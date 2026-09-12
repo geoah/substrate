@@ -1,4 +1,4 @@
-/** The agent's sessions: every `llmthread` this agent ran, newest first, with
+/** The agent's sessions: every `llm/thread` this agent ran, newest first, with
  * the one being read selected. A thread IS a run (there is no agent-run
  * record), so a row says what a run says — when it started, how it settled, and
  * what it burned. Picking one loads its transcript; **New thread** opens an
@@ -98,7 +98,7 @@ export function ThreadRail({
           </div>
         ) : threads.isError ? (
           <p className="px-3 py-3 text-xs text-muted-foreground">
-            The threads didn't load — {threads.error.message}
+            The threads didn't load: {threads.error.message}
           </p>
         ) : rows.length === 0 ? (
           <p className="px-3 py-3 text-xs text-muted-foreground">

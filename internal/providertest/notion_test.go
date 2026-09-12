@@ -39,7 +39,7 @@ package providertest
 //       sync restores "ok".
 //
 //  3. TestNotionSyncResolvesParentsBesideASecondPageType — the same install
-//     with the web bundle beside it, so `page` names two types and every
+//     with the reading-list bundle beside it, so `page` names two types and every
 //     read the sync makes must be a FULL identity. It also plants the
 //     pre-destutter pendingParent shape and proves the repair still lands.
 
@@ -62,8 +62,8 @@ const (
 	notionDir = providersDir + "/notion"
 	// The SAMPLE that declares a `page` of its own: installed beside notion,
 	// the bare name is ambiguous.
-	webDir            = samplesDir + "/web"
-	webPageType       = "samples.substrate.reamde.dev/web/page"
+	rlDir             = samplesDir + "/readinglist"
+	rlPageType        = "samples.substrate.reamde.dev/readinglist/page"
 	notionPackage     = "providers.substrate.reamde.dev/notion"
 	notionConfigType  = notionPackage + "/config"
 	notionAccountType = notionPackage + "/account"
@@ -682,7 +682,7 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	}
 }
 
-// TestNotionSyncResolvesParentsBesideASecondPageType installs the web bundle
+// TestNotionSyncResolvesParentsBesideASecondPageType installs the reading-list bundle
 // ALONGSIDE notion, so two authorities declare a type whose local name is `page`,
 // and then drives the parent-resolution path.
 //
@@ -703,7 +703,7 @@ func TestNotionSyncResolvesParentsBesideASecondPageType(t *testing.T) {
 	_, ds := newDataset(t)
 
 	// Two bundles, two `page` types. Order does not matter; both must admit.
-	for _, dir := range []string{webDir, notionDir} {
+	for _, dir := range []string{rlDir, notionDir} {
 		install(t, ds, dir, nil)
 	}
 	// The precondition this test exists for: the bare name is now ambiguous,
@@ -761,9 +761,9 @@ func TestNotionSyncResolvesParentsBesideASecondPageType(t *testing.T) {
 	if !ok || len(pend) != 2 || pend[0] != notionPageType || pend[1] != pg5 {
 		t.Fatalf("pg4 pendingParent = %v, want [%s %s]", pend, notionPageType, pg5)
 	}
-	// The web mirror is untouched: nothing wrote across the authority boundary.
-	if n := countLive(t, ds, webPageType); n != 0 {
-		t.Fatalf("the notion sync minted %d web pages", n)
+	// The reading-list mirror is untouched: nothing wrote across the authority boundary.
+	if n := countLive(t, ds, rlPageType); n != 0 {
+		t.Fatalf("the notion sync minted %d reading-list pages", n)
 	}
 
 	// --- the legacy pendingParent shape ------------------------------------

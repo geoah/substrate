@@ -20,16 +20,16 @@ import {
 
 function status(over: Partial<BundleStatus> = {}): BundleStatus {
   return {
-    id: "samples.substrate.reamde.dev/web",
-    name: "web",
-    authority: "samples.substrate.reamde.dev",
-    package: "web",
+    id: "acme.example.com/reader",
+    name: "reader",
+    authority: "acme.example.com",
+    package: "reader",
     installed: true,
     enabled: true,
     inputs: [
       {
         name: "connector",
-        kind: "samples.substrate.reamde.dev/web/config",
+        kind: "acme.example.com/reader/config",
         record: "default",
         via: "default",
       },
@@ -60,7 +60,7 @@ describe("bundleState", () => {
             {
               code: "missing",
               input: "connector",
-              kind: "samples.substrate.reamde.dev/web/config",
+              kind: "acme.example.com/reader/config",
               message: "no config record exists yet",
             },
           ],
@@ -101,10 +101,10 @@ describe("lifecycle verbs", () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify(status({ enabled: false })), { status: 200 })
     )
-    await runBundleVerb("samples.substrate.reamde.dev/web", "disable")
+    await runBundleVerb("acme.example.com/reader", "disable")
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe(
-      "/api/v1/substrate.reamde.dev/core/bundle/samples.substrate.reamde.dev%2Fweb"
+      "/api/v1/substrate.reamde.dev/core/bundle/acme.example.com%2Freader"
     )
     expect(init?.method).toBe("PATCH")
     expect(JSON.parse(String(init?.body))).toEqual({
@@ -116,10 +116,10 @@ describe("lifecycle verbs", () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ purged: 12 }), { status: 200 })
     )
-    const res = await purgeBundle("samples.substrate.reamde.dev/web")
+    const res = await purgeBundle("acme.example.com/reader")
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe(
-      "/api/v1/substrate.reamde.dev/core/bundle/samples.substrate.reamde.dev%2Fweb"
+      "/api/v1/substrate.reamde.dev/core/bundle/acme.example.com%2Freader"
     )
     expect(init?.method).toBe("PATCH")
     expect(JSON.parse(String(init?.body))).toEqual({
@@ -133,27 +133,27 @@ describe("lifecycle verbs", () => {
       new Response(JSON.stringify(status()), { status: 200 })
     )
     const res = await bindBundleInput(
-      "samples.substrate.reamde.dev/web",
+      "acme.example.com/reader",
       "connector",
       "rec-1"
     )
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe(
-      "/api/v1/substrate.reamde.dev/core/bundle/samples.substrate.reamde.dev%2Fweb/bind"
+      "/api/v1/substrate.reamde.dev/core/bundle/acme.example.com%2Freader/bind"
     )
     expect(init?.method).toBe("POST")
     expect(JSON.parse(String(init?.body))).toEqual({
       input: "connector",
       record: "rec-1",
     })
-    expect(res.id).toBe("samples.substrate.reamde.dev/web")
+    expect(res.id).toBe("acme.example.com/reader")
   })
 
   it("bind with an empty record is the unbind", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify(status()), { status: 200 })
     )
-    await bindBundleInput("samples.substrate.reamde.dev/web", "connector", "")
+    await bindBundleInput("acme.example.com/reader", "connector", "")
     const [, init] = fetchMock.mock.calls[0]
     expect(JSON.parse(String(init?.body))).toEqual({
       input: "connector",

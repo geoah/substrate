@@ -103,8 +103,8 @@ export function RecordPage() {
             <EmptyDescription>
               <span className="data">
                 {authority}/{name}/{id}
-              </span>{" "}
-              — {record.error.message}
+              </span>
+              : {record.error.message}
             </EmptyDescription>
           </EmptyHeader>
           {!notFound && (

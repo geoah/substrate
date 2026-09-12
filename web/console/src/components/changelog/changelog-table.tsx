@@ -334,7 +334,7 @@ export function ChangelogTable({
       {error ? (
         <ChangelogEmpty
           icon={<SearchXIcon />}
-          title="The change feed didn't load"
+          title="The changelog didn't load"
           description={error.message}
         >
           <Button
@@ -381,8 +381,8 @@ export function ChangelogTable({
               empty={
                 <ChangelogEmpty
                   icon={<InboxIcon />}
-                  title="No events"
-                  description="Nothing in the changelog matches this view."
+                  title="No changes"
+                  description="Nothing in the changelog matches these filters."
                 />
               }
             />

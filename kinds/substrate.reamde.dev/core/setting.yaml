@@ -1,0 +1,77 @@
+# one configuration value a bundle needs, as an ORDINARY RECORD (decision
+# record 0076). A bundle ships an empty one per setting in its closure and the
+# user fills the `value`; nothing new is parsed, because a closure already
+# carries data records.
+#
+# OWNERSHIP IS THE ID PREFIX and nothing else: the id is
+# `<bundle id>/<name>` — `<authority>/<package>/apiKey` — so a sample's
+# settings rehome with the rest of its closure and two bundles may both own an
+# `apiKey`. The engine reads the prefix in exactly three places: injection
+# (`config.settings.<name>`), the bundle's setup status, and purge.
+#
+# `type` is a HINT the engine validates `value` against on write, NOT a
+# property type in the kind system: a setting is one string, and a shape richer
+# than one string is a per-bundle kind of its own.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/setting
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One configuration value a bundle needs, stored as a record under the bundle's
+    id — `<authority>/<package>/<name>`. The bundle ships it empty, the user
+    fills the value, and every function of that bundle reads it as `config.settings.<name>`.
+    A value that carries a secret is a `secret` record instead.
+  names:
+    singular: setting
+  # The id carries the bundle prefix, so the bare name is what a row should
+  # read as when the shipper named no heading.
+  displayTemplate: "{displayName|localName}"
+  properties:
+    displayName:
+      type: string
+      displayName: Display name
+      description: the heading this setting reads as; the bundle ships it
+    description:
+      type: string
+      displayName: Description
+      description: what the value is for, in the words the person filling
+        it in needs
+    required:
+      type: bool
+      default: false
+      displayName: Required
+      description: set when the bundle cannot run without a value; an empty
+        required setting is a setup item on the bundle's status
+    value:
+      type: string
+      displayName: Value
+      description: the value, as a string; EMPTY is the unfilled state and
+        is always admitted
+    # The engine refuses a `value` that does not parse as this on write
+    # (ErrValidation, naming the property). `string` admits anything, which is
+    # why it is the default.
+    type:
+      type: enum
+      default: string
+      displayName: Type
+      description: what `value` has to parse as; the write is refused when
+        it does not
+      values:
+        - value: string
+          label: Text
+        - value: url
+          label: URL
+        - value: int
+          label: Whole number
+        - value: bool
+          label: True or false
+        - value: enum
+          label: One of a list
+    values:
+      type: string
+      repeated: true
+      displayName: Values
+      description: the admitted values when `type` is enum; `value` has to
+        be one of them

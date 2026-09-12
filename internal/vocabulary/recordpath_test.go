@@ -33,7 +33,7 @@ func TestKindGrammarSeparatesAuthorityFromName(t *testing.T) {
 			t.Errorf("ValidPackage(%q) = true: a package is one lowercase word", s)
 		}
 	}
-	for _, s := range []string{"task", "llmprovider", "person2"} {
+	for _, s := range []string{"task", "provider", "person2"} {
 		if !vocabulary.ValidName(s) {
 			t.Errorf("ValidName(%q) = false", s)
 		}
@@ -53,8 +53,8 @@ func TestSplitRecordPath(t *testing.T) {
 		ok   bool
 	}{
 		"qualified kind": {
-			path: "substrate.reamde.dev/core/llmprovider/claude",
-			kind: "substrate.reamde.dev/core/llmprovider", id: "claude", ok: true,
+			path: "substrate.reamde.dev/llm/provider/claude",
+			kind: "substrate.reamde.dev/llm/provider", id: "claude", ok: true,
 		},
 		// A declaration record's id is a kind reference, so its path has four
 		// segments and the id keeps its own slash.

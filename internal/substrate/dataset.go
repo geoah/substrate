@@ -217,7 +217,7 @@ type Dataset interface {
 // ReembedReport is what one Reembed enqueued: the pair every vector will name
 // once the queue drains, and how many properties are waiting.
 type ReembedReport struct {
-	// Provider is the llmprovider row id and Model the model it names.
+	// Provider is the llm/provider row id and Model the model it names.
 	Provider string `json:"provider"`
 	Model    string `json:"model"`
 	// Enqueued counts the (record, property) pairs now waiting, including any

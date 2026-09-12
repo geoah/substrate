@@ -13,7 +13,6 @@ type ctxKey int
 
 const (
 	ctxKeyDataset ctxKey = iota
-	ctxKeyToken
 	ctxKeyActor
 	ctxKeyPeer
 )
@@ -30,7 +29,6 @@ const actorHeader = "X-Substrate-Actor"
 // request appends, so attribution survives the caller's choice of actor name.
 func withRequestAuth(ctx context.Context, ds substrate.Dataset, tok substrate.TokenInfo, actor substrate.Actor) context.Context {
 	ctx = context.WithValue(ctx, ctxKeyDataset, ds)
-	ctx = context.WithValue(ctx, ctxKeyToken, tok)
 	ctx = substrate.WithPrincipal(ctx, tok.ID)
 	return context.WithValue(ctx, ctxKeyActor, actor)
 }
@@ -39,12 +37,6 @@ func withRequestAuth(ctx context.Context, ds substrate.Dataset, tok substrate.To
 func DatasetFrom(ctx context.Context) substrate.Dataset {
 	ds, _ := ctx.Value(ctxKeyDataset).(substrate.Dataset)
 	return ds
-}
-
-// TokenFrom returns the authenticated token metadata.
-func TokenFrom(ctx context.Context) substrate.TokenInfo {
-	t, _ := ctx.Value(ctxKeyToken).(substrate.TokenInfo)
-	return t
 }
 
 // ActorFrom returns the acting attribution for the request.

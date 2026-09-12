@@ -293,7 +293,7 @@ export function changelogFacetFields(opts: {
       kind: "state",
       repeated: false,
       states: opts.actors,
-      description: "Who committed the change",
+      description: "Who made the change",
     })
   }
   fields.push(
@@ -302,25 +302,25 @@ export function changelogFacetFields(opts: {
       kind: "state",
       repeated: false,
       states: CHANGE_OPS,
-      description: "The commit's operation",
+      description: "What the change did",
     },
     {
       name: "since",
       kind: "time",
       repeated: false,
-      description: "Events at or after this instant (e.g. 2026-08-05 14:00)",
+      description: "Changes at or after this time, such as 2026-08-05 14:00",
     },
     {
       name: "until",
       kind: "time",
       repeated: false,
-      description: "Events at or before this instant",
+      description: "Changes at or before this time",
     },
     {
       name: "q",
       kind: "string",
       repeated: false,
-      description: "Substring over kind, actor, record id and payload",
+      description: "Text to look for in the kind, actor, record id or payload",
     }
   )
   return fields

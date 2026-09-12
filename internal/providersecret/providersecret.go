@@ -1,5 +1,5 @@
 // Package providersecret takes a repository's provider bearer back out of an
-// endpoint's own words. A wire client is built from one resolved llmprovider
+// endpoint's own words. A wire client is built from one resolved llm/provider
 // row's key, and on a 401 the endpoint quotes the bearer it refused, so an
 // error returned verbatim would carry that repository's key into a log, a
 // record or an API response. Both wire clients need this (internal/llm buys

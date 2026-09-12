@@ -8,29 +8,30 @@
 # exists because the substrate exists — the repository, tokens, the
 # vocabulary's own meta-model, connection plumbing, the envelope a proposed
 # change travels in, AND the runtime the substrate itself maintains: the
-# delivery plumbing (`trigger` + `run`) and the agent loop's data
-# (`llmprovider` + `llmthread` + `llmmessage`). The sample packages (people, messaging,
+# delivery plumbing (`trigger` + `triggerrun`) and a bundle's configuration as
+# records (`setting` + `secret`, decision record 0076). The agent loop's own
+# data is the second seeded package, `substrate.reamde.dev/llm` (decision
+# record 0077); the `agent` KIND stays here because a manifest document is a
+# record of a core kind whatever package it describes. The sample packages (people, messaging,
 # calendar, tasks) are what would exist if you kept your data in a
 # shoebox — they ship as importable bundles under their own
 # samples/<package>/ directories, not here. Nothing else decides the placement.
 #
 # Absorbed here 2026-08-12: the former `automation.substrate.reamde.dev` (subsystem 7 —
 # the bundle tier's delivery plumbing as DATA: a `trigger` binds one source
-# to one callable and owns the cursor, retries, parking and replay; a `run`
-# records one delivery attempt; the cursors and parked failures underneath
-# stay engine tables, never records) and the former `ai.substrate.reamde.dev` (subsystem
-# 8 — the agent runtime's DATA: `llmprovider` is pure configuration naming a
-# wire protocol, an endpoint and a key, with `default` as the well-known row id;
-# conversation state is `llmthread` + `llmmessage`, and there is no agent-run
-# kind because the thread IS the run). Both were core parts of the substrate
-# maintained by it, so they live where the rest of the machinery lives. The
-# `agent` KIND was already core. Neither authority declared an actor, a trait
-# or a property type: `run` rows are written as the system actor, threads and
-# messages under the AGENT's actor (`agent:<authority>:<package>:<name>`), a
-# chat user message under the caller's — every effect a delivery applies
-# carries the CALLABLE's actor.
+# to one callable and owns the cursor, retries, parking and replay; a
+# `triggerrun` records one delivery attempt; the cursors and parked failures
+# underneath stay engine tables, never records) and the former
+# `ai.substrate.reamde.dev` (subsystem 8 — the agent runtime's DATA, which
+# left again in 2026-09 for `substrate.reamde.dev/llm`). Both were core parts
+# of the substrate maintained by it, so they live where the rest of the
+# machinery lives. The `agent` KIND was already core. Neither authority
+# declared an actor, a trait or a property type: `triggerrun` rows are
+# written as the system actor, threads and messages under the AGENT's actor
+# (`agent:<authority>:<package>:<name>`), a chat user message under the
+# caller's — every effect a delivery applies carries the CALLABLE's actor.
 #
-# ALPHA at v1: the agent kind, the llmprovider/llmthread/llmmessage vocabulary and the
+# ALPHA at v1: the agent kind, the `llm` package's vocabulary and the
 # /agents chat+call wire are explicitly ALPHA and UNFROZEN (ruling A12). They
 # may change or be superseded without a v1 wire break the
 # Agents section. recordpatchpolicy's judge half carries the same marker, in
@@ -42,7 +43,21 @@ data:
   authority: substrate.reamde.dev
   package: core
   # a maturity statement, not a routing key: no envelope carries a version.
-  version: 22
+  version: 25
+  # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
+  # the boot upgrade never prunes, so a header retiring a kind an existing
+  # repository still declares is refused whole and `triggerrun` never lands
+  # while the engine already writes it. A repository that predates the rename
+  # keeps a dormant `run` kind; a fresh one never has it.
+  #
+  # `llmprovider`, `llmthread`, `llmmessage` and `llminteraction` left for
+  # `substrate.reamde.dev/llm` (2026-09-12, decision record 0077), renamed to
+  # `provider`, `thread`, `message` and `interaction` as they went. Their
+  # names are not retired here either, so the four kinds stay declared
+  # forever. Their ROWS do not stay: each new declaration carries
+  # `movedFrom`, so the upgrade carries every live record to its new kind and
+  # repoints every reference at it (decision record 0078). What a repository
+  # that predates the move keeps is four dormant, EMPTY kinds.
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands

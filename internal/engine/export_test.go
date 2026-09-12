@@ -62,7 +62,7 @@ var migratedTemplate = testdb.NewTemplate("engine", func(ctx context.Context, ds
 	}
 	defer func() { _ = os.RemoveAll(root) }()
 	svc, err := Open(ctx, dsn,
-		WithKindsDir(CoreKindsDir),
+		WithKindsDir(SeedKindsDir),
 		WithDataRoot(root),
 		WithCredentialKey(TestCredentialKey))
 	if err != nil {
@@ -118,9 +118,10 @@ func WithTestSnapshotFault(fn func(stage, dir string) error) Option {
 	return func(o *options) { o.snapshotFault = fn }
 }
 
-// CoreKindsDir is the shipped core package, relative to this package: what
-// every test open loads unless it brings a patched tree.
-const CoreKindsDir = "../../kinds/substrate.reamde.dev/core"
+// SeedKindsDir is the shipped SEED AUTHORITY, relative to this package — core
+// and llm together (record 0077): what every test open loads unless it brings
+// a patched tree.
+const SeedKindsDir = "../../kinds/substrate.reamde.dev"
 
 // testClocks holds one TestClock per test name (ClockOf), so a subtest and a
 // repeated run (-count=N) start at zero.
@@ -146,7 +147,7 @@ func ClockOf(t *testing.T) *TestClock {
 func OpenForTest(t *testing.T, ctx context.Context, dsn string, opts ...Option) (substrate.Service, error) {
 	t.Helper()
 	all := append([]Option{
-		WithKindsDir(CoreKindsDir),
+		WithKindsDir(SeedKindsDir),
 		WithCredentialKey(TestCredentialKey),
 		WithTestTOTPClock(ClockOf(t).Now),
 	}, opts...)

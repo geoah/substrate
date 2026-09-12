@@ -40,13 +40,16 @@ grep_docs() {
 # --- the dead words -----------------------------------------------------
 #
 # docs/terms.md is the vocabulary, and it says a dead word is a bug wherever it
-# survives. Only the words with NO honest surviving sense are grep-able: `type`,
-# `schema`, `group`, `log`, `extension` and `capability` all have a legitimate
-# sense (a GraphQL schema, a Postgres extension, a function's `capabilities`
-# envelope), so they are the reading pass's, not this script's.
+# survives. Only the words with NO honest surviving sense are grep-able —
+# `entity`, `tenant`, `relationship`, `singleton`, `configType`, `edge` and
+# `integration` (the provider tier's old name; Notion's own "internal
+# integration" is written around, not excepted). `type`, `schema`, `group`,
+# `log`, `extension` and `capability` all have a legitimate sense (a GraphQL
+# schema, a Postgres extension, a function's `capabilities` envelope), so they
+# are the reading pass's, not this script's.
 #
 # terms.md itself is exempt: it names the dead words on purpose, to retire them.
-dead='entit(y|ies)|tenants?|relationships?|singletons?|config[ -]?[Tt]ype|edges?'
+dead='entit(y|ies)|tenants?|relationships?|singletons?|config[ -]?[Tt]ype|edges?|integrations?'
 if grep_docs -rniE "\b(${dead})\b" | grep -v '^docs/terms.md:'; then
   flag "a dead word survives; docs/terms.md names the live one"
 fi
@@ -266,7 +269,7 @@ grep_urls() {
 # `<authority>/<package>/<kind>`. Matching it straight after the authority
 # would now fire on every package whose name is a plural word (`tasks`,
 # `people`, `notes`), which is what a package is called.
-shipped_plurals='accounts|actors|agents|authorities|blobs|bundles|calendarevents|calendars|configs|contacts|conversationmessages|conversations|credentials|databases|emailaddresses|emailmessages|emailthreads|events|functions|issues|kinds|llminteractions|llmmessages|llmproviders|llmthreads|messages|notes|organizations|pages|people|projects|propertytypes|pullrequests|recordmappings|recordmergerequests|recordmerges|recordpatchpolicies|recordpatchrequests|recordsplits|recoveries|recoverykeys|repositories|rooms|runs|scratchpads|sleeps|tasklogs|tasks|teams|threads|tokens|traits|transcripts|triggers|users|webdocuments|workouts'
+shipped_plurals='accounts|actors|agents|authorities|blobs|bundles|calendarevents|calendars|configs|contacts|conversationmessages|conversations|credentials|databases|emailaddresses|emailmessages|emailthreads|events|functions|interactions|issues|kinds|llminteractions|llmmessages|llmproviders|llmthreads|messages|notes|organizations|pages|people|projects|propertytypes|providers|pullrequests|recordmappings|recordmergerequests|recordmerges|recordpatchpolicies|recordpatchrequests|recordsplits|recoveries|recoverykeys|repositories|rooms|runs|scratchpads|sleeps|tasklogs|tasks|teams|threads|tokens|traits|transcripts|triggers|users|webdocuments|workouts'
 if grep_urls -rnE "[a-z0-9-]+(\.[a-z0-9-]+)*\.reamde\.dev/[a-z][a-z0-9]*/(${shipped_plurals})\b"; then
   flag "a documented collection is addressed by its plural; the segment is the kind's name (decision 0033)"
 fi

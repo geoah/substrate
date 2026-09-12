@@ -87,7 +87,7 @@ type effectCeiling struct {
 	emit []string
 	// changes, when set, collects the committed changelog entries of every
 	// transaction the ceiling stamps — the agent mutate tool's per-dispatch
-	// record of what it wrote, stamped onto the tool's llmmessage row.
+	// record of what it wrote, stamped onto the tool's llm/message row.
 	changes *[]changeEntry
 	// policyDecision marks the engine's own judge-driven decision on a
 	// policy-gated request (judge.go decideAsPolicy): the one bundle-tier
@@ -686,11 +686,14 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// the reviewer read it, so nothing swaps a harmless patch for an arbitrary
 	// delete under an undecided request.
 	if sp.ty.Identity == vocabulary.KindRecordPatchRequest {
-		if create {
+		switch {
+		case create && t.movingRecords:
+			// A move carries a record that was admitted here once already.
+		case create:
 			if err := t.admitRequestDiff(sp); err != nil {
 				return nil, err
 			}
-		} else {
+		default:
 			if err := t.canonicalizeResubmittedDiff(sp); err != nil {
 				return nil, err
 			}
@@ -704,11 +707,16 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// answers ride the answering transition alone, and only the owner's hand
 	// resolves.
 	if sp.ty.Identity == vocabulary.KindLLMInteraction {
-		if create {
+		switch {
+		case create && t.movingRecords:
+			// Likewise: the batch contract was judged when the ask landed it,
+			// and a moved interaction arrives with the answers and the state it
+			// already had.
+		case create:
 			if err := t.admitInteraction(sp); err != nil {
 				return nil, err
 			}
-		} else {
+		default:
 			if err := t.guardInteraction(sp); err != nil {
 				return nil, err
 			}
@@ -748,6 +756,11 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// A `blob` manifest write must hold the byte-store invariants:
 	// id == digest, and `stored` only once the bytes exist.
 	if err := t.guardBlobWrite(sp); err != nil {
+		return nil, err
+	}
+	// A `setting`'s value must parse as the `type` it declares (settings.go):
+	// a setting is one string, so the type is the only contract there is.
+	if err := t.guardSettingWrite(sp); err != nil {
 		return nil, err
 	}
 	// A managed property is the engine's to write, on a data kind exactly as
@@ -1026,7 +1039,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		}
 	}
 
-	// An llmprovider row that names an embedModel is where this repository
+	// An llm/provider row that names an embedModel is where this repository
 	// buys its vectors, and the rules about it are held HERE, at the write:
 	// only the openai wire has an embeddings endpoint, only a 1536-wide model
 	// fits the column (decision record 0026), and only one row per repository
@@ -1232,7 +1245,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		}
 	}
 	// A resolved record reports back to the thread its marker names: a
-	// `system` llmmessage carrying the kind's envelope and the entries this
+	// `system` llm/message carrying the kind's envelope and the entries this
 	// resolution wrote (the record's own patch, and whatever the
 	// transition's onEnter applied), and — after commit — the thread resumes
 	// so the agent hears it. Ordered after applyEditDiff, so an accept that

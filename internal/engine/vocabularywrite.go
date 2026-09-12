@@ -617,6 +617,8 @@ type vocabularyStage struct {
 	// conversions are the record rewrites the candidate declares (a rename, a
 	// backfill, a remap, a null: convert.go), performed inside the transaction
 	// after the projection and admitted by admitConversion once the guards
+	// moveRefusals is this door's whole answer to `movedFrom` (move.go).
+	moveRefusals []string
 	// pass; conversionGuards names what refuses the batch without a count: a
 	// reader of a renamed name (renameGuards).
 	conversions      conversionPlan
@@ -635,6 +637,12 @@ func (st *vocabularyStage) guards(q sqlReader) ([]string, error) {
 	guards = append(guards, st.strandedMappings...)
 	guards = append(guards, st.retirements...)
 	guards = append(guards, st.conversionGuards...)
+	// `movedFrom` is stored here and honored nowhere but the shipped upgrade
+	// (move.go's header): this door publishes its candidate registry before any
+	// rewrite could run, and a move reaches past the write path's admission
+	// rules, which is a license no repository token holds. A batch that would
+	// imply one is refused, naming the key.
+	guards = append(guards, st.moveRefusals...)
 	narrowed, err := narrowingGuards(q, st.narrowings)
 	if err != nil {
 		return nil, err
@@ -838,6 +846,10 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	}
 
 	conversions := classifyConversions(current, candidate, touched, nil)
+	// A kind MOVE (record 0078) is classified only to be REFUSED here: this
+	// door stores `movedFrom` and performs nothing, so nothing is passed to the
+	// conversion plan and the narrowing counts stand at full strength.
+	moveRefusals := userDoorMoveGuards(classifyKindMoves(current, candidate, touched, nil))
 	return &vocabularyStage{
 		candidate: candidate,
 		touched:   touched,
@@ -858,7 +870,8 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// removed, required added — is classified here against the currently
 		// stored definitions and refused while live rows would be stranded,
 		// with the count. Additive changes pass through untouched (schemadiff.go).
-		narrowings: classifyNarrowings(current, candidate, touched),
+		narrowings:   classifyNarrowings(current, candidate, touched, nil),
+		moveRefusals: moveRefusals,
 		// A rename, a backfill, a remap and a null are neither: the
 		// transaction rewrites the live records (convert.go), and what refuses
 		// them without a count is a reader of the old name the candidate
@@ -1992,6 +2005,23 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 		good, inadmissible = ds.admissibleSubset(built)
 		quarantined = append(quarantined, inadmissible...)
 	}
+	// A SEEDED package is never quarantined, at either step (record 0077): a
+	// repository whose own meta-kinds do not admit resolves nothing, and the
+	// engine writes the llm kinds from Go constants, so serving the repository
+	// "without" either of them would be a lie dressed as a recovery. The build
+	// half already returns an error (buildPackagesSeparately); this is the
+	// admission half, which reaches the same closure by the other road.
+	for _, q := range quarantined {
+		if !seededPackageName(q.name) {
+			continue
+		}
+		ds.svc.log.Error("substrate: REFUSING to open a repository whose SEEDED closure no longer admits under this binary. "+
+			"Core and llm are what everything else resolves against, so serving the repository without one of them would "+
+			"answer wrongly rather than not at all",
+			"repository", logSafeID(ds.info.ID), "package", logSafeID(q.name), "reason", logSafeText(q.reason))
+		return fmt.Errorf("substrate/engine: repository %s: the seeded closure %s no longer admits under this binary: %s",
+			ds.info.ID, q.name, q.reason)
+	}
 	if err := ds.clearGroupQuarantine(ctx, good); err != nil {
 		return err
 	}
@@ -2010,21 +2040,27 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 
 // admissibleSubset installs the maximal subset of built packages that admits
 // into ds.reg and returns the rest as quarantined, with each one's admission
-// error. It is a fixpoint over single-package Install: a package that depends
-// on a sibling admits once that sibling is in, and Install self-removes a
-// package that fails, so ds.reg is left holding exactly the admissible subset.
-// n (installed packages) is small, so the O(n^2) worst case is fine.
+// error. It is a fixpoint over UNITS: a unit that depends on a sibling admits
+// once that sibling is in, and a failed InstallAll self-removes everything it
+// added, so ds.reg is left holding exactly the admissible subset. n (installed
+// packages) is small, so the O(n^2) worst case is fine.
+//
+// The unit is one package, EXCEPT for the seeded ones, which are one unit
+// together (record 0077): core declares against llm and llm declares back at
+// core's `agent`, so neither admits while the other is absent, and a fixpoint
+// over single packages would quarantine both — the whole repository — over a
+// cycle that is by construction always satisfied.
 func (ds *dataset) admissibleSubset(built []*vocabulary.Package) (good []*vocabulary.Package, quarantined []quarantinedPackage) {
-	remaining := append([]*vocabulary.Package(nil), built...)
+	remaining := admissionUnits(built)
 	for {
 		progressed := false
-		var next []*vocabulary.Package
-		for _, g := range remaining {
-			if err := ds.reg.Install(g); err == nil {
-				good = append(good, g)
+		var next [][]*vocabulary.Package
+		for _, unit := range remaining {
+			if err := ds.reg.InstallAll(unit); err == nil {
+				good = append(good, unit...)
 				progressed = true
 			} else {
-				next = append(next, g)
+				next = append(next, unit)
 			}
 		}
 		remaining = next
@@ -2032,17 +2068,50 @@ func (ds *dataset) admissibleSubset(built []*vocabulary.Package) (good []*vocabu
 			break
 		}
 	}
-	// Whatever remains cannot admit even with every good authority present. Re-run
-	// Install once per remaining authority to capture its reason — it fails and
+	// Whatever remains cannot admit even with every good package present. Re-run
+	// InstallAll once per remaining unit to capture its reason — it fails and
 	// self-removes, so ds.reg is untouched.
-	for _, g := range remaining {
+	for _, unit := range remaining {
 		reason := "stored closure failed admission under the current binary"
-		if err := ds.reg.Install(g); err != nil {
+		if err := ds.reg.InstallAll(unit); err != nil {
 			reason = err.Error()
 		}
-		quarantined = append(quarantined, quarantinedPackage{name: g.Identity, reason: cappedQuarantineReason(reason)})
+		for _, g := range unit {
+			quarantined = append(quarantined, quarantinedPackage{name: g.Identity, reason: cappedQuarantineReason(reason)})
+		}
 	}
 	return good, quarantined
+}
+
+// admissionUnits splits built packages into admission units, in the order they
+// were built: one unit per package, and one unit holding every seeded package
+// together with the authority row above them.
+func admissionUnits(built []*vocabulary.Package) [][]*vocabulary.Package {
+	var units [][]*vocabulary.Package
+	var seeded []*vocabulary.Package
+	seededAt := -1
+	for _, g := range built {
+		if seededPackageName(g.Identity) {
+			if seededAt < 0 {
+				seededAt = len(units)
+				units = append(units, nil)
+			}
+			seeded = append(seeded, g)
+			continue
+		}
+		units = append(units, []*vocabulary.Package{g})
+	}
+	if seededAt >= 0 {
+		units[seededAt] = seeded
+	}
+	return units
+}
+
+// seededPackageName reports whether a declaration group is one the binary
+// seeds: the two packages, and the authority row that owns them.
+func seededPackageName(name string) bool {
+	return name == vocabulary.PackageCore || name == vocabulary.PackageLLM ||
+		name == vocabulary.AuthorityPublisher
 }
 
 // markGroupQuarantined records the quarantine state on the package's own row,
@@ -2184,30 +2253,47 @@ func (ds *dataset) storedPackages(ctx context.Context, skip func(string) bool) (
 	return built, unparsed, nil
 }
 
-// buildPackagesSeparately rebuilds a source's documents ONE AUTHORITY AT A
-// TIME — every authority is bucketed and built independently anyway, so this
-// changes nothing but the blast radius of a failure. Core is the exception it
-// returns an error for: a repository whose own meta-kinds do not parse
-// resolves nothing, so quarantining core would be a lie dressed as a recovery.
+// buildPackagesSeparately rebuilds a source's documents ONE PACKAGE AT A TIME —
+// every package is bucketed and built independently anyway, so this changes
+// nothing but the blast radius of a failure.
+//
+// The SEEDED packages are the exception, twice over (record 0077). They build
+// TOGETHER, in one bucket, because `BuildPackages` resolves the closure it is
+// handed and core declares against llm (the `agent` kind's `provider`,
+// `recordpatchrequest`'s `thread`, the `ask` built-in's write permission);
+// built apart, core would fail to resolve pins to a package that is right
+// there. And a failure of that bucket is returned rather than quarantined: a
+// repository whose own meta-kinds do not resolve resolves nothing, so
+// quarantining core would be a lie dressed as a recovery, and the agent
+// runtime writes llm's kinds from Go constants, so a quarantined llm is the
+// same lie one subsystem down.
 func buildPackagesSeparately(docs []vocabulary.Document, source string) ([]*vocabulary.Package, []quarantinedPackage, error) {
-	byPackage := map[string][]vocabulary.Document{}
+	// The seeded bucket is keyed by the authority the two share, which no
+	// package identity can equal (a package reference carries a slash).
+	bucketOf := func(name string) string {
+		if seededPackageName(name) {
+			return vocabulary.AuthorityPublisher
+		}
+		return name
+	}
+	byBucket := map[string][]vocabulary.Document{}
 	var order []string
 	for _, d := range docs {
-		name := d.DeclaredPackage()
-		if _, seen := byPackage[name]; !seen {
+		name := bucketOf(d.DeclaredPackage())
+		if _, seen := byBucket[name]; !seen {
 			order = append(order, name)
 		}
-		byPackage[name] = append(byPackage[name], d)
+		byBucket[name] = append(byBucket[name], d)
 	}
 	var built []*vocabulary.Package
 	var unparsed []quarantinedPackage
 	for _, name := range order {
-		gs, err := vocabulary.BuildPackages(byPackage[name], source)
+		gs, err := vocabulary.BuildPackages(byBucket[name], source)
 		if err == nil {
 			built = append(built, gs...)
 			continue
 		}
-		if name == vocabulary.PackageCore {
+		if seededPackageName(name) {
 			return nil, nil, err
 		}
 		unparsed = append(unparsed, quarantinedPackage{name: name, reason: cappedQuarantineReason(err.Error())})

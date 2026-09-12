@@ -1,0 +1,129 @@
+# one declared kind, so the vocabulary is browsable through the same API as data
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/kind
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One declared kind — what a record is, `{authority}/{package}/{name}`.
+    The vocabulary browses through the same API as data, so every kind this
+    repository holds is a row here, and these properties are what the engine
+    validates every write against.
+  version: 17
+  names:
+    singular: kind
+  # the declarations this repository holds; id is the kind REFERENCE
+  # ("samples.substrate.reamde.dev/calendar/calendarevent", or a bare "task" for a
+  # repository-local kind) — the one id form that carries a slash.
+  displayTemplate: "{localName}"
+  # THE PROPERTIES ARE THE DECLARATION. A kind declaration's row holds the
+  # manifest's own keys — names, properties, traits, indices — and there
+  # is no `definition` blob beside them.
+  #
+  # A new property here is an ordinary versioned change: every row that carries
+  # it is a row a projection writes, and each such row is validated against the
+  # declaration the projection is installing (engine/vocabularywrite.go
+  # projectionKind), so a repository still holding the older declaration takes
+  # the rows and the boot upgrade lands.
+  properties:
+    version:
+      type: int
+      managed: true
+      description: this declaration's incremental version, maintained by the
+        engine
+    source:
+      type: enum
+      values:
+        - builtin
+        - published
+        - installed
+      managed: true
+      description: builtin for seeded kinds, published for a provider's, installed
+        for bundle ones
+    # NOT a reference, and the reason is identity: an authority is what this
+    # declaration IS part of, not a record it points at. Pinning it made the
+    # stored row spell it as a path while the manifest spelled the name, so one
+    # declaration had two Definitions — the authored one and the one that came
+    # back after a restart.
+    authority:
+      type: string
+      description: who publishes it; absent on a repository-local kind
+    package:
+      type: string
+      description: the package it is declared in, the middle segment of its
+        id
+    names:
+      type: object
+      description: what one record is called; the name is also the collection
+        segment
+      fields:
+        singular:
+          type: string
+          required: true
+          description: the kind's singular name, its identity's last segment
+    description:
+      type: string
+      description: what this kind is for, read above its collection
+    displayTemplate:
+      type: string
+      description: how a record of this kind renders its title
+    # The micro-syntax stays a string: `temporal(point: dueAt)` names a trait,
+    # a variant and the hot column it occupies in one word an author writes.
+    traits:
+      type: string
+      repeated: true
+      description: the traits this kind binds
+    indices:
+      type: object
+      repeated: true
+      description: the composite indexes this kind asks for
+      fields:
+        properties:
+          type: string
+          repeated: true
+          required: true
+          description: the properties the index covers, in order
+    # The names this kind has spent (decision record 0055). Authored, not
+    # managed: the author lists a name to retire it, the engine carries the
+    # block into every later declaration of the kind, and a listed name
+    # declared again is refused on every admission door. The second json
+    # leaf here, for the same reason as `properties`: `values` and `states`
+    # are maps of property name to a list of words, a shape the dialect
+    # cannot state, and the loader that admits the block is what holds it
+    # (vocabulary/retired.go).
+    retired:
+      type: json
+      description: the property names, enum values and states this kind retired
+        ({properties, values, states}); a listed name is refused if declared
+        again
+    # A json LEAF IN THE META-KIND (`retired`, above, is the other), and the
+    # reason here is a self-reference no bounded schema escapes. A property
+    # declaration describes OBJECT FIELDS, and
+    # a field declaration is a property declaration again — so describing
+    # `properties` needs a `fields` level, which puts a `fields` level into THIS
+    # declaration's own row, which needs one more level to describe, and so on
+    # without end. The dialect terminates by construction (vocabulary/types.go,
+    # MaxFieldDepth) and therefore cannot state its own grammar.
+    #
+    # What validates it is the LOADER, which is stronger here than any structural
+    # schema: every write of a kind declaration is parsed by it — datatypes, the
+    # key set each datatype admits, the camel rule, enum values, machine states
+    # and transitions, the depth cap — and a document it refuses never reaches a
+    # row. Same posture `recordpatchrequest.diff` keeps, for the same kind of
+    # reason: the validator that knows the shape is not a schema.
+    #
+    # Everything else on this kind IS typed — the names, the display template,
+    # the traits, the indices — none of which recurse.
+    #
+    # A LINK between records lives here too, and nowhere else: a `type:
+    # reference` property, pinned by `kind:` or `trait:` or unpinned, carrying
+    # `repeated`, `required`, `mustExist` (the referent has to exist at write),
+    # `onDelete: cascade` (the referent owns this record, so a cascade collects
+    # it), `subject: true` (a recordmapping's subject) and its own `properties`
+    # (link data: flat single values, the same set a scalar property declares).
+    # The loader is what holds every one of those keys.
+    properties:
+      type: json
+      description: the declared value slots a record of this kind carries,
+        as the loader admits them, links to other records included

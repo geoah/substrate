@@ -503,7 +503,7 @@ type Transition struct {
 	To      string
 	Stamps  map[string]string
 	OnEnter string
-	// Notifies names the reference property (pinned to core's llmthread)
+	// Notifies names the reference property (pinned to llm/thread)
 	// whose thread this transition reports into: the engine writes the
 	// resolution's `system` message there and schedules the resume, the one
 	// primitive under proposal decisions and interaction answers alike. Empty
@@ -644,6 +644,18 @@ type Kind struct {
 	// refused if the kind declares it again, on every admission door, and the
 	// engine carries a stored list into every later declaration of the kind.
 	Retired KindRetirement
+
+	// MovedFrom is the kind reference this kind used to be spelled as
+	// (decision 0078). Admitting it where the repository still declares that
+	// old kind moves every live row to this kind and repoints every live
+	// reference at it, as ordinary record writes in the same transaction
+	// (engine/move.go). The old kind stays declared and empty; nothing is
+	// pruned and no name is retired (record 0055). Loader-validated: a fully
+	// qualified reference under this kind's own authority, never this kind
+	// itself. Whether the two shapes are compatible is decided against the
+	// STORED declaration, which the loader cannot see, so the engine refuses
+	// an incompatible move.
+	MovedFrom string
 
 	// HotColumns lists the hot properties this type's capabilities bind, in
 	// {"at","endsAt","dueAt"} terms.

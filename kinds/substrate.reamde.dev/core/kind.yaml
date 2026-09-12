@@ -10,7 +10,7 @@ data:
     The vocabulary browses through the same API as data, so every kind this
     repository holds is a row here, and these properties are what the engine
     validates every write against.
-  version: 17
+  version: 18
   names:
     singular: kind
   # the declarations this repository holds; id is the kind REFERENCE
@@ -97,6 +97,16 @@ data:
       description: the property names, enum values and states this kind retired
         ({properties, values, states}); a listed name is refused if declared
         again
+    # Where this kind used to be spelled (decision record 0078). Authored, and
+    # acted on ONCE: admitting the declaration where the repository still
+    # declares the named kind moves every live row onto this kind and
+    # repoints every live reference, in the same transaction, as ordinary
+    # record writes. It stays on the declaration afterwards and does nothing,
+    # because the second admission finds no rows to move.
+    movedFrom:
+      type: string
+      description: the kind reference this kind used to be spelled as; admitting
+        it moves the old kind's live rows here and repoints every reference
     # A json LEAF IN THE META-KIND (`retired`, above, is the other), and the
     # reason here is a self-reference no bounded schema escapes. A property
     # declaration describes OBJECT FIELDS, and

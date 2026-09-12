@@ -128,8 +128,8 @@ export function DataCountsZone({
       />
       {own.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          No schema authorities are declared yet — install a vocabulary bundle
-          from the registry, or declare a kind of your own.
+          No authorities declare kinds yet. Import a sample package from the
+          registry, or declare a kind of your own.
         </p>
       ) : (
         <div className={AUTHORITY_GRID}>

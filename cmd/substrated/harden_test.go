@@ -62,7 +62,7 @@ func TestBootLineOnMacOSEnumeratesWhatIsNotEnforced(t *testing.T) {
 // answer: it is fixable, so it is an error and it points at enforce.
 func TestBootLineOnADegradedKernelIsAnError(t *testing.T) {
 	level, msg, _ := sandboxReport(sandbox.ModeBestEffort,
-		sandbox.Report{OS: "linux", LandlockABI: 0, Seccomp: true})
+		sandbox.Report{OS: "linux", LandlockABI: 0, Seccomp: true, ConnectGate: true})
 	if level != slog.LevelError {
 		t.Fatalf("level = %v, want ERROR", level)
 	}
@@ -73,7 +73,7 @@ func TestBootLineOnADegradedKernelIsAnError(t *testing.T) {
 
 func TestBootLineWhenEverythingApplies(t *testing.T) {
 	level, msg, attrs := sandboxReport(sandbox.ModeEnforce,
-		sandbox.Report{OS: "linux", LandlockABI: 4, Seccomp: true})
+		sandbox.Report{OS: "linux", LandlockABI: 4, Seccomp: true, ConnectGate: true})
 	if level != slog.LevelInfo {
 		t.Fatalf("level = %v, want INFO", level)
 	}
@@ -88,11 +88,41 @@ func TestBootLineWhenEverythingApplies(t *testing.T) {
 // Off is the operator's own choice, so it warns rather than erroring: but it
 // still says what the choice costs.
 func TestBootLineWhenTurnedOff(t *testing.T) {
-	level, msg, _ := sandboxReport(sandbox.ModeOff, sandbox.Report{OS: "linux", LandlockABI: 4, Seccomp: true})
+	level, msg, _ := sandboxReport(sandbox.ModeOff, sandbox.Report{OS: "linux", LandlockABI: 4, Seccomp: true, ConnectGate: true})
 	if level != slog.LevelWarn {
 		t.Fatalf("level = %v, want WARN", level)
 	}
 	if !strings.Contains(msg, "OFF") || !strings.Contains(msg, "unconfined") {
 		t.Fatalf("message = %q", msg)
+	}
+}
+
+// The container case the stock docker profile produces: every layer installs
+// and the connect gate's supervisor cannot answer a single notification, so
+// the line must name the capability rather than a kernel setting, and say that
+// network bodies are refused rather than quietly unfiltered. This is the
+// failure that shipped as "install a provider and every uv fetch is denied".
+func TestBootLineWhenTheConnectGateCannotBeServiced(t *testing.T) {
+	level, msg, attrs := sandboxReport(sandbox.ModeBestEffort,
+		sandbox.Report{
+			OS: "linux", LandlockABI: 4, Seccomp: true,
+			ConnectGate: false, ConnectGateErr: "pidfd_getfd: operation not permitted",
+		})
+	if level != slog.LevelError {
+		t.Fatalf("level = %v, want ERROR", level)
+	}
+	if !strings.Contains(msg, "connect gate") || !strings.Contains(msg, "REFUSED") {
+		t.Fatalf("the line does not name the gate and what stops working: %q", msg)
+	}
+	if !strings.Contains(attr(attrs, "refused"), "pidfd_getfd") {
+		t.Fatalf("the line does not name the syscall that refused: %q", attr(attrs, "refused"))
+	}
+	// The remedy, not a kernel setting: this is the one degradation an
+	// operator fixes in their deployment file.
+	advice := attr(attrs, "advice")
+	for _, want := range []string{"CAP_SYS_PTRACE", "process_vm_readv", "cap_add"} {
+		if !strings.Contains(advice, want) {
+			t.Fatalf("the advice does not mention %q: %q", want, advice)
+		}
 	}
 }

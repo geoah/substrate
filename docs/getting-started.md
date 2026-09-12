@@ -9,18 +9,22 @@ You need a running substrate and its invite code.
 [running a substrate](operations.md) is the deployment; if somebody else runs
 yours, they hand you the address and the code.
 
-## Registration needs an invite code
+## Registration
 
-One **invite code**, configured on the service, admits people. Registering
-with it creates a **user** and, in the same transaction, that user's one
-**repository**, seeded with the core vocabulary — `substrate.reamde.dev/core`
-alone. Everything else, including the task kinds used below, is a
-[sample you import](builtin-kinds.md). With no invite code
-configured, registration is closed;
-[users, tokens, and actors](auth.md#the-invite-code) has the detail.
+Registering creates a **user** and, in the same transaction, that user's one
+**repository**, seeded with the substrate's own vocabulary —
+`substrate.reamde.dev/core` and `substrate.reamde.dev/llm`, and nothing else.
+Everything else, including the task kinds used below, is a
+[sample you import](builtin-kinds.md). A deployment with an **invite code**
+configured admits only a request that presents it; the local substrate from
+`docker compose up` has none and reads none.
+[Users, tokens, and actors](auth.md#the-invite-code) has the detail.
 
 Registration needs three things from you: a repository name, a password, and a
-TOTP second factor. All three are required, and the name is yours permanently.
+TOTP second factor. All three are required on a deployment, and the name is
+yours permanently. The local substrate
+[verifies no second factor](auth.md#the-second-factor-can-be-switched-off-locally),
+so there a repository name and a password are the whole of it.
 
 ## Register
 

@@ -140,7 +140,7 @@ def main(input, host):
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT props->>'fireId' FROM records
 		WHERE kind = $1 AND props->>'status' = 'ok' AND deleted_at IS NULL
-		ORDER BY created_at, id`, typeRun)
+		ORDER BY created_at, id`, typeTriggerRun)
 	if err != nil {
 		t.Fatalf("run rows: %v", err)
 	}

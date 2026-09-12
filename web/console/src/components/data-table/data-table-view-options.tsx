@@ -85,7 +85,7 @@ export function DataTableViewOptions<TData extends RowData>({
       <PopoverContent align="end" className="w-56 p-1">
         <div className="flex flex-col">
           <span className="px-2 pt-1 pb-1.5 text-xs text-muted-foreground">
-            Columns — show, hide, reorder
+            Show, hide and reorder columns
           </span>
           {columns.map((column, i) => {
             const visible = column.getIsVisible()

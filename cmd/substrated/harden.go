@@ -55,6 +55,26 @@ func sandboxReport(mode sandbox.Mode, report sandbox.Report) (slog.Level, string
 				"advice", "run bodies you do not trust on Linux, or in the Linux VM behind Docker",
 			}
 
+	case !report.ConnectGate:
+		// Named apart from the other degradations because it is the only one
+		// whose remedy is not a kernel: every layer installed, and the calls
+		// the gate's SUPERVISOR answers notifications with are what the
+		// container's seccomp profile refused. The consequence is a refusal
+		// and never an unfiltered body, so the line says what stops working
+		// rather than what quietly widened.
+		refused := report.ConnectGateErr
+		if refused == "" && report.Err != nil {
+			refused = report.Err.Error()
+		}
+		return slog.LevelError,
+			"function sandbox DEGRADED: the connect gate cannot be serviced, so every function that declares `network:` is REFUSED until the capability is granted",
+			[]any{
+				"mode", string(mode),
+				"kernel", report.String(),
+				"refused", refused,
+				"advice", sandbox.ConnectGateRemedy,
+			}
+
 	case report.Degraded(mode):
 		return slog.LevelError,
 			"function sandbox DEGRADED: this kernel does not offer every layer, and bodies run with less confinement than the mode implies. Set SUBSTRATE_SANDBOX=enforce to refuse instead",

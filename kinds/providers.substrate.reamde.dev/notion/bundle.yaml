@@ -52,7 +52,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: notion
-  version: 8
+  version: 9
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. NO `oauth2:` manifest
@@ -65,8 +65,9 @@ data:
   authority: providers.substrate.reamde.dev
   package: notion
   description: >-
-    Mirrors the Notion pages and data sources shared with an internal integration
-    into the graph — sync-only, token-authorized, no writeback.
+    Keeps a copy of the Notion pages and data sources you have shared with
+    an internal token. It takes a token you paste rather than a sign-in, so
+    the account's connection fields stay empty. Read-only.
   # The one declared input: the connector record the sync body reads.
   # `inject: functions` hands the resolved record (token in plaintext inside
   # the runner boundary) to every invocation under config.inputs.connector.
@@ -94,10 +95,10 @@ data:
   authority: providers.substrate.reamde.dev
   package: notion
   description: >-
-    The Notion integration token this bundle spends, and the API origin it
-    may be sent to. The bundle's connector input resolves one record of this
-    kind; the token is sealed against read-back and the origin is pinned,
-    so an owner edit cannot become an exfiltration channel.
+    The Notion internal token this bundle spends, and the API origin it may
+    be sent to. The bundle's connector input resolves one record of this kind;
+    the token is sealed against read-back and the origin is pinned, so an
+    owner edit cannot become an exfiltration channel.
   names:
     singular: config
   displayTemplate: "Notion integration"
@@ -264,9 +265,9 @@ data:
   authority: providers.substrate.reamde.dev
   package: notion
   description: >-
-    What Notion holds about one page shared with the integration: its URL,
-    its block tree normalized to text, and the last-edited stamp the delta
-    sync compares to decide whether anything changed.
+    What Notion holds about one page shared with your token: its URL, its
+    block tree normalized to text, and the last-edited stamp the delta sync
+    compares to decide whether anything changed.
   names:
     singular: page
   properties:
@@ -339,7 +340,7 @@ data:
   authority: providers.substrate.reamde.dev
   package: notion
   description: >-
-    One Notion data source shared with the integration; a multi-source database
+    One Notion data source shared with your token; a multi-source database
     yields one mirror per source, all naming the same containing database.
     The raw object is kept, and its last-edited stamp drives the delta here
     too.
@@ -404,7 +405,7 @@ data:
   # backfill should ride the triggers.
   description: >-
     Sync the Notion workspace: mirror the shared pages and data sources over
-    the config's integration token, skip unchanged last_edited_times, stamp
+    the token on the config record, skip unchanged last_edited_times, stamp
     the account when the walk completes.
   runtime: python
   timeout: PT1M

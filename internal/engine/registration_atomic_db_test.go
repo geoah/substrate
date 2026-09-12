@@ -17,7 +17,7 @@ func openBareService(t *testing.T) (*service, string) {
 	t.Helper()
 	ctx := context.Background()
 	dsn := MigratedDSN(t)
-	svcIface, err := OpenForTest(t, ctx, dsn, WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsDir(CoreKindsDir))
+	svcIface, err := OpenForTest(t, ctx, dsn, WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}

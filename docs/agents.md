@@ -1,8 +1,8 @@
 # Agents
 
 **Agents are alpha and not part of the frozen v1 contract.** The `agent`
-kind, the agent-loop vocabulary (`llmprovider`, `llmthread`, `llmmessage`,
-`llminteraction`), and the `/agents` chat and call wire are all alpha and
+kind, the agent-loop vocabulary (`llm/provider`, `llm/thread`, `llm/message`,
+`llm/interaction`), and the `/agents` chat and call wire are all alpha and
 unfrozen at v1. They
 are marked alpha in the docs and in [API discovery](api.md#discovery),
 which lists the agent surface under the `agents` feature carrying the
@@ -28,22 +28,23 @@ bundled agent obeys its bundle's
 disabled or uninstalled, every entry refuses with a guard error.
 
 The `agent` kind is a first-class core kind, `substrate.reamde.dev/core/agent`, declared
-like every other core kind. Its runtime vocabulary lives in core beside it —
-`substrate.reamde.dev/core/llmprovider`,
-`substrate.reamde.dev/core/llmthread` and `substrate.reamde.dev/core/llmmessage`
-— beside the rest of the substrate's machinery.
+like every other core kind: a manifest document is a record of a core kind
+whatever package it describes. Its runtime vocabulary is the SECOND seeded
+package, `substrate.reamde.dev/llm` — `provider`, `thread`, `message` and
+`interaction` — seeded into every repository exactly as core is (decision
+record [0077](decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md)).
 
 ## The manifest
 
-Here is the URL harvester's classifier, the agent a freshly fetched page is
+Here is the reading-list sample's classifier, the agent a freshly fetched page is
 handed to:
 
 ```yaml
 kind: substrate.reamde.dev/core/agent
-metadata: {id: samples.substrate.reamde.dev/web/pageclassifier}
+metadata: {id: samples.substrate.reamde.dev/readinglist/pageclassifier}
 data:
   authority: samples.substrate.reamde.dev
-  package: web
+  package: readinglist
   description: Classify a fetched page and route it to the reading-list agent.
   prompt: |
     You are the page classifier. Read the page in the first message, decide
@@ -52,12 +53,12 @@ data:
   provider: default
   model: anthropic/claude-opus-5
   tools:
-    - function: samples.substrate.reamde.dev/web/setclass
-  subagents: [samples.substrate.reamde.dev/web/readinglistagent]
+    - function: samples.substrate.reamde.dev/readinglist/setclass
+  subagents: [samples.substrate.reamde.dev/readinglist/curator]
   budgets: {maxTurns: 4, maxToolCalls: 8, depth: 3}
   permissions:
     writes:
-      - samples.substrate.reamde.dev/web/page
+      - samples.substrate.reamde.dev/readinglist/page
       - substrate.reamde.dev/core/recordpatchrequest
 ```
 
@@ -67,7 +68,7 @@ data:
   wherever it appears as a sub-agent.
 - **`prompt`** (required, at most 64 KiB): the row is the prompt store, and the
   changelog's full retention is its version history.
-- **`provider`** (required): a `substrate.reamde.dev/core/llmprovider` record id — **where**
+- **`provider`** (required): a `substrate.reamde.dev/llm/provider` record id — **where**
   the completions are bought, resolved at dispatch and never at load.
 - **`model`** (required): the model id sent on every completion, a plain string
   the provider's endpoint understands — a gateway's alias
@@ -105,17 +106,17 @@ function's delivery rides; only the `callable` reference names the other kind:
 
 ```yaml
 kind: substrate.reamde.dev/core/trigger
-metadata: {id: web-classify-on-page}
+metadata: {id: readinglist-classify-on-page}
 data:
   properties:
     enabled: true
     source:
       record:
-        kinds: [samples.substrate.reamde.dev/web/page]
+        kinds: [samples.substrate.reamde.dev/readinglist/page]
         ops: [update]
         when: 'record != null && record.properties.fetch == "fetched" && !("class"
           in record.properties)'
-    callable: substrate.reamde.dev/core/agent/samples.substrate.reamde.dev/web/pageclassifier
+    callable: substrate.reamde.dev/core/agent/samples.substrate.reamde.dev/readinglist/pageclassifier
 ```
 
 Because vocabulary is records, a parsed agent projects to a row the console
@@ -144,7 +145,7 @@ ships — so an agent names one exactly as it names a bundle's function:
   tools:
     - function: substrate.reamde.dev/core/graphql
     - function: substrate.reamde.dev/core/propose
-    - function: samples.substrate.reamde.dev/web/setclass
+    - function: samples.substrate.reamde.dev/readinglist/setclass
 ```
 
 Three older spellings are refused, each naming its replacement. A bare string
@@ -192,8 +193,8 @@ entry could name only a function.
   proposing `thread` onto the request, which is where the decision reports
   back (below).
 - **`substrate.reamde.dev/core/ask`** pauses to ask the user, and requires
-  `permissions.writes` to name `substrate.reamde.dev/core/llminteraction`. It
-  lands one [`llminteraction`](builtin-kinds.md#substratereamdedevcore) carrying
+  `permissions.writes` to name `substrate.reamde.dev/llm/interaction`. It
+  lands one [`interaction`](builtin-kinds.md#substratereamdedevllm) carrying
   a batch of at most eight questions and returns the record id, not an answer.
   The run continues without one; the answer arrives in a later turn, when the
   user answers the interaction and the thread resumes, so the model must not
@@ -211,7 +212,7 @@ through the reviewed request: `propose` emits the request, and accepting it is
 the write.
 
 **Every dispatch's committed writes ride the tool row.** The engine stamps
-`changes` onto the tool's `llmmessage` — one `{seq, op, kind, id}` entry per
+`changes` onto the tool's `llm/message` — one `{seq, op, kind, id}` entry per
 changelog row the dispatch committed, whether a `mutate` mutation, a
 `propose`'s request row, or a function tool's applied effects — so any reader
 of the thread (the console, GraphQL) resolves WHAT changed from the changelog
@@ -342,7 +343,7 @@ ids only; they never enter a key.
 
 ## Providers
 
-An `llmprovider` row is one place completions are bought, as pure data:
+An `llm/provider` row is one place completions are bought, as pure data:
 `name`, `wire`, `baseURL`, a secret `apiKey`, `headers`, `defaults`
 (request params the agent's own `params` merge over), and `pricing`.
 
@@ -393,25 +394,24 @@ rather than mixing two models' distances. `repository reembed` is how their
 replacement is bought, on the box and never over HTTP
 ([there is no LLM configuration](operations.md#there-is-no-llm-configuration)).
 
-**Nothing seeds a provider.** A fresh repository holds no `llmprovider` row at
+**Nothing seeds a provider.** A fresh repository holds no `llm/provider` row at
 all: a row is where the wire, the endpoint and the key live, and a substrate
 cannot invent a key — one shipped without it only postpones the failure to the
 first dispatch while looking configured. An agent naming a row that is not
 there refuses at dispatch and says which row it wanted.
 
-The web and notes bundles' agents name `provider: default`, so a repository
-that installs either wants a row at that id, and no shipped bundle writes
-one. The LLM example (**Registry → Examples**) installs two correctly-shaped
-keyless rows at `anthropic` and `openai`, which its own agents name directly.
-Write a `default` row yourself, by hand as the document below or by copying
-one of those two. There are
+Every shipped sample agent names `provider: default`, so a repository that
+imports one wants a row at that id. The LLM example (**Registry → Examples**)
+is what ships it: two correctly-shaped keyless rows, `default` on Anthropic's
+wire and `openai` on OpenAI's, which its own agents name too. Import it and
+key one, or write the row yourself as the document below. There are
 no `cheap`/`mid`/`strong` rows: a tier was a model id hiding behind a name, and
 the model is the agent's own word now.
 
 ### Registering a provider
 
 A provider is a record, so adding one is a write: `apply -f`, or the console at
-**Data → `substrate.reamde.dev/core` → llmproviders → New**. (The Agents page
+**Data → `substrate.reamde.dev/llm` → providers → New**. (The Agents page
 does not list providers: an agent names one by id, and that pointer reads on
 the agent's own record.) All four below are ordinary data documents,
 `data.properties`, never a declaration.
@@ -419,7 +419,7 @@ the agent's own record.) All four below are ordinary data documents,
 ```yaml
 # OpenRouter — the OpenAI wire at its own endpoint. So is LiteLLM, Together,
 # Groq or a local Ollama: same wire, different baseURL.
-kind: substrate.reamde.dev/core/llmprovider
+kind: substrate.reamde.dev/llm/provider
 metadata: {id: openrouter}
 data:
   properties:
@@ -432,7 +432,7 @@ data:
       - {name: X-Title, value: substrate}
 ---
 # Anthropic, natively. No baseURL: the official endpoint.
-kind: substrate.reamde.dev/core/llmprovider
+kind: substrate.reamde.dev/llm/provider
 metadata: {id: anthropic}
 data:
   properties:
@@ -443,7 +443,7 @@ data:
       - {model: claude-opus-5, inputPer1M: 5, outputPer1M: 25}
 ---
 # Azure OpenAI. The deployment endpoint is the row's, and so is the key.
-kind: substrate.reamde.dev/core/llmprovider
+kind: substrate.reamde.dev/llm/provider
 metadata: {id: azure}
 data:
   properties:
@@ -453,7 +453,7 @@ data:
     apiKey: …
 ---
 # The embeddings provider: one row per repository declares embedModel.
-kind: substrate.reamde.dev/core/llmprovider
+kind: substrate.reamde.dev/llm/provider
 metadata: {id: vectors}
 data:
   properties:
@@ -474,13 +474,13 @@ secret-typed: every read surface hands back `<redacted>`, there is no way to
 read a stored key back out, and writing the property again replaces what is
 sealed. Because `apply` merges and never prunes, naming `apiKey` alone leaves
 the row's wire, endpoint and pricing exactly as they were, and writing the
-`<redacted>` sentinel back is a round trip, so `substratectl get llmprovider
+`<redacted>` sentinel back is a round trip, so `substratectl get provider
 -o yaml` is both a safe read and directly `apply -f`-able. A here-document
 keeps the key out of your shell history:
 
 ```sh
 cat <<'EOF' | substratectl apply -f -
-kind: substrate.reamde.dev/core/llmprovider
+kind: substrate.reamde.dev/llm/provider
 metadata: {id: anthropic}
 data:
   properties: {apiKey: sk-ant-…}
@@ -530,7 +530,7 @@ The id carries two slashes, so the path segment spells each `%2F`. The answer
 carries `reply` and the `thread` id, and the thread is the durable half:
 
 ```sh
-substratectl get llmthread <thread> -o yaml
+substratectl get thread <thread> -o yaml
 ```
 
 `status: ok` with a `turns`/`promptTokens`/`completionTokens` tally is a

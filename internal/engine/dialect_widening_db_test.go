@@ -443,7 +443,7 @@ func TestDerivedTitleTokens(t *testing.T) {
 
 const dtPackage = "dtemplate.example.substrate.reamde.dev/dtemplate"
 
-// core/llmthread's own title, against the SHIPPED declarations: `{agent}` is a
+// llm/thread's own title, against the SHIPPED declarations: `{agent}` is a
 // bare token on a reference, so it follows the pointer to the referent's title,
 // which is agent's `{localName}`. The template read `{agent.name}` until
 // core/agent stopped declaring `name`, and every thread in every repository
@@ -455,10 +455,10 @@ func TestLLMThreadTitleFollowsItsAgent(t *testing.T) {
 	_, ds := newDataset(t)
 	const pkg = "titlecrew.example.substrate.reamde.dev/titlecrew"
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: "substrate.reamde.dev/core/llmprovider", ID: "default",
+		Kind: "substrate.reamde.dev/llm/provider", ID: "default",
 		Properties: map[string]any{"wire": "openai", "baseURL": "https://llm.example.com/v1"},
 	}); err != nil {
-		t.Fatalf("put the llmprovider row: %v", err)
+		t.Fatalf("put the llm/provider row: %v", err)
 	}
 	docs := []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
@@ -473,7 +473,7 @@ func TestLLMThreadTitleFollowsItsAgent(t *testing.T) {
 		t.Fatalf("install the agent: %v", err)
 	}
 	thread := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "substrate.reamde.dev/core/llmthread", ID: "t1",
+		Kind: "substrate.reamde.dev/llm/thread", ID: "t1",
 		Properties: map[string]any{
 			"agent":      vocabulary.RecordPath("substrate.reamde.dev/core/agent", pkg+"/scribe"),
 			"status":     "running",
@@ -485,7 +485,7 @@ func TestLLMThreadTitleFollowsItsAgent(t *testing.T) {
 		},
 	})
 	if thread.Title != "scribe: running" {
-		t.Fatalf("llmthread title = %q, want the agent's own title and the status", thread.Title)
+		t.Fatalf("llm/thread title = %q, want the agent's own title and the status", thread.Title)
 	}
 }
 
@@ -538,7 +538,7 @@ func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
 	// A second binary opening the same store rebuilds the registry from those
 	// rows. The kind has to come back LIVE, not quarantined, which a write to it
 	// proves: a quarantined pkg's kinds are not in the registry at all.
-	svc2, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(engine.CoreKindsDir))
+	svc2, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(engine.SeedKindsDir))
 	if err != nil {
 		t.Fatalf("reopen the service: %v", err)
 	}

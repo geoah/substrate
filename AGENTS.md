@@ -5,7 +5,8 @@ How to work this repo: the substrate server (`cmd/substrated`), the console
 CLI (`cmd/substratectl`). Provider auth and sync live IN the server — the OAuth
 facility plus bundle functions.
 
-**The model, in one paragraph.** One invite code admits people. Registering
+**The model, in one paragraph.** One invite code gates who registers, where
+one is set. Registering
 creates a **repository** and its **user**: one name, one password and TOTP,
 all three. That name IS the repository's one **authority** (a bare label is
 completed under the server's host; the home of the kinds the user declares,
@@ -78,7 +79,7 @@ columns, so do not hand-align them. Settings live in `.yamlfmt` and
 `.yamllint`, one comment per decision.
 
 **A substrate to work against** — a Postgres container of its own on `:5433`
-and the binary from the tree on `:8080`, invite code `let-me-in`, pid, log,
+and the binary from the tree on `:8080`, no invite code, pid, log,
 credential key and data root under `.dev/`. `docker compose up` builds an image; this does not, so a change
 is a restart. Every task is a subcommand of `.mise/dev.sh`.
 
@@ -96,16 +97,20 @@ there is no unregister, so any change to the door is tested by throwing the
 database away — `dev:wipe` here, `docker compose down -v` on the compose path. `bin/substratectl --dsn "$(mise run dev:dsn)" …` is the operator
 hat against it, and `mise run console:build` puts the console at `/`.
 
-**The dev door has no second factor.** Every `dev*` task sets
-`SUBSTRATE_INSECURE_DISABLE_TOTP=true`, so registering and signing in are a
-repository name and a password: enrolling an authenticator for a database that gets
-wiped is friction with nothing behind it. The engine still mints and seals a
-seed, and the deployment says which door it runs at
-`GET /.well-known/substrate/server.json` (`registration.totpRequired`), which
-is what the console and `substratectl` read before they ask anybody for a
-code. A change to the door is tested under
-`mise run dev:totp`, where the factor is enforced, and NEVER by setting the
-variable outside this tree.
+**The dev door has no invite code and no second factor.** Every `dev*` task
+leaves `SUBSTRATE_INVITE_CODE` unset, so the register door reads no code
+(there is no closed state: a set code is the gate, an unset one is none), and
+sets `SUBSTRATE_INSECURE_DISABLE_TOTP=true`, so registering and signing in
+are a repository name and a password: typing a code printed beside the
+command that starts the box, and enrolling an authenticator for a database
+that gets wiped, are friction with nothing behind them. `compose.yaml` ships
+the same two defaults. The engine still mints and seals a seed, and the
+deployment says which door it runs at `GET /.well-known/substrate/server.json`
+(`registration.inviteRequired`, `registration.totpRequired`), which is what
+the console and `substratectl` read before they ask anybody for either code.
+A change to the gate is tested with `SUBSTRATE_INVITE_CODE` set (`mise run
+test:e2e` does), a change to the factor under `mise run dev:totp`, where it
+is enforced, and NEVER by setting the TOTP variable outside this tree.
 
 **The dev substrate has a data root.** Every `dev*` task exports
 `SUBSTRATE_DATA_ROOT` as the absolute path of `.dev/data`, so each
@@ -160,9 +165,14 @@ bin/substratectl --dsn "$DATABASE_URL" repository rebuild <repository>  # replay
 bin/substratectl --dsn "$DATABASE_URL" user reset <repository>   # needs SUBSTRATE_CREDENTIAL_KEY
 ```
 
-**Registration seeds the `core` package and nothing else.** `tasks` above is a
+**Registration seeds `core` and `llm` and nothing else.** The agent runtime's
+four data kinds are the second seeded package, `substrate.reamde.dev/llm`
+(`provider`, `thread`, `message`, `interaction`), out of core so core is not
+everything ([0077](docs/decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md));
+the `agent` kind stays core's, because a manifest document is a record of a
+core kind whatever package it describes. `tasks` above is a
 SAMPLE package the repository imports, so a walkthrough that reaches for any
-non-core collection takes one first: `bin/substratectl import
+collection outside the seed takes one first: `bin/substratectl import
 samples.substrate.reamde.dev/tasks`, the console's Registry page, or `POST
 /api/v1/catalog/{id}/import` (the id is the package, so its slash is
 percent-encoded: `samples.substrate.reamde.dev%2Ftasks`), which are three doors
@@ -331,7 +341,17 @@ Nothing keys on a first label.
   ([0063](docs/decisions/0063-a-property-rename-is-ordinary-record-writes.md),
   [0066](docs/decisions/0066-a-backfill-and-an-enum-remap-are-ordinary-record-writes.md)).
   `required` beside a `default` backfills the same way, and a remap onto a
-  value the stored declaration still admits is refused as lossy.
+  value the stored declaration still admits is refused as lossy. `movedFrom`
+  is live on a KIND, and only on the SHIPPED boot upgrade: admitting a seeded
+  declaration that names a kind the repository still declares carries every
+  live row of it here, same id and same properties, repoints every live
+  reference at it and tombstones the old rows, in the same transaction and as
+  ordinary record writes
+  ([0078](docs/decisions/0078-a-kind-move-is-ordinary-record-writes.md)). The
+  old kind stays declared and empty; a second boot finds nothing to move. The
+  apply door and the catalog store the key and REFUSE the move, because they
+  publish a candidate registry before any rewrite could run and because a move
+  reaches past the write path's admission rules.
   There is no `edges.<rel>.properties` and no `data.edges`:
   a reference is the only link between records, data on the link is the
   reference property's own `properties:` block, and a write carrying a link

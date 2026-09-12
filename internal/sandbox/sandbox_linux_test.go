@@ -148,6 +148,13 @@ func TestNetworkCapabilityGatesSockets(t *testing.T) {
 		t.Fatalf("a body with no network capability opened an AF_INET socket: %q", out)
 	}
 
+	// The granted half needs the connect gate's supervisor, because Wrap
+	// refuses a network policy where the two syscalls it answers notifications
+	// with are denied. That is a container profile, not a regression — and
+	// under the require gate, a failure.
+	if !c.Report().ConnectGate {
+		sandboxtest.Unavailablef(t, "the connect gate cannot be serviced here: %s", c.Report())
+	}
 	p.Network = true
 	out, err = runConfined(t, c, p, probe)
 	if err != nil {

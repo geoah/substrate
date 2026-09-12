@@ -1,0 +1,35 @@
+# The bundle's configuration, as the two ORDINARY RECORDS decision record 0076
+# makes it: a core `secret` for the key and a core `setting` for the API root.
+# They ship EMPTY where the user must fill them in and pre-filled where the
+# bundle knows the answer, and the ids sit under the bundle's own id, which is
+# what makes them this bundle's — the import rehomes them with the rest of the
+# closure, so what lands is `<your authority>/firecrawl/apiKey`.
+#
+# Both functions read them as `config.settings.apiKey` and
+# `config.settings.baseUrl`.
+kind: substrate.reamde.dev/core/secret
+metadata:
+  id: samples.substrate.reamde.dev/firecrawl/apiKey
+data:
+  properties:
+    displayName: API key
+    description: >-
+      The Firecrawl API key, from firecrawl.dev. It looks like `fc-…`. Sealed
+      from reads, injected only into this bundle's two functions.
+    required: true
+---
+# ORIGIN-PINNED in the bodies, not here: both functions only ever send the key
+# to https://api.firecrawl.dev or to loopback (the test seam), so editing this
+# value cannot redirect the credential. It ships filled in, which is why it is
+# not required.
+kind: substrate.reamde.dev/core/setting
+metadata:
+  id: samples.substrate.reamde.dev/firecrawl/baseUrl
+data:
+  properties:
+    displayName: Base URL
+    description: >-
+      The Firecrawl API root. The bodies refuse any origin but the pinned
+      one, so there is normally no reason to change it.
+    type: url
+    value: https://api.firecrawl.dev

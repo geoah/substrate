@@ -158,7 +158,7 @@ describe("lastAssistantReply", () => {
 describe("provider rows", () => {
   const provider = (properties: Record<string, unknown>): SubstrateRecord => ({
     id: "default",
-    kind: "substrate.reamde.dev/core/llmprovider",
+    kind: "substrate.reamde.dev/llm/provider",
     properties,
     labels: {},
     version: 1,

@@ -299,6 +299,13 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 			})
 		}
 		data := mmap(d, "data")
+		// A DECLARATION is a record of one of the CORE meta-kinds, exactly as
+		// the vocabulary/data split above reads it. Switching on the kind's
+		// last word alone would count a data record of some other package's
+		// kind named `trait` or `agent` as a declaration of this closure.
+		if !isSchemaDoc(vocabulary.KindPackage(ref), typ) {
+			typ = ""
+		}
 		switch typ {
 		case vocabulary.DocBundle:
 			found = true
@@ -327,18 +334,26 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 			}
 		case vocabulary.DocKind:
 			b.Closure.Kinds = append(b.Closure.Kinds, id)
-			if desc := mstr(data, "description"); desc != "" {
-				if b.Closure.KindDescriptions == nil {
-					b.Closure.KindDescriptions = map[string]string{}
-				}
-				b.Closure.KindDescriptions[id] = desc
-			}
+			describe(&b.Closure.KindDescriptions, id, mstr(data, "description"))
+		case vocabulary.DocTrait:
+			b.Closure.Traits = append(b.Closure.Traits, id)
+			describe(&b.Closure.TraitDescriptions, id, mstr(data, "description"))
 		case vocabulary.DocFunction:
 			b.Closure.Functions = append(b.Closure.Functions, id)
+			describe(&b.Closure.FunctionDescriptions, id, mstr(data, "description"))
 		case vocabulary.DocAgent:
 			b.Closure.Agents = append(b.Closure.Agents, id)
+			describe(&b.Closure.AgentDescriptions, id, mstr(data, "description"))
 		case vocabulary.DocRecordMapping:
 			b.Closure.Mappings = append(b.Closure.Mappings, id)
+		}
+		// A trigger is a DATA record, so it is matched on the kind it is a
+		// record OF rather than on a document word. The closure lists it apart
+		// from the other data rows because the deliveries are what make a
+		// bundle run without anybody pressing anything.
+		if ref == kindTrigger {
+			b.Closure.Triggers = append(b.Closure.Triggers, id)
+			describe(&b.Closure.TriggerCallables, id, mstr(mmap(data, "properties"), "callable"))
 		}
 	}
 	// The SUGGESTED half of that mapping list: the ones declared onto this
@@ -648,6 +663,22 @@ func dataPutInput(d map[string]any) (substrate.PutInput, error) {
 
 // docID reads metadata.id.
 func docID(d map[string]any) string { return mstr(d["metadata"], "id") }
+
+// kindTrigger is the kind a shipped trigger record IS one of.
+const kindTrigger = vocabulary.PackageCore + "/trigger"
+
+// describe records one closure member's prose under its id, allocating the map
+// only when there is prose: an absent description is omitted from the wire
+// rather than carried as an empty string a reader would meet as a blank line.
+func describe(into *map[string]string, id, text string) {
+	if text == "" {
+		return
+	}
+	if *into == nil {
+		*into = map[string]string{}
+	}
+	(*into)[id] = text
+}
 
 func mstr(m any, key string) string {
 	mm, ok := m.(map[string]any)

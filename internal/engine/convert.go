@@ -113,15 +113,23 @@ type propertyNull struct {
 // conversionPlan is every conversion a batch declares, classified against the
 // stored declarations. Nothing here is counted: wire counts.
 type conversionPlan struct {
-	renames   []propertyRename
-	backfills []propertyBackfill
-	remaps    []enumRemap
-	nulls     []propertyNull
+	// moves is the resolved kind move (move.go, record 0078): the rows to
+	// carry in the order they are written, and the sources whose references
+	// follow them. It runs FIRST and is not per-property. grantPatches is the
+	// number of declarations whose kind grants the move rewrites, counted into
+	// the work like every other entry.
+	moves        movesPlanned
+	grantPatches int64
+	renames      []propertyRename
+	backfills    []propertyBackfill
+	remaps       []enumRemap
+	nulls        []propertyNull
 }
 
 // empty reports a plan with nothing to rewrite.
 func (p conversionPlan) empty() bool {
-	return len(p.renames) == 0 && len(p.backfills) == 0 && len(p.remaps) == 0 && len(p.nulls) == 0
+	return p.moves.empty() && len(p.renames) == 0 && len(p.backfills) == 0 &&
+		len(p.remaps) == 0 && len(p.nulls) == 0
 }
 
 // classifyConversions lists the conversions a batch declares against the
@@ -379,6 +387,13 @@ func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
 		plan.Work += n
 		return nil
 	}
+	// The moves, first and in their own pass: a move is a whole kind's rows
+	// moving, not a property rewrite, so it is counted by its live row count
+	// and carries no property. Its WORK is the entries it will append, which is
+	// a put and a delete per row plus a patch per repointed source (move.go).
+	moveSteps, moveWork := countMoves(p.moves, p.grantPatches)
+	plan.Steps = append(plan.Steps, moveSteps...)
+	plan.Work += moveWork
 	// A remap collapses a distinction only where live records stand on both
 	// sides of it: a record holds the target already (a value the stored
 	// declaration keeps, or one a restored tombstone carries), or another
@@ -490,6 +505,8 @@ func planHash(steps []substrate.ConversionStep) string {
 // describeStep renders one step for a refusal or a log line.
 func describeStep(s substrate.ConversionStep) string {
 	switch s.Step {
+	case substrate.StepMove:
+		return fmt.Sprintf("%s: %d live records move here from %s, references repointed", s.Kind, s.Records, s.From)
 	case substrate.StepRename:
 		return fmt.Sprintf("type %s: property %q renamed to %q on %d live records", s.Kind, s.From, s.To, s.Records)
 	case substrate.StepBackfill:
@@ -659,7 +676,12 @@ func (t *txn) convertRecords(candidate *vocabulary.Registry, plan conversionPlan
 	prev := t.writeReg
 	t.writeReg = candidate
 	defer func() { t.writeReg = prev }()
-	var total int64
+	// The moves before every property step: the rows a rename or a remap
+	// rewrites are the rows the move has already carried (move.go).
+	total, err := t.moveRecords(candidate, plan.moves)
+	if err != nil {
+		return total, err
+	}
 	for _, kc := range plan.byKind() {
 		n, err := t.convertKind(kc)
 		if err != nil {

@@ -119,22 +119,19 @@ const EFFECT_TEXT: Record<ChangeEffect, { label: string; explain: string }> = {
   clear: {
     label: "removes",
     explain:
-      "The diff names null for this property, and a patch merges key-wise: accepting DELETES the key from the target.",
+      "The change sets this property to nothing, so accepting removes it from the target.",
   },
   set: {
     label: "overwrites",
-    explain:
-      "The target already carries a value here; accepting replaces it with the proposed one.",
+    explain: "The target already has a value here. Accepting replaces it.",
   },
   add: {
     label: "adds",
-    explain:
-      "The target carries no value for this property; accepting writes one.",
+    explain: "The target has no value here. Accepting writes one.",
   },
   unchanged: {
     label: "no change",
-    explain:
-      "The target already carries the proposed value, so this row applies nothing.",
+    explain: "The target already has this value, so this row changes nothing.",
   },
 }
 
@@ -426,11 +423,11 @@ type NoteValues = z.infer<typeof noteSchema>
 
 const ACCEPT_TEXT: Record<ChangeOp, string> = {
   patch:
-    "The substrate applies the diff to the target in the same transaction as this decision, checked against the version the diff was computed for: if the target has moved, nothing partial happens, the decision fails whole and the request says why.",
+    "The change lands on the target as you accept it. If the target has moved since the change was proposed, nothing is written and the request says why.",
   create:
-    "The substrate mints the named record in the same transaction as this decision. It is create-if-absent: an id already holding the very record proposed is a verified no-op, and any other collision fails the decision whole.",
+    "The record is created as you accept it. If that id is already taken by a different record, nothing is written.",
   delete:
-    "The substrate tombstones the target in the same transaction as this decision. The record stops answering reads; the changelog keeps what it was.",
+    "The target is deleted as you accept it. It stops answering reads, and the changelog keeps what it was.",
 }
 
 function DecisionDialog({
@@ -492,15 +489,14 @@ function DecisionDialog({
                 <span className="block">{op ? ACCEPT_TEXT[op] : ""}</span>
               ) : (
                 <span className="block">
-                  Nothing is applied: the target stays exactly as it is and only
-                  the decision is written. The request is kept as the record of
-                  the refusal.
+                  Nothing is written to the target. The request is kept as the
+                  record of your refusal.
                 </span>
               )}
               <span className="block">
-                Decided against version <span className="data">{version}</span>{" "}
-                of this request, so a change to the proposal since it was read
-                refuses the decision rather than deciding something else.
+                This decides version <span className="data">{version}</span> of
+                the request. If the proposal has changed since you opened it,
+                your decision is refused rather than applied to something else.
               </span>
             </DialogDescription>
           </DialogHeader>
@@ -516,8 +512,7 @@ function DecisionDialog({
               {...form.register("note")}
             />
             <FieldDescription>
-              Saved with the decision, as{" "}
-              <span className="data">owner/note</span> on this request.
+              Saved with your decision on this request.
             </FieldDescription>
             <FieldError errors={[form.formState.errors.note]} />
           </Field>
@@ -557,12 +552,12 @@ function DecisionDialog({
  * names nothing and the substrate will refuse the accept for it. */
 function emptyTableText(diff: ProposedDiff, blocked: boolean): string {
   if (blocked) {
-    return "Nothing readable here: what the diff carries is listed below, as it is stored."
+    return "Nothing readable here. What the change carries is listed below, as it is stored."
   }
   if (!diffNamesNothing(diff)) {
-    return "No property is named. What the accept would write is listed under this table."
+    return "No property is named. What accepting would write is listed under this table."
   }
-  return "The diff names nothing at all, so accepting would apply nothing: the substrate refuses that decision."
+  return "This change names nothing at all, so accepting it would do nothing. Reject it instead."
 }
 
 // ── the page ────────────────────────────────────────────────────────────────
@@ -615,7 +610,7 @@ export function ChangeRequestDetailPage() {
       setConfirming(null)
       toast.add({
         type: "success",
-        title: v === "accepted" ? "Applied." : "Rejected, nothing changed.",
+        title: v === "accepted" ? "Applied." : "Rejected. Nothing changed.",
       })
       // An accept writes another record entirely, plus the changelog, the
       // counts and the queue. Drop everything and re-read.
@@ -627,10 +622,10 @@ export function ChangeRequestDetailPage() {
       toast.add({
         type: "error",
         title: conflict
-          ? "The request moved, or the apply was refused"
-          : `Could not ${v === "accepted" ? "accept" : "reject"} the request`,
+          ? "The request changed or the change was refused, so nothing was applied"
+          : `${v === "accepted" ? "Accepting" : "Rejecting"} the request failed`,
         description: conflict
-          ? `${error.message} Reloaded: read it again, and re-propose if the target has moved.`
+          ? `${error.message} Read it again, and propose the change again if the target has moved.`
           : error.message,
       })
       // Either way it moved under us: the re-read shows the real current state
@@ -734,7 +729,7 @@ export function ChangeRequestDetailPage() {
             <p>{rationale}</p>
           ) : (
             <p className="text-muted-foreground">
-              The proposal carries no rationale.
+              The proposal gives no reason.
             </p>
           )}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
@@ -770,9 +765,7 @@ export function ChangeRequestDetailPage() {
         {/* the server's account of a refused apply */}
         {conflict && (
           <Warning>
-            <p className="font-medium">
-              The substrate refused to apply this change.
-            </p>
+            <p className="font-medium">This change was not applied.</p>
             <p className="data text-xs">{conflict.reason}</p>
             {conflict.at && (
               <p className="text-xs text-muted-foreground" title={conflict.at}>
@@ -785,10 +778,10 @@ export function ChangeRequestDetailPage() {
         {!op && (
           <Warning>
             <p>
-              This request names an op the console does not know (
-              <span className="data">{String(request.properties.op)}</span>), so
-              it cannot say what accepting would do. The substrate refuses the
-              accept too: reject it, or re-propose the change.
+              This request names an op the console does not know,{" "}
+              <span className="data">{String(request.properties.op)}</span>, so
+              nobody can say what accepting would do. Reject it, or propose the
+              change again.
             </p>
           </Warning>
         )}
@@ -796,8 +789,8 @@ export function ChangeRequestDetailPage() {
         {diff.unreadable && (
           <Warning>
             <p>
-              The stored <span className="data">diff</span> is not an object, so
-              nothing can be read out of it. Accepting fails the decode.
+              The stored <span className="data">diff</span> cannot be read, so
+              accepting it will fail.
             </p>
           </Warning>
         )}
@@ -805,11 +798,10 @@ export function ChangeRequestDetailPage() {
         {diff.refused.length > 0 && (
           <Warning>
             <p>
-              The diff names keys the substrate's decoder refuses (
-              <span className="data">{diff.refused.join(", ")}</span>), so the
-              accept fails whole. Property values belong under{" "}
-              <span className="data">properties</span>, a pointer at another
-              record among them.
+              This change names keys the substrate refuses,{" "}
+              <span className="data">{diff.refused.join(", ")}</span>, so
+              accepting it will fail. Property values belong under{" "}
+              <span className="data">properties</span>.
             </p>
           </Warning>
         )}
@@ -819,9 +811,9 @@ export function ChangeRequestDetailPage() {
         {diff.malformed.length > 0 && (
           <Warning>
             <p>
-              Part of this diff is stored in a shape the substrate's decoder
-              refuses, so no accept can succeed until it is proposed again: the
-              keys and their stored values are listed below.
+              Part of this change is stored in a shape the substrate refuses, so
+              accepting it will fail. The keys and their stored values are
+              listed below.
             </p>
           </Warning>
         )}
@@ -829,15 +821,14 @@ export function ChangeRequestDetailPage() {
         {drift && (
           <Warning>
             <p>
-              The target has moved. The accept checks it against version{" "}
+              The target has moved. This change was written for version{" "}
               <span className="data">{drift.version}</span>
               {drift.via === "diff.ifVersion"
-                ? " (the diff's own ifVersion, which overrides the stamped targetVersion)"
-                : " (the stamped targetVersion)"}
+                ? ", the version the change itself names"
+                : ", the version stamped on the request"}
               , and the record is now at{" "}
               <span className="data">{drift.current}</span>. Accepting is
-              REFUSED while they differ, rather than overwriting a write nobody
-              reviewed, so the change has to be proposed again.
+              refused while they differ. Propose the change again.
             </p>
           </Warning>
         )}
@@ -847,14 +838,13 @@ export function ChangeRequestDetailPage() {
           <>
             <Warning tone="destructive">
               <p className="font-medium">
-                Accepting DELETES{" "}
+                Accepting deletes{" "}
                 <span className="data">{target?.id ?? "the target"}</span>.
               </p>
               <p>
-                The record is tombstoned: it stops answering reads and every
-                reference pointing at it dangles. The changelog keeps what it
-                was, so the history survives, but the record does not come back
-                on its own.
+                The record stops answering reads, and every reference pointing
+                at it breaks. The changelog keeps what it was. This cannot be
+                undone from here.
               </p>
             </Warning>
             {targetRecord && (
@@ -892,11 +882,10 @@ export function ChangeRequestDetailPage() {
                 )}
                 <p>
                   Applied
-                  {decidedAt ? ` ${relativeTime(decidedAt)}` : ""}: the change
-                  landed on <span className="data">{target?.id}</span> in the
-                  same transaction as the decision. The record below is what was
-                  reviewed, frozen since it was proposed; the target's own page
-                  and the changelog are where it stands now.
+                  {decidedAt ? ` ${relativeTime(decidedAt)}` : ""}. The change
+                  landed on <span className="data">{target?.id}</span>. What is
+                  shown below is what was reviewed. Open the target to see where
+                  it stands now.
                 </p>
               </>
             ) : (
@@ -904,10 +893,9 @@ export function ChangeRequestDetailPage() {
                 <XIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                 <p>
                   Rejected
-                  {decidedAt ? ` ${relativeTime(decidedAt)}` : ""}: nothing was
-                  applied and <span className="data">{target?.id}</span> was
-                  left exactly as it was. This request is the record of the
-                  refusal.
+                  {decidedAt ? ` ${relativeTime(decidedAt)}` : ""}. Nothing was
+                  applied, and <span className="data">{target?.id}</span> was
+                  left as it was.
                 </p>
               </>
             )}
@@ -1000,10 +988,10 @@ function PatchBody({
         <Warning>
           <p>
             {error
-              ? `The target didn't load, so the current values are unknown: ${error}`
+              ? `The target didn't load: ${error}`
               : kindMissing
-                ? "The target's kind isn't in this repository's registry, so its current values can't be read. The decision buttons still work."
-                : `This request names no target to compare against. A patch request carries one in its \`target\` reference; accepting is refused without it.`}
+                ? "This repository does not have the target's kind, so its current values cannot be shown. You can still accept or reject."
+                : "This request names no target to compare against, so accepting it is refused."}
           </p>
         </Warning>
         <ProposedValues
@@ -1021,19 +1009,17 @@ function PatchBody({
       {noop && (
         <Warning>
           <p>
-            Every proposed value is already what the target carries, so this
-            diff applies nothing. The substrate refuses that accept rather than
-            recording a decision that did nothing: reject it.
+            The target already has every value this change proposes, so
+            accepting would do nothing. Reject it instead.
           </p>
         </Warning>
       )}
       {op === "create" && (
         <p className="mx-6 mb-2 text-sm text-muted-foreground">
-          Accepting mints{" "}
+          Accepting creates{" "}
           <span className="data">{target?.id ?? request.id}</span> as{" "}
-          <span className="data">{target?.kind}</span> with exactly the values
-          below. It is create-if-absent: an id already holding this record is a
-          no-op, any other collision fails the decision.
+          <span className="data">{target?.kind}</span> with the values below. If
+          that id is already taken by a different record, nothing is written.
         </p>
       )}
       {/* Only a patch has a live side to compare against; a create, and an op
@@ -1121,7 +1107,7 @@ function ExtraDiffKeys({ diff }: { diff: ProposedDiff }) {
   }
   if (diff.ifVersion !== undefined) {
     groups.push([
-      "the version it checks the target against",
+      "the version this change was written for",
       [["ifVersion", diff.ifVersion]],
     ])
   }
@@ -1162,7 +1148,7 @@ function UnreadableFields({ fields }: { fields: UnreadableField[] }) {
   return (
     <div className="mx-6 mb-4 rounded-md border border-warning/40 px-4 py-3 text-sm">
       <p className="text-xs text-muted-foreground">
-        stored values the substrate's decoder cannot read
+        stored values the substrate cannot read
       </p>
       <div className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
         {fields.map((field) => {

@@ -224,3 +224,6 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0073](0073-idempotency-keys-live-in-a-postgres-table-not-the-changelog.md) | Idempotency keys live in a Postgres table, not the changelog | accepted |
 | [0074](0074-the-repository-name-is-the-login-name.md) | The repository name is the login name, and `username` is gone | accepted |
 | [0075](0075-v1-ships-the-fs-blob-backend-alone.md) | v1 ships the `fs` blob backend alone, and `SUBSTRATE_BLOB_STORE` is gone | accepted |
+| [0076](0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md) | A bundle ships its settings as core `setting` and `secret` records | accepted |
+| [0077](0077-the-llm-kinds-live-in-their-own-seeded-package.md) | The LLM kinds live in their own seeded package, `substrate.reamde.dev/llm` | accepted |
+| [0078](0078-a-kind-move-is-ordinary-record-writes.md) | A kind move is ordinary record writes: `movedFrom` carries the rows and repoints every reference | accepted |

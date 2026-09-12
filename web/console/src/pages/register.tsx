@@ -33,7 +33,7 @@ import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
 
 /** Long enough that argon2id is not the only thing between a guess and the
  * repository; the server has no opinion beyond non-empty. */
-const MIN_PASSWORD = 12
+const MIN_PASSWORD = 8
 
 /** A secret shown for the reader to carry off: mono, selectable, with a copy
  * affordance. Offered as text beside the QR so a manager or a phone that reads
@@ -130,8 +130,9 @@ function repositoryAuthority(name: string, host: string): string {
 
 /** Registration, in two steps.
  *
- * Step one collects the invite code, the repository AND the password, then buys a TOTP
- * seed — it writes NOTHING (the browser holds the seed). Password before the
+ * Step one collects the invite code (where this substrate reads one) and the
+ * repository AND the password, then buys a TOTP seed — it writes NOTHING (the
+ * browser holds the seed). Password before the
  * QR is deliberate: a password manager sees a new-login form submit and offers
  * to SAVE it first, so when step two reveals the authenticator QR the manager
  * attaches the one-time password to the login it just created rather than to
@@ -142,7 +143,7 @@ function repositoryAuthority(name: string, host: string): string {
  * Where the substrate verifies no second factor there IS no step two: the one
  * form commits, and the seed is minted server-side and enrolled nowhere. */
 export function RegisterPage() {
-  const { totpRequired } = useAuthPolicy()
+  const { inviteRequired, totpRequired } = useAuthPolicy()
   const navigate = useNavigate()
   const [inviteCode, setInviteCode] = useState("")
   const [repository, setRepository] = useState("")
@@ -160,16 +161,8 @@ export function RegisterPage() {
 
   function fail(err: unknown) {
     if (err instanceof ApiError) {
-      if (err.code === "unsupported") {
-        setError(
-          "Registration is closed — this substrate has no invite code configured, so it admits nobody. The operator sets one on the box."
-        )
-        return
-      }
       if (err.code === "rate_limited") {
-        setError(
-          `Too many attempts — the door is rate limited on purpose. Try again in ${err.retryAfter ?? 5}s.`
-        )
+        setError(`Too many attempts. Try again in ${err.retryAfter ?? 5}s.`)
         return
       }
       setError(err.message)
@@ -179,8 +172,10 @@ export function RegisterPage() {
   }
 
   const passwordsMatch = password.length > 0 && password === confirm
+  // A door that reads no invite code is not owed one; whatever is typed is
+  // sent regardless, because the substrate ignores it either way.
   const canEnroll =
-    inviteCode.trim().length > 0 &&
+    (!inviteRequired || inviteCode.trim().length > 0) &&
     authority.length > 0 &&
     password.length >= MIN_PASSWORD &&
     passwordsMatch
@@ -249,10 +244,16 @@ export function RegisterPage() {
       await navigate({ to: "/", replace: true })
     } catch (err) {
       if (err instanceof ApiError && err.code === "auth") {
+        // Which factor was wrong is whichever this door reads: a substrate
+        // that reads neither has nothing here to get wrong.
         setError(
-          totpRequired
+          totpRequired && inviteRequired
             ? "The invite code or the 6-digit code is wrong. Check the code your authenticator shows right now and try again."
-            : "The invite code is wrong."
+            : totpRequired
+              ? "The 6-digit code is wrong. Check the code your authenticator shows right now and try again."
+              : inviteRequired
+                ? "The invite code is wrong."
+                : err.message
         )
         setCode("")
       } else {
@@ -300,14 +301,14 @@ export function RegisterPage() {
                         value={recoveryKey}
                       />
                       <FieldDescription>
-                        Never stored by the substrate. With it, a backup of your
-                        repository is recoverable on any substrate; without it,
-                        only this server&rsquo;s own key can read your secrets.
+                        Nobody can recover this key for you. With it, an export
+                        of your repository opens on any substrate. Without it,
+                        only this server can read your secrets.
                       </FieldDescription>
                     </Field>
                   )}
                   <Field>
-                    <Button type="submit">I saved it — continue</Button>
+                    <Button type="submit">Saved, continue</Button>
                   </Field>
                 </FieldGroup>
               </form>
@@ -319,11 +320,11 @@ export function RegisterPage() {
             <CardHeader>
               <CardTitle>Register</CardTitle>
               <CardDescription>
-                An invite code creates your user and your repository, seeded
-                with the shipped kinds.{" "}
-                {totpRequired
-                  ? `All three are required: the repository, a password and a ${CODE_DIGITS}-digit code.`
-                  : "This substrate does not verify a second factor, so there is no authenticator to enroll: a repository name and a password make the user."}
+                {inviteRequired
+                  ? "An invite code creates your repository, seeded with the shipped kinds."
+                  : "Registering creates your repository, seeded with the shipped kinds."}{" "}
+                {totpRequired &&
+                  `It takes the repository name, a password and a ${CODE_DIGITS}-digit code.`}
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-6">
@@ -343,20 +344,22 @@ export function RegisterPage() {
                 }}
               >
                 <FieldGroup>
-                  <Field>
-                    <FieldLabel htmlFor="inviteCode">Invite code</FieldLabel>
-                    <Input
-                      id="inviteCode"
-                      className="data"
-                      value={inviteCode}
-                      onChange={(e) => setInviteCode(e.target.value)}
-                      disabled={enrollment !== null}
-                      autoFocus
-                    />
-                    <FieldDescription>
-                      The code the operator configured on this substrate.
-                    </FieldDescription>
-                  </Field>
+                  {inviteRequired && (
+                    <Field>
+                      <FieldLabel htmlFor="inviteCode">Invite code</FieldLabel>
+                      <Input
+                        id="inviteCode"
+                        className="data"
+                        value={inviteCode}
+                        onChange={(e) => setInviteCode(e.target.value)}
+                        disabled={enrollment !== null}
+                        autoFocus
+                      />
+                      <FieldDescription>
+                        The code the operator configured on this substrate.
+                      </FieldDescription>
+                    </Field>
+                  )}
                   <Field>
                     <FieldLabel htmlFor="repository">Repository</FieldLabel>
                     <Input
@@ -371,12 +374,13 @@ export function RegisterPage() {
                       disabled={enrollment !== null}
                     />
                     <FieldDescription>
-                      Any hostname you control, such as ada.example.com: it is
-                      the name you sign in with, the authority your repository
-                      owns, and where every kind you declare lives. A plain name
-                      is completed under this host
-                      {authority ? ` (${authority})` : ""}. It cannot be changed
-                      later.
+                      Any hostname you control, such as ada.example.com. It is
+                      the name you sign in with, and where every kind you
+                      declare lives.
+                      {authority
+                        ? ` A plain name lands as ${authority}.`
+                        : ""}{" "}
+                      You cannot change it later.
                     </FieldDescription>
                   </Field>
                   <Field>
@@ -390,9 +394,10 @@ export function RegisterPage() {
                       disabled={enrollment !== null}
                     />
                     <FieldDescription>
-                      At least {MIN_PASSWORD} characters. There is no self-serve
-                      recovery: lose both factors and only the operator can
-                      reset you.
+                      At least {MIN_PASSWORD} characters.{" "}
+                      {totpRequired
+                        ? "If you lose both factors, only the operator can reset you."
+                        : "If you lose it, only the operator can reset you."}
                     </FieldDescription>
                   </Field>
                   <Field
@@ -438,7 +443,7 @@ export function RegisterPage() {
                       <p className="text-sm text-muted-foreground">
                         Scan this with your password manager or authenticator
                         app, then prove it with one code below. Nothing has been
-                        written yet — leaving now creates nothing.
+                        written yet, so leaving now creates nothing.
                       </p>
                     </div>
                     <div className="flex justify-center">
@@ -448,7 +453,7 @@ export function RegisterPage() {
                           size={168}
                           marginSize={0}
                           level="M"
-                          title="TOTP enrollment QR code"
+                          title="Authenticator setup QR code"
                         />
                       </div>
                     </div>

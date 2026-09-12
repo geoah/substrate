@@ -151,8 +151,8 @@ as a durable row (the A2A/Jules shape), which PR #72 already chose.
 
 ## The `llminteraction` kind
 
-One new core kind, `core.substrate.reamde.dev/llminteraction` (plural
-`llminteractions`), named beside `llmthread`/`llmmessage` as the agent
+One new core kind, `core.substrate.reamde.dev/llminteraction`, whose
+collection segment is that name, named beside `llmthread`/`llmmessage` as the agent
 runtime's kinds are, and generic on purpose: today it carries a batch of
 questions, and a future interaction shape (a form, a file request) extends
 the same record rather than minting a sibling. One record per BATCH,

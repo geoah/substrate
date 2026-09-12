@@ -9,9 +9,9 @@ import { coerceReferencePath, recordPath, splitRecordPath } from "./record-path"
 
 describe("splitRecordPath", () => {
   it("splits a qualified kind's path on the kind grammar, not a registry", () => {
-    expect(
-      splitRecordPath("substrate.reamde.dev/core/llmprovider/claude")
-    ).toEqual({ kind: "substrate.reamde.dev/core/llmprovider", id: "claude" })
+    expect(splitRecordPath("substrate.reamde.dev/llm/provider/claude")).toEqual(
+      { kind: "substrate.reamde.dev/llm/provider", id: "claude" }
+    )
   })
 
   it("refuses a dotless first segment: every kind carries an authority", () => {
@@ -48,7 +48,7 @@ describe("splitRecordPath", () => {
 
   it("round-trips through recordPath", () => {
     for (const path of [
-      "substrate.reamde.dev/core/llmprovider/claude",
+      "substrate.reamde.dev/llm/provider/claude",
       "substrate.reamde.dev/core/note/a/b/c",
       "substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/tasks/task",
     ]) {
@@ -78,9 +78,9 @@ describe("coerceReferencePath", () => {
 
   it("completes a bare id from the pin", () => {
     expect(
-      coerceReferencePath("substrate.reamde.dev/core/llmprovider", "claude")
+      coerceReferencePath("substrate.reamde.dev/llm/provider", "claude")
     ).toEqual({
-      value: "substrate.reamde.dev/core/llmprovider/claude",
+      value: "substrate.reamde.dev/llm/provider/claude",
     })
   })
 

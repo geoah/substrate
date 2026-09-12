@@ -20,7 +20,7 @@ func newDatasetWithDB(t *testing.T, opts ...engine.Option) (substrate.Dataset, *
 	dsn := engine.MigratedDSN(t)
 	ctx := context.Background()
 	all := []engine.Option{
-		engine.WithKindsDir(engine.CoreKindsDir),
+		engine.WithKindsDir(engine.SeedKindsDir),
 		engine.WithDataRoot(t.TempDir()),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 	}

@@ -259,7 +259,7 @@ func (a *app) repositoryReembedCommand() *cobra.Command {
 		Long: `Enqueue every embeddable property whose stored vectors did not come from the
 repository's current embeddings provider and model.
 
-A repository buys its vectors from the one llmprovider row that declares
+A repository buys its vectors from the one llm/provider row that declares
 'embedModel', and every stored vector names the row and the model that produced
 it. Change either and the old vectors are from a different model: cosine
 distance between two models' vectors is not a distance, so search would go

@@ -14,7 +14,7 @@ import (
 
 // The one guard line the fake's blocked upgrades carry: the shape the engine
 // renders, naming the kind, the property and the count.
-const labelGuard = `type substrate.reamde.dev/core/llmprovider: property "label" dropped while 1 live records still carry it — null it on them first`
+const labelGuard = `type substrate.reamde.dev/llm/provider: property "label" dropped while 1 live records still carry it — null it on them first`
 
 // `substratectl catalog` is where a refused upgrade becomes readable from a
 // terminal: core's, which no catalog entry carries, and an installed

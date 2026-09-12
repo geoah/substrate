@@ -79,7 +79,7 @@ func newReopenableDataset(t *testing.T) *reopenableDataset {
 func (r *reopenableDataset) open(t *testing.T) {
 	t.Helper()
 	svc, err := engine.Open(context.Background(), r.dsn,
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		engine.WithKindsDir("../../kinds/substrate.reamde.dev"),
 		engine.WithDataRoot(r.dataRoot),
 		engine.WithCredentialKey(credKey),
 	)

@@ -308,7 +308,7 @@ func (ds *dataset) ChangeTriggers(ctx context.Context, changes []substrate.Chang
 		return nil, err
 	}
 	for _, ch := range changes {
-		if ch.Kind == typeRun {
+		if ch.Kind == typeTriggerRun {
 			continue
 		}
 		op := runner.OpOf(ch)

@@ -353,7 +353,7 @@ type txn struct {
 	maxSeq    int64
 	// entries records every changelog row this transaction appended, in
 	// order: the (seq, op, kind, id) address, never the payload. Slices of it
-	// stamp llmmessage rows with what a dispatch wrote (`changes`), so a
+	// stamp llm/message rows with what a dispatch wrote (`changes`), so a
 	// thread's reader resolves the delta from the changelog instead of
 	// parsing tool payloads.
 	entries []changeEntry
@@ -388,6 +388,12 @@ type txn struct {
 	// writer allowed to stamp an interaction's thread reference
 	// (interactions.go admitInteraction).
 	interactionThread bool
+	// movingRecords marks a kind move carrying a record from one kind to
+	// another (move.go, record 0078). The row was admitted once already, under
+	// the old kind, so the CREATION-only contracts (an interaction's batch, a
+	// change request's reviewed envelope) must not judge it a second time: it
+	// is the same record arriving, not a new one being authored.
+	movingRecords bool
 	// policyDecision marks the ENGINE's own judge-driven decision on a
 	// policy-gated request: the one bundle-tier hand the gated
 	// guard admits.

@@ -401,7 +401,7 @@ func TestIdempotencyKeySurvivesReopen(t *testing.T) {
 
 	again, err := engine.OpenForTest(t, ctx, dsn,
 		engine.WithDataRoot(root),
-		engine.WithKindsDir(engine.CoreKindsDir),
+		engine.WithKindsDir(engine.SeedKindsDir),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)

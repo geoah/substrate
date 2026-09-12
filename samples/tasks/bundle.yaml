@@ -17,7 +17,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: tasks
-  version: 8
+  version: 9
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A SAMPLE bundle (see samples.substrate.reamde.dev/people): kinds and one
@@ -36,9 +36,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: tasks
   description: >-
-    Tasks and the projects they sit under — what is owed, with priority, an
-    optional repeat rule marked off by tasklogs, and the unpinned `source`
-    reference back to whatever asked for it.
+    Things to do and the projects they sit under: what is owed, how urgent,
+    an optional repeat rule, and a done or skipped mark per repeat. Needs
+    the people and scheduling samples.
   requires:
     - samples.substrate.reamde.dev/people
     - samples.substrate.reamde.dev/scheduling

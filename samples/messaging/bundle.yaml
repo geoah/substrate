@@ -24,7 +24,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: messaging
-  version: 6
+  version: 7
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A SAMPLE bundle (see samples.substrate.reamde.dev/people): kinds only, imported from the
@@ -37,8 +37,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: messaging
   description: >-
-    Chat and mail — conversations, conversation messages, email threads and
-    email messages, with every author and participant pointing at a person.
+    Chat and mail in one place: conversations and the messages in them, mail
+    threads and the messages in them, with every author and participant pointing
+    at a person record. Needs the people sample.
   requires:
     - samples.substrate.reamde.dev/people
   requiresAtLeast:

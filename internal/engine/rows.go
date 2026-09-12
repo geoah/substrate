@@ -271,7 +271,7 @@ func nonNilStrings(ss []string) []string {
 const changelogLockKey = "changelog"
 
 // changeEntry is one appended changelog row's ADDRESS: the seq addresses the
-// delta, kind and id address the record it moved. It is what an llmmessage's
+// delta, kind and id address the record it moved. It is what an llm/message's
 // `changes` property stores per entry, so it carries no payload.
 type changeEntry struct {
 	seq  int64
@@ -280,8 +280,8 @@ type changeEntry struct {
 	id   string
 }
 
-// changeProps renders entries as the llmmessage `changes` property stores
-// them (kinds/substrate.reamde.dev/core/llmmessage.yaml).
+// changeProps renders entries as the llm/message `changes` property stores
+// them (kinds/substrate.reamde.dev/llm/message.yaml).
 func changeProps(entries []changeEntry) []any {
 	out := make([]any, 0, len(entries))
 	for _, e := range entries {
@@ -586,13 +586,21 @@ func actorTierIn(reg *vocabulary.Registry, actor substrate.Actor) substrate.Tier
 }
 
 func (t *txn) setManager(ref eref, property string, actor substrate.Actor, tier substrate.Tier) error {
+	// The effect carries the principal so a replay reproduces the row without
+	// reading the entry around it: the fold describes what the write did, in
+	// full.
+	return t.setManagerAs(ref, property, actor, tier, t.principal)
+}
+
+// setManagerAs is setManager with the principal NAMED rather than taken from
+// the transaction. A kind move carries a manager row across whole (move.go), so
+// the hand and the token behind the value it describes are the ones that wrote
+// it, not the ones carrying it.
+func (t *txn) setManagerAs(ref eref, property string, actor substrate.Actor, tier substrate.Tier, principal string) error {
 	_, err := t.fold(foldOp{
 		Kind: foldManager, Ref: ref.Kind, ID: ref.ID,
 		Property: property, Actor: string(actor), Tier: string(tier),
-		// The effect carries the principal so a replay reproduces the row
-		// without reading the entry around it — the fold describes what the
-		// write did, in full.
-		Principal: t.principal,
+		Principal: principal,
 	})
 	return err
 }

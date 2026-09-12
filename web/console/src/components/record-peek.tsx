@@ -142,7 +142,7 @@ function PeekBody({
         value: text,
         doc: [propertyTypeLabel(prop), prop.description]
           .filter(Boolean)
-          .join(" — "),
+          .join(" · "),
       })
       if (facts.length === 2) break
     }

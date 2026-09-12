@@ -25,6 +25,7 @@ import { RecordPage } from "@/pages/record"
 import { RecordEditPage, RecordNewPage } from "@/pages/record-editor"
 import { RegisterPage } from "@/pages/register"
 import { RegistryPage } from "@/pages/registry"
+import { BundleSettingsPage, SettingsPage } from "@/pages/settings"
 import { TokensPage } from "@/pages/tokens"
 import { KindBrowsePage } from "@/pages/kind-browse"
 
@@ -92,6 +93,21 @@ export const bundleDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/registry/$id",
   component: BundleDetailPage,
+})
+
+export const settingsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/settings",
+  component: SettingsPage,
+})
+
+// The settings list is the index; one bundle's form is the page under it, and
+// the `$id` is the bundle id (`<authority>/<package>`), the same prefix its
+// setting records carry.
+export const bundleSettingsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/settings/$id",
+  component: BundleSettingsPage,
 })
 
 export const agentsRoute = createRoute({
@@ -191,6 +207,8 @@ const routeTree = rootRoute.addChildren([
     changelogRoute,
     registryRoute,
     bundleDetailRoute,
+    settingsRoute,
+    bundleSettingsRoute,
     agentsRoute,
     agentChatRoute,
     mergeRequestDetailRoute,

@@ -1,0 +1,12 @@
+# The digest the weekly rollup writes on, shipped EMPTY with the closure.
+#
+# A patch of a record that is not there is refused, and the rollup only ever
+# proposes a patch, so the record has to exist before the first Monday. Its id
+# is `latest` and the prompt names it: one digest, rewritten each week, rather
+# than a record per week nobody would go back to.
+kind: samples.substrate.reamde.dev/readinglist/digest
+metadata:
+  id: latest
+data:
+  properties:
+    summary: ""

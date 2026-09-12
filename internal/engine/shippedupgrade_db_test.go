@@ -7,7 +7,7 @@ package engine_test
 // exactly what the boot logged as refused.
 //
 // Same harness as upgrade_guard_db_test.go: two Opens over one database, the
-// second carrying a shipped tree that moved. llmprovider pins a version of its
+// second carrying a shipped tree that moved. llm/provider pins a version of its
 // own, so the narrowed declaration is pinned forward too; left at its stored
 // pin it would keep its stored shape, the upgrade under test would never run,
 // and this case would prove nothing (docs/testing.md). The assertion that the
@@ -72,11 +72,11 @@ func TestShippedUpgradePreviewReportsTheRefusedBootUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Binary N+1 narrows llmprovider while a live row holds the old shape. The
+	// Binary N+1 narrows llm/provider while a live row holds the old shape. The
 	// boot refuses the upgrade, logs the guard lines, and opens the repository
 	// on the stored declarations.
 	tree := shippedTree(t)
-	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+	patchShipped(t, llmKind(tree, "provider.yaml"), func(doc string) string {
 		return pinVersion(t, narrowLabel(t, doc), "99")
 	})
 	bumpPackageVersion(t, tree, corePackage, "99")
@@ -109,12 +109,12 @@ func TestShippedUpgradePreviewReportsTheRefusedBootUpgrade(t *testing.T) {
 	if got := strings.Join(plan.Upgrade.Blockers, "; "); got != refused {
 		t.Fatalf("preview blockers:\n  %s\nlogged refused:\n  %s", got, refused)
 	}
-	if !strings.Contains(refused, "llmprovider") || !strings.Contains(refused, `"label"`) {
+	if !strings.Contains(refused, "llm/provider") || !strings.Contains(refused, `"label"`) {
 		t.Fatalf("the guard line names neither the kind nor the property: %s", refused)
 	}
 	// The preview wrote nothing: the repository still speaks the stored shape.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "substrate.reamde.dev/core/llmprovider", ID: "after",
+		Kind: "substrate.reamde.dev/llm/provider", ID: "after",
 		Properties: map[string]any{"label": "still a string", "wire": "openai"},
 	})
 }
@@ -203,7 +203,7 @@ func TestShippedUpgradePreviewMatchesTheLogWithEveryGuardKind(t *testing.T) {
 	dsn := seededRepository(t)
 
 	tree := shippedTree(t)
-	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+	patchShipped(t, llmKind(tree, "provider.yaml"), func(doc string) string {
 		doc = pinVersion(t, narrowLabel(t, doc), "99")
 		return strings.Replace(doc, "  properties:\n",
 			"  properties:\n    region:\n      type: string\n      pattern: \"^eu-\"\n"+

@@ -6,7 +6,7 @@
  * grouping a function's five take. Three of the four host functions are gated
  * by one of them, and the loader makes each a LOAD error rather than a dispatch
  * surprise (`internal/vocabulary/agent.go`, the switch over `t.Builtin`):
- * `query` is capability-scoped and needs `permissions.reads`, `propose` writes
+ * `query` is trait-scoped and needs `permissions.reads`, `propose` writes
  * one kind and needs it in `permissions.writes`, `mutate` writes whatever the
  * agent may write and needs a non-empty `permissions.writes`. `graphql` needs
  * none: it is read-only and repository-wide, and declaring the tool IS the
@@ -149,7 +149,7 @@ export function grantHints(
           hints.push({
             function: named,
             property: READS_GRANT,
-            message: `query is capability-scoped: it needs data.${READS_GRANT} with at least one kind in its allowlist.`,
+            message: `query reads by trait, so data.${READS_GRANT} must name at least one kind.`,
           })
         }
         break
@@ -158,7 +158,7 @@ export function grantHints(
           hints.push({
             function: named,
             property: WRITES_GRANT,
-            message: `propose lands a change request: it needs ${RECORD_PATCH_REQUEST_KIND} in data.${WRITES_GRANT}.`,
+            message: `propose writes a change request, so data.${WRITES_GRANT} must name ${RECORD_PATCH_REQUEST_KIND}.`,
           })
         }
         break
@@ -167,7 +167,7 @@ export function grantHints(
           hints.push({
             function: named,
             property: WRITES_GRANT,
-            message: `mutate writes records: it needs data.${WRITES_GRANT} to name which kinds this agent may create or change.`,
+            message: `mutate writes records, so data.${WRITES_GRANT} must name the kinds this agent may create or change.`,
           })
         }
         break

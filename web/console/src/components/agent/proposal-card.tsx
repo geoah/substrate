@@ -21,7 +21,11 @@ import {
   changeRequestQueryOptions,
   submitDecision,
 } from "@/lib/api/changerequests"
-import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "@/lib/api/http"
+import {
+  CORE_AUTHORITY,
+  CORE_PACKAGE_NAME,
+  LLM_PACKAGE_NAME,
+} from "@/lib/api/http"
 import { putRecord, recordQueryOptions } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
 import {
@@ -53,12 +57,7 @@ export function ProposalCard({ id }: { id: string }) {
   const threadId = threadPath.slice(threadPath.lastIndexOf("/") + 1)
   const gated = typeof request.data?.properties.policy === "string"
   const thread = useQuery({
-    ...recordQueryOptions(
-      CORE_AUTHORITY,
-      CORE_PACKAGE_NAME,
-      "llmthread",
-      threadId
-    ),
+    ...recordQueryOptions(CORE_AUTHORITY, LLM_PACKAGE_NAME, "thread", threadId),
     enabled: gated && Boolean(threadId),
   })
   // The card shows WHAT would change, not a link to find out: for a patch,
@@ -238,7 +237,7 @@ export function ProposalCard({ id }: { id: string }) {
               (<span className="data">{verdict.outcome}</span>)
             </>
           )}
-          {verdict.rationale && <> — {verdict.rationale}</>}
+          {verdict.rationale && <>: {verdict.rationale}</>}
         </p>
       )}
       {error && <p className="text-xs text-destructive">{error}</p>}
@@ -280,8 +279,8 @@ export function ProposalCard({ id }: { id: string }) {
       {remedyOpen && remedyRule && (
         <div className="flex flex-col gap-1.5 rounded-sm border bg-background/60 p-2">
           <p className="text-xs text-muted-foreground">
-            Accepting this way also mints ONE standing rule, exactly this narrow
-            — every future diff of this class lands without review:
+            This also saves a rule. Every future change like this one lands
+            without asking you.
           </p>
           <pre className="overflow-x-auto rounded-sm bg-muted/40 p-1.5 data text-[0.7rem]">
             {JSON.stringify(remedyRule, null, 2)}
@@ -294,7 +293,7 @@ export function ProposalCard({ id }: { id: string }) {
               onClick={() => void acceptAndAllow()}
             >
               {submitting === "accepted" && <Spinner className="size-3" />}
-              Mint the rule and accept
+              Save the rule and accept
             </Button>
           </div>
         </div>
@@ -330,8 +329,8 @@ function ChangePreview({
   if (op === "delete") {
     return (
       <p className="text-xs text-destructive/80">
-        Deletes <span className="data">{targetLabel}</span> — the record is
-        tombstoned, not erased.
+        Deletes <span className="data">{targetLabel}</span>. It stops answering
+        reads, and the changelog keeps what it was.
       </p>
     )
   }

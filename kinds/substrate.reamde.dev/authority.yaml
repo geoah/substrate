@@ -9,6 +9,9 @@ kind: substrate.reamde.dev/core/authority
 metadata:
   id: substrate.reamde.dev
 data:
+  # The authority row carries a version of its own: the packages beneath it
+  # version independently, and this one moves when the row itself does.
+  version: 2
   description: >-
-    The substrate's own vocabulary: the core package every repository is seeded
-    with.
+    The substrate's own vocabulary: the core and llm packages every repository
+    is seeded with.

@@ -30,15 +30,15 @@ import (
 // ROOT thread. The loop terminates on a final tool-free reply, any budget,
 // or its deadline — over-budget is a SETTLED outcome, not a failure.
 
-// The core data kinds the loop reads and writes. The agent runtime is part of
-// the substrate, so its vocabulary is core's like the rest of the machinery —
-// the `llmprovider`/`llmthread`/`llmmessage` names carry the subsystem instead of a
-// separate authority (the former `ai.substrate.reamde.dev`, folded in 2026-08-12), and
-// the `agent` kind was always core's.
+// The data kinds the loop reads and writes. The agent runtime is part of the
+// substrate, so its vocabulary is SEEDED like the rest of the machinery, in
+// the second seeded package `substrate.reamde.dev/llm` (record 0077) rather
+// than in core, which was becoming everything. The `agent` kind stays core's:
+// it is a manifest document kind.
 const (
-	typeProvider  = "substrate.reamde.dev/core/llmprovider"
-	typeThread    = "substrate.reamde.dev/core/llmthread"
-	typeMessage   = "substrate.reamde.dev/core/llmmessage"
+	typeProvider  = "substrate.reamde.dev/llm/provider"
+	typeThread    = "substrate.reamde.dev/llm/thread"
+	typeMessage   = "substrate.reamde.dev/llm/message"
 	msgRelThread  = "thread"
 	threadRelPare = "parent"
 )
@@ -131,7 +131,7 @@ func (t *agentTally) effectsTotal() int {
 	return n
 }
 
-// providerConfig is one llmprovider row resolved against the host's gateway
+// providerConfig is one llm/provider row resolved against the host's gateway
 // fallbacks: WHERE completions are bought. The apiKey property is
 // secret-typed, so this reads the RAW row — the redacting read surface never
 // sees the key.
@@ -159,7 +159,7 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 		// Nothing seeds a provider: a repository holds none until its owner
 		// writes one, so the row an agent names is ABSENT rather than
 		// misconfigured — and the message says which, and what to do.
-		return nil, fmt.Errorf("%w: llmprovider row %q does not resolve — create it: a row carries the wire, the endpoint and the key, and the llm example bundle ships two ready to key",
+		return nil, fmt.Errorf("%w: llm/provider row %q does not resolve — create it: a row carries the wire, the endpoint and the key, and the llm example bundle ships two ready to key",
 			substrate.ErrValidation, id)
 	}
 	pc := &providerConfig{id: id, pricing: map[string]modelPrice{}}
@@ -171,7 +171,7 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 	storedKey, _ := row.Props["apiKey"].(string)
 	pc.cfg.APIKey, err = ds.openSecretValue(ctx, storedKey)
 	if err != nil {
-		return nil, fmt.Errorf("substrate/engine: open llmprovider %q apiKey: %w", id, err)
+		return nil, fmt.Errorf("substrate/engine: open llm/provider %q apiKey: %w", id, err)
 	}
 	// headers and pricing are REPEATED OBJECTS: the substrate has no map
 	// datatype, so a keyed table is a list whose key is a declared field
@@ -203,21 +203,21 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 	policy, known := pc.wire.Policy()
 	if !known {
 		if pc.wire == "" {
-			return nil, fmt.Errorf("%w: llmprovider row %q declares no wire — one of %s",
+			return nil, fmt.Errorf("%w: llm/provider row %q declares no wire — one of %s",
 				substrate.ErrValidation, id, llm.WireNames())
 		}
-		return nil, fmt.Errorf("%w: llmprovider row %q declares wire %q — one of %s",
+		return nil, fmt.Errorf("%w: llm/provider row %q declares wire %q — one of %s",
 			substrate.ErrValidation, id, wire, llm.WireNames())
 	}
 	// Every row carries its own endpoint and its own key. There is nothing
 	// host-wide to fall back to, which is the point: a host bearer that could
 	// fall into a row would travel to whatever endpoint that row names.
 	if policy.RequiresBaseURL && pc.cfg.BaseURL == "" {
-		return nil, fmt.Errorf("%w: llmprovider row %q declares no baseURL — the %s wire has no endpoint of its own, so the row names one",
+		return nil, fmt.Errorf("%w: llm/provider row %q declares no baseURL — the %s wire has no endpoint of its own, so the row names one",
 			substrate.ErrValidation, id, pc.wire)
 	}
 	if policy.RequiresAPIKey && pc.cfg.APIKey == "" {
-		return nil, fmt.Errorf("%w: llmprovider row %q declares no apiKey — a row carries the key for the endpoint it names, and there is no host key",
+		return nil, fmt.Errorf("%w: llm/provider row %q declares no apiKey — a row carries the key for the endpoint it names, and there is no host key",
 			substrate.ErrValidation, id)
 	}
 	return pc, nil
@@ -242,7 +242,7 @@ func mergeParams(providerID string, defaults, own map[string]any) (llm.Params, e
 		// The agent's own params were validated at LOAD, so whatever the
 		// merged map fails on came from the row's defaults — and the row id is
 		// the only thing in the message that finds it again.
-		return llm.Params{}, fmt.Errorf("%w: llmprovider row %q: defaults.%w",
+		return llm.Params{}, fmt.Errorf("%w: llm/provider row %q: defaults.%w",
 			substrate.ErrValidation, providerID, err)
 	}
 	return llm.Params{Temperature: p.Temperature, MaxTokens: p.MaxTokens}, nil
@@ -340,7 +340,7 @@ type agentLoop struct {
 	gateOrdinal int
 	// dispatchChanges collects the changelog entries the CURRENT tool dispatch
 	// committed (a mutate's writes, a propose's request row, a function tool's
-	// applied effects) — reset per call, stamped onto the tool's llmmessage row
+	// applied effects) — reset per call, stamped onto the tool's llm/message row
 	// as `changes`. Sub-agent dispatches deliberately collect nothing here:
 	// the child's own rows carry the child's writes.
 	dispatchChanges []changeEntry

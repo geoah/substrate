@@ -1041,22 +1041,23 @@ func TestAcceptFailuresAnnotateConflict(t *testing.T) {
 	}
 }
 
-// The agent-loop vocabulary is CORE's: llmprovider/llmthread/llmmessage resolve there
-// — the substrate maintains the agent runtime, so it publishes its data kinds
-// beside the rest of its machinery — and NOT under the retired
+// The agent-loop vocabulary is SEEDED, in the substrate's own second package:
+// llm/provider, llm/thread and llm/message resolve on a fresh repository —
+// the substrate maintains the agent runtime, so it publishes its data kinds,
+// just not in core (record 0077) — and NOT under the retired
 // agents.substrate.reamde.dev or the folded-away ai.substrate.reamde.dev.
-func TestAgentLoopKindsResolveInCore(t *testing.T) {
+func TestAgentLoopKindsResolveInTheLLMPackage(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	for _, id := range []string{"substrate.reamde.dev/core/llmprovider", "substrate.reamde.dev/core/llmthread", "substrate.reamde.dev/core/llmmessage"} {
+	for _, id := range []string{"substrate.reamde.dev/llm/provider", "substrate.reamde.dev/llm/thread", "substrate.reamde.dev/llm/message"} {
 		ti, err := ds.KindByRef(ctx, id)
 		if err != nil {
 			t.Fatalf("agent-loop kind %s does not resolve: %v", id, err)
 		}
-		if ti.Authority != "substrate.reamde.dev" || ti.Package != "core" {
-			t.Fatalf("agent-loop kind %s is in %q/%q, want substrate.reamde.dev/core", id, ti.Authority, ti.Package)
+		if ti.Authority != "substrate.reamde.dev" || ti.Package != "llm" {
+			t.Fatalf("agent-loop kind %s is in %q/%q, want substrate.reamde.dev/llm", id, ti.Authority, ti.Package)
 		}
 	}
 	// The old authorities are gone.
@@ -1068,14 +1069,14 @@ func TestAgentLoopKindsResolveInCore(t *testing.T) {
 			t.Fatalf("the retired kind %s still resolves", id)
 		}
 	}
-	// A provider row is DATA of a core kind, written by its owner — the kind
+	// A provider row is DATA of a seeded kind, written by its owner — the kind
 	// resolves on a fresh repository, and no row of it exists there.
 	row := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "substrate.reamde.dev/core/llmprovider", ID: "openai",
+		Kind: "substrate.reamde.dev/llm/provider", ID: "openai",
 		Properties: map[string]any{"label": "openai", "wire": "openai"},
 	})
-	if row.Kind != "substrate.reamde.dev/core/llmprovider" {
-		t.Fatalf("llmprovider row kind = %q", row.Kind)
+	if row.Kind != "substrate.reamde.dev/llm/provider" {
+		t.Fatalf("llm/provider row kind = %q", row.Kind)
 	}
 }
 

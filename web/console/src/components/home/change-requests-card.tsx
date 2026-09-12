@@ -143,7 +143,7 @@ export function ChangeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
         ) : rows.length === 0 ? (
           <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
             <FilePenLineIcon className="size-3.5" />
-            Nothing is waiting to be applied.
+            No changes are waiting.
           </div>
         ) : (
           <div className="flex flex-col gap-2">

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,6 +59,9 @@ type fakeSubstrate struct {
 	// `registration.totpRequired: false` — the local substrate that verifies
 	// no second factor.
 	totpDisabled bool
+	// noInvite makes it answer `registration.inviteRequired: false` — the
+	// local substrate with no SUBSTRATE_INVITE_CODE, which reads none.
+	noInvite bool
 	// changes is the ndjson watch payload (one substrate.Change per row).
 	changes []substrate.Change
 	// catalog is GET /api/v1/catalog's items, and shipped is GET
@@ -145,6 +149,20 @@ func (f *fakeSubstrate) doorRequests() []string {
 	return out
 }
 
+// discoveryReads counts the probe doorRequests hides: one gesture reads the
+// door once, however many answers it needs from it.
+func (f *fakeSubstrate) discoveryReads() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, r := range f.requests {
+		if r == "GET /.well-known/substrate/server.json" {
+			n++
+		}
+	}
+	return n
+}
+
 func (f *fakeSubstrate) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/substrate/server.json", f.handleDiscovery)
@@ -170,6 +188,15 @@ func (f *fakeSubstrate) handler() http.Handler {
 	// in substrate.reamde.dev/core; a generic collection store answers those puts.
 	mux.HandleFunc("GET "+triggerColPath+"/{id}", f.handleTriggerGet)
 	mux.HandleFunc("PUT "+triggerColPath+"/{id}", f.handleTriggerPut)
+	// A bundle's settings are data records too, and their ids carry slashes
+	// (the bundle id is the prefix), so they arrive percent-encoded in ONE
+	// segment — which is what the shipped-example apply proves.
+	mux.HandleFunc("GET "+settingColPath+"/{id}", f.handleTriggerGet)
+	mux.HandleFunc("PUT "+settingColPath+"/{id}", f.handleTriggerPut)
+	// And the shipped example's own data record, a bundle kind's collection:
+	// the apply routes it through the registry like any other record.
+	mux.HandleFunc("GET "+digestColPath+"/{id}", f.handleTriggerGet)
+	mux.HandleFunc("PUT "+digestColPath+"/{id}", f.handleTriggerPut)
 	// The trigger DELIVERY verbs, at the resource: they hang off
 	// substrate.reamde.dev/core and NOWHERE else here, so a client still riding the
 	// retired automation.substrate.reamde.dev spelling falls through to the 404 catch-all
@@ -218,6 +245,8 @@ const (
 	typesPath      = "/api/v1/substrate.reamde.dev/core/kind"
 	tasksPath      = "/api/v1/samples.substrate.reamde.dev/tasks/task"
 	triggerColPath = "/api/v1/substrate.reamde.dev/core/trigger"
+	settingColPath = "/api/v1/substrate.reamde.dev/core/setting"
+	digestColPath  = "/api/v1/samples.substrate.reamde.dev/readinglist/digest"
 )
 
 // typeRecord builds one registry row. `pkg` is the PACKAGE IDENTITY
@@ -497,11 +526,15 @@ func (f *fakeSubstrate) paced(w http.ResponseWriter) {
 // handleRegisterEnroll issues a TOTP enrollment and writes NOTHING, exactly as
 // the substrate does: the caller holds the seed and hands it back with a code.
 // handleDiscovery serves the slice of GET /.well-known/substrate/server.json
-// the door reads: whether this deployment verifies a second factor at all.
+// the door reads: whether this deployment reads an invite code and whether it
+// verifies a second factor at all.
 func (f *fakeSubstrate) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"registration": map[string]any{"totpRequired": !f.totpDisabled},
+		"registration": map[string]any{
+			"inviteRequired": !f.noInvite,
+			"totpRequired":   !f.totpDisabled,
+		},
 	})
 }
 
@@ -812,8 +845,9 @@ func (f *fakeSubstrate) handleTriggerGet(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, e)
 }
 
-// handleTriggerPut stores one trigger data record, mirroring the task put's
-// create/update accounting so apply prints the right verb.
+// handleTriggerPut stores one core data record (a trigger, or a bundle's
+// setting), mirroring the task put's create/update accounting so apply prints
+// the right verb.
 func (f *fakeSubstrate) handleTriggerPut(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
 	var in substrate.PutInput
@@ -828,8 +862,11 @@ func (f *fakeSubstrate) handleTriggerPut(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusOK, e)
 		return
 	}
+	// The kind is read off the collection this put arrived at, so the one
+	// handler answers both trigger and setting records honestly.
+	kind := strings.TrimPrefix(path.Dir(r.URL.EscapedPath()), apiPrefix+"/")
 	e := &substrate.Record{
-		ID: id, Kind: "substrate.reamde.dev/core/trigger", Properties: in.Properties,
+		ID: id, Kind: kind, Properties: in.Properties,
 		Labels: map[string]any{}, Version: 1, CreatedAt: testNow, UpdatedAt: testNow,
 	}
 	f.records[id] = e

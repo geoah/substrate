@@ -70,7 +70,7 @@ A record opens on five tabs:
   drill into. Outgoing pointers read
   straight off the record's references; inbound ones are grouped and paged as the API pages
   them, each group headed by the name the **declaration** gives that side
-  (`messages · llmmessage`, from `inverse:`) rather than the raw property name, which
+  (`messages · llm/message`, from `inverse:`) rather than the raw property name, which
   is the same link as the *other* record spells it. A member expands in
   place into its own graph, so a thread → its messages → the record a tool
   wrote is three clicks without leaving the page.
@@ -117,7 +117,7 @@ and untaken together, with a quarantine badge on one that needs re-installing.
 WHOOP, Notion, Beeper) and their row's button is *Install*, under the
 authority that publishes them; the upgrade offer lands here. **Samples** are
 the vocabulary to copy (people, tasks, calendar, and the worked LLM, notes,
-web and pebble examples) and their button is *Import as yours*, with the row
+reading-list and pebble examples) and their button is *Import as yours*, with the row
 previewing the identity it will land under (`ada.example.com/tasks`) before it
 is pressed. A held copy is offered *Upgrade* too, through the import door,
 when the binary ships the sample at a newer version than the copy was taken
@@ -141,15 +141,15 @@ each resolves, and opens a chat against one.
 A chat is a thread, and a thread is a run. The left rail is this agent's
 threads, newest first, selected through `?thread=` so a conversation is
 linkable; **New** opens an empty one. The transcript is rebuilt from the
-`llmmessage` records the loop wrote, not from the browser's memory, so a
+`llm/message` records the loop wrote, not from the browser's memory, so a
 reload shows the same conversation — and every tool call is a card that says
 whether it is running, settled or failed and expands to the request it sent
 and the response it got, both as formatted JSON. While a run streams, the same
 cards fill in live and are replaced by the stored rows when it settles.
 
-The [`llmprovider`](agents.md#providers) rows are **not** on this page: an agent
+The [`llm/provider`](agents.md#providers) rows are **not** on this page: an agent
 names a provider by id, and that pointer reads on the agent's own record.
-They live under Data → `substrate.reamde.dev/core` → llmproviders, and
+They live under Data → `substrate.reamde.dev/llm` → providers, and
 [registering one](agents.md#registering-a-provider) is an ordinary record
 write.
 

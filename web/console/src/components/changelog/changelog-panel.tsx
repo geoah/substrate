@@ -58,8 +58,8 @@ function FollowToggle({
         disabled={disabled}
         title={
           disabled
-            ? "Follow reads from the head — clear the until filter first"
-            : "Tail the changelog live"
+            ? "Follow shows the newest changes. Clear the until filter first."
+            : "Show new changes as they land."
         }
         onClick={onToggle}
       >

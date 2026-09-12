@@ -89,19 +89,25 @@ func xaChangesForward(c *C, token string) []changeRow {
 	return c.readChangesForwardAs(token, 0)
 }
 
-// xaTOTPRequired is what the deployment says about its own door. Every case
-// that registers or logs in reads it rather than assuming the dev door.
-func xaTOTPRequired(c *C) bool {
+// xaDoor is what the deployment says about its own door. Every case that
+// registers or logs in reads it rather than assuming the dev door.
+func xaDoor(c *C) (inviteRequired, totpRequired bool) {
 	c.t.Helper()
 	var disc struct {
 		Registration struct {
-			Open         bool `json:"open"`
-			TOTPRequired bool `json:"totpRequired"`
+			InviteRequired bool `json:"inviteRequired"`
+			TOTPRequired   bool `json:"totpRequired"`
 		} `json:"registration"`
 	}
 	status, raw := c.doAs("", http.MethodGet, "/.well-known/substrate/server.json", nil, &disc)
 	c.requiref(status == http.StatusOK, "discovery answered %d: %s", status, raw)
-	return disc.Registration.TOTPRequired
+	return disc.Registration.InviteRequired, disc.Registration.TOTPRequired
+}
+
+func xaTOTPRequired(c *C) bool {
+	c.t.Helper()
+	_, totp := xaDoor(c)
+	return totp
 }
 
 // xaBundleInstalled reads one bundle's installed flag from the catalog a
@@ -135,6 +141,16 @@ func xaCaseInviteCode(c *C) {
 	const wrongInvite = "not-the-invite-code"
 	name := xaName("xainvite")
 
+	// The gate is a DEPLOYMENT's, not a request's: a server with no
+	// SUBSTRATE_INVITE_CODE reads none and would admit the wrong code below
+	// as a registration. `mise run test:e2e` starts the dev server with one
+	// so this case runs; against a bare `mise run dev` it has nothing to
+	// prove.
+	if inviteRequired, _ := xaDoor(c); !inviteRequired {
+		c.stepf("SKIPPED: discovery reports `registration.inviteRequired: false`, so this server reads no invite code and there is no gate to refuse a wrong one")
+		return
+	}
+
 	c.paceAuth()
 	status, raw := c.doAs("", http.MethodPost, "/register/enroll",
 		map[string]any{"inviteCode": wrongInvite, "repository": name}, nil)
@@ -154,12 +170,6 @@ func xaCaseInviteCode(c *C) {
 		"the register refusal says %q, want `invalid invite code`", registerErr.Error.Message)
 	c.stepf("both `/register/enroll` and `/register` refused the code with 401 `auth`, %q, and said nothing about the username `%s`",
 		"invalid invite code", name)
-
-	// The other half of the row is a DEPLOYMENT, not a request: `inviteOK`
-	// answers 501 `unsupported` when no invite code is configured at all, and
-	// this server has one (it admitted the run's own registration). Reaching
-	// the 501 takes a second server started without a code.
-	c.stepf("SKIPPED the closed-door half: a substrate with no invite code configured answers 501 `unsupported`, and this one is open")
 }
 
 // --- TOK-03 ----------------------------------------------------------------

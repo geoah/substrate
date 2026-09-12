@@ -27,6 +27,23 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # The function sandbox's connect gate answers every network body's
+    # connect(2) from the substrate, with pidfd_getfd(2) and
+    # process_vm_readv(2). Docker's default seccomp profile permits those two
+    # only for a container carrying CAP_SYS_PTRACE in its bounding set, and
+    # the profile is built from the container's CONFIGURED capabilities, not
+    # from the process's effective set: without this line both calls return
+    # EPERM, and a function that declares `network:` is REFUSED rather than
+    # run with its destinations unfiltered (a provider install's `uv sync`
+    # first). It is a bounded trade, not a free one: the capability unblocks
+    # the profile's whole ptrace group for everything in the container. What
+    # bounds it is that the container holds only the substrate and the
+    # function children it spawns, all at uid 65532, and every child is
+    # started under no_new_privs inside its own Landlock domain, so the group
+    # reaches nothing the substrate could not already reach and cannot be used
+    # to escalate. Drop the line and the boot log says what stops working.
+    cap_add:
+      - SYS_PTRACE
     volumes:
       # The data root: one directory per repository with its changelog
       # segments, sealed files and blob bytes. This volume is the backup unit
@@ -61,13 +78,20 @@ services:
         exec /usr/local/bin/substrate
     environment:
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-substrate}?sslmode=disable
-      # The one door into a fresh substrate. Registering with this code creates
-      # the user and their repository. The dash (not :-) is deliberate: unset
-      # keeps the laptop default, but set-and-EMPTY passes through as empty,
-      # which closes registration — the right state once the box has its user.
-      # With :- an operator could never close the door from the environment,
-      # because empty would fall back to the known default.
-      SUBSTRATE_INVITE_CODE: ${SUBSTRATE_INVITE_CODE-let-me-in}
+      # THIS IS A LAPTOP. Two settings below make it one, and both are what to
+      # change before anyone else can reach the port (see BIND_ADDRESS).
+      #
+      # No invite code: the register door reads none, so registering is a
+      # repository name and a password. Set one and the door admits only a request
+      # that presents it, which is how a box that has its user keeps
+      # strangers out — there is no separate closed state.
+      SUBSTRATE_INVITE_CODE: ${SUBSTRATE_INVITE_CODE:-}
+      # No second factor: login and registration take the password alone, the
+      # console and substratectl read that from discovery and stop asking for
+      # a code, and the boot log says so. A seed is still minted and sealed, so
+      # setting this to false later restores the factor. On a reachable
+      # deployment a leaked password would then be the account.
+      SUBSTRATE_INSECURE_DISABLE_TOTP: ${SUBSTRATE_INSECURE_DISABLE_TOTP:-true}
       # Where every repository's directory lives: the changelog segments, the
       # sealed store's files and the blob bytes. Required and absolute; the
       # substrate-data volume above is mounted here.
@@ -88,7 +112,7 @@ services:
       # warning: consent flows in flight break on every restart.
       SUBSTRATE_OAUTH_STATE_KEY: ${SUBSTRATE_OAUTH_STATE_KEY:-}
       # There is no LLM configuration here. Completions and embeddings are
-      # bought through a repository's own `llmprovider` records, which carry
+      # bought through a repository's own `llm/provider` records, which carry
       # the wire, the endpoint, the key and (for embeddings) the model. A
       # repository that writes none has no agents and no semantic search, and
       # hybrid search returns its lexical arm.

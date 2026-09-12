@@ -176,8 +176,8 @@ export function RecordCombobox({
             ) : (
               <CommandEmpty className="text-muted-foreground">
                 {options.length
-                  ? "Nothing here matches."
-                  : "This collection has no records yet."}
+                  ? "Nothing matches."
+                  : "There are no records of this kind yet."}
               </CommandEmpty>
             )}
             {options.length > 0 && (

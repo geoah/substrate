@@ -27,7 +27,9 @@
 #   3. A RECORD-SOURCED trigger that hands each new instruction to an AGENT,
 #      which turns it into tasks through the graphql and mutate host functions.
 #
-# The agent wants an `llmprovider` row at the id it names (`default`); the
+# The AGENT wants an `llm/provider` row at the id it names (`default`), which
+# is what the llm sample ships: import that one too and fill in its key, or
+# the first agent run refuses at dispatch saying which row it wanted. The
 # function wants nothing at all. See docs/bundles-catalog.md.
 #
 # This bundle declares NO inputs and no OAuth: the endpoint is open, and the
@@ -43,7 +45,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: pebble
-  version: 3
+  version: 4
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -52,9 +54,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: pebble
   description: >-
-    Voice capture from the Pebble Index 01 ring over one public webhook: a
-    recording per capture, and in agent mode an instruction the assistant
-    turns into tasks. No OAuth, no key unless you set one.
+    Voice capture from the Pebble Index 01 ring over one public webhook: every
+    capture is saved, and a press-and-hold becomes an instruction an agent
+    turns into tasks. Needs the tasks and llm samples.
   # The assistant writes tasks, so the tasks vocabulary has to be imported
   # first.
   requires:
@@ -320,7 +322,7 @@ data:
     Reply in one short line: the task ids you created, or "already tracked"
     with the id of the task that covers it.
   provider: default
-  model: anthropic/claude-sonnet-5
+  model: claude-sonnet-5
   tools:
     - function: substrate.reamde.dev/core/graphql
     - function: substrate.reamde.dev/core/mutate

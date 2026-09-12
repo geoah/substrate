@@ -21,7 +21,7 @@ import (
 func reopenWith(t *testing.T, dsn, root string, opts ...engine.Option) substrate.Service {
 	t.Helper()
 	all := []engine.Option{
-		engine.WithKindsDir(engine.CoreKindsDir),
+		engine.WithKindsDir(engine.SeedKindsDir),
 		engine.WithDataRoot(root),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 	}

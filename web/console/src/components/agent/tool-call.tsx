@@ -3,7 +3,7 @@
  * the model sent and the RESPONSE the dispatch returned, both pretty-printed
  * and tinted. A live card and the same card replayed off the records are the
  * same component: `ToolCallView` (lib/api/transcript.ts) is filled from the
- * stream while the run is in flight and from the `llmmessage` rows afterwards,
+ * stream while the run is in flight and from the `llm/message` rows afterwards,
  * so nothing disappears when the stream ends. */
 
 import { ChevronRightIcon, WrenchIcon } from "lucide-react"

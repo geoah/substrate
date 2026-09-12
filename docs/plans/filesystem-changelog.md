@@ -1,8 +1,11 @@
 # Plan: the changelog as segment files, one directory per repository
 
-Status: in progress, September 2026. This page is the working spec for the
-change; the decision records 0050, 0051 and 0052 hold the reasoning once the
-work lands, and `docs/operations.md` the operator procedure.
+Status: landed, September 2026, as decision records
+[0050](../decisions/0050-the-changelog-is-checksummed-segment-files-and-postgres-indexes-it.md),
+[0051](../decisions/0051-a-repository-directory-is-the-backup-unit.md)
+and [0052](../decisions/0052-the-authority-is-the-repository-id.md); this page
+is kept as the history of the design, and `docs/operations.md` has the
+operator procedure.
 
 ## Why
 

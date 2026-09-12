@@ -11,9 +11,9 @@
  *
  * The fan-in used to show the raw property name of every inbound row. That
  * reads BACKWARDS: the name is the pointer as the OTHER record spells it, so
- * standing on a thread the fan-in said "thread · llmmessage", naming this
+ * standing on a thread the fan-in said "thread · llm/message", naming this
  * record instead of what points at it. A group is headed by the declaration's
- * `inverse` — `messages · llmmessage` — and falls back to
+ * `inverse` — `messages · llm/message` — and falls back to
  * `<property> of <kind>`, which is at least unambiguous, where nobody declared
  * one.
  *
@@ -544,7 +544,7 @@ function GraphNode({
     // state of the graph, not an error.
     return (
       <p className="py-1 text-xs text-muted-foreground">
-        This record is not here — a reference may name one that does not exist.
+        This record is not here. A reference can name one that does not exist.
       </p>
     )
   }
@@ -672,7 +672,7 @@ export function GraphRail({
           </EmptyMedia>
           <EmptyTitle>Nothing is linked</EmptyTitle>
           <EmptyDescription>
-            This record points nowhere, and no live record points at it.
+            This record points at nothing, and nothing points at it.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>

@@ -1,18 +1,17 @@
 # The Firecrawl bundle — web search + page scraping as CALLABLE AGENT TOOLS.
 #
-# A capability bundle, not an account integration: one API key on the
-# `connector` input's record, no accountconfig, no oauth2, no host OAuth flow —
-# the shape the URL-harvester stubbed (`firecrawlKey`, unused there) made real.
-# And no triggers: both functions are pure callables (`mode: call`) an agent
-# binds as tools or a client invokes over the call API — nothing here
-# subscribes to the changelog, so the closure ships with ZERO delivery wiring.
+# A capability bundle, not an account integration: one API key, no
+# accountconfig, no oauth2, no host OAuth flow.
+# And no triggers: both functions are plain callables an agent binds as tools
+# or a client invokes over the call API. Nothing here subscribes to the
+# changelog, so the closure ships with ZERO delivery wiring.
 #
-# Install:  substratectl apply -f bundle.yaml
-# Configure: create a config record carrying the apiKey; the `connector`
-#   input resolves it (sole record, the one named `default`, or a bound one).
+# Install:  substratectl apply -f bundle.yaml -f settings.yaml
+# Configure: fill in the `apiKey` secret the bundle ships (settings.yaml); the
+#   bodies read it as `config.settings.apiKey` (decision record 0076).
 #
-# This file is the SCHEMA closure (the atomic install unit) — and the whole
-# bundle: with no triggers there is no second file.
+# This file is the SCHEMA closure (the atomic install unit); the bundle's two
+# configuration records are ordinary data beside it, in settings.yaml.
 # ---- the owned package --------------------------------------------------------
 kind: substrate.reamde.dev/core/package
 metadata:
@@ -20,7 +19,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: firecrawl
-  version: 6
+  version: 8
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -33,64 +32,22 @@ data:
   authority: samples.substrate.reamde.dev
   package: firecrawl
   description: >-
-    Web search and page scraping over the Firecrawl API — two callable functions
-    an agent binds as tools: search the live web, and read any page as markdown
-    kept as a webdocument.
-  # The one declared input: the connector record both function bodies read.
-  # `inject: functions` hands the resolved record (apiKey resolved to plaintext,
-  # held to the runner boundary by the scrubber) to every invocation under
-  # config.inputs.connector.
-  inputs:
-    connector:
-      kind: samples.substrate.reamde.dev/firecrawl/config
-      inject: functions
-      description: the Firecrawl API key and the pinned API root
+    Web search and page reading through Firecrawl: two tools an agent can
+    call, one to search the live web, one to read any page as markdown and
+    keep it. Needs a Firecrawl API key and nothing else.
+  # NO declared input: the key and the API root are the two core `setting`
+  # and `secret` records this bundle ships (settings.yaml), injected into every
+  # invocation under config.settings by the id prefix they carry — the secret
+  # in plaintext, held to the runner boundary by the invocation scrubber.
   installs:
-    - samples.substrate.reamde.dev/firecrawl/config
     - samples.substrate.reamde.dev/firecrawl/webdocument
     - samples.substrate.reamde.dev/firecrawl/websearch
     - samples.substrate.reamde.dev/firecrawl/scrapepage
 ---
-# ---- the config type: the `connector` input's kind ------------------------
-# Deliberately NOT oauth2 (there is no OAuth client; the key is a bearer
-# token) and NOT accountconfig (there are no per-user accounts; one key
-# serves the repository). The apiKey is the connector's own secret: injected
-# into its functions' invocations (and held to the runner boundary by the
-# invocation scrubber), never read back over the API.
-kind: substrate.reamde.dev/core/kind
-metadata:
-  id: samples.substrate.reamde.dev/firecrawl/config
-data:
-  authority: samples.substrate.reamde.dev
-  package: firecrawl
-  description: >-
-    The Firecrawl API key and the API root it may be sent to. One key serves
-    the whole repository — no OAuth client, no per-user accounts — and the
-    origin is pinned, so editing the URL cannot redirect the credential.
-  names:
-    singular: config
-  displayTemplate: "Firecrawl {baseUrl}"
-  properties:
-    apiKey:
-      type: secret
-      writer: owner
-      displayName: API key
-      description: the Firecrawl API key (fc-…) — sealed from reads, injected
-        only into this bundle's functions
-    baseUrl:
-      type: url
-      writer: owner
-      default: https://api.firecrawl.dev
-      displayName: Base URL
-      description: >-
-        the Firecrawl API root — ORIGIN-PINNED: the bodies only send the apiKey
-        to https://api.firecrawl.dev or loopback (the test seam), so an edit
-        cannot redirect the credential
----
 # ---- the webdocument type: what a scrape leaves behind ---------------------
 # scrapepage's durable output, owned by THIS package (a bundle's effects stay
 # inside its own package's types — it never writes another bundle's, e.g. the
-# web harvester's page). `title` is the reserved built-in (scrapepage writes
+# reading-list sample's page). `title` is the reserved built-in (scrapepage writes
 # it); the id is host.ids.url(url), so re-scraping the same URL updates one
 # document instead of minting a second.
 kind: substrate.reamde.dev/core/kind
@@ -172,13 +129,15 @@ data:
     LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
 
     def _config(input):
-        return (((input.get("config") or {}).get("inputs") or {}).get("connector") or {}).get("properties") or {}
+        # The bundle's own settings: the `setting` and `secret` records under
+        # this bundle's id, keyed by name (decision record 0076).
+        return (input.get("config") or {}).get("settings") or {}
 
     def _base(cfg):
         # Origin pinning (fleet F1 / codex review #1): the apiKey is only ever
         # sent over HTTPS to the pinned provider host, or to loopback (any
         # scheme — the test seam). baseUrl is owner-editable, so anything else
-        # refuses BEFORE the request is built: a config edit must never
+        # refuses BEFORE the request is built: a setting edit must never
         # redirect the bearer key. (The declared `network` capability is not
         # yet host-enforced; this is the bundle-side defense.)
         base = str(cfg.get("baseUrl") or DEFAULT_BASE).strip().rstrip("/")
@@ -203,8 +162,8 @@ data:
         key = cfg.get("apiKey") or ""
         if not key:
             raise ValueError(
-                "the firecrawl connector input did not resolve: create a "
-                "config record carrying an apiKey")
+                "the firecrawl apiKey secret is empty: fill in the bundle's "
+                "apiKey setting with your fc-… key")
         limit = int(args.get("limit") or 5)
         limit = max(1, min(limit, 20))
         base = _base(cfg)
@@ -281,13 +240,15 @@ data:
     MAX_CONTENT = 24000
 
     def _config(input):
-        return (((input.get("config") or {}).get("inputs") or {}).get("connector") or {}).get("properties") or {}
+        # The bundle's own settings: the `setting` and `secret` records under
+        # this bundle's id, keyed by name (decision record 0076).
+        return (input.get("config") or {}).get("settings") or {}
 
     def _base(cfg):
         # Origin pinning (fleet F1 / codex review #1): the apiKey is only ever
         # sent over HTTPS to the pinned provider host, or to loopback (any
         # scheme — the test seam). baseUrl is owner-editable, so anything else
-        # refuses BEFORE the request is built: a config edit must never
+        # refuses BEFORE the request is built: a setting edit must never
         # redirect the bearer key. (The declared `network` capability is not
         # yet host-enforced; this is the bundle-side defense.)
         base = str(cfg.get("baseUrl") or DEFAULT_BASE).strip().rstrip("/")
@@ -326,8 +287,8 @@ data:
         key = cfg.get("apiKey") or ""
         if not key:
             raise ValueError(
-                "the firecrawl connector input did not resolve: create a "
-                "config record carrying an apiKey")
+                "the firecrawl apiKey secret is empty: fill in the bundle's "
+                "apiKey setting with your fc-… key")
         base = _base(cfg)
         body = json.dumps({"url": url, "formats": ["markdown"]}).encode("utf-8")
         req = urllib.request.Request(

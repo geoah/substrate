@@ -77,12 +77,14 @@ RUN apk add --no-cache ca-certificates tzdata python3 uv
 # The runner spawns bundle code as child processes, and NONE of it needs root.
 # uv's cache and the python host both write under HOME, so the unprivileged
 # user owns one. /keys is where a deployment that mints its own credential key
-# keeps it (see compose.yaml). Docker copies this directory's ownership onto a
-# fresh named volume, which is what lets the unprivileged user write the key it
-# mints.
+# keeps it and /var/lib/substrate is the data root it mounts (see
+# compose.yaml). Docker copies a directory's ownership onto a fresh named
+# volume mounted over it, and a path the image lacks comes up root-owned,
+# which is what lets the unprivileged user write the key it mints and create
+# the repositories directory under the data root.
 RUN addgroup -g 65532 -S substrate \
     && adduser -u 65532 -S -G substrate -h /home/substrate substrate \
-    && install -d -o substrate -g substrate /home/substrate /keys
+    && install -d -o substrate -g substrate /home/substrate /keys /var/lib/substrate
 
 ENV HOME=/home/substrate
 COPY --from=build /out/substrate /usr/local/bin/substrate

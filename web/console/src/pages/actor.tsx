@@ -83,8 +83,8 @@ function IdentityCard({ actorId }: { actorId: string }) {
             <span>{resolved.error.message}</span>
           ) : (
             <span>
-              Not in the actor registry — the changelog below is still its full
-              record.
+              This actor has no record here. The changelog below is still
+              everything it did.
             </span>
           )}
         </p>

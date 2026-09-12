@@ -36,8 +36,9 @@ uv = "0.7.12"
 # The shell linter. `.mise/*.sh` hold the dev loop and the kinds guard, and
 # they are the only code in the tree that no compiler reads.
 shellcheck = "0.11.0"
-# The Python linter and formatter, for `internal/runner/host.py` — the function
-# runner's Python host, and the one Python file the server ships.
+# The Python linter, for the two Python files in the tree: `internal/runner/host.py`,
+# the function runner's Python host and the one Python file the server ships,
+# and `.mise/testtiming.py`, the reader behind `test:timing`.
 ruff = "0.16.2"
 # The link checker, run OFFLINE: it resolves relative links and anchors against
 # the tree and never opens a socket, so a moved doc fails the lint job instead
@@ -66,10 +67,6 @@ run = "go build -trimpath -o bin/substrate ./cmd/substrated"
 [tasks."build:cli"]
 description = "Build the CLI -> bin/substratectl"
 run = "go build -trimpath -o bin/substratectl ./cmd/substratectl"
-
-[tasks.run]
-description = "Run the server (wants DATABASE_URL)"
-run = "go run ./cmd/substrated"
 
 [tasks.test]
 description = "The whole Go suite, sequential: what ci:coverage runs on main"
@@ -220,13 +217,17 @@ run = [
   # the test process hosts, and the server dials it through the same egress
   # gate as any provider. A caller's own allowlist is appended, never
   # substituted, so it cannot silently close the loopback the suite needs.
-  "SUBSTRATE_EGRESS_ALLOW=\"127.0.0.0/8,::1/128${SUBSTRATE_EGRESS_ALLOW:+,$SUBSTRATE_EGRESS_ALLOW}\" .mise/dev.sh restart",
+  # The invite code is set here because the bare dev substrate reads none,
+  # and AUTH-02 (a wrong code is refused) needs a door that does.
+  "SUBSTRATE_INVITE_CODE=\"${SUBSTRATE_INVITE_CODE:-let-me-in}\" SUBSTRATE_EGRESS_ALLOW=\"127.0.0.0/8,::1/128${SUBSTRATE_EGRESS_ALLOW:+,$SUBSTRATE_EGRESS_ALLOW}\" .mise/dev.sh restart",
   """
     SUBSTRATE_E2E_SERVER="http://127.0.0.1:${SUBSTRATE_DEV_PORT:-8080}" \
     SUBSTRATE_E2E_INVITE="${SUBSTRATE_INVITE_CODE:-let-me-in}" \
     SUBSTRATE_E2E_DSN="$(.mise/dev.sh dsn)" \
     SUBSTRATE_E2E_CTL="$PWD/bin/substratectl" \
     SUBSTRATE_E2E_CREDENTIAL_KEY="$(cat .dev/credential.key 2>/dev/null || true)" \
+    SUBSTRATE_DATA_ROOT="$PWD/.dev/data" \
+    SUBSTRATE_CREDENTIAL_KEY="$(cat .dev/credential.key 2>/dev/null || true)" \
     SUBSTRATE_E2E_REPORT_DIR="$PWD/.dev/e2e" \
     go test -count=1 -run '^TestE2E$' -v ./internal/e2e/
     """,
@@ -457,8 +458,8 @@ run = "yamlfmt -lint ."
 #
 # Every task below is one subcommand of .mise/dev.sh, which holds the shape of
 # it: the container and its volume, the pid and the log under .dev/, and the
-# environment the server boots with (invite code `let-me-in`, the console at /
-# when web/console/dist exists).
+# environment the server boots with (no invite code and no second factor, the
+# console at / when web/console/dist exists).
 #
 # `dev:wipe` is not a convenience — it is the only way back to a FRESH
 # substrate. Registration is one-shot per user and there is no unregister, so
@@ -508,10 +509,6 @@ run = ".mise/dev.sh status"
 [tasks."dev:logs"]
 description = "Follow the background substrate's log"
 run = ".mise/dev.sh logs"
-
-[tasks."dev:psql"]
-description = "A psql shell in the dev database"
-run = ".mise/dev.sh psql"
 
 [tasks."dev:dsn"]
 description = "Print the dev DSN — what the operator hat takes as --dsn"
@@ -572,10 +569,6 @@ run = "pnpm fmt:check"
 # =============================================================================
 # Image
 # =============================================================================
-
-[tasks.image]
-description = "Build the image for THIS arch, loaded into the local docker"
-run = "docker build -t $IMAGE:dev ."
 
 [tasks."image:push"]
 description = "Build multi-arch and push. TAG=<tag> (default: dev)"
@@ -753,7 +746,3 @@ depends = [
   "ci:console",
   "ci:image",
 ]
-
-[tasks.check]
-description = "Alias for ci"
-depends = ["ci"]

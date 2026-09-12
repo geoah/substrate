@@ -10,7 +10,7 @@ package its publisher owns, installed under
 `providers.substrate.reamde.dev` and upgraded there. Every one syncs from the
 provider into the repository, and none writes back.
 
-**Five samples**: LLM, notes, the web harvester, Firecrawl and Pebble. Each is
+**Five samples**: LLM, notes, the reading list, Firecrawl and Pebble. Each is
 a worked example to read and copy, imported under the repository's own
 authority and owned by it afterwards. A fix here reaches a repository that
 imported it as an upgrade offer read off the copy's origin stamp, taken by
@@ -57,8 +57,8 @@ thing, and the Records column counts them.
 | Beeper        | Provider | Pasted token   | 4     | 1         | 2       | 0      |
 | LLM           | Sample   | Key, per row   | 1     | 0         | 2       | 6      |
 | Notes         | Sample   | none           | 1     | 2         | 0       | 2      |
-| Firecrawl     | Sample   | API key        | 2     | 2         | 0       | 0      |
-| Web harvester | Sample   | none           | 2     | 4         | 4       | 3      |
+| Firecrawl     | Sample   | API key        | 1     | 2         | 2       | 0      |
+| Reading list  | Sample   | none           | 2     | 4         | 5       | 3      |
 | Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
 
 ## Connecting an OAuth provider
@@ -109,10 +109,11 @@ sync token gives it full-plus-incremental with no window.
 ## LLM (sample)
 
 Package `samples.substrate.reamde.dev/llm`. Import this bundle first if
-you want to run an agent at all. A fresh substrate seeds no `llmprovider` row,
-so this bundle ships the two an agent can name (`anthropic` and `openai`),
-correctly shaped for their wires and deliberately keyless, plus a `scratchpad`
-kind to practise on and six agents:
+you want to run an agent at all. A fresh substrate seeds no `llm/provider` row,
+so this bundle ships the two an agent can name, correctly shaped for their
+wires and deliberately keyless, plus a `scratchpad` kind to practise on and
+six agents. The Anthropic row's id is `default`, which is the row every
+shipped agent names, and the second row is `openai`:
 
 - `substrate` is the one to chat with: it reads the whole graph through the
   `graphql` built-in, writes nothing directly, proposes every change as a
@@ -129,9 +130,9 @@ kind to practise on and six agents:
   summarizer is `hiddenFromChat`: off the chat list, callable only by other
   agents.
 
-Importing it gives you two rows that refuse until you key them: `anthropic` on
-its own wire and `openai` pointed at `https://api.openai.com/v1`, re-pointable
-at any gateway that speaks that wire. Keying one is an ordinary record write,
+Importing it gives you two rows that refuse until you key them: `default` on
+Anthropic's own wire and `openai` pointed at `https://api.openai.com/v1`,
+re-pointable at any gateway that speaks that wire. Keying one is an ordinary record write,
 and [registering a provider](agents.md#registering-a-provider) is where that
 write, the wires and the pricing table are described.
 
@@ -140,8 +141,8 @@ write, the wires and the pricing table are described.
 Package `samples.substrate.reamde.dev/notes`. The smallest bundle that shows
 an agent calling functions as tools and delegating to a sub-agent, and the one
 to read first. It needs no network, no credentials and no other bundle's
-vocabulary, so it imports on a fresh substrate and is driven by hand in one
-command, and its two functions stand on their own with no model at all:
+vocabulary, so it imports on a fresh substrate, and its two functions stand on
+their own with no model at all:
 
 ```bash
 substratectl import samples.substrate.reamde.dev/notes   # or: apply --as-mine -f samples/notes/bundle.yaml
@@ -156,10 +157,10 @@ which writes the one kind the bundle declares — `note`. That write lands only
 because the kind is in BOTH the function's writes and the calling agent's,
 which is the capability envelope in one closure.
 
-Both agents name `provider: default`, so running them wants an `llmprovider`
+Both agents name `provider: default`, so running them wants an `llm/provider`
 row at that id — [nothing seeds one](agents.md#providers), and the LLM example
-above ships `anthropic` and `openai` rather than `default`. Calling an agent is
-an API call, not a CLI verb:
+above is what ships it. Import that bundle too and key its `default` row.
+Calling an agent is an API call, not a CLI verb:
 
 ```bash
 curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/notekeeper/call" \
@@ -167,14 +168,14 @@ curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/noteke
   -d '{"input": {"text": "id: my-note\n\nSomething worth keeping."}}'
 ```
 
-One run leaves TWO `llmthread` rows, the root agent's and the sub-agent's own,
-each with its own turn and token tallies; cost rolls up onto the root. If the
-`default` row points straight at Anthropic rather than at a gateway, two things
-about the row differ: model names are bare there (`claude-sonnet-5` and
-`claude-haiku-4-5-20251001`, where these manifests carry the gateway aliases
-`anthropic/claude-sonnet-5` and `anthropic/claude-haiku-4-5`), and `pricing` is
-keyed by the model string AS SENT, so a model the table does not name runs
-uncosted ([providers](agents.md#providers)).
+One run leaves TWO `llm/thread` rows, the root agent's and the sub-agent's own,
+each with its own turn and token tallies; cost rolls up onto the root. These
+manifests name models the way Anthropic's own wire does (`claude-sonnet-5`,
+`claude-haiku-4-5`), which is what the shipped `default` row speaks; point that
+row at a gateway instead and the model names become the gateway's aliases
+(`anthropic/claude-sonnet-5`). `pricing` is keyed by the model string AS SENT,
+so a model the table does not name runs uncosted
+([providers](agents.md#providers)).
 
 ## Google
 
@@ -379,10 +380,10 @@ up to two days before the connect can still land once its score settles.
 ## Notion
 
 Package `providers.substrate.reamde.dev/notion`. A provider that mirrors the Notion
-pages and data sources shared with an internal integration. It is authorized by
-an internal-integration token rather than OAuth, because Notion authenticates
-its token exchange with HTTP Basic and the host facility declares one auth
-style for every bundle.
+pages and data sources the user has shared with it. It is authorized by an
+internal Notion token (the one a workspace owner mints in Notion's settings)
+rather than OAuth, because Notion authenticates its token exchange with HTTP
+Basic and the host facility declares one auth style for every bundle.
 
 - **Kinds (4)**: `config`, `account`, and the mirrors `page` and `database`
   (one row per data source, recording its containing database).
@@ -393,14 +394,14 @@ style for every bundle.
   enabled; `notion-scheduled` fires hourly.
 - **Mappings**: none. A Notion page mirrors as a document, not a person.
 
-The integration token is a secret on the configuration record, origin-pinned to
+The Notion token is a secret on the configuration record, origin-pinned to
 Notion's API host. Only one account per repository syncs: every other account
 row is stamped `syncStatus: ignored: duplicate account`.
 
-Setting it up takes two steps in Notion. Create an internal integration
-(Settings, Connections, Develop or manage integrations) with read-content
-capabilities only, and paste its token onto the `config` record. Then SHARE
-each top-level page, database or teamspace with that integration: the search
+Setting it up takes two steps in Notion. Mint an internal token (Settings,
+Connections, Develop or manage) with read-content capabilities only, and paste
+it onto the `config` record. Then SHARE each top-level page, database or
+teamspace with the connection that token belongs to: the search
 API returns only what has been shared with it, so an unshared page is invisible
 to the sync rather than refused. A page's mirrored `content` truncates at 500
 blocks and nesting depth 2, closed by a `[content truncated]` marker.
@@ -456,18 +457,26 @@ provider account is connected and nothing syncs. It is web search and page
 scraping over the Firecrawl API, exposed as two callables an agent binds as
 tools, behind an API key.
 
-- **Kinds (2)**: `config` (holding an API key) and `webdocument` (a scraped
-  page kept as markdown).
+- **Kinds (1)**: `webdocument`, a scraped page kept as markdown.
 - **Functions (2)**: `websearch` returns hits as title, URL, and snippet and
   writes nothing; `scrapepage` scrapes a page to markdown and upserts a
   `webdocument` at the URL's deterministic id, so re-scraping the same URL
   updates the one document.
+- **Settings (2)**: a `secret` at `…/firecrawl/apiKey`, shipped empty and
+  required, and a `setting` at `…/firecrawl/baseUrl`, shipped pinned at the
+  Firecrawl origin. Both are ordinary records the closure ships
+  ([record 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)),
+  and the bodies read them as `config.settings.apiKey` and
+  `config.settings.baseUrl`. The bundle declares no input.
 - **Triggers**: none. Both functions are callables an agent or a client invokes
-  directly, so the whole closure is `bundle.yaml`.
+  directly, so the closure is `bundle.yaml` plus the two records in
+  `settings.yaml`.
 
-The API key is a secret on the configuration record, and the bodies refuse any
+The API key is a core `secret` record, sealed at rest and injected only into
+this bundle's two functions, and the bodies refuse any
 base URL that is not the pinned Firecrawl origin or loopback, so an edit of the
-owner-editable `baseUrl` can never redirect the key. Keys come from
+`baseUrl` setting can never redirect the key. While the key is empty the bundle
+carries one setup item, coded `setting`. Keys come from
 [firecrawl.dev](https://www.firecrawl.dev) and look like `fc-…`; a scraped
 page's markdown is capped at 24,000 characters, and `truncated: true` marks a
 cut. An agent that binds `scrapepage` must name `webdocument` in its own
@@ -475,39 +484,41 @@ cut. An agent that binds `scrapepage` must name `webdocument` in its own
 intersected with its caller's
 ([agents](agents.md#sub-agents-budgets-and-the-emit-ceiling)).
 
-## Web harvester (sample)
+## Reading list (sample)
 
-Package `samples.substrate.reamde.dev/web`. The substrate's
+Package `samples.substrate.reamde.dev/readinglist`. The substrate's
 shipped end-to-end conformance example: it proves that `bundle`, `kind`,
 `function`, `agent`, and `trigger` declarations compose into a real
-feature (harvest URLs from a message, fetch and classify each page, propose
-reading-list and weekly-digest notes) with no bespoke workflow primitive. It is
-the running example these pages build on.
+feature (pull the links out of a chat message, read and classify each page,
+propose what to save and a weekly digest) with no bespoke workflow primitive.
+It is the running example these pages build on, and it requires
+`samples.substrate.reamde.dev/messaging`, whose messages it reads.
 
-- **Kinds (2)**: `config` and `page` (a harvested URL and its fetched,
-  classified content).
+- **Kinds (2)**: `page` (a harvested URL and its fetched, classified content)
+  and `digest` (a week's summary, written when a rollup proposal is accepted).
 - **Functions (4)**: `findurls` extracts URLs from a triggering message and
   mints pending `page` records; `fetchpage` turns a pending page into markdown;
-  `setclass` is the classifier's write hand; `stampconfig` writes the
-  configuration record and exists to prove the emit ceiling refuses a write
-  outside it.
-- **Triggers (4)**: `web-findurls-on-message` runs `findurls` on a new
-  conversation message, `web-fetch-on-page` runs `fetchpage` on a pending page,
-  `web-classify-on-page` runs the `pageclassifier` agent on a fetched,
-  unclassified page, and `web-rollup-weekly` runs the `weeklyrollup` agent on a
-  Monday schedule.
+  `setclass` is the classifier's write hand; `stampdigest` writes a digest
+  record directly and exists to prove the emit ceiling refuses a write outside
+  it.
+- **Triggers (4)**: `readinglist-findurls-on-message` runs `findurls` on a new
+  conversation message, `readinglist-fetch-on-page` runs `fetchpage` on a
+  pending page, `readinglist-classify-on-page` runs the `pageclassifier` agent
+  on a fetched, unclassified page, and `readinglist-rollup-weekly` runs the
+  `weeklyrollup` agent on a Monday schedule.
 - **Agents (3)**: `pageclassifier` classifies a page and delegates to
-  `readinglistagent`, which proposes reading-list notes; `weeklyrollup` queries
-  the week's pages and proposes a digest. Both proposals travel as
+  `curator`, which proposes adding it to the reading list; `weeklyrollup`
+  queries the week's pages and proposes a digest. Both proposals travel as
   `substrate.reamde.dev/core/recordpatchrequest` records for the owner to accept. All
-  three name `provider: default`, a row nothing seeds (the owner writes and
-  keys it before they can run), and each names its own `model` —
-  what the agent does is what picks the model, not a tier.
+  three name `provider: default`, which the LLM example above ships, and each
+  names its own `model` — what the agent does is what picks the model, not a
+  tier.
 
 Its functions are deterministic stubs, because the bundle exists to exercise
-the machinery rather than talk to a provider. The `config` record carries the
-two knobs they read: `denyDomains`, the hosts `findurls` skips, and the
-secret-typed `firecrawlKey` a production `fetchpage` body would spend.
+the machinery rather than talk to a provider. Its one knob is a shipped
+[`setting`](bundles.md#settings) record, `denyDomains`: a
+comma-separated list of URL pieces `findurls` skips, empty as shipped, which
+the bodies read as `config.settings.denyDomains`.
 
 ## Pebble (sample)
 
@@ -527,7 +538,8 @@ the capture came from a press-and-hold. It requires
   delivers each new instruction to the agent.
 - **Agents (1)**: `assistant` reads the open tasks through the `graphql` host
   function and writes `samples.substrate.reamde.dev/tasks/task` records through
-  `mutate`. It names `provider: default`, a row nothing seeds.
+  `mutate`. It names `provider: default`, which the LLM example above ships:
+  import that bundle too and key its row.
 
 **The endpoint** is `POST
 https://<your-substrate-host>/webhooks/<authority>/pebble-webhook`, where

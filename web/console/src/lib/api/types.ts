@@ -513,10 +513,22 @@ export interface BundleClosure {
    * kinds ARE before an install has put them in the registry. Absent for a
    * kind that declares none, and from an older server whole. */
   kindDescriptions?: Record<string, string>
+  /** The contracts the closure declares, and what each one is. A package can
+   * ship traits and nothing else, so these are the whole of what it adds. */
+  traits: string[] | null
+  traitDescriptions?: Record<string, string>
   functions: string[] | null
+  functionDescriptions?: Record<string, string>
   agents: string[] | null
+  agentDescriptions?: Record<string, string>
   /** Record mappings (source-kind → subject-kind projections). */
   mappings: string[] | null
+  /** The core `trigger` records the closure ships, and the function or agent
+   * each one invokes. Also in `records`, which carries every data record;
+   * these are apart because the deliveries are what make a bundle run
+   * without anybody pressing anything. */
+  triggers: string[] | null
+  triggerCallables?: Record<string, string>
   /** The DATA records the install writes after the declarations land — an
    * extension's triggers, the llm example's keyless provider rows. Ordinary
    * records afterward, and often the ones the reader has to go and edit. */
@@ -581,7 +593,7 @@ export interface ConversionPlan {
 
 /** One record rewrite a declaration change performs (substrate.ConversionStep). */
 export interface ConversionStep {
-  step: "rename" | "backfill" | "remap" | "null"
+  step: "move" | "rename" | "backfill" | "remap" | "null"
   kind: string
   /** The property written, under its candidate name. */
   property: string
@@ -787,10 +799,12 @@ export interface InputStatus {
 
 /** The stable setup-item reasons: missing/ambiguous/dangling are an input's
  * own resolution problems; oauth-client is a resolved client record without
- * clientId/clientSecret; provider is an agent's llmprovider row absent or
- * keyless (kind substrate.reamde.dev/core/llmprovider). */
+ * clientId/clientSecret; provider is an agent's llm/provider row absent or
+ * keyless (kind substrate.reamde.dev/llm/provider); setting is a required
+ * `setting` or `secret` record of the bundle's whose value is empty (decision
+ * record 0076). */
 export type SetupCode =
-  "missing" | "ambiguous" | "dangling" | "oauth-client" | "provider"
+  "missing" | "ambiguous" | "dangling" | "oauth-client" | "provider" | "setting"
 
 /** One thing standing between a bundle and a runtime path it ships
  * (substrate.SetupItem). Problems only: an empty setup list means ready. */
@@ -810,7 +824,7 @@ export interface SetupItem {
  * read (substrate.BundleStatus). */
 export interface BundleStatus {
   /** The bundle's id — the PACKAGE it is named for
-   * ("samples.substrate.reamde.dev/web"). */
+   * ("acme.example.com/reader"). */
   id: string
   name: string
   authority: string

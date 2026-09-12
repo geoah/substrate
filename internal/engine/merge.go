@@ -21,9 +21,6 @@ const (
 	payloadLoser  = "loser"
 )
 
-// corePackage names the substrate's own machinery: none of it merges.
-const corePackage = "substrate.reamde.dev/core"
-
 // Merge and split, the two manual verbs. Nothing fuses by
 // value: two people holding one email address are two records until an owner
 // merges them.
@@ -282,9 +279,12 @@ func (t *txn) mergeRecordIf(winnerRef, loserRef eref, winnerVersion, loserVersio
 }
 
 // guardMergeType keeps the substrate's own state out of the generic merge
-// surface: a repository is not merged into another repository.
+// surface: a repository is not merged into another repository, and neither are
+// two agent threads. The test is the SOURCE, not the package name (record
+// 0077): every package the binary seeds is the substrate's own state, and
+// core stopped being the only one when the llm kinds left it.
 func guardMergeType(ty *vocabulary.Kind) error {
-	if systemKinds[ty.Identity] || ty.Package == corePackage {
+	if systemKinds[ty.Identity] || ty.Source == vocabulary.SourceBuiltin {
 		return fmt.Errorf("%w: %s records are managed by the substrate, not the generic merge surface",
 			substrate.ErrForbidden, ty.Identity)
 	}
@@ -533,7 +533,7 @@ func (t *txn) splitIf(mergeID string, ifVersion *int64) (*substrate.Record, erro
 		return nil, err
 	}
 	// The same admission for the embeddings claim, and for the same reason.
-	// A merge does not migrate properties, so a tombstoned llmprovider row
+	// A merge does not migrate properties, so a tombstoned llm/provider row
 	// keeps its embedModel while another row is free to take the job; without
 	// this, a split would land a second live claimant that no write path ever
 	// admitted, and the refusal would surface later, to whoever searched.

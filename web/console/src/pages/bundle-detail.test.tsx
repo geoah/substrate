@@ -74,6 +74,8 @@ function bundle(over: Partial<CatalogItem>): CatalogItem {
     version: 1,
     tier: "provider",
     closure: {
+      traits: null,
+      triggers: null,
       kinds: null,
       functions: null,
       agents: null,
@@ -94,6 +96,8 @@ const PEOPLE = bundle({
   version: 1,
   tier: "sample",
   closure: {
+    traits: null,
+    triggers: null,
     functions: null,
     agents: null,
     mappings: null,
@@ -119,6 +123,8 @@ const GOOGLE = bundle({
     "samples.substrate.reamde.dev/messaging",
   ],
   closure: {
+    traits: null,
+    triggers: null,
     agents: null,
     mappings: null,
     records: null,
@@ -210,6 +216,10 @@ describe("BundleDetailPage", () => {
       /** Every held bundle's status, the list the floor check reads. */
       statuses?: BundleStatus[]
       catalog?: CatalogItem[]
+      /** The repository's `setting` and `secret` records, from which the page
+       * takes the ones under this bundle's id prefix. */
+      settings?: SubstrateRecord[]
+      secrets?: SubstrateRecord[]
     } = {}
   ) {
     fetchMock.mockImplementation(async (url, init) => {
@@ -227,6 +237,12 @@ describe("BundleDetailPage", () => {
         method === "POST"
       ) {
         return jsonResponse(200, bundleStatus)
+      }
+      if (path.startsWith("/api/v1/substrate.reamde.dev/core/setting")) {
+        return jsonResponse(200, { records: opts.settings ?? [] })
+      }
+      if (path.startsWith("/api/v1/substrate.reamde.dev/core/secret")) {
+        return jsonResponse(200, { records: opts.secrets ?? [] })
       }
       if (path.startsWith("/api/v1/substrate.reamde.dev/core/kind")) {
         return jsonResponse(200, { kinds: KINDS })
@@ -278,6 +294,53 @@ describe("BundleDetailPage", () => {
         authority: "samples.substrate.reamde.dev",
         pkg: "people",
         name: "person",
+      })
+    })
+
+    // A bundle ships its settings as records under its own id prefix
+    // (decision record 0076), so a closure with no inputs at all still earns
+    // the Setup surface once it ships one.
+    it("shows Setup for its settings alone, and saves one with a patch", async () => {
+      const setting: SubstrateRecord = {
+        id: `${PEOPLE.id}/baseURL`,
+        kind: "substrate.reamde.dev/core/setting",
+        properties: {
+          displayName: "Base URL",
+          type: "url",
+          value: "https://api.example.com",
+        },
+        labels: {},
+        version: 1,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      }
+      serve(status({}), {
+        settings: [
+          setting,
+          // Another bundle's setting: the prefix is the whole of ownership.
+          { ...setting, id: "x.example.com/x/baseURL" },
+        ],
+      })
+      renderPage(<BundleDetailPage />)
+      await screen.findByText("people")
+      const section = (await screen.findByText("Setup")).closest(
+        "section"
+      ) as HTMLElement
+      const input = within(section).getByLabelText(/Base URL/)
+      expect(within(section).getAllByLabelText(/Base URL/)).toHaveLength(1)
+
+      fireEvent.change(input, {
+        target: { value: "https://people.example.com" },
+      })
+      fireEvent.click(within(section).getByRole("button", { name: "Save" }))
+      await waitFor(() => {
+        const patch = fetchMock.mock.calls.find(
+          ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+        )
+        expect(patch).toBeTruthy()
+        expect(String(patch![0])).toContain(
+          encodeURIComponent(`${PEOPLE.id}/baseURL`)
+        )
       })
     })
 
@@ -361,11 +424,11 @@ describe("BundleDetailPage", () => {
       await screen.findByText("google")
       const note = screen.getByText("Requires").closest("div") as HTMLElement
       await within(note).findByTitle(
-        "samples.substrate.reamde.dev/people is imported at version 4; this bundle needs version 5 or later"
+        "samples.substrate.reamde.dev/people is imported at version 4, but this bundle needs version 5 or later"
       )
       expect(
         screen.getByText(
-          /samples\.substrate\.reamde\.dev\/people is imported at version 4, and this bundle needs version 5 or later: import that package's bundle again first\./
+          /samples\.substrate\.reamde\.dev\/people is imported at version 4\. This bundle needs version 5 or later\. Import it again from the registry first\./
         )
       ).toBeTruthy()
     })
@@ -480,16 +543,16 @@ describe("BundleDetailPage", () => {
   })
 
   describe("standalone setup items", () => {
-    it("renders a provider step as a warning row linking the llmprovider record", async () => {
+    it("renders a provider step as a warning row linking the llm/provider record", async () => {
       params.id = PEOPLE.id
       serve(
         status({
           setup: [
             {
               code: "provider",
-              kind: "substrate.reamde.dev/core/llmprovider",
+              kind: "substrate.reamde.dev/llm/provider",
               record: "openai",
-              message: "llmprovider openai has no key",
+              message: "llm/provider openai has no key",
             },
           ],
         })
@@ -498,7 +561,7 @@ describe("BundleDetailPage", () => {
       await screen.findByText("people")
       expect(screen.getByText("1 setup step")).toBeTruthy()
       const row = screen
-        .getByText("llmprovider openai has no key")
+        .getByText("llm/provider openai has no key")
         .closest("div") as HTMLElement
       const link = within(row).getByText("openai").closest("a")!
       expect(link.getAttribute("data-to")).toBe(
@@ -506,10 +569,116 @@ describe("BundleDetailPage", () => {
       )
       expect(JSON.parse(link.getAttribute("data-params")!)).toEqual({
         authority: "substrate.reamde.dev",
-        pkg: "core",
-        name: "llmprovider",
+        pkg: "llm",
+        name: "provider",
         id: "openai",
       })
+    })
+  })
+  // THE ONE ACTION THAT LANDS A LINK A FIRST IMPORT DROPPED (decision record
+  // 0049), moved here off the registry table: a sample ships one mapping per
+  // provider it knows, the door admits only the ones that resolve at the
+  // time, and a reader who installs the provider afterwards would otherwise
+  // have nothing to press. It replaces the package rather than merging into
+  // it, so it asks first.
+  describe("a held sample with a link waiting", () => {
+    const ready: CatalogItem = {
+      ...PEOPLE,
+      suggestedMappings: [
+        {
+          id: "samples.substrate.reamde.dev/people/fromgoogle",
+          from: "providers.substrate.reamde.dev/google/contact",
+          to: "samples.substrate.reamde.dev/people/person",
+          package: "providers.substrate.reamde.dev/google",
+          state: "ready",
+        },
+      ],
+    }
+
+    /** The bodies the import door received, decoded. */
+    function importBodies(): { confirm?: unknown }[] {
+      return fetchMock.mock.calls
+        .filter(
+          ([url, init]) =>
+            String(url).endsWith("/import") &&
+            (init as RequestInit | undefined)?.method === "POST"
+        )
+        .map(([, init]) => {
+          const raw = (init as RequestInit | undefined)?.body
+          return raw ? (JSON.parse(String(raw)) as { confirm?: unknown }) : {}
+        })
+    }
+
+    function importCalls(): string[] {
+      return fetchMock.mock.calls
+        .filter(
+          ([url, init]) =>
+            String(url).endsWith("/import") &&
+            (init as RequestInit | undefined)?.method === "POST"
+        )
+        .map(([url]) => String(url))
+    }
+
+    it("offers Import again, says what it costs, and asks before it runs", async () => {
+      serve(status({}), { catalog: [ready, GOOGLE] })
+      renderPage(<BundleDetailPage />)
+      await screen.findByText("Links waiting")
+      expect(
+        screen.getByText(/Import again to land 1 link, now that google is/)
+      ).toBeTruthy()
+      fireEvent.click(screen.getByRole("button", { name: "Import again" }))
+      const dialog = await screen.findByRole("dialog")
+      expect(within(dialog).getByText(/Import people again\?/)).toBeTruthy()
+      expect(importCalls()).toEqual([])
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Import again" })
+      )
+      await waitFor(() =>
+        expect(importCalls()).toEqual([
+          `${CATALOG_PATH}/samples.substrate.reamde.dev%2Fpeople/import`,
+        ])
+      )
+    })
+
+    // The server keeps a preview on an EDITED copy even when nothing shipped
+    // moved (decision record 0070), because the re-import needs the
+    // confirmation it hands out: the click sends it, never a bare POST.
+    it("over an edited copy, confirms the previewed plan", async () => {
+      serve(status({ modified: true }), {
+        catalog: [
+          {
+            ...ready,
+            upgrade: {
+              available: false,
+              work: 0,
+              lossy: false,
+              discardsEdits: true,
+              planHash: "d15c",
+              changelogSeq: 9,
+            },
+          },
+          GOOGLE,
+        ],
+      })
+      renderPage(<BundleDetailPage />)
+      await screen.findByText("Links waiting")
+      fireEvent.click(screen.getByRole("button", { name: "Import again" }))
+      const dialog = await screen.findByRole("dialog")
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Import again" })
+      )
+      await waitFor(() => expect(importBodies()).toHaveLength(1))
+      expect(importBodies()[0].confirm).toEqual({
+        planHash: "d15c",
+        changelogSeq: 9,
+      })
+    })
+
+    it("says nothing at all when no link is waiting", async () => {
+      renderPage(<BundleDetailPage />)
+      await screen.findByText("people")
+      expect(screen.queryByText("Links waiting")).toBeNull()
+      expect(screen.queryByRole("button", { name: "Import again" })).toBeNull()
     })
   })
 })

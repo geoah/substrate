@@ -36,11 +36,21 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const corePackage = "substrate.reamde.dev/core"
+const (
+	corePackage = "substrate.reamde.dev/core"
+	llmPackage  = "substrate.reamde.dev/llm"
+)
 
 // coreKind is one shipped core declaration inside a copied tree.
 func coreKind(tree, file string) string {
 	return filepath.Join(tree, corePackage, file)
+}
+
+// llmKind is one shipped llm declaration inside a copied tree: the agent
+// loop's data is the second seeded package (record 0077), so the guards that
+// drive a narrowing through `provider` patch a file under it.
+func llmKind(tree, file string) string {
+	return filepath.Join(tree, llmPackage, file)
 }
 
 func patchShipped(t *testing.T, path string, replace func(string) string) {
@@ -55,7 +65,7 @@ func patchShipped(t *testing.T, path string, replace func(string) string) {
 }
 
 // pinVersion rewrites a declaration's own `version:`, whatever it stands at.
-// A kind that pins one of its own (llmprovider, recordpatchpolicy) needs the
+// A kind that pins one of its own (llm/provider, recordpatchpolicy) needs the
 // line REPLACED by a test that wants an older pin, not a second key the parser
 // would refuse.
 func pinVersion(t *testing.T, doc, version string) string {
@@ -71,19 +81,19 @@ func pinVersion(t *testing.T, doc, version string) string {
 // property named `version` (the kind declares one) is never the match.
 var reDeclaredVersion = regexp.MustCompile(`\n  version: \S+\n`)
 
-// narrowLabel turns llmprovider's `label` from a string into an int — the same
+// narrowLabel turns llm/provider's `label` from a string into an int — the same
 // datatype change `/vocabulary/apply` refuses while a live row holds a string.
 func narrowLabel(t *testing.T, doc string) string {
 	t.Helper()
 	const from = "    label:\n      type: string\n"
 	if !strings.Contains(doc, from) {
-		t.Fatal("llmprovider no longer declares `label` as a plain string")
+		t.Fatal("llm/provider no longer declares `label` as a plain string")
 	}
 	return strings.Replace(doc, from, "    label:\n      type: int\n", 1)
 }
 
 // seededRepository creates a repository under the REAL tree and leaves ONE
-// live llmprovider row in it — the row every narrowing below would strand.
+// live llm/provider row in it — the row every narrowing below would strand.
 // Written here rather than seeded: a repository holds no provider until its
 // owner writes one.
 func seededRepository(t *testing.T) (dsn string) {
@@ -98,7 +108,7 @@ func seededRepository(t *testing.T) (dsn string) {
 		t.Fatalf("open dataset: %v", err)
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "substrate.reamde.dev/core/llmprovider", ID: "guarded",
+		Kind: "substrate.reamde.dev/llm/provider", ID: "guarded",
 		Properties: map[string]any{"label": "a label", "wire": "openai"},
 	}); err != nil {
 		t.Fatalf("put the live provider row: %v", err)
@@ -124,10 +134,10 @@ func TestBootUpgradeRefusesANarrowingWithLiveRows(t *testing.T) {
 	t.Parallel()
 	dsn := seededRepository(t)
 	tree := shippedTree(t)
-	// llmprovider pins a version of its own, so the authority bump alone would
+	// llm/provider pins a version of its own, so the authority bump alone would
 	// keep the stored declaration and never classify the retype: the pin moves
 	// too, and the guard is the only thing that keeps the narrowing out.
-	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+	patchShipped(t, llmKind(tree, "provider.yaml"), func(doc string) string {
 		return pinVersion(t, narrowLabel(t, doc), "99")
 	})
 
@@ -159,7 +169,7 @@ func stillSpeaksTheOldShape(t *testing.T, dsn string) {
 		t.Fatalf("dataset: %v", err)
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "substrate.reamde.dev/core/llmprovider", ID: "another",
+		Kind: "substrate.reamde.dev/llm/provider", ID: "another",
 		Properties: map[string]any{"label": "still a string", "wire": "openai"},
 	}); err != nil {
 		t.Fatalf("the old shape must still be writable — the narrowing landed anyway: %v", err)
@@ -172,7 +182,7 @@ func TestBootUpgradeAdmitsAnAdditiveChange(t *testing.T) {
 	tree := shippedTree(t)
 	// The version moves and the declaration only GAINS a property. The guard
 	// exists to stop a narrowing, never an ordinary upgrade.
-	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+	patchShipped(t, llmKind(tree, "provider.yaml"), func(doc string) string {
 		return strings.Replace(doc, "  properties:\n",
 			"  properties:\n    region:\n      type: string\n      description: an added, optional property\n", 1)
 	})
@@ -185,13 +195,13 @@ func TestBootUpgradeIgnoresAKindItDoesNotRewrite(t *testing.T) {
 	t.Parallel()
 	dsn := seededRepository(t)
 	tree := shippedTree(t)
-	// llmprovider narrows AND pins its own version, which the authority bump
+	// llm/provider narrows AND pins its own version, which the authority bump
 	// below cannot lift — so the upgrade holds the stored declaration exactly
 	// as it stands and never rewrites this kind, while every other core
 	// declaration moves around it. A guard that classified every kind in a
 	// touched authority, rather than the ones actually being rewritten, would
 	// refuse this boot over a change nobody is making.
-	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+	patchShipped(t, llmKind(tree, "provider.yaml"), func(doc string) string {
 		return pinVersion(t, narrowLabel(t, doc), "1")
 	})
 	if err := openMoved(t, dsn, tree); err != nil {
@@ -207,8 +217,8 @@ func TestBootUpgradeRefusesAnUnstorableDefault(t *testing.T) {
 	t.Parallel()
 	dsn := seededRepository(t)
 	tree := shippedTree(t)
-	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
-		// llmprovider pins a version of its own, so the authority bump alone
+	patchShipped(t, llmKind(tree, "provider.yaml"), func(doc string) string {
+		// llm/provider pins a version of its own, so the authority bump alone
 		// would leave this declaration exactly where it stands and re-project
 		// nothing, and the upgrade under test would never run.
 		doc = pinVersion(t, doc, "99")
@@ -232,20 +242,20 @@ func TestBootUpgradeRefusesAnUnstorableDefault(t *testing.T) {
 		t.Fatalf("dataset: %v", err)
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "substrate.reamde.dev/core/llmprovider", ID: "after",
+		Kind: "substrate.reamde.dev/llm/provider", ID: "after",
 		Properties: map[string]any{"label": "still writable", "wire": "openai", "region": "eu-west"},
 	}); err == nil {
 		t.Fatal("the declaration carrying the unstorable default must not have landed")
 	}
 	// …and the repository still works under the declaration it stored.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "substrate.reamde.dev/core/llmprovider", ID: "after",
+		Kind: "substrate.reamde.dev/llm/provider", ID: "after",
 		Properties: map[string]any{"label": "still writable", "wire": "openai"},
 	})
 }
 
 // providerWrite opens the database under the real tree and writes one
-// llmprovider row, answering what the write said.
+// llm/provider row, answering what the write said.
 func providerWrite(t *testing.T, dsn, id string, props map[string]any) error {
 	t.Helper()
 	ctx := context.Background()
@@ -259,7 +269,7 @@ func providerWrite(t *testing.T, dsn, id string, props map[string]any) error {
 		t.Fatalf("dataset: %v", err)
 	}
 	_, err = ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "substrate.reamde.dev/core/llmprovider", ID: id, Properties: props,
+		Kind: "substrate.reamde.dev/llm/provider", ID: id, Properties: props,
 	})
 	return err
 }
@@ -317,10 +327,10 @@ func TestBootUpgradeRefusesATightenedPatternWithLiveRows(t *testing.T) {
 	t.Parallel()
 	dsn := seededRepository(t)
 	tree := shippedTree(t)
-	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+	patchShipped(t, llmKind(tree, "provider.yaml"), func(doc string) string {
 		const from = "    label:\n      type: string\n"
 		if !strings.Contains(doc, from) {
-			t.Fatal("llmprovider no longer declares `label` as a plain string")
+			t.Fatal("llm/provider no longer declares `label` as a plain string")
 		}
 		return pinVersion(t, strings.Replace(doc, from, from+"      pattern: \"^[a-z]+$\"\n", 1), "99")
 	})
@@ -339,10 +349,10 @@ func TestBootUpgradeRefusesALoweredMaxWithLiveRows(t *testing.T) {
 		t.Fatalf("put the numbered row: %v", err)
 	}
 	tree := shippedTree(t)
-	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+	patchShipped(t, llmKind(tree, "provider.yaml"), func(doc string) string {
 		const from = "          max: 2\n"
 		if strings.Count(doc, from) != 1 {
-			t.Fatal("llmprovider no longer bounds `defaults.temperature` at 2, once")
+			t.Fatal("llm/provider no longer bounds `defaults.temperature` at 2, once")
 		}
 		return pinVersion(t, strings.Replace(doc, from, "          max: 1\n", 1), "99")
 	})
@@ -366,10 +376,10 @@ func TestBootUpgradeRefusesARaisedDecimalMinWithLiveRows(t *testing.T) {
 		t.Fatalf("put the numbered row: %v", err)
 	}
 	tree := shippedTree(t)
-	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+	patchShipped(t, llmKind(tree, "provider.yaml"), func(doc string) string {
 		const from = "        inputPer1M:\n          type: decimal\n          min: 0\n"
 		if !strings.Contains(doc, from) {
-			t.Fatal("llmprovider no longer declares `pricing.inputPer1M` as a decimal bounded at 0")
+			t.Fatal("llm/provider no longer declares `pricing.inputPer1M` as a decimal bounded at 0")
 		}
 		return pinVersion(t, strings.Replace(doc, from, "        inputPer1M:\n          type: decimal\n          min: 1\n", 1), "99")
 	})
@@ -593,7 +603,7 @@ func TestBootUpgradeConvertsAShippedRename(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
-	got := mustGet(t, ds, "substrate.reamde.dev/core/llmprovider", "guarded")
+	got := mustGet(t, ds, "substrate.reamde.dev/llm/provider", "guarded")
 	if got.Properties["displayLabel"] != "a label" || got.Properties["label"] != nil {
 		t.Fatalf("the boot did not move the value: %v", got.Properties)
 	}
@@ -611,31 +621,31 @@ func TestBootUpgradeConvertsAShippedRename(t *testing.T) {
 		t.Fatalf("the title did not render under the renamed template: %q", got.Title)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "substrate.reamde.dev/core/llmprovider", ID: "renamed",
+		Kind: "substrate.reamde.dev/llm/provider", ID: "renamed",
 		Properties: map[string]any{"displayLabel": "written under the new name", "wire": "openai"},
 	})
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "substrate.reamde.dev/core/llmprovider", ID: "stale",
+		Kind: "substrate.reamde.dev/llm/provider", ID: "stale",
 		Properties: map[string]any{"label": "the old name", "wire": "openai"},
 	}); err == nil {
 		t.Fatal("the old name must be undeclared once the rename landed")
 	}
 }
 
-// renameShippedLabel is the shipped rename the boot tests drive: llmprovider's
+// renameShippedLabel is the shipped rename the boot tests drive: llm/provider's
 // `label` becomes `displayLabel`, the kind's own template follows, and the
 // declaration pins version 99 so the authority bump re-projects it.
 func renameShippedLabel(t *testing.T, tree string) {
 	t.Helper()
-	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+	patchShipped(t, llmKind(tree, "provider.yaml"), func(doc string) string {
 		const from = "    label:\n      type: string\n"
 		if !strings.Contains(doc, from) {
-			t.Fatal("llmprovider no longer declares `label` as a plain string")
+			t.Fatal("llm/provider no longer declares `label` as a plain string")
 		}
 		doc = strings.Replace(doc, from, "    displayLabel:\n      type: string\n      renamedFrom: label\n", 1)
 		const tmpl = `displayTemplate: "{label|localName} ({wire})"`
 		if !strings.Contains(doc, tmpl) {
-			t.Fatal("llmprovider no longer titles itself from `label`")
+			t.Fatal("llm/provider no longer titles itself from `label`")
 		}
 		doc = strings.Replace(doc, tmpl, `displayTemplate: "{displayLabel|localName} ({wire})"`, 1)
 		return pinVersion(t, doc, "99")
@@ -770,8 +780,8 @@ func TestBootUpgradeRefusesARenameAStoredMappingReads(t *testing.T) {
 }
 
 // addShippedGadget adds a core `gadget` kind pinned at its own version, whose
-// displayTemplate reads an llmprovider property through a reference pinned at
-// llmprovider: the shape whose stored and embedded declarations can disagree.
+// displayTemplate reads an llm/provider property through a reference pinned at
+// llm/provider: the shape whose stored and embedded declarations can disagree.
 func addShippedGadget(t *testing.T, tree, version, tmpl string) {
 	t.Helper()
 	doc := "kind: substrate.reamde.dev/core/kind\nmetadata:\n  id: " + corePackage + "/gadget\ndata:\n" +
@@ -779,7 +789,7 @@ func addShippedGadget(t *testing.T, tree, version, tmpl string) {
 		"  names:\n    singular: gadget\n" +
 		"  displayTemplate: \"" + tmpl + "\"\n" +
 		"  properties:\n    note:\n      type: string\n" +
-		"    provider:\n      type: reference\n      kind: substrate.reamde.dev/core/llmprovider\n"
+		"    provider:\n      type: reference\n      kind: substrate.reamde.dev/llm/provider\n"
 	if err := os.WriteFile(filepath.Join(tree, corePackage, "gadget.yaml"), []byte(doc), 0o600); err != nil {
 		t.Fatalf("add the shipped gadget kind: %v", err)
 	}
@@ -803,7 +813,7 @@ func TestBootUpgradeCompilesTheKeptStoredDeclaration(t *testing.T) {
 		t.Fatalf("shipping the gadget kind must land: %v", err)
 	}
 
-	// Binary N+2 renames llmprovider's label and embeds gadget at 150 on the
+	// Binary N+2 renames llm/provider's label and embeds gadget at 150 on the
 	// OLD name: gadget is kept at its stored 200, and the rename must land.
 	renaming := shippedTree(t)
 	renameShippedLabel(t, renaming)
@@ -817,7 +827,7 @@ func TestBootUpgradeCompilesTheKeptStoredDeclaration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
-	if got := mustGet(t, ds, "substrate.reamde.dev/core/llmprovider", "guarded"); got.Properties["displayLabel"] != "a label" {
+	if got := mustGet(t, ds, "substrate.reamde.dev/llm/provider", "guarded"); got.Properties["displayLabel"] != "a label" {
 		t.Fatalf("the rename did not land: %v", got.Properties)
 	}
 	gadget := mustGet(t, ds, "substrate.reamde.dev/core/kind", corePackage+"/gadget")
@@ -829,7 +839,7 @@ func TestBootUpgradeCompilesTheKeptStoredDeclaration(t *testing.T) {
 	}
 	card := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: corePackage + "/gadget", ID: "g1",
-		Properties: map[string]any{"provider": "substrate.reamde.dev/core/llmprovider/guarded"},
+		Properties: map[string]any{"provider": "substrate.reamde.dev/llm/provider/guarded"},
 	})
 	if card.Title != "a label" {
 		t.Fatalf("the kept template does not render the renamed property: %q", card.Title)
@@ -855,7 +865,7 @@ func TestBootUpgradeRefusesARenameAStoredTemplateReads(t *testing.T) {
 				map[string]any{
 					"displayTemplate": tmpl,
 					"properties": map[string]any{
-						"provider": map[string]any{"type": "reference", "kind": "substrate.reamde.dev/core/llmprovider"},
+						"provider": map[string]any{"type": "reference", "kind": "substrate.reamde.dev/llm/provider"},
 					},
 				}),
 		}
@@ -878,7 +888,7 @@ func TestBootUpgradeRefusesARenameAStoredTemplateReads(t *testing.T) {
 	renameShippedLabel(t, tree)
 	refused := openMovedRefused(t, dsn, tree)
 	wantRefusedUpgrade(t, refused,
-		`kind `+viewerPackage+`/providercard: displayTemplate {provider.label} reads property "label" of substrate.reamde.dev/core/llmprovider, which this apply renames to "displayLabel"; rewrite the template first`)
+		`kind `+viewerPackage+`/providercard: displayTemplate {provider.label} reads property "label" of substrate.reamde.dev/llm/provider, which this apply renames to "displayLabel"; rewrite the template first`)
 	stillSpeaksTheOldShape(t, dsn)
 
 	// The owner moves the template; the next open lands the rename.
@@ -889,13 +899,13 @@ func TestBootUpgradeRefusesARenameAStoredTemplateReads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
-	got := mustGet(t, ds, "substrate.reamde.dev/core/llmprovider", "guarded")
+	got := mustGet(t, ds, "substrate.reamde.dev/llm/provider", "guarded")
 	if got.Properties["displayLabel"] != "a label" || got.Properties["label"] != nil {
 		t.Fatalf("the rename did not land once the template moved: %v", got.Properties)
 	}
 	card := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       viewerPackage + "/providercard",
-		Properties: map[string]any{"provider": "substrate.reamde.dev/core/llmprovider/guarded"},
+		Properties: map[string]any{"provider": "substrate.reamde.dev/llm/provider/guarded"},
 	})
 	if card.Title != "a label" {
 		t.Fatalf("the stored template does not read the renamed property: %q", card.Title)
@@ -903,20 +913,20 @@ func TestBootUpgradeRefusesARenameAStoredTemplateReads(t *testing.T) {
 }
 
 // convertShippedProvider is the shipped backfill and remap the boot tests
-// drive: llmprovider's optional `label` becomes required with a default, and
+// drive: llm/provider's optional `label` becomes required with a default, and
 // the `azure` wire is respelled `azureopenai`. The declaration pins version 99
 // so the authority bump re-projects it.
 func convertShippedProvider(t *testing.T, tree string) {
 	t.Helper()
-	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+	patchShipped(t, llmKind(tree, "provider.yaml"), func(doc string) string {
 		const label = "    label:\n      type: string\n"
 		if !strings.Contains(doc, label) {
-			t.Fatal("llmprovider no longer declares `label` as a plain string")
+			t.Fatal("llm/provider no longer declares `label` as a plain string")
 		}
 		doc = strings.Replace(doc, label, "    label:\n      type: string\n      required: true\n      default: unnamed\n", 1)
 		const azure = "        - value: azure\n          label: Azure OpenAI\n"
 		if !strings.Contains(doc, azure) {
-			t.Fatal("llmprovider no longer declares the `azure` wire")
+			t.Fatal("llm/provider no longer declares the `azure` wire")
 		}
 		doc = strings.Replace(doc, azure, "        - value: azureopenai\n          label: Azure OpenAI\n          renamedFrom: azure\n", 1)
 		return pinVersion(t, doc, "99")
@@ -931,7 +941,7 @@ func TestBootUpgradeConvertsAShippedBackfillAndRemap(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dsn := seededRepository(t)
-	const provider = "substrate.reamde.dev/core/llmprovider"
+	const provider = "substrate.reamde.dev/llm/provider"
 	// Beside the seeded row (a label, the openai wire): one without a label
 	// on the wire the tree respells.
 	{
@@ -1005,19 +1015,19 @@ func TestBootUpgradeRefusesAShippedLossyRemap(t *testing.T) {
 			t.Fatalf("dataset: %v", err)
 		}
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: "substrate.reamde.dev/core/llmprovider", ID: "bare", Properties: map[string]any{"wire": "azure"},
+			Kind: "substrate.reamde.dev/llm/provider", ID: "bare", Properties: map[string]any{"wire": "azure"},
 		})
 		_ = svc.Close()
 	}
 	tree := shippedTree(t)
-	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+	patchShipped(t, llmKind(tree, "provider.yaml"), func(doc string) string {
 		const azure = "        - value: azure\n          label: Azure OpenAI\n"
 		if !strings.Contains(doc, azure) {
-			t.Fatal("llmprovider no longer declares the `azure` wire")
+			t.Fatal("llm/provider no longer declares the `azure` wire")
 		}
 		const openai = "        - value: openai\n          label: OpenAI\n"
 		if !strings.Contains(doc, openai) {
-			t.Fatal("llmprovider no longer declares the `openai` wire")
+			t.Fatal("llm/provider no longer declares the `openai` wire")
 		}
 		doc = strings.Replace(doc, azure, "", 1)
 		doc = strings.Replace(doc, openai, "        - value: openai\n          label: OpenAI\n          renamedFrom: azure\n", 1)
@@ -1047,8 +1057,14 @@ func TestBootUpgradeRefusesAShippedLossyRemap(t *testing.T) {
 		for _, s := range p.Upgrade.Steps {
 			planned = planned || (s.Step == substrate.StepRemap && s.From == "azure" && s.To == "openai" && s.Records == 1 && s.Lossy)
 		}
-		if p.Upgrade.Available && (!p.Upgrade.Lossy || p.Upgrade.PlanHash == "" || p.Upgrade.ChangelogSeq == 0) {
-			t.Fatalf("the preview carries no plan for the refused upgrade: %+v", p.Upgrade)
+		// The entry that HAS steps carries the whole plan. The blockers are
+		// registry-wide, so core's own entry names a refusal belonging to
+		// llm/provider's kind (record 0077) while the steps sit on llm's
+		// entry; asking core for a plan it never had would fail on the
+		// package split rather than on the plan.
+		if p.Upgrade.Available && len(p.Upgrade.Steps) > 0 &&
+			(!p.Upgrade.Lossy || p.Upgrade.PlanHash == "" || p.Upgrade.ChangelogSeq == 0) {
+			t.Fatalf("the preview carries no plan for the refused upgrade of %s: %+v", p.Package, p.Upgrade)
 		}
 	}
 	if !named || !planned {
@@ -1064,7 +1080,7 @@ func TestBootUpgradeConvertsARemapOntoARetainedValueNobodyHolds(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dsn := seededRepository(t)
-	const provider = "substrate.reamde.dev/core/llmprovider"
+	const provider = "substrate.reamde.dev/llm/provider"
 	// The one live row moves onto the wire the tree renames, so nothing holds
 	// `openai` when the remap lands on it.
 	{
@@ -1079,11 +1095,11 @@ func TestBootUpgradeConvertsARemapOntoARetainedValueNobodyHolds(t *testing.T) {
 		_ = svc.Close()
 	}
 	tree := shippedTree(t)
-	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+	patchShipped(t, llmKind(tree, "provider.yaml"), func(doc string) string {
 		const azure = "        - value: azure\n          label: Azure OpenAI\n"
 		const openai = "        - value: openai\n          label: OpenAI\n"
 		if !strings.Contains(doc, azure) || !strings.Contains(doc, openai) {
-			t.Fatal("llmprovider no longer declares the `azure` and `openai` wires")
+			t.Fatal("llm/provider no longer declares the `azure` and `openai` wires")
 		}
 		doc = strings.Replace(doc, azure, "", 1)
 		doc = strings.Replace(doc, openai, "        - value: openai\n          label: OpenAI\n          renamedFrom: azure\n", 1)

@@ -69,6 +69,38 @@ export function landedId(
   return `${home}/${item.package}`
 }
 
+/** What can continue a DNS-style name: the boundary the server's rehoming
+ * walk uses (vocabulary.RehomeAuthority), so the two agree on what counts as a
+ * mention. */
+const NAME_CHARACTER = /[A-Za-z0-9._-]/
+
+/** Every whole-name mention of `from` in one string, rewritten to `to`. NOT a
+ * prefix rewrite: a trigger's callable is a core kind reference with the
+ * sample's own identity INSIDE it
+ * (`substrate.reamde.dev/core/function/<sample authority>/pebble/ingest`), and
+ * a preview that left the shipped authority in there would name a record this
+ * repository will not have. A mention inside a longer name
+ * (`notsamples.example.com`) is left alone, which is the server's rule too. */
+export function rehomeAuthority(s: string, from: string, to: string): string {
+  if (!from || !to || !s.includes(from)) return s
+  let out = ""
+  let i = 0
+  for (;;) {
+    const at = s.indexOf(from, i)
+    if (at < 0) {
+      out += s.slice(i)
+      return out
+    }
+    const end = at + from.length
+    const before = at > 0 ? s[at - 1] : ""
+    const after = end < s.length ? s[end] : ""
+    const whole =
+      !NAME_CHARACTER.test(before || " ") && !NAME_CHARACTER.test(after || " ")
+    out += s.slice(i, at) + (whole ? to : from)
+    i = end
+  }
+}
+
 /** One catalog entry as it lands HERE: a sample's authority, closure
  * identities, declared input kinds and `requires:` all carry this repository's
  * authority, because that is what the import writes and what the registry will
@@ -77,9 +109,7 @@ export function landedId(
  * shipped closure, which is what the import door is called with. */
 export function landedCatalog(item: CatalogItem, home: string): CatalogItem {
   if (item.tier !== "sample" || !home) return item
-  const from = `${item.authority}/`
-  const rehome = (s: string) =>
-    s.startsWith(from) ? `${home}/${s.slice(from.length)}` : s
+  const rehome = (s: string) => rehomeAuthority(s, item.authority, home)
   const closure = item.closure
   return {
     ...item,
@@ -112,21 +142,37 @@ export function landedCatalog(item: CatalogItem, home: string): CatalogItem {
     closure: {
       ...closure,
       kinds: closure.kinds?.map(rehome) ?? null,
+      traits: closure.traits?.map(rehome) ?? null,
       functions: closure.functions?.map(rehome) ?? null,
       agents: closure.agents?.map(rehome) ?? null,
       mappings: closure.mappings?.map(rehome) ?? null,
-      kindDescriptions: closure.kindDescriptions
-        ? Object.fromEntries(
-            Object.entries(closure.kindDescriptions).map(([k, v]) => [
-              rehome(k),
-              v,
-            ])
-          )
-        : undefined,
+      // A trigger's id is a plain record id, so only the callable it names
+      // carries the authority that moves.
+      triggers: closure.triggers ?? null,
+      triggerCallables: rekey(closure.triggerCallables, (k) => k, rehome),
+      kindDescriptions: rekey(closure.kindDescriptions, rehome),
+      traitDescriptions: rekey(closure.traitDescriptions, rehome),
+      functionDescriptions: rekey(closure.functionDescriptions, rehome),
+      agentDescriptions: rekey(closure.agentDescriptions, rehome),
       records:
         closure.records?.map((r) => ({ ...r, kind: rehome(r.kind) })) ?? null,
     },
   }
+}
+
+/** One of the closure's keyed maps, rehomed: the keys are identities the
+ * import rewrites, and a value is prose unless it is an identity too. Absent
+ * stays absent, so an older server's omission is not turned into an empty
+ * map. */
+function rekey(
+  map: Record<string, string> | undefined,
+  key: (s: string) => string,
+  value: (s: string) => string = (s) => s
+): Record<string, string> | undefined {
+  if (!map) return undefined
+  return Object.fromEntries(
+    Object.entries(map).map(([k, v]) => [key(k), value(v)])
+  )
 }
 
 /** One catalog entry by the id it has HERE, sharing the list's cache (the same
@@ -144,6 +190,16 @@ export function catalogItemQueryOptions(id: string, home = "") {
       return found && landedCatalog(found, home)
     },
   })
+}
+
+/** ONE catalog entry, read fresh from the server rather than from the list's
+ * cache. A confirmation names one plan at one changelog head, so a chain
+ * import re-reads the preview of each bundle right before it takes it: the
+ * step before it moved the head, and the token the list was read with is
+ * refused (engine convert.go). The id is a package reference, so its slash is
+ * one encoded path segment. */
+export function fetchCatalogItem(id: string): Promise<CatalogItem> {
+  return request<CatalogItem>("GET", `${CATALOG}/${seg(id)}`)
 }
 
 /** Install a PROVIDER's closure into this repository, under the authority that

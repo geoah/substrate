@@ -38,7 +38,7 @@ boot.
 | `PORT`                         | `8080`                                 | The port served.                                                                                          |
 | `LOG_LEVEL`                    | `info`                                 | `debug`, `info`, `warn`, `error`.                                                                         |
 | `WEB_DIR`                      | —                                      | The built console, served at `/`. Empty disables static serving.                                          |
-| `SUBSTRATE_INVITE_CODE`        | — (unset: registration is off)         | The one way in. See below.                                                                                  |
+| `SUBSTRATE_INVITE_CODE`        | — (unset: the door reads no code)      | Gates registration. **Set it before anyone else can reach the port.** See below.                            |
 | `SUBSTRATE_DATA_ROOT`          | required                               | The directory every repository's files live under: `repositories/<authority>/` with the manifest, the changelog segments, the sealed store's files and (on the `fs` blob store) the blob bytes. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
 | `SUBSTRATE_CHANGELOG_SEGMENT_BYTES` | `268435456`                       | The size past which the active changelog segment rotates: the writer fsyncs, writes the finished file's `.sha256` sidecar and opens the next segment. At least 1 MiB. |
 | `SUBSTRATE_CONVERSION_CEILING` | `10000`                                | The most live records one declaration change (a vocabulary apply, a provider upgrade, the boot upgrade) may rewrite in its transaction ([vocabulary evolution](vocabulary.md#backfilling-and-remapping)). A plan above it is refused and the previews list the refusal; `0` removes the ceiling. |
@@ -49,7 +49,7 @@ boot.
 | `SUBSTRATE_CONSOLE_URL`        | —                                      | The console origin the OAuth return-page posts to and falls back to redirecting into. Empty is local dev. |
 | `SUBSTRATE_SANDBOX`            | `best-effort`                          | How hard to confine function bodies: `off`, `best-effort`, or `enforce` (refuse to run a body unconfined). |
 | `SUBSTRATE_SANDBOX_EGRESS_ALLOW` | —                                   | A comma-separated list of CIDRs (or bare addresses) a network body may reach despite the private-range block. A body that declares `permissions.network` reaches the public internet but not the deployment's own loopback, link-local or RFC1918 ranges, so a local provider (a loopback Ollama) needs its address listed here. Empty blocks every private range. |
-| `SUBSTRATE_EGRESS_ALLOW`       | —                                      | A comma-separated list of CIDRs (or bare addresses) the SERVER may dial for a repository-chosen URL despite the private-range block. An `llmprovider` row's `baseURL` is written by the repository owner, so the engine confines its completion and embedding dials to public destinations, refusing the deployment's own loopback, link-local, RFC1918 and CGNAT ranges at connect time (issue #241). A local provider (a loopback Ollama) needs its address listed here. Empty blocks every private range. This is the server's own dials; `SUBSTRATE_SANDBOX_EGRESS_ALLOW` is the separate escape for a function body's dials. |
+| `SUBSTRATE_EGRESS_ALLOW`       | —                                      | A comma-separated list of CIDRs (or bare addresses) the SERVER may dial for a repository-chosen URL despite the private-range block. An `llm/provider` row's `baseURL` is written by the repository owner, so the engine confines its completion and embedding dials to public destinations, refusing the deployment's own loopback, link-local, RFC1918 and CGNAT ranges at connect time (issue #241). A local provider (a loopback Ollama) needs its address listed here. Empty blocks every private range. This is the server's own dials; `SUBSTRATE_SANDBOX_EGRESS_ALLOW` is the separate escape for a function body's dials. |
 
 `SUBSTRATE_CREDENTIAL_KEY` is the one that must be backed up apart from the
 data root: without it, sealed material is unreadable
@@ -134,7 +134,7 @@ rest; the substrate does not.
 
 The server takes no LLM endpoint, no key and no embedding model. Completions
 and embeddings alike are bought through a repository's own
-[`llmprovider`](agents.md#providers) records, which carry the wire, the
+[`llm/provider`](agents.md#providers) records, which carry the wire, the
 endpoint, the key and (for embeddings) the model. The process holds no bearer,
 so no host-wide key can reach a repository-chosen endpoint.
 
@@ -208,7 +208,7 @@ not the store.
 
 Function bodies are third-party code, and the substrate confines them with
 Landlock, seccomp and rlimits: see [the sandbox](functions.md#the-sandbox) for
-what each layer closes. Two things an operator needs to know:
+what each layer closes. Three things an operator needs to know:
 
 **Check the boot log.** The substrate reports the sandbox once at startup,
 naming the kernel's actual Landlock ABI. If a layer is missing the line is an
@@ -216,9 +216,35 @@ ERROR, not a warning, because a confinement that silently does less than it
 claims is worse than none. A real deployment should run `SUBSTRATE_SANDBOX=enforce`,
 which turns that into a refusal to run bodies at all.
 
-**Both layers work in a stock container**: Docker's and containerd's default
-seccomp profiles permit the `landlock_*` and `seccomp` syscalls, and neither
-needs a capability. What does **not** work in a stock container is anything built
+**Landlock and seccomp work in a stock container**: Docker's and containerd's
+default seccomp profiles permit the `landlock_*` and `seccomp` syscalls, and
+neither needs a capability.
+
+**The connect gate needs `CAP_SYS_PTRACE`.** It is the third layer, and the only
+one whose work happens in the substrate rather than in the body: the filter
+routes a body's `connect(2)` to a supervisor here, which reads the destination
+with `process_vm_readv(2)` and duplicates the body's socket with
+`pidfd_getfd(2)`. The default seccomp profile permits those two only for a
+container carrying `CAP_SYS_PTRACE` in its bounding set, so without it the gate
+cannot answer a single notification. `compose.yaml` ships
+`cap_add: [SYS_PTRACE]` for exactly this (`securityContext.capabilities.add` is
+the Kubernetes spelling). It is a bounded trade: the capability unblocks the
+profile's ptrace group for the whole container, and what bounds it is that the
+container holds only the substrate and the function children it spawns, all at
+one unprivileged uid and each started under `no_new_privs` inside its own
+Landlock domain.
+
+**Without the capability, network bodies are refused, never unfiltered.**
+Filtering the destination is the contract a network grant is issued under
+([0035](decisions/0035-a-network-body-connect-is-filtered-by-destination.md)),
+so a gate that cannot run refuses every function that declares `network:` in
+`best-effort` as well as in `enforce` — reaching the deployment's own Postgres
+is not a degradation of that contract, it is its opposite. The boot line is an
+ERROR naming the syscall that refused, and the refusal a caller sees names it
+too, so a failing provider install reads as the missing capability instead of
+as uv's "Permission denied". A function that declares no network is unaffected.
+
+What does **not** work in a stock container is anything built
 on user namespaces or cgroup delegation: `CLONE_NEWUSER` is denied by the
 default profile and `/sys/fs/cgroup` is mounted read-only, which is why the
 sandbox has no memory or process-count ceiling. Do not add `--privileged` to
@@ -226,10 +252,13 @@ try to get one.
 
 ## The invite code
 
-`SUBSTRATE_INVITE_CODE` is the only way a user gets created. Set it, register,
-then unset it and restart: with it unset, registration is closed
-(`501 unsupported`). Registration is rate-limited (paced, with no failure
-lockout) whether or not the code is set ([users and tokens](auth.md)).
+`SUBSTRATE_INVITE_CODE` gates the one way a user gets created. Set, the
+register door admits only a request that presents it. Unset, the door reads
+no code and anyone who reaches the port may register — the laptop default,
+which `compose.yaml` ships and the boot log warns about. There is no closed
+state: once the box has its user, keep strangers out with a code nobody is
+given. Registration is rate-limited (paced, with no failure lockout) whether
+or not the code is set ([users and tokens](auth.md)).
 
 There is no admin user and no operator password. Everything privileged happens
 on the box, through the DSN.
@@ -604,7 +633,7 @@ key from before the restore runs its operation again. A consent flow in flight i
 and a PKCE verifier with an expiry, and the callback fails once, so the user
 starts the flow over. A user's tokens are records, so they come back.
 Change cursors that clients saved (the console's tail, `substratectl watch
---from`, an integration's bookmark) are refused once after an import: the row
+--from`, a provider's bookmark) are refused once after an import: the row
 comes back with a new history generation, and a resume under the old one
 answers `410 compacted` naming the head to re-list from ([the
 changelog](changelog.md#frames-and-the-horizon)). A dump keeps the row's
@@ -625,7 +654,7 @@ queued the repository's embeddable properties` with the count). Into an empty
 database that is every property; a newer directory restored over an older
 database dump queues only what changed, so it does not re-buy the repository.
 The drain loop then buys the vectors a batch at a time once the repository's
-`llmprovider` row resolves; with no such row the queue rows wait for one. A
+`llm/provider` row resolves; with no such row the queue rows wait for one. A
 `semantic` search says which of the two it is answering from, refused or
 partial ([search](api.md#search)). The new vectors come from new provider
 calls, so a ranking may differ from before the copy. `reembed` is not part of

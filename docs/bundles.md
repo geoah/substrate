@@ -2,7 +2,7 @@
 
 A **bundle** is the unit of installation: a closure of declarations and
 behavior that teaches the substrate something new, applied as one unit and
-removable as one unit. Installing the URL harvester adds functions and agents;
+removable as one unit. Installing the reading-list sample adds functions and agents;
 installing a provider like Google adds account access and sync; installing a
 vocabulary bundle adds kinds and rules. All three are bundles — there is no
 second word for them, on the wire or anywhere else.
@@ -34,37 +34,35 @@ and every installed kind's GraphQL name carries its full authority
 [traits](data-model.md#traits),
 [property types](data-model.md#property-types),
 [record mappings](projection.md), [functions](functions.md), and
-[agents](agents.md). The harvester's document, its description elided:
+[agents](agents.md). The reading-list bundle's document, its description elided:
 
 ```yaml
 kind: substrate.reamde.dev/core/bundle
 metadata:
-  id: samples.substrate.reamde.dev/web
+  id: samples.substrate.reamde.dev/readinglist
 data:
   authority: samples.substrate.reamde.dev
-  package: web
-  inputs:
-    connector:
-      kind: samples.substrate.reamde.dev/web/config
-      inject: functions
+  package: readinglist
+  requires:
+    - samples.substrate.reamde.dev/messaging
   installs:
-    - samples.substrate.reamde.dev/web/config
-    - samples.substrate.reamde.dev/web/page
-    - samples.substrate.reamde.dev/web/findurls
-    - samples.substrate.reamde.dev/web/fetchpage
-    - samples.substrate.reamde.dev/web/setclass
-    - samples.substrate.reamde.dev/web/stampconfig
-    - samples.substrate.reamde.dev/web/pageclassifier
-    - samples.substrate.reamde.dev/web/readinglistagent
-    - samples.substrate.reamde.dev/web/weeklyrollup
+    - samples.substrate.reamde.dev/readinglist/digest
+    - samples.substrate.reamde.dev/readinglist/page
+    - samples.substrate.reamde.dev/readinglist/findurls
+    - samples.substrate.reamde.dev/readinglist/fetchpage
+    - samples.substrate.reamde.dev/readinglist/setclass
+    - samples.substrate.reamde.dev/readinglist/stampdigest
+    - samples.substrate.reamde.dev/readinglist/pageclassifier
+    - samples.substrate.reamde.dev/readinglist/curator
+    - samples.substrate.reamde.dev/readinglist/weeklyrollup
 ```
 
 The document's own id is the package it owns
-(`samples.substrate.reamde.dev/web`), and every entry in `installs:` is a full
+(`samples.substrate.reamde.dev/readinglist`), and every entry in `installs:` is a full
 kind reference, never a bare name. The bundle document never travels alone: the
 [`package`](vocabulary.md) document that heads the closure, and every member
 `installs:` names, belong to the same apply. A closure applied without that
-header is refused — `package samples.substrate.reamde.dev/web: no package
+header is refused — `package samples.substrate.reamde.dev/readinglist: no package
 manifest declares it` — and `installs:` is held equal to what the package
 actually declares, both ways, so a member left out and a name that is not there
 are each refused by the same rule: the closure is the package.
@@ -150,12 +148,17 @@ existed, and the shipped sample claims no upgrade over it.
 The preview also carries the **conversion plan** the install would run
 ([decision 0067](decisions/0067-a-lossy-conversion-runs-only-with-a-confirmation-bound-to-its-preview.md)):
 `steps`, one per record rewrite the closure declares against the live records
-(`rename`, `backfill`, `remap` and `null`, [vocabulary
+(`move`, `rename`, `backfill`, `remap` and `null`, [vocabulary
 evolution](vocabulary.md#backfilling-and-remapping)), each with the number of
 live records it touches; `work`, the sum of those counts; `lossy`, true when a
 step removes values from the fold (a dropped property nulled, an enum value
 renamed onto a value live records already hold); and `planHash` and
 `changelogSeq`, the plan's identity and the changelog head it was counted at.
+A `move` step is a whole kind's rows travelling to the kind that named it with
+`movedFrom:` ([decision
+0078](decisions/0078-a-kind-move-is-ordinary-record-writes.md)): same id, same
+properties, every reference at the old kind repointed, the old kind left
+declared and empty. It runs first, loses nothing, and is never lossy.
 A lossless plan installs on the bare `POST …/install`. A lossy one runs only
 with a body confirming what was previewed, `{"confirm": {"planHash",
 "changelogSeq"}}`: without it the install is refused with the `lossy` code,
@@ -368,6 +371,50 @@ deleting a connected account revokes best-effort against the declared
 record. A function never sees any of it — its injected config carries a
 resolved `token`, never the client secret or the reference.
 
+## Settings
+
+A bundle that needs one key and one URL for the whole repository does not
+declare a kind for them. It ships two ordinary records instead — a core
+`setting` for a plain value and a core `secret` for credential material — and
+the user fills them in
+([record 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)).
+Nothing new is parsed: a closure already carries data records, so a bundle
+declares a setting by writing an empty one.
+
+**The id is the ownership.** A setting's id is `<bundle id>/<name>`, and the
+bundle id is `<authority>/<package>`, so the Firecrawl sample ships
+`samples.substrate.reamde.dev/firecrawl/apiKey` and an import rehomes it with
+the rest of the closure. Two bundles may each own an `apiKey`, and the prefix
+is the only thing that says whose a record is — a hand-written record under
+another bundle's prefix is that bundle's setting.
+
+```yaml
+kind: substrate.reamde.dev/core/secret
+metadata:
+  id: samples.substrate.reamde.dev/firecrawl/apiKey
+data:
+  properties:
+    displayName: API key
+    required: true
+```
+
+A `setting` carries `value` as a string plus a `type` hint the engine holds it
+to on write — `string`, `url`, `int`, `bool`, or `enum` with a `values` list —
+so a value that does not parse is refused naming the property. An empty value
+is always admitted, because empty is the unfilled state every shipped setting
+starts in. A `secret` has the same fields with `value` typed `secret`: sealed
+at rest and never read back over the API. The type is a hint on a record, not
+a property type in the kind system, so a richer shape (an object, a list) is
+still a kind of the bundle's own.
+
+Every setting and secret under a bundle's prefix reaches its functions as
+`config.settings.<name>`, the secret in plaintext inside the runner boundary
+and held there by the invocation scrubber, exactly as an input's secret is
+([Functions](functions.md#the-sdk)). A `required` one whose value is still
+empty is a setup item on the bundle's status, coded `setting`, so the registry
+badge and the bundle page count it. Purging a bundle removes its settings;
+uninstall leaves them, as it leaves every record.
+
 ## Connections
 
 A **Connection** is one configured provider account: a record of an
@@ -408,7 +455,7 @@ The **catalog** lists everything shipped in the binary, in the two tiers
 [0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
 the six **providers** under `kinds/providers.substrate.reamde.dev`, and the
 ten **samples** under `samples/` (`people`, `tasks`, `messaging`, `calendar`,
-`scheduling`, and the worked examples `llm`, `notes`, `web`, `pebble`,
+`scheduling`, and the worked examples `llm`, `notes`, `readinglist`, `pebble`,
 `firecrawl`) a repository takes because creation seeds
 `substrate.reamde.dev/core` alone.
 

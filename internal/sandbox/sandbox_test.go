@@ -58,12 +58,21 @@ func TestReportNamesAnUnsupportedPlatform(t *testing.T) {
 	if got := darwin.String(); !contains(got, "darwin") || !contains(got, "cannot be confined") {
 		t.Fatalf("unsupported platform reads as %q", got)
 	}
-	linux := Report{OS: "linux", LandlockABI: 4, Seccomp: true}
+	linux := Report{OS: "linux", LandlockABI: 4, Seccomp: true, ConnectGate: true}
 	if !linux.Supported() || !linux.FS() {
 		t.Fatal("a linux report with landlock is supported")
 	}
 	if got := linux.String(); !contains(got, "ABI v4") {
 		t.Fatalf("supported platform reads as %q", got)
+	}
+	// The gate is a third layer with its own failure, so the line an operator
+	// reads carries it beside the other two, and a refusal says which syscall.
+	gone := Report{OS: "linux", LandlockABI: 4, Seccomp: true, ConnectGateErr: "pidfd_getfd: operation not permitted"}
+	if !gone.Degraded(ModeBestEffort) {
+		t.Fatal("a report whose connect gate cannot be serviced is degraded")
+	}
+	if got := gone.String(); !contains(got, "connect gate: unavailable") || !contains(got, "pidfd_getfd") {
+		t.Fatalf("an unserviceable gate reads as %q", got)
 	}
 	// This build's own platform must agree with the constructor.
 	if New(ModeBestEffort).Report().OS != runtime.GOOS {

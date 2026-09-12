@@ -549,7 +549,7 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 	sort.Strings(g.FunctionOrder)
 
 	// Agents (agent.go): tool callables, sub-agents and emit resolve against
-	// the registry in Finalize/Install; the llmprovider data row resolves at dispatch.
+	// the registry in Finalize/Install; the llm/provider data row resolves at dispatch.
 	l.buildPackageAgents(gd, g)
 
 	// The bundle document (bundle.go): its id is the package it is named for,
@@ -752,7 +752,7 @@ var deletedDataKeys = map[string]string{
 	"identifying":        "identity is the id and nothing else",
 	"id":                 "a writer supplies metadata.id; there are no id strategies",
 	"merge":              "merge is manual and owner-driven",
-	"llm":                "provider + model — an llmprovider record id and the model string sent on every completion",
+	"llm":                "provider + model — an llm/provider record id and the model string sent on every completion",
 	"binding":            "a `type: reference` property plus a recordmapping document (record 50)",
 	"projects":           "a `type: reference` property plus a recordmapping document (record 50)",
 	"actor":              "transitions carry no guard — anyone may perform any of them",
@@ -790,6 +790,10 @@ var typeDataKeys = map[string]bool{
 	// (decision 0055): parsed by parseKindRetirement, refused on every
 	// admission door if declared again.
 	"retired": true,
+	// `movedFrom` is the reference this kind used to be spelled as (decision
+	// 0078): admitting it moves the old kind's live rows and repoints every
+	// live reference at them.
+	"movedFrom": true,
 }
 
 // namesKeys is the `names` block's key set: the kind's own name and nothing
@@ -900,6 +904,7 @@ func (l *loader) parseType(doc Document) *Kind {
 		t.PropOrder = append(t.PropOrder, n)
 	}
 	sort.Strings(t.PropOrder)
+	l.parseMovedFrom(where, d, t)
 	// After the properties: a retired name that is also declared is refused.
 	l.parseKindRetirement(where, d, t)
 
@@ -1260,7 +1265,7 @@ const maxCallableDescription = 1000
 
 // maxKindDescription bounds a KIND's description. A kind's is not a tooltip:
 // the console heads the kind's page with it, and a reader arriving at
-// `substrate.reamde.dev/core/run` needs what the thing is AND what writes it,
+// `substrate.reamde.dev/core/triggerrun` needs what the thing is AND what writes it,
 // which is two sentences. Still one line — the folded scalar (`>-`) is how a
 // manifest wraps one.
 const maxKindDescription = 400
@@ -2562,10 +2567,16 @@ func (r *Registry) resolvePackage(g *Package) []string {
 			p.To = resolved.Identity
 		}
 		// A `notifies:` transition reports into a thread, so the marker must
-		// name a reference property PINNED to core's llmthread — and, until
-		// the resume bounds have earned wider trust, only core's own kinds
-		// carry it: a bundle kind minting
+		// name a reference property PINNED to the llm package's thread — and,
+		// until the resume bounds have earned wider trust, only the two
+		// packages the binary SEEDS carry it: a bundle kind minting
 		// resume-on-transition would be an unbounded paid-compute trigger.
+		// The two are named rather than read off `Source` because this runs
+		// inside the loader, and the loader stamps whatever source its caller
+		// hands it — LoadFS builds any tree as `builtin`. The engine's own
+		// source check would be right and this one would not, so the test
+		// that has to hold here is the one the loader can answer alone
+		// (record 0077).
 		machineNames := make([]string, 0, len(t.Machines))
 		for mn := range t.Machines {
 			machineNames = append(machineNames, mn)
@@ -2577,12 +2588,19 @@ func (r *Registry) resolvePackage(g *Package) []string {
 					continue
 				}
 				at := fmt.Sprintf("%s: data.properties.%s.transitions[%d].notifies", where, mn, i)
-				if t.Package != "substrate.reamde.dev/core" {
-					problems = append(problems, fmt.Sprintf("%s: only core kinds may notify a thread in this build", at))
+				if t.Package != PackageCore && t.Package != PackageLLM {
+					problems = append(problems, fmt.Sprintf("%s: only the substrate's own seeded kinds may notify a thread in this build", at))
 					continue
 				}
+				// EITHER thread kind. A repository seeded before record 0077
+				// still declares the dormant `core/llmthread` and the dormant
+				// kinds pinned at it, and the boot upgrade never prunes them,
+				// so a binary that accepted only the new pin would refuse to
+				// finalize its own stored closure and the repository would not
+				// open. Nothing can write into core, so the legacy pin is
+				// reachable only from what an older binary seeded.
 				p, ok := t.Prop(tr.Notifies)
-				if !ok || p.Datatype != DatatypeReference || p.To != KindLLMThread {
+				if !ok || p.Datatype != DatatypeReference || (p.To != KindLLMThread && p.To != kindLLMThreadPreMove) {
 					problems = append(problems, fmt.Sprintf("%s: %q must be a reference property pinned to %s", at, tr.Notifies, KindLLMThread))
 				}
 			}

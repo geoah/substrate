@@ -1,4 +1,4 @@
-/** The transcript fold: `llmmessage` rows in, reader-shaped turns out. The
+/** The transcript fold: `llm/message` rows in, reader-shaped turns out. The
  * rules under test are the ones a live stream and a page reload must agree on
  * — pairing a tool result to the call that asked for it, by id. */
 
@@ -24,7 +24,7 @@ function row(properties: Record<string, unknown>): SubstrateRecord {
   seq++
   return {
     id: `m${seq}`,
-    kind: "substrate.reamde.dev/core/llmmessage",
+    kind: "substrate.reamde.dev/llm/message",
     properties,
     labels: {},
     version: 1,
@@ -461,7 +461,7 @@ describe("interactions", () => {
         {
           seq: 9,
           op: "put",
-          kind: "substrate.reamde.dev/core/llminteraction",
+          kind: "substrate.reamde.dev/llm/interaction",
           id: "iabcdefghijk",
         },
       ],
@@ -477,7 +477,7 @@ describe("interactions", () => {
       tools: [],
       content: JSON.stringify({
         event: "interactionAnswered",
-        interaction: "substrate.reamde.dev/core/llminteraction/iabcdefghijk",
+        interaction: "substrate.reamde.dev/llm/interaction/iabcdefghijk",
         answers: [{ question: "color", selected: ["red"] }],
       }),
     })
@@ -495,7 +495,7 @@ describe("interactions", () => {
       tools: [],
       content: JSON.stringify({
         event: "interactionDismissed",
-        interaction: "substrate.reamde.dev/core/llminteraction/iabcdefghijk",
+        interaction: "substrate.reamde.dev/llm/interaction/iabcdefghijk",
       }),
     })
     expect(dismissed?.event).toBe("interactionDismissed")

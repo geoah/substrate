@@ -18,7 +18,7 @@ vi.mock("@tanstack/react-router", () => ({
 }))
 
 /** What GET /.well-known/substrate/server.json said about the door; discovery.test.ts covers the fetching. */
-const policy = vi.hoisted(() => ({ totpRequired: true }))
+const policy = vi.hoisted(() => ({ inviteRequired: true, totpRequired: true }))
 vi.mock("@/lib/api/discovery", () => ({ useAuthPolicy: () => policy }))
 
 import { AccountPage } from "./account"
@@ -118,7 +118,7 @@ describe("AccountPage", () => {
     ).toBe(true)
 
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { repository: "geoah" }))
-    fireEvent.change(card.getByLabelText("Code from the NEW secret"), {
+    fireEvent.change(card.getByLabelText("Code from the new secret"), {
       target: { value: "222 222" },
     })
     fireEvent.click(card.getByRole("button", { name: "Replace authenticator" }))

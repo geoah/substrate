@@ -2,12 +2,12 @@
 # after the attempt settles — the generalization of the parked-failure
 # ledger. Cleanup is first-class: parked runs are kept until their failure is
 # retried away, everything else is pruned to the newest few per trigger
-# (engine/triggers.go documents the number). Run rows are the one record
-# type a trigger's record source can NEVER match: every delivery writes one,
+# (engine/triggers.go documents the number). A triggerrun is the one record
+# kind a trigger's record source can NEVER match: every delivery writes one,
 # so a `*` subscription over them would feed itself forever.
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: substrate.reamde.dev/core/run
+  id: substrate.reamde.dev/core/triggerrun
 data:
   authority: substrate.reamde.dev
   package: core
@@ -16,9 +16,9 @@ data:
     settles: what fired, what ran, what it applied, and why it parked. Parked
     runs are kept until their failure is retried away; the rest are pruned
     to the newest few per trigger.
-  version: 15
+  version: 16
   names:
-    singular: run
+    singular: triggerrun
   displayTemplate: "{status}: {callable}"
   indices:
     - properties:

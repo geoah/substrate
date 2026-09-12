@@ -39,7 +39,7 @@ import { ProposalCard } from "./proposal-card"
 
 const TASK_KIND = "samples.substrate.reamde.dev/tasks/task"
 const REQUEST_PATH = "/api/v1/substrate.reamde.dev/core/recordpatchrequest/cr-1"
-const THREAD_PATH = "/api/v1/substrate.reamde.dev/core/llmthread/th-1"
+const THREAD_PATH = "/api/v1/substrate.reamde.dev/llm/thread/th-1"
 const TARGET_PATH = "/api/v1/samples.substrate.reamde.dev/tasks/task/task-1"
 const POLICY_PATH =
   "/api/v1/substrate.reamde.dev/core/recordpatchpolicy/allow-cr-1"
@@ -79,13 +79,13 @@ const gatedRequest = record({
     target: { ref: `${TASK_KIND}/task-1` },
     diff: { properties: { summary: "New summary" } },
     policy: "substrate.reamde.dev/core/recordpatchpolicy/gate-1",
-    thread: "substrate.reamde.dev/core/llmthread/th-1",
+    thread: "substrate.reamde.dev/llm/thread/th-1",
   },
 })
 
 const thread = record({
   id: "th-1",
-  kind: "substrate.reamde.dev/core/llmthread",
+  kind: "substrate.reamde.dev/llm/thread",
   properties: { agent: "substrate.reamde.dev/core/agent/scribe" },
 })
 
@@ -164,7 +164,7 @@ describe("ProposalCard", () => {
     expect(await screen.findByText(/"scribe"/)).toBeTruthy()
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Mint the rule and accept" })
+      screen.getByRole("button", { name: "Save the rule and accept" })
     )
 
     await waitFor(() => {

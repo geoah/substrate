@@ -16,8 +16,8 @@ export function ChangelogPage() {
       <div className="shrink-0 px-6 pt-5 pb-1">
         <h1 className="text-lg font-semibold">Changelog</h1>
         <p className="text-xs text-muted-foreground">
-          Every commit in the substrate, newest first — one row per change,
-          expandable to what it did.
+          Every change in this repository, newest first. Open a row to see what
+          it did.
         </p>
       </div>
       <ChangelogPanel />

@@ -29,15 +29,17 @@ readonly DSN="postgres://postgres:postgres@127.0.0.1:${DB_PORT}/substrate?sslmod
 readonly STATE=".dev"
 readonly PIDFILE="${STATE}/substrate.pid"
 readonly LOGFILE="${STATE}/substrate.log"
-# The same code compose.yaml defaults to, so a walkthrough written against one
-# path works against the other.
-readonly INVITE="${SUBSTRATE_INVITE_CODE:-let-me-in}"
+# NO INVITE CODE BY DEFAULT: the door reads none, so registering here is a
+# repository name and a password. Same as compose.yaml, so a walkthrough written
+# against one path works against the other. Set one to test the gate
+# (`test:e2e` does).
+readonly INVITE="${SUBSTRATE_INVITE_CODE:-}"
+invite_words() { [ -n "$INVITE" ] && echo "invite code ${INVITE}" || echo "no invite code"; }
 # THE SECOND FACTOR IS OFF HERE BY DEFAULT. This substrate is thrown away by
 # `dev:wipe` and registration is one-shot per user, so every fresh start would
 # otherwise mean enrolling an authenticator entry to reach a repository that
-# will not outlive the afternoon. Nothing else in the tree turns it off, and
-# `dev:totp` runs the same substrate with the factor enforced — which is how a
-# change to the door gets tested.
+# will not outlive the afternoon. `dev:totp` runs the same substrate with the
+# factor enforced — which is how a change to the door gets tested.
 # Not readonly: `dev:totp` is this same substrate with the factor put back.
 DISABLE_TOTP="${SUBSTRATE_INSECURE_DISABLE_TOTP:-true}"
 # The credential key wraps each repository's DEK and a host without one refuses
@@ -175,7 +177,7 @@ wait_healthy() {
 # a factor that is off must never be something you find out by accident.
 totp_note() {
 	if [ "$DISABLE_TOTP" = "true" ]; then
-		echo "  second factor: OFF (username + password; mise run dev:totp enforces it)"
+		echo "  second factor: OFF (repository name + password; mise run dev:totp enforces it)"
 	else
 		echo "  second factor: enforced"
 	fi
@@ -193,11 +195,11 @@ urls() {
 }
 
 # The server takes NO LLM configuration. Completions and embeddings are bought
-# through a repository's own `llmprovider` records, so a dev substrate that
+# through a repository's own `llm/provider` records, so a dev substrate that
 # wants either writes one after registering:
 #
 #   bin/substratectl apply -f - <<'YAML'
-#   kind: substrate.reamde.dev/core/llmprovider
+#   kind: substrate.reamde.dev/llm/provider
 #   metadata:
 #     id: vectors
 #   data:
@@ -230,7 +232,7 @@ server_start() {
 	[ -d "$WEB_DIR" ] && web=("WEB_DIR=${WEB_DIR}")
 	# Egress stays default-closed; the variable passes through only when the
 	# caller set one. The e2e suite needs loopback open, because its
-	# llmprovider rows point at a stub the test process hosts.
+	# llm/provider rows point at a stub the test process hosts.
 	local egress=()
 	[ -n "${SUBSTRATE_EGRESS_ALLOW:-}" ] && egress=("SUBSTRATE_EGRESS_ALLOW=${SUBSTRATE_EGRESS_ALLOW}")
 	nohup env \
@@ -254,7 +256,7 @@ server_start() {
 		server_stop >/dev/null
 		return 1
 	fi
-	echo "dev: substrate up (pid $(cat "$PIDFILE")), invite code ${INVITE}"
+	echo "dev: substrate up (pid $(cat "$PIDFILE")), $(invite_words)"
 	totp_note
 	urls
 	[ -d "$WEB_DIR" ] || echo "  (no console: mise run console:build, then mise run dev:restart)"
@@ -287,7 +289,7 @@ cmd_run() {
 		return 1
 	fi
 	db_up
-	echo "dev: substrate on :${PORT}, invite code ${INVITE} (ctrl-c to stop)"
+	echo "dev: substrate on :${PORT}, $(invite_words) (ctrl-c to stop)"
 	totp_note
 	urls
 	local web=()
@@ -359,8 +361,14 @@ cmd_status() {
 		# The RUNNING server's own answer, not what this shell would start one
 		# with: `dev` and `dev:totp` differ, so status must report the door
 		# that is actually up.
-		case "$(curl -fsS "http://127.0.0.1:${PORT}/.well-known/substrate/server.json" 2>/dev/null)" in
-		*'"totpRequired":false'*) echo "  second factor: OFF (username + password)" ;;
+		local disc
+		disc="$(curl -fsS "http://127.0.0.1:${PORT}/.well-known/substrate/server.json" 2>/dev/null)"
+		case "$disc" in
+		*'"inviteRequired":false'*) echo "  invite code:   none (anyone who reaches this port may register)" ;;
+		*'"inviteRequired":true'*) echo "  invite code:   required" ;;
+		esac
+		case "$disc" in
+		*'"totpRequired":false'*) echo "  second factor: OFF (repository name + password)" ;;
 		*'"totpRequired":true'*) echo "  second factor: enforced" ;;
 		esac
 		urls
@@ -388,16 +396,15 @@ cmd_logs() {
 
 cmd_dsn() { echo "$DSN"; }
 
-cmd_psql() { exec docker exec -it "$CONTAINER" psql -U postgres -d substrate "$@"; }
 
 case "${1:-}" in
-run | totp | up | stop | restart | wipe | status | logs | dsn | psql)
+run | totp | up | stop | restart | wipe | status | logs | dsn)
 	verb="$1"
 	shift
 	"cmd_${verb}" "$@"
 	;;
 *)
-	echo "usage: .mise/dev.sh {run|totp|up|stop|restart|wipe|status|logs|dsn|psql}" >&2
+	echo "usage: .mise/dev.sh {run|totp|up|stop|restart|wipe|status|logs|dsn}" >&2
 	exit 2
 	;;
 esac

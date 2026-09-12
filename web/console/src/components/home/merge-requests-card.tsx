@@ -136,7 +136,7 @@ export function MergeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
         ) : rows.length === 0 ? (
           <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
             <GitMergeIcon className="size-3.5" />
-            Nothing waits on a verdict.
+            No merge requests are waiting.
           </div>
         ) : (
           <div className="flex flex-col gap-2">

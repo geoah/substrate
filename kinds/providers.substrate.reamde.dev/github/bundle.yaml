@@ -30,7 +30,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: github
-  version: 10
+  version: 11
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -43,9 +43,9 @@ data:
   authority: providers.substrate.reamde.dev
   package: github
   description: >-
-    Connects a GitHub account and mirrors the owner's code work — the connected
-    user, their repositories, and every issue and pull request they are involved
-    in — as mirror records, sync-only.
+    Keeps a copy of the GitHub issues and pull requests you are involved in,
+    and their repositories. Read-only, and those three toggles need GitHub's
+    broad `repo` scope; only the user toggle is narrow.
   # The one declared input: the OAuth client record. NO inject: the host
   # OAuth facility reads it (oauth2.clientInput below); no function body ever
   # sees the client credentials.

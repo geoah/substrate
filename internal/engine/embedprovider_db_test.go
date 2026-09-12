@@ -16,7 +16,7 @@ import (
 	"github.com/geoah/substrate/internal/testdb"
 )
 
-// Where a repository buys its vectors is its own data: the one llmprovider row
+// Where a repository buys its vectors is its own data: the one llm/provider row
 // that declares embedModel. These tests cover the four states the ticket named
 // — no provider at all, a wire with no embeddings endpoint, a model of the
 // wrong width, and a re-embed interrupted halfway — plus the one the design
@@ -139,11 +139,11 @@ func TestEmbedProviderRowRefusals(t *testing.T) {
 
 // TestProviderRowsAreOutsideTheMergeSurface: merge is the one verb that could
 // get a SECOND live claimant past the write. It does not migrate properties,
-// so a merged-away llmprovider row keeps its embedModel while another row is
+// so a merged-away llm/provider row keeps its embedModel while another row is
 // free to take the job, and split would then restore it beside that row by
 // clearing the tombstone and folding directly.
 //
-// That sequence cannot start: llmprovider is core's, and the generic merge
+// That sequence cannot start: llm/provider is core's, and the generic merge
 // surface refuses every core kind. A recordmerge naming one cannot be forged
 // either, because recordmerge is a system kind no external write may create.
 // The split path carries the claim check anyway (merge.go), so the invariant
@@ -167,7 +167,7 @@ func TestProviderRowsAreOutsideTheMergeSurface(t *testing.T) {
 
 	_, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: typeProvider, Winner: "completions", Loser: "vectors"})
 	if err == nil || !errors.Is(err, substrate.ErrForbidden) {
-		t.Fatalf("an llmprovider row was merged: %v", err)
+		t.Fatalf("an llm/provider row was merged: %v", err)
 	}
 
 	// And the merge record that a split would need cannot be written by hand.

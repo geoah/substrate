@@ -10,8 +10,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Registration is the ONE door into a fresh substrate: the invite code admits,
-// and one transaction creates the user, their repository and the seed. It is
+// Registration is the ONE door into a fresh substrate: the invite code admits
+// where one is configured, and one transaction creates the user, their
+// repository and the seed. It is
 // two calls and one write — `/register/enroll` issues a TOTP seed and creates
 // NOTHING, `/register` takes it back with one code and a password — so an
 // abandoned registration leaves no row behind.
@@ -33,14 +34,15 @@ func (a *app) registerCommand() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "register",
-		Short: "Register a user with an invite code and store the first token",
-		Long: `Create a repository and its user on a substrate that is open for
-registration.
+		Short: "Register a repository and store the first token",
+		Long: `Create a repository and its user.
 
 Three things make a user: a repository name, a password, and a second factor.
 substratectl asks the substrate for a TOTP enrollment, prints it once for an
 authenticator, and takes back one code with the password — only that call
-writes anything.
+writes anything. A substrate with an invite code configured asks for it first;
+a local one with none (the compose quick start, mise run dev) is not asked and
+reads none.
 
   substratectl register --server https://substrate.example.com
   substratectl register --repository geoah --invite-code CODE \
@@ -70,14 +72,32 @@ name you log in with, and permanent. Pass any hostname you control
 					firstEnv("SUBSTRATE_SERVER", "SS_SERVER"),
 					existing.Server, defaultServer)
 			}
-			if invite == "" {
+			cl := newClient(server, "", a.hc)
+			// The door's shape is read AT MOST ONCE, and only when an answer
+			// changes what happens next: a caller carrying an invite code, a
+			// seed and a code has already decided, and a password that fails
+			// its own confirmation spends no request. A substrate that reads
+			// no invite code is not asked for one; one that verifies no
+			// second factor is not asked for an enrollment either, because
+			// buying a seed nobody will hold, to prove it with a code nothing
+			// checks, is ceremony. The commit then sends no secret, and the
+			// substrate mints the one it seals.
+			var read *doorPolicy
+			door := func() doorPolicy {
+				if read == nil {
+					d := cl.door(cmd.Context())
+					read = &d
+				}
+				return *read
+			}
+			if invite == "" && door().inviteRequired {
 				invite, err = a.secret(false, "Invite code: ")
 				if err != nil {
 					return err
 				}
-			}
-			if invite == "" {
-				return errors.New("an invite code is required: a substrate with none configured is closed to registration")
+				if invite == "" {
+					return errors.New("an invite code is required: this substrate admits nobody without the one its operator configured")
+				}
 			}
 			if repository == "" {
 				repository, err = a.prompt("Repository: ")
@@ -92,17 +112,9 @@ name you log in with, and permanent. Pass any hostname you control
 			if err != nil {
 				return err
 			}
-			cl := newClient(server, "", a.hc)
-			// A substrate that verifies no second factor is not asked for an
-			// enrollment either: buying a seed nobody will hold, to prove it
-			// with a code nothing checks, is ceremony. The commit sends no
-			// secret, and the substrate mints the one it seals.
-			//
-			// Asked only when the answer changes what happens next: a caller
-			// carrying both a seed and a code has already decided.
 			totpRequired := true
 			if secret == "" || code == "" {
-				totpRequired = cl.totpRequired(cmd.Context())
+				totpRequired = door().totpRequired
 			}
 			if secret == "" && totpRequired {
 				enrollment, err := cl.registerEnroll(cmd.Context(), registerBeginRequest{
@@ -186,7 +198,7 @@ name you log in with, and permanent. Pass any hostname you control
 	}
 	f := cmd.Flags()
 	f.StringVar(&server, "server", "", "substrate base URL")
-	f.StringVar(&invite, "invite-code", "", "invite code (prompted for when omitted)")
+	f.StringVar(&invite, "invite-code", "", "invite code (prompted for when omitted, where the substrate reads one)")
 	f.StringVar(&repository, "repository", "", "repository to create, which becomes its authority: ada.example.com, or a bare label under the substrate's host (prompted for when omitted)")
 	f.StringVar(&secret, "totp-secret", "", "base32 TOTP seed to enroll (default: ask the substrate for one)")
 	f.StringVar(&code, "totp-code", "", "6-digit code from the new enrollment (prompted for when omitted)")

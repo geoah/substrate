@@ -35,7 +35,11 @@ vi.mock("@/router", () => ({
  * `policy.live` hands the hook back to the real module for the last describe,
  * which is about the one render the stub cannot show: the policy landing after
  * the first paint, with whatever the reader already typed in the fields. */
-const policy = vi.hoisted(() => ({ totpRequired: true, live: false }))
+const policy = vi.hoisted(() => ({
+  inviteRequired: true,
+  totpRequired: true,
+  live: false,
+}))
 vi.mock("@/lib/api/discovery", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api/discovery")>()
   return {

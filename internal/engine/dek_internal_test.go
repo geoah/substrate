@@ -46,7 +46,7 @@ func TestOpenRepoPayloadOpensUnderTheDEKAlone(t *testing.T) {
 	t.Parallel()
 	dek := bytes.Repeat([]byte{3}, 32)
 	host := bytes.Repeat([]byte{4}, 32)
-	aad := sealedAAD("secret:abc", "ada.example.com/core/llmprovider", "a")
+	aad := sealedAAD("secret:abc", "ada.example.com/llm/provider", "a")
 	raw := []byte(`"material"`)
 	dekAEAD, err := newAEAD(dek)
 	if err != nil {

@@ -59,14 +59,15 @@ nothing, there are none.
 | **sample** | The other catalog tier: a package the user copies (`samples/`). It IMPORTS under the repository's own authority (`samples.substrate.reamde.dev/tasks/task` lands as `ada.example.com/tasks/task`) and is the repository's afterwards: writable, and offered an upgrade through the origin stamp its import left. Decision records 0048 and 0070. |
 | **vocabulary bundle** | A description, not a catalog tier: a bundle that happens to ship only kinds and rules, with no functions and no provider. Nothing in the code reads it. |
 | **input** | A bundle's named configuration need: it names a kind, and the engine resolves ONE record per input — the bound record, else the record whose id is `default`, else the sole live record, else nothing, surfaced per input on the bundle's status. No cardinality is enforced on the kind. |
+| **setting** | A bundle's configuration as an ordinary record, a core `setting` or `secret` at `<bundle id>/<name>`, shipped in the closure and filled in by the user. Ownership is the id prefix alone; a bundle's functions read them as `config.settings.<name>`. Decision record 0076. |
 | **bind** | The explicit step of input resolution: a reference on the bundle's own record row, named for the input, pointing it at a chosen record. `POST /api/v1/substrate.reamde.dev/core/bundle/{id}/bind`; an empty record unbinds. |
 | **account** | One configured connection to a provider: a record of an `accountconfig`-trait kind. The console groups these under **Connections**. |
 | **catalog** | The read-only list of the bundle closures built into the binary, each in one of the two tiers. A source to install or import from, never a package. |
 | **callable** | The union of function and agent — what a trigger binds and what dispatch invokes. |
 | **function** | A callable whose body is inline Python, bounded by its declared `permissions`: `reads`, `writes`, `call`, `network` and `mutations`, five grants in one object on the declaration. |
 | **agent** | A callable whose body is an LLM loop. Alpha. |
-| **llmprovider** | One place an agent buys completions: a wire, an endpoint and a key, as data. Alpha. |
-| **wire** | The protocol an `llmprovider`'s adapter speaks — `openai`, `anthropic` or `azure` — never a company: a gateway that speaks OpenAI's wire is an `openai` row. |
+| **llm/provider** | One place an agent buys completions: a wire, an endpoint and a key, as data. The kind is `provider` in the seeded `substrate.reamde.dev/llm` package, written here with its package because the bare word also names a catalog tier. Alpha. |
+| **wire** | The protocol an `llm/provider`'s adapter speaks — `openai`, `anthropic` or `azure` — never a company: a gateway that speaks OpenAI's wire is an `openai` row. |
 | **model** | The model id an agent sends on every completion, a plain string its provider understands. There is no model record and no tier. |
 | **trigger** | One delivery binding: exactly one source (`record`, `schedule` or `webhook`) to one callable. |
 | **run** | One settled delivery attempt of a trigger. |

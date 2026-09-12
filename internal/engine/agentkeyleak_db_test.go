@@ -118,7 +118,7 @@ func installSecretToolBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 		Kind: typeProvider, ID: "leakllm",
 		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-leakllm"},
 	}); err != nil {
-		t.Fatalf("put llmprovider row: %v", err)
+		t.Fatalf("put llm/provider row: %v", err)
 	}
 	leak := vocabulary.FunctionManifest(secretToolPackage, "leaktool", map[string]any{
 		"description": "copies the config secret into a note",

@@ -1,6 +1,6 @@
 /** Agent chat (`/agents/:id`, id = the agent identity): the agent's threads on
  * the left, one thread's conversation on the right. A thread IS a run, and the
- * transcript IS records — `llmthread` + `llmmessage` rows the loop writes as it
+ * transcript IS records — `llm/thread` + `llm/message` rows the loop writes as it
  * goes — so this surface reads them back and nothing it showed while streaming
  * is lost on reload.
  *
@@ -336,8 +336,8 @@ function ChatSurface({ id }: { id: string }) {
                 to="/data/$authority/$pkg/$name/$id"
                 params={{
                   authority: "substrate.reamde.dev",
-                  pkg: "core",
-                  name: "llmthread",
+                  pkg: "llm",
+                  name: "thread",
                   id: thread,
                 }}
                 className="inline-flex items-center gap-0.5 underline-offset-4 hover:underline"
@@ -381,14 +381,14 @@ function ChatSurface({ id }: { id: string }) {
                   mean "loading" here — only a fetch in flight can. */}
               {messages.isPending && messages.isFetching && (
                 <p className="py-8 text-center text-sm text-muted-foreground">
-                  Loading the transcript…
+                  Loading the messages…
                 </p>
               )}
               {turns.length === 0 && !streaming && !messages.isFetching && (
                 <p className="py-8 text-center text-sm text-muted-foreground">
                   {thread
-                    ? "This thread has no turns."
-                    : "Send a message to open a thread against this agent."}
+                    ? "This thread has no messages yet."
+                    : "Send a message to start a thread with this agent."}
                 </p>
               )}
               <Transcript turns={turns} liveKey={liveKey} />
@@ -423,8 +423,8 @@ function ChatSurface({ id }: { id: string }) {
                 rows={2}
                 placeholder={
                   thread
-                    ? "Continue this thread…  (⌘↵ to send)"
-                    : "Message the agent…  (⌘↵ to send)"
+                    ? "Continue this thread…  ⌘↵ to send"
+                    : "Message the agent…  ⌘↵ to send"
                 }
                 disabled={busy}
                 className="min-h-0 resize-none"

@@ -18,6 +18,7 @@ import {
   LogOutIcon,
   MoonIcon,
   PackageIcon,
+  SlidersHorizontalIcon,
   SunIcon,
   SunMoonIcon,
   UserRoundIcon,
@@ -49,6 +50,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -60,6 +62,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import { logout } from "@/lib/api/auth"
+import { bundleStatusesQueryOptions } from "@/lib/api/bundles"
 import { catalogQueryOptions } from "@/lib/api/catalog"
 import {
   buildKindNav,
@@ -67,13 +70,14 @@ import {
   type AuthorityNav,
   type PackageNav,
 } from "@/lib/api/kinds"
-import { getToken, getRepository, maskedToken } from "@/lib/api/session"
-import { upgradableBundleCount } from "@/lib/bundles"
+import { getRepository } from "@/lib/api/session"
+import { settingSetupCount, upgradableBundleCount } from "@/lib/bundles"
 
 const consoleItems = [
   { title: "Overview", to: "/", icon: HomeIcon },
   { title: "Changelog", to: "/changelog", icon: ActivityIcon },
   { title: "Registry", to: "/registry", icon: PackageIcon },
+  { title: "Settings", to: "/settings", icon: SlidersHorizontalIcon },
   { title: "Agents", to: "/agents", icon: BotIcon },
 ] as const
 
@@ -89,11 +93,32 @@ function RegistryUpgradeBadge() {
   )
   if (count <= 0) return null
   return (
-    <SidebarMenuBadge className="bg-primary text-primary-foreground">
+    <SidebarMenuBadge variant="count">
       <span className="sr-only">
         {count === 1
           ? "1 bundle upgrade available"
           : `${count} bundle upgrades available`}
+      </span>
+      <span aria-hidden>{count}</span>
+    </SidebarMenuBadge>
+  )
+}
+
+/** The Settings row's number: the required settings and secrets still empty
+ * across the bundles this repository holds, counted off the bundle statuses
+ * the Registry page already reads (shared cache, no second endpoint). Nothing
+ * to fill in renders nothing. */
+export function SettingsSetupBadge() {
+  const statuses = useQuery(bundleStatusesQueryOptions)
+  const count = useMemo(
+    () => settingSetupCount(statuses.data ?? []),
+    [statuses.data]
+  )
+  if (count <= 0) return null
+  return (
+    <SidebarMenuBadge variant="count">
+      <span className="sr-only">
+        {count === 1 ? "1 setting to fill in" : `${count} settings to fill in`}
       </span>
       <span aria-hidden>{count}</span>
     </SidebarMenuBadge>
@@ -137,40 +162,63 @@ function KindLinks({ nav, className }: { nav: PackageNav; className: string }) {
   )
 }
 
-/** One package's kinds under its authority: the package's own word links to
- * its page, the kinds sit under it. */
-function PackageGroup({ nav }: { nav: PackageNav }) {
+/** One package's kinds, collapsible under its authority: the package's own
+ * word links to its page (the authority's kinds table, filtered to this
+ * package), the chevron alone opens and closes its kinds. Open by default, so
+ * the tree reads the same as before a reader touches it. */
+export function PackageGroup({ nav }: { nav: PackageNav }) {
   const params = useParams({ strict: false })
+  const label = nav.package || "local"
   return (
-    <>
-      <SidebarMenuSubItem>
-        <SidebarMenuSubButton
-          isActive={
-            params.authority === nav.authority &&
-            params.pkg === nav.package &&
-            !params.name
-          }
-          className="pl-9 text-sidebar-foreground/70"
-          render={
-            <Link
-              to="/data/$authority/$pkg"
-              params={{ authority: nav.authority, pkg: nav.package }}
-            />
-          }
-        >
-          <span className="truncate">{nav.package || "local"}</span>
-        </SidebarMenuSubButton>
-      </SidebarMenuSubItem>
-      <KindLinks nav={nav} className="pl-12" />
-    </>
+    <Collapsible
+      defaultOpen
+      className="group/package"
+      render={<SidebarMenuSubItem />}
+    >
+      <SidebarMenuSubButton
+        isActive={
+          params.authority === nav.authority &&
+          params.pkg === nav.package &&
+          !params.name
+        }
+        className="pr-8 pl-9 text-sidebar-foreground/70"
+        render={
+          <Link
+            to="/data/$authority/$pkg"
+            params={{ authority: nav.authority, pkg: nav.package }}
+          />
+        }
+      >
+        <PackageIcon />
+        <span className="truncate">{label}</span>
+      </SidebarMenuSubButton>
+      <CollapsibleTrigger
+        render={
+          <SidebarMenuAction
+            className="top-1.5 cursor-pointer"
+            aria-label={`Toggle the kinds in ${label}`}
+          />
+        }
+      >
+        <ChevronRightIcon className="transition-transform duration-200 group-data-open/package:rotate-90" />
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <SidebarMenuSub className={fullWidthSub}>
+          <KindLinks nav={nav} className="pl-12" />
+        </SidebarMenuSub>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
-/** One authority's packages, collapsible. In v1 authorities replace the old
- * group concept, and every kind carries an authority and a package (decisions
- * 0042 and 0047); the `"local"` fallback is defensive against a malformed row
- * with no authority. */
-function AuthorityGroup({ nav }: { nav: AuthorityNav }) {
+/** One authority's packages, collapsible. The label navigates to the
+ * authority's own kinds table and the chevron alone collapses the row, so
+ * reaching the page and folding the tree are two targets, not one. In v1
+ * authorities replace the old group concept, and every kind carries an
+ * authority and a package (decisions 0042 and 0047); the `"local"` fallback is
+ * defensive against a malformed row with no authority. */
+export function AuthorityGroup({ nav }: { nav: AuthorityNav }) {
+  const params = useParams({ strict: false })
   const label = nav.authority || "local"
   return (
     <Collapsible
@@ -178,14 +226,25 @@ function AuthorityGroup({ nav }: { nav: AuthorityNav }) {
       className="group/collapsible"
       render={<SidebarMenuItem />}
     >
-      <CollapsibleTrigger
+      <SidebarMenuButton
+        tooltip={label}
+        isActive={params.authority === nav.authority && !params.pkg}
         render={
-          <SidebarMenuButton tooltip={label} className="cursor-pointer" />
+          <Link to="/data/$authority" params={{ authority: nav.authority }} />
         }
       >
         <FileCode2Icon />
         <span className="truncate">{label}</span>
-        <ChevronRightIcon className="ml-auto transition-transform duration-200 group-data-open/collapsible:rotate-90" />
+      </SidebarMenuButton>
+      <CollapsibleTrigger
+        render={
+          <SidebarMenuAction
+            className="cursor-pointer"
+            aria-label={`Toggle the packages in ${label}`}
+          />
+        }
+      >
+        <ChevronRightIcon className="transition-transform duration-200 group-data-open/collapsible:rotate-90" />
       </CollapsibleTrigger>
       <CollapsibleContent>
         <SidebarMenuSub className={fullWidthSub}>
@@ -246,7 +305,6 @@ function ActorFooter() {
   const { isMobile } = useSidebar()
   const navigate = useNavigate()
   const { theme, setTheme } = useTheme()
-  const token = getToken()
   const repository = getRepository()
 
   async function logOut() {
@@ -262,23 +320,16 @@ function ActorFooter() {
       <SidebarMenuItem>
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={
-              <SidebarMenuButton size="lg" className="aria-expanded:bg-muted" />
-            }
+            render={<SidebarMenuButton className="aria-expanded:bg-muted" />}
           >
-            <Avatar className="rounded-lg">
-              <AvatarFallback className="rounded-lg">
-                <KeyRoundIcon className="size-4" />
+            <Avatar className="size-5 rounded-md">
+              <AvatarFallback className="rounded-md">
+                <KeyRoundIcon className="size-3" />
               </AvatarFallback>
             </Avatar>
-            <div className="grid flex-1 text-left text-sm leading-tight">
-              <span className="truncate font-medium">
-                {repository ?? "Signed in"}
-              </span>
-              <span className="truncate data text-xs text-sidebar-foreground/70">
-                {token ? maskedToken(token) : "no session"}
-              </span>
-            </div>
+            <span className="truncate font-medium">
+              {repository ?? "Signed in"}
+            </span>
             <ChevronsUpDownIcon className="ml-auto size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -367,6 +418,7 @@ export function AppSidebar() {
                     <span>{item.title}</span>
                   </SidebarMenuButton>
                   {item.to === "/registry" && <RegistryUpgradeBadge />}
+                  {item.to === "/settings" && <SettingsSetupBadge />}
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>

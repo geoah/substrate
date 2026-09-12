@@ -11,7 +11,7 @@ import (
 // through the same httptest fakes on loopback. The sandbox connect gate refuses
 // a network-granted body's dial (0035-a-network-body-connect-is-filtered-by-destination),
 // and the #241 server-side gate refuses the engine's own dial of a
-// repository-chosen llmprovider baseURL. A real deployment's Postgres and
+// repository-chosen llm/provider baseURL. A real deployment's Postgres and
 // metadata endpoint sit in exactly those ranges. The agent-loop and embeddings
 // suites point provider rows at loopback fakes, so they take the operator escape
 // each gate documents. Set before m.Run, so the runner reads the sandbox one

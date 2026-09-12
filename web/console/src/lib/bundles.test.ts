@@ -27,10 +27,18 @@ import {
   previewFailed,
   FAILED_PREVIEW_BLOCKER,
   requirementsOf,
-  requiresHint,
+  chainHint,
+  requirementTree,
+  missingChain,
+  closureRows,
+  importPlan,
+  triggerRows,
+  mappingLinksSentence,
+  readyMappings,
   heldVersions,
   needsConfirmation,
   confirmationOf,
+  settingSetupCount,
   stepLines,
   upgradableBundleCount,
   upgradeBlocked,
@@ -74,6 +82,8 @@ function catalog(over: Partial<CatalogItem> = {}): CatalogItem {
       client: { kind: "providers.substrate.reamde.dev/google/config" },
     },
     closure: {
+      traits: null,
+      triggers: null,
       agents: null,
       mappings: null,
       records: null,
@@ -200,6 +210,8 @@ describe("mergeBundles", () => {
           tier: "sample",
           installed: true,
           closure: {
+            traits: null,
+            triggers: null,
             functions: null,
             agents: null,
             mappings: null,
@@ -285,6 +297,44 @@ describe("bundleSections", () => {
     ])
     expect(sections.samples.map((r) => r.id)).toEqual(["ada.example.com/tasks"])
     expect(sections.applied.map((r) => r.id)).toEqual(["x.example.com/x"])
+  })
+})
+
+describe("settingSetupCount", () => {
+  it("counts the empty settings across every held bundle, and nothing else", () => {
+    expect(
+      settingSetupCount([
+        {
+          setup: [
+            {
+              code: "setting",
+              kind: "substrate.reamde.dev/core/secret",
+              record: "ada.example.com/firecrawl/apiKey",
+              message: "API key is not set",
+            },
+            // An input's own problem belongs to the Registry's setup chip, not
+            // to the settings badge.
+            { code: "missing", input: "client", message: "no record yet" },
+          ],
+        },
+        {
+          setup: [
+            {
+              code: "setting",
+              kind: "substrate.reamde.dev/core/setting",
+              record: "ada.example.com/web/baseURL",
+              message: "Base URL is not set",
+            },
+          ],
+        },
+        {},
+      ])
+    ).toBe(2)
+  })
+
+  it("is zero when nothing needs filling in", () => {
+    expect(settingSetupCount([])).toBe(0)
+    expect(settingSetupCount([{ setup: [] }])).toBe(0)
   })
 })
 
@@ -427,7 +477,7 @@ describe("the upgrade preview helpers", () => {
       steps: [
         {
           step: "rename",
-          kind: "substrate.reamde.dev/core/llmprovider",
+          kind: "substrate.reamde.dev/llm/provider",
           property: "displayLabel",
           from: "label",
           to: "displayLabel",
@@ -458,7 +508,7 @@ describe("the upgrade preview helpers", () => {
       ],
     }
     expect(stepLines(plan)).toEqual([
-      "renames label to displayLabel on substrate.reamde.dev/core/llmprovider: 3 live records rewritten",
+      "renames label to displayLabel on substrate.reamde.dev/llm/provider: 3 live records rewritten",
       "backfills size with its default on geoah.example.com/shop/widget: 1 live record rewritten",
       "rewrites status active to open on geoah.example.com/shop/widget: 2 live records rewritten (lossy: the records holding either value become one set)",
       "drops color on geoah.example.com/shop/widget: its value leaves 1 live record (lossy: the values stay in the changelog only)",
@@ -544,7 +594,7 @@ describe("presentAuthorities — what this repository already holds", () => {
   })
 })
 
-describe("requirementsOf / requiresHint — what to import first", () => {
+describe("requirementsOf / chainHint: what is taken first", () => {
   const present = new Set([
     "samples.substrate.reamde.dev/people",
     "substrate.reamde.dev/core",
@@ -571,39 +621,42 @@ describe("requirementsOf / requiresHint — what to import first", () => {
 
   it("a closure that declares against nothing is never blocked", () => {
     expect(requirementsOf({ requires: [] }, new Set())).toEqual([])
-    expect(requiresHint([])).toBe("")
+    expect(chainHint([], "Import", "tasks")).toBe("")
   })
 
-  it("names one missing package, then several, the way the server names them", () => {
+  it("says what the one button will take first, in the order it takes them", () => {
     expect(
-      requiresHint(
+      chainHint(
         missingRequirements(
           requirementsOf(
             { requires: ["samples.substrate.reamde.dev/tasks"] },
             present
           )
-        )
+        ),
+        "Import",
+        "pebble"
       )
     ).toBe(
-      "Import samples.substrate.reamde.dev/tasks first — this bundle declares against it."
+      "Import all takes samples.substrate.reamde.dev/tasks first, in that order, then pebble."
     )
     expect(
-      requiresHint(
+      chainHint(
         missingRequirements(
           requirementsOf(
             {
               requires: [
                 "samples.substrate.reamde.dev/people",
                 "samples.substrate.reamde.dev/messaging",
-                "samples.substrate.reamde.dev/calendar",
               ],
             },
             present
           )
-        )
+        ),
+        "Install",
+        "google"
       )
     ).toBe(
-      "Import samples.substrate.reamde.dev/messaging and samples.substrate.reamde.dev/calendar first — this bundle declares against them."
+      "Install all takes samples.substrate.reamde.dev/messaging first, in that order, then google."
     )
   })
 })
@@ -633,8 +686,8 @@ describe("requiresAtLeast: the floor under a requirement (decision record 0070)"
       },
       { package: "ada.example.com/scheduling", present: true, held: 2 },
     ])
-    expect(requiresHint(missingRequirements(reqs))).toBe(
-      "Import ada.example.com/people again first: this bundle needs it at version 4 or later, and this repository holds version 3."
+    expect(chainHint(missingRequirements(reqs), "Import", "tasks")).toBe(
+      "ada.example.com/people is here at version 3 and this bundle needs version 4 or later, so it is imported again."
     )
   })
 
@@ -661,9 +714,9 @@ describe("requiresAtLeast: the floor under a requirement (decision record 0070)"
       new Set(["ada.example.com/people"]),
       versions
     )
-    expect(requiresHint(missingRequirements(reqs))).toBe(
-      "Import ada.example.com/scheduling first — this bundle declares against it. " +
-        "Import ada.example.com/people again first: this bundle needs it at version 4 or later, and this repository holds version 3."
+    expect(chainHint(missingRequirements(reqs), "Import", "tasks")).toBe(
+      "Import all takes ada.example.com/scheduling first, in that order, then tasks. " +
+        "ada.example.com/people is here at version 3 and this bundle needs version 4 or later, so it is imported again."
     )
   })
 
@@ -769,6 +822,8 @@ describe("installedKindRows — the Kinds table", () => {
       registry,
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           functions: null,
           agents: null,
           mappings: null,
@@ -794,6 +849,8 @@ describe("installedKindRows — the Kinds table", () => {
       registry,
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           functions: null,
           agents: null,
           mappings: null,
@@ -814,6 +871,8 @@ describe("installedKindRows — the Kinds table", () => {
       registry,
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           functions: null,
           agents: null,
           mappings: null,
@@ -841,6 +900,8 @@ describe("installedKindRows — the Kinds table", () => {
       [],
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           functions: null,
           agents: null,
           mappings: null,
@@ -857,6 +918,8 @@ describe("installedKindRows — the Kinds table", () => {
       [{ ...contactKind, description: "The reconciled one." }],
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           functions: null,
           agents: null,
           mappings: null,
@@ -875,6 +938,8 @@ describe("installedKindRows — the Kinds table", () => {
       registry,
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           functions: null,
           agents: null,
           mappings: null,
@@ -894,6 +959,8 @@ describe("bundleRecordRows — the Records table", () => {
     const rows = bundleRecordRows(
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           mappings: null,
           records: null,
           kinds: ["providers.substrate.reamde.dev/google/t"],
@@ -923,13 +990,15 @@ describe("bundleRecordRows — the Records table", () => {
     const rows = bundleRecordRows(
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           functions: null,
           agents: null,
           mappings: null,
           kinds: [],
           records: [
             { kind: "substrate.reamde.dev/core/trigger", id: "ongooglesync" },
-            { kind: "substrate.reamde.dev/core/llmprovider", id: "anthropic" },
+            { kind: "substrate.reamde.dev/llm/provider", id: "anthropic" },
           ],
         },
       })
@@ -941,7 +1010,7 @@ describe("bundleRecordRows — the Records table", () => {
         name: "ongooglesync",
       },
       {
-        kind: "substrate.reamde.dev/core/llmprovider",
+        kind: "substrate.reamde.dev/llm/provider",
         id: "anthropic",
         name: "anthropic",
       },
@@ -952,6 +1021,8 @@ describe("bundleRecordRows — the Records table", () => {
     const withMappings = bundleRecordRows(
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           functions: null,
           agents: null,
           records: null,
@@ -971,6 +1042,8 @@ describe("bundleRecordRows — the Records table", () => {
       bundleRecordRows(
         catalog({
           closure: {
+            traits: null,
+            triggers: null,
             functions: null,
             agents: null,
             mappings: null,
@@ -1034,19 +1107,19 @@ describe("declaresProviderInterfaces", () => {
 
   it("is false for a non-provider bundle (no account kind, no oauth2 input)", () => {
     const connectorKind = kindInfo({
-      identity: "samples.substrate.reamde.dev/web/config",
+      identity: "acme.example.com/reader/config",
       name: "config",
-      authority: "samples.substrate.reamde.dev",
-      package: "web",
+      authority: "acme.example.com",
+      package: "reader",
     })
     expect(
       declaresProviderInterfaces(
         {
-          id: "samples.substrate.reamde.dev/web",
+          id: "acme.example.com/reader",
           inputs: [
             {
               name: "connector",
-              kind: "samples.substrate.reamde.dev/web/config",
+              kind: "acme.example.com/reader/config",
             },
           ],
         },
@@ -1126,5 +1199,239 @@ describe("oauthConnectBlocked, the connect gate", () => {
         [clientKind]
       )
     ).toBe(false)
+  })
+})
+
+describe("the requirement chain: what one button has to take", () => {
+  // pebble requires tasks, tasks requires people and scheduling, and this
+  // repository holds none of them. The wire says only the direct one.
+  const rows = mergeBundles(
+    [],
+    [
+      catalog({
+        id: "s.example.com/pebble",
+        name: "pebble",
+        package: "pebble",
+        tier: "sample",
+        requires: ["s.example.com/tasks"],
+      }),
+      catalog({
+        id: "s.example.com/tasks",
+        name: "tasks",
+        package: "tasks",
+        tier: "sample",
+        requires: ["s.example.com/people", "s.example.com/scheduling"],
+      }),
+      catalog({
+        id: "s.example.com/people",
+        name: "people",
+        package: "people",
+        tier: "sample",
+      }),
+      catalog({
+        id: "s.example.com/scheduling",
+        name: "scheduling",
+        package: "scheduling",
+        tier: "sample",
+      }),
+    ]
+  )
+  const byId = new Map(rows.map((r) => [r.id, r]))
+  const pebble = byId.get("s.example.com/pebble")!
+
+  it("walks the chain the wire does not carry, and names each supplier", () => {
+    const tree = requirementTree(pebble, byId, new Set())
+    expect(tree.map((n) => n.package)).toEqual(["s.example.com/tasks"])
+    expect(tree[0].row?.name).toBe("tasks")
+    expect(tree[0].requires.map((n) => n.package)).toEqual([
+      "s.example.com/people",
+      "s.example.com/scheduling",
+    ])
+  })
+
+  it("orders the missing ones leaves first, each once", () => {
+    const chain = missingChain(requirementTree(pebble, byId, new Set()))
+    expect(chain.map((n) => n.package)).toEqual([
+      "s.example.com/people",
+      "s.example.com/scheduling",
+      "s.example.com/tasks",
+    ])
+  })
+
+  it("drops what this repository already holds", () => {
+    const chain = missingChain(
+      requirementTree(pebble, byId, new Set(["s.example.com/people"]))
+    )
+    expect(chain.map((n) => n.package)).toEqual([
+      "s.example.com/scheduling",
+      "s.example.com/tasks",
+    ])
+  })
+
+  it("takes a package held below its floor again, in the same pass", () => {
+    const floored = mergeBundles(
+      [],
+      [
+        catalog({
+          id: "s.example.com/pebble",
+          tier: "sample",
+          requires: ["s.example.com/tasks"],
+          requiresAtLeast: { "s.example.com/tasks": 4 },
+        }),
+        catalog({ id: "s.example.com/tasks", tier: "sample" }),
+      ]
+    )
+    const map = new Map(floored.map((r) => [r.id, r]))
+    const chain = missingChain(
+      requirementTree(
+        map.get("s.example.com/pebble")!,
+        map,
+        new Set(["s.example.com/tasks"]),
+        new Map([["s.example.com/tasks", 3]])
+      )
+    )
+    expect(chain.map((n) => n.package)).toEqual(["s.example.com/tasks"])
+    expect(chain[0].held).toBe(3)
+    expect(chain[0].atLeast).toBe(4)
+  })
+
+  it("refuses a cycle instead of importing a bundle before itself", () => {
+    const cyclic = mergeBundles(
+      [],
+      [
+        catalog({ id: "a.example.com/one", requires: ["a.example.com/two"] }),
+        catalog({ id: "a.example.com/two", requires: ["a.example.com/one"] }),
+      ]
+    )
+    const map = new Map(cyclic.map((r) => [r.id, r]))
+    const one = map.get("a.example.com/one")!
+    const tree = requirementTree(one, map, new Set())
+    // The walk stops where it comes back round, and says so.
+    expect(tree[0].requires[0].cycle).toBe(true)
+    const plan = importPlan(one, tree)
+    expect(plan.bundles).toEqual([])
+    expect(plan.refusal).toBe(
+      "a.example.com/two and a.example.com/one require each other, so there is no order to import them in. Nothing is imported."
+    )
+  })
+
+  it("plans the chain leaves first with the bundle last, and only once", () => {
+    const plan = importPlan(pebble, requirementTree(pebble, byId, new Set()))
+    expect(plan.refusal).toBe("")
+    expect(plan.bundles.map((b) => b.id)).toEqual([
+      "s.example.com/people",
+      "s.example.com/scheduling",
+      "s.example.com/tasks",
+      "s.example.com/pebble",
+    ])
+  })
+
+  it("refuses up front when the catalog does not ship a requirement", () => {
+    const rows = mergeBundles(
+      [],
+      [
+        catalog({
+          id: "s.example.com/pebble",
+          name: "pebble",
+          tier: "sample",
+          requires: ["s.example.com/tasks", "s.example.com/nowhere"],
+        }),
+        catalog({ id: "s.example.com/tasks", tier: "sample" }),
+      ]
+    )
+    const map = new Map(rows.map((r) => [r.id, r]))
+    const row = map.get("s.example.com/pebble")!
+    const plan = importPlan(row, requirementTree(row, map, new Set()))
+    // Nothing is imported: landing tasks and then refusing on the bundle the
+    // reader actually asked for is a half-done job.
+    expect(plan.bundles).toEqual([])
+    expect(plan.refusal).toBe(
+      "s.example.com/nowhere is not in the catalog, so it cannot be imported from here. Nothing is imported."
+    )
+  })
+})
+
+describe("closure rows: a name and what it is", () => {
+  it("reads each member's declared description, sorted by name", () => {
+    const got = closureRows(
+      ["x.example.com/p/zebra", "x.example.com/p/apple"],
+      {
+        "x.example.com/p/apple": "a fruit",
+      }
+    )
+    expect(got).toEqual([
+      {
+        identity: "x.example.com/p/apple",
+        name: "apple",
+        description: "a fruit",
+      },
+      { identity: "x.example.com/p/zebra", name: "zebra" },
+    ])
+  })
+
+  it("a trigger says what it runs, since it declares nothing else", () => {
+    const item = catalog({
+      closure: {
+        kinds: null,
+        traits: null,
+        functions: null,
+        agents: null,
+        mappings: null,
+        records: null,
+        triggers: ["on-sync"],
+        triggerCallables: {
+          "on-sync": "substrate.reamde.dev/core/function/x.example.com/p/sync",
+        },
+      },
+    })
+    expect(triggerRows(item)).toEqual([
+      { identity: "on-sync", name: "on-sync", description: "runs sync" },
+    ])
+    expect(triggerRows(undefined)).toEqual([])
+  })
+})
+
+describe("what a sample's mappings link", () => {
+  const mapped = mergeBundles(
+    [],
+    [
+      catalog({
+        id: "s.example.com/people",
+        tier: "sample",
+        suggestedMappings: [
+          {
+            id: "s.example.com/people/fromgithub",
+            from: "p.example.com/github/user",
+            to: "s.example.com/people/person",
+            package: "p.example.com/github",
+            state: "waiting",
+          },
+          {
+            id: "s.example.com/people/fromlinear",
+            from: "p.example.com/linear/user",
+            to: "s.example.com/people/person",
+            package: "p.example.com/linear",
+            state: "ready",
+          },
+        ],
+      }),
+    ]
+  )[0]
+
+  it("says it in one sentence, with no state word in it", () => {
+    expect(mappingLinksSentence(mapped)).toBe(
+      "Links github user and linear user records onto person. " +
+        "Each link lands when that provider is installed and this sample is imported again."
+    )
+  })
+
+  it("says nothing for a closure that ships none", () => {
+    expect(mappingLinksSentence(mergeBundles([], [catalog()])[0])).toBe("")
+  })
+
+  it("names the ones a re-import would land, and only those", () => {
+    expect(readyMappings(mapped).map((m) => m.id)).toEqual([
+      "s.example.com/people/fromlinear",
+    ])
   })
 })

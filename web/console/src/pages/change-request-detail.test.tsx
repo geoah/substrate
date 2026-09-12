@@ -216,14 +216,16 @@ describe("ChangeRequestDetailPage", () => {
       await screen.findByRole("button", { name: "Accept and apply" })
     )
 
-    await screen.findByText("The request moved, or the apply was refused")
+    await screen.findByText(
+      "The request changed or the change was refused, so nothing was applied"
+    )
   })
 
   it("warns when the target has moved past the stamped targetVersion", async () => {
     serve(patchRequest, { target: { ...target, version: 9 } })
     renderPage(<ChangeRequestDetailPage />)
     await screen.findByText(/The target has moved/)
-    expect(screen.getByText(/the stamped targetVersion/)).toBeTruthy()
+    expect(screen.getByText(/the version stamped on the request/)).toBeTruthy()
   })
 
   it("surfaces the substrate/conflict annotation a refused apply left", async () => {
@@ -237,7 +239,7 @@ describe("ChangeRequestDetailPage", () => {
       { target }
     )
     renderPage(<ChangeRequestDetailPage />)
-    await screen.findByText("The substrate refused to apply this change.")
+    await screen.findByText("This change was not applied.")
     expect(screen.getByText("applyDiff on cr-1: stale")).toBeTruthy()
   })
 
@@ -262,7 +264,7 @@ describe("ChangeRequestDetailPage", () => {
     )
     renderPage(<ChangeRequestDetailPage />)
 
-    await screen.findByText(/Accepting mints/)
+    await screen.findByText(/Accepting creates/)
     expect(screen.getByText("create")).toBeTruthy()
     expect(screen.getByText("Write it down")).toBeTruthy()
     // A pointer is a proposed value like any other, on its own property row.
@@ -287,9 +289,9 @@ describe("ChangeRequestDetailPage", () => {
     )
     renderPage(<ChangeRequestDetailPage />)
 
-    await screen.findByText(/Accepting DELETES/)
+    await screen.findByText(/Accepting deletes/)
     expect(screen.getByText("delete")).toBeTruthy()
-    expect(screen.getByText(/The record is tombstoned/)).toBeTruthy()
+    expect(screen.getByText(/The record stops answering reads/)).toBeTruthy()
     // The summary of the record the accept would take away, once it is read.
     expect(await screen.findByText("goes away")).toBeTruthy()
   })
@@ -315,7 +317,7 @@ describe("ChangeRequestDetailPage", () => {
     )
     renderPage(<ChangeRequestDetailPage />)
 
-    await screen.findByText(/nothing was applied/)
+    await screen.findByText(/Nothing was applied/)
     expect(screen.getByText("rejected")).toBeTruthy()
     expect(screen.getByText("console")).toBeTruthy()
     expect(screen.queryByRole("button", { name: /Accept/ })).toBeNull()
@@ -373,11 +375,9 @@ describe("ChangeRequestDetailPage", () => {
     renderPage(<ChangeRequestDetailPage />)
 
     await screen.findByText(/The target has moved/)
+    expect(screen.getByText(/the version the change itself names/)).toBeTruthy()
     expect(
-      screen.getByText(/the diff's own ifVersion, which overrides/)
-    ).toBeTruthy()
-    expect(
-      screen.getByText("the version it checks the target against")
+      screen.getByText("the version this change was written for")
     ).toBeTruthy()
   })
 
@@ -399,7 +399,7 @@ describe("ChangeRequestDetailPage", () => {
     )
     renderPage(<ChangeRequestDetailPage />)
 
-    await screen.findByText(/the substrate's decoder refuses/)
+    await screen.findByText(/names keys the substrate refuses/)
     expect(screen.getByText("edges")).toBeTruthy()
   })
 
@@ -416,10 +416,10 @@ describe("ChangeRequestDetailPage", () => {
     )
     renderPage(<ChangeRequestDetailPage />)
 
-    await screen.findByText(/stored in a shape the substrate's decoder refuses/)
+    await screen.findByText(/stored in a shape the substrate\s+refuses/)
     // The raw value, kept verbatim beside the key it was stored under.
     expect(
-      screen.getByText("stored values the substrate's decoder cannot read")
+      screen.getByText("stored values the substrate cannot read")
     ).toBeTruthy()
     expect(screen.getByText("properties")).toBeTruthy()
     expect(screen.getByText("[]")).toBeTruthy()
@@ -467,7 +467,7 @@ describe("ChangeRequestDetailPage", () => {
   it("names the diff keys the substrate's strict decode would refuse", async () => {
     serve(request({ properties: { diff: { saved: true } } }), { target })
     renderPage(<ChangeRequestDetailPage />)
-    await screen.findByText(/names keys the substrate's decoder refuses/)
+    await screen.findByText(/names keys the substrate refuses/)
     expect(screen.getByText("saved")).toBeTruthy()
   })
 })

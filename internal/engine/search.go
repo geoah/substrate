@@ -56,7 +56,7 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) (substr
 		}
 		if provider == nil {
 			if mode == substrate.SearchSemantic {
-				return out, fmt.Errorf("%w: semantic search needs an embeddings provider: no llmprovider row declares %s",
+				return out, fmt.Errorf("%w: semantic search needs an embeddings provider: no llm/provider row declares %s",
 					substrate.ErrValidation, propEmbedModel)
 			}
 			mode = substrate.SearchLexical
@@ -262,7 +262,7 @@ func (ds *dataset) pairHasVectors(ctx context.Context, provider *embedProvider) 
 // while the semantic arm has nothing, and Pending says how much it is missing.
 func (ds *dataset) refuseSemantic(ctx context.Context, provider *embedProvider, pending int) error {
 	if pending > 0 {
-		return fmt.Errorf("%w: semantic search has no vectors yet from llmprovider %q model %q: %d properties pending in the embed queue",
+		return fmt.Errorf("%w: semantic search has no vectors yet from llm/provider %q model %q: %d properties pending in the embed queue",
 			substrate.ErrUnavailable, provider.id, provider.model, pending)
 	}
 	var others bool
@@ -270,7 +270,7 @@ func (ds *dataset) refuseSemantic(ctx context.Context, provider *embedProvider, 
 		return fmt.Errorf("substrate/engine: semantic search: %w", err)
 	}
 	if others {
-		return fmt.Errorf("%w: semantic search has no vectors from llmprovider %q model %q and the stored vectors are another pair's: run substratectl repository reembed to replace them",
+		return fmt.Errorf("%w: semantic search has no vectors from llm/provider %q model %q and the stored vectors are another pair's: run substratectl repository reembed to replace them",
 			substrate.ErrValidation, provider.id, provider.model)
 	}
 	return nil
@@ -343,7 +343,7 @@ func (ds *dataset) ProcessEmbedQueue(ctx context.Context, batch int) (int, error
 	// for a row that predates the rule or a client the table's width no longer
 	// describes (decision record 0026).
 	if provider.Dimension() != vectorDim {
-		return 0, fmt.Errorf("%w: llmprovider row %q model %q is %d wide, storage expects %d",
+		return 0, fmt.Errorf("%w: llm/provider row %q model %q is %d wide, storage expects %d",
 			substrate.ErrValidation, provider.id, provider.model, provider.Dimension(), vectorDim)
 	}
 	if batch <= 0 {

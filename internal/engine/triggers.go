@@ -26,8 +26,8 @@ import (
 // from the delivery ledger (delivery.go), so a restore brings them back.
 
 const (
-	typeTrigger = "substrate.reamde.dev/core/trigger"
-	typeRun     = "substrate.reamde.dev/core/run"
+	typeTrigger    = "substrate.reamde.dev/core/trigger"
+	typeTriggerRun = "substrate.reamde.dev/core/triggerrun"
 )
 
 // The callable kinds a trigger may name. The property is an open string on

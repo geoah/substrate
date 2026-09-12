@@ -40,7 +40,7 @@ func TestE2E(t *testing.T) {
 	}()
 
 	r.runCase("AUTH-01", "Registration and the token door",
-		"The invite code admits a registration; the minted token authenticates; a taken username refuses; "+
+		"The invite code admits a registration; the minted token authenticates; a taken repository name refuses; "+
 			"login mints a second token; a revoked token stops working while the others survive.",
 		caseAuth)
 	r.runCase("REC-01", "Bundle install and the record lifecycle",
@@ -88,7 +88,7 @@ func TestE2E(t *testing.T) {
 		caseStory05)
 	r.runCase("STORY-06", "The world holds together",
 		"Every changelog row is attributed to the owner, a bundle, or one of the four story callables; the "+
-			"checksums and sidecars verify; a rebuild refolds the changelog into a byte-identical graph.",
+			"checksums and sidecars verify; a rebuild against the live server is refused by the writer lock and leaves the graph as it was.",
 		caseStory06)
 
 	// Everything beyond the slice and the stories registers itself into the
@@ -128,8 +128,8 @@ func caseAuth(c *C) {
 
 	var disc struct {
 		Registration struct {
-			Open         bool `json:"open"`
-			TOTPRequired bool `json:"totpRequired"`
+			InviteRequired bool `json:"inviteRequired"`
+			TOTPRequired   bool `json:"totpRequired"`
 		} `json:"registration"`
 		Changelog *struct {
 			Horizon int64 `json:"horizon"`
@@ -137,9 +137,8 @@ func caseAuth(c *C) {
 	}
 	status, raw = c.doAs("", http.MethodGet, "/.well-known/substrate/server.json", nil, &disc)
 	c.requiref(status == http.StatusOK, "discovery answered %d: %s", status, raw)
-	c.requiref(disc.Registration.Open, "registration is closed on this server; the suite needs an invite code")
 	c.requiref(disc.Changelog != nil, "discovery publishes no changelog horizon")
-	c.stepf("discovery: registration open, totpRequired=%t, changelog horizon %d", disc.Registration.TOTPRequired, disc.Changelog.Horizon)
+	c.stepf("discovery: inviteRequired=%t, totpRequired=%t, changelog horizon %d", disc.Registration.InviteRequired, disc.Registration.TOTPRequired, disc.Changelog.Horizon)
 
 	// Register. With the factor enforced the suite enrolls a seed and proves
 	// it with a live code, exactly as an authenticator would.
@@ -169,6 +168,9 @@ func caseAuth(c *C) {
 		} `json:"token"`
 		Secret      string `json:"secret"`
 		RecoveryKey string `json:"recoveryKey"`
+		// Repository is the authority the label resolved to: what the
+		// operator hat addresses, where the door took the bare label.
+		Repository string `json:"repository"`
 	}
 	c.paceAuth()
 	// The register, login and mint failure messages carry no body: a 2xx of
@@ -178,6 +180,8 @@ func caseAuth(c *C) {
 	c.requiref(strings.HasPrefix(regOut.Secret, "substrate_tok_"), "token secret has the wrong shape")
 	c.requiref(regOut.RecoveryKey != "", "register minted no recovery key (none was supplied)")
 	r.token, r.tokenID = regOut.Secret, regOut.Token.ID
+	c.requiref(regOut.Repository != "", "register echoed no repository authority")
+	r.authority = regOut.Repository
 	r.rep.Repository, r.rep.Password = r.repository, r.password
 	c.stepf("registered `%s`: repository created, first token `%s` minted, recovery key returned once (not kept)", r.repository, regOut.Token.ID)
 
@@ -194,12 +198,13 @@ func caseAuth(c *C) {
 	status, _ = c.doAs("", http.MethodGet, "/tokens", nil, nil)
 	c.requiref(status == http.StatusUnauthorized, "GET /tokens without a bearer answered %d, want 401", status)
 
-	// A taken username refuses; registration is one-shot per user.
+	// A taken repository name refuses; registration is one-shot per repository,
+	// and the refusal names the authority the name resolved to.
 	c.paceAuth()
 	status, raw = c.doAs("", http.MethodPost, "/register", reg, nil)
-	c.requiref(status == http.StatusUnprocessableEntity && strings.Contains(string(raw), "already exists"),
-		"re-registering %q answered %d, want a 422 naming the taken username: %s", r.repository, status, raw)
-	c.stepf("a second registration of `%s` was refused: 422, %q", r.repository, "already exists")
+	c.requiref(status == http.StatusUnprocessableEntity && strings.Contains(string(raw), "already owned"),
+		"re-registering %q answered %d, want a 422 naming the taken authority: %s", r.repository, status, raw)
+	c.stepf("a second registration of `%s` was refused: 422, %q", r.repository, "already owned")
 
 	// Login mints a second token that works.
 	login := map[string]any{"repository": r.repository, "password": r.password, "label": "e2e-login"}
@@ -424,7 +429,7 @@ func caseChangelog(c *C) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, ctl, "--dsn", dsn, "repository", "verify", r.repository).CombinedOutput()
+	out, err := exec.CommandContext(ctx, ctl, "--dsn", dsn, "repository", "verify", r.authority).CombinedOutput()
 	c.requiref(err == nil, "substratectl repository verify %s: %v: %s", r.repository, err, out)
 	c.stepf("operator verify (`substratectl repository verify %s`): %s", r.repository, verifySummary(string(out)))
 }

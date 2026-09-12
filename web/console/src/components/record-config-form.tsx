@@ -102,8 +102,8 @@ export function RecordConfigForm({
       toast.add({
         type: "error",
         title: record
-          ? `Could not update the ${name}`
-          : `Could not create the ${name}`,
+          ? `Saving the ${name} failed`
+          : `Creating the ${name} failed`,
         description: error.message,
       })
     },

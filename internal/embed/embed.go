@@ -1,7 +1,7 @@
 // Package embed is the substrate.Embedder the embed queue drains through: an
 // OpenAI-wire embeddings endpoint. Every gateway that copied that wire speaks
 // it, so the base URL is what selects one, and the caller resolves that URL
-// from a repository's llmprovider row rather than from the process.
+// from a repository's llm/provider row rather than from the process.
 package embed
 
 import (
@@ -60,7 +60,7 @@ func KnownModels() []string {
 	return slices.Sorted(maps.Keys(modelDimensions))
 }
 
-// Config configures the embedder: one resolved llmprovider row's endpoint,
+// Config configures the embedder: one resolved llm/provider row's endpoint,
 // key, headers and model. An empty Timeout means 30s.
 type Config struct {
 	BaseURL string
@@ -71,7 +71,7 @@ type Config struct {
 }
 
 // headerTransport rides the gateway's own headers on every request. The
-// llmprovider row declares them (attribution headers, a proxy's routing
+// llm/provider row declares them (attribution headers, a proxy's routing
 // header) and internal/llm sends the same set on completions.
 type headerTransport struct {
 	base    http.RoundTripper

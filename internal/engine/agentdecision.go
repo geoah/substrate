@@ -1,9 +1,9 @@
 package engine
 
 // The resolution primitive. A transition declared with `notifies: <prop>`
-// (vocabulary.Transition.Notifies, a reference property pinned to llmthread)
+// (vocabulary.Transition.Notifies, a reference property pinned to llm/thread)
 // reports itself into that thread: the same transaction writes ONE `system`
-// llmmessage — the kind's envelope plus the transition's changelog entries —
+// llm/message — the kind's envelope plus the transition's changelog entries —
 // and, after commit, the thread RESUMES so the agent's next turn reacts to
 // it. The marker is declared, never hardcoded per kind. The message is an
 // ordinary record: any reader of the thread (the console, GraphQL, the watch
@@ -22,6 +22,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -179,7 +180,7 @@ func (t *txn) requestTarget(req *erow) (eref, error) {
 	return referenceTargetOf(req, propTarget), nil
 }
 
-// putThreadSystemRow writes one `system` llmmessage into a thread: the
+// putThreadSystemRow writes one `system` llm/message into a thread: the
 // envelope as content, the resolution's changelog entries as `changes`, the
 // next stored turn ordinal. The writer is the resolving actor — an owner
 // decision writes under the owner's hand, a judge's under the policy's — so
@@ -204,8 +205,28 @@ func (t *txn) putThreadSystemRow(threadID string, env map[string]any, wrote []ch
 	if len(wrote) > 0 {
 		props["changes"] = changeProps(wrote)
 	}
+	if err := t.requireThreadKinds(); err != nil {
+		return err
+	}
 	_, err = t.put(substrate.PutInput{Kind: typeMessage, ID: id, Properties: props})
 	return err
+}
+
+// requireThreadKinds refuses a thread write on a repository whose boot upgrade
+// has not landed the agent runtime's kinds. The loop addresses them by
+// constant, so writing "somewhere else" would put a turn into a dormant kind
+// under ordinals nothing else counts. A `notifies:` transition is the one write
+// that can reach here before the upgrade, and it must say what is missing
+// rather than land half of itself (records 0077, 0078).
+func (t *txn) requireThreadKinds() error {
+	reg := t.declarations()
+	for _, ident := range []string{typeThread, typeMessage} {
+		if _, ok := reg.ByIdentity(ident); !ok {
+			return fmt.Errorf("%w: this repository does not declare %s: the shipped vocabulary upgrade that moves the agent runtime's kinds has not landed here, and a thread cannot be written to until it does",
+				substrate.ErrValidation, ident)
+		}
+	}
+	return nil
 }
 
 // nextThreadTurn is the thread's next message ordinal — the max stored
@@ -348,7 +369,7 @@ func (ds *dataset) SweepResolutions(ctx context.Context) (int, error) {
 		    SELECT 1 FROM records m
 		    WHERE m.kind = $2 AND m.deleted_at IS NULL
 		      AND m.props->>'role' = 'system'
-		      AND `+referencePathSQL("m.props", msgRelThread)+` = 'substrate.reamde.dev/core/llmthread/' || t.id
+		      AND `+referencePathSQL("m.props", msgRelThread)+` = 'substrate.reamde.dev/llm/thread/' || t.id
 		      AND m.created_at > (t.props->>'finishedAt')::timestamptz
 		  )`,
 		typeThread, typeMessage)

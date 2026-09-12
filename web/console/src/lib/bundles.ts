@@ -24,7 +24,6 @@ import type {
   KindInfo,
   ShippedUpgrade,
   SuggestedMapping,
-  SuggestedMappingState,
 } from "@/lib/api/types"
 import { kindByIdentity, kindPackage, splitKind } from "@/lib/definition"
 
@@ -203,6 +202,8 @@ export function stepLines(plan: ConversionPlan | undefined): string[] {
   return (plan?.steps ?? []).map((s) => {
     const n = `${s.records} live ${s.records === 1 ? "record" : "records"}`
     switch (s.step) {
+      case "move":
+        return `moves ${n} from ${s.from} to ${s.to}, repointing every reference`
       case "rename":
         return `renames ${s.from} to ${s.to} on ${s.kind}: ${n} rewritten`
       case "backfill":
@@ -315,6 +316,8 @@ export function requirementsOf(
   })
 }
 
+/** The entries a bundle's requirements list that this repository does not
+ * satisfy: what the detail page's note and the chain hint are about. */
 export function missingRequirements(
   requirements: Requirement[]
 ): Requirement[] {
@@ -327,32 +330,146 @@ function andList(names: string[]): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
 }
 
-/** The refusal stated BEFORE the server states it: what to import first, named
- * the way the server names it (packages, which are also the bundle ids). A
- * package held below its floor is named with both versions, since importing
- * it AGAIN is the fix, not importing it. Empty string when nothing is
- * missing — the caller shows no hint at all. */
-export function requiresHint(missing: Requirement[]): string {
+/** What the row's own button will do about what is missing, in one sentence:
+ * the whole requirement closure is taken first, leaves first, and then the
+ * bundle itself. A package held below the floor the closure puts under it
+ * (`requiresAtLeast`, decision record 0070) is taken AGAIN rather than taken,
+ * so it says both versions. Empty string when nothing is missing. */
+export function chainHint(
+  missing: Requirement[],
+  verb: string,
+  name: string
+): string {
   if (!missing.length) return ""
   const tooOld = (r: Requirement) =>
     r.atLeast !== undefined && r.held !== undefined && r.held < r.atLeast
-  const absent = missing.filter((r) => !tooOld(r))
-  const old = missing.filter(tooOld)
   const parts: string[] = []
+  const absent = missing.filter((r) => !tooOld(r))
   if (absent.length) {
-    const names = andList(absent.map((r) => r.package))
     parts.push(
-      absent.length === 1
-        ? `Import ${names} first — this bundle declares against it.`
-        : `Import ${names} first — this bundle declares against them.`
+      `${verb} all takes ${andList(absent.map((r) => r.package))} first, in that order, then ${name}.`
     )
   }
-  for (const r of old) {
+  for (const r of missing.filter(tooOld)) {
     parts.push(
-      `Import ${r.package} again first: this bundle needs it at version ${r.atLeast} or later, and this repository holds version ${r.held}.`
+      `${r.package} is here at version ${r.held} and this bundle needs version ${r.atLeast} or later, so it is imported again.`
     )
   }
   return parts.join(" ")
+}
+
+/** One node of the TRANSITIVE requirement closure: a required package, what it
+ * requires in turn, and the catalog row that supplies it. The wire's
+ * `requires` is direct only, so the chain is walked here: importing a bundle
+ * whose requirement itself requires two more is one action, not three the
+ * reader has to discover one refusal at a time. */
+export interface RequirementNode extends Requirement {
+  /** The catalog row that would supply this package. Absent when the shipped
+   * catalog has no closure for it, which is a requirement nothing here can
+   * take: the server's refusal is the one that names it. */
+  row?: BundleRow
+  /** This package is already on the path that reached it, so the closure
+   * requires its way back round. `cycleWith` is the package that names it
+   * here, which is the other end of the loop. */
+  cycle?: boolean
+  cycleWith?: string
+  requires: RequirementNode[]
+}
+
+/** The requirement closure under one row, walked across catalog entries.
+ * `byId` keys every row by the package identity it has HERE, which is what a
+ * requirement names (a sample's are rehomed by landedCatalog before they get
+ * this far).
+ *
+ * The row's OWN id starts the walk as seen, so a closure that requires its way
+ * back to it stops there and is marked a cycle rather than listing the bundle
+ * among the things to import before itself. The closure is data, and data can
+ * say anything. */
+export function requirementTree(
+  row: BundleRow,
+  byId: ReadonlyMap<string, BundleRow>,
+  present: ReadonlySet<string>,
+  versions: ReadonlyMap<string, number> = new Map(),
+  seen: ReadonlySet<string> = new Set([row.id])
+): RequirementNode[] {
+  return requirementsOf(row, present, versions).map((req) => {
+    const supplier = byId.get(req.package)
+    const cycle = seen.has(req.package)
+    const next = new Set([...seen, req.package])
+    return {
+      ...req,
+      ...(supplier && { row: supplier }),
+      ...(cycle && { cycle: true, cycleWith: row.id }),
+      requires:
+        supplier && !cycle
+          ? requirementTree(supplier, byId, present, versions, next)
+          : [],
+    }
+  })
+}
+
+/** Every missing package in the closure, LEAVES FIRST and each named once:
+ * the order the imports have to run in, since a bundle is refused while
+ * anything it declares against is absent. */
+export function missingChain(nodes: RequirementNode[]): RequirementNode[] {
+  const out: RequirementNode[] = []
+  const seen = new Set<string>()
+  const walk = (list: RequirementNode[]) => {
+    for (const node of list) {
+      walk(node.requires)
+      if (node.present || seen.has(node.package)) continue
+      seen.add(node.package)
+      out.push(node)
+    }
+  }
+  walk(nodes)
+  return out
+}
+
+/** What one press of the row's button will do: the bundles to take, leaves
+ * first and the row itself last, or the one sentence saying why nothing can
+ * be taken at all. Nothing is ever half-planned: a chain that cannot finish
+ * imports nothing, rather than landing the leaves and refusing on what the
+ * reader actually asked for. */
+export interface ImportPlan {
+  /** Each bundle to take, in order. Empty when the plan is refused. */
+  bundles: BundleRow[]
+  /** Why nothing can be taken, in one sentence. Empty when it can. */
+  refusal: string
+}
+
+export function importPlan(
+  row: BundleRow,
+  chain: RequirementNode[]
+): ImportPlan {
+  const loops: string[] = []
+  const walk = (nodes: RequirementNode[]) => {
+    for (const node of nodes) {
+      if (node.cycle && node.cycleWith) {
+        loops.push(`${node.cycleWith} and ${node.package}`)
+      }
+      walk(node.requires)
+    }
+  }
+  walk(chain)
+  if (loops.length) {
+    return {
+      bundles: [],
+      refusal: `${andList([...new Set(loops)])} require each other, so there is no order to import them in. Nothing is imported.`,
+    }
+  }
+  const missing = missingChain(chain)
+  const absent = missing.filter((node) => !node.row).map((node) => node.package)
+  if (absent.length) {
+    return {
+      bundles: [],
+      refusal: `${andList(absent)} ${absent.length === 1 ? "is" : "are"} not in the catalog, so ${absent.length === 1 ? "it" : "they"} cannot be imported from here. Nothing is imported.`,
+    }
+  }
+  return {
+    bundles: [...missing.flatMap((node) => (node.row ? [node.row] : [])), row],
+    refusal: "",
+  }
 }
 
 /** Whether taking the upgrade needs the reader's consent first: the plan
@@ -376,33 +493,6 @@ export function confirmationOf(
 
 // ── suggested mappings (decision record 0049) ──────────────────────────────
 
-/** One suggested mapping as a row renders it: the mapping itself, the sample
- * that declares it, its state, and one sentence saying what to do about it.
- *
- * A sample ships one mapping per provider it knows, onto a kind of its own,
- * and a door admits only the ones that resolve here. Both sections show them,
- * from the two directions: a sample's card lists what it projects and what is
- * not projecting yet; a provider's lists the samples waiting on it, which is a
- * reason to install it.
- *
- * The state is the MAPPING RECORD's, never the provider's: installing GitHub
- * lands mirrors and no mapping, so a row that read "landed" off the provider
- * would tell the reader a projection was running when nothing was. */
-export interface SuggestedMappingRow {
-  mapping: SuggestedMapping
-  /** The sample package that declares it: the bundle to import again. */
-  sample: string
-  /** That package's own word ("people"), which is how a row names it. */
-  sampleWord: string
-  state: SuggestedMappingState
-  /** True only in `landed`: the projection is running. */
-  landed: boolean
-  /** The chip's label: source kind name to subject kind name. */
-  label: string
-  /** The hover, one sentence: what it projects, and what to do about it. */
-  title: string
-}
-
 /** The package's own word, the last segment of a package identity. */
 function packageWord(pkg: string): string {
   const parts = pkg.split("/")
@@ -413,110 +503,42 @@ function packageWord(pkg: string): string {
  * the package rather than merging into it (decision record 0048), so a kind or
  * a property the reader added since is dropped by it. */
 export const REIMPORT_WARNING =
-  "Re-importing replaces that package and may remove your changes."
+  "Importing again replaces the package and may remove your changes."
 
-function suggestedRow(
-  mapping: SuggestedMapping,
-  sample: string
-): SuggestedMappingRow {
-  const provider = packageWord(mapping.package)
-  const word = packageWord(sample)
-  const projects = `${mapping.from} projects onto ${mapping.to}`
-  const again = `import ${word} again. ${REIMPORT_WARNING}`
-  const title = () => {
-    switch (mapping.state) {
-      case "landed":
-        return `${projects}: landed.`
-      case "ready":
-        return `${projects}: ${again}`
-      case "blocked":
-        return `${projects}: upgrade ${provider} first, then ${again}${
-          mapping.problems?.length ? ` ${mapping.problems.join(" ")}` : ""
-        }`
-      default:
-        return `${projects}: install ${provider}, then ${again}`
-    }
-  }
-  return {
-    mapping,
-    sample,
-    sampleWord: word,
-    state: mapping.state,
-    landed: mapping.state === "landed",
-    label: `${splitKind(mapping.from).name} → ${splitKind(mapping.to).name}`,
-    title: title(),
-  }
-}
-
-/** A SAMPLE row's own suggested mappings, in the order the closure ships
- * them. Empty for a provider (it declares none) and for a bundle with no
- * catalog entry. */
-export function suggestedMappingsOf(row: BundleRow): SuggestedMappingRow[] {
-  const catalog = row.catalog
-  if (!catalog?.suggestedMappings) return []
-  return catalog.suggestedMappings.map((m) => suggestedRow(m, catalog.id))
-}
-
-/** A PROVIDER row's inbound suggested mappings: every sample that carries one
- * onto this provider's kinds, and what each one is doing. Read over EVERY row,
- * because the samples are in the other section. */
-export function samplesMappingOnto(
-  row: BundleRow,
-  rows: BundleRow[]
-): SuggestedMappingRow[] {
-  if (row.tier !== "provider") return []
-  const out: SuggestedMappingRow[] = []
-  for (const other of rows) {
-    const catalog = other.catalog
-    if (other.tier !== "sample" || !catalog?.suggestedMappings) continue
-    for (const m of catalog.suggestedMappings) {
-      if (m.package === row.id) out.push(suggestedRow(m, catalog.id))
-    }
-  }
-  return out
+/** What a SAMPLE's mappings do, in one sentence: which provider's records it
+ * links onto which of its own kinds, and what makes one land. A provider
+ * declares no mapping at all (decision record 0049), so this is empty for one,
+ * and empty for a closure that ships none.
+ *
+ * The provider is named by its package's own word, read off the source kind's
+ * package, because that is the bundle the reader would install. */
+export function mappingLinksSentence(row: BundleRow): string {
+  const mappings = row.catalog?.suggestedMappings ?? []
+  if (!mappings.length) return ""
+  const sources = andList([
+    ...new Set(
+      mappings.map((m) => `${packageWord(m.package)} ${splitKind(m.from).name}`)
+    ),
+  ])
+  const targets = andList([
+    ...new Set(mappings.map((m) => splitKind(m.to).name)),
+  ])
+  return (
+    `Links ${sources} records onto ${targets}. ` +
+    `Each link lands when that provider is installed and this sample is imported again.`
+  )
 }
 
 /** The mappings a RE-IMPORT would land: their provider is here and they fit
- * it, and only the import is missing. This is what earns an installed sample
- * whose shipped closure has not moved an "Import again" action (decision
- * record 0049); a moved one is offered the upgrade, which is the same door. */
-export function readySuggestedMappings(
-  rows: SuggestedMappingRow[]
-): SuggestedMappingRow[] {
-  return rows.filter((r) => r.state === "ready")
-}
-
-/** What to do about the ones that are not projecting, in one sentence: which
- * providers to install or upgrade, which samples to import again, and what a
- * re-import costs (decision records 0048 and 0049). Empty string when every
- * mapping has landed.
- *
- * `held` is whether this repository already has the bundle, and it changes
- * only the verb: a sample nobody has imported yet is imported, not
- * re-imported, and its own Import button is right there. */
-export function suggestedMappingHint(
-  rows: SuggestedMappingRow[],
-  held = true
-): string {
-  const pending = rows.filter((r) => !r.landed)
-  if (!pending.length) return ""
-  const samples = andList([...new Set(pending.map((r) => r.sampleWord))])
-  const what =
-    pending.length === 1 ? "this mapping" : `these ${pending.length} mappings`
-  const words = (state: SuggestedMappingState) =>
-    andList([
-      ...new Set(
-        pending
-          .filter((r) => r.state === state)
-          .map((r) => packageWord(r.mapping.package))
-      ),
-    ])
-  const steps: string[] = []
-  if (words("waiting")) steps.push(`install ${words("waiting")}`)
-  if (words("blocked")) steps.push(`upgrade ${words("blocked")}`)
-  steps.push(held ? `import ${samples} again` : `import ${samples}`)
-  const sentence = `To enable ${what}, ${steps.join(", then ")}.`
-  return held ? `${sentence} ${REIMPORT_WARNING}` : sentence
+ * it, and only the import is missing. This is what earns a held sample an
+ * "Import again" on its own page (decision record 0049); a moved closure is
+ * offered the upgrade instead, which is the same door. */
+export function readyMappings(row: {
+  catalog?: Pick<CatalogItem, "suggestedMappings">
+}): SuggestedMapping[] {
+  return (row.catalog?.suggestedMappings ?? []).filter(
+    (m) => m.state === "ready"
+  )
 }
 
 /** The server's OWN words for a refused import. Admission answers with a
@@ -554,6 +576,49 @@ export function accountKindOf(
   return kinds.find(
     (k) => kindPackage(k) === bundlePackage && hasTrait(k, "accountconfig")
   )
+}
+
+/** One member of a closure as the registry lists it: its own word and the
+ * prose its declaration carries. The name alone says nothing, and before a
+ * bundle lands there is no registry entry to look it up in, so the catalog's
+ * own descriptions are the only ones there are. */
+export interface ClosureRow {
+  identity: string
+  name: string
+  description?: string
+}
+
+export function closureRows(
+  ids: string[] | null | undefined,
+  described: Record<string, string> | undefined
+): ClosureRow[] {
+  return (ids ?? [])
+    .map((identity) => ({
+      identity,
+      name: splitKind(identity).name,
+      ...(described?.[identity] && { description: described[identity] }),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/** The trigger records a closure ships. A trigger's id is a plain record id,
+ * not a reference, and core's trigger kind declares no description: what it
+ * invokes is the whole of what there is to say about it. */
+export function triggerRows(catalog?: CatalogItem): ClosureRow[] {
+  const closure = catalog?.closure
+  return (closure?.triggers ?? [])
+    .map((id) => {
+      // A callable is a REFERENCE value, a kind reference and an id, so its
+      // last segment is the function's or the agent's own word.
+      const callable = closure?.triggerCallables?.[id]
+      const word = callable?.split("/").pop()
+      return {
+        identity: id,
+        name: id,
+        ...(word && { description: `runs ${word}` }),
+      }
+    })
+    .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 // ── bundle-detail closure inventory (the Kinds + Resources tables) ────────
@@ -698,11 +763,32 @@ function oauthClientInput(
 }
 
 /** The setup codes that are an input's own resolution problems; the rest
- * (oauth-client, provider) stand on their own as warning rows. */
+ * (oauth-client, provider, setting) stand on their own. */
 const INPUT_SETUP_CODES = ["missing", "ambiguous", "dangling"] as const
 
 export function isInputSetupCode(code: SetupItem["code"]): boolean {
   return (INPUT_SETUP_CODES as readonly string[]).includes(code)
+}
+
+/** A setup item a settings FORM clears rather than a warning row: a required
+ * `setting` or `secret` record with no value (decision record 0076). The form
+ * marks the field itself, so the row beside it would say the same thing
+ * twice. */
+export function isSettingSetupCode(code: SetupItem["code"]): boolean {
+  return code === "setting"
+}
+
+/** The Settings row's number in the sidebar: every empty required setting
+ * across the bundles this repository holds, counted off the same status read
+ * the Registry page makes. Nothing to fill in renders nothing. */
+export function settingSetupCount(
+  statuses: Pick<BundleStatus, "setup">[]
+): number {
+  return statuses.reduce(
+    (total, b) =>
+      total + (b.setup ?? []).filter((i) => isSettingSetupCode(i.code)).length,
+    0
+  )
 }
 
 /** Whether the connect flow should be gated on setup: the server refuses

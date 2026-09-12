@@ -1,0 +1,43 @@
+# The agent runtime's data, as its own seeded package. `core` is what exists
+# because the substrate exists — the repository, tokens, the vocabulary's own
+# meta-model, the delivery plumbing. The agent loop is a SUBSYSTEM on top of
+# that: a `provider` says where completions are bought, a `thread` is one
+# invocation (there is no agent-run kind — the thread IS the run), a `message`
+# is one turn of it, and an `interaction` is one batch of questions the agent
+# asked its owner. A repository that never runs an agent still holds these
+# kinds, because the binary seeds every package it ships. Core declares against
+# them in exactly three places: the `agent` kind's `provider` reference,
+# `recordpatchrequest`'s `thread`, and the `ask` built-in's write permission.
+#
+# The `agent` kind itself stays in core: it is a MANIFEST document kind
+# (vocabulary.DocAgent), and a manifest document is a record of a core kind
+# whatever package it describes.
+#
+# SEEDED, like core: this package's source is `builtin`, which is what the
+# seed, the boot upgrade, the declaration-write refusal, the merge guard and
+# the GraphQL bare-singular name all key on. Two checks name the seeded
+# packages instead — `notifies:` in the loader, which cannot read a trustworthy
+# source, and the quarantine refusal — and record 0077 says why each.
+#
+# ALPHA at v1: this vocabulary and the /agents chat+call wire are explicitly
+# ALPHA and UNFROZEN (ruling A12). They may change or be superseded without a
+# v1 wire break.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: substrate.reamde.dev/llm
+data:
+  authority: substrate.reamde.dev
+  package: llm
+  # a maturity statement, not a routing key: no envelope carries a version.
+  version: 1
+  # Moved out of `core` (2026-09-12), renaming each local name as it went:
+  # `llmprovider` -> `provider`, `llmthread` -> `thread`, `llmmessage` ->
+  # `message`, `llminteraction` -> `interaction`. The rename is required, not
+  # cosmetic: a SEEDED kind's GraphQL name is its bare singular, the old
+  # core kinds are never pruned from a repository that predates the move, and
+  # `llm/llmprovider` would claim `Llmprovider` beside the dormant
+  # `core/llmprovider` forever. The old names are NOT retired in core, so the
+  # four old kinds stay declared and dormant. Their ROWS come here: each kind
+  # below carries `movedFrom`, and admitting it carries every live record
+  # across and repoints every reference at it, in one transaction (decision
+  # record 0078). Decision record 0077 is the move itself.

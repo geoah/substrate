@@ -1,0 +1,72 @@
+# one declared trait: reusable typed properties a record type binds
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/trait
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One declared trait: reusable typed properties with shared semantics that
+    a kind binds — `temporal`, `accountconfig`, `oauth2`. Traits resolve across
+    authorities, and host behavior keys on the trait a kind binds rather than
+    on what the kind is called.
+  version: 8
+  names:
+    singular: trait
+  # id = "<authority>/<package>/<name>". Traits resolve across authorities, so
+  # a vocabulary type can bind core's `temporal` without redeclaring it.
+  displayTemplate: "{localName}"
+  properties:
+    version:
+      type: int
+      managed: true
+      description: this declaration's incremental version, maintained by the
+        engine
+    source:
+      type: enum
+      values:
+        - builtin
+        - published
+        - installed
+      managed: true
+      description: builtin for seeded traits, published for a provider's,
+        installed for bundle ones
+    # NOT a reference, and the reason is identity: an authority is what this
+    # declaration IS part of, not a record it points at. Pinning it made the
+    # stored row spell it as a path while the manifest spelled the name, so one
+    # declaration had two Definitions — the authored one and the one that came
+    # back after a restart.
+    authority:
+      type: string
+      required: true
+      description: the authority that declares it
+    package:
+      type: string
+      description: the package it is declared in, the middle segment of its
+        id
+    description:
+      type: string
+      description: what binding this trait means
+    # A MAP: the key is the property's name, the value its datatype word. A
+    # trait's properties are a contract on the binding kind's own declarations,
+    # so the datatype is all there is to say.
+    properties:
+      type: string
+      keyed: true
+      keyPattern: camel
+      description: the properties a binding kind must declare, name → datatype
+    # The variant LIST: a kind binds one of them (`traits: [temporal(point)]`).
+    oneOf:
+      type: object
+      repeated: true
+      description: the variants a binding picks one of
+      fields:
+        name:
+          type: string
+          required: true
+          description: the variant's name, as a binding names it
+        properties:
+          type: string
+          keyed: true
+          keyPattern: camel
+          description: the variant's properties, name → datatype

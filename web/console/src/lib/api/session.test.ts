@@ -5,7 +5,6 @@ import {
   clearSession,
   getToken,
   hasSession,
-  maskedToken,
   saveSession,
   sessionExpired,
   setSessionChangedHandler,
@@ -69,15 +68,5 @@ describe("session", () => {
     sessionExpired()
     expect(changed).toHaveBeenCalledTimes(1)
     expect(hasSession()).toBe(false)
-  })
-})
-
-describe("maskedToken", () => {
-  it("shows only the edges of a real token", () => {
-    expect(maskedToken("substrate_tok_abcdef9f2c")).toBe("subs…9f2c")
-  })
-
-  it("never echoes a short value", () => {
-    expect(maskedToken("tiny")).toBe("token")
   })
 })

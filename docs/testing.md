@@ -338,7 +338,7 @@ endpoint and Anthropic's:
   if it ever regresses.
 
 **The chain** (`internal/engine/agents_live_db_test.go`), one case through the
-real engine with no fakes anywhere: two `llmprovider` records (one per wire), a
+real engine with no fakes anywhere: two `llm/provider` records (one per wire), a
 deterministic function tool, an OpenAI-backed sub-agent, and an
 Anthropic-backed root agent that calls the tool, delegates to the sub-agent and
 settles. What it asserts is durable state — the thread rows and their token and

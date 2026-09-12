@@ -6,9 +6,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: tasks
   description: >-
-    The done-or-skipped mark against one occurrence of a recurring task. The
-    task itself stays open while its rule repeats; only the occurrences are
-    marked, and absence in the logs is what missed means.
+    The done or skipped mark for one occurrence of a repeating task. The task
+    stays open while it keeps repeating, so it is the occurrences that get
+    marked, and one with no mark was missed.
   names:
     singular: tasklog
   displayTemplate: "{status}"

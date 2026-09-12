@@ -116,8 +116,8 @@ describe("RecordConfigForm", () => {
     // No empty placeholder (its value is ""), and none of the empty-choice
     // copy — a required select with a value must not offer an empty pick.
     expect(options.some((o) => o.value === "")).toBe(false)
-    expect(within(select).queryByText("— none —")).toBeNull()
-    expect(within(select).queryByText("— select —")).toBeNull()
+    expect(within(select).queryByText("None")).toBeNull()
+    expect(within(select).queryByText("Select…")).toBeNull()
     // Exactly the three declared options remain.
     expect(options.map((o) => o.value)).toEqual(["off", "hourly", "daily"])
   })

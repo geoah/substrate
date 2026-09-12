@@ -266,7 +266,7 @@ func TestEveryDeclarationKindAdmitsEveryOrigin(t *testing.T) {
 // a kind that ships without a displayTemplate fails this test, and one that
 // gains a template has to leave the list.
 func TestEveryKindDeclaresADisplayTemplate(t *testing.T) {
-	// the nine bundle mirrors
+	// the eight bundle mirrors
 	// carry the provider's own title and move with the built-in slot's
 	// retirement (issue 68).
 	onTheSlot := map[string]bool{
@@ -277,8 +277,7 @@ func TestEveryKindDeclaresADisplayTemplate(t *testing.T) {
 		"samples.substrate.reamde.dev/notes/note":            true,
 		"providers.substrate.reamde.dev/notion/database":     true,
 		"providers.substrate.reamde.dev/notion/page":         true,
-		"samples.substrate.reamde.dev/web/config":            true,
-		"samples.substrate.reamde.dev/web/page":              true,
+		"samples.substrate.reamde.dev/readinglist/page":      true,
 	}
 	declared := map[string]bool{}
 	for _, d := range readTreeDocuments(t) {

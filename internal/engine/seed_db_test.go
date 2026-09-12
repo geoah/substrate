@@ -158,7 +158,7 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 	}
 	// …and opening it writes no DECLARATION at all: the tree does not
 	// re-assert, and the upgrade diff against the binary that seeded it is
-	// empty. (Open still seeds the create-only llmprovider row, which is data.)
+	// empty. (Open still seeds the create-only llm/provider row, which is data.)
 	for _, ch := range changesSince(t, ds, atCreation) {
 		if strings.HasSuffix(ch.Kind, ".substrate.reamde.dev/core") && declarationKinds[ch.Kind] {
 			t.Fatalf("opening a freshly seeded repository re-wrote declaration %s %s", ch.Kind, ch.RecordID)
@@ -201,9 +201,12 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("kinds: %v", err)
 	}
+	// The SEEDED set is core and llm (record 0077) and nothing else: a domain
+	// package appearing here would be vocabulary silently going back to being
+	// seeded into every new repository.
 	for _, k := range declared {
-		if k.Authority != "substrate.reamde.dev" || k.Package != "core" {
-			t.Errorf("a freshly created repository speaks %s — only core is seeded", k.Identity)
+		if k.Authority != "substrate.reamde.dev" || (k.Package != "core" && k.Package != "llm") {
+			t.Errorf("a freshly created repository speaks %s — only core and llm are seeded", k.Identity)
 		}
 	}
 	// Every declaration kind carries one, not just record types.

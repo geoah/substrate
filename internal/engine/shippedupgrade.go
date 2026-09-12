@@ -34,6 +34,12 @@ type shippedUpgradeStage struct {
 	// The projection skips these, so a repository ahead of the binary stays
 	// ahead and nothing is ever downgraded.
 	keep map[string]bool
+	// moves are the kind moves this upgrade performs (move.go, record 0078):
+	// a shipped declaration naming an old kind with `movedFrom` that this
+	// repository still declares. They are classified before the narrowings,
+	// because a reference at a kind the same transaction carries must not be
+	// counted as pointing elsewhere, and they run first inside it.
+	moves []kindMove
 	// narrowings are the guards that need a live-row count. guards runs them
 	// over whichever reader the door holds: the boot's transaction, or the
 	// bare pool for the read.
@@ -138,7 +144,14 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	// refused at boot too, otherwise rows would be shaped one way under a
 	// declaration that says another, with nothing anywhere reporting it. A
 	// guard only one door honors is not a guard.
-	st.narrowings = classifyNarrowingsExcept(current, reg, st.upgrade, keptIdents)
+	// The moves this upgrade performs are classified BEFORE the narrowings, so
+	// a reference at a kind the same transaction carries is not counted as
+	// pointing elsewhere (move.go, record 0078). Without this the seeded
+	// upgrade of a repository that ever ran an agent is refused forever: its
+	// agent rows point at the kind the move is about to carry.
+	st.moves = classifyKindMoves(current, reg, st.upgrade, keptIdents)
+	st.narrowings = classifyNarrowingsExcept(current, reg, st.upgrade, keptIdents, movedTargets(st.moves))
+	st.refused = append(st.refused, moveGuards(current, st.moves)...)
 
 	// The default check `/vocabulary/apply` takes, for the same reason the
 	// narrowing guards are here: a declared default no write could store would
@@ -274,6 +287,21 @@ func (st *shippedUpgradeStage) guards(q sqlReader, ceiling int64) ([]string, sub
 		return nil, substrate.ConversionPlan{}, err
 	}
 	lines := append(append([]string(nil), st.refused...), counted...)
+	// The move's own counted half: the rows each one carries, the references
+	// that follow them, and the blockers only the store can answer (a live
+	// destination row, a reference declaration left pinned at the emptied
+	// kind). Resolved here rather than at staging so the preview and the boot
+	// read the same store under the same locks (move.go).
+	planned, moveLines, err := planMoves(q, st.candidate, st.moves)
+	if err != nil {
+		return nil, substrate.ConversionPlan{}, err
+	}
+	grants, err := countGrants(q, movedTargets(st.moves))
+	if err != nil {
+		return nil, substrate.ConversionPlan{}, err
+	}
+	st.conversions.moves, st.conversions.grantPatches = planned, grants
+	lines = append(lines, moveLines...)
 	plan, err := st.conversions.wire(q)
 	if err != nil {
 		return nil, plan, err

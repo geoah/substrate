@@ -67,6 +67,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { toast } from "@/components/ui/toast"
 import { BundleStateBadge, SetupBadge } from "@/components/bundle-state-badge"
+import { BundleSettingsForm } from "@/components/bundle-settings"
 import { RecordConfigForm } from "@/components/record-config-form"
 import {
   ACCOUNT_CONFIG_TRAIT,
@@ -90,6 +91,7 @@ import {
 } from "@/lib/api/bundles"
 import {
   catalogItemQueryOptions,
+  importBundle,
   oauthCallbackURL,
   type CatalogItem,
 } from "@/lib/api/catalog"
@@ -100,14 +102,26 @@ import {
 } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { repositoryQueryOptions } from "@/lib/api/repository"
-import { CORE_AUTHORITY, CORE_PACKAGE, CORE_PACKAGE_NAME } from "@/lib/api/http"
+import {
+  CORE_AUTHORITY,
+  CORE_PACKAGE,
+  CORE_PACKAGE_NAME,
+  LLM_PACKAGE,
+  LLM_PACKAGE_NAME,
+} from "@/lib/api/http"
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import {
   accountKindOf,
   bundleRecordRows,
+  confirmationOf,
   declaresProviderInterfaces,
+  importFailureText,
+  missingRequirements,
+  readyMappings,
+  REIMPORT_WARNING,
   installedKindRows,
   isInputSetupCode,
+  isSettingSetupCode,
   oauthConnectBlocked,
   heldVersions,
   mergeBundles,
@@ -117,6 +131,8 @@ import {
   type ShippedRecordRow,
   type KindRow,
 } from "@/lib/bundles"
+import { settingRecordsQueryOptions } from "@/lib/api/settings"
+import { groupSettings, type SettingField } from "@/lib/settings"
 import { cellValue, recordTitle } from "@/lib/format"
 import { splitKind, kindByIdentity } from "@/lib/definition"
 import { cn } from "@/lib/utils"
@@ -128,7 +144,7 @@ const GOOGLE_OAUTH_DOCS = "https://support.google.com/cloud/answer/6158849"
 
 /** The provider callback URL, read-only with a copy affordance — the value the
  * owner must register in their OAuth client. Provider-specific: it renders only
- * on an integration bundle (declaresProviderInterfaces). */
+ * on a provider bundle (declaresProviderInterfaces). */
 function CallbackUrlNote() {
   const url = oauthCallbackURL()
   const [copied, setCopied] = useState(false)
@@ -176,7 +192,7 @@ function CallbackUrlNote() {
  * requirement torn down after the import reads as missing here rather than
  * silently rotting. Renders only when the shipped closure names any. */
 function RequiresNote({ requirements }: { requirements: Requirement[] }) {
-  const missing = requirements.filter((r) => !r.present)
+  const missing = missingRequirements(requirements)
   return (
     <div className="rounded-md border bg-muted/30 px-4 py-3">
       <span className="text-xs font-medium">Requires</span>
@@ -194,7 +210,7 @@ function RequiresNote({ requirements }: { requirements: Requirement[] }) {
               req.present
                 ? `${req.package} is imported`
                 : req.held !== undefined
-                  ? `${req.package} is imported at version ${req.held}; this bundle needs version ${req.atLeast} or later`
+                  ? `${req.package} is imported at version ${req.held}, but this bundle needs version ${req.atLeast} or later`
                   : `${req.package} is not imported`
             }
           >
@@ -213,7 +229,7 @@ function RequiresNote({ requirements }: { requirements: Requirement[] }) {
       <p className="pt-1.5 text-xs text-muted-foreground">
         {missing.length
           ? requiresNoteText(missing)
-          : "The vocabulary this bundle's mappings, references and trigger subscriptions point at. All of it is imported."}
+          : "The packages this bundle points at. Every one of them is imported."}
       </p>
     </div>
   )
@@ -231,17 +247,123 @@ function requiresNoteText(missing: Requirement[]): string {
     parts.push(
       `Not in this repository: ${absent
         .map((r) => r.package)
-        .join(
-          ", "
-        )}. This bundle's mappings and references point at it — re-import that package's bundle from the registry.`
+        .join(", ")}. This bundle points at it. Import it from the registry.`
     )
   }
   for (const r of old) {
     parts.push(
-      `${r.package} is imported at version ${r.held}, and this bundle needs version ${r.atLeast} or later: import that package's bundle again first.`
+      `${r.package} is imported at version ${r.held}. This bundle needs version ${r.atLeast} or later. Import it again from the registry first.`
     )
   }
   return parts.join(" ")
+}
+
+/** IMPORT AGAIN: the one action that lands a mapping a first import dropped
+ * (decision record 0049). A sample ships one mapping per provider it knows,
+ * and the door admits only the ones that resolve at the time; a reader who
+ * installs a provider afterwards would otherwise have nothing to press, and
+ * the projection would never run.
+ *
+ * It lives HERE, on the page of the bundle it re-imports, and not on the
+ * registry list: a row in a table is no place for a state machine about
+ * somebody else's package (owner ruling).
+ *
+ * It CONFIRMS first, because a re-import is not a merge: the batch replaces
+ * the package wholesale (decision record 0048), so a kind or a property the
+ * reader added since is dropped by it, or the narrowing guard refuses the
+ * import while live records still hold the old shape. Where the server's
+ * preview says the copy WAS edited (`discardsEdits`, decision record 0070)
+ * the click also sends that preview's `planHash` and `changelogSeq`, which
+ * the door requires. */
+function ImportAgainNote({ item }: { item: CatalogItem }) {
+  const queryClient = useQueryClient()
+  const [confirming, setConfirming] = useState(false)
+  const ready = readyMappings({ catalog: item })
+  const importing = useMutation({
+    mutationFn: () => importBundle(item.id, confirmationOf(item.upgrade)),
+    onSuccess: (status) => {
+      setConfirming(false)
+      toast.add({
+        type: "success",
+        title:
+          ready.length === 1
+            ? `${item.name} re-imported: 1 link landed.`
+            : `${item.name} re-imported: ${ready.length} links landed.`,
+      })
+      seedBundleStatus(queryClient, status)
+      void queryClient.invalidateQueries()
+      refetchBundleStateSoon(queryClient)
+    },
+    onError: (error) => {
+      toast.add({
+        type: "error",
+        title: `Could not re-import ${item.name}`,
+        description: importFailureText(error),
+      })
+    },
+  })
+  if (!ready.length) return null
+  const providers = [
+    ...new Set(ready.map((m) => m.package.split("/").pop() ?? m.package)),
+  ].join(", ")
+  const what = ready.length === 1 ? "1 link" : `${ready.length} links`
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/30 px-4 py-3">
+      <div className="min-w-0">
+        <span className="text-xs font-medium">Links waiting</span>
+        <p className="pt-1 text-xs text-muted-foreground">
+          {`Import again to land ${what}, now that ${providers} ${
+            ready.length === 1 ? "is" : "are"
+          } installed. ${REIMPORT_WARNING}`}
+        </p>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={importing.isPending}
+        onClick={() => setConfirming(true)}
+      >
+        {importing.isPending && <Spinner className="size-3.5" />}
+        Import again
+      </Button>
+      {confirming && (
+        <Dialog
+          open
+          onOpenChange={(open) =>
+            !open && !importing.isPending && setConfirming(false)
+          }
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Import {item.name} again?</DialogTitle>
+              <DialogDescription>
+                {`This lands ${what}, now that the provider each one reads is installed. ` +
+                  `A re-import REPLACES ${item.id} rather than merging into it: a kind or a property you added is dropped by it, ` +
+                  `and it is refused outright while live records still hold a shape the shipped package no longer declares. ` +
+                  `Your records are untouched either way.`}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                disabled={importing.isPending}
+                onClick={() => setConfirming(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={importing.isPending}
+                onClick={() => importing.mutate()}
+              >
+                {importing.isPending && <Spinner className="size-3.5" />}
+                Import again
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  )
 }
 
 // ── the lifecycle verbs ─────────────────────────────────────────────────────
@@ -269,7 +391,7 @@ function verbPlan(verb: BundleVerb | "purge", b: BundleStatus): VerbPlan {
         label: "Disable",
         done: "Disabled.",
         title: `Disable ${b.name}?`,
-        body: "Execution stops — triggers stop delivering and callables stop resolving. The schema and data stay exactly as they are; enable brings it back with the cursors intact.",
+        body: "The bundle stops running. Triggers stop delivering and functions stop resolving. Its kinds and records stay as they are. Enable picks it up where it left off.",
         run: (id) => runBundleVerb(id, "disable"),
       }
     case "enable":
@@ -277,7 +399,7 @@ function verbPlan(verb: BundleVerb | "purge", b: BundleStatus): VerbPlan {
         label: "Enable",
         done: "Enabled.",
         title: `Enable ${b.name}?`,
-        body: "Execution resumes from where the cursors stand.",
+        body: "The bundle starts running again, from where it left off.",
         run: (id) => runBundleVerb(id, "enable"),
       }
     case "uninstall":
@@ -285,7 +407,7 @@ function verbPlan(verb: BundleVerb | "purge", b: BundleStatus): VerbPlan {
         label: "Uninstall",
         done: "Uninstalled.",
         title: `Uninstall ${b.name}?`,
-        body: "Tears down the schema, callables and runtime registration for good. Refused while live data remains — purge the data first. Reinstalling means re-applying the closure.",
+        body: "This removes the bundle's kinds and functions. It is refused while any record of those kinds is still live, so purge the data first. Installing again starts from scratch.",
         destructive: true,
         run: (id) => uninstallBundle(id).then(() => null),
       }
@@ -296,13 +418,14 @@ function verbPlan(verb: BundleVerb | "purge", b: BundleStatus): VerbPlan {
         title: `Purge ${b.name}'s data?`,
         body: (
           <>
-            Tombstones every live row in <span className="data">{b.id}</span> —{" "}
+            This deletes every live record in{" "}
+            <span className="data">{b.id}</span>,{" "}
             <span className="data">
               {(b.liveRecords ?? 0).toLocaleString()}
             </span>{" "}
-            {(b.liveRecords ?? 0) === 1 ? "record" : "records"} — through the
-            finalizer flow. Refused while the bundle is running: disable it
-            first. This is not reversible, and it must run before uninstall.
+            {(b.liveRecords ?? 0) === 1 ? "record" : "records"} in all. It is
+            refused while the bundle is running, so disable it first. This
+            cannot be undone, and uninstall needs it done.
           </>
         ),
         destructive: true,
@@ -336,7 +459,7 @@ function LifecycleButtons({ bundle }: { bundle: BundleStatus }) {
       setConfirming(null)
       toast.add({
         type: "error",
-        title: `Could not ${plan.label.toLowerCase()} the bundle`,
+        title: `${plan.label} failed`,
         description: error.message,
       })
       void queryClient.invalidateQueries()
@@ -387,7 +510,7 @@ function LifecycleButtons({ bundle }: { bundle: BundleStatus }) {
       </div>
       {!bundle.installed && (
         <p className="max-w-xs text-right text-xs text-muted-foreground">
-          Uninstalled — re-apply the closure to reinstall (
+          Uninstalled. Re-apply the closure to reinstall (
           <span className="data">substratectl apply -f bundle.yaml</span>).
           Enable cannot restore a removed registration.
         </p>
@@ -446,21 +569,21 @@ function Fact({
 }
 
 /** One setup item that is NOT an input's own resolution problem: an
- * incomplete OAuth client record ("oauth-client") or an agent's llmprovider
+ * incomplete OAuth client record ("oauth-client") or an agent's llm/provider
  * row absent or keyless ("provider"). A warning row in the server's own words;
- * a "provider" item links to the named llmprovider record. */
+ * a "provider" item links to the named llm/provider record. */
 function SetupItemRow({ item, types }: { item: SetupItem; types: KindInfo[] }) {
-  // "provider" always means core's llmprovider kind; any other coded item
+  // "provider" always means the llm package's own provider kind; any other coded item
   // resolves its named kind through the registry for the record route.
   const kind =
     item.code === "provider"
-      ? kindByIdentity(types, `${CORE_PACKAGE}/llmprovider`)
+      ? kindByIdentity(types, `${LLM_PACKAGE}/provider`)
       : item.kind
         ? kindByIdentity(types, item.kind)
         : undefined
   const authority = item.code === "provider" ? CORE_AUTHORITY : kind?.authority
-  const pkg = item.code === "provider" ? CORE_PACKAGE_NAME : kind?.package
-  const name = item.code === "provider" ? "llmprovider" : kind?.name
+  const pkg = item.code === "provider" ? LLM_PACKAGE_NAME : kind?.package
+  const name = item.code === "provider" ? "provider" : kind?.name
   return (
     <div className="flex items-center justify-between gap-3 rounded-md border border-warning/40 px-4 py-2.5">
       <p className="flex min-w-0 items-center gap-2 text-xs text-warning">
@@ -536,8 +659,8 @@ function InputCard({
       toast.add({
         type: "error",
         title: record
-          ? `Could not bind ${input.name}`
-          : `Could not unbind ${input.name}`,
+          ? `Binding ${input.name} failed`
+          : `Unbinding ${input.name} failed`,
         description: error.message,
       })
     },
@@ -591,9 +714,9 @@ function InputCard({
       )}
       {!kind ? (
         <p className="px-4 py-3 text-xs text-muted-foreground">
-          The registry has not reconciled{" "}
-          <span className="data">{input.kind}</span>, so its records cannot be
-          listed here.
+          This repository does not have{" "}
+          <span className="data">{input.kind}</span> yet, so there are no
+          records to list.
         </p>
       ) : records.isPending ? (
         <Skeleton className="m-3 h-16 rounded-md" />
@@ -611,9 +734,8 @@ function InputCard({
         </p>
       ) : rows.length === 0 ? (
         <p className="px-4 py-3 text-xs text-muted-foreground">
-          No live <span className="data">{splitKind(input.kind).name}</span>{" "}
-          record exists yet. Create one and, as the sole record of its kind, it
-          resolves this input on its own.
+          There is no <span className="data">{splitKind(input.kind).name}</span>{" "}
+          record yet. Create one and it resolves this input on its own.
         </p>
       ) : (
         <div>
@@ -701,8 +823,8 @@ function InputCard({
           }
           description={
             <>
-              A <span className="data">secret</span> field is write-only. Leave
-              it blank on edit to keep the sealed value.
+              A <span className="data">secret</span> field never reads back.
+              Leave it blank to keep the stored value.
             </>
           }
         />
@@ -711,25 +833,35 @@ function InputCard({
   )
 }
 
-/** The Setup surface: the provider callback URL (integrations only), every
- * setup item that stands on its own, then one card per declared input. The
- * caller renders this ONLY when the bundle declares inputs or the status
- * carries setup items; a bundle needing neither shows nothing at all. */
+/** The Setup surface: the provider callback URL (providers only), the
+ * bundle's own settings as a form, every setup item that stands on its own,
+ * then one card per declared input. The caller renders this ONLY when the
+ * bundle declares inputs, ships settings, or the status carries setup items; a
+ * bundle needing none of the three shows nothing at all. */
 function SetupSection({
   bundle,
   types,
   provider,
+  settings,
 }: {
   bundle: BundleStatus
   types: KindInfo[]
   provider: boolean
+  settings: SettingField[]
 }) {
+  // A `setting` item is what the form above already marks on the field, so it
+  // is not repeated as a warning row.
   const standalone = (bundle.setup ?? []).filter(
-    (item) => !isInputSetupCode(item.code)
+    (item) => !isInputSetupCode(item.code) && !isSettingSetupCode(item.code)
   )
   return (
     <div className="flex flex-col gap-3">
       {provider && <CallbackUrlNote />}
+      {settings.length > 0 && (
+        <div className="rounded-md border px-4 py-3">
+          <BundleSettingsForm fields={settings} />
+        </div>
+      )}
       {standalone.map((item, i) => (
         <SetupItemRow
           key={`${item.code}:${item.input ?? item.record ?? i}`}
@@ -758,7 +890,7 @@ function PropertyGrid({ record }: { record: SubstrateRecord }) {
   if (!rows.length) {
     return (
       <p className="px-4 py-3 text-xs text-muted-foreground">
-        This record declares no properties beyond its title.
+        This record has no properties to show.
       </p>
     )
   }
@@ -820,12 +952,12 @@ function AccountRow({
           target = new URL(url)
         } catch {
           throw new Error(
-            "The connect flow returned an invalid authorization URL."
+            "The provider returned an address the console cannot open."
           )
         }
         if (target.protocol !== "https:") {
           throw new Error(
-            "The connect flow returned a non-HTTPS authorization URL; refusing to open it."
+            "The provider returned an address that is not HTTPS, so the console will not open it."
           )
         }
         if (tab) tab.location.href = url
@@ -843,15 +975,15 @@ function AccountRow({
         setAwaitingReturn(true)
         toast.add({
           type: "success",
-          title: "Consent opened in a new tab",
-          description: "Approve there — this page updates when you return.",
+          title: "The provider opened in a new tab",
+          description: "Approve there. This page updates when you come back.",
         })
       } else {
         // No tab opened → never claim success. The blocker ate it.
         toast.add({
           type: "error",
-          title: "Your browser blocked the consent tab",
-          description: "Allow pop-ups for this site, then Connect again.",
+          title: "Your browser blocked the new tab",
+          description: "Allow pop-ups for this site, then press Connect again.",
         })
       }
       void queryClient.invalidateQueries({ queryKey: ["trait", "records"] })
@@ -860,7 +992,7 @@ function AccountRow({
       setConfirming(false)
       toast.add({
         type: "error",
-        title: "Could not start the connect flow",
+        title: "Connecting failed",
         description: error.message,
       })
     },
@@ -899,8 +1031,8 @@ function AccountRow({
           type: "error",
           title: "Connecting failed",
           description: msg.correlation
-            ? `The host rejected the grant. Reference ${msg.correlation}.`
-            : "The host rejected the grant.",
+            ? `The provider refused. Reference ${msg.correlation}.`
+            : "The provider refused.",
         })
       }
     }
@@ -958,7 +1090,7 @@ function AccountRow({
           onClick={() => setConfirming(true)}
         >
           {connect.isPending && <Spinner className="size-3.5" />}
-          {connected ? "Reconnect" : "Connect account"}
+          {connected ? "Reconnect" : "Connect"}
         </Button>
       </div>
       {confirming && (
@@ -975,11 +1107,9 @@ function AccountRow({
                 {recordTitle(account.properties) || "this account"}?
               </DialogTitle>
               <DialogDescription>
-                This opens the provider's consent screen in a new tab. On
-                approval the host stores a credential reference on this account
-                and begins syncing the enabled data.
-                {connected &&
-                  " Reconnecting replaces the current grant — the previous consent is superseded."}
+                This opens the provider in a new tab. Once you approve, this
+                account starts syncing the data you turned on.
+                {connected && " Reconnecting replaces the current approval."}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -1008,7 +1138,7 @@ function AccountRow({
           open={editing}
           onOpenChange={setEditing}
           title={`Edit ${recordTitle(account.properties) || type.name}`}
-          description="Change which data this account syncs, the cadence and the backfill depth. Token state is host-managed and not editable here."
+          description="Change what this account syncs, how often, and how far back. The connection itself is not edited here."
         />
       )}
     </div>
@@ -1059,7 +1189,7 @@ function AccountsSection({
         open={adding}
         onOpenChange={setAdding}
         title={`Add ${accountType.name}`}
-        description="Create the account, then Connect it to run the host OAuth flow. The feature toggles and cadence take effect once it is connected."
+        description="Create the account, then press Connect to approve it with the provider. What it syncs takes effect once it is connected."
       />
     ) : null
 
@@ -1069,7 +1199,7 @@ function AccountsSection({
   if (accounts.isError) {
     return (
       <p className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
-        The accounts didn't load — {accounts.error.message}
+        The accounts didn't load: {accounts.error.message}
         <Button
           variant="outline"
           size="sm"
@@ -1096,7 +1226,7 @@ function AccountsSection({
               </EmptyMedia>
               <EmptyTitle>No accounts yet</EmptyTitle>
               <EmptyDescription>
-                Add an account, then connect it to run the host OAuth flow.
+                Add an account, then connect it with the provider.
               </EmptyDescription>
             </EmptyHeader>
             <div className="flex justify-center pt-1">
@@ -1108,21 +1238,20 @@ function AccountsSection({
           </Empty>
         ) : (
           <p className="rounded-md border px-4 py-3 text-xs text-muted-foreground">
-            This integration declares no account-config kind.
+            This provider has no accounts to connect.
           </p>
         )
       ) : (
         <div className="rounded-md border">
           {blocked && (
             <p className="border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
-              Connecting is refused until the integration is installed, enabled
-              and its OAuth client is set up.
+              Connecting needs the provider installed, enabled and set up first.
             </p>
           )}
           {capped && (
             <p className="border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
-              Showing the first accounts only — this substrate has more than the
-              embedded list caps at. Open the account type to browse them all.
+              Showing the first accounts only. Open the account kind to browse
+              them all.
             </p>
           )}
           {mine.map((account) => (
@@ -1382,9 +1511,7 @@ function KindsSection({
               <BoxesIcon />
             </EmptyMedia>
             <EmptyTitle>No record kinds</EmptyTitle>
-            <EmptyDescription>
-              This bundle installed no record kinds.
-            </EmptyDescription>
+            <EmptyDescription>This bundle adds no kinds.</EmptyDescription>
           </EmptyHeader>
         </Empty>
       }
@@ -1422,7 +1549,7 @@ function RecordsSection({
             </EmptyMedia>
             <EmptyTitle>No other records</EmptyTitle>
             <EmptyDescription>
-              This bundle ships no functions, agents, mappings or data records.
+              This bundle ships no functions, agents or other records.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -1448,6 +1575,16 @@ export function BundleDetailPage() {
   const catalog = useQuery(
     catalogItemQueryOptions(id, repository.data?.authority ?? "")
   )
+  // The bundle's own settings: every `setting` and `secret` record under its
+  // id prefix (decision record 0076). Read here rather than in the Setup
+  // surface, because whether the surface renders at all depends on them.
+  const settings = useQuery(settingRecordsQueryOptions)
+  const settingFields = useMemo(
+    () =>
+      groupSettings(settings.data ?? []).find((g) => g.bundle === id)?.fields ??
+      [],
+    [settings.data, id]
+  )
   const types = registry.data ?? []
 
   if (status.isPending) return <DetailSkeleton />
@@ -1462,7 +1599,7 @@ export function BundleDetailPage() {
             </EmptyMedia>
             <EmptyTitle>The bundle didn't load</EmptyTitle>
             <EmptyDescription>
-              <span className="data">{id}</span> — {status.error.message}
+              <span className="data">{id}</span>: {status.error.message}
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
@@ -1482,11 +1619,13 @@ export function BundleDetailPage() {
   const bundle = status.data
   const provider = declaresProviderInterfaces(bundle, types)
   const item = catalog.data
-  // The Setup surface exists only for a bundle that declares inputs or whose
-  // status carries setup items. A bundle that declares neither shows nothing
-  // there: no heading, no empty state.
+  // The Setup surface exists only for a bundle that declares inputs, ships
+  // settings, or whose status carries setup items. A bundle with none of the
+  // three shows nothing there: no heading, no empty state.
   const hasSetup =
-    (bundle.inputs?.length ?? 0) > 0 || (bundle.setup?.length ?? 0) > 0
+    (bundle.inputs?.length ?? 0) > 0 ||
+    (bundle.setup?.length ?? 0) > 0 ||
+    settingFields.length > 0
   // The requirements are checked against the LIVE registry: a package is
   // present when some reconciled kind carries it, which is the check the
   // server's admission makes. A floor (`requiresAtLeast`, decision record
@@ -1509,8 +1648,8 @@ export function BundleDetailPage() {
             <SetupBadge count={setupCount(bundle)} />
             {bundle.quarantined && bundle.quarantineReason ? (
               <span className="basis-full text-xs text-warning">
-                Quarantined: {bundle.quarantineReason} Re-install the bundle to
-                clear it.
+                Quarantined: {bundle.quarantineReason} Install the bundle again
+                to clear it.
               </span>
             ) : null}
             {item?.tier ? (
@@ -1563,22 +1702,21 @@ export function BundleDetailPage() {
           {requirements.length > 0 && (
             <RequiresNote requirements={requirements} />
           )}
+          {item && <ImportAgainNote item={item} />}
           {hasSetup && (
-            <section>
+            // The anchor the Registry sends a fresh import to when its status
+            // says a setting is still empty.
+            <section id="setup">
               <h2 className="pb-1 text-sm font-medium">Setup</h2>
               <p className="pb-2 text-xs text-muted-foreground">
                 {(bundle.inputs?.length ?? 0) > 0 ? (
                   <>
-                    Each declared input resolves ONE record: an explicitly bound
-                    one first, then the record named{" "}
-                    <span className="data">default</span>, then the sole live
-                    record of its kind.
+                    Each input uses one record. A record you bind wins, then the
+                    one named <span className="data">default</span>, then the
+                    only record of its kind.
                   </>
                 ) : (
-                  <>
-                    What this bundle still needs before the paths it ships will
-                    run, in the server's own words.
-                  </>
+                  <>What this bundle still needs before it will run.</>
                 )}
               </p>
               {registry.isPending ? (
@@ -1588,6 +1726,7 @@ export function BundleDetailPage() {
                   bundle={bundle}
                   types={types}
                   provider={provider}
+                  settings={settingFields}
                 />
               )}
             </section>
@@ -1596,9 +1735,8 @@ export function BundleDetailPage() {
             <section>
               <h2 className="pb-1 text-sm font-medium">Accounts</h2>
               <p className="pb-2 text-xs text-muted-foreground">
-                The integration's connected accounts (a{" "}
-                <span className="data">accountconfig</span> trait query); the
-                host runs the OAuth flow.
+                The accounts this provider syncs. Connect one to approve it with
+                the provider.
               </p>
               <AccountsSection bundle={bundle} types={types} />
             </section>
@@ -1606,9 +1744,9 @@ export function BundleDetailPage() {
           <section>
             <h2 className="pb-1 text-sm font-medium">Kinds</h2>
             <p className="pb-2 text-xs text-muted-foreground">
-              The record kinds this bundle installed in{" "}
+              The kinds this bundle added under{" "}
               <span className="data">{bundle.authority}</span>, each with its
-              live row count.
+              live record count.
             </p>
             {registry.isPending ? (
               <Skeleton className="h-24 w-full rounded-md" />
@@ -1625,8 +1763,8 @@ export function BundleDetailPage() {
           <section>
             <h2 className="pb-1 text-sm font-medium">Records</h2>
             <p className="pb-2 text-xs text-muted-foreground">
-              The rest of the closure — its functions, agents and mappings, and
-              the records the install wrote beside them.
+              The functions, agents and mappings this bundle ships, and the
+              records it wrote beside them.
             </p>
             {catalog.isPending || registry.isPending ? (
               <Skeleton className="h-24 w-full rounded-md" />

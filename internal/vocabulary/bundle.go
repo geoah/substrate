@@ -640,7 +640,11 @@ func (r *Registry) resolveBundle(g *Package) []string {
 				where, req, floor, held.Version))
 		}
 	}
-	required := map[string]bool{PackageCore: true, g.Identity: true}
+	// The SEEDED packages need no `requires:` line: the binary writes both
+	// into every repository at creation, so they are always present, and a
+	// bundle taking an `llm/provider` input is asking for a row of a kind
+	// nobody can be without (record 0077).
+	required := map[string]bool{PackageCore: true, PackageLLM: true, g.Identity: true}
 	for _, req := range b.Requires {
 		required[req] = true
 	}
@@ -653,7 +657,7 @@ func (r *Registry) resolveBundle(g *Package) []string {
 			problems = append(problems, fmt.Sprintf("%s.kind: unknown kind %q", w, in.Kind))
 			continue
 		case !required[ik.Package]:
-			problems = append(problems, fmt.Sprintf("%s.kind: %q is declared in %s — an input's kind lives in the bundle's own package, core, or a package the bundle requires",
+			problems = append(problems, fmt.Sprintf("%s.kind: %q is declared in %s — an input's kind lives in the bundle's own package, a seeded package, or a package the bundle requires",
 				w, in.Kind, ik.Package))
 		}
 		// An injected input's records cross into the bundle's function

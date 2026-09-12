@@ -25,7 +25,7 @@ type BundleStatus struct {
 	Inputs []InputStatus `json:"inputs,omitempty"`
 	// Setup lists what stands between this bundle and every runtime path
 	// it ships — unresolved inputs, an incomplete OAuth client, an agent
-	// whose llmprovider row is missing or keyless. Empty means ready.
+	// whose llm/provider row is missing or keyless. Empty means ready.
 	// Every item mirrors a refusal dispatch would actually make; a
 	// non-refusal is never a setup step.
 	Setup []SetupItem `json:"setup,omitempty"`
@@ -139,15 +139,19 @@ type ConversionPlan struct {
 
 // ConversionStep is one record rewrite a declaration change performs.
 type ConversionStep struct {
-	// Step is the rewrite: StepRename, StepBackfill, StepRemap or StepNull.
+	// Step is the rewrite: StepMove, StepRename, StepBackfill, StepRemap or
+	// StepNull.
 	Step string `json:"step"`
-	// Kind is the full reference of the kind whose records move.
+	// Kind is the full reference of the kind whose records move. On a move it
+	// is the kind the rows arrive at.
 	Kind string `json:"kind"`
 	// Property is the property the step writes, under the name the candidate
-	// declaration gives it (a rename's To; a null's dropped name).
+	// declaration gives it (a rename's To; a null's dropped name). Empty on a
+	// move, which carries whole records rather than one property.
 	Property string `json:"property"`
-	// From and To are a rename's old and new property names, or a remap's old
-	// and new values. Empty on a backfill and a null.
+	// From and To are a rename's old and new property names, a remap's old and
+	// new values, or a move's old and new kind references. Empty on a backfill
+	// and a null.
 	From string `json:"from,omitempty"`
 	To   string `json:"to,omitempty"`
 	// Records is the number of live records the step rewrites.
@@ -159,6 +163,12 @@ type ConversionStep struct {
 
 // ConversionStep.Step values, in the order the engine runs them on a record.
 const (
+	// StepMove carries every live record of the kind a declaration names with
+	// `movedFrom` onto that declaration's own kind, same id and same
+	// properties, and repoints every live reference that named the old kind
+	// (decision record 0078). It runs FIRST, before any other step: the rows
+	// the rest of the plan converts are the rows the move has already carried.
+	StepMove = "move"
 	// StepRename moves a property's value to its new name (`renamedFrom`).
 	StepRename = "rename"
 	// StepBackfill writes a property's declared default onto every record
@@ -226,15 +236,16 @@ const (
 type SetupItem struct {
 	// Code is the stable reason: SetupMissing/SetupAmbiguous/SetupDangling
 	// for an input, SetupOAuthClient for an incomplete client record,
-	// SetupProvider for an agent whose llmprovider row is absent or keyless.
+	// SetupProvider for an agent whose llm/provider row is absent or keyless,
+	// SetupSetting for a required setting or secret nobody has filled in.
 	Code string `json:"code"`
 	// Input names the unresolved input, when the item is an input's.
 	Input string `json:"input,omitempty"`
 	// Kind is the kind whose record would clear the item: the input's kind,
-	// or core's llmprovider.
+	// the llm package's provider, or core's setting/secret.
 	Kind string `json:"kind,omitempty"`
 	// Record is the existing record to fix, when one exists — the incomplete
-	// client, the keyless provider row.
+	// client, the keyless provider row, the empty setting.
 	Record string `json:"record,omitempty"`
 	// Message is one sentence naming the fix.
 	Message string `json:"message"`
@@ -252,9 +263,12 @@ const (
 	// SetupOAuthClient: the client input resolved but its record is missing
 	// clientId or clientSecret.
 	SetupOAuthClient = "oauth-client"
-	// SetupProvider: an agent names an llmprovider row that is absent or
+	// SetupProvider: an agent names an llm/provider row that is absent or
 	// cannot dispatch (no key where one is required).
 	SetupProvider = "provider"
+	// SetupSetting: a `setting` or `secret` record the bundle ships under its
+	// own id marked required, with no value filled in (decision record 0076).
+	SetupSetting = "setting"
 )
 
 // BundleUninstalled is the reply to an uninstall. The bundle has no status

@@ -88,12 +88,6 @@ func KindName(ref string) string {
 	return name
 }
 
-// KindAuthority is the authority of a kind reference, "" when it is bare.
-func KindAuthority(ref string) string {
-	authority, _, _ := SplitKindRef(ref)
-	return authority
-}
-
 // KindPackage is the package identity a kind reference lives in
 // ("samples.substrate.reamde.dev/tasks"), "" when the reference is bare.
 func KindPackage(ref string) string {
@@ -211,6 +205,10 @@ func ReferentIDs(values []any, pin string) []string {
 // CoreKind renders a core-package kind reference: the manifest envelope's own
 // kinds all live there ("substrate.reamde.dev/core/kind").
 func CoreKind(name string) string { return PackageCore + "/" + name }
+
+// LLMKind renders an llm-package kind reference: the agent runtime's four data
+// kinds ("substrate.reamde.dev/llm/provider"), record 0077.
+func LLMKind(name string) string { return PackageLLM + "/" + name }
 
 // GraphQLName is the GraphQL object name a kind resolves to, and the ONE
 // place the rule lives (record 0058):

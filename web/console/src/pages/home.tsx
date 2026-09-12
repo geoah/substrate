@@ -30,8 +30,8 @@ export function HomePage() {
       <div>
         <h1 className="text-lg font-semibold">Overview</h1>
         <p className="text-xs text-muted-foreground">
-          The latest activity, what waits on a verdict and what the substrate
-          holds — every tile opens its surface.
+          Recent activity, what needs a decision, and what this repository
+          holds.
         </p>
       </div>
 

@@ -22,10 +22,10 @@ const (
 	fnPackage = "widgets.test.dev/widgets"
 	fnActor   = substrate.Actor(fnPackage)
 
-	widgetType = fnPackage + "/widget"
-	gadgetType = fnPackage + "/gadget"
-	taskType   = "samples.substrate.reamde.dev/tasks/task"
-	runType    = "substrate.reamde.dev/core/run"
+	widgetType     = fnPackage + "/widget"
+	gadgetType     = fnPackage + "/gadget"
+	taskType       = "samples.substrate.reamde.dev/tasks/task"
+	triggerRunType = "substrate.reamde.dev/core/triggerrun"
 )
 
 // fnDoc renders one function manifest into the test connector authority,
@@ -180,7 +180,7 @@ func actorChanges(t *testing.T, ds substrate.Dataset, function string) []substra
 func dataSeq(t *testing.T, ds substrate.Dataset) int64 {
 	t.Helper()
 	out, err := ds.Changes(context.Background(), 0, substrate.ChangeFilter{
-		ExcludeKinds: []string{runType},
+		ExcludeKinds: []string{triggerRunType},
 	}, 100000)
 	if err != nil {
 		t.Fatalf("changes: %v", err)
@@ -319,7 +319,7 @@ func runRowsOf(t *testing.T, ds substrate.Dataset, triggerID, status string) []*
 	t.Helper()
 	page, err := ds.List(context.Background(), substrate.Query{
 		Filter: substrate.Filter{
-			Kinds: []string{runType},
+			Kinds: []string{triggerRunType},
 			Properties: map[string]substrate.Cond{
 				"trigger": {Eq: vocabulary.RecordPath("substrate.reamde.dev/core/trigger", triggerID)},
 				"status":  {Eq: status},

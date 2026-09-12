@@ -22,7 +22,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: calendar
-  version: 8
+  version: 9
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A SAMPLE bundle (see samples.substrate.reamde.dev/people): kinds only, imported from the
@@ -35,8 +35,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: calendar
   description: >-
-    Calendars, events, recurring event series and meeting transcripts — what
-    happens when, with attendees pointing at people.
+    Your calendars and what is on them: events, the repeating series behind
+    them, and meeting transcripts, with everyone attending pointing at a person
+    record. Needs the people and scheduling samples.
   requires:
     - samples.substrate.reamde.dev/people
     - samples.substrate.reamde.dev/scheduling

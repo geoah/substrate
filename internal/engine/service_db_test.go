@@ -24,7 +24,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
 		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir(engine.CoreKindsDir))
+			engine.WithKindsDir(engine.SeedKindsDir))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -195,7 +195,7 @@ func TestSchemaRowsStoreNoSourceYAML(t *testing.T) {
 	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
 		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir(engine.CoreKindsDir))
+			engine.WithKindsDir(engine.SeedKindsDir))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -278,7 +278,7 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 		t.Fatalf("package projection type = %q", pkg.Kind)
 	}
 	// A sample package INSTALLS: only the seeded core package is builtin.
-	if v, _ := vocabulary.VersionValue(pkg.Properties["version"]); v != 4 || pkg.Properties["source"] != "installed" {
+	if v, _ := vocabulary.VersionValue(pkg.Properties["version"]); v != 5 || pkg.Properties["source"] != "installed" {
 		t.Fatalf("package projection = %v", pkg.Properties)
 	}
 	// A vocabulary package declares no actors of its own; core's four are the

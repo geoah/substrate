@@ -11,19 +11,19 @@ trigger delivery, another function's host call, the HTTP call API, or a manual
 per-trigger run.
 
 Functions ship inside a [bundle](bundles.md), beside the kinds they
-read and write. Here is one shaped like the URL harvester's, which turns a
+read and write. Here is one shaped like the reading-list sample's, which turns a
 freshly minted `page` record into fetched markdown:
 
 ```yaml
 kind: substrate.reamde.dev/core/function
-metadata: {id: samples.substrate.reamde.dev/web/fetchpage}
+metadata: {id: samples.substrate.reamde.dev/readinglist/fetchpage}
 data:
   authority: samples.substrate.reamde.dev
-  package: web
+  package: readinglist
   description: Fetch one pending page as markdown and mark it fetched.
   runtime: python
   permissions:
-    writes: [samples.substrate.reamde.dev/web/page]
+    writes: [samples.substrate.reamde.dev/readinglist/page]
   source: |
     def main(input, host):
         env = input.get("envelope") or {}
@@ -33,7 +33,7 @@ data:
         title = slug.replace("-", " ").strip() or url
         markdown = "# " + title + "\n\nfetched from " + url
         host.effects.patch(
-            "samples.substrate.reamde.dev/web/page", page.get("id"),
+            "samples.substrate.reamde.dev/readinglist/page", page.get("id"),
             properties={"title": title, "content": markdown,
                         "fetch": "fetched"})
         return {"output": {"page": page.get("id")}}
@@ -76,7 +76,7 @@ permissions:
   writes:                          # which kinds it may create or change
     - samples.substrate.reamde.dev/tasks/task
   call:                            # which other functions its code may invoke
-    - samples.substrate.reamde.dev/web/setclass
+    - samples.substrate.reamde.dev/readinglist/setclass
   network:                         # the hosts it may reach; any entry grants egress
     - api.example.com
   mutations:                       # the identity-changing operations: merge, split
@@ -187,7 +187,7 @@ body. Core ships five of them, and they are the agent
 | `substrate.reamde.dev/core/graphql` | the whole-repository read-only GraphQL surface |
 | `substrate.reamde.dev/core/mutate` | GraphQL mutations, bounded by the calling agent's emit |
 | `substrate.reamde.dev/core/propose` | lands one reviewed `recordpatchrequest` |
-| `substrate.reamde.dev/core/ask` | lands one `llminteraction` carrying a batch of at most eight questions for the user; it returns the record id, not the answer, which arrives in a later turn |
+| `substrate.reamde.dev/core/ask` | lands one `llm/interaction` carrying a batch of at most eight questions for the user; it returns the record id, not the answer, which arrives in a later turn |
 
 They are **ordinary function records**: seeded into every new repository,
 delivered to an existing one by the [boot upgrade](vocabulary.md), listed in
@@ -299,7 +299,7 @@ rides inline; a multipart request may total 32 MiB. An authenticated wake
 
 **One `kind`, everywhere.** A kind is named by a reference:
 `<authority>/<package>/<name>` (`samples.substrate.reamde.dev/tasks/task`,
-`samples.substrate.reamde.dev/web/page`), and every kind carries both
+`samples.substrate.reamde.dev/readinglist/page`), and every kind carries both
 ([decision 0042](decisions/0042-every-kind-carries-an-authority.md),
 [decision 0047](decisions/0047-a-kind-lives-in-a-package.md)). The
 envelope, the SDK's reads, the SDK's writes and an explicit
@@ -316,7 +316,7 @@ value: a reference property holds the path `<kind>/<id>` under `ref`, and the
 `{kind, id}` pair is the retired shape a write refuses by name.
 
 ```python
-PAGE = "samples.substrate.reamde.dev/web/page"
+PAGE = "samples.substrate.reamde.dev/readinglist/page"
 
 def main(input, host):
     record = (input.get("envelope") or {}).get("record") or {}
@@ -392,7 +392,13 @@ unprivileged, none requiring a container runtime:
   A local provider (a loopback Ollama) is re-permitted by listing its address in
   `SUBSTRATE_SANDBOX_EGRESS_ALLOW`. Holding a body to the *specific hosts* it
   declared is not done yet; what is enforced is "the internet, not the
-  deployment's own network".
+  deployment's own network". The supervisor half of that fine layer is the one
+  piece of the sandbox that needs something from the deployment: it reads the
+  destination with `process_vm_readv(2)` and duplicates the body's socket with
+  `pidfd_getfd(2)`, which a container's default seccomp profile permits only
+  with `CAP_SYS_PTRACE` in its bounding set. Where it is missing, a body that
+  declares network is **refused** rather than run unfiltered, in every mode but
+  `off` ([running a substrate](operations.md#the-function-sandbox)).
 - **rlimits** cap descriptors and file size, and disable core dumps.
 
 The process environment is separately default-deny: every child starts from a
@@ -402,7 +408,7 @@ construction rather than by filtering.
 
 ### Platforms
 
-The sandbox is **Linux only**, and both layers work on `linux/amd64` and
+The sandbox is **Linux only**, and every layer works on `linux/amd64` and
 `linux/arm64`: the two architectures the image ships. The seccomp filter
 carries a syscall table per architecture, because a filter written against the
 wrong numbering does not fail loudly, it denies and permits the wrong calls; an
@@ -423,7 +429,11 @@ confined by *its* kernel.
 loudly about any it does not) or `enforce` (refuse to run a body at all unless
 the filesystem and syscall layers both applied). The effective state is logged
 once at boot; a degraded sandbox logs at ERROR, because a confinement that
-quietly does less than it claims is worse than none.
+quietly does less than it claims is worse than none. The destination filter is
+outside that choice: `best-effort` degrades a layer it cannot apply to the body
+itself, but where the *supervisor* cannot run, a body that declares network is
+refused under `best-effort` too, because running it would mean handing it the
+deployment's own network rather than a weaker version of the internet.
 
 **What it does not do.** It is not a container. A body still shares a uid and a
 pid namespace with the substrate, so it can signal it. There is no memory or
@@ -554,7 +564,8 @@ page.
 **`host.config()` resolves the callable's configuration.** It carries the
 owning `bundle`, which is its package identity, the bundle's
 `inject: functions` inputs each resolved to one record under `inputs` (an
-unresolved input's key is absent), and every
+unresolved input's key is absent), the bundle's own
+[settings](bundles.md#settings) under `settings`, and every
 [connection](bundles.md#connections) the bundle declares under `accounts`,
 each flattened to its id, kind and stored properties. For an OAuth bundle the
 host resolves each account's credential itself and hands the body a live
@@ -563,6 +574,15 @@ so one broken account never parks the whole delivery. The OAuth facility's own
 secrets, the client record's `clientSecret` and an account's `tokenRef`, are
 never injected, and every injected secret value is scrubbed out of whatever
 crosses back over the runner boundary.
+
+`settings` is a flat map of name to value: one entry per core `setting` or
+`secret` record whose id sits under the bundle's own id, keyed by the part of
+the id after it, so a bundle shipping `<authority>/<package>/apiKey` reads it
+as `config.settings.apiKey`. A `secret` arrives as the material itself, held
+to the runner boundary by the same scrubber. The key is absent when the bundle
+ships no settings, and one setting's own key is absent when nobody has written
+its value at all, so a body that needs one refuses in its own words
+([record 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)).
 
 **Two ceilings.** `host.log(msg)` records a line on the invocation's run
 record, truncated at 4096 characters and capped at 200 lines per invocation
@@ -596,16 +616,16 @@ is the trigger that drives the function above:
 
 ```yaml
 kind: substrate.reamde.dev/core/trigger
-metadata: {id: web-fetch-on-page}
+metadata: {id: readinglist-fetch-on-page}
 data:
   properties:
     enabled: true
     source:
       record:
-        kinds: [samples.substrate.reamde.dev/web/page]
+        kinds: [samples.substrate.reamde.dev/readinglist/page]
         ops: [create]              # create | update | delete
         when: 'record != null && record.properties.fetch == "pending"'
-    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/web/fetchpage
+    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/readinglist/fetchpage
 ```
 
 `source` takes exactly one arm:
@@ -657,7 +677,7 @@ is the function body.
 - **Idempotent by construction.** A function composes its own ids, `put`
   upserts, and identical writes are suppressed. Replaying a trigger over the
   whole changelog is a no-op where it already ran. The dispatcher advances a
-  record trigger's cursor and writes its run record in the same transaction
+  record trigger's cursor and writes its `triggerrun` record in the same transaction
   as a function's effects, so substrate-side consequences are effectively-once
   and no crash leaves effects with no record of the delivery. An
   [agent](agents.md) delivery claims the cursor before its loop runs and
@@ -727,7 +747,7 @@ repository.
 
 `replay` answers the cursor it set; `run`, `wake` and `retry` answer
 `{"ran": n}`, the number of deliveries that applied effects. Every settled
-dispatched delivery writes a `substrate.reamde.dev/core/run` row under the
+dispatched delivery writes a `substrate.reamde.dev/core/triggerrun` row under the
 `substrate` actor, in the transaction that commits its effects and its cursor
 or fire-state motion: the trigger, the callable, the mode, the seq or fire id,
 the status (`ok`, `skipped` or `parked`), the attempt count and the

@@ -68,7 +68,7 @@ describe("referenceID / referenceCell", () => {
     // The served shape: the path under `ref`, whether or not the declaration
     // hangs link properties off it.
     expect(
-      referenceID({ ref: "substrate.reamde.dev/core/llmprovider/claude" })
+      referenceID({ ref: "substrate.reamde.dev/llm/provider/claude" })
     ).toBe("claude")
     expect(referenceID({ ref: "tasks.example.com/tasks/task/abc123" })).toBe(
       "abc123"

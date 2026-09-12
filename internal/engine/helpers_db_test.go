@@ -295,13 +295,13 @@ func ids(records []*substrate.Record) []string {
 	return out
 }
 
-// typeProvider is the llmprovider kind reference, spelled out here because
+// typeProvider is the llm/provider kind reference, spelled out here because
 // these tests are outside the engine package and the constant is not exported.
-const typeProvider = "substrate.reamde.dev/core/llmprovider"
+const typeProvider = "substrate.reamde.dev/llm/provider"
 
 // fakeEmbedServer is an OpenAI-wire embeddings endpoint over httptest. The
 // embedder is no longer injectable — a repository resolves it from its own
-// llmprovider row — so a test that wants vectors points a row at THIS, which
+// llm/provider row — so a test that wants vectors points a row at THIS, which
 // exercises the resolution, the key and the wire rather than an interface the
 // production path does not use.
 //
@@ -409,7 +409,7 @@ func bagOfWordsVector(s string, width int) []float32 {
 	return vec
 }
 
-// installEmbedProvider writes the llmprovider row that makes a repository
+// installEmbedProvider writes the llm/provider row that makes a repository
 // embed: the one row declaring embedModel. Nothing seeds one, so every test
 // that wants vectors writes it, exactly as an owner would.
 func installEmbedProvider(t *testing.T, ds substrate.Dataset, id, baseURL, model string) {

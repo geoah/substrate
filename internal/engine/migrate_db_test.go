@@ -25,7 +25,7 @@ func TestOpenRefusesAnUnknownEditedMigration(t *testing.T) {
 	}
 	_, err := engine.OpenForTest(t, context.Background(), dsn,
 		engine.WithDataRoot(t.TempDir()),
-		engine.WithKindsDir(engine.CoreKindsDir),
+		engine.WithKindsDir(engine.SeedKindsDir),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {
 		t.Fatal("a database whose 0001 nothing recognizes was opened")
@@ -95,7 +95,7 @@ func TestOpenRefusesADatabaseANewerBinaryMigrated(t *testing.T) {
 	} {
 		opts := append([]engine.Option{
 			engine.WithDataRoot(t.TempDir()),
-			engine.WithKindsDir(engine.CoreKindsDir),
+			engine.WithKindsDir(engine.SeedKindsDir),
 			engine.WithCredentialKey(engine.TestCredentialKey),
 		}, extra...)
 		_, err := engine.OpenForTest(t, context.Background(), dsn, opts...)

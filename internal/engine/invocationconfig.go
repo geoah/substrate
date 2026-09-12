@@ -2,9 +2,10 @@ package engine
 
 // The runner's config resolution: a bundle function's invocation carries
 // `config` — the bundle's `inject: functions` inputs, each resolved to one
-// record (secrets resolved, keyed by input name under `inputs`), and the
-// bundle's account records, each with a live access token injected when the
-// bundle authenticates over the host OAuth facility. The resolved map
+// record (secrets resolved, keyed by input name under `inputs`), the bundle's
+// own `setting` and `secret` records keyed by name under `settings`
+// (settings.go), and the bundle's account records, each with a live access
+// token injected when the bundle authenticates over the host OAuth facility. The resolved map
 // crosses only into the invocation; the invocation SCRUBBER (scrub.go)
 // holds every surface that leaves the runner boundary — logs, errors,
 // outputs — to the injected values. Functions outside any bundle get nil.
@@ -31,8 +32,8 @@ const (
 
 // resolveFunctionConfig builds one invocation's `config` map, plus the list
 // of INJECTED SECRET VALUES (secret-typed properties resolved into the map,
-// live access tokens) the invocation scrubber holds every outbound surface
-// to. Nil config for a function outside any bundle.
+// live access tokens, the bundle's own secrets) the invocation scrubber holds
+// every outbound surface to. Nil config for a function outside any bundle.
 func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Function) (map[string]any, []string, error) {
 	b, ok := ds.registry().BundleOf(fn.Package)
 	if !ok {
@@ -78,6 +79,22 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 	if len(inputs) > 0 {
 		cfg["inputs"] = inputs
 	}
+
+	// The bundle's SETTINGS (settings.go, decision record 0076): the core
+	// `setting` and `secret` records under the bundle's own id prefix, keyed
+	// by the name the id ends in. A secret arrives in plaintext and joins the
+	// scrubber list, exactly as an input's own secret does. Absent when the
+	// bundle ships none, so a function of a bundle with no settings sees the
+	// key missing rather than an empty map.
+	settings, ssecrets, err := ds.bundleSettings(ctx, b)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(settings) > 0 {
+		cfg["settings"] = settings
+	}
+	secrets = append(secrets, ssecrets...)
+
 	oauthEnabled := b.OAuth2 != nil
 
 	// The refresh endpoints (client creds + token endpoint from the manifest,

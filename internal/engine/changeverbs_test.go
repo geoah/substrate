@@ -95,7 +95,7 @@ func TestMessageChangeOpsAreTheChangelogsOwn(t *testing.T) {
 	// Every op the effect applier can stamp on a turn's `changes`. `gc` is
 	// absent on purpose: it is the collector's own pass, not a dispatch's
 	// write.
-	assertValues(t, "llmmessage changes.op",
+	assertValues(t, "llm/message changes.op",
 		fieldValues(t, seedKind(t, typeMessage), "changes", "op"),
 		[]string{
 			string(substrate.OpPut), string(substrate.OpPatch), string(substrate.OpDelete),

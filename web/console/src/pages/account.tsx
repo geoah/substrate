@@ -44,12 +44,12 @@ import { useAuthPolicy } from "@/lib/api/discovery"
 import { getRepository } from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
 
-const MIN_PASSWORD = 12
+const MIN_PASSWORD = 8
 
 function describe(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.code === "forbidden") {
-      return "This endpoint does not accept a token — fill in your current password and code."
+      return "Being signed in is not enough. Fill in your current password and code."
     }
     if (err.code === "auth") {
       return "The password or the code is wrong. Try a fresh code."
@@ -69,7 +69,7 @@ async function copy(value: string) {
   } catch {
     toast.add({
       type: "error",
-      title: "Could not reach the clipboard — select and copy.",
+      title: "Copying failed. Select the secret and copy it.",
     })
   }
 }
@@ -84,9 +84,8 @@ export function AccountPage() {
         <div>
           <h1 className="text-lg font-semibold">Account</h1>
           <p className="text-xs text-muted-foreground">
-            Your credential. Changing it needs your current password
-            {totpRequired && " and code"} in the request — a signed-in browser
-            is not enough, by design.
+            Changing your password needs your current password
+            {totpRequired && " and code"}. Being signed in is not enough.
           </p>
         </div>
       </div>
@@ -96,8 +95,7 @@ export function AccountPage() {
             <CardHeader>
               <CardTitle>You</CardTitle>
               <CardDescription>
-                One repository, implied by your token — there is nothing to
-                pick. Signed-in browsers and scripts are all token records; see{" "}
+                Every signed-in browser and script holds a token. Open{" "}
                 <Link
                   to="/account/tokens"
                   className="underline underline-offset-4 hover:text-foreground"
@@ -177,8 +175,8 @@ function PasswordCard({
       <CardHeader>
         <CardTitle>Change password</CardTitle>
         <CardDescription>
-          Your live tokens keep working: a token is data access, the credential
-          is the account.
+          Changing the password does not revoke your tokens. Revoke them on the
+          Tokens page if you need to.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -272,17 +270,14 @@ function TotpOffCard() {
       <CardHeader>
         <CardTitle>Second factor: off</CardTitle>
         <CardDescription>
-          This substrate boots with{" "}
-          <code className="data">SUBSTRATE_INSECURE_DISABLE_TOTP</code>, so no
-          code is verified anywhere and your password is the whole credential.
-          It is a local-development setting.
+          This substrate verifies no code, so your password is all you need to
+          sign in. It is a setting for local development.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <p className="text-sm text-muted-foreground">
-          Turning it back on restores the factor as it was — which for a user
-          registered while it was off is a secret nobody holds. The operator
-          re-issues one on the box with{" "}
+          If you registered while it was off, nobody holds a secret for you. The
+          operator issues one with{" "}
           <code className="data">substratectl user reset</code>.
         </p>
       </CardContent>
@@ -356,8 +351,8 @@ function TotpCard({ repository }: { repository: string }) {
       <CardHeader>
         <CardTitle>Replace your authenticator</CardTitle>
         <CardDescription>
-          Prove the current factors, add the new secret, then prove that. The
-          old secret stops working the moment the new one lands.
+          Enter your current password and code, add the new secret, then enter a
+          code from it. The old secret stops working straight away.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -406,14 +401,14 @@ function TotpCard({ repository }: { repository: string }) {
                 <Separator />
                 <div className="flex flex-col gap-2">
                   <p className="text-sm text-muted-foreground">
-                    Add this to your authenticator —{" "}
+                    Add this to your authenticator with{" "}
                     <a
                       href={enrollment.otpauthUri}
                       className="underline underline-offset-4 hover:text-foreground"
                     >
                       the link
                     </a>
-                    , or the secret by hand:
+                    , or type the secret by hand.
                   </p>
                   <div className="flex items-center gap-2">
                     <code className="min-w-0 flex-1 truncate rounded-lg bg-muted px-2.5 py-1.5 data text-xs">
@@ -432,7 +427,7 @@ function TotpCard({ repository }: { repository: string }) {
                 </div>
                 <Field>
                   <FieldLabel htmlFor="totp-new-code">
-                    Code from the NEW secret
+                    Code from the new secret
                   </FieldLabel>
                   <Input
                     id="totp-new-code"

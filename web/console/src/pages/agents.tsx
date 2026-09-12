@@ -3,10 +3,10 @@
  * surface; the manifest opens the record page, where the prompt, tools and
  * budgets live and edit.
  *
- * The llmprovider rows are NOT here. They are ordinary records of a core kind,
+ * The llm/provider rows are NOT here. They are ordinary records of a core kind,
  * they are not agents, and a table of them on this page implied a relationship
  * the page does not have — an agent names a provider by id, and that pointer
- * reads on the agent's own record. Data → llmprovider is where they live. */
+ * reads on the agent's own record. Data → llm/provider is where they live. */
 
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -202,10 +202,9 @@ export function AgentsPage() {
       <div className="shrink-0 px-6 pt-5 pb-2">
         <h1 className="text-lg font-semibold">Agents</h1>
         <p className="text-xs text-muted-foreground">
-          {agentRows.length.toLocaleString()} declared, from{" "}
-          <span className="data">substrate.reamde.dev/core/agents</span>
+          {agentRows.length.toLocaleString()} you can chat to
           {hiddenFromChatCount > 0 &&
-            ` (${hiddenFromChatCount.toLocaleString()} more hidden from chat, under Data)`}
+            `. ${hiddenFromChatCount.toLocaleString()} more are hidden from chat and listed under Data`}
         </p>
       </div>
 
@@ -226,7 +225,7 @@ export function AgentsPage() {
                 </EmptyMedia>
                 <EmptyTitle>No agents</EmptyTitle>
                 <EmptyDescription>
-                  No agents are declared on this substrate yet.
+                  Import a package that ships one to get started.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>

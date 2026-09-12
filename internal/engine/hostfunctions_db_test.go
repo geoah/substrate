@@ -140,7 +140,7 @@ func TestBootUpgradeDeliversTheHostFunctions(t *testing.T) {
 	_ = svc.Close()
 
 	// This binary's tree: the open runs the upgrade.
-	svc2 := openWith(CoreKindsDir)
+	svc2 := openWith(SeedKindsDir)
 	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("the boot upgrade could not deliver the host functions: %v", err)
@@ -165,46 +165,44 @@ func TestBootUpgradeDeliversTheHostFunctions(t *testing.T) {
 	}
 }
 
-// preHostKindsDir writes core's tree as the binary before this one shipped it:
-// no host function declarations, and a function kind whose runtime enum has no
-// `host` value and whose `source` is required.
+// preHostKindsDir writes the seed tree as the binary before this one shipped
+// it: no host function declarations, and a function kind whose runtime enum
+// has no `host` value and whose `source` is required. The WHOLE seed authority
+// is copied, both packages, because core declares against llm (record 0077)
+// and a tree holding one of them resolves nothing.
 func preHostKindsDir(t *testing.T) string {
 	t.Helper()
-	const src = CoreKindsDir
+	const src = SeedKindsDir
 	dir := t.TempDir()
-	entries, err := os.ReadDir(src)
+	if err := os.CopyFS(dir, os.DirFS(src)); err != nil {
+		t.Fatalf("copy the seed tree: %v", err)
+	}
+	if err := os.Remove(filepath.Join(dir, "core", "hostfunctions.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	fn := filepath.Join(dir, "core", "function.yaml")
+	raw, err := os.ReadFile(fn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" || e.Name() == "hostfunctions.yaml" {
-			continue
+	body := string(raw)
+	body = strings.Replace(body, "  version: 15\n", "  version: 4\n", 1)
+	body = strings.Replace(body, "        - python\n        - host\n", "        - python\n", 1)
+	body = strings.Replace(body,
+		"      fts: false\n      description: the inline body, on an inline runtime\n",
+		"      fts: false\n      required: true\n      description: the inline body\n", 1)
+	// The rewrite is a fixture, so it says so when the declaration moves out
+	// from under it instead of silently testing today's tree twice.
+	for _, want := range []string{"version: 4", "required: true"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("the pre-host function.yaml rewrite missed %q", want)
 		}
-		raw, err := os.ReadFile(filepath.Join(src, e.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		body := string(raw)
-		if e.Name() == "function.yaml" {
-			body = strings.Replace(body, "  version: 14\n", "  version: 4\n", 1)
-			body = strings.Replace(body, "        - python\n        - host\n", "        - python\n", 1)
-			body = strings.Replace(body,
-				"      fts: false\n      description: the inline body, on an inline runtime\n",
-				"      fts: false\n      required: true\n      description: the inline body\n", 1)
-			// The rewrite is a fixture, so it says so when the declaration moves out
-			// from under it instead of silently testing today's tree twice.
-			for _, want := range []string{"version: 4", "required: true"} {
-				if !strings.Contains(body, want) {
-					t.Fatalf("the pre-host function.yaml rewrite missed %q", want)
-				}
-			}
-			if strings.Contains(body, "- host") {
-				t.Fatal("the pre-host function.yaml still admits the host runtime")
-			}
-		}
-		if err := os.WriteFile(filepath.Join(dir, e.Name()), []byte(body), 0o600); err != nil {
-			t.Fatal(err)
-		}
+	}
+	if strings.Contains(body, "- host") {
+		t.Fatal("the pre-host function.yaml still admits the host runtime")
+	}
+	if err := os.WriteFile(fn, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	return dir
 }

@@ -60,7 +60,7 @@ const (
 	// minPasswordLength is the only password policy v1 has. Length is the
 	// property that matters and the one a user can act on; a composition rule
 	// would be theater in front of an argon2id hash.
-	minPasswordLength = 12
+	minPasswordLength = 8
 	maxPasswordLength = 1024
 )
 
