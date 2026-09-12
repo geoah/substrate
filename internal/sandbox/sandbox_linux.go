@@ -25,6 +25,11 @@ func init() {
 	if len(os.Args) >= 4 && os.Args[1] == stubArgv {
 		stubMain(os.Args[2], os.Args[3:])
 	}
+	// argv: [self, probeArgv] — the connect-gate probe's target, spawned by
+	// probe() and never by anything else.
+	if len(os.Args) == 2 && os.Args[1] == probeArgv {
+		probeChildMain()
+	}
 }
 
 // stubMain applies the policy to THIS process and exec's the real program. It
@@ -115,6 +120,11 @@ func New(mode Mode) *Confiner {
 // a filter, because a filter cannot be uninstalled and the probe runs in the
 // substrate's own process. An outer profile that denies seccomp(2), the case
 // that matters, answers EPERM to the probe just as it would to the install.
+//
+// The connect gate is probed too, one level down and for the same reason: its
+// filter installs cleanly under the stock container profile, and it is the
+// syscalls the SUPERVISOR needs to ANSWER a notification that are denied, so
+// every layer reads green while no network body can connect.
 func probe() Report {
 	r := Report{OS: runtime.GOOS}
 	abi, err := landlockABI()
@@ -122,6 +132,7 @@ func probe() Report {
 		r.LandlockABI = abi
 	}
 	r.Seccomp = seccompAvailable()
+	r.ConnectGate, r.ConnectGateErr, r.Err = connectGateAvailable()
 	return r
 }
 
@@ -149,6 +160,9 @@ func (c *Confiner) wrap(cmd *exec.Cmd, p Policy) error {
 	// Without seccomp there is nothing to service, so drop it rather than set up
 	// a socket the stub can never send on (which would hang Serve). Under
 	// enforce, Wrap already refused a missing seccomp layer before reaching here.
+	// A policy that reaches here with NotifyConnect set has a serviceable gate:
+	// Wrap refuses a network policy outright when the probe says otherwise,
+	// rather than dropping the filter the grant was issued under.
 	if p.NotifyConnect && c.report.Seccomp {
 		sp, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
 		if err != nil {

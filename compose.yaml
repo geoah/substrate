@@ -27,6 +27,23 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # The function sandbox's connect gate answers every network body's
+    # connect(2) from the substrate, with pidfd_getfd(2) and
+    # process_vm_readv(2). Docker's default seccomp profile permits those two
+    # only for a container carrying CAP_SYS_PTRACE in its bounding set, and
+    # the profile is built from the container's CONFIGURED capabilities, not
+    # from the process's effective set: without this line both calls return
+    # EPERM, and a function that declares `network:` is REFUSED rather than
+    # run with its destinations unfiltered (a provider install's `uv sync`
+    # first). It is a bounded trade, not a free one: the capability unblocks
+    # the profile's whole ptrace group for everything in the container. What
+    # bounds it is that the container holds only the substrate and the
+    # function children it spawns, all at uid 65532, and every child is
+    # started under no_new_privs inside its own Landlock domain, so the group
+    # reaches nothing the substrate could not already reach and cannot be used
+    # to escalate. Drop the line and the boot log says what stops working.
+    cap_add:
+      - SYS_PTRACE
     volumes:
       # The data root: one directory per repository with its changelog
       # segments, sealed files and blob bytes. This volume is the backup unit

@@ -47,7 +47,10 @@
 // a body GRANTED network has its connect destinations filtered
 // (connectgate_linux.go): the runner connects to the address it verified and
 // injects the socket, so a multi-threaded body cannot race the destination past
-// the check. One residual remains: a UDP body reaching a private service through
+// the check. That filter is not optional — where the deployment denies the two
+// syscalls the supervisor answers notifications with, a body that declares
+// network is REFUSED rather than run unfiltered, in every mode but off. One
+// residual remains: a UDP body reaching a private service through
 // sendto with no connect is not filtered
 // (0035-a-network-body-connect-is-filtered-by-destination). That is a named
 // residual risk, not an oversight.
@@ -153,9 +156,31 @@ type Report struct {
 	LandlockABI int
 	// Seccomp reports whether an unprivileged filter installs.
 	Seccomp bool
+	// ConnectGate reports whether this process may service the connect gate's
+	// notifications AGAINST A CHILD: pidfd_getfd(2) to duplicate the body's
+	// socket and process_vm_readv(2) to read the sockaddr it passed. Both are
+	// probed rather than assumed, because Docker's and containerd's default
+	// seccomp profiles permit them only for a container carrying
+	// CAP_SYS_PTRACE in its bounding set. Without them every branch of the
+	// gate answers EACCES, so EVERY connect from EVERY network body fails
+	// while the layers the boot line reports are all green.
+	ConnectGate bool
+	// ConnectGateErr names the syscall that was refused and its errno, so the
+	// boot line and the refusal can say which one. Empty when the gate can be
+	// serviced, and empty when the probe could not complete: that case is Err,
+	// because "the kernel says no" and "we could not ask" are different states
+	// and only the first one has a remedy.
+	ConnectGateErr string
 	// Err carries the probe failure, if the probe itself could not run.
 	Err error
 }
+
+// ConnectGateRemedy is the one thing an operator can do about a gate the
+// kernel will not let this process service. It is a const rather than prose in
+// three places because the boot line, the refusal and the docs must not drift.
+const ConnectGateRemedy = "give the container CAP_SYS_PTRACE in its bounding set " +
+	"(compose: `cap_add: [SYS_PTRACE]`; Kubernetes: `securityContext.capabilities.add`), " +
+	"because the default seccomp profile gates pidfd_getfd(2) and process_vm_readv(2) on that capability"
 
 // MinLandlockABI is the ABI at which the filesystem layer is COMPLETE enough
 // to be called enforced.
@@ -187,7 +212,7 @@ func (r Report) Degraded(mode Mode) bool {
 	if mode == ModeOff {
 		return false
 	}
-	return !r.FS() || !r.Seccomp
+	return !r.FS() || !r.Seccomp || !r.ConnectGate
 }
 
 // String is the one line an operator reads at boot.
@@ -206,7 +231,17 @@ func (r Report) String() string {
 	if r.Seccomp {
 		sec = "available"
 	}
-	return fmt.Sprintf("filesystem: %s, syscall filter: %s", fs, sec)
+	gate := "available"
+	if !r.ConnectGate {
+		gate = "unavailable"
+		switch {
+		case r.ConnectGateErr != "":
+			gate += " (" + r.ConnectGateErr + ")"
+		case r.Err != nil:
+			gate += " (not probed: " + r.Err.Error() + ")"
+		}
+	}
+	return fmt.Sprintf("filesystem: %s, syscall filter: %s, connect gate: %s", fs, sec, gate)
 }
 
 // Confiner applies a policy to children. Build it once with New.
@@ -257,5 +292,38 @@ func (c *Confiner) Wrap(cmd *exec.Cmd, p Policy) error {
 		return fmt.Errorf("sandbox: SUBSTRATE_SANDBOX=enforce, but %s: "+
 			"set SUBSTRATE_SANDBOX=best-effort to run bodies unconfined anyway", c.report)
 	}
+	// Destination filtering is the contract a network grant is issued under
+	// (0035-a-network-body-connect-is-filtered-by-destination): `network:`
+	// means the internet, not whatever the substrate's own network routes to.
+	// So a gate that cannot be serviced refuses the body in EVERY mode but
+	// off, rather than best-effort running it unfiltered: reaching the
+	// deployment's Postgres is not a degradation of that contract, it is its
+	// opposite. A body that asks for no network is untouched by this.
+	//
+	// An unsupported platform is excluded because there is nothing to fail
+	// open FROM: macOS applies no layer at all and the boot line says so, and
+	// refusing there would mean no function that declares network runs on a
+	// developer laptop.
+	if c.report.Supported() && (p.Network || p.NotifyConnect) && !c.report.ConnectGate {
+		return c.connectGateRefusal()
+	}
 	return c.wrap(cmd, p)
+}
+
+// connectGateRefusal is the error a network policy gets when the gate cannot
+// be serviced. It names the syscall that refused where the kernel answered,
+// and the probe's own failure where it could not ask: a transient probe
+// failure must not read as a missing capability, and neither may quietly widen
+// what a body reaches.
+func (c *Confiner) connectGateRefusal() error {
+	if c.report.ConnectGateErr != "" {
+		return fmt.Errorf("sandbox: the connect gate cannot run here: %s; %s",
+			c.report.ConnectGateErr, ConnectGateRemedy)
+	}
+	if c.report.Err != nil {
+		return fmt.Errorf("sandbox: the connect gate could not be probed at boot (%w), so a body that declares "+
+			"network is refused rather than run with its destinations unfiltered", c.report.Err)
+	}
+	return fmt.Errorf("sandbox: the connect gate is unavailable on this platform, so a body that declares " +
+		"network is refused rather than run with its destinations unfiltered")
 }

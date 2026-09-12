@@ -4,6 +4,7 @@ package sandbox
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -124,6 +125,120 @@ func installConnectGate(notifFD int) error {
 	}
 	_ = unix.Close(notifFD)
 	return nil
+}
+
+// probeArgv turns this binary into the connect-gate probe's child, the same
+// way stubArgv turns it into the confinement stub: the probe has to exist in
+// every binary that builds a Confiner, test binaries included, so it is an
+// argv sentinel and not a subcommand.
+const probeArgv = "__substrate_sandbox_probe"
+
+// probeMemory is the content the probe child exposes at a fixed address. It is
+// a package-level buffer so the address the child prints stays valid for the
+// life of the child, and the parent compares what it read against it: a read
+// that succeeds and returns something else is not a working gate.
+var probeMemory = []byte("substrate connect gate probe")
+
+// probeTimeout bounds the probe. It runs once, at boot, before the server
+// listens, so a child that never speaks must not hold the boot open.
+const probeTimeout = 5 * time.Second
+
+// probeChildMain is the probe's other half: print the address and length of
+// the known buffer, then block until the parent closes stdin. Blocking is what
+// keeps the child alive through the parent's pidfd_open, pidfd_getfd and
+// process_vm_readv, and blocking on STDIN (rather than sleeping) is what makes
+// the parent's close the exit signal. It never returns.
+func probeChildMain() {
+	fmt.Printf("%x %d\n", uintptr(unsafe.Pointer(&probeMemory[0])), len(probeMemory))
+	var b [1]byte
+	_, _ = os.Stdin.Read(b[:])
+	os.Exit(0)
+}
+
+// connectGateAvailable reports whether this process may make, AGAINST A CHILD,
+// the two calls the supervisor answers every notification with: it returns
+// whether the gate can run, the refusal where the kernel gave one, and an error
+// where the probe could not complete.
+//
+// The target is a real child and not this process, because both calls are
+// target-sensitive: a yama ptrace scope, an LSM or a container profile can
+// permit a process to read its own memory while denying it a child's, and the
+// gate only ever reads children.
+//
+// Only EPERM, EACCES and ENOSYS mean "unavailable": those are a profile or a
+// kernel saying no, which has a remedy. Any other errno (EMFILE, a child that
+// could not be spawned) is a probe that did not complete, reported through
+// Report.Err; Wrap refuses a network policy for either reason, so a transient
+// failure never moves the boundary in either direction.
+func connectGateAvailable() (bool, string, error) {
+	cmd := exec.Command("/proc/self/exe", probeArgv)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return false, "", fmt.Errorf("connect-gate probe: stdin: %w", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		_ = stdin.Close()
+		return false, "", fmt.Errorf("connect-gate probe: stdout: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		_, _ = stdin.Close(), stdout.Close()
+		return false, "", fmt.Errorf("connect-gate probe: start: %w", err)
+	}
+	// Every exit path closes stdin (which is how the child is told to go),
+	// drains stdout and reaps the child, so a failed probe leaves behind
+	// neither a descriptor nor a process.
+	defer func() {
+		_ = stdin.Close()
+		_, _ = io.Copy(io.Discard, stdout)
+		_ = cmd.Wait()
+	}()
+	kill := time.AfterFunc(probeTimeout, func() { _ = cmd.Process.Kill() })
+	defer kill.Stop()
+
+	var addr uint64
+	var length int
+	if _, err := fmt.Fscanf(stdout, "%x %d\n", &addr, &length); err != nil {
+		return false, "", fmt.Errorf("connect-gate probe: read the child's address: %w", err)
+	}
+	if length != len(probeMemory) {
+		return false, "", fmt.Errorf("connect-gate probe: the child named %d bytes, want %d", length, len(probeMemory))
+	}
+
+	pidfd, err := unix.PidfdOpen(cmd.Process.Pid, 0)
+	if err != nil {
+		return classifyProbe("pidfd_open", err)
+	}
+	defer func() { _ = unix.Close(pidfd) }()
+	// Descriptor 0 is the child's stdin: the pipe opened above, so it is there
+	// for as long as the probe runs.
+	dup, err := unix.PidfdGetfd(pidfd, 0, 0)
+	if err != nil {
+		return classifyProbe("pidfd_getfd", err)
+	}
+	_ = unix.Close(dup)
+
+	buf := make([]byte, length)
+	local := []unix.Iovec{{Base: &buf[0], Len: uint64(length)}}
+	remote := []unix.RemoteIovec{{Base: uintptr(addr), Len: length}}
+	n, err := unix.ProcessVMReadv(cmd.Process.Pid, local, remote, 0)
+	if err != nil {
+		return classifyProbe("process_vm_readv", err)
+	}
+	if n != length || !bytes.Equal(buf, probeMemory) {
+		return false, "", fmt.Errorf("connect-gate probe: process_vm_readv read %d bytes of %q, want %d of %q",
+			n, buf, length, probeMemory)
+	}
+	return true, "", nil
+}
+
+// classifyProbe splits a refusal from a failure: the first is a profile or a
+// kernel the operator can answer, the second says nothing about either.
+func classifyProbe(call string, err error) (bool, string, error) {
+	if errors.Is(err, unix.EPERM) || errors.Is(err, unix.EACCES) || errors.Is(err, unix.ENOSYS) {
+		return false, fmt.Sprintf("%s: %v", call, err), nil
+	}
+	return false, "", fmt.Errorf("connect-gate probe: %s: %w", call, err)
 }
 
 // serve is the linux half of Confiner.Serve: it receives the listener

@@ -48,6 +48,19 @@ func requireSeccomp(t *testing.T, r *Runner) {
 	sandboxtest.Case(t)
 }
 
+// requireConnectGate is the extra guard a case that GRANTS network needs: Wrap
+// refuses a network policy outright where the gate's supervisor syscalls are
+// denied (a stock container profile with no CAP_SYS_PTRACE), because the
+// destination filter is the contract the grant is issued under. That is an
+// environment difference here, and a failure under the require gate. It is
+// called AFTER the case's own guard, so the case is still counted as guarded.
+func requireConnectGate(t *testing.T, r *Runner) {
+	t.Helper()
+	if rep := r.sandbox.Report(); rep.Supported() && !rep.ConnectGate {
+		sandboxtest.Unavailablef(t, "the connect gate cannot be serviced here: %s", rep)
+	}
+}
+
 // Ten cases below guard on the confinement, and under
 // SUBSTRATE_TEST_REQUIRE_SANDBOX exactly ten must reach that guard: a kernel
 // or image change that turns them into skips cannot leave a green build
@@ -197,6 +210,7 @@ def main(input, host):
 func TestNetworkCapabilityGatesABody(t *testing.T) {
 	r := New()
 	requireSeccomp(t, r)
+	requireConnectGate(t, r)
 	const probe = `
 import socket
 def main(input, host):
@@ -381,6 +395,7 @@ func TestIdleProcessesAreReaped(t *testing.T) {
 func TestWithdrawingNetworkRetiresTheProcess(t *testing.T) {
 	r := New()
 	requireSeccomp(t, r)
+	requireConnectGate(t, r)
 	ctx := context.Background()
 	const probe = `
 import socket
@@ -424,6 +439,7 @@ def main(input, host):
 func TestTLSWorksWhileKeyMaterialStaysDenied(t *testing.T) {
 	r := New()
 	requireSandbox(t, r)
+	requireConnectGate(t, r)
 	const keyProbe = `
 import os
 def main(input, host):
@@ -631,6 +647,7 @@ def main(input, host):
 func TestNetworkBodyCannotReachTheDeploymentsOwnRanges(t *testing.T) {
 	r := New()
 	requireSeccomp(t, r)
+	requireConnectGate(t, r)
 
 	// A listener on loopback stands in for the deployment's Postgres: the same
 	// class of address, reachable from the shared network namespace. It is up,
@@ -710,6 +727,7 @@ def main(input, host):
 func TestNetworkBodyCannotRaceTheConnectAddress(t *testing.T) {
 	r := New()
 	requireSeccomp(t, r)
+	requireConnectGate(t, r)
 
 	var accepts atomic.Int64
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
