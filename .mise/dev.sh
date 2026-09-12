@@ -396,16 +396,15 @@ cmd_logs() {
 
 cmd_dsn() { echo "$DSN"; }
 
-cmd_psql() { exec docker exec -it "$CONTAINER" psql -U postgres -d substrate "$@"; }
 
 case "${1:-}" in
-run | totp | up | stop | restart | wipe | status | logs | dsn | psql)
+run | totp | up | stop | restart | wipe | status | logs | dsn)
 	verb="$1"
 	shift
 	"cmd_${verb}" "$@"
 	;;
 *)
-	echo "usage: .mise/dev.sh {run|totp|up|stop|restart|wipe|status|logs|dsn|psql}" >&2
+	echo "usage: .mise/dev.sh {run|totp|up|stop|restart|wipe|status|logs|dsn}" >&2
 	exit 2
 	;;
 esac

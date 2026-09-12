@@ -32,18 +32,6 @@ export function agentsQueryOptions() {
   })
 }
 
-/** The llmprovider rows — one endpoint each, addressed by an agent's
- * `provider` beside the plain `model` id it sends. */
-export function providersQueryOptions() {
-  return recordsQueryOptions({
-    authority: CORE_AUTHORITY,
-    package: CORE_PACKAGE_NAME,
-    name: "llmprovider",
-    first: 200,
-    orderBy: "createdAt:desc",
-  })
-}
-
 /** Where a provider row sends its completions. `wire` is the protocol, not the
  * vendor, and only `anthropic` has an endpoint of its own: there is no host
  * gateway, so an `openai` or `azure` row without a `baseURL` refuses at

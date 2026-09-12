@@ -10,13 +10,13 @@ problem Kubernetes already answered, and the design borrows its answer:
 
 - the substrate is the **API server**: typed records, declared validation, an
   ordered change feed;
-- every application and integration is a **controller**: it watches, decides,
+- every application and provider is a **controller**: it watches, decides,
   and writes back through the same public API;
 - behavior lives in **declarations** (kinds, states, mappings, functions), not
   in bespoke endpoints. The write API is five generic mutations, forever:
   `put`, `patch`, `delete`, `merge`, `split`;
 - a closure of those declarations installs and uninstalls as one unit, a
-  **bundle**, which is how a provider integration or an automation reaches the
+  **bundle**, which is how a provider or an automation reaches the
   data without a substrate code change.
 
 These pages build one thing, a to-do list, from registration through to the

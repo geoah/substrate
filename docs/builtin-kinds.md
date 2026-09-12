@@ -66,7 +66,7 @@ traits across packages, the way every package binds core's `temporal`
 | Kind                  | What it is                                                              |
 | --------------------- | ----------------------------------------------------------------------- |
 | `calendar`            | One provider calendar.                                                  |
-| `calendarevent`       | Always a concrete occurrence; integrations explode series into these.   |
+| `calendarevent`       | Always a concrete occurrence; providers explode series into these.      |
 | `calendareventseries` | The recurring definition, RRULE and exceptions, never on the timeline.  |
 | `transcript`          | A meeting transcript, pointed at the occurrence that actually happened. |
 

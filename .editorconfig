@@ -24,9 +24,6 @@ indent_style = tab
 [*.sh]
 indent_style = tab
 
-[Makefile]
-indent_style = tab
-
 # Trailing whitespace is significant in Markdown (two spaces is a line break),
 # so nothing here may strip it.
 [*.md]

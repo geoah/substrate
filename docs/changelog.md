@@ -3,7 +3,7 @@
 Every committed write appends one entry to the repository's **changelog**, in the
 same transaction as the write itself. It is append-only, strictly sequential,
 and there is exactly one of it per repository: the source of truth, the change
-feed, the audit trail, and the input stream for triggers and integrations are
+feed, the audit trail, and the input stream for triggers and providers are
 all the same changelog. The [records](data-model.md) you read are its fold. Identical
 re-writes append nothing, so a re-sync leaves no wake.
 
@@ -402,7 +402,7 @@ horizon, and the horizon is where policy lives.
   where it stands as `delivery` entries in the same changelog, which the feed
   never shows.
 - **Watchers**: the stream above, and `substratectl watch` is that stream in a
-  terminal ([substratectl](substratectl.md)). Integrations reconcile from it.
+  terminal ([substratectl](substratectl.md)). Providers reconcile from it.
 - **The console's events page** is the same feed, paged backward through
   history and filtered ([web console](console.md)).
 - **`rebuild`** replays it from the segment files, which is what makes the

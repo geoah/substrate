@@ -14,7 +14,6 @@ import {
 import {
   collectionPath,
   CORE_AUTHORITY,
-  CORE_PACKAGE,
   CORE_PACKAGE_NAME,
   request,
   seg,
@@ -27,7 +26,6 @@ import {
 } from "@/lib/mergerequests"
 
 export const MR_NAME = "recordmergerequest"
-export const MR_KIND = `${CORE_PACKAGE}/recordmergerequest`
 
 /** `decision` is a state property; states filter through `properties` like any
  * other (verified live) — one value as `eq`, several as `in`. No decision =

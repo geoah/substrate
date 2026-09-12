@@ -49,8 +49,8 @@ and a task may both be `9f2k` and stay unrelated. **Always address a record by
 its full identity, on every surface.**
 
 Ids the server mints are 12 characters of lowercase base32. A writer may
-supply its own id on create, which is how an integration composes a stable id
-out of a provider's own key; supplied ids allow a wider character set (RFC 3986
+supply its own id on create, which is how a provider composes a stable id out
+of the upstream service's own key; supplied ids allow a wider character set (RFC 3986
 unreserved plus `:`, `@` and `/`, up to 128 characters). The one exception is
 a kind some `recordmapping` points at: its ids are server-assigned, and a
 create carrying an id is refused
@@ -353,10 +353,10 @@ itself must compare it in SQL: a one-way SHA-256 the server minted, stored
 as the value. The `substrate.reamde.dev/core/token` kind stores its hash
 this way ([users and tokens](auth.md)).
 
-**Objects.** An `object` property declares its fields inline. This is how an
-integration's kinds mirror what their provider actually sends. In the GitHub
-[integration](bundles-catalog.md#github), issues carry milestones in
-GitHub's own shape:
+**Objects.** An `object` property declares its fields inline. This is how a
+provider's kinds mirror what the upstream service actually sends. In the GitHub
+[provider](bundles-catalog.md#github), issues carry milestones in GitHub's own
+shape:
 
 ```yaml
 milestone:
@@ -671,8 +671,8 @@ state can never be corrupted by an eager writer. The rules, each one
 mechanical:
 
 - **Creations are born in the declared `initial` state.** A creating write
-  may name any declared state instead (an integration mirroring a provider's
-  already-done item starts it there); an undeclared state name is refused.
+  may name any declared state instead (a provider mirroring an item already
+  done upstream starts it there); an undeclared state name is refused.
 - **Transitions travel only as `patch`.** A `put` that would move a state is
   refused ("patch does transitions"), so re-applying a document you read can
   never accidentally complete a task.

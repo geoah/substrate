@@ -607,7 +607,7 @@ key from before the restore runs its operation again. A consent flow in flight i
 and a PKCE verifier with an expiry, and the callback fails once, so the user
 starts the flow over. A user's tokens are records, so they come back.
 Change cursors that clients saved (the console's tail, `substratectl watch
---from`, an integration's bookmark) are refused once after an import: the row
+--from`, a provider's bookmark) are refused once after an import: the row
 comes back with a new history generation, and a resume under the old one
 answers `410 compacted` naming the head to re-list from ([the
 changelog](changelog.md#frames-and-the-horizon)). A dump keeps the row's

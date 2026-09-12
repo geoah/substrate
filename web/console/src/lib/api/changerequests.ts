@@ -10,7 +10,7 @@
  * request proposed, and lands the server's account on it as
  * `substrate/conflict`, so a rejected call means re-read, never retry. */
 
-import { CORE_AUTHORITY, CORE_PACKAGE, CORE_PACKAGE_NAME } from "./http"
+import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "./http"
 import {
   patchRecord,
   recordCountQueryOptions,
@@ -25,7 +25,6 @@ import {
 } from "@/lib/changerequests"
 
 export const CR_NAME = "recordpatchrequest"
-export const CR_KIND = `${CORE_PACKAGE}/recordpatchrequest`
 
 /** `decision` is a state property; states filter through `properties` like any
  * other, one value as `eq` and several as `in`. No decision = the whole queue,

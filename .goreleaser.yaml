@@ -95,7 +95,7 @@ dockers_v2:
     sbom: false
     flags:
       - --provenance=false
-    # No `latest` here: the tip-of-main build (mise.toml's `image:latest`,
+    # No `latest` here: the tip-of-main build (.mise.toml's `image:latest`,
     # run by .github/workflows/latest.yml) already owns that tag, and a
     # release racing it for the same name is worse than a release with no
     # `latest` at all.

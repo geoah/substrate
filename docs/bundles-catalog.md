@@ -379,10 +379,10 @@ up to two days before the connect can still land once its score settles.
 ## Notion
 
 Package `providers.substrate.reamde.dev/notion`. A provider that mirrors the Notion
-pages and data sources shared with an internal integration. It is authorized by
-an internal-integration token rather than OAuth, because Notion authenticates
-its token exchange with HTTP Basic and the host facility declares one auth
-style for every bundle.
+pages and data sources the user has shared with it. It is authorized by an
+internal Notion token (the one a workspace owner mints in Notion's settings)
+rather than OAuth, because Notion authenticates its token exchange with HTTP
+Basic and the host facility declares one auth style for every bundle.
 
 - **Kinds (4)**: `config`, `account`, and the mirrors `page` and `database`
   (one row per data source, recording its containing database).
@@ -393,14 +393,14 @@ style for every bundle.
   enabled; `notion-scheduled` fires hourly.
 - **Mappings**: none. A Notion page mirrors as a document, not a person.
 
-The integration token is a secret on the configuration record, origin-pinned to
+The Notion token is a secret on the configuration record, origin-pinned to
 Notion's API host. Only one account per repository syncs: every other account
 row is stamped `syncStatus: ignored: duplicate account`.
 
-Setting it up takes two steps in Notion. Create an internal integration
-(Settings, Connections, Develop or manage integrations) with read-content
-capabilities only, and paste its token onto the `config` record. Then SHARE
-each top-level page, database or teamspace with that integration: the search
+Setting it up takes two steps in Notion. Mint an internal token (Settings,
+Connections, Develop or manage) with read-content capabilities only, and paste
+it onto the `config` record. Then SHARE each top-level page, database or
+teamspace with the connection that token belongs to: the search
 API returns only what has been shared with it, so an unshared page is invisible
 to the sync rather than refused. A page's mirrored `content` truncates at 500
 blocks and nesting depth 2, closed by a `[content truncated]` marker.

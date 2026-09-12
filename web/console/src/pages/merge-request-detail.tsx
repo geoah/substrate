@@ -219,7 +219,7 @@ function DiffRows({ rows, kinds }: { rows: DiffRow[]; kinds: KindInfo[] }) {
                 <TooltipContent>
                   {row.declared
                     ? "declared property"
-                    : "not declared by the schema"}
+                    : "not declared by the kind"}
                 </TooltipContent>
               )}
             </Tooltip>

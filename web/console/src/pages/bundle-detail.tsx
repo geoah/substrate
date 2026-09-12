@@ -128,7 +128,7 @@ const GOOGLE_OAUTH_DOCS = "https://support.google.com/cloud/answer/6158849"
 
 /** The provider callback URL, read-only with a copy affordance — the value the
  * owner must register in their OAuth client. Provider-specific: it renders only
- * on an integration bundle (declaresProviderInterfaces). */
+ * on a provider bundle (declaresProviderInterfaces). */
 function CallbackUrlNote() {
   const url = oauthCallbackURL()
   const [copied, setCopied] = useState(false)
@@ -269,7 +269,7 @@ function verbPlan(verb: BundleVerb | "purge", b: BundleStatus): VerbPlan {
         label: "Disable",
         done: "Disabled.",
         title: `Disable ${b.name}?`,
-        body: "Execution stops — triggers stop delivering and callables stop resolving. The schema and data stay exactly as they are; enable brings it back with the cursors intact.",
+        body: "Execution stops — triggers stop delivering and callables stop resolving. The vocabulary and data stay exactly as they are; enable brings it back with the cursors intact.",
         run: (id) => runBundleVerb(id, "disable"),
       }
     case "enable":
@@ -285,7 +285,7 @@ function verbPlan(verb: BundleVerb | "purge", b: BundleStatus): VerbPlan {
         label: "Uninstall",
         done: "Uninstalled.",
         title: `Uninstall ${b.name}?`,
-        body: "Tears down the schema, callables and runtime registration for good. Refused while live data remains — purge the data first. Reinstalling means re-applying the closure.",
+        body: "Tears down the vocabulary, callables and runtime registration for good. Refused while live data remains — purge the data first. Reinstalling means re-applying the closure.",
         destructive: true,
         run: (id) => uninstallBundle(id).then(() => null),
       }
@@ -711,7 +711,7 @@ function InputCard({
   )
 }
 
-/** The Setup surface: the provider callback URL (integrations only), every
+/** The Setup surface: the provider callback URL (providers only), every
  * setup item that stands on its own, then one card per declared input. The
  * caller renders this ONLY when the bundle declares inputs or the status
  * carries setup items; a bundle needing neither shows nothing at all. */
@@ -1108,15 +1108,15 @@ function AccountsSection({
           </Empty>
         ) : (
           <p className="rounded-md border px-4 py-3 text-xs text-muted-foreground">
-            This integration declares no account-config kind.
+            This provider declares no account-config kind.
           </p>
         )
       ) : (
         <div className="rounded-md border">
           {blocked && (
             <p className="border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
-              Connecting is refused until the integration is installed, enabled
-              and its OAuth client is set up.
+              Connecting is refused until the provider is installed, enabled and
+              its OAuth client is set up.
             </p>
           )}
           {capped && (
@@ -1596,7 +1596,7 @@ export function BundleDetailPage() {
             <section>
               <h2 className="pb-1 text-sm font-medium">Accounts</h2>
               <p className="pb-2 text-xs text-muted-foreground">
-                The integration's connected accounts (a{" "}
+                The provider's connected accounts (a{" "}
                 <span className="data">accountconfig</span> trait query); the
                 host runs the OAuth flow.
               </p>

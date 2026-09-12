@@ -52,14 +52,13 @@ area/docs:
       - any-glob-to-any-file:
           - docs/**
           - README.md
-          - CONTRIBUTING.md
 
 area/ci:
   - changed-files:
       - any-glob-to-any-file:
           - .github/**
           - .mise/**
-          - mise.toml
+          - .mise.toml
           - Dockerfile
-          - docker-compose*.yml
+          - compose.yaml
           - .golangci.yml
