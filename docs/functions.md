@@ -392,7 +392,13 @@ unprivileged, none requiring a container runtime:
   A local provider (a loopback Ollama) is re-permitted by listing its address in
   `SUBSTRATE_SANDBOX_EGRESS_ALLOW`. Holding a body to the *specific hosts* it
   declared is not done yet; what is enforced is "the internet, not the
-  deployment's own network".
+  deployment's own network". The supervisor half of that fine layer is the one
+  piece of the sandbox that needs something from the deployment: it reads the
+  destination with `process_vm_readv(2)` and duplicates the body's socket with
+  `pidfd_getfd(2)`, which a container's default seccomp profile permits only
+  with `CAP_SYS_PTRACE` in its bounding set. Where it is missing, a body that
+  declares network is **refused** rather than run unfiltered, in every mode but
+  `off` ([running a substrate](operations.md#the-function-sandbox)).
 - **rlimits** cap descriptors and file size, and disable core dumps.
 
 The process environment is separately default-deny: every child starts from a
@@ -402,7 +408,7 @@ construction rather than by filtering.
 
 ### Platforms
 
-The sandbox is **Linux only**, and both layers work on `linux/amd64` and
+The sandbox is **Linux only**, and every layer works on `linux/amd64` and
 `linux/arm64`: the two architectures the image ships. The seccomp filter
 carries a syscall table per architecture, because a filter written against the
 wrong numbering does not fail loudly, it denies and permits the wrong calls; an
@@ -423,7 +429,11 @@ confined by *its* kernel.
 loudly about any it does not) or `enforce` (refuse to run a body at all unless
 the filesystem and syscall layers both applied). The effective state is logged
 once at boot; a degraded sandbox logs at ERROR, because a confinement that
-quietly does less than it claims is worse than none.
+quietly does less than it claims is worse than none. The destination filter is
+outside that choice: `best-effort` degrades a layer it cannot apply to the body
+itself, but where the *supervisor* cannot run, a body that declares network is
+refused under `best-effort` too, because running it would mean handing it the
+deployment's own network rather than a weaker version of the internet.
 
 **What it does not do.** It is not a container. A body still shares a uid and a
 pid namespace with the substrate, so it can signal it. There is no memory or

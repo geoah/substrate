@@ -208,7 +208,7 @@ not the store.
 
 Function bodies are third-party code, and the substrate confines them with
 Landlock, seccomp and rlimits: see [the sandbox](functions.md#the-sandbox) for
-what each layer closes. Two things an operator needs to know:
+what each layer closes. Three things an operator needs to know:
 
 **Check the boot log.** The substrate reports the sandbox once at startup,
 naming the kernel's actual Landlock ABI. If a layer is missing the line is an
@@ -216,9 +216,35 @@ ERROR, not a warning, because a confinement that silently does less than it
 claims is worse than none. A real deployment should run `SUBSTRATE_SANDBOX=enforce`,
 which turns that into a refusal to run bodies at all.
 
-**Both layers work in a stock container**: Docker's and containerd's default
-seccomp profiles permit the `landlock_*` and `seccomp` syscalls, and neither
-needs a capability. What does **not** work in a stock container is anything built
+**Landlock and seccomp work in a stock container**: Docker's and containerd's
+default seccomp profiles permit the `landlock_*` and `seccomp` syscalls, and
+neither needs a capability.
+
+**The connect gate needs `CAP_SYS_PTRACE`.** It is the third layer, and the only
+one whose work happens in the substrate rather than in the body: the filter
+routes a body's `connect(2)` to a supervisor here, which reads the destination
+with `process_vm_readv(2)` and duplicates the body's socket with
+`pidfd_getfd(2)`. The default seccomp profile permits those two only for a
+container carrying `CAP_SYS_PTRACE` in its bounding set, so without it the gate
+cannot answer a single notification. `compose.yaml` ships
+`cap_add: [SYS_PTRACE]` for exactly this (`securityContext.capabilities.add` is
+the Kubernetes spelling). It is a bounded trade: the capability unblocks the
+profile's ptrace group for the whole container, and what bounds it is that the
+container holds only the substrate and the function children it spawns, all at
+one unprivileged uid and each started under `no_new_privs` inside its own
+Landlock domain.
+
+**Without the capability, network bodies are refused, never unfiltered.**
+Filtering the destination is the contract a network grant is issued under
+([0035](decisions/0035-a-network-body-connect-is-filtered-by-destination.md)),
+so a gate that cannot run refuses every function that declares `network:` in
+`best-effort` as well as in `enforce` — reaching the deployment's own Postgres
+is not a degradation of that contract, it is its opposite. The boot line is an
+ERROR naming the syscall that refused, and the refusal a caller sees names it
+too, so a failing provider install reads as the missing capability instead of
+as uv's "Permission denied". A function that declares no network is unaffected.
+
+What does **not** work in a stock container is anything built
 on user namespaces or cgroup delegation: `CLONE_NEWUSER` is denied by the
 default profile and `/sys/fs/cgroup` is mounted read-only, which is why the
 sandbox has no memory or process-count ceiling. Do not add `--privileged` to
