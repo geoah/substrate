@@ -581,8 +581,8 @@ function SidebarMenuAction({
 }
 
 /** The badge's colours, as a VARIANT rather than a caller's className. The
- * base sets the text colour three times — plain, `peer-hover/menu-button:` and
- * `peer-data-active/menu-button:` — and tailwind-merge cannot override a
+ * base sets the text colour three times (plain, `peer-hover/menu-button:` and
+ * `peer-data-active/menu-button:`), and tailwind-merge cannot override a
  * variant it was not handed, so a caller passing `text-primary-foreground`
  * kept it only while the row was neither hovered nor active and turned the
  * count near-black on the accent otherwise. A variant carries all three
