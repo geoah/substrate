@@ -51,8 +51,11 @@ same API. [docs/README.md](docs/README.md) draws the comparison out.
 ## Quick start
 
 ```bash
-docker compose up
+docker compose up --build
 ```
+
+Compose reuses an image it already has, so `--build` is what makes the image
+follow the tree.
 
 That is the whole thing: Postgres, the API and the console at
 <http://localhost:8080>. Every setting has a working default; the first start
@@ -385,7 +388,7 @@ mise run ci             # every CI job, locally
 mise tasks              # everything else
 ```
 
-`docker compose up` builds an image; `mise run dev` runs the binary from the
+`docker compose up --build` builds an image; `mise run dev` runs the binary from the
 tree, so a change is a restart rather than a rebuild. Registration is
 one-shot per user, so testing it twice means `mise run dev:wipe`.
 [docs/running-locally.md](docs/running-locally.md) has what those tasks set and
