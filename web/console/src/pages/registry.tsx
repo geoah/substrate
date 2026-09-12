@@ -203,6 +203,7 @@ function TakeButton({
   missing: Requirement[]
 }) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const sample = row.tier === "sample"
   const verb = sample ? "Import" : "Install"
   const running = sample ? "Importing…" : "Installing…"
@@ -227,6 +228,17 @@ function TakeButton({
       // can lag it.
       void queryClient.invalidateQueries()
       refetchBundleStateSoon(queryClient)
+      // A bundle that landed with an empty required setting cannot run until
+      // somebody fills it in, so the import hands the reader straight to the
+      // form. The id is the LANDED one the door answered with: a sample's is
+      // rehomed. Nothing to fill in leaves the reader on the list.
+      if ((status.setup ?? []).some((item) => item.code === "setting")) {
+        void navigate({
+          to: "/registry/$id",
+          params: { id: status.id },
+          hash: "setup",
+        })
+      }
     },
     onError: (error) => {
       toast.add({

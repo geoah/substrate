@@ -16,12 +16,20 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router"
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
-import { afterEach, beforeAll, describe, expect, it } from "vitest"
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
 import { buildKindNav } from "@/lib/api/kinds"
-import type { KindInfo } from "@/lib/api/types"
-import { AuthorityGroup } from "./app-sidebar"
+import type { BundleStatus, KindInfo } from "@/lib/api/types"
+import { AuthorityGroup, SettingsSetupBadge } from "./app-sidebar"
 import { SidebarMenu, SidebarProvider } from "./ui/sidebar"
 
 function kind(pkg: string, name: string): KindInfo {
@@ -138,5 +146,52 @@ describe("the Data tree", () => {
 
     fireEvent.click(chevron)
     expect(screen.getByRole("link", { name: "task" })).toBeDefined()
+  })
+})
+
+/** The Settings row's number, off the bundle statuses the Registry already
+ * reads. A repository with nothing to fill in shows no badge at all. */
+describe("the Settings badge", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+
+  function serve(statuses: Partial<BundleStatus>[]) {
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ items: statuses }), { status: 200 })
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    return render(
+      <QueryClientProvider client={client}>
+        <SettingsSetupBadge />
+      </QueryClientProvider>
+    )
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+
+  it("counts every empty setting across the held bundles", async () => {
+    const { container } = serve([
+      {
+        setup: [
+          { code: "setting", message: "API key is not set" },
+          { code: "missing", input: "client", message: "no record yet" },
+        ],
+      },
+      { setup: [{ code: "setting", message: "Base URL is not set" }] },
+    ])
+    expect(await screen.findByText("2")).toBeDefined()
+    expect(container.textContent).toContain("2 settings to fill in")
+  })
+
+  it("renders nothing when there is nothing to fill in", async () => {
+    const { container } = serve([{ setup: [] }])
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(container.textContent).toBe("")
   })
 })

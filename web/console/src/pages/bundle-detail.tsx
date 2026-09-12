@@ -67,6 +67,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { toast } from "@/components/ui/toast"
 import { BundleStateBadge, SetupBadge } from "@/components/bundle-state-badge"
+import { BundleSettingsForm } from "@/components/bundle-settings"
 import { RecordConfigForm } from "@/components/record-config-form"
 import {
   ACCOUNT_CONFIG_TRAIT,
@@ -108,6 +109,7 @@ import {
   declaresProviderInterfaces,
   installedKindRows,
   isInputSetupCode,
+  isSettingSetupCode,
   oauthConnectBlocked,
   heldVersions,
   mergeBundles,
@@ -117,6 +119,8 @@ import {
   type ShippedRecordRow,
   type KindRow,
 } from "@/lib/bundles"
+import { settingRecordsQueryOptions } from "@/lib/api/settings"
+import { groupSettings, type SettingField } from "@/lib/settings"
 import { cellValue, recordTitle } from "@/lib/format"
 import { splitKind, kindByIdentity } from "@/lib/definition"
 import { cn } from "@/lib/utils"
@@ -709,25 +713,35 @@ function InputCard({
   )
 }
 
-/** The Setup surface: the provider callback URL (providers only), every
- * setup item that stands on its own, then one card per declared input. The
- * caller renders this ONLY when the bundle declares inputs or the status
- * carries setup items; a bundle needing neither shows nothing at all. */
+/** The Setup surface: the provider callback URL (providers only), the
+ * bundle's own settings as a form, every setup item that stands on its own,
+ * then one card per declared input. The caller renders this ONLY when the
+ * bundle declares inputs, ships settings, or the status carries setup items; a
+ * bundle needing none of the three shows nothing at all. */
 function SetupSection({
   bundle,
   types,
   provider,
+  settings,
 }: {
   bundle: BundleStatus
   types: KindInfo[]
   provider: boolean
+  settings: SettingField[]
 }) {
+  // A `setting` item is what the form above already marks on the field, so it
+  // is not repeated as a warning row.
   const standalone = (bundle.setup ?? []).filter(
-    (item) => !isInputSetupCode(item.code)
+    (item) => !isInputSetupCode(item.code) && !isSettingSetupCode(item.code)
   )
   return (
     <div className="flex flex-col gap-3">
       {provider && <CallbackUrlNote />}
+      {settings.length > 0 && (
+        <div className="rounded-md border px-4 py-3">
+          <BundleSettingsForm fields={settings} />
+        </div>
+      )}
       {standalone.map((item, i) => (
         <SetupItemRow
           key={`${item.code}:${item.input ?? item.record ?? i}`}
@@ -1441,6 +1455,16 @@ export function BundleDetailPage() {
   const catalog = useQuery(
     catalogItemQueryOptions(id, repository.data?.authority ?? "")
   )
+  // The bundle's own settings: every `setting` and `secret` record under its
+  // id prefix (decision record 0076). Read here rather than in the Setup
+  // surface, because whether the surface renders at all depends on them.
+  const settings = useQuery(settingRecordsQueryOptions)
+  const settingFields = useMemo(
+    () =>
+      groupSettings(settings.data ?? []).find((g) => g.bundle === id)?.fields ??
+      [],
+    [settings.data, id]
+  )
   const types = registry.data ?? []
 
   if (status.isPending) return <DetailSkeleton />
@@ -1475,11 +1499,13 @@ export function BundleDetailPage() {
   const bundle = status.data
   const provider = declaresProviderInterfaces(bundle, types)
   const item = catalog.data
-  // The Setup surface exists only for a bundle that declares inputs or whose
-  // status carries setup items. A bundle that declares neither shows nothing
-  // there: no heading, no empty state.
+  // The Setup surface exists only for a bundle that declares inputs, ships
+  // settings, or whose status carries setup items. A bundle with none of the
+  // three shows nothing there: no heading, no empty state.
   const hasSetup =
-    (bundle.inputs?.length ?? 0) > 0 || (bundle.setup?.length ?? 0) > 0
+    (bundle.inputs?.length ?? 0) > 0 ||
+    (bundle.setup?.length ?? 0) > 0 ||
+    settingFields.length > 0
   // The requirements are checked against the LIVE registry: a package is
   // present when some reconciled kind carries it, which is the check the
   // server's admission makes. A floor (`requiresAtLeast`, decision record
@@ -1557,7 +1583,9 @@ export function BundleDetailPage() {
             <RequiresNote requirements={requirements} />
           )}
           {hasSetup && (
-            <section>
+            // The anchor the Registry sends a fresh import to when its status
+            // says a setting is still empty.
+            <section id="setup">
               <h2 className="pb-1 text-sm font-medium">Setup</h2>
               <p className="pb-2 text-xs text-muted-foreground">
                 {(bundle.inputs?.length ?? 0) > 0 ? (
@@ -1577,6 +1605,7 @@ export function BundleDetailPage() {
                   bundle={bundle}
                   types={types}
                   provider={provider}
+                  settings={settingFields}
                 />
               )}
             </section>

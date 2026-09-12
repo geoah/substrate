@@ -698,11 +698,32 @@ function oauthClientInput(
 }
 
 /** The setup codes that are an input's own resolution problems; the rest
- * (oauth-client, provider) stand on their own as warning rows. */
+ * (oauth-client, provider, setting) stand on their own. */
 const INPUT_SETUP_CODES = ["missing", "ambiguous", "dangling"] as const
 
 export function isInputSetupCode(code: SetupItem["code"]): boolean {
   return (INPUT_SETUP_CODES as readonly string[]).includes(code)
+}
+
+/** A setup item a settings FORM clears rather than a warning row: a required
+ * `setting` or `secret` record with no value (decision record 0076). The form
+ * marks the field itself, so the row beside it would say the same thing
+ * twice. */
+export function isSettingSetupCode(code: SetupItem["code"]): boolean {
+  return code === "setting"
+}
+
+/** The Settings row's number in the sidebar: every empty required setting
+ * across the bundles this repository holds, counted off the same status read
+ * the Registry page makes. Nothing to fill in renders nothing. */
+export function settingSetupCount(
+  statuses: Pick<BundleStatus, "setup">[]
+): number {
+  return statuses.reduce(
+    (total, b) =>
+      total + (b.setup ?? []).filter((i) => isSettingSetupCode(i.code)).length,
+    0
+  )
 }
 
 /** Whether the connect flow should be gated on setup: the server refuses

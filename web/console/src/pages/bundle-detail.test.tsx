@@ -210,6 +210,10 @@ describe("BundleDetailPage", () => {
       /** Every held bundle's status, the list the floor check reads. */
       statuses?: BundleStatus[]
       catalog?: CatalogItem[]
+      /** The repository's `setting` and `secret` records, from which the page
+       * takes the ones under this bundle's id prefix. */
+      settings?: SubstrateRecord[]
+      secrets?: SubstrateRecord[]
     } = {}
   ) {
     fetchMock.mockImplementation(async (url, init) => {
@@ -227,6 +231,12 @@ describe("BundleDetailPage", () => {
         method === "POST"
       ) {
         return jsonResponse(200, bundleStatus)
+      }
+      if (path.startsWith("/api/v1/substrate.reamde.dev/core/setting")) {
+        return jsonResponse(200, { records: opts.settings ?? [] })
+      }
+      if (path.startsWith("/api/v1/substrate.reamde.dev/core/secret")) {
+        return jsonResponse(200, { records: opts.secrets ?? [] })
       }
       if (path.startsWith("/api/v1/substrate.reamde.dev/core/kind")) {
         return jsonResponse(200, { kinds: KINDS })
@@ -278,6 +288,53 @@ describe("BundleDetailPage", () => {
         authority: "samples.substrate.reamde.dev",
         pkg: "people",
         name: "person",
+      })
+    })
+
+    // A bundle ships its settings as records under its own id prefix
+    // (decision record 0076), so a closure with no inputs at all still earns
+    // the Setup surface once it ships one.
+    it("shows Setup for its settings alone, and saves one with a patch", async () => {
+      const setting: SubstrateRecord = {
+        id: `${PEOPLE.id}/baseURL`,
+        kind: "substrate.reamde.dev/core/setting",
+        properties: {
+          displayName: "Base URL",
+          type: "url",
+          value: "https://api.example.com",
+        },
+        labels: {},
+        version: 1,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      }
+      serve(status({}), {
+        settings: [
+          setting,
+          // Another bundle's setting: the prefix is the whole of ownership.
+          { ...setting, id: "x.example.com/x/baseURL" },
+        ],
+      })
+      renderPage(<BundleDetailPage />)
+      await screen.findByText("people")
+      const section = (await screen.findByText("Setup")).closest(
+        "section"
+      ) as HTMLElement
+      const input = within(section).getByLabelText(/Base URL/)
+      expect(within(section).getAllByLabelText(/Base URL/)).toHaveLength(1)
+
+      fireEvent.change(input, {
+        target: { value: "https://people.example.com" },
+      })
+      fireEvent.click(within(section).getByRole("button", { name: "Save" }))
+      await waitFor(() => {
+        const patch = fetchMock.mock.calls.find(
+          ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+        )
+        expect(patch).toBeTruthy()
+        expect(String(patch![0])).toContain(
+          encodeURIComponent(`${PEOPLE.id}/baseURL`)
+        )
       })
     })
 

@@ -493,6 +493,49 @@ describe("RegistryPage", () => {
     ).toBeTruthy()
   })
 
+  it("hands a fresh import straight to its Setup when a setting is empty", async () => {
+    serve({
+      take: () =>
+        jsonResponse(200, {
+          id: `${HOME}/people`,
+          name: "people",
+          authority: HOME,
+          package: "people",
+          installed: true,
+          enabled: true,
+          setup: [
+            {
+              code: "setting",
+              kind: "substrate.reamde.dev/core/secret",
+              record: `${HOME}/people/apiKey`,
+              message: "API key is not set",
+            },
+          ],
+        }),
+    })
+    renderPage(<RegistryPage />)
+    const people = await rowOf("people")
+    fireEvent.click(within(people).getByRole("button", { name: /^Import$/ }))
+    // The LANDED id, not the shipped one the click named.
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        to: "/registry/$id",
+        params: { id: `${HOME}/people` },
+        hash: "setup",
+      })
+    )
+  })
+
+  it("leaves the reader on the list when the import needs nothing", async () => {
+    renderPage(<RegistryPage />)
+    const people = await rowOf("people")
+    fireEvent.click(within(people).getByRole("button", { name: /^Import$/ }))
+    expect(
+      await screen.findByText(`people imported as ${HOME}/people.`)
+    ).toBeTruthy()
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
   it("surfaces a server refusal in the server's own words", async () => {
     const problem =
       "bundle samples.substrate.reamde.dev/people: data.requires names substrate.reamde.dev/core, which this repository does not have — import that package first"

@@ -25,6 +25,7 @@ import { RecordPage } from "@/pages/record"
 import { RecordEditPage, RecordNewPage } from "@/pages/record-editor"
 import { RegisterPage } from "@/pages/register"
 import { RegistryPage } from "@/pages/registry"
+import { SettingsPage } from "@/pages/settings"
 import { TokensPage } from "@/pages/tokens"
 import { KindBrowsePage } from "@/pages/kind-browse"
 
@@ -92,6 +93,12 @@ export const bundleDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/registry/$id",
   component: BundleDetailPage,
+})
+
+export const settingsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/settings",
+  component: SettingsPage,
 })
 
 export const agentsRoute = createRoute({
@@ -191,6 +198,7 @@ const routeTree = rootRoute.addChildren([
     changelogRoute,
     registryRoute,
     bundleDetailRoute,
+    settingsRoute,
     agentsRoute,
     agentChatRoute,
     mergeRequestDetailRoute,

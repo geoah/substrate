@@ -18,6 +18,7 @@ import {
   LogOutIcon,
   MoonIcon,
   PackageIcon,
+  SlidersHorizontalIcon,
   SunIcon,
   SunMoonIcon,
   UserRoundIcon,
@@ -61,6 +62,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import { logout } from "@/lib/api/auth"
+import { bundleStatusesQueryOptions } from "@/lib/api/bundles"
 import { catalogQueryOptions } from "@/lib/api/catalog"
 import {
   buildKindNav,
@@ -69,12 +71,13 @@ import {
   type PackageNav,
 } from "@/lib/api/kinds"
 import { getRepository } from "@/lib/api/session"
-import { upgradableBundleCount } from "@/lib/bundles"
+import { settingSetupCount, upgradableBundleCount } from "@/lib/bundles"
 
 const consoleItems = [
   { title: "Overview", to: "/", icon: HomeIcon },
   { title: "Changelog", to: "/changelog", icon: ActivityIcon },
   { title: "Registry", to: "/registry", icon: PackageIcon },
+  { title: "Settings", to: "/settings", icon: SlidersHorizontalIcon },
   { title: "Agents", to: "/agents", icon: BotIcon },
 ] as const
 
@@ -95,6 +98,27 @@ function RegistryUpgradeBadge() {
         {count === 1
           ? "1 bundle upgrade available"
           : `${count} bundle upgrades available`}
+      </span>
+      <span aria-hidden>{count}</span>
+    </SidebarMenuBadge>
+  )
+}
+
+/** The Settings row's number: the required settings and secrets still empty
+ * across the bundles this repository holds, counted off the bundle statuses
+ * the Registry page already reads (shared cache, no second endpoint). Nothing
+ * to fill in renders nothing. */
+export function SettingsSetupBadge() {
+  const statuses = useQuery(bundleStatusesQueryOptions)
+  const count = useMemo(
+    () => settingSetupCount(statuses.data ?? []),
+    [statuses.data]
+  )
+  if (count <= 0) return null
+  return (
+    <SidebarMenuBadge className="bg-primary text-primary-foreground">
+      <span className="sr-only">
+        {count === 1 ? "1 setting to fill in" : `${count} settings to fill in`}
       </span>
       <span aria-hidden>{count}</span>
     </SidebarMenuBadge>
@@ -394,6 +418,7 @@ export function AppSidebar() {
                     <span>{item.title}</span>
                   </SidebarMenuButton>
                   {item.to === "/registry" && <RegistryUpgradeBadge />}
+                  {item.to === "/settings" && <SettingsSetupBadge />}
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>

@@ -31,6 +31,7 @@ import {
   heldVersions,
   needsConfirmation,
   confirmationOf,
+  settingSetupCount,
   stepLines,
   upgradableBundleCount,
   upgradeBlocked,
@@ -285,6 +286,44 @@ describe("bundleSections", () => {
     ])
     expect(sections.samples.map((r) => r.id)).toEqual(["ada.example.com/tasks"])
     expect(sections.applied.map((r) => r.id)).toEqual(["x.example.com/x"])
+  })
+})
+
+describe("settingSetupCount", () => {
+  it("counts the empty settings across every held bundle, and nothing else", () => {
+    expect(
+      settingSetupCount([
+        {
+          setup: [
+            {
+              code: "setting",
+              kind: "substrate.reamde.dev/core/secret",
+              record: "ada.example.com/firecrawl/apiKey",
+              message: "API key is not set",
+            },
+            // An input's own problem belongs to the Registry's setup chip, not
+            // to the settings badge.
+            { code: "missing", input: "client", message: "no record yet" },
+          ],
+        },
+        {
+          setup: [
+            {
+              code: "setting",
+              kind: "substrate.reamde.dev/core/setting",
+              record: "ada.example.com/web/baseURL",
+              message: "Base URL is not set",
+            },
+          ],
+        },
+        {},
+      ])
+    ).toBe(2)
+  })
+
+  it("is zero when nothing needs filling in", () => {
+    expect(settingSetupCount([])).toBe(0)
+    expect(settingSetupCount([{ setup: [] }])).toBe(0)
   })
 })
 

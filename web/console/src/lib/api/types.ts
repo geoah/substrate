@@ -788,9 +788,11 @@ export interface InputStatus {
 /** The stable setup-item reasons: missing/ambiguous/dangling are an input's
  * own resolution problems; oauth-client is a resolved client record without
  * clientId/clientSecret; provider is an agent's llmprovider row absent or
- * keyless (kind substrate.reamde.dev/core/llmprovider). */
+ * keyless (kind substrate.reamde.dev/core/llmprovider); setting is a required
+ * `setting` or `secret` record of the bundle's whose value is empty (decision
+ * record 0076). */
 export type SetupCode =
-  "missing" | "ambiguous" | "dangling" | "oauth-client" | "provider"
+  "missing" | "ambiguous" | "dangling" | "oauth-client" | "provider" | "setting"
 
 /** One thing standing between a bundle and a runtime path it ships
  * (substrate.SetupItem). Problems only: an empty setup list means ready. */
