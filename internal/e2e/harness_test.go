@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -259,6 +260,63 @@ func httpJSON(hc *http.Client, base, token, method, path string, body any) (int,
 		return resp.StatusCode, nil, err
 	}
 	return resp.StatusCode, raw, nil
+}
+
+// recordsRoute is the one list route: every read of "some records" is a GET
+// here, told apart by its parameters, and the one body-addressed create is a
+// POST here. A record's own URL stays its reference under the version prefix.
+const recordsRoute = "/api/v1/records"
+
+// kindOf reads the kind reference off a kind path constant
+// (`/api/v1/<authority>/<package>/<kind>`), which the suite keeps as the
+// prefix of every record URL.
+func kindOf(kindPath string) string {
+	return strings.TrimPrefix(kindPath, "/api/v1/")
+}
+
+// listOf is the list of one kind: the records route narrowed by
+// `filter.kinds`, with any further parameters appended as given
+// ("first=200", "watch=1").
+func listOf(kindPath string, extra ...string) string {
+	return listWhere(map[string]any{"kinds": []string{kindOf(kindPath)}}, extra...)
+}
+
+// listWhere spells a filter document as the records route's `filter`
+// parameter, with any further parameters appended as given.
+func listWhere(filter map[string]any, extra ...string) string {
+	raw, _ := json.Marshal(filter)
+	path := recordsRoute + "?filter=" + url.QueryEscape(string(raw))
+	for _, p := range extra {
+		path += "&" + p
+	}
+	return path
+}
+
+// referencingList is the reverse read: every record pointing at one target,
+// narrowed to one reference property when `property` is set. The page's
+// `matches` says from which property each record points.
+func referencingList(kind, id, property string, extra ...string) string {
+	ref := map[string]any{"ref": kind + "/" + id}
+	if property != "" {
+		ref["property"] = property
+	}
+	return listWhere(map[string]any{"referencing": ref}, extra...)
+}
+
+// recordsPage is the list envelope, narrowed to what the cases read.
+type recordsPage struct {
+	Records    []record                   `json:"records"`
+	Cursor     string                     `json:"cursor"`
+	Head       int64                      `json:"head"`
+	Generation string                     `json:"generation"`
+	Included   map[string]record          `json:"included"`
+	Matches    map[string][]referenceSite `json:"matches"`
+}
+
+// referenceSite is one place a record points at a referencing target.
+type referenceSite struct {
+	Property string `json:"property"`
+	Path     string `json:"path"`
 }
 
 // fetch is the appendix's quiet read: no case, no recording.

@@ -28,7 +28,7 @@ func putPolicy(t *testing.T, ds *dataset, id string, props map[string]any) *subs
 	return e
 }
 
-func TestPolicyGatesAMutateIntoARequest(t *testing.T) {
+func TestPolicyGatesAWriteIntoARequest(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
@@ -39,10 +39,8 @@ func TestPolicyGatesAMutateIntoARequest(t *testing.T) {
 		},
 		"action": "gate",
 	})
-	fake.script("mut",
-		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-held", properties: {name: "wanted"}}) { id } }`,
-		})}}},
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-held", map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held, waiting."},
 		// The decision's resume.
 		fakeTurn{content: "landed at last."},
@@ -57,7 +55,7 @@ func TestPolicyGatesAMutateIntoARequest(t *testing.T) {
 	}
 	tool := lastToolMessage(t, ds, res.Thread)
 	if tool["ok"] == true {
-		t.Fatal("a gated mutate reported ok")
+		t.Fatal("a gated write reported ok")
 	}
 	if content, _ := tool["content"].(string); !strings.Contains(content, "held for review as") {
 		t.Fatalf("the result does not name the hold: %s", content)
@@ -116,10 +114,8 @@ func TestPolicyGatesAPatchOfAnAbsentTargetIntoACreate(t *testing.T) {
 		},
 		"action": "gate",
 	})
-	fake.script("mut",
-		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { patch(kind: "crew.test.dev/crew/widget", id: "w-absent", input: {properties: {name: "wanted"}}) { id } }`,
-		})}}},
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "patch", crewPackage+"/widget", "w-absent", map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held, waiting."},
 	)
 	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "edit a widget"); err != nil {
@@ -128,38 +124,6 @@ func TestPolicyGatesAPatchOfAnAbsentTargetIntoACreate(t *testing.T) {
 	req := onlyPatchRequest(t, ds)
 	if req.Properties["op"] != "create" || req.Properties["targetId"] != "w-absent" {
 		t.Fatalf("a gated patch of an absent target: %+v", req.Properties)
-	}
-}
-
-// AN EDGE WRITE IS NOT GATEABLE. Link and Unlink check the emit ceiling and
-// write (agentgql.go); policyVerdict never runs for them, so the widest
-// selector there is does not hold one. The declaration and
-// docs/changelog.md#change-verbs both say so, and this is what holds them to it.
-func TestPolicyNeverGatesAnEdgeWrite(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	ds, fake := openAgentDataset(t)
-	putPolicy(t, ds, "gate-everything", map[string]any{"action": "gate"})
-	mustPutInternal(t, ds, substrate.PutInput{Kind: crewPackage + "/widget", ID: "w-a"})
-	mustPutInternal(t, ds, substrate.PutInput{Kind: crewPackage + "/widget", ID: "w-b"})
-	fake.script("mut",
-		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { link(rel: "related", srcKind: "crew.test.dev/crew/widget", src: "w-a",
-				dstKind: "crew.test.dev/crew/widget", dst: "w-b") { id } }`,
-		})}}},
-		fakeTurn{content: "linked."},
-	)
-	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "link the widgets"); err != nil {
-		t.Fatalf("call: %v", err)
-	}
-	page, err := ds.List(ctx, substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{vocabulary.KindRecordPatchRequest}}, First: 10,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(page.Records) != 0 {
-		t.Fatalf("an edge write minted %d request(s): the door does not see link", len(page.Records))
 	}
 }
 
@@ -423,9 +387,7 @@ func TestBundleHandsStayOffThePolicyKind(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	fake.script("med",
-		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "substrate.reamde.dev/core/recordpatchpolicy", id: "backdoor", properties: {action: "allow"}}) { id } }`,
-		})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", vocabulary.KindRecordPatchPolicy, "backdoor", map[string]any{"action": "allow"})}}},
 		fakeTurn{content: "tried."},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/meddler", "open the door")
@@ -520,7 +482,7 @@ func TestVoluntaryProposalsStaySelfAcceptable(t *testing.T) {
 		t.Fatalf("call: %v", err)
 	}
 	fake.script("self",
-		fakeTurn{calls: []fakeCall{{"mutate", decideArgs(t, req.ID, "accepted")}}},
+		fakeTurn{calls: []fakeCall{{"write", decideArgs(t, req.ID, "accepted")}}},
 		fakeTurn{content: "approved my own."},
 	)
 	res2, err := ds.CallAgent(ctx, crewPackage+"/selfjudge", "approve your proposal")
@@ -544,10 +506,8 @@ func TestGatedRequestsRefuseBundleDecisions(t *testing.T) {
 		"selector": map[string]any{"kinds": []any{crewPackage + "/widget"}},
 		"action":   "gate",
 	})
-	fake.script("mut",
-		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-gated", properties: {name: "wanted"}}) { id } }`,
-		})}}},
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-gated", map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held."},
 	)
 	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget"); err != nil {
@@ -557,7 +517,7 @@ func TestGatedRequestsRefuseBundleDecisions(t *testing.T) {
 	// The arbiter's emit covers widgets and requests, and it is NOT the
 	// proposer — but the request is policy-gated, so installed code keeps out.
 	fake.script("arbiter",
-		fakeTurn{calls: []fakeCall{{"mutate", decideArgs(t, req.ID, "accepted")}}},
+		fakeTurn{calls: []fakeCall{{"write", decideArgs(t, req.ID, "accepted")}}},
 		fakeTurn{content: "tried."},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/arbiter", "work the inbox")

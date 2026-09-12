@@ -136,8 +136,7 @@ webhook: the rules live where the manifest is parsed. A batch is **one
 transaction, every document admitted or none** (a refusal carries the full
 problem list), and a committed batch is active immediately, no restart
 anywhere. A candidate registry is built and compiled whole, closure
-resolution and CEL guards and templates and the GraphQL-name uniqueness check
-included, before the write transaction opens, so a broken closure fails the
+resolution and CEL guards and templates included, before the write transaction opens, so a broken closure fails the
 batch rather than half-loading. Inside the transaction every write is held to
 that candidate, the closure's own data documents included, so a closure may
 ship a record, a reference, a mapping source or a trigger of a kind or callable

@@ -133,7 +133,7 @@ func TestWithoutMappingsPrunesTheDocumentAndItsInstallsEntry(t *testing.T) {
 	// shipped closure and serves every repository from it.
 	data, _ := docs[0]["data"].(map[string]any)
 	if installs, _ := data["installs"].([]any); len(installs) != 4 {
-		t.Fatalf("the prune mutated the shipped document: %v", installs)
+		t.Fatalf("the prune altered the shipped document: %v", installs)
 	}
 }
 

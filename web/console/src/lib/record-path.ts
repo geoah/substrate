@@ -86,7 +86,7 @@ export interface CoercedReference {
  *
  * A value that does NOT parse as a path is unambiguous even carrying slashes,
  * which is what keeps a kind or function IDENTITY spellable as the short form
- * (`substrate.reamde.dev/core/graphql` under a pin at core's `function`):
+ * (`substrate.reamde.dev/core/query` under a pin at core's `function`):
  * nothing is left over for an id, so it cannot be read as a path. Only
  * empty-segment shapes are refused there.
  *

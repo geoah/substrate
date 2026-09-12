@@ -1,4 +1,4 @@
-# substrate — one image serving the v1 REST/GraphQL API, the door
+# substrate — one image serving the v1 REST API, the door
 # (/register, /login, /tokens) and the built console.
 #
 # Build context is the repo root (Go module github.com/geoah/substrate):

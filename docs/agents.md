@@ -137,13 +137,13 @@ The key is `function` because an entry admits nothing else: a sub-agent is named
 on `subagents:`, and `callable` is the [trigger](functions.md#triggers)'s word,
 where a target really may be a function or an agent.
 
-That is the only arm, because the five built-ins are
+That is the only arm, because the four built-ins are
 [**host functions**](functions.md#host-functions) — `runtime: host` records core
 ships — so an agent names one exactly as it names a bundle's function:
 
 ```yaml
   tools:
-    - function: substrate.reamde.dev/core/graphql
+    - function: substrate.reamde.dev/core/query
     - function: substrate.reamde.dev/core/propose
     - function: samples.substrate.reamde.dev/readinglist/setclass
 ```
@@ -156,27 +156,31 @@ an agent could name that no record declared, and it is gone now that they are
 records. And `{callable: …}` was this key's first name, before it was clear an
 entry could name only a function.
 
-- **`substrate.reamde.dev/core/query`** is the capability-scoped read, and
-  requires `permissions.reads`, a load error otherwise. A get outside the allowlist
-  answers like an absent id; list and search clamp to the remaining row budget;
-  a blown budget is a tool error the model sees.
-- **`substrate.reamde.dev/core/graphql`** is the whole-repository read: the
-  **same** schema and resolvers the `/graphql` endpoint executes
-  (`internal/gql`), run in-process against the loop's dataset under the agent's
-  actor. Declaring it is the grant, and it grants reads only: the document is
-  parsed first, and a mutation or subscription in it is a tool error naming
-  where those verbs live. A result over 64KB is refused with a narrowing hint
-  rather than truncated. Use `query` instead when an agent should read a few
-  named kinds under a row budget; use `graphql` when the agent's job is the
-  graph itself.
-- **`substrate.reamde.dev/core/mutate`** executes GraphQL mutations (`put`,
-  `patch`, `delete`) through the same resolvers, and requires
-  a non-empty `permissions.writes` (a load error otherwise). Every written kind is resolved
-  and held to the agent's **effective** emit before the write applies, so a
-  sub-agent's ceiling narrows it like any other effect; `merge` and `split`
-  refuse outright, as fusing identities is the owner's reviewed decision. Writes
-  ride the full public path (kind guards, schema-record admission) under the
-  agent's actor.
+- **`substrate.reamde.dev/core/query`** is the read, and it speaks the
+  [records route](api.md#the-records-route)'s grammar as a tool: `kind` + `id`
+  reads one record; `q` (with `mode`, `first` and `filter.kinds`) is the ranked read;
+  otherwise `filter` (the whole [grammar](api.md#the-filter-grammar),
+  `referencing` included), `orderBy`, `first`, `after` and `expand` list a
+  page, which answers `{records, cursor, head, generation, included?,
+  matches?}` exactly as the route does. It requires `permissions.reads`, a
+  load error otherwise, and every arm is held to that allowlist: a get outside
+  it answers like an absent id, a kind outside it in `filter.kinds` or `kinds`
+  is refused by name, an expanded referent outside it is left out, and a list
+  that names no kinds lists the allowlist. List and search clamp to the
+  remaining row budget; a blown budget is a tool error the model sees.
+- **`substrate.reamde.dev/core/write`** is the direct write: one call is
+  `{op, kind, id, input, ifVersion}`, where `op` is `put` (create or update,
+  merging and never pruning; omit `id` to mint one), `patch` (change an
+  existing record) or `delete` (tombstone one), `input` is
+  `{properties, labels, annotations}` decoded through the same strict path a
+  REST body takes, and `ifVersion` holds the write to the version the model
+  read. It requires a non-empty `permissions.writes` (a load error otherwise).
+  Every written kind is held to the agent's **effective** emit before the
+  write applies, so a sub-agent's ceiling narrows it like any other effect,
+  and the [policy door](#the-policy-door) runs for each write exactly as it
+  does for a function tool's effects. There is no `merge` or `split` op:
+  fusing identities is the owner's reviewed decision. Writes ride the full
+  public path (kind guards, declaration admission) under the agent's actor.
 - **`substrate.reamde.dev/core/propose`** is the reviewed write, and requires
   `permissions.writes` to name
   `substrate.reamde.dev/core/recordpatchrequest`. It lands one
@@ -213,9 +217,9 @@ the write.
 
 **Every dispatch's committed writes ride the tool row.** The engine stamps
 `changes` onto the tool's `llm/message` — one `{seq, op, kind, id}` entry per
-changelog row the dispatch committed, whether a `mutate` mutation, a
+changelog row the dispatch committed, whether a `write` call, a
 `propose`'s request row, or a function tool's applied effects — so any reader
-of the thread (the console, GraphQL) resolves WHAT changed from the changelog
+of the thread (the console, a client on the changefeed) resolves WHAT changed from the changelog
 instead of parsing tool payloads. A rolled-back dispatch stamps nothing, and a
 sub-agent call stamps nothing on the parent: the child thread's own rows carry
 the child's writes.
@@ -224,7 +228,7 @@ the child's writes.
 
 A request an agent's `propose` landed knows its thread, so the decision
 reports back instead of vanishing into the inbox. When anybody decides it —
-the owner in the console, a judge agent through `mutate` — the deciding
+the owner in the console, a judge agent through `write` — the deciding
 transaction also writes one `system` message into the proposing thread: the
 content is a JSON envelope (`event: "proposalDecision"`, the request's record
 path, the verdict, the target and — on an accepted patch or create — the

@@ -30,30 +30,20 @@ export const SECRET_NAME = "secret"
  * repository that outgrows the cap is a paging problem nobody has yet. */
 export const SETTINGS_CAP = 500
 
-function readCollection(name: string, signal?: AbortSignal): Promise<Page> {
-  return request<Page>(
+/** Both kinds in ONE read: the records route lists several kinds at once
+ * (`filter.kinds`), so the settings surface is one request, not two joined. */
+async function fetchBoth(signal?: AbortSignal): Promise<SubstrateRecord[]> {
+  const page = await request<Page>(
     "GET",
-    listPath({
-      authority: CORE_AUTHORITY,
-      package: CORE_PACKAGE_NAME,
-      name,
-      first: SETTINGS_CAP,
-    }),
+    listPath({ kinds: [SETTING_KIND, SECRET_KIND], first: SETTINGS_CAP }),
     undefined,
     { signal }
   )
+  return page.records ?? []
 }
 
-async function fetchBoth(signal?: AbortSignal): Promise<SubstrateRecord[]> {
-  const [settings, secrets] = await Promise.all([
-    readCollection(SETTING_NAME, signal),
-    readCollection(SECRET_NAME, signal),
-  ])
-  return [...(settings.records ?? []), ...(secrets.records ?? [])]
-}
-
-/** Every `setting` and `secret` record in the repository, both collections in
- * one list. The kind on each record is what tells the two apart. */
+/** Every `setting` and `secret` record in the repository, one list. The kind
+ * on each record is what tells the two apart. */
 export const settingRecordsQueryOptions = queryOptions({
   queryKey: ["settings", "records"],
   queryFn: ({ signal }) => fetchBoth(signal),

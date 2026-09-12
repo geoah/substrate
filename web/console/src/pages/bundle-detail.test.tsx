@@ -206,6 +206,17 @@ function configRecord(id: string): SubstrateRecord {
   }
 }
 
+/** The kinds a records-route URL lists, read off its `filter`: the list route
+ * is one path for every kind, so a stub dispatches on this, not the path. */
+function listedKinds(path: string): string[] {
+  const url = new URL(path, "http://x")
+  if (url.pathname !== "/api/v1/records") return []
+  const filter = JSON.parse(url.searchParams.get("filter") ?? "{}") as {
+    kinds?: string[]
+  }
+  return filter.kinds ?? []
+}
+
 describe("BundleDetailPage", () => {
   const fetchMock = vi.fn<typeof fetch>()
 
@@ -238,21 +249,20 @@ describe("BundleDetailPage", () => {
       ) {
         return jsonResponse(200, bundleStatus)
       }
-      if (path.startsWith("/api/v1/substrate.reamde.dev/core/setting")) {
-        return jsonResponse(200, { records: opts.settings ?? [] })
+      const kinds = listedKinds(path)
+      // Settings and secrets come back in ONE read, both kinds in the filter.
+      if (kinds.includes("substrate.reamde.dev/core/setting")) {
+        return jsonResponse(200, {
+          records: [...(opts.settings ?? []), ...(opts.secrets ?? [])],
+        })
       }
-      if (path.startsWith("/api/v1/substrate.reamde.dev/core/secret")) {
-        return jsonResponse(200, { records: opts.secrets ?? [] })
-      }
-      if (path.startsWith("/api/v1/substrate.reamde.dev/core/kind")) {
+      if (kinds.includes("substrate.reamde.dev/core/kind")) {
         return jsonResponse(200, { kinds: KINDS })
       }
       if (path === CATALOG_PATH) {
         return jsonResponse(200, { items: opts.catalog ?? [PEOPLE, GOOGLE] })
       }
-      if (
-        path.startsWith("/api/v1/providers.substrate.reamde.dev/google/config")
-      ) {
+      if (kinds.includes("providers.substrate.reamde.dev/google/config")) {
         return jsonResponse(200, { records: opts.configs ?? [] })
       }
       return jsonResponse(200, { records: [] })

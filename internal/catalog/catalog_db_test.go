@@ -99,9 +99,8 @@ func loadCatalog(t *testing.T) *catalog.Catalog {
 }
 
 // Every shipped bundle installs into ONE repository, requires first: the whole
-// set has to coexist, so a GraphQL-name collision or an unresolvable edge
-// between two shipped packages surfaces here rather than on a user's
-// substrate.
+// set has to coexist, so an unresolvable reference between two shipped
+// packages surfaces here rather than on a user's substrate.
 func TestShippedBundlesInstall(t *testing.T) {
 	ds := newDataset(t)
 	c := loadCatalog(t)

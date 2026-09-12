@@ -79,9 +79,9 @@ func TestTokenListAndRevoke(t *testing.T) {
 
 // The repository-management endpoints (create, list, rotate) went with the control
 // plane that gated them, and B3 did not bring them back: registration is
-// `/register` behind the invite code, and `repositories` is an ordinary system-type
-// collection the engine refuses generic writes to.
-func TestRepositoryCollectionHasNoInstallVerb(t *testing.T) {
+// `/register` behind the invite code, and `repository` is an ordinary core
+// kind the engine refuses generic writes to.
+func TestRepositoryKindHasNoInstallVerb(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodPost, "/api/v1/substrate.reamde.dev/core/repositories/geoah/rotateotp", tok, map[string]any{})

@@ -2,7 +2,6 @@ package api
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -26,9 +25,9 @@ var wantFeatureSurfaces = map[string][]string{
 	"bundles":    {surfaceREST},
 	"blobs":      {surfaceREST},
 	"export":     {surfaceREST},
-	"changefeed": {surfaceREST, surfaceGraphQL},
-	"search":     {surfaceGraphQL},
-	"embeddings": {surfaceGraphQL},
+	"changefeed": {surfaceREST},
+	"search":     {surfaceREST},
+	"embeddings": {surfaceREST},
 	"agents":     {surfaceREST},
 }
 
@@ -70,10 +69,9 @@ func TestDiscoveryReportsVersionsAndBuild(t *testing.T) {
 	}
 }
 
-// Every feature says which surfaces serve it, because the two are not
-// equivalent: search is the GraphQL query's alone, and a client that read a
-// listed feature as "a REST route exists" went looking for one that never
-// shipped.
+// Every feature says which surfaces serve it, and each name is a key of the
+// document's `surfaces` object: a client follows a feature to its door
+// instead of trying a route to see whether it exists.
 func TestDiscoveryFeaturesNameTheirSurfaces(t *testing.T) {
 	h := New(Config{Service: newFakeService()})
 
@@ -106,11 +104,10 @@ func TestDiscoveryFeaturesNameTheirSurfaces(t *testing.T) {
 }
 
 // The surface verdict is one object, not a stamp per feature: REST is the
-// supported developer interface and every part of GraphQL is preview (decision
-// 0053). Each surface names its endpoint so a preview door is locatable from
-// discovery alone, and the GraphQL endpoint is held to the mounted route. The
-// object is read off the wire as bytes too, because a client reads JSON and a
-// renamed key would still decode into the Go struct.
+// one surface and the supported developer interface (decision 0053). It
+// names its endpoint, and the object is read off the wire as bytes too,
+// because a client reads JSON and a renamed key would still decode into the
+// Go struct. There is no second surface, so no other key.
 func TestDiscoveryNamesEachSurfaceWithItsCompatibility(t *testing.T) {
 	env := newTestEnv(t)
 	rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
@@ -120,11 +117,7 @@ func TestDiscoveryNamesEachSurfaceWithItsCompatibility(t *testing.T) {
 	if want := (surfaceInfo{Endpoint: "/api/v1", Compatibility: "supported"}); doc.Surfaces.REST != want {
 		t.Fatalf("surfaces.rest = %+v, want %+v", doc.Surfaces.REST, want)
 	}
-	if want := (surfaceInfo{Endpoint: "/api/v1/graphql", Compatibility: "preview"}); doc.Surfaces.GraphQL != want {
-		t.Fatalf("surfaces.graphql = %+v, want %+v", doc.Surfaces.GraphQL, want)
-	}
-	wire := `"surfaces":{"rest":{"endpoint":"/api/v1","compatibility":"supported"},` +
-		`"graphql":{"endpoint":"/api/v1/graphql","compatibility":"preview"}}`
+	wire := `"surfaces":{"rest":{"endpoint":"/api/v1","compatibility":"supported"}}`
 	if body := rec.Body.String(); !strings.Contains(body, wire) {
 		t.Fatalf("surfaces did not serialize as %s: %s", wire, body)
 	}
@@ -133,37 +126,46 @@ func TestDiscoveryNamesEachSurfaceWithItsCompatibility(t *testing.T) {
 	// follow a feature to its door.
 	for _, f := range doc.Features {
 		for _, s := range f.Surfaces {
-			if s != surfaceREST && s != surfaceGraphQL {
+			if s != surfaceREST {
 				t.Fatalf("feature %q names surface %q, which the surfaces object does not carry", f.Name, s)
 			}
 		}
 	}
 
-	// The advertised GraphQL endpoint is the one that answers.
-	tok := env.svc.token(fakeRepository)
-	gql := env.do(t, http.MethodPost, doc.Surfaces.GraphQL.Endpoint, tok,
-		map[string]any{"query": `{ __typename }`})
-	wantStatus(t, gql, http.StatusOK)
+	// The grammar names the two routes a client addresses records through:
+	// the one list route and the record path.
+	if doc.Grammar.Collection != recordsPath {
+		t.Fatalf("grammar.collection = %q, want %q", doc.Grammar.Collection, recordsPath)
+	}
+	if want := "/api/v1/{authority}/{package}/{kind}/{id}"; doc.Grammar.RecordPath != want {
+		t.Fatalf("grammar.recordPath = %q, want %q", doc.Grammar.RecordPath, want)
+	}
 }
 
-// The gql-only marker is a claim about the routes, so hold the routes to it:
-// a search path under /api/v1 is read as an ordinary collection ("unknown
-// collection"), which is what "there is no search route" looks like from
-// outside. The door that does rank is TestGraphQLSearch's.
-func TestSearchHasNoRESTRoute(t *testing.T) {
+// The `search` feature is a claim about a route, so hold the route to it:
+// `GET /records?q=` ranks, and the answer is the ranked page with a score per
+// hit. A search path of its own under /api/v1 names nothing.
+func TestSearchIsTheRecordsRouteRanking(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
-	// A one-segment path names no kind (decision 0042), so it is the router's
-	// generic 404; a two-segment path is a collection lookup that misses.
-	for path, want := range map[string]string{
-		"/api/v1/search": "no such API path",
-		"/api/v1/substrate.reamde.dev/core/search": "unknown collection",
-	} {
-		rec := env.do(t, http.MethodGet, path+"?q=hello", tok, nil)
-		wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
-		if body := rec.Body.String(); !strings.Contains(body, want) {
-			t.Fatalf("GET %s = %s, want %q", path, body, want)
-		}
+	ds := env.svc.datasets[fakeRepository]
+	ds.put(&substrate.Record{ID: "p1", Kind: personKind, Title: "Ada Lovelace", Properties: map[string]any{}})
+	ds.put(&substrate.Record{ID: "p2", Kind: personKind, Title: "Grace Hopper", Properties: map[string]any{}})
+
+	rec := env.do(t, http.MethodGet, recordsPath+"?q=ada", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	page := decodeJSON[substrate.RankedPage](t, rec)
+	if len(page.Records) != 1 || page.Records[0].ID != "p1" {
+		t.Fatalf("ranked page = %+v", page)
+	}
+	if page.Scores[personKind+"/p1"].Lexical == 0 {
+		t.Fatalf("the hit carries no score: %+v", page.Scores)
+	}
+
+	rec = env.do(t, http.MethodGet, "/api/v1/search?q=hello", tok, nil)
+	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
+	if body := rec.Body.String(); !strings.Contains(body, "no such API path") {
+		t.Fatalf("GET /api/v1/search = %s, want the router's 404", body)
 	}
 }
 
@@ -181,11 +183,10 @@ func discoveryFeatures(t *testing.T, svc substrate.Service) map[string]string {
 	return got
 }
 
-// Every feature carries the stability its surface has reached. `stable`
-// means frozen for v1, and every feature of the supported REST surface is.
-// `search` stays beta because its only door is the preview GraphQL surface,
-// and that surface is the only door to embeddings too. `agents` and
-// `embeddings` stay alpha because both shapes are still moving.
+// Every feature carries the stability its shape has reached. `stable` means
+// frozen for v1. `search` stays beta while the ranked page's shape is young,
+// and `agents` and `embeddings` stay alpha because both shapes are still
+// moving.
 // Change a stamp here and in the features literal together, and a stable one
 // only with a decision record, as 0053 scheduled this flip: it is a promise a
 // client has already read.
@@ -227,7 +228,7 @@ func TestDiscoveryDoesNotRequireAuth(t *testing.T) {
 func TestPrimaryPrefixServesResources(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/person", tok, nil)
+	rec := env.do(t, http.MethodGet, recordsPath, tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	if w := rec.Header().Get("Warning"); w != "" {
 		t.Fatalf("primary /api/v1 carried a Warning header: %q", w)
@@ -239,7 +240,7 @@ func TestPrimaryPrefixServesResources(t *testing.T) {
 func TestUnknownVersionPrefixIsNotServed(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1alpha1/samples.substrate.reamde.dev/people/person", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1alpha1/records", tok, nil)
 	wantStatus(t, rec, http.StatusNotFound)
 }
 
@@ -249,7 +250,7 @@ func TestUnavailableIs503WithRetryAfter(t *testing.T) {
 	env := newTestEnv(t)
 	env.svc.authErr = errors.New("repository open failed")
 	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/person", tok, nil)
+	rec := env.do(t, http.MethodGet, recordsPath, tok, nil)
 	wantErrorCode(t, rec, http.StatusServiceUnavailable, codeUnavailable)
 	if ra := rec.Header().Get("Retry-After"); ra == "" {
 		t.Fatalf("503 unavailable must carry Retry-After")
@@ -262,32 +263,6 @@ func TestBadRequestIsEmittedAndCoded(t *testing.T) {
 	// A non-numeric changelog cursor is a bad_request, named, not silence.
 	rec := env.do(t, http.MethodGet, changesPath+"?from=notanumber", tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
-}
-
-func TestGraphQLErrorCarriesProblemInExtensions(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	// Wrap so errors.Is matches the sentinel, exactly like the engine.
-	ds.errs["List"] = fmt.Errorf("label ns: %w", substrate.ErrForbidden)
-
-	rec := env.do(t, http.MethodPost, "/api/v1/graphql", tok,
-		map[string]any{"query": `{ records(first: 10) { nodes { id } } }`})
-	wantStatus(t, rec, http.StatusOK)
-
-	out := decodeJSON[struct {
-		Errors []struct {
-			Message    string         `json:"message"`
-			Extensions map[string]any `json:"extensions"`
-		} `json:"errors"`
-	}](t, rec)
-	if len(out.Errors) == 0 {
-		t.Fatalf("expected a graphql error, body %s", rec.Body.String())
-	}
-	ext := out.Errors[0].Extensions
-	if ext == nil || ext["code"] != codeForbidden {
-		t.Fatalf("error extensions = %v, want the problem object with code %q", ext, codeForbidden)
-	}
 }
 
 // --- A4: watch frames + horizon -----------------------------------------

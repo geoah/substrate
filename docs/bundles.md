@@ -24,12 +24,11 @@ owns**. Its `metadata.id` IS that package
 ([decision 0047](decisions/0047-a-kind-lives-in-a-package.md)): a closure and
 the thing that installs it can never be spelled apart, and a document whose id
 says anything else is refused naming the package. The package's own word is the
-bundle's name and one segment of an installed kind's GraphQL name, so it is
-one lowercase word. Two authorities may publish a package of the same word: an
-install writes under `bundle:<authority>:<package>`, so they stay two writers,
-and every installed kind's GraphQL name carries its full authority
-(`Acme_example_com_Tasks_Task`), so the two names never collide
-([decision 0058](decisions/0058-a-graphql-name-always-carries-the-authority.md)).
+bundle's name and the middle segment of every installed kind's reference, so it
+is one lowercase word. Two authorities may publish a package of the same word:
+an install writes under `bundle:<authority>:<package>`, so they stay two
+writers, and every kind reference carries its full authority, so the two never
+collide.
 `installs:` lists the exact references of everything the closure ships: its [kinds](data-model.md#kinds-and-references),
 [traits](data-model.md#traits),
 [property types](data-model.md#property-types),
@@ -338,8 +337,8 @@ roles: `oauth`, only the facility's own actor, holding `tokenRef`,
 `connector`, only installed bundle code, holding a sync's own state
 (`syncToken`, `lastSyncedAt`, `syncStatus`); and `owner`, only an owner-tier
 actor, holding the feature toggles, `syncFrequency` and `backfillDepth`. The
-rule is enforced in the write path for REST, GraphQL, and CLI alike, not just
-in the console.
+rule is enforced in the write path for REST and the CLI alike, not just in
+the console.
 
 The flow itself is two endpoints. `POST …/oauth/start` takes the
 account record's id as `record` and answers the consent URL as `url`; it is
@@ -445,7 +444,7 @@ The **Connections** view in the console is a cross-bundle operational
 surface over every such account, one row per account, read from the native
 `accountconfig` records that provider bundles ship. It pages every
 implementor of the `accountconfig` trait, which is a plain query
-(`GET …/substrate.reamde.dev/core/trait/{id}/records`, with
+(`GET /api/v1/records?filter={"implements": "accountconfig"}`, with
 `…/trait/{id}/implementors` for the kinds themselves), because implementing a
 trait is queryable.
 

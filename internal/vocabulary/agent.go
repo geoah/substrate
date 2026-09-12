@@ -23,19 +23,16 @@ import (
 // The built-in agent tools, by the LOCAL NAME of the host function record that
 // declares each one. `query` is the capability-scoped read (gated by the agent's
 // `permissions.reads`); `propose` emits `recordpatchrequest` records (gated by
-// `permissions.writes` naming the request type); `graphql` is the
-// WHOLE-repository read-only GraphQL surface (declaring it is the grant: there
-// is no narrower scope to declare, which is why the scoped `query` survives
-// beside it); `mutate` executes GraphQL mutations, each written kind held to the
-// agent's effective emit (so it needs a non-empty `permissions.writes`).
+// `permissions.writes` naming the request type); `write` puts, patches and
+// deletes, each written kind held to the agent's effective emit (so it needs
+// a non-empty `permissions.writes`); `ask` lands one interaction.
 //
 // A `tools:` entry names ONE of them the way it names any other function: by
 // identity, under `function:`. There is no second arm — see agentBuiltinByIdentity.
 const (
 	AgentToolQuery   = "query"
 	AgentToolPropose = "propose"
-	AgentToolGraphQL = "graphql"
-	AgentToolMutate  = "mutate"
+	AgentToolWrite   = "write"
 	AgentToolAsk     = "ask"
 )
 
@@ -48,8 +45,7 @@ const (
 var agentBuiltinByIdentity = map[string]string{
 	HostFunctionQuery:   AgentToolQuery,
 	HostFunctionPropose: AgentToolPropose,
-	HostFunctionGraphQL: AgentToolGraphQL,
-	HostFunctionMutate:  AgentToolMutate,
+	HostFunctionWrite:   AgentToolWrite,
 	HostFunctionAsk:     AgentToolAsk,
 }
 
@@ -262,7 +258,7 @@ var deletedAgentToolKeys = map[string]string{
 // agentBuiltinIdentities lists the four host functions in the order the errors
 // name them.
 var agentBuiltinIdentities = []string{
-	HostFunctionQuery, HostFunctionPropose, HostFunctionGraphQL, HostFunctionMutate,
+	HostFunctionQuery, HostFunctionPropose, HostFunctionWrite, HostFunctionAsk,
 }
 
 // buildPackageAgents parses one authority's agent documents — load.go's one-line
@@ -394,9 +390,7 @@ func (l *loader) parseAgent(d Document) *Agent {
 	}
 	a.Reads = fn.Caps.Reads
 
-	// The built-ins' grants are load errors, not dispatch surprises. `graphql`
-	// alone needs none: it is read-only and repository-wide by design, and the
-	// declaration is the grant.
+	// The built-ins' grants are load errors, not dispatch surprises.
 	for _, t := range a.Tools {
 		switch t.Builtin {
 		case AgentToolQuery:
@@ -409,9 +403,9 @@ func (l *loader) parseAgent(d Document) *Agent {
 				l.errf("%s: data.tools: propose needs %s in data.permissions.writes, which names the request kinds the agent may create", where, KindRecordPatchRequest)
 				return nil
 			}
-		case AgentToolMutate:
+		case AgentToolWrite:
 			if len(a.Emit) == 0 {
-				l.errf("%s: data.tools: mutate needs data.permissions.writes, which names the kinds the agent may create or change", where)
+				l.errf("%s: data.tools: write needs data.permissions.writes, which names the kinds the agent may create or change", where)
 				return nil
 			}
 		case AgentToolAsk:

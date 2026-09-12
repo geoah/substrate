@@ -3,8 +3,8 @@ package engine
 // THE FOUR HOST FUNCTIONS AS RECORDS. `runtime: host` names no body — the engine
 // is the implementation — so what these hold is everything that follows from the
 // four being ordinary function records: they are seeded, they arrive in a
-// repository that predates them through the boot upgrade, two of them are
-// callable under a token and two are not, and a trigger may not name one.
+// repository that predates them through the boot upgrade, one of them is
+// callable under a token and three are not, and a trigger may not name one.
 
 import (
 	"bytes"
@@ -26,10 +26,10 @@ import (
 
 // hostFunctionIDs are the four, in the order the assertions name them.
 var hostFunctionIDs = []string{
-	vocabulary.HostFunctionGraphQL,
-	vocabulary.HostFunctionMutate,
-	vocabulary.HostFunctionPropose,
 	vocabulary.HostFunctionQuery,
+	vocabulary.HostFunctionWrite,
+	vocabulary.HostFunctionPropose,
+	vocabulary.HostFunctionAsk,
 }
 
 // A FRESH REPOSITORY HOLDS THEM. The seed writes the binary's tree into the
@@ -69,15 +69,15 @@ func TestHostFunctionsAreSeededAsRecords(t *testing.T) {
 		}
 	}
 	// propose is the one with a write permission of its own, because it writes one
-	// kind and always the same one; mutate declares none, since the ceiling is its
+	// kind and always the same one; write declares none, since the ceiling is its
 	// caller's.
 	perms, _ := rows[vocabulary.HostFunctionPropose].Properties["permissions"].(map[string]any)
 	if writes, _ := perms["writes"].([]any); len(writes) != 1 ||
 		storedReferencePath(writes[0]) != vocabulary.RecordPath(kindKind, vocabulary.KindRecordPatchRequest) {
 		t.Fatalf("propose permissions = %v", rows[vocabulary.HostFunctionPropose].Properties["permissions"])
 	}
-	if _, has := rows[vocabulary.HostFunctionMutate].Properties["permissions"]; has {
-		t.Fatal("mutate declares a grant of its own; the ceiling is the calling agent's")
+	if _, has := rows[vocabulary.HostFunctionWrite].Properties["permissions"]; has {
+		t.Fatal("write declares a grant of its own; the ceiling is the calling agent's")
 	}
 }
 
@@ -207,9 +207,9 @@ func preHostKindsDir(t *testing.T) string {
 	return dir
 }
 
-// THE DIRECT CALL API SPLITS THE FOUR. `graphql` and `query` are reads and the
-// caller is a token that owns the repository, so they answer in process; `propose`
-// and `mutate` are bounded by the CALLING AGENT's grants, and a direct call has no
+// THE DIRECT CALL API SPLITS THE FOUR. `query` is a read and the caller is a
+// token that owns the repository, so it answers in process; `write`, `propose`
+// and `ask` are bounded by the CALLING AGENT's grants, and a direct call has no
 // calling agent to be bounded by, so they refuse and name where the tool works.
 func TestCallFunctionOnHostFunctions(t *testing.T) {
 	ctx := context.Background()
@@ -222,24 +222,24 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, effects, err := ds.CallFunction(ctx, vocabulary.HostFunctionGraphQL, map[string]any{
-		"query": `{ record(kind: "samples.substrate.reamde.dev/tasks/task", id: "t-1") { id } }`,
+	out, effects, err := ds.CallFunction(ctx, vocabulary.HostFunctionQuery, map[string]any{
+		"kind": "samples.substrate.reamde.dev/tasks/task", "id": "t-1",
 	})
 	if err != nil {
-		t.Fatalf("graphql under a token: %v", err)
+		t.Fatalf("query under a token: %v", err)
 	}
 	if effects != 0 {
 		t.Fatalf("a read applied %d effects", effects)
 	}
 	if !strings.Contains(toJSONString(t, out), "t-1") {
-		t.Fatalf("the graphql answer does not hold the record: %v", out)
+		t.Fatalf("the query answer does not hold the record: %v", out)
 	}
 
 	out, _, err = ds.CallFunction(ctx, vocabulary.HostFunctionQuery, map[string]any{
 		"kind": "samples.substrate.reamde.dev/tasks/task",
 	})
 	if err != nil {
-		t.Fatalf("query under a token: %v", err)
+		t.Fatalf("query list under a token: %v", err)
 	}
 	if !strings.Contains(toJSONString(t, out), "t-1") {
 		t.Fatalf("the query answer does not hold the record: %v", out)
@@ -249,7 +249,8 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 	// is the missing grant and not the shape.
 	for id, args := range map[string]map[string]any{
 		vocabulary.HostFunctionPropose: {"op": "patch", "kind": "samples.substrate.reamde.dev/tasks/task", "target": "t-1"},
-		vocabulary.HostFunctionMutate:  {"query": `mutation { delete(kind: "samples.substrate.reamde.dev/tasks/task", id: "t-1") { id } }`},
+		vocabulary.HostFunctionWrite:   {"op": "delete", "kind": "samples.substrate.reamde.dev/tasks/task", "id": "t-1"},
+		vocabulary.HostFunctionAsk:     {"questions": []any{map[string]any{"id": "q", "prompt": "really?"}}},
 	} {
 		_, _, err := ds.CallFunction(ctx, id, args)
 		if !errors.Is(err, substrate.ErrForbidden) {
@@ -262,7 +263,7 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 
 	// The card is enforced on the way in, like every other function's, because it
 	// is an ordinary declared `arguments:` list.
-	if _, _, err := ds.CallFunction(ctx, vocabulary.HostFunctionGraphQL,
+	if _, _, err := ds.CallFunction(ctx, vocabulary.HostFunctionQuery,
 		map[string]any{"nonsense": true}); !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("an undeclared argument was admitted: %v", err)
 	}
@@ -325,11 +326,11 @@ func TestAgentQueryBuiltinByReference(t *testing.T) {
 		t.Fatal(err)
 	}
 	fake.script("lib",
-		fakeTurn{calls: []fakeCall{{"query", gqlToolArgs(t, map[string]any{
+		fakeTurn{calls: []fakeCall{{"query", toolArgs(t, map[string]any{
 			"kind": crewPackage + "/widget",
 		})}}},
 		// A kind OUTSIDE the reads allowlist refuses by naming it.
-		fakeTurn{calls: []fakeCall{{"query", gqlToolArgs(t, map[string]any{
+		fakeTurn{calls: []fakeCall{{"query", toolArgs(t, map[string]any{
 			"kind": "samples.substrate.reamde.dev/tasks/task",
 		})}}},
 		fakeTurn{content: "one widget on the shelf"},
@@ -372,7 +373,7 @@ func TestAgentQueryBuiltinByReference(t *testing.T) {
 // (`{"at": {"gte": …}}` instead of nesting it under `properties`) had the key
 // silently discarded and got the WHOLE collection back as if it had asked for
 // it — a wrong answer with no sign anything went wrong. The strict decode the
-// GraphQL doors already used refuses it, and names the keys so the model can
+// REST route already used refuses it, and names the keys so the model can
 // correct itself in the next turn.
 func TestAgentQueryRefusesAnUnknownFilterKey(t *testing.T) {
 	t.Parallel()
@@ -386,7 +387,7 @@ func TestAgentQueryRefusesAnUnknownFilterKey(t *testing.T) {
 		}
 	}
 	fake.script("lib",
-		fakeTurn{calls: []fakeCall{{"query", gqlToolArgs(t, map[string]any{
+		fakeTurn{calls: []fakeCall{{"query", toolArgs(t, map[string]any{
 			"kind":   crewPackage + "/widget",
 			"filter": map[string]any{"at": map[string]any{"gte": "2026-08-15T00:00:00Z"}},
 		})}}},
@@ -420,7 +421,7 @@ func TestAgentPureFunctionTool(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	fake.script("pure",
-		fakeTurn{calls: []fakeCall{{"measure", gqlToolArgs(t, map[string]any{"name": "widget"})}}},
+		fakeTurn{calls: []fakeCall{{"measure", toolArgs(t, map[string]any{"name": "widget"})}}},
 		fakeTurn{content: "six"},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/purist", "measure widget")

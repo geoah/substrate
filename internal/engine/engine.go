@@ -30,7 +30,6 @@ import (
 
 	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/changelogfile"
-	"github.com/geoah/substrate/internal/gql"
 	"github.com/geoah/substrate/internal/oauthflow"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
@@ -244,9 +243,6 @@ type service struct {
 	// directories' writer and must not become one (repodir.go).
 	readOnly bool
 	log      *slog.Logger
-	// gqlSchemas caches the agent loop's GraphQL schema per repository
-	// (internal/gql owns the key and builder); the API layer holds its own.
-	gqlSchemas *gql.Cache
 	// bg counts and bounds every detached task the engine starts
 	// (background.go); Close drains it before any pool closes.
 	bg *background
@@ -367,7 +363,6 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		now:               o.now,
 		readOnly:          o.dirReadOnly,
 		log:               o.log,
-		gqlSchemas:        gql.NewCache(),
 		bg:                newBackground(),
 		datasets:          map[string]*dataset{},
 		opening:           map[string]chan struct{}{},

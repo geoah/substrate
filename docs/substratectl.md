@@ -90,14 +90,27 @@ defaults to `substratectl`.
 
 ## Reading
 
-`substratectl get <kind> [id]` reads a collection or one record. The kind may be
+`substratectl get <kind> [id]` lists the records of one kind or reads one record. The kind may be
 qualified (`samples.substrate.reamde.dev/tasks/task`) or bare (`task`), which
 resolves against the kind registry; when two installed packages declare the same
 name, it needs qualifying, or `--package` to name the package it resolves in
 (every provider bundle installs a `config`, so `config` always needs one). Lists take `--filter` (the
 JSON [filter grammar](api.md#the-filter-grammar)), `-l` label selectors,
 `--order-by`, and `--limit`; `--after` resends the opaque keyset cursor a page
-printed, and `-w` streams that one collection's changes instead of listing it.
+printed. `--expand prop1,prop2` carries the referents of those reference
+properties back with the page (as further `---` documents in `-o yaml`, under
+an `included` key in `-o json`; the table prints the page alone), and
+`--referencing <kind>/<id>` is the reverse read: only the records of the kind
+that point at that one. `-w` streams that one kind's changes instead of
+listing it, resumable with `--from` and `--generation` like `watch`.
+
+`substratectl search <query>` ranks records against a query: `--mode`
+picks `hybrid` (the default), `lexical` or `semantic`, `--kinds` narrows to
+the kinds named (qualified or bare, resolved like `get`), and `--limit` caps
+the hits. The table prints each hit's raw per-arm scores; `-o yaml` and
+`-o json` print the ranking as the server answers it: the records as
+envelopes, their scores keyed by `<kind>/<id>`, and `pending`, how much of
+the semantic index is still being built.
 
 `-o yaml` writes each record as an [envelope](data-model.md#the-envelope)
 document (`kind`, `metadata`, `data`, and the server-set `status`),
@@ -132,7 +145,7 @@ full `<kind>/<id>` path where the declaration names no kind.
 resumable with `--from` and `--generation` (the opening line prints both) and
 filterable by `--kinds`, `--actors` and `--ops`. A cursor from a history the
 server has since replaced is refused with the head to resume from. To
-narrow to one collection instead, `substratectl get <kind> -w` streams that
+narrow to one kind instead, `substratectl get <kind> -w` streams that
 one kind's changes.
 
 Delivery bookkeeping lives on [triggers](functions.md#triggers), not on

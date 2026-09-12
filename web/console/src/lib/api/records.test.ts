@@ -5,14 +5,16 @@ import {
   createRecord,
   recordIdSegment,
   formatCount,
-  groupIncoming,
+  groupReferencing,
   listPath,
   patchRecord,
+  referencingRows,
+  type ReferencingRow,
 } from "./records"
-import type { IncomingReference } from "./types"
+import type { Page, SubstrateRecord } from "./types"
 
 describe("listPath", () => {
-  it("carries first, the opaque cursor verbatim, filter and orderBy", () => {
+  it("carries first, the opaque cursor verbatim, the kind inside the filter, and orderBy", () => {
     // The server's own keyset token — a JSON blob, base64url — resent as-is.
     const cursor = "eyJrIjpbIjIwMjYtMDgtMDYiXSwiaWQiOiJhYmMifQ"
     const path = listPath({
@@ -25,12 +27,12 @@ describe("listPath", () => {
       orderBy: "updatedAt:desc",
     })
     const url = new URL(path, "http://x")
-    expect(url.pathname).toBe(
-      "/api/v1/samples.substrate.reamde.dev/people/person"
-    )
+    // One route for every list; the kind rides in the filter, not the path.
+    expect(url.pathname).toBe("/api/v1/records")
     expect(url.searchParams.get("first")).toBe("50")
     expect(url.searchParams.get("after")).toBe(cursor)
     expect(JSON.parse(url.searchParams.get("filter")!)).toEqual({
+      kinds: ["samples.substrate.reamde.dev/people/person"],
       properties: { prominence: { eq: "known" } },
     })
     expect(url.searchParams.get("orderBy")).toBe("updatedAt:desc")
@@ -39,7 +41,7 @@ describe("listPath", () => {
     expect(url.searchParams.has("withEdges")).toBe(false)
   })
 
-  it("addresses a collection by its authority, package and kind name", () => {
+  it("names a collection's kind as its one filter.kinds entry", () => {
     const url = new URL(
       listPath({
         authority: "samples.substrate.reamde.dev",
@@ -48,23 +50,67 @@ describe("listPath", () => {
       }),
       "http://x"
     )
-    expect(url.pathname).toBe("/api/v1/samples.substrate.reamde.dev/tasks/task")
+    expect(url.pathname).toBe("/api/v1/records")
+    expect(JSON.parse(url.searchParams.get("filter")!)).toEqual({
+      kinds: ["samples.substrate.reamde.dev/tasks/task"],
+    })
   })
 
-  it("omits what is not asked: no cursor at page one, no empty filter", () => {
+  it("lists several kinds at once, or every kind with none", () => {
+    const two = new URL(
+      listPath({
+        kinds: [
+          "substrate.reamde.dev/core/setting",
+          "substrate.reamde.dev/core/secret",
+        ],
+        first: 500,
+      }),
+      "http://x"
+    )
+    expect(JSON.parse(two.searchParams.get("filter")!)).toEqual({
+      kinds: [
+        "substrate.reamde.dev/core/setting",
+        "substrate.reamde.dev/core/secret",
+      ],
+    })
+    // No kind and nothing else to narrow by: no filter at all.
+    const all = new URL(listPath({ kinds: [], first: 25 }), "http://x")
+    expect(all.searchParams.has("filter")).toBe(false)
+    // An implements arm alone is a legal cross-kind read.
+    const trait = new URL(
+      listPath({
+        kinds: [],
+        filter: { implements: "x.dev/core/accountconfig" },
+      }),
+      "http://x"
+    )
+    expect(JSON.parse(trait.searchParams.get("filter")!)).toEqual({
+      implements: "x.dev/core/accountconfig",
+    })
+  })
+
+  it("omits what is not asked: no cursor at page one, no empty arms, and expand only when named", () => {
     const url = new URL(
       listPath({
         authority: "g",
         package: "k",
         name: "p",
         first: 25,
-        filter: {},
+        filter: { properties: {}, labels: {} },
       }),
       "http://x"
     )
     expect(url.searchParams.has("after")).toBe(false)
-    expect(url.searchParams.has("filter")).toBe(false)
+    expect(JSON.parse(url.searchParams.get("filter")!)).toEqual({
+      kinds: ["g/k/p"],
+    })
+    expect(url.searchParams.has("expand")).toBe(false)
     expect(url.searchParams.has("withEdges")).toBe(false)
+    const expanded = new URL(
+      listPath({ authority: "g", package: "k", name: "p", expand: ["a", "b"] }),
+      "http://x"
+    )
+    expect(expanded.searchParams.get("expand")).toBe("a,b")
   })
 })
 
@@ -98,7 +144,7 @@ describe("record writes (integrations flow)", () => {
     fetchMock.mockReset()
   })
 
-  it("createRecord POSTs the properties to the collection, no id (the substrate mints one)", async () => {
+  it("createRecord POSTs to the records route with the kind in the body, no id (the substrate mints one)", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ id: "abc", properties: {} }), {
         status: 201,
@@ -112,16 +158,35 @@ describe("record writes (integrations flow)", () => {
       },
     })
     const [url, init] = fetchMock.mock.calls[0]
-    expect(String(url)).toBe(
-      "/api/v1/providers.substrate.reamde.dev/google/accounts"
-    )
+    expect(String(url)).toBe("/api/v1/records")
     expect(init?.method).toBe("POST")
     expect(JSON.parse(String(init?.body))).toEqual({
+      kind: "providers.substrate.reamde.dev/google/accounts",
       properties: {
         email: "alice@example.com",
         enabledContacts: true,
         syncFrequency: "daily",
       },
+    })
+  })
+
+  it("createRecord with a chosen id PUTs at the record path, since the POST refuses an id", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ id: "chosen", properties: {} }), {
+        status: 201,
+      })
+    )
+    await createRecord("providers.substrate.reamde.dev", "google", "accounts", {
+      id: "chosen",
+      properties: { email: "alice@example.com" },
+    })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(String(url)).toBe(
+      "/api/v1/providers.substrate.reamde.dev/google/accounts/chosen"
+    )
+    expect(init?.method).toBe("PUT")
+    expect(JSON.parse(String(init?.body))).toEqual({
+      properties: { email: "alice@example.com" },
     })
   })
 
@@ -206,18 +271,62 @@ describe("formatCount", () => {
   })
 })
 
-describe("groupIncoming", () => {
-  const row = (
-    property: string,
-    kind: string,
-    id: string
-  ): IncomingReference => ({
+describe("referencingRows", () => {
+  const rec = (kind: string, id: string): SubstrateRecord => ({
+    id,
+    kind,
+    properties: {},
+    labels: {},
+    version: 1,
+    createdAt: "",
+    updatedAt: "",
+  })
+
+  it("joins each record with every site matches lists for it", () => {
+    const page: Page = {
+      records: [rec("g.dev/k/pr", "1"), rec("g.dev/k/pr", "2")],
+      head: 9,
+      generation: "g",
+      matches: {
+        "g.dev/k/pr/1": [{ property: "author" }, { property: "reviewer" }],
+        "g.dev/k/pr/2": [{ property: "steps", path: "steps.owner" }],
+      },
+    }
+    expect(
+      referencingRows(page).map((r) => [r.record.id, r.property, r.path])
+    ).toEqual([
+      ["1", "author", undefined],
+      ["1", "reviewer", undefined],
+      ["2", "steps", "steps.owner"],
+    ])
+  })
+
+  it("keeps a record the page carries with no match entry", () => {
+    const page: Page = {
+      records: [rec("g.dev/k/pr", "1")],
+      head: 1,
+      generation: "g",
+    }
+    expect(referencingRows(page)).toHaveLength(1)
+  })
+})
+
+describe("groupReferencing", () => {
+  const row = (property: string, kind: string, id: string): ReferencingRow => ({
     property,
-    from: { id, kind },
+    record: {
+      id,
+      kind,
+      properties: {},
+      labels: {},
+      version: 1,
+      createdAt: "",
+      updatedAt: "",
+    },
   })
 
   it("folds rows into property × kind buckets, kind then property", () => {
-    const groups = groupIncoming([
+    const groups = groupReferencing([
       row("author", "providers.substrate.reamde.dev/github/pr", "1"),
       row("author", "providers.substrate.reamde.dev/github/pr", "2"),
       row("author", "providers.substrate.reamde.dev/github/issue", "3"),
@@ -230,11 +339,11 @@ describe("groupIncoming", () => {
     ])
   })
 
-  it("collects a bucket the refs order interleaves", () => {
-    // The index walks (src_kind, src, property, …), so one source record's two
-    // properties come back adjacent and the two sources of one property do
-    // not. An adjacency fold would emit `author` twice.
-    const groups = groupIncoming([
+  it("collects a bucket whatever order the page interleaves it in", () => {
+    // One source record's two properties come back adjacent (two rows of one
+    // record) and the two sources of one property do not. An adjacency fold
+    // would emit `author` twice.
+    const groups = groupReferencing([
       row("author", "providers.substrate.reamde.dev/github/pr", "1"),
       row("reviewer", "providers.substrate.reamde.dev/github/pr", "1"),
       row("author", "providers.substrate.reamde.dev/github/pr", "2"),
@@ -253,7 +362,7 @@ describe("groupIncoming", () => {
     const pageTwo = [
       row("author", "providers.substrate.reamde.dev/github/pr", "2"),
     ]
-    const groups = groupIncoming([...pageOne, ...pageTwo])
+    const groups = groupReferencing([...pageOne, ...pageTwo])
     expect(groups).toHaveLength(1)
     expect(groups[0].rows).toHaveLength(2)
   })

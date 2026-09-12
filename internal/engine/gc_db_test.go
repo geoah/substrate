@@ -357,21 +357,19 @@ func TestIncomingOverTraitReference(t *testing.T) {
 		Kind: traitMirrorPackage + "/session", ID: "sess-a",
 		Properties: map[string]any{"label": "on A", "account": accA.Kind + "/" + accA.ID},
 	})
-	page, err := ds.Incoming(ctx, accA.Kind, accA.ID, substrate.IncomingOptions{})
-	if err != nil {
-		t.Fatalf("incoming: %v", err)
-	}
+	page := referencing(t, ds, accA.Kind, accA.ID, substrate.Filter{}, 50, "")
 	found := false
-	for _, row := range page.Incoming {
-		if row.From.ID != sess.ID {
+	for _, e := range page.Records {
+		if e.ID != sess.ID {
 			continue
 		}
-		if row.Property != "account" || row.Path != "" {
-			t.Fatalf("the trait-pinned reference row reads %+v", row)
+		sites := page.Matches[vocabulary.RecordPath(e.Kind, e.ID)]
+		if len(sites) != 1 || sites[0].Property != "account" || sites[0].Path != "" {
+			t.Fatalf("the trait-pinned reference site reads %+v", sites)
 		}
 		found = true
 	}
 	if !found {
-		t.Fatalf("incoming did not list the session pointing through the trait pin: %+v", page.Incoming)
+		t.Fatalf("referencing did not list the session pointing through the trait pin: %v", pathsOf(page))
 	}
 }

@@ -39,13 +39,14 @@ func init() {
 	registerCase(620, "CAL-03", "Nth-weekday series resolve to the right instants",
 		"Every-2nd-Tuesday and last-Friday series live side by side for four months; each month window "+
 			"returns exactly one instance of each at the right date, the series records never appear in any "+
-			"time window (they are definitions, not occurrences), and /incoming on a series lists exactly "+
-			"its own occurrences.",
+			"time window (they are definitions, not occurrences), and the reverse read (`filter.referencing` "+
+			"on a series) lists exactly its own occurrences.",
 		xcCaseNthWeekday)
 	registerCase(630, "CAL-04", "This-and-following: the split Google performs",
 		"Changing a weekly series from occurrence five onward is a split: the old series gains UNTIL and "+
 			"keeps occurrences one to four, a new series carries five to eight at the new time, the full "+
-			"window shows the time change at the boundary, and each series' /incoming holds exactly its half.",
+			"window shows the time change at the boundary, and the reverse read on each series holds exactly "+
+			"its half.",
 		xcCaseSeriesSplit)
 	registerCase(640, "OCC-01", "The occurrences read: a daily-forever dose beside the calendar",
 		"A dose taken every day forever is ONE schedule record, of a kind this case declares itself, whose "+
@@ -104,13 +105,12 @@ func xcOccurrence(c *C, id, seriesID, summary string, at time.Time, length time.
 // xcWindow is the calendar client's read: live events in [from, to), by time.
 func xcWindow(c *C, from, to time.Time) []record {
 	c.t.Helper()
-	filter := fmt.Sprintf(`{"properties":{"at":{"gte":%q,"lt":%q}}}`,
-		from.Format(time.RFC3339), to.Format(time.RFC3339))
-	var page struct {
-		Records []record `json:"records"`
+	filter := map[string]any{
+		"kinds":      []string{kindOf(eventCollection)},
+		"properties": map[string]any{"at": map[string]any{"gte": from.Format(time.RFC3339), "lt": to.Format(time.RFC3339)}},
 	}
-	status, raw := c.do(http.MethodGet,
-		eventCollection+"?filter="+url.QueryEscape(filter)+"&orderBy=at&first=200", nil, &page)
+	var page recordsPage
+	status, raw := c.do(http.MethodGet, listWhere(filter, "orderBy=at", "first=200"), nil, &page)
 	c.requiref(status == http.StatusOK, "the window query answered %d: %s", status, raw)
 	return page.Records
 }
@@ -305,13 +305,16 @@ func xcCaseWeekdayStandup(c *C) {
 	// deleted:true only.
 	day := xcWindowIDs(c, canceledAt.Truncate(24*time.Hour), canceledAt.Truncate(24*time.Hour).AddDate(0, 0, 1))
 	c.requiref(len(day) == 0, "the canceled day still answers: %v", day)
-	filter := fmt.Sprintf(`{"deleted":true,"properties":{"at":{"gte":%q,"lt":%q}}}`,
-		canceledAt.Truncate(24*time.Hour).Format(time.RFC3339),
-		canceledAt.Truncate(24*time.Hour).AddDate(0, 0, 1).Format(time.RFC3339))
-	var tomb struct {
-		Records []record `json:"records"`
+	filter := map[string]any{
+		"kinds":   []string{kindOf(eventCollection)},
+		"deleted": true,
+		"properties": map[string]any{"at": map[string]any{
+			"gte": canceledAt.Truncate(24 * time.Hour).Format(time.RFC3339),
+			"lt":  canceledAt.Truncate(24*time.Hour).AddDate(0, 0, 1).Format(time.RFC3339),
+		}},
 	}
-	status, raw = c.do(http.MethodGet, eventCollection+"?filter="+url.QueryEscape(filter), nil, &tomb)
+	var tomb recordsPage
+	status, raw = c.do(http.MethodGet, listWhere(filter), nil, &tomb)
 	c.requiref(status == http.StatusOK && len(tomb.Records) == 1 && tomb.Records[0].ID == canceledID,
 		"deleted:true over the canceled day answered %d with %d rows: %s", status, len(tomb.Records), raw)
 
@@ -393,24 +396,22 @@ func xcCaseNthWeekday(c *C) {
 	c.stepf("each month window answers exactly one 2nd-Tuesday and one last-Friday instance, on the oracle's dates")
 
 	// The definitions are never in a window: no temporal trait, no instant.
-	var page struct {
-		Records []record `json:"records"`
-	}
-	status, raw := c.do(http.MethodGet, seriesCollection+"?first=200", nil, &page)
+	var page recordsPage
+	status, raw := c.do(http.MethodGet, listOf(seriesCollection, "first=200"), nil, &page)
 	c.requiref(status == http.StatusOK, "listing series answered %d: %s", status, raw)
 	for _, rec := range page.Records {
 		c.requiref(rec.Properties["at"] == nil, "series %s carries a timeline instant %v", rec.ID, rec.Properties["at"])
 	}
 
-	// The back-reference a calendar UI walks: /incoming on the series,
-	// narrowed to the `series` property, is exactly its occurrences.
-	var incoming struct {
-		Total int `json:"total"`
-	}
-	status, _ = c.do(http.MethodGet, seriesCollection+"/x-ser-2tu/incoming?property=series", nil, &incoming)
-	c.requiref(status == http.StatusOK && incoming.Total == 4,
-		"incoming on the 2nd-Tuesday series holds %d occurrences, want 4", incoming.Total)
-	c.stepf("the series never sits in a time window, and /incoming on it lists exactly its 4 occurrences")
+	// The back-reference a calendar UI walks: the records pointing at the
+	// series through the `series` property are exactly its occurrences.
+	var pointing recordsPage
+	status, raw = c.do(http.MethodGet,
+		referencingList(kindOf(seriesCollection), "x-ser-2tu", "series", "first=200"), nil, &pointing)
+	c.requiref(status == http.StatusOK && len(pointing.Records) == 4,
+		"the reverse read on the 2nd-Tuesday series answered %d with %d occurrences, want 4: %s",
+		status, len(pointing.Records), raw)
+	c.stepf("the series never sits in a time window, and `filter.referencing` on it lists exactly its 4 occurrences")
 }
 
 // --- CAL-04 ---------------------------------------------------------------
@@ -471,19 +472,18 @@ func xcCaseSeriesSplit(c *C) {
 	}
 	c.stepf("one ordered window shows the boundary: four at the old hour on series A, then four an hour later on series B")
 
-	// Each series' incoming holds exactly its half.
+	// The reverse read on each series holds exactly its half.
 	for _, tc := range []struct {
 		id   string
 		want int
 	}{{"x-ser-sync-a", 4}, {"x-ser-sync-b", 4}} {
-		var incoming struct {
-			Total int `json:"total"`
-		}
-		status, _ := c.do(http.MethodGet, seriesCollection+"/"+tc.id+"/incoming?property=series", nil, &incoming)
-		c.requiref(status == http.StatusOK && incoming.Total == tc.want,
-			"incoming on %s holds %d, want %d", tc.id, incoming.Total, tc.want)
+		var pointing recordsPage
+		status, raw := c.do(http.MethodGet,
+			referencingList(kindOf(seriesCollection), tc.id, "series", "first=200"), nil, &pointing)
+		c.requiref(status == http.StatusOK && len(pointing.Records) == tc.want,
+			"the reverse read on %s answered %d with %d occurrences, want %d: %s", tc.id, status, len(pointing.Records), tc.want, raw)
 	}
-	c.stepf("each half of the split accounts for exactly its four occurrences through /incoming")
+	c.stepf("each half of the split accounts for exactly its four occurrences through `filter.referencing`")
 }
 
 // --- OCC-01 ----------------------------------------------------------------

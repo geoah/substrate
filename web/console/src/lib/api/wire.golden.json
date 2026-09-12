@@ -212,21 +212,6 @@
     "effects": true,
     "output": true
   },
-  "IncomingPage": {
-    "cursor": false,
-    "incoming": true,
-    "total": true
-  },
-  "IncomingReference": {
-    "from": true,
-    "path": false,
-    "property": true
-  },
-  "IncomingSource": {
-    "id": true,
-    "kind": true,
-    "title": false
-  },
   "InputStatus": {
     "description": false,
     "kind": true,
@@ -288,6 +273,8 @@
     "cursor": false,
     "generation": true,
     "head": true,
+    "included": false,
+    "matches": false,
     "records": true
   },
   "ProblemDetail": {
@@ -313,13 +300,19 @@
     "labels": false,
     "properties": false
   },
+  "RankedPage": {
+    "pending": true,
+    "records": true,
+    "scores": true
+  },
   "RecordFilter": {
     "deleted": false,
     "ids": false,
     "implements": false,
     "kinds": false,
     "labels": false,
-    "properties": false
+    "properties": false,
+    "referencing": false
   },
   "RecordPatch": {
     "addFinalizers": false,
@@ -328,6 +321,14 @@
     "labels": false,
     "properties": false,
     "removeFinalizers": false
+  },
+  "ReferenceSite": {
+    "path": false,
+    "property": true
+  },
+  "Referencing": {
+    "property": false,
+    "ref": true
   },
   "RegisterInput": {
     "inviteCode": true,
@@ -344,6 +345,10 @@
     "repository": false,
     "secret": true,
     "token": true
+  },
+  "Scores": {
+    "lexical": false,
+    "semantic": false
   },
   "SessionCredential": {
     "repository": true

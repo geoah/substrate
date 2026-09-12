@@ -153,6 +153,7 @@ bin/substratectl register                    # invite code, repository, password
 bin/substratectl login --repository <yours>  # password + TOTP; mints a token record
 bin/substratectl kinds                       # every installed kind
 bin/substratectl get kind <ref> -o yaml      # one kind's definition
+bin/substratectl get task                    # list one kind: GET /api/v1/records with the kind in filter.kinds
 bin/substratectl get task <id> -o yaml       # one record, apply-able envelope
 bin/substratectl apply -f record.yaml        # put (merge, never prune)
 bin/substratectl watch                       # resumable change stream
@@ -233,9 +234,8 @@ words, and what each one replaced:
 
 `docs/terms.md` is the full list, and it is the one the docs are held to.
 
-Three words survive only in their honest senses. `schema`: GraphQL's own
-`Schema`, JSON Schema for function IO, and Postgres (`schema_migrations`,
-`current_schema`). `log`: logging alone — `slog`, the `log` field on the
+Three words survive only in their honest senses. `schema`: JSON Schema for
+function IO, and Postgres (`schema_migrations`, `current_schema`). `log`: logging alone — `slog`, the `log` field on the
 service, a function body's stdout. `extension`: a file extension, or a Postgres
 one. Anywhere else, each of them is a bug.
 
@@ -246,8 +246,11 @@ A kind reference is `{authority}/{package}/{name}`
 dot-separated DNS-style name, the package and the name are single lowercase
 words, so the reference splits on its two slashes without a registry: the
 authority is the one segment carrying a dot. A stored reference value is that
-plus the id, and a REST path is the reference under `/api/v1/`: three segments
-address a collection, four a record.
+plus the id, and a record's REST path is the reference under `/api/v1/`: four
+segments, always. There is no per-kind list route: every list, ranked read and
+tail is `GET /api/v1/records` with the kind in `filter.kinds`, and a create
+under a server-assigned id is `POST /api/v1/records` with `kind` in the body
+([0079](docs/decisions/0079-graphql-is-removed-and-the-records-read-is-one-route.md)).
 
 The **package** is the unit. A kind may pin its own `version`, else it takes
 its package's; a stored closure the loader refuses parks its package; and
@@ -268,13 +271,10 @@ package segment is the third job for `/`
 actors are `bundle:<authority>:<package>`,
 `function:<authority>:<package>:<name>` and
 `agent:<authority>:<package>:<name>`, derived by the engine and never declared
-([0025](docs/decisions/0025-an-actor-carries-the-full-authority.md)). A
-non-core kind's GraphQL name is `<Authority>_<Package>_<Kind>`, the authority's
-dots folded to underscores (`Ada_example_com_Tasks_Task`); only the seeded
-`core` kinds keep the bare singular. The authority is always in the name and
-never a tie-break, so installing a package cannot rename another kind's type
-([0058](docs/decisions/0058-a-graphql-name-always-carries-the-authority.md)).
-Nothing keys on a first label.
+([0025](docs/decisions/0025-an-actor-carries-the-full-authority.md)). There
+is no second spelling of a kind anywhere: no generated type name, no folded
+authority. The reference is the name on every surface, and nothing keys on a
+first label.
 
 ## House rules
 

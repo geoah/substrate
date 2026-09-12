@@ -82,12 +82,11 @@ func TestCanonicalIDReferenceResolution(t *testing.T) {
 		t.Fatalf("author = %+v, want the former id kept verbatim %+v", got, want)
 	}
 	// The reverse read is where the trail resolves: the winner sees the book.
-	page, err := ds.Incoming(ctx, winner.Kind, winner.ID, substrate.IncomingOptions{Property: "author"})
-	if err != nil {
-		t.Fatalf("incoming: %v", err)
-	}
-	if page.Total != 1 || page.Incoming[0].From.ID != book.ID {
-		t.Fatalf("the winner's incoming `author` = %+v", page.Incoming)
+	page := referencing(t, ds, winner.Kind, winner.ID, substrate.Filter{
+		Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(winner.Kind, winner.ID), Property: "author"},
+	}, 50, "")
+	if len(page.Records) != 1 || page.Records[0].ID != book.ID {
+		t.Fatalf("the winner's referencing `author` = %v", pathsOf(page))
 	}
 	// A write addressed at a former id lands on the winner too.
 	if got := mustPatch(t, ds, owner, loser.Kind, loser.ID, substrate.PatchInput{
@@ -141,22 +140,23 @@ func TestCanonicalIDMergeRepointsNothing(t *testing.T) {
 	// The reverse read at the winner sees every pointer into the pair: the
 	// book's author, plus the merge record's own `winner` and `loser`, which name
 	// both sides deliberately and are what make the merge splittable
-	// (MODEL §11.5).
-	page := readIncoming(t, ds, winner.Kind, winner.ID, 50, "")
-	if page.Total != 3 {
-		t.Fatalf("incoming at the winner = %+v", page.Incoming)
+	// (MODEL §11.5). The merge record is ONE record pointing from two sites,
+	// so the page holds it once and its matches name both.
+	page := referencing(t, ds, winner.Kind, winner.ID, substrate.Filter{}, 50, "")
+	if len(page.Records) != 2 {
+		t.Fatalf("referencing the winner = %v", pathsOf(page))
 	}
-	var books, merges int
-	for _, in := range page.Incoming {
-		switch in.From.Kind {
+	var books, mergeSites int
+	for _, e := range page.Records {
+		switch e.Kind {
 		case book.Kind:
 			books++
 		case "substrate.reamde.dev/core/recordmerge":
-			merges++
+			mergeSites = len(page.Matches[vocabulary.RecordPath(e.Kind, e.ID)])
 		}
 	}
-	if books != 1 || merges != 2 {
-		t.Fatalf("incoming at the winner = %+v", page.Incoming)
+	if books != 1 || mergeSites != 2 {
+		t.Fatalf("referencing the winner = %v %+v", pathsOf(page), page.Matches)
 	}
 	// The loser's own outbound pointer is still on its tombstone: a merge takes
 	// the record out of every LIVE read, and puts none of its values anywhere.
@@ -340,12 +340,11 @@ func TestCanonicalIDReferenceWriteAtFormerIDs(t *testing.T) {
 		t.Fatalf("a write at a former id landed on %+v, want the winner holding %+v", got, want)
 	}
 	// The value names a tombstone, and the surviving organization still sees it.
-	page, err := ds.Incoming(ctx, org.Kind, org.ID, substrate.IncomingOptions{Property: "memberOf"})
-	if err != nil {
-		t.Fatalf("incoming: %v", err)
-	}
-	if page.Total != 1 || page.Incoming[0].From.ID != winner.ID {
-		t.Fatalf("the surviving organization's incoming `memberOf` = %+v", page.Incoming)
+	page := referencing(t, ds, org.Kind, org.ID, substrate.Filter{
+		Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(org.Kind, org.ID), Property: "memberOf"},
+	}, 50, "")
+	if len(page.Records) != 1 || page.Records[0].ID != winner.ID {
+		t.Fatalf("the surviving organization's referencing `memberOf` = %v", pathsOf(page))
 	}
 	// Clearing is writing the property away; there is no second verb.
 	if _, err := ds.Patch(ctx, owner, "person", loser.ID, substrate.PatchInput{

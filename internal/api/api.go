@@ -1,7 +1,6 @@
 // Package api is the substrate's HTTP surface: the versioned REST resource
-// API, the GraphQL endpoint, the bootstrap/tenancy endpoints, and the watch
-// streams. It talks to the store only through the substrate.Service
-// contract.
+// API, the registration and login doors, and the watch streams. It talks to
+// the store only through the substrate.Service contract.
 package api
 
 import (
@@ -16,7 +15,6 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/geoah/substrate/internal/catalog"
-	"github.com/geoah/substrate/internal/gql"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -87,10 +85,6 @@ type handler struct {
 	totpDisabled bool
 	catalog      *catalog.Catalog
 	consoleURL   string
-
-	// schemas is the GraphQL schema cache, one entry per repository, rebuilt
-	// on registry-fingerprint changes (internal/gql owns the key and builder).
-	schemas *gql.Cache
 }
 
 // New builds the router.
@@ -111,7 +105,6 @@ func New(cfg Config) http.Handler {
 		totpDisabled: cfg.TOTPDisabled,
 		catalog:      cfg.Catalog,
 		consoleURL:   strings.TrimRight(cfg.ConsoleURL, "/"),
-		schemas:      gql.NewCache(),
 	}
 
 	r := chi.NewRouter()
@@ -232,8 +225,12 @@ func (h *handler) mountResources(r chi.Router) {
 			// reserved word, which is what lets them drop their authority prefix
 			// without a separator, and it keeps the
 			// `substrate.reamde.dev/core/recordmerge` and `/recordsplit`
-			// collections reachable while merge and split sit here (#202).
-			r.Post(graphqlRoute, h.postGraphQL)
+			// kinds reachable while merge and split sit here (#202).
+			//
+			// THE RECORDS ROUTE: every list, the ranked read and the tail, one
+			// grammar (records.go); and the body-addressed create.
+			r.Get(recordsRoute, h.getRecords)
+			r.Post(recordsRoute, h.postRecords)
 			// The batch vocabulary verb (a declaration is a record): every
 			// document admitted or none, one transaction, activation on commit.
 			// It stays distinct because a batch of declarations is not record
@@ -286,10 +283,7 @@ func (h *handler) mountResources(r chi.Router) {
 			// COLLECTION-level verb (`bundle/status`, `trigger/status`) does sit
 			// where an id would, so it shadows a record with that id — but the
 			// bundle and trigger kinds are system-managed and refuse a generic
-			// write, so no unreadable row can land there. The record
-			// sub-resource word `incoming` is reserved as an id on every kind
-			// (rest.go, reservedRecordID), which is what keeps that corner
-			// symmetric rather than a write-only trap.
+			// write, so no unreadable row can land there.
 			//
 			// Trigger delivery bookkeeping: status is computed, a replay is a
 			// cursor reset, a run is one synthesized delivery, a wake is an
@@ -305,56 +299,26 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Get(bundle+"/status", h.getBundleStatuses)
 			r.Get(bundle+"/{id}/status", h.getBundleStatus)
 			r.Post(bundle+"/{id}/bind", h.postBundleBind)
-			// Traits as host-recognized interfaces: the kinds implementing one,
-			// and their records — the console's "account configs" view.
+			// Traits as host-recognized interfaces: the kinds implementing one.
+			// Their records are `GET /records?filter={"implements": …}`.
 			trait := "/" + corePackage + "/trait/{id}"
 			r.Get(trait+"/implementors", h.getTraitImplementors)
-			r.Get(trait+"/records", h.getTraitRecords)
 			// The callable invocation API: manual invoke with arbitrary input.
 			r.Post("/"+corePackage+"/function/{name}/call", h.postFunctionCall)
 			// Agents: the same call API, plus chat — the one loop streaming.
 			r.Post("/"+corePackage+"/agent/{name}/call", h.postAgentCall)
 			r.Post("/"+corePackage+"/agent/{name}/chat", h.postAgentChat)
 
-			// THE GENERIC RECORD SURFACE. The path IS the kind reference:
-			// {authority}/{package}/{kind} for a collection, that plus the id
-			// for a record. Every kind carries an authority and a package
-			// (decisions 0042, 0047), so the two shapes are told apart by
-			// SEGMENT COUNT alone — a three-segment path is a collection, a
-			// four-segment path a record — and `addressed` is the ONE place
-			// that reads it.
-			//
-			// Each method says which shape it serves, and a method sent to the
-			// other shape answers 405 naming the spelling that works. POST at a
-			// two-segment path was bound to createInCollection whatever the path
-			// meant, so a POST to a record discarded the id and created one under
-			// a server id; PUT was the mirror at a collection.
-			//
-			// A path shorter than three segments names no kind, so no route
-			// binds it: an unknown word answers the router's JSON 404 and a
-			// wrong method on a reserved word (`DELETE /graphql`) its JSON 405,
-			// never the console's index.html.
-			r.Get("/{a1}/{a2}/{a3}", h.listCollection)
-			r.Post("/{a1}/{a2}/{a3}", h.createInCollection)
-			r.Put("/{a1}/{a2}/{a3}", h.putResource)
-			r.Patch("/{a1}/{a2}/{a3}", h.patchResource)
-			r.Delete("/{a1}/{a2}/{a3}", h.deleteResource)
-
+			// THE RECORD PATH. It IS the record's reference: the kind's three
+			// segments ({authority}/{package}/{kind}, decisions 0042, 0047) and
+			// the id. Nothing binds a shorter path: there is no collection
+			// route (every list is /records), so an unknown word answers the
+			// router's JSON 404 and a wrong method on a reserved word its JSON
+			// 405, never the console's index.html.
 			r.Get("/{a1}/{a2}/{a3}/{a4}", h.getResource)
-			r.Post("/{a1}/{a2}/{a3}/{a4}", h.createInCollection)
 			r.Put("/{a1}/{a2}/{a3}/{a4}", h.putResource)
 			r.Patch("/{a1}/{a2}/{a3}/{a4}", h.patchResource)
 			r.Delete("/{a1}/{a2}/{a3}/{a4}", h.deleteResource)
-
-			// The record's one sub-resource hangs a level below the id
-			// (`/{authority}/{package}/{kind}/{id}/incoming`). A static segment
-			// beats a parameter in chi's tree, so a record whose id is literally
-			// `incoming` is shadowed by the sub-resource route a level up and
-			// is refused as an id in both directions (`reservedRecordID`),
-			// keeping the corner symmetric (decision 0033). The shorter route
-			// below holds that shadow.
-			r.Get("/{a1}/{a2}/{a3}/incoming", h.getIncoming)
-			r.Get("/{a1}/{a2}/{a3}/{a4}/incoming", h.getIncoming)
 		})
 	}
 }

@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-08-19
 decision-makers: George Antoniadis
+amended-by: 0079
 ---
 
 # 0042. Every kind carries an authority; the URL disambiguates by segment count

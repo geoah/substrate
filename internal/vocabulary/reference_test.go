@@ -141,9 +141,9 @@ func TestReferenceLinkPropertiesRefused(t *testing.T) {
 			person: "      type: reference\n      kind: person\n      properties:\n        ref: {type: string}\n",
 			want:   "the reserved key holding the referent's path",
 		},
-		// `target` is not a key of the stored value: it is the referent record
-		// on the generated GraphQL object, written into the same field map as
-		// the link properties, so a declared one would take its place.
+		// `target` is not a key of the stored value: it is the field the
+		// referent record is read under, beside the link properties, so a
+		// declared one would take its place.
 		"the reserved target key": {
 			person: "      type: reference\n      kind: person\n      properties:\n        target: {type: string}\n",
 			want:   "the reserved key holding the referent record",

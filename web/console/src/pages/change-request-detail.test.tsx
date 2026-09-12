@@ -122,6 +122,17 @@ function renderPage(ui: ReactElement) {
   )
 }
 
+/** The kinds a records-route URL lists, read off its `filter`: the list route
+ * is one path for every kind, so a stub dispatches on this, not the path. */
+function listedKinds(path: string): string[] {
+  const url = new URL(path, "http://x")
+  if (url.pathname !== "/api/v1/records") return []
+  const filter = JSON.parse(url.searchParams.get("filter") ?? "{}") as {
+    kinds?: string[]
+  }
+  return filter.kinds ?? []
+}
+
 describe("ChangeRequestDetailPage", () => {
   const fetchMock = vi.fn<typeof fetch>()
 
@@ -132,7 +143,7 @@ describe("ChangeRequestDetailPage", () => {
     fetchMock.mockImplementation(async (url, init) => {
       const method = (init as RequestInit | undefined)?.method ?? "GET"
       const path = String(url)
-      if (path.startsWith("/api/v1/substrate.reamde.dev/core/kind")) {
+      if (listedKinds(path).includes("substrate.reamde.dev/core/kind")) {
         return jsonResponse(200, { kinds: KINDS })
       }
       if (path === REQUEST_PATH) {

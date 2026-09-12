@@ -20,7 +20,13 @@ var (
 	// confirm it (decision 0067).
 	ErrLossyConversion = errors.New("substrate: lossy conversion refused")
 	ErrValidation      = errors.New("substrate: validation failed")
-	ErrForbidden       = errors.New("substrate: forbidden") // e.g. foreign label namespace, system type write
+	// ErrStaleHistory is a list cursor minted under another history
+	// generation: a restore replaced the changelog since, so the positions
+	// the cursor carries mean nothing here. The client lists again. It wraps
+	// ErrValidation so a caller that only knows the older sentinel still
+	// refuses it; the API answers it as the changelog's own 410.
+	ErrStaleHistory = fmt.Errorf("%w: cursor from another history", ErrValidation)
+	ErrForbidden    = errors.New("substrate: forbidden") // e.g. foreign label namespace, system type write
 	// ErrGated marks a write a policy HELD rather than refused: it converted
 	// into a recordpatchrequest awaiting review, and the message names it. The
 	// policy door runs only inside the agent loop, where the hold becomes a

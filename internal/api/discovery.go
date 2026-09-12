@@ -30,8 +30,7 @@ type discoveryDoc struct {
 	// Surfaces is the compatibility verdict per request surface, keyed by the
 	// same names a feature's `surfaces` carries. It is a different axis from
 	// a feature's stability: stability says how far ONE feature's shape has
-	// settled, compatibility says which surface a client builds on at all
-	// (decision 0053).
+	// settled, compatibility says what a client may pin (decision 0053).
 	Surfaces surfacesInfo `json:"surfaces"`
 	// Grammar is how this deployment spells a kind and a record reference —
 	// the one thing a client must agree with the substrate about before it can
@@ -69,46 +68,37 @@ type grammarInfo struct {
 	Kind string `json:"kind"`
 	// Record is a record reference: the kind reference, then the id.
 	Record string `json:"record"`
-	// Collection is the REST collection path under a version prefix: the kind
-	// reference's three segments, with the id making a record's four.
+	// Collection is the one list route under the version prefix: every kind's
+	// records, narrowed by `filter`, ranked by `q`, tailed by `watch=1`.
 	Collection string `json:"collection"`
+	// RecordPath is a record's URL under the version prefix: its reference.
+	RecordPath string `json:"recordPath"`
 	// Actors is the closed actor domain. The first three are
 	// the doors a request may name in X-Substrate-Actor; the rest are the
 	// substrate's own writing hands and are refused on that header.
 	Actors []string `json:"actors"`
 }
 
-// surfacesInfo names the two request surfaces with their endpoint and their
-// compatibility. REST is the supported developer interface; every part of
-// GraphQL, the generated types and the root operations and scalars alike, is
-// a preview that may change without a v1 wire break (decision 0053). Both are
-// served today: the verdict is about what a client may pin, never about
-// whether the door is open.
+// surfacesInfo names the request surface with its endpoint and its
+// compatibility. REST is the one surface and the supported developer
+// interface; the object stays keyed so a second surface, should one come,
+// lands as a new key beside it rather than a reshaped document.
 type surfacesInfo struct {
-	REST    surfaceInfo `json:"rest"`
-	GraphQL surfaceInfo `json:"graphql"`
+	REST surfaceInfo `json:"rest"`
 }
 
 type surfaceInfo struct {
 	// Endpoint is the path the surface is served under, so a preview surface
 	// is locatable from discovery alone.
 	Endpoint string `json:"endpoint"`
-	// Compatibility is compatibilitySupported or compatibilityPreview.
+	// Compatibility is compatibilitySupported.
 	Compatibility string `json:"compatibility"`
 }
 
-// The compatibility values a surface carries. They are NOT stability values:
-// a feature's stability is stamped per feature and answers a different
-// question, so "preview" is never a fourth entry in substrate/stability.go.
-const (
-	compatibilitySupported = "supported"
-	compatibilityPreview   = "preview"
-)
-
-// graphqlRoute is the GraphQL door under the version prefix. The router mounts
-// it and discovery advertises it from this one spelling, so the two cannot
-// drift.
-const graphqlRoute = "/graphql"
+// The compatibility value a surface carries. It is NOT a stability value: a
+// feature's stability is stamped per feature and answers a different
+// question.
+const compatibilitySupported = "supported"
 
 type endpointsInfo struct {
 	Register string `json:"register"`
@@ -140,16 +130,11 @@ type changelogInfo struct {
 // StabilityBeta or StabilityStable, and it describes CHANGE, not quality:
 // everything listed is served today.
 //
-// The two surfaces are not equivalent: REST is the supported interface, GraphQL
-// is a preview projection over the same records (decision 0053), so a feature
-// only one of them serves has to say so here. Surfaces is never empty, and each
-// name is a key of the document's top-level `surfaces` object.
-//
-// Surfaces are about the feature's OWN operations, never about its records: a
-// trigger and a blob manifest are ordinary records, readable through
-// `records`/`record` on both surfaces whatever this list says. What
-// `["rest"]` means is that the feature's verbs (a replay, an install, a
-// function call, a blob's bytes) have REST paths and no GraphQL field.
+// Surfaces is never empty, and each name is a key of the document's
+// top-level `surfaces` object. They are about the feature's OWN operations,
+// never about its records: a trigger and a blob manifest are ordinary
+// records, readable through `/records` and the record path whatever this
+// list says.
 type featureInfo struct {
 	Name      string   `json:"name"`
 	Stability string   `json:"stability"`
@@ -158,33 +143,24 @@ type featureInfo struct {
 
 // The request surfaces a feature can be served on. A client reads them off
 // discovery instead of trying a route to see whether it exists.
-const (
-	surfaceREST    = "rest"
-	surfaceGraphQL = "graphql"
-)
+const surfaceREST = "rest"
 
 // features is what this deployment serves, written out. It is a literal
 // because substrate.Dataset is one interface with one implementation: there
 // is nothing to ask, and every entry below is served wherever this binary
 // runs.
 //
-// Each stability says how far the feature's shape has settled, it binds on
-// the REST door alone, and `stable` means frozen for v1: additive only, a
-// break announced (see substrate.StabilityStable). The GraphQL door is
-// `preview` for every feature whatever the feature stamps (the `surfaces`
-// object, decision 0053), so a stable `changefeed` does not make the
-// `changelog` field stable, and `search`, served on GraphQL alone, stays
-// beta. `agents` stays alpha on `rest` and `embeddings` alpha on `graphql`,
-// because both shapes are still moving.
+// Each stability says how far the feature's shape has settled, and `stable`
+// means frozen for v1: additive only, a break announced (see
+// substrate.StabilityStable). `agents` and `embeddings` stay alpha because
+// both shapes are still moving, and `search` beta while the ranked page is
+// young.
 //
 // Each entry's surfaces are the doors that actually exist today, and they are
-// about the feature's OWN verbs, never its records: a trigger and a blob
-// manifest are ordinary records, readable through `records`/`record` on both
-// surfaces whatever this list says. Search and embeddings are the two REST
-// does not serve: REST filters (`?filter=`) and GraphQL's
-// `search(q, mode, kinds, k)` ranks, and the semantic arm of that same query
-// is the only door to a vector. The changefeed is read on both; everything
-// else is a set of REST verbs with no GraphQL field.
+// about the feature's OWN verbs, never its records. Search is
+// `GET /records?q=`, embeddings reach a caller as its semantic arm, the
+// changefeed is `/changes` and the `watch=1` tail of `/records`, and
+// everything else is a set of REST verbs.
 //
 // A feature added here is a route added beside it, and a route removed takes
 // its entry: nothing computes the list, so the two are held together by
@@ -201,25 +177,19 @@ var features = []featureInfo{
 	// repository directory's and its snapshot.json is the operator's, both
 	// settled, but this is the surface's first release.
 	{Name: "export", Stability: substrate.StabilityBeta, Surfaces: []string{surfaceREST}},
-	// The changefeed is the one feature both surfaces read: REST pages it
-	// (`GET …/changes?before=`), resumes it forward (`?from=`) and tails it
-	// (`?watch=1`), GraphQL resumes it forward (`changelog(from, filter,
-	// first)`) but streams nothing, because there is no subscription. The
-	// stamp freezes the REST routes; the GraphQL field stays a preview with
-	// the rest of its surface.
-	{Name: "changefeed", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST, surfaceGraphQL}},
-	// Search's only door is the GraphQL schema, a preview generated per
-	// repository from that repository's kinds (docs/api.md), so the feature
-	// stays beta.
-	{Name: "search", Stability: substrate.StabilityBeta, Surfaces: []string{surfaceGraphQL}},
-	// Embeddings are alpha and GraphQL is their only door: they reach a caller
-	// as the semantic arm of that same query, and the vector width is a
-	// constant in the engine (vectorDim) that no declaration can move. The
-	// provider is a repository's own llm/provider row, not a host setting an
-	// operator can omit, so the feature is served wherever the substrate is; a
-	// repository that declares no row is told so by its first query, naming
-	// the property.
-	{Name: "embeddings", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceGraphQL}},
+	// The changefeed: paged backward (`GET …/changes?before=`), resumed
+	// forward (`?from=`) and tailed (`?watch=1`, on /changes and on /records).
+	{Name: "changefeed", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
+	// Search is `GET /records?q=`: served, and beta while the hit shape (the
+	// per-arm scores beside the page) is young.
+	{Name: "search", Stability: substrate.StabilityBeta, Surfaces: []string{surfaceREST}},
+	// Embeddings are alpha: they reach a caller as the semantic arm of that
+	// same ranked read, and the vector width is a constant in the engine
+	// (vectorDim) that no declaration can move. The provider is a
+	// repository's own llm/provider row, not a host setting an operator can
+	// omit, so the feature is served wherever the substrate is; a repository
+	// that declares no row is told so by its first query, naming the property.
+	{Name: "embeddings", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}},
 	{Name: substrate.FeatureAgents, Stability: substrate.AgentStability, Surfaces: []string{surfaceREST}},
 }
 
@@ -231,13 +201,13 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 		Changelog: changelogInfo{Horizon: retentionHorizon()},
 		Features:  features,
 		Surfaces: surfacesInfo{
-			REST:    surfaceInfo{Endpoint: "/api/" + APIVersion, Compatibility: compatibilitySupported},
-			GraphQL: surfaceInfo{Endpoint: "/api/" + APIVersion + graphqlRoute, Compatibility: compatibilityPreview},
+			REST: surfaceInfo{Endpoint: "/api/" + APIVersion, Compatibility: compatibilitySupported},
 		},
 		Grammar: grammarInfo{
 			Kind:       "<authority>/<package>/<name>",
 			Record:     "<authority>/<package>/<kind>/<id>",
-			Collection: "/api/" + APIVersion + "/{authority}/{package}/{kind}[/{id}]",
+			Collection: "/api/" + APIVersion + recordsRoute,
+			RecordPath: "/api/" + APIVersion + "/{authority}/{package}/{kind}/{id}",
 			Actors: []string{
 				string(substrate.ActorAPI), string(substrate.ActorConsole), string(substrate.ActorCLI),
 				substrate.BundleActorPrefix + "<authority>:<package>",

@@ -178,14 +178,13 @@ below rather than `args`.
 ## Host functions
 
 `runtime: host` is the function with no body, because the **engine** is its
-body. Core ships five of them, and they are the agent
+body. Core ships four of them, and they are the agent
 [built-in tools](agents.md#tools):
 
 | Reference | What it does |
 | --- | --- |
-| `substrate.reamde.dev/core/query` | the capability-scoped read |
-| `substrate.reamde.dev/core/graphql` | the whole-repository read-only GraphQL surface |
-| `substrate.reamde.dev/core/mutate` | GraphQL mutations, bounded by the calling agent's emit |
+| `substrate.reamde.dev/core/query` | the capability-scoped read: the [records route](api.md#the-records-route)'s grammar as a tool, one record by `kind` + `id`, a ranked read by `q`, or a filtered, ordered, paged list with one hop of `expand` |
+| `substrate.reamde.dev/core/write` | one record write, `{op: put\|patch\|delete, kind, id, input, ifVersion}`, bounded by the calling agent's emit |
 | `substrate.reamde.dev/core/propose` | lands one reviewed `recordpatchrequest` |
 | `substrate.reamde.dev/core/ask` | lands one `llm/interaction` carrying a batch of at most eight questions for the user; it returns the record id, not the answer, which arrives in a later turn |
 
@@ -196,22 +195,21 @@ other function. Their declarations are
 `kinds/substrate.reamde.dev/core/hostfunctions.yaml`, and the `description` and
 `arguments:` there are exactly what a model is shown, rendered by the same code
 that renders a bundle function's card: changing what an LLM reads about
-`graphql` is a record write and not a release.
+`query` is a record write and not a release.
 
-**The grant is the caller's.** `query` is held to the calling agent's reads,
-`mutate` to its effective emit, and `graphql` needs no grant at all because
-declaring it *is* the grant (there is no narrower scope to state over a whole
-repository). `propose` and `ask` each carry a `permissions.writes` of their
-own, because each writes one kind and always the same one.
+**The grant is the caller's.** `query` is held to the calling agent's reads
+and `write` to its effective emit, so neither declares a grant of its own.
+`propose` and `ask` each carry a `permissions.writes`, because each writes one
+kind and always the same one.
 
 That is also what decides **where each is callable**:
 
-- **As an agent tool**, all five.
-- **Through the [call API](#host-call)**, `graphql` and `query` only: the caller
-  is a token that owns the repository, so a read needs no narrower grant.
-  `propose`, `mutate` and `ask` refuse there by name: there is no calling
-  agent whose grants would bound them, and `ask` has no thread to answer into.
-  The refusal points at declaring an agent that carries the tool.
+- **As an agent tool**, all four.
+- **Through the [call API](#host-call)**, `query` alone: the caller is a token
+  that owns the repository, so a read needs no narrower grant. `write`,
+  `propose` and `ask` refuse there by name: there is no calling agent whose
+  grants would bound them, and `ask` has no thread to answer into. The refusal
+  points at declaring an agent that carries the tool.
 - **As a [trigger](#triggers)'s callable**, none. A delivery has no caller to
   borrow grants from, so the row is refused at admission rather than parked
   forever, and the refusal names the same shape: an agent carrying the tool,
@@ -221,7 +219,7 @@ That is also what decides **where each is callable**:
 
 Two smaller rules follow. A host function is admissible **only from the shipped
 build**, so a bundle or an owner declaring one is refused, and a **bare name
-never resolves to one**: the five are named for what they do, which is exactly
+never resolves to one**: the four are named for what they do, which is exactly
 what a repository's own function is likeliest to be called, so `query` keeps
 meaning the user's `query` and the built-in answers its full reference.
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** The Graph tab's layout contract: direction is said once per section
- * (Outgoing/Incoming), the current record heads the tree, groups carry the
+ * (Outgoing/Referenced by), the current record heads the tree, groups carry the
  * shared kind and the count, and every target is a RecordPill — not a bare
  * link with the kind repeated on every row. */
 
@@ -32,33 +32,34 @@ vi.mock("@tanstack/react-router", () => ({
 }))
 
 // The fan-in is the graph's one query; everything else about the layout is
-// pure render. One page, no cursor: two comments point at the task.
+// pure render. One page, no cursor: two comments point at the task, and
+// `matches` says from which property each does.
 vi.mock("@/lib/api/http", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/http")>()
   return {
     ...actual,
     request: vi.fn((_method: string, path: string) => {
-      if (path.includes("/incoming")) {
+      const url = new URL(path, "http://x")
+      const filter = JSON.parse(url.searchParams.get("filter") ?? "{}")
+      if (url.pathname === "/api/v1/records" && filter.referencing) {
+        const comment = "notes.substrate.reamde.dev/notes/comment"
+        const row = (id: string, title: string) => ({
+          id,
+          kind: comment,
+          properties: { title, task: `${filter.referencing.ref}` },
+          labels: {},
+          version: 1,
+          createdAt: "2026-08-14T10:00:00Z",
+          updatedAt: "2026-08-14T10:00:00Z",
+        })
         return Promise.resolve({
-          incoming: [
-            {
-              property: "task",
-              from: {
-                id: "c1",
-                kind: "notes.substrate.reamde.dev/notes/comment",
-                title: "First",
-              },
-            },
-            {
-              property: "task",
-              from: {
-                id: "c2",
-                kind: "notes.substrate.reamde.dev/notes/comment",
-                title: "Second",
-              },
-            },
-          ],
-          total: 2,
+          records: [row("c1", "First"), row("c2", "Second")],
+          head: 2,
+          generation: "g1",
+          matches: {
+            [`${comment}/c1`]: [{ property: "task" }],
+            [`${comment}/c2`]: [{ property: "task" }],
+          },
         })
       }
       throw new Error(`unexpected request: ${path}`)
@@ -145,7 +146,7 @@ describe("GraphRail", () => {
   it("heads the tree with the current record, and says each direction once", async () => {
     const { container } = renderRail()
     await waitFor(() => {
-      expect(container.textContent).toContain("Incoming")
+      expect(container.textContent).toContain("Referenced by")
     })
     const text = container.textContent ?? ""
     expect(text).toContain("Ship the console")
@@ -170,14 +171,14 @@ describe("GraphRail", () => {
       "/data/samples.substrate.reamde.dev/people/person/p1"
     )
     await waitFor(() => {
-      expect(container.textContent).toContain("Incoming")
+      expect(container.textContent).toContain("Referenced by")
     })
   })
 
   it("says a group's shared kind once, with its count, never per row", async () => {
     const { container } = renderRail()
     await waitFor(() => {
-      expect(container.textContent).toContain("Incoming")
+      expect(container.textContent).toContain("Referenced by")
     })
     const text = container.textContent ?? ""
     // Two assignees, one kind: "person" appears on the group label alone.
@@ -216,7 +217,7 @@ describe("GraphRail", () => {
       </QueryClientProvider>
     )
     await waitFor(() => {
-      expect(container.textContent).toContain("Incoming")
+      expect(container.textContent).toContain("Referenced by")
     })
     const pill = [...container.querySelectorAll("a")].find(
       (a) => a.textContent === "p1"

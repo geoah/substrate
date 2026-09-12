@@ -3,26 +3,24 @@
  *
  * An agent's grants live under ONE `permissions` object: what it may read
  * (`permissions.reads`) and what it may write (`permissions.writes`), the same
- * grouping a function's five take. Three of the four host functions are gated
- * by one of them, and the loader makes each a LOAD error rather than a dispatch
+ * grouping a function's five take. Three of the host functions are gated by
+ * one of them, and the loader makes each a LOAD error rather than a dispatch
  * surprise (`internal/vocabulary/agent.go`, the switch over `t.Builtin`):
- * `query` is trait-scoped and needs `permissions.reads`, `propose` writes
- * one kind and needs it in `permissions.writes`, `mutate` writes whatever the
- * agent may write and needs a non-empty `permissions.writes`. `graphql` needs
- * none: it is read-only and repository-wide, and declaring the tool IS the
- * grant.
+ * `query` reads within `permissions.reads` and needs it, `propose` writes one
+ * kind and needs it in `permissions.writes`, `write` writes whatever the agent
+ * may write and needs a non-empty `permissions.writes`. `ask` needs none: it
+ * writes nothing but a question.
  *
  * The loader remains the enforcement. This is the same question asked early, so
  * the editor can say what is missing while the answer is still one control
  * away, and it is pure over the parsed document, so the form lens and the
  * problems panel read one answer. */
 
-/** The four `runtime: host` function records, by identity. The source of truth
- * is `kinds/substrate.reamde.dev/core/hostfunctions.yaml`; a tool entry names
- * one of them under `function:` exactly as it names any other function. */
+/** The gated `runtime: host` function records, by identity. The source of
+ * truth is `kinds/substrate.reamde.dev/core/hostfunctions.yaml`; a tool entry
+ * names one of them under `function:` exactly as it names any other function. */
 export const HOST_FUNCTION_QUERY = "substrate.reamde.dev/core/query"
-export const HOST_FUNCTION_GRAPHQL = "substrate.reamde.dev/core/graphql"
-export const HOST_FUNCTION_MUTATE = "substrate.reamde.dev/core/mutate"
+export const HOST_FUNCTION_WRITE = "substrate.reamde.dev/core/write"
 export const HOST_FUNCTION_PROPOSE = "substrate.reamde.dev/core/propose"
 
 /** The request kind `propose` lands, and the one an agent's write permission
@@ -94,8 +92,7 @@ function identitiesOf(value: unknown): string[] {
 export function hostToolsOf(properties: Record<string, unknown>): string[] {
   const known = [
     HOST_FUNCTION_QUERY,
-    HOST_FUNCTION_GRAPHQL,
-    HOST_FUNCTION_MUTATE,
+    HOST_FUNCTION_WRITE,
     HOST_FUNCTION_PROPOSE,
   ]
   const out: string[] = []
@@ -149,7 +146,7 @@ export function grantHints(
           hints.push({
             function: named,
             property: READS_GRANT,
-            message: `query reads by trait, so data.${READS_GRANT} must name at least one kind.`,
+            message: `query reads within the read grant, so data.${READS_GRANT} must name at least one kind.`,
           })
         }
         break
@@ -162,12 +159,12 @@ export function grantHints(
           })
         }
         break
-      case HOST_FUNCTION_MUTATE:
+      case HOST_FUNCTION_WRITE:
         if (writes.length === 0) {
           hints.push({
             function: named,
             property: WRITES_GRANT,
-            message: `mutate writes records, so data.${WRITES_GRANT} must name the kinds this agent may create or change.`,
+            message: `write writes records, so data.${WRITES_GRANT} must name the kinds this agent may create or change.`,
           })
         }
         break

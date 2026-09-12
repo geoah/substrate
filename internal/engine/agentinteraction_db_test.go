@@ -252,19 +252,12 @@ func TestOnlyTheOwnerResolvesAnInteraction(t *testing.T) {
 	// A bundle actor answering — even with the interaction kind in its emit —
 	// refuses: asks are always the user's.
 	fake.script("med",
-		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation Meddle($id: ID!, $input: JSON!) {
-  patch(kind: "substrate.reamde.dev/llm/interaction", id: $id, input: $input) { id }
-}`,
-			"variables": map[string]any{"id": interaction.ID, "input": map[string]any{
-				"properties": map[string]any{
-					"state": "answered",
-					"answers": []any{
-						map[string]any{"question": "color", "selected": []any{"red"}},
-						map[string]any{"question": "sure", "selected": []any{"yes"}},
-					},
-				},
-			}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "patch", vocabulary.KindLLMInteraction, interaction.ID, map[string]any{
+			"state": "answered",
+			"answers": []any{
+				map[string]any{"question": "color", "selected": []any{"red"}},
+				map[string]any{"question": "sure", "selected": []any{"yes"}},
+			},
 		})}}},
 		fakeTurn{content: "tried."},
 	)

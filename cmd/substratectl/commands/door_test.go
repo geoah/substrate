@@ -64,28 +64,28 @@ func TestConfigRoundTrip(t *testing.T) {
 	}
 }
 
-// The collection path IS the kind reference, split into segments: an
-// authority, a package and a name, three for every kind. An id carrying a
+// The record path IS the kind reference, split into segments — an authority,
+// a package and a name, three for every kind — then the id. An id carrying a
 // slash, and a declaration record's id IS a kind reference, travels
-// percent-encoded rather than as more path segments.
-func TestCollectionPathIsTheKindReference(t *testing.T) {
+// percent-encoded rather than as more path segments, and a sub-resource
+// (a bundle's status) hangs off the record.
+func TestRecordPathIsTheKindReferenceThenTheID(t *testing.T) {
 	cases := []struct {
 		pkg, kind string
 		id        []string
 		want      string
 	}{
-		{"samples.substrate.reamde.dev/tasks", "task", nil, "/api/v1/samples.substrate.reamde.dev/tasks/task"},
 		{"samples.substrate.reamde.dev/tasks", "task", []string{"t9"}, "/api/v1/samples.substrate.reamde.dev/tasks/task/t9"},
 		{
 			"substrate.reamde.dev/core", "kind",
 			[]string{"samples.substrate.reamde.dev/tasks/task"},
 			"/api/v1/substrate.reamde.dev/core/kind/samples.substrate.reamde.dev%2Ftasks%2Ftask",
 		},
-		{"samples.substrate.reamde.dev/tasks", "task", []string{"t9", "incoming"}, "/api/v1/samples.substrate.reamde.dev/tasks/task/t9/incoming"},
+		{"substrate.reamde.dev/core", "bundle", []string{"providers.substrate.reamde.dev/google", "status"}, "/api/v1/substrate.reamde.dev/core/bundle/providers.substrate.reamde.dev%2Fgoogle/status"},
 	}
 	for _, tc := range cases {
-		if got := collectionPath(tc.pkg, tc.kind, tc.id...); got != tc.want {
-			t.Errorf("collectionPath(%q, %q, %v) = %q, want %q", tc.pkg, tc.kind, tc.id, got, tc.want)
+		if got := recordPath(tc.pkg, tc.kind, tc.id...); got != tc.want {
+			t.Errorf("recordPath(%q, %q, %v) = %q, want %q", tc.pkg, tc.kind, tc.id, got, tc.want)
 		}
 	}
 	// The encoded id survives the round trip a server does on it.

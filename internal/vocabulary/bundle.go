@@ -19,12 +19,9 @@ import (
 // identity is its `metadata.id` (decision 0047). Whether a bundle may span two
 // packages is open, and nothing in the tree needs it.
 //
-// A bundle's name is its PACKAGE name, and that is the name its installed
-// kinds carry in GraphQL (ref.go). Two authorities publishing a package of one
-// name is legal — an install writes under `bundle:<authority>:<package>`,
-// which cannot collide, and the GraphQL names disambiguate by authority — and
-// a GraphQL name claimed twice is refused by name (load.go,
-// graphqlNameProblems).
+// A bundle's name is its PACKAGE name. Two authorities publishing a package of
+// one name is legal: an install writes under `bundle:<authority>:<package>`,
+// which cannot collide, and every kind reference carries its authority.
 
 // The host-recognized trait interfaces: traits
 // the loader and the engine key behavior on, shipped in core.

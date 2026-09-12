@@ -111,6 +111,17 @@ function renderBundle(id: string) {
   return renderPage(<BundleSettingsPage />)
 }
 
+/** The kinds a records-route URL lists, read off its `filter`: the list route
+ * is one path for every kind, so a stub dispatches on this, not the path. */
+function listedKinds(path: string): string[] {
+  const url = new URL(path, "http://x")
+  if (url.pathname !== "/api/v1/records") return []
+  const filter = JSON.parse(url.searchParams.get("filter") ?? "{}") as {
+    kinds?: string[]
+  }
+  return filter.kinds ?? []
+}
+
 describe("the settings surfaces", () => {
   const fetchMock = vi.fn<typeof fetch>()
   let settings: SubstrateRecord[] = []
@@ -122,11 +133,10 @@ describe("the settings surfaces", () => {
     routeParams = {}
     fetchMock.mockImplementation(async (url) => {
       const path = String(url)
-      if (path.startsWith(SETTINGS_PATH)) {
-        return jsonResponse({ records: settings })
+      // Both kinds arrive in ONE list read; the record's kind tells them apart.
+      if (listedKinds(path).includes(SETTING_KIND)) {
+        return jsonResponse({ records: [...settings, ...secrets] })
       }
-      if (path.startsWith(SECRETS_PATH))
-        return jsonResponse({ records: secrets })
       if (path === STATUSES_PATH) {
         return jsonResponse({
           items: [

@@ -21,9 +21,9 @@ import { RecordCombobox } from "./record-combobox"
  * the id the write names it with. */
 const HOST_FUNCTIONS: RecordOption[] = [
   {
-    value: "substrate.reamde.dev/core/graphql",
+    value: "substrate.reamde.dev/core/query",
     title: "",
-    description: "Run a read-only GraphQL query against the repository.",
+    description: "Read records: one by id, a filtered list, or a ranking.",
   },
   {
     value: "substrate.reamde.dev/core/propose",
