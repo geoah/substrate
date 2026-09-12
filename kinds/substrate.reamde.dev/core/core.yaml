@@ -8,8 +8,9 @@
 # exists because the substrate exists — the repository, tokens, the
 # vocabulary's own meta-model, connection plumbing, the envelope a proposed
 # change travels in, AND the runtime the substrate itself maintains: the
-# delivery plumbing (`trigger` + `triggerrun`) and the agent loop's data
-# (`llmprovider` + `llmthread` + `llmmessage`). The sample packages (people, messaging,
+# delivery plumbing (`trigger` + `triggerrun`), the agent loop's data
+# (`llmprovider` + `llmthread` + `llmmessage`) and a bundle's configuration as
+# records (`setting` + `secret`, decision record 0076). The sample packages (people, messaging,
 # calendar, tasks) are what would exist if you kept your data in a
 # shoebox — they ship as importable bundles under their own
 # samples/<package>/ directories, not here. Nothing else decides the placement.
@@ -42,7 +43,7 @@ data:
   authority: substrate.reamde.dev
   package: core
   # a maturity statement, not a routing key: no envelope carries a version.
-  version: 23
+  version: 24
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands

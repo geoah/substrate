@@ -609,7 +609,8 @@ func (t *txn) tearDownCallableTriggers(callables map[string]bool) error {
 	return nil
 }
 
-// PurgeBundle tombstones every live data record of the bundle's owned types
+// PurgeBundle tombstones every live data record of the bundle's owned types,
+// plus the `setting` and `secret` records under its own id prefix,
 // through the ordinary soft-delete path — finalizers hold what needs teardown
 // (the OAuth facility revokes and releases), the GC sweep collects the rest.
 // It requires the bundle disabled or uninstalled first: purge is an explicit,
@@ -686,6 +687,14 @@ func (ds *dataset) PurgeBundle(ctx context.Context, id string) (int, error) {
 		return purged, err
 	}
 	n, err := ds.purgeTypes(ctx, otherTypes)
+	purged += n
+	if err != nil {
+		return purged, err
+	}
+	// The bundle's CONFIGURATION goes with its data: the settings and secrets
+	// under its id prefix are records it owns (settings.go, decision record
+	// 0076). Uninstall leaves them, as it leaves every record.
+	n, err = ds.purgeSettings(ctx, b)
 	purged += n
 	if err != nil {
 		return purged, err
@@ -977,6 +986,15 @@ func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle) (subs
 			}
 		}
 	}
+	// The bundle's own settings and secrets (settings.go): a required one
+	// nobody has filled in is exactly what a body would refuse on, so it is a
+	// setup step for the same reason an unresolved input is.
+	settingItems, err := ds.settingSetupItems(ctx, b)
+	if err != nil {
+		return st, err
+	}
+	st.Setup = append(st.Setup, settingItems...)
+
 	// The agents' providers live OUTSIDE the bundle (core llmprovider rows),
 	// and are still half of "will this bundle run": dry-run the same
 	// resolution dispatch performs and surface its refusal verbatim.

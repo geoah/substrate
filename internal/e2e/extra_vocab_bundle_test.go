@@ -39,9 +39,22 @@ const (
 	xvStatsFunction  = "samples.substrate.reamde.dev/notes/stats"
 	xvNoteKind       = "samples.substrate.reamde.dev/notes/note"
 
-	xvFirecrawlBundle     = "samples.substrate.reamde.dev/firecrawl"
-	xvFirecrawlConfigKind = "samples.substrate.reamde.dev/firecrawl/config"
-	xvFirecrawlConfigs    = "/api/v1/samples.substrate.reamde.dev/firecrawl/config"
+	// The bundle BUN-04 works: a provider whose one input is a plain config
+	// record carrying a pasted token, so the whole bind flow runs without an
+	// OAuth consent. (Firecrawl used to play this part; its configuration is
+	// core setting/secret records now, decision record 0076, and it has no
+	// input left to bind.)
+	xvNotionBundle     = "providers.substrate.reamde.dev/notion"
+	xvNotionConfigKind = "providers.substrate.reamde.dev/notion/config"
+	xvNotionConfigs    = "/api/v1/providers.substrate.reamde.dev/notion/config"
+
+	// The bundle BUN-04's second half works: the one shipped closure whose
+	// configuration is records rather than an input.
+	xvFirecrawlBundle = "samples.substrate.reamde.dev/firecrawl"
+	xvFirecrawlKeyID  = "samples.substrate.reamde.dev/firecrawl/apiKey"
+	xvFirecrawlBaseID = "samples.substrate.reamde.dev/firecrawl/baseUrl"
+	xvSecretRecord    = "/api/v1/substrate.reamde.dev/core/secret"
+	xvSettingRecord   = "/api/v1/substrate.reamde.dev/core/setting"
 
 	xvTemporalTrait = "substrate.reamde.dev/core/temporal"
 
@@ -688,52 +701,55 @@ func xvInput(st xvBundleStatus, name string) (xvInputStatus, []xvSetupItem) {
 	return found, steps
 }
 
-// xvCaseBundleInput: BUN-04, on firecrawl, the one shipped bundle whose input
-// is bindable without an OAuth consent: a plain config record carrying an API
-// key, no host flow, no account.
+// xvCaseBundleInput: BUN-04, in two halves. The INPUT half runs on notion,
+// the shipped bundle whose one input is bindable without an OAuth consent: a
+// plain config record carrying a pasted token, no host flow. The SETTINGS half
+// runs on firecrawl, whose configuration is core `setting` and `secret`
+// records under the bundle's own id instead of an input at all (decision
+// record 0076).
 func xvCaseBundleInput(c *C) {
-	st := c.xvInstall(xvFirecrawlBundle)
+	st := c.xvInstall(xvNotionBundle)
 	in, steps := xvInput(st, "connector")
-	c.requiref(in.Name == "connector" && in.Kind == xvFirecrawlConfigKind,
-		"the installed bundle declares no `connector` input of %s: %+v", xvFirecrawlConfigKind, st.Inputs)
+	c.requiref(in.Name == "connector" && in.Kind == xvNotionConfigKind,
+		"the installed bundle declares no `connector` input of %s: %+v", xvNotionConfigKind, st.Inputs)
 	c.requiref(in.Record == "" && in.Via == "", "a freshly installed bundle's input already resolves to %q", in.Record)
 	c.requiref(len(steps) == 1 && steps[0].Code == "missing",
 		"the unresolved input's setup steps are %+v, want exactly one `missing`", steps)
-	c.requiref(steps[0].Kind == xvFirecrawlConfigKind,
+	c.requiref(steps[0].Kind == xvNotionConfigKind,
 		"the setup step names kind %q, want the input's own kind", steps[0].Kind)
 	c.stepf("installed `%s`: its declared input `connector` reads unresolved, and the setup step names the kind that would clear it: %q",
-		xvFirecrawlBundle, steps[0].Message)
+		xvNotionBundle, steps[0].Message)
 
 	// One record, and the input resolves as the sole one.
-	sole := c.putRec(xvFirecrawlConfigs, "xv-firecrawl-key",
-		map[string]any{"apiKey": "fc-e2e-not-a-real-key", "baseUrl": "https://api.firecrawl.dev"})
-	c.requiref(sole.prop("apiKey") == "<redacted>",
-		"the config's secret read back as %q; a secret property is never readable over the API", sole.prop("apiKey"))
-	in, steps = xvInput(c.xvStatus(xvFirecrawlBundle), "connector")
+	sole := c.putRec(xvNotionConfigs, "xv-notion-token",
+		map[string]any{"integrationToken": "ntn_e2e-not-a-real-token"})
+	c.requiref(sole.prop("integrationToken") == "<redacted>",
+		"the config's secret read back as %q; a secret property is never readable over the API", sole.prop("integrationToken"))
+	in, steps = xvInput(c.xvStatus(xvNotionBundle), "connector")
 	c.requiref(in.Record == sole.ID && in.Via == "sole",
 		"one record resolved as record=%q via=%q, want the sole one", in.Record, in.Via)
 	c.requiref(len(steps) == 0, "a resolved input still carries setup steps: %+v", steps)
-	c.stepf("wrote one `%s` record `%s` (its `apiKey` reads back `<redacted>`): the input resolves via `sole`", xvFirecrawlConfigKind, sole.ID)
+	c.stepf("wrote one `%s` record `%s` (its `integrationToken` reads back `<redacted>`): the input resolves via `sole`", xvNotionConfigKind, sole.ID)
 
 	// A second record makes the choice ambiguous: the substrate refuses to
 	// tie-break, it does not pick one.
-	second := c.putRec(xvFirecrawlConfigs, "xv-firecrawl-spare", map[string]any{"apiKey": "fc-e2e-spare"})
-	in, steps = xvInput(c.xvStatus(xvFirecrawlBundle), "connector")
+	second := c.putRec(xvNotionConfigs, "xv-notion-spare", map[string]any{"integrationToken": "ntn_e2e-spare"})
+	in, steps = xvInput(c.xvStatus(xvNotionBundle), "connector")
 	c.requiref(in.Record == "" && in.Via == "", "with two records the input still resolves to %q via %q", in.Record, in.Via)
 	c.requiref(len(steps) == 1 && steps[0].Code == "ambiguous",
 		"two records give setup steps %+v, want exactly one `ambiguous`", steps)
 	c.stepf("a second record `%s` makes it ambiguous: an unbound input with two candidates resolves to nothing rather than guessing", second.ID)
 
 	// The id `default` is the next step in the order.
-	byDefault := c.putRec(xvFirecrawlConfigs, "default", map[string]any{"apiKey": "fc-e2e-default"})
-	in, _ = xvInput(c.xvStatus(xvFirecrawlBundle), "connector")
+	byDefault := c.putRec(xvNotionConfigs, "default", map[string]any{"integrationToken": "ntn_e2e-default"})
+	in, _ = xvInput(c.xvStatus(xvNotionBundle), "connector")
 	c.requiref(in.Record == byDefault.ID && in.Via == "default",
 		"the record named `default` resolved as record=%q via=%q", in.Record, in.Via)
 	c.stepf("a record at the id `default` resolves the input via `default`, ahead of the two unnamed candidates")
 
 	// A bind outranks it.
 	var bound xvBundleStatus
-	status, raw := c.do(http.MethodPost, xvBundleRecord(xvFirecrawlBundle)+"/bind",
+	status, raw := c.do(http.MethodPost, xvBundleRecord(xvNotionBundle)+"/bind",
 		map[string]any{"input": "connector", "record": second.ID}, &bound)
 	c.requiref(status == http.StatusOK, "binding answered %d: %s", status, raw)
 	in, steps = xvInput(bound, "connector")
@@ -741,33 +757,77 @@ func xvCaseBundleInput(c *C) {
 		"after the bind the input resolves to record=%q via=%q, want %s via bound", in.Record, in.Via, second.ID)
 	c.requiref(len(steps) == 0, "a bound input still carries setup steps: %+v", steps)
 	c.stepf("`POST %s/bind {\"input\":\"connector\",\"record\":\"%s\"}` answers the refreshed status: via `bound`, outranking the `default` record. The order is bound, default, sole",
-		xvBundleRecord(xvFirecrawlBundle), second.ID)
+		xvBundleRecord(xvNotionBundle), second.ID)
 
 	// The refusals around the verb.
-	status, raw = c.do(http.MethodPost, xvBundleRecord(xvFirecrawlBundle)+"/bind",
+	status, raw = c.do(http.MethodPost, xvBundleRecord(xvNotionBundle)+"/bind",
 		map[string]any{"input": "nosuchinput", "record": second.ID}, nil)
 	c.requiref(status == http.StatusNotFound, "binding an undeclared input answered %d, want 404: %s", status, raw)
 	ref := c.xvRefused(raw)
 	c.requiref(strings.Contains(ref.Message, "nosuchinput"), "the refusal does not name the input: %s", ref.Message)
-	status, raw = c.do(http.MethodPost, xvBundleRecord(xvFirecrawlBundle)+"/bind",
+	status, raw = c.do(http.MethodPost, xvBundleRecord(xvNotionBundle)+"/bind",
 		map[string]any{"input": "connector", "record": "xv-no-such-config"}, nil)
 	c.requiref(status == http.StatusNotFound, "binding to a record that does not exist answered %d, want 404: %s", status, raw)
-	status, raw = c.do(http.MethodPost, xvBundleRecord(xvFirecrawlBundle)+"/bind",
+	status, raw = c.do(http.MethodPost, xvBundleRecord(xvNotionBundle)+"/bind",
 		map[string]any{"input": "", "record": second.ID}, nil)
 	c.requiref(status == http.StatusBadRequest, "binding with no input named answered %d, want 400: %s", status, raw)
-	in, _ = xvInput(c.xvStatus(xvFirecrawlBundle), "connector")
+	in, _ = xvInput(c.xvStatus(xvNotionBundle), "connector")
 	c.requiref(in.Record == second.ID && in.Via == "bound", "a refused bind moved the resolution to %q via %q", in.Record, in.Via)
 	c.stepf("an undeclared input name is a 404 naming it, a bind to a record that does not exist is a 404, and a bind naming no input is a 400; none of them moves the standing bind")
 
-	final := c.xvStatus(xvFirecrawlBundle)
+	final := c.xvStatus(xvNotionBundle)
 	c.requiref(final.LiveRecords >= 3, "the bundle counts %d live records, want the three config records this case wrote", final.LiveRecords)
 	c.stepf("the bundle is left installed, enabled and bound, counting %d live records of its own authority", final.LiveRecords)
 
-	// The whole flow ran without an OAuth consent: firecrawl's input is a
-	// plain config record. A bundle whose input is an OAuth CLIENT (google,
-	// github, linear, whoop) binds the same way, but exercising what the
-	// binding then unlocks needs a provider consent, which is OAU-01's
-	// business and not this case's.
+	// The whole flow ran without an OAuth consent: notion's input is a
+	// plain config record carrying a pasted token. A bundle whose input is an
+	// OAuth CLIENT (google, github, linear, whoop) binds the same way, but
+	// exercising what the binding then unlocks needs a provider consent,
+	// which is OAU-01's business and not this case's.
 	c.stepf("SKIPPED here: the same bind against an oauth2 bundle's `client` input. Binding it is the identical call, " +
 		"but nothing downstream of it moves without a provider consent, which the OAuth cases own")
+
+	// ---- the other shape: configuration as records -----------------------
+	// Firecrawl declares NO input. Its closure ships two core records under
+	// the bundle's own id, and filling them in is the whole of its setup.
+	fc := c.xvInstall(xvFirecrawlBundle)
+	c.requiref(len(fc.Inputs) == 0, "the firecrawl bundle declares inputs %+v, want none", fc.Inputs)
+	var empty []xvSetupItem
+	for _, item := range fc.Setup {
+		if item.Code == "setting" {
+			empty = append(empty, item)
+		}
+	}
+	c.requiref(len(empty) == 1 && empty[0].Kind == "substrate.reamde.dev/core/secret",
+		"the freshly installed bundle's `setting` steps are %+v, want the one empty required secret", empty)
+	c.stepf("installed `%s`, which declares no input at all: its configuration is the two records its closure ships, and the empty required `%s` is its one setup step, coded `setting`: %q",
+		xvFirecrawlBundle, xvFirecrawlKeyID, empty[0].Message)
+
+	// The shipped records are ordinary: readable, and the pre-filled one
+	// carries the value the closure shipped.
+	var base record
+	status, raw = c.do(http.MethodGet, xvSettingRecord+"/"+url.PathEscape(xvFirecrawlBaseID), nil, &base)
+	c.requiref(status == http.StatusOK, "reading the shipped setting answered %d: %s", status, raw)
+	c.requiref(base.prop("value") == "https://api.firecrawl.dev",
+		"the shipped baseUrl setting carries %q", base.prop("value"))
+	c.stepf("`GET %s` answers the shipped `baseUrl` setting, pre-filled at the pinned Firecrawl origin",
+		xvSettingRecord+"/"+url.PathEscape(xvFirecrawlBaseID))
+
+	// A value that does not parse as the setting's `type` is refused.
+	status, raw = c.do(http.MethodPatch, xvSettingRecord+"/"+url.PathEscape(xvFirecrawlBaseID),
+		map[string]any{"properties": map[string]any{"value": "not a url at all"}}, nil)
+	c.requiref(status == http.StatusUnprocessableEntity,
+		"a url setting took a non-url value: %d %s", status, raw)
+	c.stepf("patching that `type: url` setting with `not a url at all` is a 422: a setting's value is held to its declared type on write")
+
+	// Filling the required secret clears the step, and it never reads back.
+	filled := c.putRec(xvSecretRecord, xvFirecrawlKeyID,
+		map[string]any{"value": "fc-e2e-not-a-real-key", "required": true, "displayName": "API key"})
+	c.requiref(filled.prop("value") == "<redacted>",
+		"the filled secret read back as %q", filled.prop("value"))
+	after := c.xvStatus(xvFirecrawlBundle)
+	for _, item := range after.Setup {
+		c.requiref(item.Code != "setting", "a `setting` step survived the fill: %+v", item)
+	}
+	c.stepf("writing the `apiKey` secret (which reads back `<redacted>`) clears the bundle's `setting` setup step; purging the bundle would take both records with it, and uninstalling leaves them")
 }

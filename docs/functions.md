@@ -554,7 +554,8 @@ page.
 **`host.config()` resolves the callable's configuration.** It carries the
 owning `bundle`, which is its package identity, the bundle's
 `inject: functions` inputs each resolved to one record under `inputs` (an
-unresolved input's key is absent), and every
+unresolved input's key is absent), the bundle's own
+[settings](bundles.md#settings) under `settings`, and every
 [connection](bundles.md#connections) the bundle declares under `accounts`,
 each flattened to its id, kind and stored properties. For an OAuth bundle the
 host resolves each account's credential itself and hands the body a live
@@ -563,6 +564,15 @@ so one broken account never parks the whole delivery. The OAuth facility's own
 secrets, the client record's `clientSecret` and an account's `tokenRef`, are
 never injected, and every injected secret value is scrubbed out of whatever
 crosses back over the runner boundary.
+
+`settings` is a flat map of name to value: one entry per core `setting` or
+`secret` record whose id sits under the bundle's own id, keyed by the part of
+the id after it, so a bundle shipping `<authority>/<package>/apiKey` reads it
+as `config.settings.apiKey`. A `secret` arrives as the material itself, held
+to the runner boundary by the same scrubber. The key is absent when the bundle
+ships no settings, and one setting's own key is absent when nobody has written
+its value at all, so a body that needs one refuses in its own words
+([record 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)).
 
 **Two ceilings.** `host.log(msg)` records a line on the invocation's run
 record, truncated at 4096 characters and capped at 200 lines per invocation

@@ -57,7 +57,7 @@ thing, and the Records column counts them.
 | Beeper        | Provider | Pasted token   | 4     | 1         | 2       | 0      |
 | LLM           | Sample   | Key, per row   | 1     | 0         | 2       | 6      |
 | Notes         | Sample   | none           | 1     | 2         | 0       | 2      |
-| Firecrawl     | Sample   | API key        | 2     | 2         | 0       | 0      |
+| Firecrawl     | Sample   | API key        | 1     | 2         | 0       | 0      |
 | Web harvester | Sample   | none           | 2     | 4         | 4       | 3      |
 | Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
 
@@ -456,18 +456,26 @@ provider account is connected and nothing syncs. It is web search and page
 scraping over the Firecrawl API, exposed as two callables an agent binds as
 tools, behind an API key.
 
-- **Kinds (2)**: `config` (holding an API key) and `webdocument` (a scraped
-  page kept as markdown).
+- **Kinds (1)**: `webdocument`, a scraped page kept as markdown.
 - **Functions (2)**: `websearch` returns hits as title, URL, and snippet and
   writes nothing; `scrapepage` scrapes a page to markdown and upserts a
   `webdocument` at the URL's deterministic id, so re-scraping the same URL
   updates the one document.
+- **Settings (2)**: a `secret` at `…/firecrawl/apiKey`, shipped empty and
+  required, and a `setting` at `…/firecrawl/baseUrl`, shipped pinned at the
+  Firecrawl origin. Both are ordinary records the closure ships
+  ([record 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)),
+  and the bodies read them as `config.settings.apiKey` and
+  `config.settings.baseUrl`. The bundle declares no input.
 - **Triggers**: none. Both functions are callables an agent or a client invokes
-  directly, so the whole closure is `bundle.yaml`.
+  directly, so the closure is `bundle.yaml` plus the two records in
+  `settings.yaml`.
 
-The API key is a secret on the configuration record, and the bodies refuse any
+The API key is a core `secret` record, sealed at rest and injected only into
+this bundle's two functions, and the bodies refuse any
 base URL that is not the pinned Firecrawl origin or loopback, so an edit of the
-owner-editable `baseUrl` can never redirect the key. Keys come from
+`baseUrl` setting can never redirect the key. While the key is empty the bundle
+carries one setup item, coded `setting`. Keys come from
 [firecrawl.dev](https://www.firecrawl.dev) and look like `fc-…`; a scraped
 page's markdown is capped at 24,000 characters, and `truncated: true` marks a
 cut. An agent that binds `scrapepage` must name `webdocument` in its own

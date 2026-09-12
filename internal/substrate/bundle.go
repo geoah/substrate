@@ -226,15 +226,16 @@ const (
 type SetupItem struct {
 	// Code is the stable reason: SetupMissing/SetupAmbiguous/SetupDangling
 	// for an input, SetupOAuthClient for an incomplete client record,
-	// SetupProvider for an agent whose llmprovider row is absent or keyless.
+	// SetupProvider for an agent whose llmprovider row is absent or keyless,
+	// SetupSetting for a required setting or secret nobody has filled in.
 	Code string `json:"code"`
 	// Input names the unresolved input, when the item is an input's.
 	Input string `json:"input,omitempty"`
 	// Kind is the kind whose record would clear the item: the input's kind,
-	// or core's llmprovider.
+	// core's llmprovider, or core's setting/secret.
 	Kind string `json:"kind,omitempty"`
 	// Record is the existing record to fix, when one exists — the incomplete
-	// client, the keyless provider row.
+	// client, the keyless provider row, the empty setting.
 	Record string `json:"record,omitempty"`
 	// Message is one sentence naming the fix.
 	Message string `json:"message"`
@@ -255,6 +256,9 @@ const (
 	// SetupProvider: an agent names an llmprovider row that is absent or
 	// cannot dispatch (no key where one is required).
 	SetupProvider = "provider"
+	// SetupSetting: a `setting` or `secret` record the bundle ships under its
+	// own id marked required, with no value filled in (decision record 0076).
+	SetupSetting = "setting"
 )
 
 // BundleUninstalled is the reply to an uninstall. The bundle has no status

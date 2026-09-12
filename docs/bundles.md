@@ -368,6 +368,50 @@ deleting a connected account revokes best-effort against the declared
 record. A function never sees any of it — its injected config carries a
 resolved `token`, never the client secret or the reference.
 
+## Settings
+
+A bundle that needs one key and one URL for the whole repository does not
+declare a kind for them. It ships two ordinary records instead — a core
+`setting` for a plain value and a core `secret` for credential material — and
+the user fills them in
+([record 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)).
+Nothing new is parsed: a closure already carries data records, so a bundle
+declares a setting by writing an empty one.
+
+**The id is the ownership.** A setting's id is `<bundle id>/<name>`, and the
+bundle id is `<authority>/<package>`, so the Firecrawl sample ships
+`samples.substrate.reamde.dev/firecrawl/apiKey` and an import rehomes it with
+the rest of the closure. Two bundles may each own an `apiKey`, and the prefix
+is the only thing that says whose a record is — a hand-written record under
+another bundle's prefix is that bundle's setting.
+
+```yaml
+kind: substrate.reamde.dev/core/secret
+metadata:
+  id: samples.substrate.reamde.dev/firecrawl/apiKey
+data:
+  properties:
+    displayName: API key
+    required: true
+```
+
+A `setting` carries `value` as a string plus a `type` hint the engine holds it
+to on write — `string`, `url`, `int`, `bool`, or `enum` with a `values` list —
+so a value that does not parse is refused naming the property. An empty value
+is always admitted, because empty is the unfilled state every shipped setting
+starts in. A `secret` has the same fields with `value` typed `secret`: sealed
+at rest and never read back over the API. The type is a hint on a record, not
+a property type in the kind system, so a richer shape (an object, a list) is
+still a kind of the bundle's own.
+
+Every setting and secret under a bundle's prefix reaches its functions as
+`config.settings.<name>`, the secret in plaintext inside the runner boundary
+and held there by the invocation scrubber, exactly as an input's secret is
+([Functions](functions.md#the-sdk)). A `required` one whose value is still
+empty is a setup item on the bundle's status, coded `setting`, so the registry
+badge and the bundle page count it. Purging a bundle removes its settings;
+uninstall leaves them, as it leaves every record.
+
 ## Connections
 
 A **Connection** is one configured provider account: a record of an

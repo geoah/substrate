@@ -1119,6 +1119,13 @@ func redactProps(ty *vocabulary.Kind, props map[string]any) map[string]any {
 	for k, v := range props {
 		if ty != nil {
 			if p, ok := ty.Prop(k); ok && p.Sensitive() {
+				// An empty secret is the unset state, and reading it back as
+				// the marker would say "set" about nothing; the marker stands
+				// in for a value, so it is only emitted where one exists.
+				if str, isStr := v.(string); isStr && str == "" {
+					out[k] = ""
+					continue
+				}
 				out[k] = Redacted
 				continue
 			}

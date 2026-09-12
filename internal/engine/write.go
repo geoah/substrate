@@ -750,6 +750,11 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	if err := t.guardBlobWrite(sp); err != nil {
 		return nil, err
 	}
+	// A `setting`'s value must parse as the `type` it declares (settings.go):
+	// a setting is one string, so the type is the only contract there is.
+	if err := t.guardSettingWrite(sp); err != nil {
+		return nil, err
+	}
 	// A managed property is the engine's to write, on a data kind exactly as
 	// on a declaration row (checkDeclarationWrite).
 	if err := t.checkManagedProps(sp); err != nil {
