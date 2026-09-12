@@ -80,6 +80,9 @@ type run struct {
 	stub *llmStub // the scripted OpenAI-wire model the story agents buy from
 
 	repository string
+	// authority is the name the repository resolved to at registration, and
+	// the id the operator hat addresses it by.
+	authority  string
 	password   string
 	token      string // the first token's secret; every case call carries it
 	tokenID    string

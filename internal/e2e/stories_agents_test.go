@@ -368,19 +368,24 @@ func caseStory06(c *C) {
 		c.stepf("SKIPPED the verify and rebuild: %s and %s are not both set", envCtl, envDSN)
 		return
 	}
-	out, err := ctlRun(ctl, dsn, "repository", "verify", r.repository)
+	out, err := ctlRun(ctl, dsn, "repository", "verify", r.authority)
 	c.requiref(err == nil, "repository verify: %v: %s", err, out)
 	c.stepf("operator verify: %s", verifySummary(out))
 
-	out, err = ctlRun(ctl, dsn, "repository", "rebuild", r.repository)
-	c.requiref(err == nil, "repository rebuild: %v: %s", err, out)
+	// A rebuild refolds the changelog into records, so it takes the changelog
+	// writer lock the running server holds: against a live substrate the
+	// operator hat must refuse, not race the writer. The refold itself runs
+	// against a stopped server in internal/testenv's acceptance drill.
+	out, err = ctlRun(ctl, dsn, "repository", "rebuild", r.authority)
+	c.requiref(err != nil && strings.Contains(out, "writer lock"),
+		"repository rebuild against the live server: err=%v, want the writer-lock refusal: %s", err, out)
 	rebuilt := c.graphJoin()
 	c.requiref(string(join) == string(rebuilt),
-		"the rebuilt fold answers a different graph:\nbefore: %s\nafter:  %s", join, rebuilt)
-	c.stepf("repository rebuild refolded the changelog and the same GraphQL join answered byte-identically")
+		"the refused rebuild changed the graph:\nbefore: %s\nafter:  %s", join, rebuilt)
+	c.stepf("repository rebuild against the live server was refused by the changelog writer lock, and the fold is untouched")
 }
 
-// graphJoin is the one fixed read STORY-06 compares across a rebuild: the
+// graphJoin is the one fixed read STORY-06 compares around the refused rebuild: the
 // whole story graph, every kind the stories touched. References ride in
 // `properties` like every other value, so there is no second selection to
 // ask for.
