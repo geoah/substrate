@@ -93,7 +93,7 @@ function RegistryUpgradeBadge() {
   )
   if (count <= 0) return null
   return (
-    <SidebarMenuBadge className="bg-primary text-primary-foreground">
+    <SidebarMenuBadge variant="count">
       <span className="sr-only">
         {count === 1
           ? "1 bundle upgrade available"
@@ -116,7 +116,7 @@ export function SettingsSetupBadge() {
   )
   if (count <= 0) return null
   return (
-    <SidebarMenuBadge className="bg-primary text-primary-foreground">
+    <SidebarMenuBadge variant="count">
       <span className="sr-only">
         {count === 1 ? "1 setting to fill in" : `${count} settings to fill in`}
       </span>

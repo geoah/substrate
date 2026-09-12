@@ -580,18 +580,43 @@ function SidebarMenuAction({
   })
 }
 
+/** The badge's colours, as a VARIANT rather than a caller's className. The
+ * base sets the text colour three times — plain, `peer-hover/menu-button:` and
+ * `peer-data-active/menu-button:` — and tailwind-merge cannot override a
+ * variant it was not handed, so a caller passing `text-primary-foreground`
+ * kept it only while the row was neither hovered nor active and turned the
+ * count near-black on the accent otherwise. A variant carries all three
+ * states, so there is one place to say what a badge looks like. */
+const sidebarMenuBadgeVariants = cva(
+  "pointer-events-none absolute right-1 flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-xs font-medium tabular-nums select-none group-data-[collapsible=icon]:hidden peer-data-[size=default]/menu-button:top-1.5 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1",
+  {
+    variants: {
+      variant: {
+        default:
+          "text-sidebar-foreground peer-hover/menu-button:text-sidebar-accent-foreground peer-data-active/menu-button:text-sidebar-accent-foreground",
+        // The attention count: it means something is waiting, so it keeps the
+        // primary fill and its own foreground in every state.
+        count:
+          "bg-primary text-primary-foreground peer-hover/menu-button:text-primary-foreground peer-data-active/menu-button:text-primary-foreground",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+    },
+  }
+)
+
 function SidebarMenuBadge({
   className,
+  variant,
   ...props
-}: React.ComponentProps<"div">) {
+}: React.ComponentProps<"div"> &
+  VariantProps<typeof sidebarMenuBadgeVariants>) {
   return (
     <div
       data-slot="sidebar-menu-badge"
       data-sidebar="menu-badge"
-      className={cn(
-        "pointer-events-none absolute right-1 flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-xs font-medium text-sidebar-foreground tabular-nums select-none group-data-[collapsible=icon]:hidden peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[size=default]/menu-button:top-1.5 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1 peer-data-active/menu-button:text-sidebar-accent-foreground",
-        className
-      )}
+      className={cn(sidebarMenuBadgeVariants({ variant }), className)}
       {...props}
     />
   )

@@ -194,4 +194,23 @@ describe("the Settings badge", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     expect(container.textContent).toBe("")
   })
+
+  // The badge sits on the primary fill, and the sidebar row recolours its
+  // badge on hover and while active. A count that only named the resting
+  // colour went near-black on dark blue in both of those states.
+  it("keeps the primary foreground on hover and while the row is active", async () => {
+    const { container } = serve([
+      { setup: [{ code: "setting", message: "API key is not set" }] },
+    ])
+    await screen.findByText("1")
+    const badge = container.querySelector('[data-slot="sidebar-menu-badge"]')!
+    const classes = badge.className
+    expect(classes).toContain("bg-primary")
+    expect(classes).toContain("text-primary-foreground")
+    expect(classes).toContain("peer-hover/menu-button:text-primary-foreground")
+    expect(classes).toContain(
+      "peer-data-active/menu-button:text-primary-foreground"
+    )
+    expect(classes).not.toContain("text-sidebar-accent-foreground")
+  })
 })
