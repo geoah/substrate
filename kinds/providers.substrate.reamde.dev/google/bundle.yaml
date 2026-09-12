@@ -41,7 +41,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: google
-  version: 14
+  version: 15
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -55,8 +55,9 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   description: >-
-    Connects a Google account and mirrors its address book, mail and calendars
-    under this package's own kinds, in Google's shape.
+    Keeps a copy of your Google contacts, mail and calendars, each its own
+    toggle you can turn on separately. Read-only: nothing is ever written
+    back to Google.
   # The one declared input: the OAuth client record. NO inject: the host
   # OAuth facility reads it (oauth2.clientInput below); no function body ever
   # sees the client credentials.

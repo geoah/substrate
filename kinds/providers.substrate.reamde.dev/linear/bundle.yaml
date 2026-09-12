@@ -30,7 +30,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: linear
-  version: 12
+  version: 13
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -44,8 +44,9 @@ data:
   authority: providers.substrate.reamde.dev
   package: linear
   description: >-
-    Connects a Linear workspace and syncs the issues assigned to you into
-    issue mirrors under this package's own kinds, read-only toward Linear.
+    Keeps a copy of the Linear issues assigned to YOU, their teams and your
+    own user record. Nothing else in the workspace is synced, and nothing
+    is ever written back to Linear.
   # The one declared input: the OAuth client record. NO inject: the host
   # OAuth facility reads it (oauth2.clientInput below); no function body ever
   # sees the client credentials.

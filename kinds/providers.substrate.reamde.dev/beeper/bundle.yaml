@@ -34,7 +34,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: beeper
-  version: 9
+  version: 10
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block — an oauth2 block would demand a client input, and this
@@ -47,8 +47,9 @@ data:
   authority: providers.substrate.reamde.dev
   package: beeper
   description: >-
-    Connects a Beeper (Matrix) account with a pasted access token and mirrors
-    its bridged rooms and messages into the graph — sync-only, no sending.
+    Keeps a copy of your Beeper chats and their messages, from every network
+    it bridges. It takes a token you paste rather than a sign-in, and it reads
+    only: it cannot send.
   # The one declared input: the connector record the sync body reads.
   # `inject: functions` hands the resolved record (token in plaintext inside
   # the runner boundary) to every invocation under config.inputs.connector.

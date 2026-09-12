@@ -25,7 +25,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: whoop
-  version: 8
+  version: 9
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members: the two config types,
@@ -37,8 +37,9 @@ data:
   authority: providers.substrate.reamde.dev
   package: whoop
   description: >-
-    Connects a WHOOP account and syncs its recovery, sleep and workout records
-    into recovery/sleep/workout mirrors — a sync-only wearable integration.
+    Keeps a copy of your WHOOP recovery scores, sleep and workouts. Read-only.
+    Disconnecting deletes the stored token, but revoking the grant itself
+    is done in WHOOP's own app.
   # The one declared input: the OAuth client record. NO inject: the host
   # OAuth facility reads it (oauth2.clientInput below); no function body ever
   # sees the client credentials.
