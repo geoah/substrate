@@ -135,6 +135,39 @@ function propertySizing(prop: DeclaredProperty): PropertySizing {
   return { size: { min: 160, max: 420, weight: 1.5 } }
 }
 
+/** The columns a kind opens WITHOUT, by kind reference. A declaration-driven
+ * table gives every declared property a column, which is right for a kind
+ * nobody here knows and wrong for the few core kinds whose declaration is
+ * mostly machinery: `core/function` declares its own authority and package
+ * (both already in the title now that a function titles itself with its full
+ * reference), its version, its body, its argument list, and two policy enums
+ * almost nothing sets. The default is the readable subset; the Columns menu
+ * still has the rest, and a saved preference wins over this map entirely
+ * (`useDataTable` reads `prefs.hidden` first).
+ *
+ * A kind is listed only where the SHIPPED declaration is known here, because
+ * hiding a property of a kind this console did not ship would be guessing at
+ * somebody else's vocabulary. */
+const DEFAULT_HIDDEN: Record<string, string[]> = {
+  "substrate.reamde.dev/core/function": [
+    "authority",
+    "package",
+    "version",
+    "source",
+    "arguments",
+    "returns",
+    "permissions",
+    "effect",
+    "confirmation",
+  ],
+}
+
+/** The column ids a kind's table hides until the reader asks for them. Empty
+ * for every kind not in the map, which is almost all of them. */
+export function defaultHiddenColumns(kind: KindInfo): string[] {
+  return (DEFAULT_HIDDEN[kind.identity] ?? []).map(propertyColumnId)
+}
+
 export function buildColumns(
   kind: KindInfo
 ): DataTableColumn<SubstrateRecord>[] {

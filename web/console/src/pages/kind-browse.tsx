@@ -56,6 +56,7 @@ import { filterableProperties, kindByCollection } from "@/lib/definition"
 import {
   buildColumns,
   columnIdOf,
+  defaultHiddenColumns,
   sortPropertyOf,
 } from "@/pages/kind-browse-columns"
 import { kindBrowseRoute } from "@/router"
@@ -192,6 +193,12 @@ export function KindBrowsePage() {
     () => (kindInfo ? buildColumns(kindInfo) : []),
     [kindInfo]
   )
+  // Only the OPENING set: a reader who has saved a column preference for this
+  // kind keeps it, and the Columns menu turns any of these back on.
+  const defaultHidden = useMemo(
+    () => (kindInfo ? defaultHiddenColumns(kindInfo) : []),
+    [kindInfo]
+  )
 
   const sorting = useMemo(() => parseSort(sort), [sort])
   function onSortingChange(updater: Updater<SortingState>) {
@@ -212,6 +219,7 @@ export function KindBrowsePage() {
     onSortingChange,
     getRowId: (row) => row.id,
     prefsKey: `browse:${authority}/${pkg}/${name}`,
+    defaultHidden,
   })
 
   // Only the REGISTRY gates the whole page — it names the collection and it
