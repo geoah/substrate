@@ -33,7 +33,7 @@ import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
 
 /** Long enough that argon2id is not the only thing between a guess and the
  * repository; the server has no opinion beyond non-empty. */
-const MIN_PASSWORD = 12
+const MIN_PASSWORD = 8
 
 /** A secret shown for the reader to carry off: mono, selectable, with a copy
  * affordance. Offered as text beside the QR so a manager or a phone that reads

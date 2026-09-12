@@ -44,7 +44,7 @@ import { useAuthPolicy } from "@/lib/api/discovery"
 import { getRepository } from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
 
-const MIN_PASSWORD = 12
+const MIN_PASSWORD = 8
 
 function describe(err: unknown): string {
   if (err instanceof ApiError) {
