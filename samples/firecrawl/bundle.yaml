@@ -1,11 +1,10 @@
 # The Firecrawl bundle — web search + page scraping as CALLABLE AGENT TOOLS.
 #
 # A capability bundle, not an account integration: one API key, no
-# accountconfig, no oauth2, no host OAuth flow — the shape the URL-harvester
-# stubbed (`firecrawlKey`, unused there) made real.
-# And no triggers: both functions are pure callables (`mode: call`) an agent
-# binds as tools or a client invokes over the call API — nothing here
-# subscribes to the changelog, so the closure ships with ZERO delivery wiring.
+# accountconfig, no oauth2, no host OAuth flow.
+# And no triggers: both functions are plain callables an agent binds as tools
+# or a client invokes over the call API. Nothing here subscribes to the
+# changelog, so the closure ships with ZERO delivery wiring.
 #
 # Install:  substratectl apply -f bundle.yaml -f settings.yaml
 # Configure: fill in the `apiKey` secret the bundle ships (settings.yaml); the
@@ -20,7 +19,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: firecrawl
-  version: 7
+  version: 8
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -33,9 +32,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: firecrawl
   description: >-
-    Web search and page scraping over the Firecrawl API — two callable functions
-    an agent binds as tools: search the live web, and read any page as markdown
-    kept as a webdocument.
+    Web search and page reading through Firecrawl: two tools an agent can
+    call, one to search the live web, one to read any page as markdown and
+    keep it. Needs a Firecrawl API key and nothing else.
   # NO declared input: the key and the API root are the two core `setting`
   # and `secret` records this bundle ships (settings.yaml), injected into every
   # invocation under config.settings by the id prefix they carry — the secret

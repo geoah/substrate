@@ -28,7 +28,7 @@
 # provider row that is still keyless) is the host's own status probe, surfaced
 # on the bundle status as a "provider" setup item with no declaration needed.
 #
-# Five agents, five lessons. `substrate` is the flagship: the mneme-v4 chat
+# Six agents, five lessons. `substrate` is the flagship: the mneme-v4 chat
 # shape, reading the whole graph through the `graphql` built-in and writing
 # NOTHING directly (every change is a proposed recordpatchrequest the owner
 # decides on — and the decision comes BACK into the thread as a `system`
@@ -46,7 +46,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: llm
-  version: 12
+  version: 13
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -55,9 +55,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: llm
   description: >-
-    Two provider rows ready to key, the substrate assistant, an editor and
-    a judge for the decision loop, a scratchpad kind to practise on, and a
-    delegation pair. Install it, set one key, chat.
+    Two provider rows waiting for your API key, and six agents to try them
+    on: chat with your own records, an editor, two judges, and a pair where
+    one agent calls another. Install it, paste one key, chat.
   installs:
     - samples.substrate.reamde.dev/llm/scratchpad
     - samples.substrate.reamde.dev/llm/substrate

@@ -33,7 +33,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: people
-  version: 4
+  version: 5
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A SAMPLE bundle: a bare package the substrate publishes, delivered
@@ -53,8 +53,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: people
   description: >-
-    People, organizations and teams — one record per human, the target every
-    connector's contact, attendee, author and sender maps onto.
+    One record per human, plus the organizations and teams they belong to.
+    Every other sample's contact, attendee, author and sender points here,
+    so import this one first.
   installs:
     - samples.substrate.reamde.dev/people/organization
     - samples.substrate.reamde.dev/people/person

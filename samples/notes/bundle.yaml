@@ -1,20 +1,23 @@
 # The note-taking example: the smallest bundle that shows an AGENT calling
 # FUNCTIONS as tools and delegating to a SUB-AGENT.
 #
-# It is deliberately self-contained. Nothing here needs the network, a
-# provider account, an OAuth consent or another bundle's vocabulary, so it can
-# be installed on a fresh substrate and driven by hand in one command:
+# It is deliberately small. Nothing here needs the network, a provider
+# account, an OAuth consent or another bundle's vocabulary, so it installs on
+# a fresh substrate and the functions can be driven by hand in one command:
 #
 #   substratectl apply -f bundle.yaml
 #   substratectl function call stats --input '{"text": "hello world"}'
 #
-# The agents want an `llmprovider` row at the id they name (`default`); the
-# functions want nothing at all. See docs/bundles-catalog.md.
+# The AGENTS need one thing more: an `llmprovider` row at the id they name
+# (`default`), which is what the llm sample ships. Import that one too and
+# fill in its key, or the first agent run refuses at dispatch saying which row
+# it wanted. See docs/bundles-catalog.md.
 #
 # What it demonstrates, in the order the loop hits it:
 #
-#   1. A FUNCTION TOOL that computes. `stats` is pure Python, declares no
-#      network, and is therefore denied sockets by the sandbox.
+#   1. A FUNCTION TOOL that computes. `stats` is pure Python: it declares no
+#      network, so the sandbox denies it sockets, and it declares no writes,
+#      so every effect it could ever return refuses.
 #   2. A SUB-AGENT. `titler` is a second LLM loop with its own budget and its
 #      own thread, called by the root agent as a tool.
 #   3. A FUNCTION TOOL that writes. `savenote` emits a `note`, and that effect
@@ -37,7 +40,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: notes
-  version: 6
+  version: 7
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -46,9 +49,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: notes
   description: >-
-    A worked example of the agent loop: one agent that calls two functions
-    as tools and hands the hard part to a sub-agent, ending in a saved note.
-    It needs no network, no credentials and no other bundle.
+    A worked example of the agent loop: one agent calls two functions as tools,
+    hands the title to a sub-agent, and saves a note. Its agents need the
+    llm sample imported and one key filled in.
   installs:
     - samples.substrate.reamde.dev/notes/note
     - samples.substrate.reamde.dev/notes/stats
@@ -108,8 +111,6 @@ data:
     - name: characters
       type: float
       description: the character count
-  permissions:
-    writes: [samples.substrate.reamde.dev/notes/note]
   source: |
     def main(input, host):
         text = (input.get("args") or {}).get("text") or ""

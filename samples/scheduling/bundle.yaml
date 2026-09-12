@@ -19,7 +19,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: scheduling
-  version: 2
+  version: 3
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A SAMPLE bundle: traits only, imported from the registry. The `installs`
@@ -32,9 +32,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: scheduling
   description: >-
-    Two shared traits the repeating kinds bind: `recurring`, an RRULE stored
-    and never expanded, and `occurrencelog`, one occurrence marked done or
-    skipped.
+    Repeat rules, and done or skipped marks, shared by tasks and calendar
+    events so both spell them the same way. It adds no kinds of its own: import
+    it because tasks or calendar needs it.
   installs:
     - samples.substrate.reamde.dev/scheduling/recurring
     - samples.substrate.reamde.dev/scheduling/occurrencelog
