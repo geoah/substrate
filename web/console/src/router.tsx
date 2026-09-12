@@ -14,6 +14,8 @@ import { AccountPage } from "@/pages/account"
 import { ActorPage } from "@/pages/actor"
 import { AgentChatPage } from "@/pages/agent-chat"
 import { AgentsPage } from "@/pages/agents"
+import { AppPage, AppScreenPage, AppScreenRecordPage } from "@/pages/app"
+import { AppsPage } from "@/pages/apps"
 import { ChangelogPage } from "@/pages/changelog"
 import { BundleDetailPage } from "@/pages/bundle-detail"
 import { AuthorityPage, PackagePage } from "@/pages/authority"
@@ -27,6 +29,7 @@ import { RegisterPage } from "@/pages/register"
 import { RegistryPage } from "@/pages/registry"
 import { BundleSettingsPage, SettingsPage } from "@/pages/settings"
 import { TokensPage } from "@/pages/tokens"
+import { ViewPage, ViewRecordPage } from "@/pages/view"
 import { KindBrowsePage } from "@/pages/kind-browse"
 
 const rootRoute = createRootRoute()
@@ -199,6 +202,54 @@ export const accountRoute = createRoute({
   component: AccountPage,
 })
 
+// The apps routes own their chrome: `staticData.chrome` is what AppShell reads
+// to drop its sidebar and header under 768 px. A record segment is the
+// record's FULL path (`<kind>/<id>`) percent-encoded as one segment, because a
+// trait view spans kinds; a bare id is accepted when the view has one kind.
+const appChrome = { chrome: "app" } as const
+
+export const appsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/apps",
+  component: AppsPage,
+  staticData: appChrome,
+})
+
+export const appRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/apps/$id",
+  component: AppPage,
+  staticData: appChrome,
+})
+
+export const appScreenRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/apps/$id/$screen",
+  component: AppScreenPage,
+  staticData: appChrome,
+})
+
+export const appScreenRecordRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/apps/$id/$screen/$record",
+  component: AppScreenRecordPage,
+  staticData: appChrome,
+})
+
+export const viewRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/views/$id",
+  component: ViewPage,
+  staticData: appChrome,
+})
+
+export const viewRecordRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/views/$id/$record",
+  component: ViewRecordPage,
+  staticData: appChrome,
+})
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   registerRoute,
@@ -222,6 +273,12 @@ const routeTree = rootRoute.addChildren([
     actorRoute,
     tokensRoute,
     accountRoute,
+    appsRoute,
+    appRoute,
+    appScreenRoute,
+    appScreenRecordRoute,
+    viewRoute,
+    viewRecordRoute,
   ]),
 ])
 
@@ -236,5 +293,10 @@ export const router = createRouter({
 declare module "@tanstack/react-router" {
   interface Register {
     router: typeof router
+  }
+  interface StaticDataRouteOption {
+    /** `app`: the route draws its own chrome (components/apps/app-chrome.tsx)
+     * and the shell steps aside under 768 px. */
+    chrome?: "app"
   }
 }

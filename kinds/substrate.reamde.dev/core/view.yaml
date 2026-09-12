@@ -1,0 +1,301 @@
+# one way of looking at records: a kind or a trait, a layout from the closed
+# set the console ships, and the filter, order, grouping, visible properties
+# and actions as data. The record IS the view: apply admits it, the console
+# renders it, an app composes several by reference, and the one custom layout
+# carries its own document, rendered behind the opaque-origin guest and never
+# in the console's own realm.
+#
+# Nothing declarative here executes: `filter` and `orderBy` travel to the
+# engine as data, text is the server-rendered title, a verb is one of a closed
+# set. The only code is `source`, and it is written at owner tier alone.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/view
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One way of looking at records: a kind or a trait, a layout, and the filter,
+    order, grouping, visible properties and actions as data. The console renders
+    it, an app composes several by reference, and the custom layout carries
+    its own document, rendered behind the guest.
+  version: 2
+  names:
+    singular: view
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the view's heading
+    description:
+      type: string
+      description: what this view is for, one line
+    # A value is permanent once shipped: a live row makes its removal a
+    # narrowing, and decision 0066's remap cannot land on a value that is
+    # still admitted. A value enters this list in the commit whose renderer
+    # lands, never before.
+    layout:
+      type: enum
+      required: true
+      values:
+        - list
+        - board
+        - timeline
+        - contacts
+        - detail
+        - form
+        - custom
+      description: how the records are laid out; custom renders `source`
+    # Not mustExist, so a view may precede the package it renders and the
+    # console gates on presence instead of the write refusing.
+    kind:
+      type: reference
+      kind: substrate.reamde.dev/core/kind
+      description: the one kind this view reads; absent when `trait` names
+        the set
+    trait:
+      type: reference
+      kind: substrate.reamde.dev/core/trait
+      description: the trait whose implementors this view reads, across kinds
+    # The bundle's own floor (decision 0070), keyed by package identity. A
+    # sample's keys are rehomed with the copy, like every string in it.
+    requiresAtLeast:
+      type: int
+      keyed: true
+      description: the least version of a package this view renders against;
+        below it the console offers the upgrade instead of the view
+    # json for the reason `kind.properties` is: the filter grammar is the
+    # engine's (internal/substrate/query.go) and a Cond's value is any
+    # scalar. `$input.<name>` strings resolve before the request.
+    filter:
+      type: json
+      description: the records filter, verbatim
+    orderBy:
+      type: object
+      repeated: true
+      description: the sort keys, first wins; absent orders by the kind's
+        temporal point, else by title
+      fields:
+        property:
+          type: string
+          required: true
+          description: a declared property, at, endsAt, dueAt, title, createdAt
+            or updatedAt
+        desc:
+          type: bool
+          description: descending
+    groupBy:
+      type: string
+      description: the property rows group under; a board's columns are the
+        states its filter admits, a list sections by a state, enum or reference,
+        and by its temporal point as Overdue to Undated
+    show:
+      type: string
+      repeated: true
+      description: the properties shown after the title, in order; absent
+        shows the kind's column properties; a default-valued enum is hidden
+    # Runtime narrowing, never stored: a chip per value present in the loaded
+    # rows, ANDed with `filter` for the request. A state, an enum or a
+    # reference; anything else is a status problem.
+    facets:
+      type: string
+      repeated: true
+      description: the properties a person may narrow the rows by while looking,
+        offered as chips; a state, an enum or a reference
+    window:
+      type: object
+      description: a timeline's span around now
+      fields:
+        past:
+          type: duration
+          description: how far back
+        future:
+          type: duration
+          description: how far forward
+    first:
+      type: int
+      min: 1
+      max: 500
+      description: the page size; absent means 50; a list and a contacts view
+        load the next page on scroll, a board and a timeline stop here
+    empty:
+      type: string
+      description: what an empty view says
+    via:
+      type: string
+      description: the reference property that scopes this view to an opened
+        record; a create prefills it; without a parent the view renders unscoped
+    opens:
+      type: reference
+      kind: view
+      description: the view a row tap pushes with the row as its record; absent
+        opens the record sheet
+    related:
+      type: object
+      repeated: true
+      description: a detail's related views, each scoped through its own via
+      fields:
+        view:
+          type: reference
+          kind: view
+          required: true
+          description: the related view
+        heading:
+          type: string
+          description: the heading over it; absent uses the view's name
+    attach:
+      type: enum
+      repeated: true
+      values:
+        - launcher
+        - browse
+        - record
+        - home
+      description: where the console offers this view; launcher as its own
+        entry, browse on its kind's page, record as a card on a record page,
+        home on the overview
+    replaces:
+      type: bool
+      description: on the kind's page, stand in for the default table; the
+        lowest id wins when two say so
+    actions:
+      type: object
+      repeated: true
+      description: the closed verbs this view offers, in order
+      fields:
+        name:
+          type: string
+          required: true
+          description: the action's camel name
+        label:
+          type: string
+          description: the button text; absent humanizes the name
+        description:
+          type: string
+          description: what the action does, shown on the button's hover and
+            in the confirmation
+        icon:
+          type: string
+          description: a lucide icon name
+        verb:
+          type: enum
+          required: true
+          values:
+            - create
+            - transition
+            - patch
+            - delete
+            - call
+            - chat
+            - open
+            - link
+          description: what the action does
+        placement:
+          type: enum
+          values:
+            - primary
+            - header
+            - row
+          description: primary is the screen's one bottom button and a create's
+            default; row is every other verb's default; in a section or card
+            mount both primary and header are its trailing button
+        to:
+          type: string
+          description: a transition's target state
+        property:
+          type: string
+          description: the state property a transition moves; absent means
+            the kind's sole one
+        view:
+          type: reference
+          kind: view
+          description: the view an open pushes, with the row as its record
+        href:
+          type: string
+          description: the url-typed property of the row a link opens; a property
+            name, never a template
+        prompt:
+          type: string
+          repeated: true
+          description: the properties a create or patch asks for; the property
+            the displayTemplate reads first is always required
+        set:
+          type: string
+          keyed: true
+          description: property to value written without asking; a value may
+            be `$input.<name>` or `$input.<name>.<property>`
+        callable:
+          type: reference
+          kind: any
+          description: the function a call invokes or the agent a chat opens
+        message:
+          type: string
+          description: a chat's opening message, a template over the row
+        confirm:
+          type: bool
+          description: ask before running; delete always asks
+        when:
+          type: object
+          description: show the action only while one property matches; a
+            transition is also hidden while the machine does not admit it
+          fields:
+            property:
+              type: string
+              required: true
+              description: the property tested
+            in:
+              type: string
+              repeated: true
+              description: the values that match, coerced to the property's
+                datatype
+            exists:
+              type: bool
+              description: match on presence instead of value
+            not:
+              type: bool
+              description: invert the match
+    # Read only when layout is custom; a declarative view executes nothing
+    # and needs no grant. Enforced per call by the host bridge, and the
+    # pushed page is held to reads.kinds too, so the view's own kind must
+    # be listed there.
+    permissions:
+      type: object
+      description: what a custom layout's document may do through the bridge;
+        a grant left out is refused
+      fields:
+        reads:
+          type: object
+          description: what it may list, get and receive
+          fields:
+            kinds:
+              type: reference
+              kind: substrate.reamde.dev/core/kind
+              repeated: true
+              description: the kinds every read is held to, the view's own
+                included
+        writes:
+          type: reference
+          kind: substrate.reamde.dev/core/kind
+          repeated: true
+          description: the kinds it may put, patch and delete
+        call:
+          type: reference
+          kind: substrate.reamde.dev/core/function
+          repeated: true
+          description: the functions it may call
+        agents:
+          type: reference
+          kind: substrate.reamde.dev/core/agent
+          repeated: true
+          description: the agents it may chat with
+    # THE ONE ESCAPE HATCH: an HTML document of the MCP Apps resource type,
+    # never indexed, held to the same 256 KiB as function.source, and written
+    # only at owner tier. An agent's mutate is refused, a proposal lands only
+    # when the owner accepts it, and a bundle install writes below owner
+    # tier, so no shipped closure carries browser code.
+    source:
+      type: text
+      fts: false
+      writer: owner
+      description: a custom layout's HTML document, written by the owner alone

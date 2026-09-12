@@ -93,6 +93,16 @@
   --sidebar-ring: oklch(0.6 0.09 235);
 }
 
+/* Touch density: an app or view route under 768 px toggles this on the root
+   (components/apps/touch.ts). 16 px is what keeps iOS from zooming a focused
+   input, and the wider spacing is what makes a 44 px target; it sits on the
+   root because Tailwind's rem utilities resolve there and portaled sheets
+   must inherit it. The rest of the console keeps its 13.5 px. */
+html.touch {
+  font-size: 16px;
+  --spacing: 0.3rem;
+}
+
 .dark {
   --background: oklch(0.16 0.01 255);
   --foreground: oklch(0.9 0.008 250);
