@@ -49,6 +49,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -137,40 +138,63 @@ function KindLinks({ nav, className }: { nav: PackageNav; className: string }) {
   )
 }
 
-/** One package's kinds under its authority: the package's own word links to
- * its page, the kinds sit under it. */
-function PackageGroup({ nav }: { nav: PackageNav }) {
+/** One package's kinds, collapsible under its authority: the package's own
+ * word links to its page (the authority's kinds table, filtered to this
+ * package), the chevron alone opens and closes its kinds. Open by default, so
+ * the tree reads the same as before a reader touches it. */
+export function PackageGroup({ nav }: { nav: PackageNav }) {
   const params = useParams({ strict: false })
+  const label = nav.package || "local"
   return (
-    <>
-      <SidebarMenuSubItem>
-        <SidebarMenuSubButton
-          isActive={
-            params.authority === nav.authority &&
-            params.pkg === nav.package &&
-            !params.name
-          }
-          className="pl-9 text-sidebar-foreground/70"
-          render={
-            <Link
-              to="/data/$authority/$pkg"
-              params={{ authority: nav.authority, pkg: nav.package }}
-            />
-          }
-        >
-          <span className="truncate">{nav.package || "local"}</span>
-        </SidebarMenuSubButton>
-      </SidebarMenuSubItem>
-      <KindLinks nav={nav} className="pl-12" />
-    </>
+    <Collapsible
+      defaultOpen
+      className="group/package"
+      render={<SidebarMenuSubItem />}
+    >
+      <SidebarMenuSubButton
+        isActive={
+          params.authority === nav.authority &&
+          params.pkg === nav.package &&
+          !params.name
+        }
+        className="pr-8 pl-9 text-sidebar-foreground/70"
+        render={
+          <Link
+            to="/data/$authority/$pkg"
+            params={{ authority: nav.authority, pkg: nav.package }}
+          />
+        }
+      >
+        <PackageIcon />
+        <span className="truncate">{label}</span>
+      </SidebarMenuSubButton>
+      <CollapsibleTrigger
+        render={
+          <SidebarMenuAction
+            className="top-1.5 cursor-pointer"
+            aria-label={`Toggle the kinds in ${label}`}
+          />
+        }
+      >
+        <ChevronRightIcon className="transition-transform duration-200 group-data-open/package:rotate-90" />
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <SidebarMenuSub className={fullWidthSub}>
+          <KindLinks nav={nav} className="pl-12" />
+        </SidebarMenuSub>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
-/** One authority's packages, collapsible. In v1 authorities replace the old
- * group concept, and every kind carries an authority and a package (decisions
- * 0042 and 0047); the `"local"` fallback is defensive against a malformed row
- * with no authority. */
-function AuthorityGroup({ nav }: { nav: AuthorityNav }) {
+/** One authority's packages, collapsible. The label navigates to the
+ * authority's own kinds table and the chevron alone collapses the row, so
+ * reaching the page and folding the tree are two targets, not one. In v1
+ * authorities replace the old group concept, and every kind carries an
+ * authority and a package (decisions 0042 and 0047); the `"local"` fallback is
+ * defensive against a malformed row with no authority. */
+export function AuthorityGroup({ nav }: { nav: AuthorityNav }) {
+  const params = useParams({ strict: false })
   const label = nav.authority || "local"
   return (
     <Collapsible
@@ -178,14 +202,25 @@ function AuthorityGroup({ nav }: { nav: AuthorityNav }) {
       className="group/collapsible"
       render={<SidebarMenuItem />}
     >
-      <CollapsibleTrigger
+      <SidebarMenuButton
+        tooltip={label}
+        isActive={params.authority === nav.authority && !params.pkg}
         render={
-          <SidebarMenuButton tooltip={label} className="cursor-pointer" />
+          <Link to="/data/$authority" params={{ authority: nav.authority }} />
         }
       >
         <FileCode2Icon />
         <span className="truncate">{label}</span>
-        <ChevronRightIcon className="ml-auto transition-transform duration-200 group-data-open/collapsible:rotate-90" />
+      </SidebarMenuButton>
+      <CollapsibleTrigger
+        render={
+          <SidebarMenuAction
+            className="cursor-pointer"
+            aria-label={`Toggle the packages in ${label}`}
+          />
+        }
+      >
+        <ChevronRightIcon className="transition-transform duration-200 group-data-open/collapsible:rotate-90" />
       </CollapsibleTrigger>
       <CollapsibleContent>
         <SidebarMenuSub className={fullWidthSub}>
