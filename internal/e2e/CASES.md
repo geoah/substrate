@@ -18,7 +18,7 @@ against a real Postgres, and `internal/testenv` drives the published error
 codes over a real socket, so these cases are what only a live server, a live
 database and a real client show.
 
-Three preconditions gate individual cases and steps, and the `test:e2e` task
+Four preconditions gate individual cases and steps, and the `test:e2e` task
 sets what it can:
 
 - `totp`: the enforced door, `mise run dev:totp`, which every case that
@@ -29,6 +29,11 @@ sets what it can:
 - `dsn`: the operator hat, so `SUBSTRATE_E2E_DSN`, `SUBSTRATE_E2E_CTL` and the
   credential key those commands read. A step that needs it and does not have
   it records SKIPPED in the report instead of asserting.
+- `uv`: `uv` on PATH and a reachable package index, which BUN-07 needs because
+  a provider's body declares its dependencies in a PEP 723 block and the
+  runner resolves them with `uv sync --script` before the body runs. Neither
+  is arrangeable from here, so the case SKIPs with the reason rather than
+  reading an offline machine as a broken sandbox.
 
 An id is `<AREA>-<NN>`, where the area names the surface the case drives, and
 an id is permanent: a case that moves keeps it, so a six-month-old report

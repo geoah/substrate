@@ -2,9 +2,12 @@ package e2e
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/url"
+	"os/exec"
 	"strings"
+	"time"
 )
 
 // The vocabulary-upgrade, bundle-lifecycle and GraphQL cases (orders 400-499).
@@ -56,6 +59,12 @@ const (
 	xvSecretRecord    = "/api/v1/substrate.reamde.dev/core/secret"
 	xvSettingRecord   = "/api/v1/substrate.reamde.dev/core/setting"
 
+	// The provider whose PEP 723 block is the smallest (one pinned
+	// `requests`), so BUN-07 pays for the least resolve that still exercises
+	// the whole provisioning path.
+	xvGitHubBundle = "providers.substrate.reamde.dev/github"
+	xvGitHubSync   = "providers.substrate.reamde.dev/github/githubsync"
+
 	xvTemporalTrait = "substrate.reamde.dev/core/temporal"
 
 	xvKindCollection    = "/api/v1/substrate.reamde.dev/core/kind"
@@ -99,6 +108,12 @@ func init() {
 			"step; one record resolves it as the sole one, a second makes it ambiguous, a record named "+
 			"`default` resolves it again, and an explicit bind outranks both.",
 		xvCaseBundleInput)
+	registerCase(490, "BUN-07", "A provider's PEP 723 dependencies provision",
+		"Installing the github provider and calling its sync body runs `uv sync --script` for the "+
+			"dependencies the body's PEP 723 block declares, under the sandbox the runner wraps the "+
+			"provision in: the call reaches the body instead of failing in uv, which is what a deployment "+
+			"whose connect gate cannot be serviced could not do.",
+		xvCaseProviderProvisions)
 }
 
 // ---- the shapes these cases read ------------------------------------------
@@ -830,4 +845,59 @@ func xvCaseBundleInput(c *C) {
 		c.requiref(item.Code != "setting", "a `setting` step survived the fill: %+v", item)
 	}
 	c.stepf("writing the `apiKey` secret (which reads back `<redacted>`) clears the bundle's `setting` setup step; purging the bundle would take both records with it, and uninstalling leaves them")
+}
+
+// xvCaseProviderProvisions: BUN-07. Every sample package's bodies are pure
+// python, so the provider bundles are the only ones whose install-then-run
+// path goes through `uv sync --script`, and that path is what a deployment
+// whose connect gate cannot be serviced kills.
+//
+// What it proves is that the provisioning path yields an interpreter whose
+// environment imports the dependency the body declares: the body's first
+// lines `import requests`, so a 200 is that import succeeding. It does NOT
+// prove a cold resolve or that anything was fetched — the runner's uv cache is
+// shared across runs of this tree and is usually warm.
+//
+// The uv and index preconditions are checked on the test CLIENT because
+// `mise run test:e2e` runs the suite on the same host as the server, which is
+// the only place from here that says anything about what the server can do.
+func xvCaseProviderProvisions(c *C) {
+	if _, err := exec.LookPath("uv"); err != nil {
+		c.skipf("uv is not on PATH: a PEP 723 body cannot provision here")
+	}
+	if err := xvIndexReachable(); err != nil {
+		c.skipf("the python package index is unreachable (%v): a cold resolve needs the network", err)
+	}
+
+	st := c.xvInstall(xvGitHubBundle)
+	c.requiref(!st.Quarantined, "the installed provider is quarantined: %s", st.QuarantineReason)
+	c.stepf("installed the provider `%s`: %d kinds, %d functions", xvGitHubBundle, st.Kinds, st.Functions)
+
+	// No account is connected and none is needed: the body's queue is empty,
+	// so what this call spends is the provision and the body's imports. A cold
+	// resolve can outlast one exchange on a slow machine, which
+	// SUBSTRATE_E2E_TIMEOUT raises.
+	status, raw := c.do(http.MethodPost,
+		"/api/v1/substrate.reamde.dev/core/function/"+url.PathEscape(xvGitHubSync)+"/call",
+		map[string]any{"input": map[string]any{}}, nil)
+	body := strings.ToLower(string(raw))
+	for _, marker := range []string{"uv sync", "failed to fetch", "os error 13", "no solution found"} {
+		c.requiref(!strings.Contains(body, marker),
+			"calling %s failed while provisioning its dependencies (%q): the runner could not resolve the PEP 723 block. "+
+				"In a container that is the connect gate, which needs CAP_SYS_PTRACE and says so in the boot line. Answer %d: %s",
+			xvGitHubSync, marker, status, raw)
+	}
+	c.requiref(status == http.StatusOK, "calling %s answered %d: %s", xvGitHubSync, status, raw)
+	c.stepf("`%s` ran: the provisioned environment imports the dependency its PEP 723 block declares", xvGitHubSync)
+}
+
+// xvIndexReachable is the network precondition. A case that cannot reach an
+// index SKIPs with the reason rather than reading an offline machine as a
+// broken sandbox.
+func xvIndexReachable() error {
+	conn, err := net.DialTimeout("tcp", "pypi.org:443", 5*time.Second)
+	if err != nil {
+		return err
+	}
+	return conn.Close()
 }
