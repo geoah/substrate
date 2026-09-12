@@ -9,17 +9,17 @@
 # shape; a wizard is a sequence of interactions, and prose belongs in chat.
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: substrate.reamde.dev/core/llminteraction
+  id: substrate.reamde.dev/llm/interaction
 data:
   authority: substrate.reamde.dev
-  package: core
+  package: llm
   description: >-
     One batch of questions an agent asked the user, waiting in the thread
     it came from: answering (or dismissing) it is one reviewed transition,
     which reports back into the thread and resumes the agent.
   version: 11
   names:
-    singular: llminteraction
+    singular: interaction
   displayTemplate: "{state} #{localName}"
   indices:
     - properties:
@@ -30,7 +30,7 @@ data:
     # from the outside (engine admission holds this).
     thread:
       type: reference
-      kind: substrate.reamde.dev/core/llmthread
+      kind: substrate.reamde.dev/llm/thread
       required: true
       inverse: interactions
       inverseDescription: the questions this thread's agent asked

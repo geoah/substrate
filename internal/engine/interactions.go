@@ -1,6 +1,6 @@
 package engine
 
-// The llminteraction kind's own admission and guards, symmetric to the request
+// The llm/interaction kind's own admission and guards, symmetric to the request
 // kind's (admitRequestDiff, guardImmutableEnvelope): the generic object
 // machinery checks field SHAPE only, so everything an ask promises — unique
 // question ids, bounded batches, materialized yes/no options, answers only
@@ -203,7 +203,7 @@ func validateInteractionAnswers(storedQuestions, given any) error {
 	return nil
 }
 
-// dispatchAsk lands one llminteraction: the soft interaction. Gated by the
+// dispatchAsk lands one llm/interaction: the soft interaction. Gated by the
 // agent's emit naming the interaction kind (checked at load, held again
 // here); the questions ride to admission verbatim, where the batch contract
 // is enforced for every door at once; the thread is the loop's stamp.

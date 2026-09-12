@@ -179,7 +179,7 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 
 const crewPackage = "crew.test.dev/crew"
 
-// openAgentDataset provisions a repository, points a set of llmprovider rows at the fake
+// openAgentDataset provisions a repository, points a set of llm/provider rows at the fake
 // server (one model id per loop under test), and installs one authority carrying
 // a widget type, the annotate function tool, and every agent the tests
 // exercise.
@@ -201,7 +201,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 				"pricing": []any{map[string]any{"model": model, "inputPer1M": "1", "outputPer1M": "5"}},
 			},
 		}); err != nil {
-			t.Fatalf("put llmprovider row %s: %v", id, err)
+			t.Fatalf("put llm/provider row %s: %v", id, err)
 		}
 	}
 	agent := func(name string, data map[string]any) map[string]any {
@@ -798,7 +798,7 @@ func installGreeterBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 			Kind: typeProvider, ID: id,
 			Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-" + id},
 		}); err != nil {
-			t.Fatalf("put llmprovider row %s: %v", id, err)
+			t.Fatalf("put llm/provider row %s: %v", id, err)
 		}
 	}
 	greeter := vocabulary.AgentManifest(abPackage, "greeter", map[string]any{
@@ -1135,7 +1135,7 @@ func TestProviderRowCarriesItsOwnEndpointAndKey(t *testing.T) {
 		Kind: typeProvider, ID: "leaky",
 		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL},
 	}); err != nil {
-		t.Fatalf("put leaky llmprovider row: %v", err)
+		t.Fatalf("put leaky llm/provider row: %v", err)
 	}
 	if _, err := ds.resolveProvider(ctx, "leaky"); err == nil || !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("a row-defined baseURL resolved without a row-defined apiKey: %v", err)
@@ -1508,7 +1508,7 @@ func TestProposeDiffValidation(t *testing.T) {
 	}
 }
 
-// Nothing seeds an llmprovider. A repository holds none until its owner writes
+// Nothing seeds an llm/provider. A repository holds none until its owner writes
 // one, because a row with an openai wire, no endpoint and no key answers
 // nothing — it only postpones the failure to the first dispatch, wearing the
 // name `default` as if it were configured.
@@ -1524,7 +1524,7 @@ func TestFreshRepositoryHoldsNoProvider(t *testing.T) {
 		t.Fatalf("list providers: %v", err)
 	}
 	if len(page.Records) != 0 {
-		t.Fatalf("a fresh repository holds %d llmprovider rows, want none", len(page.Records))
+		t.Fatalf("a fresh repository holds %d llm/provider rows, want none", len(page.Records))
 	}
 
 	// And an agent naming one it does not have says so, in terms an owner can

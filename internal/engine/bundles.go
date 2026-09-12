@@ -995,7 +995,7 @@ func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle) (subs
 	}
 	st.Setup = append(st.Setup, settingItems...)
 
-	// The agents' providers live OUTSIDE the bundle (core llmprovider rows),
+	// The agents' providers live OUTSIDE the bundle (llm/provider rows),
 	// and are still half of "will this bundle run": dry-run the same
 	// resolution dispatch performs and surface its refusal verbatim.
 	probed := map[string]bool{}

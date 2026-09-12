@@ -8,7 +8,7 @@
 #   substratectl apply -f bundle.yaml
 #   substratectl function call stats --input '{"text": "hello world"}'
 #
-# The AGENTS need one thing more: an `llmprovider` row at the id they name
+# The AGENTS need one thing more: an `llm/provider` row at the id they name
 # (`default`), which is what the llm sample ships. Import that one too and
 # fill in its key, or the first agent run refuses at dispatch saying which row
 # it wanted. See docs/bundles-catalog.md.

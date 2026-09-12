@@ -11,9 +11,9 @@
  *
  * The fan-in used to show the raw property name of every inbound row. That
  * reads BACKWARDS: the name is the pointer as the OTHER record spells it, so
- * standing on a thread the fan-in said "thread · llmmessage", naming this
+ * standing on a thread the fan-in said "thread · llm/message", naming this
  * record instead of what points at it. A group is headed by the declaration's
- * `inverse` — `messages · llmmessage` — and falls back to
+ * `inverse` — `messages · llm/message` — and falls back to
  * `<property> of <kind>`, which is at least unambiguous, where nobody declared
  * one.
  *

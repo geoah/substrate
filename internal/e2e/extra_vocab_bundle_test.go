@@ -698,7 +698,7 @@ func xvCaseTraitEndpoints(c *C) {
 
 // xvInput returns one named input's resolution and the setup steps standing
 // against it, both looked up by name: a status may carry setup items about
-// other things entirely (an agent's missing llmprovider row), and those are
+// other things entirely (an agent's missing llm/provider row), and those are
 // not this input's business.
 func xvInput(st xvBundleStatus, name string) (xvInputStatus, []xvSetupItem) {
 	var found xvInputStatus

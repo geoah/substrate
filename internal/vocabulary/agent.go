@@ -70,10 +70,16 @@ var AgentParamKeys = []string{AgentParamMaxTokens, AgentParamTemperature}
 const KindRecordPatchRequest = "substrate.reamde.dev/core/recordpatchrequest"
 
 // KindLLMThread is the thread kind a `notifies:` transition reports into.
-const KindLLMThread = "substrate.reamde.dev/core/llmthread"
+const KindLLMThread = "substrate.reamde.dev/llm/thread"
+
+// kindLLMThreadPreMove is where that kind lived before record 0077. The boot
+// upgrade never prunes, so a repository seeded by an older binary still
+// declares it and still declares the kinds pinned at it; the `notifies:` check
+// accepts it so this binary can finalize a closure it did not write.
+const kindLLMThreadPreMove = "substrate.reamde.dev/core/llmthread"
 
 // KindLLMInteraction is the batch-of-questions kind the `ask` built-in emits.
-const KindLLMInteraction = "substrate.reamde.dev/core/llminteraction"
+const KindLLMInteraction = "substrate.reamde.dev/llm/interaction"
 
 // KindRecordPatchPolicy is the owner's door rules for agent writes.
 const KindRecordPatchPolicy = "substrate.reamde.dev/core/recordpatchpolicy"
@@ -110,7 +116,7 @@ type Agent struct {
 	Description string
 	// Prompt is the system prompt; the row is the prompt store.
 	Prompt string
-	// Provider is an llmprovider data-record id (`default` or a custom row):
+	// Provider is an llm/provider data-record id (`default` or a custom row):
 	// WHERE the loop buys completions. Data rows are runtime state, so the
 	// reference resolves at dispatch, never at load.
 	Provider string
@@ -311,11 +317,11 @@ func (l *loader) parseAgent(d Document) *Agent {
 		l.errf("%s: data.prompt is %d bytes — the cap is %d", where, len(a.Prompt), AgentPromptMaxBytes)
 		return nil
 	}
-	// `provider` is a REFERENCE at llmprovider: a manifest authors the bare
+	// `provider` is a REFERENCE at llm/provider: a manifest authors the bare
 	// record id and the row stores the full path, and the loop resolves the id.
-	a.Provider = ReferentID(d.Data["provider"], CoreKind("llmprovider"))
+	a.Provider = ReferentID(d.Data["provider"], LLMKind("provider"))
 	if a.Provider == "" {
-		l.errf("%s: data.provider is required — an llmprovider record id (default, or a custom row)", where)
+		l.errf("%s: data.provider is required — an llm/provider record id (default, or a custom row)", where)
 		return nil
 	}
 	if !ValidID(a.Provider) {
@@ -439,7 +445,7 @@ func ParseAgentParams(params map[string]any) (AgentParams, error) {
 			if !ok {
 				return AgentParams{}, fmt.Errorf("%s: %v — a number", k, params[k])
 			}
-			// The kind declares min 0, max 2 (agent.yaml, llmprovider.yaml
+			// The kind declares min 0, max 2 (agent.yaml, llm/provider.yaml
 			// defaults), and min/max never reach the upgrade narrowing check, so
 			// a value the loader waved through would project a record the kind
 			// refuses. 2 is the widest the wires accept (OpenAI and Azure 0..2,

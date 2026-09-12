@@ -17,7 +17,7 @@ Three ground rules:
   scoring) available to the agent as function tools rather than replaced by
   it.
 - **The substrate is never mocked; the model always is.** Agent stories run
-  against a scripted OpenAI-wire stub the test hosts (an `llmprovider`
+  against a scripted OpenAI-wire stub the test hosts (an `llm/provider`
   record points at its loopback URL; the dev server needs
   `SUBSTRATE_EGRESS_ALLOW=127.0.0.0/8,::1/128`, which the `test:e2e` task
   sets). Every "LLM decision" is scripted, so every assertion is exact.

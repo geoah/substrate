@@ -195,11 +195,11 @@ urls() {
 }
 
 # The server takes NO LLM configuration. Completions and embeddings are bought
-# through a repository's own `llmprovider` records, so a dev substrate that
+# through a repository's own `llm/provider` records, so a dev substrate that
 # wants either writes one after registering:
 #
 #   bin/substratectl apply -f - <<'YAML'
-#   kind: substrate.reamde.dev/core/llmprovider
+#   kind: substrate.reamde.dev/llm/provider
 #   metadata:
 #     id: vectors
 #   data:
@@ -232,7 +232,7 @@ server_start() {
 	[ -d "$WEB_DIR" ] && web=("WEB_DIR=${WEB_DIR}")
 	# Egress stays default-closed; the variable passes through only when the
 	# caller set one. The e2e suite needs loopback open, because its
-	# llmprovider rows point at a stub the test process hosts.
+	# llm/provider rows point at a stub the test process hosts.
 	local egress=()
 	[ -n "${SUBSTRATE_EGRESS_ALLOW:-}" ] && egress=("SUBSTRATE_EGRESS_ALLOW=${SUBSTRATE_EGRESS_ALLOW}")
 	nohup env \

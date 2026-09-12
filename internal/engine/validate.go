@@ -245,7 +245,7 @@ func coerceObject(p *vocabulary.Property, v any) (any, error) {
 // referent KIND must be known, and the `kind:` pin must match — is taken inside
 // the transaction (validateReferences). Here we only reach a path:
 //
-//   - a full path ("substrate.reamde.dev/core/llmprovider/claude"), left alone;
+//   - a full path ("substrate.reamde.dev/llm/provider/claude"), left alone;
 //   - the AUTHORED SHORT FORM, a bare record id, ONLY when `kind:` pins a
 //     concrete kind, which then supplies what the value omits, mirroring a
 //     which supplies what the value omits.

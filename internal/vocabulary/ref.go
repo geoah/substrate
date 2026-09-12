@@ -206,6 +206,10 @@ func ReferentIDs(values []any, pin string) []string {
 // kinds all live there ("substrate.reamde.dev/core/kind").
 func CoreKind(name string) string { return PackageCore + "/" + name }
 
+// LLMKind renders an llm-package kind reference: the agent runtime's four data
+// kinds ("substrate.reamde.dev/llm/provider"), record 0077.
+func LLMKind(name string) string { return PackageLLM + "/" + name }
+
 // GraphQLName is the GraphQL object name a kind resolves to, and the ONE
 // place the rule lives (record 0058):
 //

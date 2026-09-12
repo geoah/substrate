@@ -72,7 +72,7 @@ vi.mock("@/lib/code", async (importOriginal) => {
 import { YamlView } from "./yaml-view"
 import type { KeyDocs } from "@/lib/yaml-annotations"
 
-const SOURCE = `kind: substrate.reamde.dev/core/llmprovider
+const SOURCE = `kind: substrate.reamde.dev/llm/provider
 metadata:
   id: default
 data:
@@ -94,8 +94,8 @@ const DOCS: KeyDocs = {
 const TARGETS = {
   ids: {},
   kinds: {
-    "substrate.reamde.dev/core/llmprovider":
-      "/data/substrate.reamde.dev/core/llmproviders",
+    "substrate.reamde.dev/llm/provider":
+      "/data/substrate.reamde.dev/llm/providers",
   },
 }
 
@@ -179,8 +179,8 @@ describe("YamlView", () => {
     })
     const link = container.querySelector("a")
     expect(link?.getAttribute("href")).toBe(
-      "/data/substrate.reamde.dev/core/llmproviders"
+      "/data/substrate.reamde.dev/llm/providers"
     )
-    expect(link?.textContent).toBe("substrate.reamde.dev/core/llmprovider")
+    expect(link?.textContent).toBe("substrate.reamde.dev/llm/provider")
   })
 })

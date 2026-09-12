@@ -5,7 +5,7 @@ conformance example. It pulls every link out of a chat message, stands in for
 a fetch of each one, has an agent say what sort of page it is, and proposes
 what to save and a weekly digest for you to accept, composed entirely from
 `bundle`, `kind`,
-`trait`, `function`, `trigger`, `agent` and `llmprovider`. If this chain ever
+`trait`, `function`, `trigger`, `agent` and `llm/provider`. If this chain ever
 needed a workflow primitive, the core would still be too specific; it needs
 none.
 

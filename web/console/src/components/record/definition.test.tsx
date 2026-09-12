@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The kind Definition view (owner ask: "I go to the llmproviders kind … I
+/** The kind Definition view (owner ask: "I go to the llm/providers kind … I
  * don't have a tab to see its definition — I want to see the kind YAML"). It must show
  * the declaration as YAML AND as a readable table — name, type, description,
  * required — and it must do both off the registry it was handed, with no
@@ -35,9 +35,9 @@ vi.mock("@tanstack/react-router", () => ({
 import { KindDefinition } from "./definition"
 import type { KindInfo } from "@/lib/api/types"
 
-const llmprovider: KindInfo = {
-  identity: "substrate.reamde.dev/core/llmprovider",
-  name: "llmprovider",
+const providerKind: KindInfo = {
+  identity: "substrate.reamde.dev/llm/provider",
+  name: "provider",
   authority: "substrate.reamde.dev",
   package: "core",
   version: 1,
@@ -46,7 +46,7 @@ const llmprovider: KindInfo = {
   definition: {
     authority: "substrate.reamde.dev",
     package: "core",
-    names: { singular: "llmprovider" },
+    names: { singular: "provider" },
     displayTemplate: "{name} ({wire})",
     properties: {
       wire: {
@@ -83,13 +83,13 @@ const account: KindInfo = {
   definition: {},
 }
 
-function renderDefinition(kind: KindInfo = llmprovider) {
+function renderDefinition(kind: KindInfo = providerKind) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   return render(
     <QueryClientProvider client={client}>
-      <KindDefinition kind={kind} kinds={[llmprovider, account]} />
+      <KindDefinition kind={kind} kinds={[providerKind, account]} />
     </QueryClientProvider>
   )
 }
@@ -101,7 +101,7 @@ describe("KindDefinition", () => {
     const { container } = renderDefinition()
     const yaml = container.querySelector("pre")!.textContent ?? ""
     expect(yaml).toContain("kind: substrate.reamde.dev/core/kind")
-    expect(yaml).toContain("id: substrate.reamde.dev/core/llmprovider")
+    expect(yaml).toContain("id: substrate.reamde.dev/llm/provider")
     expect(yaml).toContain("displayTemplate: ")
     expect(yaml).toContain(
       "description: the wire protocol this endpoint speaks"
@@ -162,7 +162,7 @@ describe("KindDefinition", () => {
 
   it("says so plainly when the registry stored no declaration", () => {
     const { container } = renderDefinition({
-      ...llmprovider,
+      ...providerKind,
       definition: {},
     })
     expect(container.textContent).toContain("No stored declaration")

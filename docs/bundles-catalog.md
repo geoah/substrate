@@ -109,7 +109,7 @@ sync token gives it full-plus-incremental with no window.
 ## LLM (sample)
 
 Package `samples.substrate.reamde.dev/llm`. Import this bundle first if
-you want to run an agent at all. A fresh substrate seeds no `llmprovider` row,
+you want to run an agent at all. A fresh substrate seeds no `llm/provider` row,
 so this bundle ships the two an agent can name, correctly shaped for their
 wires and deliberately keyless, plus a `scratchpad` kind to practise on and
 six agents. The Anthropic row's id is `default`, which is the row every
@@ -157,7 +157,7 @@ which writes the one kind the bundle declares — `note`. That write lands only
 because the kind is in BOTH the function's writes and the calling agent's,
 which is the capability envelope in one closure.
 
-Both agents name `provider: default`, so running them wants an `llmprovider`
+Both agents name `provider: default`, so running them wants an `llm/provider`
 row at that id — [nothing seeds one](agents.md#providers), and the LLM example
 above is what ships it. Import that bundle too and key its `default` row.
 Calling an agent is an API call, not a CLI verb:
@@ -168,7 +168,7 @@ curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/noteke
   -d '{"input": {"text": "id: my-note\n\nSomething worth keeping."}}'
 ```
 
-One run leaves TWO `llmthread` rows, the root agent's and the sub-agent's own,
+One run leaves TWO `llm/thread` rows, the root agent's and the sub-agent's own,
 each with its own turn and token tallies; cost rolls up onto the root. These
 manifests name models the way Anthropic's own wire does (`claude-sonnet-5`,
 `claude-haiku-4-5`), which is what the shipped `default` row speaks; point that

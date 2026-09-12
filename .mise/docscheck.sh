@@ -269,7 +269,7 @@ grep_urls() {
 # `<authority>/<package>/<kind>`. Matching it straight after the authority
 # would now fire on every package whose name is a plural word (`tasks`,
 # `people`, `notes`), which is what a package is called.
-shipped_plurals='accounts|actors|agents|authorities|blobs|bundles|calendarevents|calendars|configs|contacts|conversationmessages|conversations|credentials|databases|emailaddresses|emailmessages|emailthreads|events|functions|issues|kinds|llminteractions|llmmessages|llmproviders|llmthreads|messages|notes|organizations|pages|people|projects|propertytypes|pullrequests|recordmappings|recordmergerequests|recordmerges|recordpatchpolicies|recordpatchrequests|recordsplits|recoveries|recoverykeys|repositories|rooms|runs|scratchpads|sleeps|tasklogs|tasks|teams|threads|tokens|traits|transcripts|triggers|users|webdocuments|workouts'
+shipped_plurals='accounts|actors|agents|authorities|blobs|bundles|calendarevents|calendars|configs|contacts|conversationmessages|conversations|credentials|databases|emailaddresses|emailmessages|emailthreads|events|functions|interactions|issues|kinds|llminteractions|llmmessages|llmproviders|llmthreads|messages|notes|organizations|pages|people|projects|propertytypes|providers|pullrequests|recordmappings|recordmergerequests|recordmerges|recordpatchpolicies|recordpatchrequests|recordsplits|recoveries|recoverykeys|repositories|rooms|runs|scratchpads|sleeps|tasklogs|tasks|teams|threads|tokens|traits|transcripts|triggers|users|webdocuments|workouts'
 if grep_urls -rnE "[a-z0-9-]+(\.[a-z0-9-]+)*\.reamde\.dev/[a-z][a-z0-9]*/(${shipped_plurals})\b"; then
   flag "a documented collection is addressed by its plural; the segment is the kind's name (decision 0033)"
 fi

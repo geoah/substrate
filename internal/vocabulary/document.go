@@ -21,9 +21,16 @@ import (
 // A repository may never claim an authority under the publisher's
 // (engine.validRepositoryAuthority), so nothing a user declares can be
 // mistaken for shipped vocabulary.
+//
+// PackageLLM is the second package the binary seeds (record 0077): the agent
+// loop's own data, out of core so core is not everything. It is seeded, so
+// nothing keys on its NAME — the seed, the boot upgrade, the
+// declaration-write refusal and the GraphQL bare singular all read
+// `source: builtin`.
 const (
 	AuthorityPublisher = "substrate.reamde.dev"
 	PackageCore        = AuthorityPublisher + "/core"
+	PackageLLM         = AuthorityPublisher + "/llm"
 )
 
 // The manifest document kinds — the local names under PackageCore. The

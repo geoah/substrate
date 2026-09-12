@@ -102,7 +102,7 @@ func TestCatalogDetailEnumeratesTheClosure(t *testing.T) {
 
 // A bundle's DATA records are half of what installing it does, and the llm
 // example is the case that proves it: its closure is agents, and the two
-// keyless llmprovider rows it writes are the things the reader is then told
+// keyless llm/provider rows it writes are the things the reader is then told
 // to go and key. A preview that named only the declarations showed that
 // bundle as "six agents and nothing else", which is what it looked like on
 // the Registry page.
@@ -119,7 +119,7 @@ func TestCatalogPreviewsTheRecordsAnInstallWrites(t *testing.T) {
 	want := map[string]bool{"default": true, "openai": true}
 	got := map[string]bool{}
 	for _, r := range b.Closure.Records {
-		if r.Kind != "substrate.reamde.dev/core/llmprovider" {
+		if r.Kind != "substrate.reamde.dev/llm/provider" {
 			t.Errorf("unexpected shipped record %+v", r)
 			continue
 		}

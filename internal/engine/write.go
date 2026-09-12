@@ -87,7 +87,7 @@ type effectCeiling struct {
 	emit []string
 	// changes, when set, collects the committed changelog entries of every
 	// transaction the ceiling stamps — the agent mutate tool's per-dispatch
-	// record of what it wrote, stamped onto the tool's llmmessage row.
+	// record of what it wrote, stamped onto the tool's llm/message row.
 	changes *[]changeEntry
 	// policyDecision marks the engine's own judge-driven decision on a
 	// policy-gated request (judge.go decideAsPolicy): the one bundle-tier
@@ -1031,7 +1031,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		}
 	}
 
-	// An llmprovider row that names an embedModel is where this repository
+	// An llm/provider row that names an embedModel is where this repository
 	// buys its vectors, and the rules about it are held HERE, at the write:
 	// only the openai wire has an embeddings endpoint, only a 1536-wide model
 	// fits the column (decision record 0026), and only one row per repository
@@ -1237,7 +1237,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		}
 	}
 	// A resolved record reports back to the thread its marker names: a
-	// `system` llmmessage carrying the kind's envelope and the entries this
+	// `system` llm/message carrying the kind's envelope and the entries this
 	// resolution wrote (the record's own patch, and whatever the
 	// transition's onEnter applied), and — after commit — the thread resumes
 	// so the agent hears it. Ordered after applyEditDiff, so an accept that

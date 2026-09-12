@@ -24,7 +24,7 @@ func TestVocabularyDialectGate(t *testing.T) {
 	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
 		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir(engine.CoreKindsDir))
+			engine.WithKindsDir(engine.SeedKindsDir))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -160,7 +160,7 @@ func assertDefinitionBlobRefusesTheOpen(t *testing.T, declKind string, blob any)
 	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
 		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir(engine.CoreKindsDir))
+			engine.WithKindsDir(engine.SeedKindsDir))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -234,7 +234,7 @@ func TestStoreRefusesANullDefinitionAtTheRow(t *testing.T) {
 	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
 		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir(engine.CoreKindsDir))
+			engine.WithKindsDir(engine.SeedKindsDir))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -288,7 +288,7 @@ func TestStoreRefusesADeletedGrantSpelling(t *testing.T) {
 	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
 		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir(engine.CoreKindsDir))
+			engine.WithKindsDir(engine.SeedKindsDir))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}

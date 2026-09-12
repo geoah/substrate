@@ -1,12 +1,12 @@
 package substrate
 
 // The agent loop's wire shapes: what the call API returns
-// and what the chat stream carries. Conversation state itself is llmthread +
-// llmmessage RECORDS in substrate.reamde.dev/core — these types are only the live
+// and what the chat stream carries. Conversation state itself is llm/thread +
+// llm/message RECORDS in substrate.reamde.dev/llm — these types are only the live
 // transport around one invocation.
 //
 // ALPHA (StabilityAlpha, stability.go). The agent kind, the agent-loop
-// vocabulary (llmprovider/llmthread/llmmessage) and the /agents chat+call wire
+// vocabulary (llm/provider/llm/thread/llm/message) and the /agents chat+call wire
 // may change or be superseded with no notice at all. That is a weaker promise
 // than the rest of this package makes, and the rest is not frozen either: no
 // surface is stable yet, so every other feature reports beta and announces its
@@ -15,7 +15,7 @@ package substrate
 // first thing that would be dropped.
 
 // AgentStability is the declared stability of the agent kind, its
-// llmprovider/llmthread/llmmessage vocabulary and the /agents wire: "alpha".
+// llm/provider/llm/thread/llm/message vocabulary and the /agents wire: "alpha".
 // It is the cheap machine-visible marker the discovery/features surface
 // reads to mark agents alpha; StabilityAlpha (stability.go) is the value it
 // carries.
@@ -80,7 +80,7 @@ type AgentEvent struct {
 	// Tool/Args/OK shape the tool lifecycle events, and ID is the tool call
 	// they belong to: a turn may dispatch the same tool twice, so the NAME
 	// cannot pair a started event with its finished one — only the id can.
-	// It is the same id the `llmmessage` transcript keys its tool rows by
+	// It is the same id the `llm/message` transcript keys its tool rows by
 	// (`toolCallId`), so a live card and its replayed row are the same card.
 	ID   string `json:"id,omitempty"`
 	Tool string `json:"tool,omitempty"`

@@ -88,7 +88,7 @@ func TestImportQueuesEveryEmbeddableProperty(t *testing.T) {
 	}
 }
 
-// With no llmprovider row the import queues the properties all the same, and
+// With no llm/provider row the import queues the properties all the same, and
 // they stay pending: the drain idles over them, semantic search returns the
 // error naming the missing row, and the first row that resolves buys them.
 func TestImportQueuesEmbedsWithoutAProvider(t *testing.T) {
@@ -148,7 +148,7 @@ func TestAResumedImportQueuesEmbeds(t *testing.T) {
 	dsn2 := engine.MigratedDSN(t)
 	errKilled := errors.New("the process died here")
 	_, err := engine.OpenForTest(t, ctx, dsn2,
-		engine.WithKindsDir(engine.CoreKindsDir),
+		engine.WithKindsDir(engine.SeedKindsDir),
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithTestImportFault(0, func(stage string) error {
@@ -295,7 +295,7 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 	}
 }
 
-// The directory re-points the repository's llmprovider row at another model
+// The directory re-points the repository's llm/provider row at another model
 // while every blurb stays the same: the older database's vectors carry the
 // old pair, so the text hash alone would call them current, and semantic
 // search would refuse naming `substratectl repository reembed` until an

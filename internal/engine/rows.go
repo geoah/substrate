@@ -271,7 +271,7 @@ func nonNilStrings(ss []string) []string {
 const changelogLockKey = "changelog"
 
 // changeEntry is one appended changelog row's ADDRESS: the seq addresses the
-// delta, kind and id address the record it moved. It is what an llmmessage's
+// delta, kind and id address the record it moved. It is what an llm/message's
 // `changes` property stores per entry, so it carries no payload.
 type changeEntry struct {
 	seq  int64
@@ -280,8 +280,8 @@ type changeEntry struct {
 	id   string
 }
 
-// changeProps renders entries as the llmmessage `changes` property stores
-// them (kinds/substrate.reamde.dev/core/llmmessage.yaml).
+// changeProps renders entries as the llm/message `changes` property stores
+// them (kinds/substrate.reamde.dev/llm/message.yaml).
 func changeProps(entries []changeEntry) []any {
 	out := make([]any, 0, len(entries))
 	for _, e := range entries {

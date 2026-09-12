@@ -81,7 +81,7 @@ func TestLiveAgentChainAcrossWires(t *testing.T) {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: typeProvider, ID: p.id, Properties: p.props,
 		}); err != nil {
-			t.Fatalf("put llmprovider %s: %v", p.id, err)
+			t.Fatalf("put llm/provider %s: %v", p.id, err)
 		}
 	}
 

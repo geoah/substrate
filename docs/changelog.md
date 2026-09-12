@@ -142,7 +142,7 @@ which is what lets the `recordId` scope return the entry to either record
 
 Each column answers a different question.
 
-- **The changelog says what landed.** `llmmessage.changes.op`, the ops an agent
+- **The changelog says what landed.** `llm/message.changes.op`, the ops an agent
   turn's dispatch wrote, is this column verbatim except `gc`, which is the
   collector's own pass and not any dispatch's write.
 - **A policy selector says what the agent called**: the verb behind the write,

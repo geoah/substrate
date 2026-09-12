@@ -102,7 +102,13 @@ import {
 } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { repositoryQueryOptions } from "@/lib/api/repository"
-import { CORE_AUTHORITY, CORE_PACKAGE, CORE_PACKAGE_NAME } from "@/lib/api/http"
+import {
+  CORE_AUTHORITY,
+  CORE_PACKAGE,
+  CORE_PACKAGE_NAME,
+  LLM_PACKAGE,
+  LLM_PACKAGE_NAME,
+} from "@/lib/api/http"
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import {
   accountKindOf,
@@ -563,21 +569,21 @@ function Fact({
 }
 
 /** One setup item that is NOT an input's own resolution problem: an
- * incomplete OAuth client record ("oauth-client") or an agent's llmprovider
+ * incomplete OAuth client record ("oauth-client") or an agent's llm/provider
  * row absent or keyless ("provider"). A warning row in the server's own words;
- * a "provider" item links to the named llmprovider record. */
+ * a "provider" item links to the named llm/provider record. */
 function SetupItemRow({ item, types }: { item: SetupItem; types: KindInfo[] }) {
-  // "provider" always means core's llmprovider kind; any other coded item
+  // "provider" always means the llm package's own provider kind; any other coded item
   // resolves its named kind through the registry for the record route.
   const kind =
     item.code === "provider"
-      ? kindByIdentity(types, `${CORE_PACKAGE}/llmprovider`)
+      ? kindByIdentity(types, `${LLM_PACKAGE}/provider`)
       : item.kind
         ? kindByIdentity(types, item.kind)
         : undefined
   const authority = item.code === "provider" ? CORE_AUTHORITY : kind?.authority
-  const pkg = item.code === "provider" ? CORE_PACKAGE_NAME : kind?.package
-  const name = item.code === "provider" ? "llmprovider" : kind?.name
+  const pkg = item.code === "provider" ? LLM_PACKAGE_NAME : kind?.package
+  const name = item.code === "provider" ? "provider" : kind?.name
   return (
     <div className="flex items-center justify-between gap-3 rounded-md border border-warning/40 px-4 py-2.5">
       <p className="flex min-w-0 items-center gap-2 text-xs text-warning">

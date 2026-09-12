@@ -165,9 +165,14 @@ bin/substratectl --dsn "$DATABASE_URL" repository rebuild <repository>  # replay
 bin/substratectl --dsn "$DATABASE_URL" user reset <repository>   # needs SUBSTRATE_CREDENTIAL_KEY
 ```
 
-**Registration seeds the `core` package and nothing else.** `tasks` above is a
+**Registration seeds `core` and `llm` and nothing else.** The agent runtime's
+four data kinds are the second seeded package, `substrate.reamde.dev/llm`
+(`provider`, `thread`, `message`, `interaction`), out of core so core is not
+everything ([0077](docs/decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md));
+the `agent` kind stays core's, because a manifest document is a record of a
+core kind whatever package it describes. `tasks` above is a
 SAMPLE package the repository imports, so a walkthrough that reaches for any
-non-core collection takes one first: `bin/substratectl import
+collection outside the seed takes one first: `bin/substratectl import
 samples.substrate.reamde.dev/tasks`, the console's Registry page, or `POST
 /api/v1/catalog/{id}/import` (the id is the package, so its slash is
 percent-encoded: `samples.substrate.reamde.dev%2Ftasks`), which are three doors

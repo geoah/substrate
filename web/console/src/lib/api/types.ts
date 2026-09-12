@@ -799,8 +799,8 @@ export interface InputStatus {
 
 /** The stable setup-item reasons: missing/ambiguous/dangling are an input's
  * own resolution problems; oauth-client is a resolved client record without
- * clientId/clientSecret; provider is an agent's llmprovider row absent or
- * keyless (kind substrate.reamde.dev/core/llmprovider); setting is a required
+ * clientId/clientSecret; provider is an agent's llm/provider row absent or
+ * keyless (kind substrate.reamde.dev/llm/provider); setting is a required
  * `setting` or `secret` record of the bundle's whose value is empty (decision
  * record 0076). */
 export type SetupCode =

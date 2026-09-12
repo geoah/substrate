@@ -621,12 +621,12 @@ const notOnTheWire: Record<string, string> = {
   AuthorityNav: "the sidebar's grouping of KindInfo rows",
   KindNav: "the sidebar's grouping of KindInfo rows",
   // transcript.ts
-  ChangeStamp: "a view the console folds from llmmessage records",
-  ToolCallView: "a view the console folds from llmmessage records",
-  TurnView: "a view the console folds from llmmessage records",
-  DecisionNotice: "a view the console folds from llmmessage records",
-  InteractionNotice: "a view the console folds from llmmessage records",
-  DeliveryNotice: "a view the console folds from llmmessage records",
+  ChangeStamp: "a view the console folds from llm/message records",
+  ToolCallView: "a view the console folds from llm/message records",
+  TurnView: "a view the console folds from llm/message records",
+  DecisionNotice: "a view the console folds from llm/message records",
+  InteractionNotice: "a view the console folds from llm/message records",
+  DeliveryNotice: "a view the console folds from llm/message records",
   // actors.ts
   ActorMirrors: "client-side actor resolution state",
   ResolvedActor: "client-side actor resolution state",

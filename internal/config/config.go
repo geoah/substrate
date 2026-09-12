@@ -68,7 +68,7 @@ type Config struct {
 	ConsoleURL string `envconfig:"SUBSTRATE_CONSOLE_URL" default:""`
 
 	// There is NO LLM configuration here. Completions and embeddings alike are
-	// bought through a repository's own llmprovider records, which carry the
+	// bought through a repository's own llm/provider records, which carry the
 	// wire, the endpoint, the key and (for embeddings) the model, so the
 	// process holds no bearer that could reach a repository-chosen endpoint.
 }

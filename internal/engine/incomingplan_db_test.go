@@ -32,7 +32,7 @@ func planDataset(t *testing.T) *dataset {
 	dsn := MigratedDSN(t)
 	svc, err := OpenForTest(t, ctx, dsn,
 		WithDataRoot(t.TempDir()),
-		WithKindsDir(CoreKindsDir),
+		WithKindsDir(SeedKindsDir),
 		WithCredentialKey(TestCredentialKey))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)

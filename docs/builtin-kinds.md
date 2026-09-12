@@ -1,8 +1,8 @@
 # Built-in kinds
 
-This page maps the vocabulary this binary ships, package by package: the
-`substrate.reamde.dev/core` package a repository is seeded with, and the
-sample packages it can import. A kind is named `<authority>/<package>/<name>`;
+This page maps the vocabulary this binary ships, package by package: the two
+packages a repository is seeded with, `substrate.reamde.dev/core` and
+`substrate.reamde.dev/llm`, and the sample packages it can import. A kind is named `<authority>/<package>/<name>`;
 the tables give the name, and each heading gives the package as the tree
 spells it, under the placeholder authority an import rewrites. Which door a
 package takes, what an import rewrites and how an upgrade is offered are in
@@ -117,20 +117,29 @@ console-editable and changelog-visible like anything else
 | `trigger` | One binding of a source (a record subscription, a schedule, or a public webhook endpoint) to one callable, owning the delivery cursor. |
 | `triggerrun` | One trigger delivery attempt, written after it settles: the delivery ledger's row. Parked runs stay until retried away; the rest are pruned to the newest few per trigger. |
 
-So is the agent runtime's data. **Agents are alpha**, so these four are a
-preview, unfrozen at v1 and not part of the frozen core:
-
-| Kind             | What it is                                                                                       |
-| ---------------- | ------------------------------------------------------------------------------------------------ |
-| `llmprovider`    | One place completions are bought: `label`, `wire` (enum), `baseURL`, `apiKey`, `embedModel`, `headers` and `pricing` (repeated objects), `defaults` (object). |
-| `llmthread`      | One agent run's conversation state, written as the loop runs — its `provider` and `model` included. |
-| `llmmessage`     | One turn in a thread, with its tool-call audit.                                                  |
-| `llminteraction` | One batch of questions an agent asked the user, waiting in the thread it came from; answering or dismissing it is one reviewed owner transition that resumes the agent. Landed by the `ask` built-in. |
-
 The ten [declarable kinds](vocabulary.md#the-declarable-kinds) — `authority`,
 `package`, `kind`, `propertytype`, `trait`, `recordmapping`, `function`,
 `agent`, `bundle`, `actor` — live in core too, and so do the three shipped traits:
 `temporal`, which puts a record on the timeline, and the `accountconfig` and
 `oauth2` interfaces the OAuth facility recognizes.
+
+## substrate.reamde.dev/llm
+
+The second package the binary seeds: the agent runtime's own data, out of core
+so core is not everything (decision record
+[0077](decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md)). It
+is seeded exactly as core is, so a fresh repository holds these four kinds
+without importing anything. **Agents are alpha**, so all four are a preview,
+unfrozen at v1 and not part of the frozen core:
+
+| Kind          | What it is                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------ |
+| `provider`    | One place completions are bought: `label`, `wire` (enum), `baseURL`, `apiKey`, `embedModel`, `headers` and `pricing` (repeated objects), `defaults` (object). |
+| `thread`      | One agent run's conversation state, written as the loop runs — its `provider` and `model` included. |
+| `message`     | One turn in a thread, with its tool-call audit.                                                  |
+| `interaction` | One batch of questions an agent asked the user, waiting in the thread it came from; answering or dismissing it is one reviewed owner transition that resumes the agent. Landed by the `ask` built-in. |
+
+The `agent` kind itself stays in core: it is one of the declarable kinds, and a
+manifest document is a record of a core kind whatever package it describes.
 
 Back to [the documentation index](README.md).

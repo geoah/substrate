@@ -12,8 +12,9 @@ yours, they hand you the address and the code.
 ## Registration
 
 Registering creates a **user** and, in the same transaction, that user's one
-**repository**, seeded with the core vocabulary — `substrate.reamde.dev/core`
-alone. Everything else, including the task kinds used below, is a
+**repository**, seeded with the substrate's own vocabulary —
+`substrate.reamde.dev/core` and `substrate.reamde.dev/llm`, and nothing else.
+Everything else, including the task kinds used below, is a
 [sample you import](builtin-kinds.md). A deployment with an **invite code**
 configured admits only a request that presents it; the local substrate from
 `docker compose up` has none and reads none.

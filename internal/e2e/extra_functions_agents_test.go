@@ -20,8 +20,8 @@ const (
 	xfFunctionPath = "/api/v1/substrate.reamde.dev/core/function/"
 	xfAgentPath    = "/api/v1/substrate.reamde.dev/core/agent/"
 
-	xfThreadCollection  = "/api/v1/substrate.reamde.dev/core/llmthread"
-	xfMessageCollection = "/api/v1/substrate.reamde.dev/core/llmmessage"
+	xfThreadCollection  = "/api/v1/substrate.reamde.dev/llm/thread"
+	xfMessageCollection = "/api/v1/substrate.reamde.dev/llm/message"
 
 	// The host functions answer their FULL identity and never a bare name:
 	// ResolveFunction keeps a built-in out of the bare-name candidates, so
@@ -52,10 +52,10 @@ func init() {
 	registerCase(550, "AGN-02", "Agent chat streams ndjson",
 		"`…/agent/{name}/chat` streams one AgentEvent per line: the thread id first, the assistant's turn "+
 			"as deltas that reassemble to the whole reply, and one done carrying the settled result last. "+
-			"The transcript persists as llmthread and llmmessage records the client can re-read.",
+			"The transcript persists as llm/thread and llm/message records the client can re-read.",
 		xfCaseAgentChat)
 	registerCase(560, "AGN-04", "Without a provider row the agent refuses at dispatch",
-		"An agent naming an llmprovider row nobody wrote is admitted at declaration and refused at the "+
+		"An agent naming an llm/provider row nobody wrote is admitted at declaration and refused at the "+
 			"call, 422, naming the row it wanted.",
 		xfCaseAgentNoProvider)
 	registerCase(570, "AGN-05", "Cost lands from the model's usage block",
@@ -197,7 +197,7 @@ type xfChatEvent struct {
 // equality like any other string.
 func xfThreadMessages(c *C, thread string) []record {
 	c.t.Helper()
-	filter := url.QueryEscape(`{"properties":{"thread":{"eq":"substrate.reamde.dev/core/llmthread/` + thread + `"}}}`)
+	filter := url.QueryEscape(`{"properties":{"thread":{"eq":"substrate.reamde.dev/llm/thread/` + thread + `"}}}`)
 	var page struct {
 		Records []record `json:"records"`
 	}
@@ -373,7 +373,7 @@ func xfCaseAgentChat(c *C) {
 	// API, not a live-only artifact of the stream.
 	thread := c.getRec(xfThreadCollection, events[0].Thread)
 	c.requiref(thread.prop("status") == "ok" && thread.prop("mode") == "chat" && thread.prop("model") == "chatgreeter",
-		"the llmthread record: status %q, mode %q, model %q", thread.prop("status"), thread.prop("mode"), thread.prop("model"))
+		"the llm/thread record: status %q, mode %q, model %q", thread.prop("status"), thread.prop("mode"), thread.prop("model"))
 	msgs := xfThreadMessages(c, events[0].Thread)
 	roles := map[string]string{}
 	for _, m := range msgs {
@@ -381,7 +381,7 @@ func xfCaseAgentChat(c *C) {
 	}
 	c.requiref(roles["user"] == "hello" && roles["assistant"] == xfGreeting,
 		"the persisted transcript holds %d messages: %v", len(msgs), roles)
-	c.stepf("the thread persists as records: `llmthread` `%s` settled `ok` in mode `chat`, with the user's `hello` and the assistant's reply as `llmmessage` rows", events[0].Thread)
+	c.stepf("the thread persists as records: `llm/thread` `%s` settled `ok` in mode `chat`, with the user's `hello` and the assistant's reply as `llm/message` rows", events[0].Thread)
 }
 
 // --- AGN-04 -------------------------------------------------------------
@@ -396,11 +396,11 @@ func xfCaseAgentNoProvider(c *C) {
 	c.requiref(status == http.StatusUnprocessableEntity, "the call answered %d, want 422: %s", status, raw)
 	refusal := xfDecodeError(c, raw)
 	c.requiref(refusal.Error.Code == "validation", "the refusal's code is %q, want validation: %s", refusal.Error.Code, raw)
-	c.requiref(strings.Contains(refusal.Error.Message, `llmprovider row "missingprovider" does not resolve`),
+	c.requiref(strings.Contains(refusal.Error.Message, `llm/provider row "missingprovider" does not resolve`),
 		"the refusal does not name the missing row: %s", refusal.Error.Message)
 	c.requiref(strings.Contains(refusal.Error.Message, "create it"),
 		"the refusal names the missing row but not what to do about it: %s", refusal.Error.Message)
-	c.stepf("the call was refused 422 naming the row it wanted: `llmprovider row \"missingprovider\" does not resolve`, and telling the owner to create it")
+	c.stepf("the call was refused 422 naming the row it wanted: `llm/provider row \"missingprovider\" does not resolve`, and telling the owner to create it")
 }
 
 // --- AGN-05 -------------------------------------------------------------
@@ -447,6 +447,6 @@ func xfCaseAgentCost(c *C) {
 	tokens, _ := thread.Properties["totalTokens"].(float64)
 	cost, _ := thread.Properties["costUSD"].(float64)
 	c.requiref(tokens == 15 && cost == 20,
-		"the llmthread record stamped totalTokens %v and costUSD %v, want 15 and 20", thread.Properties["totalTokens"], thread.Properties["costUSD"])
-	c.stepf("the `llmthread` record `%s` carries the same stamp: 15 tokens, costUSD 20, readable long after the call returned", res.Thread)
+		"the llm/thread record stamped totalTokens %v and costUSD %v, want 15 and 20", thread.Properties["totalTokens"], thread.Properties["costUSD"])
+	c.stepf("the `llm/thread` record `%s` carries the same stamp: 15 tokens, costUSD 20, readable long after the call returned", res.Thread)
 }

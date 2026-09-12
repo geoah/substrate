@@ -24,7 +24,7 @@ func newRaceDataset(t *testing.T) *dataset {
 	dsn := MigratedDSN(t)
 	svc, err := OpenForTest(t, ctx, dsn,
 		WithDataRoot(t.TempDir()),
-		WithCredentialKey(TestCredentialKey), WithKindsDir(CoreKindsDir))
+		WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
@@ -84,7 +84,7 @@ func reopenableWidgetDataset(t *testing.T) (open func() *dataset, closeSvc func(
 	open = func() *dataset {
 		svc, err := OpenForTest(t, ctx, dsn,
 			WithDataRoot(t.TempDir()),
-			WithCredentialKey(TestCredentialKey), WithKindsDir(CoreKindsDir))
+			WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir))
 		if err != nil {
 			t.Fatalf("open engine: %v", err)
 		}

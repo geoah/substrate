@@ -8,10 +8,10 @@
 # replayed to the model as context.
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: substrate.reamde.dev/core/llmmessage
+  id: substrate.reamde.dev/llm/message
 data:
   authority: substrate.reamde.dev
-  package: core
+  package: llm
   description: >-
     One turn of an agent thread — the transcript and the tool-call audit,
     written by the loop as it runs. A user turn is the envelope or the human's
@@ -19,7 +19,7 @@ data:
     call's result.
   version: 12
   names:
-    singular: llmmessage
+    singular: message
   displayTemplate: "{role} #{turn}"
   properties:
     role:
@@ -102,7 +102,7 @@ data:
           description: the written record's id
     thread:
       type: reference
-      kind: substrate.reamde.dev/core/llmthread
+      kind: substrate.reamde.dev/llm/thread
       required: true
       inverse: messages
       inverseDescription: the turns of this thread, in loop order

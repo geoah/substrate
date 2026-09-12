@@ -1,6 +1,6 @@
 package engine
 
-// The llminteraction regressions (docs/plans/thread-interactions.md phase 2):
+// The llm/interaction regressions (docs/plans/thread-interactions.md phase 2):
 // the ask built-in lands a thread-stamped batch, admission judges the batch
 // at every door, answers ride the answering transition alone and validate
 // against the STORED questions, only the owner resolves, and the resolution
@@ -254,7 +254,7 @@ func TestOnlyTheOwnerResolvesAnInteraction(t *testing.T) {
 	fake.script("med",
 		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
 			"query": `mutation Meddle($id: ID!, $input: JSON!) {
-  patch(kind: "substrate.reamde.dev/core/llminteraction", id: $id, input: $input) { id }
+  patch(kind: "substrate.reamde.dev/llm/interaction", id: $id, input: $input) { id }
 }`,
 			"variables": map[string]any{"id": interaction.ID, "input": map[string]any{
 				"properties": map[string]any{

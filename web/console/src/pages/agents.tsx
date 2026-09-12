@@ -3,10 +3,10 @@
  * surface; the manifest opens the record page, where the prompt, tools and
  * budgets live and edit.
  *
- * The llmprovider rows are NOT here. They are ordinary records of a core kind,
+ * The llm/provider rows are NOT here. They are ordinary records of a core kind,
  * they are not agents, and a table of them on this page implied a relationship
  * the page does not have — an agent names a provider by id, and that pointer
- * reads on the agent's own record. Data → llmprovider is where they live. */
+ * reads on the agent's own record. Data → llm/provider is where they live. */
 
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"

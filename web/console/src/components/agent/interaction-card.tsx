@@ -1,5 +1,5 @@
 /** The ask, inline in the thread that asked it. The card RESOLVES the
- * llminteraction and renders its live state, exactly as the proposal card
+ * llm/interaction and renders its live state, exactly as the proposal card
  * does: a pending batch is a form (radio per single-select question,
  * checkboxes per multi, dismissal beside submit), a resolved one shows what
  * was chosen. The answer is ONE CAS'd patch performing the answering
@@ -17,13 +17,13 @@ import { MessageCircleQuestionIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
-import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "@/lib/api/http"
+import { CORE_AUTHORITY, LLM_PACKAGE_NAME } from "@/lib/api/http"
 import { patchRecord, recordQueryOptions } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { cn } from "@/lib/utils"
 
 // The collection segment is the kind name (decision 0033).
-const INTERACTION_KIND = "llminteraction"
+const INTERACTION_KIND = "interaction"
 
 interface Option {
   value: string
@@ -86,7 +86,7 @@ function answersOf(record: SubstrateRecord): Map<string, string[]> {
 export function InteractionCard({ id }: { id: string }) {
   const client = useQueryClient()
   const interaction = useQuery(
-    recordQueryOptions(CORE_AUTHORITY, CORE_PACKAGE_NAME, INTERACTION_KIND, id)
+    recordQueryOptions(CORE_AUTHORITY, LLM_PACKAGE_NAME, INTERACTION_KIND, id)
   )
   const [picked, setPicked] = useState<Map<string, string[]>>(new Map())
   const [submitting, setSubmitting] = useState<"answer" | "dismiss" | null>(
@@ -136,7 +136,7 @@ export function InteractionCard({ id }: { id: string }) {
     try {
       await patchRecord(
         CORE_AUTHORITY,
-        CORE_PACKAGE_NAME,
+        LLM_PACKAGE_NAME,
         INTERACTION_KIND,
         id,
         {

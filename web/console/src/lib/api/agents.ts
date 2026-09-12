@@ -1,11 +1,11 @@
-/** Agents: the agent registry rows, the llmprovider rows they complete
- * against, the llmthread/llmmessage transcript records, and the ndjson chat
- * stream. The agent, llmprovider, llmthread and llmmessage rows are ordinary
+/** Agents: the agent registry rows, the llm/provider rows they complete
+ * against, the llm/thread/llm/message transcript records, and the ndjson chat
+ * stream. The agent, llm/provider, llm/thread and llm/message rows are ordinary
  * records the generic browse renders; this module adds the agent-scoped
  * reads and the one thing the record API cannot do — the streaming chat loop.
  *
  * The whole agent-loop vocabulary lives in CORE: core absorbed the runtime
- * kinds, so `llmprovider`, `llmthread` and `llmmessage` sit beside `agent`
+ * kinds, so `llm/provider`, `llm/thread` and `llm/message` sit beside `agent`
  * under `substrate.reamde.dev/core` — there is no separate runtime authority
  * to seed. */
 
@@ -16,6 +16,7 @@ import {
   corePath,
   CORE_AUTHORITY,
   CORE_PACKAGE_NAME,
+  LLM_PACKAGE_NAME,
   envelopeError,
 } from "./http"
 import { getToken, sessionExpired } from "./session"
@@ -60,8 +61,8 @@ export function providerHasKey(record: SubstrateRecord): boolean {
 export function agentThreadsQueryOptions(agent: string, first = 50) {
   return recordsQueryOptions({
     authority: CORE_AUTHORITY,
-    package: CORE_PACKAGE_NAME,
-    name: "llmthread",
+    package: LLM_PACKAGE_NAME,
+    name: "thread",
     first,
     // `agent` is a REFERENCE: the filter names the record it points at, and
     // a bare id is admitted because the declaration pins the kind.
@@ -77,8 +78,8 @@ export function threadMessagesQueryOptions(threadId: string) {
   return queryOptions({
     ...recordsQueryOptions({
       authority: CORE_AUTHORITY,
-      package: CORE_PACKAGE_NAME,
-      name: "llmmessage",
+      package: LLM_PACKAGE_NAME,
+      name: "message",
       first: TRANSCRIPT_WINDOW,
       // `thread` is a REFERENCE property on the message.
       filter: { properties: { thread: { eq: threadId } } },

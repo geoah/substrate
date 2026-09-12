@@ -116,7 +116,7 @@ func TestRegistrationEnrollsRecoveryKey(t *testing.T) {
 	// a secret and decrypt its sealed row with nothing but the identity's
 	// DEK, which is the whole recovery claim.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "substrate.reamde.dev/core/llmprovider", ID: "prov",
+		Kind: "substrate.reamde.dev/llm/provider", ID: "prov",
 		Properties: map[string]any{
 			"label": "prov", "wire": "openai",
 			"baseURL": "https://llm.example.com/v1", "apiKey": "sk-recover-me",
@@ -124,7 +124,7 @@ func TestRegistrationEnrollsRecoveryKey(t *testing.T) {
 	})
 	var ref string
 	if err := db.QueryRow(`SELECT props->>'apiKey' FROM records WHERE kind = $1 AND id = 'prov'`,
-		"substrate.reamde.dev/core/llmprovider").Scan(&ref); err != nil {
+		"substrate.reamde.dev/llm/provider").Scan(&ref); err != nil {
 		t.Fatalf("read ref: %v", err)
 	}
 	var payload []byte
@@ -192,7 +192,7 @@ func TestRegistrationMintsTheRecoveryKeyWhenTheClientNamesNoRecipient(t *testing
 	// one does: the DEK it recovers opens a payload the repository sealed,
 	// with no host key in hand.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "substrate.reamde.dev/core/llmprovider", ID: "prov",
+		Kind: "substrate.reamde.dev/llm/provider", ID: "prov",
 		Properties: map[string]any{
 			"label": "prov", "wire": "openai",
 			"baseURL": "https://llm.example.com/v1", "apiKey": "sk-server-minted",
@@ -201,7 +201,7 @@ func TestRegistrationMintsTheRecoveryKeyWhenTheClientNamesNoRecipient(t *testing
 	db := rawDB(t, dsn)
 	var ref string
 	if err := db.QueryRow(`SELECT props->>'apiKey' FROM records WHERE kind = $1 AND id = 'prov'`,
-		"substrate.reamde.dev/core/llmprovider").Scan(&ref); err != nil {
+		"substrate.reamde.dev/llm/provider").Scan(&ref); err != nil {
 		t.Fatalf("read ref: %v", err)
 	}
 	var payload []byte

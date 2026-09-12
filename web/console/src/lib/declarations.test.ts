@@ -24,9 +24,7 @@ describe("the declaration kinds", () => {
     expect(DECLARATION_KINDS).toHaveLength(10)
     expect(isDeclarationKind(KIND_KIND)).toBe(true)
     expect(isDeclarationKind(AGENT_KIND)).toBe(true)
-    expect(isDeclarationKind("substrate.reamde.dev/core/llmprovider")).toBe(
-      false
-    )
+    expect(isDeclarationKind("substrate.reamde.dev/llm/provider")).toBe(false)
     expect(isDeclarationKind("tasks.example.com/task")).toBe(false)
   })
 

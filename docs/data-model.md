@@ -177,14 +177,15 @@ its own package: `samples.substrate.reamde.dev/people`,
 `samples.substrate.reamde.dev/scheduling` (the `recurring` and `occurrencelog`
 traits that `calendar` and `tasks` require), and the function and agent
 examples `notes`, `llm`, `readinglist`, `firecrawl` and `pebble` under the same
-authority — each a bundle you **import** — and `substrate.reamde.dev/core`
-for the substrate's own machinery, which is the only one a new repository is
-seeded with. Packages namespace names; they never partition the data: a
+authority — each a bundle you **import** — and the substrate's own machinery
+in `substrate.reamde.dev/core` and the agent runtime's data in
+`substrate.reamde.dev/llm`, which are the two a new repository is seeded
+with. Packages namespace names; they never partition the data: a
 reference crosses packages as easily as it stays inside one.
 
 A **kind declaration is itself a record**, living in the repository's own changelog
 like everything else, whatever package it declares into. Your repository was
-seeded with `substrate.reamde.dev/core` when it was created, and everything else — the
+seeded with those two when it was created, and everything else — the
 vocabulary above included — arrived as an import you asked for; either way the
 declarations are rows in your repository, not a file the server reads at query
 time. [Vocabulary as records](vocabulary.md) is that whole story.
@@ -414,7 +415,7 @@ A value is ONE OBJECT, holding the referent's path under the reserved key
 
 ```yaml
 provider:
-  ref: substrate.reamde.dev/core/llmprovider/claude
+  ref: substrate.reamde.dev/llm/provider/claude
 ```
 
 That is the shape every read serves and every row stores, whether or not the
@@ -425,13 +426,13 @@ changing shape: adding `properties:` adds a key beside `ref`, and nothing that
 already reads the pointer moves.
 
 **A bare path string is write-time shorthand.** `provider:
-substrate.reamde.dev/core/llmprovider/claude` applies and is stored as the
+substrate.reamde.dev/llm/provider/claude` applies and is stored as the
 object above, so a hand-written document stays short. Nothing serves the
 shorthand back.
 
 Against a concrete pin a bare record id is accepted as the authored short form
 too, and canonicalized to the full path on write, so `provider: default` stores
-as `{ref: substrate.reamde.dev/core/llmprovider/default}`; unpinned, a bare id
+as `{ref: substrate.reamde.dev/llm/provider/default}`; unpinned, a bare id
 names no kind and is refused. A path that contradicts its pin is refused naming
 both ends.
 

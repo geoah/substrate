@@ -112,7 +112,7 @@ services:
       # warning: consent flows in flight break on every restart.
       SUBSTRATE_OAUTH_STATE_KEY: ${SUBSTRATE_OAUTH_STATE_KEY:-}
       # There is no LLM configuration here. Completions and embeddings are
-      # bought through a repository's own `llmprovider` records, which carry
+      # bought through a repository's own `llm/provider` records, which carry
       # the wire, the endpoint, the key and (for embeddings) the model. A
       # repository that writes none has no agents and no semantic search, and
       # hybrid search returns its lexical arm.

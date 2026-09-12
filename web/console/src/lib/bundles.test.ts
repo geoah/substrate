@@ -477,7 +477,7 @@ describe("the upgrade preview helpers", () => {
       steps: [
         {
           step: "rename",
-          kind: "substrate.reamde.dev/core/llmprovider",
+          kind: "substrate.reamde.dev/llm/provider",
           property: "displayLabel",
           from: "label",
           to: "displayLabel",
@@ -508,7 +508,7 @@ describe("the upgrade preview helpers", () => {
       ],
     }
     expect(stepLines(plan)).toEqual([
-      "renames label to displayLabel on substrate.reamde.dev/core/llmprovider: 3 live records rewritten",
+      "renames label to displayLabel on substrate.reamde.dev/llm/provider: 3 live records rewritten",
       "backfills size with its default on geoah.example.com/shop/widget: 1 live record rewritten",
       "rewrites status active to open on geoah.example.com/shop/widget: 2 live records rewritten (lossy: the records holding either value become one set)",
       "drops color on geoah.example.com/shop/widget: its value leaves 1 live record (lossy: the values stay in the changelog only)",
@@ -998,7 +998,7 @@ describe("bundleRecordRows — the Records table", () => {
           kinds: [],
           records: [
             { kind: "substrate.reamde.dev/core/trigger", id: "ongooglesync" },
-            { kind: "substrate.reamde.dev/core/llmprovider", id: "anthropic" },
+            { kind: "substrate.reamde.dev/llm/provider", id: "anthropic" },
           ],
         },
       })
@@ -1010,7 +1010,7 @@ describe("bundleRecordRows — the Records table", () => {
         name: "ongooglesync",
       },
       {
-        kind: "substrate.reamde.dev/core/llmprovider",
+        kind: "substrate.reamde.dev/llm/provider",
         id: "anthropic",
         name: "anthropic",
       },

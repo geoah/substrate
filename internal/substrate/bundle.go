@@ -25,7 +25,7 @@ type BundleStatus struct {
 	Inputs []InputStatus `json:"inputs,omitempty"`
 	// Setup lists what stands between this bundle and every runtime path
 	// it ships — unresolved inputs, an incomplete OAuth client, an agent
-	// whose llmprovider row is missing or keyless. Empty means ready.
+	// whose llm/provider row is missing or keyless. Empty means ready.
 	// Every item mirrors a refusal dispatch would actually make; a
 	// non-refusal is never a setup step.
 	Setup []SetupItem `json:"setup,omitempty"`
@@ -226,13 +226,13 @@ const (
 type SetupItem struct {
 	// Code is the stable reason: SetupMissing/SetupAmbiguous/SetupDangling
 	// for an input, SetupOAuthClient for an incomplete client record,
-	// SetupProvider for an agent whose llmprovider row is absent or keyless,
+	// SetupProvider for an agent whose llm/provider row is absent or keyless,
 	// SetupSetting for a required setting or secret nobody has filled in.
 	Code string `json:"code"`
 	// Input names the unresolved input, when the item is an input's.
 	Input string `json:"input,omitempty"`
 	// Kind is the kind whose record would clear the item: the input's kind,
-	// core's llmprovider, or core's setting/secret.
+	// the llm package's provider, or core's setting/secret.
 	Kind string `json:"kind,omitempty"`
 	// Record is the existing record to fix, when one exists — the incomplete
 	// client, the keyless provider row, the empty setting.
@@ -253,7 +253,7 @@ const (
 	// SetupOAuthClient: the client input resolved but its record is missing
 	// clientId or clientSecret.
 	SetupOAuthClient = "oauth-client"
-	// SetupProvider: an agent names an llmprovider row that is absent or
+	// SetupProvider: an agent names an llm/provider row that is absent or
 	// cannot dispatch (no key where one is required).
 	SetupProvider = "provider"
 	// SetupSetting: a `setting` or `secret` record the bundle ships under its

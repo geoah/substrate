@@ -11,7 +11,7 @@ import (
 )
 
 // The engine's agent plumbing around the loop (agentloop.go): the well-known
-// llmprovider row, and the two direct entry points — the call API and chat.
+// llm/provider row, and the two direct entry points — the call API and chat.
 // Trigger dispatch enters through functions.go's deliver/deliverFire, which
 // branch on the trigger's callable kind.
 

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The editor's FORM lens over an `llmprovider`-shaped kind: the issue's own
+/** The editor's FORM lens over an `llm/provider`-shaped kind: the issue's own
  * worked example, where setting an `apiKey` was only ever possible through raw
  * YAML with no help in it.
  *
@@ -23,9 +23,9 @@ import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { propertiesOf, templateYAML } from "@/lib/record-yaml"
 import { PropertyForm } from "./property-form"
 
-const llmprovider: KindInfo = {
-  identity: "substrate.reamde.dev/core/llmprovider",
-  name: "llmprovider",
+const providerKind: KindInfo = {
+  identity: "substrate.reamde.dev/llm/provider",
+  name: "provider",
   authority: "substrate.reamde.dev",
   package: "core",
   version: 0,
@@ -64,7 +64,7 @@ const llmprovider: KindInfo = {
 
 const record: SubstrateRecord = {
   id: "default",
-  kind: "substrate.reamde.dev/core/llmprovider",
+  kind: "substrate.reamde.dev/llm/provider",
   properties: {
     name: "the gateway",
     wire: "openai",
@@ -114,7 +114,7 @@ function renderKindForm(
 }
 
 function renderForm(seed: string, over: { record?: SubstrateRecord } = {}) {
-  return renderKindForm(llmprovider, seed, over)
+  return renderKindForm(providerKind, seed, over)
 }
 
 /** The last document the form emitted. */
@@ -157,7 +157,7 @@ afterEach(cleanup)
 
 describe("the form lens", () => {
   it("composes a control per declared property, with its one-liner", () => {
-    renderForm(templateYAML(llmprovider))
+    renderForm(templateYAML(providerKind))
     expect(screen.getByLabelText(/^Name/)).toBeTruthy()
     expect(screen.getByText("the endpoint")).toBeTruthy()
     // The enum is a select over what the kind admits, not a text box.
@@ -172,12 +172,12 @@ describe("the form lens", () => {
   })
 
   it("never offers a host-managed property (writer: oauth)", () => {
-    renderForm(templateYAML(llmprovider))
+    renderForm(templateYAML(providerKind))
     expect(screen.queryByLabelText(/Token ref/)).toBeNull()
   })
 
   it("writes an edit into the document, one key at a time", () => {
-    const text = templateYAML(llmprovider)
+    const text = templateYAML(providerKind)
     const { onChange } = renderForm(text)
     fireEvent.change(screen.getByLabelText(/^Name/), {
       target: { value: "the gateway" },
@@ -191,7 +191,7 @@ describe("the form lens", () => {
   })
 
   it("writes a number as a number, and JSON as parsed JSON", () => {
-    const { onChange } = renderForm(templateYAML(llmprovider))
+    const { onChange } = renderForm(templateYAML(providerKind))
     fireEvent.change(screen.getByLabelText(/Max retries/), {
       target: { value: "3" },
     })
@@ -207,7 +207,7 @@ describe("the form lens", () => {
   })
 
   it("keeps a draft that cannot be a value out of the document, and says why", () => {
-    const { onChange } = renderForm(templateYAML(llmprovider))
+    const { onChange } = renderForm(templateYAML(providerKind))
     fireEvent.change(screen.getByLabelText(/Extras/), {
       target: { value: "{oops" },
     })
@@ -216,7 +216,7 @@ describe("the form lens", () => {
   })
 
   it("keeps a secret write-only: it never seeds, and blank never touches the document", () => {
-    const seeded = `kind: substrate.reamde.dev/core/llmprovider
+    const seeded = `kind: substrate.reamde.dev/llm/provider
 metadata:
   id: default
 data:
@@ -239,20 +239,20 @@ data:
   })
 
   it("freezes a state on an edit, and offers the machine's states on a create", () => {
-    renderForm(templateYAML(llmprovider))
+    renderForm(templateYAML(providerKind))
     const create = screen.getByLabelText("Status") as HTMLSelectElement
     expect(create.disabled).toBe(false)
     expect([...create.options].map((o) => o.value)).toContain("live")
     cleanup()
 
-    renderForm(templateYAML(llmprovider), { record })
+    renderForm(templateYAML(providerKind), { record })
     const edit = screen.getByLabelText("Status") as HTMLSelectElement
     expect(edit.disabled).toBe(true)
     expect(screen.getByText(/changes by transition/)).toBeTruthy()
   })
 
   it("edits a repeated object as rows of its declared fields, not as JSON", () => {
-    const text = templateYAML(llmprovider)
+    const text = templateYAML(providerKind)
     const { onChange } = renderForm(text)
     // A repeated object starts empty and grows a row at a time.
     fireEvent.click(screen.getByRole("button", { name: "Add Pricing row" }))
@@ -310,7 +310,7 @@ const mappingKind: KindInfo = {
 const AGENT = "substrate.reamde.dev/core/agent"
 const FUNCTION = "substrate.reamde.dev/core/function"
 const KIND = "substrate.reamde.dev/core/kind"
-const LLMPROVIDER = "substrate.reamde.dev/core/llmprovider"
+const PROVIDER = "substrate.reamde.dev/llm/provider"
 
 const agentKind: KindInfo = {
   identity: "substrate.reamde.dev/core/agent",
@@ -334,7 +334,7 @@ const agentKind: KindInfo = {
       },
       // EVERY POINTER IS A REFERENCE, pinned with `kind:`, and its value is
       // the flat path `<kind-identity>/<record-id>`.
-      provider: { type: "reference", kind: LLMPROVIDER, required: true },
+      provider: { type: "reference", kind: PROVIDER, required: true },
       agents: { type: "reference", kind: AGENT, repeated: true },
       tools: {
         type: "object",
@@ -394,13 +394,13 @@ function registryKind(identity: string): KindInfo {
 
 /** The kind records the registry collection serves, which is what a pointer
  * pinned at `substrate.reamde.dev/core/kind` offers. */
-const KIND_RECORDS = [FUNCTION, KIND, LLMPROVIDER]
+const KIND_RECORDS = [FUNCTION, KIND, PROVIDER]
 
 const REGISTRY: KindInfo[] = [
   agentKind,
   registryKind(FUNCTION),
   registryKind(KIND),
-  registryKind(LLMPROVIDER),
+  registryKind(PROVIDER),
 ]
 
 /** The collections the pickers read, served from one stub so a dropdown can be
@@ -446,7 +446,7 @@ function stubCollections() {
         page(KIND_RECORDS.map((id) => record(id, { description: "a kind" })))
       )
     }
-    if (url.includes("/llmprovider?")) {
+    if (url.includes("/provider?")) {
       return Promise.resolve(page([record("claude", { name: "the gateway" })]))
     }
     return Promise.resolve(page([]))
@@ -584,9 +584,7 @@ data:
     await waitFor(() => expect(offered()).toEqual(["claude"]))
     fireEvent.click(screen.getByText("the gateway"))
     // The PATH is the value; the row read as the record.
-    expect(propertiesOf(emitted(onChange))?.provider).toBe(
-      `${LLMPROVIDER}/claude`
-    )
+    expect(propertiesOf(emitted(onChange))?.provider).toBe(`${PROVIDER}/claude`)
   })
 
   it("keeps free text open: a record can be minted at any time", () => {
@@ -598,7 +596,7 @@ data:
     // The PIN completes what was typed: a bare id is the authored short form,
     // and the write carries the path it names.
     expect(propertiesOf(emitted(onChange))?.provider).toBe(
-      `${LLMPROVIDER}/not-listed-yet`
+      `${PROVIDER}/not-listed-yet`
     )
   })
 
@@ -624,7 +622,7 @@ data:
     stubCollections()
     renderKindForm(agentKind, templateYAML(agentKind), {
       kinds: REGISTRY,
-      record: agentRecord({ provider: `${LLMPROVIDER}/claude` }),
+      record: agentRecord({ provider: `${PROVIDER}/claude` }),
     })
     fireEvent.click(screen.getByLabelText("Add Agents"))
     await waitFor(() => expect(offered()).toEqual(["crew.test.dev/librarian"]))

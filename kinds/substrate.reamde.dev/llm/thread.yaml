@@ -7,10 +7,10 @@
 # rows the console renders and continues.
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: substrate.reamde.dev/core/llmthread
+  id: substrate.reamde.dev/llm/thread
 data:
   authority: substrate.reamde.dev
-  package: core
+  package: llm
   description: >-
     One agent invocation's conversation state; there is no agent-run record,
     the thread IS the run. Status, turns, tokens and cost accumulate as the
@@ -18,7 +18,7 @@ data:
     so one number answers what a chain cost.
   version: 11
   names:
-    singular: llmthread
+    singular: thread
   displayTemplate: "{agent}: {status}"
   # No index on `agent`: a reference filters by containment, which rides the
   # repository-wide GIN index on props.
@@ -41,7 +41,7 @@ data:
     provider:
       type: string
       required: true
-      description: the llmprovider row id the run resolved
+      description: the provider row id the run resolved
     model:
       type: string
       required: true
@@ -117,7 +117,7 @@ data:
         expired lease is taken over
     parent:
       type: reference
-      kind: substrate.reamde.dev/core/llmthread
+      kind: substrate.reamde.dev/llm/thread
       inverse: subagentThreads
       inverseDescription: the sub-agent runs this thread called
       description: the calling agent's thread, on sub-agent threads

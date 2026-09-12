@@ -2010,21 +2010,27 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 
 // admissibleSubset installs the maximal subset of built packages that admits
 // into ds.reg and returns the rest as quarantined, with each one's admission
-// error. It is a fixpoint over single-package Install: a package that depends
-// on a sibling admits once that sibling is in, and Install self-removes a
-// package that fails, so ds.reg is left holding exactly the admissible subset.
-// n (installed packages) is small, so the O(n^2) worst case is fine.
+// error. It is a fixpoint over UNITS: a unit that depends on a sibling admits
+// once that sibling is in, and a failed InstallAll self-removes everything it
+// added, so ds.reg is left holding exactly the admissible subset. n (installed
+// packages) is small, so the O(n^2) worst case is fine.
+//
+// The unit is one package, EXCEPT for the seeded ones, which are one unit
+// together (record 0077): core declares against llm and llm declares back at
+// core's `agent`, so neither admits while the other is absent, and a fixpoint
+// over single packages would quarantine both — the whole repository — over a
+// cycle that is by construction always satisfied.
 func (ds *dataset) admissibleSubset(built []*vocabulary.Package) (good []*vocabulary.Package, quarantined []quarantinedPackage) {
-	remaining := append([]*vocabulary.Package(nil), built...)
+	remaining := admissionUnits(built)
 	for {
 		progressed := false
-		var next []*vocabulary.Package
-		for _, g := range remaining {
-			if err := ds.reg.Install(g); err == nil {
-				good = append(good, g)
+		var next [][]*vocabulary.Package
+		for _, unit := range remaining {
+			if err := ds.reg.InstallAll(unit); err == nil {
+				good = append(good, unit...)
 				progressed = true
 			} else {
-				next = append(next, g)
+				next = append(next, unit)
 			}
 		}
 		remaining = next
@@ -2032,17 +2038,50 @@ func (ds *dataset) admissibleSubset(built []*vocabulary.Package) (good []*vocabu
 			break
 		}
 	}
-	// Whatever remains cannot admit even with every good authority present. Re-run
-	// Install once per remaining authority to capture its reason — it fails and
+	// Whatever remains cannot admit even with every good package present. Re-run
+	// InstallAll once per remaining unit to capture its reason — it fails and
 	// self-removes, so ds.reg is untouched.
-	for _, g := range remaining {
+	for _, unit := range remaining {
 		reason := "stored closure failed admission under the current binary"
-		if err := ds.reg.Install(g); err != nil {
+		if err := ds.reg.InstallAll(unit); err != nil {
 			reason = err.Error()
 		}
-		quarantined = append(quarantined, quarantinedPackage{name: g.Identity, reason: cappedQuarantineReason(reason)})
+		for _, g := range unit {
+			quarantined = append(quarantined, quarantinedPackage{name: g.Identity, reason: cappedQuarantineReason(reason)})
+		}
 	}
 	return good, quarantined
+}
+
+// admissionUnits splits built packages into admission units, in the order they
+// were built: one unit per package, and one unit holding every seeded package
+// together with the authority row above them.
+func admissionUnits(built []*vocabulary.Package) [][]*vocabulary.Package {
+	var units [][]*vocabulary.Package
+	var seeded []*vocabulary.Package
+	seededAt := -1
+	for _, g := range built {
+		if seededPackageName(g.Identity) {
+			if seededAt < 0 {
+				seededAt = len(units)
+				units = append(units, nil)
+			}
+			seeded = append(seeded, g)
+			continue
+		}
+		units = append(units, []*vocabulary.Package{g})
+	}
+	if seededAt >= 0 {
+		units[seededAt] = seeded
+	}
+	return units
+}
+
+// seededPackageName reports whether a declaration group is one the binary
+// seeds: the two packages, and the authority row that owns them.
+func seededPackageName(name string) bool {
+	return name == vocabulary.PackageCore || name == vocabulary.PackageLLM ||
+		name == vocabulary.AuthorityPublisher
 }
 
 // markGroupQuarantined records the quarantine state on the package's own row,
@@ -2184,30 +2223,47 @@ func (ds *dataset) storedPackages(ctx context.Context, skip func(string) bool) (
 	return built, unparsed, nil
 }
 
-// buildPackagesSeparately rebuilds a source's documents ONE AUTHORITY AT A
-// TIME — every authority is bucketed and built independently anyway, so this
-// changes nothing but the blast radius of a failure. Core is the exception it
-// returns an error for: a repository whose own meta-kinds do not parse
-// resolves nothing, so quarantining core would be a lie dressed as a recovery.
+// buildPackagesSeparately rebuilds a source's documents ONE PACKAGE AT A TIME —
+// every package is bucketed and built independently anyway, so this changes
+// nothing but the blast radius of a failure.
+//
+// The SEEDED packages are the exception, twice over (record 0077). They build
+// TOGETHER, in one bucket, because `BuildPackages` resolves the closure it is
+// handed and core declares against llm (the `agent` kind's `provider`,
+// `recordpatchrequest`'s `thread`, the `ask` built-in's write permission);
+// built apart, core would fail to resolve pins to a package that is right
+// there. And a failure of that bucket is returned rather than quarantined: a
+// repository whose own meta-kinds do not resolve resolves nothing, so
+// quarantining core would be a lie dressed as a recovery, and the agent
+// runtime writes llm's kinds from Go constants, so a quarantined llm is the
+// same lie one subsystem down.
 func buildPackagesSeparately(docs []vocabulary.Document, source string) ([]*vocabulary.Package, []quarantinedPackage, error) {
-	byPackage := map[string][]vocabulary.Document{}
+	// The seeded bucket is keyed by the authority the two share, which no
+	// package identity can equal (a package reference carries a slash).
+	bucketOf := func(name string) string {
+		if seededPackageName(name) {
+			return vocabulary.AuthorityPublisher
+		}
+		return name
+	}
+	byBucket := map[string][]vocabulary.Document{}
 	var order []string
 	for _, d := range docs {
-		name := d.DeclaredPackage()
-		if _, seen := byPackage[name]; !seen {
+		name := bucketOf(d.DeclaredPackage())
+		if _, seen := byBucket[name]; !seen {
 			order = append(order, name)
 		}
-		byPackage[name] = append(byPackage[name], d)
+		byBucket[name] = append(byBucket[name], d)
 	}
 	var built []*vocabulary.Package
 	var unparsed []quarantinedPackage
 	for _, name := range order {
-		gs, err := vocabulary.BuildPackages(byPackage[name], source)
+		gs, err := vocabulary.BuildPackages(byBucket[name], source)
 		if err == nil {
 			built = append(built, gs...)
 			continue
 		}
-		if name == vocabulary.PackageCore {
+		if seededPackageName(name) {
 			return nil, nil, err
 		}
 		unparsed = append(unparsed, quarantinedPackage{name: name, reason: cappedQuarantineReason(err.Error())})

@@ -178,7 +178,7 @@ func TestDisableDrainsABundledAgentTriggerDelivery(t *testing.T) {
 
 // installToolBundle stands up a bundle with one effectful function, plus a
 // non-bundled agent that names the bundled function as a tool and a live
-// llmprovider row for it — the cross-bundle function-tool fixture.
+// llm/provider row for it — the cross-bundle function-tool fixture.
 func installToolBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
@@ -187,7 +187,7 @@ func installToolBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 		Kind: typeProvider, ID: "userllm",
 		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-userllm"},
 	}); err != nil {
-		t.Fatalf("put llmprovider row: %v", err)
+		t.Fatalf("put llm/provider row: %v", err)
 	}
 	writer := vocabulary.FunctionManifest(tbPackage, "writer", map[string]any{
 		"description": "writes one task",

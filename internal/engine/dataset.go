@@ -353,7 +353,7 @@ type txn struct {
 	maxSeq    int64
 	// entries records every changelog row this transaction appended, in
 	// order: the (seq, op, kind, id) address, never the payload. Slices of it
-	// stamp llmmessage rows with what a dispatch wrote (`changes`), so a
+	// stamp llm/message rows with what a dispatch wrote (`changes`), so a
 	// thread's reader resolves the delta from the changelog instead of
 	// parsing tool payloads.
 	entries []changeEntry

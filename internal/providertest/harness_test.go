@@ -47,11 +47,11 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// The trees a suite reads, relative to this package: the seeded core package,
-// the shipped providers, the samples. Same depth as internal/engine, so the
+// The trees a suite reads, relative to this package: the seed authority (core
+// and llm), the shipped providers, the samples. Same depth as internal/engine, so the
 // paths inside enginetest resolve here too.
 const (
-	coreKindsDir = "../../kinds/substrate.reamde.dev/core"
+	seedKindsDir = "../../kinds/substrate.reamde.dev"
 	providersDir = "../../kinds/providers.substrate.reamde.dev"
 	samplesDir   = "../../samples"
 )
@@ -145,7 +145,7 @@ var migratedTemplate = testdb.NewTemplate("providertest", func(ctx context.Conte
 	}
 	defer func() { _ = os.RemoveAll(root) }()
 	svc, err := engine.Open(ctx, dsn,
-		engine.WithKindsDir(coreKindsDir),
+		engine.WithKindsDir(seedKindsDir),
 		engine.WithDataRoot(root),
 		engine.WithCredentialKey(credentialKey))
 	if err != nil {
@@ -158,7 +158,7 @@ var migratedTemplate = testdb.NewTemplate("providertest", func(ctx context.Conte
 func newService(t *testing.T, opts ...engine.Option) substrate.Service {
 	t.Helper()
 	all := append([]engine.Option{
-		engine.WithKindsDir(coreKindsDir),
+		engine.WithKindsDir(seedKindsDir),
 		engine.WithDataRoot(t.TempDir()),
 		engine.WithCredentialKey(credentialKey),
 	}, opts...)
@@ -271,7 +271,7 @@ func loadDocs(t *testing.T, path string) []map[string]any {
 // what every admission test starts from: no database, no uv.
 func bundleRegistry(t *testing.T, dir string) *vocabulary.Registry {
 	t.Helper()
-	reg, err := enginetest.SeededRegistry(coreKindsDir)
+	reg, err := enginetest.SeededRegistry(seedKindsDir)
 	if err != nil {
 		t.Fatalf("build the repository registry: %v", err)
 	}

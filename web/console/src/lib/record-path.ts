@@ -1,6 +1,6 @@
 /** The RECORD PATH: `<authority>/<package>/<kind>/<id>`, one flat string, the
  * whole stored value of a `reference`-typed property
- * (`substrate.reamde.dev/core/llmprovider/claude`). Every kind carries an
+ * (`substrate.reamde.dev/llm/provider/claude`). Every kind carries an
  * authority and a package (decisions 0042 and 0047), so a stored path is always
  * four-plus segments.
  *

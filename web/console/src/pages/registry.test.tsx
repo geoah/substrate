@@ -1425,7 +1425,7 @@ describe("RegistryPage", () => {
 
     it("a refused core boot upgrade is stated above the sections", async () => {
       const guard =
-        'type substrate.reamde.dev/core/llmprovider: property "label" dropped while 1 live records still carry it — null it on them first'
+        'type substrate.reamde.dev/llm/provider: property "label" dropped while 1 live records still carry it — null it on them first'
       serve({
         shipped: [
           {
@@ -1442,7 +1442,7 @@ describe("RegistryPage", () => {
               steps: [
                 {
                   step: "rename" as const,
-                  kind: "substrate.reamde.dev/core/llmprovider",
+                  kind: "substrate.reamde.dev/llm/provider",
                   property: "protocol",
                   from: "wire",
                   to: "protocol",
@@ -1463,7 +1463,7 @@ describe("RegistryPage", () => {
       // operator knows the boot rewrites records, not only declarations.
       expect(
         within(notice).getByText(
-          "renames wire to protocol on substrate.reamde.dev/core/llmprovider: 2 live records rewritten"
+          "renames wire to protocol on substrate.reamde.dev/llm/provider: 2 live records rewritten"
         )
       ).toBeTruthy()
     })

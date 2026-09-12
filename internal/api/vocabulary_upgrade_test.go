@@ -47,16 +47,21 @@ func newShippedUpgradeEnv(t *testing.T, plans []substrate.ShippedUpgrade, err er
 	}
 }
 
-// A withheld core upgrade is readable by a repository token: the package, the
+// llmPackageRef is the second seeded package (record 0077): the withheld
+// upgrade the fake reports is one of its kinds, because that is where the
+// agent runtime's declarations live.
+const llmPackageRef = coreAuthorityName + "/llm"
+
+// A withheld shipped upgrade is readable by a repository token: the package, the
 // versions the boot compared and the guard lines it refused on, the same
 // shape a catalog entry's `upgrade` carries.
 func TestVocabularyUpgradeServesTheShippedPreview(t *testing.T) {
 	want := []substrate.ShippedUpgrade{{
-		Package: corePackage,
+		Package: llmPackageRef,
 		Upgrade: substrate.BundleUpgrade{
 			Available: true, From: 16, To: 17,
-			Changes:  []substrate.BundleUpgradeChange{{Kind: "kind", ID: corePackage + "/llmprovider", From: 8, To: 9}},
-			Blockers: []string{`type ` + corePackage + `/llmprovider: property "label" dropped while 1 live records still carry it — null it on them first`},
+			Changes:  []substrate.BundleUpgradeChange{{Kind: "kind", ID: llmPackageRef + "/provider", From: 8, To: 9}},
+			Blockers: []string{`type ` + llmPackageRef + `/provider: property "label" dropped while 1 live records still carry it — null it on them first`},
 		},
 	}}
 	env := newShippedUpgradeEnv(t, want, nil)
@@ -69,13 +74,13 @@ func TestVocabularyUpgradeServesTheShippedPreview(t *testing.T) {
 		t.Fatalf("items = %+v, want one", body.Items)
 	}
 	got := body.Items[0]
-	if got.Package != corePackage || !got.Upgrade.Available || got.Upgrade.From != 16 || got.Upgrade.To != 17 {
+	if got.Package != llmPackageRef || !got.Upgrade.Available || got.Upgrade.From != 16 || got.Upgrade.To != 17 {
 		t.Fatalf("entry = %+v", got)
 	}
 	if len(got.Upgrade.Blockers) != 1 || got.Upgrade.Blockers[0] != want[0].Upgrade.Blockers[0] {
 		t.Fatalf("blockers = %q", got.Upgrade.Blockers)
 	}
-	if len(got.Upgrade.Changes) != 1 || got.Upgrade.Changes[0].ID != corePackage+"/llmprovider" {
+	if len(got.Upgrade.Changes) != 1 || got.Upgrade.Changes[0].ID != llmPackageRef+"/provider" {
 		t.Fatalf("changes = %+v", got.Upgrade.Changes)
 	}
 

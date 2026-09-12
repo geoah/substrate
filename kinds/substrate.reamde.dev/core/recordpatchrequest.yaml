@@ -12,7 +12,7 @@ data:
     record, create one, or delete one. A learner or an app writes it, accepting
     the decision applies it, and the envelope is frozen once proposed so nobody
     can swap what was reviewed.
-  version: 15
+  version: 16
   names:
     singular: recordpatchrequest
   displayTemplate: "{decision}: {target|targetId}"
@@ -98,12 +98,12 @@ data:
       description: the governing policy record's version at conversion
     # Stamped by the agent loop when the propose built-in lands the request:
     # the thread whose tool call proposed it. The decision writes a `system`
-    # llmmessage back into that thread and resumes it, so the proposing agent
+    # llm/message back into that thread and resumes it, so the proposing agent
     # hears the verdict without a trigger. Absent on requests a human or a
     # function proposed — those have no thread to report to.
     thread:
       type: reference
-      kind: substrate.reamde.dev/core/llmthread
+      kind: substrate.reamde.dev/llm/thread
       inverse: proposals
       inverseDescription: the change requests this thread's propose calls
         landed

@@ -503,7 +503,7 @@ type Transition struct {
 	To      string
 	Stamps  map[string]string
 	OnEnter string
-	// Notifies names the reference property (pinned to core's llmthread)
+	// Notifies names the reference property (pinned to llm/thread)
 	// whose thread this transition reports into: the engine writes the
 	// resolution's `system` message there and schedules the resume, the one
 	// primitive under proposal decisions and interaction answers alike. Empty

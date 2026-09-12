@@ -17,7 +17,7 @@ import { describe, expect, it } from "vitest"
 import { tokenize, type CodeToken } from "./shiki"
 
 const YAML = `# the manifest
-kind: substrate.reamde.dev/core/llmprovider
+kind: substrate.reamde.dev/llm/provider
 metadata:
   id: default
 `

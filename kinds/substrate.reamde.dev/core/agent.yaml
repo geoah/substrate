@@ -20,7 +20,7 @@ data:
     a function by a trigger, the call API or another agent. The row IS the
     prompt store, so changing what an agent does is a record write and the
     changelog is its version history.
-  version: 14
+  version: 15
   names:
     singular: agent
   displayTemplate: "{localName}"
@@ -59,15 +59,15 @@ data:
       fts: false
       required: true
       description: the system prompt; the row is the prompt store
-    # The llmprovider the loop reads wire/baseURL/apiKey off at dispatch. The
+    # The llm/provider the loop reads wire/baseURL/apiKey off at dispatch. The
     # pin is what lets a client offer a picker, and it supplies the kind an
     # authored bare id omits: `default` stores as
-    # `substrate.reamde.dev/core/llmprovider/default`.
+    # `substrate.reamde.dev/llm/provider/default`.
     provider:
       type: reference
-      kind: substrate.reamde.dev/core/llmprovider
+      kind: substrate.reamde.dev/llm/provider
       required: true
-      description: the llmprovider this agent's loop completes against
+      description: the provider row this agent's loop completes against
     model:
       type: string
       required: true

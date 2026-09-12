@@ -18,10 +18,10 @@
 # a second row declaring it refuses at the write.
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: substrate.reamde.dev/core/llmprovider
+  id: substrate.reamde.dev/llm/provider
 data:
   authority: substrate.reamde.dev
-  package: core
+  package: llm
   description: >-
     One place completions are bought: the wire an adapter speaks, the endpoint,
     the key that reaches it, and what its models cost. An agent names a provider
@@ -29,7 +29,7 @@ data:
     this row.
   version: 8
   names:
-    singular: llmprovider
+    singular: provider
   displayTemplate: "{label|localName} ({wire})"
   properties:
     label:

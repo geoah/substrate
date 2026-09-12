@@ -504,7 +504,7 @@ there.
 
 `embeddings` is listed like the rest. Discovery opens no repository, so it
 does not answer the narrower question of whether the CALLER's repository
-declares an [`llmprovider` row](agents.md): the first semantic query answers
+declares an [`llm/provider` row](agents.md): the first semantic query answers
 that one, naming the property no row declares. An entry stands for every route
 behind it, so `bundles` covers the lifecycle transitions and catalog install
 together.
@@ -721,7 +721,7 @@ embeddable returns no hits, and a row re-pointed at a model nobody ran
 `substratectl repository reembed` for is refused naming the command.
 
 **Which model bought the vectors is data, per repository.** The one
-[`llmprovider`](agents.md#providers) row declaring `embedModel` is where a
+[`llm/provider`](agents.md#providers) row declaring `embedModel` is where a
 repository buys them, each stored vector names that row and that model, and the
 semantic arm scores only the currently resolved pair. Re-point the row and the
 older vectors stop being scored rather than being ranked against the new ones:

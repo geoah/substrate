@@ -27,7 +27,7 @@
 #   3. A RECORD-SOURCED trigger that hands each new instruction to an AGENT,
 #      which turns it into tasks through the graphql and mutate host functions.
 #
-# The AGENT wants an `llmprovider` row at the id it names (`default`), which
+# The AGENT wants an `llm/provider` row at the id it names (`default`), which
 # is what the llm sample ships: import that one too and fill in its key, or
 # the first agent run refuses at dispatch saying which row it wanted. The
 # function wants nothing at all. See docs/bundles-catalog.md.

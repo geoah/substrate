@@ -2689,7 +2689,7 @@ func TestADeclaredBundleActorBelongsToItsAuthority(t *testing.T) {
 // Everything else about the vocabulary is editorial and belongs in the files'
 // own review, not in the loader's suite.
 func TestShippedSchemaLoads(t *testing.T) {
-	r, err := vocabulary.LoadDir("../../kinds/substrate.reamde.dev/core")
+	r, err := vocabulary.LoadDir("../../kinds/substrate.reamde.dev")
 	if err != nil {
 		t.Fatalf("load shipped schema: %v", err)
 	}
@@ -2715,29 +2715,31 @@ func TestShippedSchemaLoads(t *testing.T) {
 	if _, err := r.ResolveTrait("substrate.reamde.dev/core", "temporal"); err != nil {
 		t.Errorf("temporal capability: %v", err)
 	}
-	// The runtime the substrate maintains is core's too (2026-08-12): the
-	// delivery plumbing and the agent loop's data, folded out of the former
-	// automation.substrate.reamde.dev / ai.substrate.reamde.dev authorities.
+	// The runtime the substrate maintains is seeded too: the delivery plumbing
+	// in core, and the agent loop's data in the second seeded package
+	// (record 0077), whose kinds the engine addresses by name.
 	for _, ident := range []string{
 		"substrate.reamde.dev/core/trigger", "substrate.reamde.dev/core/triggerrun",
-		"substrate.reamde.dev/core/llmprovider", "substrate.reamde.dev/core/llmthread", "substrate.reamde.dev/core/llmmessage",
+		"substrate.reamde.dev/llm/provider", "substrate.reamde.dev/llm/thread",
+		"substrate.reamde.dev/llm/message", "substrate.reamde.dev/llm/interaction",
 		"substrate.reamde.dev/core/agent", "substrate.reamde.dev/core/function", "substrate.reamde.dev/core/bundle",
 	} {
 		if _, ok := r.ByIdentity(ident); !ok {
 			t.Errorf("%s missing", ident)
 		}
 	}
-	// THE SEEDED TREE IS THE CORE PACKAGE ALONE, beside the authority row that
-	// owns it. Every other package is one a repository installs; a domain
+	// THE SEEDED TREE IS CORE AND LLM, beside the authority row that owns
+	// them. Every other package is one a repository installs; a domain
 	// package reappearing here would silently go back to being seeded into
 	// every new repository.
+	seeded := map[string]bool{vocabulary.PackageCore: true, vocabulary.PackageLLM: true}
 	for _, g := range r.PackageList() {
 		if g.IsAuthority() {
 			continue
 		}
-		if g.Identity != vocabulary.PackageCore {
-			t.Errorf("the seeded tree declares %s — only %s is seeded; vocabulary ships as an installable package",
-				g.Identity, vocabulary.PackageCore)
+		if !seeded[g.Identity] {
+			t.Errorf("the seeded tree declares %s — only %s and %s are seeded; vocabulary ships as an installable package",
+				g.Identity, vocabulary.PackageCore, vocabulary.PackageLLM)
 		}
 	}
 	// The actor domain is closed and flat: the three doors
@@ -2809,7 +2811,7 @@ func TestShippedSchemaUsesBlockStyle(t *testing.T) {
 	}
 	// The seeded tree and the shipped VOCABULARY bundles — the same manifests
 	// the tree used to hold, moved to the catalog and held to the same rule.
-	roots := append([]string{"../../kinds/substrate.reamde.dev/core"}, shippedVocabularyDirs...)
+	roots := append([]string{"../../kinds/substrate.reamde.dev"}, shippedVocabularyDirs...)
 	for _, root := range roots {
 		if err := walk(root); err != nil {
 			t.Fatalf("walk %s: %v", root, err)
@@ -2896,7 +2898,7 @@ func TestShippedVocabularyBundles(t *testing.T) {
 	}
 	// Into a repository that holds core and nothing else, all four at once —
 	// the import order a fresh repository actually faces.
-	r, err := vocabulary.LoadDir("../../kinds/substrate.reamde.dev/core")
+	r, err := vocabulary.LoadDir("../../kinds/substrate.reamde.dev")
 	if err != nil {
 		t.Fatalf("load the seeded tree: %v", err)
 	}

@@ -126,7 +126,7 @@ func TestWrongHostKeyIsNamedById(t *testing.T) {
 	}
 	_, err := OpenForTest(t, ctx, dsn,
 		WithDataRoot(root),
-		WithKindsDir(CoreKindsDir),
+		WithKindsDir(SeedKindsDir),
 		WithCredentialKey(base64.StdEncoding.EncodeToString(other)))
 	if err == nil {
 		t.Fatal("a host with the wrong key booted over the database")
@@ -159,7 +159,7 @@ func TestBootNamesADamagedWrapUnderTheSameKey(t *testing.T) {
 
 	_, err := OpenForTest(t, ctx, dsn,
 		WithDataRoot(root),
-		WithKindsDir(CoreKindsDir),
+		WithKindsDir(SeedKindsDir),
 		WithCredentialKey(TestCredentialKey))
 	if err == nil {
 		t.Fatal("a damaged wrap booted")
@@ -277,9 +277,9 @@ func TestSecretPropsDoNotAliasOneSealedRow(t *testing.T) {
 // a row's ciphertext onto another row fails the open. The tests below reach
 // openSecretValue directly and plant bytes in the sealed table the way an
 // attacker with table write access would.
-const bindingProviderKind = "substrate.reamde.dev/core/llmprovider"
+const bindingProviderKind = "substrate.reamde.dev/llm/provider"
 
-// putProviderSecret writes one llmprovider row with a secret apiKey and returns
+// putProviderSecret writes one llm/provider row with a secret apiKey and returns
 // the sealed-store ref the property now holds.
 func putProviderSecret(t *testing.T, ds *dataset, id, key string) string {
 	t.Helper()
@@ -374,7 +374,7 @@ func openCredentialService(t *testing.T) (*service, Repository) {
 	t.Helper()
 	ctx := context.Background()
 	dsn := MigratedDSN(t)
-	svcIface, err := OpenForTest(t, ctx, dsn, WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsDir(CoreKindsDir))
+	svcIface, err := OpenForTest(t, ctx, dsn, WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}

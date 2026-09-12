@@ -62,6 +62,7 @@ const (
 	secondPassword  = "another-correct-horse-battery"
 
 	corePkg        = "substrate.reamde.dev/core"
+	llmPkg         = "substrate.reamde.dev/llm"
 	googlePkg      = "providers.substrate.reamde.dev/google"
 	embedAPIKey    = "sk-drill-embed-key"
 	embedModel     = "text-embedding-3-small"
@@ -109,7 +110,7 @@ var (
 	drillCollections = []string{
 		taskKind, projectKind, personKind, widgetKind, gadgetKind, flagKind, echoKind,
 		subjectKind, contactKind, memberKind, fileKind, oauthKind, googleConfig, googlePkg + "/account",
-		corePkg + "/llmprovider", corePkg + "/trigger", corePkg + "/recordmerge", corePkg + "/recordsplit",
+		llmPkg + "/provider", corePkg + "/trigger", corePkg + "/recordmerge", corePkg + "/recordsplit",
 		corePkg + "/blob", corePkg + "/token", corePkg + "/credential", corePkg + "/recoverykey",
 		corePkg + "/repository", corePkg + "/triggerrun", corePkg + "/kind", corePkg + "/function",
 		corePkg + "/recordmapping", corePkg + "/package", corePkg + "/bundle",
@@ -939,7 +940,7 @@ func (d *drill) writeSecretsAndAttachment(t *testing.T, e *testenv.Env) {
 	putRecord(t, e, fileKind, "report", map[string]any{"properties": map[string]any{
 		"name": "report.txt", "data": blob.Digest, "notes": "attached before the restore",
 	}})
-	putRecord(t, e, corePkg+"/llmprovider", "vectors", map[string]any{"properties": map[string]any{
+	putRecord(t, e, llmPkg+"/provider", "vectors", map[string]any{"properties": map[string]any{
 		"label": "vectors", "wire": "openai", "baseURL": d.embed.srv.URL,
 		"apiKey": embedAPIKey, "embedModel": embedModel,
 	}})
@@ -1075,7 +1076,7 @@ func (d *drill) writeSecondRepository(t *testing.T, e *testenv.Env) {
 		})
 	}
 	patchRecord(t, l, secondTask, "l-0", map[string]any{"labels": map[string]any{"owner/second": nil}})
-	putRecord(t, l, corePkg+"/llmprovider", "second-llm", map[string]any{"properties": map[string]any{
+	putRecord(t, l, llmPkg+"/provider", "second-llm", map[string]any{"properties": map[string]any{
 		"label": "second", "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": "sk-second-value",
 	}})
 	if status, raw, _ := l.DoRaw(http.MethodPut, "/api/v1/blobs?name=second.txt", []byte("second bytes"),

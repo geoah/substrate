@@ -1,4 +1,4 @@
-/** The transcript as a reader sees it, folded out of the `llmmessage` rows the
+/** The transcript as a reader sees it, folded out of the `llm/message` rows the
  * loop wrote (`internal/engine/agentloop.go`). The wire shape is a flat list of
  * turns — a `user` row, an `assistant` row carrying prose and/or its dispatched
  * `toolCalls`, and one `tool` row per dispatch keyed back by `toolCallId`. The
@@ -91,12 +91,18 @@ const PROPOSE_TOOL = "propose"
 const REQUEST_KIND = "substrate.reamde.dev/core/recordpatchrequest"
 
 /** The interaction kind — a batch of questions the `ask` built-in landed. */
-const INTERACTION_KIND = "substrate.reamde.dev/core/llminteraction"
+const INTERACTION_KIND = "substrate.reamde.dev/llm/interaction"
+/** Where that kind was before it moved out of core (decision record 0077). A
+ * stamp written before the move still spells it, and a transcript read back
+ * years later must still find its interaction. */
+const INTERACTION_KIND_PRE_MOVE = "substrate.reamde.dev/core/llminteraction"
 
 /** The interaction a settled ask landed, from the engine-stamped changes. */
 export function interactionIdOf(call: ToolCallView): string | undefined {
   const stamped = (call.changes ?? []).find(
-    (c) => c.kind === INTERACTION_KIND && c.op === "put"
+    (c) =>
+      (c.kind === INTERACTION_KIND || c.kind === INTERACTION_KIND_PRE_MOVE) &&
+      c.op === "put"
   )
   return stamped?.id
 }
@@ -131,7 +137,7 @@ const MINTED_ID = /^[a-z2-7]{12}$/
  * agent that aliases `{function: …/propose, name: file}` gets no link, and one
  * that aliases some other function TO `propose` would get one on any payload
  * that looked right. Carrying the tool entry's function identity on the
- * llmmessage row is what would settle it, and it is not carried yet (noted
+ * llm/message row is what would settle it, and it is not carried yet (noted
  * follow-up).
  *
  * Everything that CAN be checked is: the call settled ok, the name is exactly

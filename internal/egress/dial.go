@@ -12,7 +12,7 @@ import (
 )
 
 // A server dial of a repository-chosen URL is issue #241's SSRF read primitive:
-// a repository owner writes an llmprovider row, so the baseURL the engine dials
+// a repository owner writes an llm/provider row, so the baseURL the engine dials
 // is attacker-chosen, and a completion's body returns to the dispatching user.
 // A string check on the URL is defeated by DNS (a name that resolves to a
 // private address on the connect the check did not see), so the check runs in

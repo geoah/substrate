@@ -70,7 +70,7 @@ A record opens on five tabs:
   drill into. Outgoing pointers read
   straight off the record's references; inbound ones are grouped and paged as the API pages
   them, each group headed by the name the **declaration** gives that side
-  (`messages · llmmessage`, from `inverse:`) rather than the raw property name, which
+  (`messages · llm/message`, from `inverse:`) rather than the raw property name, which
   is the same link as the *other* record spells it. A member expands in
   place into its own graph, so a thread → its messages → the record a tool
   wrote is three clicks without leaving the page.
@@ -141,15 +141,15 @@ each resolves, and opens a chat against one.
 A chat is a thread, and a thread is a run. The left rail is this agent's
 threads, newest first, selected through `?thread=` so a conversation is
 linkable; **New** opens an empty one. The transcript is rebuilt from the
-`llmmessage` records the loop wrote, not from the browser's memory, so a
+`llm/message` records the loop wrote, not from the browser's memory, so a
 reload shows the same conversation — and every tool call is a card that says
 whether it is running, settled or failed and expands to the request it sent
 and the response it got, both as formatted JSON. While a run streams, the same
 cards fill in live and are replaced by the stored rows when it settles.
 
-The [`llmprovider`](agents.md#providers) rows are **not** on this page: an agent
+The [`llm/provider`](agents.md#providers) rows are **not** on this page: an agent
 names a provider by id, and that pointer reads on the agent's own record.
-They live under Data → `substrate.reamde.dev/core` → llmproviders, and
+They live under Data → `substrate.reamde.dev/llm` → providers, and
 [registering one](agents.md#registering-a-provider) is an ordinary record
 write.
 

@@ -543,16 +543,16 @@ describe("BundleDetailPage", () => {
   })
 
   describe("standalone setup items", () => {
-    it("renders a provider step as a warning row linking the llmprovider record", async () => {
+    it("renders a provider step as a warning row linking the llm/provider record", async () => {
       params.id = PEOPLE.id
       serve(
         status({
           setup: [
             {
               code: "provider",
-              kind: "substrate.reamde.dev/core/llmprovider",
+              kind: "substrate.reamde.dev/llm/provider",
               record: "openai",
-              message: "llmprovider openai has no key",
+              message: "llm/provider openai has no key",
             },
           ],
         })
@@ -561,7 +561,7 @@ describe("BundleDetailPage", () => {
       await screen.findByText("people")
       expect(screen.getByText("1 setup step")).toBeTruthy()
       const row = screen
-        .getByText("llmprovider openai has no key")
+        .getByText("llm/provider openai has no key")
         .closest("div") as HTMLElement
       const link = within(row).getByText("openai").closest("a")!
       expect(link.getAttribute("data-to")).toBe(
@@ -569,8 +569,8 @@ describe("BundleDetailPage", () => {
       )
       expect(JSON.parse(link.getAttribute("data-params")!)).toEqual({
         authority: "substrate.reamde.dev",
-        pkg: "core",
-        name: "llmprovider",
+        pkg: "llm",
+        name: "provider",
         id: "openai",
       })
     })

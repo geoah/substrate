@@ -21,7 +21,11 @@ import {
   changeRequestQueryOptions,
   submitDecision,
 } from "@/lib/api/changerequests"
-import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "@/lib/api/http"
+import {
+  CORE_AUTHORITY,
+  CORE_PACKAGE_NAME,
+  LLM_PACKAGE_NAME,
+} from "@/lib/api/http"
 import { putRecord, recordQueryOptions } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
 import {
@@ -53,12 +57,7 @@ export function ProposalCard({ id }: { id: string }) {
   const threadId = threadPath.slice(threadPath.lastIndexOf("/") + 1)
   const gated = typeof request.data?.properties.policy === "string"
   const thread = useQuery({
-    ...recordQueryOptions(
-      CORE_AUTHORITY,
-      CORE_PACKAGE_NAME,
-      "llmthread",
-      threadId
-    ),
+    ...recordQueryOptions(CORE_AUTHORITY, LLM_PACKAGE_NAME, "thread", threadId),
     enabled: gated && Boolean(threadId),
   })
   // The card shows WHAT would change, not a link to find out: for a patch,

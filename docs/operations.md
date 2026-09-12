@@ -49,7 +49,7 @@ boot.
 | `SUBSTRATE_CONSOLE_URL`        | —                                      | The console origin the OAuth return-page posts to and falls back to redirecting into. Empty is local dev. |
 | `SUBSTRATE_SANDBOX`            | `best-effort`                          | How hard to confine function bodies: `off`, `best-effort`, or `enforce` (refuse to run a body unconfined). |
 | `SUBSTRATE_SANDBOX_EGRESS_ALLOW` | —                                   | A comma-separated list of CIDRs (or bare addresses) a network body may reach despite the private-range block. A body that declares `permissions.network` reaches the public internet but not the deployment's own loopback, link-local or RFC1918 ranges, so a local provider (a loopback Ollama) needs its address listed here. Empty blocks every private range. |
-| `SUBSTRATE_EGRESS_ALLOW`       | —                                      | A comma-separated list of CIDRs (or bare addresses) the SERVER may dial for a repository-chosen URL despite the private-range block. An `llmprovider` row's `baseURL` is written by the repository owner, so the engine confines its completion and embedding dials to public destinations, refusing the deployment's own loopback, link-local, RFC1918 and CGNAT ranges at connect time (issue #241). A local provider (a loopback Ollama) needs its address listed here. Empty blocks every private range. This is the server's own dials; `SUBSTRATE_SANDBOX_EGRESS_ALLOW` is the separate escape for a function body's dials. |
+| `SUBSTRATE_EGRESS_ALLOW`       | —                                      | A comma-separated list of CIDRs (or bare addresses) the SERVER may dial for a repository-chosen URL despite the private-range block. An `llm/provider` row's `baseURL` is written by the repository owner, so the engine confines its completion and embedding dials to public destinations, refusing the deployment's own loopback, link-local, RFC1918 and CGNAT ranges at connect time (issue #241). A local provider (a loopback Ollama) needs its address listed here. Empty blocks every private range. This is the server's own dials; `SUBSTRATE_SANDBOX_EGRESS_ALLOW` is the separate escape for a function body's dials. |
 
 `SUBSTRATE_CREDENTIAL_KEY` is the one that must be backed up apart from the
 data root: without it, sealed material is unreadable
@@ -134,7 +134,7 @@ rest; the substrate does not.
 
 The server takes no LLM endpoint, no key and no embedding model. Completions
 and embeddings alike are bought through a repository's own
-[`llmprovider`](agents.md#providers) records, which carry the wire, the
+[`llm/provider`](agents.md#providers) records, which carry the wire, the
 endpoint, the key and (for embeddings) the model. The process holds no bearer,
 so no host-wide key can reach a repository-chosen endpoint.
 
@@ -654,7 +654,7 @@ queued the repository's embeddable properties` with the count). Into an empty
 database that is every property; a newer directory restored over an older
 database dump queues only what changed, so it does not re-buy the repository.
 The drain loop then buys the vectors a batch at a time once the repository's
-`llmprovider` row resolves; with no such row the queue rows wait for one. A
+`llm/provider` row resolves; with no such row the queue rows wait for one. A
 `semantic` search says which of the two it is answering from, refused or
 partial ([search](api.md#search)). The new vectors come from new provider
 calls, so a ranking may differ from before the copy. `reembed` is not part of

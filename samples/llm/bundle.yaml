@@ -6,7 +6,7 @@
 # without an upgrade path, and installing it accepts that. Nothing outside
 # this directory declares against it.
 #
-# NOTHING SEEDS A PROVIDER. A repository holds no `llmprovider` row until its
+# NOTHING SEEDS A PROVIDER. A repository holds no `llm/provider` row until its
 # owner writes one, because a row is where the wire, the endpoint and the KEY
 # live — and a substrate cannot invent a key. A row shipped without one would
 # only postpone the failure to the first dispatch while looking configured.
@@ -14,7 +14,7 @@
 # So this bundle is the shortcut, and it asks one thing of you afterwards:
 #
 #   1. Install it (Registry → Examples, or `substratectl apply -f`).
-#   2. Data → llmproviders → `default` → Edit, and put your key in `apiKey`.
+#   2. Data → providers → `default` → Edit, and put your key in `apiKey`.
 #      It is secret-typed: it reads back redacted ever after, and writing it
 #      again is how a rotation is done.
 #   3. Agents → `samples.substrate.reamde.dev/llm/substrate` → chat.
@@ -48,7 +48,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: llm
-  version: 14
+  version: 15
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -168,7 +168,7 @@ data:
   permissions:
     writes:
       - substrate.reamde.dev/core/recordpatchrequest
-      - substrate.reamde.dev/core/llminteraction
+      - substrate.reamde.dev/llm/interaction
   budgets:
     maxTurns: 16
     maxToolCalls: 12

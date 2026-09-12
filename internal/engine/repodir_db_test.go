@@ -45,7 +45,7 @@ func repoDirOf(t *testing.T, svc substrate.Service, ds substrate.Dataset) string
 func reopen(t *testing.T, dsn, root string) (substrate.Service, error) {
 	t.Helper()
 	svc, err := engine.OpenForTest(t, context.Background(), dsn,
-		engine.WithKindsDir(engine.CoreKindsDir),
+		engine.WithKindsDir(engine.SeedKindsDir),
 		engine.WithDataRoot(root),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {
@@ -256,7 +256,7 @@ func secretRefOf(t *testing.T, dsn, kind, id, prop string) string {
 	return ref
 }
 
-// putProvider writes an llmprovider row whose apiKey is a secret-typed
+// putProvider writes an llm/provider row whose apiKey is a secret-typed
 // property, and returns the ref the property stores.
 func putProvider(t *testing.T, ds substrate.Dataset, dsn, id, key string) string {
 	t.Helper()
@@ -836,7 +836,7 @@ func TestReadOnlyOpenLeavesDamageAndVerifyNamesIt(t *testing.T) {
 
 	ctx := context.Background()
 	ro, err := engine.OpenForTest(t, ctx, dsn,
-		engine.WithKindsDir(engine.CoreKindsDir),
+		engine.WithKindsDir(engine.SeedKindsDir),
 		engine.WithDataRoot(root),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithDirectoryReadOnly())
@@ -947,7 +947,7 @@ func TestImportRefusesADirectoryTheKeyCannotOpen(t *testing.T) {
 	}
 	ctx := context.Background()
 	_, err := engine.OpenForTest(t, ctx, dsn2,
-		engine.WithKindsDir(engine.CoreKindsDir),
+		engine.WithKindsDir(engine.SeedKindsDir),
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(base64.StdEncoding.EncodeToString(other)))
 	if err == nil {
@@ -1374,7 +1374,7 @@ func TestAnInterruptedImportResumesAtTheNextBoot(t *testing.T) {
 			for i, c := range tc.crashes {
 				seen := 0
 				_, err := engine.OpenForTest(t, ctx, dsn2,
-					engine.WithKindsDir(engine.CoreKindsDir),
+					engine.WithKindsDir(engine.SeedKindsDir),
 					engine.WithDataRoot(root2),
 					engine.WithCredentialKey(engine.TestCredentialKey),
 					engine.WithTestImportFault(batch, func(stage string) error {
@@ -1404,7 +1404,7 @@ func TestAnInterruptedImportResumesAtTheNextBoot(t *testing.T) {
 				// second process beside the (dead) server meets the marker at
 				// the open and is told to boot the server.
 				ro, err := engine.OpenForTest(t, ctx, dsn2,
-					engine.WithKindsDir(engine.CoreKindsDir),
+					engine.WithKindsDir(engine.SeedKindsDir),
 					engine.WithDataRoot(root2),
 					engine.WithCredentialKey(engine.TestCredentialKey),
 					engine.WithDirectoryReadOnly())
@@ -1483,7 +1483,7 @@ func TestAResumedImportFoldsWhatTheCatchUpAppended(t *testing.T) {
 	errKilled := errors.New("the process died here")
 	ctx := context.Background()
 	_, err := engine.OpenForTest(t, ctx, dsn2,
-		engine.WithKindsDir(engine.CoreKindsDir),
+		engine.WithKindsDir(engine.SeedKindsDir),
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithTestImportFault(int(head), func(stage string) error {
@@ -1626,7 +1626,7 @@ func TestCatchUpAppendsWholeTransactions(t *testing.T) {
 	}
 
 	svc2, err := engine.OpenForTest(t, context.Background(), dsn,
-		engine.WithKindsDir(engine.CoreKindsDir),
+		engine.WithKindsDir(engine.SeedKindsDir),
 		engine.WithDataRoot(root),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithCatchUpBatch(3),

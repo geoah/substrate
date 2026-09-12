@@ -103,7 +103,7 @@ func run() error {
 	defer cancel()
 
 	// There is no embedder here, and no LLM gateway either. Both are a
-	// REPOSITORY's data: an llmprovider row names the endpoint, the key and
+	// REPOSITORY's data: an llm/provider row names the endpoint, the key and
 	// (for embeddings) the model, and the engine resolves it per repository
 	// per pass. The process holds no key that could reach a
 	// repository-chosen endpoint.

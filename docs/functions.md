@@ -187,7 +187,7 @@ body. Core ships five of them, and they are the agent
 | `substrate.reamde.dev/core/graphql` | the whole-repository read-only GraphQL surface |
 | `substrate.reamde.dev/core/mutate` | GraphQL mutations, bounded by the calling agent's emit |
 | `substrate.reamde.dev/core/propose` | lands one reviewed `recordpatchrequest` |
-| `substrate.reamde.dev/core/ask` | lands one `llminteraction` carrying a batch of at most eight questions for the user; it returns the record id, not the answer, which arrives in a later turn |
+| `substrate.reamde.dev/core/ask` | lands one `llm/interaction` carrying a batch of at most eight questions for the user; it returns the record id, not the answer, which arrives in a later turn |
 
 They are **ordinary function records**: seeded into every new repository,
 delivered to an existing one by the [boot upgrade](vocabulary.md), listed in

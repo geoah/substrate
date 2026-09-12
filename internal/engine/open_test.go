@@ -22,7 +22,7 @@ func TestOpenRequiresADataRoot(t *testing.T) {
 		"relative root": {engine.WithDataRoot("data")},
 	} {
 		all := append([]engine.Option{
-			engine.WithKindsDir(engine.CoreKindsDir),
+			engine.WithKindsDir(engine.SeedKindsDir),
 			engine.WithCredentialKey(engine.TestCredentialKey),
 		}, opts...)
 		svc, err := engine.Open(ctx, dsn, all...)

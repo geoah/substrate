@@ -243,9 +243,9 @@ describe("linkTargetsOf", () => {
 /** The kind DEFINITION view's document: the same envelope as a record's, with
  * the meta-kind on top and the declaration as `data` — what a schema file
  * authors, re-rendered from the stored (key-order-less) definition. */
-const llmprovider: KindInfo = {
-  identity: "substrate.reamde.dev/core/llmprovider",
-  name: "llmprovider",
+const providerKind: KindInfo = {
+  identity: "substrate.reamde.dev/llm/provider",
+  name: "provider",
   authority: "substrate.reamde.dev",
   package: "core",
   version: 1,
@@ -254,7 +254,7 @@ const llmprovider: KindInfo = {
   definition: {
     // deliberately scrambled: jsonb lost the authored order.
     properties: { wire: { type: "string" } },
-    names: { singular: "llmprovider" },
+    names: { singular: "provider" },
     displayTemplate: "{name}",
     authority: "substrate.reamde.dev",
     package: "core",
@@ -264,14 +264,14 @@ const llmprovider: KindInfo = {
 
 describe("kindManifestOf", () => {
   it("wraps the declaration in the meta-kind envelope, id = the reference", () => {
-    const m = kindManifestOf(llmprovider)
+    const m = kindManifestOf(providerKind)
     expect(Object.keys(m)).toEqual(["kind", "metadata", "data"])
     expect(m.kind).toBe("substrate.reamde.dev/core/kind")
-    expect(m.metadata).toEqual({ id: "substrate.reamde.dev/core/llmprovider" })
+    expect(m.metadata).toEqual({ id: "substrate.reamde.dev/llm/provider" })
   })
 
   it("re-imposes the authored reading order, unknown keys last", () => {
-    const data = kindManifestOf(llmprovider).data as Record<string, unknown>
+    const data = kindManifestOf(providerKind).data as Record<string, unknown>
     expect(Object.keys(data)).toEqual([
       "authority",
       "package",
@@ -283,16 +283,16 @@ describe("kindManifestOf", () => {
   })
 
   it("renders an empty data map for a kind with no stored declaration", () => {
-    const bare = kindManifestOf({ ...llmprovider, definition: {} })
+    const bare = kindManifestOf({ ...providerKind, definition: {} })
     expect(bare.data).toEqual({})
   })
 })
 
 describe("kindManifestYAML", () => {
   it("serializes the declaration in document order", () => {
-    const yaml = kindManifestYAML(llmprovider)
+    const yaml = kindManifestYAML(providerKind)
     expect(yaml.split("\n")[0]).toBe("kind: substrate.reamde.dev/core/kind")
-    expect(yaml).toContain("id: substrate.reamde.dev/core/llmprovider")
+    expect(yaml).toContain("id: substrate.reamde.dev/llm/provider")
     expect(yaml.indexOf("authority:")).toBeLessThan(yaml.indexOf("properties:"))
     expect(yaml).toContain("    type: string")
   })

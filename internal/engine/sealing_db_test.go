@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	sgProviderKind = "substrate.reamde.dev/core/llmprovider"
+	sgProviderKind = "substrate.reamde.dev/llm/provider"
 	sgPlainKey     = "sk-plain-12345"
 )
 
@@ -285,7 +285,7 @@ func TestOAuthClientSecretIsSealedAtRest(t *testing.T) {
 func TestImportRefusesADirectoryWhoseSealedFilesDoNotOpen(t *testing.T) {
 	t.Parallel()
 	svc, ds, dsn := newDatasetWithDSN(t)
-	const kind = "substrate.reamde.dev/core/llmprovider"
+	const kind = "substrate.reamde.dev/llm/provider"
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: kind, ID: "prov",
 		Properties: map[string]any{
@@ -465,7 +465,7 @@ func otherCredentialKey(t *testing.T) ([]byte, string) {
 func openWithKey(t *testing.T, dsn, root, key string) (substrate.Service, error) {
 	t.Helper()
 	svc, err := engine.OpenForTest(t, context.Background(), dsn,
-		engine.WithKindsDir(engine.CoreKindsDir),
+		engine.WithKindsDir(engine.SeedKindsDir),
 		engine.WithDataRoot(root),
 		engine.WithCredentialKey(key))
 	if err == nil {

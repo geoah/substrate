@@ -1,9 +1,9 @@
 package engine
 
 // The resolution primitive. A transition declared with `notifies: <prop>`
-// (vocabulary.Transition.Notifies, a reference property pinned to llmthread)
+// (vocabulary.Transition.Notifies, a reference property pinned to llm/thread)
 // reports itself into that thread: the same transaction writes ONE `system`
-// llmmessage — the kind's envelope plus the transition's changelog entries —
+// llm/message — the kind's envelope plus the transition's changelog entries —
 // and, after commit, the thread RESUMES so the agent's next turn reacts to
 // it. The marker is declared, never hardcoded per kind. The message is an
 // ordinary record: any reader of the thread (the console, GraphQL, the watch
@@ -179,7 +179,7 @@ func (t *txn) requestTarget(req *erow) (eref, error) {
 	return referenceTargetOf(req, propTarget), nil
 }
 
-// putThreadSystemRow writes one `system` llmmessage into a thread: the
+// putThreadSystemRow writes one `system` llm/message into a thread: the
 // envelope as content, the resolution's changelog entries as `changes`, the
 // next stored turn ordinal. The writer is the resolving actor — an owner
 // decision writes under the owner's hand, a judge's under the policy's — so
@@ -348,7 +348,7 @@ func (ds *dataset) SweepResolutions(ctx context.Context) (int, error) {
 		    SELECT 1 FROM records m
 		    WHERE m.kind = $2 AND m.deleted_at IS NULL
 		      AND m.props->>'role' = 'system'
-		      AND `+referencePathSQL("m.props", msgRelThread)+` = 'substrate.reamde.dev/core/llmthread/' || t.id
+		      AND `+referencePathSQL("m.props", msgRelThread)+` = 'substrate.reamde.dev/llm/thread/' || t.id
 		      AND m.created_at > (t.props->>'finishedAt')::timestamptz
 		  )`,
 		typeThread, typeMessage)

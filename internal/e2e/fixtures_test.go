@@ -17,7 +17,7 @@ const (
 	verdictCollection = "/api/v1/" + storyPkg + "/matchverdict"
 
 	triggerCollection    = "/api/v1/substrate.reamde.dev/core/trigger"
-	providerCollection   = "/api/v1/substrate.reamde.dev/core/llmprovider"
+	providerCollection   = "/api/v1/substrate.reamde.dev/llm/provider"
 	requestCollection    = "/api/v1/substrate.reamde.dev/core/recordpatchrequest"
 	triggerRunCollection = "/api/v1/substrate.reamde.dev/core/triggerrun"
 

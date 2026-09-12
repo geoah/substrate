@@ -184,7 +184,7 @@ data:
       - substrate.reamde.dev/core/recordpatchrequest
 ---
 # ---- ask: the soft interaction --------------------------------------------------
-# Lands ONE llminteraction — a batch of questions the user answers as a unit —
+# Lands ONE llm/interaction — a batch of questions the user answers as a unit —
 # with `thread` stamped by the loop. The answer arrives in a LATER turn as a
 # system row (the answering transition notifies the thread and resumes it), so
 # the card teaches the model the contract: ask, then continue other work or
@@ -209,4 +209,4 @@ data:
         multi?: bool}; omit options for a yes/no question'
   permissions:
     writes:
-      - substrate.reamde.dev/core/llminteraction
+      - substrate.reamde.dev/llm/interaction

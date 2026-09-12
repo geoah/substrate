@@ -325,7 +325,7 @@ permissions, triggers, webhooks and the sandbox.
 The agent loop is core: the `agent` kind, its built-in tools and the
 console's chat all ship in the engine, which is why `assistant` needed
 nothing installed. The one thing a substrate cannot invent is an LLM
-provider key. Providers are `llmprovider` records, and the catalog ships a
+provider key. Providers are `llm/provider` records, and the catalog ships a
 **bundle** with two keyless rows (`anthropic`, `openai`) and example agents
 beside them. A bundle is the install unit: a closure like `chores.yaml`,
 installed and removed as one thing, from the console's Registry page or
@@ -342,7 +342,7 @@ write, and `apiKey` is secret-typed, so it reads back redacted ever after:
 
 ```bash
 cat <<'EOF' | bin/substratectl apply -f -
-kind: substrate.reamde.dev/core/llmprovider
+kind: substrate.reamde.dev/llm/provider
 metadata:
   id: anthropic
 data:

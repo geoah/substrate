@@ -18,7 +18,7 @@ import (
 
 // WHERE VECTORS ARE BOUGHT. Completions name their provider row on the agent;
 // embeddings have no agent to name one, so the DECLARATION is the selection:
-// the one llmprovider row that carries `embedModel` is the repository's
+// the one llm/provider row that carries `embedModel` is the repository's
 // embeddings provider. Exactly one row may carry it, held at the write
 // (admitProviderRow), so resolution is a lookup and never a policy.
 //
@@ -32,7 +32,7 @@ const propEmbedModel = "embedModel"
 // embedProvider is one repository's resolved embeddings provider: the client
 // that buys the vectors, and the pair that stamps them.
 type embedProvider struct {
-	// id is the llmprovider row, and model the model id as sent. The two
+	// id is the llm/provider row, and model the model id as sent. The two
 	// together are what `embeddings.provider`/`embeddings.model` store and
 	// what the semantic query filters on, so a vector some other pair produced
 	// is never scored against one this pair did.
@@ -73,13 +73,13 @@ func (ds *dataset) resolveEmbedProvider(ctx context.Context) (*embedProvider, er
 		// (merge.go). This stays because the cost of being wrong about that
 		// is silent: picking one of two claimants would re-embed a whole
 		// repository against a coin toss, and the vectors would not say so.
-		return nil, fmt.Errorf("%w: llmprovider rows %s each declare %s — a repository buys embeddings from one row, so clear it from all but one",
+		return nil, fmt.Errorf("%w: llm/provider rows %s each declare %s — a repository buys embeddings from one row, so clear it from all but one",
 			substrate.ErrValidation, strings.Join(ids, ", "), propEmbedModel)
 	}
 	return ds.openEmbedProvider(ctx, claims[0].id)
 }
 
-// embedClaim is one live llmprovider row declaring embedModel: the pair a
+// embedClaim is one live llm/provider row declaring embedModel: the pair a
 // vector it buys is stamped with (embedProvider.id, embedProvider.model).
 type embedClaim struct{ id, model string }
 
@@ -120,7 +120,7 @@ func (ds *dataset) openEmbedProvider(ctx context.Context, id string) (*embedProv
 		return nil, err
 	}
 	if row == nil {
-		return nil, fmt.Errorf("%w: llmprovider row %q does not resolve", substrate.ErrValidation, id)
+		return nil, fmt.Errorf("%w: llm/provider row %q does not resolve", substrate.ErrValidation, id)
 	}
 	model, _ := row.Props[propEmbedModel].(string)
 	model = strings.TrimSpace(model)
@@ -137,7 +137,7 @@ func (ds *dataset) openEmbedProvider(ctx context.Context, id string) (*embedProv
 		Headers: pc.cfg.Headers,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%w: llmprovider row %q: %w", substrate.ErrValidation, id, err)
+		return nil, fmt.Errorf("%w: llm/provider row %q: %w", substrate.ErrValidation, id, err)
 	}
 	return &embedProvider{id: id, model: model, client: client}, nil
 }
@@ -157,7 +157,7 @@ func (ds *dataset) Reembed(ctx context.Context, all bool) (substrate.ReembedRepo
 		return substrate.ReembedReport{}, err
 	}
 	if provider == nil {
-		return substrate.ReembedReport{}, fmt.Errorf("%w: nothing to re-embed against: no llmprovider row declares %s",
+		return substrate.ReembedReport{}, fmt.Errorf("%w: nothing to re-embed against: no llm/provider row declares %s",
 			substrate.ErrValidation, propEmbedModel)
 	}
 	report := substrate.ReembedReport{Provider: provider.id, Model: provider.model, All: all}
@@ -477,11 +477,11 @@ func chunksCurrent(stored map[int]storedChunk, hashes []string, pair *embedClaim
 func checkEmbedWire(id string, wire llm.Wire, model string) error {
 	policy, known := wire.Policy()
 	if !known {
-		return fmt.Errorf("%w: llmprovider row %q declares %s %q but no valid wire — one of %s",
+		return fmt.Errorf("%w: llm/provider row %q declares %s %q but no valid wire — one of %s",
 			substrate.ErrValidation, id, propEmbedModel, model, llm.WireNames())
 	}
 	if !policy.Embeddings {
-		return fmt.Errorf("%w: llmprovider row %q declares %s %q on wire %q, which has no embeddings endpoint — embeddings are bought on the openai wire, so point %s at a row whose wire is openai",
+		return fmt.Errorf("%w: llm/provider row %q declares %s %q on wire %q, which has no embeddings endpoint — embeddings are bought on the openai wire, so point %s at a row whose wire is openai",
 			substrate.ErrValidation, id, propEmbedModel, model, wire, propEmbedModel)
 	}
 	return nil
@@ -493,17 +493,17 @@ func checkEmbedWire(id string, wire llm.Wire, model string) error {
 func checkEmbedModel(id, model string) error {
 	dim, ok := embed.ModelDim(model)
 	if !ok {
-		return fmt.Errorf("%w: llmprovider row %q declares %s %q, whose width is not known here — name one of %s",
+		return fmt.Errorf("%w: llm/provider row %q declares %s %q, whose width is not known here — name one of %s",
 			substrate.ErrValidation, id, propEmbedModel, model, strings.Join(embed.KnownModels(), ", "))
 	}
 	if dim != embed.Dim {
-		return fmt.Errorf("%w: llmprovider row %q declares %s %q, which is %d wide; stored vectors are %d wide, and the width is not truncated to fit",
+		return fmt.Errorf("%w: llm/provider row %q declares %s %q, which is %d wide; stored vectors are %d wide, and the width is not truncated to fit",
 			substrate.ErrValidation, id, propEmbedModel, model, dim, embed.Dim)
 	}
 	return nil
 }
 
-// admitProviderRow holds an llmprovider row to the embeddings rules AT THE
+// admitProviderRow holds an llm/provider row to the embeddings rules AT THE
 // WRITE, where the person who caused the refusal is present to read it. A row
 // that names no embedModel is an ordinary completions row and passes
 // untouched.
@@ -541,7 +541,7 @@ func (t *txn) admitProviderRow(id string, props map[string]any) error {
 		return fmt.Errorf("substrate/engine: check the embeddings provider claim: %w", err)
 	}
 	if other != "" {
-		return fmt.Errorf("%w: llmprovider row %q already declares %s — a repository buys embeddings from one row, so clear it there before naming it here",
+		return fmt.Errorf("%w: llm/provider row %q already declares %s — a repository buys embeddings from one row, so clear it there before naming it here",
 			substrate.ErrValidation, other, propEmbedModel)
 	}
 	return nil

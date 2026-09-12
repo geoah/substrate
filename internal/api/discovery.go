@@ -215,7 +215,7 @@ var features = []featureInfo{
 	// Embeddings are alpha and GraphQL is their only door: they reach a caller
 	// as the semantic arm of that same query, and the vector width is a
 	// constant in the engine (vectorDim) that no declaration can move. The
-	// provider is a repository's own llmprovider row, not a host setting an
+	// provider is a repository's own llm/provider row, not a host setting an
 	// operator can omit, so the feature is served wherever the substrate is; a
 	// repository that declares no row is told so by its first query, naming
 	// the property.

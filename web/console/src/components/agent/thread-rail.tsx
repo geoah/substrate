@@ -1,4 +1,4 @@
-/** The agent's sessions: every `llmthread` this agent ran, newest first, with
+/** The agent's sessions: every `llm/thread` this agent ran, newest first, with
  * the one being read selected. A thread IS a run (there is no agent-run
  * record), so a row says what a run says — when it started, how it settled, and
  * what it burned. Picking one loads its transcript; **New thread** opens an

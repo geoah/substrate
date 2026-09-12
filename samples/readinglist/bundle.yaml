@@ -1,6 +1,6 @@
 # The reading-list bundle — the substrate's shipped conformance example
 # (substrate-primitives §8). It composes ONLY from the primitive set:
-# bundle + kind + trait + function + agent + trigger + llmprovider. No workflow,
+# bundle + kind + trait + function + agent + trigger + llm/provider. No workflow,
 # connector, link, or reflection primitive appears anywhere — that is the whole
 # point of the gate.
 #

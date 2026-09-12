@@ -24,7 +24,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
 		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir(engine.CoreKindsDir))
+			engine.WithKindsDir(engine.SeedKindsDir))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -195,7 +195,7 @@ func TestSchemaRowsStoreNoSourceYAML(t *testing.T) {
 	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
 		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir(engine.CoreKindsDir))
+			engine.WithKindsDir(engine.SeedKindsDir))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}

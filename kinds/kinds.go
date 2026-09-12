@@ -4,17 +4,18 @@
 // diff.
 //
 // The tree is embedded whole, and the two views of it are the two roles an
-// authority can play. [Seed] is the substrate's own machinery — the core
-// package repository creation writes into a new repository's changelog.
+// authority can play. [Seed] is the substrate's own machinery — the packages
+// repository creation writes into a new repository's changelog.
 // [Bundles] is everything else: the provider packages a repository installs and
 // a console lists as available. The shipped SAMPLES are a second tree with its
 // own embed (the samples package), because a sample is vocabulary to copy
 // rather than vocabulary the substrate runs.
 //
 // The split is by NAME rather than by nesting so that adding an authority is
-// adding a directory. A layout that nested the two roles would let a new
-// package land in the wrong half and go unnoticed; here the only way to be the
-// seed is to be the seed.
+// adding a directory, and adding a SEEDED package is adding a directory under
+// the seed authority: nothing in Go names the packages it holds. A layout that
+// nested the two roles would let a new package land in the wrong half and go
+// unnoticed; here the only way to be the seed is to be the seed.
 package kinds
 
 import (
@@ -22,11 +23,17 @@ import (
 	"io/fs"
 )
 
-// SeedAuthority is the one authority whose packages are the seed, and
-// SeedPackage the single package it publishes.
+// SeedAuthority is the one authority whose packages are the seed. Its packages
+// are core and llm (record 0077), and [Seed] is the whole authority rather
+// than any named package: adding a third is adding a directory, because every
+// reader of the seed keys on the authority and on `source: builtin`.
+//
+// SeedCorePackage and SeedLLMPackage name the two the binary ships today, for
+// the callers that address one of them in particular.
 const (
-	SeedAuthority = "substrate.reamde.dev"
-	SeedPackage   = SeedAuthority + "/core"
+	SeedAuthority   = "substrate.reamde.dev"
+	SeedCorePackage = SeedAuthority + "/core"
+	SeedLLMPackage  = SeedAuthority + "/llm"
 )
 
 // The pattern is part of the contract: an authority directory it misses is a

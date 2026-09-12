@@ -139,7 +139,7 @@ func openInternalDataset(t *testing.T, opts ...Option) *dataset {
 	svc, err := OpenForTest(t, ctx, dsn,
 		append([]Option{
 			WithDataRoot(t.TempDir()),
-			WithKindsDir(CoreKindsDir),
+			WithKindsDir(SeedKindsDir),
 			WithCredentialKey(TestCredentialKey),
 		}, opts...)...)
 	if err != nil {
@@ -172,7 +172,7 @@ func openCoreDataset(t *testing.T, opts ...Option) *dataset {
 	svc, err := OpenForTest(t, ctx, dsn,
 		append([]Option{
 			WithDataRoot(t.TempDir()),
-			WithKindsDir(CoreKindsDir),
+			WithKindsDir(SeedKindsDir),
 			WithCredentialKey(TestCredentialKey),
 		}, opts...)...)
 	if err != nil {
