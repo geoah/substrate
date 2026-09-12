@@ -53,6 +53,9 @@ function hasFilter(filter?: RecordFilter): filter is RecordFilter {
   if (!filter) return false
   return Boolean(
     filter.kinds?.length ||
+    filter.ids?.length ||
+    filter.implements ||
+    filter.deleted !== undefined ||
     Object.keys(filter.properties ?? {}).length ||
     Object.keys(filter.labels ?? {}).length
   )
@@ -84,6 +87,37 @@ export function recordsQueryOptions(p: ListParams) {
     queryFn: ({ signal }) =>
       request<Page>("GET", listPath(p), undefined, { signal }),
     placeholderData: (prev) => prev,
+  })
+}
+
+/** The same list walked page by page: each page's opaque `cursor` is the next
+ * page's `after`, and the walk ends when a page omits it. `after` in `p` is
+ * ignored; the page parameter is the cursor. Keyed under the same
+ * `["records", authority, package, name]` prefix as the single-page read, so
+ * one invalidation refreshes both. */
+export function recordsInfiniteOptions(p: ListParams) {
+  return infiniteQueryOptions({
+    queryKey: [
+      "records",
+      p.authority,
+      p.package,
+      p.name,
+      "pages",
+      {
+        first: p.first ?? 50,
+        filter: hasFilter(p.filter) ? p.filter : null,
+        orderBy: p.orderBy ?? null,
+      },
+    ],
+    queryFn: ({ pageParam, signal }) =>
+      request<Page>(
+        "GET",
+        listPath({ ...p, after: pageParam || undefined }),
+        undefined,
+        { signal }
+      ),
+    initialPageParam: "",
+    getNextPageParam: (last) => last.cursor ?? undefined,
   })
 }
 
@@ -190,24 +224,27 @@ export type RecordWrite = Omit<PutInput, "kind">
 
 /** Create one record in a collection: `POST /{authority}/{package}/{name}`.
  * The kind is settled by the URL; the body carries authored properties (and an
- * optional id — omit it and the substrate mints one). */
+ * optional id — omit it and the substrate mints one). An `idempotencyKey`
+ * lets a retried submit land the record once. */
 export function createRecord(
   authority: string,
   pkg: string,
   name: string,
-  input: RecordWrite
+  input: RecordWrite,
+  opts: { idempotencyKey?: string } = {}
 ): Promise<SubstrateRecord> {
   return request<SubstrateRecord>(
     "POST",
     collectionPath(authority, pkg, name),
-    input
+    input,
+    { idempotencyKey: opts.idempotencyKey }
   )
 }
 
-/** Upsert one record by id: `PUT /{authority}/{package}/{name}/{id}`. A
- * full-document apply — the write replaces the authored envelope wholesale
- * (unlike PATCH's key-wise merge), the natural semantic for the YAML editor's
- * Edit flow. */
+/** Upsert one record by id: `PUT /{authority}/{package}/{name}/{id}`. A put
+ * MERGES the authored envelope key-wise and never prunes: a key the body
+ * omits stands, and only an explicit `delete` removes anything. The YAML
+ * editor's Edit flow writes through it. */
 export function putRecord(
   authority: string,
   pkg: string,
@@ -251,6 +288,23 @@ export function patchRecord(
     "PATCH",
     `${collectionPath(authority, pkg, name)}/${seg(id)}`,
     patch
+  )
+}
+
+/** Delete one record: `DELETE /{authority}/{package}/{name}/{id}`. The CAS
+ * precondition travels as `?ifVersion=` because a DELETE body is dropped by
+ * enough clients and proxies to be unreliable (`internal/api/rest.go`). */
+export function deleteRecord(
+  authority: string,
+  pkg: string,
+  name: string,
+  id: string,
+  ifVersion?: number
+): Promise<void> {
+  const q = ifVersion === undefined ? "" : `?ifVersion=${ifVersion}`
+  return request<void>(
+    "DELETE",
+    `${collectionPath(authority, pkg, name)}/${seg(id)}${q}`
   )
 }
 

@@ -8,20 +8,33 @@
  * TOP TABS, the record page's idiom (owner ask, 2026-08-12): **Records** is the
  * collection, **Definition** is the kind that shapes it — its declaration YAML
  * and the properties it declares. The active tab lives in `?tab=` so it
- * is linkable, and both tabs read the ONE kinds query this page already makes. */
+ * is linkable, and both tabs read the ONE kinds query this page already makes.
+ *
+ * A VIEW attached to the kind (`attach: browse`) is one more tab, keyed by
+ * its id and rendered in page mode; a view that `replaces` stands in for the
+ * table on the Records tab, and a toggle restores the table. */
 
-import { useEffect, useMemo, useState } from "react"
+import {
+  Suspense,
+  lazy,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import type { SortingState, Updater } from "@tanstack/react-table"
-import { InboxIcon, PlusIcon, SearchXIcon } from "lucide-react"
 import {
-  parseAsArrayOf,
-  parseAsString,
-  parseAsStringLiteral,
-  useQueryState,
-} from "nuqs"
+  InboxIcon,
+  LayoutListIcon,
+  PlusIcon,
+  SearchXIcon,
+  TableIcon,
+} from "lucide-react"
+import { parseAsArrayOf, parseAsString, useQueryState } from "nuqs"
 
+import { ViewBoundary } from "@/components/apps/view-boundary"
 import { DataTable, useDataTable } from "@/components/data-table/data-table"
 import { DataTableCursorPagination } from "@/components/data-table/data-table-cursor-pagination"
 import { DataTableFilters } from "@/components/data-table/data-table-filters"
@@ -39,6 +52,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { viewsQueryOptions } from "@/lib/api/apps"
 import {
   recordsQueryOptions,
   recordCountQueryOptions,
@@ -46,13 +60,25 @@ import {
 } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import {
+  recordPageParams,
+  replacingView,
+  viewsAttachedTo,
+  type AttachedView,
+} from "@/lib/apps/attach"
+import type { ActionHost, ViewContext } from "@/lib/apps/spec"
+import type { KindInfo } from "@/lib/api/types"
+import {
   decodeFilters,
   encodeFilter,
   loadBrowsePrefs,
   saveBrowsePrefs,
   toRecordFilter,
 } from "@/lib/filters"
-import { filterableProperties, kindByCollection } from "@/lib/definition"
+import {
+  filterableProperties,
+  kindByCollection,
+  kindByIdentity,
+} from "@/lib/definition"
 import {
   buildColumns,
   columnIdOf,
@@ -64,11 +90,30 @@ import { kindBrowseRoute } from "@/router"
 const PAGE_SIZE = 50
 const DEFAULT_SORT = "updatedAt:desc"
 
-/** The tab keys, in bar order; the records lead and are the default. */
-const TABS = ["records", "definition"] as const
-const tabParser = parseAsStringLiteral(TABS)
-  .withDefault("records")
+/** The fixed tab keys, in bar order; the records lead and are the default.
+ * An attached view adds its id as a key, so the parser is a plain string and
+ * a key no tab carries falls back to the records. */
+const RECORDS_TAB = "records"
+const DEFINITION_TAB = "definition"
+const tabParser = parseAsString
+  .withDefault(RECORDS_TAB)
   .withOptions({ history: "push" })
+
+/** The apps runtime is one lazy chunk: a page that opens no view pays
+ * nothing for it. */
+const ViewRenderer = lazy(() =>
+  import("@/components/apps/view-renderer").then((m) => ({
+    default: m.ViewRenderer,
+  }))
+)
+const ActionButton = lazy(() =>
+  import("@/components/apps/action-button").then((m) => ({
+    default: m.ActionButton,
+  }))
+)
+
+/** A tab is a page-mode mount with no app around it, so no inputs. */
+const PAGE_CTX: ViewContext = { inputs: {}, mode: "page" }
 
 function parseSort(sort: string): SortingState {
   const [property, dir] = sort.split(":")
@@ -121,6 +166,34 @@ export function KindBrowsePage() {
   const kindInfo = registry.data
     ? kindByCollection(registry.data, authority, pkg, name)
     : undefined
+
+  const views = useQuery(viewsQueryOptions())
+  const attached = useMemo(
+    () =>
+      kindInfo && registry.data && views.data
+        ? viewsAttachedTo(views.data.records, registry.data, {
+            browse: kindInfo.identity,
+          })
+        : [],
+    [kindInfo, registry.data, views.data]
+  )
+  const replacing = useMemo(
+    () =>
+      kindInfo && registry.data && views.data
+        ? replacingView(views.data.records, registry.data, kindInfo.identity)
+        : undefined,
+    [kindInfo, registry.data, views.data]
+  )
+  // The replacing view already holds the Records tab; a second tab for it
+  // would open the same thing twice.
+  const viewTabs = attached.filter((v) => v.spec.id !== replacing?.spec.id)
+  const [showTable, setShowTable] = useState(false)
+  const activeTab =
+    tab === RECORDS_TAB ||
+    tab === DEFINITION_TAB ||
+    viewTabs.some((v) => v.spec.id === tab)
+      ? tab
+      : RECORDS_TAB
 
   const filters = useMemo(() => decodeFilters(filterTokens), [filterTokens])
   const filterFields = useMemo(
@@ -296,17 +369,41 @@ export function KindBrowsePage() {
         </Button>
       </div>
       <Tabs
-        value={tab}
-        onValueChange={(next) => void setTab(next as (typeof TABS)[number])}
+        value={activeTab}
+        onValueChange={(next) => void setTab(String(next))}
         className="min-h-0 flex-1 gap-0"
       >
         <TabsList variant="line" className="mx-4 shrink-0 justify-start">
-          <TabsTrigger value="records">Records</TabsTrigger>
-          <TabsTrigger value="definition">Definition</TabsTrigger>
+          <TabsTrigger value={RECORDS_TAB}>Records</TabsTrigger>
+          <TabsTrigger value={DEFINITION_TAB}>Definition</TabsTrigger>
+          {viewTabs.map((v) => (
+            <TabsTrigger key={v.spec.id} value={v.spec.id}>
+              {v.spec.name}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
-        <TabsContent value="records" className="flex min-h-0 flex-col border-t">
-          {records.isError ? (
+        <TabsContent
+          value={RECORDS_TAB}
+          className="flex min-h-0 flex-col border-t"
+        >
+          {replacing && !showTable ? (
+            <BrowseView
+              view={replacing}
+              kinds={registry.data ?? []}
+              trailing={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-xs text-muted-foreground"
+                  onClick={() => setShowTable(true)}
+                >
+                  <TableIcon className="size-3.5" />
+                  Show table
+                </Button>
+              }
+            />
+          ) : records.isError ? (
             <PageEmpty
               icon={<SearchXIcon />}
               title={`${kindInfo.name} records didn't load`}
@@ -335,7 +432,18 @@ export function KindBrowsePage() {
                     persist({ filter: tokens })
                   }}
                 />
-                <div className="ml-auto py-2.5 pl-2">
+                <div className="ml-auto flex items-center gap-1 py-2.5 pl-2">
+                  {replacing && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1.5 text-xs text-muted-foreground"
+                      onClick={() => setShowTable(false)}
+                    >
+                      <LayoutListIcon className="size-3.5" />
+                      Show {replacing.spec.name}
+                    </Button>
+                  )}
                   <DataTableViewOptions table={table} />
                 </div>
               </div>
@@ -406,12 +514,89 @@ export function KindBrowsePage() {
           )}
         </TabsContent>
 
-        <TabsContent value="definition" className="min-h-0 border-t">
+        <TabsContent value={DEFINITION_TAB} className="min-h-0 border-t">
           <ScrollArea className="h-full">
             <KindDefinition kind={kindInfo} kinds={registry.data ?? []} />
           </ScrollArea>
         </TabsContent>
+
+        {viewTabs.map((v) => (
+          <TabsContent
+            key={v.spec.id}
+            value={v.spec.id}
+            className="flex min-h-0 flex-col border-t"
+          >
+            <BrowseView view={v} kinds={registry.data ?? []} />
+          </TabsContent>
+        ))}
       </Tabs>
+    </div>
+  )
+}
+
+/** One attached view under the page's own header and tabs: page mode, its
+ * failures held inside its rectangle. There is no app chrome here to carry
+ * the view's primary button, so the primary and header actions sit in a
+ * row above the rows, beside whatever the caller trails (the table toggle),
+ * and a row tap opens the row's own record page. */
+function BrowseView({
+  view,
+  kinds,
+  trailing,
+}: {
+  view: AttachedView
+  kinds: KindInfo[]
+  trailing?: ReactNode
+}) {
+  const navigate = useNavigate()
+  const { spec } = view
+  const kind = spec.kind ? kindByIdentity(kinds, spec.kind) : undefined
+  const host: ActionHost = { spec, kind, kinds, ctx: PAGE_CTX }
+  const actions = spec.actions.filter(
+    (a) => a.placement === "primary" || a.placement === "header"
+  )
+  const bar = actions.length > 0 || trailing || spec.description
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {bar && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-1.5">
+          {spec.description && (
+            <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+              {spec.description}
+            </p>
+          )}
+          <div className="ml-auto flex items-center gap-1">
+            <Suspense fallback={null}>
+              {actions.map((action) => (
+                <ActionButton
+                  key={action.name}
+                  host={host}
+                  action={action}
+                  className="md:h-8"
+                />
+              ))}
+            </Suspense>
+            {trailing}
+          </div>
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+        <Suspense fallback={<BrowseTableSkeleton />}>
+          <ViewBoundary label={spec.id}>
+            <ViewRenderer
+              spec={spec}
+              kinds={kinds}
+              ctx={PAGE_CTX}
+              onOpenRecord={(record) =>
+                void navigate({
+                  to: "/data/$authority/$pkg/$name/$id",
+                  params: recordPageParams(record),
+                })
+              }
+            />
+          </ViewBoundary>
+        </Suspense>
+      </div>
     </div>
   )
 }

@@ -1,0 +1,80 @@
+# one app: a name, an icon and an ordered list of screens, each one view by
+# reference, plus the inputs its views resolve `$input` against. The app is
+# the thin composition and the view is the atom: a view renders alone under
+# the same host chrome, so an app record exists only where there are two or
+# more screens or an input to bind.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/app
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One app: a name, an icon and an ordered list of screens, each one view
+    by reference, plus the inputs its views resolve `$input` against. The
+    console renders it under host-owned chrome; a standalone page renders
+    the same record.
+  version: 1
+  names:
+    singular: app
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the app's heading
+    description:
+      type: string
+      description: what the app is for, one line
+    icon:
+      type: string
+      description: a lucide icon name
+    home:
+      type: bool
+      description: the app a phone opens first; the lowest id wins when two
+        say so
+    screens:
+      type: object
+      repeated: true
+      description: the screens in order; two are a segmented control, three
+        to five a tab bar, the rest open only from an action
+      fields:
+        name:
+          type: string
+          required: true
+          description: the camel route segment
+        label:
+          type: string
+          description: the tab and header text; absent uses the view's name
+        icon:
+          type: string
+          description: the tab icon
+        view:
+          type: reference
+          kind: view
+          required: true
+          description: the view this screen renders
+    # The bundle's `inputs`, on the app: the same shape and the same rule,
+    # bound, then the id `default`, then the sole record, else nothing.
+    inputs:
+      type: object
+      keyed: true
+      keyPattern: camel
+      description: the app's named configuration needs, each naming a kind
+      fields:
+        kind:
+          type: reference
+          kind: substrate.reamde.dev/core/kind
+          required: true
+          description: the kind whose records satisfy this input
+        description:
+          type: string
+          description: what the input is for
+    # The bundle's `bindings` minus `managed`: written by the console's
+    # picker or by hand. A shipped app never carries one, because install
+    # merges and the owner's binding must survive a re-install.
+    bindings:
+      type: reference
+      keyed: true
+      keyPattern: camel
+      description: the owner's chosen record per input, keyed by its name
