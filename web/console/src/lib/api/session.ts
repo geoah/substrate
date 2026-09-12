@@ -133,9 +133,3 @@ export function sessionExpired(): void {
   clearSession()
   unauthorizedHandler?.()
 }
-
-/** `substrate…9f2c` — the footer's identity line without ever showing the secret. */
-export function maskedToken(token: string): string {
-  if (token.length <= 8) return "token"
-  return `${token.slice(0, 4)}…${token.slice(-4)}`
-}

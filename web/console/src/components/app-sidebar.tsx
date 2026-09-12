@@ -67,7 +67,7 @@ import {
   type AuthorityNav,
   type PackageNav,
 } from "@/lib/api/kinds"
-import { getToken, getRepository, maskedToken } from "@/lib/api/session"
+import { getRepository } from "@/lib/api/session"
 import { upgradableBundleCount } from "@/lib/bundles"
 
 const consoleItems = [
@@ -246,7 +246,6 @@ function ActorFooter() {
   const { isMobile } = useSidebar()
   const navigate = useNavigate()
   const { theme, setTheme } = useTheme()
-  const token = getToken()
   const repository = getRepository()
 
   async function logOut() {
@@ -262,23 +261,16 @@ function ActorFooter() {
       <SidebarMenuItem>
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={
-              <SidebarMenuButton size="lg" className="aria-expanded:bg-muted" />
-            }
+            render={<SidebarMenuButton className="aria-expanded:bg-muted" />}
           >
-            <Avatar className="rounded-lg">
-              <AvatarFallback className="rounded-lg">
-                <KeyRoundIcon className="size-4" />
+            <Avatar className="size-5 rounded-md">
+              <AvatarFallback className="rounded-md">
+                <KeyRoundIcon className="size-3" />
               </AvatarFallback>
             </Avatar>
-            <div className="grid flex-1 text-left text-sm leading-tight">
-              <span className="truncate font-medium">
-                {repository ?? "Signed in"}
-              </span>
-              <span className="truncate data text-xs text-sidebar-foreground/70">
-                {token ? maskedToken(token) : "no session"}
-              </span>
-            </div>
+            <span className="truncate font-medium">
+              {repository ?? "Signed in"}
+            </span>
             <ChevronsUpDownIcon className="ml-auto size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent
