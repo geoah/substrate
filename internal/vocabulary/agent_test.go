@@ -69,7 +69,7 @@ func loadAgAuthority(t *testing.T, agData string) (*vocabulary.Registry, error) 
 
 // coreHostStub is the minimum of core an agent fixture needs to NAME a built-in.
 // The four built-ins are `runtime: host` function records, so
-// `{function: substrate.reamde.dev/core/graphql}` resolves against the registry
+// `{function: substrate.reamde.dev/core/query}` resolves against the registry
 // like any other callable — a fixture declaring no core cannot name one, which is
 // exactly the refusal a real repository gets for a function nobody installed.
 // (`host` is admissible here because LoadFS builds `builtin`.)
@@ -102,20 +102,11 @@ data:
 ---
 kind: substrate.reamde.dev/core/function
 metadata:
-  id: substrate.reamde.dev/core/graphql
+  id: substrate.reamde.dev/core/write
 data:
   authority: substrate.reamde.dev
   package: core
-  description: reads the whole repository through GraphQL
-  runtime: host
----
-kind: substrate.reamde.dev/core/function
-metadata:
-  id: substrate.reamde.dev/core/mutate
-data:
-  authority: substrate.reamde.dev
-  package: core
-  description: writes through GraphQL under the calling agent's emit
+  description: writes one record under the calling agent's emit
   runtime: host
 ---
 kind: substrate.reamde.dev/core/function
@@ -221,22 +212,24 @@ func TestAgentLoadsWithoutCoreEmit(t *testing.T) {
 	}
 }
 
-// The graphql built-in needs no grant beyond its declaration (it is read-only
-// and repository-wide by design), mutate rides the emit allowlist, and
-// hiddenFromChat is an ordinary parsed flag: one manifest proves all three. The
-// built-ins are named BY IDENTITY, and the derived Builtin word is what the
-// grant checks and the loop's dispatch read off the resolved entry.
-func TestAgentGraphQLBuiltinsAndHiddenFromChat(t *testing.T) {
+// The query built-in rides the reads allowlist, write rides the emit
+// allowlist, and hiddenFromChat is an ordinary parsed flag: one manifest
+// proves all three. The built-ins are named BY IDENTITY, and the derived
+// Builtin word is what the grant checks and the loop's dispatch read off the
+// resolved entry.
+func TestAgentBuiltinsAndHiddenFromChat(t *testing.T) {
 	r, err := loadAgAuthorityWithCore(t, agAuthority(`  description: reads and writes the graph
   prompt: You tend widgets.
   provider: default
   model: claude-opus-5
   hiddenFromChat: true
   tools:
-    - {function: substrate.reamde.dev/core/graphql}
-    - {function: substrate.reamde.dev/core/mutate}
+    - {function: substrate.reamde.dev/core/query}
+    - {function: substrate.reamde.dev/core/write}
   permissions:
     writes: [ag.example.com/ag/widget]
+    reads:
+      kinds: [ag.example.com/ag/widget]
 `))
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -249,8 +242,8 @@ func TestAgentGraphQLBuiltinsAndHiddenFromChat(t *testing.T) {
 		t.Fatal("hiddenFromChat did not parse")
 	}
 	if len(ag.Tools) != 2 ||
-		ag.Tools[0].Builtin != vocabulary.AgentToolGraphQL ||
-		ag.Tools[1].Builtin != vocabulary.AgentToolMutate {
+		ag.Tools[0].Builtin != vocabulary.AgentToolQuery ||
+		ag.Tools[1].Builtin != vocabulary.AgentToolWrite {
 		t.Fatalf("tools %+v", ag.Tools)
 	}
 	// The unmarked sibling reads as chattable.
@@ -310,12 +303,12 @@ func TestAgentRefusals(t *testing.T) {
   model: claude-opus-5
   tools: [{function: substrate.reamde.dev/core/propose}]
 `, "propose needs substrate.reamde.dev/core/recordpatchrequest in data.permissions.writes"},
-		{"mutate without emit", `  description: d
+		{"write without emit", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
-  tools: [{function: substrate.reamde.dev/core/mutate}]
-`, "mutate needs data.permissions.writes"},
+  tools: [{function: substrate.reamde.dev/core/write}]
+`, "write needs data.permissions.writes"},
 		{"self sub-agent", `  description: d
   prompt: p
   provider: default

@@ -12,11 +12,11 @@
 
 import { queryOptions } from "@tanstack/react-query"
 
-import { CORE_AUTHORITY, corePath, request, splitKind } from "./http"
+import { CORE_AUTHORITY, CORE_PACKAGE_NAME, request, splitKind } from "./http"
+import { listPath } from "./records"
 import type { KindInfo, Page } from "./types"
 
-// The registry collection is the `kind` kind's own name (decision 0033); the
-// engine resolves the segment by identity.
+// The registry is the core `kind` kind's records, named in `filter.kinds`.
 const KINDS = "kind"
 /** One page comfortably above any real registry; the fetch still follows the
  * cursor if a substrate ever outgrows it. */
@@ -78,11 +78,15 @@ export async function fetchKinds(signal?: AbortSignal): Promise<KindInfo[]> {
   const out: KindInfo[] = []
   let after: string | undefined
   do {
-    const q = new URLSearchParams({ first: String(REGISTRY_PAGE) })
-    if (after) q.set("after", after)
     const page = await request<Page>(
       "GET",
-      `${corePath(KINDS)}?${q}`,
+      listPath({
+        authority: CORE_AUTHORITY,
+        package: CORE_PACKAGE_NAME,
+        name: KINDS,
+        first: REGISTRY_PAGE,
+        after,
+      }),
       undefined,
       { signal }
     )

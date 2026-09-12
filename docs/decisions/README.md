@@ -201,12 +201,12 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0050](0050-the-changelog-is-checksummed-segment-files-and-postgres-indexes-it.md) | The changelog is checksummed segment files per repository, and Postgres indexes it | accepted |
 | [0051](0051-a-repository-directory-is-the-backup-unit.md) | A repository directory under the data root is the backup unit | superseded |
 | [0052](0052-the-authority-is-the-repository-id.md) | The authority is the repository id | accepted |
-| [0053](0053-rest-is-supported-all-of-graphql-is-preview.md) | REST is the supported interface; all of GraphQL is preview | accepted |
+| [0053](0053-rest-is-supported-all-of-graphql-is-preview.md) | REST is the supported interface; all of GraphQL is preview | superseded |
 | [0054](0054-a-repository-moves-between-host-keys-through-an-offline-rewrap.md) | A repository moves between host keys through an offline rewrap of its manifest | accepted |
 | [0055](0055-a-retired-name-is-declared-and-never-inferred-from-a-prune.md) | A retired name is a declared reservation, never inferred from a prune | accepted |
 | [0056](0056-a-change-cursor-is-a-seq-under-a-history-generation.md) | A change cursor is a seq under a history generation | accepted |
 | [0057](0057-a-changelog-line-names-its-transaction-and-an-unfinished-one-is-cut-whole.md) | A changelog line names its transaction, and an unfinished transaction is cut whole | accepted |
-| [0058](0058-a-graphql-name-always-carries-the-authority.md) | A non-core kind's GraphQL name always carries its full authority | accepted |
+| [0058](0058-a-graphql-name-always-carries-the-authority.md) | A non-core kind's GraphQL name always carries its full authority | superseded |
 | [0059](0059-a-marked-repository-refuses-plain-and-host-key-sealed-payloads.md) | A repository marked DEK-only refuses plain and host-key-sealed payloads | accepted |
 | [0060](0060-a-record-carries-the-kind-version-that-last-wrote-it.md) | A record carries the kind version that last wrote it | accepted |
 | [0061](0061-a-change-event-names-the-affected-records-and-clients-fetch-them.md) | A change event names the affected records with their versions, and clients fetch them | accepted |
@@ -227,3 +227,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0076](0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md) | A bundle ships its settings as core `setting` and `secret` records | accepted |
 | [0077](0077-the-llm-kinds-live-in-their-own-seeded-package.md) | The LLM kinds live in their own seeded package, `substrate.reamde.dev/llm` | accepted |
 | [0078](0078-a-kind-move-is-ordinary-record-writes.md) | A kind move is ordinary record writes: `movedFrom` carries the rows and repoints every reference | accepted |
+| [0079](0079-graphql-is-removed-and-the-records-read-is-one-route.md) | GraphQL is removed, and the records read is one route | accepted |

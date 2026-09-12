@@ -14,126 +14,56 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// THE PATH GRAMMAR (decisions 0033, 0042, 0047).
+// THE RECORD PATH (decisions 0033, 0042, 0047).
 //
-//	/{authority}/{package}/{kind}         a kind's collection
 //	/{authority}/{package}/{kind}/{id}    a record
 //
-// Every kind carries an authority and a package, so a collection is always
-// three segments and a record always four, and the two shapes are told apart
-// by SEGMENT COUNT, never by inspecting a segment. The collection segments ARE
-// the kind reference, so everything after the version prefix is that reference,
-// and a record's path is the record path a `reference` property stores
-// (vocabulary.RecordPath) character for character. There is no separator
-// segment: sub-resources hang one level below the id, and non-record endpoints
-// sit at the version root, so nothing needs one.
+// Every kind carries an authority and a package, so a record is always four
+// segments, and the path IS the record's reference value
+// (vocabulary.RecordPath) character for character under the version prefix.
+// There is no collection path: every list is `GET /records` (records.go), so
+// a shorter path names nothing and answers the router's 404.
 
-// address is what a REST path addresses: the collection's authority, its
-// package, the kind name, and the record id ("" on a collection route).
+// address is what a record path addresses: the kind reference and the id.
 type address struct {
-	authority string
-	pkg       string
-	kind      string
-	id        string
+	kind string
+	id   string
 }
 
-// ref is the kind reference the collection segments spell.
-func (a address) ref() string { return vocabulary.KindRef(a.authority, a.pkg, a.kind) }
-
-// path is the address as a URL under the version prefix, which for a record is
-// also its stored reference value (vocabulary.RecordPath).
+// path is the address as a URL under the version prefix, which is also the
+// record's stored reference value (vocabulary.RecordPath).
 func (a address) path() string {
-	p := "/api/" + APIVersion + "/" + a.ref()
-	if a.id != "" {
-		p += "/" + a.id
-	}
-	return p
+	return "/api/" + APIVersion + "/" + vocabulary.RecordPath(a.kind, a.id)
 }
 
-// reservedRecordID reports whether an id collides with a record sub-resource
-// segment. `incoming` is a static route below a record (`…/{id}/incoming`), so
-// an id spelled that way is refused as a record id, both read and write,
-// keeping the shadow corner symmetric (decision 0033).
-func reservedRecordID(id string) bool {
-	return id == "incoming"
-}
-
-// addressed reads what a REST path addresses, by SEGMENT COUNT alone: four
-// segments name a record ({authority}/{package}/{kind}/{id}), three a
-// collection ({authority}/{package}/{kind}). Every kind carries an authority
-// and a package (decisions 0042, 0047), so a shorter path names nothing and a
-// second return of false is a 404 rather than a lookup.
-func addressed(r *http.Request) (address, bool) {
-	s1, s2, s3, s4 := pathParam(r, "a1"), pathParam(r, "a2"), pathParam(r, "a3"), pathParam(r, "a4")
-	switch {
-	case s4 != "":
-		return address{authority: s1, pkg: s2, kind: s3, id: s4}, true
-	case s3 != "":
-		return address{authority: s1, pkg: s2, kind: s3}, true
-	default:
-		return address{}, false
+// addressed reads the record a path addresses. The four segments are the
+// kind reference's three and the id.
+func addressed(r *http.Request) address {
+	return address{
+		kind: vocabulary.KindRef(pathParam(r, "a1"), pathParam(r, "a2"), pathParam(r, "a3")),
+		id:   pathParam(r, "a4"),
 	}
 }
 
-// collection resolves the addressed collection to a declared kind, refusing an
-// address of the wrong shape FIRST.
-//
-// wantID says which shape the caller serves. A method that means one thing at a
-// collection and nothing at a record (or the reverse) answers 405 naming the
-// path that works, and never falls through to a write: `POST` at a record
-// path must not resolve the collection, discard the id and create a record
-// under a server-assigned id (#202), and `PUT` at a collection must not
-// create under a random one.
-func (h *handler) collection(w http.ResponseWriter, r *http.Request, wantID bool) (substrate.Dataset, substrate.KindInfo, address, bool) {
-	addr, ok := addressed(r)
-	if !ok {
-		writeError(w, http.StatusNotFound, codeNotFound, "no such API path: "+r.URL.Path)
-		return nil, substrate.KindInfo{}, address{}, false
-	}
-	if wantID && addr.id == "" {
-		writeError(w, http.StatusMethodNotAllowed, codeBadRequest,
-			r.Method+" addresses a record, not a collection: PUT "+addr.path()+
-				"/{id} writes one record, POST "+addr.path()+" creates one")
-		return nil, substrate.KindInfo{}, address{}, false
-	}
-	if !wantID && addr.id != "" {
-		coll := address{authority: addr.authority, pkg: addr.pkg, kind: addr.kind}
-		writeError(w, http.StatusMethodNotAllowed, codeBadRequest,
-			r.Method+" addresses a collection, not a record: POST "+coll.path()+
-				" creates one, PUT "+addr.path()+" writes this record")
-		return nil, substrate.KindInfo{}, address{}, false
-	}
-	// A record id may not be a sub-resource word. `…/{kind}/{id}/incoming` is a
-	// static route, so a published record whose
-	// id is `incoming` reads through the sub-resource handler and 405s while a
-	// PUT to the same path creates it — a write-only row nothing can read. The
-	// reservation refuses BOTH directions, on every kind, so the word means the
-	// sub-resource everywhere and the corner is symmetric (decision 0033). It
-	// does not touch the sub-resource handlers themselves: those address the
-	// record by its real id (the segment before the word), never by the word.
-	if wantID && reservedRecordID(addr.id) {
-		writeError(w, http.StatusBadRequest, codeBadRequest,
-			"id "+strconv.Quote(addr.id)+" is reserved: it names a record sub-resource, so no record may take it")
-		return nil, substrate.KindInfo{}, address{}, false
-	}
+// record resolves the addressed record's kind, refusing an unknown kind as a
+// 404. There is no scope gate here: a token has FULL ACCESS to its
+// repository, so authentication is the whole authorization story on this
+// path. What a token cannot do is written into the kinds themselves: the auth
+// kinds refuse generic writes at the engine's one chokepoint, not with a
+// per-request capability check.
+func (h *handler) record(w http.ResponseWriter, r *http.Request) (substrate.Dataset, substrate.KindInfo, address, bool) {
+	addr := addressed(r)
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)
-	// The collection segments ARE the kind reference, so they resolve the kind
-	// directly.
-	ti, err := ds.KindByRef(ctx, addr.ref())
+	ti, err := ds.KindByRef(ctx, addr.kind)
 	if err != nil {
 		if errors.Is(err, substrate.ErrNotFound) {
-			writeError(w, http.StatusNotFound, codeNotFound, "unknown collection "+addr.ref())
+			writeError(w, http.StatusNotFound, codeNotFound, "unknown kind "+addr.kind)
 			return nil, substrate.KindInfo{}, address{}, false
 		}
 		writeSubstrateError(w, err)
 		return nil, substrate.KindInfo{}, address{}, false
 	}
-	// There is no scope gate here any more: a token has FULL ACCESS to its
-	// repository, so authentication is the whole authorization
-	// story on this path. What a token cannot do is written into the kinds
-	// themselves — the auth kinds refuse generic writes at the engine's one
-	// chokepoint, not with a per-request capability check.
 	return ds, ti, addr, true
 }
 
@@ -149,10 +79,9 @@ func pathParam(r *http.Request, name string) string {
 	return raw
 }
 
-// putStatus is 201 for a create, 200 for an update or replace. A
-// fresh row lands at version 1 and every later write bumps it past 1, so
-// POST-to-collection and PUT-at-id report which they did CONSISTENTLY — no
-// more blanket 201 on an upsert that only updated (codex api finding 5).
+// putStatus is 201 for a create, 200 for an update or replace. A fresh row
+// lands at version 1 and every later write bumps it past 1, so POST and PUT
+// report which they did consistently.
 func putStatus(e *substrate.Record) int {
 	if e != nil && e.Version == 1 {
 		return http.StatusCreated
@@ -160,85 +89,13 @@ func putStatus(e *substrate.Record) int {
 	return http.StatusOK
 }
 
-func (h *handler) listCollection(w http.ResponseWriter, r *http.Request) {
-	ds, ti, _, ok := h.collection(w, r, false)
-	if !ok {
-		return
-	}
-
-	// A collection watch is the changelog tail scoped to this type. The list
-	// query grammar does not apply to it — filter/orderBy/first/after/
-	// withAnnotations are silently meaningless on a watch — so their presence is
-	// a bad_request naming the param, never silent success. `from` and
-	// `generation` (the resume cursor) ARE honored.
-	if r.URL.Query().Get("watch") == "1" {
-		if bad := rejectParams(r, "filter", "orderBy", "first", "after", "withAnnotations"); bad != "" {
-			writeError(w, http.StatusBadRequest, codeBadRequest, bad+" is not supported with watch=1")
-			return
-		}
-		if bad := unsupportedParam(r, watchParams...); bad != "" {
-			writeError(w, http.StatusBadRequest, codeBadRequest, bad)
-			return
-		}
-		h.streamChanges(w, r, ds, substrate.ChangeFilter{Kinds: []string{ti.Identity}}, false)
-		return
-	}
-	if bad := unsupportedParam(r, listParams...); bad != "" {
-		writeError(w, http.StatusBadRequest, codeBadRequest, bad)
-		return
-	}
-
-	q, err := parseQuery(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
-		return
-	}
-	// The path names the kind, so the collection FORCES filter.kinds (ruling
-	// A8). An explicit, conflicting filter.kinds is not silently overwritten —
-	// it is a bad_request; the caller either drops it or lists a different
-	// collection.
-	if len(q.Filter.Kinds) > 0 {
-		writeError(w, http.StatusBadRequest, codeBadRequest,
-			"filter.kinds is not supported on a collection list — the path already names the kind")
-		return
-	}
-	q.Filter.Kinds = []string{ti.Identity}
-
-	page, err := ds.List(r.Context(), q)
-	if err != nil {
-		writeSubstrateError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, page)
-}
-
-func (h *handler) createInCollection(w http.ResponseWriter, r *http.Request) {
-	ds, ti, _, ok := h.collection(w, r, false)
-	if !ok {
-		return
-	}
-	var in substrate.PutInput
-	if err := decodeRecordBody(r, &in); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
-		return
-	}
-	in.Kind = ti.Identity
-	ctx := idempotentContext(r)
-	ent, err := ds.Put(ctx, ActorFrom(ctx), in)
-	if err != nil {
-		writeSubstrateError(w, err)
-		return
-	}
-	writeJSON(w, putStatus(ent), ent)
-}
-
 func (h *handler) getResource(w http.ResponseWriter, r *http.Request) {
-	ds, ti, addr, ok := h.collection(w, r, true)
+	ds, ti, addr, ok := h.record(w, r)
 	if !ok {
 		return
 	}
-	// The path carries the whole record reference — the collection names the
-	// kind, {id} the id — so the read is kind-scoped by construction.
+	// The path carries the whole record reference — the kind, then the id —
+	// so the read is kind-scoped by construction.
 	ent, err := ds.Get(r.Context(), ti.Identity, addr.id)
 	if err != nil {
 		writeSubstrateError(w, err)
@@ -248,7 +105,7 @@ func (h *handler) getResource(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) putResource(w http.ResponseWriter, r *http.Request) {
-	ds, ti, addr, ok := h.collection(w, r, true)
+	ds, ti, addr, ok := h.record(w, r)
 	if !ok {
 		return
 	}
@@ -269,7 +126,7 @@ func (h *handler) putResource(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) patchResource(w http.ResponseWriter, r *http.Request) {
-	ds, ti, addr, ok := h.collection(w, r, true)
+	ds, ti, addr, ok := h.record(w, r)
 	if !ok {
 		return
 	}
@@ -301,7 +158,7 @@ func (h *handler) patchResource(w http.ResponseWriter, r *http.Request) {
 // and proxies to be no place for a guard, and the spelling is the one `put`
 // and `patch` carry in their bodies. Any other parameter is refused by name.
 func (h *handler) deleteResource(w http.ResponseWriter, r *http.Request) {
-	ds, ti, addr, ok := h.collection(w, r, true)
+	ds, ti, addr, ok := h.record(w, r)
 	if !ok {
 		return
 	}
@@ -335,19 +192,9 @@ func (h *handler) deleteResource(w http.ResponseWriter, r *http.Request) {
 // set is a bad_request naming the key — never silence, because a
 // silently ignored parameter returns UNFILTERED rows that look filtered.
 var (
-	// listParams is the list query grammar: the filter document, the order, the
-	// keyset page, the heavy-data opt-in, and the mode switch itself.
-	listParams = []string{"filter", "orderBy", "first", "after", "withAnnotations", "watch"}
-	// incomingParams is the reverse read's grammar: the keyset page, and the
-	// two narrowings a drill-down expands one group with.
-	incomingParams = []string{"first", "after", "property", "fromKind"}
 	// deleteParams is a record delete's grammar: the version precondition
 	// alone.
 	deleteParams = []string{"ifVersion"}
-	// watchParams is a collection watch: the mode switch and the resume cursor.
-	// The list grammar does not apply, and rejectParams names those keys with a
-	// message of their own before this set is consulted.
-	watchParams = []string{"watch", "from", "generation"}
 	// changeParams is the cross-collection changefeed: the two modes' cursors
 	// plus the change filter, whose list-valued keys are all PLURAL.
 	changeParams = []string{
@@ -395,33 +242,44 @@ func nearestParam(name string, allowed []string) string {
 	return ""
 }
 
-// rejectParams reports the first named query parameter that is present, "" if
-// none are. It is how a mode names a parameter it does not honor instead of
-// dropping it silently: the caller turns a non-empty return into a
-// bad_request.
-func rejectParams(r *http.Request, names ...string) string {
-	q := r.URL.Query()
-	for _, n := range names {
-		if q.Has(n) {
-			return n
+// parseFilter reads the `filter` parameter: a URL-encoded JSON document,
+// decoded STRICTLY. A misspelled filter key must never broaden the query by
+// silently dropping a narrowing predicate, so an unknown key is a bad_request
+// naming it.
+func parseFilter(r *http.Request) (substrate.Filter, error) {
+	var f substrate.Filter
+	if raw := r.URL.Query().Get("filter"); raw != "" {
+		if err := decodeJSONStrict(strings.NewReader(raw), &f); err != nil {
+			return f, errors.New("filter: " + err.Error())
 		}
 	}
-	return ""
+	return f, nil
 }
 
-// parseQuery reads the list parameters: filter (URL-encoded JSON), orderBy
-// ("at:desc,createdAt" or JSON), first/after, and the heavy-data opt-in.
+// parseFirst reads the page size, 0 when absent.
+func parseFirst(r *http.Request) (int, error) {
+	raw := r.URL.Query().Get("first")
+	if raw == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, errors.New("first: not a number")
+	}
+	return n, nil
+}
+
+// parseQuery reads the list parameters: filter, orderBy ("at:desc,createdAt"
+// or JSON), first/after, expand (comma-separated reference properties) and
+// the heavy-data opt-in.
 func parseQuery(r *http.Request) (substrate.Query, error) {
 	v := r.URL.Query()
 	var q substrate.Query
-	if raw := v.Get("filter"); raw != "" {
-		// The filter document is decoded STRICTLY: a misspelled
-		// filter key must never broaden the query by silently dropping a
-		// narrowing predicate, so an unknown key is a bad_request naming it.
-		if err := decodeJSONStrict(strings.NewReader(raw), &q.Filter); err != nil {
-			return q, errors.New("filter: " + err.Error())
-		}
+	f, err := parseFilter(r)
+	if err != nil {
+		return q, err
 	}
+	q.Filter = f
 	if raw := v.Get("orderBy"); raw != "" {
 		orders, err := parseOrderBy(raw)
 		if err != nil {
@@ -429,15 +287,18 @@ func parseQuery(r *http.Request) (substrate.Query, error) {
 		}
 		q.OrderBy = orders
 	}
-	if raw := v.Get("first"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil {
-			return q, errors.New("first: not a number")
-		}
-		q.First = n
+	if q.First, err = parseFirst(r); err != nil {
+		return q, err
 	}
 	q.After = v.Get("after")
 	q.WithAnnotations = v.Get("withAnnotations") == "1"
+	if raw := v.Get("expand"); raw != "" {
+		for _, name := range strings.Split(raw, ",") {
+			if name = strings.TrimSpace(name); name != "" {
+				q.Expand = append(q.Expand, name)
+			}
+		}
+	}
 	return q, nil
 }
 

@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strconv"
 	"text/template"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -223,35 +222,6 @@ func (h *handler) getTraitImplementors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.Listed(types))
-}
-
-// getTraitRecords pages the records of every type implementing a trait —
-// the read the console's "account configs" view is built on.
-func (h *handler) getTraitRecords(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	first := 0
-	if v := r.URL.Query().Get("first"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 {
-			writeError(w, http.StatusBadRequest, codeBadRequest, "first must be a positive integer")
-			return
-		}
-		first = n
-	}
-	// The trait selector passes through WHOLE: a full identity matches
-	// resolved bindings exactly, and a bare name resolves only when unique —
-	// cutting an identity down to its local name would let a bundle-local
-	// look-alike answer for a core trait.
-	page, err := DatasetFrom(ctx).List(ctx, substrate.Query{
-		Filter: substrate.Filter{Implements: pathParam(r, "id")},
-		First:  first,
-		After:  r.URL.Query().Get("after"),
-	})
-	if err != nil {
-		writeSubstrateError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, page)
 }
 
 type oauthStartRequest struct {

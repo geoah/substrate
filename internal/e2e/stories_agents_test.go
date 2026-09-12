@@ -207,7 +207,7 @@ func caseStory04(c *C) {
 	var requests struct {
 		Records []record `json:"records"`
 	}
-	status, raw = c.do(http.MethodGet, requestCollection, nil, &requests)
+	status, raw = c.do(http.MethodGet, listOf(requestCollection), nil, &requests)
 	c.requiref(status == http.StatusOK, "listing recordpatchrequests answered %d: %s", status, raw)
 	c.requiref(len(requests.Records) == 5, "reflection filed %d proposals, want 5: %s", len(requests.Records), raw)
 	c.stepf("reflection proposed exactly 5 changes and wrote NOTHING directly")
@@ -226,7 +226,7 @@ func caseStory04(c *C) {
 		}
 		return true
 	})
-	status, raw = c.do(http.MethodGet, requestCollection, nil, &requests)
+	status, raw = c.do(http.MethodGet, listOf(requestCollection), nil, &requests)
 	c.requiref(status == http.StatusOK, "re-listing recordpatchrequests answered %d: %s", status, raw)
 	accepted, rejected := 0, 0
 	for _, req := range requests.Records {
@@ -264,19 +264,12 @@ func caseStory04(c *C) {
 
 	// The references naming the transcript under `source` are exactly the
 	// three sourced tasks.
-	var incoming struct {
-		Incoming []struct {
-			Property string `json:"property"`
-			From     struct {
-				ID string `json:"id"`
-			} `json:"from"`
-		} `json:"incoming"`
-	}
-	status, _ = c.do(http.MethodGet, transcriptCollection+"/tr-kickoff/incoming?property=source", nil, &incoming)
-	c.requiref(status == http.StatusOK, "incoming on tr-kickoff answered %d", status)
-	fromIDs := make([]string, 0, len(incoming.Incoming))
-	for _, in := range incoming.Incoming {
-		fromIDs = append(fromIDs, in.From.ID)
+	var pointing recordsPage
+	status, _ = c.do(http.MethodGet, referencingList(transcriptKind, "tr-kickoff", "source"), nil, &pointing)
+	c.requiref(status == http.StatusOK, "the reverse read of tr-kickoff answered %d", status)
+	fromIDs := make([]string, 0, len(pointing.Records))
+	for _, in := range pointing.Records {
+		fromIDs = append(fromIDs, in.ID)
 	}
 	c.requiref(sameSet(fromIDs, "task-welcome-flow", "task-profile-signup", "task-northwind-pilot"),
 		"the tasks whose `source` names tr-kickoff: %v", fromIDs)
@@ -361,7 +354,7 @@ func caseStory06(c *C) {
 	c.stepf("all %d changelog rows are attributed to the owner, the bundles, or the four story callables (%v)", len(rows), storyActors)
 
 	join := c.graphJoin()
-	c.stepf("the GraphQL join over the story graph answers %d bytes", len(join))
+	c.stepf("the one list over the story graph answers %d bytes", len(join))
 
 	ctl, dsn := ctlEnv()
 	if ctl == "" || dsn == "" {
@@ -385,10 +378,10 @@ func caseStory06(c *C) {
 	c.stepf("repository rebuild against the live server was refused by the changelog writer lock, and the fold is untouched")
 }
 
-// graphJoin is the one fixed read STORY-06 compares around the refused rebuild: the
-// whole story graph, every kind the stories touched. References ride in
-// `properties` like every other value, so there is no second selection to
-// ask for.
+// graphJoin is the one fixed read STORY-06 compares around the refused
+// rebuild: the whole story graph, every kind the stories touched, in one
+// list. References ride in `properties` like every other value, so there is
+// no second selection to ask for.
 func (c *C) graphJoin() []byte {
 	c.t.Helper()
 	kinds := []string{
@@ -396,22 +389,20 @@ func (c *C) graphJoin() []byte {
 		eventKind, transcriptKind, storyPkg + "/matchverdict",
 		"substrate.reamde.dev/core/recordpatchrequest",
 	}
-	query := `{ records(filter: {kinds: ["` + strings.Join(kinds, `", "`) + `"]}, orderBy: [{property: "createdAt"}], first: 200) {
-		nodes { id kind properties } } }`
-	status, raw := c.do(http.MethodPost, "/api/v1/graphql", map[string]any{"query": query}, nil)
-	c.requiref(status == http.StatusOK && !strings.Contains(string(raw), `"errors"`),
-		"the GraphQL join answered %d: %s", status, raw)
+	path := listWhere(map[string]any{"kinds": kinds}, "orderBy=createdAt", "first=200")
+	status, raw := c.do(http.MethodGet, path, nil, nil)
+	c.requiref(status == http.StatusOK, "the story-graph list answered %d: %s", status, raw)
 	return raw
 }
 
-// countRecords is the size of one collection's live list.
-func (c *C) countRecords(collection string) int {
+// countRecords is the size of one kind's live list.
+func (c *C) countRecords(kindPath string) int {
 	c.t.Helper()
 	var page struct {
 		Records []record `json:"records"`
 	}
-	status, raw := c.do(http.MethodGet, collection+"?first=200", nil, &page)
-	c.requiref(status == http.StatusOK, "counting %s answered %d: %s", collection, status, raw)
+	status, raw := c.do(http.MethodGet, listOf(kindPath, "first=200"), nil, &page)
+	c.requiref(status == http.StatusOK, "counting %s answered %d: %s", kindOf(kindPath), status, raw)
 	return len(page.Records)
 }
 
@@ -475,7 +466,7 @@ func (c *C) waitFor(what string, cond func() bool) {
 // The quiet reads: no step recording, for use inside waitFor conditions.
 // quietList follows the cursor to exhaustion, so a count over a grown
 // collection is never silently one page of it.
-func (c *C) quietList(collection string) ([]record, error) {
+func (c *C) quietList(kindPath string) ([]record, error) {
 	var all []record
 	after := ""
 	for {
@@ -483,7 +474,7 @@ func (c *C) quietList(collection string) ([]record, error) {
 			Records []record `json:"records"`
 			Cursor  string   `json:"cursor"`
 		}
-		path := collection + "?first=200"
+		path := listOf(kindPath, "first=200")
 		if after != "" {
 			path += "&after=" + url.QueryEscape(after)
 		}
@@ -534,7 +525,7 @@ func (c *C) quietRuns(trigger string) int {
 // matcherResponder drives the matcher agent: score, decide, attach, audit.
 // There are no link verbs to reach for: attaching the transcript to its
 // meeting and its speakers is one patch of the transcript's own reference
-// properties, through the same mutate tool the audit goes through.
+// properties, through the same write tool the audit goes through.
 func matcherResponder(llmReq llmReq) llmTurn {
 	rec := llmReq.deliveredRecord()
 	tid, _ := rec["id"].(string)
@@ -543,16 +534,12 @@ func matcherResponder(llmReq llmReq) llmTurn {
 		for _, s := range speakers {
 			refs = append(refs, recPath(personKind, s))
 		}
-		return llmCall{"mutate", map[string]any{
-			"query": fmt.Sprintf(
-				"mutation($id: ID!, $in: JSON!) { patch(kind: %q, id: $id, input: $in) { id } }", transcriptKind),
-			"variables": map[string]any{
-				"id": tid,
-				"in": map[string]any{"properties": map[string]any{
-					"meeting":  recPath(eventKind, event),
-					"speakers": refs,
-				}},
-			},
+		return llmCall{"write", map[string]any{
+			"op": "patch", "kind": transcriptKind, "id": tid,
+			"input": map[string]any{"properties": map[string]any{
+				"meeting":  recPath(eventKind, event),
+				"speakers": refs,
+			}},
 		}}
 	}
 	verdict := func(v string, score float64, reason, event string) llmCall {
@@ -563,12 +550,9 @@ func matcherResponder(llmReq llmReq) llmTurn {
 		if event != "" {
 			props["event"] = recPath(eventKind, event)
 		}
-		return llmCall{"mutate", map[string]any{
-			"query": "mutation($in: JSON!) { put(input: $in) { id } }",
-			"variables": map[string]any{"in": map[string]any{
-				"kind": storyPkg + "/matchverdict", "id": "mv-" + tid,
-				"properties": props,
-			}},
+		return llmCall{"write", map[string]any{
+			"op": "put", "kind": storyPkg + "/matchverdict", "id": "mv-" + tid,
+			"input": map[string]any{"properties": props},
 		}}
 	}
 	// The winner comes out of the TOOL'S answer, never out of this script:
@@ -701,12 +685,9 @@ func arbiterResponder(req llmReq) llmTurn {
 	if op, _ := props["op"].(string); op == "create" && !diffCarriesSource(props["diff"]) {
 		decision = "rejected"
 	}
-	return llmTurn{calls: []llmCall{{"mutate", map[string]any{
-		"query": `mutation($id: ID!, $in: JSON!) { patch(kind: "substrate.reamde.dev/core/recordpatchrequest", id: $id, input: $in) { id } }`,
-		"variables": map[string]any{
-			"id": id,
-			"in": map[string]any{"properties": map[string]any{"decision": decision}},
-		},
+	return llmTurn{calls: []llmCall{{"write", map[string]any{
+		"op": "patch", "kind": "substrate.reamde.dev/core/recordpatchrequest", "id": id,
+		"input": map[string]any{"properties": map[string]any{"decision": decision}},
 	}}}}
 }
 

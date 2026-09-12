@@ -418,8 +418,7 @@ func TestShippedCallableActorsAreDistinct(t *testing.T) {
 // callable's name, an id that is not its package), and skipping them is how a
 // shipped example reached a release refusing to install. Requires go first,
 // into ONE seed registry, through the same BuildPackages+InstallAll pair
-// admission runs (the pair that also refuses a GraphQL name claimed twice),
-// so the whole shipped set has to coexist without a database.
+// admission runs, so the whole shipped set has to coexist without a database.
 //
 // PROVIDERS GO FIRST, then the samples in `requires:` order, because a
 // sample's SUGGESTED MAPPINGS name a provider's mirror as their source

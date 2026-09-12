@@ -68,14 +68,14 @@ func startWatch(t *testing.T, srv *httptest.Server, path, token string) (*bufio.
 	return bufio.NewReader(resp.Body), stop
 }
 
-func TestWatchCollectionStreamsBookmarkThenChanges(t *testing.T) {
+func TestWatchRecordsStreamsBookmarkThenChanges(t *testing.T) {
 	env := newTestEnv(t)
 	srv := httptest.NewServer(env.h)
 	defer srv.Close()
 	tok := env.svc.token(fakeRepository)
 	ds := env.svc.datasets[fakeRepository]
 
-	br, stop := startWatch(t, srv, peoplePath+"?watch=1", tok)
+	br, stop := startWatch(t, srv, peopleRecords+"&watch=1", tok)
 	defer stop()
 
 	first := readLine(t, br)
@@ -87,7 +87,7 @@ func TestWatchCollectionStreamsBookmarkThenChanges(t *testing.T) {
 		TS: time.Unix(5, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
 		RecordID: "c1", Kind: "samples.substrate.reamde.dev/people/person",
 	})
-	// A change in another collection must not appear on this stream.
+	// A change of another kind must not appear on this stream.
 	ds.commit(substrate.Change{
 		TS: time.Unix(6, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
 		RecordID: "m1", Kind: "samples.substrate.reamde.dev/messaging/conversationmessage",
@@ -214,12 +214,12 @@ func wantReset(t *testing.T, status int, got substrate.ErrorPayload, head int64,
 }
 
 // resumeEntryPoints are every REST door that takes a `from` cursor: the feed
-// as a page, the feed as a stream, and a collection's own stream. The rule
-// is one rule, so each door is held to it.
+// as a page, the feed as a stream, and the records route's own stream. The
+// rule is one rule, so each door is held to it.
 var resumeEntryPoints = map[string]string{
-	"feed page":        "/api/v1/changes?",
-	"feed watch":       "/api/v1/changes?watch=1&",
-	"collection watch": peoplePath + "?watch=1&",
+	"feed page":     "/api/v1/changes?",
+	"feed watch":    "/api/v1/changes?watch=1&",
+	"records watch": peopleRecords + "&watch=1&",
 }
 
 func TestBookmarkCarriesTheGeneration(t *testing.T) {
@@ -296,7 +296,7 @@ func TestFromZeroNeedsNoGeneration(t *testing.T) {
 	if lines != 3 {
 		t.Fatalf("got %d ndjson lines, want bookmark + 2 changes", lines)
 	}
-	wantNotRefused(t, env, peoplePath+"?watch=1&from=0", tok)
+	wantNotRefused(t, env, peopleRecords+"&watch=1&from=0", tok)
 }
 
 // The ticket's case: head 7, a client saves cursor 5, an OLDER copy of the
@@ -382,7 +382,7 @@ func TestListAndHistoryCarryTheHandoff(t *testing.T) {
 	ds := env.svc.datasets[fakeRepository]
 	head := seedPeople(ds, 2)
 
-	rec := env.do(t, http.MethodGet, peoplePath, tok, nil)
+	rec := env.do(t, http.MethodGet, peopleRecords, tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	page := decodeJSON[map[string]any](t, rec)
 	if page["head"] != float64(head) || page["generation"] != ds.generation {

@@ -1,27 +1,36 @@
 # THE HOST FUNCTIONS: the four callables whose body is the ENGINE.
 #
 # `runtime: host` names no source. What runs is engine code — the agent loop's
-# query executor, the GraphQL executor the /graphql endpoint shares, the propose
-# writer — and this file is what makes each of them a RECORD like every other
-# function: seeded into a new repository, delivered to an existing one by the
-# boot upgrade, listed in the functions collection, and named by an agent under
+# query executor, its write executor, the propose writer, the ask writer — and
+# this file is what makes each of them a RECORD like every other function:
+# seeded into a new repository, delivered to an existing one by the boot
+# upgrade, listed in the functions collection, and named by an agent under
 # `tools: [{function: substrate.reamde.dev/core/…}]` exactly as a bundle's
-# function is. They used to be four engine constants and a `{builtin: x}` arm on
+# function is. They used to be engine constants and a `{builtin: x}` arm on
 # `tools:` — the one thing an agent could name that no record declared.
 #
 # THE DECLARATION IS THE CARD. The `description` and the `arguments:` here are
 # what the model is shown, rendered by the loader like any other function's, so
-# tuning what an LLM reads about `graphql` is editing this file. Only `host` is
+# tuning what an LLM reads about `query` is editing this file. Only `host` is
 # admissible from a SHIPPED build: the engine can implement only what the engine
 # ships, so the loader refuses the runtime from any installed package.
 #
 # THE GRANT IS THE CALLER'S. A host function declares no `reads:` and (except
-# propose) no `emit:`, because the grant that scopes it belongs to whoever
-# called it: `query` is held to the calling agent's `reads:`, `mutate` to its
-# effective writes. That is also why two of the four are NOT callable through
+# propose and ask) no `emit:`, because the grant that scopes it belongs to
+# whoever called it: `query` is held to the calling agent's `reads:`, `write`
+# to its effective writes. That is also why the writes are NOT callable through
 # the direct call API and never a trigger's target — there is no calling agent
 # whose grants would bound them.
+#
+# Two earlier host functions took a whole query document as a tool
+# (2026-09-12, decision record 0079). They are pruned here rather than
+# retired, because a function is a record, not a kind; a repository that
+# predates the change loses the two rows at the boot upgrade and an agent
+# naming them is quarantined until it names `query` and `write`.
 # ---- query: the capability-scoped read -------------------------------------
+# The records route's grammar as a tool: one record by (kind, id), a ranked
+# read by `q`, otherwise a filtered, ordered, keyset-paged list with one hop
+# of expansion. Every arm is held to the calling agent's `reads:`.
 kind: substrate.reamde.dev/core/function
 metadata:
   id: substrate.reamde.dev/core/query
@@ -29,10 +38,18 @@ data:
   authority: substrate.reamde.dev
   package: core
   description: >-
-    Read records: pass kind + id for one record, kind (+ optional filter,
-    first) to list, or q (+ optional kinds, k) to search. Read-only. Records
-    are always addressed by their full reference (kind + id), never a bare
-    id.
+    Read records. Pass kind + id for one record; q (+ optional mode, first,
+    filter.kinds) to rank by relevance; otherwise filter (+ optional orderBy,
+    first, after, expand) to list. A filter is {kinds, ids, implements, properties,
+    labels, deleted, referencing}: properties maps a name to a condition (eq,
+    in, prefix, gt, gte, lt, lte, contains, exists), timestamps RFC3339, so
+    a day is properties: {at: {gte: "2026-08-15T00:00:00Z", lt: "2026-08-16T00:00:00Z"}};
+    referencing: {ref: "<kind>/<id>", property?} lists what points AT a record.
+    A list answers {records, cursor, head, generation, included?, matches?}:
+    resend cursor as after for the next page; expand names reference properties
+    whose targets come back in included, keyed by "<kind>/<id>". Records are
+    always addressed by their full reference (kind + id), never a bare id.
+    Read-only.
   runtime: host
   arguments:
     - name: id
@@ -41,92 +58,84 @@ data:
         (kind, id) pair)
     - name: kind
       type: string
-      description: "a kind reference: with id reads one record, alone lists"
+      description: "a kind reference: with id reads one record; alone, the
+        one-kind shorthand for filter.kinds"
     - name: filter
       type: json
       description: >-
-        the list filter: {ids, implements, properties, labels, deleted}; properties
-        maps a name to a condition (eq, in, prefix, gt, gte, lt, lte, contains,
-        exists), timestamps RFC3339
+        the list filter: {kinds, ids, implements, properties, labels, deleted,
+        referencing}; properties maps a name to a condition (eq, in, prefix,
+        gt, gte, lt, lte, contains, exists), timestamps RFC3339
+    - name: orderBy
+      type: json
+      description: 'a list of {property, desc?}; default createdAt descending'
     - name: first
       type: int
       description: max rows to return
-    - name: q
+    - name: after
       type: string
-      description: search query
-    # The executor has always read a `kinds` list on the search arm; the Go card
-    # literal never declared it, so no caller could legally pass one. The
-    # declaration is the contract now, and it says what the code does.
-    - name: kinds
+      description: the cursor a previous page returned, resent verbatim
+    - name: expand
       type: string
       repeated: true
-      description: narrow the search to these kinds, each within the reads
-        allowlist
-    - name: k
-      type: int
-      description: max search hits
----
-# ---- graphql: the whole-repository read ------------------------------------
-# No `reads:` — DECLARING THE TOOL IS THE GRANT. There is no narrower scope to
-# declare over a whole-repository read surface, which is why the scoped `query`
-# survives beside it.
-kind: substrate.reamde.dev/core/function
-metadata:
-  id: substrate.reamde.dev/core/graphql
-data:
-  authority: substrate.reamde.dev
-  package: core
-  description: >-
-    Run a read-only GraphQL query against the repository. The schema is introspectable
-    (__schema / __type), arguments included. Roots: record(kind, id) for one
-    record; records(filter, orderBy, first, after) to list (a connection,
-    so descend through nodes { ... }); search(q, kinds, k) for hybrid lexical+semantic
-    lookup; changelog(from, filter, first) for history. A filter is {kinds,
-    ids, implements, properties, labels, deleted}; properties maps a name
-    to a condition (eq, in, prefix, gt, gte, lt, lte, contains, exists), timestamps
-    RFC3339, so a day is properties: {at: {gte: "2026-08-15T00:00:00Z", lt:
-    "2026-08-16T00:00:00Z"}}. `nodes` is the Record interface: a kind's own
-    properties need an inline fragment, nodes { id ... on <Type> { summary
-    } }; <Type> comes from __schema { types { name } }. Do not guess field
-    names: introspect when unsure, and batch related lookups into one query.
-    Mutations and subscriptions are rejected. Responses over 64KB are refused;
-    narrow the query.
-  runtime: host
-  arguments:
-    - name: query
+      description: reference properties whose targets to include beside the
+        page, one hop
+    - name: q
       type: string
-      required: true
-      description: the GraphQL document to execute
-    - name: variables
-      type: json
-      description: values for the variables the document declares
+      description: search query; ranks instead of filtering, narrowed by filter.kinds
+        alone, first hits
+    - name: mode
+      type: enum
+      values:
+        - hybrid
+        - lexical
+        - semantic
+      description: how q ranks (default hybrid)
 ---
-# ---- mutate: the agent-scoped write ----------------------------------------
+# ---- write: the agent-scoped write ------------------------------------------
 # No `emit:` of its own, and that is the point: the ceiling is the CALLING
 # AGENT's effective emit, so an emit here would be a second, looser answer to
 # the question of what this tool may write.
 kind: substrate.reamde.dev/core/function
 metadata:
-  id: substrate.reamde.dev/core/mutate
+  id: substrate.reamde.dev/core/write
 data:
   authority: substrate.reamde.dev
   package: core
   description: >-
-    Run a GraphQL mutation against the repository. Roots: put(input: {kind,
-    id, properties}) merges and never prunes; patch(kind, id, input, ifVersion);
-    delete(kind, id). A link to another record is an ordinary property, its
-    value the string "<kind>/<id>". Every record written must be of a kind
-    in the agent's emit allowlist; merge and split are refused. Ids must come
-    from query results, never invented.
+    Write one record: op put creates or updates (merges, never prunes) the
+    record at kind + id (omit id to mint one); op patch changes an existing
+    one; op delete tombstones one. Property values ride under input as {"properties":
+    {...}}, labels and annotations beside them; ifVersion holds the write
+    to the version you read. A link to another record is an ordinary property
+    whose value is "<kind>/<id>". Every record written must be of a kind in
+    the agent's writes allowlist; merge and split are the owner's. Ids must
+    come from query results, never invented — except a put's new id.
   runtime: host
   arguments:
-    - name: query
+    - name: op
+      type: enum
+      values:
+        - put
+        - patch
+        - delete
+      required: true
+      description: put creates or updates, patch changes an existing record,
+        delete tombstones one
+    - name: kind
       type: string
       required: true
-      description: the GraphQL document to execute
-    - name: variables
+      description: the kind reference of the record
+    - name: id
+      type: string
+      description: the record id (required for patch and delete; omit on put
+        to mint one)
+    - name: input
       type: json
-      description: values for the variables the document declares
+      description: '{properties, labels, annotations} for put and patch'
+    - name: ifVersion
+      type: int
+      description: apply only if the record is still at this version
 ---
 # ---- propose: the reviewed write -------------------------------------------
 # The one host function with a write permission, because it writes one kind and
@@ -159,7 +168,7 @@ data:
         - delete
       description: 'what accepting would do: patch (the default) an existing
         record, create the named one, or delete it. These are the request''s
-        own words, not the put/patch/delete the mutate tool takes'
+        own words, not the put/patch/delete the write tool takes'
     - name: target
       type: string
       description: the existing record id to patch or delete (requires kind

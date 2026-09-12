@@ -116,13 +116,13 @@ six agents. The Anthropic row's id is `default`, which is the row every
 shipped agent names, and the second row is `openai`:
 
 - `substrate` is the one to chat with: it reads the whole graph through the
-  `graphql` built-in, writes nothing directly, proposes every change as a
+  `query` built-in, writes nothing directly, proposes every change as a
   `recordpatchrequest` the owner decides on, and asks clarifying questions
   through the `ask` built-in.
-- `substrateEditor` writes scratchpads directly through the `mutate` built-in,
+- `substrateEditor` writes scratchpads directly through the `write` built-in,
   the demo for engine-stamped `changes` on a thread's tool rows.
 - `substrateArbiter` is a judge you point a trigger at: it accepts or rejects a
-  change request through `mutate`.
+  change request through `write`.
 - `substrateJudge` is the tool-less verdict agent a
   [`recordpatchpolicy`](agents.md#the-policy-door) names under `judge:`, the
   policy layer's example.
@@ -331,7 +331,7 @@ upstream keeps its mirror until a tombstone slice adds reconciliation.
 
 `read` is the only scope this bundle ever requests. Linear exposes no userinfo
 endpoint the facility could read at the exchange, so the account's `email` is
-stamped by the sync from the GraphQL `viewer` query instead, and the owner
+stamped by the sync from Linear's own `viewer` query instead, and the owner
 never types it. A workspace that HIDES the viewer's email leaves an issue with
 no address to probe, so the sync points each issue's `assignee` slot at the
 viewer's own `user` mirror: a mapping that reaches people through that mirror
@@ -536,9 +536,9 @@ the capture came from a press-and-hold. It requires
   is derived from the fire id, so a retried delivery updates the same records.
 - **Triggers (2)**: `pebble-webhook` receives the POST; `pebble-on-instruction`
   delivers each new instruction to the agent.
-- **Agents (1)**: `assistant` reads the open tasks through the `graphql` host
+- **Agents (1)**: `assistant` reads the open tasks through the `query` host
   function and writes `samples.substrate.reamde.dev/tasks/task` records through
-  `mutate`. It names `provider: default`, which the LLM example above ships:
+  `write`. It names `provider: default`, which the LLM example above ships:
   import that bundle too and key its row.
 
 **The endpoint** is `POST

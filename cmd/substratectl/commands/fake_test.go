@@ -21,8 +21,8 @@ import (
 var testNow = time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
 
 // fakeSubstrate implements the REST subset the CLI talks to (the contract
-// "REST wire contract"): the kind registry, one vocabulary collection,
-// tokens, changes.
+// "REST wire contract"): the records route in its three modes over the kind
+// registry and one data kind, the record path, tokens, changes.
 type fakeSubstrate struct {
 	mu      sync.Mutex
 	records map[string]*substrate.Record
@@ -121,7 +121,16 @@ func (f *fakeSubstrate) record(id string) *substrate.Record {
 func (f *fakeSubstrate) noteRequest(r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.requests = append(f.requests, r.Method+" "+r.URL.Path)
+	// The records route names its kind inside `filter`, so the recorded line
+	// carries the kinds after the path — a test asserting WHICH kind was read
+	// has one string to compare, the way it had one path before.
+	line := r.Method + " " + r.URL.Path
+	if r.URL.Path == pathRecords && r.Method == http.MethodGet {
+		var flt substrate.Filter
+		_ = json.Unmarshal([]byte(r.URL.Query().Get("filter")), &flt)
+		line += "?kinds=" + strings.Join(flt.Kinds, ",")
+	}
+	f.requests = append(f.requests, line)
 	f.lastAuth = r.Header.Get("Authorization")
 	f.lastQuery = r.URL.Query()
 	f.lastBody = nil
@@ -166,7 +175,13 @@ func (f *fakeSubstrate) discoveryReads() int {
 func (f *fakeSubstrate) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/substrate/server.json", f.handleDiscovery)
-	mux.HandleFunc("GET "+typesPath, f.handleTypes)
+	// THE RECORDS ROUTE: every list, the ranked read and the kind-scoped tail
+	// are one GET told apart by its parameters, and the id-less create is the
+	// POST beside it. The kind rides in `filter.kinds` (or the body), never in
+	// the path — a three-segment path is the 404 catch-all here as it is on
+	// the server.
+	mux.HandleFunc("GET "+pathRecords, f.handleRecords)
+	mux.HandleFunc("POST "+pathRecords, f.handlePost)
 	mux.HandleFunc("POST /api/v1/vocabulary/apply", f.handleVocabularyApply)
 	mux.HandleFunc("GET /api/v1/changes", f.handleChanges)
 	// The door, BESIDE the versioned API and outside every prefix: no
@@ -178,8 +193,6 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux.HandleFunc("POST /tokens", f.handleMint)
 	mux.HandleFunc("GET /tokens", f.handleTokens)
 	mux.HandleFunc("DELETE /tokens/{id}", f.handleRevoke)
-	mux.HandleFunc("GET "+tasksPath, f.handleList)
-	mux.HandleFunc("POST "+tasksPath, f.handlePost)
 	mux.HandleFunc("GET "+tasksPath+"/{id}", f.handleGet)
 	mux.HandleFunc("PUT "+tasksPath+"/{id}", f.handlePut)
 	mux.HandleFunc("PATCH "+tasksPath+"/{id}", f.handlePatch)
@@ -234,20 +247,26 @@ func writeError(w http.ResponseWriter, status int, code, msg string, problems []
 	}})
 }
 
-// The two paths the tests spell out: the registry is `kinds` (naming
-// scheme R4 — `type` is a column on every record), and the one data collection
-// lives in `samples.substrate.reamde.dev/tasks`, since the shipped vocabulary is split by subject
-// domain rather than gathered under a single `vocab` authority.
-// The collection segment is the kind NAME (decision 0033): the registry is the
-// `kind` kind, the one data collection is `task`, and the trigger records and
-// their delivery verbs hang off `trigger`.
+// The kinds and paths the tests spell out. The registry is the `kind` kind
+// and the one data kind is `task` in `samples.substrate.reamde.dev/tasks`,
+// since the shipped vocabulary is split by subject domain rather than
+// gathered under a single `vocab` authority; both LIST through the records
+// route, so typesPath is what the fake records for a registry read. A record
+// path is the kind reference plus the id (decision 0033), and the trigger
+// records and their delivery verbs hang off `trigger`.
 const (
-	typesPath      = "/api/v1/substrate.reamde.dev/core/kind"
-	tasksPath      = "/api/v1/samples.substrate.reamde.dev/tasks/task"
+	taskKind       = "samples.substrate.reamde.dev/tasks/task"
+	typesPath      = pathRecords + "?kinds=" + kindKind
+	tasksPath      = "/api/v1/" + taskKind
 	triggerColPath = "/api/v1/substrate.reamde.dev/core/trigger"
 	settingColPath = "/api/v1/substrate.reamde.dev/core/setting"
 	digestColPath  = "/api/v1/samples.substrate.reamde.dev/readinglist/digest"
 )
+
+// listOf is the line the fake records for a list of one kind.
+func listOf(kind string) string {
+	return "GET " + pathRecords + "?kinds=" + kind
+}
 
 // typeRecord builds one registry row. `pkg` is the PACKAGE IDENTITY
 // (`{authority}/{package}`): a row carries the two apart, and its id is the
@@ -344,7 +363,6 @@ const (
 // are the newest rows), `first` capped at maxPageSize, and an opaque cursor
 // that is absent once the walk is exhausted.
 func (f *fakeSubstrate) handleTypes(w http.ResponseWriter, r *http.Request) {
-	f.noteRequest(r)
 	f.mu.Lock()
 	registry := append(append([]map[string]any{}, f.extraTypes...), fakeRegistry...)
 	f.mu.Unlock()
@@ -368,7 +386,7 @@ func (f *fakeSubstrate) handleTypes(w http.ResponseWriter, r *http.Request) {
 		start = min(n, len(registry))
 	}
 	end := min(start+first, len(registry))
-	page := map[string]any{"records": registry[start:end], "head": 0}
+	page := map[string]any{"records": registry[start:end], "head": fakeHead, "generation": fakeGeneration}
 	if end < len(registry) {
 		page["cursor"] = strconv.Itoa(end)
 	}
@@ -655,21 +673,29 @@ func (f *fakeSubstrate) rejectUnknown(w http.ResponseWriter, route string, allow
 	return true
 }
 
+// fakeHead and fakeGeneration are the changelog position every read reports:
+// the bookmark a watch opens at, the head a page carries, the generation a
+// resume must hand back.
+const (
+	fakeHead       = 41
+	fakeGeneration = "gen-test"
+)
+
 func (f *fakeSubstrate) handleChanges(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
 	// A cursor above 0 under another history generation is refused the way the
 	// server refuses it: 410 naming the head and generation to resume at.
-	if q := r.URL.Query(); q.Get("from") != "" && q.Get("from") != "0" && q.Get("generation") != "gen-test" {
+	if q := r.URL.Query(); q.Get("from") != "" && q.Get("from") != "0" && q.Get("generation") != fakeGeneration {
 		writeJSON(w, http.StatusGone, map[string]any{"error": map[string]any{
 			"code": "compacted", "message": "the history was replaced since the cursor was saved",
-			"head": 41, "generation": "gen-test",
+			"head": fakeHead, "generation": fakeGeneration,
 		}})
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.WriteHeader(http.StatusOK)
 	enc := json.NewEncoder(w)
-	_ = enc.Encode(map[string]any{"bookmark": 41, "generation": "gen-test"})
+	_ = enc.Encode(map[string]any{"bookmark": fakeHead, "generation": fakeGeneration})
 	for _, c := range f.changes {
 		_ = enc.Encode(c)
 	}
@@ -678,20 +704,209 @@ func (f *fakeSubstrate) handleChanges(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (f *fakeSubstrate) handleList(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Query().Get("watch") == "1" {
-		f.handleChanges(w, r)
-		return
+// The parameter sets each mode of the records route honors, mirrored from
+// the server: a parameter outside its mode's set is refused by name, so a
+// client sending a list parameter with `watch=1` is caught here and not in
+// production.
+var (
+	fakeListParams   = []string{"filter", "orderBy", "first", "after", "expand", "withAnnotations"}
+	fakeRankedParams = []string{"q", "mode", "filter", "first"}
+	fakeWatchParams  = []string{"watch", "filter", "from", "generation"}
+)
+
+// allowParams refuses the first query parameter outside allowed, reporting
+// whether the handler may continue.
+func allowParams(w http.ResponseWriter, r *http.Request, allowed ...string) bool {
+	ok := map[string]bool{}
+	for _, n := range allowed {
+		ok[n] = true
 	}
-	f.noteRequest(r)
+	for name := range r.URL.Query() {
+		if !ok[name] {
+			writeError(w, http.StatusBadRequest, "bad_request", "unknown query parameter "+strconv.Quote(name), nil)
+			return false
+		}
+	}
+	return true
+}
+
+// recordsFilter decodes the `filter` parameter STRICTLY, as the server does:
+// an unknown key is a 400, never a silently broadened read.
+func recordsFilter(w http.ResponseWriter, r *http.Request) (substrate.Filter, bool) {
+	var flt substrate.Filter
+	if raw := r.URL.Query().Get("filter"); raw != "" {
+		dec := json.NewDecoder(strings.NewReader(raw))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&flt); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "filter: "+err.Error(), nil)
+			return flt, false
+		}
+	}
+	return flt, true
+}
+
+// knownKind answers the server's 404 for a kind the fake never declared. The
+// fake serves records for two kinds only, the registry and the tasks, and a
+// read of any other declared kind is refused the same way so a test asserting
+// WHICH kind was addressed reads the recorded line and nothing else.
+func knownKind(w http.ResponseWriter, kinds []string) bool {
+	for _, k := range kinds {
+		if k != kindKind && k != taskKind {
+			writeError(w, http.StatusNotFound, "not_found", "unknown kind "+k, nil)
+			return false
+		}
+	}
+	return true
+}
+
+// handleRecords is the one records route, dispatched on its parameters the
+// way the server dispatches it: the tail, the ranked read, else the list.
+func (f *fakeSubstrate) handleRecords(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	switch {
+	case q.Get("watch") == "1":
+		if !allowParams(w, r, fakeWatchParams...) {
+			return
+		}
+		flt, ok := recordsFilter(w, r)
+		if !ok || !knownKind(w, flt.Kinds) {
+			return
+		}
+		f.handleChanges(w, r)
+	case q.Has("q"):
+		f.noteRequest(r)
+		if !allowParams(w, r, fakeRankedParams...) {
+			return
+		}
+		flt, ok := recordsFilter(w, r)
+		if !ok || !knownKind(w, flt.Kinds) {
+			return
+		}
+		f.handleSearch(w, r, flt)
+	default:
+		f.noteRequest(r)
+		if !allowParams(w, r, fakeListParams...) {
+			return
+		}
+		flt, ok := recordsFilter(w, r)
+		if !ok || !knownKind(w, flt.Kinds) {
+			return
+		}
+		if len(flt.Kinds) == 1 && flt.Kinds[0] == kindKind {
+			f.handleTypes(w, r)
+			return
+		}
+		f.handleList(w, r, flt)
+	}
+}
+
+// handleList serves the tasks: the page shape whole (records, head,
+// generation), the `referencing` arm as a predicate over the stored reference
+// values, and `expand` as the referents the named properties point at, keyed
+// by record path.
+func (f *fakeSubstrate) handleList(w http.ResponseWriter, r *http.Request, flt substrate.Filter) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make([]*substrate.Record, 0, len(f.records))
 	for _, e := range f.records {
+		if e.Kind != taskKind {
+			continue
+		}
+		if flt.Referencing != nil && !pointsAt(e, flt.Referencing) {
+			continue
+		}
 		out = append(out, e)
 	}
 	sortRecords(out)
-	writeJSON(w, http.StatusOK, map[string]any{"records": out})
+	page := map[string]any{"records": out, "head": fakeHead, "generation": fakeGeneration}
+	if raw := r.URL.Query().Get("expand"); raw != "" {
+		included := map[string]*substrate.Record{}
+		for _, e := range out {
+			for _, prop := range strings.Split(raw, ",") {
+				ref, ok := refValue(e.Properties[prop])
+				if !ok {
+					continue
+				}
+				if target := f.records[path.Base(ref)]; target != nil {
+					included[ref] = target
+				}
+			}
+		}
+		page["included"] = included
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+// refValue reads a stored reference value, `{ref: "<kind>/<id>"}`.
+func refValue(v any) (string, bool) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return "", false
+	}
+	ref, ok := m["ref"].(string)
+	return ref, ok && ref != ""
+}
+
+// pointsAt reports whether any of e's reference properties (or the one
+// named) holds the target.
+func pointsAt(e *substrate.Record, target *substrate.Referencing) bool {
+	for name, v := range e.Properties {
+		if target.Property != "" && name != target.Property {
+			continue
+		}
+		if ref, ok := refValue(v); ok && ref == target.Ref {
+			return true
+		}
+	}
+	return false
+}
+
+// handleSearch ranks the tasks whose title carries the query, case-folded:
+// one arm's score per hit, chosen by mode, and no pending work.
+func (f *fakeSubstrate) handleSearch(w http.ResponseWriter, r *http.Request, flt substrate.Filter) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	q := r.URL.Query()
+	needle := strings.ToLower(q.Get("q"))
+	tasksWanted := len(flt.Kinds) == 0
+	for _, k := range flt.Kinds {
+		tasksWanted = tasksWanted || k == taskKind
+	}
+	first := 20
+	if raw := q.Get("first"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "first: not a number", nil)
+			return
+		}
+		first = n
+	}
+	all := make([]*substrate.Record, 0, len(f.records))
+	for _, e := range f.records {
+		all = append(all, e)
+	}
+	sortRecords(all)
+	res := substrate.SearchResult{}
+	for _, e := range all {
+		if !tasksWanted || e.Kind != taskKind || len(res.Hits) >= first {
+			continue
+		}
+		title, _ := e.Properties["title"].(string)
+		if !strings.Contains(strings.ToLower(title), needle) {
+			continue
+		}
+		hit := substrate.Hit{Record: e}
+		switch substrate.SearchMode(q.Get("mode")) {
+		case substrate.SearchSemantic:
+			hit.Semantic = 0.9
+		case substrate.SearchLexical:
+			hit.Lexical = 0.5
+		default:
+			hit.Lexical, hit.Semantic = 0.5, 0.9
+		}
+		res.Hits = append(res.Hits, hit)
+	}
+	writeJSON(w, http.StatusOK, substrate.Ranked(res))
 }
 
 // mergeInto records that `former` was merged away into `canonical`: the trail
@@ -814,15 +1029,31 @@ func (f *fakeSubstrate) handlePatch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, e)
 }
 
+// handlePost is the id-less create at the records route, STRICT like the
+// server: the body names its kind, an id in it is refused rather than
+// honored (a chosen id is a PUT at the record path), and an unknown kind is
+// the same 404 the record path answers.
 func (f *fakeSubstrate) handlePost(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
 	var in substrate.PutInput
 	_ = json.Unmarshal(mustRaw(f.lastBody), &in)
+	if in.Kind == "" {
+		writeError(w, http.StatusUnprocessableEntity, "validation", "kind is required", nil)
+		return
+	}
+	if in.ID != "" {
+		writeError(w, http.StatusUnprocessableEntity, "validation", "id is not accepted here", nil)
+		return
+	}
+	if in.Kind != taskKind {
+		writeError(w, http.StatusNotFound, "not_found", "unknown kind "+in.Kind, nil)
+		return
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	id := fmt.Sprintf("gen%02d", len(f.records)+1)
 	e := &substrate.Record{
-		ID: id, Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{},
+		ID: id, Kind: taskKind, Properties: map[string]any{},
 		Labels: map[string]any{}, Version: 1, CreatedAt: testNow, UpdatedAt: testNow,
 	}
 	if title, ok := putTitle(in); ok {

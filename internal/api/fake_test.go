@@ -277,8 +277,6 @@ type fakeDataset struct {
 	// meta is per-record property provenance, attached by Get and ONLY by
 	// Get — lists never carry it, exactly like the engine.
 	meta map[string]map[string]substrate.PropertyMeta
-	// incoming backs the separate paginated reverse-reference resource.
-	incoming map[string][]substrate.IncomingReference
 	// formers maps a merged-away id to the record that now wears its data.
 	formers map[string]string
 	changes []substrate.Change
@@ -337,7 +335,6 @@ func newFakeDataset(name string) *fakeDataset {
 		types:      testTypes(),
 		records:    map[string]*substrate.Record{},
 		meta:       map[string]map[string]substrate.PropertyMeta{},
-		incoming:   map[string][]substrate.IncomingReference{},
 		formers:    map[string]string{},
 		trStates:   map[int64][]substrate.ChangeTrigger{},
 		generation: "gen-" + name + "-1",
@@ -366,8 +363,8 @@ func testTypes() []substrate.KindInfo {
 					"name":    map[string]any{"type": "string"},
 					"company": map[string]any{"type": "string"},
 					"emails":  map[string]any{"kind": "[string]"},
-					// An unpinned reference: the GraphQL Reference scalar
-					// carries the stored "<kind>/<id>" path.
+					// An unpinned reference: the stored value carries the
+					// "<kind>/<id>" path under `ref`.
 					"manager": map[string]any{"type": "reference"},
 				},
 			},
@@ -398,8 +395,7 @@ func testTypes() []substrate.KindInfo {
 				"properties": map[string]any{
 					"text": map[string]any{"type": "markdown"},
 					// A reference CARRYING LINK DATA: the declaration's
-					// `properties` are what turn the Reference scalar into a
-					// generated object type, `{ref, since, target}`.
+					// `properties` are what a write may set beside `ref`.
 					"author": map[string]any{
 						"type":      "reference",
 						"kind":      "samples.substrate.reamde.dev/people/person",
@@ -446,7 +442,7 @@ func testTypes() []substrate.KindInfo {
 		{
 			// The bundle kind: a PATCH of one of its records runs the lifecycle
 			// transition (disable/enable/uninstall/purge), so the fake carries
-			// it for the collection to resolve.
+			// it for the record path to resolve.
 			Identity: kindBundleIdentity, Name: "bundle", Authority: coreAuthorityName, Package: "core",
 			Version: 1, Source: "builtin",
 			Definition: map[string]any{
@@ -514,11 +510,11 @@ const fakeMaxSafeInt = 1<<53 - 1
 // refuseUnsafeNumbers mirrors the two numeric refusals of decision 0012 on a
 // kind's top-level properties: an `int` (scalar, repeated, or a link property
 // inside a reference) past |2^53-1|, and a `decimal` that arrives as a JSON
-// number instead of its digit string. The GraphQL door re-encodes its input
-// before the engine sees it, and this is the fake's proof that what arrives is
-// what the engine would refuse, rather than a value rounded into range or a
-// number turned back into a string. Nested sites and the wording of the
-// refusal are the engine's and are tested there.
+// number instead of its digit string. The REST door decodes its body with
+// json.Number, and this is the fake's proof that what arrives is what the
+// engine would refuse, rather than a value rounded into range or a number
+// turned back into a string. Nested sites and the wording of the refusal are
+// the engine's and are tested there.
 func (d *fakeDataset) refuseUnsafeNumbers(kind string, props map[string]any) error {
 	ty, err := d.KindByRef(context.Background(), kind)
 	if err != nil {
@@ -786,49 +782,6 @@ func (d *fakeDataset) Get(_ context.Context, typ, id string) (*substrate.Record,
 	return e, nil
 }
 
-func (d *fakeDataset) Incoming(_ context.Context, typ, id string, opts substrate.IncomingOptions) (*substrate.IncomingPage, error) {
-	_ = typ
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if canonical, moved := d.formers[id]; moved {
-		id = canonical
-	}
-	rows := d.incoming[id]
-	// The narrowings a drill-down sends, honored so a handler test can assert
-	// that one group's expansion asks for that group alone.
-	if opts.Property != "" || opts.FromKind != "" {
-		var kept []substrate.IncomingReference
-		for _, row := range rows {
-			if opts.Property != "" && row.Property != opts.Property {
-				continue
-			}
-			if opts.FromKind != "" && row.From.Kind != opts.FromKind {
-				continue
-			}
-			kept = append(kept, row)
-		}
-		rows = kept
-	}
-	first := opts.First
-	if first <= 0 {
-		first = 50
-	}
-	start := 0
-	if opts.After != "" {
-		_, _ = fmt.Sscanf(opts.After, "offset:%d", &start)
-	}
-	start = min(start, len(rows))
-	end := min(start+first, len(rows))
-	page := &substrate.IncomingPage{
-		Incoming: append([]substrate.IncomingReference(nil), rows[start:end]...),
-		Total:    len(rows),
-	}
-	if end < len(rows) {
-		page.Cursor = fmt.Sprintf("offset:%d", end)
-	}
-	return page, nil
-}
-
 func (d *fakeDataset) List(_ context.Context, q substrate.Query) (*substrate.Page, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -846,6 +799,21 @@ func (d *fakeDataset) List(_ context.Context, q substrate.Query) (*substrate.Pag
 			implementors[k] = true
 		}
 	}
+	// The reverse read matches the target by its canonical id and every
+	// former one, as the engine's refs index does.
+	var targets []string
+	if ref := q.Filter.Referencing; ref != nil {
+		targets = append(targets, ref.Ref)
+		if i := strings.LastIndex(ref.Ref, "/"); i >= 0 {
+			kind, id := ref.Ref[:i], ref.Ref[i+1:]
+			for former, canonical := range d.formers {
+				if canonical == id {
+					targets = append(targets, kind+"/"+former)
+				}
+			}
+		}
+	}
+	page := &substrate.Page{Head: int64(len(d.changes)), Generation: d.generation}
 	var out []*substrate.Record
 	for _, id := range sortedRecordIDs(d.records) {
 		e := d.records[id]
@@ -855,9 +823,72 @@ func (d *fakeDataset) List(_ context.Context, q substrate.Query) (*substrate.Pag
 		if q.Filter.Implements != "" && !implementors[e.Kind] {
 			continue
 		}
+		if q.Filter.Referencing != nil {
+			sites := referenceSites(e.Properties, targets, q.Filter.Referencing.Property)
+			if len(sites) == 0 {
+				continue
+			}
+			if page.Matches == nil {
+				page.Matches = map[string][]substrate.ReferenceSite{}
+			}
+			page.Matches[vocabulary.RecordPath(e.Kind, e.ID)] = sites
+		}
 		out = append(out, e)
 	}
-	return &substrate.Page{Records: out, Cursor: "", Head: int64(len(d.changes)), Generation: d.generation}, nil
+	page.Records = out
+	// Expand: one hop, the referents the page's rows point at through the
+	// named properties, keyed by record path; a dangling pointer has no entry.
+	for _, name := range q.Expand {
+		for _, e := range out {
+			for _, path := range referencePaths(e.Properties[name]) {
+				target := d.recordAt(path)
+				if target == nil {
+					continue
+				}
+				if page.Included == nil {
+					page.Included = map[string]*substrate.Record{}
+				}
+				page.Included[path] = target
+			}
+		}
+	}
+	return page, nil
+}
+
+// recordAt resolves a "<kind>/<id>" path against the fake's rows, a former id
+// included.
+func (d *fakeDataset) recordAt(path string) *substrate.Record {
+	i := strings.LastIndex(path, "/")
+	if i < 0 {
+		return nil
+	}
+	kind, id := path[:i], path[i+1:]
+	if canonical, moved := d.formers[id]; moved {
+		id = canonical
+	}
+	e, ok := d.records[id]
+	if !ok || e.Kind != kind {
+		return nil
+	}
+	return e
+}
+
+// referenceSites names the top-level properties of one record whose value
+// points at any of the targets, narrowed to `property` when it is set.
+func referenceSites(props map[string]any, targets []string, property string) []substrate.ReferenceSite {
+	var out []substrate.ReferenceSite
+	for _, name := range sortedKeys(props) {
+		if property != "" && name != property {
+			continue
+		}
+		for _, path := range referencePaths(props[name]) {
+			if containsString(targets, path) {
+				out = append(out, substrate.ReferenceSite{Property: name})
+				break
+			}
+		}
+	}
+	return out
 }
 
 func (d *fakeDataset) Search(_ context.Context, in substrate.SearchInput) (substrate.SearchResult, error) {
@@ -1228,6 +1259,15 @@ func containsString(hay []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func sortedKeys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func sortedRecordIDs(m map[string]*substrate.Record) []string {

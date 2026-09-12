@@ -9,10 +9,10 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// bundlePath is /api/v1/substrate.reamde.dev/core/bundle/{segments…} — the
-// bundle kind's collection and its records (decision 0033).
+// bundlePath is /api/v1/substrate.reamde.dev/core/bundle/{segments…} — a
+// bundle record and the sub-resources hanging off it (decision 0033).
 func bundlePath(segments ...string) string {
-	return collectionPath(corePackage, "bundle", segments...)
+	return recordPath(corePackage, "bundle", segments...)
 }
 
 // patchBundleState PATCHes the bundle record with one runtime-state transition

@@ -9,6 +9,7 @@ import { queryOptions, type QueryClient } from "@tanstack/react-query"
 
 import { catalogQueryOptions, type CatalogItem } from "./catalog"
 import { CORE_PACKAGE, corePath, request, rootPath, seg } from "./http"
+import { listPath } from "./records"
 import type {
   BundlePurged,
   BundleStatus,
@@ -164,17 +165,21 @@ export interface TraitRecords {
   capped: boolean
 }
 
-/** The account-config records: a bounded page of live records of a kind
- * implementing the `accountconfig` trait, across all bundles — the page scopes
- * to one bundle by the record's authority. */
+/** The account-config records: a bounded page of live records of every kind
+ * implementing the `accountconfig` trait (`filter.implements`, no kind named),
+ * across all bundles — the page scopes to one bundle by the record's
+ * authority. */
 export function traitRecordsQueryOptions(trait: string) {
   return queryOptions({
     queryKey: ["trait", "records", trait],
     queryFn: async ({ signal }): Promise<TraitRecords> => {
-      const q = new URLSearchParams({ first: String(TRAIT_ACCOUNTS_CAP) })
       const page = await request<Page>(
         "GET",
-        `${corePath("trait", trait)}/records?${q}`,
+        listPath({
+          kinds: [],
+          first: TRAIT_ACCOUNTS_CAP,
+          filter: { implements: trait },
+        }),
         undefined,
         { signal }
       )

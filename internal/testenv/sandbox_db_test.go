@@ -233,13 +233,13 @@ func TestEnvironmentStartsAndAuthenticates(t *testing.T) {
 	if status, body := env.Do("GET", "/healthz", nil); status != 200 {
 		t.Fatalf("healthz: %d %s", status, body)
 	}
-	if status, _ := env.Do("GET", "/api/v1/substrate.reamde.dev/core/kind", nil); status != 200 {
+	if status, _ := env.Do("GET", listPath("substrate.reamde.dev/core/kind", nil), nil); status != 200 {
 		t.Fatalf("authenticated kinds listing: %d", status)
 	}
 	// The token is real: the same request without it is refused.
 	token := env.Token
 	env.Token = ""
-	if status, _ := env.Do("GET", "/api/v1/substrate.reamde.dev/core/kind", nil); status != 401 {
+	if status, _ := env.Do("GET", listPath("substrate.reamde.dev/core/kind", nil), nil); status != 401 {
 		t.Fatalf("unauthenticated kinds listing: %d, want 401", status)
 	}
 	env.Token = token

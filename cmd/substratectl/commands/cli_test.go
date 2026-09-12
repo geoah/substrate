@@ -756,8 +756,8 @@ func TestGetTableAsksTheRegistryOnlyForTheStateColumn(t *testing.T) {
 	if !strings.Contains(out, "lifecycle=open") {
 		t.Fatalf("a qualified reference lost the STATE column:\n%s", out)
 	}
-	if h.fake.requests[0] != "GET /api/v1/samples.substrate.reamde.dev/tasks/task" {
-		t.Fatalf("the collection read must come first: %v", h.fake.requests)
+	if h.fake.requests[0] != listOf(taskKind) {
+		t.Fatalf("the list must come first: %v", h.fake.requests)
 	}
 }
 
@@ -786,26 +786,26 @@ func TestStateColumnComesFromTheDeclaration(t *testing.T) {
 
 // A bare kind name that exactly one package declares still resolves without a
 // package: splitting the vocabulary namespaced the names, it did not make
-// every command spell a package out. The fake serves only the tasks
-// collection, so most of these reads 404; what is under test is the collection
-// the CLI addressed, not what came back.
+// every command spell a package out. The fake serves records of the tasks
+// kind only, so most of these reads 404; what is under test is the kind the
+// CLI named in filter.kinds, not what came back.
 func TestGetBareNameResolvesWhenUniqueAcrossPackages(t *testing.T) {
-	cases := []struct{ arg, path string }{
-		{"person", "/api/v1/samples.substrate.reamde.dev/people/person"},
-		{"calendarevent", "/api/v1/samples.substrate.reamde.dev/calendar/calendarevent"},
-		{"conversationmessage", "/api/v1/samples.substrate.reamde.dev/messaging/conversationmessage"},
-		{"book", "/api/v1/library.substrate.reamde.dev/library/book"},
-		{"movie", "/api/v1/library.substrate.reamde.dev/library/movie"},
-		{"podcast", "/api/v1/library.substrate.reamde.dev/library/podcast"},
-		{"bookseries", "/api/v1/library.substrate.reamde.dev/library/bookseries"},
-		{"tvseries", "/api/v1/library.substrate.reamde.dev/library/tvseries"},
+	cases := []struct{ arg, kind string }{
+		{"person", "samples.substrate.reamde.dev/people/person"},
+		{"calendarevent", "samples.substrate.reamde.dev/calendar/calendarevent"},
+		{"conversationmessage", "samples.substrate.reamde.dev/messaging/conversationmessage"},
+		{"book", "library.substrate.reamde.dev/library/book"},
+		{"movie", "library.substrate.reamde.dev/library/movie"},
+		{"podcast", "library.substrate.reamde.dev/library/podcast"},
+		{"bookseries", "library.substrate.reamde.dev/library/bookseries"},
+		{"tvseries", "library.substrate.reamde.dev/library/tvseries"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.arg, func(t *testing.T) {
 			h := newHarness(t)
 			h.writeConfig()
 			_, _, _ = h.run("get", tc.arg)
-			want := "GET " + tc.path
+			want := listOf(tc.kind)
 			for _, req := range h.fake.requests {
 				if req == want {
 					return
@@ -840,12 +840,12 @@ func TestGetAmbiguousNameErrors(t *testing.T) {
 	h2 := newHarness(t)
 	h2.writeConfig()
 	// Both escape hatches the error names must actually address the right
-	// collection; only the recorded requests matter here.
+	// kind; only the recorded requests matter here.
 	h2.run("get", "slack.connectors.substrate.reamde.dev/slack/syncrun")                   //nolint:dogsled // requests are the assertion
 	h2.run("get", "syncrun", "--package", "google.connectors.substrate.reamde.dev/google") //nolint:dogsled // requests are the assertion
 	for _, want := range []string{
-		"GET /api/v1/slack.connectors.substrate.reamde.dev/slack/syncrun",
-		"GET /api/v1/google.connectors.substrate.reamde.dev/google/syncrun",
+		listOf("slack.connectors.substrate.reamde.dev/slack/syncrun"),
+		listOf("google.connectors.substrate.reamde.dev/google/syncrun"),
 	} {
 		var saw bool
 		for _, req := range h2.fake.requests {
@@ -857,7 +857,7 @@ func TestGetAmbiguousNameErrors(t *testing.T) {
 	}
 }
 
-// The registry is an ordinary collection: it pages, newest first, and the
+// The registry is an ordinary list: it pages, newest first, and the
 // shipped vocabulary is the OLDEST rows in it. A client that takes the
 // server's default page and ignores the cursor therefore sees the newest 50
 // types and nothing else — which reports shipped vocabulary as unknown, and,
@@ -876,21 +876,21 @@ func TestTypeRegistryIsReadWhole(t *testing.T) {
 	h.fake.extraTypes = extra
 
 	// `book` sits at the oldest end of the registry. The fake serves no
-	// library collection, so the read itself 404s — the assertion is that it
-	// RESOLVED and addressed that collection at all.
+	// library records, so the read itself 404s — the assertion is that it
+	// RESOLVED and named that kind at all.
 	if _, _, err := h.run("get", "book"); err != nil && strings.Contains(err.Error(), "no kind named") {
 		t.Fatalf("`get book` lost shipped vocabulary past the first page: %v", err)
 	}
 	var sawBooks bool
 	pages := 0
 	for _, req := range h.fake.requests {
-		sawBooks = sawBooks || req == "GET /api/v1/library.substrate.reamde.dev/library/book"
+		sawBooks = sawBooks || req == listOf("library.substrate.reamde.dev/library/book")
 		if req == "GET "+typesPath {
 			pages++
 		}
 	}
 	if !sawBooks {
-		t.Fatalf("`get book` did not reach the library collection: %v", h.fake.requests)
+		t.Fatalf("`get book` did not list the library kind: %v", h.fake.requests)
 	}
 	if pages < 2 {
 		t.Fatalf("the registry was read in %d request(s); a %d-row registry pages", pages, len(extra)+len(fakeRegistry))
@@ -1218,7 +1218,7 @@ func TestApplyRefusesTheOldSpellings(t *testing.T) {
 				t.Fatalf("err = %v, want it to name %s", err, tc.want)
 			}
 			for _, req := range h.fake.requests {
-				if strings.HasPrefix(req, "PUT ") || strings.HasPrefix(req, "POST /api/v1/tasks") {
+				if strings.HasPrefix(req, "PUT ") || strings.HasPrefix(req, "POST "+pathRecords) {
 					t.Fatalf("nothing may be written: %v", h.fake.requests)
 				}
 			}
@@ -1297,11 +1297,17 @@ data:
 	}
 	var sawPost, sawPut bool
 	for _, req := range h.fake.requests {
-		sawPost = sawPost || req == "POST /api/v1/samples.substrate.reamde.dev/tasks/task"
+		sawPost = sawPost || req == "POST "+pathRecords
 		sawPut = sawPut || req == "PUT /api/v1/samples.substrate.reamde.dev/tasks/task/t7"
 	}
 	if !sawPost || !sawPut {
-		t.Fatalf("expected a POST for the id-less doc and a PUT for t7: %v", h.fake.requests)
+		t.Fatalf("expected a POST at the records route for the id-less doc and a PUT for t7: %v", h.fake.requests)
+	}
+	// The id-less create names its kind in the body and no id: the fake
+	// refuses either slip the way the server does, so the two records landing
+	// is the proof, and the stored kind is the doubled check.
+	if got := h.fake.record("gen01"); got == nil || got.Kind != taskKind {
+		t.Fatalf("POSTed record = %+v, want one of kind %s", got, taskKind)
 	}
 }
 
@@ -1775,7 +1781,7 @@ func TestActorFlagIsSent(t *testing.T) {
 	// The fake records the auth header only; assert via a direct client too.
 	cl := newClient(h.server, "substrate_tok_geoah_test", nil)
 	cl.actor = "gmail.google.connectors.substrate.reamde.dev"
-	req, err := cl.newRequest(context.Background(), "GET", "/api/v1/substrate.reamde.dev/core/kind", nil, nil)
+	req, err := cl.newRequest(context.Background(), "GET", pathRecords, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

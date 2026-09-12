@@ -72,8 +72,8 @@ Three more words, used precisely on every page:
 
 The envelope is the YAML form. It is what [`substratectl get -o yaml`](substratectl.md)
 emits and what `apply` and the batch vocabulary apply consume.
-[REST and GraphQL](api.md) reads return the record
-flat, as one JSON object, not wrapped in an envelope.
+[REST](api.md) reads return the record flat, as one JSON object, not
+wrapped in an envelope.
 
 ## The envelope
 
@@ -165,10 +165,9 @@ independently, which is what lets `google` and `github` publish under
 
 A **record reference** writes kind and id together:
 `samples.substrate.reamde.dev/tasks/task/t9`. That is the path form, which a reference
-property carries under `ref`; on REST the same reference is split into path
-segments
-(`/api/v1/samples.substrate.reamde.dev/tasks/task/t9`), and on GraphQL it travels as two
-arguments.
+property carries under `ref`; on REST the same reference is the record's
+path (`/api/v1/samples.substrate.reamde.dev/tasks/task/t9`), and an agent's
+`query` tool takes it as the `kind` and `id` arguments.
 
 The shipped vocabulary is split by subsystem, Kubernetes-style, each subsystem
 its own package: `samples.substrate.reamde.dev/people`,
@@ -505,8 +504,9 @@ every account kind implements
 ([decision record 0034](decisions/0034-a-reference-may-pin-a-trait-not-only-a-kind.md)).
 
 **Reading backwards.** Every reference answers in reverse, pinned or not:
-`GET …/incoming` lists the records pointing at this one, narrowable by the
-property name and the source kind ([the API](api.md#rest-resources)). A
+the `referencing` filter arm of `GET /api/v1/records` lists the records
+pointing at one, narrowable by the property name and, through `kinds`, the
+source kind ([the API](api.md#who-points-at-a-record-referencing)). A
 `subject: true` reference is the one a [record mapping](projection.md)
 projects along.
 
@@ -563,8 +563,8 @@ Some properties mean the same thing on every kind that carries them:
 "when does this sit on the timeline" is one question whether the record is a
 calendar event, an email, or a task. A **trait** declares such a set of
 properties once, as a `trait` manifest, and any kind binds it with one line.
-Binding gives the kind the trait's properties, their indexes, and a shared
-GraphQL interface.
+Binding gives the kind the trait's properties, their indexes, and a place in
+every `implements` query over the trait.
 
 The one worked example is `temporal`, shipped in core:
 
@@ -598,8 +598,8 @@ traits:
   - temporal(range)
 ```
 
-and with that one line the kind carries `at` and `endsAt`, indexed, and joins
-the `Temporal` GraphQL interface, so "everything on the timeline this week,
+and with that one line the kind carries `at` and `endsAt`, indexed, and
+answers `implements: temporal`, so "everything on the timeline this week,
 whatever its kind" is one query.
 
 A binding may also rename where the trait's property lands. A task's moment
@@ -639,7 +639,7 @@ traits:
 ```
 
 Because implementing a trait is queryable, a client can page every record of
-a trait (`GET …/substrate.reamde.dev/core/trait/{id}/records`), which is what the
+a trait (`GET /api/v1/records?filter={"implements": …}`), which is what the
 console's connections view over `accountconfig` accounts is.
 [Bundles](bundles.md) puts these three interfaces to work, and
 [traits and interfaces](traits.md) is the worked tour: declaring a trait of

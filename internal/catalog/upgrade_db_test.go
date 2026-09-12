@@ -44,9 +44,9 @@ var tasksRequires = []string{
 // tests hold, while the closure it is made of stays the tasks closure the
 // tree ships. movedTasksSampleCatalog loads the same copy as the sample it
 // is.
-func movedTasksCatalog(t *testing.T, mutate map[string]func(string) string) *catalog.Catalog {
+func movedTasksCatalog(t *testing.T, rewrite map[string]func(string) string) *catalog.Catalog {
 	t.Helper()
-	c, err := catalog.Load(catalog.ProviderRoot(os.DirFS(movedTasksRoot(t, mutate))))
+	c, err := catalog.Load(catalog.ProviderRoot(os.DirFS(movedTasksRoot(t, rewrite))))
 	if err != nil {
 		t.Fatalf("load moved catalog: %v", err)
 	}
@@ -56,9 +56,9 @@ func movedTasksCatalog(t *testing.T, mutate map[string]func(string) string) *cat
 // movedTasksSampleCatalog is movedTasksCatalog under the SAMPLE tier: binary
 // N+1's samples tree, which is what a copy imported from binary N is
 // previewed against (decision record 0070).
-func movedTasksSampleCatalog(t *testing.T, mutate map[string]func(string) string) *catalog.Catalog {
+func movedTasksSampleCatalog(t *testing.T, rewrite map[string]func(string) string) *catalog.Catalog {
 	t.Helper()
-	c, err := catalog.Load(catalog.SampleRoot(os.DirFS(movedTasksRoot(t, mutate))))
+	c, err := catalog.Load(catalog.SampleRoot(os.DirFS(movedTasksRoot(t, rewrite))))
 	if err != nil {
 		t.Fatalf("load moved sample catalog: %v", err)
 	}
@@ -66,7 +66,7 @@ func movedTasksSampleCatalog(t *testing.T, mutate map[string]func(string) string
 }
 
 // movedTasksRoot writes the copied samples tree the two loaders read.
-func movedTasksRoot(t *testing.T, mutate map[string]func(string) string) string {
+func movedTasksRoot(t *testing.T, rewrite map[string]func(string) string) string {
 	t.Helper()
 	// The copy mirrors the samples root: the authority manifest at the root,
 	// the tasks package directory beside it.
@@ -91,7 +91,7 @@ func movedTasksRoot(t *testing.T, mutate map[string]func(string) string) string 
 				t.Fatalf("read %s: %v", e.Name(), err)
 			}
 			doc := string(raw)
-			if m, ok := mutate[e.Name()]; ok {
+			if m, ok := rewrite[e.Name()]; ok {
 				doc = m(doc)
 			}
 			if err := os.WriteFile(filepath.Join(dstDir, e.Name()), []byte(doc), 0o600); err != nil {

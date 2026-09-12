@@ -233,8 +233,8 @@ export function seekQueryOptions(untilMs: number) {
 export type WatchStatus =
   "connecting" | "live" | "retrying" | "compacted" | "stopped" | "off"
 
-/** The problem object the substrate carries in a REST envelope, a GraphQL
- * error's bundles, AND the watch terminal error frame. */
+/** The problem object the substrate carries in a REST envelope AND the watch
+ * terminal error frame. */
 export interface WatchError {
   code: string
   message: string

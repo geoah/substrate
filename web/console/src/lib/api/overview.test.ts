@@ -136,7 +136,8 @@ describe("authorityCountsQueryOptions", () => {
       kindInfo("actor", "core.dev"),
     ]
     globalThis.fetch = (async (input: RequestInfo | URL) => {
-      if (String(input).includes("/tenant")) {
+      // The kind rides in the URL-encoded filter, not the path.
+      if (decodeURIComponent(String(input)).includes("/tenant")) {
         return new Response(
           JSON.stringify({ error: { code: "forbidden", message: "no" } }),
           { status: 403 }

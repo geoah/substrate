@@ -234,16 +234,17 @@ func storyDocuments(providerID string) []map[string]any {
 			"package":     storyPackage,
 			"description": "Attaches a transcript to the meeting that actually happened, or declines and says why.",
 			"prompt": "You attach one transcript per run. Call scorecandidates, pick the clear winner above the " +
-				"floor, link meeting and speakers with mutate, and write a matchverdict either way. " +
+				"floor, link meeting and speakers with write, and write a matchverdict either way. " +
 				"A transcript that matches nothing attaches to nothing.",
 			"provider": providerID,
 			"model":    "transcriptMatcher",
 			"tools": []map[string]any{
-				{"function": "substrate.reamde.dev/core/graphql"},
-				{"function": "substrate.reamde.dev/core/mutate"},
+				{"function": "substrate.reamde.dev/core/query"},
+				{"function": "substrate.reamde.dev/core/write"},
 				{"function": storyPkg + "/scorecandidates"},
 			},
 			"permissions": map[string]any{
+				"reads":  map[string]any{"kinds": []string{transcriptKind, eventKind, "samples.substrate.reamde.dev/people/person"}},
 				"writes": []string{transcriptKind, storyPkg + "/matchverdict"},
 			},
 			"budgets": map[string]any{"maxTurns": 8, "maxToolCalls": 12, "deadlineSeconds": 120},
@@ -264,10 +265,11 @@ func storyDocuments(providerID string) []map[string]any {
 			// stories assert exact proposal counts.
 			"resume": "never",
 			"tools": []map[string]any{
-				{"function": "substrate.reamde.dev/core/graphql"},
+				{"function": "substrate.reamde.dev/core/query"},
 				{"function": "substrate.reamde.dev/core/propose"},
 			},
 			"permissions": map[string]any{
+				"reads":  map[string]any{"kinds": []string{transcriptKind, taskKind, "samples.substrate.reamde.dev/people/person"}},
 				"writes": []string{"substrate.reamde.dev/core/recordpatchrequest"},
 			},
 			"budgets": map[string]any{"maxTurns": 10, "maxToolCalls": 12, "deadlineSeconds": 120},
@@ -277,15 +279,16 @@ func storyDocuments(providerID string) []map[string]any {
 			"package":     storyPackage,
 			"description": "Decides one change request per run: work without provenance is rejected.",
 			"prompt": "You decide one recordpatchrequest per run, delivered in the envelope. Accept a proposal " +
-				"whose diff carries its source, reject one that carries none, with one mutate call patching " +
+				"whose diff carries its source, reject one that carries none, with one write call patching " +
 				"the request's decision.",
 			"provider": providerID,
 			"model":    "changeRequestReviewer",
 			"tools": []map[string]any{
-				{"function": "substrate.reamde.dev/core/graphql"},
-				{"function": "substrate.reamde.dev/core/mutate"},
+				{"function": "substrate.reamde.dev/core/query"},
+				{"function": "substrate.reamde.dev/core/write"},
 			},
 			"permissions": map[string]any{
+				"reads":  map[string]any{"kinds": []string{"substrate.reamde.dev/core/recordpatchrequest", taskKind}},
 				"writes": []string{"substrate.reamde.dev/core/recordpatchrequest", taskKind},
 			},
 			"budgets": map[string]any{"maxTurns": 6, "maxToolCalls": 4, "deadlineSeconds": 120},

@@ -2,7 +2,7 @@
  * walk either direction without leaving the page.
  *
  * The LAYOUT is a hierarchy, not a wall of rows: the record on top, then one
- * **Outgoing** and one **Incoming** section — direction is said once, at the
+ * **Outgoing** and one **Referenced by** section — direction is said once, at the
  * section header, so the rows under it carry no per-row arrows. Inside a
  * section, each group is a small uppercase label (the reference property, or
  * the inverse for fan-in) with the group's kind and count beside it, and every
@@ -20,8 +20,10 @@
  * TWO DIRECTIONS, and only one of them is a query. Outgoing pointers are the
  * record's own reference-typed properties, so `thread → agent` costs nothing
  * to show — and could not be answered by the fan-in reader at all, which only
- * ever looks the other way. Incoming groups come from `/incoming`, narrowed
- * per group so expanding one pulls that group alone.
+ * ever looks the other way. The fan-in is the records route's `referencing`
+ * filter, narrowed per group (`filter.kinds` + `referencing.property`) so
+ * expanding one pulls that group alone. The route has no total: a count is
+ * what the page returned, `N+` while a cursor says there is more.
  *
  * A member expands IN PLACE into the same component, so the graph is walkable
  * to any depth. `path` carries the (kind, id) pairs already open above a node:
@@ -49,13 +51,15 @@ import {
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
-  groupIncoming,
-  incomingInfiniteOptions,
+  groupReferencing,
+  recordPath,
   recordQueryOptions,
+  referencingInfiniteOptions,
+  referencingRows,
+  type ReferencingRow,
 } from "@/lib/api/records"
 import {
   readReference,
-  type IncomingReference,
   type KindInfo,
   type SubstrateRecord,
 } from "@/lib/api/types"
@@ -121,7 +125,8 @@ function Section({
   label: string
   /** The direction spelled out, for the reader the arrow does not reach. */
   hint: string
-  count?: number
+  /** Already rendered: a plain number, or `N+` while a cursor says more. */
+  count?: number | string
   children: React.ReactNode
 }) {
   return (
@@ -134,7 +139,7 @@ function Section({
         {label}
         {count !== undefined && (
           <span className="font-normal text-muted-foreground">
-            {count.toLocaleString()}
+            {typeof count === "number" ? count.toLocaleString() : count}
           </span>
         )}
       </div>
@@ -365,13 +370,15 @@ function NodeRow({
   )
 }
 
+/** Render a page tally: what was seen, `+` while a cursor says there is more. */
+function seenCount(seen: number, partial: boolean): string {
+  return `${seen.toLocaleString()}${partial ? "+" : ""}`
+}
+
 /** One inbound group: everything of one kind pointing here under one name,
  * paged on its own cursor so opening it costs that group alone. */
-function IncomingGroupRow({
-  authority,
-  pkg,
-  name,
-  id,
+function ReferencingGroupRow({
+  target,
   property,
   fromKind,
   seen,
@@ -380,10 +387,8 @@ function IncomingGroupRow({
   path,
   depth,
 }: {
-  authority: string
-  pkg: string
-  name: string
-  id: string
+  /** The target's record path, `<kind>/<id>`. */
+  target: string
   property: string
   fromKind: string
   seen: number
@@ -398,17 +403,23 @@ function IncomingGroupRow({
     [kinds, fromKind, property]
   )
   const rows = useInfiniteQuery({
-    ...incomingInfiniteOptions(authority, pkg, name, id, GROUP_PAGE, {
+    ...referencingInfiniteOptions(target, GROUP_PAGE, {
       property,
-      fromKind,
+      kind: fromKind,
     }),
     enabled: open,
   })
-  const members = (rows.data?.pages ?? []).flatMap((p) => p.incoming ?? [])
-  // The group's OWN total, once it is open: the closed count comes from the
+  // The narrowed read still answers every site of the property; a site under
+  // another property cannot arrive, but the fold is by name regardless.
+  const members = (rows.data?.pages ?? [])
+    .flatMap(referencingRows)
+    .filter((row) => row.property === property)
+  // The group's OWN count, once it is open: the closed count comes from the
   // discovery page, which is capped, so a large group would otherwise announce
-  // the cap as its size. Closed and truncated, it says `n+` instead of lying.
-  const total = rows.data?.pages[0]?.total
+  // the cap as its size. Either way a cursor says `n+` instead of lying.
+  const opened = rows.data
+    ? seenCount(members.length, Boolean(rows.hasNextPage))
+    : undefined
 
   return (
     <Row
@@ -425,11 +436,11 @@ function IncomingGroupRow({
           )}
           {members.map((row) => (
             <NodeRow
-              key={`${row.from.kind}:${row.from.id}:${row.path ?? ""}`}
+              key={`${row.record.kind}:${row.record.id}:${row.path ?? ""}`}
               node={{
-                id: row.from.id,
-                kind: row.from.kind,
-                title: row.from.title,
+                id: row.record.id,
+                kind: row.record.kind,
+                title: recordTitle(row.record.properties) || undefined,
               }}
               kinds={kinds}
               path={path}
@@ -454,11 +465,7 @@ function IncomingGroupRow({
       <GroupLabel
         name={named.label}
         kind={splitKind(fromKind).name}
-        count={
-          total !== undefined
-            ? total.toLocaleString()
-            : `${seen.toLocaleString()}${partial ? "+" : ""}`
-        }
+        count={opened ?? seenCount(seen, partial)}
         description={named.description}
       />
     </Row>
@@ -466,10 +473,8 @@ function IncomingGroupRow({
 }
 
 /** A NESTED reference site says where inside the property it sits; a kind's
- * own property has nothing more to say, so the row carries no trailing note.
- * The source's creation stamp is not served here (issue #323) and the row does
- * not invent one. */
-function MemberMeta({ row }: { row: IncomingReference }) {
+ * own property has nothing more to say, so the row carries no trailing note. */
+function MemberMeta({ row }: { row: ReferencingRow }) {
   if (!row.path) return null
   return (
     <span className="ml-auto flex shrink-0 items-center gap-2 text-[0.7rem] text-muted-foreground">
@@ -511,18 +516,20 @@ function GraphNode({
   const record = given ?? fetched.data
   const kindInfo = kindByIdentity(kinds, kind)
 
-  const incoming = useInfiniteQuery(
-    incomingInfiniteOptions(authority, pkg, name, id, 200)
-  )
-  // The refs index walks (src_kind, src, property, …), so a bucket is not
-  // contiguous and `groupIncoming` folds by key — which is what makes a group
-  // whole across a page boundary.
+  const target = recordPath(kind, id)
+  const referencing = useInfiniteQuery(referencingInfiniteOptions(target, 200))
+  // A page is in the list's order, not grouped, so `groupReferencing` folds
+  // by key — which is what makes a group whole across a page boundary.
   const groups = useMemo(
     () =>
-      groupIncoming(
-        (incoming.data?.pages ?? []).flatMap((p) => p.incoming ?? [])
+      groupReferencing(
+        (referencing.data?.pages ?? []).flatMap(referencingRows)
       ),
-    [incoming.data]
+    [referencing.data]
+  )
+  const pointing = (referencing.data?.pages ?? []).reduce(
+    (n, p) => n + (p.records?.length ?? 0),
+    0
   )
 
   const outgoing = useMemo(
@@ -582,35 +589,32 @@ function GraphNode({
       {groups.length > 0 && (
         <Section
           icon={ArrowDownLeftIcon}
-          label="Incoming"
+          label="Referenced by"
           hint="What points at this record"
-          count={incoming.data?.pages[0]?.total}
+          count={seenCount(pointing, Boolean(referencing.hasNextPage))}
         >
           {groups.map((group) => (
-            <IncomingGroupRow
+            <ReferencingGroupRow
               key={`${group.property} ${group.kind}`}
-              authority={authority}
-              pkg={pkg}
-              name={name}
-              id={id}
+              target={target}
               property={group.property}
               fromKind={group.kind}
               seen={group.rows.length}
-              partial={Boolean(incoming.hasNextPage)}
+              partial={Boolean(referencing.hasNextPage)}
               kinds={kinds}
               path={path}
               depth={depth}
             />
           ))}
-          {incoming.hasNextPage && (
+          {referencing.hasNextPage && (
             <Button
               variant="ghost"
               size="sm"
               className="h-6 px-1 text-xs font-normal text-muted-foreground"
-              onClick={() => void incoming.fetchNextPage()}
-              disabled={incoming.isFetchingNextPage}
+              onClick={() => void referencing.fetchNextPage()}
+              disabled={referencing.isFetchingNextPage}
             >
-              {incoming.isFetchingNextPage ? "Loading…" : "More groups"}
+              {referencing.isFetchingNextPage ? "Loading…" : "More groups"}
             </Button>
           )}
         </Section>
@@ -634,15 +638,15 @@ export function GraphRail({
 }) {
   const kindInfo = kindByIdentity(kinds, record.kind)
   const outgoing = outgoingOf(record, kindInfo)
-  const incoming = useInfiniteQuery(
-    incomingInfiniteOptions(authority, pkg, name, record.id, 200)
+  const referencing = useInfiniteQuery(
+    referencingInfiniteOptions(recordPath(record.kind, record.id), 200)
   )
   const empty =
     outgoing.length === 0 &&
-    !incoming.isPending &&
-    (incoming.data?.pages[0]?.total ?? 0) === 0
+    !referencing.isPending &&
+    (referencing.data?.pages[0]?.records?.length ?? 0) === 0
 
-  if (incoming.isError) {
+  if (referencing.isError) {
     return (
       <Empty className="py-10">
         <EmptyHeader>
@@ -650,12 +654,12 @@ export function GraphRail({
             <NetworkIcon />
           </EmptyMedia>
           <EmptyTitle>The graph didn't load</EmptyTitle>
-          <EmptyDescription>{incoming.error.message}</EmptyDescription>
+          <EmptyDescription>{referencing.error.message}</EmptyDescription>
         </EmptyHeader>
         <Button
           variant="outline"
           size="sm"
-          onClick={() => void incoming.refetch()}
+          onClick={() => void referencing.refetch()}
         >
           Retry
         </Button>

@@ -109,7 +109,7 @@ func TestSelfResolutionDoesNotResumeOwnThread(t *testing.T) {
 	// Run 2: the SAME agent accepts it. The decider and the thread's agent
 	// are one actor, so thread 1 gets the row and no continuation.
 	fake.script("self",
-		fakeTurn{calls: []fakeCall{{"mutate", decideArgs(t, "req-self", "accepted")}}},
+		fakeTurn{calls: []fakeCall{{"write", decideArgs(t, "req-self", "accepted")}}},
 		fakeTurn{content: "accepted it."},
 	)
 	if _, err := ds.CallAgent(ctx, crewPackage+"/selfjudge", "work the inbox"); err != nil {

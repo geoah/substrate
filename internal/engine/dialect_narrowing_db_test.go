@@ -106,12 +106,12 @@ func dnRow(t *testing.T, ds substrate.Dataset) {
 	})
 }
 
-// dnCases are the narrowing variants: each mutates the base declaration and
+// dnCases are the narrowing variants: each alters the base declaration and
 // names the fragment its guard must carry.
 func dnCases() map[string]struct {
-	mutate func(props map[string]any)
-	says   string
-	refs   bool // the count is over live references, not records
+	alter func(props map[string]any)
+	says  string
+	refs  bool // the count is over live references, not records
 } {
 	// spec.fields, reached the same way by every case that edits a level-2 field.
 	specFields := func(props map[string]any) map[string]any {
@@ -126,44 +126,44 @@ func dnCases() map[string]struct {
 		return limitFields(props)["budgets"].(map[string]any)["fields"].(map[string]any)
 	}
 	return map[string]struct {
-		mutate func(props map[string]any)
-		says   string
-		refs   bool
+		alter func(props map[string]any)
+		says  string
+		refs  bool
 	}{
 		"level-2 field dropped": {
-			mutate: func(props map[string]any) { delete(limitFields(props), "depth") },
-			says:   `object "spec.limits" drops field "depth"`,
+			alter: func(props map[string]any) { delete(limitFields(props), "depth") },
+			says:  `object "spec.limits" drops field "depth"`,
 		},
 		"level-4 field dropped": {
-			mutate: func(props map[string]any) { delete(budgetFields(props), "calls") },
-			says:   `object "spec.limits.budgets" drops field "calls"`,
+			alter: func(props map[string]any) { delete(budgetFields(props), "calls") },
+			says:  `object "spec.limits.budgets" drops field "calls"`,
 		},
 		"level-4 field retyped": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				budgetFields(props)["calls"] = map[string]any{"type": "string"}
 			},
 			says: `object "spec.limits.budgets" field "calls" changes kind int → string`,
 		},
 		"level-2 field retyped": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				limitFields(props)["depth"] = map[string]any{"type": "string"}
 			},
 			says: `object "spec.limits" field "depth" changes kind int → string`,
 		},
 		"level-1 field list flattened": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["grant"].(map[string]any)["fields"].(map[string]any)["scopes"] = map[string]any{"type": "string"}
 			},
 			says: `object "grant" field "scopes" changes kind repeated string → string`,
 		},
 		"keyed field flattened": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				specFields(props)["tags"] = map[string]any{"type": "string"}
 			},
 			says: `object "spec" field "tags" changes kind keyed string → string`,
 		},
 		"keyed field tightens its keys": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				specFields(props)["tags"] = map[string]any{
 					"type": "string", "keyed": true, "keyPattern": "camel",
 				}
@@ -171,35 +171,35 @@ func dnCases() map[string]struct {
 			says: `object "spec" field "tags" tightens its keys to camel`,
 		},
 		"keyed property flattened": {
-			mutate: func(props map[string]any) { props["effects"] = map[string]any{"type": "int"} },
-			says:   `property "effects" changes kind keyed int → int`,
+			alter: func(props map[string]any) { props["effects"] = map[string]any{"type": "int"} },
+			says:  `property "effects" changes kind keyed int → int`,
 		},
 		"property becomes keyed": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["plain"] = map[string]any{"type": "string", "keyed": true}
 			},
 			says: `property "plain" changes kind string → keyed string`,
 		},
 		"keyed property tightens its keys": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["notes"] = map[string]any{"type": "string", "keyed": true, "keyPattern": "camel"}
 			},
 			says: `property "notes" tightens its keys to camel`,
 		},
 		"reference inside a repeated object narrows": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["tools"].(map[string]any)["fields"].(map[string]any)["callable"] = map[string]any{"type": "reference", "kind": "other"}
 			},
 			says: `object "tools" reference "callable" narrows its target to ` + dwPackage + `/other`,
 		},
 		"reference inside a keyed map narrows": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["installs"].(map[string]any)["fields"].(map[string]any)["source"] = map[string]any{"type": "reference", "kind": "other"}
 			},
 			says: `object "installs" reference "source" narrows its target to ` + dwPackage + `/other`,
 		},
 		"reference at level 3 narrows": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				limitFields(props)["ref"] = map[string]any{"type": "reference", "kind": "other"}
 			},
 			says: `object "spec.limits" reference "ref" narrows its target to ` + dwPackage + `/other`,
@@ -208,13 +208,13 @@ func dnCases() map[string]struct {
 		// the declared set here, so both arms refuse; without rows the same
 		// diffs admit, which is the string→enum path's whole point.
 		"string retyped to enum missing the held value": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["plain"] = map[string]any{"type": "enum", "values": []any{"other"}}
 			},
 			says: `property "plain" changes kind string → enum while`,
 		},
 		"keyed string field retyped to enum missing the held value": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				specFields(props)["tags"] = map[string]any{
 					"type": "enum", "values": []any{"blue"}, "keyed": true,
 				}
@@ -225,7 +225,7 @@ func dnCases() map[string]struct {
 		// three verbs were declared after the fact: a repeated string field,
 		// closed to the set the engine already matched against.
 		"repeated string field retyped to enum missing the held value": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["grant"].(map[string]any)["fields"].(map[string]any)["scopes"] = map[string]any{
 					"type": "enum", "values": []any{"write"}, "repeated": true,
 				}
@@ -235,43 +235,43 @@ func dnCases() map[string]struct {
 		// An enum value removed, once per container an enum can sit in. The keyed
 		// one is the case a containment test on the whole map could never see.
 		"scalar enum value removed": {
-			mutate: func(props map[string]any) { props["level"] = dwEnumNarrowed() },
-			says:   `property "level" removes value(s) "high"`,
+			alter: func(props map[string]any) { props["level"] = dwEnumNarrowed() },
+			says:  `property "level" removes value(s) "high"`,
 		},
 		"repeated enum value removed": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["levels"] = map[string]any{"type": "enum", "values": []any{"low"}, "repeated": true}
 			},
 			says: `property "levels" removes value(s) "high"`,
 		},
 		"keyed enum value removed": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["slots"] = map[string]any{"type": "enum", "values": []any{"low"}, "keyed": true}
 			},
 			says: `property "slots" removes value(s) "high"`,
 		},
 		"field enum value removed": {
-			mutate: func(props map[string]any) { specFields(props)["mode"] = dwEnumNarrowed() },
-			says:   `object "spec" field "mode" removes value(s) "high"`,
+			alter: func(props map[string]any) { specFields(props)["mode"] = dwEnumNarrowed() },
+			says:  `object "spec" field "mode" removes value(s) "high"`,
 		},
 		"field enum value removed at level 3": {
-			mutate: func(props map[string]any) { limitFields(props)["grade"] = dwEnumNarrowed() },
-			says:   `object "spec.limits" field "grade" removes value(s) "high"`,
+			alter: func(props map[string]any) { limitFields(props)["grade"] = dwEnumNarrowed() },
+			says:  `object "spec.limits" field "grade" removes value(s) "high"`,
 		},
 		"field enum value removed inside a repeated object": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["tools"].(map[string]any)["fields"].(map[string]any)["role"] = dwEnumNarrowed()
 			},
 			says: `object "tools" field "role" removes value(s) "high"`,
 		},
 		"field enum value removed inside a keyed map": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["installs"].(map[string]any)["fields"].(map[string]any)["channel"] = dwEnumNarrowed()
 			},
 			says: `object "installs" field "channel" removes value(s) "high"`,
 		},
 		"keyed field enum value removed": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				specFields(props)["slots"] = map[string]any{
 					"type": "enum", "values": []any{"low"}, "keyed": true,
 				}
@@ -282,31 +282,31 @@ func dnCases() map[string]struct {
 		// bound counts in its narrowing direction, and each is counted in the
 		// value's own container and at its own depth, the link data included.
 		"property pattern changed": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["code"] = map[string]any{"type": "string", "pattern": "^[a-z]{3}$"}
 			},
 			says: `property "code" changes its pattern to ^[a-z]{3}$`,
 		},
 		"repeated property pattern changed": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["codes"] = map[string]any{"type": "string", "pattern": "^[a-z]{3}$", "repeated": true}
 			},
 			says: `property "codes" changes its pattern to ^[a-z]{3}$`,
 		},
 		"property pattern added": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["plain"] = map[string]any{"type": "string", "pattern": "^x"}
 			},
 			says: `property "plain" changes its pattern to ^x`,
 		},
 		"keyed property pattern added": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["notes"] = map[string]any{"type": "string", "keyed": true, "pattern": "^x"}
 			},
 			says: `property "notes" changes its pattern to ^x`,
 		},
 		"digest pattern changed": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["fingerprint"] = map[string]any{"type": "digest", "pattern": "^cd"}
 			},
 			says: `property "fingerprint" changes its pattern to ^cd`,
@@ -314,83 +314,83 @@ func dnCases() map[string]struct {
 		// A sealed value cannot be matched, so any pattern change on a secret
 		// counts every row holding one, and the guard says so.
 		"secret pattern changed": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["token"] = map[string]any{"type": "secret", "pattern": "^new-"}
 			},
 			says: `property "token" changes its pattern to ^new- while 1 live records hold a sealed value, which cannot be checked against a pattern`,
 		},
 		"property min raised": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["count"] = map[string]any{"type": "int", "min": 6, "max": 10}
 			},
 			says: `property "count" requires values >= 6`,
 		},
 		"property max lowered": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["count"] = map[string]any{"type": "int", "min": 1, "max": 4}
 			},
 			says: `property "count" requires values <= 4`,
 		},
 		"float min added": {
-			mutate: func(props map[string]any) { props["ratio"] = map[string]any{"type": "float", "min": 0.5} },
-			says:   `property "ratio" requires values >= 0.5`,
+			alter: func(props map[string]any) { props["ratio"] = map[string]any{"type": "float", "min": 0.5} },
+			says:  `property "ratio" requires values >= 0.5`,
 		},
 		"float max added": {
-			mutate: func(props map[string]any) { props["ratio"] = map[string]any{"type": "float", "max": 0.1} },
-			says:   `property "ratio" requires values <= 0.1`,
+			alter: func(props map[string]any) { props["ratio"] = map[string]any{"type": "float", "max": 0.1} },
+			says:  `property "ratio" requires values <= 0.1`,
 		},
 		"decimal min raised": {
-			mutate: func(props map[string]any) { props["price"] = map[string]any{"type": "decimal", "min": 10} },
-			says:   `property "price" requires values >= 10`,
+			alter: func(props map[string]any) { props["price"] = map[string]any{"type": "decimal", "min": 10} },
+			says:  `property "price" requires values >= 10`,
 		},
 		"decimal max added": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["price"] = map[string]any{"type": "decimal", "min": 0, "max": 5}
 			},
 			says: `property "price" requires values <= 5`,
 		},
 		"field pattern changed": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				specFields(props)["code"] = map[string]any{"type": "string", "pattern": "^[a-z]{3}$"}
 			},
 			says: `object "spec" field "code" changes its pattern to ^[a-z]{3}$`,
 		},
 		"field pattern added inside a repeated object": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["tools"].(map[string]any)["fields"].(map[string]any)["label"] = map[string]any{"type": "string", "pattern": "^[a-z]{3}$"}
 			},
 			says: `object "tools" field "label" changes its pattern to ^[a-z]{3}$`,
 		},
 		"field pattern added inside a keyed map": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["installs"].(map[string]any)["fields"].(map[string]any)["version"] = map[string]any{"type": "string", "pattern": "^[0-9]+$"}
 			},
 			says: `object "installs" field "version" changes its pattern to ^[0-9]+$`,
 		},
 		"level-3 field min added": {
-			mutate: func(props map[string]any) { limitFields(props)["depth"] = map[string]any{"type": "int", "min": 5} },
-			says:   `object "spec.limits" field "depth" requires values >= 5`,
+			alter: func(props map[string]any) { limitFields(props)["depth"] = map[string]any{"type": "int", "min": 5} },
+			says:  `object "spec.limits" field "depth" requires values >= 5`,
 		},
 		"level-4 field max added": {
-			mutate: func(props map[string]any) { budgetFields(props)["calls"] = map[string]any{"type": "int", "max": 2} },
-			says:   `object "spec.limits.budgets" field "calls" requires values <= 2`,
+			alter: func(props map[string]any) { budgetFields(props)["calls"] = map[string]any{"type": "int", "max": 2} },
+			says:  `object "spec.limits.budgets" field "calls" requires values <= 2`,
 		},
 		"link property pattern changed": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["pinned"].(map[string]any)["properties"].(map[string]any)["note"] = map[string]any{"type": "string", "pattern": "^[a-z]{3}$"}
 			},
 			says: `reference "pinned" changes link property "note"'s pattern to ^[a-z]{3}$`,
 			refs: true,
 		},
 		"link property min raised": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["pinned"].(map[string]any)["properties"].(map[string]any)["weight"] = map[string]any{"type": "int", "min": 6}
 			},
 			says: `reference "pinned" requires link property "weight" >= 6`,
 			refs: true,
 		},
 		"link property max added": {
-			mutate: func(props map[string]any) {
+			alter: func(props map[string]any) {
 				props["pinned"].(map[string]any)["properties"].(map[string]any)["weight"] = map[string]any{"type": "int", "min": 1, "max": 4}
 			},
 			says: `reference "pinned" requires link property "weight" <= 4`,
@@ -410,7 +410,7 @@ func TestNestedNarrowingsRefusedWithLiveRows(t *testing.T) {
 	for name, c := range dnCases() {
 		t.Run(name, func(t *testing.T) {
 			props := dnBaseProps()
-			c.mutate(props)
+			c.alter(props)
 			count := "1 live records"
 			if c.refs {
 				count = "1 live references"
@@ -432,7 +432,7 @@ func TestNestedNarrowingsAdmittedWithoutRows(t *testing.T) {
 	for name, c := range dnCases() {
 		t.Run(name, func(t *testing.T) {
 			props := dnBaseProps()
-			c.mutate(props)
+			c.alter(props)
 			if err := dwApply(t, ds, props); err != nil {
 				t.Fatalf("no live rows, so the narrowing must land: %v", err)
 			}
@@ -481,10 +481,10 @@ func TestNarrowingAdmitsWhatTheDataAlreadySatisfies(t *testing.T) {
 		Properties: map[string]any{"keyedRefs": map[string]any{}, "notes": map[string]any{}},
 	})
 
-	narrow := func(t *testing.T, mutate func(props map[string]any)) error {
+	narrow := func(t *testing.T, alter func(props map[string]any)) error {
 		t.Helper()
 		props := dnBaseProps()
-		mutate(props)
+		alter(props)
 		return dwApply(t, ds, props)
 	}
 	restore := func(t *testing.T) {
@@ -647,10 +647,10 @@ func TestConstraintChangesAdmitWhatTheDataSatisfies(t *testing.T) {
 			props["pinned"].(map[string]any)["properties"].(map[string]any)["note"] = map[string]any{"type": "string", "pattern": "^[a-d]+$"}
 		},
 	}
-	for name, mutate := range cases {
+	for name, alter := range cases {
 		t.Run(name, func(t *testing.T) {
 			props := dnBaseProps()
-			mutate(props)
+			alter(props)
 			if err := dwApply(t, ds, props); err != nil {
 				t.Fatalf("every stored value satisfies the new constraint, so it must land: %v", err)
 			}

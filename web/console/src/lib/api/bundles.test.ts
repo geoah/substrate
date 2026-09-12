@@ -181,11 +181,12 @@ describe("the account-config trait read", () => {
     fetchMock.mockReset()
   })
 
-  // The trait is a KIND REFERENCE, and the Accounts section reads it through
-  // the core package's trait sub-path. A spelling the server does not
-  // recognize is a 404 nobody sees until the section is opened, so the
-  // identity and the URL it produces are pinned here together.
-  it("reads the host trait by its identity, under the core package", async () => {
+  // The trait is a KIND REFERENCE, and the Accounts section reads its
+  // implementors off the records route: no kind named, `filter.implements`
+  // alone. A spelling the server does not recognize is a refusal nobody sees
+  // until the section is opened, so the identity and the URL it produces are
+  // pinned here together.
+  it("reads the host trait's implementors by its identity, through filter.implements", async () => {
     expect(ACCOUNT_CONFIG_TRAIT).toBe("substrate.reamde.dev/core/accountconfig")
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ records: [] }), { status: 200 })
@@ -193,9 +194,12 @@ describe("the account-config trait read", () => {
     await traitRecordsQueryOptions(ACCOUNT_CONFIG_TRAIT).queryFn?.({
       signal: undefined,
     } as never)
-    expect(String(fetchMock.mock.calls[0][0])).toBe(
-      "/api/v1/substrate.reamde.dev/core/trait/substrate.reamde.dev%2Fcore%2Faccountconfig/records?first=200"
-    )
+    const url = new URL(String(fetchMock.mock.calls[0][0]), "http://x")
+    expect(url.pathname).toBe("/api/v1/records")
+    expect(url.searchParams.get("first")).toBe("200")
+    expect(JSON.parse(url.searchParams.get("filter")!)).toEqual({
+      implements: "substrate.reamde.dev/core/accountconfig",
+    })
   })
 })
 

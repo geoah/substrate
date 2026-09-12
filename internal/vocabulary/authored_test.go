@@ -104,11 +104,11 @@ data:
     writes: [a.example.com/a/widget]
 `
 
-// TestTheParseNeverMutatesTheDocument is the invariant itself: build the
+// TestTheParseNeverAltersTheDocument is the invariant itself: build the
 // authorities from one copy of the stream and compare the documents against a
 // second, independent parse of the same text. Any in-place rewrite shows up as a
 // difference, whichever key it touched.
-func TestTheParseNeverMutatesTheDocument(t *testing.T) {
+func TestTheParseNeverAltersTheDocument(t *testing.T) {
 	built, err := vocabulary.ParseStream([]byte(authoredStream))
 	if err != nil {
 		t.Fatalf("parse the stream: %v", err)
@@ -125,7 +125,7 @@ func TestTheParseNeverMutatesTheDocument(t *testing.T) {
 	}
 	for i := range built {
 		if !reflect.DeepEqual(built[i].Data, untouched[i].Data) {
-			t.Fatalf("%s %s: the parse mutated the document\n after  %#v\n before %#v",
+			t.Fatalf("%s %s: the parse altered the document\n after  %#v\n before %#v",
 				built[i].Kind, built[i].ID, built[i].Data, untouched[i].Data)
 		}
 	}

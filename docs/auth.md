@@ -186,7 +186,7 @@ a token's blast radius is the data, never the account. It is also why the
 console's account page sends no bearer token at all on either change.
 
 The generic record API cannot touch either auth kind: the credential cannot be
-put, patched, or deleted through REST, GraphQL, or the CLI's record surface,
+put, patched, or deleted through REST or the CLI's record surface,
 and a token can only be **deleted** there, which is exactly revocation. Both
 stay readable and listable. Auth-path writes are attributed to the `substrate`
 actor.

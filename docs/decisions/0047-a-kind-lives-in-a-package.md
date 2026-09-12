@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-02
 decision-makers: George Antoniadis
+amended-by: 0079
 ---
 
 # 0047. A kind lives in a package, and a package lives in an authority

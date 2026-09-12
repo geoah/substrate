@@ -38,9 +38,9 @@ import (
 // escapes each segment JSON-Pointer style ("~" -> "~0", "." -> "~1") so the
 // separator cannot appear inside a segment.
 //
-// NOTHING DECODES IT. The path is an OPAQUE ADDRESS: the incoming reader serves
-// it as stored, its keyset cursor compares it byte-wise against the same stored
-// bytes, and no caller splits it back into segments. Adding a decoder would
+// NOTHING DECODES IT. The path is an OPAQUE ADDRESS: the referencing read
+// serves it as stored in a page's `matches`, and no caller splits it back
+// into segments. Adding a decoder would
 // create a second spelling of the address that has to agree with this one.
 
 // refRow is one derived reference: where it sits in the source record, what it
@@ -222,8 +222,8 @@ func referencePathSQL(column, property string) string {
 // object, so a reader that picked its parse from the current declaration would
 // go blind to exactly the rows the change did not rewrite — silently, as a null
 // or a filter that stops matching. Read both shapes, always. The query filter
-// (query.go referenceValue) and the GraphQL reference scalar (gql/schema.go
-// coerceReferencePath) are held to this the same way.
+// (query.go referenceValue) and the expand loader (expand.go
+// referencePathsOf) are held to this the same way.
 func splitReferenceValue(v any) (eref, map[string]any, bool) {
 	switch t := v.(type) {
 	case string:

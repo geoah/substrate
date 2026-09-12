@@ -35,7 +35,7 @@ for real agent workflows, in four pieces:
 It also takes a position on migrating the loop to Google's ADK for Go.
 
 The end goal: a thread is a complete, self-describing account of a run that
-ANY reader (the console, a GraphQL consumer, another harness) can render and
+ANY reader (the console, an API consumer, another harness) can render and
 drive, including its open questions and pending gates, without bespoke
 endpoints or payload sniffing.
 
@@ -236,7 +236,7 @@ did.
 
 ### The `ask` built-in
 
-A fifth host function beside query/propose/graphql/mutate:
+A fifth host function beside the query, propose and write built-ins:
 `core.substrate.reamde.dev/ask` (a distinct name from the kind, so one
 spelling never means two things in an error message). Arguments mirror the
 questions envelope. It requires `permissions.writes` to name the interaction kind
@@ -698,9 +698,9 @@ ticket.
 - **Inbox**: the review page grows from "change requests" to "needs you":
   pending asks and pending requests (including conflicted ones needing
   re-propose), grouped by thread, newest first. Both are record queries.
-- **GraphQL**: no bespoke fields. Asks and requests reach consumers through
-  the generic record surface today and through reference inverses
-  (`thread { interactions, proposals, messages }`) once issue #71 lands, which this
+- **The API**: no bespoke routes. Asks and requests reach consumers through
+  the generic record surface today and through the reverse read
+  (`filter.referencing` on a thread), which this
   plan makes load-bearing.
 - **Streaming**: the live overlay gets one new `AgentEvent` kind, `ask`, so
   a running chat renders the form the moment the tool settles instead of on
@@ -728,8 +728,8 @@ Additive throughout; no narrowing, no data migration:
    enforce/advise, the policy-actor decision arm in `authorizeRequestOp`,
    the engine-owned `policy/verdict` annotation, the remedy flow on the
    gate card. Ships with a judged example in the llm bundle.
-5. **Ticketed beside**: sub-agent change aggregation (#70), the GraphQL
-   thread surface (#71, load-bearing for the inbox), function escalation,
+5. **Ticketed beside**: sub-agent change aggregation (#70), the thread
+   read surface (#71, load-bearing for the inbox), function escalation,
    workflows, compaction (which must never fold away turns that pending
    interactions still reference; adk-python issue 4740 is the cautionary
    precedent).

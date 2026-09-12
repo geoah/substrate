@@ -22,3 +22,13 @@ exclude_path = [
   # be wrong for every other file here.
   "web/console/index.html",
 ]
+
+# A frozen decision record may point at code that has since left the tree:
+# docs/decisions/0037 links `internal/engine/agentgql.go`, which decision 0079
+# removed. Its body is frozen (`mise run frozen:check`), so the link cannot be
+# repaired, and the record is history, not a claim about the present
+# (docs/decisions/README.md, "A decision record can rot"). The one path is
+# excluded by name so every other link in that record is still held.
+exclude = [
+  "internal/engine/agentgql\\.go$",
+]

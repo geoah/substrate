@@ -267,18 +267,16 @@ func TestProposalRejectionReportsBack(t *testing.T) {
 	})
 }
 
-func TestMutateStampsChangesOnToolRow(t *testing.T) {
+func TestWriteStampsChangesOnToolRow(t *testing.T) {
 	t.Parallel()
-	// A mutate dispatch's committed writes ride the tool row: one entry per
+	// A write dispatch's committed writes ride the tool row: one entry per
 	// changelog row, the seq addressing the delta. A thread-less decision
 	// (putRequest writes no thread) stamps and resumes nothing — the quiet
-	// half is TestAgentMutateDecidesRequestsWithinEmit, untouched.
+	// half is TestAgentWriteDecidesRequestsWithinEmit, untouched.
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	fake.script("mut",
-		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-stamped", properties: {name: "made"}}) { id } }`,
-		})}}},
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-stamped", map[string]any{"name": "made"})}}},
 		fakeTurn{content: "made it"},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget")
@@ -287,7 +285,7 @@ func TestMutateStampsChangesOnToolRow(t *testing.T) {
 	}
 	tool := lastToolMessage(t, ds, res.Thread)
 	if tool["ok"] != true {
-		t.Fatalf("mutate failed: %v", tool["content"])
+		t.Fatalf("write failed: %v", tool["content"])
 	}
 	entries := changesOfRow(tool)
 	if len(entries) != 1 {
@@ -308,14 +306,12 @@ func TestMutateStampsChangesOnToolRow(t *testing.T) {
 
 func TestFailedDispatchStampsNoChanges(t *testing.T) {
 	t.Parallel()
-	// A refused mutate rolls its transaction back, so the tool row carries no
+	// A refused write rolls its transaction back, so the tool row carries no
 	// `changes` — the sink flushes after commit, never before.
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	fake.script("mut",
-		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "samples.substrate.reamde.dev/tasks/task", id: "t-refused", properties: {title: "no"}}) { id } }`,
-		})}}},
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", taskKind, "t-refused", map[string]any{"title": "no"})}}},
 		fakeTurn{content: "refused"},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/editor", "write a task")
@@ -324,7 +320,7 @@ func TestFailedDispatchStampsNoChanges(t *testing.T) {
 	}
 	tool := lastToolMessage(t, ds, res.Thread)
 	if tool["ok"] != false {
-		t.Fatalf("an out-of-emit mutate reported ok: %v", tool["content"])
+		t.Fatalf("an out-of-emit write reported ok: %v", tool["content"])
 	}
 	if tool["changes"] != nil {
 		t.Fatalf("a refused dispatch stamped changes: %+v", tool["changes"])

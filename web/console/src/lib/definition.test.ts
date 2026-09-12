@@ -7,7 +7,6 @@ import {
   declaredReferences,
   describeKey,
   filterableProperties,
-  graphqlTypeName,
   propertyTypeLabel,
   kindByCollection,
   resolveReferenceTarget,
@@ -297,71 +296,5 @@ describe("type labels", () => {
     ).toBe("reference → person")
     // A repeated reference wears the container marker like any other property.
     expect(propertyTypeLabel(by("memberOf"))).toBe("reference → organization[]")
-  })
-})
-
-describe("graphqlTypeName", () => {
-  it("PascalCases a bare kind's name", () => {
-    expect(graphqlTypeName("task")).toBe("Task")
-  })
-
-  it("PascalCases a shipped authority's kind name, no prefix", () => {
-    expect(graphqlTypeName("samples.substrate.reamde.dev/people/person")).toBe(
-      "Person"
-    )
-  })
-
-  it("prefixes an installed kind with its full authority and package", () => {
-    // Decision 0058: the authority is always in the name, dots folded to
-    // underscores, so a second authority installing `google` renames nothing.
-    expect(
-      graphqlTypeName(
-        "providers.substrate.reamde.dev/google/person",
-        "installed"
-      )
-    ).toBe("Providers_substrate_reamde_dev_Google_Person")
-    expect(graphqlTypeName("ada.example.com/google/person", "installed")).toBe(
-      "Ada_example_com_Google_Person"
-    )
-  })
-
-  it("folds the authority injectively, as the server does", () => {
-    // A hyphen is legal in an authority and illegal in a GraphQL name; the
-    // server spells it `__` (a dot is `_`), so a hyphenated authority and its
-    // unhyphenated twin keep two names.
-    expect(
-      graphqlTypeName("acme-dev.example.com/tasks/task", "installed")
-    ).toBe("Acme__dev_example_com_Tasks_Task")
-    expect(
-      graphqlTypeName("my-host.example.com/tasks/task", "installed")
-    ).not.toBe(graphqlTypeName("myhost.example.com/tasks/task", "installed"))
-    // A GraphQL name may not begin with a digit, so a digit-first authority
-    // leads with `_`.
-    expect(graphqlTypeName("3rd.example.com/tasks/task", "installed")).toBe(
-      "_3rd_example_com_Tasks_Task"
-    )
-  })
-
-  it("leaves a bare reference bare whatever its source", () => {
-    // No authority to fold; prefixing an empty one would spell the reserved
-    // `__` introspection prefix.
-    expect(graphqlTypeName("task", "installed")).toBe("Task")
-  })
-
-  it("prefixes a published provider kind too", () => {
-    // A provider's declarations are a copy the repository holds, so the server
-    // names them like any other non-seed kind (vocabulary GraphQLName).
-    expect(
-      graphqlTypeName(
-        "providers.substrate.reamde.dev/whoop/account",
-        "published"
-      )
-    ).toBe("Providers_substrate_reamde_dev_Whoop_Account")
-  })
-
-  it("leaves a seeded kind bare", () => {
-    expect(graphqlTypeName("substrate.reamde.dev/core/token", "builtin")).toBe(
-      "Token"
-    )
   })
 })

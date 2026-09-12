@@ -81,15 +81,17 @@ func TestUnmatchedAPIPathsAreJSONWithoutAWebDir(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
 	// `/api/v1/nope` matches no route at all — not even the generic
-	// {authority}/{package}/{name} resource, whose own 404 is a JSON problem object
-	// already — so it is the router's fallback that has to answer well.
+	// {authority}/{package}/{kind}/{id} record, whose own 404 is a JSON
+	// problem object already — so it is the router's fallback that has to
+	// answer well.
 	wantErrorCode(t, env.do(t, http.MethodGet, "/api/v1/nope", tok, nil),
 		http.StatusNotFound, codeNotFound)
 	wantErrorCode(t, env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/core/nope", tok, nil),
 		http.StatusNotFound, codeNotFound)
-	// An unauthenticated one is refused before the path is considered at all,
-	// which is a JSON problem object too — never HTML with a 200.
-	wantErrorCode(t, env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/core/nope", "", nil),
+	// An unauthenticated request at a route that exists is refused before the
+	// path's handler runs, which is a JSON problem object too — never HTML
+	// with a 200.
+	wantErrorCode(t, env.do(t, http.MethodGet, recordsPath, "", nil),
 		http.StatusUnauthorized, codeAuth)
 }
 
@@ -103,7 +105,7 @@ func TestUnknownListParamsAreRefused(t *testing.T) {
 	tok := env.svc.token(fakeRepository)
 
 	for _, query := range []string{"?bogus=1", "?first=2&bogus=1", "?limit=5", "?watch=1&bogus=1"} {
-		rec := env.do(t, http.MethodGet, peoplePath+query, tok, nil)
+		rec := env.do(t, http.MethodGet, recordsPath+query, tok, nil)
 		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 		msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message
 		if !strings.Contains(msg, "bogus") && !strings.Contains(msg, "limit") {
@@ -111,13 +113,13 @@ func TestUnknownListParamsAreRefused(t *testing.T) {
 		}
 	}
 	// The key is quoted so the message points at exactly one thing.
-	rec := env.do(t, http.MethodGet, peoplePath+"?limit=5", tok, nil)
+	rec := env.do(t, http.MethodGet, recordsPath+"?limit=5", tok, nil)
 	msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message
 	if !strings.Contains(msg, `"limit"`) {
 		t.Errorf("message = %q, want the offending key quoted", msg)
 	}
 	// A near miss is told the spelling that works: `orderby` is `orderBy`.
-	rec = env.do(t, http.MethodGet, peoplePath+"?orderby=createdAt", tok, nil)
+	rec = env.do(t, http.MethodGet, recordsPath+"?orderby=createdAt", tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, `"orderBy"`) {
 		t.Errorf("message = %q, want the working spelling suggested", msg)
@@ -137,16 +139,17 @@ func TestSupportedListParamsStillWork(t *testing.T) {
 		"?after=",
 		"?orderBy=updatedAt:desc",
 		"?withAnnotations=1",
+		"?expand=manager",
 		`?filter={"properties":{"name":{"eq":"Ada"}}}`,
-		"?first=5&orderBy=createdAt&withAnnotations=1",
+		`?filter={"kinds":["` + personKind + `"]}&first=5&orderBy=createdAt&withAnnotations=1`,
 	} {
-		rec := env.do(t, http.MethodGet, peoplePath+query, tok, nil)
+		rec := env.do(t, http.MethodGet, recordsPath+query, tok, nil)
 		wantStatus(t, rec, http.StatusOK)
 	}
 	// The watch mode's own parameters: the switch and the resume cursor.
-	wantNotRefused(t, env, peoplePath+"?watch=1&from=0", tok)
+	wantNotRefused(t, env, recordsPath+"?watch=1&from=0", tok)
 	generation := env.svc.datasets[fakeRepository].generation
-	wantNotRefused(t, env, peoplePath+"?watch=1&from=1&generation="+generation, tok)
+	wantNotRefused(t, env, recordsOf(t, personKind, "watch=1", "from=1", "generation="+generation), tok)
 }
 
 // wantNotRefused drives a WATCH request to completion: the stream would

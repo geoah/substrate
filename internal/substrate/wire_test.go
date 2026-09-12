@@ -49,9 +49,10 @@ var wireTypes = map[string]any{
 	"ProblemDetail": ProblemDetail{},
 
 	"SubstrateRecord":     Record{},
-	"IncomingReference":   IncomingReference{},
-	"IncomingSource":      IncomingSource{},
-	"IncomingPage":        IncomingPage{},
+	"ReferenceSite":       ReferenceSite{},
+	"Referencing":         Referencing{},
+	"RankedPage":          RankedPage{},
+	"Scores":              Scores{},
 	"PropertyMeta":        PropertyMeta{},
 	"PropertyAlternative": PropertyAlternative{},
 	"PutInput":            PutInput{},

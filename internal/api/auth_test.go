@@ -9,13 +9,13 @@ import (
 
 func TestAuthMissingBearer(t *testing.T) {
 	env := newTestEnv(t)
-	rec := env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/person", "", nil)
+	rec := env.do(t, http.MethodGet, recordsPath, "", nil)
 	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
 }
 
 func TestAuthUnknownToken(t *testing.T) {
 	env := newTestEnv(t)
-	rec := env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/person", "substrate_tok_nope", nil)
+	rec := env.do(t, http.MethodGet, recordsPath, "substrate_tok_nope", nil)
 	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
 }
 
@@ -26,15 +26,15 @@ func TestActorDefaultsToOwnerAndHeaderNamesTheWriter(t *testing.T) {
 	tok := env.svc.token(fakeRepository)
 	ds := env.svc.datasets[fakeRepository]
 
-	rec := env.do(t, http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", tok,
-		map[string]any{"properties": map[string]any{"name": "Ada"}})
+	rec := env.do(t, http.MethodPost, recordsPath, tok,
+		map[string]any{"kind": personKind, "properties": map[string]any{"name": "Ada"}})
 	wantStatus(t, rec, http.StatusCreated)
 	if ds.lastActor != substrate.ActorAPI {
 		t.Fatalf("default actor = %q, want owner", ds.lastActor)
 	}
 
-	rec = env.do(t, http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", tok,
-		map[string]any{"properties": map[string]any{"name": "Grace"}},
+	rec = env.do(t, http.MethodPost, recordsPath, tok,
+		map[string]any{"kind": personKind, "properties": map[string]any{"name": "Grace"}},
 		actorHeader, "gmail.google.connectors.substrate.reamde.dev")
 	wantStatus(t, rec, http.StatusCreated)
 	if ds.lastActor != "gmail.google.connectors.substrate.reamde.dev" {
@@ -53,8 +53,8 @@ func TestWriteCarriesTheResolvedTokenID(t *testing.T) {
 	second := env.svc.token(fakeRepository)
 	ds := env.svc.datasets[fakeRepository]
 
-	rec := env.do(t, http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", first,
-		map[string]any{"properties": map[string]any{"name": "Ada"}})
+	rec := env.do(t, http.MethodPost, recordsPath, first,
+		map[string]any{"kind": personKind, "properties": map[string]any{"name": "Ada"}})
 	wantStatus(t, rec, http.StatusCreated)
 	if ds.lastPrincipal != env.svc.tokens[first].info.ID {
 		t.Fatalf("principal = %q, want the first token's id %q", ds.lastPrincipal, env.svc.tokens[first].info.ID)
@@ -62,8 +62,8 @@ func TestWriteCarriesTheResolvedTokenID(t *testing.T) {
 
 	// A different token, the same asserted actor: the principal moves, the
 	// actor does not.
-	rec = env.do(t, http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", second,
-		map[string]any{"properties": map[string]any{"name": "Grace"}},
+	rec = env.do(t, http.MethodPost, recordsPath, second,
+		map[string]any{"kind": personKind, "properties": map[string]any{"name": "Grace"}},
 		actorHeader, string(substrate.ActorConsole))
 	wantStatus(t, rec, http.StatusCreated)
 	if ds.lastActor != substrate.ActorConsole {
@@ -90,14 +90,14 @@ func TestActorHeaderRefusesTheHostNamespace(t *testing.T) {
 		// request that could claim it could forge one.
 		"bundle:samples.substrate.reamde.dev:tasks",
 	} {
-		rec := env.do(t, http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", tok,
-			map[string]any{"properties": map[string]any{"name": "forged"}},
+		rec := env.do(t, http.MethodPost, recordsPath, tok,
+			map[string]any{"kind": personKind, "properties": map[string]any{"name": "forged"}},
 			actorHeader, actor)
 		wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
 	}
 	// A name that merely RESEMBLES the namespace is ordinary.
-	rec := env.do(t, http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", tok,
-		map[string]any{"properties": map[string]any{"name": "fine"}},
+	rec := env.do(t, http.MethodPost, recordsPath, tok,
+		map[string]any{"kind": personKind, "properties": map[string]any{"name": "fine"}},
 		actorHeader, "substrateish.example.com")
 	wantStatus(t, rec, http.StatusCreated)
 }

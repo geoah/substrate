@@ -240,14 +240,14 @@ describe("system turns and engine-stamped changes", () => {
     const turns = transcriptOf([
       row({
         role: "assistant",
-        toolCalls: [call("c1", "mutate", "{}")],
+        toolCalls: [call("c1", "write", "{}")],
         turn: 0,
       }),
       row({
         role: "tool",
         content: "{}",
         toolCallId: "c1",
-        name: "mutate",
+        name: "write",
         ok: true,
         turn: 1,
         changes: [stamp(3, "put", "crew.test.dev/widget", "w1")],
@@ -308,7 +308,7 @@ describe("requestIdOf", () => {
   it("does not read another kind's stamp as a proposal", () => {
     const found = requestIdOf(
       settled({
-        name: "mutate",
+        name: "write",
         output: "{}",
         changes: [
           { seq: 4, op: "put", kind: "crew.test.dev/widget", id: "w1" },

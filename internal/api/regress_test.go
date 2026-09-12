@@ -1,10 +1,8 @@
 package api
 
 // Codex regression round 2 (server, API surface):
-//   #1  GraphQL mutations enforce token scopes; bundle lifecycle is gated
+//   #1  the bundle lifecycle is gated behind the engine's exclusive fence
 //   #4  a successful uninstall acks with a tombstone, never an error
-//   #9  GraphQL JSON inputs decode strictly (a miscased ifVersion errors)
-//   #15 a fractional / out-of-range Long variable errors, never truncates
 //   #16 a malformed trailing closer {}} is bad_request
 
 import (
@@ -182,85 +180,6 @@ func TestBundleLifecycleIsRecordState(t *testing.T) {
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 }
 
-// ---- GraphQL scope + strict decode + Long (#1 read/write, #9, #15) ----------
-
-// gqlRaw posts a GraphQL request and returns the parsed response WITHOUT
-// failing on GraphQL errors (the gql helper fails on them).
-func (e *testEnv) gqlRaw(t *testing.T, token, query string, vars map[string]any) gqlResponse {
-	t.Helper()
-	rec := e.do(t, http.MethodPost, graphqlPath, token, map[string]any{"query": query, "variables": vars})
-	wantStatus(t, rec, http.StatusOK)
-	return decodeJSON[gqlResponse](t, rec)
-}
-
-// TestGraphQLInputStrictDecodeMiscasedIfVersion pins codex regress #9: GraphQL
-// mutation inputs go through the strict decoder, so a miscased `ifversion` key
-// errors rather than silently dropping the CAS precondition.
-func TestGraphQLInputStrictDecodeMiscasedIfVersion(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	res := env.gqlRaw(t, tok,
-		`mutation ($in: JSON!) { patch(kind: "samples.substrate.reamde.dev/people/person", id: "x", input: $in) { id } }`,
-		map[string]any{"in": map[string]any{"ifversion": 3}})
-	if len(res.Errors) == 0 {
-		t.Fatal("a miscased ifversion silently decoded — the strict decoder is not on the GraphQL path")
-	}
-	if !strings.Contains(res.Errors[0].Message, "ifversion") {
-		t.Fatalf("error = %q, want it to name the unknown field ifversion", res.Errors[0].Message)
-	}
-}
-
-// TestGraphQLLongVariableRejectsFractional pins codex regress #15: a fractional
-// Long variable errors (UseNumber + coerceLong), never truncates.
-func TestGraphQLLongVariableRejectsFractional(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	res := env.gqlRaw(t, tok, `query ($from: Long) { changelog(from: $from) { from } }`,
-		map[string]any{"from": 1.5})
-	if len(res.Errors) == 0 {
-		t.Fatal("a fractional Long variable was accepted — it truncated instead of erroring")
-	}
-}
-
-// TestGraphQLLongVariableRejectsOutOfRange pins the other half of #15: a value
-// past 2^63 errors rather than wrapping.
-func TestGraphQLLongVariableRejectsOutOfRange(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	// 2^63 as a JSON number literal — one past the int64 ceiling.
-	res := env.gqlRaw(t, tok, `query ($from: Long) { changelog(from: $from) { from } }`,
-		map[string]any{"from": float64(9223372036854775808.0)})
-	if len(res.Errors) == 0 {
-		t.Fatal("an out-of-range Long variable was accepted — it wrapped instead of erroring")
-	}
-}
-
-// TestGraphQLIntVariableIsUsable is the other side of #15: UseNumber must not
-// make ordinary `Int` variables unusable. graphql-go coerces by type switch and
-// has no json.Number case, so `{"first": 5}` used to fail variable coercion
-// outright ("Variable \"$first\" got invalid value 5") and every client was
-// pushed into inlining its page sizes.
-func TestGraphQLIntVariableIsUsable(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	res := env.gqlRaw(t, tok,
-		`query ($first: Int) { records(first: $first) { nodes { id } } }`,
-		map[string]any{"first": 5})
-	if len(res.Errors) > 0 {
-		t.Fatalf("an Int variable was refused: %v", res.Errors)
-	}
-	// The value ARRIVES: the fake records the query it was listed with.
-	if got := env.svc.datasets[fakeRepository].lastQuery.First; got != 5 {
-		t.Fatalf("first reached the dataset as %d, want 5", got)
-	}
-	// And a Long variable travels the same path in the same request shape.
-	res = env.gqlRaw(t, tok, `query ($from: Long) { changelog(from: $from) { from } }`,
-		map[string]any{"from": 9007199254740993})
-	if len(res.Errors) > 0 {
-		t.Fatalf("a Long variable past 2^53 was refused: %v", res.Errors)
-	}
-}
-
 // ---- scoped changefeed refill (#13) -----------------------------------------
 
 // ---- strict REST decode trailing closer (#16) -------------------------------
@@ -271,7 +190,7 @@ func TestGraphQLIntVariableIsUsable(t *testing.T) {
 func TestStrictDecodeRejectsTrailingCloser(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", strings.NewReader("{}}"))
+	req := httptest.NewRequest(http.MethodPost, recordsPath, strings.NewReader("{}}"))
 	req.RemoteAddr = "10.0.0.1:1234"
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rec := httptest.NewRecorder()

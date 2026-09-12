@@ -37,10 +37,11 @@ func init() {
 			"the string and the JSON spelling, ascending and descending; and a first=2/after= keyset walk "+
 			"reaches the same records in the same order as one unpaged read, with no row repeated and none lost.",
 		xqCaseListGrammar)
-	registerCase(310, "QRY-02", "filter.kinds is refused on a collection list",
-		"The collection path already names the kind, so a filter that names one too is a 400 rather than a "+
-			"silent overwrite: both the path's own kind and a foreign one are refused with the same message.",
-		xqCaseCollectionKindsFilter)
+	registerCase(310, "QRY-02", "filter.kinds is how a list narrows to a kind",
+		"There is one list route, and `filter.kinds` is its kind predicate: a list narrowed to the task kind "+
+			"answers tasks alone, a kind nothing declares is a 404 naming the unknown kind, and a list with no "+
+			"filter answers records of more than one kind.",
+		xqCaseKindsFilter)
 	registerCase(340, "LOG-02", "The backward page walks history to its end",
 		"`before`/`first` pages the changelog newest-first: the seqs strictly decrease across the whole walk, "+
 			"the cursor is absent on the last page alone, and the walk reads exactly the rows the forward read "+
@@ -55,10 +56,11 @@ func init() {
 		"The pair narrows the feed to exactly the rows the unfiltered read holds for that record, and either "+
 			"half alone is a 400 saying why an id without a kind does not name one record.",
 		xqCaseRecordHistory)
-	registerCase(370, "LOG-05", "A collection watch delivers its own kind only",
-		"A watch on the task collection ignores a person written before the task it delivers, and refuses the "+
-			"list grammar (`filter`, `first`) instead of quietly ignoring parameters a stream cannot honor.",
-		xqCaseCollectionWatch)
+	registerCase(370, "LOG-05", "A records watch delivers the kinds it filters and nothing else",
+		"`GET /records?watch=1` narrowed by `filter.kinds` to the task kind ignores a person written before the "+
+			"task it delivers, and refuses the list grammar (a `filter` arm beyond `kinds`, `first`) instead of "+
+			"quietly ignoring parameters a stream cannot honor.",
+		xqCaseRecordsWatch)
 	registerCase(380, "LOG-06", "Heartbeats keep an idle stream open",
 		"A watch with nothing to deliver stays open and writes a bare `{}` control frame on the 30s interval, "+
 			"so an idle client (and any proxy between) sees liveness instead of a dead socket.",
@@ -135,13 +137,29 @@ func xqBadRequest(c *C, path, want string) xqError {
 	return e
 }
 
-// xqListTasks reads one page of the task collection.
+// xqListTasks reads one page of tasks: the records route narrowed to the task
+// kind, merged into whatever filter the case passes so a case that names its
+// own kinds keeps them.
 func xqListTasks(c *C, v url.Values) xqPage {
 	c.t.Helper()
-	path := tasksCollection
-	if len(v) > 0 {
-		path += "?" + v.Encode()
+	filter := map[string]any{}
+	if raw := v.Get("filter"); raw != "" {
+		c.requiref(json.Unmarshal([]byte(raw), &filter) == nil, "the case's filter is not JSON: %s", raw)
 	}
+	if _, set := filter["kinds"]; !set {
+		filter["kinds"] = []string{xqTaskKind}
+	}
+	rest := url.Values{}
+	for k, vals := range v {
+		if k != "filter" {
+			rest[k] = vals
+		}
+	}
+	var extra []string
+	if len(rest) > 0 {
+		extra = append(extra, rest.Encode())
+	}
+	path := listWhere(filter, extra...)
 	var page xqPage
 	status, raw := c.do(http.MethodGet, path, nil, &page)
 	c.requiref(status == http.StatusOK, "GET %s answered %d: %s", path, status, raw)
@@ -345,12 +363,12 @@ func xqCaseListGrammar(c *C) {
 	seen := map[string]bool{}
 	after, pages := "", 0
 	for {
-		v := xqValues("first", "2")
+		extra := []string{"first=2"}
 		if after != "" {
-			v.Set("after", after)
+			extra = append(extra, "after="+url.QueryEscape(after))
 		}
 		var page xqPage
-		path := tasksCollection + "?" + v.Encode()
+		path := listOf(tasksCollection, extra...)
 		status, raw := xqGet(c, path, &page)
 		c.requiref(status == http.StatusOK, "GET %s answered %d: %s", path, status, raw)
 		c.requiref(len(page.Records) <= 2, "a first=2 page answered %d records", len(page.Records))
@@ -376,16 +394,40 @@ func xqCaseListGrammar(c *C) {
 		"with none repeated and none lost", pages, len(paged))
 }
 
-// xqCaseCollectionKindsFilter pins the collection list's one forced predicate.
-func xqCaseCollectionKindsFilter(c *C) {
-	const want = "filter.kinds is not supported on a collection list"
-	for _, kind := range []string{xqTaskKind, personKind} {
-		path := tasksCollection + "?" + xqValues("filter", fmt.Sprintf(`{"kinds":[%q]}`, kind)).Encode()
-		// The path's own kind is refused as flatly as a foreign one: the
-		// refusal is about the key, not about a conflict of values.
-		e := xqBadRequest(c, path, want)
-		c.stepf("`filter.kinds=[%s]` on the task collection was refused 400 `%s`: %q", kind, e.Error.Code, e.Error.Message)
+// xqCaseKindsFilter pins the one kind predicate a list has: filter.kinds on
+// the records route, where a read with no filter spans every kind.
+func xqCaseKindsFilter(c *C) {
+	tasks := xqListTasks(c, xqValues("first", "200"))
+	c.requiref(len(tasks.Records) > 0, "the task list is empty; the stories wrote tasks")
+	for _, rec := range tasks.Records {
+		c.requiref(rec.Kind == xqTaskKind, "`filter.kinds=[%s]` answered `%s`, a `%s`", xqTaskKind, rec.ID, rec.Kind)
 	}
+	c.stepf("`filter={\"kinds\":[\"%s\"]}` answered %d records, every one a task", xqTaskKind, len(tasks.Records))
+
+	// A kind nothing declares is not an empty list: the filter names a kind
+	// that does not exist, and the answer says so.
+	const nope = "samples.substrate.reamde.dev/tasks/nope"
+	path := listWhere(map[string]any{"kinds": []string{nope}})
+	status, raw := c.do(http.MethodGet, path, nil, nil)
+	c.requiref(status == http.StatusNotFound, "GET %s answered %d, want 404: %s", path, status, raw)
+	e := xqRefused(c, raw)
+	c.requiref(e.Error.Code == "not_found", "the unknown kind was refused as %q, want not_found", e.Error.Code)
+	c.requiref(strings.Contains(e.Error.Message, "unknown kind") && strings.Contains(e.Error.Message, nope),
+		"the refusal does not name the unknown kind: %q", e.Error.Message)
+	c.stepf("`filter={\"kinds\":[\"%s\"]}` was refused 404 `%s`: %q", nope, e.Error.Code, e.Error.Message)
+
+	// No filter, no kind: the newest page of the whole repository is mixed.
+	var all xqPage
+	path = recordsRoute + "?first=500"
+	status, raw = c.do(http.MethodGet, path, nil, &all)
+	c.requiref(status == http.StatusOK, "GET %s answered %d: %s", path, status, raw)
+	kinds := map[string]bool{}
+	for _, rec := range all.Records {
+		kinds[rec.Kind] = true
+	}
+	c.requiref(len(kinds) > 1, "an unfiltered list of %d records holds one kind %v; the stories wrote several",
+		len(all.Records), kinds)
+	c.stepf("`GET %s` with no filter answered %d records of %d kinds", recordsRoute, len(all.Records), len(kinds))
 }
 
 // xqCaseBackwardPage walks the changelog newest-first to its bottom.
@@ -583,44 +625,46 @@ func xqCaseRecordHistory(c *C) {
 	c.stepf("`recordKind` without `recordId`: 400, %q", e.Error.Message)
 }
 
-// xqCaseCollectionWatch pins the per-collection watch: its kind, and the list
-// parameters a stream cannot honor.
-func xqCaseCollectionWatch(c *C) {
-	st := xqOpenStream(c, tasksCollection+"?watch=1", 30*time.Second)
+// xqCaseRecordsWatch pins the records watch: filter.kinds is the one arm the
+// tail honors, and the list parameters a stream cannot honor are refused.
+func xqCaseRecordsWatch(c *C) {
+	st := xqOpenStream(c, listOf(tasksCollection, "watch=1"), 30*time.Second)
 	defer st.close()
 	head := st.bookmark(c)
 
-	// The person is written FIRST and lands at the lower seq: were the
-	// collection watch the whole feed, its row would arrive before the task's.
+	// The person is written FIRST and lands at the lower seq: were the kind
+	// filter dropped, its row would arrive before the task's.
 	c.putRec(personCollection, "x-log-watcher",
 		map[string]any{"name": "Wren Watcher", "emails": []string{"wren@acme.example"}})
 	const probe = "x-log-watched"
-	c.putRec(tasksCollection, probe, map[string]any{"name": "The collection watch probe"})
+	c.putRec(tasksCollection, probe, map[string]any{"name": "The records watch probe"})
 
 	rows := 0
 	for {
 		row, ok := st.row(c)
-		c.requiref(ok, "the task collection's watch delivered nothing for `%s` before the deadline: %v", probe, st.sc.Err())
+		c.requiref(ok, "the task watch delivered nothing for `%s` before the deadline: %v", probe, st.sc.Err())
 		rows++
 		c.requiref(row.Kind == xqTaskKind,
-			"the task collection's watch delivered a `%s` row (`%s`) at seq %d", row.Kind, row.RecordID, row.Seq)
-		c.requiref(row.Seq > head, "the collection watch re-delivered seq %d, at or below its bookmark %d", row.Seq, head)
+			"the task watch delivered a `%s` row (`%s`) at seq %d", row.Kind, row.RecordID, row.Seq)
+		c.requiref(row.Seq > head, "the watch re-delivered seq %d, at or below its bookmark %d", row.Seq, head)
 		if row.RecordID == probe {
 			break
 		}
 	}
-	c.stepf("the watch on the task collection delivered `%s` (and %d other task rows) while ignoring the person "+
-		"written before it", probe, rows-1)
+	c.stepf("the watch narrowed to the task kind delivered `%s` (and %d other task rows) while ignoring the "+
+		"person written before it", probe, rows-1)
 
-	// The list grammar is refused rather than ignored: a `filter` a stream
-	// drops would return the whole collection's tail looking narrowed.
-	for _, param := range [][2]string{
-		{"filter", `{"properties":{"status":{"eq":"open"}}}`},
-		{"first", "2"},
+	// The list grammar is refused rather than ignored: a filter arm or a page
+	// size a stream drops would return the whole tail looking narrowed.
+	for _, param := range []struct{ key, path, want string }{
+		{"filter.properties", listWhere(map[string]any{
+			"kinds":      []string{xqTaskKind},
+			"properties": map[string]any{"status": map[string]any{"eq": "open"}},
+		}, "watch=1"), "filter.properties is not supported with watch=1"},
+		{"first", listOf(tasksCollection, "watch=1", "first="+url.QueryEscape("2")), `unknown query parameter "first"`},
 	} {
-		path := tasksCollection + "?" + xqValues("watch", "1", param[0], param[1]).Encode()
-		e := xqBadRequest(c, path, param[0]+" is not supported with watch=1")
-		c.stepf("`?watch=1&%s=…` on the collection: 400, %q", param[0], e.Error.Message)
+		e := xqBadRequest(c, param.path, param.want)
+		c.stepf("`?watch=1&%s=…` on the records route: 400, %q", param.key, e.Error.Message)
 	}
 }
 

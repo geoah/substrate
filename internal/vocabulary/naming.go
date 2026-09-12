@@ -29,12 +29,6 @@ var (
 	reAuthority = regexp.MustCompile("^" + authorityRE + "$")
 	reWord      = regexp.MustCompile("^" + wordRE + "$")
 	reCamel     = regexp.MustCompile("^" + camelRE + "$")
-	// reGraphQLName is graphql-go's own identifier pattern. GraphQLName is
-	// built to satisfy it for every legal reference (record 0058), and
-	// graphqlNameProblems checks each produced name against it anyway, so a
-	// name the schema builder would refuse is refused at the declaration
-	// door, by name, instead of taking the repository's schema down.
-	reGraphQLName = regexp.MustCompile(`^[_a-zA-Z][_a-zA-Z0-9]*$`)
 	// An actor is one of the closed domain's names: a bare word (`console`,
 	// `substratectl`, `api`, `substrate`) or a prefixed machine hand carrying
 	// the full authority and the package — `bundle:<authority>:<package>`,

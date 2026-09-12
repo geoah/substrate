@@ -69,8 +69,8 @@ func TestIdempotencyKeyReachesTheFiveOperations(t *testing.T) {
 		saw    func() string
 	}{
 		{
-			"create", "/api/v1/" + person,
-			map[string]any{"properties": map[string]any{"name": "Ada"}},
+			"create", recordsPath,
+			map[string]any{"kind": person, "properties": map[string]any{"name": "Ada"}},
 			http.StatusCreated,
 			func() string { return plain.lastIdempotencyKey },
 		},
@@ -129,8 +129,8 @@ func TestIdempotencyKeyReachesTheFiveOperations(t *testing.T) {
 func TestIdempotencyKeyRepeatReplaysAndMismatchIs409(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
-	path := "/api/v1/samples.substrate.reamde.dev/people/person"
-	body := map[string]any{"properties": map[string]any{"name": "Ada"}}
+	path := recordsPath
+	body := map[string]any{"kind": personKind, "properties": map[string]any{"name": "Ada"}}
 
 	first := env.do(t, http.MethodPost, path, tok, body, idempotencyHeader, "reused")
 	wantStatus(t, first, http.StatusCreated)
@@ -141,7 +141,7 @@ func TestIdempotencyKeyRepeatReplaysAndMismatchIs409(t *testing.T) {
 	}
 
 	rec := env.do(t, http.MethodPost, path, tok,
-		map[string]any{"properties": map[string]any{"name": "Grace"}}, idempotencyHeader, "reused")
+		map[string]any{"kind": personKind, "properties": map[string]any{"name": "Grace"}}, idempotencyHeader, "reused")
 	wantErrorCode(t, rec, http.StatusConflict, codeConflict)
 	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, `Idempotency-Key "reused"`) {
 		t.Fatalf("the conflict does not name the key: %q", msg)

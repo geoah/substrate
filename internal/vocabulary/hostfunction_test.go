@@ -66,11 +66,11 @@ data:
 
 func TestHostFunctionLoadsAsACardAlone(t *testing.T) {
 	fsys := fstest.MapFS{"hf.example.com/hf/all.yaml": &fstest.MapFile{Data: []byte(hostFn(
-		`  description: runs a read-only GraphQL query against the repository
+		`  description: asks the user a batch of questions
   runtime: host
   arguments:
-    - {name: query, type: string, required: true, description: the document to execute}
-    - {name: variables, type: json}
+    - {name: questions, type: json, required: true, description: the questions to put}
+    - {name: rationale, type: string}
 `))}}
 	r, err := vocabulary.LoadFS(fsys)
 	if err != nil {
@@ -91,8 +91,8 @@ func TestHostFunctionLoadsAsACardAlone(t *testing.T) {
 	if len(props) != 2 {
 		t.Fatalf("arguments compiled to %#v", fn.Input)
 	}
-	if _, typed := props["variables"].(map[string]any)["type"]; typed {
-		t.Fatalf("a json argument declares a type: %#v", props["variables"])
+	if _, typed := props["questions"].(map[string]any)["type"]; typed {
+		t.Fatalf("a json argument declares a type: %#v", props["questions"])
 	}
 }
 
@@ -206,8 +206,8 @@ data:
 		t.Fatalf("the host identity did not resolve: %v", err)
 	}
 	// And a bare name with ONLY a host function behind it says where to look.
-	if _, err := r.ResolveFunction("graphql"); err == nil ||
-		!strings.Contains(err.Error(), vocabulary.HostFunctionGraphQL) {
+	if _, err := r.ResolveFunction("write"); err == nil ||
+		!strings.Contains(err.Error(), vocabulary.HostFunctionWrite) {
 		t.Fatalf("the bare built-in name resolved or misreported: %v", err)
 	}
 }

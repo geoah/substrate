@@ -5,7 +5,7 @@ package substrate
 // and bundle status, parked deliveries, trait implementors. Items always holds
 // the whole set today; Cursor is reserved so keyset pagination lands as a
 // filled field, not a reshaped body (decision 0036). Records, history and
-// incoming keep their own keyset Page (records/cursor/head, query.go).
+// history keep their own keyset Page (records/cursor/head, query.go).
 type OperationalList[T any] struct {
 	Items  []T    `json:"items"`
 	Cursor string `json:"cursor,omitempty"`

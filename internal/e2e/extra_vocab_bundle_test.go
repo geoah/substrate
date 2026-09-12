@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// The vocabulary-upgrade, bundle-lifecycle and GraphQL cases (orders 400-499).
+// The vocabulary-upgrade, bundle-lifecycle and records-route cases (orders 400-499).
 //
 // Two rules keep these off the repository the earlier cases built. The
 // vocabulary cases own their OWN authority (`upgrades.e2e.example`), applied
@@ -25,11 +25,6 @@ const (
 	xvPkg              = xvAuthority + "/" + xvPackage
 	xvWidgetKind       = xvPkg + "/widget"
 	xvWidgetCollection = "/api/v1/" + xvPkg + "/widget"
-	// The GraphQL type name the widget kind generates: the kind lands as
-	// `installed`, so its name is the authority (dots folded to
-	// underscores), the package and the kind (decision 0058); a change to
-	// that fold fails here loudly.
-	xvWidgetGraphQLType = "Upgrades_e2e_example_Upgrades_Widget"
 
 	// The package VOC-04 tries to admit with a key the dialect does not
 	// know. It must never exist afterwards.
@@ -85,23 +80,23 @@ func init() {
 			"reaches storage, so it never quarantines.",
 		xvCaseUnknownDialectKey)
 	registerCase(430, "VOC-05", "A kind reference as a record id",
-		"The kind collection holds declaration records whose ids ARE kind references; the percent-encoded "+
+		"The kind list holds declaration records whose ids ARE kind references; the percent-encoded "+
 			"GET answers one and its id round-trips, while the unencoded spelling addresses nothing.",
 		xvCaseKindReferenceID)
-	registerCase(440, "GQL-02", "The GraphQL schema follows a vocabulary apply",
-		"Without a restart, the generated schema answers a records query over the kind VOC-02 applied, and "+
-			"introspection shows the type carrying the property VOC-02's upgrade added.",
-		xvCaseGraphQLFollowsApply)
+	registerCase(440, "LIST-02", "The records route follows a vocabulary apply",
+		"Without a restart, a list narrowed to the kind VOC-02 applied answers its widgets carrying the "+
+			"property VOC-02's upgrade added, and a list narrowed to a kind nobody declared is a 404 naming it.",
+		xvCaseListFollowsApply)
 	registerCase(450, "BUN-03", "The bundle lifecycle on a throwaway bundle",
 		"Install, write a record, disable (the bundle's function refuses invocation while ordinary writes "+
 			"of its kinds still land), enable, and the teardown order the guards enforce: purge needs a "+
 			"disabled bundle, uninstall needs no live records, and the reinstalled bundle comes back "+
 			"disabled because the disable outlives the uninstall.",
 		xvCaseBundleLifecycle)
-	registerCase(470, "BUN-06", "Trait endpoints see through installed kinds",
+	registerCase(470, "BUN-06", "A trait sees through installed kinds",
 		"The temporal trait's implementors list the kinds that declare it, across every installed "+
-			"authority, and its records endpoint pages records of exactly those kinds; an unknown trait "+
-			"implements nothing rather than refusing.",
+			"authority, and a list filtered by `implements` pages records of exactly those kinds; an unknown "+
+			"trait implements nothing on the implementors route and is a validation refusal in a filter.",
 		xvCaseTraitEndpoints)
 	registerCase(480, "BUN-04", "A bundle input resolves: sole, default, then bound",
 		"An installed bundle with a declared input reads unresolved and names the missing kind as a setup "+
@@ -256,14 +251,14 @@ func xvCaseAdditiveUpgrade(c *C) {
 
 	// What the upgrade is FOR: both spellings are refused first, so the
 	// second apply is what admits them rather than something already true.
-	status, raw = c.do(http.MethodPost, xvWidgetCollection,
-		map[string]any{"properties": map[string]any{"name": "Too soon", "size": "medium"}}, nil)
+	status, raw = c.do(http.MethodPost, recordsRoute,
+		map[string]any{"kind": kindOf(xvWidgetCollection), "properties": map[string]any{"name": "Too soon", "size": "medium"}}, nil)
 	c.requiref(status == http.StatusUnprocessableEntity, "an undeclared enum value answered %d, want 422: %s", status, raw)
 	ref := c.xvRefused(raw)
 	c.requiref(ref.Code == "validation" && strings.Contains(ref.Message, "small, large"),
 		"the refusal of `medium` does not name the declared values: %s", ref.Message)
-	status, raw = c.do(http.MethodPost, xvWidgetCollection,
-		map[string]any{"properties": map[string]any{"name": "Too soon", "color": "teal"}}, nil)
+	status, raw = c.do(http.MethodPost, recordsRoute,
+		map[string]any{"kind": kindOf(xvWidgetCollection), "properties": map[string]any{"name": "Too soon", "color": "teal"}}, nil)
 	c.requiref(status == http.StatusUnprocessableEntity, "an undeclared property answered %d, want 422: %s", status, raw)
 	ref = c.xvRefused(raw)
 	c.requiref(ref.Code == "validation" && strings.Contains(ref.Message, "color"),
@@ -350,9 +345,9 @@ func xvCaseUnknownDialectKey(c *C) {
 	// Nothing was stored, so there is nothing to quarantine.
 	status, raw = c.do(http.MethodGet, xvPackageCollection+"/"+url.PathEscape(xvSparklePkg), nil, nil)
 	c.requiref(status == http.StatusNotFound, "the refused package exists: GET answered %d: %s", status, raw)
-	status, _ = c.do(http.MethodGet, "/api/v1/"+xvSparklePkg+"/gadget", nil, nil)
-	c.requiref(status == http.StatusNotFound, "the refused kind has a collection: GET answered %d", status)
-	c.stepf("nothing was stored: the package record and the collection both 404. Over the live door an unknown " +
+	status, _ = c.do(http.MethodGet, listOf("/api/v1/"+xvSparklePkg+"/gadget"), nil, nil)
+	c.requiref(status == http.StatusNotFound, "the refused kind lists: GET answered %d", status)
+	c.stepf("nothing was stored: the package record and a list of the kind both 404. Over the live door an unknown " +
 		"declaration key is REFUSED, never quarantined; the quarantine in decision 0020 is the repository-open " +
 		"path, where a closure ALREADY STORED meets a binary that does not know one of its keys, which no API call can reach")
 }
@@ -376,7 +371,7 @@ func xvCaseKindReferenceID(c *C) {
 		encoded, declaration.ID, declaration.prop("authority"), declaration.prop("package"))
 
 	// The id round-trips: re-encoding what came back addresses the same
-	// record, so a client can page the collection and follow its own ids.
+	// record, so a client can page the list and follow its own ids.
 	var again record
 	status, _ = c.do(http.MethodGet, xvKindCollection+"/"+url.PathEscape(declaration.ID), nil, &again)
 	c.requiref(status == http.StatusOK && again.ID == declaration.ID,
@@ -388,78 +383,49 @@ func xvCaseKindReferenceID(c *C) {
 		"the unencoded kind reference answered %d, want 404: the slash must be encoded, never a path segment", status)
 	c.stepf("the id round-trips through `url.PathEscape`, and the unencoded spelling `%s/%s` is a 404: the reference's slash is data, not a path separator", xvKindCollection, taskKind)
 
-	// The collection holds them all, VOC-02's own kind among them.
-	var page struct {
-		Records []record `json:"records"`
-	}
-	status, raw = c.do(http.MethodGet, xvKindCollection+"?first=200", nil, &page)
-	c.requiref(status == http.StatusOK, "listing the kind collection answered %d: %s", status, raw)
+	// The list holds them all, VOC-02's own kind among them.
+	var page recordsPage
+	status, raw = c.do(http.MethodGet, listOf(xvKindCollection, "first=200"), nil, &page)
+	c.requiref(status == http.StatusOK, "listing the kind declarations answered %d: %s", status, raw)
 	found := map[string]bool{}
 	for _, rec := range page.Records {
 		found[rec.ID] = true
 	}
 	c.requiref(found[taskKind] && found[xvWidgetKind],
-		"the kind collection is missing %s or %s among its %d records", taskKind, xvWidgetKind, len(page.Records))
-	c.stepf("the kind collection lists %d declarations, every id a kind reference, `%s` and `%s` among them",
+		"the kind list is missing %s or %s among its %d records", taskKind, xvWidgetKind, len(page.Records))
+	c.stepf("the kind list holds %d declarations, every id a kind reference, `%s` and `%s` among them",
 		len(page.Records), taskKind, xvWidgetKind)
 }
 
-// xvCaseGraphQLFollowsApply: GQL-02. The schema is generated per repository
-// from the live registry, so a kind applied minutes ago is queryable in the
-// same process.
-func xvCaseGraphQLFollowsApply(c *C) {
-	query := `{ records(filter: {kinds: ["` + xvWidgetKind + `"]}, first: 20) { nodes { id kind properties } } }`
-	var answer struct {
-		Data struct {
-			Records struct {
-				Nodes []struct {
-					ID         string         `json:"id"`
-					Kind       string         `json:"kind"`
-					Properties map[string]any `json:"properties"`
-				} `json:"nodes"`
-			} `json:"records"`
-		} `json:"data"`
+// xvCaseListFollowsApply: LIST-02. The list resolves `filter.kinds` against
+// the live registry, so a kind applied minutes ago lists in the same process,
+// and a kind nobody declared is refused by name rather than answered empty.
+func xvCaseListFollowsApply(c *C) {
+	var page recordsPage
+	status, raw := c.do(http.MethodGet, listOf(xvWidgetCollection, "first=200"), nil, &page)
+	c.requiref(status == http.StatusOK, "the widget list answered %d: %s", status, raw)
+	byID := map[string]record{}
+	for _, rec := range page.Records {
+		c.requiref(rec.Kind == xvWidgetKind, "the list answered a %s record", rec.Kind)
+		byID[rec.ID] = rec
 	}
-	status, raw := c.do(http.MethodPost, "/api/v1/graphql", map[string]any{"query": query}, &answer)
-	c.requiref(status == http.StatusOK && !strings.Contains(string(raw), `"errors"`),
-		"the widget query answered %d: %s", status, raw)
-	byID := map[string]map[string]any{}
-	for _, node := range answer.Data.Records.Nodes {
-		c.requiref(node.Kind == xvWidgetKind, "the query answered a %s node", node.Kind)
-		byID[node.ID] = node.Properties
-	}
-	c.requiref(byID["xv-widget-small"] != nil && byID["xv-widget-medium"] != nil,
-		"GraphQL does not see VOC-02's widgets: %s", raw)
-	c.requiref(byID["xv-widget-medium"]["color"] == "teal",
-		"the medium widget's `color` did not come back through GraphQL: %v", byID["xv-widget-medium"])
-	c.stepf("`POST /api/v1/graphql` answered %d widgets of `%s` with no restart between the apply and the query",
-		len(answer.Data.Records.Nodes), xvWidgetKind)
+	_, small := byID["xv-widget-small"]
+	medium, ok := byID["xv-widget-medium"]
+	c.requiref(small && ok, "the list does not see VOC-02's widgets: %s", raw)
+	c.requiref(medium.prop("color") == "teal",
+		"the medium widget's `color` did not come back through the list: %v", medium.Properties)
+	c.stepf("`GET %s` narrowed to `%s` answered %d widgets, the medium one carrying `color: teal`, with no restart between the apply and the list",
+		recordsRoute, xvWidgetKind, len(page.Records))
 
-	// Introspection carries the upgrade too: `color` is a field on the
-	// generated type, so the schema followed the SECOND apply, not just the
-	// first.
-	var introspection struct {
-		Data struct {
-			Type *struct {
-				Name   string `json:"name"`
-				Fields []struct {
-					Name string `json:"name"`
-				} `json:"fields"`
-			} `json:"__type"`
-		} `json:"data"`
-	}
-	status, raw = c.do(http.MethodPost, "/api/v1/graphql",
-		map[string]any{"query": `{ __type(name: "` + xvWidgetGraphQLType + `") { name fields { name } } }`}, &introspection)
-	c.requiref(status == http.StatusOK && introspection.Data.Type != nil,
-		"introspection found no type %q: %d %s", xvWidgetGraphQLType, status, raw)
-	fields := map[string]bool{}
-	for _, f := range introspection.Data.Type.Fields {
-		fields[f.Name] = true
-	}
-	c.requiref(fields["name"] && fields["size"] && fields["color"],
-		"the generated type is missing a declared property: %s", raw)
-	c.stepf("introspection answers the type `%s` with `name`, `size` and `color` as fields: the schema followed the upgrade, not only the first apply",
-		introspection.Data.Type.Name)
+	// The kind is resolved, not pattern-matched: a reference nobody declared
+	// is a 404 naming it, the same answer the record path gives.
+	missing := xvPkg + "/gizmo"
+	status, raw = c.do(http.MethodGet, listWhere(map[string]any{"kinds": []string{missing}}), nil, nil)
+	c.requiref(status == http.StatusNotFound, "a list of the undeclared kind `%s` answered %d, want 404: %s", missing, status, raw)
+	ref := c.xvRefused(raw)
+	c.requiref(ref.Code == "not_found" && strings.Contains(ref.Message, "unknown kind "+missing),
+		"the refusal does not name the unknown kind: %s", ref.Message)
+	c.stepf("a list narrowed to `%s`, which no apply declared, is a 404 `unknown kind %s`: a filter's kind is resolved, never matched empty", missing, missing)
 }
 
 // ---- the bundle lifecycle --------------------------------------------------
@@ -546,7 +512,7 @@ func xvCaseBundleLifecycle(c *C) {
 	var listed struct {
 		Records []record `json:"records"`
 	}
-	status, _ = c.do(http.MethodGet, xvNoteCollection, nil, &listed)
+	status, _ = c.do(http.MethodGet, listOf(xvNoteCollection), nil, &listed)
 	c.requiref(status == http.StatusOK && len(listed.Records) >= 2,
 		"the disabled bundle's records stopped listing: %d, status %d", len(listed.Records), status)
 	c.stepf("disabled: the function refuses with 403 `guard` (%q), while `%s` still writes and both notes still list. "+
@@ -583,14 +549,14 @@ func xvCaseBundleLifecycle(c *C) {
 	c.requiref(status == http.StatusOK, "purging answered %d: %s", status, raw)
 	c.requiref(purge.Purged == 2, "the purge counted %d records; this case wrote exactly 2, so any other count purged the wrong rows", purge.Purged)
 	listed.Records = nil
-	status, _ = c.do(http.MethodGet, xvNoteCollection, nil, &listed)
+	status, _ = c.do(http.MethodGet, listOf(xvNoteCollection), nil, &listed)
 	c.requiref(status == http.StatusOK && len(listed.Records) == 0,
-		"the collection still lists %d records after the purge", len(listed.Records))
+		"the notes still list %d records after the purge", len(listed.Records))
 	var tombstone record
 	status, _ = c.do(http.MethodGet, xvNoteCollection+"/xv-note-one", nil, &tombstone)
 	c.requiref(status == http.StatusOK && tombstone.DeletedAt != "",
 		"a purged record should still GET as a tombstone; answered %d with deletedAt %q", status, tombstone.DeletedAt)
-	c.stepf("disabled, then purged: `{\"purged\":%d}`, the collection lists nothing, and `%s` still GETs as a tombstone. "+
+	c.stepf("disabled, then purged: `{\"purged\":%d}`, the notes list nothing, and `%s` still GETs as a tombstone. "+
 		"A purge tombstones the data, it does not erase the history", purge.Purged, tombstone.ID)
 
 	var uninstalled struct {
@@ -599,13 +565,13 @@ func xvCaseBundleLifecycle(c *C) {
 	status, raw = c.do(http.MethodPatch, xvBundleRecord(xvNotesBundle),
 		map[string]any{"properties": map[string]any{"uninstalled": true}}, &uninstalled)
 	c.requiref(status == http.StatusOK && uninstalled.Uninstalled, "uninstalling answered %d: %s", status, raw)
-	status, _ = c.do(http.MethodGet, xvNoteCollection, nil, nil)
-	c.requiref(status == http.StatusNotFound, "the collection answered %d after the uninstall, want 404", status)
+	status, _ = c.do(http.MethodGet, listOf(xvNoteCollection), nil, nil)
+	c.requiref(status == http.StatusNotFound, "a list of the notes answered %d after the uninstall, want 404", status)
 	status, _ = c.do(http.MethodGet, xvBundleRecord(xvNotesBundle)+"/status", nil, nil)
 	c.requiref(status == http.StatusNotFound, "the bundle status answered %d after the uninstall, want 404", status)
 	status, _ = c.xvCallStats("one two three")
 	c.requiref(status == http.StatusNotFound, "the bundle's function answered %d after the uninstall, want 404", status)
-	c.stepf("uninstalled: the collection, the bundle status and the function are all 404. An uninstalled bundle has no status, it simply stops being listed")
+	c.stepf("uninstalled: a list of the kind, the bundle status and the function are all 404. An uninstalled bundle has no status, it simply stops being listed")
 
 	st = c.xvInstall(xvNotesBundle)
 	c.requiref(!st.Enabled,
@@ -613,10 +579,10 @@ func xvCaseBundleLifecycle(c *C) {
 	// A `null` records array leaves an already-decoded slice alone, so the
 	// emptiness assertion below needs the reset.
 	listed.Records = nil
-	status, _ = c.do(http.MethodGet, xvNoteCollection, nil, &listed)
+	status, _ = c.do(http.MethodGet, listOf(xvNoteCollection), nil, &listed)
 	c.requiref(status == http.StatusOK && len(listed.Records) == 0,
-		"the collection came back from the reinstall with %d records, status %d", len(listed.Records), status)
-	c.stepf("reinstalled from the catalog: the closure is back and the collection is empty, and the bundle comes back DISABLED. " +
+		"the notes came back from the reinstall with %d records, status %d", len(listed.Records), status)
+	c.stepf("reinstalled from the catalog: the closure is back and the notes list empty, and the bundle comes back DISABLED. " +
 		"The disable outlives the uninstall")
 
 	status, raw = c.xvLifecycle(xvNotesBundle, "disabled", false)
@@ -659,41 +625,44 @@ func xvCaseTraitEndpoints(c *C) {
 	c.stepf("`%s` lists %d kinds implementing `%s` across %d authorities, `%s` and `%s` among them",
 		path, len(implementors.Items), xvTemporalTrait, len(authorities), taskKind, eventKind)
 
-	// The records endpoint pages the records of exactly those kinds.
-	records := xvTraitCollection + "/" + url.PathEscape(xvTemporalTrait) + "/records"
-	var first struct {
-		Records []record `json:"records"`
-		Cursor  string   `json:"cursor"`
-	}
-	status, raw = c.do(http.MethodGet, records+"?first=2", nil, &first)
-	c.requiref(status == http.StatusOK, "the trait records answered %d: %s", status, raw)
+	// A list filtered by `implements` pages the records of exactly those kinds.
+	implements := map[string]any{"implements": xvTemporalTrait}
+	var first recordsPage
+	status, raw = c.do(http.MethodGet, listWhere(implements, "first=2"), nil, &first)
+	c.requiref(status == http.StatusOK, "the implementing records answered %d: %s", status, raw)
 	c.requiref(len(first.Records) == 2, "`first=2` answered %d records", len(first.Records))
 	c.requiref(first.Cursor != "", "a full page carries no cursor to page on: %s", raw)
 	seen := map[string]bool{}
 	for _, rec := range first.Records {
-		c.requiref(kinds[rec.Kind], "the trait records answered a %s record, which implements no temporal", rec.Kind)
+		c.requiref(kinds[rec.Kind], "the list answered a %s record, which implements no temporal", rec.Kind)
 		seen[rec.Kind+"/"+rec.ID] = true
 	}
 
-	var second struct {
-		Records []record `json:"records"`
-	}
-	status, raw = c.do(http.MethodGet, records+"?first=2&after="+url.QueryEscape(first.Cursor), nil, &second)
+	var second recordsPage
+	status, raw = c.do(http.MethodGet, listWhere(implements, "first=2", "after="+url.QueryEscape(first.Cursor)), nil, &second)
 	c.requiref(status == http.StatusOK, "the second page answered %d: %s", status, raw)
 	c.requiref(len(second.Records) > 0, "the second page is empty; the story repository holds more than two temporal records")
 	for _, rec := range second.Records {
 		c.requiref(kinds[rec.Kind], "the second page answered a %s record, which implements no temporal", rec.Kind)
 		c.requiref(!seen[rec.Kind+"/"+rec.ID], "the second page repeats %s from the first", rec.ID)
 	}
-	c.stepf("`%s?first=2` answered 2 records of implementing kinds with a cursor, and `after=` the cursor answered %d more with no repeats",
-		records, len(second.Records))
+	c.stepf("`GET %s` with `filter.implements: %s` and `first=2` answered 2 records of implementing kinds with a cursor, and `after=` the cursor answered %d more with no repeats",
+		recordsRoute, xvTemporalTrait, len(second.Records))
 
-	// An unknown trait implements nothing; it is not an error.
+	// An unknown trait implements nothing on the implementors route, which is
+	// an answer; in a filter it is a refusal, because a list narrowed to a
+	// trait nobody declared would otherwise read as an honest empty page.
+	const nosuch = "substrate.reamde.dev/core/nosuchtrait"
 	implementors.Items = nil
-	status, raw = c.do(http.MethodGet, xvTraitCollection+"/"+url.PathEscape("substrate.reamde.dev/core/nosuchtrait")+"/implementors", nil, &implementors)
+	status, raw = c.do(http.MethodGet, xvTraitCollection+"/"+url.PathEscape(nosuch)+"/implementors", nil, &implementors)
 	c.requiref(status == http.StatusOK && len(implementors.Items) == 0,
 		"an unknown trait answered %d with %d implementors: %s", status, len(implementors.Items), raw)
-	c.stepf("an unknown trait answers 200 with an empty list: nothing implements it, which is an answer rather than a refusal")
+	status, raw = c.do(http.MethodGet, listWhere(map[string]any{"implements": nosuch}, "first=2"), nil, nil)
+	c.requiref(status == http.StatusUnprocessableEntity, "a list implementing an unknown trait answered %d, want 422: %s", status, raw)
+	ref := c.xvRefused(raw)
+	c.requiref(ref.Code == "validation" && strings.Contains(ref.Message, nosuch),
+		"the refusal does not name the trait: %s", ref.Message)
+	c.stepf("an unknown trait answers 200 with an empty implementors list, and `filter.implements` naming it is a 422 `validation`: nothing implements it, and a filter on nothing is a mistake rather than an empty page")
 }
 
 // xvInput returns one named input's resolution and the setup steps standing

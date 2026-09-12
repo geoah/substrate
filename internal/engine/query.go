@@ -2,14 +2,11 @@ package engine
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -56,8 +53,8 @@ func (ds *dataset) Get(ctx context.Context, typ, id string) (*substrate.Record, 
 		return nil, err
 	}
 	// Single-record reads carry property provenance. Reverse pointers are a
-	// separate paged read: they are derived state, and a record can have an
-	// unbounded number of them.
+	// List under Filter.Referencing: they are derived state, and a record can
+	// have an unbounded number of them.
 	if e.PropertyMeta, err = ds.propertyMeta(ctx, e); err != nil {
 		return nil, err
 	}
@@ -67,124 +64,12 @@ func (ds *dataset) Get(ctx context.Context, typ, id string) (*substrate.Record, 
 	return e, nil
 }
 
-// Incoming reads a page of reverse pointers, joined to their live sources. ONE
-// query over the refs index (refs.go), which is the reverse projection of every
-// reference value in the repository — so `incoming` answers for a pointer
-// whatever shape its declaration takes: pinned or unpinned, single, repeated or
-// keyed, a kind's own property or one nested inside an object.
-//
-// UNPINNED POINTERS ARE VISIBLE. The union of arms this replaced could
-// not see them: an unconstrained reference names no target kind, so the registry
-// could not say it pointed here without reading every row of every kind that
-// declared one. The index is keyed on the target, so there is nothing to
-// enumerate and nothing to leave out.
-//
-// FORMER IDS. A merge does not repoint reference values — they keep resolving
-// through the former-id trail on read — so the match is against the canonical id
-// OR any id this record used to live under, or every pointer written before a
-// merge silently disappears from the graph.
-//
-// A tombstoned source still holds its rows until GC, but a deleted record no
-// longer points at anything, so the join to `records` is what filters it out.
-func (ds *dataset) Incoming(ctx context.Context, typ, id string, opts substrate.IncomingOptions) (*substrate.IncomingPage, error) {
-	ty, err := ds.resolveType(typ)
-	if err != nil {
-		return nil, err
-	}
-	canonical, err := ds.canonicalOf(ctx, ds.db, eref{Kind: ty.Identity, ID: id})
-	if err != nil {
-		return nil, err
-	}
-	first := opts.First
-	if first <= 0 {
-		first = defaultPageSize
-	}
-	if first > maxPageSize {
-		first = maxPageSize
-	}
-	ids, err := ds.idsOf(ctx, canonical)
-	if err != nil {
-		return nil, err
-	}
-
-	// KEYSET continuation over the index's OWN key: (src_kind, src, property,
-	// path, ord) addresses one row and nothing else, so a page boundary can
-	// neither drop nor repeat.
-	signature := incomingSignature(canonical, ids, opts)
-	var seek *incomingSeek
-	if opts.After != "" {
-		tok, err := decodeKeyset(opts.After)
-		if err != nil {
-			return nil, err
-		}
-		// The generation check mirrors List: an incoming cursor carries no
-		// head, but one history's positions are not another's either.
-		if tok.G != ds.historyGeneration() {
-			return nil, fmt.Errorf("%w: cursor was minted against another history; list again", substrate.ErrValidation)
-		}
-		if tok.O != signature || len(tok.K) != 5 {
-			return nil, fmt.Errorf("%w: bad cursor", substrate.ErrValidation)
-		}
-		for _, k := range tok.K {
-			if k == nil {
-				return nil, fmt.Errorf("%w: bad cursor", substrate.ErrValidation)
-			}
-		}
-		ord, err := strconv.Atoi(*tok.K[4])
-		if err != nil {
-			return nil, fmt.Errorf("%w: bad cursor", substrate.ErrValidation)
-		}
-		seek = &incomingSeek{
-			srcKind: *tok.K[0], src: *tok.K[1],
-			property: *tok.K[2], path: *tok.K[3], ord: ord,
-		}
-	}
-
-	countB := &builder{}
-	countWhere := ds.incomingWhere(countB, canonical, ids, opts, nil)
-	var total int
-	if err := ds.db.QueryRowContext(ctx,
-		`SELECT count(*) FROM `+incomingFromSQL+countWhere, countB.args...).Scan(&total); err != nil {
-		return nil, err
-	}
-
-	b := &builder{}
-	rows, err := ds.db.QueryContext(ctx, ds.incomingPageSQL(b, canonical, ids, opts, seek, first+1), b.args...)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	page := &substrate.IncomingPage{Incoming: []substrate.IncomingReference{}, Total: total}
-	// The key of the last row ON THE PAGE, which is what the next seek starts
-	// strictly after. The (first+1)-th row only says a next page exists; minting
-	// the cursor from IT would skip it.
-	var lastKey []*string
-	for rows.Next() {
-		var in substrate.IncomingReference
-		var ord int
-		if err := rows.Scan(&in.Property, &in.Path, &ord, &in.From.ID, &in.From.Kind,
-			&in.From.Title); err != nil {
-			return nil, err
-		}
-		if len(page.Incoming) == first {
-			page.Cursor = encodeKeyset(signature, lastKey, 0, ds.historyGeneration())
-			break
-		}
-		lastKey = []*string{
-			ptrTo(in.From.Kind), ptrTo(in.From.ID), ptrTo(in.Property), ptrTo(in.Path),
-			ptrTo(strconv.Itoa(ord)),
-		}
-		page.Incoming = append(page.Incoming, in)
-	}
-	return page, rows.Err()
-}
-
 // idsOf is the canonical id plus every id this record used to live under. A
 // reference value keeps whatever id was written, so a reverse lookup that asked
 // only for the canonical one would miss every pointer older than a merge.
-func (ds *dataset) idsOf(ctx context.Context, canonical eref) ([]string, error) {
+func (ds *dataset) idsOf(ctx context.Context, x dbx, canonical eref) ([]string, error) {
 	ids := []string{canonical.ID}
-	rows, err := ds.db.QueryContext(ctx,
+	rows, err := x.QueryContext(ctx,
 		`SELECT former_id FROM former_ids WHERE record_kind = $1 AND record_id = $2 ORDER BY former_id`,
 		canonical.Kind, canonical.ID)
 	if err != nil {
@@ -199,116 +84,6 @@ func (ds *dataset) idsOf(ctx context.Context, canonical eref) ([]string, error) 
 		ids = append(ids, former)
 	}
 	return ids, rows.Err()
-}
-
-// incomingSeek is a decoded reverse cursor: the last row of the previous page,
-// in the index's own key order.
-type incomingSeek struct {
-	srcKind, src, property, path string
-	ord                          int
-}
-
-// incomingOrderSQL is the index's key order, and incomingOrder its signature —
-// stamped into the cursor so a list cursor cannot be replayed against the
-// reverse reader, and versioned so a cursor minted under an older order is
-// refused rather than silently mis-paged.
-const (
-	incomingOrderSQL = `r.src_kind, r.src, r.property, r.path, r.ord`
-	incomingOrder    = "incoming:srcKind,src,property,path,ord"
-)
-
-// incomingSignature is what the cursor is stamped with: the order AND THE READ
-// IT WAS MINTED AGAINST — the target's whole id set, the `property` narrowing
-// and the `fromKind` narrowing. The key alone identifies a row in the index,
-// not a row in THIS page's match set, so a cursor from a `property=a` page
-// replayed with `property=b`, another source kind or another target used to
-// seek past unrelated keys and return a short page that looked complete. A
-// mismatch is the same bad-cursor refusal a token from another order gets.
-//
-// THE ID SET, not the canonical id alone. A merge INTO the target mid-walk adds
-// the loser's id to the match, and every pointer stored against the loser that
-// sorts before the cursor would be skipped for the rest of the walk — a page
-// that is short and says nothing about it. Digesting the set means the merge
-// invalidates outstanding cursors, and a client that restarts gets a complete
-// answer. The set is sorted first, because idsOf's order is the trail's and not
-// a property of the match.
-//
-// Everything travels through a JSON array and a digest rather than a joined
-// string: the narrowings are caller input, and a `property` holding the
-// separator could otherwise spell another read's signature. The digest is not a
-// SECRET — a cursor carries the reader's own repository-scoped data, so forging
-// one grants nothing — it is only a compact way to say which set was matched.
-func incomingSignature(canonical eref, ids []string, opts substrate.IncomingOptions) string {
-	sorted := append([]string(nil), ids...)
-	sort.Strings(sorted)
-	digest := sha256.Sum256(mustJSON(sorted))
-	raw, _ := json.Marshal([]string{
-		canonical.Kind, canonical.ID, opts.Property, opts.FromKind,
-		hex.EncodeToString(digest[:8]),
-	})
-	return incomingOrder + ":" + string(raw)
-}
-
-// incomingFromSQL is the reverse read's source: the index, joined to its live
-// sources. The page read and the count read stand on the same one.
-const incomingFromSQL = `refs r JOIN records s ON s.kind = r.src_kind AND s.id = r.src`
-
-// incomingPageSQL is THE page statement, so the plan a test explains is the
-// plan production runs. It fills b with the statement's arguments.
-func (ds *dataset) incomingPageSQL(
-	b *builder, canonical eref, ids []string, opts substrate.IncomingOptions, seek *incomingSeek, limit int,
-) string {
-	where := ds.incomingWhere(b, canonical, ids, opts, seek)
-	return `SELECT r.property, r.path, r.ord, s.id, s.kind, s.title FROM ` + incomingFromSQL +
-		where + ` ORDER BY ` + incomingOrderSQL + ` LIMIT ` + b.arg(limit)
-}
-
-// incomingWhere renders the reverse read's predicate: the target (over every id
-// it has ever had), a live source, the caller's narrowing and the keyset seek.
-//
-// ONE ID IS BOUND AS A SCALAR, and that is a plan decision, not a spelling
-// preference. `r.dst IN (SELECT jsonb_array_elements_text($n))` is a semi-join
-// against a set the planner cannot see the size of, and it will not walk
-// refs_dst_idx in key order for it: a target with tens of thousands of pointers
-// top-N sorts the whole match set for every page (~109ms against 30k rows,
-// versus ~0.2ms for plain equality). `r.dst = $n` pins the index prefix and the
-// page becomes an index-ordered scan.
-//
-// A record with a former-id trail keeps the set form, and that shape MAY still
-// sort. It is rare by construction — the trail grows one id per merge, and a
-// record that has been merged into is not the fan-in hot spot — and correctness
-// is what the set is there for: a pointer written before a merge names an id
-// the record no longer answers to, and dropping those rows would silently lose
-// them from the graph.
-func (ds *dataset) incomingWhere(
-	b *builder, canonical eref, ids []string, opts substrate.IncomingOptions, seek *incomingSeek,
-) string {
-	// Only the branch that is rendered binds its argument: a placeholder the
-	// statement does not carry is a parameter Postgres refuses to type.
-	var target string
-	if len(ids) == 1 {
-		target = `r.dst = ` + b.arg(ids[0])
-	} else {
-		rawIDs, _ := json.Marshal(ids) // a []string always marshals
-		target = `r.dst IN (SELECT jsonb_array_elements_text(` + b.arg(rawIDs) + `::jsonb))`
-	}
-	where := []string{
-		`r.dst_kind = ` + b.arg(canonical.Kind),
-		target,
-		`s.deleted_at IS NULL`,
-	}
-	if opts.Property != "" {
-		where = append(where, `r.property = `+b.arg(opts.Property))
-	}
-	if opts.FromKind != "" {
-		where = append(where, `r.src_kind = `+b.arg(opts.FromKind))
-	}
-	if seek != nil {
-		where = append(where, `(r.src_kind, r.src, r.property, r.path, r.ord) > (`+
-			b.arg(seek.srcKind)+`, `+b.arg(seek.src)+`, `+b.arg(seek.property)+`, `+
-			b.arg(seek.path)+`, `+b.arg(seek.ord)+`)`)
-	}
-	return ` WHERE ` + strings.Join(where, " AND ")
 }
 
 // propertyMeta assembles one record's per-property provenance: the manager
@@ -464,8 +239,31 @@ func (b *builder) jsonArray(vals []string) string {
 }
 
 func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page, error) {
+	// A read-only REPEATABLE READ snapshot pins the page AND the head seq to
+	// one point in time: head = MAX(seq) in this snapshot, so every
+	// row the page can see has a change seq <= head, and `watch?from=head`
+	// replays exactly the changes NOT in this snapshot — no gap, no dup. But
+	// REPEATABLE READ pins ONE page, not the whole walk (each List opens a fresh
+	// txn and snapshot), so the walk's head is the FIRST page's head carried
+	// through the cursor (codex regress #3): a later page reports the same head
+	// it began at, and a row inserted mid-walk lands strictly after that head —
+	// caught by the watch, never lost. The keyset walk itself still sees every
+	// row committed for the whole walk exactly once. It opens BEFORE the filter
+	// is built, because a referencing arm resolves its target's former-id
+	// trail, and that read belongs to the same snapshot as the rows it selects.
+	tx, err := ds.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	b := &builder{}
-	if err := ds.buildFilter(ctx, b, q.Filter); err != nil {
+	types, err := ds.buildFilter(ctx, tx, b, q.Filter)
+	if err != nil {
+		return nil, err
+	}
+	expand, err := ds.expandProperties(types, q.Expand)
+	if err != nil {
 		return nil, err
 	}
 	terms, err := ds.orderTerms(q.OrderBy)
@@ -473,6 +271,10 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 		return nil, err
 	}
 	order := renderOrder(terms)
+	// The cursor is stamped with the order AND the filter it was minted under:
+	// a token replayed against another filter would seek past rows the new
+	// predicate admits and answer a short page that looked complete.
+	signature := order + "|" + filterDigest(q.Filter)
 	first := q.First
 	if first <= 0 {
 		first = defaultPageSize
@@ -497,8 +299,8 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 		if err != nil {
 			return nil, err
 		}
-		if tok.O != order {
-			return nil, fmt.Errorf("%w: cursor does not match this orderBy", substrate.ErrValidation)
+		if tok.O != signature {
+			return nil, fmt.Errorf("%w: cursor does not match this filter and orderBy", substrate.ErrValidation)
 		}
 		if len(tok.K) != len(terms) {
 			return nil, fmt.Errorf("%w: bad cursor", substrate.ErrValidation)
@@ -509,7 +311,7 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 		// then resume past writes it never saw. The generation the cursor was
 		// minted under is what says the head still means something.
 		if tok.G != ds.historyGeneration() {
-			return nil, fmt.Errorf("%w: cursor was minted against another history; list again", substrate.ErrValidation)
+			return nil, fmt.Errorf("%w: cursor was minted against another history; list again", substrate.ErrStaleHistory)
 		}
 		b.add(seekPredicate(b, terms, tok.K))
 		carriedHead = tok.H
@@ -530,22 +332,6 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	}
 	limitArg := b.arg(first + 1)
 	sqlText := listSQL(where, keyCols, order, limitArg)
-
-	// A read-only REPEATABLE READ snapshot pins the page AND the head seq to
-	// one point in time: head = MAX(seq) in this snapshot, so every
-	// row the page can see has a change seq <= head, and `watch?from=head`
-	// replays exactly the changes NOT in this snapshot — no gap, no dup. But
-	// REPEATABLE READ pins ONE page, not the whole walk (each List opens a fresh
-	// txn and snapshot), so the walk's head is the FIRST page's head carried
-	// through the cursor (codex regress #3): a later page reports the same head
-	// it began at, and a row inserted mid-walk lands strictly after that head —
-	// caught by the watch, never lost. The keyset walk itself still sees every
-	// row committed for the whole walk exactly once.
-	tx, err := ds.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback() }()
 
 	// Records starts non-nil so an empty page serializes `[]`, the array the
 	// wire promises, never `null`.
@@ -605,7 +391,7 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	}
 	_ = rows.Close()
 	if hasMore && len(got) > 0 {
-		page.Cursor = encodeKeyset(order, got[len(got)-1].keys, page.Head, page.Generation)
+		page.Cursor = encodeKeyset(signature, got[len(got)-1].keys, page.Head, page.Generation)
 	}
 	for _, s := range got {
 		e, err := ds.hydrate(ctx, tx, s.row, q.WithAnnotations)
@@ -613,6 +399,16 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 			return nil, err
 		}
 		page.Records = append(page.Records, e)
+	}
+	if q.Filter.Referencing != nil {
+		if page.Matches, err = ds.referenceSites(ctx, tx, q.Filter.Referencing, page.Records); err != nil {
+			return nil, err
+		}
+	}
+	if len(expand) > 0 {
+		if page.Included, err = ds.expandReferents(ctx, tx, expand, page.Records); err != nil {
+			return nil, err
+		}
 	}
 	return page, nil
 }
@@ -626,7 +422,9 @@ func listSQL(where string, keyCols []string, order, limitArg string) string {
 		` FROM records WHERE ` + where + ` ORDER BY ` + order + ` LIMIT ` + limitArg
 }
 
-func (ds *dataset) buildFilter(ctx context.Context, b *builder, f substrate.Filter) error {
+// buildFilter renders the filter's predicates into b and returns the kinds
+// the filter admits (nil when it names none, which means every kind).
+func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substrate.Filter) ([]*vocabulary.Kind, error) {
 	reg := ds.registry()
 	var types []*vocabulary.Kind
 	seen := map[string]bool{}
@@ -639,24 +437,22 @@ func (ds *dataset) buildFilter(ctx context.Context, b *builder, f substrate.Filt
 	for _, name := range f.Kinds {
 		t, err := reg.Resolve(name)
 		if err != nil {
-			return fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+			return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 		}
 		addType(t)
 	}
 	if f.Implements != "" {
 		impl, err := reg.ImplementingStrict(f.Implements)
 		if err != nil {
-			return fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+			return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 		}
 		if len(impl) == 0 {
-			return fmt.Errorf("%w: no type implements %q", substrate.ErrValidation, f.Implements)
+			return nil, fmt.Errorf("%w: no type implements %q", substrate.ErrValidation, f.Implements)
 		}
-		// Every predicate in a filter NARROWS: `types` and `implements` intersect,
-		// they never union. Unioning them let a COLLECTION read — where the path
-		// forces filter.types — answer with rows of other types
-		// entirely, so `/tasks?filter={"implements":"…"}` returned every
-		// implementor in the repository. `implements` alone still means "every
-		// implementor", which is what the trait-records resource asks for.
+		// Every predicate in a filter NARROWS: `kinds` and `implements`
+		// intersect, they never union. Unioning them would let a list that
+		// named its kinds answer with rows of other kinds entirely.
+		// `implements` alone still means "every implementor".
 		if len(types) == 0 {
 			for _, t := range impl {
 				addType(t)
@@ -673,7 +469,7 @@ func (ds *dataset) buildFilter(ctx context.Context, b *builder, f substrate.Filt
 				}
 			}
 			if len(kept) == 0 {
-				return fmt.Errorf("%w: no type in filter.types implements %q", substrate.ErrValidation, f.Implements)
+				return nil, fmt.Errorf("%w: no type in filter.types implements %q", substrate.ErrValidation, f.Implements)
 			}
 			types = kept
 		}
@@ -696,15 +492,20 @@ func (ds *dataset) buildFilter(ctx context.Context, b *builder, f substrate.Filt
 	}
 	for _, name := range sortedKeys(f.Properties) {
 		if err := ds.condProp(ctx, b, types, name, f.Properties[name]); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	for _, name := range sortedKeys(f.Labels) {
 		if err := condJSON(b, `labels`, name, f.Labels[name], ""); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	if f.Referencing != nil {
+		if err := ds.condReferencing(ctx, x, b, f.Referencing); err != nil {
+			return nil, err
+		}
+	}
+	return types, nil
 }
 
 // recordColumns maps the filterable/orderable record columns onto their SQL
@@ -812,8 +613,8 @@ func (ds *dataset) referenceShapes(types []*vocabulary.Kind, name string) []*voc
 // stored under: its canonical id first, then every id it used to live under. A
 // merge repoints no stored value (decision 0044), so a filter naming the winner
 // must still match the rows written before the merge, and one naming a loser
-// must match the rows written after it — the same trail `Get`, `Incoming` and
-// the GC cascade already follow.
+// must match the rows written after it — the same trail `Get`, the referencing
+// arm and the GC cascade already follow.
 //
 // An unresolvable path is its own answer: a kind this repository never declared
 // has no trail, and the filter still means the literal pointer.
@@ -826,7 +627,7 @@ func (ds *dataset) referenceFilterIDs(ctx context.Context, path string) ([]strin
 	if err != nil {
 		return nil, err
 	}
-	ids, err := ds.idsOf(ctx, canonical)
+	ids, err := ds.idsOf(ctx, ds.db, canonical)
 	if err != nil {
 		return nil, err
 	}
@@ -1230,8 +1031,8 @@ func likePrefix(p string) string {
 // orderTerm is one resolved sort key: the SQL expression and its direction.
 // The final terms of any order are always the (`kind`, `id`) tiebreak — two
 // NOT-NULL columns whose PAIR is the record's unique identity: an
-// id is unique only WITHIN a type, so a cross-type walk (GraphQL records, a
-// trait/implements query spanning types) needs `kind` beside `id` for a strict
+// id is unique only WITHIN a type, so a cross-type walk (a records list that
+// names several kinds, a trait/implements query spanning types) needs `kind` beside `id` for a strict
 // total order, the precondition keyset seeking relies on. Ordering by id alone
 // left two kinds sharing an id and equal sort values non-deterministically
 // ordered — a page boundary could skip or duplicate one (codex regress #2).
@@ -1401,14 +1202,14 @@ func afterKey(b *builder, t orderTerm, v *string) string {
 	return `(` + cmp + ` OR ` + t.expr + ` IS NULL)`
 }
 
-// keyset is the decoded form of the opaque list/incoming continuation token.
-// O pins the resolved order it was minted against (so a cursor cannot be
-// replayed against a different orderBy); K carries the last row's key values,
+// keyset is the decoded form of the opaque list continuation token. O pins
+// the resolved order and the filter digest it was minted against (so a cursor
+// cannot be replayed against a different orderBy or filter); K carries the last row's key values,
 // a nil element meaning that key was NULL. H carries the FIRST page's changelog
 // head so the whole walk reports ONE head: the
 // list→watch handoff must pin the snapshot the walk began at, not each page's
 // own new snapshot, or an insert during paging is lost. Zero (an empty
-// changelog first page) is omitted; the Incoming reader mints no head.
+// changelog first page) is omitted.
 type keyset struct {
 	O string    `json:"o"`
 	K []*string `json:"k"`

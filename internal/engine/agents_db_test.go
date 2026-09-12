@@ -188,7 +188,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	fake := newFakeLLM(t)
-	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm", "stoicllm", "selfllm", "askllm", "medllm", "burnllm", "vjudgellm"} {
+	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "archllm", "editllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm", "stoicllm", "selfllm", "askllm", "medllm", "burnllm", "vjudgellm"} {
 		model := strings.TrimSuffix(id, "llm")
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: typeProvider, ID: id,
@@ -280,11 +280,11 @@ def main(input, host):
 				"writes": []any{vocabulary.KindLLMInteraction},
 			},
 		}),
-		// meddler holds mutate over interactions AND the policy kind: the
+		// meddler holds write over interactions AND the policy kind: the
 		// owner-only rules' foil, twice.
 		agent("meddler", map[string]any{
 			"provider": "medllm", "model": "med",
-			"tools": []any{map[string]any{"function": vocabulary.HostFunctionMutate}},
+			"tools": []any{map[string]any{"function": vocabulary.HostFunctionWrite}},
 			"permissions": map[string]any{
 				"writes": []any{vocabulary.KindLLMInteraction, vocabulary.KindRecordPatchPolicy},
 			},
@@ -318,7 +318,7 @@ def main(input, host):
 			"provider": "selfllm", "model": "self",
 			"tools": []any{
 				map[string]any{"function": vocabulary.HostFunctionPropose},
-				map[string]any{"function": vocabulary.HostFunctionMutate},
+				map[string]any{"function": vocabulary.HostFunctionWrite},
 			},
 			"permissions": map[string]any{
 				"writes": []any{vocabulary.KindRecordPatchRequest, crewPackage + "/widget"},
@@ -358,28 +358,34 @@ def main(input, host):
 			"tools":       []any{map[string]any{"function": crewPackage + "/keyecho"}},
 			"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
 		}),
-		// archivist reads the whole graph through the graphql built-in and
-		// writes nothing; editor holds both graphql tools, its mutate gated to
-		// widgets alone.
+		// archivist reads widgets through the query built-in and writes
+		// nothing; editor holds both built-ins, its write gated to widgets
+		// alone.
 		agent("archivist", map[string]any{
-			"provider": "gqlllm", "model": "gql",
-			"tools": []any{map[string]any{"function": vocabulary.HostFunctionGraphQL}},
+			"provider": "archllm", "model": "arch",
+			"tools": []any{map[string]any{"function": vocabulary.HostFunctionQuery}},
+			"permissions": map[string]any{
+				"reads": map[string]any{"kinds": []any{crewPackage + "/widget"}},
+			},
 		}),
 		agent("editor", map[string]any{
-			"provider": "mutllm", "model": "mut",
+			"provider": "editllm", "model": "edit",
 			"tools": []any{
-				map[string]any{"function": vocabulary.HostFunctionGraphQL},
-				map[string]any{"function": vocabulary.HostFunctionMutate},
+				map[string]any{"function": vocabulary.HostFunctionQuery},
+				map[string]any{"function": vocabulary.HostFunctionWrite},
 			},
-			"permissions": map[string]any{"writes": []any{crewPackage + "/widget"}},
+			"permissions": map[string]any{
+				"reads":  map[string]any{"kinds": []any{crewPackage + "/widget"}},
+				"writes": []any{crewPackage + "/widget"},
+			},
 		}),
-		// arbiter DECIDES change requests through the mutate tool: its emit
+		// arbiter DECIDES change requests through the write tool: its emit
 		// names the request kind (so it may write the decision) and widgets (so
 		// the accept's transitive write is within its ceiling), and NOT tasks —
 		// the confused-deputy half of the pair.
 		agent("arbiter", map[string]any{
 			"provider": "arbiterllm", "model": "arbiter",
-			"tools": []any{map[string]any{"function": vocabulary.HostFunctionMutate}},
+			"tools": []any{map[string]any{"function": vocabulary.HostFunctionWrite}},
 			"permissions": map[string]any{
 				"writes": []any{vocabulary.KindRecordPatchRequest, crewPackage + "/widget"},
 			},

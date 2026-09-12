@@ -145,7 +145,7 @@ func TestIdempotencyKeyBindsToTheThreadItOpened(t *testing.T) {
 	}
 }
 
-// The key is consumed at the entry: the loop's mutate tool creates records
+// The key is consumed at the entry: the loop's write tool creates records
 // on a context without it, so two creates under one agent call are two
 // records and not a create-key collision.
 func TestIdempotencyKeyDoesNotLeakIntoTheAgentsWrites(t *testing.T) {
@@ -154,13 +154,11 @@ func TestIdempotencyKeyDoesNotLeakIntoTheAgentsWrites(t *testing.T) {
 	ctx := context.Background()
 	kctx := substrate.WithIdempotencyKey(ctx, "editor-1")
 	put := func(id, name string) string {
-		return gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "` + id + `", properties: {name: "` + name + `"}}) { id } }`,
-		})
+		return writeArgs(t, "put", crewPackage+"/widget", id, map[string]any{"name": name})
 	}
-	fake.script("mut",
-		fakeTurn{calls: []fakeCall{{"mutate", put("w-first", "first")}}},
-		fakeTurn{calls: []fakeCall{{"mutate", put("w-second", "second")}}},
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", put("w-first", "first")}}},
+		fakeTurn{calls: []fakeCall{{"write", put("w-second", "second")}}},
 		fakeTurn{content: "made both"},
 	)
 	res, err := ds.CallAgent(kctx, crewPackage+"/editor", "make two widgets")
@@ -177,7 +175,7 @@ func TestIdempotencyKeyDoesNotLeakIntoTheAgentsWrites(t *testing.T) {
 	}
 	for _, m := range threadMessages(t, ds, res.Thread) {
 		if m["role"] == "tool" && m["ok"] != true {
-			t.Fatalf("a mutate failed under the call's key: %v", m["content"])
+			t.Fatalf("a write failed under the call's key: %v", m["content"])
 		}
 	}
 	if n := keyRows(t, ds, "editor-1"); n != 1 {

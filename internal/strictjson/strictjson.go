@@ -1,8 +1,8 @@
-// Package strictjson is the ONE strict JSON decode both wire surfaces share:
-// exact-key check, unknown-field refusal, and an end-of-stream check. The API
-// body decoder and the GraphQL JSON-scalar remarshal (REST's regress #9 twin)
-// hold inputs to the same rules, so a typo'd `ifversion` can never quietly
-// disable CAS on either path.
+// Package strictjson is the ONE strict JSON decode every door shares: exact-key
+// check, unknown-field refusal, and an end-of-stream check. The API body
+// decoder, the filter parameter and the agent tools' JSON arguments hold
+// inputs to the same rules, so a typo'd `ifversion` can never quietly disable
+// CAS on any path.
 package strictjson
 
 import (
@@ -18,9 +18,9 @@ import (
 
 // DecodeBytes is the shared strict decode: exact-key check, unknown-field
 // refusal, and an END-OF-STREAM check. `useNumber` decodes JSON numbers as
-// json.Number rather than float64 — the GraphQL variable path needs it so a
-// fractional or out-of-range Long input is rejected, not truncated (codex
-// regress #15). Every other caller decodes without it, unchanged.
+// json.Number rather than float64, for a caller that must see the exact
+// decimal text before any float rounding; every caller in the tree today
+// decodes without it.
 //
 // The end-of-stream check requires a SECOND decode to return io.EOF rather than
 // trusting Decoder.More() (codex regress #16): More() reports whether another
@@ -48,10 +48,9 @@ func DecodeBytes(raw []byte, v any, useNumber bool) error {
 
 // Keys is the exact set of top-level json keys this decoder accepts for v,
 // sorted: the same set exactKeyCheck holds an input to. A refusal that names
-// them is the only grammar an opaque JSON argument has, because on the GraphQL side
-// `filter` is a JSON scalar, so introspection shows a caller nothing and a
-// bare `unknown field "at"` reads as "the server cannot do this" rather than
-// "you spelled it wrong".
+// them is the only grammar an opaque JSON argument has: a `filter` arrives as
+// one JSON value, so a bare `unknown field "at"` reads as "the server cannot
+// do this" rather than "you spelled it wrong".
 func Keys(v any) []string {
 	t := reflect.TypeOf(v)
 	for t != nil && t.Kind() == reflect.Pointer {

@@ -46,17 +46,19 @@ func TestAgentToolEntriesNameTheirCallable(t *testing.T) {
 		return ag.Tools
 	}
 	entries := tools(`[{function: substrate.reamde.dev/core/query},
-    {function: substrate.reamde.dev/core/graphql},
-    {function: substrate.reamde.dev/core/mutate},
+    {function: substrate.reamde.dev/core/write},
     {function: ag.example.com/ag/annotate}]`)
-	if len(entries) != 4 || entries[0].Builtin != vocabulary.AgentToolQuery || entries[0].Name != vocabulary.AgentToolQuery {
+	if len(entries) != 3 || entries[0].Builtin != vocabulary.AgentToolQuery || entries[0].Name != vocabulary.AgentToolQuery {
 		t.Fatalf("tools %+v", entries)
 	}
 	if entries[0].Callable != vocabulary.HostFunctionQuery {
 		t.Fatalf("the built-in entry does not carry its identity: %+v", entries[0])
 	}
-	if entries[3].Callable != "ag.example.com/ag/annotate" || entries[3].Name != "annotate" || entries[3].Builtin != "" {
-		t.Fatalf("the function entry %+v", entries[3])
+	if entries[1].Builtin != vocabulary.AgentToolWrite || entries[1].Callable != vocabulary.HostFunctionWrite {
+		t.Fatalf("the write entry %+v", entries[1])
+	}
+	if entries[2].Callable != "ag.example.com/ag/annotate" || entries[2].Name != "annotate" || entries[2].Builtin != "" {
+		t.Fatalf("the function entry %+v", entries[2])
 	}
 }
 
@@ -69,7 +71,10 @@ func TestAgentBuiltinToolAliases(t *testing.T) {
   provider: default
   model: claude-opus-5
   tools:
-    - {function: substrate.reamde.dev/core/graphql, name: ask, description: asks the graph}
+    - {function: substrate.reamde.dev/core/query, name: ask, description: asks the graph}
+  permissions:
+    reads:
+      kinds: [ag.example.com/ag/widget]
 `))
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -79,7 +84,7 @@ func TestAgentBuiltinToolAliases(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(ag.Tools) != 1 || ag.Tools[0].Name != "ask" || ag.Tools[0].Description != "asks the graph" ||
-		ag.Tools[0].Builtin != vocabulary.AgentToolGraphQL {
+		ag.Tools[0].Builtin != vocabulary.AgentToolQuery {
 		t.Fatalf("tools %+v", ag.Tools)
 	}
 }
@@ -93,7 +98,7 @@ func TestAgentBuiltinToolEntryGrants(t *testing.T) {
 			`[{function: substrate.reamde.dev/core/propose}]`,
 			"propose needs substrate.reamde.dev/core/recordpatchrequest in data.permissions.writes",
 		},
-		"mutate needs emit": {`[{function: substrate.reamde.dev/core/mutate}]`, "mutate needs data.permissions.writes"},
+		"write needs emit": {`[{function: substrate.reamde.dev/core/write}]`, "write needs data.permissions.writes"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

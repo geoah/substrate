@@ -54,7 +54,7 @@ the fold effects it applied, under the payload key `fold`, which is what makes
 the changelog replayable rather than merely informative: `substratectl
 repository rebuild` replays the changelog through the same fold code
 ([running a substrate](operations.md#operator-recovery)). The effects never
-reach the wire: no REST or GraphQL response carries `fold`, so a change to how
+reach the wire: no response carries `fold`, so a change to how
 the fold spells an effect is a storage change and not an API change. A
 secret-typed value never reaches the changelog at all: the effect carries an
 opaque ref into the sealed store, the material lives there encrypted, and a
@@ -146,7 +146,7 @@ Each column answers a different question.
   turn's dispatch wrote, is this column verbatim except `gc`, which is the
   collector's own pass and not any dispatch's write.
 - **A policy selector says what the agent called**: the verb behind the write,
-  matched before anything looks at the target. Three routes reach it, a `mutate`
+  matched before anything looks at the target. Three routes reach it, a `write`
   tool call, a function tool's write effect (one gated effect holds the whole
   batch) and a `propose` carrying a `create`, `patch` or `delete`, which is
   matched as the `put`, `patch` or `delete` it stands for and consults the
@@ -295,7 +295,8 @@ the vocabulary dialect
 
 ## Watching
 
-Any collection, and the changelog itself, streams with `?watch=1`:
+The records route, narrowed to a set of kinds, and the changelog itself
+stream with `?watch=1`:
 newline-delimited JSON (`application/x-ndjson`), opened with a bookmark you can
 resume from, so a consumer that disconnects misses nothing:
 
@@ -357,11 +358,11 @@ pagination.)
 Every row this endpoint returns also carries `triggers`: each runnable enabled
 [trigger](functions.md#triggers)'s stance on that row — `pending`,
 `processed`, or `parked` with its error — omitted where the trigger cannot fire
-on it at all. Per-collection watches stay plain rows.
+on it at all. A `GET /api/v1/records?watch=1` tail stays plain rows.
 
 This is the other half of the list-to-watch handoff: a list response carries
 the changelog `head` seq at its snapshot and the `generation` it belongs to, so
-paging a collection and then opening `watch?from={head}&generation={generation}`
+listing and then opening `watch?from={head}&generation={generation}`
 misses nothing and double-sees nothing.
 
 ## Frames and the horizon

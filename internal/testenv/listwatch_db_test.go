@@ -41,7 +41,7 @@ func TestListHeadHandsOffToTheWatch(t *testing.T) {
 		Head       int64  `json:"head"`
 		Generation string `json:"generation"`
 	}
-	mustDecode(t, e, http.MethodGet, itemsPath+"?first=1", nil, &page)
+	mustDecode(t, e, http.MethodGet, listPath(eventRef+"/item", nil)+"&first=1", nil, &page)
 	if page.Head == 0 || page.Generation == "" {
 		t.Fatalf("the list page carries head %d generation %q, want the handoff pair", page.Head, page.Generation)
 	}

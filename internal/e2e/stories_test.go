@@ -249,34 +249,28 @@ func caseStory01(c *C) {
 		"nour's membership role: %v", nour.Properties["memberOf"])
 	c.stepf("`memberOf` carries its link data: the org under `ref`, the role `engineer` beside it")
 
-	// The reverse view: the references naming Nour name the task assigned to
-	// them and the team that holds them, without Nour's record storing either.
-	var incoming struct {
-		Incoming []struct {
-			Property string `json:"property"`
-			From     struct {
-				ID   string `json:"id"`
-				Kind string `json:"kind"`
-			} `json:"from"`
-		} `json:"incoming"`
-		Total int `json:"total"`
-	}
-	status, raw = c.do(http.MethodGet, personCollection+"/nour/incoming", nil, &incoming)
-	c.requiref(status == http.StatusOK, "incoming on nour answered %d: %s", status, raw)
+	// The reverse view: the records pointing at Nour are the task assigned to
+	// them and the team that holds them, without Nour's record storing
+	// either; the page's matches say from which property each one points.
+	var pointing recordsPage
+	status, raw = c.do(http.MethodGet, referencingList(personKind, "nour", ""), nil, &pointing)
+	c.requiref(status == http.StatusOK, "the reverse read of nour answered %d: %s", status, raw)
 	found := map[string]bool{}
-	for _, in := range incoming.Incoming {
-		found[in.Property+" from "+in.From.ID] = true
+	for _, rec := range pointing.Records {
+		for _, site := range pointing.Matches[recPath(rec.Kind, rec.ID)] {
+			found[site.Property+" from "+rec.ID] = true
+		}
 	}
 	c.requiref(found["assignee from task-usage-export"] && found["members from engineering"],
-		"the references naming nour miss the task or the team: %v", found)
-	c.stepf("incoming on `nour` names both ends: `assignee` from the task, `members` from the team (%d rows)", incoming.Total)
+		"the records pointing at nour miss the task or the team: %v", found)
+	c.stepf("the reverse read of `nour` names both ends: `assignee` from the task, `members` from the team (%d records)", len(pointing.Records))
 
 	// References are ordinary properties, so a plain list carries them: there
 	// is nothing to opt into, and the retired opt-in is refused as a param.
 	var listed struct {
 		Records []record `json:"records"`
 	}
-	status, raw = c.do(http.MethodGet, tasksCollection+"?first=50", nil, &listed)
+	status, raw = c.do(http.MethodGet, listOf(tasksCollection, "first=50"), nil, &listed)
 	c.requiref(status == http.StatusOK, "the task list answered %d: %s", status, raw)
 	pointed := 0
 	for _, rec := range listed.Records {
@@ -289,11 +283,14 @@ func caseStory01(c *C) {
 
 	// One filtered list: open tasks assigned to Nour, ordered by dueAt. A
 	// pinned reference filters by the bare id too, the way a write accepts it.
-	filter := url.QueryEscape(`{"properties":{"status":{"eq":"open"},"assignee":{"eq":"nour"}}}`)
+	filter := map[string]any{
+		"kinds":      []string{taskKind},
+		"properties": map[string]any{"status": map[string]any{"eq": "open"}, "assignee": map[string]any{"eq": "nour"}},
+	}
 	var page struct {
 		Records []record `json:"records"`
 	}
-	status, raw = c.do(http.MethodGet, tasksCollection+"?filter="+filter+"&orderBy=dueAt", nil, &page)
+	status, raw = c.do(http.MethodGet, listWhere(filter, "orderBy=dueAt"), nil, &page)
 	c.requiref(status == http.StatusOK, "the filtered list answered %d: %s", status, raw)
 	c.requiref(len(page.Records) == 1 && page.Records[0].ID == "task-usage-export",
 		"open tasks assigned to nour: want exactly task-usage-export, got %d records", len(page.Records))
@@ -303,17 +300,20 @@ func caseStory01(c *C) {
 	// person cannot name a team, a `mustExist` reference cannot be born
 	// dangling, and a link property the declaration does not declare is
 	// refused naming it.
-	status, raw = c.do(http.MethodPost, tasksCollection, map[string]any{
+	status, raw = c.do(http.MethodPost, recordsRoute, map[string]any{
+		"kind":       taskKind,
 		"properties": map[string]any{"name": "A task aimed at a team", "assignee": recPath(teamKind, "engineering")},
 	}, nil)
 	c.requiref(status == http.StatusUnprocessableEntity,
 		"an assignee naming a team answered %d, want 422: %s", status, raw)
-	status, raw = c.do(http.MethodPost, tasksCollection, map[string]any{
+	status, raw = c.do(http.MethodPost, recordsRoute, map[string]any{
+		"kind":       taskKind,
 		"properties": map[string]any{"name": "A task aimed at nobody", "assignee": recPath(personKind, "nobody-at-all")},
 	}, nil)
 	c.requiref(status == http.StatusNotFound,
 		"an assignee at an absent person answered %d, want 404: %s", status, raw)
-	status, raw = c.do(http.MethodPost, personCollection, map[string]any{
+	status, raw = c.do(http.MethodPost, recordsRoute, map[string]any{
+		"kind": personKind,
 		"properties": map[string]any{
 			"name":     "A chatty member",
 			"memberOf": []any{linkTo(recPath(orgKind, "acme"), map[string]any{"mood": "hopeful"})},
@@ -325,7 +325,8 @@ func caseStory01(c *C) {
 
 	// The retired shape is refused by name rather than dropped in silence, so
 	// a client written against the old model loses nothing quietly.
-	status, raw = c.do(http.MethodPost, tasksCollection, map[string]any{
+	status, raw = c.do(http.MethodPost, recordsRoute, map[string]any{
+		"kind":       taskKind,
 		"properties": map[string]any{"name": "A task with edges"},
 		"edges":      map[string]any{"assignee": []any{map[string]any{"id": "sam"}}},
 	}, nil)

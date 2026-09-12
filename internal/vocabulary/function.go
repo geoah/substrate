@@ -74,8 +74,7 @@ const (
 
 	HostFunctionQuery   = PackageCore + "/query"
 	HostFunctionPropose = PackageCore + "/propose"
-	HostFunctionGraphQL = PackageCore + "/graphql"
-	HostFunctionMutate  = PackageCore + "/mutate"
+	HostFunctionWrite   = PackageCore + "/write"
 	HostFunctionAsk     = PackageCore + "/ask"
 )
 
@@ -1022,8 +1021,8 @@ func (r *Registry) Functions() []*Function {
 
 // ResolveFunction accepts a full identity or a bare name unique across
 // authorities — except for a HOST function, which answers its identity alone.
-// The four of them are named for what they do (`query`, `graphql`, `mutate`,
-// `propose`), which is exactly what a repository's own function is likeliest to
+// The four of them are named for what they do (`query`, `write`, `propose`,
+// `ask`), which is exactly what a repository's own function is likeliest to
 // be called, so a bare name that resolved to the user's function before they
 // shipped has to keep resolving to it.
 func (r *Registry) ResolveFunction(nameOrIdentity string) (*Function, error) {

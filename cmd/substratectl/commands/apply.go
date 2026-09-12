@@ -43,7 +43,8 @@ Every document wears the envelope — kind, metadata, data:
 A qualified kind resolves outright; a bare one resolves against the kind
 registry, and a name several authorities declare (every bundle installs a
 ` + "`config`" + `) has to be qualified. A document with ` + "`metadata.id`" + `
-is PUT at that id; without one it is POSTed to the collection. The
+is PUT at that id; without one it is POSTed to the records route, which
+assigns one. The
 ` + "`status`" + ` block written by ` + "`substratectl get -o yaml`" + ` is ignored, so
 get output is directly apply-able.
 

@@ -6,8 +6,8 @@ package engine
 // llm/message — the kind's envelope plus the transition's changelog entries —
 // and, after commit, the thread RESUMES so the agent's next turn reacts to
 // it. The marker is declared, never hardcoded per kind. The message is an
-// ordinary record: any reader of the thread (the console, GraphQL, the watch
-// stream) sees the resolution without this package's help, and the loop's
+// ordinary record: any reader of the thread (the console, the records route, the
+// watch stream) sees the resolution without this package's help, and the loop's
 // history replay hands it to the model as context.
 //
 // Resume is BOUNDED, because a resume is a paid agent turn: the agent's own

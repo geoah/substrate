@@ -441,8 +441,8 @@ data:
 	}
 }
 
-// The definition the projections and the GraphQL builder read is the
-// manifest's data map, spelled exactly as it was authored.
+// The definition the projections read is the manifest's data map, spelled
+// exactly as it was authored.
 func TestDefinitionIsTheData(t *testing.T) {
 	r := loadVocab(t)
 	task, _ := r.ByIdentity("vocab.example.com/vocab/task")
@@ -452,10 +452,10 @@ func TestDefinitionIsTheData(t *testing.T) {
 	props, _ := task.Definition["properties"].(map[string]any)
 	status, _ := props["status"].(map[string]any)
 	if status["type"] != "state" {
-		t.Fatal("definition.properties.status is the state machine the GraphQL builder reads")
+		t.Fatal("definition.properties.status is the state machine the projection reads")
 	}
 	if _, ok := task.Definition["traits"]; !ok {
-		t.Fatal("definition.traits is what the GraphQL builder reads")
+		t.Fatal("definition.traits is what the projection reads")
 	}
 	names, _ := task.Definition["names"].(map[string]any)
 	if names["singular"] != "task" {
@@ -727,11 +727,9 @@ data:
 		}
 	})
 
-	// Two authorities may hold the same LOCAL name only when one of them is
-	// installed: a shipped kind's GraphQL name is its bare singular, and the
-	// declaration-time uniqueness check refuses a second claim on it. An
-	// installed kind is authority-prefixed, so the pair is legal — and that is
-	// exactly the case the in-authority-first rule exists for.
+	// Two authorities may hold the same LOCAL name: each kind's identity
+	// carries its authority, so the pair is legal — and that is exactly the
+	// case the in-authority-first rule exists for.
 	t.Run("in authority first", func(t *testing.T) {
 		install := func(t *testing.T, body string) *vocabulary.Registry {
 			t.Helper()
@@ -2838,8 +2836,7 @@ var shippedVocabularyDirs = []string{
 // same bar where they now live: they admit TOGETHER (messaging and calendar
 // point at people) and they carry the shape a sample package has — kinds, no
 // inputs, no callables. They install as the repository's own
-// (`source: installed`), which is what gives their GraphQL names an authority
-// and package prefix instead of the bare singular.
+// (`source: installed`).
 func TestShippedVocabularyBundles(t *testing.T) {
 	var raw []map[string]any
 	for _, dir := range shippedVocabularyDirs {
@@ -2963,11 +2960,6 @@ func TestShippedVocabularyBundles(t *testing.T) {
 		if _, ok := person.Prop(p); ok {
 			t.Errorf("person.%s must not exist", p)
 		}
-	}
-	// An installed kind carries its AUTHORITY and PACKAGE in GraphQL, so two
-	// packages may declare a `person` without either renaming the other.
-	if got := vocabulary.GraphQLName("samples.substrate.reamde.dev/people/person", person.Source); got != "Samples_substrate_reamde_dev_People_Person" {
-		t.Errorf("GraphQL name = %q, want Samples_substrate_reamde_dev_People_Person", got)
 	}
 }
 

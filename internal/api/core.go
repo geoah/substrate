@@ -111,10 +111,9 @@ func decodeJSONStrict(r io.Reader, v any) error {
 }
 
 // decodeStrictBytes is the shared strict decode (exact-key check,
-// unknown-field refusal, end-of-stream check), moved to internal/strictjson so
-// the GraphQL remarshal path (internal/gql) holds JSON-scalar inputs to the
-// SAME rules this body decoder does. This name survives as the api package's
-// spelling of it.
+// unknown-field refusal, end-of-stream check) in internal/strictjson, which
+// the agent tools' JSON arguments are held to as well. This name is the api
+// package's spelling of it.
 func decodeStrictBytes(raw []byte, v any, useNumber bool) error {
 	return strictjson.DecodeBytes(raw, v, useNumber)
 }

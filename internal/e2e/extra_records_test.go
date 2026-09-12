@@ -14,8 +14,8 @@ import (
 // after the stories, over the repository the stories built, and every record
 // they write or delete carries the `x-` id prefix so the acme world stays as
 // it was left.
-// The one exception is REC-06, which has to write the reserved words
-// themselves; it says so where it does.
+// The one exception is REC-06, which has to write the ids that were once
+// reserved; it says so where it does.
 func init() {
 	registerCase(210, "REC-03", "What a PATCH can do to a property",
 		"A null deletes the property outright, a state property is a transition that stamps its own time, and a "+
@@ -25,9 +25,10 @@ func init() {
 		"A create and a patch that carry a property the kind never declared both answer 422 `validation` with the "+
 			"problem addressed to `props.bogusprop`, and no record is written.",
 		xrCaseUndeclaredProperty)
-	registerCase(240, "REC-06", "Client-chosen ids, and the two reserved words",
-		"A POST carrying an id lands at that id and a PUT lands at the path's id whatever the body says; "+
-			"`incoming` is refused as an id at the record path in both directions, and it is the only word that is.",
+	registerCase(240, "REC-06", "Who names a record: PUT's path does, POST never does",
+		"A PUT lands at the path's id whatever the body says, and no id is reserved: the words that once named "+
+			"sub-resources are ordinary ids in both directions. `POST /api/v1/records` creates under a server-assigned id "+
+			"and refuses a body carrying one, 422 naming the PUT at the record path, writing nothing.",
 		xrCaseChosenIDs)
 	registerCase(250, "REC-07", "Labels and annotations round-trip",
 		"Both maps demand namespaced `<actor>/<name>` keys; a list row carries the labels but never the "+
@@ -44,17 +45,19 @@ func init() {
 		xrCaseReferenceWrites)
 	registerCase(280, "REF-03", "A reference outlives the target's tombstone",
 		"Deleting a person leaves every reference naming them standing: the holder's GET still spells the target "+
-			"path, the tombstone still answers /incoming, and the holder's version never moves (decision 0027).",
+			"path, the tombstone's reverse read (`filter.referencing`) still lists the holder, and the holder's "+
+			"version never moves (decision 0027).",
 		xrCaseReferenceTombstone)
-	registerCase(285, "REF-04", "/incoming narrows and pages",
-		"`property` narrows to one reference property, `fromKind` to one source kind, `first`+`after` walk the "+
-			"fan-in one distinct row at a time, and a parameter the reverse read does not take (`rel`, `orderBy`) "+
-			"is a 400 naming it.",
-		xrCaseIncoming)
+	registerCase(285, "REF-04", "The reverse read narrows and pages like any list",
+		"`filter.referencing` lists the records pointing at one target and `matches` names the property each "+
+			"points from; `referencing.property` narrows to one property, `kinds` beside it to one source kind, "+
+			"`first`+`after` walk the fan-in one distinct record at a time, `orderBy` is admitted, and a parameter "+
+			"the route does not take (`rel`) is a 400 naming it.",
+		xrCaseReferencing)
 	registerCase(290, "MRG-01", "Merge folds two records into one",
 		"`POST /api/v1/merge` writes a `recordmerge` record; the loser's id keeps resolving, now answering the "+
 			"canonical record with the loser as a formerId. Nothing repoints: the task's `assignee` still spells "+
-			"the loser, and the winner's /incoming finds it through the former id.",
+			"the loser, and the winner's reverse read finds it through the former id.",
 		xrCaseMerge)
 	registerCase(295, "MRG-02", "Split reverses the merge",
 		"`POST /api/v1/split` gives the loser its record back: no canonicalId, no formerId on the winner, the "+
@@ -67,7 +70,6 @@ func init() {
 const (
 	xrPatchTask   = "x-rec-patch"
 	xrPropTask    = "x-rec-prop"
-	xrChosenPost  = "x-chosen"
 	xrChosenPut   = "x-chosen2"
 	xrChosenGhost = "x-chosen-elsewhere"
 	xrMetaTask    = "x-rec-meta"
@@ -161,7 +163,7 @@ func xrGet(c *C, path string) xrRecord {
 	return rec
 }
 
-// xrListFind reads a collection page and returns the row with this id, plus
+// xrListFind reads one list page and returns the row with this id, plus
 // whether it was there at all. It exists because the metadata cases assert on
 // what a LIST row omits, which a single GET can never show.
 func xrListFind(c *C, path, id string) (xrRecord, bool) {
@@ -263,8 +265,10 @@ func xrCasePatch(c *C) {
 func xrCaseUndeclaredProperty(c *C) {
 	before := c.countRecords(tasksCollection)
 
-	status, raw := c.do(http.MethodPost, tasksCollection,
-		map[string]any{"properties": map[string]any{"bogusprop": 1}}, nil)
+	status, raw := c.do(http.MethodPost, recordsRoute, map[string]any{
+		"kind":       kindOf(tasksCollection),
+		"properties": map[string]any{"bogusprop": 1},
+	}, nil)
 	c.requiref(status == http.StatusUnprocessableEntity, "the undeclared property answered %d, want 422: %s", status, raw)
 	p := xrRefusal(c, raw)
 	want := "props.bogusprop: not declared on " + taskKind
@@ -279,7 +283,7 @@ func xrCaseUndeclaredProperty(c *C) {
 	// declared half of the body.
 	c.requiref(c.countRecords(tasksCollection) == before,
 		"the refused create still wrote a record: %d tasks before, %d after", before, c.countRecords(tasksCollection))
-	c.stepf("nothing was written: the collection still holds the same %d tasks", before)
+	c.stepf("nothing was written: the task list still holds the same %d records", before)
 
 	// The same refusal on the patch door, so a property cannot slip in on the
 	// second write of a record that was created clean.
@@ -294,22 +298,13 @@ func xrCaseUndeclaredProperty(c *C) {
 	c.stepf("the patch door refuses it identically, so an existing record cannot grow the property either")
 }
 
-// xrCaseChosenIDs: REC-06. Who names a record, and the two words no record
-// may be named.
+// xrCaseChosenIDs: REC-06. Who names a record. A PUT's path does, a POST's
+// body never does, and no word is held back from being an id.
 func xrCaseChosenIDs(c *C) {
-	// POST with an id in the body: a create at the writer's own key.
-	var posted xrRecord
-	status, raw := c.do(http.MethodPost, tasksCollection, map[string]any{
-		"id":         xrChosenPost,
-		"properties": map[string]any{"name": "Named by the body"},
-	}, &posted)
-	c.requiref(status == http.StatusCreated, "the POST carrying an id answered %d, want 201: %s", status, raw)
-	c.requiref(posted.ID == xrChosenPost, "the POST landed at %q, want %q", posted.ID, xrChosenPost)
-
 	// PUT at a path, with a DIFFERENT id in the body: the path wins and the
 	// body's id is ignored, so nothing lands at the id the body named.
 	var put xrRecord
-	status, raw = c.do(http.MethodPut, xrTaskPath(xrChosenPut), map[string]any{
+	status, raw := c.do(http.MethodPut, xrTaskPath(xrChosenPut), map[string]any{
 		"id":         xrChosenGhost,
 		"properties": map[string]any{"name": "Named by the path"},
 	}, &put)
@@ -317,64 +312,44 @@ func xrCaseChosenIDs(c *C) {
 	c.requiref(put.ID == xrChosenPut, "the PUT landed at %q, want the path's %q", put.ID, xrChosenPut)
 	status, _ = c.do(http.MethodGet, xrTaskPath(xrChosenGhost), nil, nil)
 	c.requiref(status == http.StatusNotFound, "the body's id answered %d, want 404: a PUT's path is the id", status)
-	c.stepf("`POST` with `{\"id\":\"%s\"}` landed at that id; `PUT %s` landed at the path's id and the body's `%s` was ignored",
-		xrChosenPost, xrTaskPath(xrChosenPut), xrChosenGhost)
+	c.stepf("`PUT %s` landed at the path's id and the body's `%s` was ignored", xrTaskPath(xrChosenPut), xrChosenGhost)
 
-	// `incoming` is the one static sub-resource segment under a record, so no
-	// record may take it as an id. The record path refuses both directions,
-	// read and write, and writes nothing (decision 0033).
-	status, raw = c.do(http.MethodPut, xrTaskPath("incoming"),
-		map[string]any{"properties": map[string]any{"name": "A record named after a sub-resource"}}, nil)
-	c.requiref(status == http.StatusBadRequest, "PUT at the reserved id answered %d, want 400: %s", status, raw)
-	refused := xrRefusal(c, raw)
-	c.requiref(refused.Error.Code == "bad_request" && strings.Contains(refused.Error.Message, "is reserved") &&
-		strings.Contains(refused.Error.Message, "incoming"),
-		"the refusal does not name the reserved id: %q", refused.Error.Message)
-	status, raw = c.do(http.MethodDelete, xrTaskPath("incoming"), nil, nil)
-	c.requiref(status == http.StatusBadRequest, "DELETE at the reserved id answered %d, want 400: %s", status, raw)
-	c.stepf("`PUT` and `DELETE` at the reserved id `incoming` are both 400 `bad_request` naming the id")
-
-	// `edges` is NOT reserved: the word names nothing on the wire any more,
-	// so a record may take it as an id like any other string. Asserted here
-	// rather than assumed, because a leftover reservation would refuse a
-	// perfectly ordinary id forever.
-	status, raw = c.do(http.MethodPut, xrTaskPath("edges"),
-		map[string]any{"properties": map[string]any{"name": "An ordinary record that happens to be called edges"}}, nil)
-	c.requiref(status == http.StatusCreated, "PUT at the id `edges` answered %d, want 201: %s", status, raw)
-	ordinary := xrGet(c, xrTaskPath("edges"))
-	c.requiref(ordinary.ID == "edges", "the record at the id `edges` reads back as %q", ordinary.ID)
-	c.stepf("`edges` is an ordinary record id now: the write is a 201 and the read answers it")
-
-	// The collection door does not pass through that check: the reservation
-	// lives on the record path, and a POST names its id in the BODY. What the
-	// live server does with it is pinned here either way, because a create
-	// that lands at a reserved id is a row no request can read or delete.
-	var reserved xrRecord
-	status, raw = c.do(http.MethodPost, tasksCollection, map[string]any{
-		"id":         "incoming",
-		"properties": map[string]any{"name": "A record named after a sub-resource"},
-	}, &reserved)
-	if status >= http.StatusBadRequest {
-		// The closed door must be THE refusal, not any failure: a 500 here
-		// would read as the gap fixed when the server merely fell over.
-		c.requiref(status == http.StatusBadRequest, "the reserved-id POST answered %d, want the 400 refusal: %s", status, raw)
-		p := xrRefusal(c, raw)
-		c.requiref(strings.Contains(p.Error.Message, "incoming"),
-			"the collection POST refused the reserved id without naming it: %q", p.Error.Message)
-		c.stepf("`POST` carrying `{\"id\":\"incoming\"}` was refused too: %d, %q", status, p.Error.Message)
-		return
+	// Nothing is reserved. The two words that once named static sub-resources
+	// under a record name nothing on the wire now, so each is an ordinary id
+	// in both directions, write and read. Asserted rather than assumed, because
+	// a leftover reservation would refuse a perfectly ordinary id forever.
+	for _, id := range []string{"incoming", "edges"} {
+		status, raw = c.do(http.MethodPut, xrTaskPath(id),
+			map[string]any{"properties": map[string]any{"name": "An ordinary record that happens to be called " + id}}, nil)
+		c.requiref(status == http.StatusCreated, "PUT at the id %q answered %d, want 201: %s", id, status, raw)
+		ordinary := xrGet(c, xrTaskPath(id))
+		c.requiref(ordinary.ID == id, "the record at the id %q reads back as %q", id, ordinary.ID)
+		_, listed := xrListFind(c, listOf(tasksCollection, "first=200"), id)
+		c.requiref(listed, "the record at the id %q is missing from the task list", id)
 	}
-	c.requiref(status == http.StatusCreated, "the collection POST answered %d: %s", status, raw)
-	c.requiref(reserved.ID == "incoming", "the collection POST landed at %q, want incoming", reserved.ID)
-	status, _ = c.do(http.MethodGet, xrTaskPath("incoming"), nil, nil)
-	c.requiref(status == http.StatusMethodNotAllowed, "reading the reserved-id record answered %d, want 405", status)
-	status, _ = c.do(http.MethodDelete, xrTaskPath("incoming"), nil, nil)
-	c.requiref(status == http.StatusBadRequest, "deleting the reserved-id record answered %d, want 400", status)
-	_, listed := xrListFind(c, tasksCollection+"?first=200", "incoming")
-	c.requiref(listed, "the reserved-id record is not even in the list; where did it go?")
-	c.stepf("GAP: `POST` at the collection carrying `{\"id\":\"incoming\"}` is NOT refused (201). " +
-		"The row it creates appears in the list, answers 405 on a GET at its own path and 400 on a DELETE, " +
-		"so it can never be read or removed by id. The reservation guards the record path only.")
+	var gone xrRecord
+	status, raw = c.do(http.MethodDelete, xrTaskPath("incoming"), nil, &gone)
+	c.requiref(status == http.StatusOK, "DELETE at the id `incoming` answered %d, want 200: %s", status, raw)
+	c.requiref(gone.DeletedAt != "", "the delete's answer carries no deletedAt")
+	c.stepf("`incoming` and `edges` are ordinary record ids: each write is a 201, each read answers it, and `DELETE` tombstones `incoming` like any record")
+
+	// POST never takes an id: the body-addressed create lands under a
+	// server-assigned id, and a body carrying one is refused, pointing at the
+	// PUT that writes the record it named. Nothing is written by the refusal.
+	before := c.countRecords(tasksCollection)
+	status, raw = c.do(http.MethodPost, recordsRoute, map[string]any{
+		"kind":       kindOf(tasksCollection),
+		"id":         "incoming",
+		"properties": map[string]any{"name": "A create that tries to choose its id"},
+	}, nil)
+	c.requiref(status == http.StatusUnprocessableEntity, "the POST carrying an id answered %d, want 422: %s", status, raw)
+	p := xrRefusal(c, raw)
+	wantPut := "PUT " + xrTaskPath("incoming")
+	c.requiref(p.Error.Code == "validation" && strings.Contains(p.Error.Message, wantPut),
+		"the refusal does not name the PUT at the record path %q: %q", wantPut, p.Error.Message)
+	c.requiref(c.countRecords(tasksCollection) == before,
+		"the refused POST wrote a record: %d tasks before, %d after", before, c.countRecords(tasksCollection))
+	c.stepf("`POST %s` carrying `{\"id\":\"incoming\"}` is 422 `validation` naming `%s`, and the task list is unchanged", recordsRoute, wantPut)
 }
 
 // xrCaseLabelsAnnotations: REC-07. The two side maps, their key rule, and
@@ -404,13 +379,13 @@ func xrCaseLabelsAnnotations(c *C) {
 	c.stepf("`api/tier` and `api/note` were admitted: the writer's actor is the namespace")
 
 	// A list row is the cheap read: labels ride along, annotations do not.
-	row, ok := xrListFind(c, tasksCollection+"?first=200", xrMetaTask)
+	row, ok := xrListFind(c, listOf(tasksCollection, "first=200"), xrMetaTask)
 	c.requiref(ok, "the metadata record is missing from the list")
 	c.requiref(row.Labels["api/tier"] == "gold", "the list row lost the label: %v", row.Labels)
 	c.requiref(len(row.Annotations) == 0, "the plain list row carries annotations %v; they are the opt-in half", row.Annotations)
 	c.stepf("a plain list row carries the labels and omits the annotations entirely")
 
-	row, ok = xrListFind(c, tasksCollection+"?first=200&withAnnotations=1", xrMetaTask)
+	row, ok = xrListFind(c, listOf(tasksCollection, "first=200", "withAnnotations=1"), xrMetaTask)
 	c.requiref(ok, "the metadata record is missing from the withAnnotations list")
 	c.requiref(row.Annotations["api/note"] == "hello",
 		"`withAnnotations=1` did not carry the annotation: %v", row.Annotations)
@@ -464,7 +439,7 @@ func xrCasePropertyMeta(c *C) {
 	c.stepf("the changelog agrees: seq %d put by `api`, seq %d put by `console`", rows[0].Seq, rows[1].Seq)
 
 	// A list row never carries provenance: it is a single-record read.
-	row, ok := xrListFind(c, tasksCollection+"?first=200", xrActorsTask)
+	row, ok := xrListFind(c, listOf(tasksCollection, "first=200"), xrActorsTask)
 	c.requiref(ok && len(row.PropertyMeta) == 0,
 		"a list row carries propertyMeta %v; provenance is a single-record read", row.PropertyMeta)
 	c.stepf("the list row carries no propertyMeta at all")
@@ -509,9 +484,9 @@ func xrCaseReferenceWrites(c *C) {
 	got := xrGet(c, xrTaskPath(xrRefTask))
 	c.requiref(sameSet(xrRefPaths(got, "assignee"), recPath(personKind, "sam")),
 		"the source's GET does not carry the reference: %v", got.Properties["assignee"])
-	c.requiref(xrIncomingHas(c, xrPersonPath("sam")+"/incoming?property=assignee", xrRefTask),
-		"sam's /incoming does not name %s under assignee", xrRefTask)
-	c.stepf("the reference reads from both ends: on the task's GET, and on `sam`'s /incoming under `assignee`")
+	c.requiref(xrPointsAt(c, personKind, "sam", "assignee", xrRefTask),
+		"sam's reverse read does not list %s under assignee", xrRefTask)
+	c.stepf("the reference reads from both ends: on the task's GET, and on `sam`'s reverse read (`filter.referencing`) under `assignee`")
 
 	// A put that says nothing about the pointer keeps it: put merges, never
 	// prunes, and that is exactly why clearing needs a word of its own.
@@ -531,8 +506,8 @@ func xrCaseReferenceWrites(c *C) {
 	c.requiref(status == http.StatusOK, "the clearing patch answered %d, want 200: %s", status, raw)
 	c.requiref(len(xrRefPaths(cleared, "assignee")) == 0,
 		"the null left the reference standing: %v", cleared.Properties["assignee"])
-	c.requiref(!xrIncomingHas(c, xrPersonPath("sam")+"/incoming?property=assignee", xrRefTask),
-		"sam's /incoming still names %s after the clearing patch", xrRefTask)
+	c.requiref(!xrPointsAt(c, personKind, "sam", "assignee", xrRefTask),
+		"sam's reverse read still lists %s after the clearing patch", xrRefTask)
 	c.stepf("`PATCH` with `{\"assignee\": null}` dropped the pointer from both ends")
 }
 
@@ -558,7 +533,7 @@ func xrCaseReferenceTombstone(c *C) {
 	status, raw = c.do(http.MethodDelete, xrPersonPath(xrRefVictim), nil, &tombstone)
 	c.requiref(status == http.StatusOK, "deleting the target answered %d: %s", status, raw)
 	c.requiref(tombstone.DeletedAt != "", "the delete's answer carries no deletedAt")
-	_, listed := xrListFind(c, personCollection+"?first=200", xrRefVictim)
+	_, listed := xrListFind(c, listOf(personCollection, "first=200"), xrRefVictim)
 	c.requiref(!listed, "the tombstoned person is still in the list; a tombstone leaves the fold")
 	c.stepf("deleted `%s`: the tombstone carries deletedAt=%s and leaves the person list", xrRefVictim, tombstone.DeletedAt)
 
@@ -573,111 +548,114 @@ func xrCaseReferenceTombstone(c *C) {
 
 	// The reverse read answers for a tombstone too, which is what lets an
 	// undelete know what pointed at it.
-	c.requiref(xrIncomingHas(c, xrPersonPath(xrRefVictim)+"/incoming", xrRefHolder),
-		"the tombstone's /incoming lost the holder")
-	c.stepf("the tombstone's own /incoming still names `%s`: the reference survives the delete at both ends, and only a purge drops it (decision 0027)", xrRefHolder)
+	c.requiref(xrPointsAt(c, personKind, xrRefVictim, "", xrRefHolder),
+		"the tombstone's reverse read lost the holder")
+	c.stepf("the tombstone's own reverse read still lists `%s`: the reference survives the delete at both ends, and only a purge drops it (decision 0027)", xrRefHolder)
 }
 
-// xrIncomingRow is one reverse pointer, narrowed to what these cases assert.
-// There is one kind of pointer now, so the row says which PROPERTY names this
-// record and where inside it, and nothing about how.
-type xrIncomingRow struct {
-	Property string `json:"property"`
-	Path     string `json:"path"`
-	From     struct {
-		ID   string `json:"id"`
-		Kind string `json:"kind"`
-	} `json:"from"`
-}
-
-type xrIncomingPage struct {
-	Incoming []xrIncomingRow `json:"incoming"`
-	Cursor   string          `json:"cursor"`
-	Total    int             `json:"total"`
-}
-
-func xrIncomingRead(c *C, path string) xrIncomingPage {
+// xrReferencingRead is one page of the reverse read. `matches` rides beside
+// the records because one source can point at the target from two sites, and
+// a page of distinct records cannot say which properties matched on its own.
+func xrReferencingRead(c *C, path string) recordsPage {
 	c.t.Helper()
-	var page xrIncomingPage
+	var page recordsPage
 	status, raw := c.do(http.MethodGet, path, nil, &page)
 	c.requiref(status == http.StatusOK, "GET %s answered %d: %s", path, status, raw)
 	return page
 }
 
-// xrIncomingHas reports whether a reverse read names this source record.
-func xrIncomingHas(c *C, path, from string) bool {
+// xrPointsAt reports whether the reverse read of (kind, id), narrowed to
+// `property` when it is set, lists the record fromID.
+func xrPointsAt(c *C, kind, id, property, fromID string) bool {
 	c.t.Helper()
-	for _, row := range xrIncomingRead(c, path).Incoming {
-		if row.From.ID == from {
+	for _, rec := range xrReferencingRead(c, referencingList(kind, id, property, "first=200")).Records {
+		if rec.ID == fromID {
 			return true
 		}
 	}
 	return false
 }
 
-// xrCaseIncoming: REF-04. The reverse read of a record with a wide fan-in is
-// only usable if it narrows and pages, so both are pinned here against `sam`,
-// who the stories left pointed at by a task, a team, an event and a
-// transcript.
-func xrCaseIncoming(c *C) {
-	all := xrIncomingRead(c, xrPersonPath("sam")+"/incoming")
-	c.requiref(all.Total >= 4, "sam has %d incoming rows; the stories left at least four", all.Total)
-	props := map[string]bool{}
-	for _, row := range all.Incoming {
-		props[row.Property] = true
-		c.requiref(row.Property != "", "an incoming row does not name the property that points here: %+v", row)
+// xrMatchProperties is the set of properties `matches` names for the page's
+// records, and the ids the target is pointed at from. Every listed record must
+// have at least one match: a record on the reverse read page that `matches`
+// cannot explain is a bug in the page, not the test.
+func xrMatchProperties(c *C, page recordsPage) (props, from map[string]bool) {
+	c.t.Helper()
+	props, from = map[string]bool{}, map[string]bool{}
+	for _, rec := range page.Records {
+		sites := page.Matches[recPath(rec.Kind, rec.ID)]
+		c.requiref(len(sites) > 0, "the reverse read lists %s/%s but `matches` has no site for it: %v", rec.Kind, rec.ID, page.Matches)
+		from[rec.ID] = true
+		for _, site := range sites {
+			c.requiref(site.Property != "", "a match site for %s does not name the property that points here: %+v", rec.ID, site)
+			props[site.Property] = true
+		}
 	}
-	c.requiref(props["assignee"] && props["members"], "sam's incoming properties are %v; want at least assignee and members", props)
-	c.stepf("`sam`'s unnarrowed /incoming answers %d rows across %d reference properties", all.Total, len(props))
+	return props, from
+}
 
-	// `property` narrows to one reference property.
-	byProp := xrIncomingRead(c, xrPersonPath("sam")+"/incoming?property=assignee")
-	c.requiref(len(byProp.Incoming) > 0, "?property=assignee answered nothing")
-	c.requiref(byProp.Total <= all.Total, "the narrowed total %d exceeds the whole fan-in %d", byProp.Total, all.Total)
-	found := false
-	for _, row := range byProp.Incoming {
-		c.requiref(row.Property == "assignee", "?property=assignee answered a %q row from %s", row.Property, row.From.ID)
-		found = found || row.From.ID == "task-invite-flow"
-	}
-	c.requiref(found, "?property=assignee lost the task the stories assigned to sam")
-	c.stepf("`?property=assignee` narrowed %d rows to %d, all of them assignee rows, `task-invite-flow` among them", all.Total, byProp.Total)
+// xrCaseReferencing: REF-04. The reverse read of a record with a wide fan-in
+// is only usable if it narrows and pages, so both are pinned here against
+// `sam`, who the stories left pointed at by a task, a team, an event and a
+// transcript. It is an ordinary list with one more filter arm, so everything
+// a list takes, it takes.
+func xrCaseReferencing(c *C) {
+	all := xrReferencingRead(c, referencingList(personKind, "sam", "", "first=200"))
+	c.requiref(len(all.Records) >= 4, "sam is pointed at by %d records; the stories left at least four", len(all.Records))
+	props, _ := xrMatchProperties(c, all)
+	c.requiref(props["assignee"] && props["members"], "sam is pointed at from %v; want at least assignee and members", props)
+	c.stepf("`sam`'s unnarrowed reverse read answers %d records, and `matches` names %d reference properties among them", len(all.Records), len(props))
 
-	// `fromKind` narrows to one source kind, by full identity.
-	byKind := xrIncomingRead(c, xrPersonPath("sam")+"/incoming?fromKind="+url.QueryEscape(teamKind))
-	c.requiref(len(byKind.Incoming) > 0, "?fromKind=%s answered nothing", teamKind)
+	// `referencing.property` narrows to one reference property, and the
+	// narrowing shows in `matches` too: no site from another property rides
+	// along on a record that also matched the named one.
+	byProp := xrReferencingRead(c, referencingList(personKind, "sam", "assignee", "first=200"))
+	c.requiref(len(byProp.Records) > 0, "referencing.property=assignee answered nothing")
+	c.requiref(len(byProp.Records) <= len(all.Records), "the narrowed page %d exceeds the whole fan-in %d", len(byProp.Records), len(all.Records))
+	narrowed, from := xrMatchProperties(c, byProp)
+	c.requiref(len(narrowed) == 1 && narrowed["assignee"], "referencing.property=assignee answered sites from %v", narrowed)
+	c.requiref(from["task-invite-flow"], "referencing.property=assignee lost the task the stories assigned to sam")
+	c.stepf("`referencing.property=assignee` narrowed %d records to %d, every match an assignee site, `task-invite-flow` among them", len(all.Records), len(byProp.Records))
+
+	// The source kind is narrowed the way any list narrows: `kinds` beside
+	// `referencing` in the same filter.
+	byKind := xrReferencingRead(c, listWhere(map[string]any{
+		"kinds":       []string{teamKind},
+		"referencing": map[string]any{"ref": recPath(personKind, "sam")},
+	}, "first=200"))
+	c.requiref(len(byKind.Records) > 0, "kinds=[%s] beside referencing answered nothing", teamKind)
 	fromTeam := false
-	for _, row := range byKind.Incoming {
-		c.requiref(row.From.Kind == teamKind, "?fromKind answered a row from %s", row.From.Kind)
-		fromTeam = fromTeam || row.From.ID == "product"
+	for _, rec := range byKind.Records {
+		c.requiref(rec.Kind == teamKind, "kinds=[%s] answered a record of kind %s", teamKind, rec.Kind)
+		fromTeam = fromTeam || rec.ID == "product"
 	}
-	c.requiref(fromTeam, "?fromKind lost the team sam leads")
-	c.stepf("`?fromKind=%s` answered %d rows, every one of them from a team, `product` among them", teamKind, byKind.Total)
+	c.requiref(fromTeam, "kinds=[%s] beside referencing lost the team sam leads", teamKind)
+	c.stepf("`{\"kinds\":[%q],\"referencing\":…}` answered %d records, every one a team, `product` among them", teamKind, len(byKind.Records))
 
-	// The keyset page walks the fan-in one row at a time, and the cursor
-	// picks up at the next DISTINCT row rather than repeating the last one.
-	first := xrIncomingRead(c, xrPersonPath("sam")+"/incoming?first=1")
-	c.requiref(len(first.Incoming) == 1, "?first=1 answered %d rows", len(first.Incoming))
-	c.requiref(first.Cursor != "", "?first=1 answered no cursor with more rows to come")
-	c.requiref(first.Total == all.Total, "the paged total is %d, want the whole fan-in %d", first.Total, all.Total)
-	next := xrIncomingRead(c, xrPersonPath("sam")+"/incoming?first=1&after="+url.QueryEscape(first.Cursor))
-	c.requiref(len(next.Incoming) == 1, "the second page answered %d rows", len(next.Incoming))
-	c.requiref(next.Incoming[0] != first.Incoming[0], "the second page repeated the first row: %+v", next.Incoming[0])
-	c.stepf("`?first=1` answered one row and a cursor; the cursor answered the next distinct row, with the total still %d", next.Total)
+	// The keyset page walks the fan-in one record at a time, and the cursor
+	// picks up at the next DISTINCT record rather than repeating the last one.
+	first := xrReferencingRead(c, referencingList(personKind, "sam", "", "first=1"))
+	c.requiref(len(first.Records) == 1, "first=1 answered %d records", len(first.Records))
+	c.requiref(first.Cursor != "", "first=1 answered no cursor with more records to come")
+	next := xrReferencingRead(c, referencingList(personKind, "sam", "", "first=1", "after="+url.QueryEscape(first.Cursor)))
+	c.requiref(len(next.Records) == 1, "the second page answered %d records", len(next.Records))
+	c.requiref(next.Records[0].ID != first.Records[0].ID || next.Records[0].Kind != first.Records[0].Kind,
+		"the second page repeated the first record: %s/%s", next.Records[0].Kind, next.Records[0].ID)
+	c.stepf("`first=1` answered one record and a cursor; `after` answered the next distinct record")
 
-	// The list grammar does not apply to a reverse read, and a silently
-	// ignored parameter would return the unfiltered fan-in looking filtered.
-	status, raw := c.do(http.MethodGet, xrPersonPath("sam")+"/incoming?orderBy=createdAt", nil, nil)
-	c.requiref(status == http.StatusBadRequest, "orderBy on /incoming answered %d, want 400: %s", status, raw)
-	c.requiref(strings.Contains(xrRefusal(c, raw).Error.Message, "orderBy is not supported on incoming"),
-		"the refusal does not name the parameter: %s", raw)
+	// The list grammar applies whole: a reverse read orders like any list.
+	ordered := xrReferencingRead(c, referencingList(personKind, "sam", "", "first=200", "orderBy=createdAt"))
+	c.requiref(len(ordered.Records) == len(all.Records), "orderBy=createdAt answered %d records, want the same %d", len(ordered.Records), len(all.Records))
 
-	// The retired spelling of the narrowing parameter is refused too, rather
-	// than ignored into an unnarrowed answer that looks narrowed.
-	status, raw = c.do(http.MethodGet, xrPersonPath("sam")+"/incoming?rel=assignee", nil, nil)
-	c.requiref(status == http.StatusBadRequest, "the retired `rel` parameter answered %d, want 400: %s", status, raw)
-	c.requiref(strings.Contains(xrRefusal(c, raw).Error.Message, `rel`),
+	// A parameter the route does not take is refused, never ignored into an
+	// unnarrowed answer that looks narrowed.
+	status, raw := c.do(http.MethodGet, referencingList(personKind, "sam", "", "rel=assignee"), nil, nil)
+	c.requiref(status == http.StatusBadRequest, "the `rel` parameter answered %d, want 400: %s", status, raw)
+	refused := xrRefusal(c, raw)
+	c.requiref(refused.Error.Code == "bad_request" && strings.Contains(refused.Error.Message, `unknown query parameter "rel"`),
 		"the refusal of `rel` does not name it: %s", raw)
-	c.stepf("`?orderBy=createdAt` and the retired `?rel=` are both 400 naming the parameter: the reverse read takes first, after, property and fromKind, and nothing else")
+	c.stepf("`orderBy=createdAt` is admitted (200, the same %d records); `rel=` is 400 `bad_request`, %q", len(ordered.Records), refused.Error.Message)
 }
 
 // xrSeedDuplicates writes the two people a merge folds and the task pointing
@@ -702,14 +680,14 @@ func xrSeedDuplicates(c *C) {
 }
 
 // xrFindMerge finds the live merge record joining the two duplicates. MRG-02
-// reads it out of the collection rather than out of MRG-01's memory, so a
+// reads it out of the merge list rather than out of MRG-01's memory, so a
 // failed MRG-01 fails MRG-02 with a message about what is missing.
 func xrFindMerge(c *C) xrRecord {
 	c.t.Helper()
 	var page struct {
 		Records []xrRecord `json:"records"`
 	}
-	status, raw := c.do(http.MethodGet, xrMergeCollection+"?first=200", nil, &page)
+	status, raw := c.do(http.MethodGet, listOf(xrMergeCollection, "first=200"), nil, &page)
 	c.requiref(status == http.StatusOK, "listing the merges answered %d: %s", status, raw)
 	for _, rec := range page.Records {
 		if sameSet(xrRefPaths(rec, "winner"), recPath(personKind, xrDupWinner)) &&
@@ -717,7 +695,7 @@ func xrFindMerge(c *C) xrRecord {
 			return rec
 		}
 	}
-	c.requiref(false, "no live merge of %s into %s is in the collection", xrDupLoser, xrDupWinner)
+	c.requiref(false, "no live merge of %s into %s is in the merge list", xrDupLoser, xrDupWinner)
 	return xrRecord{}
 }
 
@@ -762,9 +740,9 @@ func xrCaseMerge(c *C) {
 	task := xrGet(c, xrTaskPath(xrDupTask))
 	c.requiref(sameSet(xrRefPaths(task, "assignee"), recPath(personKind, xrDupLoser)),
 		"the task's assignee is %v; the merge must not rewrite a value in another record", xrRefPaths(task, "assignee"))
-	c.requiref(xrIncomingHas(c, xrPersonPath(xrDupWinner)+"/incoming?property=assignee", xrDupTask),
-		"the winner's /incoming does not name the task pointing at its former id")
-	c.stepf("the task still spells `assignee: %s` (a merge never rewrites another record), and the winner's /incoming finds it through the former id",
+	c.requiref(xrPointsAt(c, kindOf(personCollection), xrDupWinner, "assignee", xrDupTask),
+		"the winner's reverse read does not list the task pointing at its former id")
+	c.stepf("the task still spells `assignee: %s` (a merge never rewrites another record), and the winner's reverse read finds it through the former id",
 		recPath(personKind, xrDupLoser))
 }
 
@@ -796,15 +774,15 @@ func xrCaseSplit(c *C) {
 	task := xrGet(c, xrTaskPath(xrDupTask))
 	c.requiref(sameSet(xrRefPaths(task, "assignee"), recPath(personKind, xrDupLoser)),
 		"the task's assignee is %v after the split, want the loser it always spelled", xrRefPaths(task, "assignee"))
-	c.requiref(xrIncomingHas(c, xrPersonPath(xrDupLoser)+"/incoming?property=assignee", xrDupTask),
-		"the restored loser's /incoming does not name the task")
+	c.requiref(xrPointsAt(c, kindOf(personCollection), xrDupLoser, "assignee", xrDupTask),
+		"the restored loser's reverse read does not list the task")
 	c.stepf("the task's `assignee` never moved and now names a live record again: `%s`", xrDupLoser)
 
 	// The merge record is spent, not erased: it stays addressable as a
 	// tombstone, so the trail of what happened survives the reversal.
 	spent := xrGet(c, xrMergeCollection+"/"+url.PathEscape(merge.ID))
 	c.requiref(spent.DeletedAt != "", "the reversed merge record carries no deletedAt")
-	_, listed := xrListFind(c, xrMergeCollection+"?first=200", merge.ID)
+	_, listed := xrListFind(c, listOf(xrMergeCollection, "first=200"), merge.ID)
 	c.requiref(!listed, "the reversed merge is still in the merge list")
 	c.stepf("the merge record itself is tombstoned (deletedAt=%s): it leaves the list and stays readable by id", spent.DeletedAt)
 }

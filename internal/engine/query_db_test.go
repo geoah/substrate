@@ -193,7 +193,7 @@ func TestListKeysetWalkSeesEachRowOnce(t *testing.T) {
 
 	seen := map[string]int{}
 	after := ""
-	mutated := false
+	churned := false
 	for pages := 0; ; pages++ {
 		if pages > 100 {
 			t.Fatal("walk did not terminate")
@@ -211,8 +211,8 @@ func TestListKeysetWalkSeesEachRowOnce(t *testing.T) {
 		}
 		// After the first page, churn the collection: delete three of the
 		// original rows (seen or not) and insert four new ones.
-		if !mutated {
-			mutated = true
+		if !churned {
+			churned = true
 			del := 0
 			for id := range stable {
 				if del >= 3 {

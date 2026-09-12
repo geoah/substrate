@@ -148,9 +148,9 @@ func TestManifestFollowsTheChangelogStampBeforeARestart(t *testing.T) {
 func TestImportRefusesAManifestAboveTheBinaryBeforeAnyRow(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name   string
-		mutate func(*changelogfile.Manifest)
-		want   error
+		name string
+		edit func(*changelogfile.Manifest)
+		want error
 	}{
 		{"changelog dialect", func(m *changelogfile.Manifest) { m.ChangelogDialect = engine.MaxChangelogDialect() + 1 }, engine.ErrChangelogDialectNewer},
 		{"vocabulary dialect", func(m *changelogfile.Manifest) { m.VocabularyDialect = engine.MaxSchemaDialect() + 1 }, engine.ErrVocabularyDialectNewer},
@@ -170,7 +170,7 @@ func TestImportRefusesAManifestAboveTheBinaryBeforeAnyRow(t *testing.T) {
 				t.Fatal(err)
 			}
 			m := readManifest(t, dir)
-			c.mutate(&m)
+			c.edit(&m)
 			if err := changelogfile.WriteManifest(dir, m); err != nil {
 				t.Fatal(err)
 			}

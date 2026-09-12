@@ -661,8 +661,8 @@ type Kind struct {
 	// {"at","endsAt","dueAt"} terms.
 	HotColumns map[string]bool
 
-	// Definition is the manifest's data map: what the GraphQL builder and the
-	// console read, exactly as it was authored.
+	// Definition is the manifest's data map: what the console reads, exactly
+	// as it was authored.
 	Definition map[string]any
 }
 
@@ -695,8 +695,8 @@ func (t *Kind) applyCapability(b TraitBinding) {
 	}
 }
 
-// Interfaces lists the GraphQL-style interface names this type implements:
-// one per bound trait, one per declared machine.
+// Interfaces lists the interface names this type implements: one per bound
+// trait, one per declared machine.
 func (t *Kind) Interfaces() []string {
 	var out []string
 	for _, c := range t.Traits {
@@ -865,7 +865,8 @@ func (r *Registry) Clone() *Registry {
 	return c
 }
 
-// Version is the counter the GraphQL layer caches its schema against.
+// Version is the counter readers fingerprint the registry by: it moves on
+// every Finalize and Install.
 func (r *Registry) Version() int64 {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

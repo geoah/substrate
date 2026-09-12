@@ -45,7 +45,7 @@ func init() {
 			"stops authenticating, the same revocation `DELETE /tokens/{id}` performs.",
 		xaCaseTokenRecordRevoke)
 	registerCase(180, "ISO-01", "A second user sees none of the first user's repository",
-		"A freshly registered second user's token finds the first user's collections absent, its record "+
+		"A freshly registered second user's token finds the first user's kinds unknown, its record "+
 			"404, and its own changelog holding core rows alone, while the first user's token still answers.",
 		xaCaseIsolation)
 	registerCase(190, "ISO-02", "An install belongs to one repository",
@@ -214,8 +214,8 @@ func xaCaseTokenRecordRevoke(c *C) {
 // --- ISO-01 ----------------------------------------------------------------
 
 // xaCaseIsolation registers a second user and looks for the first one's
-// repository through it, in the three places it could leak: the collections,
-// one known record, and the changelog.
+// repository through it, in the three places it could leak: a list of its
+// kinds, one known record, and the changelog.
 func xaCaseIsolation(c *C) {
 	r := c.r
 
@@ -241,19 +241,20 @@ func xaCaseIsolation(c *C) {
 	xaSecond.username, xaSecond.token = second, reg.Secret
 	c.stepf("registered a second user `%s` with its own repository and first token `%s`", second, reg.Token.ID)
 
-	// The first user's vocabulary is not the second user's: the collections
-	// do not exist there at all, which is a 404 naming the collection.
-	for _, path := range []string{tasksCollection, personCollection} {
-		status, raw = c.doAs(xaSecond.token, http.MethodGet, path, nil, nil)
+	// The first user's vocabulary is not the second user's: the kinds do not
+	// exist there at all, so a list narrowed to one is a 404 naming the kind.
+	for _, kindPath := range []string{tasksCollection, personCollection} {
+		status, raw = c.doAs(xaSecond.token, http.MethodGet, listOf(kindPath), nil, nil)
 		c.requiref(status == http.StatusNotFound,
-			"the second user's GET %s answered %d, want 404: %s", path, status, raw)
+			"the second user's list of %s answered %d, want 404: %s", kindOf(kindPath), status, raw)
 		e := xaErrorOf(c, raw)
-		c.requiref(e.Error.Code == "not_found", "the second user's GET %s was refused with code %q, want `not_found`", path, e.Error.Code)
+		c.requiref(e.Error.Code == "not_found" && strings.Contains(e.Error.Message, "unknown kind "+kindOf(kindPath)),
+			"the second user's list of %s was refused with %q %q, want `not_found` naming the kind", kindOf(kindPath), e.Error.Code, e.Error.Message)
 	}
 	status, raw = c.doAs(xaSecond.token, http.MethodGet, personCollection+"/nour", nil, nil)
 	c.requiref(status == http.StatusNotFound,
 		"the second user's GET of the first user's person `nour` answered %d, want 404: %s", status, raw)
-	c.stepf("through the second user's token the task and person collections are 404, and so is the first user's `nour`")
+	c.stepf("through the second user's token a list of tasks or people is 404 `unknown kind`, and so is the first user's `nour`")
 
 	// The changelog is the truth, so isolation has to hold there too: the
 	// second repository's feed is its own registration and nothing else.
@@ -278,11 +279,11 @@ func xaCaseIsolation(c *C) {
 		len(theirs), len(mine))
 
 	// And the first user's repository is exactly where it was.
-	status, raw = c.do(http.MethodGet, tasksCollection, nil, nil)
-	c.requiref(status == http.StatusOK, "the first user's task collection answered %d, want 200: %s", status, raw)
+	status, raw = c.do(http.MethodGet, listOf(tasksCollection), nil, nil)
+	c.requiref(status == http.StatusOK, "the first user's task list answered %d, want 200: %s", status, raw)
 	nour := c.getRec(personCollection, "nour")
 	c.requiref(nour.prop("name") == "Nour Haddad", "the first user's `nour` reads back %q", nour.prop("name"))
-	c.stepf("the first user's token still answers: the task collection is 200 and `nour` reads back unchanged")
+	c.stepf("the first user's token still answers: the task list is 200 and `nour` reads back unchanged")
 }
 
 // --- ISO-02 ----------------------------------------------------------------

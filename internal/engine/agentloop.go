@@ -968,10 +968,8 @@ func (l *agentLoop) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool
 		return l.dispatchQuery(ctx, args)
 	case tool.builtin == vocabulary.AgentToolPropose:
 		return l.dispatchPropose(ctx, args)
-	case tool.builtin == vocabulary.AgentToolGraphQL:
-		return l.dispatchGraphQL(ctx, args)
-	case tool.builtin == vocabulary.AgentToolMutate:
-		return l.dispatchMutate(ctx, args)
+	case tool.builtin == vocabulary.AgentToolWrite:
+		return l.dispatchWrite(ctx, args)
 	case tool.builtin == vocabulary.AgentToolAsk:
 		return l.dispatchAsk(ctx, args)
 	case tool.sub != nil:
@@ -1033,6 +1031,12 @@ func (s queryScope) allows(ident string) bool {
 
 // runQueryTool executes one `query` call and reports the rows it read, so the
 // caller's budget (the loop's, when there is one) stays the caller's business.
+//
+// The tool speaks the records route's grammar: `id` + `kind` reads one record,
+// `q` ranks, and otherwise `filter`/`orderBy`/`first`/`after`/`expand` list.
+// The allowlist holds every arm: a list that names no kinds lists the
+// allowlist, a kind outside it is refused by name, and an expanded referent
+// of a kind outside it is dropped from `included`.
 func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[string]any) (string, bool, int) {
 	if id, _ := args["id"].(string); id != "" {
 		// A get names the FULL identity: type + id. The type is
@@ -1061,67 +1065,141 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 		}
 		return toolJSON(map[string]any{"record": e}), true, 1
 	}
-	if q, _ := args["q"].(string); q != "" {
-		in := substrate.SearchInput{Q: q}
-		if k, ok := anyFloat(args["k"]); ok && int(k) > 0 {
-			in.K = int(k)
-		} else {
-			in.K = listDefaultFirst
+	q := substrate.Query{First: listDefaultFirst}
+	if raw, ok := args["filter"].(map[string]any); ok {
+		buf, _ := json.Marshal(raw)
+		// The SAME strict decode the REST route uses. A plain Unmarshal
+		// dropped a key it did not know, so a model that guessed the shape —
+		// `{"at": {"gte": …}}` instead of `{"properties": {"at": …}}` — got
+		// the whole collection back as if it had asked for it, and answered
+		// from it. A refusal naming the keys is the only honest answer.
+		if err := strictjson.DecodeBytes(buf, &q.Filter, false); err != nil {
+			return toolError(fmt.Sprintf("filter: %v. filter takes %s",
+				err, strings.Join(strictjson.Keys(substrate.Filter{}), ", "))), false, 0
 		}
-		in.K = min(in.K, scope.rows)
-		if types, _ := args["kinds"].([]any); len(types) > 0 {
-			for _, tv := range types {
-				ident := fmt.Sprint(tv)
-				if !scope.allows(ident) {
-					return toolError(ident + " is not in the reads allowlist"), false, 0
-				}
-				in.Kinds = append(in.Kinds, ident)
+	}
+	if first, ok := anyFloat(args["first"]); ok && int(first) > 0 {
+		q.First = int(first)
+	}
+	if text, _ := args["q"].(string); text != "" {
+		// The ranked arm is the route's: `q`, `mode`, `first` and
+		// `filter.kinds` alone, every other filter arm refused by name, since
+		// both ranking arms cap candidates before hydration and a predicate
+		// applied afterwards would not produce the filtered top-k.
+		if arm := rankedFilterArm(q.Filter); arm != "" {
+			return toolError("filter." + arm + " is not supported with q: a ranked read narrows by filter.kinds alone"), false, 0
+		}
+		in := substrate.SearchInput{Q: text, K: min(q.First, scope.rows)}
+		if m, _ := args["mode"].(string); m != "" {
+			in.Mode = substrate.SearchMode(m)
+		}
+		for _, ident := range q.Filter.Kinds {
+			ty, err := ds.resolveType(ident)
+			if err != nil {
+				return toolError(err.Error()), false, 0
 			}
-		} else {
+			if !scope.allows(ty.Identity) {
+				return toolError(ident + " is not in the reads allowlist"), false, 0
+			}
+			in.Kinds = append(in.Kinds, ty.Identity)
+		}
+		if len(in.Kinds) == 0 {
 			in.Kinds = scope.kinds
 		}
 		res, err := ds.Search(ctx, in)
 		if err != nil {
 			return toolError(err.Error()), false, 0
 		}
-		return toolJSON(map[string]any{"hits": res.Hits, "pending": res.Pending}), true, len(res.Hits)
+		return toolJSON(substrate.Ranked(res)), true, len(res.Hits)
 	}
-	ident, _ := args["kind"].(string)
-	if ident == "" {
-		return toolError("pass id, kind, or q"), false, 0
+	// `kind` is the one-kind shorthand for filter.kinds.
+	if ident, _ := args["kind"].(string); ident != "" && len(q.Filter.Kinds) == 0 {
+		q.Filter.Kinds = []string{ident}
 	}
-	ty, err := ds.resolveType(ident)
-	if err != nil {
-		return toolError(err.Error()), false, 0
+	if len(q.Filter.Kinds) == 0 {
+		// The allowlist IS the list when the call names no kinds: nil for a
+		// token, which lists the repository. Copied, because the loop below
+		// rewrites each entry to its identity and the allowlist is the agent's.
+		q.Filter.Kinds = append([]string(nil), scope.kinds...)
 	}
-	if !scope.allows(ty.Identity) {
-		return toolError(ident + " is not in the reads allowlist"), false, 0
-	}
-	q := substrate.Query{Filter: substrate.Filter{Kinds: []string{ty.Identity}}, First: listDefaultFirst}
-	if raw, ok := args["filter"].(map[string]any); ok {
-		buf, _ := json.Marshal(raw)
-		var f substrate.Filter
-		// The SAME strict decode the other two doors use. A plain Unmarshal
-		// dropped a key it did not know, so a model that guessed the shape —
-		// `{"at": {"gte": …}}` instead of `{"properties": {"at": …}}` — got
-		// the whole collection back as if it had asked for it, and answered
-		// from it. A refusal naming the keys is the only honest answer.
-		if err := strictjson.DecodeBytes(buf, &f, false); err != nil {
-			return toolError(fmt.Sprintf("filter: %v. filter takes %s",
-				err, strings.Join(strictjson.Keys(substrate.Filter{}), ", "))), false, 0
+	for i, ident := range q.Filter.Kinds {
+		ty, err := ds.resolveType(ident)
+		if err != nil {
+			return toolError(err.Error()), false, 0
 		}
-		f.Kinds = []string{ty.Identity}
-		q.Filter = f
+		if !scope.allows(ty.Identity) {
+			return toolError(ident + " is not in the reads allowlist"), false, 0
+		}
+		q.Filter.Kinds[i] = ty.Identity
 	}
-	if first, ok := anyFloat(args["first"]); ok && int(first) > 0 {
-		q.First = int(first)
+	if ref := q.Filter.Referencing; ref != nil {
+		// The target of a reverse read is held to the allowlist too: resolving
+		// it walks the target kind's former-id trail, and which ids became
+		// which is a fact about that kind an agent without the grant may not
+		// learn.
+		kind, _, ok := vocabulary.SplitRecordPath(ref.Ref)
+		if !ok {
+			return toolError("filter.referencing.ref must be a record path \"<kind>/<id>\""), false, 0
+		}
+		ty, err := ds.resolveType(kind)
+		if err != nil {
+			return toolError(err.Error()), false, 0
+		}
+		if !scope.allows(ty.Identity) {
+			return toolError(kind + " is not in the reads allowlist"), false, 0
+		}
+	}
+	if raw, ok := args["orderBy"]; ok && raw != nil {
+		buf, _ := json.Marshal(raw)
+		if err := strictjson.DecodeBytes(buf, &q.OrderBy, false); err != nil {
+			return toolError(fmt.Sprintf("orderBy: %v. orderBy is a list of {property, desc}", err)), false, 0
+		}
 	}
 	q.First = min(q.First, scope.rows)
+	q.After, _ = args["after"].(string)
+	if names, _ := args["expand"].([]any); len(names) > 0 {
+		for _, n := range names {
+			q.Expand = append(q.Expand, fmt.Sprint(n))
+		}
+	}
 	page, err := ds.List(ctx, q)
 	if err != nil {
 		return toolError(err.Error()), false, 0
 	}
-	return toolJSON(map[string]any{"records": page.Records}), true, len(page.Records)
+	for path, e := range page.Included {
+		if !scope.allows(e.Kind) {
+			delete(page.Included, path)
+		}
+	}
+	rows := len(page.Records) + len(page.Included)
+	if rows > scope.rows {
+		// The budget is rows returned, and an expansion is rows: a page that
+		// fits with referents that do not is refused whole rather than served
+		// past the ceiling or silently cut to a dangling graph.
+		return toolError(fmt.Sprintf("expand would return %d rows against a budget of %d; lower first or expand fewer properties",
+			rows, scope.rows)), false, 0
+	}
+	return toolJSON(page), true, rows
+}
+
+// rankedFilterArm names the first filter arm set beside `kinds`, or "": the
+// ranked arm admits `kinds` alone.
+func rankedFilterArm(f substrate.Filter) string {
+	switch {
+	case f.Implements != "":
+		return "implements"
+	case len(f.IDs) > 0:
+		return "ids"
+	case len(f.Properties) > 0:
+		return "properties"
+	case len(f.Labels) > 0:
+		return "labels"
+	case f.Deleted != nil:
+		return "deleted"
+	case f.Referencing != nil:
+		return "referencing"
+	}
+	return ""
 }
 
 // --- the propose built-in ---------------------------------------------------------

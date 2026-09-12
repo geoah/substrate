@@ -9,7 +9,8 @@
 
 import { queryOptions } from "@tanstack/react-query"
 
-import { corePath, request } from "./http"
+import { CORE_AUTHORITY, CORE_PACKAGE_NAME, request } from "./http"
+import { listPath } from "./records"
 import type { Page } from "./types"
 
 /** The repository record's own shape, the one property the console reads. */
@@ -26,7 +27,12 @@ async function fetchRepository(
 ): Promise<RepositoryInfo | undefined> {
   const page = await request<Page>(
     "GET",
-    `${corePath("repository")}?first=1`,
+    listPath({
+      authority: CORE_AUTHORITY,
+      package: CORE_PACKAGE_NAME,
+      name: "repository",
+      first: 1,
+    }),
     undefined,
     { signal }
   )

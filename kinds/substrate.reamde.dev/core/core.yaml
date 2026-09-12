@@ -43,7 +43,7 @@ data:
   authority: substrate.reamde.dev
   package: core
   # a maturity statement, not a routing key: no envelope carries a version.
-  version: 25
+  version: 26
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands

@@ -13,7 +13,6 @@ area/server:
       - any-glob-to-any-file:
           - internal/api/**
           - internal/engine/**
-          - internal/gql/**
           - internal/substrate/**
           - internal/catalog/**
           - internal/embed/**

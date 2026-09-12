@@ -35,11 +35,11 @@ import (
 const ReferenceValueKey = "ref"
 
 // ReferenceTargetField is the second reserved link-property name. It is not a
-// key of the stored value: the GraphQL object generated for a reference carries
-// `ref` (the path) beside `target` (the referent record itself), and the
-// declared link properties are written into that same object. A link property
-// spelled `target` would replace the referent field with its own value, so it is
-// refused in the declaration, where the author can rename it.
+// key of the stored value: it is held back so a reader that one day inlines a
+// referent beside `ref` in the reference object has a name that no declared
+// link property can already occupy. Today the records route's `expand` puts
+// referents in the page's `included` sidecar and writes nothing into the
+// value, so the reservation costs a declaration one word and nothing else.
 const ReferenceTargetField = "target"
 
 // KindRef renders a kind reference from its parts. An empty authority and
@@ -209,82 +209,6 @@ func CoreKind(name string) string { return PackageCore + "/" + name }
 // LLMKind renders an llm-package kind reference: the agent runtime's four data
 // kinds ("substrate.reamde.dev/llm/provider"), record 0077.
 func LLMKind(name string) string { return PackageLLM + "/" + name }
-
-// GraphQLName is the GraphQL object name a kind resolves to, and the ONE
-// place the rule lives (record 0058):
-//
-//   - a SHIPPED kind, the seed's (`source: builtin`), keeps its bare singular:
-//     "substrate.reamde.dev/core/token" -> Token;
-//   - every other kind carries its FULL authority, dots folded to underscores,
-//     then its package, then its singular:
-//     "samples.substrate.reamde.dev/tasks/task" ->
-//     Samples_substrate_reamde_dev_Tasks_Task. That is both an installed kind
-//     and a published one: a provider's declarations are a copy the repository
-//     holds, so they are named like one.
-//
-// The name is a function of the kind alone, never of its neighbors, so
-// installing a package cannot rename a kind that was already there, and both
-// readers (the schema builder in internal/gql and graphqlNameProblems in
-// load.go) call this function directly rather than a map built over the set.
-// The authority is always present rather than joined as a tie-break, because a
-// tie-break renames both sides when the second authority arrives and a query
-// written against the first name breaks. The underscore keeps every non-seed
-// name apart from the names core's bare singulars use. A reference with no
-// authority (a bare kind name) gets the bare singular, because prefixing an
-// empty authority would spell the `__` GraphQL reserves for introspection.
-// Two kinds that still spell one name are refused where the second
-// declaration lands (graphqlNameProblems, run by Finalize, Install and
-// InstallAll alike), never silently renamed.
-func GraphQLName(ref, source string) string {
-	authority, pkg, name := SplitKindRef(ref)
-	base := titleCase(name)
-	if base == "" {
-		return ""
-	}
-	if source == SourceBuiltin || authority == "" {
-		return base
-	}
-	return graphqlAuthority(authority) + "_" + titleCase(pkg) + "_" + base
-}
-
-// graphqlAuthority folds an authority into one GraphQL name segment, and the
-// fold is INJECTIVE: two distinct authorities never spell one segment, so the
-// one-name refusal is reachable only for the seed's bare singulars. The
-// authority grammar (authorityRE) is lowercase labels of letters, digits and
-// inner hyphens, joined by dots, and never carries an underscore, so the
-// underscore is the escape: `.` becomes `_`, `-` becomes `__`, and an
-// authority whose first character is a digit gains a leading `_` so the name
-// satisfies GraphQL's `^[_a-zA-Z][_a-zA-Z0-9]*$`. A run of underscores reads
-// back unambiguously because a hyphen never sits beside a dot. The first
-// letter is upper-cased. The console's graphqlAuthority
-// (web/console/src/lib/definition.ts) is this function in TypeScript and
-// must fold identically.
-func graphqlAuthority(authority string) string {
-	var out strings.Builder
-	if authority[0] >= '0' && authority[0] <= '9' {
-		out.WriteByte('_')
-	}
-	for _, r := range authority {
-		switch r {
-		case '.':
-			out.WriteByte('_')
-		case '-':
-			out.WriteString("__")
-		default:
-			out.WriteRune(r)
-		}
-	}
-	return titleCase(out.String())
-}
-
-// titleCase upper-cases the first rune and leaves the rest as declared, so a
-// camelCase local name keeps its humps.
-func titleCase(s string) string {
-	if s == "" {
-		return ""
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
-}
 
 // PackageActor is the writing hand a PACKAGE's own installed code carries:
 // `bundle:<authority>:<package>`, the same hand an install writes its

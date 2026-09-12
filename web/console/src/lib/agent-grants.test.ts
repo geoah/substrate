@@ -1,7 +1,7 @@
 /** The grant preconditions, asked of a document. Each of the three is here
  * twice, unpaid and paid, because a hint that never clears is as wrong as one
- * that never fires, and `graphql` is here to stay silent: declaring it IS its
- * grant, so it must never produce a hint.
+ * that never fires, and a function that is not a host function is here to stay
+ * silent: it carries no host grant, so it must never produce a hint.
  *
  * The grants live under `permissions` (`writes` and `reads`), and the messages
  * say those paths, because a hint that names a key the loader no longer knows
@@ -10,10 +10,9 @@
 import { describe, expect, it } from "vitest"
 
 import {
-  HOST_FUNCTION_GRAPHQL,
-  HOST_FUNCTION_MUTATE,
   HOST_FUNCTION_PROPOSE,
   HOST_FUNCTION_QUERY,
+  HOST_FUNCTION_WRITE,
   RECORD_PATCH_REQUEST_KIND,
   grantHints,
   hostToolsOf,
@@ -150,7 +149,7 @@ describe("grantHints", () => {
     expect(
       grantHints(
         agent({
-          ...tools(HOST_FUNCTION_MUTATE),
+          ...tools(HOST_FUNCTION_WRITE),
           emit: [WIDGET],
         })
       )
@@ -179,8 +178,8 @@ describe("grantHints", () => {
     ).toEqual([])
   })
 
-  it("mutate needs a non-empty write grant, whatever it names", () => {
-    const unpaid = grantHints(agent(tools(HOST_FUNCTION_MUTATE)))
+  it("write needs a non-empty write grant, whatever it names", () => {
+    const unpaid = grantHints(agent(tools(HOST_FUNCTION_WRITE)))
     expect(unpaid).toHaveLength(1)
     expect(unpaid[0].property).toBe("permissions.writes")
     expect(unpaid[0].message).toContain("data.permissions.writes")
@@ -188,24 +187,24 @@ describe("grantHints", () => {
     expect(
       grantHints(
         agent({
-          ...tools(HOST_FUNCTION_MUTATE),
+          ...tools(HOST_FUNCTION_WRITE),
           permissions: { writes: [WIDGET] },
         })
       )
     ).toEqual([])
   })
 
-  it("graphql is its own grant and never earns a hint", () => {
-    expect(grantHints(agent(tools(HOST_FUNCTION_GRAPHQL)))).toEqual([])
+  it("another authority's function carries no host grant and never earns a hint", () => {
+    expect(grantHints(agent(tools("crew.test.dev/crew/summarize")))).toEqual([])
   })
 
   it("reports every unmet grant of a document, one per tool", () => {
     const hints = grantHints(
-      agent(tools(HOST_FUNCTION_QUERY, HOST_FUNCTION_MUTATE))
+      agent(tools(HOST_FUNCTION_QUERY, HOST_FUNCTION_WRITE))
     )
     expect(hints.map((h) => h.function)).toEqual([
       HOST_FUNCTION_QUERY,
-      HOST_FUNCTION_MUTATE,
+      HOST_FUNCTION_WRITE,
     ])
   })
 })

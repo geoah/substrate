@@ -270,9 +270,10 @@ func TestBootUpgradeMovesTheLLMRowsOutOfCore(t *testing.T) {
 	// THE MOVED THREAD IS THE AGENT LOOP'S AGAIN: the transcript the loop reads
 	// is a filter on the message kind by the thread it points at, which is the
 	// read that saw nothing at all while the rows sat under the old kind.
-	filter := `?filter=` + `%7B%22properties%22%3A%7B%22thread%22%3A%7B%22eq%22%3A%22th-1%22%7D%7D%7D`
 	var page map[string]any
-	after.MustJSON(http.MethodGet, "/api/v1/"+llmPkg+"/message"+filter, nil, &page)
+	after.MustJSON(http.MethodGet, listPath(llmPkg+"/message", map[string]any{
+		"properties": map[string]any{"thread": map[string]any{"eq": "th-1"}},
+	}), nil, &page)
 	records, _ := page["records"].([]any)
 	if len(records) != 2 {
 		t.Fatalf("the moved thread's history is %d messages, want the 2 it was written with", len(records))
@@ -354,7 +355,7 @@ func changelogHead(t *testing.T, e *testenv.Env) int64 {
 	var page struct {
 		Head int64 `json:"head"`
 	}
-	e.MustJSON(http.MethodGet, "/api/v1/"+corePkg+"/kind?first=1", nil, &page)
+	e.MustJSON(http.MethodGet, listPath(corePkg+"/kind", nil)+"&first=1", nil, &page)
 	return page.Head
 }
 

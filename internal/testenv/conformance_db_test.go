@@ -39,8 +39,8 @@ const (
 	conformanceRef = conformanceAuthority + "/" + conformancePackage
 )
 
-// notesPath is the collection every record case writes to. A collection is
-// three segments now: authority, package, kind.
+// notesPath is the kind prefix every record case writes under; a record path is
+// it plus the id, and a list is /records with the kind under filter.
 const notesPath = "/api/v1/" + conformanceRef + "/note"
 
 // conformanceVocabulary declares the kind the record cases use and the
@@ -272,8 +272,8 @@ func conformanceCases() []codeCase {
 		run: func(t *testing.T, e *testenv.Env) {
 			// A token is a record, and the mint path is the only hand that
 			// writes one.
-			status, body := e.Do(http.MethodPost, "/api/v1/substrate.reamde.dev/core/token",
-				map[string]any{"id": "forged", "properties": map[string]any{"label": "forged"}})
+			status, body := e.Do(http.MethodPost, "/api/v1/records",
+				map[string]any{"kind": "substrate.reamde.dev/core/token", "properties": map[string]any{"label": "forged"}})
 			wantError(t, status, body, http.StatusForbidden, "forbidden")
 		},
 	}, {
@@ -293,7 +293,7 @@ func conformanceCases() []codeCase {
 		code: "auth",
 		run: func(t *testing.T, e *testenv.Env) {
 			// The same server and the same client; only the bearer changes.
-			status, body := e.WithToken("substrate_tok_nope").Do(http.MethodGet, notesPath, nil)
+			status, body := e.WithToken("substrate_tok_nope").Do(http.MethodGet, listPath(conformanceRef+"/note", nil), nil)
 			wantError(t, status, body, http.StatusUnauthorized, "auth")
 		},
 	}, {
@@ -368,7 +368,7 @@ func conformanceCases() []codeCase {
 			if err := e.Service.Close(); err != nil {
 				t.Fatalf("close the service: %v", err)
 			}
-			status, body, header := e.DoRaw(http.MethodGet, notesPath, nil, nil)
+			status, body, header := e.DoRaw(http.MethodGet, listPath(conformanceRef+"/note", nil), nil, nil)
 			wantError(t, status, body, http.StatusServiceUnavailable, "unavailable")
 			// Ruling A6: every unavailable carries Retry-After, the auth path
 			// included. e.Do cannot see headers, so this case builds its own

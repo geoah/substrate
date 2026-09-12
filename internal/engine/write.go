@@ -76,7 +76,7 @@ func (e *diffConflict) Unwrap() error { return e.err }
 
 // effectCeiling carries a bundle actor's EFFECTIVE emit set into a public
 // write. Every effect-application site stamps the ceiling on the transaction it
-// opens itself (setEffectEmit); the agent mutate built-in cannot, because it
+// opens itself (setEffectEmit); the agent write built-in cannot, because it
 // delegates to the public Put/Patch/Delete to keep schema admission, the kind
 // guards and the conflict annotation, and those open their transactions
 // internally — so it hands the ceiling down instead. A nil *effectCeiling is
@@ -86,7 +86,7 @@ func (e *diffConflict) Unwrap() error { return e.err }
 type effectCeiling struct {
 	emit []string
 	// changes, when set, collects the committed changelog entries of every
-	// transaction the ceiling stamps — the agent mutate tool's per-dispatch
+	// transaction the ceiling stamps — the agent write tool's per-dispatch
 	// record of what it wrote, stamped onto the tool's llm/message row.
 	changes *[]changeEntry
 	// policyDecision marks the engine's own judge-driven decision on a
@@ -474,7 +474,7 @@ func (ds *dataset) Patch(ctx context.Context, actor substrate.Actor, typ, id str
 }
 
 // patchBounded is Patch with an optional effect ceiling. It is the door an
-// agent's `mutate` accept goes through: the ceiling reaches applyEditDiff's
+// agent's `write` accept goes through: the ceiling reaches applyEditDiff's
 // authorizeRequestOp, which fails closed without one.
 func (ds *dataset) patchBounded(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput, ceiling *effectCeiling) (*substrate.Record, error) {
 	// A patch addressed at a schema record routes through admission: the

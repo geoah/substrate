@@ -2,7 +2,7 @@ package engine_test
 
 // What the console's "Add account" form reads and writes: a property may
 // carry a human `displayName` and a string `enum` of allowed `values`, both
-// survive the kind read the console and GraphQL consume, an out-of-enum value
+// survive the kind read the console consumes, an out-of-enum value
 // is refused on write, and an account's email is written by the OAuth facility
 // from the grant (writer: oauth) rather than typed by the owner.
 
@@ -36,7 +36,7 @@ func TestDisplayNameAndEnumValuesSurviveTheKindRead(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 
-	// The type read (the projection the console/GraphQL get) carries both the
+	// The type read (the projection the console gets) carries both the
 	// human label and the enum's allowed values.
 	row := mustGet(t, ds, "substrate.reamde.dev/core/kind", swPackage+"/gizmo")
 	props, _ := row.Properties["properties"].(map[string]any)

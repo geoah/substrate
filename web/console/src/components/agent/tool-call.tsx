@@ -65,7 +65,7 @@ export function ToolCallCard({ call }: { call: ToolCallView }) {
   const proposed = requestIdOf(call)
   // An ask's interaction renders as the form card, the same live-state rule.
   const asked = interactionIdOf(call)
-  // The dispatch's other writes (a mutate's records, a function's effects):
+  // The dispatch's other writes (a write's records, a function's effects):
   // the interaction and request rows already render as their cards, so they
   // are not chips.
   const changes = (call.changes ?? []).filter(

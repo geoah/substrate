@@ -209,8 +209,8 @@ export function corePath(name: string, id?: string): string {
 }
 
 /** A repository-wide endpoint that names no kind: `/api/v1/{segments}`. The
- * changefeed, the vocabulary apply, the blob store, GraphQL, the catalog, the
- * merge/split and the OAuth doors live at the version root, out of the kind
+ * changefeed, the records route, the vocabulary apply, the blob store, the
+ * catalog, the merge/split and the OAuth doors live at the version root, out of the kind
  * namespace, so nothing needs a separator to sit beside a collection (decision
  * 0033). */
 export function rootPath(...segments: string[]): string {

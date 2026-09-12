@@ -11,22 +11,37 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// The graphql/mutate built-ins and the hiddenFromChat withholding, against the
-// crew fixture (agents_db_test.go): archivist reads through graphql alone,
-// editor mutates within its widget-only emit, arbiter decides change requests
+// The query/write built-ins and the hiddenFromChat withholding, against the
+// crew fixture (agents_db_test.go): archivist reads through query alone,
+// editor writes within its widget-only emit, arbiter decides change requests
 // within its own, judge exists to be called.
 
 // taskKind is a kind OUTSIDE the crew authority's own vocabulary: the arbiter's
 // emit does not name it, so it is the confused-deputy target.
 const taskKind = "samples.substrate.reamde.dev/tasks/task"
 
-func gqlToolArgs(t *testing.T, m map[string]any) string {
+// toolArgs is one tool call's arguments as the wire carries them.
+func toolArgs(t *testing.T, m map[string]any) string {
 	t.Helper()
 	buf, err := json.Marshal(m)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return string(buf)
+}
+
+// writeArgs is one `write` call: op against (kind, id), the properties under
+// input the way the card teaches.
+func writeArgs(t *testing.T, op, kind, id string, props map[string]any) string {
+	t.Helper()
+	args := map[string]any{"op": op, "kind": kind}
+	if id != "" {
+		args["id"] = id
+	}
+	if props != nil {
+		args["input"] = map[string]any{"properties": props}
+	}
+	return toolArgs(t, args)
 }
 
 // lastToolMessage returns the newest role=tool row on a thread.
@@ -44,7 +59,7 @@ func lastToolMessage(t *testing.T, ds *dataset, threadID string) map[string]any 
 	return tool
 }
 
-func TestAgentGraphQLReads(t *testing.T) {
+func TestAgentQueryReads(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
@@ -54,9 +69,9 @@ func TestAgentGraphQLReads(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	fake.script("gql",
-		fakeTurn{calls: []fakeCall{{"graphql", gqlToolArgs(t, map[string]any{
-			"query": `{ records(filter: {kinds: ["crew.test.dev/crew/widget"]}, first: 5) { nodes { id kind } } }`,
+	fake.script("arch",
+		fakeTurn{calls: []fakeCall{{"query", toolArgs(t, map[string]any{
+			"filter": map[string]any{"kinds": []any{crewPackage + "/widget"}}, "first": 5,
 		})}}},
 		fakeTurn{content: "one widget"},
 	)
@@ -69,7 +84,7 @@ func TestAgentGraphQLReads(t *testing.T) {
 	}
 	tool := lastToolMessage(t, ds, res.Thread)
 	if tool["ok"] != true {
-		t.Fatalf("graphql read failed: %v", tool["content"])
+		t.Fatalf("query read failed: %v", tool["content"])
 	}
 	content, _ := tool["content"].(string)
 	if !strings.Contains(content, "w-listed") {
@@ -77,16 +92,14 @@ func TestAgentGraphQLReads(t *testing.T) {
 	}
 }
 
-func TestAgentGraphQLRefusesMutations(t *testing.T) {
+func TestAgentWithoutWriteToolCannotWrite(t *testing.T) {
 	t.Parallel()
-	// The chat-grade read tool holds at the AST: a mutation in its document
-	// is a tool error the model sees, and nothing lands.
+	// The archivist holds `query` alone: a `write` call is an unknown tool,
+	// a result the model sees, and nothing lands.
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	fake.script("gql",
-		fakeTurn{calls: []fakeCall{{"graphql", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-sneak", properties: {name: "no"}}) { id } }`,
-		})}}},
+	fake.script("arch",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-sneak", map[string]any{"name": "no"})}}},
 		fakeTurn{content: "refused, stopping"},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/archivist", "write one")
@@ -95,27 +108,25 @@ func TestAgentGraphQLRefusesMutations(t *testing.T) {
 	}
 	tool := lastToolMessage(t, ds, res.Thread)
 	if tool["ok"] != false {
-		t.Fatal("a mutation document passed the read-only gate")
+		t.Fatal("a write passed a read-only agent")
 	}
-	if content, _ := tool["content"].(string); !strings.Contains(content, "mutations are not allowed") {
+	if content, _ := tool["content"].(string); !strings.Contains(content, "unknown tool") {
 		t.Fatalf("refusal does not name the gate: %s", content)
 	}
 	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-sneak"); !errors.Is(err, substrate.ErrNotFound) {
-		t.Fatalf("the refused mutation landed: %v", err)
+		t.Fatalf("the refused write landed: %v", err)
 	}
 	if res.Effects != 0 {
 		t.Fatalf("effects tallied on a refusal: %+v", res)
 	}
 }
 
-func TestAgentMutateWritesWithinEmit(t *testing.T) {
+func TestAgentWriteWritesWithinEmit(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	fake.script("mut",
-		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-made", properties: {name: "made"}}) { id } }`,
-		})}}},
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-made", map[string]any{"name": "made"})}}},
 		fakeTurn{content: "made it"},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget")
@@ -127,11 +138,14 @@ func TestAgentMutateWritesWithinEmit(t *testing.T) {
 	}
 	tool := lastToolMessage(t, ds, res.Thread)
 	if tool["ok"] != true {
-		t.Fatalf("mutate failed: %v", tool["content"])
+		t.Fatalf("write failed: %v", tool["content"])
+	}
+	if content, _ := tool["content"].(string); !strings.Contains(content, `"record"`) || !strings.Contains(content, "w-made") {
+		t.Fatalf("the result does not carry the record as written: %s", content)
 	}
 	e, err := ds.Get(ctx, crewPackage+"/widget", "w-made")
 	if err != nil {
-		t.Fatalf("the mutation did not land: %v", err)
+		t.Fatalf("the write did not land: %v", err)
 	}
 	if e.Properties["name"] != "made" {
 		t.Fatalf("widget props: %+v", e.Properties)
@@ -146,19 +160,18 @@ func TestAgentMutateWritesWithinEmit(t *testing.T) {
 	}
 }
 
-func TestAgentMutateHoldsEmitAndRefusesMerge(t *testing.T) {
+func TestAgentWriteHoldsEmitAndRefusesUnknownOp(t *testing.T) {
 	t.Parallel()
 	// Editor's emit names widgets alone: a put outside it refuses naming the
-	// allowlist, and merge refuses on principle — both as results the model
-	// sees, with nothing applied.
+	// allowlist, and an op the tool does not offer (merge is the owner's
+	// decision) refuses by naming the three it does — both as results the
+	// model sees, with nothing applied.
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	fake.script("mut",
-		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "samples.substrate.reamde.dev/tasks/task", id: "t-sneak", properties: {title: "no"}}) { id } }`,
-		})}}},
-		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { merge(kind: "crew.test.dev/crew/widget", winner: "w-a", loser: "w-b") { id } }`,
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", taskKind, "t-sneak", map[string]any{"title": "no"})}}},
+		fakeTurn{calls: []fakeCall{{"write", toolArgs(t, map[string]any{
+			"op": "merge", "kind": crewPackage + "/widget", "id": "w-a",
 		})}}},
 		fakeTurn{content: "blocked twice"},
 	)
@@ -167,14 +180,14 @@ func TestAgentMutateHoldsEmitAndRefusesMerge(t *testing.T) {
 		t.Fatalf("call: %v", err)
 	}
 	if res.Effects != 0 {
-		t.Fatalf("a refused mutation tallied: %+v", res)
+		t.Fatalf("a refused write tallied: %+v", res)
 	}
 	msgs := threadMessages(t, ds, res.Thread)
 	var toolContents []string
 	for _, m := range msgs {
 		if m["role"] == "tool" {
 			if m["ok"] == true {
-				t.Fatalf("a gated mutation reported ok: %v", m["content"])
+				t.Fatalf("a gated write reported ok: %v", m["content"])
 			}
 			content, _ := m["content"].(string)
 			toolContents = append(toolContents, content)
@@ -186,15 +199,47 @@ func TestAgentMutateHoldsEmitAndRefusesMerge(t *testing.T) {
 	if !strings.Contains(toolContents[0], "effective emit allowlist") {
 		t.Fatalf("emit refusal does not name the gate: %s", toolContents[0])
 	}
-	if !strings.Contains(toolContents[1], "owner's decision") {
-		t.Fatalf("merge refusal does not name the owner: %s", toolContents[1])
+	if !strings.Contains(toolContents[1], "op must be put, patch or delete") {
+		t.Fatalf("the unknown op refusal does not name the three: %s", toolContents[1])
 	}
-	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "t-sneak"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, taskKind, "t-sneak"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the refused put landed: %v", err)
 	}
 }
 
-// --- deciding a change request through the mutate tool -----------------------
+func TestAgentWriteRefusesAnUnknownInputKey(t *testing.T) {
+	t.Parallel()
+	// `input` is decoded strictly: a property written straight onto it, the
+	// REST body's own mistake, is refused by name and the keys it takes.
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", toolArgs(t, map[string]any{
+			"op": "put", "kind": crewPackage + "/widget", "id": "w-flat",
+			"input": map[string]any{"name": "flat"},
+		})}}},
+		fakeTurn{content: "asked wrong"},
+	)
+	res, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	tool := lastToolMessage(t, ds, res.Thread)
+	if tool["ok"] == true {
+		t.Fatalf("a flat input was admitted: %v", tool["content"])
+	}
+	content, _ := tool["content"].(string)
+	for _, want := range []string{`unknown field \"name\"`, "properties"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("the refusal does not mention %q: %s", want, content)
+		}
+	}
+	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-flat"); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the refused put landed: %v", err)
+	}
+}
+
+// --- deciding a change request through the write tool ------------------------
 
 // putRequest lands one proposed patch request against a target, the way an app
 // or the API would.
@@ -213,23 +258,16 @@ func putRequest(t *testing.T, ds *dataset, id, targetKind, targetID string, diff
 	return e
 }
 
-// decideArgs is the mutate document that decides one request — the accept an
-// agent reviewer writes.
+// decideArgs is the write call that decides one request — the accept an agent
+// reviewer writes.
 func decideArgs(t *testing.T, id, decision string) string {
 	t.Helper()
-	return gqlToolArgs(t, map[string]any{
-		"query": `mutation Decide($id: ID!, $decision: JSON!) {
-			patch(kind: "substrate.reamde.dev/core/recordpatchrequest", id: $id, input: $decision) { id }
-		}`,
-		"variables": map[string]any{
-			"id": id, "decision": map[string]any{"properties": map[string]any{"decision": decision}},
-		},
-	})
+	return writeArgs(t, "patch", vocabulary.KindRecordPatchRequest, id, map[string]any{"decision": decision})
 }
 
-func TestAgentMutateDecidesRequestsWithinEmit(t *testing.T) {
+func TestAgentWriteDecidesRequestsWithinEmit(t *testing.T) {
 	t.Parallel()
-	// Accept and reject are SYMMETRIC through the mutate tool: the wrapper
+	// Accept and reject are SYMMETRIC through the write tool: the wrapper
 	// carries the agent's effective emit into the transaction, so an accept is
 	// bounded by that ceiling exactly like a function-tool effect — it applies
 	// when the target kind is in the emit, and refuses as a confused deputy when
@@ -254,9 +292,9 @@ func TestAgentMutateDecidesRequestsWithinEmit(t *testing.T) {
 	putRequest(t, ds, "req-reject", widget.Kind, widget.ID, map[string]any{"name": "worse"})
 
 	fake.script("arbiter",
-		fakeTurn{calls: []fakeCall{{"mutate", decideArgs(t, "req-accept", "accepted")}}},
-		fakeTurn{calls: []fakeCall{{"mutate", decideArgs(t, "req-deputy", "accepted")}}},
-		fakeTurn{calls: []fakeCall{{"mutate", decideArgs(t, "req-reject", "rejected")}}},
+		fakeTurn{calls: []fakeCall{{"write", decideArgs(t, "req-accept", "accepted")}}},
+		fakeTurn{calls: []fakeCall{{"write", decideArgs(t, "req-deputy", "accepted")}}},
+		fakeTurn{calls: []fakeCall{{"write", decideArgs(t, "req-reject", "rejected")}}},
 		fakeTurn{content: "decided"},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/arbiter", "work the inbox")
@@ -330,7 +368,7 @@ func TestAgentMutateDecidesRequestsWithinEmit(t *testing.T) {
 func TestTriggerFiresAgentThatAcceptsRequest(t *testing.T) {
 	t.Parallel()
 	// The whole loop, end to end: a proposed request fires a trigger, the agent
-	// it names decides it through the mutate tool, and the accepted diff lands
+	// it names decides it through the write tool, and the accepted diff lands
 	// on the target.
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
@@ -354,7 +392,7 @@ func TestTriggerFiresAgentThatAcceptsRequest(t *testing.T) {
 	}
 
 	fake.script("arbiter",
-		fakeTurn{calls: []fakeCall{{"mutate", decideArgs(t, "req-fired", "accepted")}}},
+		fakeTurn{calls: []fakeCall{{"write", decideArgs(t, "req-fired", "accepted")}}},
 		fakeTurn{content: "reviewed"},
 	)
 	putRequest(t, ds, "req-fired", widget.Kind, widget.ID, map[string]any{"name": "reviewed"})

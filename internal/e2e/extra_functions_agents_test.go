@@ -28,7 +28,7 @@ const (
 	// these travel percent-encoded through the one {name} path segment.
 	xfHostQuery   = "substrate.reamde.dev/core/query"
 	xfHostPropose = "substrate.reamde.dev/core/propose"
-	xfHostMutate  = "substrate.reamde.dev/core/mutate"
+	xfHostWrite   = "substrate.reamde.dev/core/write"
 
 	// The greeting AGN-02 reassembles out of the stream's deltas.
 	xfGreeting = "Hello. This reply arrived in pieces."
@@ -46,7 +46,7 @@ func init() {
 		xfCaseFunctionFault)
 	registerCase(520, "FN-03", "The host functions on the direct call API",
 		"`query` reads a record through the call API under the token's own reach, while `propose` and "+
-			"`mutate` are refused 403 because a direct call has no calling agent to bound their writes; "+
+			"`write` are refused 403 because a direct call has no calling agent to bound their writes; "+
 			"a bare host name is a 404 naming the full identity.",
 		xfCaseHostFunctions)
 	registerCase(550, "AGN-02", "Agent chat streams ndjson",
@@ -197,11 +197,12 @@ type xfChatEvent struct {
 // equality like any other string.
 func xfThreadMessages(c *C, thread string) []record {
 	c.t.Helper()
-	filter := url.QueryEscape(`{"properties":{"thread":{"eq":"substrate.reamde.dev/llm/thread/` + thread + `"}}}`)
-	var page struct {
-		Records []record `json:"records"`
+	filter := map[string]any{
+		"kinds":      []string{kindOf(xfMessageCollection)},
+		"properties": map[string]any{"thread": map[string]any{"eq": "substrate.reamde.dev/llm/thread/" + thread}},
 	}
-	status, raw := c.do(http.MethodGet, xfMessageCollection+"?first=50&filter="+filter, nil, &page)
+	var page recordsPage
+	status, raw := c.do(http.MethodGet, listWhere(filter, "first=50"), nil, &page)
 	c.requiref(status == http.StatusOK, "listing thread %s's messages answered %d: %s", thread, status, raw)
 	return page.Records
 }
@@ -294,7 +295,7 @@ func xfCaseHostFunctions(c *C) {
 		"the 404 does not name the full identity to use instead: %s", refusal.Error.Message)
 	c.stepf("the bare name `query` is a 404 naming `%s`: a host function answers its full identity alone", xfHostQuery)
 
-	// `propose` and `mutate` write, and their ceiling is the CALLING AGENT's
+	// `propose` and `write` write, and their ceiling is the CALLING AGENT's
 	// effective emit. A direct call has no calling agent, so there is no
 	// ceiling to apply and inventing one would turn a reviewed write into an
 	// unreviewed one. The inputs are WELL-FORMED on purpose: argument
@@ -305,9 +306,9 @@ func xfCaseHostFunctions(c *C) {
 			"op": "patch", "kind": taskKind, "target": "task-welcome-flow",
 			"diff": map[string]any{"properties": map[string]any{"priority": "low"}}, "rationale": "a direct call must not file this",
 		},
-		xfHostMutate: {"query": `mutation { patch(kind: "` + taskKind + `", id: "task-welcome-flow", input: {}) { id } }`},
+		xfHostWrite: {"op": "patch", "kind": taskKind, "id": "task-welcome-flow", "input": map[string]any{}},
 	}
-	for _, name := range []string{xfHostPropose, xfHostMutate} {
+	for _, name := range []string{xfHostPropose, xfHostWrite} {
 		status, raw = xfCall(c, name, inputs[name], nil)
 		c.requiref(status == http.StatusForbidden, "calling %s answered %d, want 403: %s", name, status, raw)
 		refusal = xfDecodeError(c, raw)
@@ -316,7 +317,7 @@ func xfCaseHostFunctions(c *C) {
 			strings.Contains(refusal.Error.Message, "call the agent"),
 			"the refusal of %s does not say whose grants bound it, or where it does work: %s", name, refusal.Error.Message)
 	}
-	c.stepf("`%s` and `%s` are both refused 403: a direct call carries no calling agent, so their writes have no ceiling and the refusal says to call an agent instead", xfHostPropose, xfHostMutate)
+	c.stepf("`%s` and `%s` are both refused 403: a direct call carries no calling agent, so their writes have no ceiling and the refusal says to call an agent instead", xfHostPropose, xfHostWrite)
 }
 
 // --- AGN-02 -------------------------------------------------------------

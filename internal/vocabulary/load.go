@@ -1257,9 +1257,9 @@ const maxDescription = 200
 
 // maxCallableDescription bounds a FUNCTION's description, and a function's is
 // not a tooltip either: it is the model-facing tool CARD, the whole text an LLM
-// reads before deciding to call. The four host functions' cards teach an entire
-// surface — the `graphql` one names every root, the batching advice and the two
-// refusals. Still one line: a folded scalar (`>-`) is how a declaration
+// reads before deciding to call. The host functions' cards teach an entire
+// surface — the `query` one names every arm of the records grammar. Still one
+// line: a folded scalar (`>-`) is how a declaration
 // wraps one.
 const maxCallableDescription = 1000
 
@@ -2317,7 +2317,6 @@ func (r *Registry) Finalize() error {
 		problems = append(problems, r.resolvePackage(g)...)
 	}
 	problems = append(problems, r.mappingInvariantProblems()...)
-	problems = append(problems, r.graphqlNameProblems()...)
 	if len(problems) > 0 {
 		return validationError(problems)
 	}
@@ -2328,22 +2327,18 @@ func (r *Registry) Finalize() error {
 }
 
 // Install adds an already-parsed package and resolves it, bumping the version
-// counter the GraphQL layer caches against.
+// counter readers fingerprint the registry by.
 func (r *Registry) Install(g *Package) error {
 	if err := r.add(g); err != nil {
 		return err
 	}
 	problems := r.resolvePackage(g)
 	// The registry-wide invariants re-run whole: a re-registration may add a
-	// mapping whose violation lives on an already-loaded kind, and it may
-	// claim a GraphQL name another package already answers to. Both are
-	// checked HERE and not only in Finalize, because the engine installs
-	// through this door alone (vocabularywrite.go): a collision it skipped
-	// would land in the store and take the whole repository's schema build
-	// down at the next read.
+	// mapping whose violation lives on an already-loaded kind. Checked HERE
+	// and not only in Finalize, because the engine installs through this door
+	// alone (vocabularywrite.go).
 	problems = append(problems, r.mappingInvariantProblems()...)
 	problems = append(problems, r.crossPackageMappingProblems([]*Package{g})...)
-	problems = append(problems, r.graphqlNameProblems()...)
 	if len(problems) > 0 {
 		r.remove(g.Identity)
 		return validationError(problems)
@@ -2382,7 +2377,6 @@ func (r *Registry) InstallAll(packages []*Package) error {
 	}
 	problems = append(problems, r.mappingInvariantProblems()...)
 	problems = append(problems, r.crossPackageMappingProblems(packages)...)
-	problems = append(problems, r.graphqlNameProblems()...)
 	if len(problems) > 0 {
 		for _, g := range packages {
 			r.remove(g.Identity)
@@ -2751,55 +2745,5 @@ func mslice(m map[string]any, k string) []any {
 	return v
 }
 
-// graphqlNameProblems is the DECLARATION-TIME uniqueness check on resolved
-// GraphQL names. Two kinds that resolve to one
-// GraphQL object name would make the schema unbuildable — or, worse, let a
-// later declaration rename an earlier one — so the SECOND declaration is
-// refused here, at the same moment every other narrowing refusal happens,
-// rather than at the next schema build. Finalize runs on the CANDIDATE
-// registry of every declaration write (engine/schemawrite.go), so this is
-// checked before any row lands.
-func (r *Registry) graphqlNameProblems() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	// The SAME rule the schema builder applies (internal/gql), asked of every
-	// kind: a name this refuses is a name that could not be built, and a name
-	// it admits is the one the schema will carry.
-	byName := map[string][]string{}
-	var problems []string
-	for _, t := range r.byIdent {
-		name := GraphQLName(t.Identity, t.Source)
-		if name == "" {
-			continue
-		}
-		// The authority fold is built to satisfy this pattern for every
-		// legal reference; the check stands so a name the schema builder
-		// would refuse is refused here, naming the kind, instead of at the
-		// next schema build where it takes every query down with it.
-		if !reGraphQLName.MatchString(name) {
-			problems = append(problems, fmt.Sprintf(
-				"graphql name %s of %s is not a GraphQL identifier (%s)",
-				name, t.Identity, reGraphQLName.String()))
-		}
-		byName[name] = append(byName[name], t.Identity)
-	}
-	for name, idents := range byName {
-		if len(idents) < 2 {
-			continue
-		}
-		sort.Strings(idents)
-		// Both identities are named in full. The authority fold is injective,
-		// so two non-seed kinds meet here only when their references are one
-		// reference; two SEED kinds meet on the bare singular.
-		problems = append(problems, fmt.Sprintf(
-			"graphql name %s is claimed by %s: one kind per GraphQL name; rename one kind or its package",
-			name, strings.Join(idents, " and ")))
-	}
-	sort.Strings(problems)
-	return problems
-}
-
 // Two bundles may share a first label: an actor carries the full authority
-// (record 0025), so the label is a display name and a GraphQL prefix. A real
-// collision is one GraphQL name claimed twice, which graphqlNameProblems
-// above refuses and names both kinds in.
+// (record 0025), so the label is a display name and nothing keys on it.

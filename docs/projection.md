@@ -277,8 +277,8 @@ loser's place in the graph:
 
 - **Nothing is re-pointed.** Every record that pointed at the loser still
   holds the loser's path, and every read of that path resolves to the winner
-  through the former-id trail, a source record's subject reference and the
-  winner's `incoming` list included. The winner absorbs the loser's place in
+  through the former-id trail, a source record's subject reference and a
+  `referencing` read at the winner included. The winner absorbs the loser's place in
   the graph by resolution, not by rewriting rows.
 - **Labels fill gaps**: the winner's stand, the loser's land where the winner
   has none. Annotations move too, colliding keys resolving newest-wins.
@@ -395,8 +395,7 @@ shared email address, scoring overlapping names, whatever the matcher
 decides), one request per strong candidate. The owner reviews the queue in
 the [console](console.md) and accepts or rejects, with the request's
 rationale beside a field-by-field comparison of the two records. Merging without a request is the same mutation driven directly:
-`merge` over [GraphQL](api.md#rest-and-graphql), or a REST post naming the kind
-and the two ids:
+a REST post naming the kind and the two ids:
 
 ```http
 POST /api/v1/merge
