@@ -111,7 +111,7 @@ var (
 		subjectKind, contactKind, memberKind, fileKind, oauthKind, googleConfig, googlePkg + "/account",
 		corePkg + "/llmprovider", corePkg + "/trigger", corePkg + "/recordmerge", corePkg + "/recordsplit",
 		corePkg + "/blob", corePkg + "/token", corePkg + "/credential", corePkg + "/recoverykey",
-		corePkg + "/repository", corePkg + "/run", corePkg + "/kind", corePkg + "/function",
+		corePkg + "/repository", corePkg + "/triggerrun", corePkg + "/kind", corePkg + "/function",
 		corePkg + "/recordmapping", corePkg + "/package", corePkg + "/bundle",
 	}
 	// drillTriggers are the triggers the drill writes; the provider install
@@ -809,7 +809,7 @@ func (d *drill) seedSource(t *testing.T) *testenv.Env {
 	d.dsnA = testdb.NewSchema(tb)
 	d.embed = newFakeEmbed(tb)
 
-	patched, shippedRun := patchedSeedTree(tb, "run.yaml")
+	patched, shippedRun := patchedSeedTree(tb, "triggerrun.yaml")
 	d.runVersion = shippedRun
 	first := testenv.Start(tb,
 		testenv.WithUser(drillAuthority, drillPassword),
@@ -819,8 +819,8 @@ func (d *drill) seedSource(t *testing.T) *testenv.Env {
 	if first.Repository != drillAuthority {
 		t.Fatalf("registered repository %q, want %q", first.Repository, drillAuthority)
 	}
-	if got := kindVersions(t, first)[corePkg+"/run"]; got != shippedRun-1 {
-		t.Fatalf("run declared at %d under the patched tree, want %d", got, shippedRun-1)
+	if got := kindVersions(t, first)[corePkg+"/triggerrun"]; got != shippedRun-1 {
+		t.Fatalf("triggerrun declared at %d under the patched tree, want %d", got, shippedRun-1)
 	}
 	first.Stop()
 
@@ -841,7 +841,7 @@ func (d *drill) seedSource(t *testing.T) *testenv.Env {
 	// token and the seed carry over the restart, as they would for a client.
 	d.envA.Session = first.Session
 	e := d.envA.For(t)
-	if got := kindVersions(t, e)[corePkg+"/run"]; got != shippedRun {
+	if got := kindVersions(t, e)[corePkg+"/triggerrun"]; got != shippedRun {
 		t.Errorf("the boot upgrade did not land: run declared at %d, want the shipped %d", got, shippedRun)
 	}
 	return e
