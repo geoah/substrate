@@ -24,7 +24,7 @@ RUN pnpm build
 # ---- go build -----------------------------------------------------------
 # Runs on the native build arch and cross-compiles, so the multi-arch build
 # never emulates the Go toolchain.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 ARG TARGETOS TARGETARCH
 # What this image will call itself when asked (discovery's `server.version`).
 # It has to be handed in: .dockerignore drops .git, so the toolchain records
