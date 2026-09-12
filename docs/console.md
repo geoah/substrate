@@ -117,7 +117,7 @@ and untaken together, with a quarantine badge on one that needs re-installing.
 WHOOP, Notion, Beeper) and their row's button is *Install*, under the
 authority that publishes them; the upgrade offer lands here. **Samples** are
 the vocabulary to copy (people, tasks, calendar, and the worked LLM, notes,
-web and pebble examples) and their button is *Import as yours*, with the row
+reading-list and pebble examples) and their button is *Import as yours*, with the row
 previewing the identity it will land under (`ada.example.com/tasks`) before it
 is pressed. A held copy is offered *Upgrade* too, through the import door,
 when the binary ships the sample at a newer version than the copy was taken

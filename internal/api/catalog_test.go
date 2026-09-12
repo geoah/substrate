@@ -17,7 +17,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const webBundleID = "samples.substrate.reamde.dev/web"
+const rlBundleID = "samples.substrate.reamde.dev/readinglist"
 
 // statusErrDataset is a fake dataset that DOES run the bundle lifecycle but
 // whose status reads fail — the repository/database fault review #11 must surface
@@ -38,7 +38,7 @@ func (d statusErrDataset) BundleStatus(context.Context, string) (substrate.Bundl
 // BundlePackage resolves, so the lifecycle gate passes and the status read is
 // what fails.
 func (d statusErrDataset) BundlePackage(context.Context, string) (string, error) {
-	return "samples.substrate.reamde.dev/web", nil
+	return "samples.substrate.reamde.dev/readinglist", nil
 }
 
 // statusErrService authenticates into a statusErrDataset, so the handler
@@ -231,18 +231,18 @@ func TestCatalogListReturnsShippedBundles(t *testing.T) {
 	}](t, rec)
 	var found bool
 	for _, item := range body.Items {
-		if item.ID == webBundleID {
+		if item.ID == rlBundleID {
 			found = true
-			if item.Name != "web" || item.Authority != "samples.substrate.reamde.dev" || item.Package != "web" || item.Version != 9 {
-				t.Errorf("web entry fields = %+v", item)
+			if item.Name != "readinglist" || item.Authority != "samples.substrate.reamde.dev" || item.Package != "readinglist" || item.Version != 10 {
+				t.Errorf("reading-list entry fields = %+v", item)
 			}
 			if item.Installed {
-				t.Error("web must not read installed on a fake dataset with no bundle lifecycle")
+				t.Error("readinglist must not read installed on a fake dataset with no bundle lifecycle")
 			}
 		}
 	}
 	if !found {
-		t.Fatalf("web bundle not in catalog list: %+v", body.Items)
+		t.Fatalf("reading-list bundle not in catalog list: %+v", body.Items)
 	}
 }
 
@@ -266,7 +266,7 @@ func TestCatalogListCarriesTheTier(t *testing.T) {
 	}](t, rec)
 	want := map[string]string{
 		googleBundleID: substrate.TierProvider,
-		webBundleID:    substrate.TierSample,
+		rlBundleID:     substrate.TierSample,
 	}
 	seen := map[string]bool{}
 	for _, item := range body.Items {
@@ -305,7 +305,7 @@ func TestCatalogImportRefusesAProvider(t *testing.T) {
 func TestCatalogImportRefusesNonOwner(t *testing.T) {
 	env := newCatalogEnv(t)
 	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(webBundleID)+"/import", tok, nil,
+	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(rlBundleID)+"/import", tok, nil,
 		actorHeader, "reader.substrate.reamde.dev")
 	wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
 }
@@ -326,10 +326,10 @@ func TestCatalogImportUnknownNamesTheBundle(t *testing.T) {
 func TestCatalogDetailPreviewsTheClosure(t *testing.T) {
 	env := newCatalogEnv(t)
 	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(webBundleID), tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(rlBundleID), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	item := decodeJSON[substrate.CatalogItem](t, rec)
-	if len(item.Closure.Functions) != 4 || len(item.Closure.Records) != 4 {
+	if len(item.Closure.Functions) != 4 || len(item.Closure.Records) != 6 {
 		t.Errorf("closure = %+v", item.Closure)
 	}
 }
@@ -354,7 +354,7 @@ func TestCatalogListSurfacesStatusReadFailure(t *testing.T) {
 func TestCatalogDetailSurfacesStatusReadFailure(t *testing.T) {
 	env := newStatusErrEnv(t)
 	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(webBundleID), tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(rlBundleID), tok, nil)
 	wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)
 }
 
@@ -365,7 +365,7 @@ func TestCatalogDetailSurfacesStatusReadFailure(t *testing.T) {
 func TestCatalogInstallRefusesNonOwner(t *testing.T) {
 	env := newCatalogEnv(t)
 	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(webBundleID)+"/install", tok, nil,
+	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(rlBundleID)+"/install", tok, nil,
 		actorHeader, "reader.substrate.reamde.dev")
 	wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
 }
@@ -384,7 +384,7 @@ type heldDataset struct {
 }
 
 func (d heldDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus, error) {
-	st := substrate.BundleStatus{ID: d.id, Name: "web", Installed: true, Enabled: true}
+	st := substrate.BundleStatus{ID: d.id, Name: "readinglist", Installed: true, Enabled: true}
 	if d.origin != "" {
 		st.Origin, st.OriginVersion, st.Modified = d.origin, 8, true
 	}
@@ -432,8 +432,8 @@ func newHeldEnv(t *testing.T, id string) *testEnv {
 		t.Fatalf("load catalog: %v", err)
 	}
 	origin := ""
-	if strings.HasSuffix(id, "/web") {
-		origin = webBundleID
+	if strings.HasSuffix(id, "/readinglist") {
+		origin = rlBundleID
 	}
 	return newHeldEnvFor(t, cat, id, origin)
 }
@@ -479,22 +479,22 @@ func TestCatalogKeepsThePreviewOfAnEditedCopy(t *testing.T) {
 			} `json:"items"`
 		}](t, rec)
 		for _, item := range body.Items {
-			if item.ID == webBundleID {
+			if item.ID == rlBundleID {
 				return item.Upgrade
 			}
 		}
-		t.Fatalf("the listing does not carry %s", webBundleID)
+		t.Fatalf("the listing does not carry %s", rlBundleID)
 		return nil
 	}
 	edited := &substrate.BundleUpgrade{
 		DiscardsEdits:  true,
 		ConversionPlan: substrate.ConversionPlan{PlanHash: "d15c", ChangelogSeq: 9},
 	}
-	up := read(newHeldEnvWithPlan(t, cat, "geoah.example.com/web", webBundleID, edited))
+	up := read(newHeldEnvWithPlan(t, cat, "geoah.example.com/readinglist", rlBundleID, edited))
 	if up == nil || !up.DiscardsEdits || up.Available || up.PlanHash != "d15c" || up.ChangelogSeq != 9 {
 		t.Fatalf("an edited copy's entry carries %+v, want the discarding preview with its hash", up)
 	}
-	if up := read(newHeldEnvWithPlan(t, cat, "geoah.example.com/web", webBundleID, &substrate.BundleUpgrade{})); up != nil {
+	if up := read(newHeldEnvWithPlan(t, cat, "geoah.example.com/readinglist", rlBundleID, &substrate.BundleUpgrade{})); up != nil {
 		t.Errorf("a preview with nothing to say rides the entry: %+v", up)
 	}
 }
@@ -609,8 +609,8 @@ func installedFor(t *testing.T, env *testEnv, id string) bool {
 // what the listing has to look for.
 func TestCatalogReportsAnImportedSampleInstalled(t *testing.T) {
 	// The fake repository's authority is <name>.example.com.
-	env := newHeldEnv(t, "geoah.example.com/web")
-	if !installedFor(t, env, webBundleID) {
+	env := newHeldEnv(t, "geoah.example.com/readinglist")
+	if !installedFor(t, env, rlBundleID) {
 		t.Error("an imported sample reads as available, so the console offers it again")
 	}
 }
@@ -620,7 +620,7 @@ func TestCatalogReportsAnImportedSampleInstalled(t *testing.T) {
 // status computed it; the entry carries it so the Registry can say "imported
 // at 8, edited" without a second read.
 func TestCatalogCarriesTheHeldCopyProvenance(t *testing.T) {
-	env := newHeldEnv(t, "geoah.example.com/web")
+	env := newHeldEnv(t, "geoah.example.com/readinglist")
 	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
@@ -634,9 +634,9 @@ func TestCatalogCarriesTheHeldCopyProvenance(t *testing.T) {
 	}](t, rec)
 	for _, item := range body.Items {
 		switch item.ID {
-		case webBundleID:
-			if item.Origin != webBundleID || item.OriginVersion != 8 || !item.Modified {
-				t.Errorf("held web entry provenance = %+v, want origin %s v8 modified", item, webBundleID)
+		case rlBundleID:
+			if item.Origin != rlBundleID || item.OriginVersion != 8 || !item.Modified {
+				t.Errorf("held reading-list entry provenance = %+v, want origin %s v8 modified", item, rlBundleID)
 			}
 		default:
 			if item.Origin != "" || item.OriginVersion != 0 || item.Modified {
@@ -646,41 +646,42 @@ func TestCatalogCarriesTheHeldCopyProvenance(t *testing.T) {
 	}
 }
 
-// otherWebBundleID is a second SAMPLE of the package word `web`, published by
-// another authority: both land as `<home>/web`, so the landed id alone cannot
-// say which one a repository imported.
-const otherWebBundleID = "other.example.com/web"
+// otherReadinglistBundleID is a second SAMPLE of the package word
+// `readinglist`, published by another authority: both land as
+// `<home>/readinglist`, so the landed id alone cannot say which one a
+// repository imported.
+const otherReadinglistBundleID = "other.example.com/readinglist"
 
-// catalogWithOtherWeb is the shipped catalog plus a second sample root
-// carrying otherWebBundleID.
-func catalogWithOtherWeb(t *testing.T) *catalog.Catalog {
+// catalogWithOtherReadinglist is the shipped catalog plus a second sample
+// root carrying otherReadinglistBundleID.
+func catalogWithOtherReadinglist(t *testing.T) *catalog.Catalog {
 	t.Helper()
 	other := fstest.MapFS{
-		"web/bundle.yaml": &fstest.MapFile{Data: []byte(`
+		"readinglist/bundle.yaml": &fstest.MapFile{Data: []byte(`
 kind: substrate.reamde.dev/core/package
 metadata:
-  id: other.example.com/web
+  id: other.example.com/readinglist
 data:
   authority: other.example.com
-  package: web
+  package: readinglist
   version: 2
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
-  id: other.example.com/web
+  id: other.example.com/readinglist
 data:
   authority: other.example.com
-  package: web
-  description: another authority's web sample
+  package: readinglist
+  description: another authority's reading-list sample
   installs:
-    - other.example.com/web/page
+    - other.example.com/readinglist/page
 ---
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: other.example.com/web/page
+  id: other.example.com/readinglist/page
 data:
   authority: other.example.com
-  package: web
+  package: readinglist
   names:
     singular: page
   properties:
@@ -692,8 +693,8 @@ data:
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
-	if _, ok := cat.ByID(otherWebBundleID); !ok {
-		t.Fatalf("the second web sample did not load: %v", cat.Warnings())
+	if _, ok := cat.ByID(otherReadinglistBundleID); !ok {
+		t.Fatalf("the second reading-list sample did not load: %v", cat.Warnings())
 	}
 	return cat
 }
@@ -733,14 +734,14 @@ func provenanceFor(t *testing.T, env *testEnv, id string) (installed bool, origi
 }
 
 // Two samples of one package word from two authorities both land as
-// `<home>/web`. The copy's ORIGIN says which one was imported, so only that
+// `<home>/readinglist`. The copy's ORIGIN says which one was imported, so only that
 // entry reads installed and carries the provenance; the other is still on
 // offer.
 func TestCatalogMatchesAnImportedSampleByItsOrigin(t *testing.T) {
-	cat := catalogWithOtherWeb(t)
-	for _, imported := range []string{webBundleID, otherWebBundleID} {
-		env := newHeldEnvFor(t, cat, "geoah.example.com/web", imported)
-		for _, id := range []string{webBundleID, otherWebBundleID} {
+	cat := catalogWithOtherReadinglist(t)
+	for _, imported := range []string{rlBundleID, otherReadinglistBundleID} {
+		env := newHeldEnvFor(t, cat, "geoah.example.com/readinglist", imported)
+		for _, id := range []string{rlBundleID, otherReadinglistBundleID} {
 			installed, origin := provenanceFor(t, env, id)
 			if id == imported {
 				if !installed || origin != imported {
@@ -759,8 +760,8 @@ func TestCatalogMatchesAnImportedSampleByItsOrigin(t *testing.T) {
 // landed id is all there is to match on: both entries read installed, as
 // they did before, and neither carries provenance.
 func TestCatalogFallsBackToTheLandedIDForAnUnstampedCopy(t *testing.T) {
-	env := newHeldEnvFor(t, catalogWithOtherWeb(t), "geoah.example.com/web", "")
-	for _, id := range []string{webBundleID, otherWebBundleID} {
+	env := newHeldEnvFor(t, catalogWithOtherReadinglist(t), "geoah.example.com/readinglist", "")
+	for _, id := range []string{rlBundleID, otherReadinglistBundleID} {
 		installed, origin := provenanceFor(t, env, id)
 		if !installed || origin != "" {
 			t.Errorf("entry %s installed=%v origin=%q, want installed with no provenance", id, installed, origin)
@@ -772,8 +773,8 @@ func TestCatalogFallsBackToTheLandedIDForAnUnstampedCopy(t *testing.T) {
 // door while the providers name sample packages under `requires:`. The listing
 // has to see that one too, or the console offers an install that already ran.
 func TestCatalogReportsAVerbatimInstalledSampleInstalled(t *testing.T) {
-	env := newHeldEnvFor(t, catalogWithOtherWeb(t), webBundleID, "")
-	if !installedFor(t, env, webBundleID) {
+	env := newHeldEnvFor(t, catalogWithOtherReadinglist(t), rlBundleID, "")
+	if !installedFor(t, env, rlBundleID) {
 		t.Error("a verbatim-installed sample reads as available, so the console offers it again")
 	}
 }
@@ -782,7 +783,7 @@ func TestCatalogReportsAVerbatimInstalledSampleInstalled(t *testing.T) {
 // make everything look installed.
 func TestCatalogReportsAnUntakenSampleAvailable(t *testing.T) {
 	env := newHeldEnv(t, googleBundleID)
-	if installedFor(t, env, webBundleID) {
+	if installedFor(t, env, rlBundleID) {
 		t.Error("a sample this repository does not have reads as installed")
 	}
 }

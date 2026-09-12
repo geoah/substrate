@@ -5,14 +5,14 @@ import (
 	"testing"
 )
 
-// The URL-harvester example ships two files and a README that says to install
-// them with `substratectl apply -f bundle.yaml -f triggers.yaml`. This drives the
-// EXACT shipped files through the real CLI apply path — schema batch for the
-// bundle closure, the resolver for each trigger — so "shipped example" means
+// The reading-list example ships four files and a README that says to install
+// them with one `substratectl apply`. This drives the EXACT shipped files
+// through the real CLI apply path: one vocabulary batch for the closure, and
+// the resolver for each data record. "Shipped example" has to mean
 // installable, not just green in an engine test that bypasses the resolver.
-const exampleDir = "../../../samples/web"
+const exampleDir = "../../../samples/readinglist"
 
-func TestShippedURLHarvesterExampleApplies(t *testing.T) {
+func TestShippedReadingListExampleApplies(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	// triggers.yaml is data in substrate.reamde.dev/core; the real resolver needs the
@@ -20,10 +20,17 @@ func TestShippedURLHarvesterExampleApplies(t *testing.T) {
 	// schema kinds and rides the batch verb without a registry lookup.
 	h.fake.extraTypes = []map[string]any{
 		typeRecord("trigger", "substrate.reamde.dev/core", "builtin", nil),
+		typeRecord("setting", "substrate.reamde.dev/core", "builtin", nil),
+		// The closure's own kind, as the registry would hold it once the
+		// batch above landed: digest.yaml is a record OF the thing this very
+		// apply declared.
+		typeRecord("digest", "samples.substrate.reamde.dev/readinglist", "installed", nil),
 	}
 
 	out, errOut, err := h.run("apply",
 		"-f", exampleDir+"/bundle.yaml",
+		"-f", exampleDir+"/settings.yaml",
+		"-f", exampleDir+"/digest.yaml",
 		"-f", exampleDir+"/triggers.yaml")
 	if err != nil {
 		t.Fatalf("apply of the shipped example failed: %v\nstdout:\n%s\nstderr:\n%s", err, out, errOut)
@@ -48,8 +55,8 @@ func TestShippedURLHarvesterExampleApplies(t *testing.T) {
 	// The four triggers each resolved through the real `type: trigger` path and
 	// were PUT into substrate.reamde.dev/core/trigger.
 	for _, id := range []string{
-		"web-findurls-on-message", "web-fetch-on-page",
-		"web-classify-on-page", "web-rollup-weekly",
+		"readinglist-findurls-on-message", "readinglist-fetch-on-page",
+		"readinglist-classify-on-page", "readinglist-rollup-weekly",
 	} {
 		want := "PUT " + triggerColPath + "/" + id
 		var saw bool

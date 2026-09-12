@@ -824,7 +824,7 @@ export interface SetupItem {
  * read (substrate.BundleStatus). */
 export interface BundleStatus {
   /** The bundle's id — the PACKAGE it is named for
-   * ("samples.substrate.reamde.dev/web"). */
+   * ("acme.example.com/reader"). */
   id: string
   name: string
   authority: string

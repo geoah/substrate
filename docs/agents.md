@@ -35,15 +35,15 @@ like every other core kind. Its runtime vocabulary lives in core beside it —
 
 ## The manifest
 
-Here is the URL harvester's classifier, the agent a freshly fetched page is
+Here is the reading-list sample's classifier, the agent a freshly fetched page is
 handed to:
 
 ```yaml
 kind: substrate.reamde.dev/core/agent
-metadata: {id: samples.substrate.reamde.dev/web/pageclassifier}
+metadata: {id: samples.substrate.reamde.dev/readinglist/pageclassifier}
 data:
   authority: samples.substrate.reamde.dev
-  package: web
+  package: readinglist
   description: Classify a fetched page and route it to the reading-list agent.
   prompt: |
     You are the page classifier. Read the page in the first message, decide
@@ -52,12 +52,12 @@ data:
   provider: default
   model: anthropic/claude-opus-5
   tools:
-    - function: samples.substrate.reamde.dev/web/setclass
-  subagents: [samples.substrate.reamde.dev/web/readinglistagent]
+    - function: samples.substrate.reamde.dev/readinglist/setclass
+  subagents: [samples.substrate.reamde.dev/readinglist/curator]
   budgets: {maxTurns: 4, maxToolCalls: 8, depth: 3}
   permissions:
     writes:
-      - samples.substrate.reamde.dev/web/page
+      - samples.substrate.reamde.dev/readinglist/page
       - substrate.reamde.dev/core/recordpatchrequest
 ```
 
@@ -105,17 +105,17 @@ function's delivery rides; only the `callable` reference names the other kind:
 
 ```yaml
 kind: substrate.reamde.dev/core/trigger
-metadata: {id: web-classify-on-page}
+metadata: {id: readinglist-classify-on-page}
 data:
   properties:
     enabled: true
     source:
       record:
-        kinds: [samples.substrate.reamde.dev/web/page]
+        kinds: [samples.substrate.reamde.dev/readinglist/page]
         ops: [update]
         when: 'record != null && record.properties.fetch == "fetched" && !("class"
           in record.properties)'
-    callable: substrate.reamde.dev/core/agent/samples.substrate.reamde.dev/web/pageclassifier
+    callable: substrate.reamde.dev/core/agent/samples.substrate.reamde.dev/readinglist/pageclassifier
 ```
 
 Because vocabulary is records, a parsed agent projects to a row the console
@@ -144,7 +144,7 @@ ships — so an agent names one exactly as it names a bundle's function:
   tools:
     - function: substrate.reamde.dev/core/graphql
     - function: substrate.reamde.dev/core/propose
-    - function: samples.substrate.reamde.dev/web/setclass
+    - function: samples.substrate.reamde.dev/readinglist/setclass
 ```
 
 Three older spellings are refused, each naming its replacement. A bare string

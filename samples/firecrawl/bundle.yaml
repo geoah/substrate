@@ -47,7 +47,7 @@ data:
 # ---- the webdocument type: what a scrape leaves behind ---------------------
 # scrapepage's durable output, owned by THIS package (a bundle's effects stay
 # inside its own package's types — it never writes another bundle's, e.g. the
-# web harvester's page). `title` is the reserved built-in (scrapepage writes
+# reading-list sample's page). `title` is the reserved built-in (scrapepage writes
 # it); the id is host.ids.url(url), so re-scraping the same URL updates one
 # document instead of minting a second.
 kind: substrate.reamde.dev/core/kind

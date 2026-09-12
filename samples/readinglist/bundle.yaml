@@ -1,16 +1,19 @@
-# The URL-harvester bundle — the substrate's shipped conformance example
+# The reading-list bundle — the substrate's shipped conformance example
 # (substrate-primitives §8). It composes ONLY from the primitive set:
 # bundle + kind + trait + function + agent + trigger + llmprovider. No workflow,
 # connector, link, or reflection primitive appears anywhere — that is the whole
 # point of the gate.
 #
-# Install:  substratectl apply -f bundle.yaml -f triggers.yaml
-# Configure: create a config record (denyDomains + firecrawlKey); the
-#   `connector` input resolves it: the sole record, the one named `default`,
-#   or an explicitly bound one.
+# Install:  substratectl apply -f bundle.yaml -f settings.yaml -f digest.yaml \
+#             -f triggers.yaml
+# Configure: nothing has to be filled in. The one knob is the `denyDomains`
+#   setting the bundle ships (settings.yaml), which findurls reads as
+#   `config.settings.denyDomains` (decision record 0076).
 #
-# This file is the SCHEMA closure (the atomic install unit). The delivery
-# wiring lives beside it in triggers.yaml as ordinary data records.
+# This file is the SCHEMA closure (the atomic install unit). The one setting,
+# the empty digest the rollup writes on and the delivery wiring live beside
+# it, in settings.yaml, digest.yaml and triggers.yaml, as ordinary data
+# records.
 #
 # OUT OF THE STABLE SET (decision record 0015): this bundle is a worked
 # example, not shipped vocabulary. Its declarations may change or leave
@@ -21,11 +24,11 @@
 # metadata.id.
 kind: substrate.reamde.dev/core/package
 metadata:
-  id: samples.substrate.reamde.dev/web
+  id: samples.substrate.reamde.dev/readinglist
 data:
   authority: samples.substrate.reamde.dev
-  package: web
-  version: 9
+  package: readinglist
+  version: 10
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -33,83 +36,71 @@ data:
 # equal both ways.
 kind: substrate.reamde.dev/core/bundle
 metadata:
-  id: samples.substrate.reamde.dev/web
+  id: samples.substrate.reamde.dev/readinglist
 data:
   authority: samples.substrate.reamde.dev
-  package: web
+  package: readinglist
   description: >-
-    Harvests URLs out of any message, fetches each page, classifies it, and
-    proposes reading-list and weekly-digest notes — the substrate's end-to-end
-    conformance example.
-  # The one declared input: the connector record the function bodies read.
-  # `inject: functions` hands the resolved record (secrets resolved) to every
-  # function invocation under config.inputs.connector.
-  inputs:
-    connector:
-      kind: samples.substrate.reamde.dev/web/config
-      inject: functions
-      description: the deny list, the fetch credential and the newest digest
-  # The harvester subscribes to conversation messages (triggers.yaml), so the
+    Pulls the links out of your chats, has an agent say what sort of page
+    each is, and proposes what to save and a weekly digest. The fetch is a
+    stub: it invents the text rather than going to the web.
+  # NO declared input: the one knob is the core `setting` record this bundle
+  # ships (settings.yaml), injected into every invocation under
+  # config.settings by the id prefix it carries (decision record 0076).
+  # findurls subscribes to conversation messages (triggers.yaml), so the
   # messaging vocabulary has to be imported first.
   requires:
     - samples.substrate.reamde.dev/messaging
   requiresAtLeast:
     samples.substrate.reamde.dev/messaging: 5
   installs:
-    - samples.substrate.reamde.dev/web/config
-    - samples.substrate.reamde.dev/web/page
-    - samples.substrate.reamde.dev/web/findurls
-    - samples.substrate.reamde.dev/web/fetchpage
-    - samples.substrate.reamde.dev/web/setclass
-    - samples.substrate.reamde.dev/web/stampconfig
-    - samples.substrate.reamde.dev/web/pageclassifier
-    - samples.substrate.reamde.dev/web/readinglistagent
-    - samples.substrate.reamde.dev/web/weeklyrollup
+    - samples.substrate.reamde.dev/readinglist/digest
+    - samples.substrate.reamde.dev/readinglist/page
+    - samples.substrate.reamde.dev/readinglist/findurls
+    - samples.substrate.reamde.dev/readinglist/fetchpage
+    - samples.substrate.reamde.dev/readinglist/setclass
+    - samples.substrate.reamde.dev/readinglist/stampdigest
+    - samples.substrate.reamde.dev/readinglist/pageclassifier
+    - samples.substrate.reamde.dev/readinglist/curator
+    - samples.substrate.reamde.dev/readinglist/weeklyrollup
 ---
-# ---- the config type: the `connector` input's kind ------------------------
-# denyDomains gates the harvester; firecrawlKey is the (unused-in-this-stub)
-# fetch credential, carried as a secret so it never reads back. Records of
-# this kind are ordinary (any number may exist); the bundle's `connector`
-# input picks the one the functions see.
+# ---- the digest: what the weekly rollup writes ----------------------------
+# A record, not a setting: a setting is what the OWNER fills in, and this is
+# what a run produces. The bundle's own knob (`denyDomains`) is the core
+# `setting` in settings.yaml, which no function here writes. ONE empty digest
+# ships with the closure (digest.yaml, id `latest`), because a patch of a
+# record that is not there is refused: the rollup has something to write on
+# from the first Monday.
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: samples.substrate.reamde.dev/web/config
+  id: samples.substrate.reamde.dev/readinglist/digest
 data:
   authority: samples.substrate.reamde.dev
-  package: web
+  package: readinglist
   description: >-
-    This bundle's configuration record: the URL substrings that are never
-    harvested, the page-fetch credential, and the newest weekly digest a rollup
-    produced.
+    A summary of the pages harvested over one week, written when you accept
+    the weekly rollup's proposal.
   names:
-    singular: config
+    singular: digest
+  displayTemplate: "{summary}"
   properties:
-    denyDomains:
-      type: string
-      repeated: true
-      description: a URL containing any of these substrings is never harvested
-    firecrawlKey:
-      type: secret
-      description: the page-fetch API key (placeholder — the stub fetch uses
-        none)
-    lastDigest:
-      type: string
-      description: the newest weekly digest text, filled when a rollup is
-        accepted
+    summary:
+      type: text
+      description: the digest itself, as prose
 ---
 # ---- the page record type -------------------------------------------------
 # `title` is the reserved built-in (fetchpage writes it); `source` is an
 # unpinned reference back at whatever message carried the URL.
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: samples.substrate.reamde.dev/web/page
+  id: samples.substrate.reamde.dev/readinglist/page
 data:
   authority: samples.substrate.reamde.dev
-  package: web
+  package: readinglist
   description: >-
-    One harvested web page: where it came from, the fetched markdown, the
-    classifier's verdict and whether a reading-list proposal for it was accepted.
-    Its id is a hash of the URL, so re-harvesting updates one row.
+    One page picked up from a link: where the link came from, the page's text,
+    what sort of thing it is, and whether you said to save it. Its id is a
+    hash of the URL, so the same link never lands twice.
   names:
     singular: page
   properties:
@@ -137,21 +128,21 @@ data:
 ---
 # ---- function: findurls ---------------------------------------------------
 # Walks every string property of the triggering record, extracts URLs, honors
-# denyDomains from the injected `connector` input, and mints one pending page
-# per allowed URL with put-if-absent — so re-feeding the same message re-mints
-# nothing. The input arrives injected (config.inputs.connector); an unresolved
-# input's key is simply absent and the deny list falls back empty.
+# the denyDomains setting, and mints one pending page per allowed URL with
+# put-if-absent — so re-feeding the same message re-mints nothing. The setting
+# arrives injected under config.settings; an empty or unwritten one is an
+# empty deny list, which is why the bundle needs no setup to run.
 kind: substrate.reamde.dev/core/function
 metadata:
-  id: samples.substrate.reamde.dev/web/findurls
+  id: samples.substrate.reamde.dev/readinglist/findurls
 data:
   authority: samples.substrate.reamde.dev
-  package: web
-  description: Extract every URL from the triggering record and mint pending
-    pages.
+  package: readinglist
+  description: Find every link in the record that fired, and mint one pending
+    page for each one the deny list allows.
   runtime: python
   permissions:
-    writes: [samples.substrate.reamde.dev/web/page]
+    writes: [samples.substrate.reamde.dev/readinglist/page]
   source: |
     import re
 
@@ -161,8 +152,11 @@ data:
         env = input.get("envelope") or {}
         record = env.get("record") or {}
         change = env.get("change") or {}
-        cfg = (((input.get("config") or {}).get("inputs") or {}).get("connector") or {}).get("properties") or {}
-        deny = cfg.get("denyDomains") or []
+        # The bundle's own settings: the `setting` records under this
+        # bundle's id, keyed by name (decision record 0076). One string, so
+        # the deny list is comma-separated and blank entries are dropped.
+        cfg = (input.get("config") or {}).get("settings") or {}
+        deny = [d.strip() for d in str(cfg.get("denyDomains") or "").split(",") if d.strip()]
         msg_id = record.get("id")
         # page.source is an unpinned reference, so the value carries the kind
         # too: a reference value is the flat "<kind>/<id>" path. The delivery
@@ -180,7 +174,7 @@ data:
             if not isinstance(value, str):
                 continue
             for url in _URL.findall(value):
-                if any(d and d in url for d in deny):
+                if any(d in url for d in deny):
                     host.log("denied " + url)
                     continue
                 # host.ids.url hashes the exact URL: no truncated-slug collision
@@ -191,7 +185,7 @@ data:
                     continue
                 seen.add(pid)
                 host.effects.put(
-                    "samples.substrate.reamde.dev/web/page", pid,
+                    "samples.substrate.reamde.dev/readinglist/page", pid,
                     properties={"url": url, "fetch": "pending",
                                 "source": source_ref},
                     if_absent=True)
@@ -203,14 +197,16 @@ data:
 # network so tests never touch the wire), and marks the page fetched.
 kind: substrate.reamde.dev/core/function
 metadata:
-  id: samples.substrate.reamde.dev/web/fetchpage
+  id: samples.substrate.reamde.dev/readinglist/fetchpage
 data:
   authority: samples.substrate.reamde.dev
-  package: web
-  description: Fetch one pending page as markdown and mark it fetched.
+  package: readinglist
+  description: >-
+    Stands in for a fetch, with no network at all: it invents one pending
+    page's text from the URL and marks the page fetched.
   runtime: python
   permissions:
-    writes: [samples.substrate.reamde.dev/web/page]
+    writes: [samples.substrate.reamde.dev/readinglist/page]
   source: |
     def main(input, host):
         env = input.get("envelope") or {}
@@ -221,7 +217,7 @@ data:
         title = slug.replace("-", " ").replace("_", " ").strip() or url
         markdown = "# " + title + "\n\nfetched from " + url + " (stub markdown)"
         host.effects.patch(
-            "samples.substrate.reamde.dev/web/page", page.get("id"),
+            "samples.substrate.reamde.dev/readinglist/page", page.get("id"),
             properties={"title": title, "content": markdown, "fetch": "fetched"})
         return {"output": {"page": page.get("id")}}
 ---
@@ -230,11 +226,11 @@ data:
 # has no generic patch built-in, so a direct write is a function tool.
 kind: substrate.reamde.dev/core/function
 metadata:
-  id: samples.substrate.reamde.dev/web/setclass
+  id: samples.substrate.reamde.dev/readinglist/setclass
 data:
   authority: samples.substrate.reamde.dev
-  package: web
-  description: Set a page's class. Call with {id, class}.
+  package: readinglist
+  description: Record what sort of page this is. Call with {id, class}.
   runtime: python
   arguments:
     - name: id
@@ -246,101 +242,104 @@ data:
       required: true
       description: article | tool | video
   permissions:
-    writes: [samples.substrate.reamde.dev/web/page]
+    writes: [samples.substrate.reamde.dev/readinglist/page]
   source: |
     def main(input, host):
         args = input.get("args") or {}
         pid = args["id"]
         cls = args.get("class") or "article"
-        host.effects.patch("samples.substrate.reamde.dev/web/page", pid, properties={"class": cls})
+        host.effects.patch("samples.substrate.reamde.dev/readinglist/page", pid, properties={"class": cls})
         return {"output": {"page": pid, "class": cls}}
 ---
-# ---- function: stampconfig ------------------------------------------------
-# The reading-list agent's DIRECT config-write hand — a patch of the bundle
-# config. It exists to prove the emit ceiling NEGATIVELY: the reading-list
-# agent declares config in its own emit and carries this tool, but when it
-# runs as the classifier's sub-agent its effective emit is its own ∩ the
-# classifier's (which names only page + recordpatchrequest), so config is
-# refused and nothing lands. Delegation can only narrow.
+# ---- function: stampdigest ------------------------------------------------
+# The curator's DIRECT digest-write hand — a patch of a digest record. It
+# exists to prove the emit ceiling NEGATIVELY: the curator declares digest in
+# its own emit and carries this tool, but when it runs as the classifier's
+# sub-agent its effective emit is its own ∩ the classifier's (which names only
+# page + recordpatchrequest), so the digest write is refused and nothing
+# lands. Delegation can only narrow.
 kind: substrate.reamde.dev/core/function
 metadata:
-  id: samples.substrate.reamde.dev/web/stampconfig
+  id: samples.substrate.reamde.dev/readinglist/stampdigest
 data:
   authority: samples.substrate.reamde.dev
-  package: web
-  description: Stamp the bundle config directly. Call with {id}.
+  package: readinglist
+  description: Write over a digest directly, without asking. Call with {id}.
   runtime: python
   arguments:
     - name: id
       type: string
       required: true
-      description: the config record id
+      description: the digest record id
   permissions:
-    writes: [samples.substrate.reamde.dev/web/config]
+    writes: [samples.substrate.reamde.dev/readinglist/digest]
   source: |
     def main(input, host):
         args = input.get("args") or {}
-        cid = args["id"]
+        did = args["id"]
         return {
             "effects": [{
                 "action": "patch",
-                "kind": "samples.substrate.reamde.dev/web/config", "id": cid,
-                "properties": {"lastDigest": "stamped directly by the reading-list agent"},
+                "kind": "samples.substrate.reamde.dev/readinglist/digest", "id": did,
+                "properties": {"summary": "stamped directly by the curator"},
             }],
-            "output": {"config": cid},
+            "output": {"digest": did},
         }
 ---
 # ---- agent: pageclassifier ------------------------------------------------
 # Triggers on a fetched, unclassified page. Patches the class through the
-# setclass tool, then routes to the reading-list sub-agent. Its emit must also
+# setclass tool, then routes to the curator sub-agent. Its emit must also
 # name recordpatchrequest so the sub-agent's propose survives the emit ceiling
 # (a child's effective emit is its own ∩ the caller's).
 kind: substrate.reamde.dev/core/agent
 metadata:
-  id: samples.substrate.reamde.dev/web/pageclassifier
+  id: samples.substrate.reamde.dev/readinglist/pageclassifier
 data:
   authority: samples.substrate.reamde.dev
-  package: web
-  description: Classify a fetched page and route it to the reading-list agent.
+  package: readinglist
+  description: Work out whether a page is an article, a tool or a video, then
+    hand it to the curator.
   prompt: |
     You are the page classifier. Read the page in the first message, decide
     whether it is an article, a tool, or a video, set its class with the
-    setclass tool, then hand the page to the reading-list agent.
+    setclass tool, then hand the page to the curator.
   provider: default
-  model: anthropic/claude-opus-5
+  model: claude-opus-5
   tools:
-    - function: samples.substrate.reamde.dev/web/setclass
-  subagents: [samples.substrate.reamde.dev/web/readinglistagent]
+    - function: samples.substrate.reamde.dev/readinglist/setclass
+  subagents: [samples.substrate.reamde.dev/readinglist/curator]
   budgets:
     maxTurns: 4
     maxToolCalls: 8
     depth: 3
   permissions:
     writes:
-      - samples.substrate.reamde.dev/web/page
+      - samples.substrate.reamde.dev/readinglist/page
       - substrate.reamde.dev/core/recordpatchrequest
 ---
-# ---- agent: readinglistagent (sub-agent) ----------------------------------
+# ---- agent: curator (sub-agent) -------------------------------------------
 # Proposes a recordpatchrequest that marks the page saved. The owner decides;
 # accepting is what applies the patch.
 kind: substrate.reamde.dev/core/agent
 metadata:
-  id: samples.substrate.reamde.dev/web/readinglistagent
+  id: samples.substrate.reamde.dev/readinglist/curator
 data:
   authority: samples.substrate.reamde.dev
-  package: web
-  description: Propose adding a classified page to the owner's reading list.
+  package: readinglist
+  description: Ask the owner whether a classified page belongs on the reading
+    list.
   prompt: |
     You maintain the reading list. Propose a patch that sets the page's `saved`
     property to true, with a short rationale — address the page by full
-    identity: type samples.substrate.reamde.dev/web/page plus its target id. Do not write
-    directly. You also carry a stampconfig tool, but under a caller whose emit
-    does not name config it will be refused — propose instead.
+    identity: kind samples.substrate.reamde.dev/readinglist/page plus its
+    target id. Do not write
+    directly. You also carry a stampdigest tool, but under a caller whose emit
+    does not name digest it will be refused — propose instead.
   provider: default
-  model: anthropic/claude-sonnet-5
+  model: claude-sonnet-5
   tools:
     - function: substrate.reamde.dev/core/propose
-    - function: samples.substrate.reamde.dev/web/stampconfig
+    - function: samples.substrate.reamde.dev/readinglist/stampdigest
   budgets:
     maxTurns: 4
     maxToolCalls: 4
@@ -348,31 +347,35 @@ data:
   permissions:
     writes:
       - substrate.reamde.dev/core/recordpatchrequest
-      - samples.substrate.reamde.dev/web/config
+      - samples.substrate.reamde.dev/readinglist/digest
 ---
 # ---- agent: weeklyrollup (schedule-fired) ---------------------------------
-# Reads the week's pages and proposes a digest note (a patch of the config's
-# lastDigest). Fired by a schedule trigger, not by a changelog row.
+# Reads the week's pages and proposes a patch of the digest record's summary.
+# Fired by a schedule trigger, not by a changelog row.
 kind: substrate.reamde.dev/core/agent
 metadata:
-  id: samples.substrate.reamde.dev/web/weeklyrollup
+  id: samples.substrate.reamde.dev/readinglist/weeklyrollup
 data:
   authority: samples.substrate.reamde.dev
-  package: web
-  description: Summarize the pages harvested this week and propose a digest.
+  package: readinglist
+  description: Sum up the pages read this week and propose it as the week's
+    digest.
   prompt: |
     You write the weekly digest. Read the fetched pages, summarize them, and
-    propose a patch that stores the summary as the config's lastDigest —
-    address the config by full identity (type samples.substrate.reamde.dev/web/config
-    plus its target id); reads name a type beside the id too.
+    propose a patch that stores the summary on the digest record the bundle
+    ships, whose id is `latest` — address it by full identity (kind
+    samples.substrate.reamde.dev/readinglist/digest plus that id); reads name
+    a kind beside the id too.
   provider: default
-  model: anthropic/claude-haiku-4-5
+  model: claude-haiku-4-5
   tools:
     - function: substrate.reamde.dev/core/query
     - function: substrate.reamde.dev/core/propose
   permissions:
     reads:
-      kinds: [samples.substrate.reamde.dev/web/page]
+      kinds:
+        - samples.substrate.reamde.dev/readinglist/page
+        - samples.substrate.reamde.dev/readinglist/digest
     writes: [substrate.reamde.dev/core/recordpatchrequest]
   budgets:
     maxTurns: 6

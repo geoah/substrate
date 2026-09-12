@@ -1,0 +1,19 @@
+# The bundle's one knob, as an ORDINARY RECORD decision record 0076 makes it:
+# a core `setting` whose id sits under the bundle's own id, which is what
+# makes it this bundle's. The import rehomes it with the rest of the closure,
+# so what lands is `<your authority>/readinglist/denyDomains`.
+#
+# findurls reads it as `config.settings.denyDomains`. It ships EMPTY and is
+# not required: an empty deny list harvests everything, which is a working
+# bundle rather than a setup item.
+kind: substrate.reamde.dev/core/setting
+metadata:
+  id: samples.substrate.reamde.dev/readinglist/denyDomains
+data:
+  properties:
+    displayName: Deny list
+    description: >-
+      Comma-separated pieces of URL that are never picked up: a link containing
+      any of them is skipped. Empty harvests everything.
+    type: string
+    value: ""

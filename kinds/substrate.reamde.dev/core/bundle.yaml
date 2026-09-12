@@ -1,5 +1,5 @@
 # one installed bundle: the install unit (substrate-primitives §4). The id
-# IS the owned package ("samples.substrate.reamde.dev/web"); the declaration names its
+# IS the owned package ("samples.substrate.reamde.dev/readinglist"); the declaration names its
 # inputs and the exact closure it ships, and a batch carrying a bundle
 # document REPLACES the owned package whole — install and upgrade are one
 # atomic apply, breakage refused. `disabled`/`uninstalled`/`purging` are runtime

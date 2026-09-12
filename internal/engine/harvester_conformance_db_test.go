@@ -1,8 +1,8 @@
 package engine
 
-// The build's conformance gate (substrate-primitives §8): the URL-harvester
+// The build's conformance gate (substrate-primitives §8): the reading-list
 // bundle, installed as a REAL closure from the shipped example manifests
-// (../../samples/web), driven end to end through the one
+// (../../samples/readinglist), driven end to end through the one
 // delivery mechanism, and held to the two properties the throwaway prototype
 // proved — put-if-absent re-mints nothing, replay-from-zero is quiet in the
 // data — at a causal depth well under the cap. Nothing here composes from a
@@ -28,28 +28,28 @@ import (
 )
 
 const (
-	webPackage    = "samples.substrate.reamde.dev/web"
-	webConfigType = webPackage + "/config"
-	webPageType   = webPackage + "/page"
-	convMsgType   = "samples.substrate.reamde.dev/messaging/conversationmessage"
+	rlPackage    = "samples.substrate.reamde.dev/readinglist"
+	rlDigestType = rlPackage + "/digest"
+	rlPageType   = rlPackage + "/page"
+	convMsgType  = "samples.substrate.reamde.dev/messaging/conversationmessage"
 
 	// The models the shipped agents name on the `default` provider row:
 	// distinct, so one fake server drives the whole chain by model.
-	modelStrong = "anthropic/claude-opus-5"    // pageclassifier
-	modelMid    = "anthropic/claude-sonnet-5"  // readinglistagent
-	modelCheap  = "anthropic/claude-haiku-4-5" // weeklyrollup
+	modelStrong = "claude-opus-5"    // pageclassifier
+	modelMid    = "claude-sonnet-5"  // curator
+	modelCheap  = "claude-haiku-4-5" // weeklyrollup
 
-	exampleDir = "../../samples/web"
+	exampleDir = "../../samples/readinglist"
 
 	blogURL    = "https://blog.example.com/how-substrates-compose"
 	trackerURL = "https://tracker.example/evil"
 )
 
-// webPageID mirrors the findurls body's id EXACTLY: the id is host.ids.url(u),
+// rlPageID mirrors the findurls body's id EXACTLY: the id is host.ids.url(u),
 // a hash of the URL (no truncated-slug collision). The Python body minted these
 // ids and runner.URLID recomputes them, so a divergence between host.py and the
 // Go mirror fails here as well as in the runner's own vectors.
-func webPageID(u string) string {
+func rlPageID(u string) string {
 	return runner.URLID(u)
 }
 
@@ -118,7 +118,7 @@ func countLivePages(t *testing.T, ds *dataset) int {
 	var n int
 	if err := ds.db.QueryRowContext(context.Background(),
 		`SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL`,
-		webPageType).Scan(&n); err != nil {
+		rlPageType).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -217,42 +217,50 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	// --- install the bundle atomically, from the shipped manifests ---------
 	vocabularyDocs := loadYAMLDocs(t, exampleDir+"/bundle.yaml")
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, vocabularyDocs); err != nil {
-		t.Fatalf("install the harvester bundle: %v", err)
+		t.Fatalf("install the reading-list bundle: %v", err)
 	}
-	row, err := ds.Get(ctx, "substrate.reamde.dev/core/bundle", webPackage)
+	row, err := ds.Get(ctx, "substrate.reamde.dev/core/bundle", rlPackage)
 	if err != nil || row.Kind != "substrate.reamde.dev/core/bundle" {
 		t.Fatalf("bundle row: %+v %v", row, err)
 	}
-	// The wiring: the four trigger data records, applied as ordinary puts.
-	for _, m := range loadYAMLDocs(t, exampleDir+"/triggers.yaml") {
-		putDataDoc(t, ds, m)
+	// The wiring and the empty digest: the SHIPPED data records, applied as
+	// ordinary puts exactly as the install does. The digest has to be one of
+	// them, because the rollup only ever proposes a PATCH and a patch of a
+	// record that is not there is refused.
+	for _, f := range []string{"/triggers.yaml", "/digest.yaml"} {
+		for _, m := range loadYAMLDocs(t, exampleDir+f) {
+			putDataDoc(t, ds, m)
+		}
+	}
+	digest, err := ds.Get(ctx, rlDigestType, "latest")
+	if err != nil {
+		t.Fatalf("the shipped digest record: %v", err)
 	}
 
-	// --- the config record (denyDomains + a secret key): the sole record
-	// resolves the bundle's `connector` input, which injects into findurls --
-	cfg := mustPutInternal(t, ds, substrate.PutInput{
-		Kind: webConfigType,
-		Properties: map[string]any{
-			"denyDomains":  []any{"tracker.example"},
-			"firecrawlKey": "fc-secret-placeholder",
-		},
+	// --- the bundle's own setting: a core `setting` record under the
+	// bundle's id prefix, which is what injects into findurls as
+	// config.settings.denyDomains (decision record 0076). The shipped one is
+	// empty; this write is the owner filling it in.
+	mustPutInternal(t, ds, substrate.PutInput{
+		Kind: kindSetting, ID: rlPackage + "/denyDomains",
+		Properties: map[string]any{"type": "string", "value": "tracker.example"},
 	})
 
 	// The two agents that fire during the reactive chain. weeklyrollup
 	// is scripted later, just before the schedule tick.
-	blogPage := webPageID(blogURL)
+	blogPage := rlPageID(blogURL)
 	fake.script(modelStrong, // pageclassifier
 		fakeTurn{calls: []fakeCall{{"setclass", fmt.Sprintf(`{"id":%q,"class":"article"}`, blogPage)}}},
-		fakeTurn{calls: []fakeCall{{"readinglistagent", `{"input":"please save this page"}`}}},
+		fakeTurn{calls: []fakeCall{{"curator", `{"input":"please save this page"}`}}},
 		fakeTurn{content: "classified as article and routed to the reading list."},
 	)
-	fake.script(modelMid, // readinglistagent
-		// First it reaches for stampconfig — a write of config, which the
+	fake.script(modelMid, // curator
+		// First it reaches for stampdigest — a write of digest, which the
 		// child's OWN emit allows but the classifier's ceiling denies. The tool
 		// must refuse and nothing may land. THEN it makes the proposal, which
 		// survives because recordpatchrequest is in both.
-		fakeTurn{calls: []fakeCall{{"stampconfig", fmt.Sprintf(`{"id":%q}`, cfg.ID)}}},
-		fakeTurn{calls: []fakeCall{{"propose", fmt.Sprintf(`{"kind":"samples.substrate.reamde.dev/web/page","target":%q,"diff":{"properties":{"saved":true}},"rationale":"worth reading"}`, blogPage)}}},
+		fakeTurn{calls: []fakeCall{{"stampdigest", fmt.Sprintf(`{"id":%q}`, digest.ID)}}},
+		fakeTurn{calls: []fakeCall{{"propose", fmt.Sprintf(`{"kind":"samples.substrate.reamde.dev/readinglist/page","target":%q,"diff":{"properties":{"saved":true}},"rationale":"worth reading"}`, blogPage)}}},
 		fakeTurn{content: "proposed the reading-list add."},
 	)
 
@@ -274,7 +282,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	if got := countLivePages(t, ds); got != 1 {
 		t.Fatalf("live pages: %d, want 1 (deny-listed url filtered)", got)
 	}
-	if _, err := ds.Get(ctx, webPageType, webPageID(trackerURL)); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, rlPageType, rlPageID(trackerURL)); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the deny-listed page was minted: %v", err)
 	}
 
@@ -292,7 +300,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		WHERE kind = $1 AND deleted_at IS NULL
 		  AND `+referencePathSQL("props", "trigger")+` = $2 AND `+referencePathSQL("props", "record")+` = $3
 		ORDER BY created_at DESC, id DESC LIMIT 1`,
-		typeTriggerRun, vocabulary.RecordPath(typeTrigger, "web-findurls-on-message"),
+		typeTriggerRun, vocabulary.RecordPath(typeTrigger, "readinglist-findurls-on-message"),
 		denyMsg.ID).Scan(&denyStatus); err != nil {
 		t.Fatalf("the deny-only findurls run: %v", err)
 	}
@@ -301,13 +309,13 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	}
 	var trackerRows int
 	if err := ds.db.QueryRowContext(ctx,
-		`SELECT count(*) FROM changelog WHERE record_id = $1`, webPageID(trackerURL)).Scan(&trackerRows); err != nil {
+		`SELECT count(*) FROM changelog WHERE record_id = $1`, rlPageID(trackerURL)).Scan(&trackerRows); err != nil {
 		t.Fatal(err)
 	}
 	if trackerRows != 0 {
 		t.Fatalf("the deny-listed page has %d changelog rows — it was minted at some point, not never", trackerRows)
 	}
-	page, err := ds.Get(ctx, webPageType, blogPage)
+	page, err := ds.Get(ctx, rlPageType, blogPage)
 	if err != nil {
 		t.Fatalf("the harvested page: %v", err)
 	}
@@ -330,12 +338,12 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		blogPage).Scan(&classActor); err != nil {
 		t.Fatalf("the class-patch changelog row: %v", err)
 	}
-	if substrate.Actor(classActor) != substrate.AgentActor(vocabulary.SplitKindRef(webPackage+"/pageclassifier")) {
+	if substrate.Actor(classActor) != substrate.AgentActor(vocabulary.SplitKindRef(rlPackage+"/pageclassifier")) {
 		t.Fatalf("class patched by %q, not the classifier agent", classActor)
 	}
 
 	// The sub-agent's proposal landed as a recordpatchrequest targeting the
-	// page, authored by the reading-list agent.
+	// page, authored by the curator.
 	var reqID, reqActor string
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT e.id, c.actor FROM records e
@@ -344,8 +352,8 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		ORDER BY c.seq LIMIT 1`, vocabulary.KindRecordPatchRequest).Scan(&reqID, &reqActor); err != nil {
 		t.Fatalf("the reading-list proposal: %v", err)
 	}
-	if substrate.Actor(reqActor) != substrate.AgentActor(vocabulary.SplitKindRef(webPackage+"/readinglistagent")) {
-		t.Fatalf("proposal authored by %q, not the reading-list agent", reqActor)
+	if substrate.Actor(reqActor) != substrate.AgentActor(vocabulary.SplitKindRef(rlPackage+"/curator")) {
+		t.Fatalf("proposal authored by %q, not the curator", reqActor)
 	}
 	var target string
 	if err := ds.db.QueryRowContext(ctx,
@@ -356,27 +364,27 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		t.Fatalf("proposal targets %q, not the page", target)
 	}
 
-	// Threads: one classifier (trigger) root, one reading-list child with the
+	// Threads: one classifier (trigger) root, one curator child with the
 	// parent edge — the sub-agent hop.
-	if n := threadCountOf(t, ds, webPackage+"/pageclassifier"); n != 1 {
+	if n := threadCountOf(t, ds, rlPackage+"/pageclassifier"); n != 1 {
 		t.Fatalf("classifier threads: %d", n)
 	}
-	if n := threadCountOf(t, ds, webPackage+"/readinglistagent"); n != 1 {
-		t.Fatalf("reading-list threads: %d", n)
+	if n := threadCountOf(t, ds, rlPackage+"/curator"); n != 1 {
+		t.Fatalf("curator threads: %d", n)
 	}
 
 	// --- EMIT CEILING: a child-allowed effect the parent denies is refused --
-	// Before proposing, the reading-list agent tried stampconfig — a config
-	// write its OWN emit allows. As the classifier's sub-agent its effective
-	// emit is its own ∩ the classifier's (page + recordpatchrequest, no
-	// config), so the tool must have refused. The refusal is a tool result
-	// the model saw, and NOTHING may have landed on the config.
+	// Before proposing, the curator tried stampdigest — a digest write its
+	// OWN emit allows. As the classifier's sub-agent its effective emit is
+	// its own ∩ the classifier's (page + recordpatchrequest, no digest), so
+	// the tool must have refused. The refusal is a tool result the model saw,
+	// and NOTHING may have landed on the digest.
 	var childThread string
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT id FROM records WHERE kind = $1 AND deleted_at IS NULL AND `+referencePathSQL("props", "agent")+` = $2
 		ORDER BY created_at DESC, id DESC LIMIT 1`,
-		typeThread, vocabulary.RecordPath(kindAgent, webPackage+"/readinglistagent")).Scan(&childThread); err != nil {
-		t.Fatalf("the reading-list child thread: %v", err)
+		typeThread, vocabulary.RecordPath(kindAgent, rlPackage+"/curator")).Scan(&childThread); err != nil {
+		t.Fatalf("the curator child thread: %v", err)
 	}
 	var refused bool
 	for _, m := range threadMessages(t, ds, childThread) {
@@ -385,22 +393,22 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		}
 	}
 	if !refused {
-		t.Fatalf("the child's stampconfig call was not refused by the emit ceiling")
+		t.Fatalf("the child's stampdigest call was not refused by the emit ceiling")
 	}
-	// No changelog row wrote the config under the reading-list agent's actor:
-	// the ceiling refusal is real, not merely reported.
-	var childConfigWrites int
+	// No changelog row wrote the digest under the curator's actor: the
+	// ceiling refusal is real, not merely reported.
+	var childDigestWrites int
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM changelog WHERE record_id = $1 AND actor = $2`,
-		cfg.ID, string(substrate.AgentActor(vocabulary.SplitKindRef(webPackage+"/readinglistagent")))).Scan(&childConfigWrites); err != nil {
+		digest.ID, string(substrate.AgentActor(vocabulary.SplitKindRef(rlPackage+"/curator")))).Scan(&childDigestWrites); err != nil {
 		t.Fatal(err)
 	}
-	if childConfigWrites != 0 {
-		t.Fatalf("the ceilinged stampconfig landed %d config writes under the child actor", childConfigWrites)
+	if childDigestWrites != 0 {
+		t.Fatalf("the ceilinged stampdigest landed %d digest writes under the child actor", childDigestWrites)
 	}
 
 	// The run ledger: an ok run for each record trigger's delivery.
-	for _, trID := range []string{"web-findurls-on-message", "web-fetch-on-page", "web-classify-on-page"} {
+	for _, trID := range []string{"readinglist-findurls-on-message", "readinglist-fetch-on-page", "readinglist-classify-on-page"} {
 		var oks int
 		if err := ds.db.QueryRowContext(ctx, `
 			SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL
@@ -425,7 +433,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("approve the proposal: %v", err)
 	}
-	saved, err := ds.Get(ctx, webPageType, blogPage)
+	saved, err := ds.Get(ctx, rlPageType, blogPage)
 	if err != nil {
 		t.Fatalf("get saved page: %v", err)
 	}
@@ -438,7 +446,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	// its depth is a precise fact, not a range: the triggering message is a
 	// direct owner write (depth 0), findurls mints the page (1), fetchpage
 	// marks it fetched (2), and the classifier — firing on that fetched
-	// update — routes to the reading-list agent whose propose lands at depth 3.
+	// update — routes to the curator whose propose lands at depth 3.
 	// Owner approval is a SEPARATE direct owner write, off this causal path, so
 	// it never extends the depth. Accepting the 0..8 range would let a chain
 	// that lost every causal link (depth 0) pass; the exact value is the point.
@@ -477,13 +485,13 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	var pageWritesAfter int
 	if err := ds.db.QueryRowContext(ctx,
 		`SELECT count(*) FROM changelog WHERE seq > $1 AND kind = $2`,
-		headBeforeReput, webPageType).Scan(&pageWritesAfter); err != nil {
+		headBeforeReput, rlPageType).Scan(&pageWritesAfter); err != nil {
 		t.Fatal(err)
 	}
 	if pageWritesAfter != 0 {
 		t.Fatalf("put-if-absent upserted the page: %d new page changelog rows after re-feed", pageWritesAfter)
 	}
-	again, err := ds.Get(ctx, webPageType, blogPage)
+	again, err := ds.Get(ctx, rlPageType, blogPage)
 	if err != nil {
 		t.Fatalf("get re-fed page: %v", err)
 	}
@@ -500,7 +508,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	dataSeqBefore := maxDataSeq(t, ds)
 	parkedBefore := parkedFailures(t, ds)
 	runsHeadBefore := changelogHead(t, ds)
-	replayed := []string{"web-findurls-on-message", "web-fetch-on-page", "web-classify-on-page"}
+	replayed := []string{"readinglist-findurls-on-message", "readinglist-fetch-on-page", "readinglist-classify-on-page"}
 	for _, trID := range replayed {
 		if err := ds.ReplayTrigger(ctx, trID, 0); err != nil {
 			t.Fatalf("replay %s: %v", trID, err)
@@ -546,13 +554,13 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 
 	// --- the schedule tick produces a rollup proposal ----------------------
 	fake.script(modelCheap, // weeklyrollup
-		fakeTurn{calls: []fakeCall{{"propose", fmt.Sprintf(`{"kind":"samples.substrate.reamde.dev/web/config","target":%q,"diff":{"properties":{"lastDigest":"1 page harvested this week"}},"rationale":"weekly digest"}`, cfg.ID)}}},
+		fakeTurn{calls: []fakeCall{{"propose", fmt.Sprintf(`{"kind":"samples.substrate.reamde.dev/readinglist/digest","target":%q,"diff":{"properties":{"summary":"1 page harvested this week"}},"rationale":"weekly digest"}`, digest.ID)}}},
 		fakeTurn{content: "digest proposed."},
 	)
 	// Make the weekly occurrence overdue, then tick.
 	if _, err := ds.db.ExecContext(ctx, `
 		UPDATE trigger_schedule SET fired_at = fired_at - interval '8 days'
-		WHERE trigger_id = $1`, "web-rollup-weekly"); err != nil {
+		WHERE trigger_id = $1`, "readinglist-rollup-weekly"); err != nil {
 		t.Fatalf("rewind schedule: %v", err)
 	}
 	if _, err := ds.ProcessTriggers(ctx); err != nil {
@@ -568,14 +576,14 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		`SELECT dst FROM refs WHERE property = 'target' AND path = '' AND src = $1`, digestReq).Scan(&digestTarget); err != nil {
 		t.Fatal(err)
 	}
-	if digestTarget != cfg.ID {
-		t.Fatalf("digest proposal targets %q, not the config", digestTarget)
+	if digestTarget != digest.ID {
+		t.Fatalf("digest proposal targets %q, not the digest record", digestTarget)
 	}
 	var rollupOK int
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL
 		  AND `+referencePathSQL("props", "trigger")+` = $2 AND props->>'status' = 'ok'`,
-		typeTriggerRun, vocabulary.RecordPath(typeTrigger, "web-rollup-weekly")).Scan(&rollupOK); err != nil {
+		typeTriggerRun, vocabulary.RecordPath(typeTrigger, "readinglist-rollup-weekly")).Scan(&rollupOK); err != nil {
 		t.Fatal(err)
 	}
 	if rollupOK < 1 {

@@ -10,7 +10,7 @@ package its publisher owns, installed under
 `providers.substrate.reamde.dev` and upgraded there. Every one syncs from the
 provider into the repository, and none writes back.
 
-**Five samples**: LLM, notes, the web harvester, Firecrawl and Pebble. Each is
+**Five samples**: LLM, notes, the reading list, Firecrawl and Pebble. Each is
 a worked example to read and copy, imported under the repository's own
 authority and owned by it afterwards. A fix here reaches a repository that
 imported it as an upgrade offer read off the copy's origin stamp, taken by
@@ -57,8 +57,8 @@ thing, and the Records column counts them.
 | Beeper        | Provider | Pasted token   | 4     | 1         | 2       | 0      |
 | LLM           | Sample   | Key, per row   | 1     | 0         | 2       | 6      |
 | Notes         | Sample   | none           | 1     | 2         | 0       | 2      |
-| Firecrawl     | Sample   | API key        | 1     | 2         | 0       | 0      |
-| Web harvester | Sample   | none           | 2     | 4         | 4       | 3      |
+| Firecrawl     | Sample   | API key        | 1     | 2         | 2       | 0      |
+| Reading list  | Sample   | none           | 2     | 4         | 5       | 3      |
 | Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
 
 ## Connecting an OAuth provider
@@ -484,39 +484,41 @@ cut. An agent that binds `scrapepage` must name `webdocument` in its own
 intersected with its caller's
 ([agents](agents.md#sub-agents-budgets-and-the-emit-ceiling)).
 
-## Web harvester (sample)
+## Reading list (sample)
 
-Package `samples.substrate.reamde.dev/web`. The substrate's
+Package `samples.substrate.reamde.dev/readinglist`. The substrate's
 shipped end-to-end conformance example: it proves that `bundle`, `kind`,
 `function`, `agent`, and `trigger` declarations compose into a real
-feature (harvest URLs from a message, fetch and classify each page, propose
-reading-list and weekly-digest notes) with no bespoke workflow primitive. It is
-the running example these pages build on.
+feature (pull the links out of a chat message, read and classify each page,
+propose what to save and a weekly digest) with no bespoke workflow primitive.
+It is the running example these pages build on, and it requires
+`samples.substrate.reamde.dev/messaging`, whose messages it reads.
 
-- **Kinds (2)**: `config` and `page` (a harvested URL and its fetched,
-  classified content).
+- **Kinds (2)**: `page` (a harvested URL and its fetched, classified content)
+  and `digest` (a week's summary, written when a rollup proposal is accepted).
 - **Functions (4)**: `findurls` extracts URLs from a triggering message and
   mints pending `page` records; `fetchpage` turns a pending page into markdown;
-  `setclass` is the classifier's write hand; `stampconfig` writes the
-  configuration record and exists to prove the emit ceiling refuses a write
-  outside it.
-- **Triggers (4)**: `web-findurls-on-message` runs `findurls` on a new
-  conversation message, `web-fetch-on-page` runs `fetchpage` on a pending page,
-  `web-classify-on-page` runs the `pageclassifier` agent on a fetched,
-  unclassified page, and `web-rollup-weekly` runs the `weeklyrollup` agent on a
-  Monday schedule.
+  `setclass` is the classifier's write hand; `stampdigest` writes a digest
+  record directly and exists to prove the emit ceiling refuses a write outside
+  it.
+- **Triggers (4)**: `readinglist-findurls-on-message` runs `findurls` on a new
+  conversation message, `readinglist-fetch-on-page` runs `fetchpage` on a
+  pending page, `readinglist-classify-on-page` runs the `pageclassifier` agent
+  on a fetched, unclassified page, and `readinglist-rollup-weekly` runs the
+  `weeklyrollup` agent on a Monday schedule.
 - **Agents (3)**: `pageclassifier` classifies a page and delegates to
-  `readinglistagent`, which proposes reading-list notes; `weeklyrollup` queries
-  the week's pages and proposes a digest. Both proposals travel as
+  `curator`, which proposes adding it to the reading list; `weeklyrollup`
+  queries the week's pages and proposes a digest. Both proposals travel as
   `substrate.reamde.dev/core/recordpatchrequest` records for the owner to accept. All
-  three name `provider: default`, a row nothing seeds (the owner writes and
-  keys it before they can run), and each names its own `model` —
-  what the agent does is what picks the model, not a tier.
+  three name `provider: default`, which the LLM example above ships, and each
+  names its own `model` — what the agent does is what picks the model, not a
+  tier.
 
 Its functions are deterministic stubs, because the bundle exists to exercise
-the machinery rather than talk to a provider. The `config` record carries the
-two knobs they read: `denyDomains`, the hosts `findurls` skips, and the
-secret-typed `firecrawlKey` a production `fetchpage` body would spend.
+the machinery rather than talk to a provider. Its one knob is a shipped
+[`setting`](bundles.md#settings) record, `denyDomains`: a
+comma-separated list of URL pieces `findurls` skips, empty as shipped, which
+the bodies read as `config.settings.denyDomains`.
 
 ## Pebble (sample)
 

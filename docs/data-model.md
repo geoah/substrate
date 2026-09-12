@@ -176,7 +176,7 @@ its own package: `samples.substrate.reamde.dev/people`,
 `samples.substrate.reamde.dev/calendar`, `samples.substrate.reamde.dev/tasks`,
 `samples.substrate.reamde.dev/scheduling` (the `recurring` and `occurrencelog`
 traits that `calendar` and `tasks` require), and the function and agent
-examples `notes`, `llm`, `web`, `firecrawl` and `pebble` under the same
+examples `notes`, `llm`, `readinglist`, `firecrawl` and `pebble` under the same
 authority — each a bundle you **import** — and `substrate.reamde.dev/core`
 for the substrate's own machinery, which is the only one a new repository is
 seeded with. Packages namespace names; they never partition the data: a

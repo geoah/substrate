@@ -11,19 +11,19 @@ trigger delivery, another function's host call, the HTTP call API, or a manual
 per-trigger run.
 
 Functions ship inside a [bundle](bundles.md), beside the kinds they
-read and write. Here is one shaped like the URL harvester's, which turns a
+read and write. Here is one shaped like the reading-list sample's, which turns a
 freshly minted `page` record into fetched markdown:
 
 ```yaml
 kind: substrate.reamde.dev/core/function
-metadata: {id: samples.substrate.reamde.dev/web/fetchpage}
+metadata: {id: samples.substrate.reamde.dev/readinglist/fetchpage}
 data:
   authority: samples.substrate.reamde.dev
-  package: web
+  package: readinglist
   description: Fetch one pending page as markdown and mark it fetched.
   runtime: python
   permissions:
-    writes: [samples.substrate.reamde.dev/web/page]
+    writes: [samples.substrate.reamde.dev/readinglist/page]
   source: |
     def main(input, host):
         env = input.get("envelope") or {}
@@ -33,7 +33,7 @@ data:
         title = slug.replace("-", " ").strip() or url
         markdown = "# " + title + "\n\nfetched from " + url
         host.effects.patch(
-            "samples.substrate.reamde.dev/web/page", page.get("id"),
+            "samples.substrate.reamde.dev/readinglist/page", page.get("id"),
             properties={"title": title, "content": markdown,
                         "fetch": "fetched"})
         return {"output": {"page": page.get("id")}}
@@ -76,7 +76,7 @@ permissions:
   writes:                          # which kinds it may create or change
     - samples.substrate.reamde.dev/tasks/task
   call:                            # which other functions its code may invoke
-    - samples.substrate.reamde.dev/web/setclass
+    - samples.substrate.reamde.dev/readinglist/setclass
   network:                         # the hosts it may reach; any entry grants egress
     - api.example.com
   mutations:                       # the identity-changing operations: merge, split
@@ -299,7 +299,7 @@ rides inline; a multipart request may total 32 MiB. An authenticated wake
 
 **One `kind`, everywhere.** A kind is named by a reference:
 `<authority>/<package>/<name>` (`samples.substrate.reamde.dev/tasks/task`,
-`samples.substrate.reamde.dev/web/page`), and every kind carries both
+`samples.substrate.reamde.dev/readinglist/page`), and every kind carries both
 ([decision 0042](decisions/0042-every-kind-carries-an-authority.md),
 [decision 0047](decisions/0047-a-kind-lives-in-a-package.md)). The
 envelope, the SDK's reads, the SDK's writes and an explicit
@@ -316,7 +316,7 @@ value: a reference property holds the path `<kind>/<id>` under `ref`, and the
 `{kind, id}` pair is the retired shape a write refuses by name.
 
 ```python
-PAGE = "samples.substrate.reamde.dev/web/page"
+PAGE = "samples.substrate.reamde.dev/readinglist/page"
 
 def main(input, host):
     record = (input.get("envelope") or {}).get("record") or {}
@@ -616,16 +616,16 @@ is the trigger that drives the function above:
 
 ```yaml
 kind: substrate.reamde.dev/core/trigger
-metadata: {id: web-fetch-on-page}
+metadata: {id: readinglist-fetch-on-page}
 data:
   properties:
     enabled: true
     source:
       record:
-        kinds: [samples.substrate.reamde.dev/web/page]
+        kinds: [samples.substrate.reamde.dev/readinglist/page]
         ops: [create]              # create | update | delete
         when: 'record != null && record.properties.fetch == "pending"'
-    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/web/fetchpage
+    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/readinglist/fetchpage
 ```
 
 `source` takes exactly one arm:

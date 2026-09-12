@@ -218,7 +218,7 @@ def _need_component(fn, field, value):
 class Ids:
     """Deterministic, URL-safe, hash-backed id helpers. A function composes the
     ids of what it writes; hashing the provider key removes the truncate-a-URL
-    collision foot-gun (the harvester's old `page-<slug>`). Every component is a
+    collision foot-gun (the reading list's old `page-<slug>`). Every component is a
     required non-empty string, and the human slug is ASCII-folded. runner's
     ids.go recomputes these in Go for the engine's tests, so the two are held
     to one golden (testdata/id_vectors.json)."""

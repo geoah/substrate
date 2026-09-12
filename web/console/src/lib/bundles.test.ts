@@ -1107,19 +1107,19 @@ describe("declaresProviderInterfaces", () => {
 
   it("is false for a non-provider bundle (no account kind, no oauth2 input)", () => {
     const connectorKind = kindInfo({
-      identity: "samples.substrate.reamde.dev/web/config",
+      identity: "acme.example.com/reader/config",
       name: "config",
-      authority: "samples.substrate.reamde.dev",
-      package: "web",
+      authority: "acme.example.com",
+      package: "reader",
     })
     expect(
       declaresProviderInterfaces(
         {
-          id: "samples.substrate.reamde.dev/web",
+          id: "acme.example.com/reader",
           inputs: [
             {
               name: "connector",
-              kind: "samples.substrate.reamde.dev/web/config",
+              kind: "acme.example.com/reader/config",
             },
           ],
         },

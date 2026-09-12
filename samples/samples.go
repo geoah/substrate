@@ -25,7 +25,7 @@ const Authority = "samples.substrate.reamde.dev"
 // still passes. kinds_test.go holds it to the tree on disk.
 //
 //go:embed all:authority.yaml all:calendar all:firecrawl all:llm all:messaging
-//go:embed all:notes all:pebble all:people all:scheduling all:tasks all:web
+//go:embed all:notes all:pebble all:people all:readinglist all:scheduling all:tasks
 var files embed.FS
 
 // Samples is the whole sample tree, as a filesystem whose root holds one

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -187,6 +188,15 @@ func (f *fakeSubstrate) handler() http.Handler {
 	// in substrate.reamde.dev/core; a generic collection store answers those puts.
 	mux.HandleFunc("GET "+triggerColPath+"/{id}", f.handleTriggerGet)
 	mux.HandleFunc("PUT "+triggerColPath+"/{id}", f.handleTriggerPut)
+	// A bundle's settings are data records too, and their ids carry slashes
+	// (the bundle id is the prefix), so they arrive percent-encoded in ONE
+	// segment — which is what the shipped-example apply proves.
+	mux.HandleFunc("GET "+settingColPath+"/{id}", f.handleTriggerGet)
+	mux.HandleFunc("PUT "+settingColPath+"/{id}", f.handleTriggerPut)
+	// And the shipped example's own data record, a bundle kind's collection:
+	// the apply routes it through the registry like any other record.
+	mux.HandleFunc("GET "+digestColPath+"/{id}", f.handleTriggerGet)
+	mux.HandleFunc("PUT "+digestColPath+"/{id}", f.handleTriggerPut)
 	// The trigger DELIVERY verbs, at the resource: they hang off
 	// substrate.reamde.dev/core and NOWHERE else here, so a client still riding the
 	// retired automation.substrate.reamde.dev spelling falls through to the 404 catch-all
@@ -235,6 +245,8 @@ const (
 	typesPath      = "/api/v1/substrate.reamde.dev/core/kind"
 	tasksPath      = "/api/v1/samples.substrate.reamde.dev/tasks/task"
 	triggerColPath = "/api/v1/substrate.reamde.dev/core/trigger"
+	settingColPath = "/api/v1/substrate.reamde.dev/core/setting"
+	digestColPath  = "/api/v1/samples.substrate.reamde.dev/readinglist/digest"
 )
 
 // typeRecord builds one registry row. `pkg` is the PACKAGE IDENTITY
@@ -833,8 +845,9 @@ func (f *fakeSubstrate) handleTriggerGet(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, e)
 }
 
-// handleTriggerPut stores one trigger data record, mirroring the task put's
-// create/update accounting so apply prints the right verb.
+// handleTriggerPut stores one core data record (a trigger, or a bundle's
+// setting), mirroring the task put's create/update accounting so apply prints
+// the right verb.
 func (f *fakeSubstrate) handleTriggerPut(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
 	var in substrate.PutInput
@@ -849,8 +862,11 @@ func (f *fakeSubstrate) handleTriggerPut(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusOK, e)
 		return
 	}
+	// The kind is read off the collection this put arrived at, so the one
+	// handler answers both trigger and setting records honestly.
+	kind := strings.TrimPrefix(path.Dir(r.URL.EscapedPath()), apiPrefix+"/")
 	e := &substrate.Record{
-		ID: id, Kind: "substrate.reamde.dev/core/trigger", Properties: in.Properties,
+		ID: id, Kind: kind, Properties: in.Properties,
 		Labels: map[string]any{}, Version: 1, CreatedAt: testNow, UpdatedAt: testNow,
 	}
 	f.records[id] = e

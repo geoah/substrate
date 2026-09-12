@@ -250,13 +250,13 @@ func TestStoreRefusesANullDefinitionAtTheRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	importVocabulary(t, ds, "messaging")
-	installShippedBundle(t, ds, "web")
+	installShippedBundle(t, ds, "readinglist")
 	db, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
 	if err != nil {
 		t.Fatalf("open repository schema: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	const fn = "samples.substrate.reamde.dev/web/findurls"
+	const fn = "samples.substrate.reamde.dev/readinglist/findurls"
 	if _, err := db.ExecContext(ctx, `
 		UPDATE records SET props = jsonb_set(props, '{definition}', 'null')
 		WHERE kind = $1 AND id = $2`,
@@ -304,20 +304,20 @@ func TestStoreRefusesADeletedGrantSpelling(t *testing.T) {
 		t.Fatal(err)
 	}
 	importVocabulary(t, ds, "messaging")
-	installShippedBundle(t, ds, "web")
+	installShippedBundle(t, ds, "readinglist")
 	db, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
 	if err != nil {
 		t.Fatalf("open repository schema: %v", err)
 	}
 	defer func() { _ = db.Close() }()
 	// The grant hoisted onto `data` itself, with no `permissions` object.
-	const fn = "samples.substrate.reamde.dev/web/findurls"
+	const fn = "samples.substrate.reamde.dev/readinglist/findurls"
 	if _, err := db.ExecContext(ctx, `
 		UPDATE records
 		SET props = jsonb_set(props - 'permissions', '{emit}', $3::jsonb)
 		WHERE kind = $1 AND id = $2`,
 		"substrate.reamde.dev/core/function", fn,
-		`["samples.substrate.reamde.dev/web/page"]`); err != nil {
+		`["samples.substrate.reamde.dev/readinglist/page"]`); err != nil {
 		t.Fatalf("plant an interim grant row: %v", err)
 	}
 	_ = svc.Close()

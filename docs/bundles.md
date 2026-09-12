@@ -2,7 +2,7 @@
 
 A **bundle** is the unit of installation: a closure of declarations and
 behavior that teaches the substrate something new, applied as one unit and
-removable as one unit. Installing the URL harvester adds functions and agents;
+removable as one unit. Installing the reading-list sample adds functions and agents;
 installing a provider like Google adds account access and sync; installing a
 vocabulary bundle adds kinds and rules. All three are bundles — there is no
 second word for them, on the wire or anywhere else.
@@ -34,37 +34,35 @@ and every installed kind's GraphQL name carries its full authority
 [traits](data-model.md#traits),
 [property types](data-model.md#property-types),
 [record mappings](projection.md), [functions](functions.md), and
-[agents](agents.md). The harvester's document, its description elided:
+[agents](agents.md). The reading-list bundle's document, its description elided:
 
 ```yaml
 kind: substrate.reamde.dev/core/bundle
 metadata:
-  id: samples.substrate.reamde.dev/web
+  id: samples.substrate.reamde.dev/readinglist
 data:
   authority: samples.substrate.reamde.dev
-  package: web
-  inputs:
-    connector:
-      kind: samples.substrate.reamde.dev/web/config
-      inject: functions
+  package: readinglist
+  requires:
+    - samples.substrate.reamde.dev/messaging
   installs:
-    - samples.substrate.reamde.dev/web/config
-    - samples.substrate.reamde.dev/web/page
-    - samples.substrate.reamde.dev/web/findurls
-    - samples.substrate.reamde.dev/web/fetchpage
-    - samples.substrate.reamde.dev/web/setclass
-    - samples.substrate.reamde.dev/web/stampconfig
-    - samples.substrate.reamde.dev/web/pageclassifier
-    - samples.substrate.reamde.dev/web/readinglistagent
-    - samples.substrate.reamde.dev/web/weeklyrollup
+    - samples.substrate.reamde.dev/readinglist/digest
+    - samples.substrate.reamde.dev/readinglist/page
+    - samples.substrate.reamde.dev/readinglist/findurls
+    - samples.substrate.reamde.dev/readinglist/fetchpage
+    - samples.substrate.reamde.dev/readinglist/setclass
+    - samples.substrate.reamde.dev/readinglist/stampdigest
+    - samples.substrate.reamde.dev/readinglist/pageclassifier
+    - samples.substrate.reamde.dev/readinglist/curator
+    - samples.substrate.reamde.dev/readinglist/weeklyrollup
 ```
 
 The document's own id is the package it owns
-(`samples.substrate.reamde.dev/web`), and every entry in `installs:` is a full
+(`samples.substrate.reamde.dev/readinglist`), and every entry in `installs:` is a full
 kind reference, never a bare name. The bundle document never travels alone: the
 [`package`](vocabulary.md) document that heads the closure, and every member
 `installs:` names, belong to the same apply. A closure applied without that
-header is refused — `package samples.substrate.reamde.dev/web: no package
+header is refused — `package samples.substrate.reamde.dev/readinglist: no package
 manifest declares it` — and `installs:` is held equal to what the package
 actually declares, both ways, so a member left out and a name that is not there
 are each refused by the same rule: the closure is the package.
@@ -452,7 +450,7 @@ The **catalog** lists everything shipped in the binary, in the two tiers
 [0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
 the six **providers** under `kinds/providers.substrate.reamde.dev`, and the
 ten **samples** under `samples/` (`people`, `tasks`, `messaging`, `calendar`,
-`scheduling`, and the worked examples `llm`, `notes`, `web`, `pebble`,
+`scheduling`, and the worked examples `llm`, `notes`, `readinglist`, `pebble`,
 `firecrawl`) a repository takes because creation seeds
 `substrate.reamde.dev/core` alone.
 

@@ -24,35 +24,38 @@ func realCatalog(t *testing.T) *Catalog {
 func TestCatalogListsShippedBundle(t *testing.T) {
 	c := realCatalog(t)
 	// A malformed or half-built neighbor is dropped with a warning, not
-	// fatal — but the web closure itself must never be the one dropped.
+	// fatal — but the reading-list closure itself must never be the one
+	// dropped.
 	for _, w := range c.Warnings() {
-		if strings.HasPrefix(w, "samples.substrate.reamde.dev/web") {
-			t.Fatalf("the web bundle was dropped: %v", w)
+		if strings.HasPrefix(w, "samples.substrate.reamde.dev/readinglist") {
+			t.Fatalf("the reading-list bundle was dropped: %v", w)
 		}
 	}
-	const webID = "samples.substrate.reamde.dev/web"
-	b, ok := c.ByID(webID)
+	const rlID = "samples.substrate.reamde.dev/readinglist"
+	b, ok := c.ByID(rlID)
 	if !ok {
 		var ids []string
 		for _, x := range c.Bundles() {
 			ids = append(ids, x.ID)
 		}
-		t.Fatalf("web bundle %q not in catalog; have %v", webID, ids)
+		t.Fatalf("reading-list bundle %q not in catalog; have %v", rlID, ids)
 	}
-	if b.Name != "web" {
-		t.Errorf("name = %q, want web", b.Name)
+	if b.Name != "readinglist" {
+		t.Errorf("name = %q, want readinglist", b.Name)
 	}
 	if b.Authority != "samples.substrate.reamde.dev" {
 		t.Errorf("authority = %q", b.Authority)
 	}
-	if b.Package != "web" {
-		t.Errorf("package = %q, want web", b.Package)
+	if b.Package != "readinglist" {
+		t.Errorf("package = %q, want readinglist", b.Package)
 	}
-	if b.Version != 9 {
-		t.Errorf("version = %d, want 9", b.Version)
+	if b.Version != 10 {
+		t.Errorf("version = %d, want 10", b.Version)
 	}
-	if _, ok := b.Inputs["connector"]; !ok {
-		t.Errorf("inputs = %v, want a connector input", b.Inputs)
+	// Its configuration is a shipped `setting` record, not an input: a bundle
+	// with no declared input is the shape decision record 0076 moved to.
+	if len(b.Inputs) != 0 {
+		t.Errorf("inputs = %v, want none", b.Inputs)
 	}
 	if b.Description == "" {
 		t.Error("description is empty")
@@ -60,12 +63,13 @@ func TestCatalogListsShippedBundle(t *testing.T) {
 }
 
 func TestCatalogDetailEnumeratesTheClosure(t *testing.T) {
-	b, ok := realCatalog(t).ByID("samples.substrate.reamde.dev/web")
+	b, ok := realCatalog(t).ByID("samples.substrate.reamde.dev/readinglist")
 	if !ok {
-		t.Fatal("web bundle missing")
+		t.Fatal("reading-list bundle missing")
 	}
-	// The web closure ships two record kinds, four functions, three agents,
-	// and writes four trigger records beside them.
+	// The reading-list closure ships two record kinds, four functions, three
+	// agents, and writes four triggers, one setting and the empty digest the
+	// rollup patches beside them.
 	if got := len(b.Closure.Kinds); got != 2 {
 		t.Errorf("kinds = %d, want 2 (%v)", got, b.Closure.Kinds)
 	}
@@ -75,16 +79,16 @@ func TestCatalogDetailEnumeratesTheClosure(t *testing.T) {
 	if got := len(b.Closure.Agents); got != 3 {
 		t.Errorf("agents = %d, want 3 (%v)", got, b.Closure.Agents)
 	}
-	if got := len(b.Closure.Records); got != 4 {
-		t.Errorf("records = %d, want 4 (%v)", got, b.Closure.Records)
+	if got := len(b.Closure.Records); got != 6 {
+		t.Errorf("records = %d, want 6 (%v)", got, b.Closure.Records)
 	}
 	for _, r := range b.Closure.Records {
 		if r.Kind == "" || r.ID == "" {
 			t.Errorf("a shipped record needs both halves of its identity: %+v", r)
 		}
 	}
-	if !contains(b.Closure.Kinds, "samples.substrate.reamde.dev/web/config") {
-		t.Errorf("config kind not in the closure: %v", b.Closure.Kinds)
+	if !contains(b.Closure.Kinds, "samples.substrate.reamde.dev/readinglist/digest") {
+		t.Errorf("digest kind not in the closure: %v", b.Closure.Kinds)
 	}
 	// Each kind's own description rides along: before an install there is no
 	// registry entry to look one up in, and "what does this ship" is the
@@ -135,10 +139,10 @@ func TestCatalogPreviewsTheRecordsAnInstallWrites(t *testing.T) {
 func TestCatalogTierIsTheTreeTheClosureCameFrom(t *testing.T) {
 	c := realCatalog(t)
 	cases := map[string]string{
-		"providers.substrate.reamde.dev/google": substrate.TierProvider,
-		"providers.substrate.reamde.dev/linear": substrate.TierProvider,
-		"samples.substrate.reamde.dev/web":      substrate.TierSample,
-		"samples.substrate.reamde.dev/tasks":    substrate.TierSample,
+		"providers.substrate.reamde.dev/google":    substrate.TierProvider,
+		"providers.substrate.reamde.dev/linear":    substrate.TierProvider,
+		"samples.substrate.reamde.dev/readinglist": substrate.TierSample,
+		"samples.substrate.reamde.dev/tasks":       substrate.TierSample,
 	}
 	for id, want := range cases {
 		b, ok := c.ByID(id)
