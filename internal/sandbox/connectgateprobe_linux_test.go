@@ -128,7 +128,7 @@ func TestANetworkBodyIsRefusedWhenTheGateCannotRun(t *testing.T) {
 }
 
 // A probe that could not complete is not a capability the operator is missing,
-// and it is not a licence to run unfiltered either: the body is refused with
+// and it is not a license to run unfiltered either: the body is refused with
 // the probe's own failure.
 func TestANetworkBodyIsRefusedWhenTheProbeFailed(t *testing.T) {
 	errProbe := errors.New("connect-gate probe: pidfd_open: too many open files")
