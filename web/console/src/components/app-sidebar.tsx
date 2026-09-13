@@ -15,6 +15,7 @@ import {
   HomeIcon,
   KeyRoundIcon,
   LayersIcon,
+  LayoutGridIcon,
   LogOutIcon,
   MoonIcon,
   PackageIcon,
@@ -75,6 +76,7 @@ import { settingSetupCount, upgradableBundleCount } from "@/lib/bundles"
 
 const consoleItems = [
   { title: "Overview", to: "/", icon: HomeIcon },
+  { title: "Apps", to: "/apps", icon: LayoutGridIcon },
   { title: "Changelog", to: "/changelog", icon: ActivityIcon },
   { title: "Registry", to: "/registry", icon: PackageIcon },
   { title: "Settings", to: "/settings", icon: SlidersHorizontalIcon },

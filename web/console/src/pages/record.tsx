@@ -10,9 +10,16 @@
  * The active tab lives in the URL (`?tab=`) so it is linkable and back-button
  * friendly. An **Edit** action opens the YAML editor for this record. The layout
  * is generic — functions, kinds, triggers, agents and data records all render
- * through it. */
+ * through it.
+ *
+ * An APP attached to the record (`attach: record`, by a kind it reads or by
+ * a `via` pinned at this kind) is a card under the properties, handed this
+ * record through the bridge: on a phone the record reads top to bottom, its
+ * data first and what hangs off it after. The page filters coarsely off the
+ * raw row (the runtime decides `via`), so the apps chunk loads only when a
+ * candidate exists. */
 
-import { useMemo } from "react"
+import { Suspense, lazy, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { FileQuestionIcon, PencilIcon } from "lucide-react"
@@ -36,6 +43,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { appAttaches, appReadKinds, appsQueryOptions } from "@/lib/api/apps"
 import { recordQueryOptions } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { ApiError } from "@/lib/api/types"
@@ -58,6 +66,10 @@ const tabParser = parseAsStringLiteral(TABS)
   .withDefault("properties")
   .withOptions({ history: "push" })
 
+const AppCard = lazy(() =>
+  import("@/components/apps/runtime").then((m) => ({ default: m.AppCard }))
+)
+
 export function RecordPage() {
   const { authority, pkg, name, id } = recordRoute.useParams()
   const [tab, setTab] = useQueryState("tab", tabParser)
@@ -67,6 +79,20 @@ export function RecordPage() {
     ? kindByCollection(registry.data, authority, pkg, name)
     : undefined
   const record = useQuery(recordQueryOptions(authority, pkg, name, id))
+
+  // Candidates only: an app without `via` must read this kind; one with
+  // `via` may point here, and the card decides once it has the registry.
+  const apps = useQuery(appsQueryOptions())
+  const attached = useMemo(() => {
+    const identity = kindInfo?.identity
+    if (!identity) return []
+    return (apps.data?.records ?? []).filter(
+      (a) =>
+        appAttaches(a, "record") &&
+        (typeof a.properties.via === "string" ||
+          appReadKinds(a).includes(identity))
+    )
+  }, [apps.data, kindInfo])
 
   // The hover vocabulary comes off the kinds query the page already holds —
   // one registry read backs every property tooltip on the manifest.
@@ -190,6 +216,18 @@ export function RecordPage() {
               kind={kindInfo}
               kinds={registry.data ?? []}
             />
+            {attached.length > 0 && (
+              <div className="flex max-w-3xl flex-col gap-4 px-6 pb-6">
+                {attached.map((app) => (
+                  <Suspense
+                    key={app.id}
+                    fallback={<Skeleton className="h-32 rounded-xl" />}
+                  >
+                    <AppCard app={app} at="record" attachedRecord={e} />
+                  </Suspense>
+                ))}
+              </div>
+            )}
           </ScrollArea>
         </TabsContent>
         <TabsContent value="graph" className="min-h-0 border-t">
