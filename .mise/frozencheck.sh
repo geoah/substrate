@@ -20,6 +20,16 @@
 # evidence of what was decided and why. What a record IS allowed to do is
 # change status, so only the body below the frontmatter is compared: marking a
 # record superseded edits `status:` and `superseded-by:` and nothing else.
+# The one body edit that is not a rewrite is MECHANICAL LINK REPAIR
+# (docs/decisions/README.md, "Superseding, not editing"): a link whose target
+# was renamed or deleted may be repointed or reduced to its text, because
+# `lint:docs` holds every link in the tree and a dead one is a bug wherever it
+# lives. So the bodies are compared with every inline Markdown link reduced to
+# its text: what the record SAYS is frozen, where it points is not. Only a
+# plain inline link (`[text](target)`, the target one token) is reduced: an
+# image (`![alt](src)`) is content, a link inside a code span is text the
+# reader sees, and a target holding whitespace is prose wearing a link's
+# clothes, so all three stay in the comparison.
 #
 # FROZEN_CHECK_BASE overrides the base commit, for trying the check by hand:
 #   FROZEN_CHECK_BASE=HEAD~1 mise run frozen:check
@@ -90,7 +100,7 @@ decision_body() {
     NR == 1 { next }
     !closed && $0 == "---" { closed = 1; next }
     closed { print }
-  '
+  ' | sed -E 's/(^|[^`!\\])\[([^][]*)\]\(([^()[:space:]]*)\)/\1\2/g'
 }
 
 decision_base_status() {

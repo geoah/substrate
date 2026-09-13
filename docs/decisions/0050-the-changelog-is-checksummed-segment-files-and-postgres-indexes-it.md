@@ -19,7 +19,7 @@ first-open backfill and a sanctioned in-place rewrite
 credential key to append at all, and it produced no backup: a database dump
 was still the only copy. V1 wants a copy on disk that a cron can take, and
 corruption detection without a key
-([the plan](../plans/filesystem-changelog.md)).
+(the plan).
 
 ## Considered Options
 

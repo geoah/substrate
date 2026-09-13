@@ -12,7 +12,7 @@ decision-makers: George Antoniadis
 ([internal/api/errors.go](../../internal/api/errors.go)), but no HTTP request
 can produce it ([#242](https://github.com/geoah/substrate/issues/242)). The
 policy door is a method on `agentMutateDataset`
-([internal/engine/agentgql.go](../../internal/engine/agentgql.go) `door`), built
+(internal/engine/agentgql.go `door`), built
 only inside the agent loop, and its three `policyVerdict` call sites each turn a
 `gate` verdict into a `recordpatchrequest` and a tool-result string the model
 reads. `agentEntryError`

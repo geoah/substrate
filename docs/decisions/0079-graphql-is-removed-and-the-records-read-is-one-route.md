@@ -21,7 +21,7 @@ functions. Keeping it cost a generated schema per repository, a naming rule
 with its own record ([0058](0058-a-graphql-name-always-carries-the-authority.md)),
 a 64-bit scalar, a type-name mirror in the console, a dependency, and a
 second copy of every read and write to hold to the first. The proposal is
-[docs/plans/api-consolidation.md](../plans/api-consolidation.md), drafted and
+docs/plans/api-consolidation.md, drafted and
 reviewed jointly; this record binds what it settled.
 
 ## Considered Options
@@ -164,7 +164,7 @@ successor [0022](0022-rest-is-frozen-graphql-is-a-projection.md) now names;
 retires the
 collection-path sentences of 0033, 0042 and 0047 named above, which
 otherwise stand. The plan is
-[docs/plans/api-consolidation.md](../plans/api-consolidation.md); the
+docs/plans/api-consolidation.md; the
 reader-facing contract is [docs/api.md](../api.md). Revisit if a second
 request surface is wanted again (discovery's `surfaces` stayed keyed for it),
 if the ranked read or the tail needs property predicates pushed into the
