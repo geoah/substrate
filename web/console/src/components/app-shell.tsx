@@ -1,8 +1,14 @@
 import { Fragment, useEffect, useState } from "react"
-import { Link, Outlet, useRouterState } from "@tanstack/react-router"
+import {
+  Link,
+  Outlet,
+  useMatches,
+  useRouterState,
+} from "@tanstack/react-router"
 import { SearchIcon } from "lucide-react"
 
 import { AppSidebar } from "@/components/app-sidebar"
+import { ConsoleTabs } from "@/components/apps/console-tabs"
 import { CommandMenu } from "@/components/command-menu"
 import {
   Breadcrumb,
@@ -20,6 +26,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { CR_NAME } from "@/lib/api/changerequests"
 import { CORE_AUTHORITY, CORE_PACKAGE, CORE_PACKAGE_NAME } from "@/lib/api/http"
 import { MR_NAME } from "@/lib/api/mergerequests"
@@ -92,6 +99,16 @@ function crumbsFor(pathname: string): Crumb[] {
       { label: id, mono: true },
     ]
   }
+  if (pathname.startsWith("/apps/")) {
+    const id = decodeURIComponent(
+      pathname.slice("/apps/".length).split("/")[0] ?? ""
+    )
+    return [
+      { label: "Apps", to: "/apps" },
+      { label: id, mono: true },
+    ]
+  }
+  if (pathname.startsWith("/apps")) return [{ label: "Apps" }]
   if (pathname.startsWith("/actors/")) {
     const id = decodeURIComponent(pathname.slice("/actors/".length))
     return [{ label: "Actors" }, { label: id, mono: true }]
@@ -167,6 +184,9 @@ function ShellBreadcrumb() {
 
 export function AppShell() {
   const [commandOpen, setCommandOpen] = useState(false)
+  const matches = useMatches()
+  const appChrome = matches.some((m) => m.staticData?.chrome === "app")
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -178,6 +198,16 @@ export function AppShell() {
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [])
+
+  // An app route under 768 px owns the viewport: its own header, its own
+  // bottom button, no sidebar and no console header around it.
+  if (appChrome && isMobile) {
+    return (
+      <TooltipProvider delay={250}>
+        <Outlet />
+      </TooltipProvider>
+    )
+  }
 
   return (
     <SidebarProvider>
@@ -205,6 +235,7 @@ export function AppShell() {
           <div className="flex min-h-0 flex-1 flex-col overflow-auto">
             <Outlet />
           </div>
+          <ConsoleTabs />
         </SidebarInset>
         <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
       </TooltipProvider>

@@ -8,19 +8,18 @@
  * TOP TABS, the record page's idiom (owner ask, 2026-08-12): **Records** is the
  * collection, **Definition** is the kind that shapes it — its declaration YAML
  * and the properties it declares. The active tab lives in `?tab=` so it
- * is linkable, and both tabs read the ONE kinds query this page already makes. */
+ * is linkable, and both tabs read the ONE kinds query this page already makes.
+ *
+ * An APP attached to the kind (`attach: browse`, reading this kind) is one
+ * more tab, keyed by its id, its guest filling the tab. The apps runtime is
+ * one lazy chunk; the page reads only the raw row's `attach` and grant. */
 
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, lazy, useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import type { SortingState, Updater } from "@tanstack/react-table"
 import { InboxIcon, PlusIcon, SearchXIcon } from "lucide-react"
-import {
-  parseAsArrayOf,
-  parseAsString,
-  parseAsStringLiteral,
-  useQueryState,
-} from "nuqs"
+import { parseAsArrayOf, parseAsString, useQueryState } from "nuqs"
 
 import { DataTable, useDataTable } from "@/components/data-table/data-table"
 import { DataTableCursorPagination } from "@/components/data-table/data-table-cursor-pagination"
@@ -39,6 +38,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { appAttaches, appReadKinds, appsQueryOptions } from "@/lib/api/apps"
 import {
   recordsQueryOptions,
   recordCountQueryOptions,
@@ -64,11 +64,18 @@ import { kindBrowseRoute } from "@/router"
 const PAGE_SIZE = 50
 const DEFAULT_SORT = "updatedAt:desc"
 
-/** The tab keys, in bar order; the records lead and are the default. */
-const TABS = ["records", "definition"] as const
-const tabParser = parseAsStringLiteral(TABS)
-  .withDefault("records")
+/** The fixed tab keys, in bar order; the records lead and are the default.
+ * An attached app adds its id as a key, so the parser is a plain string and
+ * a key no tab carries falls back to the records. */
+const RECORDS_TAB = "records"
+const DEFINITION_TAB = "definition"
+const tabParser = parseAsString
+  .withDefault(RECORDS_TAB)
   .withOptions({ history: "push" })
+
+const AppCard = lazy(() =>
+  import("@/components/apps/runtime").then((m) => ({ default: m.AppCard }))
+)
 
 function parseSort(sort: string): SortingState {
   const [property, dir] = sort.split(":")
@@ -121,6 +128,23 @@ export function KindBrowsePage() {
   const kindInfo = registry.data
     ? kindByCollection(registry.data, authority, pkg, name)
     : undefined
+
+  const apps = useQuery(appsQueryOptions())
+  const appTabs = useMemo(() => {
+    const identity = kindInfo?.identity
+    if (!identity) return []
+    return (apps.data?.records ?? [])
+      .filter(
+        (a) => appAttaches(a, "browse") && appReadKinds(a).includes(identity)
+      )
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  }, [apps.data, kindInfo])
+  const activeTab =
+    tab === RECORDS_TAB ||
+    tab === DEFINITION_TAB ||
+    appTabs.some((a) => a.id === tab)
+      ? tab
+      : RECORDS_TAB
 
   const filters = useMemo(() => decodeFilters(filterTokens), [filterTokens])
   const filterFields = useMemo(
@@ -296,16 +320,26 @@ export function KindBrowsePage() {
         </Button>
       </div>
       <Tabs
-        value={tab}
-        onValueChange={(next) => void setTab(next as (typeof TABS)[number])}
+        value={activeTab}
+        onValueChange={(next) => void setTab(String(next))}
         className="min-h-0 flex-1 gap-0"
       >
         <TabsList variant="line" className="mx-4 shrink-0 justify-start">
-          <TabsTrigger value="records">Records</TabsTrigger>
-          <TabsTrigger value="definition">Definition</TabsTrigger>
+          <TabsTrigger value={RECORDS_TAB}>Records</TabsTrigger>
+          <TabsTrigger value={DEFINITION_TAB}>Definition</TabsTrigger>
+          {appTabs.map((a) => (
+            <TabsTrigger key={a.id} value={a.id}>
+              {typeof a.properties.name === "string" && a.properties.name
+                ? a.properties.name
+                : a.id}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
-        <TabsContent value="records" className="flex min-h-0 flex-col border-t">
+        <TabsContent
+          value={RECORDS_TAB}
+          className="flex min-h-0 flex-col border-t"
+        >
           {records.isError ? (
             <PageEmpty
               icon={<SearchXIcon />}
@@ -406,11 +440,23 @@ export function KindBrowsePage() {
           )}
         </TabsContent>
 
-        <TabsContent value="definition" className="min-h-0 border-t">
+        <TabsContent value={DEFINITION_TAB} className="min-h-0 border-t">
           <ScrollArea className="h-full">
             <KindDefinition kind={kindInfo} kinds={registry.data ?? []} />
           </ScrollArea>
         </TabsContent>
+
+        {appTabs.map((a) => (
+          <TabsContent
+            key={a.id}
+            value={a.id}
+            className="flex min-h-0 flex-1 flex-col border-t"
+          >
+            <Suspense fallback={<BrowseTableSkeleton />}>
+              <AppCard app={a} at="browse" />
+            </Suspense>
+          </TabsContent>
+        ))}
       </Tabs>
     </div>
   )

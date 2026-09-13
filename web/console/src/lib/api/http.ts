@@ -48,6 +48,10 @@ export interface RequestOpts {
   anonymous?: boolean
   /** Carry this token instead of the stored one (login verification). */
   token?: string
+  /** Sent as `Idempotency-Key`: a create retried with the same key lands once
+   * (`internal/api/core.go`). Minted once per pending write, never per
+   * attempt. */
+  idempotencyKey?: string
   signal?: AbortSignal
 }
 
@@ -109,6 +113,7 @@ export async function request<T>(
     "X-Substrate-Actor": ACTOR,
   }
   if (body !== undefined) headers["Content-Type"] = "application/json"
+  if (opts.idempotencyKey) headers["Idempotency-Key"] = opts.idempotencyKey
   const token = opts.token ?? (opts.anonymous ? null : getToken())
   if (token) headers.Authorization = `Bearer ${token}`
 

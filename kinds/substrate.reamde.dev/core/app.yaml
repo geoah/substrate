@@ -1,0 +1,169 @@
+# one app: a name, a runtime and one inline module the console runs behind an
+# opaque-origin guest, the way a function is a name, a runtime and one inline
+# body the sandbox runs. The record IS the app: apply admits it, the launcher
+# lists it, the guest mounts its source under the grant below, and the engine
+# reads none of it. The console is the one consumer, the bridge the one door,
+# and `writer: owner` on the two code properties the one admission gate.
+#
+# There is no second format. A list, a row, a timeline are components in the
+# SDK the source imports, never records, so the console renders nothing of an
+# app in its own realm and the author is never told which layout to want.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/app
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One app: a name, a runtime and one inline module the console mounts behind
+    an opaque-origin guest, reaching records only through the bridge and only
+    inside the grant it declares. The record IS the app, as a function's record
+    is the function.
+  version: 1
+  names:
+    singular: app
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the app's heading, in the launcher and the host's title
+        bar
+    description:
+      type: string
+      description: what the app is for, one line; the launcher's subtitle
+        and what a model reads before it edits the source
+    icon:
+      type: string
+      description: a lucide icon name the launcher and the tab bar draw
+    # A value is permanent once shipped: a live row makes its removal a
+    # narrowing, and decision 0066's remap cannot land on a value that is
+    # still admitted. A value enters this list with the shell that runs it.
+    runtime:
+      type: enum
+      required: true
+      values:
+        - react
+        - html
+      description: react is a TSX module that default-exports a component;
+        html is a whole document; both run behind the guest
+    # THE CODE. Never FTS-indexed, held by the host to the 256 KiB a
+    # function's body is held to, and written at OWNER TIER alone: an agent's
+    # mutate is refused by the engine, its propose lands only when the owner
+    # accepts, and a bundle install writes below owner tier, so no shipped
+    # closure carries browser code.
+    source:
+      type: text
+      fts: false
+      required: true
+      writer: owner
+      description: the inline module or document, written by the owner alone;
+        a react runtime default-exports its component, html is the page
+    # Node's own convention for a package-internal import: a module is
+    # imported as `#<key>`, which an import map resolves and a relative path
+    # from a blob-backed module cannot.
+    modules:
+      type: text
+      fts: false
+      keyed: true
+      keyPattern: camel
+      writer: owner
+      description: further modules a bigger app splits into, keyed by name
+        and imported as `#name` from the source and from each other
+    # The grant a function declares, plus traits and agents. Enforced per
+    # call by the host bridge, never by the server, and honored only when this
+    # property and the two code properties were written at owner tier: an
+    # object cannot carry `writer`, so the host reads the tier off the row.
+    permissions:
+      type: object
+      description: what the source may do through the bridge; a grant left
+        out is refused, and below owner tier the whole grant is ignored
+      fields:
+        reads:
+          type: object
+          description: what it may list, get, subscribe to and search
+          fields:
+            kinds:
+              type: reference
+              kind: substrate.reamde.dev/core/kind
+              repeated: true
+              description: the kinds every read is held to
+            traits:
+              type: reference
+              kind: substrate.reamde.dev/core/trait
+              repeated: true
+              description: traits whose implementors it may read across kinds,
+                expanded at mount and again when a kind lands
+        writes:
+          type: reference
+          kind: substrate.reamde.dev/core/kind
+          repeated: true
+          description: the kinds it may put, patch, transition and delete
+        call:
+          type: reference
+          kind: substrate.reamde.dev/core/function
+          repeated: true
+          description: the functions it may call
+        agents:
+          type: reference
+          kind: substrate.reamde.dev/core/agent
+          repeated: true
+          description: the agents it may chat with
+    # The bundle's `inputs`, on the app: the same shape and the same rule,
+    # bound, then the id `default`, then the sole record, else nothing.
+    inputs:
+      type: object
+      keyed: true
+      keyPattern: camel
+      description: the app's named configuration needs, each naming a kind;
+        `me` on a provider's profile kind is the common one
+      fields:
+        kind:
+          type: reference
+          kind: substrate.reamde.dev/core/kind
+          required: true
+          description: the kind whose records satisfy this input
+        description:
+          type: string
+          description: what the input is for
+    # The bundle's `bindings` minus `managed`: written by the host's picker or
+    # by hand, never shipped, so the owner's choice survives a re-apply.
+    bindings:
+      type: reference
+      keyed: true
+      keyPattern: camel
+      description: the owner's chosen record per input, keyed by its name
+    # The SDK major is the contract (Figma's `api`, Shopify's `api_version`):
+    # a major grows only additively, a break is the next major served beside
+    # it under its own import map, and the record says which one it speaks.
+    sdk:
+      type: int
+      min: 1
+      default: 1
+      description: the SDK major the source was written against; the host
+        serves every major it still ships and refuses one newer than that
+    # Decision 0070's floor, keyed by package identity as a bundle spells it;
+    # a reference in the grant that resolves to nothing gates on presence.
+    requiresAtLeast:
+      type: int
+      keyed: true
+      description: the least version of a package this app renders against;
+        below it the host offers the upgrade instead of mounting
+    attach:
+      type: enum
+      repeated: true
+      values:
+        - launcher
+        - home
+        - record
+        - browse
+      description: where the console offers the app; absent means launcher;
+        record mounts it as a card on the pages `via` points at
+    via:
+      type: string
+      description: the reference property that scopes the app on a record
+        page; the host mounts it on that kind's pages and hands it the record
+    home:
+      type: bool
+      description: the app a phone opens first; the lowest id wins when two
+        say so

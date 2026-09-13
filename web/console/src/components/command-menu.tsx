@@ -6,6 +6,7 @@ import {
   BotIcon,
   FolderIcon,
   HomeIcon,
+  LayoutGridIcon,
   PackageIcon,
 } from "lucide-react"
 
@@ -22,6 +23,7 @@ import { buildKindNav, kindsQueryOptions } from "@/lib/api/kinds"
 
 const pages = [
   { title: "Overview", to: "/", icon: HomeIcon },
+  { title: "Apps", to: "/apps", icon: LayoutGridIcon },
   { title: "Changelog", to: "/changelog", icon: ActivityIcon },
   { title: "Registry", to: "/registry", icon: PackageIcon },
   { title: "Agents", to: "/agents", icon: BotIcon },

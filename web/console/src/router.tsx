@@ -14,6 +14,8 @@ import { AccountPage } from "@/pages/account"
 import { ActorPage } from "@/pages/actor"
 import { AgentChatPage } from "@/pages/agent-chat"
 import { AgentsPage } from "@/pages/agents"
+import { AppPage } from "@/pages/app"
+import { AppsPage } from "@/pages/apps"
 import { ChangelogPage } from "@/pages/changelog"
 import { BundleDetailPage } from "@/pages/bundle-detail"
 import { AuthorityPage, PackagePage } from "@/pages/authority"
@@ -199,6 +201,34 @@ export const accountRoute = createRoute({
   component: AccountPage,
 })
 
+// The apps routes own their chrome: `staticData.chrome` is what AppShell reads
+// to drop its sidebar and header under 768 px. The splat under `/apps/$id/` is
+// the APP'S OWN path (`/apps/projects/website` is `/website` to the app),
+// surfaced to it as its route and pushed by its `navigate`, so a reload lands
+// where the app was and the OS back gesture walks its history.
+const appChrome = { chrome: "app" } as const
+
+export const appsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/apps",
+  component: AppsPage,
+  staticData: appChrome,
+})
+
+export const appRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/apps/$id",
+  component: AppPage,
+  staticData: appChrome,
+})
+
+export const appSplatRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/apps/$id/$",
+  component: AppPage,
+  staticData: appChrome,
+})
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   registerRoute,
@@ -222,6 +252,9 @@ const routeTree = rootRoute.addChildren([
     actorRoute,
     tokensRoute,
     accountRoute,
+    appsRoute,
+    appRoute,
+    appSplatRoute,
   ]),
 ])
 
@@ -236,5 +269,10 @@ export const router = createRouter({
 declare module "@tanstack/react-router" {
   interface Register {
     router: typeof router
+  }
+  interface StaticDataRouteOption {
+    /** `app`: the route draws its own chrome (components/apps/app-chrome.tsx)
+     * and the shell steps aside under 768 px. */
+    chrome?: "app"
   }
 }
