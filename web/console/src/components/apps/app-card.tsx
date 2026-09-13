@@ -10,11 +10,13 @@
  * it.
  *
  * The page hands in the row as the LIST served it, which carries no
- * `propertyMeta`; provenance is read off the single-record read, the one
- * wire surface that does, so nothing mounts until that read has landed. */
+ * `propertyMeta`; the gate (`app-gate.ts`, the screen's own) reads the
+ * single-record row, the registry and the package versions, so nothing
+ * mounts here that `/apps/$id` would refuse: a floor the repository is
+ * below, a package it lacks, an SDK it does not serve. A card draws the
+ * refusal as a strip where the screen offers the Registry. */
 
-import { useCallback, useMemo, useRef, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useCallback, useRef, useState } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
 
 import { AppBoundary } from "@/components/apps/app-boundary"
@@ -23,6 +25,7 @@ import {
   type AppFrameHandle,
   type FramePhase,
 } from "@/components/apps/app-frame"
+import { useAppGate } from "@/components/apps/app-gate"
 import { ErrorsStrip } from "@/components/apps/errors"
 import { ProblemStrip } from "@/components/apps/problems"
 import { Button } from "@/components/ui/button"
@@ -34,14 +37,10 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useLiveRecords } from "@/hooks/use-live-records"
-import { appQueryOptions } from "@/lib/api/apps"
-import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { SubstrateRecord } from "@/lib/api/types"
-import { appSpec, attachesToRecord } from "@/lib/apps/app-spec"
+import { attachesToRecord } from "@/lib/apps/app-spec"
 import type { PrimaryActionParams } from "@/lib/apps/bridge/protocol"
-import { useAppInputs } from "@/lib/apps/inputs"
-import { blockingProblems, type AppError } from "@/lib/apps/spec"
+import type { AppError, Problem } from "@/lib/apps/spec"
 
 export function AppCard({
   app,
@@ -55,17 +54,7 @@ export function AppCard({
   attachedRecord?: SubstrateRecord
 }) {
   const navigate = useNavigate()
-  const registry = useQuery(kindsQueryOptions)
-  const single = useQuery(appQueryOptions(app.id))
-  const record = single.data
-  const kinds = useMemo(() => registry.data ?? [], [registry.data])
-  const spec = useMemo(
-    () =>
-      record && registry.data ? appSpec(record, registry.data) : undefined,
-    [record, registry.data]
-  )
-  const inputs = useAppInputs(spec, kinds)
-  useLiveRecords(inputs.kinds)
+  const gate = useAppGate(app.id)
 
   const [title, setTitle] = useState<string>()
   const [primary, setPrimary] = useState<PrimaryActionParams | null>(null)
@@ -91,7 +80,15 @@ export function AppCard({
     [navigate, app.id]
   )
 
-  if (!spec || !record) return <Skeleton className="h-32 rounded-xl" />
+  if (gate.phase === "pending") return <Skeleton className="h-32 rounded-xl" />
+  if (gate.phase === "absent") {
+    return (
+      <ProblemStrip
+        problems={[{ path: app.id, message: gate.message, severity: "error" }]}
+      />
+    )
+  }
+  const { record, spec, kinds, missing, blocking, inputs } = gate
   if (
     at === "record" &&
     (!attachedRecord || !attachesToRecord(spec, kinds, attachedRecord.kind))
@@ -99,11 +96,20 @@ export function AppCard({
     return null
   }
 
-  const blocking = blockingProblems(spec.problems)
+  // What the screen refuses, the card refuses: a missing package is the
+  // screen's install offer, here a line naming it.
+  const refused: Problem[] = [
+    ...blocking,
+    ...missing.map((pkg) => ({
+      path: "permissions",
+      message: `needs ${pkg}`,
+      severity: "warning" as const,
+    })),
+  ]
   const body = (
     <AppBoundary label={spec.id}>
-      {blocking.length > 0 ? (
-        <ProblemStrip problems={blocking} />
+      {refused.length > 0 ? (
+        <ProblemStrip problems={refused} />
       ) : (
         <>
           <ErrorsStrip

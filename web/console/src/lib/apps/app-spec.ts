@@ -27,6 +27,7 @@ import {
   RESERVED_MODULES,
   SDK_MAJOR,
   SOURCE_CAP,
+  SOURCE_MODULE,
   type AppSpec,
   type Attach,
   type Grant,
@@ -134,10 +135,15 @@ export function appSpec(
   const modules: Record<string, string> = {}
   for (const [name, text] of Object.entries(obj(p.modules))) {
     if (typeof text !== "string") continue
-    if (RESERVED_MODULES.includes(name)) {
+    const taken = RESERVED_MODULES.includes(name)
+      ? `${name} is the import map's; a module is imported as #${name}`
+      : name === SOURCE_MODULE
+        ? `${name} is the entry's name; a module has its own`
+        : undefined
+    if (taken) {
       problems.push({
         path: `modules.${name}`,
-        message: `${name} is the import map's; a module is imported as #${name}`,
+        message: taken,
         severity: "error",
       })
       continue

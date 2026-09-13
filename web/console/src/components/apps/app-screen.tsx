@@ -1,17 +1,19 @@
-/** `/apps/$id` and `/apps/$id/$`: one app under the host chrome. The gates
- * run in order before anything mounts: the record itself, the packages its
- * grant names (else the install offer), the SDK major, the `requiresAtLeast`
- * floor, owner provenance (else the review notice with Take over and Open
- * record), then the inputs (an ambiguous or missing one puts the picker where
- * the frame would be). The chrome is driven from bridge state: the title the
- * guest sets, the one primary button it asks for, the back button that walks
+/** `/apps/$id` and `/apps/$id/$`: one app under the host chrome. The gate is
+ * `app-gate.ts`, the same one a card passes, and its refusals are drawn here
+ * in order: the record itself, the packages the grant names (else the
+ * install offer), the SDK major and the `requiresAtLeast` floor, owner
+ * provenance (else the review notice with Take over and Open record), then
+ * the inputs (an ambiguous or missing one puts the picker where the frame
+ * would be). The chrome is driven from bridge state: the title the guest
+ * sets, the one primary button it asks for, and the back button, which is
+ * put to the guest first (a listener may be dismissing a sheet) and walks
  * the app's own history while the splat is non-empty and returns to the
- * launcher when it is. The overflow menu holds Settings (the inputs picker),
- * Open record, Edit source and Reload; the errors strip sits between the
- * header and the frame. */
+ * launcher when it is, for a guest that did not take it. The overflow menu
+ * holds Settings (the inputs picker), Open record, Edit source and Reload;
+ * the errors strip sits between the header and the frame. */
 
-import { useCallback, useMemo, useRef, useState } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useCallback, useRef, useState } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useRouter } from "@tanstack/react-router"
 import {
   EllipsisVerticalIcon,
@@ -29,6 +31,7 @@ import {
   type AppFrameHandle,
   type FramePhase,
 } from "@/components/apps/app-frame"
+import { useAppGate } from "@/components/apps/app-gate"
 import { ErrorsStrip } from "@/components/apps/errors"
 import { InputBinder } from "@/components/apps/input-binder"
 import { ProblemList } from "@/components/apps/problems"
@@ -50,21 +53,14 @@ import {
 } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "@/components/ui/toast"
-import { useLiveRecords } from "@/hooks/use-live-records"
-import { APP_NAME, appQueryOptions } from "@/lib/api/apps"
+import { APP_NAME } from "@/lib/api/apps"
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "@/lib/api/http"
-import { kindsQueryOptions } from "@/lib/api/kinds"
-import { patchRecord, recordsQueryOptions } from "@/lib/api/records"
-import type { SubstrateRecord } from "@/lib/api/types"
-import { appSpec, missingPackages } from "@/lib/apps/app-spec"
-import { GATED, ownerProvenance } from "@/lib/apps/bridge/host"
+import { patchRecord } from "@/lib/api/records"
+import { GATED } from "@/lib/apps/bridge/host"
 import type { PrimaryActionParams } from "@/lib/apps/bridge/protocol"
-import { inputStatus, useAppInputs } from "@/lib/apps/inputs"
-import { blockingProblems, type AppError } from "@/lib/apps/spec"
+import { inputStatus } from "@/lib/apps/inputs"
+import type { AppError } from "@/lib/apps/spec"
 import { kindByIdentity } from "@/lib/definition"
-
-/** One page comfortably above any repository's package count. */
-const PACKAGES_PAGE = 200
 
 export function ScreenSkeleton({
   title = " ",
@@ -87,46 +83,12 @@ export function ScreenSkeleton({
   )
 }
 
-/** Package identity → the version the repository holds, off the `core/package`
- * collection, for the `requiresAtLeast` floor. */
-function packageVersions(records: SubstrateRecord[]): Record<string, number> {
-  const out: Record<string, number> = {}
-  for (const r of records) {
-    const v = r.properties.version
-    if (typeof v === "number") out[r.id] = v
-  }
-  return out
-}
-
 export function AppScreen({ id, splat }: { id: string; splat: string }) {
   useTouchRoot()
   const router = useRouter()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const registry = useQuery(kindsQueryOptions)
-  const app = useQuery(appQueryOptions(id))
-  const packages = useQuery(
-    recordsQueryOptions({
-      authority: CORE_AUTHORITY,
-      package: CORE_PACKAGE_NAME,
-      name: "package",
-      first: PACKAGES_PAGE,
-    })
-  )
-  const kinds = useMemo(() => registry.data ?? [], [registry.data])
-  const versions = useMemo(
-    () => packageVersions(packages.data?.records ?? []),
-    [packages.data]
-  )
-  const spec = useMemo(
-    () =>
-      app.data && registry.data
-        ? appSpec(app.data, registry.data, versions)
-        : undefined,
-    [app.data, registry.data, versions]
-  )
-  const inputs = useAppInputs(spec, kinds)
-  useLiveRecords(inputs.kinds)
+  const gate = useAppGate(id)
 
   const [title, setTitle] = useState<string>()
   const [primary, setPrimary] = useState<PrimaryActionParams | null>(null)
@@ -137,10 +99,28 @@ export function AppScreen({ id, splat }: { id: string; splat: string }) {
   const frame = useRef<AppFrameHandle>(null)
 
   const route = splat ? `/${splat}` : ""
+  // The host's own back, root-aware: the app's history while its path is
+  // non-empty and there is an entry of ours to walk back to; the app's root
+  // when the path was opened straight (a bare history.back() there leaves
+  // the console for whatever came before it); the launcher at the root.
+  // What an SDK `host.back()` takes too.
+  const hostBack = useCallback(() => {
+    if (!splat) void navigate({ to: "/apps" })
+    else if (router.history.canGoBack()) router.history.back()
+    else void navigate({ to: "/apps/$id", params: { id } })
+  }, [splat, router, navigate, id])
+  // The header's tap: the guest first, the host only for a guest that did
+  // not take it (or a screen with no guest up).
   const back = useCallback(() => {
-    if (splat) router.history.back()
-    else void navigate({ to: "/apps" })
-  }, [splat, router, navigate])
+    const asked = frame.current?.back()
+    if (!asked) {
+      hostBack()
+      return
+    }
+    void asked.then((handled) => {
+      if (!handled) hostBack()
+    })
+  }, [hostBack])
 
   const onPhase = useCallback((phase: FramePhase) => {
     // A fresh mount starts with the chrome the record gives it.
@@ -161,31 +141,24 @@ export function AppScreen({ id, splat }: { id: string; splat: string }) {
     [router, id]
   )
 
-  if (registry.isPending || app.isPending) {
-    return <ScreenSkeleton onBack={back} />
+  if (gate.phase === "pending") {
+    return <ScreenSkeleton onBack={hostBack} />
   }
-  if (app.isError || !app.data || !spec) {
+  if (gate.phase === "absent") {
     return (
-      <AppChrome title="App" onBack={back}>
+      <AppChrome title="App" onBack={hostBack}>
         <ProblemList
           title="No such app"
-          problems={[
-            {
-              path: id,
-              message: app.error?.message ?? "not found",
-              severity: "error",
-            },
-          ]}
+          problems={[{ path: id, message: gate.message, severity: "error" }]}
         />
       </AppChrome>
     )
   }
 
-  const record = app.data
-  const missing = missingPackages(spec)
+  const { record, spec, kinds, granted, missing, blocking, inputs } = gate
   if (missing.length) {
     return (
-      <AppChrome title={spec.name} onBack={back}>
+      <AppChrome title={spec.name} onBack={hostBack}>
         <ProblemList
           title="This app needs a package this repository lacks"
           problems={missing.map((pkg) => ({
@@ -205,11 +178,10 @@ export function AppScreen({ id, splat }: { id: string; splat: string }) {
       </AppChrome>
     )
   }
-  const blocking = blockingProblems(spec.problems)
   if (blocking.length) {
-    const floor = blocking.some((p) => p.path.startsWith("requiresAtLeast."))
+    const floor = blocking.some((p) => p.path.startsWith("requiresAtLeast"))
     return (
-      <AppChrome title={spec.name} onBack={back}>
+      <AppChrome title={spec.name} onBack={hostBack}>
         <ProblemList
           title={
             floor
@@ -233,8 +205,6 @@ export function AppScreen({ id, splat }: { id: string; splat: string }) {
       </AppChrome>
     )
   }
-
-  const granted = ownerProvenance(record)
 
   async function takeOver() {
     setTakingOver(true)
@@ -264,7 +234,7 @@ export function AppScreen({ id, splat }: { id: string; splat: string }) {
         )
         version = restored.version
       }
-      toast.add({ type: "success", title: `${spec!.name} is yours` })
+      toast.add({ type: "success", title: `${spec.name} is yours` })
       void queryClient.invalidateQueries({
         queryKey: ["record", CORE_AUTHORITY, CORE_PACKAGE_NAME, APP_NAME, id],
       })
@@ -284,7 +254,7 @@ export function AppScreen({ id, splat }: { id: string; splat: string }) {
 
   if (!granted) {
     return (
-      <AppChrome title={spec.name} onBack={back}>
+      <AppChrome title={spec.name} onBack={hostBack}>
         <div className="flex flex-col gap-4 px-4 py-6 text-sm">
           <div className="flex items-start gap-3">
             <ShieldAlertIcon className="mt-0.5 size-5 shrink-0 text-warning" />
@@ -427,15 +397,12 @@ export function AppScreen({ id, splat }: { id: string; splat: string }) {
         )
       }
     >
-      {binder &&
-      (binder.state.state === "ambiguous" ||
-        binder.state.state === "missing") ? (
+      {binder ? (
         <InputBinder
           app={record}
           name={binder.name}
           input={spec.inputs[binder.name]}
           kind={binder.kind}
-          options={binder.state.options}
         />
       ) : (
         <>
@@ -459,6 +426,7 @@ export function AppScreen({ id, splat }: { id: string; splat: string }) {
             onError={onError}
             onPhase={onPhase}
             onNavigatePath={onNavigatePath}
+            onBack={hostBack}
           />
         </>
       )}
@@ -484,8 +452,8 @@ export function AppScreen({ id, splat }: { id: string; splat: string }) {
                   name={name}
                   input={input}
                   kind={kind}
-                  options={inputs.candidates[name] ?? []}
                   current={current}
+                  status={state ? inputStatus(name, state, kind) : undefined}
                 />
               )
             })}

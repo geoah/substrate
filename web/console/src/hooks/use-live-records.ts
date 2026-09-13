@@ -6,29 +6,48 @@
  * queries refetch.
  *
  * The union always carries the app collection (`core/app`), so saving an app
- * remounts the guest showing it, and the kind collection itself, so an
- * import or a declaration edit invalidates `["registry"]` and every
- * declaration follows. Invalidation is by identity, not by query: a change
- * to `tasks/task/t9` touches every `["records", authority, pkg, name]` list,
- * the single-record read and the bounded count, and so every guest
- * subscription observing one of them. Rows are batched for a beat so an
- * import or a sync refetches once.
+ * remounts the guest showing it, the kind collection itself, so an import or
+ * a declaration edit invalidates `["registry"]` and every declaration and
+ * every implementor set derived from it follows, and the package collection,
+ * whose rows hold the versions an app's floor is held against. Invalidation
+ * is by identity, not by query: a change to `tasks/task/t9` touches every
+ * `["records", authority, pkg, name]` list, the single-record read and the
+ * bounded count, and so every guest subscription observing one of them.
+ * Rows are batched for a beat so an import or a sync refetches once.
  *
  * SUBSCRIBE, THEN REFETCH: the tail opens at the head, so a write between a
- * list's read and the stream opening is in neither. Every time the stream
- * reports `live` (first open, reopen on a union change, reconnect) the
- * watched kinds' record queries are invalidated once; `staleTime` alone
- * schedules no refetch. */
+ * list's read and the stream opening is in neither. The first `live` a tail
+ * reports is the HANDOFF: every watched kind's lists, counts and
+ * single-record reads are invalidated (an app edited in that gap would
+ * otherwise run its older source under its older grant for as long as no
+ * later change happened to name it), and so is the registry, because a
+ * declaration can change in that gap too. A later `live` is a reconnect
+ * resuming from the last seen seq, which misses nothing; the lists are
+ * invalidated once more anyway, since `staleTime` alone schedules no refetch.
+ *
+ * The resume cursor is a seq in one history generation. Retention can
+ * overtake it during an outage and a restore can retire its generation
+ * while a tab is open; the transport reports either as `compacted` and
+ * returns. Nothing read under the old cursor can be trusted, so the same
+ * handoff runs and a fresh tail opens at the new head. A terminal error
+ * frame is `stopped`: the tail is left down rather than hammered, and the
+ * status store says so for a screen to show, with `retryLiveTail` as the
+ * way back. */
 
-import { useEffect } from "react"
+import { useEffect, useSyncExternalStore } from "react"
 import { useQueryClient, type QueryClient } from "@tanstack/react-query"
 
 import { APP_KIND } from "@/lib/api/apps"
-import { watchChanges, type WatchHandle } from "@/lib/api/changes"
+import {
+  watchChanges,
+  type WatchHandle,
+  type WatchStatus,
+} from "@/lib/api/changes"
 import { CORE_PACKAGE, splitKind } from "@/lib/api/http"
 
 const KIND_KIND = `${CORE_PACKAGE}/kind`
-const ALWAYS = [APP_KIND, KIND_KIND]
+const PACKAGE_KIND = `${CORE_PACKAGE}/package`
+const ALWAYS = [APP_KIND, KIND_KIND, PACKAGE_KIND]
 const BATCH_MS = 150
 
 interface Subscriber {
@@ -39,9 +58,61 @@ interface Subscriber {
 const subscribers = new Map<symbol, Subscriber>()
 let tail: WatchHandle | undefined
 let tailKey = ""
+/** Which tail a callback belongs to: a stopped tail may still report `off`
+ * after its successor opened, and a stale callback must not touch the
+ * status or reopen anything. */
+let tailGeneration = 0
 let reconcileTimer: ReturnType<typeof setTimeout> | undefined
 let flushTimer: ReturnType<typeof setTimeout> | undefined
 const pending = new Map<string, Set<string>>()
+
+// ── the status store ────────────────────────────────────────────────────────
+
+/** The transport's states, plus `off` for no tail at all. `stopped` is
+ * terminal until the union changes or `retryLiveTail` is called. */
+export interface LiveStatus {
+  state: WatchStatus
+  /** The transport's word for a retry, a compaction or a stop. */
+  detail?: string
+}
+
+let status: LiveStatus = { state: "off" }
+const statusListeners = new Set<() => void>()
+
+function setStatus(next: LiveStatus) {
+  if (next.state === status.state && next.detail === status.detail) return
+  status = next
+  for (const listener of [...statusListeners]) listener()
+}
+
+export function subscribeLiveStatus(listener: () => void): () => void {
+  statusListeners.add(listener)
+  return () => void statusListeners.delete(listener)
+}
+
+export function liveStatusSnapshot(): LiveStatus {
+  return status
+}
+
+/** The shared tail's state, for a screen that wants to say "live updates
+ * stopped" and offer `retryLiveTail`. */
+export function useLiveStatus(): LiveStatus {
+  return useSyncExternalStore(
+    subscribeLiveStatus,
+    liveStatusSnapshot,
+    liveStatusSnapshot
+  )
+}
+
+/** Open a fresh tail at the head for the current union, whatever the old
+ * one was doing: the recovery from `stopped`, and what a compaction does on
+ * its own. */
+export function retryLiveTail(): void {
+  tailKey = ""
+  scheduleReconcile()
+}
+
+// ── invalidation ────────────────────────────────────────────────────────────
 
 function union(): string[] {
   const kinds = new Set<string>(ALWAYS)
@@ -55,6 +126,9 @@ function clients(): Set<QueryClient> {
   return out
 }
 
+/** The queries one kind's change touches: its lists and count, the named
+ * records, or EVERY record read of the kind when no ids are named (a
+ * handoff, which cannot know what moved). */
 function invalidateKind(client: QueryClient, kind: string, ids?: Set<string>) {
   if (kind === KIND_KIND) {
     void client.invalidateQueries({ queryKey: ["registry"] })
@@ -66,7 +140,13 @@ function invalidateKind(client: QueryClient, kind: string, ids?: Set<string>) {
   void client.invalidateQueries({
     queryKey: ["records-count", authority, pkg, name],
   })
-  for (const id of ids ?? []) {
+  if (!ids) {
+    void client.invalidateQueries({
+      queryKey: ["record", authority, pkg, name],
+    })
+    return
+  }
+  for (const id of ids) {
     void client.invalidateQueries({
       queryKey: ["record", authority, pkg, name, id],
     })
@@ -82,15 +162,28 @@ function flush() {
   }
 }
 
-/** The handoff: what was read before the stream opened may be stale. */
+/** The handoff: everything read before this tail was at the head may be
+ * stale, the vocabulary included. The implementor sets are derived from the
+ * registry (`lib/apps/grant.ts`), so invalidating it refreshes them too. */
+function handoff(kinds: string[]) {
+  for (const client of clients()) {
+    for (const kind of kinds) invalidateKind(client, kind)
+    void client.invalidateQueries({ queryKey: ["registry"] })
+  }
+}
+
+/** A reconnect from a cursor: the lists are refreshed, the rest was never
+ * out of date. */
 function refetchWatched(kinds: string[]) {
   for (const client of clients()) {
     for (const kind of kinds) {
       if (kind === KIND_KIND) continue
-      invalidateKind(client, kind)
+      invalidateKind(client, kind, new Set())
     }
   }
 }
+
+// ── the tail ────────────────────────────────────────────────────────────────
 
 function reconcile() {
   reconcileTimer = undefined
@@ -100,10 +193,16 @@ function reconcile() {
   tail?.stop()
   tail = undefined
   tailKey = key
-  if (!kinds.length) return
+  const generation = ++tailGeneration
+  if (!kinds.length) {
+    setStatus({ state: "off" })
+    return
+  }
+  let handedOff = false
   tail = watchChanges({
     filter: { kinds },
     onRow: (row) => {
+      if (generation !== tailGeneration) return
       const affected = row.affected?.length
         ? row.affected
         : [{ kind: row.kind, id: row.recordId }]
@@ -114,12 +213,25 @@ function reconcile() {
       }
       if (flushTimer === undefined) flushTimer = setTimeout(flush, BATCH_MS)
     },
-    onStatus: (status) => {
-      if (status === "live") refetchWatched(kinds)
+    onStatus: (state, detail) => {
+      if (generation !== tailGeneration) return
+      setStatus({ state, detail })
+      if (state === "live") {
+        if (handedOff) refetchWatched(kinds)
+        else handoff(kinds)
+        handedOff = true
+      }
+      // The transport does not reconnect after a terminal frame, and neither
+      // does this: a union change or `retryLiveTail` opens the next one.
+      if (state === "stopped") tail = undefined
     },
-    // A compacted cursor cannot happen here: the tail opens bare at the head
-    // and resumes from what it has seen, and a restore between the two
-    // reopens at the new head through the same reconnect.
+    onCompacted: () => {
+      if (generation !== tailGeneration) return
+      handoff(kinds)
+      tail = undefined
+      tailKey = ""
+      scheduleReconcile()
+    },
   })
 }
 

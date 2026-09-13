@@ -7,6 +7,8 @@
 
 import { transform } from "sucrase"
 
+import { SOURCE_MODULE } from "@/lib/apps/spec"
+
 export interface TransformProblem {
   module: string
   message: string
@@ -24,7 +26,7 @@ export function transformModule(name: string, text: string): Transformed {
       jsxImportSource: "react",
       production: true,
       disableESTransforms: true,
-      filePath: name === "source" ? "source.tsx" : `#${name}.tsx`,
+      filePath: name === SOURCE_MODULE ? `${name}.tsx` : `#${name}.tsx`,
     })
     return { js: code }
   } catch (e) {

@@ -225,6 +225,8 @@ export function inputStatus(
       return `\`${name}\` needs a kind this repository does not have`
     case "ambiguous":
       return `pick which ${noun} is \`${name}\``
+    case "error":
+      return state.message
     default:
       return undefined
   }

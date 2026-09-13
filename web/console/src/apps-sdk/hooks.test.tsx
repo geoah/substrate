@@ -1,14 +1,23 @@
 // @vitest-environment jsdom
 /** The hooks over a fake app: `useRecords` renders the first page the
  * subscription answers and the next one it pushes, shares one subscription
- * between two components over one query and drops it when both leave,
- * `loadMore` appends the next cursor's page, `useRecord` narrows to the id,
- * and `useRoute` follows the app's path. */
+ * between two components over one query and drops it when both leave, walks
+ * the cursor page by page under `loadMore` and keeps the walk coherent
+ * across a push (re-read to the same depth from the pushed cursor, the
+ * cursor always the last page's, rows deduplicated by identity, every walked
+ * page dropped when the grant goes), `useRecord` narrows to the id, and
+ * `useRoute` follows the app's path. */
 
 import { act, cleanup, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { App, Page, Query, SubstrateRecord } from "./core"
+import {
+  SdkError,
+  type App,
+  type Page,
+  type Query,
+  type SubstrateRecord,
+} from "./core"
 
 const subscriptions = new Map<string, (page: Page) => void>()
 const opened: string[] = []
@@ -17,10 +26,10 @@ const listed: string[] = []
 let routeListeners = new Set<(path: string) => void>()
 let path = ""
 
-function row(id: string): SubstrateRecord {
+function row(id: string, kind = "ada.example.com/tasks/task"): SubstrateRecord {
   return {
     id,
-    kind: "ada.example.com/tasks/task",
+    kind,
     properties: { name: id },
     labels: {},
     version: 1,
@@ -28,6 +37,10 @@ function row(id: string): SubstrateRecord {
     updatedAt: "",
   }
 }
+
+/** What `records.list` answers, by the cursor it was asked under. */
+let pages = new Map<string, Partial<Page>>()
+let deferred: { resolve(page: Page): void }[] = []
 
 const fakeApp = {
   records: {
@@ -40,9 +53,14 @@ const fakeApp = {
         subscriptions.delete(key)
       }
     },
-    list: async (q: Query) => {
+    list: (q: Query) => {
       listed.push(JSON.stringify(q))
-      return { records: [row("c")], loading: false } satisfies Page
+      const answer = pages.get(q.after ?? "")
+      if (answer === undefined) {
+        return new Promise<Page>((resolve) => deferred.push({ resolve }))
+      }
+      if (answer.error) return Promise.reject(answer.error)
+      return Promise.resolve({ records: [], loading: false, ...answer })
     },
   },
   route: {
@@ -76,14 +94,28 @@ const push = (q: Query, page: Partial<Page>) =>
     })
   })
 
+/** Let every settled list answer land. */
+const settle = () =>
+  act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+
 function Names({ q }: { q: Query }) {
   const page = useRecords(q)
   return (
     <div>
-      <p data-testid="state">{page.loading ? "loading" : "ready"}</p>
+      <p data-testid="state">
+        {page.loading
+          ? "loading"
+          : page.error
+            ? `error:${page.error.code}`
+            : "ready"}
+      </p>
       <ul>
         {page.records.map((r) => (
-          <li key={r.id}>{r.id}</li>
+          <li key={`${r.kind} ${r.id}`}>{r.id}</li>
         ))}
       </ul>
       {page.cursor && <button onClick={page.loadMore}>more</button>}
@@ -91,17 +123,29 @@ function Names({ q }: { q: Query }) {
   )
 }
 
+const shown = () =>
+  screen.queryAllByRole("listitem").map((li) => li.textContent)
+const more = () =>
+  act(async () => {
+    screen.getByRole("button", { name: "more" }).click()
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+
 afterEach(() => {
   cleanup()
   subscriptions.clear()
   opened.length = 0
   closed.length = 0
   listed.length = 0
+  pages = new Map()
+  deferred = []
   routeListeners = new Set()
   path = ""
 })
 
 const OPEN: Query = { kind: "ada.example.com/tasks/task", orderBy: "dueAt:asc" }
+const after = (cursor: string) => JSON.stringify({ ...OPEN, after: cursor })
 
 describe("useRecords", () => {
   it("renders the answered page, then the pushed one", async () => {
@@ -110,13 +154,9 @@ describe("useRecords", () => {
     expect(opened).toEqual([JSON.stringify(OPEN)])
     push(OPEN, { records: [row("a"), row("b")] })
     expect(screen.getByTestId("state").textContent).toBe("ready")
-    expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(
-      ["a", "b"]
-    )
+    expect(shown()).toEqual(["a", "b"])
     push(OPEN, { records: [row("b")] })
-    expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(
-      ["b"]
-    )
+    expect(shown()).toEqual(["b"])
   })
 
   it("shares one subscription between two components and releases it last-out", () => {
@@ -148,27 +188,138 @@ describe("useRecords", () => {
     expect(opened).toEqual([JSON.stringify(OPEN), JSON.stringify(DONE)])
     expect(screen.getByTestId("state").textContent).toBe("loading")
     push(DONE, { records: [row("z")] })
-    expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(
-      ["z"]
-    )
+    expect(shown()).toEqual(["z"])
   })
 
-  it("appends the next cursor's page on loadMore and keeps it across a push", async () => {
+  it("walks the cursor page by page, each under the page before it", async () => {
+    pages.set("c1", { records: [row("c")], cursor: "c2" })
+    pages.set("c2", { records: [row("d")] })
     render(<Names q={OPEN} />)
     push(OPEN, { records: [row("a")], cursor: "c1" })
+    await more()
+    expect(listed).toEqual([after("c1")])
+    expect(shown()).toEqual(["a", "c"])
+    // The cursor is page two's, not page one's, so the next Load more is
+    // page three and never page two again.
+    await more()
+    expect(listed).toEqual([after("c1"), after("c2")])
+    expect(shown()).toEqual(["a", "c", "d"])
+    expect(screen.queryByRole("button")).toBeNull()
+  })
+
+  it("re-reads every walked page from the pushed cursor and keeps the walk's cursor", async () => {
+    pages.set("c1", { records: [row("c")], cursor: "c2" })
+    pages.set("c2", { records: [row("d")], cursor: "c3" })
+    render(<Names q={OPEN} />)
+    push(OPEN, { records: [row("a")], cursor: "c1" })
+    await more()
+    await more()
+    expect(shown()).toEqual(["a", "c", "d"])
+    listed.length = 0
+
+    // A push: the first page moved (a row landed, its cursor moved with it),
+    // so the two walked pages are read again from the NEW cursor, in turn,
+    // and a row edited out of page two is gone.
+    pages.set("c1b", { records: [row("c")], cursor: "c2b" })
+    pages.set("c2b", { records: [row("e")], cursor: "c3b" })
+    push(OPEN, { records: [row("z"), row("a")], cursor: "c1b" })
+    // The old pages stay up until the walk lands.
+    expect(shown()).toEqual(["z", "a", "c", "d"])
+    await settle()
+    expect(listed).toEqual([after("c1b"), after("c2b")])
+    expect(shown()).toEqual(["z", "a", "c", "e"])
+    // The cursor offered is the last walked page's, not the pushed first's.
+    pages.set("c3b", { records: [row("f")] })
+    await more()
+    expect(listed.at(-1)).toBe(after("c3b"))
+    expect(shown()).toEqual(["z", "a", "c", "e", "f"])
+  })
+
+  it("deduplicates by identity across every page while a walk is stale", async () => {
+    pages.set("c1", { records: [row("b"), row("c")], cursor: "c2" })
+    pages.set("c2", { records: [row("c"), row("d")] })
+    render(<Names q={OPEN} />)
+    push(OPEN, { records: [row("a")], cursor: "c1" })
+    await more()
+    await more()
+    expect(shown()).toEqual(["a", "b", "c", "d"])
+    // The first page now carries a row page two had; it shows once, and a
+    // same id under another kind is another row.
+    push(OPEN, {
+      records: [row("a"), row("b"), row("d", "ada.example.com/tasks/bug")],
+      cursor: "c1",
+    })
+    expect(shown()).toEqual(["a", "b", "d", "c", "d"])
+  })
+
+  it("drops the walked pages when the pushed page has no cursor, or the grant went", async () => {
+    pages.set("c1", { records: [row("c")] })
+    render(<Names q={OPEN} />)
+    push(OPEN, { records: [row("a")], cursor: "c1" })
+    await more()
+    expect(shown()).toEqual(["a", "c"])
+    // The collection fits one page now.
+    push(OPEN, { records: [row("a")] })
+    expect(shown()).toEqual(["a"])
+    expect(listed).toHaveLength(1)
+
+    push(OPEN, { records: [row("a")], cursor: "c1" })
+    await settle()
+    await more()
+    expect(shown()).toEqual(["a", "c"])
+    // A forbidden push clears every retained page, not only the first.
+    push(OPEN, {
+      records: [],
+      error: new SdkError({ code: "forbidden", message: "no longer reads" }),
+    })
+    expect(shown()).toEqual([])
+    expect(screen.getByTestId("state").textContent).toBe("error:forbidden")
+    // Another error keeps what is on screen.
+    push(OPEN, { records: [row("a")], cursor: "c1" })
+    await settle()
+    await more()
+    push(OPEN, {
+      records: [row("a")],
+      cursor: "c1",
+      error: new SdkError({ code: "network", message: "offline" }),
+    })
+    expect(shown()).toEqual(["a", "c"])
+    expect(screen.getByTestId("state").textContent).toBe("error:network")
+  })
+
+  it("drops a Load more that lands after the push that outdated it", async () => {
+    render(<Names q={OPEN} />)
+    push(OPEN, { records: [row("a")], cursor: "c1" })
+    // c1 is not answered yet: the walk is in flight.
+    await more()
+    expect(listed).toEqual([after("c1")])
+    pages.set("c1b", { records: [row("c")] })
+    push(OPEN, { records: [row("a"), row("b")], cursor: "c1b" })
+    await settle()
+    // The push re-walked to the asked depth from its own cursor …
+    expect(listed).toEqual([after("c1"), after("c1b")])
+    expect(shown()).toEqual(["a", "b", "c"])
+    // … and the stale answer, landing now, appends nothing.
     await act(async () => {
-      screen.getByRole("button", { name: "more" }).click()
+      deferred[0].resolve({ records: [row("stale")], loading: false })
       await Promise.resolve()
     })
-    expect(listed).toEqual([JSON.stringify({ ...OPEN, after: "c1" })])
-    expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(
-      ["a", "c"]
-    )
-    expect(screen.queryByRole("button")).toBeNull()
-    push(OPEN, { records: [row("a"), row("c")] })
-    expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(
-      ["a", "c"]
-    )
+    expect(shown()).toEqual(["a", "b", "c"])
+  })
+
+  it("shows a failed Load more and clears it on the next push", async () => {
+    pages.set("c1", { error: new SdkError({ code: "network", message: "x" }) })
+    render(<Names q={OPEN} />)
+    push(OPEN, { records: [row("a")], cursor: "c1" })
+    await more()
+    expect(screen.getByTestId("state").textContent).toBe("error:network")
+    expect(shown()).toEqual(["a"])
+    pages.set("c1", { records: [row("c")] })
+    push(OPEN, { records: [row("a")], cursor: "c1" })
+    // The asked depth is remembered: the push walks the page that failed.
+    await settle()
+    expect(screen.getByTestId("state").textContent).toBe("ready")
+    expect(shown()).toEqual(["a", "c"])
   })
 })
 

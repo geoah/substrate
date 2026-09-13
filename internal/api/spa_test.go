@@ -151,6 +151,11 @@ func TestSPAHandlerCacheHeaders(t *testing.T) {
 	if got := rec.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
 		t.Errorf("asset: cache-control = %q, want immutable", got)
 	}
+	// The guest shell's opaque origin loads its modules and fonts from here
+	// as CORS requests; the header is what lets the browser hand them over.
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Errorf("asset: access-control-allow-origin = %q, want *", got)
+	}
 
 	// `/index.html` itself is not in the list: http.ServeFile canonicalizes it
 	// to `./` with a 301 before any header of ours is read.

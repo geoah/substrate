@@ -436,6 +436,14 @@ func spaHandler(dir string) http.HandlerFunc {
 		case err == nil && !info.IsDir():
 			if strings.HasPrefix(rel, assetPrefix) {
 				w.Header().Set("Cache-Control", cacheImmutable)
+				// The console's guest shell runs on an opaque origin (a sandboxed
+				// frame without allow-same-origin), so a module script or a font
+				// it loads from here is a CORS request carrying `Origin: null`,
+				// and without this header the browser discards the response
+				// before the shell can run. Only the content-hashed build files
+				// carry it: nothing under /api does, and the token never rides a
+				// request to /assets/.
+				w.Header().Set("Access-Control-Allow-Origin", "*")
 			} else {
 				w.Header().Set("Cache-Control", cacheNever)
 			}

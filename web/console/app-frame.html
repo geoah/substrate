@@ -9,7 +9,10 @@
       what holds under `vite dev` and what the document rewrite keeps, since
       `document.open()` replaces the tree and not the policy container.
       `script-src 'self'` admits vite's module URLs and the built SDK because
-      CSP3 resolves 'self' from the document's URL, not its opaque origin.
+      CSP3 resolves 'self' from the document's URL, not its opaque origin;
+      it is the floor, and the shell narrows it at once to the exact paths
+      it needs with a second meta policy (src/frame/main.ts, `pin`), read
+      from the `#guest-build` block the build writes above this comment.
       `blob:` in `script-src` is what lets a transformed module be imported as
       a module rather than inlined as text: the shell mints one blob URL per
       module and the bootstrap `import()`s the entry. It widens nothing,
@@ -19,6 +22,8 @@
       `worker-src 'none'`. `connect-src 'none'` closes fetch, XHR, WebSocket
       and beacons; `img-src` without a host closes the image beacon;
       `font-src 'self'` admits the console's own font and nothing off-origin.
+      Where the guest may NAVIGATE is not this policy's to say; the console's
+      own `frame-src 'self'` (index.html) holds the frame to this origin.
       The one dev-only effect is noise: vite's HMR client, injected into every
       page it serves, is refused its WebSocket by this same policy and says so
       in the frame's console.
