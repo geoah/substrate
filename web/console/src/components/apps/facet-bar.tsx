@@ -5,7 +5,10 @@
  * `eq` to `in`; a repeated property holds one at a time. Clear leads the
  * row while anything is pressed. The selection is the URL's
  * (`useFacetSelection`), which the screen also reads into the context, so
- * pressing a chip and the rows narrowing are one state. */
+ * pressing a chip and the rows narrowing are one state. A value the URL
+ * carries that the view's own filter does not admit (a shared or edited
+ * link) is dropped by the read rather than widening it, and the bar says so
+ * beneath the chips, since the chip it names is never pressed. */
 
 import {
   Fragment,
@@ -17,11 +20,13 @@ import {
 } from "react"
 import { XIcon } from "lucide-react"
 
+import { ProblemStrip } from "@/components/apps/problems"
 import { Button } from "@/components/ui/button"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { specOf } from "@/lib/apps/cond"
 import {
   facetGroups,
+  facetProblems,
   mergeSeen,
   useFacetSelection,
   type ReferentMemory,
@@ -131,51 +136,61 @@ export function FacetBar({
     () => facetGroups(spec, kind, seen, selection),
     [spec, kind, seen, selection]
   )
+  // Against the declared filter: a token-valued test admits everything
+  // until the read resolves it, so nothing is reported that the read might
+  // still honor.
+  const dropped = useMemo(
+    () => facetProblems(spec.filter, selection, kind),
+    [spec.filter, selection, kind]
+  )
   if (!groups.length && !any) return null
 
   return (
-    <div
-      role="group"
-      aria-label="Narrow"
-      className={cn(
-        "flex min-h-11 [scrollbar-width:none] items-center gap-2 overflow-x-auto border-b px-4 py-1.5 [&::-webkit-scrollbar]:hidden",
-        className
-      )}
-    >
-      {any && (
-        <Chip onClick={clear} className="gap-1 pl-2">
-          <XIcon className="size-3.5" />
-          Clear
-        </Chip>
-      )}
-      {groups.map((group, i) => {
-        const picked = selection[group.property] ?? []
-        return (
-          <Fragment key={group.property}>
-            {(i > 0 || any) && (
-              <span aria-hidden className="h-5 w-px shrink-0 bg-border" />
-            )}
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {group.label}
-            </span>
-            {group.chips.map((chip) => (
-              <Chip
-                key={chip.value}
-                pressed={picked.includes(chip.value)}
-                onClick={() =>
-                  toggle(
-                    group.property,
-                    chip.value,
-                    group.single ? "only" : "toggle"
-                  )
-                }
-              >
-                {chip.label}
-              </Chip>
-            ))}
-          </Fragment>
-        )
-      })}
-    </div>
+    <>
+      <div
+        role="group"
+        aria-label="Narrow"
+        className={cn(
+          "flex min-h-11 [scrollbar-width:none] items-center gap-2 overflow-x-auto border-b px-4 py-1.5 [&::-webkit-scrollbar]:hidden",
+          className
+        )}
+      >
+        {any && (
+          <Chip onClick={clear} className="gap-1 pl-2">
+            <XIcon className="size-3.5" />
+            Clear
+          </Chip>
+        )}
+        {groups.map((group, i) => {
+          const picked = selection[group.property] ?? []
+          return (
+            <Fragment key={group.property}>
+              {(i > 0 || any) && (
+                <span aria-hidden className="h-5 w-px shrink-0 bg-border" />
+              )}
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {group.label}
+              </span>
+              {group.chips.map((chip) => (
+                <Chip
+                  key={chip.value}
+                  pressed={picked.includes(chip.value)}
+                  onClick={() =>
+                    toggle(
+                      group.property,
+                      chip.value,
+                      group.single ? "only" : "toggle"
+                    )
+                  }
+                >
+                  {chip.label}
+                </Chip>
+              ))}
+            </Fragment>
+          )
+        })}
+      </div>
+      <ProblemStrip problems={dropped} />
+    </>
   )
 }

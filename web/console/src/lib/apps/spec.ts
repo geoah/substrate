@@ -231,12 +231,20 @@ export type FacetSelection = Record<string, string[]>
  * `via` view is scoped to, or a detail view's subject; `mode` says how much
  * room the mount has; `facets` is the selection live on this mount, read
  * from the URL by the screen and ANDed into every read (`facets.ts`), absent
- * where nothing threads one (a card), so a layout draws no chips there. */
+ * where nothing threads one (a card), so a layout draws no chips there;
+ * `ancestors` is the line of view ids mounted above this one. */
 export interface ViewContext {
   inputs: Record<string, SubstrateRecord | undefined>
   parent?: { record: SubstrateRecord; kind: KindInfo }
   mode: "page" | "card" | "inline"
   facets?: FacetSelection
+  /** The ids of the views this mount sits inside, outermost first. The
+   * renderer appends its own id before the layout sees the context, and
+   * refuses a mount whose id is already on the line, because a detail that
+   * relates itself, or two that relate each other, would otherwise mount
+   * without end. The line is per branch: the same view under two sibling
+   * sections is two lines, each holding it once. */
+  ancestors?: string[]
 }
 
 /** What a button needs to run one of the view's actions: the view, its

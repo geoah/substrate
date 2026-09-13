@@ -9,10 +9,17 @@
  * registry having that kind: a trait view has no kind of its own, and a full
  * path says everything the request needs. A read that fails, or a segment
  * that names no kind, is `sheetError`, so the URL never claims a record the
- * screen silently ignores. */
+ * screen silently ignores.
+ *
+ * A sheet opened locally keeps the row's IDENTITY and reads the record
+ * through the same single-record query the route's sheet uses, never the
+ * row itself: a transition moves the version, an agent edits the record
+ * behind the screen, and a held copy would draw the old state and send the
+ * old `ifVersion`. The selection belongs to the screen and parent it was
+ * made on and clears with them. */
 
 import { useMemo, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   useCanGoBack,
   useNavigate,
@@ -24,6 +31,7 @@ import {
 import { splitKind } from "@/lib/api/http"
 import { recordQueryOptions } from "@/lib/api/records"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+import { actionApplies } from "@/lib/apps/actions"
 import { viaTarget } from "@/lib/apps/queries"
 import {
   backMove,
@@ -32,7 +40,13 @@ import {
   SHEET_STATE,
   sheetClose,
 } from "@/lib/apps/route"
-import type { ViewContext, ViewSpec } from "@/lib/apps/spec"
+import type {
+  ActionHost,
+  ActionSpec,
+  ViewContext,
+  ViewSpec,
+} from "@/lib/apps/spec"
+import { recordPath } from "@/lib/record-path"
 
 declare module "@tanstack/react-router" {
   interface HistoryState {
@@ -56,6 +70,13 @@ const SWAP: SheetNavigation = { replace: true, state: (prev) => prev }
 
 export type SegmentRole = "parent" | "subject" | "sheet"
 
+/** One record by kind identity and id: all a tap keeps of its row, and what
+ * the sheet's read is keyed on. */
+interface Selection {
+  kindIdentity: string
+  id: string
+}
+
 export interface ScreenRecord {
   role?: SegmentRole
   /** The parent for the view's context, once loaded. */
@@ -68,10 +89,22 @@ export interface ScreenRecord {
   /** The segment asked for a record the sheet cannot show: the read failed
    * (gone, refused) or the segment names no kind to read it from. */
   sheetError?: Error
+  /** The `<kind>/<id>` the open sheet is for: the route's segment, or the
+   * local selection's path. */
+  sheetSegment?: string
   /** A sheet is open or opening, through the route or locally. */
   sheetOpen: boolean
   openRecord: (record: SubstrateRecord) => void
   closeSheet: () => void
+}
+
+/** The single-record read for a selection; disabled while there is none. */
+function useRecordRead(selection: Selection | undefined) {
+  const { authority, pkg, name } = splitKind(selection?.kindIdentity ?? "")
+  return useQuery({
+    ...recordQueryOptions(authority, pkg, name, selection?.id ?? ""),
+    enabled: Boolean(selection?.kindIdentity && selection?.id),
+  })
 }
 
 export function useScreenRecord({
@@ -79,6 +112,7 @@ export function useScreenRecord({
   kind,
   kinds,
   segment,
+  screenKey,
   toRecord,
   toView,
   clear,
@@ -87,6 +121,9 @@ export function useScreenRecord({
   kind: KindInfo | undefined
   kinds: KindInfo[]
   segment?: string
+  /** What names the screen beyond its view: an app's id and screen name,
+   * since two screens of one app may show one view under one segment. */
+  screenKey?: string
   /** Navigate to this screen with the record segment set. */
   toRecord: (segment: string, nav: SheetNavigation) => void
   /** Navigate to another view with the record segment set (`opens`). */
@@ -95,6 +132,7 @@ export function useScreenRecord({
   clear: (nav: { replace: boolean }) => void
 }): ScreenRecord {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const entryState = useRouterState({ select: (s) => s.location.state.sheet })
   const role: SegmentRole | undefined =
     segment && spec
@@ -110,21 +148,29 @@ export function useScreenRecord({
     ? parseRecordSegment(segment, fallback, kinds)
     : undefined
   const identity = target?.kindIdentity ?? ""
-  const { authority, pkg, name } = splitKind(identity)
-  const record = useQuery({
-    ...recordQueryOptions(authority, pkg, name, target?.id ?? ""),
-    enabled: Boolean(identity && target?.id),
-  })
-  const [local, setLocal] = useState<SubstrateRecord | null>(null)
-
+  const named: Selection | undefined =
+    target && identity ? { kindIdentity: identity, id: target.id } : undefined
   const scoped = role === "parent" || role === "subject"
+  const parentRead = useRecordRead(scoped ? named : undefined)
+
+  // A local selection is made on one screen under one parent; another
+  // screen of the app or another parent is another page, and a sheet that
+  // survived the move would show a record from the page before.
+  const owner = `${screenKey ?? ""}\n${spec?.id ?? ""}\n${segment ?? ""}`
+  const [local, setLocal] = useState<(Selection & { owner: string }) | null>(
+    null
+  )
+  if (local && local.owner !== owner) setLocal(null)
+  const selected = local && local.owner === owner ? local : undefined
+  const sheetRead = useRecordRead(role === "sheet" ? named : selected)
+
   const targetKind = target?.kind
   const parent = useMemo(
     () =>
-      scoped && record.data && targetKind
-        ? { record: record.data, kind: targetKind }
+      scoped && parentRead.data && targetKind
+        ? { record: parentRead.data, kind: targetKind }
         : undefined,
-    [scoped, record.data, targetKind]
+    [scoped, parentRead.data, targetKind]
   )
   const noKind =
     target && !identity
@@ -138,19 +184,46 @@ export function useScreenRecord({
   return {
     role,
     parent,
-    parentPending: scoped && !record.data && !record.error && !noKind,
-    parentError: scoped ? (record.error ?? noKind) : undefined,
-    sheetRecord: role === "sheet" ? record.data : (local ?? undefined),
-    sheetError: role === "sheet" ? (record.error ?? noKind) : undefined,
-    sheetOpen: role === "sheet" || local !== null,
+    parentPending: scoped && !parentRead.data && !parentRead.error && !noKind,
+    parentError: scoped ? (parentRead.error ?? noKind) : undefined,
+    sheetRecord: sheetRead.data,
+    sheetError:
+      role === "sheet"
+        ? (sheetRead.error ?? noKind)
+        : selected
+          ? (sheetRead.error ?? undefined)
+          : undefined,
+    sheetSegment:
+      role === "sheet"
+        ? segment
+        : selected
+          ? recordPath(selected.kindIdentity, selected.id)
+          : undefined,
+    sheetOpen: role === "sheet" || selected !== undefined,
     openRecord: (row) => {
-      if (spec?.opens) toView(spec.opens, recordSegment(row))
-      else if (!segment) toRecord(recordSegment(row), PUSH)
+      if (spec?.opens) {
+        toView(spec.opens, recordSegment(row))
+        return
+      }
+      // The row primes the read the sheet is keyed on, already stale, so the
+      // sheet opens at once and the read replaces the row on mount; from
+      // then on every write and every change reaches it through that key.
+      const at = splitKind(row.kind)
+      const key = recordQueryOptions(
+        at.authority,
+        at.pkg,
+        at.name,
+        row.id
+      ).queryKey
+      if (queryClient.getQueryData(key) === undefined) {
+        queryClient.setQueryData(key, row, { updatedAt: 0 })
+      }
+      if (!segment) toRecord(recordSegment(row), PUSH)
       else if (role === "sheet") toRecord(recordSegment(row), SWAP)
-      else setLocal(row)
+      else setLocal({ owner, kindIdentity: row.kind, id: row.id })
     },
     closeSheet: () => {
-      if (local) {
+      if (selected) {
         setLocal(null)
         return
       }
@@ -158,6 +231,45 @@ export function useScreenRecord({
       if (sheetClose({ sheet: entryState }) === "back") router.history.back()
       else clear({ replace: true })
     },
+  }
+}
+
+export interface ChromeActions {
+  /** The host the chrome's buttons run under: the screen's own, or on a
+   * detail the subject's kind in place of the view's. */
+  host: ActionHost
+  /** The detail's subject, the record every chrome action there acts on;
+   * absent on every other screen. */
+  record?: SubstrateRecord
+  primary?: ActionSpec
+  header: ActionSpec[]
+}
+
+/** The primary and header actions a screen draws in its chrome. On a detail
+ * the subject is the row those buttons act on: they are hosted under its
+ * kind, offered only while it admits them (`actionApplies`, so a header
+ * transition hides along an arm the machine lacks, as a row's would) and
+ * handed the record, which is what lets a header transition, patch, delete
+ * or open work on the record the page shows. Every other screen has no row
+ * for its chrome, and its actions are offered as declared. */
+export function chromeActions(
+  host: ActionHost,
+  screen: Pick<ScreenRecord, "role" | "parent">
+): ChromeActions {
+  const subject = screen.role === "subject" ? screen.parent : undefined
+  const offered = (a: ActionSpec) =>
+    !subject ||
+    a.verb === "create" ||
+    actionApplies(a, subject.record, subject.kind)
+  return {
+    host: subject ? { ...host, kind: subject.kind } : host,
+    record: subject?.record,
+    primary: host.spec.actions.find(
+      (a) => a.placement === "primary" && offered(a)
+    ),
+    header: host.spec.actions.filter(
+      (a) => a.placement === "header" && offered(a)
+    ),
   }
 }
 

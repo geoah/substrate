@@ -11,8 +11,10 @@ import type { ViewSpec } from "../spec"
 import {
   checkAccess,
   createBridgeHost,
+  NOT_GRANTED,
   ownerProvenance,
   PING_MISSES,
+  type Provenance,
   type RecordsApi,
 } from "./host"
 import {
@@ -211,22 +213,29 @@ function guest(port: MessagePort, opts: { answerPings?: boolean } = {}): Guest {
   }
 }
 
+const OWNERS: Provenance = { granted: true, filtered: true }
+
 function mount(opts: {
   spec?: ViewSpec
-  granted?: boolean
+  provenance?: Provenance
   api?: RecordsApi
   answerPings?: boolean
   onLost?: () => void
+  onUnloaded?: () => void
   pingMs?: number
 }) {
   const [hostPort, guestPort] = pair()
   const view = opts.spec ?? spec()
   const host = createBridgeHost({
     view: () => ({ spec: view, kinds }),
-    granted: () => opts.granted ?? true,
+    provenance: () => opts.provenance ?? OWNERS,
     api: opts.api ?? fakeApi(),
     pingMs: opts.pingMs,
-    callbacks: { hostContext: () => hostContext, onLost: opts.onLost },
+    callbacks: {
+      hostContext: () => hostContext,
+      onLost: opts.onLost,
+      onUnloaded: opts.onUnloaded,
+    },
   })
   host.attach(hostPort)
   return { host, guest: guest(guestPort, { answerPings: opts.answerPings }) }
@@ -339,21 +348,43 @@ describe("owner provenance", () => {
   })
   const owner = { tier: "owner" }
 
-  it("holds when every gated property present is the owner's", () => {
+  it("holds, page included, when all four are present and the owner's", () => {
     expect(
       ownerProvenance(
         row({ source: owner, permissions: owner, kind: owner, filter: owner })
       )
-    ).toBe(true)
-    // A row without a filter has no filter provenance to ask for.
+    ).toEqual({ granted: true, filtered: true })
+  })
+
+  it("holds without a page when the filter is absent: nobody approved a selection", () => {
     expect(
       ownerProvenance(
         row(
           { source: owner, permissions: owner, kind: owner },
-          { source: "<p>", permissions: {}, kind: {} }
+          { source: "<p>", permissions: {}, kind: { ref: "k" } }
         )
       )
-    ).toBe(true)
+    ).toEqual({ granted: true, filtered: false })
+  })
+
+  it("fails when a required property is absent: a deletion is not an approval", () => {
+    for (const missing of ["source", "permissions", "kind"] as const) {
+      const props: Record<string, unknown> = {
+        source: "<p>",
+        permissions: {},
+        kind: { ref: "k" },
+        filter: {},
+      }
+      delete props[missing]
+      expect(
+        ownerProvenance(
+          row(
+            { source: owner, permissions: owner, kind: owner, filter: owner },
+            props
+          )
+        )
+      ).toEqual(NOT_GRANTED)
+    }
   })
 
   it("fails when one is below owner, unrecorded, or the source is missing", () => {
@@ -366,15 +397,16 @@ describe("owner provenance", () => {
           filter: owner,
         })
       )
-    ).toBe(false)
+    ).toEqual(NOT_GRANTED)
+    // A filter that is present but unrecorded is below owner, not absent.
     expect(
       ownerProvenance(row({ source: owner, permissions: owner, kind: owner }))
-    ).toBe(false)
-    expect(ownerProvenance(row({}))).toBe(false)
-    expect(ownerProvenance(row({ source: owner }, { permissions: {} }))).toBe(
-      false
-    )
-    expect(ownerProvenance(undefined)).toBe(false)
+    ).toEqual(NOT_GRANTED)
+    expect(ownerProvenance(row({}))).toEqual(NOT_GRANTED)
+    expect(
+      ownerProvenance(row({ source: owner }, { permissions: {} }))
+    ).toEqual(NOT_GRANTED)
+    expect(ownerProvenance(undefined)).toEqual(NOT_GRANTED)
   })
 })
 
@@ -469,7 +501,7 @@ describe("the host over a port", () => {
     const api = fakeApi()
     const { host, guest: g } = mount({
       api,
-      granted: false,
+      provenance: NOT_GRANTED,
       spec: spec({ writes: [TASK] }),
     })
     host.pushPage(page)
@@ -496,6 +528,41 @@ describe("the host over a port", () => {
     await g.init()
     expect(g.notices.some((n) => n.method === METHODS.toolResult)).toBe(false)
     host.teardown()
+  })
+
+  it("pushes no page without an owner-written filter, and still serves the grant's calls", async () => {
+    const api = fakeApi()
+    const { host, guest: g } = mount({
+      api,
+      provenance: { granted: true, filtered: false },
+    })
+    host.pushPage(page)
+    await g.init()
+    await settle()
+    expect(g.notices.some((n) => n.method === METHODS.toolResult)).toBe(false)
+    const listed = await g.call(TOOLS.list, { kind: TASK })
+    expect(listed.structuredContent?.records).toEqual(page.records)
+    await expect(g.call(TOOLS.list, { kind: PERSON })).rejects.toMatchObject({
+      code: ERROR.forbidden,
+    })
+    expect(api.calls).toEqual(["list task"])
+    host.teardown()
+  })
+
+  it("tears down when the shell says the document is leaving its frame", async () => {
+    const onLost = vi.fn()
+    const onUnloaded = vi.fn()
+    const { host, guest: g } = mount({ onLost, onUnloaded })
+    await g.init()
+    g.rpc.notify(METHODS.unload)
+    await settle()
+    expect(onUnloaded).toHaveBeenCalledTimes(1)
+    expect(onLost).not.toHaveBeenCalled()
+    expect(host.closed).toBe(true)
+    // Idempotent: the port is closed, a second notice reaches nothing.
+    g.rpc.notify(METHODS.unload)
+    await settle()
+    expect(onUnloaded).toHaveBeenCalledTimes(1)
   })
 
   it("refuses a link off http, https and mailto, and unknown methods", async () => {

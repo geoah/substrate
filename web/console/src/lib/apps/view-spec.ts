@@ -133,6 +133,54 @@ export function packageOf(identity: string): string {
   return authority ? `${authority}/${pkg}` : identity
 }
 
+/** One floor a repository does not meet: the package, the least version the
+ * view renders against, and what is installed, absent when the package is
+ * not. */
+export interface FloorShortfall {
+  package: string
+  floor: number
+  installed?: number
+}
+
+/** The floors in `requiresAtLeast` the repository is below, held against the
+ * installed versions (`installedVersions` in `lib/api/apps.ts`, off the
+ * `core/package` rows). A package with no row is short the way an absent
+ * kind is at the presence gate; that gate speaks first for the view's own
+ * kind, so this is heard for a floor on any other package. `undefined`
+ * versions are not yet read and report nothing, so the caller decides
+ * whether to wait for them before drawing rows. */
+export function floorShortfalls(
+  spec: Pick<ViewSpec, "requiresAtLeast">,
+  versions: Record<string, number> | undefined
+): FloorShortfall[] {
+  if (!versions) return []
+  const out: FloorShortfall[] = []
+  for (const [pkg, floor] of Object.entries(spec.requiresAtLeast)) {
+    const installed = versions[pkg]
+    if (installed !== undefined && installed >= floor) continue
+    out.push({ package: pkg, floor, installed })
+  }
+  return out
+}
+
+/** The shortfalls as the problems the renderer shows instead of rows: an
+ * error each, at `requiresAtLeast.<package>`, naming the floor and what is
+ * installed. The floor guards the properties the view's actions and cells
+ * were written against, so rendering below it is a wrong screen, not a
+ * degraded one. */
+export function floorProblems(
+  spec: Pick<ViewSpec, "requiresAtLeast">,
+  versions: Record<string, number> | undefined
+): Problem[] {
+  return floorShortfalls(spec, versions).map((s) => ({
+    path: `requiresAtLeast.${s.package}`,
+    message: `needs ${s.package} at version ${s.floor} (${
+      s.installed === undefined ? "not installed" : `installed ${s.installed}`
+    })`,
+    severity: "error",
+  }))
+}
+
 /** A stored reference read down to what it names: the path with the
  * referenced collection's prefix removed, so a `kind:` pin at the kind
  * collection yields the kind identity and a pin at `view` yields the view id.

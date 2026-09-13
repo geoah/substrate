@@ -7,9 +7,13 @@
  * tail for what the view reads and switches on `layout` to one lazily
  * imported component per value, so a layout's own weight loads only when a
  * view of that layout is opened. A kind the registry lacks is the install
- * offer, a blocking problem is the problem list, a warning sits in a strip
+ * offer, a package below a floor the view declares is the shortfall in place
+ * of rows, a blocking problem is the problem list, a warning sits in a strip
  * above the layout, and every layout is inside the boundary, so a throw takes
- * its own rectangle and nothing beside it. */
+ * its own rectangle and nothing beside it. A view already open on the line
+ * above this mount (`ctx.ancestors`: a detail that relates itself, two that
+ * relate each other) is one line saying so and no layout, because an error
+ * boundary catches a throw and not a tree that never stops growing. */
 
 import { lazy, Suspense, useMemo, type ComponentType } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -31,7 +35,11 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useLiveRecords } from "@/hooks/use-live-records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
-import { liveKinds, useImplementors } from "@/lib/apps/queries"
+import {
+  liveKinds,
+  useFloorProblems,
+  useImplementors,
+} from "@/lib/apps/queries"
 import { recordSegment } from "@/lib/apps/route"
 import {
   blockingProblems,
@@ -135,6 +143,15 @@ export function ViewRenderer(props: ViewRendererProps) {
     () => ownCtx ?? { inputs: {}, parent, mode },
     [ownCtx, parent, mode]
   )
+  const viewId = spec?.id
+  const reentered = Boolean(viewId && ctx.ancestors?.includes(viewId))
+  // The layout's context carries this view on the line, so a mount it makes
+  // (a related section) can tell it is inside this one.
+  const layoutCtx = useMemo<ViewContext>(
+    () =>
+      viewId ? { ...ctx, ancestors: [...(ctx.ancestors ?? []), viewId] } : ctx,
+    [ctx, viewId]
+  )
   const onOpenRecord =
     props.onOpenRecord ??
     ((record: SubstrateRecord) =>
@@ -150,13 +167,32 @@ export function ViewRenderer(props: ViewRendererProps) {
   const implementors = useImplementors(
     spec ?? { trait: undefined, kind: undefined }
   )
-  useLiveRecords(spec ? liveKinds(spec, implementors) : undefined)
+  useLiveRecords(spec && !reentered ? liveKinds(spec, implementors) : undefined)
+  const floors = useFloorProblems(spec)
 
   if (!spec) return <LayoutSkeleton />
+  if (reentered) {
+    return (
+      <ProblemStrip
+        problems={[
+          {
+            path: spec.id,
+            message: `${spec.id} is already open above this`,
+            severity: "warning",
+          },
+        ]}
+      />
+    )
+  }
   const blocking = blockingProblems(spec.problems)
   const warnings = spec.problems.filter((p) => p.severity === "warning")
   if (spec.kind && !kind) return <NeedsPackage identity={spec.kind} />
   if (blocking.length) return <ProblemList problems={blocking} />
+  // Below a floor the view declares, the shortfall stands in for the rows:
+  // the cells and actions were written against properties the installed
+  // package may not have yet.
+  if (!floors) return <LayoutSkeleton />
+  if (floors.length) return <ProblemList problems={floors} />
 
   const Layout = LAYOUTS[spec.layout]
   return (
@@ -167,7 +203,7 @@ export function ViewRenderer(props: ViewRendererProps) {
           spec={spec}
           kind={kind}
           kinds={kinds}
-          ctx={ctx}
+          ctx={layoutCtx}
           onOpenRecord={onOpenRecord}
         />
       </Suspense>

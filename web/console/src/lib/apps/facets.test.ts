@@ -1,13 +1,21 @@
 /** Facets on the wire and as chips: the selection ANDs into the request
  * (`eq` for one value, `in` for several, `contains` on a repeated property)
- * without touching the declared filter, and the chips come from the
+ * INSIDE what the declared filter admits and without touching it, a value
+ * the view does not admit is dropped and said, and the chips come from the
  * declaration for a closed set and from the remembered referents for a
  * reference. */
 
 import { describe, expect, it } from "vitest"
 
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
-import { facetGroups, facetParam, referentChips, withFacets } from "./facets"
+import {
+  applyFacets,
+  facetGroups,
+  facetParam,
+  facetProblems,
+  referentChips,
+  withFacets,
+} from "./facets"
 import type { ViewSpec } from "./spec"
 
 const task: KindInfo = {
@@ -37,6 +45,11 @@ const task: KindInfo = {
       },
       project: { type: "reference", kind: "project" },
       tags: { type: "reference", kind: "tag", repeated: true },
+      colors: {
+        type: "enum",
+        repeated: true,
+        values: [{ value: "red" }, { value: "blue" }],
+      },
     },
   },
 }
@@ -110,6 +123,102 @@ describe("withFacets", () => {
   it("matches a repeated property item-wise with the latest pick", () => {
     const out = withFacets({}, { tags: ["t/a/b/1", "t/a/b/2"] }, task)
     expect(out.properties?.tags).toEqual({ contains: "t/a/b/2" })
+  })
+
+  it("intersects with the view's own eq: that value alone survives", () => {
+    const one = { properties: { status: { eq: "open" } } }
+    expect(withFacets(one, { status: ["open"] }, task).properties).toEqual({
+      status: { eq: "open" },
+    })
+    const out = applyFacets(one, { status: ["done"] }, task)
+    expect(out.filter).toEqual(one)
+    expect(out.selection).toEqual({})
+    expect(out.problems).toEqual([
+      {
+        path: "facets.status",
+        message: expect.stringMatching(/"done" is not among the values/),
+        severity: "warning",
+      },
+    ])
+  })
+
+  it("intersects with the view's own in: the picks inside it, as eq or in", () => {
+    expect(
+      withFacets(declared, { status: ["done", "open"] }, task).properties
+        ?.status
+    ).toEqual({ eq: "open" })
+    expect(
+      withFacets(declared, { status: ["proposed", "open"] }, task).properties
+        ?.status
+    ).toEqual({ in: ["proposed", "open"] })
+    const outside = applyFacets(declared, { status: ["done"] }, task)
+    expect(outside.filter.properties?.status).toEqual({
+      in: ["open", "proposed"],
+    })
+    expect(outside.problems.map((p) => p.path)).toEqual(["facets.status"])
+  })
+
+  it("a shared URL naming a referent the view does not show changes nothing on the wire", () => {
+    const mine = {
+      properties: {
+        project: { eq: { ref: "ada.example.com/tasks/project/home" } },
+      },
+    }
+    const out = applyFacets(
+      mine,
+      { project: ["ada.example.com/tasks/project/taxes"] },
+      task
+    )
+    expect(out.filter).toEqual(mine)
+    expect(facetProblems(mine, out.selection, task)).toEqual([])
+    expect(
+      facetProblems(
+        mine,
+        { project: ["ada.example.com/tasks/project/taxes"] },
+        task
+      )
+    ).toHaveLength(1)
+    expect(
+      withFacets(
+        mine,
+        { project: ["ada.example.com/tasks/project/home"] },
+        task
+      ).properties?.project
+    ).toEqual({ eq: "ada.example.com/tasks/project/home" })
+  })
+
+  it("keeps a repeated reference's contains and adds the pick beside it", () => {
+    const held = { properties: { tags: { contains: "t/a/b/1" } } }
+    expect(
+      withFacets(held, { tags: ["t/a/b/1"] }, task).properties?.tags
+    ).toEqual({ contains: "t/a/b/1" })
+    expect(
+      withFacets(held, { tags: ["t/a/b/2"] }, task).properties?.tags
+    ).toEqual({ contains: "t/a/b/1", in: ["t/a/b/2"] })
+    expect(
+      applyFacets(
+        { properties: { tags: { contains: "t/a/b/1", in: ["t/a/b/2"] } } },
+        { tags: ["t/a/b/3"] },
+        task
+      ).problems
+    ).toHaveLength(1)
+  })
+
+  it("refuses a second containment on a repeated property that is not a reference", () => {
+    const held = { properties: { colors: { contains: "red" } } }
+    const out = applyFacets(held, { colors: ["blue"] }, task)
+    expect(out.filter).toEqual(held)
+    expect(out.problems[0]).toMatchObject({
+      path: "facets.colors",
+      message: expect.stringMatching(/held to "red"/),
+    })
+    expect(withFacets(held, { colors: ["red"] }, task)).toEqual(held)
+  })
+
+  it("leaves a token-valued test to the read that resolves it", () => {
+    const tokened = { properties: { project: { eq: "$input.me" } } }
+    expect(withFacets(tokened, { project: ["p/x/y/z"] }, task)).toEqual(tokened)
+    expect(facetProblems(tokened, { project: ["p/x/y/z"] }, task)).toEqual([])
   })
 
   it("names the URL key it lives under", () => {

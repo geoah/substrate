@@ -4,9 +4,10 @@
  *
  * - `transition`: `PATCH {properties: {[state]: to}, ifVersion}`; the record
  *   is rewritten in every cached page first and dropped from pages whose
- *   filter it no longer matches (`cond.ts`), a toast offers Undo along the
- *   declared return arm when one exists, a `conflict` refetches and says so,
- *   a `guard` names the move the machine refused.
+ *   filter it no longer matches (`cond.ts`), with the pages snapshotted
+ *   before the rewrite so a failure puts them back as they were, a toast
+ *   offers Undo along the declared return arm when one exists, a `conflict`
+ *   refetches and says so, a `guard` names the move the machine refused.
  * - `patch`: the same over `set` plus the prompted values.
  * - `create`: `POST` with an `Idempotency-Key` minted once per pending form,
  *   seeded from `set`, from `via` and from every `eq` on a writable property
@@ -185,31 +186,115 @@ function filterOfKey(key: readonly unknown[]): RecordFilter | undefined {
   return filter ?? undefined
 }
 
+function listPrefix(kind: KindInfo): readonly unknown[] {
+  const { authority, pkg, name } = splitKind(kind.identity)
+  return ["records", authority, pkg, name]
+}
+
+/** Rewrite every cached list of the kind. `editor` is called ONCE PER QUERY
+ * with the filter it was read under and answers the page edit, so an edit
+ * that must happen once per query (placing a created row) can keep that
+ * count across an infinite query's pages. */
 function rewriteCaches(
   queryClient: QueryClient,
   kind: KindInfo,
-  edit: (records: SubstrateRecord[], filter?: RecordFilter) => SubstrateRecord[]
+  editor: (
+    filter?: RecordFilter
+  ) => (records: SubstrateRecord[]) => SubstrateRecord[]
 ) {
-  const { authority, pkg, name } = splitKind(kind.identity)
-  const prefix = ["records", authority, pkg, name]
   for (const [key, data] of queryClient.getQueriesData<Cached>({
-    queryKey: prefix,
+    queryKey: listPrefix(kind),
   })) {
     if (!data) continue
-    const filter = filterOfKey(key)
+    const edit = editor(filterOfKey(key))
     if ("pages" in data) {
       queryClient.setQueryData<InfiniteData<Page>>(key, {
         ...data,
         pages: data.pages.map((page) => ({
           ...page,
-          records: edit(page.records ?? [], filter),
+          records: edit(page.records ?? []),
         })),
       })
     } else {
       queryClient.setQueryData<Page>(key, {
         ...data,
-        records: edit(data.records ?? [], filter),
+        records: edit(data.records ?? []),
       })
+    }
+  }
+}
+
+/** Every cache entry a write on one record may touch, as it stands: the
+ * lists under the kind and the record's own read. */
+export type CacheSnapshot = [readonly unknown[], unknown][]
+
+/** Taken BEFORE an optimistic rewrite, so a failure can put back exactly what
+ * was there. A row the rewrite dropped from a page (a transition out of the
+ * page's filter) has no other way back: an update can only replace a row a
+ * page still holds. In-flight reads of the same lists are cancelled first,
+ * so a page that was already on the wire cannot land over the optimistic
+ * shape and the snapshot is of settled data. */
+export async function snapshotCaches(
+  queryClient: QueryClient,
+  kind: KindInfo,
+  id: string
+): Promise<CacheSnapshot> {
+  const prefix = listPrefix(kind)
+  const single = ["record", ...prefix.slice(1), id]
+  await Promise.all([
+    queryClient.cancelQueries({ queryKey: prefix }),
+    queryClient.cancelQueries({ queryKey: single }),
+  ])
+  const out: CacheSnapshot = []
+  for (const [key, data] of queryClient.getQueriesData({ queryKey: prefix })) {
+    if (data !== undefined) out.push([key, data])
+  }
+  const own = queryClient.getQueryData(single)
+  if (own !== undefined) out.push([single, own])
+  return out
+}
+
+/** Put the record back as the snapshot had it, in every entry the snapshot
+ * holds: replaced where a page still shows it, back at its old place where
+ * the rewrite dropped it, gone where the rewrite added it. The OTHER rows
+ * keep what they show now, so an update that landed in between (another
+ * action's success, a change from the tail) is not undone by this one's
+ * failure. An entry created since the snapshot is left alone; the
+ * invalidation that follows a failure refetches it. */
+export function restoreCaches(
+  queryClient: QueryClient,
+  snapshot: CacheSnapshot,
+  id: string
+) {
+  const put = (now: Page, was: Page | undefined): Page => {
+    const before = was?.records ?? []
+    const at = before.findIndex((r) => r.id === id)
+    const records = [...(now.records ?? [])]
+    const here = records.findIndex((r) => r.id === id)
+    if (at < 0) {
+      return here < 0
+        ? now
+        : { ...now, records: records.filter((r) => r.id !== id) }
+    }
+    if (here >= 0) records[here] = before[at]
+    else records.splice(Math.min(at, records.length), 0, before[at])
+    return { ...now, records }
+  }
+  for (const [key, was] of snapshot) {
+    if (key[0] === "record") {
+      queryClient.setQueryData(key, was)
+      continue
+    }
+    const now = queryClient.getQueryData<Cached>(key)
+    if (!now) continue
+    if ("pages" in now) {
+      const pages = (was as InfiniteData<Page>).pages ?? []
+      queryClient.setQueryData<InfiniteData<Page>>(key, {
+        ...now,
+        pages: now.pages.map((page, i) => put(page, pages[i])),
+      })
+    } else {
+      queryClient.setQueryData<Page>(key, put(now, was as Page))
     }
   }
 }
@@ -221,31 +306,42 @@ export function updateCaches(
   kind: KindInfo,
   updated: SubstrateRecord
 ) {
-  rewriteCaches(queryClient, kind, (records, filter) =>
-    records.flatMap((r) => {
-      if (r.id !== updated.id) return [r]
-      return matchesFilter(updated, filter, kind) ? [updated] : []
-    })
+  rewriteCaches(
+    queryClient,
+    kind,
+    (filter) => (records) =>
+      records.flatMap((r) => {
+        if (r.id !== updated.id) return [r]
+        return matchesFilter(updated, filter, kind) ? [updated] : []
+      })
   )
-  const { authority, pkg, name } = splitKind(kind.identity)
-  const single = ["record", authority, pkg, name, updated.id]
+  const single = ["record", ...listPrefix(kind).slice(1), updated.id]
   if (queryClient.getQueryData(single) !== undefined) {
     queryClient.setQueryData(single, updated)
   }
 }
 
-/** Show a created record at the head of every cached page it matches. */
+/** Show a created record at the head of every cached list it matches, once
+ * per list: the first page of an infinite query takes it and the later pages
+ * do not repeat it, and a list that already holds it (a refetch landed
+ * first) is left as it is. */
 export function insertIntoCaches(
   queryClient: QueryClient,
   kind: KindInfo,
   created: SubstrateRecord
 ) {
-  let placed = false
-  rewriteCaches(queryClient, kind, (records, filter) => {
-    if (placed || records.some((r) => r.id === created.id)) return records
-    if (!matchesFilter(created, filter, kind)) return records
-    placed = true
-    return [created, ...records]
+  rewriteCaches(queryClient, kind, (filter) => {
+    let placed = false
+    return (records) => {
+      if (placed) return records
+      if (records.some((r) => r.id === created.id)) {
+        placed = true
+        return records
+      }
+      if (!matchesFilter(created, filter, kind)) return records
+      placed = true
+      return [created, ...records]
+    }
   })
 }
 
@@ -254,8 +350,10 @@ export function removeFromCaches(
   kind: KindInfo,
   id: string
 ) {
-  rewriteCaches(queryClient, kind, (records) =>
-    records.filter((r) => r.id !== id)
+  rewriteCaches(
+    queryClient,
+    kind,
+    () => (records) => records.filter((r) => r.id !== id)
   )
 }
 
@@ -294,6 +392,7 @@ async function runTransition(
     properties: { ...record.properties, [t.property]: t.to },
     version: record.version + 1,
   }
+  const before = await snapshotCaches(queryClient, kind, record.id)
   updateCaches(queryClient, kind, optimistic)
   try {
     const saved = await patchRecord(authority, pkg, name, record.id, {
@@ -325,7 +424,7 @@ async function runTransition(
     }
     return { ok: true, record: saved }
   } catch (error) {
-    updateCaches(queryClient, kind, record)
+    restoreCaches(queryClient, before, record.id)
     invalidateKind(queryClient, kind)
     if (error instanceof ApiError && error.code === "conflict") {
       toast.add({
@@ -364,6 +463,7 @@ async function runPatch(args: RunActionArgs): Promise<ActionOutcome> {
     properties: { ...record.properties, ...properties },
     version: record.version + 1,
   }
+  const before = await snapshotCaches(queryClient, kind, record.id)
   updateCaches(queryClient, kind, optimistic)
   try {
     const saved = await patchRecord(authority, pkg, name, record.id, {
@@ -375,7 +475,7 @@ async function runPatch(args: RunActionArgs): Promise<ActionOutcome> {
     toast.add({ type: "success", title: `${titleOf(saved)} updated` })
     return { ok: true, record: saved }
   } catch (error) {
-    updateCaches(queryClient, kind, record)
+    restoreCaches(queryClient, before, record.id)
     invalidateKind(queryClient, kind)
     if (error instanceof ApiError && error.code === "conflict") {
       toast.add({

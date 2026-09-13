@@ -4,7 +4,13 @@
 import { describe, expect, it } from "vitest"
 
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
-import { defaultShow, packageOf, viewSpec } from "./view-spec"
+import {
+  defaultShow,
+  floorProblems,
+  floorShortfalls,
+  packageOf,
+  viewSpec,
+} from "./view-spec"
 
 const task: KindInfo = {
   identity: "ada.example.com/tasks/task",
@@ -217,5 +223,53 @@ describe("facets and descriptions", () => {
     expect(shown.problems.map((p) => p.message)).toEqual([
       "Shows when the substrate last wrote each record, not the `updatedAt` the kind declares.",
     ])
+  })
+})
+
+describe("floorProblems", () => {
+  const floors = {
+    requiresAtLeast: {
+      "ada.example.com/tasks": 3,
+      "ada.example.com/people": 1,
+    },
+  }
+
+  it("names a package below its floor and one not installed", () => {
+    expect(floorShortfalls(floors, { "ada.example.com/tasks": 2 })).toEqual([
+      { package: "ada.example.com/tasks", floor: 3, installed: 2 },
+      { package: "ada.example.com/people", floor: 1, installed: undefined },
+    ])
+    expect(floorProblems(floors, { "ada.example.com/tasks": 2 })).toEqual([
+      {
+        path: "requiresAtLeast.ada.example.com/tasks",
+        message: "needs ada.example.com/tasks at version 3 (installed 2)",
+        severity: "error",
+      },
+      {
+        path: "requiresAtLeast.ada.example.com/people",
+        message: "needs ada.example.com/people at version 1 (not installed)",
+        severity: "error",
+      },
+    ])
+  })
+
+  it("is quiet when every floor is met, and while the versions are unread", () => {
+    expect(
+      floorProblems(floors, {
+        "ada.example.com/tasks": 3,
+        "ada.example.com/people": 4,
+      })
+    ).toEqual([])
+    expect(floorProblems(floors, undefined)).toEqual([])
+    expect(floorProblems({ requiresAtLeast: {} }, {})).toEqual([])
+  })
+
+  it("reads the floor off the row", () => {
+    const spec = viewSpec(
+      view({ kind: KIND_REF, requiresAtLeast: { "ada.example.com/tasks": 2 } }),
+      [task]
+    )
+    expect(floorProblems(spec, { "ada.example.com/tasks": 1 })).toHaveLength(1)
+    expect(floorProblems(spec, { "ada.example.com/tasks": 2 })).toEqual([])
   })
 })

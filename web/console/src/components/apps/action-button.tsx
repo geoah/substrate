@@ -3,9 +3,13 @@
  * what a verb needs before `runAction` can go: the prompt sheet for a create
  * or a patch with a `prompt`, the confirm for a delete or a `confirm: true`,
  * an idempotency key minted once per opened form, and the navigate an `open`
- * pushes with. `<ActionButton>` is the runner with a button; `<ActionRunner>`
- * is the runner started on mount, for a menu item whose menu closes before
- * the sheet opens. */
+ * pushes with. An action with both a prompt and a confirm asks in that
+ * order: the form collects the values, the confirm asks about them, and only
+ * then does the write run, under the key the form was opened with, because
+ * a `confirm: true` the form could bypass would be no confirm at all.
+ * `<ActionButton>` is the runner with a button; `<ActionRunner>` is the
+ * runner started on mount, for a menu item whose menu closes before the
+ * sheet opens. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
@@ -82,6 +86,8 @@ export function useActionRunner(
   const navigate = useNavigate()
   const [formOpen, setFormOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  // What the form collected, held while the confirm asks about it.
+  const [collected, setCollected] = useState<Record<string, unknown>>()
   const [pending, setPending] = useState(false)
   const [idempotencyKey, setIdempotencyKey] = useState<string>()
 
@@ -131,6 +137,25 @@ export function useActionRunner(
     }
     void execute()
   }, [asksForm, asksConfirm, execute])
+
+  // The form's submit. With a confirm still to ask, the values are held and
+  // the question opens over the sheet, which stays (`false`: nothing landed)
+  // so a cancelled confirm returns to the filled form.
+  const submit = useCallback(
+    async (values: Record<string, unknown>) => {
+      if (!asksConfirm) return execute(values)
+      setCollected(values)
+      setConfirmOpen(true)
+      return false
+    },
+    [asksConfirm, execute]
+  )
+  const confirm = useCallback(() => {
+    void execute(collected).then((ok) => {
+      setConfirmOpen(false)
+      if (ok) setFormOpen(false)
+    })
+  }, [execute, collected])
 
   // The form's seed: what the write carries without asking.
   const seed = useMemo(() => {
@@ -207,7 +232,7 @@ export function useActionRunner(
           mode={action.verb === "create" ? "create" : "patch"}
           record={action.verb === "patch" ? record : undefined}
           submitLabel={action.label}
-          onSubmit={execute}
+          onSubmit={submit}
         />
       )}
       {asksConfirm && (
@@ -215,7 +240,8 @@ export function useActionRunner(
           open={confirmOpen}
           onOpenChange={(open) => {
             setConfirmOpen(open)
-            if (!open) onSettled?.()
+            // Under an open form the sequence is not over: the form is.
+            if (!open && !formOpen) onSettled?.()
           }}
           title={`${action.label}?`}
           description={action.description ?? consequence}
@@ -223,9 +249,7 @@ export function useActionRunner(
           confirmLabel={action.label}
           destructive={action.verb === "delete"}
           pending={pending}
-          onConfirm={() => {
-            void execute().then(() => setConfirmOpen(false))
-          }}
+          onConfirm={confirm}
         />
       )}
     </>

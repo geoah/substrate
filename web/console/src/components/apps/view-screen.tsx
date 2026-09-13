@@ -2,9 +2,10 @@
  * same chrome an app screen gets, so a view needs no app to render. The
  * record segment scopes the view through `via`, is a detail's subject, or
  * opens that record's sheet (use-screen-record.ts). The chrome's one primary
- * button is the view's `primary` action, header actions trail the title, and
- * the facet selection in the URL travels to the layout through the context,
- * which is what makes the chips live on this mount. */
+ * button is the view's `primary` action, header actions trail the title (on
+ * a detail both act on the subject, `chromeActions`), and the facet
+ * selection in the URL travels to the layout through the context, which is
+ * what makes the chips live on this mount. */
 
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -15,16 +16,36 @@ import { AppChrome } from "@/components/apps/app-chrome"
 import { ProblemList } from "@/components/apps/problems"
 import { MissingRecordSheet, RecordSheet } from "@/components/apps/record-sheet"
 import { useTouchRoot } from "@/components/apps/touch"
-import { useBack, useScreenRecord } from "@/components/apps/use-screen-record"
+import {
+  chromeActions,
+  useBack,
+  useScreenRecord,
+} from "@/components/apps/use-screen-record"
 import { ViewRenderer } from "@/components/apps/view-renderer"
 import { Skeleton } from "@/components/ui/skeleton"
 import { viewQueryOptions } from "@/lib/api/apps"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { useFacetSelection } from "@/lib/apps/facets"
+import { useFloorProblems } from "@/lib/apps/queries"
 import { titleOf } from "@/lib/apps/referents"
-import type { ActionHost, ViewContext } from "@/lib/apps/spec"
+import type { ViewContext } from "@/lib/apps/spec"
 import { viewSpec } from "@/lib/apps/view-spec"
 import { kindByIdentity } from "@/lib/definition"
+
+/** The rows a screen shows while what it needs is on its way: the chrome is
+ * up, the body is not. */
+export function SkeletonRows() {
+  return (
+    <div className="flex flex-col">
+      {Array.from({ length: 6 }, (_, i) => (
+        <div key={i} className="flex flex-col gap-2 border-b px-4 py-3">
+          <Skeleton className="h-4 w-2/3" />
+          <Skeleton className="h-3 w-1/3" />
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export function ScreenSkeleton({
   title = " ",
@@ -35,14 +56,7 @@ export function ScreenSkeleton({
 }) {
   return (
     <AppChrome title={title} onBack={onBack}>
-      <div className="flex flex-col">
-        {Array.from({ length: 6 }, (_, i) => (
-          <div key={i} className="flex flex-col gap-2 border-b px-4 py-3">
-            <Skeleton className="h-4 w-2/3" />
-            <Skeleton className="h-3 w-1/3" />
-          </div>
-        ))}
-      </div>
+      <SkeletonRows />
     </AppChrome>
   )
 }
@@ -68,6 +82,7 @@ export function ViewScreen({
     [view.data, registry.data]
   )
   const kind = spec?.kind ? kindByIdentity(kinds, spec.kind) : undefined
+  const floors = useFloorProblems(spec)
   const screen = useScreenRecord({
     spec,
     kind,
@@ -137,9 +152,10 @@ export function ViewScreen({
     return <ScreenSkeleton title={spec.name} onBack={back} />
   }
 
-  const host: ActionHost = { spec, kind, kinds, ctx }
-  const primary = spec.actions.find((a) => a.placement === "primary")
-  const header = spec.actions.filter((a) => a.placement === "header")
+  const chrome = chromeActions({ spec, kind, kinds, ctx }, screen)
+  // The chrome's verbs are withheld below a floor the view declares, as the
+  // rows are; the renderer says the shortfall.
+  const short = !floors || floors.length > 0
   return (
     <AppChrome
       title={spec.name}
@@ -148,12 +164,13 @@ export function ViewScreen({
       }
       onBack={back}
       actions={
-        header.length
-          ? header.map((action) => (
+        chrome.header.length && !short
+          ? chrome.header.map((action) => (
               <ActionButton
                 key={action.name}
-                host={host}
+                host={chrome.host}
                 action={action}
+                record={chrome.record}
                 variant="ghost"
                 compact
               />
@@ -161,10 +178,12 @@ export function ViewScreen({
           : undefined
       }
       primary={
-        primary && (
+        chrome.primary &&
+        !short && (
           <ActionButton
-            host={host}
-            action={primary}
+            host={chrome.host}
+            action={chrome.primary}
+            record={chrome.record}
             variant="default"
             className="h-12 w-full text-base"
           />
@@ -179,7 +198,7 @@ export function ViewScreen({
       />
       {screen.sheetRecord && (
         <RecordSheet
-          host={host}
+          host={{ spec, kind, kinds, ctx }}
           record={screen.sheetRecord}
           open
           onOpenChange={(open) => !open && screen.closeSheet()}
@@ -187,7 +206,7 @@ export function ViewScreen({
       )}
       {screen.sheetError && (
         <MissingRecordSheet
-          segment={segment ?? ""}
+          segment={screen.sheetSegment ?? ""}
           message={screen.sheetError.message}
           open
           onOpenChange={(open) => !open && screen.closeSheet()}

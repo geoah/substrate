@@ -7,7 +7,9 @@
  * parent so `via` scopes the read and seeds the create, which is the
  * section's trailing button. The record is re-read on mount and after every
  * action, because a transition moves its version and the next `ifVersion`
- * must carry it. */
+ * must carry it. Each section's context carries the line of views above it
+ * (`ctx.ancestors`, this one included by the renderer), which is what lets
+ * the renderer refuse a related view that is already open above. */
 
 import { useMemo } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -89,7 +91,8 @@ export default function DetailLayout({
   const stateValue = state ? record.properties[state.name] : undefined
   // In a page mount the screen draws the primary and header actions in its
   // chrome; the detail draws the row-placed ones, its one record being the
-  // row. A card or inline mount has no chrome and draws them all.
+  // row (so a create's `$record` is this record too). A card or inline mount
+  // has no chrome and draws them all.
   const actions = spec.actions.filter((a) => {
     if (ctx.mode === "page" && a.placement !== "row") return false
     return a.verb === "create" || actionApplies(a, record, recordKind)
@@ -120,7 +123,7 @@ export default function DetailLayout({
                 key={action.name}
                 host={host}
                 action={action}
-                record={action.verb === "create" ? undefined : record}
+                record={record}
                 className="md:h-9"
                 onSettled={onSettled}
               />
@@ -158,6 +161,7 @@ export default function DetailLayout({
           related={related}
           parent={{ record, kind: recordKind ?? subject.kind }}
           inputs={ctx.inputs}
+          ancestors={ctx.ancestors}
           kinds={kinds}
           onOpenRecord={onOpenRecord}
         />
@@ -170,12 +174,14 @@ function RelatedSection({
   related,
   parent,
   inputs,
+  ancestors,
   kinds,
   onOpenRecord,
 }: {
   related: RelatedSpec
   parent: { record: SubstrateRecord; kind: KindInfo }
   inputs: ViewContext["inputs"]
+  ancestors: ViewContext["ancestors"]
   kinds: KindInfo[]
   onOpenRecord: (record: SubstrateRecord) => void
 }) {
@@ -186,8 +192,8 @@ function RelatedSection({
   )
   const kind = spec?.kind ? kindByIdentity(kinds, spec.kind) : undefined
   const ctx = useMemo<ViewContext>(
-    () => ({ inputs, parent, mode: "card" }),
-    [inputs, parent]
+    () => ({ inputs, parent, mode: "card", ancestors }),
+    [inputs, parent, ancestors]
   )
   // In a section mount both primary and header creates are the trailing
   // button; a row-placed create stays with the rows.

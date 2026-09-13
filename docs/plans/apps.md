@@ -532,11 +532,22 @@ document's listeners. The guest's CSP is `default-src 'none'; script-src
 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:;
 connect-src 'none'; worker-src 'none'; frame-src 'none'`, the same policy in
 the dev meta tag as in the production header, because `connect-src` alone
-leaves an image URL as an exfiltration path. A custom view can reach the
-substrate only through the bridge and the internet not at all. "Renders in
-other MCP Apps hosts" is a compatibility of vocabulary, not a promise: a
-foreign host needs a `postMessage` transport adapter and the SDK packaged as a
-resource, both later work. `source` is `writer: owner`: an agent may write
+leaves an image URL as an exfiltration path. The guest's own policy does not
+govern its containing frame, so the one remaining path out, the document
+navigating itself to a foreign URL with data in the query, is closed by the
+CONSOLE document's policy: `frame-src 'self'` on the SPA, which Chrome
+enforces on a nested frame's navigations whoever initiates them (verified:
+no request leaves; Chrome then commits its error page in the frame, the shell
+reports the unload over the port and the host tears the view down with a
+notice; Firefox and Safari were not run). A custom view can reach the
+substrate only through the bridge and the internet not at all. Two honest limits of the prototype: the built shell loads its module and
+the SDK from `/assets` cross-origin, which needs `Access-Control-Allow-Origin`
+on that path from the Go server (owed with v1, so the guest runs under
+`pnpm dev` today and not from the built image), and the SDK ships under a
+fixed asset name that the server marks immutable, which a content-hashed
+name fixes. "Renders in other MCP Apps hosts" is a compatibility of
+vocabulary, not a promise: a foreign host needs a `postMessage` transport
+adapter and the SDK packaged as a resource, both later work. `source` is `writer: owner`: an agent may write
 every declarative view and app it is granted, but code lands only under the
 owner's own hand or through an accepted proposal, and no shipped closure
 carries browser code.
@@ -573,11 +584,17 @@ enforced per call and honored only when `source`, `permissions`, `kind` and
 `filter` were ALL last written at owner tier (`propertyMeta` on the single
 read; a list omits it), because only `source` carries `writer: owner` and an
 agent allowed to write views could otherwise widen the grant or repoint the
-page under an owner-written document. Below that bar the guest mounts with no
-data and no RPCs: synthetic records for a preview and a "needs the owner's
-review" line, never a "dry run" that reads. The port is revoked when the row
-changes under a mounted guest. Against the owner's own token the grant is
-advisory until a scoped token exists. Do not add CORS to `/api`.
+page under an owner-written document. The decision and the values it covers
+come from ONE single-record read, never from a collection page beside a
+provenance read of another version, and an absent gated property is not
+"nothing to check": `source`, `permissions` and `kind` must be present and
+owner-written, and a custom view without a `filter` gets no pushed page (its
+own `records.list` calls are still held to the grant). Below that bar the
+guest mounts with no data and no RPCs: synthetic records for a preview and a
+"needs the owner's review" line, never a "dry run" that reads. The port is
+revoked when the row changes under a mounted guest. Against the owner's own
+token the grant is advisory until a scoped token exists. Do not add CORS to
+`/api`.
 
 ### Versioning
 
@@ -678,6 +695,23 @@ Deferred rather than rejected: a boolean `when`, `in` versus `exists`
 exclusivity, and per-column board paging wait for the first user who needs
 them.
 
+Codex also reviewed the PR diff itself (twice: the diff, then the fixes).
+Its blocker, that the guest could navigate its own frame to a foreign URL
+with data in the query, is closed by the console document's `frame-src`
+policy plus the host teardown described above. Its majors are folded in:
+the grant and the values it covers now come from one single-record read; an
+absent gated property no longer passes the gate; a related view that names
+itself is refused; facets intersect the stored filter instead of replacing
+it; the live tail recovers from compaction and its catch-up covers single
+records and the registry; sheets read their record through the cache; inputs
+resolve a binding and `default` directly instead of scanning a page; header
+and primary actions on a detail receive their subject; a prompted action
+confirms after the form; an app route waits for its parent; rollback
+restores a removed row without undoing a neighbour's update; the SDK ships
+under a content-hashed name; `requiresAtLeast` is enforced. Open from that
+review: the server-side CORS for the built guest, picker pagination and the
+"live updates stopped" screen.
+
 ## The prototype on this branch
 
 Three things to look at, from the same view records, so the comparison is
@@ -732,8 +766,11 @@ The console's typecheck, lint, formatter, 957 tests and build pass.
 Not built, on purpose: `/m/apps/{id}` and the PWA manifest, the hold menu
 for further row actions (an overflow button stands in), offline disabling,
 the `call` and `chat` verbs (toast stubs), the engine admission gate, shipped
-`views.yaml` in the sample packages, and any of the server changes listed
-below.
+`views.yaml` in the sample packages, a paginated input picker (one page of
+fifty), a screen for the "live updates stopped" state the tail now reports,
+and any of the server changes listed below (the built guest needs the Go
+server's CORS on `/assets`, so the custom layout runs under `pnpm dev`
+today).
 
 ### Run it
 
