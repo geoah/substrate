@@ -5,7 +5,10 @@
  * Done on an active project; Resume and Done on one on hold), a transition
  * landing as a CAS patch and the buttons following the new state, and each
  * `related` view mounted scoped to this record with its create as the
- * section's trailing button. */
+ * section's trailing button. Then the line of views (`ctx.ancestors`), run
+ * through the renderer: a detail that relates itself and two that relate
+ * each other stop at one line instead of mounting without end, while the
+ * same view under two sibling sections mounts twice. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -33,6 +36,7 @@ vi.mock("@tanstack/react-router", () => ({
 /** The renderer joins the shared change-feed tail; a test has no stream. */
 vi.mock("@/hooks/use-live-records", () => ({ useLiveRecords: () => {} }))
 
+import { ViewRenderer } from "@/components/apps/view-renderer"
 import { Toaster } from "@/components/ui/toast"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import type { ViewContext } from "@/lib/apps/spec"
@@ -209,7 +213,11 @@ function page(records: SubstrateRecord[]) {
   return json({ records, head: 1, generation: "g" })
 }
 
-function stubFetch(subject: SubstrateRecord) {
+function stubFetch(
+  subject: SubstrateRecord,
+  views = [relatedView],
+  packages: SubstrateRecord[] = []
+) {
   let current = subject
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
@@ -228,9 +236,10 @@ function stubFetch(subject: SubstrateRecord) {
     if (path.endsWith(`/tasks/project/${current.id}`)) {
       return Promise.resolve(json(current))
     }
-    if (path.endsWith("/core/view/tasks-by-project")) {
-      return Promise.resolve(json(relatedView))
-    }
+    const view = views.find((v) => path.endsWith(`/core/view/${v.id}`))
+    if (view) return Promise.resolve(json(view))
+    if (path.endsWith("/core/kind")) return Promise.resolve(page([]))
+    if (path.endsWith("/core/package")) return Promise.resolve(page(packages))
     if (path.endsWith("/tasks/task")) return Promise.resolve(page(tasks))
     if (path.endsWith("/tasks/project")) {
       return Promise.resolve(page([website, taxes]))
@@ -381,5 +390,133 @@ describe("DetailLayout", () => {
     renderDetail(undefined)
     expect(screen.getByText("No record")).toBeTruthy()
     expect(buttonNames()).toEqual([])
+  })
+})
+
+/** A detail on `project` whose sections are the given views. */
+function detailOf(id: string, name: string, related: string[]) {
+  return record("substrate.reamde.dev/core/view", id, {
+    name,
+    layout: "detail",
+    kind: { ref: `substrate.reamde.dev/core/kind/${PROJECT}` },
+    show: ["summary"],
+    related: related.map((view) => ({
+      view: { ref: `substrate.reamde.dev/core/view/${view}` },
+    })),
+  })
+}
+
+/** The page mount as a screen makes it: through the renderer, which is what
+ * puts the view on the line its sections inherit. */
+function renderMounted(view: SubstrateRecord, subject: SubstrateRecord) {
+  const spec = viewSpec(view, kinds)
+  const ctx: ViewContext = {
+    inputs: {},
+    parent: { record: subject, kind: project },
+    mode: "page",
+  }
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  return render(
+    <QueryClientProvider client={client}>
+      <Toaster>
+        <ViewRenderer
+          spec={spec}
+          kinds={kinds}
+          ctx={ctx}
+          onOpenRecord={vi.fn()}
+        />
+      </Toaster>
+    </QueryClientProvider>
+  )
+}
+
+describe("the line of views a section inherits", () => {
+  it("refuses a detail that relates itself, once", async () => {
+    const self = detailOf("tasks-project-self", "Project", [
+      "tasks-project-self",
+    ])
+    stubFetch(website, [self])
+    renderMounted(self, website)
+    await screen.findByRole("heading", { level: 2, name: "Website relaunch" })
+    const section = await screen.findByRole("region", { name: "Project" })
+    await within(section).findByText(
+      "tasks-project-self is already open above this"
+    )
+    // One detail, not a second one under it.
+    expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(1)
+    expect(within(section).queryByRole("heading", { level: 2 })).toBeNull()
+  })
+
+  it("stops a two-view cycle at the view already open above", async () => {
+    const a = detailOf("tasks-project-a", "Project A", ["tasks-project-b"])
+    const b = detailOf("tasks-project-b", "Project B", ["tasks-project-a"])
+    stubFetch(website, [a, b])
+    renderMounted(a, website)
+    // B mounts under A as a detail of the same subject ...
+    const sectionB = await screen.findByRole("region", { name: "Project B" })
+    await within(sectionB).findByRole("heading", {
+      level: 2,
+      name: "Website relaunch",
+    })
+    // ... and A under B is the line, not a third detail.
+    const sectionA = await within(sectionB).findByRole("region", {
+      name: "Project A",
+    })
+    await within(sectionA).findByText(
+      "tasks-project-a is already open above this"
+    )
+    expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(2)
+  })
+
+  it("lets the same view mount under two sibling sections", async () => {
+    const a = detailOf("tasks-project-a", "Project A", [
+      "tasks-project-b",
+      "tasks-project-c",
+    ])
+    const b = detailOf("tasks-project-b", "Project B", ["tasks-by-project"])
+    const c = detailOf("tasks-project-c", "Project C", ["tasks-by-project"])
+    stubFetch(website, [a, b, c, relatedView])
+    renderMounted(a, website)
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("region", { name: "Open tasks" })
+      ).toHaveLength(2)
+    })
+    for (const section of screen.getAllByRole("region", {
+      name: "Open tasks",
+    })) {
+      await within(section).findByText("Pick a launch date")
+    }
+    expect(screen.queryByText(/is already open above this/)).toBeNull()
+  })
+})
+
+describe("a floor the view declares", () => {
+  it("says the shortfall in place of the rows while the package is below it", async () => {
+    const floored = record("substrate.reamde.dev/core/view", "tasks-floor", {
+      name: "Project",
+      layout: "detail",
+      kind: { ref: `substrate.reamde.dev/core/kind/${PROJECT}` },
+      show: ["summary"],
+      requiresAtLeast: { "ada.example.com/tasks": 9 },
+    })
+    const installed = record(
+      "substrate.reamde.dev/core/package",
+      "ada.example.com/tasks",
+      { version: 3 }
+    )
+    stubFetch(website, [floored], [installed])
+    renderMounted(floored, website)
+    await screen.findByText(
+      "needs ada.example.com/tasks at version 9 (installed 3)"
+    )
+    expect(screen.queryByRole("heading", { level: 2 })).toBeNull()
+
+    cleanup()
+    installed.properties.version = 9
+    renderMounted(floored, website)
+    await screen.findByRole("heading", { level: 2, name: "Website relaunch" })
   })
 })

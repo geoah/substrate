@@ -47,6 +47,12 @@ export const METHODS = {
   primaryAction: "substrate/primary-action",
   primaryActionClicked: "substrate/notifications/primary-action",
   back: "substrate/notifications/back",
+  /** Posted by the frame SHELL, not the SDK, from `pagehide`: the guest's
+   * document is being unloaded because it navigated its frame or was
+   * replaced. The console's `frame-src 'self'` lets no off-origin
+   * destination load, so what commits is the browser's own error page;
+   * the host tears the view down on this rather than pinging a dead frame. */
+  unload: "substrate/notifications/unload",
 } as const
 
 export type Method = (typeof METHODS)[keyof typeof METHODS]

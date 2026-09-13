@@ -1,8 +1,12 @@
-/** `substrate/app`: what a custom view's document imports. It is built as its
- * own entry chunk so the frame shell's import map can name it; in dev the map
- * points at `/src/apps-sdk/index.ts` and vite transforms it on request, in a
- * build at `/assets/app-sdk.js`, a fixed name because the shell cannot read
- * a manifest from an origin whose `connect-src` is `'none'`.
+/** `substrate/app`: what a custom view's document imports. It is emitted as
+ * its own chunk so the frame shell's import map can name it: in dev the map
+ * points at `/src/apps-sdk/index.ts` and vite transforms it on request; in a
+ * build at the chunk's CONTENT-HASHED name, which the bundler writes into the
+ * shell (vite.config.ts, `sdkUrl`), because the shell cannot read a manifest
+ * from an origin whose `connect-src` is `'none'`, and `/assets/` is cached
+ * immutable, where a fixed name would outlive its build. The guest fetches it
+ * cross-origin, so a built console serves it only once the Go server answers
+ * CORS on `/assets` (docs/plans/apps.md); vite dev already does.
  *
  * No injected global: the document reaches the console only through the
  * object `createApp()` resolves, and that object reaches the console only

@@ -3,18 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <!--
-      The guest's policy, the same in dev and in a build. A production
-      deployment sends it as a header too (with `frame-ancestors 'self'` and
-      `sandbox allow-scripts`, which a meta policy cannot carry); the meta is
-      what holds under `vite dev` and what the document rewrite keeps, since
-      `document.open()` replaces the tree and not the policy container.
+      The guest's policy, the same under `vite dev` and in a build: the Go
+      server sends no policy header today, so this meta IS the policy, and
+      the document rewrite keeps it, since `document.open()` replaces the
+      tree and not the policy container. (A header could add `frame-ancestors
+      'self'` and `sandbox allow-scripts`, which a meta cannot carry; owed.)
       `script-src 'self'` admits vite's module URLs and the built SDK because
       CSP3 resolves 'self' from the document's URL, not its opaque origin.
       `connect-src 'none'` closes fetch, XHR, WebSocket and beacons; `img-src`
       without a host closes the image beacon; `font-src 'self'` admits the
-      console's own font and nothing off-origin. The one dev-only effect is
-      noise: vite's HMR client, injected into every page it serves, is refused
-      its WebSocket by this same policy and says so in the frame's console.
+      console's own font and nothing off-origin; `form-action 'none'` refuses
+      a form's own submission. What none of these govern is this document
+      NAVIGATING ITS OWN FRAME: a frame's navigations are held to the
+      EMBEDDING document's `frame-src`, which is why the console's index.html
+      carries `frame-src 'self'`. The one dev-only effect is noise: vite's
+      HMR client, injected into every page it serves, is refused its
+      WebSocket by this same policy and says so in the frame's console.
     -->
     <meta
       http-equiv="Content-Security-Policy"

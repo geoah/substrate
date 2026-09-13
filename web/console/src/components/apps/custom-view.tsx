@@ -3,16 +3,27 @@
  * frame is `sandbox="allow-scripts"` and nothing more, so the document's
  * origin is opaque: `localStorage` throws, `/api` is unreachable, and the
  * only way to a record is a call the host checks against the view's grant.
+ * The console document's own `frame-src 'self'` (index.html) is what keeps
+ * the document from navigating its frame off-origin with data in the URL;
+ * when it tries, the browser commits its error page in the frame, the shell
+ * says so on the port, and the view is closed here with a Reload.
  *
- * The grant counts only at OWNER PROVENANCE. A view is a record like any
- * other, and an agent allowed to write views could repoint `kind`, widen
- * `permissions` or narrow `filter` under a `source` the owner wrote; the
- * single-record read is the one wire surface carrying `propertyMeta`, and
- * the document runs only when `source`, `permissions`, `kind` and `filter`
- * (each that is present) were written at `tier: owner`. Below that the
- * document is not mounted at all: the view shows its description, says it
- * needs the owner's review, and links to the source. Nothing real reaches a
- * document whose grant the owner has not written.
+ * The grant counts only at OWNER PROVENANCE, and ONE READ decides it. A view
+ * is a record like any other, and an agent allowed to write views could
+ * repoint `kind`, widen `permissions`, narrow or delete `filter`, all under
+ * a `source` the owner wrote. The single-record read is the one wire surface
+ * carrying `propertyMeta`, so the source that runs, the grant the bridge
+ * checks, the kind and filter the page is read with, and the decision that
+ * they are the owner's are ALL taken from that one response: the `spec` this
+ * component is mounted with came from some other read of the row (an app
+ * screen's collection, a card, or this very query) and is used for its id
+ * alone. `source`, `permissions` and `kind` must be present and the owner's;
+ * `filter` may be absent, and then no page is pushed. Below that the document
+ * is not mounted at all: the view shows its description, says it needs the
+ * owner's review, and links to the source. A collection read that holds a
+ * newer version of the row than the single read is what the live tail
+ * refreshes first, so a newer one triggers a re-read of the single record,
+ * once per advance, and the mount follows it.
  *
  * Full-page the frame owns its scroll (a content-sized frame breaks sticky
  * positioning and iOS momentum); in a card, `size-changed` is honored up to
@@ -21,8 +32,12 @@
  * source link drawn above it, and one that stops answering pings is torn
  * down and offered a retry. */
 
-import { useEffect, useRef, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useEffect, useMemo, useRef, useState } from "react"
+import {
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query"
 import { Link, useRouter } from "@tanstack/react-router"
 import { InfoIcon, RotateCcwIcon } from "lucide-react"
 
@@ -37,11 +52,13 @@ import {
   request,
   seg,
 } from "@/lib/api/http"
-import type { SubstrateRecord } from "@/lib/api/types"
+import type { Page, SubstrateRecord } from "@/lib/api/types"
 import {
   createBridgeHost,
+  NOT_GRANTED,
   ownerProvenance,
   type BridgeHost,
+  type Provenance,
 } from "@/lib/apps/bridge/host"
 import {
   MOUNT_TYPE,
@@ -52,14 +69,15 @@ import {
   type Theme,
 } from "@/lib/apps/bridge/protocol"
 import { viewPageOptions } from "@/lib/apps/queries"
-import type { LayoutProps } from "@/lib/apps/spec"
+import type { LayoutProps, ViewSpec } from "@/lib/apps/spec"
+import { viewSpec } from "@/lib/apps/view-spec"
 import { splitKind } from "@/lib/definition"
 import { cn } from "@/lib/utils"
 
 const FRAME_URL = "/app-frame.html"
 
-/** How long a document has to say `ui/initialize` before the view says it
- * has not. The frame stays: a static document that imports no SDK is a
+/** How long, from the frame's navigation, a document has to say
+ * `ui/initialize` before the view says it has not. The frame stays: a static document that imports no SDK is a
  * legitimate custom view. */
 const INITIALIZE_MS = 5_000
 
@@ -148,7 +166,36 @@ function measureSafeArea(): HostContext["safeAreaInsets"] {
   return insets
 }
 
-type Phase = "booting" | "live" | "silent" | "lost"
+/** The newest version of the view row that any cached collection read
+ * holds. The caller's spec was decoded from one of those reads (an app
+ * screen's, a card's, the launcher's) or from the single-record query
+ * itself, and the tail invalidates collections, so a collection ahead of the
+ * single read means the row changed since the single read was taken. */
+function newestCachedVersion(
+  client: QueryClient,
+  id: string
+): number | undefined {
+  let newest: number | undefined
+  const collections = client.getQueriesData<unknown>({
+    queryKey: ["records", CORE_AUTHORITY, CORE_PACKAGE_NAME, VIEW_NAME],
+  })
+  for (const [, data] of collections) {
+    const pages =
+      data && typeof data === "object" && "pages" in data
+        ? (data as { pages: (Page | undefined)[] }).pages
+        : [data as Page | undefined]
+    for (const page of pages) {
+      for (const row of page?.records ?? []) {
+        if (row.id === id && (newest === undefined || row.version > newest)) {
+          newest = row.version
+        }
+      }
+    }
+  }
+  return newest
+}
+
+type Phase = "booting" | "live" | "silent" | "lost" | "left"
 
 function Notice({ children }: { children: React.ReactNode }) {
   return (
@@ -159,16 +206,45 @@ function Notice({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function CustomView({ spec, kinds, ctx, onOpenRecord }: LayoutProps) {
+export function CustomView({
+  spec: mounted,
+  kinds,
+  ctx,
+  onOpenRecord,
+}: LayoutProps) {
   const router = useRouter()
-  const view = useQuery(viewQueryOptions(spec.id))
-  const granted = ownerProvenance(view.data)
+  const client = useQueryClient()
+  const view = useQuery(viewQueryOptions(mounted.id))
+  const { refetch } = view
+
+  // A collection read of the row newer than this one: re-read, once per
+  // advance. The single read stays what acts, before and after.
+  const knownVersion = newestCachedVersion(client, mounted.id)
+  const behind =
+    view.data !== undefined &&
+    knownVersion !== undefined &&
+    view.data.version < knownVersion
+  useEffect(() => {
+    if (behind) void refetch()
+  }, [behind, knownVersion, refetch])
+
+  // Everything below runs off the single-record read alone.
+  const own: ViewSpec | undefined = useMemo(
+    () => (view.data ? viewSpec(view.data, kinds) : undefined),
+    [view.data, kinds]
+  )
+  const provenance: Provenance = useMemo(
+    () => (view.data ? ownerProvenance(view.data) : NOT_GRANTED),
+    [view.data]
+  )
+  const { granted, filtered } = provenance
+  const spec = own ?? mounted
   const { problems, ...pageOptions } = viewPageOptions(spec, ctx, kinds)
   const page = useQuery({
     ...pageOptions,
-    enabled: pageOptions.enabled && granted,
+    enabled: pageOptions.enabled && granted && filtered,
   })
-  useLiveRecords(granted && spec.kind ? [spec.kind] : undefined)
+  useLiveRecords(granted && own?.kind ? [own.kind] : undefined)
 
   const [phase, setPhase] = useState<Phase>("booting")
   const [attempt, setAttempt] = useState(0)
@@ -179,13 +255,13 @@ export function CustomView({ spec, kinds, ctx, onOpenRecord }: LayoutProps) {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const boxRef = useRef<HTMLDivElement>(null)
   const bridgeRef = useRef<BridgeHost>(undefined)
-  const latest = useRef({ spec, kinds, ctx, onOpenRecord, granted })
+  const latest = useRef({ own, kinds, ctx, onOpenRecord, provenance })
   useEffect(() => {
-    latest.current = { spec, kinds, ctx, onOpenRecord, granted }
+    latest.current = { own, kinds, ctx, onOpenRecord, provenance }
   })
 
   const isPage = ctx.mode === "page"
-  const source = spec.source
+  const source = granted ? own?.source : undefined
 
   // The frame is navigated from here, not from JSX, so the `ready` listener
   // is always in place before the shell can announce itself, and the one
@@ -193,10 +269,9 @@ export function CustomView({ spec, kinds, ctx, onOpenRecord }: LayoutProps) {
   // made, never for a document the guest navigated its frame to.
   useEffect(() => {
     const iframe = frameRef.current
-    if (!granted || !source || !iframe) return
+    if (!source || !iframe) return
     let armed = true
     let bridge: BridgeHost | undefined
-    let silence: ReturnType<typeof setTimeout> | undefined
     let themeObserver: MutationObserver | undefined
     let sizeObserver: ResizeObserver | undefined
 
@@ -218,11 +293,14 @@ export function CustomView({ spec, kinds, ctx, onOpenRecord }: LayoutProps) {
       armed = false
       const channel = new MessageChannel()
       bridge = createBridgeHost({
+        // The spec and the provenance are read together off the same
+        // single-record response, never one from it and one from `mounted`;
+        // `own` exists whenever `source` does, and a read never unsets it.
         view: () => ({
-          spec: latest.current.spec,
+          spec: latest.current.own!,
           kinds: latest.current.kinds,
         }),
-        granted: () => latest.current.granted,
+        provenance: () => latest.current.provenance,
         callbacks: {
           hostContext: () => ({
             theme: currentTheme(),
@@ -235,7 +313,7 @@ export function CustomView({ spec, kinds, ctx, onOpenRecord }: LayoutProps) {
             styles: readHostStyles(),
           }),
           onInitialized: () => {
-            if (silence !== undefined) clearTimeout(silence)
+            clearTimeout(silence)
             setPhase("live")
           },
           onSizeChanged: ({ height: h }) => {
@@ -262,16 +340,13 @@ export function CustomView({ spec, kinds, ctx, onOpenRecord }: LayoutProps) {
             latest.current.onOpenRecord(row)
           },
           onLost: () => setPhase("lost"),
+          onUnloaded: () => setPhase("left"),
         },
       })
       bridge.attach(channel.port1)
       bridgeRef.current = bridge
       const mount: MountMessage = { type: MOUNT_TYPE, html: source }
       iframe.contentWindow!.postMessage(mount, "*", [channel.port2])
-
-      silence = setTimeout(() => {
-        if (!bridge?.initialized) setPhase("silent")
-      }, INITIALIZE_MS)
 
       themeObserver = new MutationObserver(() =>
         bridge?.hostContextChanged({ theme: currentTheme() })
@@ -291,17 +366,22 @@ export function CustomView({ spec, kinds, ctx, onOpenRecord }: LayoutProps) {
 
     window.addEventListener("message", onMessage)
     iframe.src = FRAME_URL
+    // Armed at the navigation, not at readiness: a shell whose module never
+    // loads announces nothing, and that silence is the same notice.
+    const silence = setTimeout(() => {
+      if (!bridge?.initialized) setPhase("silent")
+    }, INITIALIZE_MS)
 
     return () => {
       armed = false
       window.removeEventListener("message", onMessage)
-      if (silence !== undefined) clearTimeout(silence)
+      clearTimeout(silence)
       themeObserver?.disconnect()
       sizeObserver?.disconnect()
       bridge?.teardown()
       if (bridgeRef.current === bridge) bridgeRef.current = undefined
     }
-  }, [granted, source, spec.id, attempt, router])
+  }, [source, mounted.id, attempt, router])
 
   // The page reaches the guest through the bridge, which holds it until the
   // guest is ready and re-sends on every change the tail invalidates.
@@ -329,7 +409,7 @@ export function CustomView({ spec, kinds, ctx, onOpenRecord }: LayoutProps) {
         authority: CORE_AUTHORITY,
         pkg: CORE_PACKAGE_NAME,
         name: VIEW_NAME,
-        id: spec.id,
+        id: mounted.id,
       }}
       className="underline underline-offset-2 hover:text-foreground"
     >
@@ -357,6 +437,8 @@ export function CustomView({ spec, kinds, ctx, onOpenRecord }: LayoutProps) {
     setPrimary(null)
     setAttempt((n) => n + 1)
   }
+  const description = spec.description ? ` ${spec.description}` : ""
+  const closed = phase === "lost" || phase === "left"
 
   return (
     <div
@@ -367,21 +449,29 @@ export function CustomView({ spec, kinds, ctx, onOpenRecord }: LayoutProps) {
         <Notice>
           This view needs the owner&apos;s review before it runs: its source,
           grant, kind or filter was not written by the owner.
-          {spec.description ? ` ${spec.description}` : ""} {openSource}
+          {description} {openSource}
+        </Notice>
+      )}
+      {granted && !filtered && (
+        <Notice>
+          No page is pushed to this document: the view declares no filter. It
+          may still read records through its grant. {openSource}
         </Notice>
       )}
       {problems.length > 0 && <ProblemStrip problems={problems} />}
       {phase === "silent" && (
         <Notice>
           This document has not connected to the console.
-          {spec.description ? ` ${spec.description}` : ""} {openSource}
+          {description} {openSource}
         </Notice>
       )}
-      {phase === "lost" && (
+      {closed && (
         <div className="flex flex-col items-start gap-3 px-4 py-6 text-sm">
           <p className="text-muted-foreground">
-            The document stopped answering and was closed.
-            {spec.description ? ` ${spec.description}` : ""} {openSource}
+            {phase === "left"
+              ? "The document left its frame and was closed."
+              : "The document stopped answering and was closed."}
+            {description} {openSource}
           </p>
           <Button variant="outline" size="sm" onClick={retry}>
             <RotateCcwIcon />
@@ -389,7 +479,7 @@ export function CustomView({ spec, kinds, ctx, onOpenRecord }: LayoutProps) {
           </Button>
         </div>
       )}
-      {granted && source && phase !== "lost" && (
+      {source && !closed && (
         <div
           ref={boxRef}
           className={cn("relative min-h-0 w-full", isPage && "flex-1")}

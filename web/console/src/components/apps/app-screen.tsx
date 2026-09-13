@@ -4,7 +4,10 @@
  * (lib/apps/inputs.ts) and travel to the view as `ctx.inputs`; an ambiguous
  * or missing input puts the picker where the view would be, and an input or
  * a token that cannot resolve is a line under the header rather than a
- * blank screen. `/apps/$id` alone lands on the first screen. */
+ * blank screen. `/apps/$id` alone lands on the first screen. A record
+ * segment that names a parent holds the view AND its actions back until the
+ * parent is read, as the view screen does: a `via` view mounted before its
+ * parent would read the whole collection and seed nothing into a create. */
 
 import { useEffect, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -16,21 +19,22 @@ import { InputBinder } from "@/components/apps/input-binder"
 import { ProblemList } from "@/components/apps/problems"
 import { MissingRecordSheet, RecordSheet } from "@/components/apps/record-sheet"
 import { useTouchRoot } from "@/components/apps/touch"
-import { useBack, useScreenRecord } from "@/components/apps/use-screen-record"
+import {
+  chromeActions,
+  useBack,
+  useScreenRecord,
+} from "@/components/apps/use-screen-record"
 import { ViewRenderer } from "@/components/apps/view-renderer"
-import { ScreenSkeleton } from "@/components/apps/view-screen"
+import { ScreenSkeleton, SkeletonRows } from "@/components/apps/view-screen"
 import { useLiveRecords } from "@/hooks/use-live-records"
 import { appQueryOptions, viewsQueryOptions } from "@/lib/api/apps"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { appSpec } from "@/lib/apps/app-spec"
 import { useFacetSelection } from "@/lib/apps/facets"
 import { inputStatus, useAppInputs } from "@/lib/apps/inputs"
+import { useFloorProblems } from "@/lib/apps/queries"
 import { titleOf } from "@/lib/apps/referents"
-import {
-  blockingProblems,
-  type ActionHost,
-  type ViewContext,
-} from "@/lib/apps/spec"
+import { blockingProblems, type ViewContext } from "@/lib/apps/spec"
 import { substituteFilter } from "@/lib/apps/tokens"
 import { viewSpec } from "@/lib/apps/view-spec"
 import { kindByIdentity } from "@/lib/definition"
@@ -83,12 +87,14 @@ export function AppScreen({
   const kind = vspec?.kind ? kindByIdentity(kinds, vspec.kind) : undefined
   const inputs = useAppInputs(spec, kinds)
   useLiveRecords(inputs.kinds)
+  const floors = useFloorProblems(vspec)
 
   const screenRecord = useScreenRecord({
     spec: vspec,
     kind,
     kinds,
     segment,
+    screenKey: `${id}/${current?.name ?? ""}`,
     toRecord: (record, nav) =>
       void navigate({
         to: "/apps/$id/$screen/$record",
@@ -180,9 +186,12 @@ export function AppScreen({
   const tokenProblems = substituteFilter(vspec.filter, ctx).problems
   const status = unresolved[0]?.message ?? tokenProblems[0]?.message
 
-  const host: ActionHost = { spec: vspec, kind, kinds, ctx }
-  const primary = vspec.actions.find((a) => a.placement === "primary")
-  const header = vspec.actions.filter((a) => a.placement === "header")
+  const chrome = chromeActions({ spec: vspec, kind, kinds, ctx }, screenRecord)
+  // Nothing to run against while the parent is on its way: a create would
+  // seed no `via`, a header action would have no subject. Nor below a floor
+  // the view declares, where the renderer says the shortfall.
+  const waiting = screenRecord.parentPending
+  const short = !floors || floors.length > 0
   const screens = spec.screens.map((s) => ({
     name: s.name,
     label: s.label,
@@ -206,12 +215,13 @@ export function AppScreen({
       }
       status={status}
       actions={
-        header.length
-          ? header.map((action) => (
+        chrome.header.length && !waiting && !short
+          ? chrome.header.map((action) => (
               <ActionButton
                 key={action.name}
-                host={host}
+                host={chrome.host}
                 action={action}
+                record={chrome.record}
                 variant="ghost"
                 compact
               />
@@ -219,11 +229,14 @@ export function AppScreen({
           : undefined
       }
       primary={
-        primary &&
-        !binder && (
+        chrome.primary &&
+        !binder &&
+        !waiting &&
+        !short && (
           <ActionButton
-            host={host}
-            action={primary}
+            host={chrome.host}
+            action={chrome.primary}
+            record={chrome.record}
             variant="default"
             className="h-12 w-full text-base"
           />
@@ -251,6 +264,8 @@ export function AppScreen({
             },
           ]}
         />
+      ) : waiting ? (
+        <SkeletonRows />
       ) : (
         <ViewRenderer
           key={current.name}
@@ -262,7 +277,7 @@ export function AppScreen({
       )}
       {screenRecord.sheetRecord && (
         <RecordSheet
-          host={host}
+          host={{ spec: vspec, kind, kinds, ctx }}
           record={screenRecord.sheetRecord}
           open
           onOpenChange={(open) => !open && screenRecord.closeSheet()}
@@ -270,7 +285,7 @@ export function AppScreen({
       )}
       {screenRecord.sheetError && (
         <MissingRecordSheet
-          segment={segment ?? ""}
+          segment={screenRecord.sheetSegment ?? ""}
           message={screenRecord.sheetError.message}
           open
           onOpenChange={(open) => !open && screenRecord.closeSheet()}

@@ -16,6 +16,7 @@ import {
   useQuery,
 } from "@tanstack/react-query"
 
+import { installedVersions, packagesQueryOptions } from "@/lib/api/apps"
 import { corePath, request } from "@/lib/api/http"
 import { normalizeKinds } from "@/lib/api/kinds"
 import {
@@ -31,10 +32,11 @@ import type {
 } from "@/lib/api/types"
 import { kindByIdentity, splitKind, temporalProperties } from "@/lib/definition"
 import { recordPath } from "@/lib/record-path"
-import { withFacets } from "./facets"
+import { applyFacets } from "./facets"
 import type { Problem, ViewContext, ViewSpec } from "./spec"
 import { parseDuration } from "./time"
 import { substituteFilter } from "./tokens"
+import { floorProblems } from "./view-spec"
 
 /** The temporal point the kind's traits bind, else nothing. */
 export function temporalPoint(kind: KindInfo): string | undefined {
@@ -80,6 +82,9 @@ export interface ViewQuery {
   /** Absent while a token cannot resolve; `problems` says why. */
   params?: ListParams
   problems: Problem[]
+  /** The facet values the read could not honor (`facets.ts`). The read is
+   * still sent, held to the view's own filter; these are for the bar. */
+  notes?: Problem[]
 }
 
 /** The list read for one kind: the view's own, or one implementor of its
@@ -91,7 +96,8 @@ export function viewListParams(
 ): ViewQuery {
   const substituted = substituteFilter(spec.filter, ctx)
   const problems = substituted.problems
-  const filter = withFacets(substituted.filter, ctx.facets, kind)
+  const facets = applyFacets(substituted.filter, ctx.facets, kind)
+  const filter = facets.filter
   const properties = { ...(filter.properties ?? {}) }
   if (spec.via && ctx.parent) {
     properties[spec.via] = {
@@ -118,7 +124,7 @@ export function viewListParams(
     }
   }
   const resolved: RecordFilter = { ...filter, properties }
-  if (problems.length) return { problems }
+  if (problems.length) return { problems, notes: facets.problems }
   const { authority, pkg, name } = splitKind(kind.identity)
   return {
     params: {
@@ -130,6 +136,7 @@ export function viewListParams(
       orderBy: orderByParam(spec, kind),
     },
     problems,
+    notes: facets.problems,
   }
 }
 
@@ -153,11 +160,12 @@ export function viewRecordsOptions(
   kinds: KindInfo[]
 ) {
   const kind = spec.kind ? kindByIdentity(kinds, spec.kind) : undefined
-  const q = kind ? viewListParams(spec, ctx, kind) : { problems: [] }
+  const q: ViewQuery = kind ? viewListParams(spec, ctx, kind) : { problems: [] }
   return {
     ...recordsInfiniteOptions(q.params ?? NO_LIST),
     enabled: Boolean(q.params),
     problems: q.problems,
+    notes: q.notes ?? [],
   }
 }
 
@@ -169,11 +177,12 @@ export function viewPageOptions(
   kinds: KindInfo[]
 ) {
   const kind = spec.kind ? kindByIdentity(kinds, spec.kind) : undefined
-  const q = kind ? viewListParams(spec, ctx, kind) : { problems: [] }
+  const q: ViewQuery = kind ? viewListParams(spec, ctx, kind) : { problems: [] }
   return {
     ...recordsQueryOptions(q.params ?? NO_LIST),
     enabled: Boolean(q.params),
     problems: q.problems,
+    notes: q.notes ?? [],
   }
 }
 
@@ -255,9 +264,11 @@ function useTraitPages(spec: ViewSpec, ctx: ViewContext) {
     })
   }
   const problems = reads.flatMap(({ query }) => query.problems)
+  const notes = reads.flatMap(({ query }) => query.notes ?? [])
   return {
     records,
     problems,
+    notes,
     isPending: Boolean(spec.trait) && (isPending || !reads.length),
     unread,
     incomplete,
@@ -269,6 +280,8 @@ export interface ViewRecords {
   records: SubstrateRecord[]
   /** Token problems that kept the read from being sent. */
   problems: Problem[]
+  /** Facet values the read did not honor; the read was sent without them. */
+  notes?: Problem[]
   isPending: boolean
   error: Error | null
   hasNextPage: boolean
@@ -289,7 +302,7 @@ export function useViewRecords(
   ctx: ViewContext,
   kinds: KindInfo[]
 ): ViewRecords {
-  const { problems, ...options } = viewRecordsOptions(spec, ctx, kinds)
+  const { problems, notes, ...options } = viewRecordsOptions(spec, ctx, kinds)
   const q = useInfiniteQuery(options)
   const trait = useTraitPages(spec, ctx)
   if (spec.trait) {
@@ -304,6 +317,7 @@ export function useViewRecords(
   return {
     records: q.data?.pages.flatMap((p) => p.records ?? []) ?? [],
     problems,
+    notes,
     isPending: options.enabled ? q.isPending : false,
     error: q.error,
     hasNextPage: q.hasNextPage,
@@ -318,6 +332,8 @@ export function useViewRecords(
 export interface ViewPage {
   records: SubstrateRecord[]
   problems: Problem[]
+  /** Facet values the read did not honor; the read was sent without them. */
+  notes?: Problem[]
   isPending: boolean
   error: Error | null
   /** A cursor remained: the layout shows the first `spec.first` rows and
@@ -335,17 +351,36 @@ export function useViewPage(
   ctx: ViewContext,
   kinds: KindInfo[]
 ): ViewPage {
-  const { problems, ...options } = viewPageOptions(spec, ctx, kinds)
+  const { problems, notes, ...options } = viewPageOptions(spec, ctx, kinds)
   const q = useQuery(options)
   const trait = useTraitPages(spec, ctx)
   if (spec.trait) return { ...trait, error: null }
   return {
     records: q.data?.records ?? [],
     problems,
+    notes,
     isPending: options.enabled ? q.isPending : false,
     error: q.error,
     incomplete: Boolean(q.data?.cursor),
     unread: [],
     refetch: () => void q.refetch(),
   }
+}
+
+const NO_PROBLEMS: Problem[] = []
+
+/** The floors in `requiresAtLeast` the repository is below, off the package
+ * rows (`floorProblems`); `undefined` while a view that declares a floor
+ * waits on that read, so no rows are drawn against a version not yet seen.
+ * A view with no floor reads nothing. A read that failed reports no
+ * shortfall: the presence gate has already spoken for the view's own kind,
+ * and the tail refetches the rows. */
+export function useFloorProblems(
+  spec: Pick<ViewSpec, "requiresAtLeast"> | undefined
+): Problem[] | undefined {
+  const declared = Boolean(spec && Object.keys(spec.requiresAtLeast).length)
+  const packages = useQuery({ ...packagesQueryOptions(), enabled: declared })
+  if (!spec || !declared) return NO_PROBLEMS
+  if (packages.isPending) return undefined
+  return floorProblems(spec, installedVersions(packages.data?.records))
 }

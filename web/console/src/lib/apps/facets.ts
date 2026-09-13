@@ -3,11 +3,18 @@
  * search as `f.<property>` (a comma list of values), so a narrowed screen is
  * a shareable address and back/forward restore it; the screen reads it
  * (`useFacetSelection`) into `ViewContext.facets`, and every read ANDs it
- * into the request filter (`withFacets`). The declared `filter` is never
+ * into the request filter (`applyFacets`). The declared `filter` is never
  * touched, so a create's seed, which reads that filter, cannot change under
  * a chip. A chip's values come from the declaration for a state or an enum
  * (in declared order, held to what the filter admits) and from the loaded
- * rows for a reference, since a referent set has no declaration to read. */
+ * rows for a reference, since a referent set has no declaration to read.
+ *
+ * A selection NARROWS and never widens: it is intersected with the value
+ * test the view already holds on the property, because the URL is not the
+ * chip row. A shared address, an edited one, or one kept from before the
+ * view changed can carry a value the view does not admit, and honoring it
+ * would show rows the view was written to hide. A value outside the admitted
+ * set is dropped and said (`facetProblems`), never sent. */
 
 import { useCallback, useMemo } from "react"
 import { parseAsArrayOf, parseAsString, useQueryStates } from "nuqs"
@@ -21,9 +28,10 @@ import {
 } from "@/lib/api/types"
 import { splitRecordPath } from "@/lib/record-path"
 import { humanizeName, type PropSpec } from "@/lib/record-schema"
-import { specOf } from "./cond"
+import { comparable, specOf } from "./cond"
 import { admittedStates } from "./machine"
-import type { FacetSelection, ViewSpec } from "./spec"
+import type { FacetSelection, Problem, ViewSpec } from "./spec"
+import { isToken } from "./tokens"
 
 /** The URL search key a facet lives under: `f.priority=high,low`. */
 export const FACET_PARAM_PREFIX = "f."
@@ -98,38 +106,134 @@ export function useFacetSelection(
   }
 }
 
-/** A condition with its value tests removed, so the selection's own can
- * take their place; the range and presence tests stay. */
-function withoutValues(cond: Cond | undefined): Cond {
-  const rest: Cond = { ...cond }
-  delete rest.eq
-  delete rest.in
-  delete rest.contains
-  return rest
+/** The values a condition's own tests admit for the property, as strings:
+ * the one `eq`, the `in` list, or both intersected. `undefined` is every
+ * value (no value test); `"unresolved"` is a test still written as a token,
+ * which admits nothing knowable until the read substitutes it. */
+function admittedValues(
+  cond: Cond | undefined
+): Set<string> | "unresolved" | undefined {
+  if (!cond) return undefined
+  const tests: unknown[][] = []
+  if (cond.eq !== undefined) tests.push([cond.eq])
+  if (cond.in) tests.push(cond.in)
+  if (!tests.length) return undefined
+  if (tests.some((t) => t.some(isToken))) return "unresolved"
+  let admitted: Set<string> | undefined
+  for (const test of tests) {
+    const values = new Set(test.map((v) => String(comparable(v))))
+    admitted = admitted
+      ? new Set([...admitted].filter((v) => values.has(v)))
+      : values
+  }
+  return admitted
 }
 
-/** The filter with the selection ANDed in: one value is `eq`, several are
- * `in`, and a repeated property takes the latest pick as `contains`. Chips
- * only ever offer what the declared filter admits, so replacing its value
- * test with the selection's narrows and never widens. The input is not
- * mutated: a seed built from `spec.filter` stays what the row declared. */
+/** What a selection did to a filter. */
+export interface FacetApplication {
+  /** The filter with the selection ANDed in. The input is not mutated. */
+  filter: RecordFilter
+  /** The selection as sent: a value the view does not admit is gone. */
+  selection: FacetSelection
+  /** One warning per value dropped, at `facets.<property>`, for the bar to
+   * show beside the chips. */
+  problems: Problem[]
+}
+
+/** The filter with the selection ANDed in, each property's pick INTERSECTED
+ * with the value test the view holds there. A scalar's picks are cut to the
+ * admitted set and written as `eq` (one) or `in` (several) in the old test's
+ * place, which narrows because the result is inside it; a pick with nothing
+ * left is dropped and the view's own test stands. A repeated property
+ * matches item-wise with its latest pick as `contains`; where the view
+ * already holds a `contains` of its own, that requirement stays, and the
+ * pick rides beside it as `in` on a reference alone, because on a reference
+ * every value test is a containment probe and one Cond carries both
+ * (engine/query.go, condReference), while on any other repeated property
+ * the wire has one containment slot and the pick is dropped and said. */
+export function applyFacets(
+  filter: RecordFilter,
+  selection: FacetSelection | undefined,
+  kind?: KindInfo
+): FacetApplication {
+  const picked = Object.entries(selection ?? {}).filter(([, v]) => v.length)
+  if (!picked.length) return { filter, selection: {}, problems: [] }
+  const properties = { ...(filter.properties ?? {}) }
+  const sent: FacetSelection = {}
+  const problems: Problem[] = []
+  for (const [name, values] of picked) {
+    const original = properties[name]
+    const prop = specOf(kind, name)
+    const label = prop?.label ?? humanizeName(name)
+    const path = `facets.${name}`
+    const admitted = admittedValues(original)
+    // A token is resolved by the read, which applies the selection then; a
+    // caller holding the declared filter (the bar) has nothing to intersect
+    // with yet, and writing the pick over the token would widen the read.
+    if (admitted === "unresolved") continue
+    const outside = (value: string) =>
+      problems.push({
+        path,
+        message: `${label}: "${value}" is not among the values this view shows; that chip was ignored`,
+        severity: "warning",
+      })
+    if (prop?.repeated) {
+      const pick = values[values.length - 1]
+      if (admitted && !admitted.has(pick)) {
+        outside(pick)
+        continue
+      }
+      const held =
+        original?.contains === undefined
+          ? undefined
+          : String(comparable(original.contains))
+      if (held === undefined || held === pick) {
+        properties[name] = { ...original, contains: pick }
+      } else if (prop.kind === "reference") {
+        properties[name] = { ...original, in: [pick] }
+      } else {
+        problems.push({
+          path,
+          message: `${label} is held to "${held}" by this view, and the wire asks one ${label.toLowerCase()} at a time; "${pick}" was ignored`,
+          severity: "warning",
+        })
+        continue
+      }
+      sent[name] = [pick]
+      continue
+    }
+    const kept = admitted ? values.filter((v) => admitted.has(v)) : values
+    for (const value of values) if (!kept.includes(value)) outside(value)
+    if (!kept.length) continue
+    const rest: Cond = { ...original }
+    delete rest.eq
+    delete rest.in
+    properties[name] =
+      kept.length === 1 ? { ...rest, eq: kept[0] } : { ...rest, in: kept }
+    sent[name] = kept
+  }
+  return { filter: { ...filter, properties }, selection: sent, problems }
+}
+
+/** `applyFacets`, for a caller that wants the filter alone. */
 export function withFacets(
   filter: RecordFilter,
   selection: FacetSelection | undefined,
   kind?: KindInfo
 ): RecordFilter {
-  const picked = Object.entries(selection ?? {}).filter(([, v]) => v.length)
-  if (!picked.length) return filter
-  const properties = { ...(filter.properties ?? {}) }
-  for (const [name, values] of picked) {
-    const rest = withoutValues(properties[name])
-    properties[name] = specOf(kind, name)?.repeated
-      ? { ...rest, contains: values[values.length - 1] }
-      : values.length === 1
-        ? { ...rest, eq: values[0] }
-        : { ...rest, in: values }
-  }
-  return { ...filter, properties }
+  return applyFacets(filter, selection, kind).filter
+}
+
+/** The chips the read could not honor, for the bar. `filter` is what the
+ * read is held to: the view's filter with its tokens resolved where the
+ * caller has the context, else the declared one, whose token-valued tests
+ * admit everything until resolved. */
+export function facetProblems(
+  filter: RecordFilter,
+  selection: FacetSelection | undefined,
+  kind?: KindInfo
+): Problem[] {
+  return applyFacets(filter, selection, kind).problems
 }
 
 export interface FacetChip {

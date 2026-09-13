@@ -10,9 +10,11 @@
  * the grant is asked about what was found, so a spelling that is not a kind
  * is refused as unknown rather than matched as a string. The pushed page is
  * held to the same grant. And the grant counts only when the component says
- * so (`granted`): below owner provenance the guest gets no data and no
+ * so (`provenance`): below owner provenance the guest gets no data and no
  * calls, whatever the row's `permissions` say, because an agent that may
- * write views could have widened them under an owner-written `source`. */
+ * write views could have widened them under an owner-written `source`; and
+ * a row without an owner-written `filter` gets calls but no pushed page,
+ * because the page's selection is the one thing the filter approves. */
 
 import {
   createRecord,
@@ -58,18 +60,42 @@ const HOST_INFO = { name: "substrate-console", version: "0" }
  * person is asked. */
 const LINK_SCHEMES = new Set(["http:", "https:", "mailto:"])
 
-/** The properties whose provenance decides whether the grant is honored. */
-const GATED = ["source", "permissions", "kind", "filter"] as const
+/** The properties a custom view must carry, each written at owner tier,
+ * before its document runs: the code, what it may reach, and what it is a
+ * view of. */
+const REQUIRED = ["source", "permissions", "kind"] as const
 
-/** Whether every gated property the row carries was written at owner tier,
- * read off the single-record read's `propertyMeta` (lists omit it). A row
- * without the meta, written before the tiers, is below owner, not above it. */
-export function ownerProvenance(record: SubstrateRecord | undefined): boolean {
-  if (!record || typeof record.properties.source !== "string") return false
+export interface Provenance {
+  /** The document runs and the grant is honored. */
+  granted: boolean
+  /** The row carries an owner-written `filter`, so the view's own page may
+   * be pushed. Without one the page's selection was approved by nobody, and
+   * the host pushes none; the document may still call `records.list`, which
+   * the grant checks. */
+  filtered: boolean
+}
+
+export const NOT_GRANTED: Provenance = { granted: false, filtered: false }
+
+/** What the single-record read's `propertyMeta` says about the row (lists
+ * omit it). An ABSENT required property is a refusal, not a pass: an agent
+ * allowed to write views can delete a property as well as change one, and a
+ * row without the meta, written before the tiers, is below owner, not above
+ * it. `filter` alone may be absent, and then only the page is withheld. */
+export function ownerProvenance(
+  record: SubstrateRecord | undefined
+): Provenance {
+  if (!record || typeof record.properties.source !== "string") {
+    return NOT_GRANTED
+  }
   const meta = record.propertyMeta ?? {}
-  return GATED.every(
-    (p) => record.properties[p] === undefined || meta[p]?.tier === "owner"
-  )
+  const owner = (p: string) =>
+    record.properties[p] !== undefined && meta[p]?.tier === "owner"
+  if (!REQUIRED.every(owner)) return NOT_GRANTED
+  if (record.properties.filter === undefined) {
+    return { granted: true, filtered: false }
+  }
+  return owner("filter") ? { granted: true, filtered: true } : NOT_GRANTED
 }
 
 export type Access =
@@ -165,14 +191,19 @@ export interface HostCallbacks {
   openLink?: (url: URL) => void
   /** The guest missed too many pings; the host has already torn down. */
   onLost?: () => void
+  /** The guest's document left its frame (`substrate/notifications/unload`,
+   * posted by the shell from `pagehide`); the host has already torn down. */
+  onUnloaded?: () => void
 }
 
 export interface BridgeHostOptions {
   /** Read on every call, so a view saved while mounted is checked against
-   * its new grant and not the one it mounted with. */
+   * its new grant and not the one it mounted with. The spec here and the
+   * provenance below must come from the SAME read of the row: a grant
+   * checked against one snapshot and approved by another is no approval. */
   view: () => { spec: ViewSpec; kinds: KindInfo[] }
-  /** Whether the grant is the owner's (see `ownerProvenance`). */
-  granted: () => boolean
+  /** What the owner wrote (see `ownerProvenance`). */
+  provenance: () => Provenance
   callbacks: HostCallbacks
   api?: RecordsApi
   pingMs?: number
@@ -237,7 +268,7 @@ export function createBridgeHost(opts: BridgeHostOptions): BridgeHost {
   let awaitingPong = false
 
   const grantFor = (op: "read" | "write", kind: unknown): KindInfo => {
-    if (!opts.granted()) {
+    if (!opts.provenance().granted) {
       throw new RpcError(
         ERROR.forbidden,
         "the view's grant has not been written by the owner"
@@ -250,7 +281,9 @@ export function createBridgeHost(opts: BridgeHostOptions): BridgeHost {
   }
 
   const pushNow = () => {
-    if (!rpc || !ready || !page || !opts.granted()) return
+    if (!rpc || !ready || !page) return
+    const { granted, filtered } = opts.provenance()
+    if (!granted || !filtered) return
     const { spec, kinds } = opts.view()
     if (!spec.kind) return
     if (!checkAccess(spec, kinds, "read", spec.kind).ok) return
@@ -519,6 +552,14 @@ export function createBridgeHost(opts: BridgeHostOptions): BridgeHost {
         )
         return
       }
+      case METHODS.unload:
+        // The frame is committing another document. What it may commit is
+        // the browser's error page (the console's `frame-src 'self'`), and
+        // nothing this port reaches is on the other side of it.
+        if (closed) return
+        close()
+        cb.onUnloaded?.()
+        return
       default:
         return
     }
