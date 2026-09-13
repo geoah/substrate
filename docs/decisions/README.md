@@ -100,10 +100,13 @@ source of truth with nothing keeping the two in sync, and one direction makes
 a cycle impossible, because the linter requires the successor to be
 `accepted`.
 
-Mechanical repair is allowed. A link whose target was renamed may be fixed,
-because `lint:docs` runs lychee over the whole tree and a dead link is a bug
-wherever it lives. Repairing a link does not touch the decision, and git holds
-the original either way.
+Mechanical repair is allowed. A link whose target was renamed may be
+repointed, and one whose target is gone may be reduced to its text, because
+`lint:docs` runs lychee over the whole tree and a dead link is a bug wherever
+it lives. Repairing a link does not touch the decision, and git holds the
+original either way; `frozen:check` compares bodies with every link reduced to
+its text for exactly this reason, so the words are frozen and the targets are
+not.
 
 ## A decision record can rot, and that is expected
 
@@ -136,7 +139,7 @@ record that says what it said in 2026 is doing its job.
 
 `mise run frozen:check` holds the one rule the files alone cannot show, because
 it is about what CHANGED: the body of an accepted record, everything below the
-frontmatter, may not be rewritten. A record that gets edited as opinion moves
+frontmatter, may not be rewritten, its link targets excepted. A record that gets edited as opinion moves
 stops being evidence of what was decided and why, and superseding it is how the
 corpus says so. The frontmatter is deliberately outside the comparison, so
 marking a record superseded edits `status:` and `superseded-by:` and trips

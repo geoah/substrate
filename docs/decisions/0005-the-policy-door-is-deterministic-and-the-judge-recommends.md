@@ -13,7 +13,7 @@ emit ceiling: land or refuse, nothing between. The owner needed a middle
 (writes that land only as reviewed requests) and an optional LLM judge with
 confidence thresholds, without a model call becoming an authorization
 boundary. Alternatives and research are in the plan
-([docs/plans/thread-interactions.md](../plans/thread-interactions.md)).
+(docs/plans/thread-interactions.md).
 
 ## Considered Options
 

@@ -11,7 +11,7 @@ decision-makers: George Antoniadis
 PR #72 taught threads one interaction: deciding a proposed mutation wrote a
 `system` message into the proposing thread and resumed it, hardcoded to the
 `recordpatchrequest` kind in the engine. The interactions plan
-([docs/plans/thread-interactions.md](../plans/thread-interactions.md), PR
+(docs/plans/thread-interactions.md, PR
 #73) needed the same report-back for asks, and would have needed it again
 for every future interaction shape. Without one primitive, each shape grows
 its own write-back arm and its own resume bugs.

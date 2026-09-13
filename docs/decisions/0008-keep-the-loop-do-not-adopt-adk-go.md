@@ -12,7 +12,7 @@ Building the interaction model raised the question of replacing
 `internal/engine/agentloop.go` with Google's ADK for Go, which promises
 runners, sessions, workflow agents, callbacks and an ecosystem. The full
 capability matrix and fit assessment (adk-go v2.2.0, 2026-08) are in the
-plan ([docs/plans/thread-interactions.md](../plans/thread-interactions.md)).
+plan (docs/plans/thread-interactions.md).
 
 ## Considered Options
 

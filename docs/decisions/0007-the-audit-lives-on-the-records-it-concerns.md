@@ -11,7 +11,7 @@ decision-makers: George Antoniadis
 Judged auto-decisions need an audit the owner can trust after the fact:
 which policy text governed, what the judge said, with what confidence, and
 what happened. Both adversarial reviews of the interactions plan
-([docs/plans/thread-interactions.md](../plans/thread-interactions.md))
+(docs/plans/thread-interactions.md)
 proposed a dedicated create-only `policyevaluation` kind; the PR #73 review
 asked whether another kind was needed at all, and what would garbage-collect
 it.

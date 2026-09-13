@@ -94,6 +94,6 @@ refuses without a data root (`TestOpenRequiresADataRoot`).
 
 ## More Information
 
-[The plan](../plans/filesystem-changelog.md) has the layout and the boot
+The plan has the layout and the boot
 cases in full. Revisit when repositories are meant to move between hosts
 with different credential keys; the age-identity restore is the missing tool.

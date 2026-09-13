@@ -93,7 +93,7 @@ the re-wrap on import.
 
 Supersedes the "two distinct columns" paragraph of 0046 and the "named by the
 id" clause of 0051; the rest of both records stands as written above.
-[The plan](../plans/filesystem-changelog.md) has the directory layout.
+The plan has the directory layout.
 Reopen trigger: a repository that must change its authority, or domain
 verification binding the authority to something the server can check. Either
 would need the rename machinery this record declines to build.

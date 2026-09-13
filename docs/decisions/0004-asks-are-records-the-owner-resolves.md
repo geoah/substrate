@@ -11,7 +11,7 @@ decision-makers: George Antoniadis
 Agents need to ask the user things mid-thread (yes/no, pick-one, pick-many,
 several at once), and the answer has to reach the model, the console and
 every GraphQL consumer alike. The interactions plan
-([docs/plans/thread-interactions.md](../plans/thread-interactions.md))
+(docs/plans/thread-interactions.md)
 surveyed how harnesses and protocols shape this; the substrate's own
 constraint is that the changelog is the truth and an inbox must be a query.
 
