@@ -39,6 +39,15 @@ export const RESERVED_MODULES: readonly string[] = [
   "substrate/ui",
 ]
 
+/** The name the entry module carries: the app's `source`, transformed and
+ * minted first (`frame/load.ts`). It is not an import map key, nothing
+ * imports it and the bootstrap takes its blob URL directly, so it is
+ * reserved apart from `RESERVED_MODULES`, which the prompt hands the model
+ * as the specifiers it may import. A `modules.source` is refused all the
+ * same: it would share the entry's name in every runtime error, and with a
+ * loader that keyed the entry by name, its place. */
+export const SOURCE_MODULE = "source"
+
 /** One thing wrong with an app, at the path it sits at
  * (`permissions.reads.kinds[1]`, `modules.react`). */
 export interface Problem {

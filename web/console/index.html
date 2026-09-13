@@ -2,6 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      The console's one policy directive, and it is about the app frame
+      (components/apps/app-frame.tsx). The guest's own policy governs what
+      its document LOADS, not where it navigates, so a guest that read
+      records could carry them to another host in a URL of its own frame.
+      A parent's frame-src is held against the child's navigations too, its
+      own included, before any request is made; so the frame shows a
+      same-origin document or Chrome's blocked-frame page, and nothing
+      leaves. Nothing else in the console is framed. `frame-ancestors`
+      cannot travel in a meta tag; it is the server's to send.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="frame-src 'self'" />
     <link rel="icon" type="image/svg+xml" href="/substrate.svg" />
     <meta
       name="viewport"

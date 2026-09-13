@@ -29,6 +29,16 @@ export const SDK_MAJOR = 1
  * host answers with the one `"*"`-targeted post the boundary allows: the
  * mount and the port, sent to the shell the host itself navigated to. */
 export const READY_TYPE = "substrate/ready"
+/** Posted by the shell as its document is unloaded. The host only ever
+ * navigates the frame once, so hearing it means the guest navigated its own
+ * frame, and the view is closed rather than left under the console's chrome.
+ * A message posted from an unloading document arrives with no `source`, so
+ * the shell echoes the mount's nonce and the host matches on that. */
+export const LEFT_TYPE = "substrate/left"
+export interface LeftMessage {
+  type: typeof LEFT_TYPE
+  nonce: string
+}
 export const MOUNT_TYPE = "substrate/mount"
 
 export type Runtime = "react" | "html"
@@ -45,6 +55,9 @@ export interface MountMessage {
   sdk: number
   /** sha256 over the source and the modules; a change remounts. */
   digest: string
+  /** Minted per mount and known to this frame alone; `substrate/left` carries
+   * it back, since that message has no `source` to match against. */
+  nonce: string
 }
 
 /** How the shell hands the SDK its port after `document.open()` erased every
@@ -256,15 +269,20 @@ export type DisplayMode = "inline" | "fullscreen"
 
 /** One resolved app input, the engine's rule for a bundle's: the bound
  * record, else the id `default`, else the sole record, else nothing; a
- * dangling binding is `missing` and never falls through. Carried in the host
- * context, so `lib/apps/inputs.ts` (which resolves it) and the SDK (which
- * reads it) agree on one shape. */
+ * dangling binding is `missing` and never falls through; a read the host
+ * could not complete is `error`, never a load that does not end. Carried in
+ * the host context, so `lib/apps/inputs.ts` (which resolves it) and the SDK
+ * (which reads it) agree on one shape. The candidates an `ambiguous` or a
+ * `missing` input could take belong to the host's picker and never cross the
+ * port: the guest is told the state, and nothing of records it was not
+ * given. */
 export type InputState =
   | { state: "bound" | "default" | "sole"; record: SubstrateRecord }
-  | { state: "ambiguous"; options: SubstrateRecord[] }
-  | { state: "missing"; binding: string; options: SubstrateRecord[] }
+  | { state: "ambiguous" }
+  | { state: "missing"; binding: string }
   | { state: "none" }
   | { state: "unknown-kind" }
+  | { state: "error"; message: string }
   | { state: "loading" }
 
 /** What the host says about the app it mounted. */

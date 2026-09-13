@@ -1,7 +1,8 @@
 /** `substrate/app`: what an app's source imports. It is built as its own
  * entry chunk so the guest shell's import map can name it; in dev the map
  * points at `/src/apps-sdk/index.ts` and vite transforms it on request, in a
- * build at `/assets/app-sdk.js`, a fixed name because the shell cannot read
+ * build at the content-hashed `/assets/app-sdk-<hash>.js` the build writes
+ * into `app-frame.html`'s guest-build block, because the shell cannot read
  * a manifest from an origin whose `connect-src` is `'none'`.
  *
  * Everything on `App` is also a module-level export (`records`, `functions`,

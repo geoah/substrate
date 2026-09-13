@@ -1,5 +1,5 @@
 /** The decoder's defaults and the problems one row can answer: the size cap,
- * a reserved module key, an unresolved grant reference (a warning naming the
+ * a reserved module key or the entry's name, an unresolved grant reference (a warning naming the
  * package, which the launcher greys on), `via` against the read kinds, the
  * SDK refusal and the `requiresAtLeast` floor. */
 
@@ -116,6 +116,19 @@ describe("appSpec", () => {
     expect(spec.modules).toEqual({ rows: "export const n = 1" })
     expect(spec.problems.map((p) => p.path)).toEqual(["modules.react"])
     expect(spec.problems[0].severity).toBe("error")
+  })
+
+  it("refuses a module spelled as the entry", () => {
+    const spec = appSpec(
+      app({ modules: { source: "export {}", rows: "export const n = 1" } }),
+      kinds
+    )
+    expect(spec.modules).toEqual({ rows: "export const n = 1" })
+    expect(spec.problems).toContainEqual({
+      path: "modules.source",
+      message: "source is the entry's name; a module has its own",
+      severity: "error",
+    })
   })
 
   it("warns on a grant reference the registry lacks, naming the package", () => {

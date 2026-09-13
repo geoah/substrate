@@ -725,6 +725,233 @@ describe("the host over a port", () => {
     host.teardown()
   })
 
+  it("re-reads every open subscription when the grant or the registry moves", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+    })
+    // The calendar package is not installed yet.
+    let registry = [taskKind, personKind]
+    let app = spec({ reads: { kinds: [], traits: [TEMPORAL] } })
+    const api = fakeApi((p) =>
+      p.name === "task"
+        ? page
+        : { records: [record("e1", "open", EVENT)], head: 7, generation: "g" }
+    )
+    const errors: GuestError[] = []
+    const subscribed: string[][] = []
+    const [hostPort, guestPort] = pair()
+    const host = createBridgeHost({
+      app: () => ({ spec: app, kinds: registry }),
+      granted: () => true,
+      api,
+      subscriptions: createSubscriptions(client, (p) => ({
+        queryKey: ["records", p.name],
+        queryFn: () => api.list(p),
+      })),
+      callbacks: {
+        hostContext: () => hostContext,
+        onError: (e) => errors.push(e),
+        onSubscribedKinds: (k) => subscribed.push(k),
+      },
+    })
+    host.attach(hostPort)
+    const g = guest(guestPort)
+    await g.init()
+    const pages = () =>
+      g.notices
+        .filter((n) => n.method === METHODS.records)
+        .map((n) => (n.params as RecordsPush).page)
+    const ids = (p: RecordsPush["page"] | undefined) =>
+      (p?.records ?? []).map((r) => r.id).sort()
+
+    const res = await g.rpc.call<SubscribeResult>(METHODS.subscribe, {
+      implements: TEMPORAL,
+    })
+    expect(ids(res.page)).toEqual(["t1", "t2"])
+    expect(host.subscribedKinds()).toEqual([TASK])
+
+    // The calendar package lands: the trait read acquires its implementor
+    // and the guest hears the wider page now, with no data change needed.
+    registry = [taskKind, eventKind, personKind]
+    host.grantChanged()
+    await tick()
+    expect(ids(pages().at(-1))).toEqual(["e1", "t1", "t2"])
+    expect(host.subscribedKinds()).toEqual([EVENT, TASK])
+    expect(subscribed.at(-1)).toEqual([EVENT, TASK])
+
+    // A move that changes no read pushes nothing.
+    const quiet = pages().length
+    host.grantChanged()
+    await tick()
+    expect(pages().length).toBe(quiet)
+
+    // The grant narrows: the refusal is pushed now, the strip told once, and
+    // no observer is held.
+    app = spec({ reads: { kinds: [PERSON], traits: [] } })
+    host.grantChanged()
+    await tick()
+    expect(pages().at(-1)).toMatchObject({
+      records: [],
+      error: { code: "forbidden" },
+    })
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatchObject({
+      phase: "grant",
+      path: "permissions.reads.traits",
+    })
+    expect(host.subscribedKinds()).toEqual([])
+    const refused = pages().length
+    host.grantChanged()
+    await tick()
+    expect(pages().length).toBe(refused)
+    expect(errors).toHaveLength(1)
+
+    // Widened again: the subscription reopens and the page flows.
+    app = spec({ reads: { kinds: [], traits: [TEMPORAL] } })
+    host.grantChanged()
+    await tick()
+    expect(ids(pages().at(-1))).toEqual(["e1", "t1", "t2"])
+    expect(host.subscribedKinds()).toEqual([EVENT, TASK])
+    host.teardown()
+  })
+
+  it("answers a subscribe whose first page had not settled when its reads were reopened", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+    })
+    let registry = [taskKind, personKind]
+    const app = spec({ reads: { kinds: [], traits: [TEMPORAL] } })
+    // The task page is held back until the registry has moved under the
+    // subscribe: the observer it opened is replaced before it ever settles.
+    let release!: () => void
+    const held = new Promise<void>((r) => {
+      release = r
+    })
+    const api = fakeApi()
+    const slow: RecordsApi = {
+      ...api,
+      list: async (p) => {
+        if (p.name === "task") {
+          await held
+          return page
+        }
+        return {
+          records: [record("e1", "open", EVENT)],
+          head: 7,
+          generation: "g",
+        }
+      },
+    }
+    const [hostPort, guestPort] = pair()
+    const host = createBridgeHost({
+      app: () => ({ spec: app, kinds: registry }),
+      granted: () => true,
+      api: slow,
+      subscriptions: createSubscriptions(client, (p) => ({
+        queryKey: ["records", p.name],
+        queryFn: () => slow.list(p),
+      })),
+      callbacks: { hostContext: () => hostContext },
+    })
+    host.attach(hostPort)
+    const g = guest(guestPort)
+    await g.init()
+
+    const answer = g.rpc.call<SubscribeResult>(METHODS.subscribe, {
+      implements: TEMPORAL,
+    })
+    await tick()
+    registry = [taskKind, eventKind, personKind]
+    host.grantChanged()
+    await tick()
+    release()
+    const res = await answer
+    expect((res.page.records ?? []).map((r) => r.id).sort()).toEqual([
+      "e1",
+      "t1",
+      "t2",
+    ])
+    // It arrived as the answer, the only way the guest could take it: no
+    // push went out for a subscription the guest did not yet know.
+    expect(g.notices.filter((n) => n.method === METHODS.records)).toHaveLength(
+      0
+    )
+  })
+
+  it("delivers a read the widened set cannot order as the subscription's page, and throws nothing", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+    })
+    const scored: KindInfo = {
+      ...taskKind,
+      definition: {
+        ...taskKind.definition,
+        properties: {
+          ...(taskKind.definition.properties ?? {}),
+          priority: { type: "int" },
+        },
+      },
+    }
+    const named: KindInfo = {
+      ...eventKind,
+      definition: {
+        traits: ["temporal(range)"],
+        properties: { priority: { type: "string" } },
+      },
+    }
+    let registry = [scored, personKind]
+    const app = spec({ reads: { kinds: [], traits: [TEMPORAL] } })
+    const api = fakeApi((p) =>
+      p.name === "task"
+        ? page
+        : { records: [record("e1", "open", EVENT)], head: 7, generation: "g" }
+    )
+    const [hostPort, guestPort] = pair()
+    const host = createBridgeHost({
+      app: () => ({ spec: app, kinds: registry }),
+      granted: () => true,
+      api,
+      subscriptions: createSubscriptions(client, (p) => ({
+        queryKey: ["records", p.name],
+        queryFn: () => api.list(p),
+      })),
+      callbacks: { hostContext: () => hostContext },
+    })
+    host.attach(hostPort)
+    const g = guest(guestPort)
+    await g.init()
+    const pages = () =>
+      g.notices
+        .filter((n) => n.method === METHODS.records)
+        .map((n) => (n.params as RecordsPush).page)
+
+    // One implementor: the order is the server's to judge, and it answers.
+    const res = await g.rpc.call<SubscribeResult>(METHODS.subscribe, {
+      implements: TEMPORAL,
+      orderBy: "priority:asc",
+    })
+    expect(res.page.records?.map((r) => r.id)).toEqual(["t1", "t2"])
+
+    // A second implementor orders `priority` as text: the fan-out is refused
+    // where the subscribe would have refused it, as this subscription's own
+    // page, and the reconcile that met it returns normally.
+    registry = [scored, named, personKind]
+    expect(() => host.grantChanged()).not.toThrow()
+    await tick()
+    expect(pages().at(-1)).toMatchObject({
+      records: [],
+      error: {
+        code: "bad_request",
+        message: expect.stringContaining("priority"),
+      },
+    })
+    expect(host.subscribedKinds()).toEqual([])
+    const quiet = pages().length
+    host.grantChanged()
+    await tick()
+    expect(pages().length).toBe(quiet)
+  })
+
   it("gates a function on the person's confirm by its effect and confirmation", async () => {
     const confirm = vi.fn(async () => true)
     const called: string[] = []

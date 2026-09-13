@@ -11,11 +11,14 @@
  * kind identity: the name the guest sends is looked up in the registry and
  * the grant is asked about what was found, so a spelling that is not a kind
  * is refused as unknown rather than matched as a string. A subscription is
- * held to the grant when it opens and again on every push. And the grant
- * counts only when the component says so (`granted`): below owner
- * provenance the guest gets no data and no calls, whatever the row's
- * `permissions` say, because an agent that may write apps could have
- * widened them under an owner-written `source`. */
+ * held to the grant when it opens, again on every push, and again whenever
+ * the component says the grant or the registry moved (`grantChanged`): a
+ * trait read then acquires the implementor a package install added, and a
+ * read the grant stopped covering gets its refusal at once rather than on
+ * the next data change. And the grant counts only when the component says
+ * so (`granted`): below owner provenance the guest gets no data and no
+ * calls, whatever the row's `permissions` say, because an agent that may
+ * write apps could have widened them under an owner-written `source`. */
 
 import type { QueryClient } from "@tanstack/react-query"
 
@@ -297,12 +300,44 @@ export interface BridgeHost {
   back(): Promise<boolean>
   /** The app's own path moved (the host pushed history, or the person did). */
   routeChanged(path: string): void
+  /** The grant or the registry moved: every open subscription is re-read
+   * against them. A trait read whose implementors grew is reopened over the
+   * wider set and the guest hears the resulting page now; one the grant no
+   * longer admits hears the refusal now and holds no observer until it is
+   * admitted again. */
+  grantChanged(): void
   /** `ui/resource-teardown`, then the port closes. Idempotent. */
   teardown(): void
   /** The kinds the open subscriptions read. */
   subscribedKinds(): string[]
   readonly initialized: boolean
   readonly closed: boolean
+}
+
+/** One subscription the guest holds: the query as it asked it, and the
+ * reads it is observed over now, empty while the grant refuses it. */
+interface OpenSubscription {
+  q: ListArguments
+  reads: Read[]
+  refused: boolean
+  /** The subscribe's answer while it is still owed: the guest registers for
+   * pushes only once it has it, so whatever settles first, the observer the
+   * subscribe opened or the one a reconcile put in its place, must answer
+   * rather than push. */
+  answer?: (page: RecordsPush["page"]) => void
+}
+
+/** Whether two read sets ask the same collections the same way, in any
+ * order: the registry may hand kinds back in another order without a single
+ * read having changed. */
+function sameReads(a: Read[], b: Read[]): boolean {
+  if (a.length !== b.length) return false
+  const key = (reads: Read[]) =>
+    reads
+      .map((r) => JSON.stringify(r.params))
+      .sort()
+      .join("\n")
+  return key(a) === key(b)
 }
 
 function str(v: unknown): string | undefined {
@@ -336,6 +371,17 @@ function ok(structuredContent: Record<string, unknown>): CallToolResult {
 /** The API's envelope as the guest sees it, `code` and all, so a 422 reaches
  * a form as field problems and a 409 reaches a check as a conflict. */
 export function failureOf(err: unknown): ToolFailure {
+  if (err instanceof RpcError) {
+    return {
+      code:
+        err.code === ERROR.invalidParams
+          ? "bad_request"
+          : err.code === ERROR.forbidden
+            ? "forbidden"
+            : "internal",
+      message: err.message,
+    }
+  }
   if (err instanceof ApiError) {
     return {
       code: err.code,
@@ -381,6 +427,10 @@ export function createBridgeHost(opts: BridgeHostOptions): BridgeHost {
   let nextSubscription = 0
   let nextStream = 0
   const streams = new Map<string, ChatHandle>()
+  /** Every subscription the guest holds, with the query it asked and the
+   * reads it is observed over now, so a grant change can re-read it; a
+   * refused one keeps its entry and no observer. */
+  const open = new Map<string, OpenSubscription>()
 
   let memo:
     { spec: AppGrant; kinds: KindInfo[]; grant: ExpandedGrant } | undefined
@@ -431,26 +481,54 @@ export function createBridgeHost(opts: BridgeHostOptions): BridgeHost {
     }
   }
 
-  /** The kinds a read names, each held to the grant: one `kind`, several
-   * `kinds`, or the implementors of a trait intersected with the grant. */
-  const readKinds = (q: ListArguments): KindInfo[] => {
-    if (q.kind) return [grantFor("read", q.kind)]
-    if (q.kinds?.length) return q.kinds.map((k) => grantFor("read", k))
+  /** The kinds a read names, each held to the grant as it stands now: one
+   * `kind`, several `kinds`, or the implementors of a trait intersected with
+   * the grant. Answers rather than throws, so a subscription can be re-read
+   * on every push and every grant change without a refusal being reported
+   * each time; `readKinds` is the throwing, reporting form a call takes. */
+  const checkReads = (
+    q: ListArguments
+  ): { ok: true; kinds: KindInfo[] } | Extract<Access, { ok: false }> => {
+    if (!opts.granted()) {
+      return {
+        ok: false,
+        message: "the app's grant has not been written by the owner",
+      }
+    }
+    const { grant, kinds } = current()
+    const names = q.kind ? [q.kind] : q.kinds?.length ? q.kinds : undefined
+    if (names) {
+      const found: KindInfo[] = []
+      for (const name of names) {
+        const access = checkAccess(grant, kinds, "read", name)
+        if (!access.ok) return access
+        found.push(access.kind)
+      }
+      return { ok: true, kinds: found }
+    }
     if (q.implements) {
-      requireGranted()
-      const { grant } = current()
       const found = grant.readKinds.filter((k) =>
         implementsTrait(k, q.implements!)
       )
       if (!found.length) {
-        return refuse(
-          `the app's grant covers no kind implementing ${q.implements}; permissions.reads.traits: add ${q.implements}`,
-          { path: "permissions.reads.traits", message: `add ${q.implements}` }
-        )
+        return {
+          ok: false,
+          message: `the app's grant covers no kind implementing ${q.implements}; permissions.reads.traits: add ${q.implements}`,
+          problem: {
+            path: "permissions.reads.traits",
+            message: `add ${q.implements}`,
+          },
+        }
       }
-      return found
+      return { ok: true, kinds: found }
     }
     return invalid("list names a kind, kinds or a trait")
+  }
+
+  const readKinds = (q: ListArguments): KindInfo[] => {
+    const checked = checkReads(q)
+    if (!checked.ok) return refuse(checked.message, checked.problem)
+    return checked.kinds
   }
 
   const listArgs = (args: Record<string, unknown>): ListArguments => ({
@@ -473,6 +551,7 @@ export function createBridgeHost(opts: BridgeHostOptions): BridgeHost {
     closed = true
     stopPinging()
     subs?.closeAll()
+    open.clear()
     for (const handle of streams.values()) handle.stop()
     streams.clear()
     rpc?.close()
@@ -717,36 +796,73 @@ export function createBridgeHost(opts: BridgeHostOptions): BridgeHost {
     return { opened: true }
   }
 
+  /** The forbidden page: what a subscription becomes when the grant stops
+   * covering it, so the guest's list empties rather than holding the last
+   * page it was allowed. */
+  const forbidden = (message: string): RecordsPush["page"] => ({
+    records: [],
+    error: { code: "forbidden", message },
+  })
+
   /** The page a subscription's result becomes, held to the grant as it
    * stands now: an app saved with a narrower grant loses the data it no
-   * longer covers on the next beat. */
+   * longer covers on the next beat, whichever comes first of a data change
+   * and `grantChanged`. */
   const pageOf = (
     q: ListArguments,
     reads: Read[],
     result: SubscriptionResult
   ): RecordsPush["page"] => {
-    try {
-      const allowed = new Set(readKinds(q).map((k) => k.identity))
-      for (const r of reads) {
-        if (!allowed.has(r.kind.identity)) {
-          throw new RpcError(
-            ERROR.forbidden,
-            `the app's grant no longer reads ${r.kind.identity}`
-          )
-        }
-      }
-    } catch (err) {
-      return {
-        records: [],
-        error: {
-          code: "forbidden",
-          message: err instanceof Error ? err.message : String(err),
-        },
-      }
+    const checked = checkReads(q)
+    if (!checked.ok) return forbidden(checked.message)
+    const allowed = new Set(checked.kinds.map((k) => k.identity))
+    const lost = reads.find((r) => !allowed.has(r.kind.identity))
+    if (lost) {
+      return forbidden(`the app's grant no longer reads ${lost.kind.identity}`)
     }
     const page = mergePages(reads, result.pages, q.orderBy)
     const failed = result.errors.find((e) => e)
     return failed ? { ...page, error: failureOf(failed) } : page
+  }
+
+  const pushPage = (id: string, page: RecordsPush["page"]) => {
+    if (!rpc || closed) return
+    rpc.notify(METHODS.records, {
+      subscription: id,
+      page,
+    } satisfies RecordsPush)
+  }
+
+  /** A page reaches the guest as the subscribe's answer while that is owed,
+   * else as a push. */
+  const deliver = (
+    id: string,
+    entry: OpenSubscription,
+    page: RecordsPush["page"]
+  ) => {
+    const answer = entry.answer
+    if (answer) {
+      entry.answer = undefined
+      answer(page)
+    } else {
+      pushPage(id, page)
+    }
+  }
+
+  /** Observe one subscription's reads on the store: the first settled page
+   * is delivered (the subscribe's answer, or a reopen's push) and every page
+   * after it is pushed. Opening under a held id replaces the observer. */
+  const observe = (id: string, entry: OpenSubscription) => {
+    let answered = false
+    subs!.open(
+      id,
+      entry.reads.map((r) => r.params),
+      (result) => {
+        if (!answered && !result.settled) return
+        answered = true
+        deliver(id, entry, pageOf(entry.q, entry.reads, result))
+      }
+    )
   }
 
   const subscribe = (params: unknown): Promise<SubscribeResult> => {
@@ -755,27 +871,16 @@ export function createBridgeHost(opts: BridgeHostOptions): BridgeHost {
     }
     const q = listArgs(obj(params) ?? {})
     const kinds = readKinds(q)
-    const reads = readsFor(q, kinds)
+    const entry: OpenSubscription = {
+      q,
+      reads: readsFor(q, kinds),
+      refused: false,
+    }
     const id = `sub-${++nextSubscription}`
+    open.set(id, entry)
     return new Promise<SubscribeResult>((resolve) => {
-      let answered = false
-      subs.open(
-        id,
-        reads.map((r) => r.params),
-        (result) => {
-          if (!answered) {
-            if (!result.settled) return
-            answered = true
-            resolve({ subscription: id, page: pageOf(q, reads, result) })
-            return
-          }
-          if (!rpc || closed) return
-          rpc.notify(METHODS.records, {
-            subscription: id,
-            page: pageOf(q, reads, result),
-          } satisfies RecordsPush)
-        }
-      )
+      entry.answer = (page) => resolve({ subscription: id, page })
+      observe(id, entry)
       cb.onSubscribedKinds?.(subs.kinds())
     })
   }
@@ -784,9 +889,52 @@ export function createBridgeHost(opts: BridgeHostOptions): BridgeHost {
     const id =
       str(obj(params)?.subscription) ??
       invalid("unsubscribe names a subscription")
+    open.delete(id)
     subs?.close(id)
     if (subs) cb.onSubscribedKinds?.(subs.kinds())
     return {}
+  }
+
+  /** Every open subscription re-read against the grant and the registry as
+   * they stand now. A read whose kinds (or whose per-kind rewrite) changed
+   * is reopened and its first settled page pushed; one the grant no longer
+   * admits is closed and pushed the refusal, reported to the strip once, on
+   * the way in; one that is unchanged is left to its observer. */
+  const reconcile = () => {
+    if (!subs || closed) return
+    for (const [id, entry] of open) {
+      const checked = checkReads(entry.q)
+      if (!checked.ok) {
+        if (entry.refused) continue
+        entry.refused = true
+        entry.reads = []
+        subs.close(id)
+        if (checked.problem)
+          cb.onError?.({ phase: "grant", ...checked.problem })
+        deliver(id, entry, forbidden(checked.message))
+        continue
+      }
+      let reads: Read[]
+      try {
+        reads = readsFor(entry.q, checked.kinds)
+      } catch (err) {
+        // The widened set cannot be read as asked (a key the kinds order
+        // differently): the refusal the subscribe would have met is
+        // delivered as this subscription's page and its observer closed;
+        // nothing escapes into the effect that asked for the reconcile.
+        if (entry.refused) continue
+        entry.refused = true
+        entry.reads = []
+        subs.close(id)
+        deliver(id, entry, { records: [], error: failureOf(err) })
+        continue
+      }
+      if (!entry.refused && sameReads(entry.reads, reads)) continue
+      entry.refused = false
+      entry.reads = reads
+      observe(id, entry)
+    }
+    cb.onSubscribedKinds?.(subs.kinds())
   }
 
   const onRequest = async (
@@ -943,6 +1091,7 @@ export function createBridgeHost(opts: BridgeHostOptions): BridgeHost {
       if (!rpc || !initialized || closed) return
       rpc.notify(METHODS.routeChanged, { path } satisfies RouteChangedParams)
     },
+    grantChanged: reconcile,
     teardown() {
       if (closed) return
       if (rpc && initialized) {

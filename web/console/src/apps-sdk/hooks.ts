@@ -31,26 +31,121 @@ interface RecordsStore {
   loadMore(): void
 }
 
-/** One live page per query, subscribed to the bridge while a component
- * listens and dropped when the last one leaves. `loadMore` appends the next
- * cursor's page; a pushed first page keeps what was appended, minus rows it
- * now carries itself, so a live change does not fold a walked list back to
- * one page. */
+/** One live list per query, subscribed to the bridge while a component
+ * listens and dropped when the last one leaves.
+ *
+ * The first page is the subscription's: the host answers it and pushes it
+ * again whenever the tail moves it. The pages `loadMore` walked past it are
+ * the store's own, each read once under the cursor of the page before, so
+ * after a push they are the ones that can be stale: a row deleted, edited or
+ * filtered out on page two would stay as it was. So a push walks the same
+ * depth again from the pushed page's cursor (a keyset cursor is the page
+ * before it, so the walk is sequential) and the old pages stay on screen
+ * until it lands. The cursor is always the last walked page's, never the
+ * first's, so a push cannot make Load more fetch page two twice; a push
+ * whose page has no cursor (the collection fits one page now) or carries a
+ * `forbidden` error (the grant stopped covering the read) drops every walked
+ * page; and rows are deduplicated by (kind, id) across all of them. */
 function createRecordsStore(q: Query): RecordsStore {
   const listeners = new Set<() => void>()
   let first: Page = loading()
-  let extra: SubstrateRecord[] = []
+  let walked: Page[] = []
+  /** How many pages past the first the reader asked for: what a re-walk
+   * restores, a failed Load more included. */
+  let depth = 0
+  /** A Load more or a re-walk that failed, shown until the next one lands
+   * or the next push. */
+  let walkError: SdkError | undefined
   let snapshot: Page = first
   let off: (() => void) | undefined
+  /** The walk in flight, by number: a push starts a new one and a result of
+   * an older one is dropped, so a Load more answered after the push cannot
+   * append a page that no longer follows the first. */
+  let walk = 0
   let walking = false
 
+  const cursor = () =>
+    walked.length ? walked[walked.length - 1].cursor : first.cursor
+
   const publish = () => {
-    const seen = new Set(first.records.map((r) => `${r.kind} ${r.id}`))
-    const appended = extra.filter((r) => !seen.has(`${r.kind} ${r.id}`))
-    snapshot = appended.length
-      ? { ...first, records: [...first.records, ...appended] }
-      : first
+    const seen = new Set<string>()
+    const records: SubstrateRecord[] = []
+    for (const page of [first, ...walked]) {
+      for (const r of page.records) {
+        const key = `${r.kind} ${r.id}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        records.push(r)
+      }
+    }
+    snapshot = {
+      ...first,
+      records,
+      cursor: cursor(),
+      error: first.error ?? walkError,
+    }
     for (const l of [...listeners]) l()
+  }
+
+  const cancel = () => {
+    walk++
+    walking = false
+  }
+
+  const list = (after: string) => currentApp().records.list({ ...q, after })
+
+  /** Run one walk; only the walk still current when it settles lands. */
+  const run = (
+    job: (token: number) => Promise<Page[]>,
+    land: (pages: Page[]) => void
+  ) => {
+    cancel()
+    const token = walk
+    walking = true
+    job(token).then(
+      (pages) => {
+        if (token !== walk) return
+        walking = false
+        walkError = undefined
+        land(pages)
+        depth = walked.length
+        publish()
+      },
+      (error: SdkError) => {
+        if (token !== walk) return
+        walking = false
+        walkError = error
+        publish()
+      }
+    )
+  }
+
+  /** After a push: the walked pages read again to the asked depth, from the
+   * pushed page's cursor. */
+  const rewalk = () => {
+    cancel()
+    if (!depth) return
+    const from = first.cursor
+    if (!from) {
+      walked = []
+      depth = 0
+      return
+    }
+    run(
+      async (token) => {
+        const pages: Page[] = []
+        let after: string | undefined = from
+        while (pages.length < depth && after && token === walk) {
+          const next: Page = await list(after)
+          pages.push(next)
+          after = next.cursor
+        }
+        return pages
+      },
+      (pages) => {
+        walked = pages
+      }
+    )
   }
 
   return {
@@ -59,6 +154,16 @@ function createRecordsStore(q: Query): RecordsStore {
       if (listeners.size === 1) {
         off = currentApp().records.subscribe(q, (page) => {
           first = page
+          walkError = undefined
+          if (page.error) {
+            cancel()
+            if (page.error.code === "forbidden") {
+              walked = []
+              depth = 0
+            }
+          } else {
+            rewalk()
+          }
           publish()
         })
       }
@@ -72,24 +177,15 @@ function createRecordsStore(q: Query): RecordsStore {
     },
     snapshot: () => snapshot,
     loadMore() {
-      const cursor = snapshot.cursor
-      if (!cursor || walking) return
-      walking = true
-      currentApp()
-        .records.list({ ...q, after: cursor })
-        .then(
-          (next) => {
-            walking = false
-            extra = [...extra, ...next.records]
-            first = { ...first, cursor: next.cursor }
-            publish()
-          },
-          (error: SdkError) => {
-            walking = false
-            first = { ...first, error }
-            publish()
-          }
-        )
+      const after = cursor()
+      if (!after || walking || first.loading || first.error) return
+      depth = walked.length + 1
+      run(
+        async () => [await list(after)],
+        (pages) => {
+          walked = [...walked, ...pages]
+        }
+      )
     },
   }
 }

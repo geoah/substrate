@@ -13,6 +13,17 @@
  * app needs the owner's review and links to its record. Nothing real reaches
  * a document whose grant the owner has not written.
  *
+ * What the guest is told of the app (`hostContext.app`: the inputs, the
+ * attached record, the route) and of the vocabulary (`kinds`, the
+ * declarations the expanded grant covers) is built here from the props and
+ * held to the grant once more before it crosses: an input whose kind the
+ * grant does not read is withheld whatever the resolver said. It is served
+ * at `ui/initialize` and pushed again, WHOLE, whenever it moves (an input
+ * query settling after the guest came up, a binding changed in Settings, a
+ * kind landing in the registry), because the SDK merges the context at the
+ * top level only. The same moves re-read every open subscription
+ * (`grantChanged`).
+ *
  * Full-page the frame owns its scroll (a content-sized frame breaks sticky
  * positioning and iOS momentum); in a card, `size-changed` is honored up to
  * 60 vh. The frame is `inert` while a host dialog is open, a document that
@@ -46,10 +57,12 @@ import {
   type BridgeHost,
 } from "@/lib/apps/bridge/host"
 import {
+  LEFT_TYPE,
   MOUNT_TYPE,
   READY_TYPE,
+  type LeftMessage,
+  type AppContext,
   type HostContext,
-  type InputState,
   type MountMessage,
   type NavigateParams,
   type PrimaryActionParams,
@@ -57,6 +70,7 @@ import {
 } from "@/lib/apps/bridge/protocol"
 import { digest } from "@/lib/apps/digest"
 import { expandGrant } from "@/lib/apps/grant"
+import { grantedInputs, type ResolvedInputState } from "@/lib/apps/inputs"
 import type { AppError, AppSpec } from "@/lib/apps/spec"
 import { splitKind } from "@/lib/definition"
 import { cn } from "@/lib/utils"
@@ -153,14 +167,21 @@ function measureSafeArea(): HostContext["safeAreaInsets"] {
   return insets
 }
 
-export type FramePhase = "booting" | "live" | "silent" | "lost"
+export type FramePhase = "booting" | "live" | "silent" | "lost" | "left"
 
 /** What the screen's chrome may ask of the frame: the two host buttons the
  * guest is told about. */
 export interface AppFrameHandle {
   primaryActionClicked(): void
-  back(): void
+  /** The header's back tap, put to the guest first: resolves whether a
+   * listener took it, so the chrome moves the host only for a guest that
+   * did not (or is not there). */
+  back(): Promise<boolean>
 }
+
+/** The default `inputs`, one object, so an absent prop is not a new empty
+ * object per render and a new context per render. */
+const NO_INPUTS: Record<string, ResolvedInputState> = {}
 
 export interface AppFrameProps {
   spec: AppSpec
@@ -175,7 +196,9 @@ export interface AppFrameProps {
   route?: string
   /** The record an `attach: record` card is mounted on. */
   attachedRecord?: SubstrateRecord
-  inputs?: Record<string, InputState>
+  /** The inputs as the resolver left them; held to the grant again here
+   * before the guest hears of any. */
+  inputs?: Record<string, ResolvedInputState>
   /** Bumped to remount (the overflow menu's Reload, the lost phase's retry). */
   attempt?: number
   onTitle?: (text: string) => void
@@ -184,6 +207,10 @@ export interface AppFrameProps {
   onPhase?: (phase: FramePhase) => void
   /** The guest asked for another in-app path; the mount owns history. */
   onNavigatePath?: (path: string) => void
+  /** The guest asked for the host's back (`host.back()`); the mount owns
+   * history. Absent, the frame walks the app's history while its route is
+   * non-empty and opens the launcher at the root. */
+  onBack?: () => void
   ref?: Ref<AppFrameHandle>
   className?: string
 }
@@ -233,13 +260,14 @@ export function AppFrame({
   mode,
   route = "",
   attachedRecord,
-  inputs = {},
+  inputs = NO_INPUTS,
   attempt = 0,
   onTitle,
   onPrimaryAction,
   onError,
   onPhase,
   onNavigatePath,
+  onBack,
   ref,
   className,
 }: AppFrameProps) {
@@ -253,6 +281,21 @@ export function AppFrame({
   // is a subset, lifted for the contract's sake.
   useLiveRecords(granted ? [...expanded.reads, ...subscribed] : undefined)
 
+  // What the guest is told of the app. The inputs pass the grant check a
+  // second time here: the resolver is upstream and this is the door.
+  const appContext = useMemo<AppContext>(
+    () => ({
+      id: spec.id,
+      name: spec.name,
+      route,
+      record: attachedRecord
+        ? { kind: attachedRecord.kind, id: attachedRecord.id }
+        : undefined,
+      inputs: grantedInputs(inputs, spec.inputs, expanded.reads, granted),
+    }),
+    [spec, route, attachedRecord, inputs, expanded, granted]
+  )
+
   const [phase, setPhaseState] = useState<FramePhase>("booting")
   const [height, setHeight] = useState<number>()
   const [inert, setInert] = useState(false)
@@ -264,9 +307,8 @@ export function AppFrame({
     spec,
     kinds,
     expanded,
+    appContext,
     route,
-    attachedRecord,
-    inputs,
     granted,
     mode,
     onTitle,
@@ -274,15 +316,15 @@ export function AppFrame({
     onError,
     onPhase,
     onNavigatePath,
+    onBack,
   })
   useEffect(() => {
     latest.current = {
       spec,
       kinds,
       expanded,
+      appContext,
       route,
-      attachedRecord,
-      inputs,
       granted,
       mode,
       onTitle,
@@ -290,6 +332,7 @@ export function AppFrame({
       onError,
       onPhase,
       onNavigatePath,
+      onBack,
     }
   })
   const setPhase = useCallback((next: FramePhase) => {
@@ -300,7 +343,7 @@ export function AppFrame({
 
   useImperativeHandle(ref, () => ({
     primaryActionClicked: () => bridgeRef.current?.primaryActionClicked(),
-    back: () => bridgeRef.current?.back(),
+    back: () => bridgeRef.current?.back() ?? Promise.resolve(false),
   }))
 
   const isPage = mode === "page"
@@ -325,6 +368,7 @@ export function AppFrame({
     let silence: ReturnType<typeof setTimeout> | undefined
     let themeObserver: MutationObserver | undefined
     let sizeObserver: ResizeObserver | undefined
+    let nonce: string | undefined
     const mods = JSON.parse(modulesKey) as [string, string][]
     const modulesNow = Object.fromEntries(mods)
 
@@ -348,9 +392,27 @@ export function AppFrame({
       })
     }
 
+    // The host's own back, root-aware: the mount's when it owns history;
+    // else the app's history while its path is non-empty and there is an
+    // entry of ours to walk back to, the app's root when there is not (a
+    // bare history.back() there leaves the console), and the launcher at
+    // the root. The fallback the header's tap takes too.
+    const hostBack = () => {
+      const own = latest.current.onBack
+      if (own) own()
+      else if (!latest.current.route) void router.navigate({ to: "/apps" })
+      else if (router.history.canGoBack()) router.history.back()
+      else {
+        void router.navigate({
+          to: "/apps/$id",
+          params: { id: latest.current.spec.id },
+        })
+      }
+    }
+
     const onNavigate = (target: NavigateParams) => {
       if (target.back) {
-        router.history.back()
+        hostBack()
         return
       }
       if (target.app) {
@@ -376,9 +438,27 @@ export function AppFrame({
     }
 
     const onMessage = (e: MessageEvent) => {
+      const type = (e.data as { type?: unknown } | null)?.type
+      // The shell's document is being unloaded and the host did not do it:
+      // the guest navigated its own frame. Whatever replaced the shell (the
+      // blocked page a cross-origin target leaves, or a same-origin page) is
+      // closed rather than shown as the app, and the silence timer is
+      // stopped so it cannot reopen the frame as "silent" later. The message
+      // arrives with no `source` (its document is gone), so the match is the
+      // nonce this mount minted, which no other frame was told.
+      if (type === LEFT_TYPE) {
+        if (cancelled || !nonce) return
+        if ((e.data as Partial<LeftMessage>).nonce !== nonce) return
+        if (silence !== undefined) clearTimeout(silence)
+        bridge?.teardown()
+        if (bridgeRef.current === bridge) bridgeRef.current = undefined
+        setPhase("left")
+        return
+      }
       if (!armed || e.source !== iframe.contentWindow) return
-      if ((e.data as { type?: unknown } | null)?.type !== READY_TYPE) return
+      if (type !== READY_TYPE) return
       armed = false
+      nonce = crypto.randomUUID()
       const channel = new MessageChannel()
       bridge = createBridgeHost({
         app: () => ({
@@ -399,15 +479,7 @@ export function AppFrame({
               locale: navigator.language,
               timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
               styles: readHostStyles(),
-              app: {
-                id: l.spec.id,
-                name: l.spec.name,
-                route: l.route,
-                record: l.attachedRecord
-                  ? { kind: l.attachedRecord.kind, id: l.attachedRecord.id }
-                  : undefined,
-                inputs: l.inputs,
-              },
+              app: l.appContext,
               kinds: l.expanded.readKinds,
             }
           },
@@ -437,6 +509,7 @@ export function AppFrame({
       bridge.attach(channel.port1)
       bridgeRef.current = bridge
       const port = channel.port2
+      const minted = nonce
       void digest(source, modulesNow).then((d) => {
         if (cancelled || !iframe.contentWindow) return
         const mount: MountMessage = {
@@ -446,6 +519,7 @@ export function AppFrame({
           modules: modulesNow,
           sdk,
           digest: d,
+          nonce: minted,
         }
         iframe.contentWindow.postMessage(mount, "*", [port])
       })
@@ -503,6 +577,30 @@ export function AppFrame({
     bridgeRef.current?.routeChanged(route)
   }, [route])
 
+  // The app context or the declarations moved: the guest hears both, WHOLE,
+  // since the SDK merges the context at the top level only. Keyed on content
+  // because the resolver hands back a new object per query result, and an
+  // unchanged context is not news. A guest that is not up yet is served the
+  // current one at `ui/initialize` instead.
+  const sentContext = useRef<string>(undefined)
+  useEffect(() => {
+    const kinds = expanded.readKinds
+    const key = JSON.stringify([
+      appContext,
+      kinds.map((k) => [k.identity, k.version]),
+    ])
+    if (key === sentContext.current) return
+    sentContext.current = key
+    bridgeRef.current?.hostContextChanged({ app: appContext, kinds })
+  }, [appContext, expanded])
+
+  // The grant or the registry moved: every open subscription is re-read
+  // against them (a trait read acquires a kind that landed; a narrowed grant
+  // refuses now).
+  useEffect(() => {
+    bridgeRef.current?.grantChanged()
+  }, [expanded, granted])
+
   // A host dialog on top of the frame: the guest may not take focus or
   // clicks through it.
   useEffect(() => {
@@ -544,10 +642,12 @@ export function AppFrame({
           {spec.description ? ` ${spec.description}` : ""} {openRecord}
         </Notice>
       )}
-      {phase === "lost" && (
+      {(phase === "lost" || phase === "left") && (
         <div className="flex flex-col items-start gap-3 px-4 py-6 text-sm">
           <p className="text-muted-foreground">
-            The app stopped answering and was closed.
+            {phase === "lost"
+              ? "The app stopped answering and was closed."
+              : "The app left its document and was closed."}
             {spec.description ? ` ${spec.description}` : ""} {openRecord}
           </p>
           <Button variant="outline" size="sm" onClick={retry}>
@@ -556,7 +656,7 @@ export function AppFrame({
           </Button>
         </div>
       )}
-      {granted && source && phase !== "lost" && (
+      {granted && source && phase !== "lost" && phase !== "left" && (
         <div
           ref={boxRef}
           className={cn("relative min-h-0 w-full", isPage && "flex-1")}

@@ -38,7 +38,7 @@ The host holds the token, checks every call against the app's declared
 `permissions` by resolved kind identity, and honors the grant only when the
 code and the grant were written at owner tier. There is exactly one format:
 a list is a component the source imports, never a record the console
-interprets. The five examples are 31 to 55 lines per document, code included.
+interprets. The five examples are 33 to 55 lines per document, code included.
 
 ## 1. The model: one kind
 
@@ -158,7 +158,7 @@ type Page = {records: Record[], cursor?: string, incomplete?: boolean, loading: 
 useRecords(q: Query): Page & {loadMore(): void}
 useRecord(kind, id): {record?: Record, loading: boolean, error?: Error}
 useKind(identity): Declaration | undefined   // properties, states, transitions, displayTemplate, enum labels, temporal point
-useInput(name): {state: "bound"|"default"|"sole"|"none"|"ambiguous"|"missing"|"unknown-kind", record?: Record, status?: string}
+useInput(name): {state: "bound"|"default"|"sole"|"none"|"ambiguous"|"missing"|"unknown-kind"|"error"|"loading", record?: Record, status?: string}
 useRoute(): {path: string, navigate(path: string): void}
 useHost(): HostContext & {app: {id, name, record?: {kind, id}}}
 
@@ -204,17 +204,21 @@ The guest shell writes one import map before any module loads:
 
 | specifier | build | dev |
 |---|---|---|
-| `react`, `react/jsx-runtime`, `react-dom/client` | `/assets/app-react.js` and two siblings, entries that re-export the console's own React | `/src/apps-sdk/react.ts` and siblings, transformed on request |
-| `substrate/app` | `/assets/app-sdk.js` | `/src/apps-sdk/index.ts` |
-| `substrate/ui` | `/assets/app-ui.js` | `/src/apps-sdk/ui/index.ts` |
+| `react`, `react/jsx-runtime`, `react-dom/client` | `/assets/app-react-<hash>.js` and two siblings, entries that re-export the console's own React | `/src/apps-sdk/react.ts` and siblings, transformed on request |
+| `substrate/app` | `/assets/app-sdk-<hash>.js` | `/src/apps-sdk/index.ts` |
+| `substrate/ui` | `/assets/app-ui-<hash>.js` | `/src/apps-sdk/ui/index.ts` |
 | `#<name>` | a `blob:` URL per entry of `modules`, minted at mount | the same |
 
 The three React entries, the SDK and the kit are entries of the console's own
-Vite build (`preserveEntrySignatures: "exports-only"`, fixed file names, the
-pattern A's `app-sdk` already uses), so rolldown puts React in one shared
-chunk they all import and the app, the SDK and the kit see one React instance;
-two copies would break hooks, and this is the one build fact the design
-depends on. Nothing is fetched from the internet: `connect-src 'none'` and
+Vite build (`preserveEntrySignatures: "exports-only"`), so rolldown puts React
+in one shared chunk they all import and the app, the SDK and the kit see one
+React instance; two copies would break hooks, and this is the one build fact
+the design depends on. Their names carry a content hash like every other
+asset, since `/assets/` is served immutable: the build writes the five URLs,
+the import closure behind them and the font files into `app-frame.html` as a
+JSON block, and the shell reads that block before anything else, both for
+the import map and to pin its `script-src` and `font-src` to exactly those
+paths (`web/console/src/frame/guest-build.ts`). Nothing is fetched from the internet: `connect-src 'none'` and
 `script-src 'self'` see to it, and a source that imports anything outside the
 map fails to resolve before it runs. Sizes, gzipped, immutable under
 `/assets/` and so paid once per binary: React with `react-dom/client` about
@@ -335,7 +339,7 @@ is why the check is disabled on a `proposed` row: its machine has no arm to
 `done`. The row leaves the list when the tail pushes the next page, within a
 beat. `attach: browse` puts the app on the task kind's page as a tab.
 
-**Timeline of every temporal record. 31 lines, 18 of them code.**
+**Timeline of every temporal record. 33 lines, 20 of them code.**
 
 ```yaml
 kind: substrate.reamde.dev/core/app
@@ -354,12 +358,16 @@ data:
       import { useRecords, host } from "substrate/app"
       import { Screen, Timeline } from "substrate/ui"
 
+      // The window is fixed once per load: a query built inside the component
+      // would carry a fresh timestamp on every render and re-subscribe forever.
       const day = (n) => new Date(Date.now() + n * 864e5).toISOString()
+      const FROM = day(-7)
+      const TO = day(30)
 
       export default function Agenda() {
         const page = useRecords({
           implements: "substrate.reamde.dev/core/temporal",
-          filter: { properties: { at: { gte: day(-7), lt: day(30) } } },
+          filter: { properties: { at: { gte: FROM, lt: TO } } },
           orderBy: "at:asc",
           first: 300,
         })
@@ -564,7 +572,7 @@ shadow as a warning until then. A PR's `title` is the built-in column the
 sync writes, since the kind declares none, and it reads back inside
 `properties` like every column does.
 
-**The same tasks app with no kit and no React. 46 lines, 33 of them code.**
+**The same tasks app with no kit and no React. 48 lines, 35 of them code.**
 
 ```yaml
 kind: substrate.reamde.dev/core/app
@@ -584,13 +592,14 @@ data:
       <meta charset="utf-8">
       <style>
         body { margin: 0; font: 16px var(--font-sans, system-ui); background: var(--background); color: var(--foreground) }
-        form { display: flex; gap: 8px; padding: 12px }
+        .bar { display: flex; gap: 8px; padding: 12px }
         input { flex: 1; min-height: 44px; padding: 0 12px; font: inherit; color: inherit; background: none;
           border: 1px solid var(--border); border-radius: var(--radius) }
         button { min-width: 44px; min-height: 44px; font: inherit; border-radius: var(--radius) }
         li { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 12px; border-top: 1px solid var(--border) }
       </style>
-      <form><input name="name" placeholder="Add a task" autocomplete="off"><button>Add</button></form>
+      <!-- No <form>: the frame is sandboxed without allow-forms, so a submit never fires. -->
+      <div class="bar"><input id="name" placeholder="Add a task" autocomplete="off" enterkeyhint="done"><button id="add">Add</button></div>
       <ul id="list" style="list-style: none; margin: 0; padding: 0"></ul>
       <script type="module">
         import { createApp } from "substrate/app"
@@ -605,17 +614,19 @@ data:
             li.append(done, Object.assign(document.createElement("span"), { textContent: t.properties.name ?? t.id }))
             return li
           })))
-        document.forms[0].onsubmit = async (e) => {
-          e.preventDefault()
-          const name = e.target.name.value.trim()
+        const input = document.getElementById("name")
+        const add = async () => {
+          const name = input.value.trim()
           if (!name) return
-          e.target.reset()
+          input.value = ""
           await app.records.put(TASK, { properties: { name } })
         }
+        document.getElementById("add").onclick = add
+        input.onkeydown = (e) => { if (e.key === "Enter") add() }
       </script>
 ```
 
-Thirty-three lines of raw code against twenty-five with the kit, and the
+Thirty-five lines of raw code against twenty-five with the kit, and the
 difference is all styling and DOM bookkeeping: the SDK surface is the same
 object. The console's tokens (`--background`, `--border`, `--radius`,
 `--font-sans`) are on the guest's `:root` before the document's own styles
@@ -625,11 +636,11 @@ theme.
 | app | document | code |
 |---|---:|---:|
 | tasks | 39 | 25 |
-| timeline | 31 | 18 |
+| timeline | 33 | 20 |
 | contacts | 43 | 29 |
 | projects | 55 | 42 |
 | pulls | 43 | 25 |
-| tasks-raw | 46 | 33 |
+| tasks-raw | 48 | 35 |
 
 Against A: A's tasks view is 24 lines and its projects trio 64 across three
 documents. B's tasks is 39 and projects 55 in one. B is longer where A's
@@ -973,6 +984,32 @@ bridge. Bundle-shipped browser code. Apps drawing their own bottom bars, tab
 bars or login forms. Merge and split from an app. A kit prop that changes
 meaning, or a component that leaves, within an SDK major.
 
+## 8b. What the Codex reviews changed
+
+Codex reviewed the PR diff and then the fixes. Its two blockers are closed:
+the guest could navigate its own frame to a foreign URL with data in the
+query, which the console document's `frame-src 'self'` policy now stops
+before any request leaves (Chrome verified; the shell reports the unload and
+the host closes the view), and inputs were resolved with the console's
+credential outside the read grant, which now happens only at owner provenance
+and only for kinds inside the expanded grant, with the guest's context
+filtered the same way. Its majors are folded in: the five guest entries ship
+under content-hashed names injected into the shell at build time; a module
+named `source` can no longer replace the entry and the import-map keys are
+reserved; an initialized guest receives changed inputs, grants and
+declarations; open subscriptions reconcile when the grant or the registry
+changes; the live tail recovers from compaction and its catch-up covers
+single records and the registry; `useRecords` keeps every loaded page in
+one store, deduplicates by identity and never re-fetches a page; the header
+back asks the guest first; cards and tabs share the full screen's version
+floor; multi-kind ordering honours `orderBy`; and the Go server sends
+`Access-Control-Allow-Origin: *` on `/assets/` alone so the built guest can
+load its modules. Left open from that review: a same-origin navigation of
+the guest is caught only by the ping watchdog once a document has replaced
+the shell's listeners, the "live updates stopped" state has no screen yet,
+the package-floor read takes one page, and datetime ordering across kinds
+loses sub-millisecond precision.
+
 ## 9. The prototype on this branch
 
 Built against a second dev stack (a separate database and repository, so
@@ -986,7 +1023,7 @@ bridge), `web/console/src/components/apps/` (the launcher, the app screen
 and card, the chrome, the errors strip, the input binder) and
 `web/console/src/pages/{apps,app}.tsx`. Routes: `/apps`, `/apps/{id}` and
 `/apps/{id}/*` for the routes an app owns. The console's typecheck, lint,
-formatter, 1015 tests and build pass; the built output carries one React
+formatter, 1067 tests and build pass; the built output carries one React
 (every guest entry imports the console's own chunk), and the measured
 sizes are 4.3 kB for the SDK, 8.6 kB for the kit and 45 kB for the lazy
 Sucrase chunk, gzipped.
@@ -1002,8 +1039,13 @@ the overview and the tasks and contacts apps as tabs on their kind pages.
 From inside the frame: `window.origin` is `null`, `localStorage` and
 `document.cookie` throw, `fetch` to `/api` and to the internet is blocked
 before any request, a dynamic `import()` from a CDN is refused, and the
-console's tokens are byte-identical inside and out. A change made through
-the CLI reaches an open app in under a second.
+console's tokens are byte-identical inside and out. A guest that navigates
+its own frame (`location.href = "https://example.net/?…"`) is stopped by the
+console document's `frame-src 'self'` before any request is made, and the
+shell's `pagehide` tells the host, which closes the view under a "left its
+document" notice with a Reload instead of leaving the blocked page under its
+chrome. A change made through the CLI reaches an open app in under a
+second.
 
 Two things the browser taught the prototype: a sandbox without
 `allow-forms` blocks a form submission before the `submit` event fires, so
@@ -1016,9 +1058,11 @@ fires and forgets a link does not show an error.
 Not built: `Button`, `Sheet`, `Form`, `RecordField` and `Board` (exported,
 each renders an "arrives in v1" note), `agents.chat` beyond a typed stub,
 check mode, the agent prompt file, the engine admission gate, `/m/apps`, the
-shipped-closure test refusing `source` on a shipped row, and the Go server's
-CORS on `/assets` that the built shell needs (so the guest runs under
-`pnpm dev` today and not from the built image).
+shipped-closure test refusing `source` on a shipped row, and a browser smoke
+test of the guest from the built image: the Go server now answers `/assets/`
+with `Access-Control-Allow-Origin: *` (the opaque-origin shell's module and
+font loads are CORS requests; `internal/api/spa_test.go` holds the header),
+but only `pnpm dev` and `vite preview` have been driven in a browser.
 
 ### Run it
 
