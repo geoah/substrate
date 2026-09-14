@@ -28,9 +28,11 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
+import { ReferenceCell } from "@/components/record/reference-value"
 import { agentsQueryOptions } from "@/lib/api/agents"
-import type { SubstrateRecord } from "@/lib/api/types"
-import { cellValue, recordTitle } from "@/lib/format"
+import { kindsQueryOptions } from "@/lib/api/kinds"
+import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+import { cellValue, recordTitle, referenceCell } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 /** A declaration row's properties ARE the declaration: `provider` and `model`
@@ -78,7 +80,7 @@ function textColumn(opts: {
   }
 }
 
-function agentColumns(): DataTableColumn<SubstrateRecord>[] {
+function agentColumns(kinds: KindInfo[]): DataTableColumn<SubstrateRecord>[] {
   return [
     {
       id: "agent",
@@ -106,13 +108,23 @@ function agentColumns(): DataTableColumn<SubstrateRecord>[] {
       ),
       meta: { label: "agent", size: { min: 200, max: 400, weight: 1.5 } },
     },
-    textColumn({
+    {
+      // `provider` is a REFERENCE, so the cell is the provider row's pill: a
+      // link to the record the loop reads its wire and key off. Flattened as
+      // text it read `{ref}` — the served shape's key, not the provider.
       id: "provider",
-      title: "provider",
-      value: (a) => declaredField(a, "provider"),
-      data: true,
-      meta: { label: "provider", width: 120 },
-    }),
+      // The accessor is the id the pill names, so what the table sorts and
+      // filters on is what the reader sees; only the rendering differs.
+      accessorFn: (a) => referenceCell(a.properties.provider),
+      enableSorting: false,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="provider" />
+      ),
+      cell: ({ row }) => (
+        <ReferenceCell value={row.original.properties.provider} kinds={kinds} />
+      ),
+      meta: { label: "provider", size: { min: 120, max: 200, weight: 1 } },
+    },
     textColumn({
       id: "model",
       title: "model",
@@ -150,6 +162,9 @@ function agentColumns(): DataTableColumn<SubstrateRecord>[] {
 export function AgentsPage() {
   const navigate = useNavigate()
   const agents = useQuery(agentsQueryOptions())
+  // The registry, for the provider column: a reference renders as a link only
+  // where the kind it names is installed.
+  const kinds = useQuery(kindsQueryOptions)
 
   // This page is the CHAT list, so a subagent-only agent (an llm-as-judge,
   // callable only by other agents) stays off it; the row is still an ordinary
@@ -162,7 +177,7 @@ export function AgentsPage() {
     [allRows]
   )
   const hiddenFromChatCount = allRows.length - agentRows.length
-  const aCols = useMemo(() => agentColumns(), [])
+  const aCols = useMemo(() => agentColumns(kinds.data ?? []), [kinds.data])
   const aTable = useDataTable({
     columns: aCols,
     data: agentRows,
