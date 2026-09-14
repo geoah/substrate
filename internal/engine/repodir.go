@@ -94,8 +94,10 @@ var ErrDirectoryWrite = fmt.Errorf("%w: the repository directory could not be wr
 // changelog writer failed. In every case the tables may hold a write the
 // directory does not, the caller got the error, and the dataset stops taking
 // writes until the process restarts and the boot check catches the directory
-// up. Nothing repairs inline, because a repair racing the next append is how
-// two writers interleave lines.
+// up. Nothing repairs inline after a commit, because a repair racing the next
+// append is how two writers interleave lines; the one inline catch-up is of
+// rows ANOTHER process committed, and it runs before the prepare under the
+// locks the prepare holds (catchUpBeforePrepare).
 var ErrChangelogFileBehind = errors.New("substrate/engine: the repository directory is behind the tables after a failed write; restart the server so the boot check catches it up")
 
 // ErrChangelogDiverged is the boot check's refusal (case 4): the file and the
@@ -1296,13 +1298,14 @@ func (ds *dataset) commitStagedSealed(staged []string) error {
 // held.
 //
 // Two refusals here are the latch's and not a retry's. A seq gap is the
-// table ahead of the file: a commit that reported failure after Postgres had
-// committed (an in-doubt commit) had its lines cut as if it rolled back, and
-// this transaction's first seq now follows a row the file lacks. A writer
-// that failed (an I/O error, on this prepare or an earlier one) refuses every
-// prepare until the process reopens the directory, so a retry cannot
-// succeed. Both name the restart; the boot's catch-up is the repair for the
-// first and the reopen for the second.
+// table ahead of the file by this process's own doing: a commit that reported
+// failure after Postgres had committed (an in-doubt commit) had its lines cut
+// as if it rolled back, and this transaction's first seq now follows a row
+// the file lacks (a gap another process left was closed before this step,
+// catchUpBeforePrepare). A writer that failed (an I/O error, on this prepare
+// or an earlier one) refuses every prepare until the process reopens the
+// directory, so a retry cannot succeed. Both name the restart; the boot's
+// catch-up is the repair for the first and the reopen for the second.
 func (ds *dataset) prepareLines(pending []pendingEntry) (bool, error) {
 	if len(pending) == 0 {
 		return false, nil
@@ -1319,6 +1322,63 @@ func (ds *dataset) prepareLines(pending []pendingEntry) (bool, error) {
 		return false, fmt.Errorf("%w: repository %s: prepare seq %d..%d: %w", ErrDirectoryWrite, ds.info.ID, lines[0].Seq, lines[len(lines)-1].Seq, err)
 	}
 	return true, nil
+}
+
+// catchUpBeforePrepare appends to the changelog file the committed rows the
+// table holds between the file's head and this transaction's first seq, when
+// there are any and no commit of this dataset is in doubt. Rows land in the
+// table and not in this directory when ANOTHER PROCESS writes the repository
+// from a directory of its own: a second server on the same database, each
+// under a data root, which the writer lock under one data root cannot see
+// (docs/operations.md keeps it to one). Its rows are committed history this
+// directory lacks, exactly what the boot check appends at open
+// (openDirectory), and the same repair runs here under the same guarantees:
+// writerMu, so no append of this process interleaves, and the changelog
+// advisory lock this transaction holds, so no process appends until it ends
+// and every row below its first seq is committed. Without it the prepare met
+// the gap and latched the dataset until a restart, for rows it never wrote.
+//
+// A gap a commit in doubt left is this process's own, and 0062 has the next
+// prepare latch on it, so it is left to prepareLines: commitInDoubt, set by
+// the failed commit, tells the two apart, and a gap under it is not closed
+// here. A catch-up that cannot bring the file to the seq before this
+// transaction's first is divergence and latches; one that fails otherwise
+// rolls the transaction back as retryable while the writer is whole
+// (ErrDirectoryWrite) and latches when it is not. Called with writerMu held.
+func (ds *dataset) catchUpBeforePrepare(t *txn) error {
+	if len(t.pending) == 0 {
+		return nil
+	}
+	first := t.pending[0].Seq
+	head := ds.writer.Head()
+	if head == first-1 {
+		// No gap: a commit that reported failure did roll back.
+		ds.commitInDoubt = false
+		return nil
+	}
+	if head > first-1 || ds.commitInDoubt {
+		return nil
+	}
+	n, err := appendFromTable(t.ctx, ds.db, ds.writer, head, ds.svc.catchUpBatch)
+	if err == nil {
+		err = mirrorSealedFromTable(t.ctx, ds.db, ds.dir)
+	}
+	if err == nil && ds.writer.Head() != first-1 {
+		err = fmt.Errorf("%w: the file is at seq %d after the catch-up and this transaction starts at seq %d",
+			ErrChangelogDiverged, ds.writer.Head(), first)
+	}
+	if err != nil {
+		if ds.writer.Err() != nil || errors.Is(err, ErrChangelogDiverged) {
+			ds.latchDirectoryErr(fmt.Errorf("catch the file up from seq %d to %d before this write: %w", head+1, first-1, err))
+			return ds.fileErr
+		}
+		return fmt.Errorf("%w: repository %s: catch the file up from seq %d to %d before this write: %w",
+			ErrDirectoryWrite, ds.info.ID, head+1, first-1, err)
+	}
+	ds.svc.log.Error("substrate: the changelog table held entries this server's directory did not, and they were appended before this write. "+
+		"Another process is writing this repository from a directory of its own: run one server per database",
+		"repository", ds.scope.Repository, "entries", n, "from", head+1, "to", first-1)
+	return nil
 }
 
 // abortLines cuts the prepared lines back off the segment after the

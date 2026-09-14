@@ -345,7 +345,12 @@ scale. The segment files lean on the same shape: one writer process per data
 root. The writer holds an exclusive advisory lock on
 `<repository>/changelog/.lock` for as long as the repository is open, so a
 second process that opens a repository for writing is refused with a named
-error instead of appending behind the first one's back.
+error instead of appending behind the first one's back. Two processes under
+two data roots on one database are not refused, because neither holds the
+other's lock: each finds the other's rows in the changelog table at its next
+write, appends them to its own directory before its own lines and logs an
+error naming the condition. The directories stay whole, but nothing else
+about a second writer is supported: run one.
 
 ## Upgrading the binary
 
