@@ -185,16 +185,17 @@ stream erroring never stalls another. The account-level `lastSyncedAt` and
 `syncStatus` stay shared: they are the rollup every connection reports, and
 whichever stream finishes stamps them.
 
-- **Kinds (8)**: `config` (the OAuth client kind, `oauth2`, named by the
+- **Kinds (9)**: `config` (the OAuth client kind, `oauth2`, named by the
   bundle's `client` input), `account` (the Connection, `accountconfig`), `contact` (the
   mirrored contact), `emailaddress` (one address, the shared people source),
-  `thread` and `message` (the Gmail mirrors), `calendar` and `event` (the
-  Calendar mirrors).
+  `thread` and `message` (the Gmail mirrors), `calendar`, `series` and
+  `event` (the Calendar mirrors: the calendar list entry, one recurring
+  master, and a single event or a modified exception).
 - **Functions (3)**: `contactssync` pages `people/me/connections`, emits
   `contact` records, and stores the People sync token for incremental runs;
   `gmailsync` drains Gmail history (or a bounded backfill window) into thread
   and message mirrors; `calendarsync` drains each calendar's events on that
-  calendar's own sync token into calendar and event mirrors. All three also
+  calendar's own sync token into calendar, series and event mirrors. All three also
   write an `emailaddress` mirror per address they see, and none of them writes
   a kind this package does not own.
 - **Triggers (6)**: `google-contacts-on-connect`, `google-gmail-on-connect`,
@@ -231,25 +232,36 @@ a reconnect. `gmail.readonly` is one of Google's restricted scopes: a published
 client needs CASA verification, and an External plus Testing client has its
 refresh tokens revoked after seven days.
 
-**A recurring event carries its rule on the mirror.** The event walk keeps
-Google's `singleEvents=true` expansion, so every `event` mirror is a concrete
-occurrence carrying its master's `recurringEventId` and, where Google moved the
-occurrence off the slot the rule produced, its `originalStartTime`. The rule
-itself appears on no instance, so `calendarsync` fetches each distinct master
-by id, once per delivery, and writes its `recurrence` lines verbatim onto every
-instance of it. Deriving a series record from those is the repository's to do,
-from a kind of its own. The account's `calendarSeries` property is deprecated
-and inert.
+**A recurring master is a `series` row, and the read computes the rest.** The
+event walk asks Google for `singleEvents=false`, so a recurring master arrives
+as one item carrying its rule and lands as a `series` row binding core's
+`recurring`: `at`/`endsAt` are the master's `DTSTART`/`DTEND`, `recurrence` its
+`RRULE` line, `rdates` and `exdates` its `RDATE` and `EXDATE` instants
+resolved in the series' one zone (the master's own, else the calendar's, else
+UTC), `recurrenceLines` Google's array verbatim, and `cancelledSlots` every
+slot a cancelled exception has spent, folded into `exdates` on every master
+write. A modified exception is an `event` row binding core's `override`:
+`recurrenceOf` points at the series and `originalAt` names the slot it
+replaces, at the id `<series row id>_<slot>` the records read gives the
+occurrence it computes for that slot. A plain event is an `event` row. Nothing
+is expanded into rows: a records read that bounds `at` on both ends computes
+each series' occurrences beside the stored rows, so the future is the read's
+and the walk has no horizon. A cancelled master takes its series row and every
+exception pointing at it; a field cleared at Google clears on the mirror,
+because the sync writes every optional property and `null` where the item
+lacks one. The first run after the upgrade from the instance walk treats the
+stored sync token as absent (the calendar mirror's `syncWalk` names the walk
+that minted it), reads the calendar in full and retracts every legacy instance
+row at any date before stamping the walk. The account's `calendarSeries`
+property is deprecated and inert.
 
 **The three streams read `backfillDepth` differently.** Gmail and calendar
 each stamp their own backfill anchor on the first run and take the window off
 that stored instant, so neither reach creeps forward; contacts ignores the
 property entirely, because the People sync token gives it full-plus-incremental
-with no window. The calendar walk also caps its forward reach at now plus 365
-days, or a recurring event exploded to 2099 would page forever. Gmail's own cap
-is a quota: `messages.get` costs 20 units against a ceiling of 6,000 units per
-minute per user, which is what sizes the 25-message hydrate batch and the
-20-page backfill.
+with no window. Gmail's own cap is a quota: `messages.get` costs 20 units
+against a ceiling of 6,000 units per minute per user, which is what sizes the
+25-message hydrate batch and the 20-page backfill.
 
 **What this slice does not do**: no attachment bytes (metadata and the
 attachment id only), no label kind (core keeps provider label ids as plain

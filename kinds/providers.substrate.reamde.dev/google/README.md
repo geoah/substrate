@@ -5,7 +5,7 @@ a Google account's address book, mail and calendars into the repository, in
 Google's own shape. Three streams (contacts, gmail, calendar) share one
 account, each with its own toggle, scope, function and cursor.
 
-`bundle.yaml` is the closure (the config and account kinds, the six mirrors,
+`bundle.yaml` is the closure (the config and account kinds, the seven mirrors,
 the three sync functions and the trusted `oauth2:` metadata) and
 `triggers.yaml` is the delivery wiring. They are the contract; this file is
 not.
