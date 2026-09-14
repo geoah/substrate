@@ -86,6 +86,18 @@ data:
           type: int
           min: 1
           description: the completion cap sent on every request
+        reasoningEffort:
+          type: enum
+          values:
+            - none
+            - minimal
+            - low
+            - medium
+            - high
+            - xhigh
+            - max
+          description: how hard a reasoning model thinks, when it takes the
+            knob
     # `function` names the tool, and it is the ONE arm: the four built-ins are
     # `runtime: host` function records core ships, so
     # `{function: substrate.reamde.dev/core/graphql}` names one exactly as a

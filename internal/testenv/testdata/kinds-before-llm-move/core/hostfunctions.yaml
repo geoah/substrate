@@ -66,67 +66,50 @@ data:
       type: int
       description: max search hits
 ---
-# ---- graphql: the whole-repository read ------------------------------------
-# No `reads:` — DECLARING THE TOOL IS THE GRANT. There is no narrower scope to
-# declare over a whole-repository read surface, which is why the scoped `query`
-# survives beside it.
-kind: substrate.reamde.dev/core/function
-metadata:
-  id: substrate.reamde.dev/core/graphql
-data:
-  authority: substrate.reamde.dev
-  package: core
-  description: >-
-    Run a read-only GraphQL query against the repository. The schema is introspectable
-    (__schema / __type), arguments included. Roots: record(kind, id) for one
-    record; records(filter, orderBy, first, after) to list (a connection,
-    so descend through nodes { ... }); search(q, kinds, k) for hybrid lexical+semantic
-    lookup; changelog(from, filter, first) for history. A filter is {kinds,
-    ids, implements, properties, labels, deleted}; properties maps a name
-    to a condition (eq, in, prefix, gt, gte, lt, lte, contains, exists), timestamps
-    RFC3339, so a day is properties: {at: {gte: "2026-08-15T00:00:00Z", lt:
-    "2026-08-16T00:00:00Z"}}. `nodes` is the Record interface: a kind's own
-    properties need an inline fragment, nodes { id ... on <Type> { summary
-    } }; <Type> comes from __schema { types { name } }. Do not guess field
-    names: introspect when unsure, and batch related lookups into one query.
-    Mutations and subscriptions are rejected. Responses over 64KB are refused;
-    narrow the query.
-  runtime: host
-  arguments:
-    - name: query
-      type: string
-      required: true
-      description: the GraphQL document to execute
-    - name: variables
-      type: json
-      description: values for the variables the document declares
----
-# ---- mutate: the agent-scoped write ----------------------------------------
+# ---- write: the agent-scoped write ------------------------------------------
 # No `emit:` of its own, and that is the point: the ceiling is the CALLING
 # AGENT's effective emit, so an emit here would be a second, looser answer to
 # the question of what this tool may write.
 kind: substrate.reamde.dev/core/function
 metadata:
-  id: substrate.reamde.dev/core/mutate
+  id: substrate.reamde.dev/core/write
 data:
   authority: substrate.reamde.dev
   package: core
   description: >-
-    Run a GraphQL mutation against the repository. Roots: put(input: {kind,
-    id, properties}) merges and never prunes; patch(kind, id, input, ifVersion);
-    delete(kind, id). A link to another record is an ordinary property, its
-    value the string "<kind>/<id>". Every record written must be of a kind
-    in the agent's emit allowlist; merge and split are refused. Ids must come
-    from query results, never invented.
+    Write one record: op put creates or updates (merges, never prunes) the
+    record at kind + id (omit id to mint one); op patch changes an existing
+    one; op delete tombstones one. Property values ride under input as {"properties":
+    {...}}, labels and annotations beside them; ifVersion holds the write
+    to the version you read. A link to another record is an ordinary property
+    whose value is "<kind>/<id>". Every record written must be of a kind in
+    the agent's writes allowlist; merge and split are the owner's. Ids must
+    come from query results, never invented — except a put's new id.
   runtime: host
   arguments:
-    - name: query
+    - name: op
+      type: enum
+      values:
+        - put
+        - patch
+        - delete
+      required: true
+      description: put creates or updates, patch changes an existing record,
+        delete tombstones one
+    - name: kind
       type: string
       required: true
-      description: the GraphQL document to execute
-    - name: variables
+      description: the kind reference of the record
+    - name: id
+      type: string
+      description: the record id (required for patch and delete; omit on put
+        to mint one)
+    - name: input
       type: json
-      description: values for the variables the document declares
+      description: '{properties, labels, annotations} for put and patch'
+    - name: ifVersion
+      type: int
+      description: apply only if the record is still at this version
 ---
 # ---- propose: the reviewed write -------------------------------------------
 # The one host function with a write permission, because it writes one kind and
