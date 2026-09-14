@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	rrule "github.com/teambition/rrule-go"
 
@@ -64,6 +65,9 @@ func coerceProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, error)
 			continue
 		}
 		cv, err := coerceValue(p, v)
+		if err == nil {
+			err = storableText(cv)
+		}
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("props.%s: %v", name, err))
 			continue
@@ -74,6 +78,43 @@ func coerceProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, error)
 		return nil, &substrate.ValidationError{Problems: problems}
 	}
 	return out, nil
+}
+
+// storableText refuses, as a validation problem naming the property, the text
+// Postgres would refuse at the INSERT: a NUL (U+0000) anywhere in a string,
+// which neither `text` nor `jsonb` stores (SQLSTATE 22P05), and a string that
+// is not UTF-8 (22021). Refused there, the row fails as an internal error for
+// a fault in the caller's own input (#540). It walks the coerced value whole,
+// because a NUL inside a list item, an object field or a keyed map's key
+// fails the same INSERT. The JSON decoder replaces invalid UTF-8 on the way
+// in, so in practice the NUL is the one this meets; the UTF-8 check holds
+// for writers inside the process.
+func storableText(v any) error {
+	switch x := v.(type) {
+	case string:
+		if strings.IndexByte(x, 0) >= 0 {
+			return fmt.Errorf("carries a NUL (U+0000), which no row stores")
+		}
+		if !utf8.ValidString(x) {
+			return fmt.Errorf("is not valid UTF-8")
+		}
+	case []any:
+		for i, item := range x {
+			if err := storableText(item); err != nil {
+				return fmt.Errorf("[%d] %w", i, err)
+			}
+		}
+	case map[string]any:
+		for _, k := range sortedKeys(x) {
+			if err := storableText(k); err != nil {
+				return fmt.Errorf("key %q %w", k, err)
+			}
+			if err := storableText(x[k]); err != nil {
+				return fmt.Errorf("%s %w", k, err)
+			}
+		}
+	}
+	return nil
 }
 
 // coerceLinkProps validates ONE reference value's LINK DATA against what the
@@ -1003,7 +1044,13 @@ func scalarString(v any) string {
 	}
 }
 
-// snippetOf is the first 80 characters of the longest text-family property.
+// snippetRunes is a snippet's length in characters. The cut is on a rune
+// boundary: a cut by byte inside a multibyte sequence made a derived title
+// Postgres refused as invalid UTF-8, and the row with it (#540).
+const snippetRunes = 80
+
+// snippetOf is the first snippetRunes characters of the longest text-family
+// property.
 func snippetOf(ty *vocabulary.Kind, row *erow) string {
 	best := ""
 	for _, name := range ty.PropOrder {
@@ -1017,10 +1064,19 @@ func snippetOf(ty *vocabulary.Kind, row *erow) string {
 		}
 	}
 	best = strings.Join(strings.Fields(best), " ")
-	if len(best) > 80 {
-		return strings.TrimSpace(best[:80])
+	return strings.TrimSpace(truncateRunes(best, snippetRunes))
+}
+
+// truncateRunes is the first n characters of s, cut where a rune starts.
+func truncateRunes(s string, n int) string {
+	seen := 0
+	for i := range s {
+		if seen == n {
+			return s[:i]
+		}
+		seen++
 	}
-	return best
+	return s
 }
 
 // deriveTitle applies the type's display_template; types without one keep

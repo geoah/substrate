@@ -392,6 +392,9 @@ func splitProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, hotProp
 			if !ok {
 				return nil, hot, nil, fmt.Errorf("%w: properties.%s: expected a string", substrate.ErrValidation, name)
 			}
+			if err := storableText(s); err != nil {
+				return nil, hot, nil, fmt.Errorf("%w: properties.%s: %w", substrate.ErrValidation, name, err)
+			}
 			if name == substrate.PropTitle {
 				hot.title = &s
 			} else {

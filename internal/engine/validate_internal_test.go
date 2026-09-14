@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -247,5 +248,74 @@ func TestCoerceBlobRefTakesTheDigestFromTheReadShape(t *testing.T) {
 		if _, err := coerceValue(tc.p, tc.in); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%s: got %v, want it to name %q", tc.name, err, tc.want)
 		}
+	}
+}
+
+// A snippet is 80 CHARACTERS, not bytes: a byte cut that lands inside a
+// multibyte sequence left a partial rune in the derived title, which Postgres
+// refused as invalid UTF-8 (#540). The message that found it has an ellipsis
+// across byte 80.
+func TestSnippetCutsOnARuneBoundary(t *testing.T) {
+	ty := &vocabulary.Kind{
+		PropOrder: []string{"text"},
+		Props:     map[string]*vocabulary.Property{"text": {Name: "text", Datatype: vocabulary.DatatypeText}},
+	}
+	for name, text := range map[string]string{
+		"an ellipsis across byte 80": "RFC doc (still WIP) for fast -det mode. docs.google.com/document/d/1wnCnDf_rPnX…/edit?tab=t.0#heading=…",
+		"multibyte throughout":       strings.Repeat("ü", 79) + "…" + strings.Repeat("ü", 40),
+		"short":                      "under the limit …",
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := snippetOf(ty, &erow{Props: map[string]any{"text": text}})
+			if !utf8.ValidString(got) {
+				t.Fatalf("the snippet is not valid UTF-8: %q", got)
+			}
+			want := text
+			if r := []rune(text); len(r) > snippetRunes {
+				want = string(r[:snippetRunes])
+			}
+			if got != strings.TrimSpace(want) {
+				t.Fatalf("snippet = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// Text Postgres would refuse at the INSERT is refused as a validation problem
+// naming the property, wherever in the value it sits: a NUL in a text
+// property, in a list item, in an object field. Before, the row failed at the
+// INSERT and the caller read "internal error" for its own input (#540).
+func TestCoercePropsRefusesTextNoRowStores(t *testing.T) {
+	ty := &vocabulary.Kind{
+		Identity:  "a.example.com/p/k",
+		PropOrder: []string{"text", "tags", "meta"},
+		Props: map[string]*vocabulary.Property{
+			"text": {Name: "text", Datatype: vocabulary.DatatypeText},
+			"tags": {Name: "tags", Datatype: vocabulary.DatatypeString, Repeated: true},
+			"meta": {Name: "meta", Datatype: vocabulary.DatatypeJSON},
+		},
+	}
+	for name, tc := range map[string]struct {
+		in   map[string]any
+		want string
+	}{
+		"a NUL in a text":         {map[string]any{"text": "a\x00b"}, "props.text: carries a NUL (U+0000)"},
+		"a NUL in a list item":    {map[string]any{"tags": []any{"ok", "b\x00"}}, "props.tags: [1] carries a NUL"},
+		"a NUL in an object leaf": {map[string]any{"meta": map[string]any{"note": "x\x00"}}, "props.meta: note carries a NUL"},
+		"invalid UTF-8":           {map[string]any{"text": "a\xe2\x80"}, "props.text: is not valid UTF-8"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := coerceProps(ty, tc.in)
+			var ve *substrate.ValidationError
+			if !errors.As(err, &ve) {
+				t.Fatalf("err = %v, want a validation error", err)
+			}
+			if len(ve.Problems) != 1 || !strings.Contains(ve.Problems[0], tc.want) {
+				t.Fatalf("problems = %q, want one containing %q", ve.Problems, tc.want)
+			}
+		})
+	}
+	if _, err := coerceProps(ty, map[string]any{"text": "…fine…", "tags": []any{"ü"}, "meta": map[string]any{"k": "v"}}); err != nil {
+		t.Fatalf("ordinary multibyte text is refused: %v", err)
 	}
 }
