@@ -156,10 +156,9 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 		return nil, err
 	}
 	if row == nil || row.DeletedAt != nil || row.Kind != typeProvider {
-		// Nothing seeds a provider: a repository holds none until its owner
-		// writes one, so the row an agent names is ABSENT rather than
-		// misconfigured — and the message says which, and what to do.
-		return nil, fmt.Errorf("%w: llm/provider row %q does not resolve — create it: a row carries the wire, the endpoint and the key, and the llm example bundle ships two ready to key",
+		// The seeded rows are KEYLESS until the owner writes apiKey: a
+		// missing row is still the wrong diagnosis when they deleted one.
+		return nil, fmt.Errorf("%w: llm/provider row %q does not resolve — create it, or key one of the seeded rows (openai, anthropic, gemini)",
 			substrate.ErrValidation, id)
 	}
 	pc := &providerConfig{id: id, pricing: map[string]modelPrice{}}
@@ -245,7 +244,11 @@ func mergeParams(providerID string, defaults, own map[string]any) (llm.Params, e
 		return llm.Params{}, fmt.Errorf("%w: llm/provider row %q: defaults.%w",
 			substrate.ErrValidation, providerID, err)
 	}
-	return llm.Params{Temperature: p.Temperature, MaxTokens: p.MaxTokens}, nil
+	return llm.Params{
+		Temperature:     p.Temperature,
+		MaxTokens:       p.MaxTokens,
+		ReasoningEffort: p.ReasoningEffort,
+	}, nil
 }
 
 // objectRows reads a repeated-object property's stored value: a list of

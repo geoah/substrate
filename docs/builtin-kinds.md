@@ -2,7 +2,8 @@
 
 This page maps the vocabulary this binary ships, package by package: the two
 packages a repository is seeded with, `substrate.reamde.dev/core` and
-`substrate.reamde.dev/llm`, and the sample packages it can import. A kind is named `<authority>/<package>/<name>`;
+`substrate.reamde.dev/llm`, the LLM sample copied onto the repository's own
+authority at registration, and the other sample packages it can import. A kind is named `<authority>/<package>/<name>`;
 the tables give the name, and each heading gives the package as the tree
 spells it, under the placeholder authority an import rewrites. Which door a
 package takes, what an import rewrites and how an upgrade is offered are in

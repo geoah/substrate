@@ -46,8 +46,9 @@ merely note:
   used where kind, vocabulary, authority, changelog or bundle is meant, and
   capability anywhere outside a function's `capabilities` envelope, a
   capability bundle, or a Linux capability.
-- **Examples run on a fresh substrate.** Registration seeds `core` only, so a
-  snippet that touches any other collection installs its bundle first.
+- **Examples run on a fresh substrate.** Registration seeds `core`, `llm`,
+  three keyless provider rows and the LLM sample, so a snippet that touches
+  any other collection installs its bundle first.
   `get -o yaml` output must be directly `apply -f`-able.
 
 ## 3. Facts against code

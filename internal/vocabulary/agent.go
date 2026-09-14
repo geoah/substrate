@@ -3,6 +3,7 @@ package vocabulary
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -54,12 +55,23 @@ var agentBuiltinByIdentity = map[string]string{
 // silently does nothing, so an unrecognized key is a load error. A provider
 // row's `defaults` is validated against the same set at dispatch.
 const (
-	AgentParamTemperature = "temperature"
-	AgentParamMaxTokens   = "maxTokens"
+	AgentParamTemperature     = "temperature"
+	AgentParamMaxTokens       = "maxTokens"
+	AgentParamReasoningEffort = "reasoningEffort"
 )
 
 // AgentParamKeys is the recognized set, in the order the errors name it.
-var AgentParamKeys = []string{AgentParamMaxTokens, AgentParamTemperature}
+var AgentParamKeys = []string{AgentParamMaxTokens, AgentParamReasoningEffort, AgentParamTemperature}
+
+// AgentReasoningEfforts is the reasoning-effort set, weakest first — the UNION
+// of what the wires accept, because one declaration serves all of them and no
+// authored word may be refused here that some wire would have honored. Neither
+// wire takes all seven ("none" and "minimal" are openai's, "max" anthropic's),
+// so the endpoint is what refuses a value its model does not know, exactly as
+// it refuses a temperature it does not accept. The kinds declare this same set
+// as an enum (core/agent.yaml `params`, llm/provider.yaml `defaults`), so a
+// value is refused at the write as well as at the load.
+var AgentReasoningEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"}
 
 // KindRecordPatchRequest is the request type `propose` emits — the one
 // `*request` vocabulary the built-in speaks in this build.
@@ -115,15 +127,15 @@ type Agent struct {
 	Description string
 	// Prompt is the system prompt; the row is the prompt store.
 	Prompt string
-	// Provider is an llm/provider data-record id (`default` or a custom row):
+	// Provider is an llm/provider data-record id (`openai` or a custom row):
 	// WHERE the loop buys completions. Data rows are runtime state, so the
 	// reference resolves at dispatch, never at load.
 	Provider string
 	// Model is WHAT the loop asks that provider for, sent verbatim on every
 	// completion.
 	Model string
-	// Params are this agent's request knobs (temperature, maxTokens); the
-	// provider row's defaults sit under them at dispatch.
+	// Params are this agent's request knobs (temperature, maxTokens,
+	// reasoningEffort); the provider row's defaults sit under them at dispatch.
 	Params map[string]any
 	// Tools lists what the model may call, in declaration order.
 	Tools []AgentTool
@@ -431,8 +443,9 @@ func (l *loader) parseAgent(d Document) *Agent {
 // current models differ on whether a sampling param is even accepted: nil
 // means "do not send one", which is not the same as sending zero.
 type AgentParams struct {
-	Temperature *float32
-	MaxTokens   int
+	Temperature     *float32
+	MaxTokens       int
+	ReasoningEffort string
 }
 
 // ParseAgentParams validates a request-param map and parses it. The set is
@@ -468,6 +481,13 @@ func ParseAgentParams(params map[string]any) (AgentParams, error) {
 				return AgentParams{}, fmt.Errorf("%s: %v — a positive whole number", k, params[k])
 			}
 			out.MaxTokens = int(f)
+		case AgentParamReasoningEffort:
+			s, ok := params[k].(string)
+			if !ok || !slices.Contains(AgentReasoningEfforts, s) {
+				return AgentParams{}, fmt.Errorf("%s: %v — one of %s", k, params[k],
+					strings.Join(AgentReasoningEfforts, ", "))
+			}
+			out.ReasoningEffort = s
 		default:
 			return AgentParams{}, fmt.Errorf("%s is not a request param — one of %s",
 				k, strings.Join(AgentParamKeys, ", "))

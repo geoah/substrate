@@ -130,6 +130,36 @@ func TestAnthropicSendsAskedForParams(t *testing.T) {
 	}
 }
 
+// The neutral reasoningEffort lands on output_config here, not on a top-level
+// key: same declared word, each wire's own spelling.
+func TestAnthropicSendsReasoningEffortOnOutputConfig(t *testing.T) {
+	srv := newAnthropicServer(t, func(w http.ResponseWriter, _ map[string]any) {
+		jsonBody(w, map[string]any{
+			"id": "msg_1", "type": "message", "role": "assistant", "model": "m",
+			"content": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1},
+		})
+	})
+	client := srv.client(t, nil)
+	req := Request{
+		Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+		Params: Params{ReasoningEffort: "high"},
+	}
+	if _, err := client.Complete(context.Background(), req, nil); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	cfg, _ := srv.last["output_config"].(map[string]any)
+	if cfg["effort"] != "high" {
+		t.Fatalf("output_config = %v", srv.last["output_config"])
+	}
+	req.Params = Params{}
+	if _, err := client.Complete(context.Background(), req, nil); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if _, sent := srv.last["output_config"]; sent {
+		t.Fatalf("output_config was sent unasked: %v", srv.last["output_config"])
+	}
+}
+
 func TestAnthropicGroupsConsecutiveToolResultsIntoOneUserTurn(t *testing.T) {
 	srv := newAnthropicServer(t, func(w http.ResponseWriter, _ map[string]any) {
 		jsonBody(w, map[string]any{

@@ -1069,8 +1069,8 @@ func TestAgentLoopKindsResolveInTheLLMPackage(t *testing.T) {
 			t.Fatalf("the retired kind %s still resolves", id)
 		}
 	}
-	// A provider row is DATA of a seeded kind, written by its owner — the kind
-	// resolves on a fresh repository, and no row of it exists there.
+	// A provider row is DATA of a seeded kind. Creation writes three keyless
+	// vendor rows; this put merges onto the seeded openai row.
 	row := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "substrate.reamde.dev/llm/provider", ID: "openai",
 		Properties: map[string]any{"label": "openai", "wire": "openai"},

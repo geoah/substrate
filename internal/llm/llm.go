@@ -135,6 +135,17 @@ type Usage struct {
 type Params struct {
 	Temperature *float32
 	MaxTokens   int
+	// ReasoningEffort is how hard a reasoning model thinks, as the word the
+	// declaration carries: `reasoning_effort` on the openai and azure wires,
+	// `output_config.effort` on the anthropic one. Empty sends nothing, which
+	// is NOT the same as "none" — the gpt-5.6 family applies an effort of its
+	// own to a request that names none and then refuses function tools for it,
+	// so an agent with tools on one of those models needs the word said out
+	// loud. Wires accept different sets (no "none" or "minimal" on anthropic,
+	// no "max" on openai), so the value travels verbatim and a wire that does
+	// not know it refuses the call, the way it refuses a temperature it does
+	// not accept.
+	ReasoningEffort string
 }
 
 // Request is one completion.

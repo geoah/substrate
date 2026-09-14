@@ -28,7 +28,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: readinglist
-  version: 10
+  version: 11
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -303,8 +303,10 @@ data:
     You are the page classifier. Read the page in the first message, decide
     whether it is an article, a tool, or a video, set its class with the
     setclass tool, then hand the page to the curator.
-  provider: default
-  model: claude-opus-5
+  provider: openai
+  model: gpt-5
+  params:
+    reasoningEffort: none
   tools:
     - function: samples.substrate.reamde.dev/readinglist/setclass
   subagents: [samples.substrate.reamde.dev/readinglist/curator]
@@ -335,8 +337,10 @@ data:
     target id. Do not write
     directly. You also carry a stampdigest tool, but under a caller whose emit
     does not name digest it will be refused — propose instead.
-  provider: default
-  model: claude-sonnet-5
+  provider: openai
+  model: gpt-5-mini
+  params:
+    reasoningEffort: none
   tools:
     - function: substrate.reamde.dev/core/propose
     - function: samples.substrate.reamde.dev/readinglist/stampdigest
@@ -366,8 +370,10 @@ data:
     ships, whose id is `latest` — address it by full identity (kind
     samples.substrate.reamde.dev/readinglist/digest plus that id); reads name
     a kind beside the id too.
-  provider: default
-  model: claude-haiku-4-5
+  provider: openai
+  model: gpt-5-mini
+  params:
+    reasoningEffort: none
   tools:
     - function: substrate.reamde.dev/core/query
     - function: substrate.reamde.dev/core/propose

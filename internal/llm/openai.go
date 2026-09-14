@@ -95,6 +95,12 @@ func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(s
 		// unknown field rather than failing the call.
 		oreq.MaxCompletionTokens = req.Params.MaxTokens
 	}
+	// Sent only when the row or the agent named one: a gateway that predates
+	// the key ignores it, but an endpoint that knows it treats an explicit
+	// value as a decision, and "none" is the only way to put tools on a
+	// gpt-5.6 model here — that family reasons by default and refuses
+	// function tools for any effort but none on /v1/chat/completions.
+	oreq.ReasoningEffort = req.Params.ReasoningEffort
 	for _, t := range req.Tools {
 		oreq.Tools = append(oreq.Tools, openai.Tool{
 			Type: openai.ToolTypeFunction,

@@ -430,8 +430,8 @@ object above, so a hand-written document stays short. Nothing serves the
 shorthand back.
 
 Against a concrete pin a bare record id is accepted as the authored short form
-too, and canonicalized to the full path on write, so `provider: default` stores
-as `{ref: substrate.reamde.dev/llm/provider/default}`; unpinned, a bare id
+too, and canonicalized to the full path on write, so `provider: openai` stores
+as `{ref: substrate.reamde.dev/llm/provider/openai}`; unpinned, a bare id
 names no kind and is refused. A path that contradicts its pin is refused naming
 both ends.
 

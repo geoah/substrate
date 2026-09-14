@@ -76,6 +76,12 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request, onDelta fun
 	if req.Params.Temperature != nil {
 		params.Temperature = anthropic.Float(float64(*req.Params.Temperature))
 	}
+	// The neutral word lands on output_config here, not on a top-level key, and
+	// this wire's set is its own: "none" and "minimal" are openai's spellings
+	// and this endpoint refuses them, which is the refusal the loop should see.
+	if req.Params.ReasoningEffort != "" {
+		params.OutputConfig.Effort = anthropic.OutputConfigEffort(req.Params.ReasoningEffort)
+	}
 	for _, t := range req.Tools {
 		params.Tools = append(params.Tools, anthropic.ToolUnionParam{OfTool: &anthropic.ToolParam{
 			Name:        t.Name,

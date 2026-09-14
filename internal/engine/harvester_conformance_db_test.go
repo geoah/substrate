@@ -33,11 +33,13 @@ const (
 	rlPageType   = rlPackage + "/page"
 	convMsgType  = "samples.substrate.reamde.dev/messaging/conversationmessage"
 
-	// The models the shipped agents name on the `default` provider row:
-	// distinct, so one fake server drives the whole chain by model.
-	modelStrong = "claude-opus-5"    // pageclassifier
-	modelMid    = "claude-sonnet-5"  // curator
-	modelCheap  = "claude-haiku-4-5" // weeklyrollup
+	// The models the shipped agents name on the `openai` provider row:
+	// distinct between the nested pair, so one fake server drives the
+	// chain by model. curator and weeklyrollup share gpt-5-mini; the
+	// rollup is scripted only after the nested pair has drained.
+	modelStrong = "gpt-5"      // pageclassifier
+	modelMid    = "gpt-5-mini" // curator
+	modelCheap  = "gpt-5-mini" // weeklyrollup
 
 	exampleDir = "../../samples/readinglist"
 
@@ -201,17 +203,16 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	}
 
 	// Write the row the shipped agents name, pointing at the fake server.
-	// Nothing seeds a provider, so `default` is created here, and it carries
-	// its own endpoint and key because there is no host gateway to inherit.
+	// Creation seeds openai keyless; this put keys it and aims it at the fake.
 	fake := newFakeLLM(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: typeProvider, ID: "default",
+		Kind: typeProvider, ID: "openai",
 		Properties: map[string]any{
-			"label": "default", "wire": "openai",
-			"baseURL": fake.srv.URL, "apiKey": "row-key-default",
+			"label": "openai", "wire": "openai",
+			"baseURL": fake.srv.URL, "apiKey": "row-key-openai",
 		},
 	}); err != nil {
-		t.Fatalf("put the default provider row: %v", err)
+		t.Fatalf("put the openai provider row: %v", err)
 	}
 
 	// --- install the bundle atomically, from the shipped manifests ---------

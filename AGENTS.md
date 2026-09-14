@@ -166,14 +166,20 @@ bin/substratectl --dsn "$DATABASE_URL" repository rebuild <repository>  # replay
 bin/substratectl --dsn "$DATABASE_URL" user reset <repository>   # needs SUBSTRATE_CREDENTIAL_KEY
 ```
 
-**Registration seeds `core` and `llm` and nothing else.** The agent runtime's
+**Registration seeds `core` and `llm`, three keyless provider rows, and the
+LLM sample.** The agent runtime's
 four data kinds are the second seeded package, `substrate.reamde.dev/llm`
 (`provider`, `thread`, `message`, `interaction`), out of core so core is not
 everything ([0077](docs/decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md));
 the `agent` kind stays core's, because a manifest document is a record of a
-core kind whatever package it describes. `tasks` above is a
-SAMPLE package the repository imports, so a walkthrough that reaches for any
-collection outside the seed takes one first: `bin/substratectl import
+core kind whatever package it describes. Creation also writes three keyless
+`llm/provider` rows (`openai`, `anthropic`, `gemini`) and imports the LLM
+sample onto the repository's own authority, so the demo agents are there and
+name `openai`. They refuse at dispatch until that row's `apiKey` is written.
+The openai row defaults `reasoningEffort` to `none` so a gpt-5 agent with
+tools completes (absent is not none on that family). `tasks` is a SAMPLE
+package the repository still imports, so a walkthrough
+that reaches for any collection outside the seed takes one first: `bin/substratectl import
 samples.substrate.reamde.dev/tasks`, the console's Registry page, or `POST
 /api/v1/catalog/{id}/import` (the id is the package, so its slash is
 percent-encoded: `samples.substrate.reamde.dev%2Ftasks`), which are three doors

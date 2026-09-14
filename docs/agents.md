@@ -50,8 +50,10 @@ data:
     You are the page classifier. Read the page in the first message, decide
     whether it is an article, a tool, or a video, set its class with the
     setclass tool, then hand the page to the reading-list agent.
-  provider: default
-  model: anthropic/claude-opus-5
+  provider: openai
+  model: gpt-5
+  params:
+    reasoningEffort: none
   tools:
     - function: samples.substrate.reamde.dev/readinglist/setclass
   subagents: [samples.substrate.reamde.dev/readinglist/curator]
@@ -76,10 +78,15 @@ data:
   `claude-opus-5` on an `anthropic`-wire row.
   The substrate keeps no model table: re-pointing an agent at a cheaper model
   is one word here.
-- optional **`params`**: `{temperature, maxTokens}` for this agent's calls,
-  merged over the provider row's `defaults`. The set is closed, so a knob the
-  loop could not pass on is a load error rather than a line that silently does
-  nothing.
+- optional **`params`**: `{temperature, maxTokens, reasoningEffort}` for this
+  agent's calls, merged over the provider row's `defaults`. The set is closed,
+  so a knob the loop could not pass on is a load error rather than a line that
+  silently does nothing. `reasoningEffort` is one of `none`, `minimal`, `low`,
+  `medium`, `high`, `xhigh`, `max` — the union of what the wires take, so the
+  endpoint refuses one its model does not know. **Absent is not `none`**: a
+  gpt-5.6 model reasons by default and then refuses function tools for any
+  effort but none on chat completions, so an agent with `tools:` on one of
+  those needs `reasoningEffort: none` said out loud.
 - **`tools:`**, the functions the model may invoke (below).
 - **`subagents:`**, sub-agent references (self-reference is a load error).
 - **`budgets:`** bounds one run: `maxTurns` (default 8, max 64),
@@ -373,10 +380,11 @@ pricing:
 
 **Every one of these is declared, not a json blob.** `wire` is an enum of the
 three wires, so a typo is refused at the write; `defaults` is an object of the
-two request knobs there are (`temperature`, `maxTokens`); `headers` and
-`pricing` are repeated objects whose key is a declared field (`name`, `model`),
-and a later row for the same key wins. A map is declarable: a property marked
-`keyed: true` is one, which is how a kind's own `properties` block stays a map.
+three request knobs there are (`temperature`, `maxTokens`, `reasoningEffort`);
+`headers` and `pricing` are repeated objects whose key is a declared field
+(`name`, `model`), and a later row for the same key wins. A map is declarable: a
+property marked `keyed: true` is one, which is how a kind's own `properties`
+block stays a map.
 These two stay lists because each row's key is a value with a name of its own.
 
 **Every row carries its own endpoint and its own key.** There is no host
@@ -398,19 +406,23 @@ rather than mixing two models' distances. `repository reembed` is how their
 replacement is bought, on the box and never over HTTP
 ([there is no LLM configuration](operations.md#there-is-no-llm-configuration)).
 
-**Nothing seeds a provider.** A fresh repository holds no `llm/provider` row at
-all: a row is where the wire, the endpoint and the key live, and a substrate
-cannot invent a key — one shipped without it only postpones the failure to the
-first dispatch while looking configured. An agent naming a row that is not
-there refuses at dispatch and says which row it wanted.
+**Creation seeds three keyless provider rows** — `openai`, `anthropic` and
+`gemini`. A row is where the wire, the endpoint and the key live, and a
+substrate cannot invent a key, so they land without one: dispatch refuses
+until the owner writes `apiKey`. An agent naming a row that is not there
+refuses at dispatch and says which row it wanted.
 
-Every shipped sample agent names `provider: default`, so a repository that
-imports one wants a row at that id. The LLM example (**Registry → Examples**)
-is what ships it: two correctly-shaped keyless rows, `default` on Anthropic's
-wire and `openai` on OpenAI's, which its own agents name too. Import it and
-key one, or write the row yourself as the document below. There are
-no `cheap`/`mid`/`strong` rows: a tier was a model id hiding behind a name, and
-the model is the agent's own word now.
+Every shipped sample agent names `provider: openai`, so a fresh repository's
+demo agents run once that row is keyed. The seeded `openai` row defaults
+`reasoningEffort` to `none` so a gpt-5 agent with tools completes: absent is
+not none, and that family reasons by default then refuses function tools on
+chat completions. Sample agents that carry `tools:` or `subagents:` also
+say the word on their own `params`. The LLM example (**Registry →
+Examples**) is the same closure creation already imported, and it ships the
+same three rows so a later import onto a repository born before the seed
+still has them. Key one, or write another row yourself as the document
+below. There are no `cheap`/`mid`/`strong` rows: a tier was a model id hiding
+behind a name, and the model is the agent's own word now.
 
 ### Registering a provider
 

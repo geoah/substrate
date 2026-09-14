@@ -6,24 +6,16 @@
 # without an upgrade path, and installing it accepts that. Nothing outside
 # this directory declares against it.
 #
-# NOTHING SEEDS A PROVIDER. A repository holds no `llm/provider` row until its
-# owner writes one, because a row is where the wire, the endpoint and the KEY
-# live — and a substrate cannot invent a key. A row shipped without one would
-# only postpone the failure to the first dispatch while looking configured.
+# A new repository is seeded with this bundle (rehomed onto its own
+# authority) and with three keyless llm/provider rows: openai, anthropic,
+# gemini. The agents name `openai`. Key that row's apiKey and they run;
+# point an agent at another row to use a different vendor.
 #
-# So this bundle is the shortcut, and it asks one thing of you afterwards:
-#
-#   1. Install it (Registry → Examples, or `substratectl apply -f`).
-#   2. Data → providers → `default` → Edit, and put your key in `apiKey`.
+#   1. Registration already imported this bundle.
+#   2. Data → providers → `openai` → Edit, and put your key in `apiKey`.
 #      It is secret-typed: it reads back redacted ever after, and writing it
 #      again is how a rotation is done.
-#   3. Agents → `samples.substrate.reamde.dev/llm/substrate` → chat.
-#
-# The Anthropic row's id is `default` because that is the row every shipped
-# agent names, here and in the other samples; its label still says which
-# vendor it is. The `openai` row is the same shape for the other wire. An openai-wire row
-# with an EMPTY baseURL means "the host's configured gateway", which is a real
-# deployment mode and the reason it ships keyless too.
+#   3. Agents → `<authority>/llm/substrate` → chat.
 #
 # This bundle declares NO inputs: nothing here reads a configuration record.
 # The agents name their provider row directly, and the one setup signal (a
@@ -48,7 +40,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: llm
-  version: 16
+  version: 17
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -57,9 +49,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: llm
   description: >-
-    Two provider rows waiting for your API key, and six agents to try them
-    on: chat with your own records, an editor, two judges, and a pair where
-    one agent calls another. Install it, paste one key, chat.
+    Three keyless provider rows and six agents: chat with your records, an
+    editor, two judges, and a pair where one agent calls another. Paste an
+    OpenAI key, chat.
   installs:
     - samples.substrate.reamde.dev/llm/scratchpad
     - samples.substrate.reamde.dev/llm/substrate
@@ -157,8 +149,10 @@ data:
     Reply. Your final message is the prose the owner reads. Keep it short,
     name records by kind and id, and put changes in propose calls, never in
     the reply text. Chat-only turns with no proposal are normal.
-  provider: default
-  model: claude-sonnet-5
+  provider: openai
+  model: gpt-5
+  params:
+    reasoningEffort: none
   tools:
     - function: substrate.reamde.dev/core/query
     - function: substrate.reamde.dev/core/propose
@@ -201,8 +195,10 @@ data:
     scratchpad, invent a short lowercase id. After a write, answer in one
     short line naming the scratchpad id you touched. You cannot write any
     other kind, so do not try.
-  provider: default
-  model: claude-sonnet-5
+  provider: openai
+  model: gpt-5
+  params:
+    reasoningEffort: none
   tools:
     - function: substrate.reamde.dev/core/query
     - function: substrate.reamde.dev/core/write
@@ -258,8 +254,10 @@ data:
     is honest. Reject everything else — you may only materialize scratchpad
     changes, so accepting another kind's change will refuse. Then answer in
     one line: the request id and your verdict.
-  provider: default
-  model: claude-sonnet-5
+  provider: openai
+  model: gpt-5
+  params:
+    reasoningEffort: none
   tools:
     - function: substrate.reamde.dev/core/query
     - function: substrate.reamde.dev/core/write
@@ -320,8 +318,8 @@ data:
        "rationale": "one short sentence"}
 
     Escalate whenever you are unsure: a human reads escalations.
-  provider: default
-  model: claude-sonnet-5
+  provider: openai
+  model: gpt-5
   hiddenFromChat: true
   budgets:
     maxTurns: 2
@@ -342,8 +340,8 @@ data:
   prompt: |
     Summarize what you are given in ONE short sentence. No preamble, no
     bullet points, no closing remark — the sentence alone.
-  provider: default
-  model: claude-haiku-4-5
+  provider: openai
+  model: gpt-5-mini
   hiddenFromChat: true
   budgets:
     maxTurns: 2
@@ -363,8 +361,10 @@ data:
     summarizer sub-agent, then answer in one short line: the summary it
     returned, and one sentence of your own. Always call the sub-agent rather
     than summarizing yourself — the point is to show the call.
-  provider: default
-  model: claude-haiku-4-5
+  provider: openai
+  model: gpt-5-mini
+  params:
+    reasoningEffort: none
   subagents: [samples.substrate.reamde.dev/llm/substrateSummarizer]
   budgets:
     maxTurns: 4

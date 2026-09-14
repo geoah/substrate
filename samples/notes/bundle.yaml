@@ -9,7 +9,7 @@
 #   substratectl function call stats --input '{"text": "hello world"}'
 #
 # The AGENTS need one thing more: an `llm/provider` row at the id they name
-# (`default`), which is what the llm sample ships. Import that one too and
+# (`openai`), which is what the llm sample ships. Import that one too and
 # fill in its key, or the first agent run refuses at dispatch saying which row
 # it wanted. See docs/bundles-catalog.md.
 #
@@ -40,7 +40,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: notes
-  version: 7
+  version: 8
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -51,7 +51,7 @@ data:
   description: >-
     A worked example of the agent loop: one agent calls two functions as tools,
     hands the title to a sub-agent, and saves a note. Its agents need the
-    llm sample imported and one key filled in.
+    seeded openai provider keyed.
   installs:
     - samples.substrate.reamde.dev/notes/note
     - samples.substrate.reamde.dev/notes/stats
@@ -187,8 +187,8 @@ data:
     Reply with the title and nothing else: no quotes, no trailing full stop, no
     preamble, at most six words. Prefer the concrete nouns already in the text
     over a summary of it.
-  provider: default
-  model: claude-haiku-4-5
+  provider: openai
+  model: gpt-5-mini
   budgets:
     maxTurns: 2
     maxToolCalls: 1
@@ -220,8 +220,10 @@ data:
     If no id line was given, invent a short slug from the title: lowercase,
     words joined by hyphens. Reply with the saved id and the title, one short
     sentence, once savenote has returned.
-  provider: default
-  model: claude-sonnet-5
+  provider: openai
+  model: gpt-5
+  params:
+    reasoningEffort: none
   tools:
     - function: samples.substrate.reamde.dev/notes/stats
     - function: samples.substrate.reamde.dev/notes/savenote

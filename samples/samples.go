@@ -20,6 +20,11 @@ import (
 // Authority is the one authority every shipped sample is authored under.
 const Authority = "samples.substrate.reamde.dev"
 
+// LLM is the sample package a new repository is seeded with: the demo
+// agents and the scratchpad they practice on. Provider rows live beside
+// it as data of the seeded llm kind, not of this package.
+const LLM = Authority + "/llm"
+
 // The pattern is part of the contract: a package directory it misses is a
 // sample that silently stops existing in production while every other test
 // still passes. kinds_test.go holds it to the tree on disk.
