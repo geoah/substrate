@@ -10,7 +10,7 @@ import (
 // The 600 block: recurring calendars, played the way Google Calendar delivers
 // them. The substrate stores a recurrence rule and never expands it into rows
 // (decision 0039); occurrences reach a reader two ways, both through the ONE
-// window read (decision 0080): computed from the series' rule, and as
+// window read (decision 0081): computed from the series' rule, and as
 // calendarevent OVERRIDES a connector or a hand wrote for the slots it moved
 // or edited, each naming its series in `recurrenceOf` and the slot it
 // replaces in `originalAt`. These cases are that connector, note for note:
@@ -51,7 +51,7 @@ func init() {
 	registerCase(640, "OCC-01", "The window read: a daily-forever dose beside the calendar",
 		"A dose taken every day forever is ONE schedule record, of a kind this case declares itself, whose "+
 			"RRULE the substrate stores and never expands (decision 0039); the records read with `at` bounded "+
-			"on both ends computes its occurrences in any window (decision 0080) beside the calendar's rows, "+
+			"on both ends computes its occurrences in any window (decision 0081) beside the calendar's rows, "+
 			"a logged dose is a row of its own in the same window and never hides its slot, and a travel "+
 			"week moves seven doses to another timezone with exdates plus rdates, the same mechanics a "+
 			"Google instance override uses.",

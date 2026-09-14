@@ -4,7 +4,7 @@ date: 2026-09-14
 decision-makers: George Antoniadis
 ---
 
-# 0080. The window read computes occurrences, and `recurring` and `override` are core traits
+# 0081. The window read computes occurrences, and `recurring` and `override` are core traits
 
 ## Context and Problem Statement
 

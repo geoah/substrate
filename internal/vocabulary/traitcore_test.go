@@ -7,7 +7,7 @@ import (
 )
 
 // A bare trait name that core declares resolves to core's, even when another
-// package declares a same-named trait (decision 0080): `recurring` moved from
+// package declares a same-named trait (decision 0081): `recurring` moved from
 // the `scheduling` sample into core, and a repository that still holds the
 // sample's copy must keep every bare binding working, shadowed onto core's.
 // Resolution stays package-first, so the sample's own kinds binding its own

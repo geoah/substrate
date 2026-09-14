@@ -458,7 +458,7 @@ with more than rows: every series among the kinds in play (a record of a kind
 binding [`recurring`](data-model.md#traits) whose `recurrence` or `rdates` is
 set) is expanded inside the window, and its occurrences are merged into the
 page beside the plain rows and the overrides, ordered by slot
-([decision 0080](decisions/0080-the-window-read-computes-occurrences-and-recurring-is-core.md)).
+([decision 0081](decisions/0081-the-window-read-computes-occurrences-and-recurring-is-core.md)).
 A slot the series' `exdates` names, or that an `override` row claims through
 `recurrenceOf` and `originalAt` (whatever that row's own `at` and kind), is
 left out; the series row itself is never on the page, it is on the timeline

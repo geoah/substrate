@@ -198,7 +198,7 @@ opt into twice:
   read](api.md#the-window-read): a records list whose filter bounds `at` on
   both ends computes every series' occurrences beside the rows, minus its
   `exdates` and minus every slot an override claims
-  ([decision 0080](decisions/0080-the-window-read-computes-occurrences-and-recurring-is-core.md)).
+  ([decision 0081](decisions/0081-the-window-read-computes-occurrences-and-recurring-is-core.md)).
   Bind `recurring` on a kind of your own and the same read covers it the day
   it binds; bind `override` too and one occurrence can be moved or edited as
   an ordinary record. The `scheduling` sample's **`occurrencelog`** is how a

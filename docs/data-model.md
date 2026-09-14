@@ -632,7 +632,7 @@ what it does instead is compute, inside the one read that already answers
 ends is a [window read](api.md#the-window-read), and it answers with the rows
 in the window and every series' occurrences beside them, minus `exdates` and
 minus the slots overrides claim
-([decision 0080](decisions/0080-the-window-read-computes-occurrences-and-recurring-is-core.md)).
+([decision 0081](decisions/0081-the-window-read-computes-occurrences-and-recurring-is-core.md)).
 Cancelling one occurrence is adding its slot to `exdates`; moving or editing
 one is writing an override, and on a kind that binds both traits the
 computed envelope the read serves is already that override, ready to be put

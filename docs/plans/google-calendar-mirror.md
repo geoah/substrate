@@ -8,7 +8,7 @@ direction (recurrence is not a calendar feature and not a second read), then
 reworked against two independent reviews of that shape, Codex's and a
 Fable-model one (section 9 records what each found and what changed). Section
 2 landed as
-[decision record 0080](../decisions/0080-the-window-read-computes-occurrences-and-recurring-is-core.md),
+[decision record 0081](../decisions/0081-the-window-read-computes-occurrences-and-recurring-is-core.md),
 which supersedes 0043. It is a plan, not a contract: the code that landed is
 the contract, and where the two differ the code is right.
 
