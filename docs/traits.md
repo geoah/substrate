@@ -32,18 +32,18 @@ is the shared question, and each kind keeps its own answer's shape.
 
 ## Declaring one
 
-A shipped example, verbatim
-([samples/scheduling/recurring.yaml](../samples/scheduling/recurring.yaml)):
+A shipped example, verbatim (core's `recurring`, in
+[core.yaml](../kinds/substrate.reamde.dev/core/core.yaml)):
 
 ```yaml
 kind: substrate.reamde.dev/core/trait
 metadata:
-  id: samples.substrate.reamde.dev/scheduling/recurring
+  id: substrate.reamde.dev/core/recurring
 data:
-  authority: samples.substrate.reamde.dev
-  package: scheduling
-  description: "a repeat rule the substrate stores and never expands, with
-    the dates it adds, the dates it skips and the zone a time-of-day rule
+  authority: substrate.reamde.dev
+  package: core
+  description: "a repeat rule the substrate stores and never expands, with the
+    instants it adds, the instants it skips and the zone a time-of-day rule
     resolves in"
   properties:
     recurrence: recurrence
@@ -61,8 +61,18 @@ traits:
 
 and must then declare those four properties with those datatypes (the
 admission checks), plus whatever shape of its own it wants on top:
-`task` marks `rdates` and `exdates` `repeated: true` and adds a due date;
-`calendareventseries` adds its `startsAt` anchor.
+`task` marks `rdates` and `exdates` `repeated: true` and keeps its due date;
+`calendareventseries` keeps its summary and its calendar. A contract may name
+`reference` as a datatype (core's `override` does, for `recurrenceOf`): the
+binding kind's own declaration then carries the pin and the `onDelete`.
+
+Two of core's traits ask for a third: `recurring` and `override` each expect
+`temporal` on the same kind, because a rule with no anchor names no instants
+and an override with no `at` of its own sits nowhere. The loader does not
+refuse the pair (a repository that imported the `scheduling` sample before
+`recurring` moved to core holds exactly that shape, and must keep booting);
+a kind that binds either without `temporal` is simply not on the timeline,
+and no window read computes from it.
 
 Two refinements exist, both introduced by core's `temporal` and covered in
 [the data model](data-model.md#traits): a trait may declare **variants**
@@ -184,13 +194,16 @@ opt into twice:
 
 - **`temporal`** backs the hot columns, so every implementor's time window
   reads are indexed, orderable, and cheap.
-- **`recurring`** feeds the occurrences read: `GET
-  /api/v1/occurrences?from=&to=` computes every implementor's rule instants
-  in a window
-  ([decision 0043](decisions/0043-occurrences-expand-at-read-in-the-api-layer.md)),
-  and its partner **`occurrencelog`** is how a computed slot gets its
-  done-or-skipped mark. Bind `recurring` on a kind of your own and the same
-  read covers it.
+- **`recurring`** and **`override`** feed the [window
+  read](api.md#the-window-read): a records list whose filter bounds `at` on
+  both ends computes every series' occurrences beside the rows, minus its
+  `exdates` and minus every slot an override claims
+  ([decision 0081](decisions/0081-the-window-read-computes-occurrences-and-recurring-is-core.md)).
+  Bind `recurring` on a kind of your own and the same read covers it the day
+  it binds; bind `override` too and one occurrence can be moved or edited as
+  an ordinary record. The `scheduling` sample's **`occurrencelog`** is how a
+  slot gets its done-or-skipped mark: a temporal record of its own in the
+  same window.
 - **`accountconfig`** and **`oauth2`** are how the substrate's OAuth
   facility recognizes a provider account and its client credentials,
   whatever the bundle called its kinds; [bundles](bundles.md) puts them to

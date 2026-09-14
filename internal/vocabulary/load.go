@@ -478,7 +478,11 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 					continue
 				}
 				k := Datatype(fmt.Sprint(pkind))
-				if !builtinKinds[k] {
+				// `reference` is admitted as a CONTRACT datatype: the trait
+				// says the property points at a record, and the binding kind's
+				// own declaration carries the pin and the onDelete (core's
+				// `override.recurrenceOf` is the one that needs it).
+				if !builtinKinds[k] && k != DatatypeReference {
 					if _, ok := g.PropertyTypes[fmt.Sprint(pkind)]; !ok {
 						l.errf("%s: data.properties.%s: unknown property type %q", where, pname, pkind)
 						continue
@@ -2650,6 +2654,13 @@ func (r *Registry) resolvePackage(g *Package) []string {
 				where, p.Prop, p.Cap, p.Datatype, prop.Datatype))
 		}
 	}
+	// The timeline traits EXPECT `temporal` on the same kind (a rule with no
+	// anchor names no instants), but the loader does not refuse a binding
+	// without it: a repository that imported the `scheduling` sample before
+	// `recurring` moved to core holds a series kind bound to the bare name and
+	// no temporal, and refusing it here would park that package at the next
+	// boot. The window read leaves such a kind out (it is not temporal) and
+	// the sample's own upgrade adds the anchor.
 	// The bundle's inputs, after trait bindings resolved (bundle.go).
 	problems = append(problems, r.resolveBundle(g)...)
 	return problems

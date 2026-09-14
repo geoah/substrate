@@ -12,8 +12,13 @@ data:
     reader never has to filter tombstones.
   names:
     singular: calendarevent
+  # `override` (core's) is how one occurrence of a series is moved or edited:
+  # this row points at the series through `recurrenceOf` and names the slot
+  # it replaces in `originalAt`, and the window read subtracts that slot from
+  # the series' expansion. A calendarevent with neither is a plain event.
   traits:
     - temporal(range)
+    - override
   displayTemplate: "{summary}"
   properties:
     # iCalendar's SUMMARY/LOCATION/DESCRIPTION, kept under their own names.
@@ -37,12 +42,24 @@ data:
       type: url
       description: the video-conference join link, when the event carries
         one
-    # Google's originalStartTime: which of the rule's slots this occurrence
-    # replaced, when a single instance was moved. Absent on an instance the
-    # rule placed where it sits.
+    # DEPRECATED: the slot an override replaces is the trait's `originalAt`.
+    # Declared still, because dropping a property a live row may hold is a
+    # narrowing the upgrade refuses.
     originalStartAt:
+      deprecated: true
       type: datetime
-      description: the slot the rule produced before this occurrence was moved
+      description: "deprecated: the slot this occurrence replaces is `originalAt`"
+    # The override pair, core's `override` trait: the series this row
+    # replaces one slot of, and that slot. No cascade: shortening or replacing
+    # a series must not take the hand-written override along.
+    recurrenceOf:
+      type: reference
+      kind: calendareventseries
+      mustExist: true
+      description: the series this occurrence replaces one slot of
+    originalAt:
+      type: datetime
+      description: the slot the rule produced, which this occurrence replaces
     eventType:
       type: string
       description: the provider's event kind — default, outOfOffice, focusTime,
@@ -54,11 +71,15 @@ data:
       mustExist: true
       onDelete: cascade
       description: the calendar this occurrence lives in
+    # DEPRECATED: an occurrence of a series is either computed by the window
+    # read from the series' rule, or an override pointing at it through
+    # `recurrenceOf`. Nothing explodes a series into rows any more.
     series:
+      deprecated: true
       type: reference
       kind: calendareventseries
       mustExist: true
-      description: the recurring definition this occurrence was exploded from
+      description: "deprecated: an override names its series in `recurrenceOf`"
     attendees:
       type: reference
       kind: person

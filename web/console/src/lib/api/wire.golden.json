@@ -243,23 +243,6 @@
   "OAuthStarted": {
     "url": true
   },
-  "Occurrence": {
-    "at": true,
-    "id": true,
-    "kind": true,
-    "log": false,
-    "title": false
-  },
-  "OccurrenceList": {
-    "occurrences": true,
-    "problems": false,
-    "truncated": true
-  },
-  "OccurrenceLog": {
-    "id": true,
-    "kind": true,
-    "status": false
-  },
   "OccurrenceProblem": {
     "id": true,
     "kind": true,
@@ -275,6 +258,7 @@
     "head": true,
     "included": false,
     "matches": false,
+    "problems": false,
     "records": true
   },
   "ProblemDetail": {
@@ -371,6 +355,7 @@
   "SubstrateRecord": {
     "annotations": false,
     "canonicalId": false,
+    "computed": false,
     "createdAt": true,
     "deletedAt": false,
     "finalizers": false,

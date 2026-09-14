@@ -10,12 +10,17 @@ data:
     issue, or proposed by an agent. Status carries the whole lifecycle — a
     proposal waits for the owner, an open task is due, and completing it stamps
     the time by itself.
-  version: 8
+  version: 9
   names:
     singular: task
+  # `recurring` (core's) is the repeat rule seeded off dueAt; `override`
+  # (core's) is how one occurrence of a repeating task is moved or edited: a
+  # task pointing at the series through `recurrenceOf` and naming the slot
+  # it replaces in `originalAt`. The window read computes the rest.
   traits:
     - "temporal(point: dueAt)"
     - recurring
+    - override
   # `title` is the LEGACY alternative, not a second spelling to write: tasks
   # written before `name` existed hold their heading in the built-in title
   # column, and reading it keeps them titled instead of blanking them on their
@@ -72,7 +77,17 @@ data:
       type: datetime
       repeated: true
       description: extra occurrence datetimes beside the rule (iCalendar's
-        RDATE)
+    # The override pair, core's `override` trait: the repeating task this
+    # row replaces one occurrence of, and that occurrence's slot. No cascade:
+    # shortening or replacing the series must not take a hand-moved
+    # occurrence along.
+    recurrenceOf:
+      type: reference
+      kind: task
+      description: the repeating task this one replaces one occurrence of
+    originalAt:
+      type: datetime
+      description: the slot the rule produced, which this task replaces RDATE)
     timezone:
       type: timezone
       description: the IANA zone a time-of-day rule resolves in

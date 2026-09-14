@@ -2,46 +2,76 @@ package substrate
 
 import "time"
 
-// Occurrence is one computed slot of a recurring record (decision 0043): the
-// API derives it from the stored rule at read time. It is not a record — no
-// id of its own, nothing pointing at it, never in the changelog — so a consumer building an
-// agenda merges these with the temporal window query's rows on the source
-// record and the instant.
-type Occurrence struct {
-	// Kind/ID/Title name the recurring record whose rule names this instant.
-	Kind  string    `json:"kind"`
-	ID    string    `json:"id"`
-	Title string    `json:"title,omitempty"`
-	At    time.Time `json:"at"`
-	// Log is the occurrencelog row answering this slot, when one exists.
-	// Absence still means missed or still ahead, never suppressed.
-	Log *OccurrenceLog `json:"log,omitempty"`
+// The window read: a records list whose filter bounds `at` on both ends over
+// temporal kinds. It answers with the rows in the window AND the occurrences
+// it computes from every series among them (decision 0039 stores the rule and
+// never expands it into rows; its successor computes the expansion inside
+// this one read instead of a second one). The API layer does the expanding;
+// the engine answers the three halves below inside one snapshot and holds no
+// expander.
+
+// WindowKey is the position of one item in the window's total order: its
+// slot, then its kind, then its id. A page's cursor names the last item
+// emitted, computed or stored alike, and the next page seeks strictly past it.
+type WindowKey struct {
+	At   time.Time
+	Kind string
+	ID   string
 }
 
-// OccurrenceLog names the log record that marked an occurrence, with the
-// state its flip machine sits in (done or skipped, per decision 0040).
-type OccurrenceLog struct {
-	Kind   string `json:"kind"`
-	ID     string `json:"id"`
-	Status string `json:"status,omitempty"`
+// WindowQuery is the engine's half of a window read.
+type WindowQuery struct {
+	// Filter is the caller's, `at` bound included: the rows honor every arm,
+	// the series candidates every arm but the `at` bound.
+	Filter Filter
+	// From and To are the `at` bound, half-open [From, To).
+	From, To time.Time
+	// Desc walks the window newest-first.
+	Desc bool
+	// First is how many rows to answer past After; the API merges computed
+	// occurrences into them and cuts at the same count.
+	First int
+	// After is the last item the previous page emitted, or nil.
+	After *WindowKey
+	// WithAnnotations and Expand are the list's, applied to the rows.
+	WithAnnotations bool
+	Expand          []string
 }
 
-// OccurrenceProblem reports one recurring record the expansion could not
-// read: a rule too dense for the iteration budget, an unknown timezone, an
-// anchorless rule. The rest of the answer stands; the problem names what it
-// is missing.
+// WindowPage is what the engine answers, all three halves read on one
+// snapshot so a master and its overrides are never seen in different states.
+type WindowPage struct {
+	// Rows are the plain events and overrides after the key, in order; no
+	// series is among them (a series is on the timeline only through its
+	// occurrences). Len is at most First.
+	Rows []*Record
+	// More reports that a row beyond Rows exists in the window, so the
+	// caller's expansion bound is the last row's slot and not To.
+	More bool
+	// Series is every candidate series the filter admits, whole: more than
+	// the budget is an error, never a short list.
+	Series []*Record
+	// Overrides are the rows whose `recurrenceOf` names one of Series and
+	// whose `originalAt` falls in the window, whatever their kind and wherever
+	// their own `at` went: each claims one slot the expansion must skip.
+	Overrides []*Record
+	// Head and Generation are the snapshot's, as on any page.
+	Head       int64
+	Generation string
+	// Included carries the expanded referents of Rows, as on a list page.
+	Included map[string]*Record
+}
+
+// WindowSeriesBudget bounds how many series one window read enumerates. The
+// set must be complete for the page to be correct, so past the budget the
+// read refuses rather than silently drops the series with the earliest slot.
+const WindowSeriesBudget = 10000
+
+// OccurrenceProblem reports one series the expansion could not read: a rule
+// too dense for the iteration budget, an unknown timezone, an anchorless rule.
+// The rest of the page stands; the problem names what it is missing.
 type OccurrenceProblem struct {
 	Kind    string `json:"kind"`
 	ID      string `json:"id"`
 	Message string `json:"message"`
-}
-
-// OccurrenceList is the occurrences read's envelope. Truncated reports that
-// the slot cap cut the answer short; there is no cursor, because a computed
-// occurrence has no stable address to resume from — narrow the window
-// instead.
-type OccurrenceList struct {
-	Occurrences []Occurrence        `json:"occurrences"`
-	Truncated   bool                `json:"truncated"`
-	Problems    []OccurrenceProblem `json:"problems,omitempty"`
 }

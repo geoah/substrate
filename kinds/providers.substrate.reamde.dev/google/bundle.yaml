@@ -1,12 +1,12 @@
 # The Google bundle — the substrate's FIRST real integration, end to end.
 #
 # THREE streams, one account: CONTACTS (the address book), GMAIL (threads and
-# messages) and CALENDAR (calendars and event instances). Each is a separate
-# account toggle, a separate scope, a separate sync function, a separate pair
-# of triggers and a separate slice of connector state, so one stream erroring
-# never stalls another. It composes from the primitive set the way the
-# URL-harvester does (bundle + kind + trait + function + trigger), but adds
-# the two things a real connector needs and the harvester
+# messages) and CALENDAR (calendars, recurring series and events). Each is a
+# separate account toggle, a separate scope, a separate sync function, a
+# separate pair of triggers and a separate slice of connector state, so one
+# stream erroring never stalls another. It composes from the primitive set
+# the way the URL-harvester does (bundle + kind + trait + function +
+# trigger), but adds the two things a real connector needs and the harvester
 # did not: the host OAUTH facility (the oauth2 trait on the config,
 # accountconfig on the account) and the CONNECTOR RUNTIME (contacts through a
 # PEP 723 body that imports google-api-python-client under uv; gmail and
@@ -41,13 +41,13 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: google
-  version: 15
+  version: 16
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
-# package header and the bundle itself): the two config types, the four mirror
-# record types plus the shared emailaddress source, the three sync functions
-# and the batched id migration. No mapping: this package owns no person.
+# package header and the bundle itself): the two config types, the six mirror
+# record types plus the shared emailaddress source and the three sync
+# functions. No mapping: this package owns no person.
 kind: substrate.reamde.dev/core/bundle
 metadata:
   id: providers.substrate.reamde.dev/google
@@ -110,6 +110,7 @@ data:
     - providers.substrate.reamde.dev/google/thread
     - providers.substrate.reamde.dev/google/message
     - providers.substrate.reamde.dev/google/calendar
+    - providers.substrate.reamde.dev/google/series
     - providers.substrate.reamde.dev/google/event
     - providers.substrate.reamde.dev/google/contactssync
     - providers.substrate.reamde.dev/google/gmailsync
@@ -222,7 +223,8 @@ data:
       type: bool
       writer: owner
       displayName: Calendar
-      description: sync this account's Google calendars and their event instances
+      description: sync this account's Google calendars, their recurring series
+        and their events
     # How often the scheduled tick should re-sync this account. An enum so the
     # console renders a fixed choice instead of a free-text box; each value
     # carries a human label, and it is required with a default so the select
@@ -268,20 +270,19 @@ data:
       displayName: Backfill depth
       description: "how far back gmail and calendar backfill on their first
         run; contacts ignores it"
-    # The singleEvents-only switch. The instance list stays singleEvents=true
-    # either way (Google does the expanding); this decides whether the sync
     # DEPRECATED and inert: it switched the calendareventseries rows this
-    # closure no longer writes. Declared still, because dropping a property a
-    # live row may hold is a narrowing the upgrade refuses.
+    # closure no longer writes, and a master is now always a `series` row of
+    # this package's own. Declared still, because dropping a property a live
+    # row may hold is a narrowing the upgrade refuses.
     calendarSeries:
       deprecated: true
       type: bool
       default: true
       writer: owner
       displayName: Series linking
-      description: "deprecated and inert since version 14: this closure writes
-        no series rows at all, and every instance mirror carries its master's
-        recurringEventId, recurrence and originalStartTime"
+      description: "deprecated and inert since version 14: a recurring master
+        is always mirrored, as a `series` row of this package's own, and no
+        switch turns that off"
     # Connector STATE the sync bodies own (writer: connector — only installed
     # bundle code, a sync function, may set these; neither the owner nor
     # the OAuth facility writes them — review-google #2). Two tiers, and the
@@ -2470,7 +2471,8 @@ data:
 # The per-calendar SYNC TOKEN lives here rather than on the account: a
 # `{calendarId: token}` map on one account row would let one calendar's
 # advance skip another's tail, which is exactly the per-stage-cursor bug the
-# github review had to fix.
+# github review had to fix. `syncWalk` names the walk the token was minted
+# under: a token from another walk is undefined to reuse and reads as absent.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/google/calendar
@@ -2524,6 +2526,12 @@ data:
       displayName: Sync token
       description: this calendar's events sync token — stored per calendar,
         never on the account
+    syncWalk:
+      type: string
+      displayName: Sync walk
+      description: "the walk the stored sync token was minted under, stamped
+        once that walk's sweep completes; a token minted under another walk
+        reads as absent"
     syncGeneration:
       type: string
       displayName: Sync generation
@@ -2534,13 +2542,184 @@ data:
       displayName: Raw entry
       description: the calendarList entry as fetched, for provenance
 ---
-# ---- the calendar mirror: one event instance -------------------------------
-# `singleEvents=true`, so every row is a concrete OCCURRENCE. What a recurring
-# instance never carries is its master's rule, so the sync fetches the master
-# by id and writes its lines HERE: `recurringEventId`, `recurrence` and
-# `originalStartTime` all ride this row verbatim, in Google's own spelling,
-# beside the resolved instants. A repository that wants a series record of its
-# own derives one from them.
+# ---- the calendar mirror: one recurring master ------------------------------
+# A Google `Event` carrying `recurrence`, in Google's own shape, binding core's
+# `recurring`: the walk is `singleEvents=false`, so a master is ONE item with
+# its rule, and the records read that bounds `at` on both ends computes its
+# occurrences beside the plain rows (decision 0039 holds: nothing is expanded
+# into rows). A fresh kind rather than a re-shape of `event`, because
+# `event.recurrence` is live as a repeated string and a retype under live rows
+# is a narrowing the upgrade refuses.
+#
+# ONE zone resolves everything about a series — the master's own
+# `start.timeZone` when it loads, else the calendar's, else UTC — and it is
+# written to `timezone`: the read matches `exdates`, `rdates` and an
+# exception's `originalAt` against the rule's slots by EXACT instant, so an
+# EXDATE line and the exception it names must resolve in the same zone or an
+# all-day series doubles every exception.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/google/series
+data:
+  authority: providers.substrate.reamde.dev
+  package: google
+  description: >-
+    One Google recurring master, in Google's own shape: the rule, its EXDATE
+    and RDATE instants, the verbatim recurrence lines and every slot a cancelled
+    exception has spent. Never expanded into rows: a records read that bounds
+    `at` computes its occurrences beside the events that override them.
+  names:
+    singular: series
+  traits:
+    - temporal(range)
+    - recurring
+  displayTemplate: "{summary|eventId}"
+  properties:
+    account:
+      type: reference
+      kind: account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this series was synced from
+    calendar:
+      type: reference
+      kind: calendar
+      onDelete: cascade
+      displayName: Calendar
+      description: the calendar mirror this series lives in
+    calendarId:
+      type: string
+      displayName: Calendar ID
+      description: the Google calendar id this series lives in
+    eventId:
+      type: string
+      displayName: Event ID
+      description: "Google's id for the master — unique per calendar, not
+        globally, so the row id nests the calendar's"
+    icalUID:
+      type: string
+      displayName: iCal UID
+      description: "the iCalendar UID, shared with every exception of the
+        series"
+    syncGeneration:
+      type: string
+      displayName: Sync generation
+      description: the full-read generation this series was last seen in
+    recurrence:
+      type: recurrence
+      displayName: Rule
+      description: "the master's RRULE line, verbatim: `at` is its DTSTART
+        and `endsAt - at` every occurrence's duration"
+    rdates:
+      type: datetime
+      repeated: true
+      displayName: Extra dates
+      description: the master's RDATE instants, resolved in the series' zone
+    exdates:
+      type: datetime
+      repeated: true
+      displayName: Skipped dates
+      description: "the master's EXDATE instants and every cancelled slot,
+        recomputed from both on every master write"
+    timezone:
+      type: timezone
+      displayName: Timezone
+      description: "the one zone the rule, its EXDATE and RDATE lines and
+        its exceptions' original slots resolve in: the master's own, else
+        the calendar's"
+    recurrenceLines:
+      type: string
+      repeated: true
+      displayName: Recurrence lines
+      description: "Google's `recurrence` array verbatim, for provenance and
+        for regenerating the iCalendar exactly"
+    cancelledSlots:
+      type: datetime
+      repeated: true
+      displayName: Cancelled slots
+      description: "the original slot of every cancelled exception Google
+        sent, kept for the series' lifetime: it only grows"
+    status:
+      type: string
+      displayName: Status
+      description: "confirmed or tentative — a cancelled master is deleted,
+        with every exception pointing at it"
+    summary:
+      type: string
+      displayName: Summary
+      description: iCalendar's SUMMARY, the series' title line
+    description:
+      type: text
+      displayName: Description
+      description: iCalendar's DESCRIPTION, as written
+    location:
+      type: string
+      displayName: Location
+      description: iCalendar's LOCATION, as written
+    allDay:
+      type: bool
+      displayName: All day
+      description: whether Google sent a date instead of a dateTime
+    meetingURL:
+      type: url
+      displayName: Meeting link
+      description: hangoutLink, or the first video entry point in conferenceData
+    eventType:
+      type: string
+      displayName: Event type
+      description: "default, outOfOffice, focusTime or workingLocation"
+    transparency:
+      type: string
+      displayName: Transparency
+      description: "opaque (busy) or transparent (free)"
+    visibility:
+      type: string
+      displayName: Visibility
+      description: "default, public, private or confidential"
+    providerUpdatedAt:
+      type: datetime
+      displayName: Updated
+      description: Google's own last-modified instant for the master
+    organizer:
+      type: object
+      displayName: Organizer
+      description: the organizer, as Google sent it
+      fields:
+        address: string
+        name: string
+    attendees:
+      type: object
+      repeated: true
+      displayName: Attendees
+      description: "attendees with the fields a reference cannot carry (responseStatus,
+        optional, resource)"
+      fields:
+        address: string
+        name: string
+        responseStatus: string
+        optional: bool
+        resource: bool
+    raw:
+      type: json
+      displayName: Raw event
+      description: the events.list item as fetched, for provenance
+---
+# ---- the calendar mirror: one event ----------------------------------------
+# A single event, or one MODIFIED EXCEPTION of a series, binding core's
+# `override`: an exception points at its `series` row through `recurrenceOf`
+# and names the slot it replaces in `originalAt` (iCalendar's RECURRENCE-ID),
+# and its row id is `<series row id>_<slot>`, the string the records read
+# gives the occurrence it computes for that slot, so the two share an id in
+# their two kinds. `recurringEventId` and `originalStartTime` ride beside
+# them verbatim. `recurrenceOf` cascades and does not `mustExist`: Google
+# deletes a series' exceptions with it, and an exception may land a page
+# before its master.
+#
+# `startAt`, `endAt` and `recurrence` are DEPRECATED: the instants are the
+# temporal trait's `at`/`endsAt`, and the rule lives on the series. Declared
+# still, because dropping a property a live row holds is a narrowing the
+# upgrade refuses; the sync writes them null and nothing reads them.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/google/event
@@ -2548,11 +2727,14 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   description: >-
-    One Google calendar event, always a concrete occurrence: the sync expands
-    single events, and a recurring instance carries its master's rule, its
-    moved-slot stamp and every attendee's response status verbatim.
+    One Google calendar event: a single event, or one modified exception of
+    a series pointing at the series it overrides and naming the slot it replaces.
+    Every attendee's response status rides it verbatim.
   names:
     singular: event
+  traits:
+    - temporal(range)
+    - override
   displayTemplate: "{summary|eventId}"
   properties:
     account:
@@ -2562,6 +2744,12 @@ data:
       onDelete: cascade
       displayName: Account
       description: the account this event was synced from
+    calendar:
+      type: reference
+      kind: calendar
+      onDelete: cascade
+      displayName: Calendar
+      description: the calendar mirror this event lives in
     calendarId:
       type: string
       displayName: Calendar ID
@@ -2597,15 +2785,15 @@ data:
       displayName: Location
       description: iCalendar's LOCATION, as written
     startAt:
+      deprecated: true
       type: datetime
       displayName: Starts
-      description: the instance start, all-day dates resolved in the event
-        or calendar timezone
+      description: "deprecated: the start is `at`"
     endAt:
+      deprecated: true
       type: datetime
       displayName: Ends
-      description: the instance end, all-day dates resolved in the event or
-        calendar timezone
+      description: "deprecated: the end is `endsAt`"
     allDay:
       type: bool
       displayName: All day
@@ -2614,25 +2802,37 @@ data:
       type: timezone
       displayName: Timezone
       description: the event's own timezone, when it carries one that resolves
+    recurrenceOf:
+      type: reference
+      kind: series
+      onDelete: cascade
+      displayName: Series
+      description: "the series this event overrides one occurrence of; absent
+        on a single event"
+    originalAt:
+      type: datetime
+      displayName: Original slot
+      description: "the slot the series' rule produced that this event replaces,
+        resolved in the series' zone (iCalendar's RECURRENCE-ID)"
     recurringEventId:
       type: string
       displayName: Series ID
-      description: the master event id when this instance was exploded from
-        a series
+      description: "Google's id for the master, verbatim, when this event
+        is an exception of a series"
     # A string, not a datetime: the mirror keeps what Google sent, which is a
-    # date on an all-day series.
+    # date on an all-day series; `originalAt` is the resolved instant.
     originalStartTime:
       type: string
       displayName: Original start
-      description: "the slot the rule produced before this instance was moved,
-        as Google sent it (a dateTime, or a date on an all-day series)"
+      description: "the slot the rule produced, as Google sent it (a dateTime,
+        or a date on an all-day series)"
     recurrence:
+      deprecated: true
       type: string
       repeated: true
       displayName: Recurrence
-      description: "the master's RRULE, EXDATE and RDATE lines, verbatim:
-        the sync fetches the master and writes them onto every instance of
-        it"
+      description: "deprecated: the rule lives on the series row this event's
+        `recurrenceOf` names"
     meetingURL:
       type: url
       displayName: Meeting link
@@ -2695,24 +2895,27 @@ data:
   package: google
   description: >-
     Sync a Google account's calendars: drain each calendar's events on its
-    own sync token and mirror the calendars, the events and every attendee
-    address under this package's own kinds.
+    own sync token and mirror the calendars, the recurring series, the events
+    and every attendee address under this package's own kinds.
   runtime: python
   timeout: PT30S
   permissions:
     writes:
       - providers.substrate.reamde.dev/google/calendar
+      - providers.substrate.reamde.dev/google/series
       - providers.substrate.reamde.dev/google/event
       - providers.substrate.reamde.dev/google/emailaddress
       - providers.substrate.reamde.dev/google/account
-    # The calendar mirror holds each calendar's own sync token; the event
-    # mirror drives the sweep, and is read to prove a row exists before
-    # retracting it: every delta carries `cancelled` entries for events this
-    # window never stored, and deleting one that was never written is
-    # ErrNotFound and would fail the whole delivery.
+    # The calendar mirror holds each calendar's own sync token; the series
+    # and event mirrors drive the sweep, hand a master its stored zone and
+    # cancelled slots, and are read to prove a row exists before retracting
+    # it: every delta carries `cancelled` entries for events this repository
+    # never stored, and deleting one that was never written is ErrNotFound
+    # and would fail the whole delivery.
     reads:
       kinds:
         - providers.substrate.reamde.dev/google/calendar
+        - providers.substrate.reamde.dev/google/series
         - providers.substrate.reamde.dev/google/event
       budgets:
         calls: 256
@@ -2734,20 +2937,32 @@ data:
     that fails leaves the previous token standing and the whole delta re-reads
     next run: a sync token is all or nothing.
 
-    A 410 GONE — and only a 410 — means the token died. That drops to a
-    WINDOWED full re-read of that ONE calendar under a fresh generation,
-    followed by a sweep scoped to the same window, which is what turns the
-    deletes a full read cannot tombstone into actual retractions.
+    A 410 GONE — and only a 410 — means the token died. That drops to a full
+    re-read of that ONE calendar under a fresh generation, followed by a sweep
+    of the same calendar (its event rows at or above the floor, EVERY one of
+    its series rows) retracting what the generation did not stamp, which is
+    what turns the deletes a full read cannot tombstone into retractions.
 
-    MIRRORS ONLY. The instance list stays singleEvents=true, so Google keeps
-    doing the expanding and overrides and cancellations behave exactly as they
-    did. A recurring instance carries its master's `recurringEventId` and
-    Google's own `originalStartTime`, and the master's `recurrence` lines are
-    fetched by id (once per delivery, cached in the cursor) and written
-    verbatim onto every instance of it, because the rule exists nowhere else.
-    Nothing here writes a kind this package does not own
-    (docs/decisions/0049): what a calendar means to the repository is its own
-    vocabulary, reached by a mapping it declares.
+    A COPY OF THE CALENDAR, in Google's own model. The walk is
+    singleEvents=false: a recurring master is one `series` row carrying its
+    rule, a modified exception is an `event` row pointing at it through
+    `recurrenceOf` and naming its slot in `originalAt`, a cancelled exception
+    is a slot added to the series' `cancelledSlots` (and so to its `exdates`),
+    and a plain event is an `event` row. Nothing is expanded here: the
+    records read computes the occurrences (decision 0039), so no horizon
+    exists and a master exploded to 2099 costs one row. Nothing here writes a
+    kind this package does not own (docs/decisions/0049).
+
+    THE FIRST RUN UNDER THIS WALK. A sync token minted under singleEvents=true
+    is undefined to reuse, and the instance rows that walk wrote would never
+    be re-stamped. Each calendar mirror carries `syncWalk`, stamped once this
+    walk's sweep completes; a token without it reads as absent, so that run is
+    a full read under a fresh generation and its sweep is wider, once: every
+    event row carrying `recurringEventId` and no `recurrenceOf` is a legacy
+    instance and is retracted at ANY date, below the floor too, or its
+    master's computed past would double it; and every legacy plain row the
+    read never re-fetches (below the floor, `startAt` and no `at`) is moved
+    onto `at`/`endsAt`, so the archive enters a window read.
 
     Per-account isolation (F2/F3): the per-account drain is try/except; a
     failure stamps THAT account's rollup syncStatus "erroring: <reason>" once
@@ -2766,6 +2981,7 @@ data:
     ACCOUNT_TYPE = AUTHORITY + "/account"
     ADDRESS_TYPE = AUTHORITY + "/emailaddress"
     CALENDAR_TYPE = AUTHORITY + "/calendar"
+    SERIES_TYPE = AUTHORITY + "/series"
     EVENT_TYPE = AUTHORITY + "/event"
 
     CAL_API = "https://www.googleapis.com"
@@ -2774,19 +2990,23 @@ data:
     LIST_PATH = "/calendar/v3/users/me/calendarList"
 
     # The initial query parameters, PINNED in one place: an incremental call
-    # must repeat them exactly or Google 400s the request.
-    EVENT_PARAMS = {"singleEvents": "true", "showDeleted": "true",
+    # must repeat them exactly or Google 400s the request. singleEvents=false
+    # IS the walk: a master is one item carrying its rule, so a full read
+    # takes timeMin alone and no ceiling, because nothing is expanded and so
+    # nothing can page forever.
+    EVENT_PARAMS = {"singleEvents": "false", "showDeleted": "true",
                     "maxResults": 250}
+    # The walk a calendar's sync token was minted under, stamped on its
+    # mirror once the sweep completes. A token minted under any other walk
+    # (the instance walk this one replaced) reads as absent.
+    WALK = "masters"
+    # A slot inside a row id: UTC, basic format, second grain — the spelling
+    # the records read gives a computed occurrence, so an exception's row and
+    # the occurrence it replaces share one id string.
+    SLOT_FORMAT = "%Y%m%dT%H%M%SZ"
     CALENDAR_PAGE = 250
     SWEEP_PAGE = 200
-    # A full read never reaches past a year ahead: a calendar with a recurring
-    # event exploded to 2099 would otherwise page forever.
-    HORIZON_DAYS = 365
     REASON_MAX = 200
-    # How many fetched rules ride in the cursor, which is checkpointed on
-    # every page: past the cap a master is fetched again on the next page,
-    # which costs one call and never correctness.
-    MASTER_CACHE = 500
     BACKFILL_DAYS = {"none": 0, "last30d": 30, "last90d": 90, "last1y": 365}
     # The RFC 5322 dot-atom production, the same one gmailsync uses and for
     # the same reason: `emailaddress.address` is an `email`-kind property and
@@ -2799,6 +3019,14 @@ data:
     _RE_ADDR = re.compile(
         r"^" + _ATEXT + r"(?:\." + _ATEXT + r")*@"
         + _LABEL + r"(?:\." + _LABEL + r")+$")
+    # The item fields both mirrors copy under their own names.
+    _STRINGS = (("iCalUID", "icalUID"), ("summary", "summary"),
+                ("description", "description"), ("location", "location"),
+                ("eventType", "eventType"), ("transparency", "transparency"),
+                ("visibility", "visibility"))
+    # The instance walk's properties, deprecated: written null so a legacy
+    # row stops carrying a second, stale start beside `at`.
+    _RETIRED = {"startAt": None, "endAt": None, "recurrence": None}
 
 
     class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -2863,39 +3091,6 @@ data:
         return "/calendar/v3/calendars/%s/events" % urllib.parse.quote(cid, safe="")
 
 
-    def _master_path(cid, mid):
-        # events.get: a recurring MASTER never appears in a singleEvents list,
-        # so the only way to its `recurrence` lines is by id.
-        return "%s/%s" % (_events_path(cid), urllib.parse.quote(mid, safe=""))
-
-
-    def _rules(host, token, cid, mid, cache):
-        """The master's verbatim recurrence lines, once per delivery.
-
-        The rule is the one thing an instance does not carry, and it is this
-        package's to mirror: nothing else has the token. The cache rides in the
-        cursor and clears per calendar, so a rule edited at Google lands on
-        whichever later delivery carries an instance of it, which is eventual
-        consistency without a second sync token to expire."""
-        if mid in cache:
-            return cache[mid]
-        lines = []
-        try:
-            master = _get(token, _master_path(cid, mid))
-            lines = [str(x) for x in (master.get("recurrence") or [])]
-        except urllib.error.HTTPError as e:
-            # A master the instance names but the API will not hand over is one
-            # missing rule, not a failed delivery: the instances still sync.
-            # Anything but gone-or-forbidden still raises, because a 401 is the
-            # dead grant every phase surfaces.
-            if _status(e) not in (403, 404, 410):
-                raise
-            host.log("google-calendar: master %s of %s unreadable (HTTP %s), "
-                     "its instances sync without the rule" % (mid, cid, _status(e)))
-        cache[mid] = lines
-        return lines
-
-
     def _calendar_id(host, aid, cid):
         return host.ids.external("gcal-calendar", aid, cid)
 
@@ -2907,6 +3102,20 @@ data:
         # id migration exists to undo. The calendar's own derived id is the
         # account component of the event's.
         return host.ids.external("gcal-event", cref, eid)
+
+
+    def _series_id(host, cref, mid):
+        return host.ids.external("gcal-series", cref, mid)
+
+
+    def _slot(stamp):
+        return _parse(stamp).astimezone(_dt.timezone.utc).strftime(SLOT_FORMAT)
+
+
+    def _exception_id(sref, slot):
+        # `<series row id>_<slot>`: the id the records read computes for
+        # the occurrence this exception replaces.
+        return "%s_%s" % (sref, _slot(slot))
 
 
     def _address_id(host, aid, addr):
@@ -2979,13 +3188,11 @@ data:
         params = dict(EVENT_PARAMS)
         token = cur.get("syncToken") or ""
         if token:
-            # Google refuses timeMin/timeMax beside a syncToken, and every
-            # other parameter must repeat the initial request exactly.
+            # Google refuses timeMin beside a syncToken, and every other
+            # parameter must repeat the initial request exactly.
             params["syncToken"] = token
-        else:
-            if cur.get("floor"):
-                params["timeMin"] = cur["floor"]
-            params["timeMax"] = cur.get("ceil") or ""
+        elif cur.get("floor"):
+            params["timeMin"] = cur["floor"]
         if cur.get("pageToken"):
             params["pageToken"] = cur["pageToken"]
         return params
@@ -3034,9 +3241,20 @@ data:
         return ""
 
 
+    def _verbatim(item):
+        original = item.get("originalStartTime") or {}
+        return str(original.get("dateTime") or original.get("date") or "")
+
+
+    def _own_zone(item):
+        start, end = item.get("start") or {}, item.get("end") or {}
+        return (_zone_name(start.get("timeZone"))
+                or _zone_name(end.get("timeZone")))
+
+
     def _ical_instant(value, zone):
         # iCalendar's own spellings, all three: 20260805T130000Z (UTC),
-        # 20260805T130000 (local to the line's TZID, or the calendar's zone)
+        # 20260805T130000 (local to the line's TZID, or the series' zone)
         # and 20260805 (an all-day series' date).
         text = str(value or "").strip()
         if text.endswith("Z"):
@@ -3049,11 +3267,13 @@ data:
         return _iso(stamp.replace(tzinfo=zone))
 
 
-    def _ical_dates(lines, keyword, default_zone):
-        """Every datetime an EXDATE or RDATE line carries, as RFC3339 UTC.
+    def _ical_dates(host, lines, keyword, default_zone):
+        """Every instant an EXDATE or RDATE line carries, as RFC3339 UTC.
         Both forms Google sends are read (`EXDATE;TZID=Europe/London:
         20260805T130000` and `EXDATE:20260805T130000Z`), with
-        comma-separated values, over any number of lines."""
+        comma-separated values, over any number of lines. A VALUE=PERIOD
+        entry names a span, which a datetime cannot hold: logged and
+        skipped, never guessed at."""
         out = []
         for line in lines or []:
             head, sep, values = str(line).strip().partition(":")
@@ -3062,11 +3282,18 @@ data:
             params = head.split(";")
             if params[0].strip().upper() != keyword:
                 continue
-            zone = default_zone
+            zone, period = default_zone, False
             for param in params[1:]:
                 name, _, value = param.partition("=")
-                if name.strip().upper() == "TZID":
-                    zone = _zone(value.strip())
+                name, value = name.strip().upper(), value.strip()
+                if name == "TZID":
+                    zone = _zone(value)
+                elif name == "VALUE" and value.upper() == "PERIOD":
+                    period = True
+            if period:
+                host.log("google-calendar: %s in PERIOD form is not an "
+                         "instant, skipped: %s" % (keyword, line))
+                continue
             for value in values.split(","):
                 stamp = _ical_instant(value, zone)
                 if stamp and stamp not in out:
@@ -3074,50 +3301,46 @@ data:
         return out
 
 
-    def _event_props(host, aid, cid, item, cal_zone, generation):
-        eid = str(item.get("id") or "")
+    def _rrule(lines):
+        # The one RRULE line, verbatim: the `recurrence` datatype admits the
+        # prefix and the read strips it. Absent on an RDATE-only master.
+        for line in lines or []:
+            head = str(line).strip().partition(":")[0]
+            if head.split(";")[0].strip().upper() == "RRULE":
+                return str(line).strip()
+        return ""
+
+
+    def _union(*lists):
+        out = []
+        for values in lists:
+            for value in values or []:
+                value = str(value or "")
+                if value and value not in out:
+                    out.append(value)
+        return sorted(out)
+
+
+    def _item_props(aid, cid, cref, item, zone, tzname, generation):
+        """What a master, an exception and a plain event share. EVERY optional
+        property is written, None where the item lacks it: a put merges and
+        only a null deletes, so this is what makes a field cleared at Google
+        clear on the mirror."""
         start, end = item.get("start") or {}, item.get("end") or {}
-        tzname = (_zone_name(start.get("timeZone"))
-                  or _zone_name(end.get("timeZone")))
-        zone = _zone(tzname) if tzname else cal_zone
-        props = {"account": aid, "calendarId": cid, "eventId": eid,
+        props = {"account": aid, "calendar": cref, "calendarId": cid,
+                 "eventId": str(item.get("id") or ""),
                  "syncGeneration": generation, "raw": item,
                  "allDay": bool(start.get("date")),
-                 "status": str(item.get("status") or "confirmed")}
-        for src, dst in (("iCalUID", "icalUID"), ("summary", "summary"),
-                         ("description", "description"),
-                         ("location", "location"),
-                         ("recurringEventId", "recurringEventId"),
-                         ("eventType", "eventType"),
-                         ("transparency", "transparency"),
-                         ("visibility", "visibility")):
-            if item.get(src):
-                props[dst] = str(item[src])
-        if tzname:
-            props["timezone"] = tzname
-        # The mirror keeps Google's own value, whatever shape it sent (a date
-        # on an all-day series). Verbatim provenance is the mirror's job, and
-        # a repository that wants a resolved instant derives one from it.
-        original = item.get("originalStartTime") or {}
-        verbatim = str(original.get("dateTime") or original.get("date") or "")
-        if verbatim:
-            props["originalStartTime"] = verbatim
-        if item.get("recurrence"):
-            props["recurrence"] = [str(r) for r in item["recurrence"]]
+                 "status": str(item.get("status") or "confirmed"),
+                 "timezone": tzname or None,
+                 "at": _instant(start, zone) or None,
+                 "endsAt": _instant(end, zone) or None,
+                 "meetingURL": _meeting_url(item) or None,
+                 "organizer": _party(item.get("organizer"))}
+        for src, dst in _STRINGS:
+            props[dst] = str(item[src]) if item.get(src) else None
         updated = _parse(item.get("updated"))
-        if updated is not None:
-            props["providerUpdatedAt"] = _iso(updated)
-        link = _meeting_url(item)
-        if link:
-            props["meetingURL"] = link
-        starts, ends = _instant(start, zone), _instant(end, zone)
-        if starts:
-            props["startAt"] = starts
-        if ends:
-            props["endAt"] = ends
-        organizer = _party(item.get("organizer"))
-        if organizer:
-            props["organizer"] = organizer
+        props["providerUpdatedAt"] = _iso(updated) if updated is not None else None
         attendees = []
         for raw in item.get("attendees") or []:
             party = _party(raw)
@@ -3130,9 +3353,8 @@ data:
             if raw.get("resource"):
                 party["resource"] = True
             attendees.append(party)
-        if attendees:
-            props["attendees"] = attendees
-        return props, starts, ends, _instant(original, zone), organizer, attendees
+        props["attendees"] = attendees or None
+        return props
 
 
     def _valid(party):
@@ -3140,11 +3362,26 @@ data:
         return addr if _RE_ADDR.match(addr) else ""
 
 
+    def _rows(host, kind, ids):
+        """The stored rows of one kind by id, as `{id: record}`: one list
+        call per 200 ids, never a get per item."""
+        out = {}
+        ids = sorted({i for i in ids if i})
+        for start in range(0, len(ids), 200):
+            chunk = ids[start:start + 200]
+            page = host.list(filter={"kinds": [kind], "ids": chunk},
+                             first=len(chunk))
+            for ent in page.get("records") or []:
+                out[str(ent.get("id") or "")] = ent
+        return out
+
+
     def _live(host, types, ids):
         """Which of these rows actually EXIST, as a set of `type|id`. Deleting
         a row that was never written is ErrNotFound and fails the WHOLE
         delivery — and every delta carries `cancelled` entries for events this
-        window never stored. One list call per 200 ids, both types at once."""
+        repository never stored. One list call per 200 ids, all types at
+        once."""
         found = set()
         ids = sorted({i for i in ids if i})
         for start in range(0, len(ids), 200):
@@ -3156,23 +3393,76 @@ data:
         return found
 
 
-    def _stage_events(host, token, aid, cid, cref, items, cal_zone, cur):
+    def _exceptions_of(host, sref):
+        """Every live event row pointing at one series through
+        `recurrenceOf`, paged: what a cancelled master takes with it."""
+        out, after = [], None
+        while True:
+            page = host.records.list(EVENT_TYPE,
+                                     where={"recurrenceOf": {"eq": sref}},
+                                     first=SWEEP_PAGE, after=after)
+            for ent in page.get("records") or []:
+                if ent.get("id"):
+                    out.append(str(ent["id"]))
+            after = page.get("cursor") or None
+            if not after:
+                return out
+
+
+    def _stage_events(host, aid, cid, cref, items, cal_tz, cur):
         """Stage one events page IN ORDER: the addresses first (a reference
         target must exist when the row referencing it applies), then the
-        deletes a delta's `cancelled` entries mean, then the puts."""
+        deletes the page's `cancelled` entries mean, then the series, then
+        the events."""
         generation = cur.get("generation") or ""
-        addresses, drops, keeps = {}, [], []
+        cal_zone = _zone(cal_tz or "UTC")
+        masters, exceptions, cancelled, gone, singles = {}, [], [], [], []
         for item in items:
             eid = str(item.get("id") or "")
             if not eid:
                 continue
-            if str(item.get("status") or "") == "cancelled":
-                drops.append(eid)
-                continue
-            parsed = _event_props(host, aid, cid, item, cal_zone, generation)
-            keeps.append((eid,) + parsed)
-            props, _, _, _, organizer, attendees = parsed
-            for party in ([organizer] if organizer else []) + attendees:
+            dead = str(item.get("status") or "") == "cancelled"
+            if item.get("recurringEventId") and _verbatim(item):
+                (cancelled if dead else exceptions).append(item)
+            elif dead:
+                gone.append(eid)
+            elif item.get("recurrence"):
+                masters[eid] = item
+            else:
+                singles.append(item)
+
+        # Every series this page touches and what the mirror holds of it —
+        # the zone it resolved in, its verbatim lines, the slots spent so far
+        # — in one list call per 200 rather than a get per item. A cancelled
+        # entry without a master id may itself be a master: Google's
+        # tombstone does not say, so its series row is looked up beside its
+        # event row. ONE zone per series: the master's own when it is on
+        # this page, else the one its stored row resolved in, else the
+        # calendar's, else UTC.
+        touched = set(masters) | set(gone)
+        touched |= {str(x["recurringEventId"]) for x in exceptions + cancelled}
+        srefs = {mid: _series_id(host, cref, mid) for mid in touched}
+        stored = _rows(host, SERIES_TYPE, srefs.values())
+        zones = {}
+        for mid in touched:
+            held = (stored.get(srefs[mid]) or {}).get("properties") or {}
+            if mid in masters:
+                name = _own_zone(masters[mid]) or cal_tz
+            else:
+                name = _zone_name(held.get("timezone")) or cal_tz
+            zones[mid] = (name, _zone(name) if name else _dt.timezone.utc)
+        spent = {}
+        for item in cancelled:
+            mid = str(item["recurringEventId"])
+            slot = _instant(item.get("originalStartTime"), zones[mid][1])
+            if slot:
+                spent.setdefault(mid, []).append(slot)
+
+        addresses = {}
+        for item in list(masters.values()) + exceptions + singles:
+            parties = [_party(item.get("organizer"))]
+            parties += [_party(raw) for raw in item.get("attendees") or []]
+            for party in parties:
                 addr = _valid(party)
                 if not addr:
                     continue
@@ -3185,32 +3475,97 @@ data:
                 props["displayName"] = addresses[addr]["name"]
             host.effects.put(ADDRESS_TYPE, _address_id(host, aid, addr),
                              properties=props)
-        # A cancellation RETRACTS rather than tombstones: a reader never
-        # filters cancelled events. Only the rows that are actually there,
-        # because deleting one that was never written is ErrNotFound and
-        # fails the whole delivery.
-        refs = [_event_id(host, cref, eid) for eid in drops]
-        live = _live(host, (EVENT_TYPE,), refs)
-        for eref in refs:
-            if ("%s|%s" % (EVENT_TYPE, eref)) in live:
-                host.effects.delete(EVENT_TYPE, eref)
-        # THE RULE, onto the instance mirror. An instance carries its
-        # master's id but never its recurrence, so each distinct master is
-        # fetched once per delivery and its lines are written verbatim onto
-        # every instance of it: a repository that wants a series record of its
-        # own derives one from this, and nothing here writes a kind it does
-        # not own (docs/decisions/0049).
-        cache = dict(cur.get("masters") or {})
-        for eid, props, starts, ends, original, organizer, attendees in keeps:
-            mid = str(props.get("recurringEventId") or "")
-            if mid:
-                lines = _rules(host, token, cid, mid, cache)
-                if lines:
-                    props["recurrence"] = lines
-            eref = _event_id(host, cref, eid)
-            host.effects.put(EVENT_TYPE, eref, properties=props)
-        cur["masters"] = dict(sorted(cache.items())[:MASTER_CACHE])
-        return len(keeps), len(drops)
+
+        # A cancellation RETRACTS rather than tombstones, and only a row that
+        # is actually there, because deleting one that was never written is
+        # ErrNotFound and fails the whole delivery. A cancelled master takes
+        # every exception pointing at it: the cascade would collect them at
+        # the next GC, and the explicit delete keeps the timeline right in
+        # between.
+        probes = set()
+        for eid in gone:
+            probes.add((EVENT_TYPE, _event_id(host, cref, eid)))
+            probes.add((SERIES_TYPE, srefs[eid]))
+        for item in cancelled:
+            mid = str(item["recurringEventId"])
+            slot = _instant(item.get("originalStartTime"), zones[mid][1])
+            if slot:
+                probes.add((EVENT_TYPE, _exception_id(srefs[mid], slot)))
+        live = _live(host, (EVENT_TYPE, SERIES_TYPE), [ref for _, ref in probes])
+        for kind, ref in sorted(probes):
+            if ("%s|%s" % (kind, ref)) not in live:
+                continue
+            if kind == SERIES_TYPE:
+                for eref in _exceptions_of(host, ref):
+                    host.effects.delete(EVENT_TYPE, eref)
+            host.effects.delete(kind, ref)
+
+        # The series: every master on the page, its `exdates` recomputed from
+        # its EXDATE lines and every slot ever cancelled, so a removed EXDATE
+        # is honoured and a cancellation is never lost; and a SHELL for a
+        # series whose exception was cancelled before its master landed. The
+        # master's own write completes the shell, because a put merges.
+        for mid in sorted(set(masters) | set(spent)):
+            sref = srefs[mid]
+            held = (stored.get(sref) or {}).get("properties") or {}
+            name, zone = zones[mid]
+            slots = _union(held.get("cancelledSlots"), spent.get(mid))
+            master = masters.get(mid)
+            if master is None:
+                lines = [str(x) for x in held.get("recurrenceLines") or []]
+                props = {"account": aid, "calendar": cref, "calendarId": cid,
+                         "eventId": mid, "cancelledSlots": slots,
+                         "exdates": _union(
+                             _ical_dates(host, lines, "EXDATE", zone), slots)}
+            else:
+                lines = [str(x) for x in master.get("recurrence") or []]
+                props = _item_props(aid, cid, cref, master, zone, name, generation)
+                props.update({
+                    "recurrence": _rrule(lines) or None,
+                    "recurrenceLines": lines,
+                    "rdates": _ical_dates(host, lines, "RDATE", zone) or None,
+                    "exdates": _union(
+                        _ical_dates(host, lines, "EXDATE", zone), slots) or None,
+                    "cancelledSlots": slots or None})
+            host.effects.put(SERIES_TYPE, sref, properties=props)
+
+        # The events: an exception at `<series>_<slot>`, pointing at its
+        # series and naming the slot it replaces in the SERIES' zone, its own
+        # instants in its own; a plain event at its derived id.
+        skipped = 0
+        for item in exceptions:
+            mid = str(item["recurringEventId"])
+            sref = srefs[mid]
+            slot = _instant(item.get("originalStartTime"), zones[mid][1])
+            if not slot:
+                host.log("google-calendar: exception %s of %s names no slot "
+                         "(%r), skipped" % (item.get("id"), mid, _verbatim(item)))
+                skipped += 1
+                continue
+            own = _own_zone(item)
+            props = _item_props(aid, cid, cref, item,
+                                _zone(own) if own else zones[mid][1], own,
+                                generation)
+            props.update(_RETIRED)
+            props.update({"recurrenceOf": sref, "originalAt": slot,
+                          "recurringEventId": mid,
+                          "originalStartTime": _verbatim(item)})
+            host.effects.put(EVENT_TYPE, _exception_id(sref, slot),
+                             properties=props)
+        for item in singles:
+            own = _own_zone(item)
+            props = _item_props(aid, cid, cref, item,
+                                _zone(own) if own else cal_zone, own, generation)
+            props.update(_RETIRED)
+            props.update({"recurrenceOf": None, "originalAt": None,
+                          "recurringEventId":
+                              str(item.get("recurringEventId") or "") or None,
+                          "originalStartTime": _verbatim(item) or None})
+            host.effects.put(EVENT_TYPE,
+                             _event_id(host, cref, str(item["id"])),
+                             properties=props)
+        kept = len(masters) + len(exceptions) + len(singles) - skipped
+        return kept, len(gone) + len(cancelled), skipped
 
 
     def _erroring(host, acct, reason):
@@ -3235,11 +3590,11 @@ data:
     def _fresh(queue):
         return {"phase": "plan", "queue": queue, "pageToken": "", "cals": [],
                 "dead": [], "started": False, "syncToken": "",
-                "generation": "", "calTz": "", "floor": "", "ceil": "",
-                "after": "", "anchor": "", "sweep": False, "records": 0,
-                # The recurrence lines this delivery already fetched, keyed by
-                # master id (unique per CALENDAR, so it clears per calendar).
-                "masters": {},
+                "generation": "", "calTz": "", "floor": "",
+                "after": "", "anchor": "", "sweep": False,
+                # `legacy` widens the sweep once, on the first run under this
+                # walk; `stage` is the sweep's (or the purge's) current kind.
+                "legacy": False, "stage": "", "records": 0,
                 # `cancelled` is the provider's own housekeeping — a delta
                 # ALWAYS carries cancellations — and `skipped` is a failure.
                 # Counting the first as the second made an ordinary calendar
@@ -3253,7 +3608,6 @@ data:
             anchor = _iso(_now())
             cur["anchor"] = anchor
         cur["floor"] = _floor(props, anchor)
-        cur["ceil"] = _iso(_now() + _dt.timedelta(days=HORIZON_DAYS))
         cur["phase"] = "calendars"
         return cur
 
@@ -3262,7 +3616,7 @@ data:
         # `showDeleted=true` is what makes an UNSUBSCRIBED or deleted calendar
         # observable at all. Without it the entry simply stops appearing, the
         # calendar is never walked again, its per-calendar 410 never comes,
-        # and its mirror and every one of its events stay live and stale
+        # and its mirror and every one of its rows stay live and stale
         # forever: the sweep is per-calendar, and only a walk reaches it.
         params = {"maxResults": CALENDAR_PAGE, "showHidden": "true",
                   "showDeleted": "true"}
@@ -3294,7 +3648,7 @@ data:
             if tzname:
                 props["timezone"] = tzname
             # A put MERGES and never prunes, so this calendar's stored
-            # syncToken and syncGeneration survive the refresh.
+            # syncToken, syncWalk and syncGeneration survive the refresh.
             host.effects.put(CALENDAR_TYPE, cref, properties=props)
             cals.append(cid)
         cur["cals"] = cals
@@ -3304,47 +3658,53 @@ data:
             cur["pageToken"] = next_page
             return {"more": host.page.more(cur)}
         cur.update({"pageToken": "", "phase": "purge", "started": False,
-                    "after": ""})
+                    "after": "", "stage": ""})
         return {"more": host.page.more(cur)}
 
 
     def _purge(host, aid, cur):
         """Retract one DELETED calendar, a bounded page at a time: its event
-        mirrors first, then the calendar mirror itself. Only rows that are
-        actually there, because deleting one that was never written is
-        ErrNotFound and fails the whole delivery."""
+        rows, then its series rows, then the calendar mirror itself. The
+        `calendar` reference on both would cascade at the next GC; the
+        explicit retraction keeps the timeline right in between. Only rows
+        that are actually there, because deleting one that was never written
+        is ErrNotFound and fails the whole delivery."""
         dead = list(cur.get("dead") or [])
         if not dead:
-            cur.update({"phase": "events", "after": "", "started": False})
+            cur.update({"phase": "events", "after": "", "started": False,
+                        "stage": ""})
             return {"more": host.page.more(cur)}
         cid = dead[0]
         cref = _calendar_id(host, aid, cid)
-        page = host.records.list(EVENT_TYPE,
-                                  where={"account": {"eq": aid},
-                                         "calendarId": {"eq": cid}},
-                                  first=SWEEP_PAGE,
-                                  after=cur.get("after") or None)
-        eids = [str(e.get("id") or "") for e in (page.get("records") or [])]
-        eids = [e for e in eids if e]
-        if eids:
-            for eid in eids:
-                host.effects.delete(EVENT_TYPE, eid)
+        kind = SERIES_TYPE if cur.get("stage") == "series" else EVENT_TYPE
+        page = host.records.list(kind,
+                                 where={"account": {"eq": aid},
+                                        "calendarId": {"eq": cid}},
+                                 first=SWEEP_PAGE,
+                                 after=cur.get("after") or None)
+        for ent in page.get("records") or []:
+            if ent.get("id"):
+                host.effects.delete(kind, str(ent["id"]))
         cur["after"] = page.get("cursor") or ""
         if cur["after"]:
             return {"more": host.page.more(cur)}
+        if kind == EVENT_TYPE:
+            cur["stage"] = "series"
+            return {"more": host.page.more(cur)}
         host.log("google-calendar: calendar %s is gone for %s — retracted "
-                 "with its events" % (cid, aid))
+                 "with its series and events" % (cid, aid))
         live = _live(host, (CALENDAR_TYPE,), [cref])
         if ("%s|%s" % (CALENDAR_TYPE, cref)) in live:
             host.effects.delete(CALENDAR_TYPE, cref)
-        cur.update({"dead": dead[1:], "after": ""})
+        cur.update({"dead": dead[1:], "after": "", "stage": ""})
         return {"more": host.page.more(cur)}
 
 
     def _next_calendar(cur):
         cur.update({"cals": list(cur.get("cals") or [])[1:], "started": False,
                     "pageToken": "", "syncToken": "", "generation": "",
-                    "calTz": "", "sweep": False, "after": "", "masters": {}})
+                    "calTz": "", "sweep": False, "legacy": False, "stage": "",
+                    "after": ""})
         cur["phase"] = "events" if cur["cals"] else "finish"
         return cur
 
@@ -3358,12 +3718,20 @@ data:
         cref = _calendar_id(host, aid, cid)
         if not cur.get("started"):
             # The calendar reached the head: its OWN stored token decides
-            # whether this walk is incremental or a windowed full read.
+            # whether this walk is incremental or a full read. A token minted
+            # under another walk reads as absent, and that first run sweeps
+            # wider once (`legacy`).
             row = host.records.get(CALENDAR_TYPE, cref) or {}
             held = row.get("properties") or {}
             token_held = str(held.get("syncToken") or "")
+            legacy = str(held.get("syncWalk") or "") != WALK
+            if legacy and token_held:
+                host.log("google-calendar: %s/%s holds a sync token from the "
+                         "instance walk — full read under the %s walk"
+                         % (aid, cid, WALK))
+                token_held = ""
             cur.update({"syncToken": token_held, "pageToken": "",
-                        "started": True,
+                        "started": True, "legacy": legacy, "sweep": legacy,
                         "calTz": str(held.get("timezone") or ""),
                         "generation": "" if token_held else uuid.uuid4().hex})
         try:
@@ -3373,16 +3741,17 @@ data:
                 # ONLY a 410 means the token died. A 400 is a request bug and
                 # a 403 a scope problem; neither may become a full re-read.
                 raise
-            host.log("google-calendar: sync token gone for %s/%s — windowed "
-                     "full re-read" % (aid, cid))
+            host.log("google-calendar: sync token gone for %s/%s — full "
+                     "re-read" % (aid, cid))
             cur.update({"syncToken": "", "generation": uuid.uuid4().hex,
                         "pageToken": "", "sweep": True})
             resp = _get(token, _events_path(cid), _params(cur))
-        cal_zone = _zone(cur.get("calTz") or "UTC")
-        kept, dropped = _stage_events(host, token, aid, cid, cref,
-                                      resp.get("items") or [], cal_zone, cur)
+        kept, dropped, skipped = _stage_events(
+            host, aid, cid, cref, resp.get("items") or [],
+            cur.get("calTz") or "", cur)
         cur["records"] = int(cur.get("records") or 0) + kept
         cur["cancelled"] = int(cur.get("cancelled") or 0) + dropped
+        cur["skipped"] = int(cur.get("skipped") or 0) + skipped
         next_page = resp.get("nextPageToken") or ""
         if next_page:
             cur["pageToken"] = next_page
@@ -3396,40 +3765,64 @@ data:
         if stamp:
             host.effects.patch(CALENDAR_TYPE, cref, properties=stamp)
         if cur.get("sweep"):
-            cur.update({"phase": "sweep", "after": ""})
+            cur.update({"phase": "sweep", "after": "", "stage": "events"})
             return {"more": host.page.more(cur)}
         return {"more": host.page.more(_next_calendar(cur))}
 
 
     def _sweep(host, aid, cid, cur):
-        # SCOPED to this ONE calendar and to the re-read WINDOW — BOTH ends of
-        # it. The floor is obvious; the CEILING is the one that bit: an
-        # incremental delta carries no time bounds at all, so it legitimately
-        # stores an event eighteen months out, which the windowed re-read
-        # (bounded by timeMax = ceil) can never re-stamp. Without the `lte`
-        # the generation compare would then delete it. condJSON ANDs the ops
-        # on one Cond, so both bounds ride the same clause.
+        """Retract what a full read did not re-stamp, SCOPED to this ONE
+        calendar, in stages: its event rows at or above the floor (no
+        ceiling — the read has none, so a row an incremental delta stored
+        far ahead is re-read and re-stamped), then EVERY series row (a master
+        is one row whatever its dates), then, on the first run under this
+        walk only, two more: every legacy instance row is retracted at ANY
+        date, and every legacy PLAIN row the full read never re-fetches (below
+        the floor: `startAt` and no `at`) is moved onto the trait's columns,
+        or the archive would never enter a window read. `syncWalk` is stamped
+        when the last stage completes and not before, so a run that fails
+        mid-sweep repeats the whole full read."""
         generation = cur.get("generation") or ""
+        stage = cur.get("stage") or "events"
+        kind = SERIES_TYPE if stage == "series" else EVENT_TYPE
         where = {"account": {"eq": aid}, "calendarId": {"eq": cid}}
-        bounds = {}
-        if cur.get("floor"):
-            bounds["gte"] = cur["floor"]
-        if cur.get("ceil"):
-            bounds["lte"] = cur["ceil"]
-        if bounds:
-            where["startAt"] = bounds
-        page = host.records.list(EVENT_TYPE, where=where, first=SWEEP_PAGE,
-                                  after=cur.get("after") or None)
-        stale = []
+        if stage == "events" and cur.get("floor"):
+            where["at"] = {"gte": cur["floor"]}
+        if stage == "legacy":
+            where["recurringEventId"] = {"exists": True}
+            where["recurrenceOf"] = {"exists": False}
+        if stage == "archive":
+            where["startAt"] = {"exists": True}
+            where["at"] = {"exists": False}
+            where["recurringEventId"] = {"exists": False}
+        page = host.records.list(kind, where=where, first=SWEEP_PAGE,
+                                 after=cur.get("after") or None)
         for ent in page.get("records") or []:
             eid = str(ent.get("id") or "")
             row = ent.get("properties") or {}
-            if eid and row.get("syncGeneration") != generation:
-                stale.append(eid)
-        for eid in stale:
-            host.effects.delete(EVENT_TYPE, eid)
+            if not eid:
+                continue
+            if stage == "archive":
+                if row.get("startAt"):
+                    moved = dict(_RETIRED)
+                    moved.update({"at": row["startAt"],
+                                  "endsAt": row.get("endAt") or None})
+                    host.effects.patch(kind, eid, properties=moved)
+            elif stage == "legacy" or row.get("syncGeneration") != generation:
+                host.effects.delete(kind, eid)
         cur["after"] = page.get("cursor") or ""
-        return bool(cur["after"])
+        if cur["after"]:
+            return True
+        stages = ["events", "series"]
+        if cur.get("legacy"):
+            stages += ["legacy", "archive"]
+        following = stages[stages.index(stage) + 1:] if stage in stages else []
+        if following:
+            cur["stage"] = following[0]
+            return True
+        host.effects.patch(CALENDAR_TYPE, _calendar_id(host, aid, cid),
+                           properties={"syncWalk": WALK})
+        return False
 
 
     def _stamp(host, aid, acct, cur):

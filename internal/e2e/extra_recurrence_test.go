@@ -3,20 +3,20 @@ package e2e
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 )
 
 // The 600 block: recurring calendars, played the way Google Calendar delivers
 // them. The substrate stores a recurrence rule and never expands it into rows
-// (decision 0039); occurrences reach a reader as calendarevent rows a
-// CONNECTOR explodes, pointing at their calendareventseries, and as the
-// computed instants GET /occurrences derives from the stored rules (decision
-// 0043). These cases are that connector, note for note: the rules Google
-// emits, the instance overrides, the cancellations, and the
+// (decision 0039); occurrences reach a reader two ways, both through the ONE
+// window read (decision 0081): computed from the series' rule, and as
+// calendarevent OVERRIDES a connector or a hand wrote for the slots it moved
+// or edited, each naming its series in `recurrenceOf` and the slot it
+// replaces in `originalAt`. These cases are that connector, note for note:
+// the rules Google emits, the instance overrides, the cancellations, and the
 // this-and-following split, each followed by the range queries a calendar
-// client would make. OCC-01 is the computed half beside them.
+// client would make. OCC-01 is a schedule of another kind on the same read.
 const (
 	seriesCollection = "/api/v1/samples.substrate.reamde.dev/calendar/calendareventseries"
 	seriesKind       = "samples.substrate.reamde.dev/calendar/calendareventseries"
@@ -28,7 +28,7 @@ func init() {
 			"weekday of the month, month days, yearly, COUNT, UNTIL in both spellings, WKST, the RRULE: "+
 			"prefix) lands verbatim on a series and compiles under the engine's RFC 5545 parser, which now "+
 			"guards the series gate too: garbage rules and multi-line RDATE blocks are refused by name, and "+
-			"RDATE extras live in the declared `rdates` list beside `exdates` and the `startsAt` anchor.",
+			"RDATE extras live in the declared `rdates` list beside `exdates`, and the anchor is the series' own `at`.",
 		xcCaseRuleMatrix)
 	registerCase(610, "CAL-02", "A long weekday series with an override and a cancellation",
 		"A connector explodes three weeks of an every-weekday standup; one instance is moved and retitled "+
@@ -39,8 +39,8 @@ func init() {
 	registerCase(620, "CAL-03", "Nth-weekday series resolve to the right instants",
 		"Every-2nd-Tuesday and last-Friday series live side by side for four months; each month window "+
 			"returns exactly one instance of each at the right date, the series records never appear in any "+
-			"time window (they are definitions, not occurrences), and the reverse read (`filter.referencing` "+
-			"on a series) lists exactly its own occurrences.",
+			"time window as rows (only their computed occurrences do), and the reverse read "+
+			"(`filter.referencing` on a series) lists exactly its own overrides.",
 		xcCaseNthWeekday)
 	registerCase(630, "CAL-04", "This-and-following: the split Google performs",
 		"Changing a weekly series from occurrence five onward is a split: the old series gains UNTIL and "+
@@ -48,13 +48,13 @@ func init() {
 			"window shows the time change at the boundary, and the reverse read on each series holds exactly "+
 			"its half.",
 		xcCaseSeriesSplit)
-	registerCase(640, "OCC-01", "The occurrences read: a daily-forever dose beside the calendar",
+	registerCase(640, "OCC-01", "The window read: a daily-forever dose beside the calendar",
 		"A dose taken every day forever is ONE schedule record, of a kind this case declares itself, whose "+
-			"RRULE the substrate stores and never expands (decision 0039); GET /occurrences computes its "+
-			"instants in any window (decision 0043) beside the calendar's materialized rows, the "+
-			"connector-stamped series stay silent where their rows answer, a logged dose annotates its slot "+
-			"without suppressing it, and a travel week moves seven doses to another timezone with exdates "+
-			"plus rdates, the same mechanics a Google instance override uses.",
+			"RRULE the substrate stores and never expands (decision 0039); the records read with `at` bounded "+
+			"on both ends computes its occurrences in any window (decision 0081) beside the calendar's rows, "+
+			"a logged dose is a row of its own in the same window and never hides its slot, and a travel "+
+			"week moves seven doses to another timezone with exdates plus rdates, the same mechanics a "+
+			"Google instance override uses.",
 		xoCaseDoseWeek)
 }
 
@@ -70,18 +70,14 @@ func xcMonday(r *run) time.Time {
 }
 
 // xcSeries writes one recurring definition the way a connector would: the
-// rule, its `startsAt` anchor, and the [materializedFrom, materializedUntil)
-// span these cases explode into rows themselves, so the occurrences read
-// (decision 0043) stays silent here the way it stays silent over a synced
-// Google window.
+// rule and its anchor, the series' own `at` (temporal(point)), which is the
+// rule's DTSTART and its first occurrence.
 func xcSeries(c *C, id, summary, rule string, exdates []string) record {
 	c.t.Helper()
 	base := xcMonday(c.r)
 	props := map[string]any{
 		"summary": summary, "recurrence": rule, "timezone": "Europe/London",
-		"startsAt":          base.Format(time.RFC3339),
-		"materializedFrom":  base.AddDate(0, 0, -30).Format(time.RFC3339),
-		"materializedUntil": base.AddDate(1, 0, 0).Format(time.RFC3339),
+		"at": base.Format(time.RFC3339),
 	}
 	if len(exdates) > 0 {
 		props["exdates"] = exdates
@@ -90,16 +86,33 @@ func xcSeries(c *C, id, summary, rule string, exdates []string) record {
 	return c.putRec(seriesCollection, id, props)
 }
 
-// xcOccurrence explodes one instant of a series into a concrete event.
+// xcOccurrence writes one instant of a series as a concrete event: an
+// OVERRIDE claiming its slot (`recurrenceOf` + `originalAt`), so the window
+// read shows the row and not a computed twin.
 func xcOccurrence(c *C, id, seriesID, summary string, at time.Time, length time.Duration) record {
 	c.t.Helper()
 	return c.putRec(eventCollection, id, map[string]any{
-		"summary":  summary,
-		"at":       at.Format(time.RFC3339),
-		"endsAt":   at.Add(length).Format(time.RFC3339),
-		"calendar": recPath(calendarKind, "work"),
-		"series":   recPath(seriesKind, seriesID),
+		"summary":      summary,
+		"at":           at.Format(time.RFC3339),
+		"endsAt":       at.Add(length).Format(time.RFC3339),
+		"calendar":     recPath(calendarKind, "work"),
+		"recurrenceOf": recPath(seriesKind, seriesID),
+		"originalAt":   at.Format(time.RFC3339),
 	})
+}
+
+// xcTimeline is the whole timeline over both calendar kinds in [from, to):
+// the rows AND the occurrences the read computes from every series.
+func xcTimeline(c *C, from, to time.Time) []record {
+	c.t.Helper()
+	filter := map[string]any{
+		"kinds":      []string{kindOf(eventCollection), seriesKind},
+		"properties": map[string]any{"at": map[string]any{"gte": from.Format(time.RFC3339), "lt": to.Format(time.RFC3339)}},
+	}
+	var page recordsPage
+	status, raw := c.do(http.MethodGet, listWhere(filter, "orderBy=at", "first=500"), nil, &page)
+	c.requiref(status == http.StatusOK, "the timeline read answered %d: %s", status, raw)
+	return page.Records
 }
 
 // xcWindow is the calendar client's read: live events in [from, to), by time.
@@ -211,7 +224,7 @@ func xcCaseRuleMatrix(c *C) {
 	// Google's recurrence field is a LIST of lines. The rule string holds
 	// exactly one RRULE: a joined RRULE+RDATE block is refused, because RDATE
 	// extras have their own declared home now, the `rdates` datetime list
-	// beside `exdates`, and the rule's anchor lives in `startsAt`.
+	// beside `exdates`, and the rule's anchor is the series' own `at`.
 	block := "RRULE:FREQ=WEEKLY;BYDAY=MO\nRDATE:20260915T093000Z"
 	blockStatus, blockRaw := c.do(http.MethodPut, seriesCollection+"/x-ser-rdate", map[string]any{
 		"properties": map[string]any{"summary": "Matrix: an RDATE block", "recurrence": block, "calendar": recPath(calendarKind, "work")},
@@ -223,13 +236,13 @@ func xcCaseRuleMatrix(c *C) {
 		"recurrence": "RRULE:FREQ=WEEKLY;BYDAY=MO",
 		"rdates":     []string{"2026-09-15T09:30:00Z"},
 		"exdates":    []string{"2026-09-21T09:30:00Z"},
-		"startsAt":   "2026-08-31T09:30:00Z",
+		"at":         "2026-08-31T09:30:00Z",
 		"calendar":   recPath(calendarKind, "work"),
 	})
 	rdates, _ := withExtras.Properties["rdates"].([]any)
-	c.requiref(len(rdates) == 1 && withExtras.prop("startsAt") != "",
-		"the declared homes did not round-trip: rdates %v, startsAt %q", rdates, withExtras.prop("startsAt"))
-	c.stepf("a multi-line block is refused; RDATE extras live in `rdates`, skips in `exdates`, and the DTSTART anchor in `startsAt`, all round-tripping")
+	c.requiref(len(rdates) == 1 && withExtras.prop("at") != "",
+		"the declared homes did not round-trip: rdates %v, at %q", rdates, withExtras.prop("at"))
+	c.stepf("a multi-line block is refused; RDATE extras live in `rdates`, skips in `exdates`, and the DTSTART anchor in the series' own `at`, all round-tripping")
 
 	// The probe trigger leaves with the case.
 	status, _ = c.do(http.MethodDelete, triggerCollection+"/x-rrule-probe", nil, nil)
@@ -257,23 +270,22 @@ func xcCaseWeekdayStandup(c *C) {
 			ids = append(ids, id)
 		}
 	}
-	c.stepf("exploded 3 weeks of the every-weekday series: 15 occurrences at 09:30, every one naming `x-ser-standup` as its series")
+	c.stepf("wrote 3 weeks of the every-weekday series as overrides: 15 rows at 09:30, every one naming `x-ser-standup` in `recurrenceOf` and its slot in `originalAt`")
 
 	// Google's single-instance override: week 2 Wednesday moves 2 hours later
 	// and gains a title, SAME instance id, everything else untouched.
 	movedID := fmt.Sprintf("x-cal-standup-%s", monday.AddDate(0, 0, 9).Format("20060102"))
 	movedAt := monday.AddDate(0, 0, 9).Add(2 * time.Hour)
 	moved := c.putRec(eventCollection, movedID, map[string]any{
-		"summary":         "Engineering standup (moved for the all-hands)",
-		"at":              movedAt.Format(time.RFC3339),
-		"endsAt":          movedAt.Add(15 * time.Minute).Format(time.RFC3339),
-		"originalStartAt": monday.AddDate(0, 0, 9).Format(time.RFC3339),
+		"summary": "Engineering standup (moved for the all-hands)",
+		"at":      movedAt.Format(time.RFC3339),
+		"endsAt":  movedAt.Add(15 * time.Minute).Format(time.RFC3339),
 	})
-	c.requiref(sameSet(refPaths(moved, "series"), recPath(seriesKind, "x-ser-standup")),
-		"the override lost its series reference: %v (an update must merge, never prune)", refPaths(moved, "series"))
-	c.requiref(moved.prop("originalStartAt") != "",
-		"the override does not record the slot it replaced (originalStartAt)")
-	c.stepf("overrode one instance in place: same id `%s`, new time +2h, new title, `originalStartAt` naming the slot it replaced; the series reference survived the update", movedID)
+	c.requiref(sameSet(refPaths(moved, "recurrenceOf"), recPath(seriesKind, "x-ser-standup")),
+		"the override lost its series reference: %v (an update must merge, never prune)", refPaths(moved, "recurrenceOf"))
+	c.requiref(moved.prop("originalAt") == monday.AddDate(0, 0, 9).Format(time.RFC3339),
+		"the override does not keep the slot it replaced: originalAt %q", moved.prop("originalAt"))
+	c.stepf("overrode one instance in place: same id `%s`, new time +2h, new title, `originalAt` still naming the slot it replaced; the series reference survived the update", movedID)
 
 	// Google's cancellation: the week 3 Friday instance is retracted (a
 	// canceled event is DELETED, never flagged) and the series gains the
@@ -331,6 +343,38 @@ func xcCaseWeekdayStandup(c *C) {
 	c.requiref(standups == 14, "the full window holds %d live standups, want 14", standups)
 	c.stepf("window queries: week 2 has 5 (moved one at its new hour, third by time), the old slot is empty, the canceled day is empty live and one tombstone under deleted:true, the horizon holds 14")
 
+	// Past the rows anybody wrote, the timeline keeps going: week 4 over both
+	// kinds is five COMPUTED occurrences of the series, one per weekday at
+	// 09:30, each carrying the series' rule-less properties, its slot, and the
+	// override pair a put would need, at the id `x-ser-standup_<slot>`. The
+	// series row itself is never on the page.
+	week4 := xcTimeline(c, monday.AddDate(0, 0, 21), monday.AddDate(0, 0, 26))
+	var computed []record
+	for _, rec := range week4 {
+		c.requiref(rec.ID != "x-ser-standup", "the series row itself sits on the timeline: %v", rec)
+		if rec.Computed && strings.HasPrefix(rec.ID, "x-ser-standup_") {
+			computed = append(computed, rec)
+		}
+	}
+	c.requiref(len(computed) == 5, "week 4 computes %d standups, want 5: %v", len(computed), week4)
+	for i, rec := range computed {
+		wantAt := monday.AddDate(0, 0, 21+i)
+		c.requiref(rec.prop("at") == wantAt.Format(time.RFC3339) && rec.prop("originalAt") == wantAt.Format(time.RFC3339),
+			"computed standup %d sits at %q (originalAt %q), want %s", i, rec.prop("at"), rec.prop("originalAt"), wantAt.Format(time.RFC3339))
+		c.requiref(rec.ID == "x-ser-standup_"+wantAt.UTC().Format("20060102T150405Z"),
+			"computed standup %d is %q, want the series id and the slot", i, rec.ID)
+		c.requiref(sameSet(refPaths(rec, "recurrenceOf"), recPath(seriesKind, "x-ser-standup")) && rec.Version == 0,
+			"computed standup %d does not read as an override of its series: %v", i, rec.Properties)
+		c.requiref(rec.Properties["recurrence"] == nil, "a computed occurrence carries the rule: %v", rec.Properties)
+	}
+	// And GET at a computed id answers the same envelope, the path a
+	// `get -o yaml | apply -f` takes to materialize one.
+	var one record
+	status, raw = c.do(http.MethodGet, seriesCollection+"/"+computed[0].ID, nil, &one)
+	c.requiref(status == http.StatusOK && one.Computed && one.ID == computed[0].ID,
+		"GET at the computed id answered %d: %s", status, raw)
+	c.stepf("week 4, past every written row, is 5 computed occurrences at `x-ser-standup_<slot>`, version 0, each already shaped as the override a put would make, and GET at one such id answers it")
+
 	_ = ids
 }
 
@@ -360,11 +404,13 @@ func xcCaseNthWeekday(c *C) {
 	xcSeries(c, "x-ser-2tu", "Platform review (2nd Tuesday)", "RRULE:FREQ=MONTHLY;BYDAY=2TU", nil)
 	xcSeries(c, "x-ser-lastfri", "Retro (last Friday)", "RRULE:FREQ=MONTHLY;BYDAY=-1FR", nil)
 
-	// Four months of each, materialized off the case's own oracle.
+	// Four months of each, written off the case's own oracle. The month
+	// anchors are the FIRST of each month: adding a month to the 31st
+	// normalizes past the next month entirely and would skip one.
 	type expect struct{ tu, fr string }
 	months := make([]expect, 0, 4)
 	for m := range 4 {
-		anchor := start.AddDate(0, m, 0)
+		anchor := time.Date(start.Year(), start.Month()+time.Month(m), 1, 0, 0, 0, 0, time.UTC)
 		tu := xcNthWeekday(anchor.Year(), anchor.Month(), time.Tuesday, 2)
 		fr := xcNthWeekday(anchor.Year(), anchor.Month(), time.Friday, -1)
 		tuID := "x-cal-2tu-" + tu.Format("20060102")
@@ -377,7 +423,7 @@ func xcCaseNthWeekday(c *C) {
 
 	// Each calendar month window returns exactly one of each, on its date.
 	for m, want := range months {
-		anchor := start.AddDate(0, m, 0)
+		anchor := time.Date(start.Year(), start.Month()+time.Month(m), 1, 0, 0, 0, 0, time.UTC)
 		from := time.Date(anchor.Year(), anchor.Month(), 1, 0, 0, 0, 0, time.UTC)
 		got := xcWindowIDs(c, from, from.AddDate(0, 1, 0))
 		var tu, fr int
@@ -395,23 +441,29 @@ func xcCaseNthWeekday(c *C) {
 	}
 	c.stepf("each month window answers exactly one 2nd-Tuesday and one last-Friday instance, on the oracle's dates")
 
-	// The definitions are never in a window: no temporal trait, no instant.
+	// A definition carries its anchor (`at` is the rule's DTSTART) but never
+	// sits in a window AS A ROW: a timeline read over the series kind answers
+	// its computed occurrences and never the series id itself.
 	var page recordsPage
 	status, raw := c.do(http.MethodGet, listOf(seriesCollection, "first=200"), nil, &page)
 	c.requiref(status == http.StatusOK, "listing series answered %d: %s", status, raw)
 	for _, rec := range page.Records {
-		c.requiref(rec.Properties["at"] == nil, "series %s carries a timeline instant %v", rec.ID, rec.Properties["at"])
+		c.requiref(rec.Properties["at"] != nil, "series %s carries no anchor", rec.ID)
+	}
+	for _, rec := range xcTimeline(c, start, start.AddDate(0, 4, 0)) {
+		c.requiref(rec.ID != "x-ser-2tu" && rec.ID != "x-ser-lastfri",
+			"a series row sits on the timeline: %s", rec.ID)
 	}
 
 	// The back-reference a calendar UI walks: the records pointing at the
-	// series through the `series` property are exactly its occurrences.
+	// series through `recurrenceOf` are exactly its overrides.
 	var pointing recordsPage
 	status, raw = c.do(http.MethodGet,
-		referencingList(kindOf(seriesCollection), "x-ser-2tu", "series", "first=200"), nil, &pointing)
+		referencingList(kindOf(seriesCollection), "x-ser-2tu", "recurrenceOf", "first=200"), nil, &pointing)
 	c.requiref(status == http.StatusOK && len(pointing.Records) == 4,
 		"the reverse read on the 2nd-Tuesday series answered %d with %d occurrences, want 4: %s",
 		status, len(pointing.Records), raw)
-	c.stepf("the series never sits in a time window, and `filter.referencing` on it lists exactly its 4 occurrences")
+	c.stepf("the series carries its anchor but never sits in a window as a row, and `filter.referencing` on it lists exactly its 4 overrides")
 }
 
 // --- CAL-04 ---------------------------------------------------------------
@@ -467,8 +519,8 @@ func xcCaseSeriesSplit(c *C) {
 		}
 		c.requiref(at.Equal(wantAt),
 			"occurrence %d (%s) sits at %s, want %s (the hour must move exactly at the split)", i, rec.ID, at, wantAt)
-		c.requiref(sameSet(refPaths(rec, "series"), recPath(seriesKind, wantSeries)),
-			"occurrence %d (%s) names series %v, want %s", i, rec.ID, refPaths(rec, "series"), wantSeries)
+		c.requiref(sameSet(refPaths(rec, "recurrenceOf"), recPath(seriesKind, wantSeries)),
+			"occurrence %d (%s) names series %v, want %s", i, rec.ID, refPaths(rec, "recurrenceOf"), wantSeries)
 	}
 	c.stepf("one ordered window shows the boundary: four at the old hour on series A, then four an hour later on series B")
 
@@ -479,7 +531,7 @@ func xcCaseSeriesSplit(c *C) {
 	}{{"x-ser-sync-a", 4}, {"x-ser-sync-b", 4}} {
 		var pointing recordsPage
 		status, raw := c.do(http.MethodGet,
-			referencingList(kindOf(seriesCollection), tc.id, "series", "first=200"), nil, &pointing)
+			referencingList(kindOf(seriesCollection), tc.id, "recurrenceOf", "first=200"), nil, &pointing)
 		c.requiref(status == http.StatusOK && len(pointing.Records) == tc.want,
 			"the reverse read on %s answered %d with %d occurrences, want %d: %s", tc.id, status, len(pointing.Records), tc.want, raw)
 	}
@@ -580,47 +632,27 @@ func xoClosure() []map[string]any {
 	}
 }
 
-// xoList mirrors substrate.OccurrenceList, the computed half of an agenda.
-type xoList struct {
-	Occurrences []struct {
-		Kind  string `json:"kind"`
-		ID    string `json:"id"`
-		Title string `json:"title"`
-		At    string `json:"at"`
-		Log   *struct {
-			ID     string `json:"id"`
-			Status string `json:"status"`
-		} `json:"log"`
-	} `json:"occurrences"`
-	Truncated bool `json:"truncated"`
-	Problems  []struct {
-		Kind    string `json:"kind"`
-		ID      string `json:"id"`
-		Message string `json:"message"`
-	} `json:"problems"`
-}
-
-// xoRead is the agenda's computed half: what the stored rules name in the
-// window, which no row query can answer.
-func xoRead(c *C, from, to time.Time) xoList {
+// xoWindow is the window read over the schedule kind: what the stored rule
+// names in [from, to), computed, beside any row of the kind.
+func xoWindow(c *C, from, to time.Time, kinds ...string) []record {
 	c.t.Helper()
-	var out xoList
-	status, raw := c.do(http.MethodGet, "/api/v1/occurrences?from="+
-		url.QueryEscape(from.Format(time.RFC3339))+"&to="+
-		url.QueryEscape(to.Format(time.RFC3339)), nil, &out)
-	c.requiref(status == http.StatusOK, "the occurrences read answered %d: %s", status, raw)
-	c.requiref(!out.Truncated, "the window is a few weeks; nothing may truncate")
-	c.requiref(len(out.Problems) == 0,
-		"every stored rule must expand cleanly, got problems %v", out.Problems)
-	return out
+	filter := map[string]any{
+		"kinds":      kinds,
+		"properties": map[string]any{"at": map[string]any{"gte": from.Format(time.RFC3339), "lt": to.Format(time.RFC3339)}},
+	}
+	var page recordsPage
+	status, raw := c.do(http.MethodGet, listWhere(filter, "orderBy=at", "first=500"), nil, &page)
+	c.requiref(status == http.StatusOK, "the window read answered %d: %s", status, raw)
+	c.requiref(page.Cursor == "", "the window is a few weeks; nothing may page")
+	return page.Records
 }
 
-// xoDoses filters one schedule's slots out of the computed answer, in order.
-func xoDoses(list xoList, id string) []string {
+// xoDoses filters one schedule's computed slots out of the window, in order.
+func xoDoses(recs []record, id string) []string {
 	var ats []string
-	for _, o := range list.Occurrences {
-		if o.Kind == xoScheduleKind && o.ID == id {
-			ats = append(ats, o.At)
+	for _, rec := range recs {
+		if rec.Kind == xoScheduleKind && rec.Computed && strings.HasPrefix(rec.ID, id+"_") {
+			ats = append(ats, rec.prop("at"))
 		}
 	}
 	return ats
@@ -643,54 +675,49 @@ func xoCaseDoseWeek(c *C) {
 	})
 	c.stepf("one schedule record holds the forever-daily rule, anchored %s", dose.Format(time.RFC3339))
 
-	// The agenda is two reads and a merge: rows in the window (the calendar
-	// events a connector materialized), and the computed occurrences beside
-	// them. A concrete event proves the row half answers the same window.
+	// ONE read answers the timeline: the calendar's rows and the doses the
+	// rule names, on one page, by slot. A concrete event in the same window
+	// proves the row half rides beside the computed one.
 	xcOccurrence(c, "x-occ-review", "x-ser-standup", "Quarterly review",
 		base.AddDate(0, 0, 1).Add(15*time.Hour), time.Hour)
-	rows := xcWindow(c, base, week2)
+	week := xoWindow(c, base, week2, xoScheduleKind, kindOf(eventCollection))
 	found := false
-	for _, rec := range rows {
-		found = found || rec.ID == "x-occ-review"
+	for _, rec := range week {
+		found = found || (rec.ID == "x-occ-review" && !rec.Computed)
 	}
-	c.requiref(found, "the row half of the agenda lost the concrete event: %v", rows)
-
-	occs := xoRead(c, base, week2)
-	ats := xoDoses(occs, "levothyroxine-daily")
+	c.requiref(found, "the row half of the timeline lost the concrete event: %v", week)
+	ats := xoDoses(week, "levothyroxine-daily")
 	c.requiref(len(ats) == 7, "a daily rule names 7 instants in a week, got %v", ats)
 	for i, at := range ats {
 		want := dose.AddDate(0, 0, i).Format(time.RFC3339)
 		c.requiref(at == want, "dose %d computed at %s, want %s", i, at, want)
 	}
-	for _, o := range occs.Occurrences {
-		c.requiref(o.Kind != seriesKind,
-			"series %s leaked into the computed answer: its rows are the truth inside its stamp", o.ID)
+	for _, rec := range week {
+		c.requiref(rec.ID != "levothyroxine-daily", "the schedule row itself sits on the timeline")
 	}
-	c.stepf("the week answers 7 computed doses beside the calendar's rows, and no stamped series leaks a twin")
+	c.stepf("one window read answers 7 computed doses beside the calendar's rows, in slot order, and the schedule row itself is not among them")
 
-	// A taken dose is an occurrencelog; it annotates the slot, never hides it.
+	// A taken dose is an occurrencelog: a temporal row of its own in the same
+	// window, beside the slot it marks, which it never hides.
 	tue := dose.AddDate(0, 0, 1)
 	c.putRec(xoLogCollection, "x-occ-dose-tue", map[string]any{
 		"at":          tue.Add(20 * time.Minute).Format(time.RFC3339),
 		"scheduledAt": tue.Format(time.RFC3339),
 		"schedule":    recPath(xoScheduleKind, "levothyroxine-daily"),
 	})
-	occs = xoRead(c, base, week2)
-	marked := 0
-	for _, o := range occs.Occurrences {
-		if o.ID != "levothyroxine-daily" {
-			continue
+	week = xoWindow(c, base, week2, xoScheduleKind, xoLogKind)
+	logged, slots := 0, 0
+	for _, rec := range week {
+		if rec.Kind == xoLogKind && rec.ID == "x-occ-dose-tue" && !rec.Computed {
+			logged++
 		}
-		if o.At == tue.Format(time.RFC3339) {
-			c.requiref(o.Log != nil && o.Log.ID == "x-occ-dose-tue" && o.Log.Status == "done",
-				"Tuesday's slot must carry its log, got %+v", o.Log)
-			marked++
-		} else {
-			c.requiref(o.Log == nil, "an unlogged slot at %s grew a log", o.At)
+		if rec.Kind == xoScheduleKind && rec.Computed && rec.prop("at") == tue.Format(time.RFC3339) {
+			slots++
 		}
 	}
-	c.requiref(marked == 1, "exactly one slot is logged, got %d", marked)
-	c.stepf("Tuesday's dose reads done; the other six stay bare, and absence still means missed")
+	c.requiref(logged == 1 && slots == 1, "the log row (%d) and Tuesday's slot (%d) must both be on the page", logged, slots)
+	c.requiref(len(xoDoses(week, "levothyroxine-daily")) == 7, "a log never hides a slot")
+	c.stepf("Tuesday's dose log is a row in the same window beside the slot it marks; the seven slots stand, and absence still means missed")
 
 	// The travel week: home slots out via exdates, the moved instants in via
 	// rdates — 09:00 America/New_York written as instants, exactly how a
@@ -704,13 +731,13 @@ func xoCaseDoseWeek(c *C) {
 		map[string]any{"properties": map[string]any{"exdates": exdates, "rdates": rdates}}, nil)
 	c.requiref(status == http.StatusOK, "the travel-week override answered %d: %s", status, raw)
 
-	moved := xoDoses(xoRead(c, week2, week3), "levothyroxine-daily")
+	moved := xoDoses(xoWindow(c, week2, week3, xoScheduleKind), "levothyroxine-daily")
 	c.requiref(len(moved) == 7, "the travel week still doses daily, got %v", moved)
 	for i, at := range moved {
 		want := base.AddDate(0, 0, 7+i).Add(13 * time.Hour).Format(time.RFC3339)
 		c.requiref(at == want, "travel dose %d computed at %s, want %s (the moved slot)", i, at, want)
 	}
-	home := xoDoses(xoRead(c, week3, week4), "levothyroxine-daily")
+	home := xoDoses(xoWindow(c, week3, week4, xoScheduleKind), "levothyroxine-daily")
 	c.requiref(len(home) == 7 && home[0] == dose.AddDate(0, 0, 14).Format(time.RFC3339),
 		"the week after the trip must dose at home time again, got %v", home)
 	c.stepf("the travel week reads 7 moved doses and week three is home time again — the rule itself never changed")

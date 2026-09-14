@@ -113,6 +113,12 @@ export interface SubstrateRecord {
   /** The ids this record used to live under, left by merges and server-set. */
   formerIds?: string[]
   propertyMeta?: Record<string, PropertyMeta>
+  /** Set on an occurrence a window read COMPUTED from a series' rule rather
+   * than read from a stored row: the series' kind, the id `<seriesId>_<slot>`,
+   * the series' properties with the slot in its temporal columns and
+   * `recurrenceOf`/`originalAt` filled, version 0. Writing the envelope back at
+   * its id materializes it as an override. */
+  computed?: boolean
 }
 
 /** The one reserved key of a reference value. Every reference is SERVED as an
@@ -210,6 +216,9 @@ export interface Page<T = SubstrateRecord> {
   /** On a `filter.referencing` read: for each record on the page, keyed by
    * its record path, every site at which it points at the target. */
   matches?: Record<string, ReferenceSite[]>
+  /** On a window read (`at` bounded on both ends): each series the expansion
+   * could not read, named; the page stands without it. */
+  problems?: OccurrenceProblem[]
 }
 
 /** A ranked read's answer (`substrate.RankedPage`, `GET /records?q=`): the
@@ -281,43 +290,13 @@ export interface Change {
   hash?: string
 }
 
-/** One computed slot of a recurring record (`substrate.Occurrence`, decision
- * 0043): the occurrences read derives it from the stored rule. It is not a
- * record — no id of its own, nothing points at it — so an agenda merges these
- * with the
- * temporal window query's rows on (kind, id, at). */
-export interface Occurrence {
-  /** The recurring record whose rule names this instant. */
-  kind: string
-  id: string
-  title?: string
-  at: string
-  /** The occurrencelog row answering this slot, when one exists. */
-  log?: OccurrenceLog
-}
-
-/** The log record that marked an occurrence, with its state (done/skipped). */
-export interface OccurrenceLog {
-  kind: string
-  id: string
-  status?: string
-}
-
-/** One recurring record the expansion could not read (a rule too dense, an
- * unknown timezone, an anchorless rule); the rest of the answer stands. */
+/** One series a window read could not expand (a rule too dense, an unknown
+ * timezone, an anchorless rule), named on the page's `problems`; the rest of
+ * the page stands. */
 export interface OccurrenceProblem {
   kind: string
   id: string
   message: string
-}
-
-/** The occurrences read's envelope. No cursor: a computed occurrence has no
- * stable address to resume from, so a truncated answer means narrow the
- * window. */
-export interface OccurrenceList {
-  occurrences: Occurrence[]
-  truncated: boolean
-  problems?: OccurrenceProblem[]
 }
 
 /** One row of the cross-collection change feed. The payload's `properties` key

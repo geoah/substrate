@@ -25,14 +25,16 @@ const budget = 500_000
 // ErrTooDense is wrapped by Expand when the rule blows the iteration budget.
 var ErrTooDense = errors.New("the rule is too dense to expand")
 
-// Rule is the recurring trait's read-side contract: the four trait properties,
-// the anchor, and the span whose occurrences already exist as records.
+// Rule is the recurring trait's read-side contract: the four trait properties
+// and the anchor.
 type Rule struct {
 	// Recurrence is the RFC 5545 rule, with or without its "RRULE:" prefix.
 	// Empty is legal: a schedule may be pure RDates.
 	Recurrence string
 	// StartsAt anchors the rule (iCalendar's DTSTART); its wall clock in
-	// Timezone is the time of day every occurrence keeps.
+	// Timezone is the time of day every occurrence keeps, and it is ITSELF an
+	// occurrence whether or not the rule would produce it (RFC 5545 §3.8.5.3:
+	// DTSTART defines the first instance), unless an exdate removes it.
 	StartsAt time.Time
 	// Timezone is the IANA zone a time-of-day rule resolves in; empty is UTC.
 	Timezone string
@@ -40,12 +42,23 @@ type Rule struct {
 	// union, iCalendar's semantics.
 	RDates  []time.Time
 	ExDates []time.Time
-	// [MaterializedFrom, MaterializedUntil) is the span whose occurrences
-	// exist as records (decision 0043): the expander emits nothing inside it,
-	// because there the rows are the truth. A zero MaterializedUntil means no
-	// span; a zero MaterializedFrom leaves the span open at the past end.
-	MaterializedFrom  time.Time
-	MaterializedUntil time.Time
+}
+
+// EndsBefore reports whether the rule's own UNTIL closes it before the
+// instant, so a series that ended years ago is skipped without a walk from
+// its anchor. A rule without UNTIL (or with COUNT, which needs the walk), an
+// empty rule, or one that does not parse answers false and leaves the
+// judgement to Expand.
+func EndsBefore(rule string, t time.Time) bool {
+	body := strings.TrimPrefix(rule, "RRULE:")
+	if body == "" {
+		return false
+	}
+	opt, err := rrule.StrToROption(body)
+	if err != nil || opt.Until.IsZero() {
+		return false
+	}
+	return opt.Until.Before(t)
 }
 
 // Expansion is one rule's computed occurrences, ascending, in UTC.
@@ -86,18 +99,20 @@ func Expand(r Rule, from, to time.Time, maxSlots int) (Expansion, error) {
 		if excluded[t.UnixNano()] || seen[t.UnixNano()] {
 			return
 		}
-		if !r.MaterializedUntil.IsZero() && t.Before(r.MaterializedUntil) &&
-			(r.MaterializedFrom.IsZero() || !t.Before(r.MaterializedFrom)) {
-			return
-		}
 		seen[t.UnixNano()] = true
 		times = append(times, t)
 	}
 
 	if body := strings.TrimPrefix(r.Recurrence, "RRULE:"); body != "" {
 		if r.StartsAt.IsZero() {
-			return Expansion{}, errors.New("the rule has no anchor: neither startsAt nor at is set")
+			return Expansion{}, errors.New("the rule has no anchor: at is not set")
 		}
+		// The anchor is the first instance by definition. rrule-go, like
+		// dateutil, omits a DTSTART the rule does not produce (a weekly
+		// Wednesday rule anchored on a Monday), so it is kept here, before
+		// the walk, and dedup below makes it harmless when the rule does
+		// produce it.
+		keep(r.StartsAt)
 		opt, err := rrule.StrToROption(body)
 		if err != nil {
 			return Expansion{}, fmt.Errorf("expected an RFC 5545 RRULE string: %w", err)

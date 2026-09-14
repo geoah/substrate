@@ -64,9 +64,6 @@ import type {
   KindInfo,
   MintedToken,
   OAuthStarted,
-  Occurrence,
-  OccurrenceList,
-  OccurrenceLog,
   OccurrenceProblem,
   OperationalList,
   Page,
@@ -136,6 +133,7 @@ const substrateRecord: Shape<SubstrateRecord> = {
   deletedAt: false,
   finalizers: false,
   propertyMeta: false,
+  computed: false,
 }
 
 /** The reverse read's target, and one site a record points from. */
@@ -265,6 +263,7 @@ const page: Shape<Page<unknown>> = {
   generation: true,
   included: false,
   matches: false,
+  problems: false,
 }
 
 /** The ranked read's envelope, and one hit's per-arm scores. */
@@ -286,30 +285,10 @@ const operationalList: Shape<OperationalList<unknown>> = {
   cursor: false,
 }
 
-const occurrence: Shape<Occurrence> = {
-  kind: true,
-  id: true,
-  title: false,
-  at: true,
-  log: false,
-}
-
-const occurrenceLog: Shape<OccurrenceLog> = {
-  kind: true,
-  id: true,
-  status: false,
-}
-
 const occurrenceProblem: Shape<OccurrenceProblem> = {
   kind: true,
   id: true,
   message: true,
-}
-
-const occurrenceList: Shape<OccurrenceList> = {
-  occurrences: true,
-  truncated: true,
-  problems: false,
 }
 
 const tokenInfo: Shape<TokenInfo> = {
@@ -571,10 +550,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   RankedPage: rankedPage,
   Scores: scores,
   OperationalList: operationalList,
-  Occurrence: occurrence,
-  OccurrenceLog: occurrenceLog,
   OccurrenceProblem: occurrenceProblem,
-  OccurrenceList: occurrenceList,
   TokenInfo: tokenInfo,
   MintedToken: mintedToken,
   TOTPEnrollment: totpEnrollment,

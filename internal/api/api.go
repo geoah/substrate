@@ -252,10 +252,6 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Post("/merge", h.postMerges)
 			r.Post("/split", h.postSplits)
 			r.Get("/changes", h.getChanges)
-			// The occurrences read (decision 0043): every recurring record's
-			// computed instants inside a window. A read, never a write — the
-			// rule stays stored and unexpanded (decision 0039).
-			r.Get("/occurrences", h.getOccurrences)
 			// The catalog: the bundle closures shipped in the binary. List and
 			// detail are repository reads (installed reflects this
 			// repository); the two writes are the two TIERS' doors (decision

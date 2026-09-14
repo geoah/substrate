@@ -63,6 +63,10 @@ type documentStatus struct {
 	Finalizers  []string                  `yaml:"finalizers,omitempty" json:"finalizers,omitempty"`
 	FormerIDs   []string                  `yaml:"formerIds,omitempty" json:"formerIds,omitempty"`
 	Properties  map[string]statusProperty `yaml:"properties,omitempty" json:"properties,omitempty"`
+	// Computed marks an occurrence the window read derived from a series'
+	// rule rather than a stored row; applying the document back at its id is
+	// what makes it one (an override).
+	Computed bool `yaml:"computed,omitempty" json:"computed,omitempty"`
 }
 
 // statusProperty is one managed property: its manager (the actor whose write
@@ -129,6 +133,7 @@ func recordDocument(e *substrate.Record, meta map[string]statusProperty) *docume
 			Finalizers:  e.Finalizers,
 			FormerIDs:   e.FormerIDs,
 			Properties:  normalizeMeta(meta),
+			Computed:    e.Computed,
 		},
 	}
 	return d

@@ -43,7 +43,7 @@ data:
   authority: substrate.reamde.dev
   package: core
   # a maturity statement, not a routing key: no envelope carries a version.
-  version: 26
+  version: 27
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands
@@ -124,6 +124,66 @@ data:
       properties:
         at: datetime
         endsAt: datetime
+---
+# a thing that REPEATS: a rule, the instants it adds, the instants it skips,
+# and the zone its wall clock resolves in. The bound temporal slot (`at`, or
+# `dueAt` on a `temporal(point: dueAt)` binding) is the rule's DTSTART, the
+# first occurrence; on a range, `endsAt - at` is every occurrence's duration.
+#
+# Contract-style, like accountconfig: the binding kind DECLARES the four
+# properties itself (so it keeps `repeated: true` on the two lists and its own
+# descriptions), and the trait holds their presence and datatypes. It expects
+# `temporal` beside it: a rule with no anchor names no instants, and a kind
+# that binds this without sitting on the timeline is left out of every window
+# read. The loader does not refuse the pair, because a repository that imported
+# the `scheduling` sample before this trait moved to core holds exactly that
+# shape and must keep booting until it takes the sample's upgrade.
+#
+# The substrate stores the rule and never expands it into rows (decision
+# 0039). What it does instead is compute: a records read that bounds `at` on
+# both ends answers with every implementor's occurrences inside the window,
+# beside the plain rows, minus `exdates` and minus every slot an `override`
+# claims (the record below). An exdate is how one occurrence is cancelled.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/recurring
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "a repeat rule the substrate stores and never expands, with
+    the instants it adds, the instants it skips and the zone a time-of-day
+    rule resolves in"
+  properties:
+    recurrence: recurrence
+    rdates: datetime
+    exdates: datetime
+    timezone: timezone
+---
+# one occurrence of a recurring record that was MOVED, EDITED or given more
+# detail: an ordinary record of any temporal kind, pointing at the series it
+# replaces one slot of, and naming that slot. iCalendar's RECURRENCE-ID.
+#
+# Contract-style: the kind declares both properties, so it chooses the
+# reference's pin (`trait: recurring`, or one series kind) and its `onDelete`.
+# A provider mirror cascades, because the provider deletes a series'
+# exceptions with it; a user-owned kind should not, because shortening or
+# replacing a series must not take the user's hand-written overrides along.
+# Expects `temporal`, like `recurring`: an override sits on the timeline at
+# its own `at`, and the slot it replaces is what the window read subtracts
+# from the series' expansion; without the anchor it claims its slot and is
+# itself never on a page. A record with both `recurrence` and `recurrenceOf`
+# set is a series to the read, never both.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/override
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "one occurrence of a recurring record, moved or edited: points
+    at the series and names the slot it replaces"
+  properties:
+    recurrenceOf: reference
+    originalAt: datetime
 ---
 # one connected account of a bundle — a host-recognized interface: the
 # console's "account configs" view is a trait query, and the runner's config

@@ -43,6 +43,42 @@ const (
 	TraitOAuth2Core        = PackageCore + "/" + TraitOAuth2
 )
 
+// The timeline traits. `temporal` backs the hot columns; `recurring` marks a
+// series (a rule the window read expands at read time, decision 0039 and its
+// successor) and `override` marks one occurrence of a series that was moved
+// or edited. Both of the latter require `temporal` on the same kind, which
+// the loader holds at finalize.
+const (
+	TraitTemporal  = "temporal"
+	TraitRecurring = "recurring"
+	TraitOverride  = "override"
+
+	TraitTemporalCore  = PackageCore + "/" + TraitTemporal
+	TraitRecurringCore = PackageCore + "/" + TraitRecurring
+	TraitOverrideCore  = PackageCore + "/" + TraitOverride
+)
+
+// ComputedSlotLen is the width of the slot a computed occurrence's id carries
+// after its series' id and a `_`: `YYYYMMDDTHHMMSSZ`. MaxSeriesIDLen keeps the
+// whole `<seriesId>_<slot>` inside MaxIDLen, and the write path holds a kind
+// binding `recurring` to it, so every occurrence a series produces has an id
+// the alphabet admits.
+const (
+	ComputedSlotLen = len("20060102T150405Z")
+	MaxSeriesIDLen  = MaxIDLen - 1 - ComputedSlotLen
+)
+
+// The recurring and override contract properties, by name: what the window
+// read and the write path read off a row that binds them.
+const (
+	PropRecurrence   = "recurrence"
+	PropRDates       = "rdates"
+	PropExDates      = "exdates"
+	PropTimezone     = "timezone"
+	PropRecurrenceOf = "recurrenceOf"
+	PropOriginalAt   = "originalAt"
+)
+
 // Bundle is one parsed bundle document.
 type Bundle struct {
 	// Name is the owned package's own word ("google", "tasks").
