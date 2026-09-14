@@ -106,6 +106,12 @@ type dataset struct {
 	// after the commit failed (ErrChangelogFileBehind): the directory is
 	// behind the tables and only the boot check repairs it.
 	fileErr error
+	// commitInDoubt, under writerMu, is set when a commit with prepared lines
+	// reported failure, so the table may hold a transaction the file had cut
+	// (0062), and cleared by the next prepare that meets no gap. It tells the
+	// gap that commit left, which latches, from one another process's rows
+	// left, which is caught up (repodir.go catchUpBeforePrepare).
+	commitInDoubt bool
 	// manifest, under writerMu, is the manifest the directory holds, as the
 	// open wrote or verified it (engine.go openNew). The transaction that
 	// claims the changelog dialect rewrites it from here BEFORE it appends
@@ -581,6 +587,12 @@ func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 	if ds.fileErr != nil {
 		return ds.fileErr
 	}
+	// Before the manifest and the stage: rows another process committed are
+	// appended first, so the lines below are the file's next and the sealed
+	// mirror is the table's before this transaction's files are staged.
+	if err := ds.catchUpBeforePrepare(t); err != nil {
+		return err
+	}
 	if t.claimsChangelogDialect {
 		if err := ds.writeManifestBeforeCommit(maxChangelogDialect); err != nil {
 			return err
@@ -612,10 +624,14 @@ func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 		ds.abortLines(prepared)
 		ds.discardStaged(staged)
 		// A commit that errors may have committed. With lines, the next
-		// write's prepare meets the seq gap and latches then; without them
+		// write's prepare meets the seq gap and latches then, and the flag
+		// is what tells that gap from one another process left; without them
 		// nothing would, so a sealed-only transaction latches here, whether
 		// it staged files the table may now hold or deleted rows whose files
 		// are still there, and the boot rewrites sealed/ from the table.
+		if prepared {
+			ds.commitInDoubt = true
+		}
 		if !prepared && (len(staged) > 0 || len(deletes) > 0) {
 			ds.latchDirectoryErr(fmt.Errorf("commit of a sealed-only transaction failed and may have committed: %w", err))
 			return ds.fileErr
