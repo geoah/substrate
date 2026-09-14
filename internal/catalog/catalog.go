@@ -496,15 +496,31 @@ func (c *Catalog) ImportConfirmed(ctx context.Context, actor substrate.Actor, id
 		return nil, nil, fmt.Errorf("%w: %s is a provider, which installs under the authority that publishes it: use install, not import",
 			substrate.ErrValidation, b.ID)
 	}
+	return c.importSample(ctx, b, ds, confirm)
+}
+
+// SeedImport lands a sample the way Import does, for the creation seed. It
+// does not require a human actor: the repository does not yet have a token
+// that could take the door, and the changelog is attributed to the landed
+// bundle the same way a later import would be.
+func (c *Catalog) SeedImport(ctx context.Context, ds substrate.Dataset, id string) error {
+	b, ok := c.byID[id]
+	if !ok {
+		return fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
+	}
+	if b.Tier != substrate.TierSample {
+		return fmt.Errorf("%w: %s is not a sample", substrate.ErrValidation, b.ID)
+	}
+	_, _, err := c.importSample(ctx, b, ds, nil)
+	return err
+}
+
+func (c *Catalog) importSample(ctx context.Context, b *Bundle, ds substrate.Dataset, confirm *substrate.ConversionConfirm) (*Bundle, []substrate.SuggestedMapping, error) {
 	home := ds.Repository().Authority
 	if home == "" {
 		return nil, nil, fmt.Errorf("%w: this repository has no authority of its own, so there is nowhere to import %s to",
 			substrate.ErrValidation, b.ID)
 	}
-	// The suggested mappings are decided BEFORE the rehome, over the shipped
-	// documents, and the report that comes back with them is what this door
-	// answers: it names the rehomed ids, because those are the declarations
-	// the apply below writes.
 	kept, report, err := b.admitted(ctx, ds, viewRehomed)
 	if err != nil {
 		return nil, nil, err
@@ -523,19 +539,6 @@ func (c *Catalog) ImportConfirmed(ctx context.Context, actor substrate.Actor, id
 				strings.Join(left, ", "), b.Authority)},
 		}
 	}
-	// The changelog is attributed to the bundle under the authority it LANDS
-	// in: an imported sample is the repository's own vocabulary, so nothing in
-	// its history names the placeholder it was authored under.
-	//
-	// It lands `installed`, never `published`: what a sample leaves behind
-	// belongs to the repository, and `published` is exactly the origin whose
-	// declarations the repository's own token may not write (record 0048).
-	//
-	// What it does carry is where it came from: the shipped id and the
-	// shipped version, stamped on the landed package row, so the copy can be
-	// told from a package the user declared by hand and an edited copy from
-	// a pristine one. Only this door stamps them: the provider install lands
-	// the id it was asked for, and a hand apply has no origin to name.
 	opts := substrate.BundleInstall{Origin: b.ID, OriginVersion: b.Version, Confirm: confirm}
 	if err := install(ctx, ds, substrate.BundleActor(home, b.Package), vocabularyDocs, dataDocs, opts); err != nil {
 		return nil, nil, err

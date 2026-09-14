@@ -189,7 +189,7 @@ func decodeIfVersion(m map[string]any, ef *effect) error {
 
 func emitAllows(fn *vocabulary.Function, ident string) bool {
 	for _, t := range fn.Caps.Emit {
-		if t == ident {
+		if vocabulary.GrantMatches(t, ident) {
 			return true
 		}
 	}

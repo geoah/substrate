@@ -27,7 +27,7 @@
 #   3. A RECORD-SOURCED trigger that hands each new instruction to an AGENT,
 #      which turns it into tasks through the query and write host functions.
 #
-# The AGENT wants an `llm/provider` row at the id it names (`default`), which
+# The AGENT wants an `llm/provider` row at the id it names (`openai`), which
 # is what the llm sample ships: import that one too and fill in its key, or
 # the first agent run refuses at dispatch saying which row it wanted. The
 # function wants nothing at all. See docs/bundles-catalog.md.
@@ -45,7 +45,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: pebble
-  version: 5
+  version: 7
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -317,8 +317,10 @@ data:
 
     Reply in one short line: the task ids you created, or "already tracked"
     with the id of the task that covers it.
-  provider: default
-  model: claude-sonnet-5
+  provider: openai
+  model: gpt-5
+  params:
+    reasoningEffort: minimal
   tools:
     - function: substrate.reamde.dev/core/query
     - function: substrate.reamde.dev/core/write

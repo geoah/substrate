@@ -49,8 +49,8 @@ func TestCatalogListsShippedBundle(t *testing.T) {
 	if b.Package != "readinglist" {
 		t.Errorf("package = %q, want readinglist", b.Package)
 	}
-	if b.Version != 10 {
-		t.Errorf("version = %d, want 10", b.Version)
+	if b.Version != 12 {
+		t.Errorf("version = %d, want 12", b.Version)
 	}
 	// Its configuration is a shipped `setting` record, not an input: a bundle
 	// with no declared input is the shape decision record 0076 moved to.
@@ -114,9 +114,10 @@ func TestCatalogPreviewsTheRecordsAnInstallWrites(t *testing.T) {
 	if got := len(b.Closure.Agents); got != 6 {
 		t.Errorf("agents = %d, want 6 (%v)", got, b.Closure.Agents)
 	}
-	// `default` is the Anthropic row: every shipped sample agent names that
-	// id, so the row that makes them runnable is the one shipped at it.
-	want := map[string]bool{"default": true, "openai": true}
+	// `openai` is the row every shipped sample agent names: the seed writes
+	// it keyless, and importing this bundle is what makes the agents runnable
+	// on a repository that was born before the seed existed.
+	want := map[string]bool{"openai": true, "anthropic": true, "gemini": true}
 	got := map[string]bool{}
 	for _, r := range b.Closure.Records {
 		if r.Kind != "substrate.reamde.dev/llm/provider" {

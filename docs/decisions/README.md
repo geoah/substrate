@@ -231,3 +231,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0077](0077-the-llm-kinds-live-in-their-own-seeded-package.md) | The LLM kinds live in their own seeded package, `substrate.reamde.dev/llm` | accepted |
 | [0078](0078-a-kind-move-is-ordinary-record-writes.md) | A kind move is ordinary record writes: `movedFrom` carries the rows and repoints every reference | accepted |
 | [0079](0079-graphql-is-removed-and-the-records-read-is-one-route.md) | GraphQL is removed, and the records read is one route | accepted |
+| [0080](0080-a-kind-grant-may-glob-and-a-glob-never-reaches-auth-material.md) | A kind grant may glob, and a glob never reaches auth material | accepted |

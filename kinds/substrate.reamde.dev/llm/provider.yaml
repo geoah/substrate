@@ -10,8 +10,8 @@
 # repository-chosen endpoint by construction. Only the anthropic wire has an
 # endpoint of its own to leave baseURL empty against.
 #
-# An agent references a row by id (`provider: default`) and names its model as
-# a plain string, so re-pointing every agent on `default` is one patch here.
+# An agent references a row by id (`provider: openai`) and names its model as
+# a plain string, so re-pointing every agent on `openai` is one patch here.
 #
 # Embeddings resolve the same way, without an agent to name the row: the ONE
 # row that declares `embedModel` is the repository's embeddings provider, and
@@ -27,7 +27,7 @@ data:
     the key that reaches it, and what its models cost. An agent names a provider
     and a model, so re-pointing every agent on a provider is one patch to
     this row.
-  version: 8
+  version: 9
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -90,8 +90,8 @@ data:
         value:
           type: string
           description: the header value
-    # The request knobs are exactly the two llm.Params carries, so the object
-    # declares both and nothing else: a knob the loop would drop is refused at
+    # The request knobs are exactly the three llm.Params carries, so the object
+    # declares those and nothing else: a knob the loop would drop is refused at
     # the write instead of at the first dispatch.
     defaults:
       type: object
@@ -106,6 +106,20 @@ data:
           type: int
           min: 1
           description: the completion ceiling in tokens
+        # The same set core/agent.yaml declares, held by one validator: a row's
+        # defaults can never admit a value a manifest could not.
+        reasoningEffort:
+          type: enum
+          values:
+            - none
+            - minimal
+            - low
+            - medium
+            - high
+            - xhigh
+            - max
+          description: how hard a reasoning model thinks, when it takes the
+            knob
     # data-driven cost estimation: USD per 1M tokens per model id; a model
     # absent from the table means the thread's costUSD stays 0 and only the
     # token tally is authoritative. One row per model, keyed by the id AS SENT

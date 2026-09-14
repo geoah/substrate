@@ -140,10 +140,10 @@ so no host-wide key can reach a repository-chosen endpoint.
 
 Three consequences an operator meets:
 
-- A fresh repository has no agents and no semantic search until its owner
-  writes a provider row. Nothing seeds one, and
-  [registering a provider](agents.md#registering-a-provider) is where that
-  write is described.
+- A fresh repository has three keyless provider rows (`openai`, `anthropic`,
+  `gemini`) and the LLM sample's demo agents, which name `openai`. They
+  refuse at dispatch until that row's `apiKey` is written.
+  [Registering a provider](agents.md#registering-a-provider) is the write.
 - Hybrid search returns its lexical arm alone until one row declares
   `embedModel`, and the vectors it buys name that row and that model, so
   re-pointing either stops the older vectors being scored. `substratectl

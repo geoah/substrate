@@ -348,15 +348,26 @@ func TestFunctionLoadErrors(t *testing.T) {
 `,
 			want: "data.permissions.reads.kinds is required",
 		},
-		"reads.kinds take no globs": {
+		// A well-formed glob loads (record 0080); a malformed one still does not.
+		"reads.kinds refuse an infix glob": {
 			data: `  description: d
   runtime: python
   permissions:
     writes: [fn.example.com/fn/gadget]
-    reads: {kinds: ["fn.example.com/*"]}
+    reads: {kinds: ["fn.example.com/*/widget"]}
   source: "def main(input, host): return {}"
 `,
-			want: "no globs",
+			want: "a `*` stands alone or ends the pattern",
+		},
+		"writes refuse a malformed glob": {
+			data: `  description: d
+  runtime: python
+  permissions:
+    writes: ["NOT AN AUTHORITY/*"]
+    reads: {kinds: ["fn.example.com/fn/gadget"]}
+  source: "def main(input, host): return {}"
+`,
+			want: "is not a kind glob",
 		},
 		"reads.kinds must exist": {
 			data: `  description: d
@@ -598,6 +609,109 @@ func TestTriggerGlobHelpers(t *testing.T) {
 	}
 	if vocabulary.ValidFunctionOp("upsert") {
 		t.Fatal("upsert is not an op")
+	}
+}
+
+// TestGrantGlobGrammar holds a kind grant to the selector's spellings: a
+// grant reuses that grammar rather than growing a second one (record 0080).
+func TestGrantGlobGrammar(t *testing.T) {
+	for _, ok := range []string{
+		"*", "fn.example.com/*", "fn.example.com/fn/*",
+		"fn.example.com/fn/widget", "widget",
+	} {
+		if !vocabulary.ValidTypeGlob(ok) {
+			t.Fatalf("%q must be admissible in a grant", ok)
+		}
+	}
+	// An infix `*` is a typo, not a pattern: it reads as neither a glob nor a
+	// kind, so the entry is refused rather than silently matching nothing.
+	for _, bad := range []string{"fn.example.com/*/widget", "wid*get"} {
+		if vocabulary.IsTypeGlob(bad) {
+			t.Fatalf("%q must not read as a glob", bad)
+		}
+		if vocabulary.ValidKindReference(bad) {
+			t.Fatalf("%q must not read as a kind either", bad)
+		}
+	}
+	// A trailing `/*` is the glob SHAPE, so the head is then held to the
+	// authority and package grammar and a malformed one is refused there.
+	if !vocabulary.IsTypeGlob("fn.*.com/*") || vocabulary.ValidTypeGlob("fn.*.com/*") {
+		t.Fatal("a glob-shaped entry with a malformed head must be refused as a glob")
+	}
+	if !vocabulary.IsTypeGlob("*") || !vocabulary.IsTypeGlob("fn.example.com/*") ||
+		vocabulary.IsTypeGlob("fn.example.com/fn/widget") {
+		t.Fatal("IsTypeGlob disagrees with the grammar")
+	}
+}
+
+// TestGrantGlobNeverMatchesAuthKinds is the carve-out record 0080 turns on: a
+// glob covers everything the owner has, never the keys to the substrate. An
+// entry that spells one out still grants it.
+func TestGrantGlobNeverMatchesAuthKinds(t *testing.T) {
+	auth := []string{
+		"substrate.reamde.dev/core/token",
+		"substrate.reamde.dev/core/credential",
+		"substrate.reamde.dev/core/secret",
+		"substrate.reamde.dev/core/recoverykey",
+	}
+	for _, k := range auth {
+		for _, pat := range []string{"*", "substrate.reamde.dev/*", "substrate.reamde.dev/core/*"} {
+			if vocabulary.GrantMatches(pat, k) {
+				t.Fatalf("glob %q must not reach %s", pat, k)
+			}
+			// The selector's matcher is deliberately unchanged: the carve-out
+			// is the GRANT's, since a selector only costs a dispatch.
+			if !vocabulary.MatchTypeGlob(pat, k) {
+				t.Fatalf("selector %q should still match %s", pat, k)
+			}
+			if vocabulary.GrantSubsumes(pat, k) {
+				t.Fatalf("glob %q must not subsume %s", pat, k)
+			}
+		}
+		if !vocabulary.GrantMatches(k, k) {
+			t.Fatalf("%s must still be grantable by name", k)
+		}
+	}
+	// An ordinary core kind is reached by a glob: the carve-out is four kinds,
+	// not the package.
+	if !vocabulary.GrantMatches("*", "substrate.reamde.dev/core/agent") ||
+		!vocabulary.GrantMatches("substrate.reamde.dev/core/*", "substrate.reamde.dev/core/agent") {
+		t.Fatal("a glob must reach the core kinds that are not auth material")
+	}
+	if !vocabulary.GrantMatches("ada.example.com/*", "ada.example.com/tasks/task") ||
+		vocabulary.GrantMatches("ada.example.com/*", "bob.example.com/tasks/task") {
+		t.Fatal("an authority glob must stop at its authority")
+	}
+}
+
+// TestGrantSubsumesIsAPrefixLattice covers the ordering effectiveEmit narrows
+// a sub-agent's ceiling by (record 0080).
+func TestGrantSubsumesIsAPrefixLattice(t *testing.T) {
+	wider := []struct{ outer, inner string }{
+		{"*", "ada.example.com/*"},
+		{"*", "ada.example.com/tasks/task"},
+		{"ada.example.com/*", "ada.example.com/tasks/*"},
+		{"ada.example.com/*", "ada.example.com/tasks/task"},
+		{"ada.example.com/tasks/*", "ada.example.com/tasks/task"},
+		{"ada.example.com/tasks/task", "ada.example.com/tasks/task"},
+	}
+	for _, c := range wider {
+		if !vocabulary.GrantSubsumes(c.outer, c.inner) {
+			t.Fatalf("%q must subsume %q", c.outer, c.inner)
+		}
+	}
+	for _, c := range wider {
+		if c.outer == c.inner {
+			continue
+		}
+		if vocabulary.GrantSubsumes(c.inner, c.outer) {
+			t.Fatalf("%q must not subsume %q", c.inner, c.outer)
+		}
+	}
+	// Siblings are incomparable, which is what makes their meet empty.
+	if vocabulary.GrantSubsumes("ada.example.com/tasks/*", "ada.example.com/notes/*") ||
+		vocabulary.GrantSubsumes("ada.example.com/*", "bob.example.com/*") {
+		t.Fatal("siblings must not subsume one another")
 	}
 }
 

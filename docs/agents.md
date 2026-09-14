@@ -50,8 +50,10 @@ data:
     You are the page classifier. Read the page in the first message, decide
     whether it is an article, a tool, or a video, set its class with the
     setclass tool, then hand the page to the reading-list agent.
-  provider: default
-  model: anthropic/claude-opus-5
+  provider: openai
+  model: gpt-5
+  params:
+    reasoningEffort: minimal
   tools:
     - function: samples.substrate.reamde.dev/readinglist/setclass
   subagents: [samples.substrate.reamde.dev/readinglist/curator]
@@ -76,10 +78,19 @@ data:
   `claude-opus-5` on an `anthropic`-wire row.
   The substrate keeps no model table: re-pointing an agent at a cheaper model
   is one word here.
-- optional **`params`**: `{temperature, maxTokens}` for this agent's calls,
-  merged over the provider row's `defaults`. The set is closed, so a knob the
-  loop could not pass on is a load error rather than a line that silently does
-  nothing.
+- optional **`params`**: `{temperature, maxTokens, reasoningEffort}` for this
+  agent's calls, merged over the provider row's `defaults`. The set is closed,
+  so a knob the loop could not pass on is a load error rather than a line that
+  silently does nothing. `reasoningEffort` is one of `none`, `minimal`, `low`,
+  `medium`, `high`, `xhigh`, `max` — the union of what the wires take, and
+  **the accepted subset is the model's, not the wire's**, so the endpoint
+  refuses one its model does not know: `gpt-5` takes `minimal` through `high`
+  and rejects `none`, while the gpt-5.6 family takes `none`. **Absent is not
+  `none`**: a gpt-5.6 model reasons by default and then refuses function tools
+  for any effort but none on chat completions, so an agent with `tools:` on one
+  of those needs `reasoningEffort: none` said out loud. For the same reason a
+  provider row's `defaults` is the wrong home for this knob — one row serves
+  several models — and none of the seeded rows sets it.
 - **`tools:`**, the functions the model may invoke (below).
 - **`subagents:`**, sub-agent references (self-reference is a load error).
 - **`budgets:`** bounds one run: `maxTurns` (default 8, max 64),
@@ -92,6 +103,20 @@ data:
   - optional **`reads:`**, which record kinds it may read and how much: a
     `kinds:` allowlist plus `budgets:` calls and rows. Leave it out and the
     `query` tool is withheld.
+
+  Either list may **glob**, in the spellings a trigger selector uses: `*`,
+  `<authority>/*` or `<authority>/<package>/*`
+  ([0080](decisions/0080-a-kind-grant-may-glob-and-a-glob-never-reaches-auth-material.md)).
+  A glob covers kinds the repository does not have yet, so an agent granted
+  `ada.example.com/*` keeps working as bundles are imported — which is the
+  point, and also the cost: importing one widens an existing grant, and a
+  misspelled glob matches nothing where a misspelled kind would have been
+  refused at load. **A glob never reaches
+  `substrate.reamde.dev/core/token`, `/credential`, `/secret` or
+  `/recoverykey`.** Those four are granted only by an entry that spells one
+  out, so `*` means everything the owner has rather than everything including
+  the keys to the substrate. `permissions.call` takes no glob: it names
+  functions, not kinds.
 - optional **`hiddenFromChat:`**, the chat-surface withholding: `true` keeps the
   agent off the console's chat list and makes the chat API refuse it, while
   sub-agent calls, the call API and triggers still dispatch it. An
@@ -166,7 +191,8 @@ entry could name only a function.
   load error otherwise, and every arm is held to that allowlist: a get outside
   it answers like an absent id, a kind outside it in `filter.kinds` or `kinds`
   is refused by name, an expanded referent outside it is left out, and a list
-  that names no kinds lists the allowlist. List and search clamp to the
+  that names no kinds lists the allowlist — expanded against the repository's
+  current kinds where the allowlist globs. List and search clamp to the
   remaining row budget; a blown budget is a tool error the model sees.
 - **`substrate.reamde.dev/core/write`** is the direct write: one call is
   `{op, kind, id, input, ifVersion}`, where `op` is `put` (create or update,
@@ -373,10 +399,11 @@ pricing:
 
 **Every one of these is declared, not a json blob.** `wire` is an enum of the
 three wires, so a typo is refused at the write; `defaults` is an object of the
-two request knobs there are (`temperature`, `maxTokens`); `headers` and
-`pricing` are repeated objects whose key is a declared field (`name`, `model`),
-and a later row for the same key wins. A map is declarable: a property marked
-`keyed: true` is one, which is how a kind's own `properties` block stays a map.
+three request knobs there are (`temperature`, `maxTokens`, `reasoningEffort`);
+`headers` and `pricing` are repeated objects whose key is a declared field
+(`name`, `model`), and a later row for the same key wins. A map is declarable: a
+property marked `keyed: true` is one, which is how a kind's own `properties`
+block stays a map.
 These two stay lists because each row's key is a value with a name of its own.
 
 **Every row carries its own endpoint and its own key.** There is no host
@@ -398,19 +425,23 @@ rather than mixing two models' distances. `repository reembed` is how their
 replacement is bought, on the box and never over HTTP
 ([there is no LLM configuration](operations.md#there-is-no-llm-configuration)).
 
-**Nothing seeds a provider.** A fresh repository holds no `llm/provider` row at
-all: a row is where the wire, the endpoint and the key live, and a substrate
-cannot invent a key — one shipped without it only postpones the failure to the
-first dispatch while looking configured. An agent naming a row that is not
-there refuses at dispatch and says which row it wanted.
+**Creation seeds three keyless provider rows** — `openai`, `anthropic` and
+`gemini`. A row is where the wire, the endpoint and the key live, and a
+substrate cannot invent a key, so they land without one: dispatch refuses
+until the owner writes `apiKey`. An agent naming a row that is not there
+refuses at dispatch and says which row it wanted.
 
-Every shipped sample agent names `provider: default`, so a repository that
-imports one wants a row at that id. The LLM example (**Registry → Examples**)
-is what ships it: two correctly-shaped keyless rows, `default` on Anthropic's
-wire and `openai` on OpenAI's, which its own agents name too. Import it and
-key one, or write the row yourself as the document below. There are
-no `cheap`/`mid`/`strong` rows: a tier was a model id hiding behind a name, and
-the model is the agent's own word now.
+Every shipped sample agent names `provider: openai`, so a fresh repository's
+demo agents run once that row is keyed. Those that carry `tools:` or
+`subagents:` name `reasoningEffort: minimal` on their own `params`, the
+weakest value their `gpt-5` model accepts; the rows themselves set no
+reasoning default, because the accepted set belongs to the model and one row
+serves several. The LLM example (**Registry →
+Examples**) is the same closure creation already imported, and it ships the
+same three rows so a later import onto a repository born before the seed
+still has them. Key one, or write another row yourself as the document
+below. There are no `cheap`/`mid`/`strong` rows: a tier was a model id hiding
+behind a name, and the model is the agent's own word now.
 
 ### Registering a provider
 

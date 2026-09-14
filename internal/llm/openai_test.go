@@ -85,6 +85,42 @@ func TestOpenAISendsAnExplicitZeroTemperature(t *testing.T) {
 	}
 }
 
+// A named reasoning effort must reach the wire beside the tools, because on
+// this wire that combination is the whole point: the gpt-5.6 family reasons by
+// default and refuses function tools for any effort but `none`, so a request
+// carrying tools and no effort is one the endpoint 400s. Absent still sends
+// nothing — "do not name one" is not `none`.
+func TestOpenAISendsAReasoningEffortBesideTools(t *testing.T) {
+	srv := newOpenAIServer(t, func(w http.ResponseWriter, _ map[string]any) {
+		jsonBody(w, map[string]any{
+			"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "ok"}}},
+			"usage":   map[string]any{"prompt_tokens": 1, "completion_tokens": 1},
+		})
+	})
+	client, err := New(WireOpenAI, Config{BaseURL: srv.srv.URL, APIKey: "k"})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	req := Request{
+		Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+		Tools:  []Tool{{Name: "peek", Parameters: map[string]any{"type": "object"}}},
+		Params: Params{ReasoningEffort: "none"},
+	}
+	if _, err := client.Complete(context.Background(), req, nil); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if srv.last["reasoning_effort"] != "none" {
+		t.Fatalf("reasoning_effort = %v", srv.last["reasoning_effort"])
+	}
+	req.Params = Params{}
+	if _, err := client.Complete(context.Background(), req, nil); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if _, sent := srv.last["reasoning_effort"]; sent {
+		t.Fatalf("reasoning_effort was sent unasked: %v", srv.last["reasoning_effort"])
+	}
+}
+
 func TestOpenAIOneShotCarriesSystemToolsAndUsage(t *testing.T) {
 	srv := newOpenAIServer(t, func(w http.ResponseWriter, _ map[string]any) {
 		jsonBody(w, map[string]any{

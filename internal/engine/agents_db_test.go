@@ -1514,14 +1514,13 @@ func TestProposeDiffValidation(t *testing.T) {
 	}
 }
 
-// Nothing seeds an llm/provider. A repository holds none until its owner writes
-// one, because a row with an openai wire, no endpoint and no key answers
-// nothing — it only postpones the failure to the first dispatch, wearing the
-// name `default` as if it were configured.
-func TestFreshRepositoryHoldsNoProvider(t *testing.T) {
+// A new repository is seeded with three keyless llm/provider rows. Dispatch
+// refuses until the owner writes apiKey; deleting a row is not undone on the
+// next open.
+func TestFreshRepositoryHoldsKeylessProviders(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds := openInternalDataset(t)
+	ds := openInternalDataset(t, WithLLMProviderSeed(true))
 
 	page, err := ds.List(ctx, substrate.Query{
 		Filter: substrate.Filter{Kinds: []string{typeProvider}},
@@ -1529,12 +1528,38 @@ func TestFreshRepositoryHoldsNoProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list providers: %v", err)
 	}
-	if len(page.Records) != 0 {
-		t.Fatalf("a fresh repository holds %d llm/provider rows, want none", len(page.Records))
+	got := map[string]bool{}
+	for _, rec := range page.Records {
+		got[rec.ID] = true
+		if rec.Properties["apiKey"] != nil && rec.Properties["apiKey"] != "" {
+			t.Errorf("seeded llm/provider %s carries an apiKey", rec.ID)
+		}
+		// The accepted reasoning set belongs to the MODEL, and one row serves
+		// several: gpt-5 refuses the "none" the gpt-5.6 family needs. A row
+		// that defaulted the knob would break one of them at dispatch.
+		if defaults, ok := rec.Properties["defaults"].(map[string]any); ok {
+			if _, set := defaults["reasoningEffort"]; set {
+				t.Errorf("seeded llm/provider %s defaults reasoningEffort; the model's set is not the row's", rec.ID)
+			}
+		}
+	}
+	for _, id := range []string{"openai", "anthropic", "gemini"} {
+		if !got[id] {
+			t.Errorf("a fresh repository is missing llm/provider %s", id)
+		}
+	}
+	if len(page.Records) != 3 {
+		t.Errorf("a fresh repository holds %d llm/provider rows, want 3", len(page.Records))
 	}
 
-	// And an agent naming one it does not have says so, in terms an owner can
-	// act on rather than "does not resolve".
+	_, err = ds.resolveProvider(ctx, "openai")
+	if err == nil {
+		t.Fatal("resolving a keyless provider must fail")
+	}
+	if !strings.Contains(err.Error(), "apiKey") {
+		t.Fatalf("the refusal must name the missing key, got: %v", err)
+	}
+
 	_, err = ds.resolveProvider(ctx, "default")
 	if err == nil {
 		t.Fatal("resolving an absent provider must fail")

@@ -8,6 +8,7 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -158,7 +159,7 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 	}
 	// …and opening it writes no DECLARATION at all: the tree does not
 	// re-assert, and the upgrade diff against the binary that seeded it is
-	// empty. (Open still seeds the create-only llm/provider row, which is data.)
+	// empty. (Open still seeds missing llm/provider rows create-only, which is data.)
 	for _, ch := range changesSince(t, ds, atCreation) {
 		if strings.HasSuffix(ch.Kind, ".substrate.reamde.dev/core") && declarationKinds[ch.Kind] {
 			t.Fatalf("opening a freshly seeded repository re-wrote declaration %s %s", ch.Kind, ch.RecordID)
@@ -222,6 +223,74 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 		if v, _ := vocabulary.VersionValue(row.Properties["version"]); v < 1 {
 			t.Fatalf("declaration %s %s carries no version", ref.typ, ref.id)
 		}
+	}
+}
+
+// Production Open imports the LLM sample at creation: the demo agents and
+// scratchpad land under the repository's own authority, and they name the
+// seeded openai provider.
+func TestCreationSeedsLLMSample(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _ := newService(t, engine.WithLLMSampleSeed(true), engine.WithLLMProviderSeed(true))
+	repo := testdb.Repository(t)
+	if _, err := svc.CreateRepository(ctx, repo); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.KindByRef(ctx, repo+"/llm/scratchpad"); err != nil {
+		t.Fatalf("the llm sample scratchpad kind: %v", err)
+	}
+	agent, err := ds.Get(ctx, "substrate.reamde.dev/core/agent", repo+"/llm/substrate")
+	if err != nil {
+		t.Fatalf("the seeded substrate agent: %v", err)
+	}
+	if got := fmt.Sprint(agent.Properties["provider"]); !strings.Contains(got, "openai") {
+		t.Fatalf("seeded agent provider = %v, want openai", agent.Properties["provider"])
+	}
+	// minimal, not none: the agent carries tools on gpt-5, whose accepted set
+	// starts there — "none" is the gpt-5.6 family's spelling and gpt-5 refuses
+	// it outright.
+	params, _ := agent.Properties["params"].(map[string]any)
+	if params["reasoningEffort"] != "minimal" {
+		t.Fatalf("seeded agent params.reasoningEffort = %v, want minimal", agent.Properties["params"])
+	}
+}
+
+// A deleted seeded provider stays gone: the open catch-up is create-only,
+// including tombstones.
+func TestSeededProviderDeleteIsNotResurrected(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, dsn := newService(t, engine.WithLLMProviderSeed(true))
+	repo := testdb.Repository(t)
+	if _, err := svc.CreateRepository(ctx, repo); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/llm/provider", "gemini", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete gemini: %v", err)
+	}
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+	svc2, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(root), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithLLMProviderSeed(true))
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	t.Cleanup(func() { _ = svc2.Close() })
+	ds2, err := svc2.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := ds2.Get(ctx, "substrate.reamde.dev/llm/provider", "gemini")
+	if err == nil && row.DeletedAt == nil {
+		t.Fatal("reopening resurrected a deleted seeded provider")
 	}
 }
 

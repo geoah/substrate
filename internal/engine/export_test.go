@@ -150,6 +150,8 @@ func OpenForTest(t *testing.T, ctx context.Context, dsn string, opts ...Option) 
 		WithKindsDir(SeedKindsDir),
 		WithCredentialKey(TestCredentialKey),
 		WithTestTOTPClock(ClockOf(t).Now),
+		WithLLMSampleSeed(false),
+		WithLLMProviderSeed(false),
 	}, opts...)
 	return Open(ctx, dsn, all...)
 }

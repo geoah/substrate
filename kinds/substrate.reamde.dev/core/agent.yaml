@@ -20,7 +20,7 @@ data:
     a function by a trigger, the call API or another agent. The row IS the
     prompt store, so changing what an agent does is a record write and the
     changelog is its version history.
-  version: 15
+  version: 17
   names:
     singular: agent
   displayTemplate: "{localName}"
@@ -61,8 +61,8 @@ data:
       description: the system prompt; the row is the prompt store
     # The llm/provider the loop reads wire/baseURL/apiKey off at dispatch. The
     # pin is what lets a client offer a picker, and it supplies the kind an
-    # authored bare id omits: `default` stores as
-    # `substrate.reamde.dev/llm/provider/default`.
+    # authored bare id omits: `openai` stores as
+    # `substrate.reamde.dev/llm/provider/openai`.
     provider:
       type: reference
       kind: substrate.reamde.dev/llm/provider
@@ -86,6 +86,26 @@ data:
           type: int
           min: 1
           description: the completion cap sent on every request
+        # The union of what the wires accept, weakest first: `reasoning_effort`
+        # on openai and azure, `output_config.effort` on anthropic. The
+        # accepted SUBSET is the model's, not the wire's, and the endpoint
+        # refuses one its model does not know: gpt-5 takes minimal..high and
+        # rejects `none`, the gpt-5.6 family takes `none`. ABSENT IS NOT
+        # `none`: a gpt-5.6 model reasons by default and then refuses function
+        # tools for any effort but none on chat completions, so an agent with
+        # tools on one of those says the word here.
+        reasoningEffort:
+          type: enum
+          values:
+            - none
+            - minimal
+            - low
+            - medium
+            - high
+            - xhigh
+            - max
+          description: how hard a reasoning model thinks, when it takes the
+            knob
     # `function` names the tool, and it is the ONE arm: the four built-ins are
     # `runtime: host` function records core ships, so
     # `{function: substrate.reamde.dev/core/query}` names one exactly as a
@@ -156,7 +176,13 @@ data:
               type: reference
               kind: substrate.reamde.dev/core/kind
               repeated: true
-              description: the record kinds every read is held to
+              # An entry may be a kind or one of the trigger selector's globs
+              # (`*`, `<authority>/*`, `<authority>/<package>/*`), which cover
+              # kinds the repository gains later. A GLOB never reaches
+              # `token`, `credential`, `secret` or `recoverykey`: those are
+              # granted only by an entry that spells one out (record 0080).
+              description: the record kinds every read is held to, each a
+                kind or a glob over them
             budgets:
               type: object
               description: how much one run may read
@@ -175,8 +201,11 @@ data:
           type: reference
           kind: substrate.reamde.dev/core/kind
           repeated: true
-          description: which record kinds it may create or change, the change
-            requests it proposes among them
+          # Globs and the auth carve-out exactly as `reads.kinds` above
+          # (record 0080).
+          description: which record kinds it may create or change, each a
+            kind or a glob over them, the change requests it proposes among
+            them
     # Withholds the agent from the interactive chat surface only: the console
     # keeps it off the chat list and the chat API refuses it, while sub-agent
     # calls, the call API and triggers still dispatch it. Any agent, marked or

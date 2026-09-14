@@ -100,8 +100,13 @@ target must be a registered function. `permissions.network` is enforced as a
 sandbox, while the host patterns themselves are still only documentation (see
 [the sandbox](#the-sandbox)). `permissions.mutations` gates the `merge` and
 `split` effects, which are refused without it. Every entry in `writes`,
-`reads.kinds` and `call` is a full reference, `<authority>/<package>/<name>`,
-and none of them admit globs.
+`reads.kinds` and `call` is a full reference, `<authority>/<package>/<name>`.
+The two KIND lists also take a glob — `*`, `<authority>/*` or
+`<authority>/<package>/*`, the spellings a trigger selector uses — which
+covers kinds the repository gains later, and never reaches
+`substrate.reamde.dev/core/token`, `/credential`, `/secret` or `/recoverykey`
+([0080](decisions/0080-a-kind-grant-may-glob-and-a-glob-never-reaches-auth-material.md)).
+`call` admits no glob: it names functions, not kinds.
 
 The body's entrypoint is `main(input, host)`, and it returns
 `{effects, output}`. `input` names the `mode` that woke the body (`record`,

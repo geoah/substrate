@@ -45,9 +45,32 @@ describe("hostToolsOf", () => {
     ).toEqual([HOST_FUNCTION_QUERY, HOST_FUNCTION_PROPOSE])
   })
 
+  // The SERVED shape. A reference reads back as `{ref: …}`, so a document
+  // fetched from the server carries objects where an authored one carries
+  // strings, and reading only the string arm found no tools at all.
+  it("reads a tool entry whose function is the served reference object", () => {
+    expect(
+      hostToolsOf(
+        agent({
+          tools: [
+            {
+              function: {
+                ref: `substrate.reamde.dev/core/function/${HOST_FUNCTION_QUERY}`,
+              },
+            },
+            { function: { ref: HOST_FUNCTION_WRITE } },
+          ],
+        })
+      )
+    ).toEqual([HOST_FUNCTION_QUERY, HOST_FUNCTION_WRITE])
+  })
+
   it("ignores a tools list that is not a list of entries", () => {
     expect(hostToolsOf(agent({ tools: "query" }))).toEqual([])
     expect(hostToolsOf(agent({ tools: [null, 7, {}] }))).toEqual([])
+    expect(hostToolsOf(agent({ tools: [{ function: { ref: "" } }] }))).toEqual(
+      []
+    )
   })
 
   it("reads a tool entry spelled as a PATH, and one spelled short", () => {
@@ -100,6 +123,52 @@ describe("grantHints", () => {
         agent({
           ...tools(HOST_FUNCTION_QUERY),
           permissions: { reads: { kinds: [`${K}/${WIDGET}`] } },
+        })
+      )
+    ).toEqual([])
+  })
+
+  // The served shape again, on both sides at once: a record fetched from the
+  // server carries reference OBJECTS in its tools and in its grants, and a
+  // reader that saw only strings called every grant unpaid.
+  it("reads tools and grants spelled as served reference objects", () => {
+    const K = "substrate.reamde.dev/core/kind"
+    expect(
+      grantHints(
+        agent({
+          tools: [{ function: { ref: HOST_FUNCTION_PROPOSE } }],
+          permissions: {
+            writes: [{ ref: `${K}/${RECORD_PATCH_REQUEST_KIND}` }],
+          },
+        })
+      )
+    ).toEqual([])
+    expect(
+      grantHints(
+        agent({
+          tools: [{ function: { ref: HOST_FUNCTION_QUERY } }],
+          permissions: { reads: { kinds: [{ ref: `${K}/${WIDGET}` }] } },
+        })
+      )
+    ).toEqual([])
+  })
+
+  // A `*` grant is a kind glob, not a kind (decision record 0080), so it
+  // reads back as a reference whose path ends in `*` and must still count as
+  // a grant rather than reading as no allowlist at all.
+  it("counts a glob grant as a grant", () => {
+    const K = "substrate.reamde.dev/core/kind"
+    expect(
+      grantHints(
+        agent({
+          tools: [
+            { function: { ref: HOST_FUNCTION_QUERY } },
+            { function: { ref: HOST_FUNCTION_WRITE } },
+          ],
+          permissions: {
+            reads: { kinds: [{ ref: `${K}/*` }] },
+            writes: [{ ref: `${K}/*` }],
+          },
         })
       )
     ).toEqual([])

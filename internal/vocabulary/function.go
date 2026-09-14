@@ -278,6 +278,76 @@ func ValidTypeGlob(pat string) bool {
 	}
 }
 
+// --- kind grants (decision record 0080) ---------------------------------------
+
+// AuthKinds are the four core kinds a GLOB never reaches. They hold the
+// repository's own auth material, so `*` means "everything the owner has",
+// not "everything, including the keys to the substrate". An entry that spells
+// one out still grants it: the carve-out is on the glob, not on the kind.
+var AuthKinds = map[string]bool{
+	CoreKind("token"):       true,
+	CoreKind("credential"):  true,
+	CoreKind("secret"):      true,
+	CoreKind("recoverykey"): true,
+}
+
+// IsTypeGlob reports whether a grant entry is a pattern rather than one kind.
+func IsTypeGlob(pat string) bool { return pat == "*" || strings.HasSuffix(pat, "/*") }
+
+// GrantMatches is the gate every kind grant is read through — an agent's or a
+// function's `permissions.writes` and `permissions.reads.kinds` alike. It is
+// MatchTypeGlob plus the auth carve-out, and it is deliberately separate from
+// the trigger selector's matcher: a selector matching an auth kind only costs
+// a dispatch, where a grant matching one costs the substrate its keys.
+func GrantMatches(pat, ident string) bool {
+	if IsTypeGlob(pat) && AuthKinds[ident] {
+		return false
+	}
+	return MatchTypeGlob(pat, ident)
+}
+
+// GrantSubsumes reports whether every kind `outer` grants, `inner` grants too.
+// The patterns form a prefix lattice (`*` over `<authority>/*` over
+// `<authority>/<package>/*` over one reference), which is what lets an emit
+// ceiling be intersected without enumerating the registry: see
+// effectiveEmit in internal/engine.
+func GrantSubsumes(outer, inner string) bool {
+	switch {
+	case outer == inner:
+		return true
+	case outer == "*":
+		// `*` covers every pattern EXCEPT one naming an auth kind outright,
+		// which it deliberately does not reach.
+		return !AuthKinds[inner]
+	case strings.HasSuffix(outer, "/*"):
+		if AuthKinds[inner] {
+			return false
+		}
+		return strings.HasPrefix(inner, outer[:len(outer)-1])
+	default:
+		return false
+	}
+}
+
+// grantEntryProblem holds one `writes` or `reads.kinds` entry to the grammar:
+// the trigger selector's globs, or a kind reference. It returns "" when the
+// entry is admissible.
+func grantEntryProblem(entry string) string {
+	if IsTypeGlob(entry) {
+		if !ValidTypeGlob(entry) {
+			return "is not a kind glob: `*`, `<authority>/*` or `<authority>/<package>/*`"
+		}
+		return ""
+	}
+	if strings.Contains(entry, "*") {
+		return "is not a kind glob: a `*` stands alone or ends the pattern"
+	}
+	if !ValidKindReference(entry) {
+		return "is not a kind, bare or authority-qualified"
+	}
+	return ""
+}
+
 // --- the when-guard CEL contract ----------------------------------------------
 
 // The bindings a trigger's `when:` guard sees, all read-only: the triggering
@@ -749,8 +819,8 @@ func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Functi
 		return nil
 	}
 	for i, t := range ReferentIDs(mslice(perms, "writes"), CoreKind(DocKind)) {
-		if !ValidKindReference(t) {
-			l.errf("%s: data.permissions.writes[%d]: %q is not a kind; writes names them, bare or authority-qualified, no globs", where, i, t)
+		if problem := grantEntryProblem(t); problem != "" {
+			l.errf("%s: data.permissions.writes[%d]: %q %s", where, i, t, problem)
 			continue
 		}
 		fn.Caps.Emit = append(fn.Caps.Emit, t)
@@ -880,8 +950,8 @@ func (l *loader) parseReads(where string, perms map[string]any, fn *Function) bo
 	l.checkKeys(where+": "+path, r, functionReadsKeys)
 	reads := &FunctionReads{}
 	for i, t := range ReferentIDs(mslice(r, "kinds"), CoreKind(DocKind)) {
-		if !ValidKindReference(t) {
-			l.errf("%s: %s.kinds[%d]: %q — reads names kinds, bare or authority-qualified, no globs", where, path, i, t)
+		if problem := grantEntryProblem(t); problem != "" {
+			l.errf("%s: %s.kinds[%d]: %q %s", where, path, i, t, problem)
 			continue
 		}
 		reads.Kinds = append(reads.Kinds, t)
@@ -969,6 +1039,11 @@ func (r *Registry) resolveFunction(f *Function) []string {
 	var problems []string
 	where := DocFunction + " " + f.Identity()
 	for i, t := range f.Caps.Emit {
+		// A glob resolves to nothing on purpose (record 0080): its whole job
+		// is to cover kinds this registry does not hold yet.
+		if IsTypeGlob(t) {
+			continue
+		}
 		ty, err := r.Resolve(t)
 		if err != nil || ty == nil {
 			problems = append(problems, fmt.Sprintf("%s: data.permissions.writes: unknown type %q", where, t))
@@ -978,6 +1053,9 @@ func (r *Registry) resolveFunction(f *Function) []string {
 	}
 	if f.Caps.Reads != nil {
 		for i, t := range f.Caps.Reads.Kinds {
+			if IsTypeGlob(t) {
+				continue
+			}
 			ty, err := r.Resolve(t)
 			if err != nil || ty == nil {
 				problems = append(problems, fmt.Sprintf("%s: data.permissions.reads.kinds: unknown type %q", where, t))

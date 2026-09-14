@@ -153,6 +153,31 @@ func TestParseAgentParamsTemperatureBound(t *testing.T) {
 	}
 }
 
+// reasoningEffort is held to the declared set, and to it alone: the kinds
+// declare the same seven as an enum, so a value the loader waved through would
+// project a record the kind refuses. An absent one parses as empty, which is
+// what makes "do not name one" distinguishable from "none".
+func TestParseAgentParamsReasoningEffortSet(t *testing.T) {
+	for _, effort := range []any{"None", "off", "highest", "", 3, true} {
+		if _, err := vocabulary.ParseAgentParams(map[string]any{"reasoningEffort": effort}); err == nil {
+			t.Fatalf("reasoningEffort %v accepted, want refused", effort)
+		}
+	}
+	for _, effort := range []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"} {
+		p, err := vocabulary.ParseAgentParams(map[string]any{"reasoningEffort": effort})
+		if err != nil {
+			t.Fatalf("reasoningEffort %q refused: %v", effort, err)
+		}
+		if p.ReasoningEffort != effort {
+			t.Fatalf("reasoningEffort %q parsed as %q", effort, p.ReasoningEffort)
+		}
+	}
+	p, err := vocabulary.ParseAgentParams(map[string]any{"maxTokens": 8.0})
+	if err != nil || p.ReasoningEffort != "" {
+		t.Fatalf("unnamed reasoningEffort = %q (%v)", p.ReasoningEffort, err)
+	}
+}
+
 func TestAgentLoads(t *testing.T) {
 	r, err := loadAgAuthority(t, agAuthority(`  description: classifies widgets
   prompt: You classify widgets.

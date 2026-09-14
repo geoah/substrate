@@ -60,7 +60,8 @@ func newService(t *testing.T, opts ...engine.Option) (substrate.Service, string)
 }
 
 // newDataset provisions a repository, imports the TASKS sample package and
-// returns its dataset. Creation seeds core alone, so a test that reads any
+// returns its dataset. Creation seeds core and llm (and three keyless
+// provider rows), so a test that reads any
 // sample kind imports one; tasks `requires:` people and scheduling, so the
 // three arrive together and cover task, project, tasklog, person, team,
 // organization and the recurrence traits. That is what nearly every test in
@@ -88,8 +89,9 @@ func newVocabularyDataset(t *testing.T, names ...string) (substrate.Service, sub
 	return svc, ds
 }
 
-// newCoreDataset provisions a repository and stops there: core, and nothing
-// else, exactly as the seed leaves it.
+// newCoreDataset provisions a repository and stops there: the seeded
+// vocabulary (core and llm) and the three keyless provider rows. OpenForTest
+// does not import the LLM sample; production Open does.
 func newCoreDataset(t *testing.T, opts ...engine.Option) (substrate.Service, substrate.Dataset) {
 	t.Helper()
 	svc, _ := newService(t, opts...)
@@ -410,8 +412,9 @@ func bagOfWordsVector(s string, width int) []float32 {
 }
 
 // installEmbedProvider writes the llm/provider row that makes a repository
-// embed: the one row declaring embedModel. Nothing seeds one, so every test
-// that wants vectors writes it, exactly as an owner would.
+// embed: the one row declaring embedModel. The seed writes three keyless
+// completion rows and none of them declare embedModel, so every test that
+// wants vectors writes it, exactly as an owner would.
 func installEmbedProvider(t *testing.T, ds substrate.Dataset, id, baseURL, model string) {
 	t.Helper()
 	if _, err := ds.Put(context.Background(), owner, substrate.PutInput{

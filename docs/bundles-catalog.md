@@ -44,7 +44,7 @@ addressed as `<authority>/<package>/<kind>/<id>`. What a closure declares is
 exactly what its `installs:` lists. Beside that closure every bundle may ship **ordinary
 records**, written by the same install: a provider's triggers (the
 delivery wiring, in
-`triggers.yaml`) and the LLM sample's two provider rows are the same kind of
+`triggers.yaml`) and the LLM sample's three provider rows are the same kind of
 thing, and the Records column counts them.
 
 | Bundle     | Tier     | Auth           | Kinds | Functions | Records | Agents |
@@ -55,7 +55,7 @@ thing, and the Records column counts them.
 | WHOOP         | Provider | OAuth          | 5     | 1         | 2       | 0      |
 | Notion        | Provider | Internal token | 4     | 1         | 2       | 0      |
 | Beeper        | Provider | Pasted token   | 4     | 1         | 2       | 0      |
-| LLM           | Sample   | Key, per row   | 1     | 0         | 2       | 6      |
+| LLM           | Sample   | Key, per row   | 1     | 0         | 3       | 6      |
 | Notes         | Sample   | none           | 1     | 2         | 0       | 2      |
 | Firecrawl     | Sample   | API key        | 1     | 2         | 2       | 0      |
 | Reading list  | Sample   | none           | 2     | 4         | 5       | 3      |
@@ -108,12 +108,11 @@ sync token gives it full-plus-incremental with no window.
 
 ## LLM (sample)
 
-Package `samples.substrate.reamde.dev/llm`. Import this bundle first if
-you want to run an agent at all. A fresh substrate seeds no `llm/provider` row,
-so this bundle ships the two an agent can name, correctly shaped for their
-wires and deliberately keyless, plus a `scratchpad` kind to practise on and
-six agents. The Anthropic row's id is `default`, which is the row every
-shipped agent names, and the second row is `openai`:
+Package `samples.substrate.reamde.dev/llm`. A new repository already holds
+this bundle, rehomed onto its own authority, and three keyless `llm/provider`
+rows (`openai`, `anthropic`, `gemini`). The demo agents name `openai`. Key
+that row and they run. A later import of this bundle onto a repository born
+before the seed writes the same three rows and the same agents.
 
 - `substrate` is the one to chat with: it reads the whole graph through the
   `query` built-in, writes nothing directly, proposes every change as a
@@ -130,9 +129,9 @@ shipped agent names, and the second row is `openai`:
   summarizer is `hiddenFromChat`: off the chat list, callable only by other
   agents.
 
-Importing it gives you two rows that refuse until you key them: `default` on
-Anthropic's own wire and `openai` pointed at `https://api.openai.com/v1`,
-re-pointable at any gateway that speaks that wire. Keying one is an ordinary record write,
+Importing it gives you three rows that refuse until you key them: `openai`
+on OpenAI's own wire, `anthropic` on Anthropic's, and `gemini` on Google's
+OpenAI-compatible endpoint. Keying one is an ordinary record write,
 and [registering a provider](agents.md#registering-a-provider) is where that
 write, the wires and the pricing table are described.
 
@@ -157,9 +156,8 @@ which writes the one kind the bundle declares — `note`. That write lands only
 because the kind is in BOTH the function's writes and the calling agent's,
 which is the capability envelope in one closure.
 
-Both agents name `provider: default`, so running them wants an `llm/provider`
-row at that id — [nothing seeds one](agents.md#providers), and the LLM example
-above is what ships it. Import that bundle too and key its `default` row.
+Both agents name `provider: openai`, so running them wants that
+`llm/provider` row keyed — [creation seeds it](agents.md#providers), keyless.
 Calling an agent is an API call, not a CLI verb:
 
 ```bash
@@ -170,12 +168,9 @@ curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/noteke
 
 One run leaves TWO `llm/thread` rows, the root agent's and the sub-agent's own,
 each with its own turn and token tallies; cost rolls up onto the root. These
-manifests name models the way Anthropic's own wire does (`claude-sonnet-5`,
-`claude-haiku-4-5`), which is what the shipped `default` row speaks; point that
-row at a gateway instead and the model names become the gateway's aliases
-(`anthropic/claude-sonnet-5`). `pricing` is keyed by the model string AS SENT,
-so a model the table does not name runs uncosted
-([providers](agents.md#providers)).
+manifests name models the way OpenAI's wire does (`gpt-5`,
+`gpt-5-mini`), which is what the seeded `openai` row speaks; point that
+row at a gateway instead and the model names become the gateway's aliases.
 
 ## Google
 
@@ -510,7 +505,7 @@ It is the running example these pages build on, and it requires
   `curator`, which proposes adding it to the reading list; `weeklyrollup`
   queries the week's pages and proposes a digest. Both proposals travel as
   `substrate.reamde.dev/core/recordpatchrequest` records for the owner to accept. All
-  three name `provider: default`, which the LLM example above ships, and each
+  three name `provider: openai`, which creation seeds, and each
   names its own `model` — what the agent does is what picks the model, not a
   tier.
 
@@ -538,8 +533,8 @@ the capture came from a press-and-hold. It requires
   delivers each new instruction to the agent.
 - **Agents (1)**: `assistant` reads the open tasks through the `query` host
   function and writes `samples.substrate.reamde.dev/tasks/task` records through
-  `write`. It names `provider: default`, which the LLM example above ships:
-  import that bundle too and key its row.
+  `write`. It names `provider: openai`, which creation seeds:
+  key that row.
 
 **The endpoint** is `POST
 https://<your-substrate-host>/webhooks/<authority>/pebble-webhook`, where
