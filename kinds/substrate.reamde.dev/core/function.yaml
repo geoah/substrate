@@ -18,7 +18,7 @@ data:
     invoked by a trigger or called directly. The declaration IS the record
     — a write admits it, the commit activates it, and the dispatcher reads
     the registry this row rebuilds into.
-  version: 15
+  version: 16
   names:
     singular: function
   displayTemplate: "{authority}/{package}/{localName}"
@@ -195,7 +195,13 @@ data:
               type: reference
               kind: substrate.reamde.dev/core/kind
               repeated: true
-              description: the record kinds every read is held to
+              # An entry may be a kind or one of the trigger selector's globs
+              # (`*`, `<authority>/*`, `<authority>/<package>/*`). A GLOB
+              # never reaches `token`, `credential`, `secret` or
+              # `recoverykey`: those are granted only by an entry that spells
+              # one out (record 0080).
+              description: the record kinds every read is held to, each a
+                kind or a glob over them
             budgets:
               type: object
               description: how much one run may read
@@ -214,7 +220,10 @@ data:
           type: reference
           kind: substrate.reamde.dev/core/kind
           repeated: true
-          description: which record kinds it may create or change
+          # Globs and the auth carve-out exactly as `reads.kinds` above
+          # (record 0080). `call` below takes neither: it names functions.
+          description: which record kinds it may create or change, each a
+            kind or a glob over them
         call:
           type: reference
           kind: substrate.reamde.dev/core/function

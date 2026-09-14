@@ -1050,10 +1050,11 @@ func (s *readState) callAllowed(ident string) bool {
 	return false
 }
 
-// allowed reports whether a full type identity is in the reads allowlist.
+// allowed reports whether the reads allowlist covers a full type identity,
+// by name or by glob (record 0080).
 func (s *readState) allowed(ident string) bool {
 	for _, t := range s.spec.ReadTypes {
-		if t == ident {
+		if vocabulary.GrantMatches(t, ident) {
 			return true
 		}
 	}

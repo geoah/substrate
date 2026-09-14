@@ -103,6 +103,20 @@ data:
   - optional **`reads:`**, which record kinds it may read and how much: a
     `kinds:` allowlist plus `budgets:` calls and rows. Leave it out and the
     `query` tool is withheld.
+
+  Either list may **glob**, in the spellings a trigger selector uses: `*`,
+  `<authority>/*` or `<authority>/<package>/*`
+  ([0080](decisions/0080-a-kind-grant-may-glob-and-a-glob-never-reaches-auth-material.md)).
+  A glob covers kinds the repository does not have yet, so an agent granted
+  `ada.example.com/*` keeps working as bundles are imported — which is the
+  point, and also the cost: importing one widens an existing grant, and a
+  misspelled glob matches nothing where a misspelled kind would have been
+  refused at load. **A glob never reaches
+  `substrate.reamde.dev/core/token`, `/credential`, `/secret` or
+  `/recoverykey`.** Those four are granted only by an entry that spells one
+  out, so `*` means everything the owner has rather than everything including
+  the keys to the substrate. `permissions.call` takes no glob: it names
+  functions, not kinds.
 - optional **`hiddenFromChat:`**, the chat-surface withholding: `true` keeps the
   agent off the console's chat list and makes the chat API refuse it, while
   sub-agent calls, the call API and triggers still dispatch it. An
@@ -177,7 +191,8 @@ entry could name only a function.
   load error otherwise, and every arm is held to that allowlist: a get outside
   it answers like an absent id, a kind outside it in `filter.kinds` or `kinds`
   is refused by name, an expanded referent outside it is left out, and a list
-  that names no kinds lists the allowlist. List and search clamp to the
+  that names no kinds lists the allowlist — expanded against the repository's
+  current kinds where the allowlist globs. List and search clamp to the
   remaining row budget; a blown budget is a tool error the model sees.
 - **`substrate.reamde.dev/core/write`** is the direct write: one call is
   `{op, kind, id, input, ifVersion}`, where `op` is `put` (create or update,

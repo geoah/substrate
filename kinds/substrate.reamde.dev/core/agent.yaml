@@ -20,7 +20,7 @@ data:
     a function by a trigger, the call API or another agent. The row IS the
     prompt store, so changing what an agent does is a record write and the
     changelog is its version history.
-  version: 16
+  version: 17
   names:
     singular: agent
   displayTemplate: "{localName}"
@@ -176,7 +176,13 @@ data:
               type: reference
               kind: substrate.reamde.dev/core/kind
               repeated: true
-              description: the record kinds every read is held to
+              # An entry may be a kind or one of the trigger selector's globs
+              # (`*`, `<authority>/*`, `<authority>/<package>/*`), which cover
+              # kinds the repository gains later. A GLOB never reaches
+              # `token`, `credential`, `secret` or `recoverykey`: those are
+              # granted only by an entry that spells one out (record 0080).
+              description: the record kinds every read is held to, each a
+                kind or a glob over them
             budgets:
               type: object
               description: how much one run may read
@@ -195,8 +201,11 @@ data:
           type: reference
           kind: substrate.reamde.dev/core/kind
           repeated: true
-          description: which record kinds it may create or change, the change
-            requests it proposes among them
+          # Globs and the auth carve-out exactly as `reads.kinds` above
+          # (record 0080).
+          description: which record kinds it may create or change, each a
+            kind or a glob over them, the change requests it proposes among
+            them
     # Withholds the agent from the interactive chat surface only: the console
     # keeps it off the chat list and the chat API refuses it, while sub-agent
     # calls, the call API and triggers still dispatch it. Any agent, marked or

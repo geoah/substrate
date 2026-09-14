@@ -540,18 +540,34 @@ loop:
 
 // effectiveEmit intersects an agent's declared emit with the inherited
 // ceiling: a sub-agent may never write a type its calling chain could not.
+//
+// Both sides may be globs (record 0080), so the intersection is by
+// SUBSUMPTION rather than string equality: the patterns form a prefix
+// lattice, so one entry meets another as the narrower of the two, and as
+// nothing at all when neither covers the other. Keeping it symbolic is what
+// lets the ceiling hold without enumerating the registry — and what keeps it
+// right for a kind that does not exist yet.
 func effectiveEmit(own, ceiling []string, ceilinged bool) []string {
 	if !ceilinged {
 		return own
 	}
-	allowed := map[string]bool{}
-	for _, t := range ceiling {
-		allowed[t] = true
-	}
 	out := make([]string, 0, len(own))
-	for _, t := range own {
-		if allowed[t] {
-			out = append(out, t)
+	seen := map[string]bool{}
+	for _, o := range own {
+		for _, c := range ceiling {
+			narrower := ""
+			switch {
+			case vocabulary.GrantSubsumes(c, o):
+				narrower = o
+			case vocabulary.GrantSubsumes(o, c):
+				narrower = c
+			default:
+				continue
+			}
+			if !seen[narrower] {
+				seen[narrower] = true
+				out = append(out, narrower)
+			}
 		}
 	}
 	return out
@@ -560,7 +576,7 @@ func effectiveEmit(own, ceiling []string, ceilinged bool) []string {
 // emitAllows holds a type to the loop's EFFECTIVE emit set.
 func (l *agentLoop) emitAllows(ident string) bool {
 	for _, t := range l.emit {
-		if t == ident {
+		if vocabulary.GrantMatches(t, ident) {
 			return true
 		}
 	}
@@ -1025,11 +1041,43 @@ func (s queryScope) allows(ident string) bool {
 		return true
 	}
 	for _, t := range s.kinds {
-		if t == ident {
+		if vocabulary.GrantMatches(t, ident) {
 			return true
 		}
 	}
 	return false
+}
+
+// scopeKinds is the allowlist as a list of KINDS, which is what a call naming
+// none is answered with. It is a copy, because the caller rewrites each entry
+// to its identity and the allowlist is the agent's; nil stays nil, which lists
+// the whole repository for a token.
+//
+// A glob is expanded here against the registry rather than passed down
+// (record 0080): `filter.kinds` takes kind references, so a pattern would only
+// fail to resolve. Expansion is what the gate would admit anyway, auth kinds
+// included in neither.
+func (ds *dataset) scopeKinds(scope queryScope) []string {
+	if scope.kinds == nil {
+		return nil
+	}
+	globbed := false
+	for _, t := range scope.kinds {
+		if vocabulary.IsTypeGlob(t) {
+			globbed = true
+			break
+		}
+	}
+	if !globbed {
+		return append([]string(nil), scope.kinds...)
+	}
+	var out []string
+	for _, k := range ds.registry().Kinds() {
+		if scope.allows(k.Identity) {
+			out = append(out, k.Identity)
+		}
+	}
+	return out
 }
 
 // runQueryTool executes one `query` call and reports the rows it read, so the
@@ -1107,7 +1155,7 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 			in.Kinds = append(in.Kinds, ty.Identity)
 		}
 		if len(in.Kinds) == 0 {
-			in.Kinds = scope.kinds
+			in.Kinds = ds.scopeKinds(scope)
 		}
 		res, err := ds.Search(ctx, in)
 		if err != nil {
@@ -1121,9 +1169,8 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 	}
 	if len(q.Filter.Kinds) == 0 {
 		// The allowlist IS the list when the call names no kinds: nil for a
-		// token, which lists the repository. Copied, because the loop below
-		// rewrites each entry to its identity and the allowlist is the agent's.
-		q.Filter.Kinds = append([]string(nil), scope.kinds...)
+		// token, which lists the repository.
+		q.Filter.Kinds = ds.scopeKinds(scope)
 	}
 	for i, ident := range q.Filter.Kinds {
 		ty, err := ds.resolveType(ident)

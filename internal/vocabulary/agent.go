@@ -211,10 +211,11 @@ func (a *Agent) Actor() string {
 	return string(substrate.AgentActor(authority, pkg, a.Name))
 }
 
-// EmitAllows reports whether the agent's write allowlist names a type.
+// EmitAllows reports whether the agent's write allowlist covers a type, by
+// name or by glob (record 0080).
 func (a *Agent) EmitAllows(ident string) bool {
 	for _, t := range a.Emit {
-		if t == ident {
+		if GrantMatches(t, ident) {
 			return true
 		}
 	}
@@ -386,8 +387,8 @@ func (l *loader) parseAgent(d Document) *Agent {
 		return nil
 	}
 	for i, t := range ReferentIDs(mslice(perms, "writes"), CoreKind(DocKind)) {
-		if !Qualified(t) || strings.Contains(t, "*") {
-			l.errf("%s: data.permissions.writes[%d]: %q is not a full type identity; writes names them, no globs", where, i, t)
+		if problem := grantEntryProblem(t); problem != "" {
+			l.errf("%s: data.permissions.writes[%d]: %q %s", where, i, t, problem)
 			continue
 		}
 		a.Emit = append(a.Emit, t)
@@ -643,12 +644,19 @@ func (r *Registry) resolvePackageAgents(g *Package) []string {
 		a := g.Agents[an]
 		where := DocAgent + " " + a.Identity()
 		for _, t := range a.Emit {
+			// A glob resolves to nothing on purpose (record 0080).
+			if IsTypeGlob(t) {
+				continue
+			}
 			if _, ok := r.ByIdentity(t); !ok {
 				problems = append(problems, fmt.Sprintf("%s: data.permissions.writes: unknown type %q", where, t))
 			}
 		}
 		if a.Reads != nil {
 			for _, t := range a.Reads.Kinds {
+				if IsTypeGlob(t) {
+					continue
+				}
 				if _, ok := r.ByIdentity(t); !ok {
 					problems = append(problems, fmt.Sprintf("%s: data.permissions.reads.kinds: unknown type %q", where, t))
 				}
