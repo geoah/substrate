@@ -251,9 +251,12 @@ func TestCreationSeedsLLMSample(t *testing.T) {
 	if got := fmt.Sprint(agent.Properties["provider"]); !strings.Contains(got, "openai") {
 		t.Fatalf("seeded agent provider = %v, want openai", agent.Properties["provider"])
 	}
+	// minimal, not none: the agent carries tools on gpt-5, whose accepted set
+	// starts there — "none" is the gpt-5.6 family's spelling and gpt-5 refuses
+	// it outright.
 	params, _ := agent.Properties["params"].(map[string]any)
-	if params["reasoningEffort"] != "none" {
-		t.Fatalf("seeded agent params.reasoningEffort = %v, want none", agent.Properties["params"])
+	if params["reasoningEffort"] != "minimal" {
+		t.Fatalf("seeded agent params.reasoningEffort = %v, want minimal", agent.Properties["params"])
 	}
 }
 

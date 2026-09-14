@@ -45,7 +45,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: pebble
-  version: 6
+  version: 7
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -320,7 +320,7 @@ data:
   provider: openai
   model: gpt-5
   params:
-    reasoningEffort: none
+    reasoningEffort: minimal
   tools:
     - function: substrate.reamde.dev/core/query
     - function: substrate.reamde.dev/core/write

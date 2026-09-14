@@ -40,7 +40,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: llm
-  version: 17
+  version: 18
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -152,7 +152,7 @@ data:
   provider: openai
   model: gpt-5
   params:
-    reasoningEffort: none
+    reasoningEffort: minimal
   tools:
     - function: substrate.reamde.dev/core/query
     - function: substrate.reamde.dev/core/propose
@@ -198,7 +198,7 @@ data:
   provider: openai
   model: gpt-5
   params:
-    reasoningEffort: none
+    reasoningEffort: minimal
   tools:
     - function: substrate.reamde.dev/core/query
     - function: substrate.reamde.dev/core/write
@@ -257,7 +257,7 @@ data:
   provider: openai
   model: gpt-5
   params:
-    reasoningEffort: none
+    reasoningEffort: minimal
   tools:
     - function: substrate.reamde.dev/core/query
     - function: substrate.reamde.dev/core/write
@@ -364,7 +364,7 @@ data:
   provider: openai
   model: gpt-5-mini
   params:
-    reasoningEffort: none
+    reasoningEffort: minimal
   subagents: [samples.substrate.reamde.dev/llm/substrateSummarizer]
   budgets:
     maxTurns: 4

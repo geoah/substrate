@@ -53,7 +53,7 @@ data:
   provider: openai
   model: gpt-5
   params:
-    reasoningEffort: none
+    reasoningEffort: minimal
   tools:
     - function: samples.substrate.reamde.dev/readinglist/setclass
   subagents: [samples.substrate.reamde.dev/readinglist/curator]
@@ -82,11 +82,15 @@ data:
   agent's calls, merged over the provider row's `defaults`. The set is closed,
   so a knob the loop could not pass on is a load error rather than a line that
   silently does nothing. `reasoningEffort` is one of `none`, `minimal`, `low`,
-  `medium`, `high`, `xhigh`, `max` — the union of what the wires take, so the
-  endpoint refuses one its model does not know. **Absent is not `none`**: a
-  gpt-5.6 model reasons by default and then refuses function tools for any
-  effort but none on chat completions, so an agent with `tools:` on one of
-  those needs `reasoningEffort: none` said out loud.
+  `medium`, `high`, `xhigh`, `max` — the union of what the wires take, and
+  **the accepted subset is the model's, not the wire's**, so the endpoint
+  refuses one its model does not know: `gpt-5` takes `minimal` through `high`
+  and rejects `none`, while the gpt-5.6 family takes `none`. **Absent is not
+  `none`**: a gpt-5.6 model reasons by default and then refuses function tools
+  for any effort but none on chat completions, so an agent with `tools:` on one
+  of those needs `reasoningEffort: none` said out loud. For the same reason a
+  provider row's `defaults` is the wrong home for this knob — one row serves
+  several models — and none of the seeded rows sets it.
 - **`tools:`**, the functions the model may invoke (below).
 - **`subagents:`**, sub-agent references (self-reference is a load error).
 - **`budgets:`** bounds one run: `maxTurns` (default 8, max 64),
@@ -413,11 +417,11 @@ until the owner writes `apiKey`. An agent naming a row that is not there
 refuses at dispatch and says which row it wanted.
 
 Every shipped sample agent names `provider: openai`, so a fresh repository's
-demo agents run once that row is keyed. The seeded `openai` row defaults
-`reasoningEffort` to `none` so a gpt-5 agent with tools completes: absent is
-not none, and that family reasons by default then refuses function tools on
-chat completions. Sample agents that carry `tools:` or `subagents:` also
-say the word on their own `params`. The LLM example (**Registry →
+demo agents run once that row is keyed. Those that carry `tools:` or
+`subagents:` name `reasoningEffort: minimal` on their own `params`, the
+weakest value their `gpt-5` model accepts; the rows themselves set no
+reasoning default, because the accepted set belongs to the model and one row
+serves several. The LLM example (**Registry →
 Examples**) is the same closure creation already imported, and it ships the
 same three rows so a later import onto a repository born before the seed
 still has them. Key one, or write another row yourself as the document

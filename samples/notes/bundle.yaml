@@ -40,7 +40,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: notes
-  version: 8
+  version: 9
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -223,7 +223,7 @@ data:
   provider: openai
   model: gpt-5
   params:
-    reasoningEffort: none
+    reasoningEffort: minimal
   tools:
     - function: samples.substrate.reamde.dev/notes/stats
     - function: samples.substrate.reamde.dev/notes/savenote

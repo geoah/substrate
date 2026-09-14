@@ -27,11 +27,11 @@ var defaultLLMProviders = []struct {
 			"label":   "openai",
 			"wire":    "openai",
 			"baseURL": "https://api.openai.com/v1",
-			// Absent is not none: a gpt-5 family model reasons by default
-			// and then refuses function tools on chat completions unless
-			// the word is said. anthropic does not accept "none"; gemini's
-			// OpenAI-compatible endpoint is not that family.
-			"defaults": map[string]any{"reasoningEffort": "none"},
+			// No reasoningEffort default: the accepted set is the MODEL's, not
+			// the row's, and one row serves several. gpt-5 takes minimal..high
+			// and refuses "none"; the gpt-5.6 family takes "none" and needs it
+			// to put function tools on a chat completion. An agent names the
+			// value its own model accepts.
 			"pricing": []any{
 				map[string]any{"model": "gpt-5", "inputPer1M": "1.25", "outputPer1M": "10"},
 				map[string]any{"model": "gpt-5-mini", "inputPer1M": "0.25", "outputPer1M": "2"},
@@ -43,6 +43,9 @@ var defaultLLMProviders = []struct {
 		props: map[string]any{
 			"label": "anthropic",
 			"wire":  "anthropic",
+			// The SDK resolves "v1/messages" against this, so the trailing
+			// slash is load-bearing.
+			"baseURL": "https://api.anthropic.com/",
 			"pricing": []any{
 				map[string]any{"model": "claude-opus-5", "inputPer1M": "5", "outputPer1M": "25"},
 				map[string]any{"model": "claude-sonnet-5", "inputPer1M": "3", "outputPer1M": "15"},

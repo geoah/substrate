@@ -1534,10 +1534,12 @@ func TestFreshRepositoryHoldsKeylessProviders(t *testing.T) {
 		if rec.Properties["apiKey"] != nil && rec.Properties["apiKey"] != "" {
 			t.Errorf("seeded llm/provider %s carries an apiKey", rec.ID)
 		}
-		if rec.ID == "openai" {
-			defaults, _ := rec.Properties["defaults"].(map[string]any)
-			if defaults["reasoningEffort"] != "none" {
-				t.Errorf("seeded openai defaults.reasoningEffort = %v, want none", rec.Properties["defaults"])
+		// The accepted reasoning set belongs to the MODEL, and one row serves
+		// several: gpt-5 refuses the "none" the gpt-5.6 family needs. A row
+		// that defaulted the knob would break one of them at dispatch.
+		if defaults, ok := rec.Properties["defaults"].(map[string]any); ok {
+			if _, set := defaults["reasoningEffort"]; set {
+				t.Errorf("seeded llm/provider %s defaults reasoningEffort; the model's set is not the row's", rec.ID)
 			}
 		}
 	}

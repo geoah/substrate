@@ -176,8 +176,9 @@ core kind whatever package it describes. Creation also writes three keyless
 `llm/provider` rows (`openai`, `anthropic`, `gemini`) and imports the LLM
 sample onto the repository's own authority, so the demo agents are there and
 name `openai`. They refuse at dispatch until that row's `apiKey` is written.
-The openai row defaults `reasoningEffort` to `none` so a gpt-5 agent with
-tools completes (absent is not none on that family). `tasks` is a SAMPLE
+No row sets a `reasoningEffort` default: the accepted set is the MODEL's, not
+the row's (`gpt-5` refuses `none`, the gpt-5.6 family needs it for tools), so
+a tool-using agent names the value itself. `tasks` is a SAMPLE
 package the repository still imports, so a walkthrough
 that reaches for any collection outside the seed takes one first: `bin/substratectl import
 samples.substrate.reamde.dev/tasks`, the console's Registry page, or `POST
