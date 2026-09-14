@@ -1,16 +1,22 @@
 /** The Properties tab (issue #38): the record's data field by field, instead
  * of making a reader parse the manifest's YAML. Each declared property renders
  * through the shape its datatype earns: prose (`text`, `markdown`) as a
- * paragraph block, `json`/`object`/keyed maps as pretty-printed JSON, a
- * `reference` as its referent's RecordPill, a `state` as its badge, an enum as
- * its authored label, a `datetime` as the console's stamp with the wire value
- * on hover, a `secret` as the redaction sentinel, and everything else as one
- * compact line. Declared-but-unset properties still show, saying "not set",
- * so the kind's whole shape is readable off one record; values the kind never
- * declared show too, marked as such, because hiding data a record carries
- * would make this view lie. A reference carrying LINK DATA renders the
- * referent's pill with the link's own properties beside it. Read-only: Edit is
- * the page's affordance, not this tab's. */
+ * paragraph block, a DECLARED `object` as its own fields — one labelled row
+ * per field, nested as deep as the declaration goes, a repeated one as a
+ * numbered stack of those blocks and a `keyed:` map as its author-chosen keys
+ * beside their values — a shape nobody declared fields for (`json`, a bare
+ * `object`) as pretty-printed JSON, a `reference` as its referent's RecordPill,
+ * a `state` as its badge, an enum as its authored label, a `datetime` as the
+ * console's stamp with the wire value on hover, a `secret` as the redaction
+ * sentinel, and everything else as one compact line. Declared-but-unset
+ * properties still show, saying "not set", so the kind's whole shape is
+ * readable off one record; values the kind never declared show too, marked as
+ * such, because hiding data a record carries would make this view lie. A
+ * reference carrying LINK DATA renders the referent's pill with the link's own
+ * properties beside it. Read-only: Edit is the page's affordance, not this
+ * tab's. */
+
+import * as React from "react"
 
 import { ListIcon } from "lucide-react"
 
@@ -35,6 +41,7 @@ import {
   typeLabel,
   type PropSpec,
 } from "@/lib/record-schema"
+import { cn } from "@/lib/utils"
 
 /** One line of the view: a declared property (spec present, value maybe not)
  * or a value the record carries without a declaration behind it. */
@@ -44,6 +51,21 @@ interface PropertyRow {
   spec?: PropSpec
   /** The kind is known and does not declare this name. */
   undeclared?: boolean
+}
+
+/** What a name says about itself on hover: its datatype and the declaration's
+ * one-liner. The nested blocks have no room to print either, so they say both
+ * here rather than dropping them. */
+function docOf(spec?: PropSpec): string | undefined {
+  if (!spec) return undefined
+  return [typeLabel(spec), spec.description].filter(Boolean).join(" · ")
+}
+
+/** A plain bag of keys: what an `object` declaration expects to find, and what
+ * a field-by-field rendering needs. A declared object holding anything else is
+ * a record disagreeing with its kind, and reads as the JSON it is. */
+function isBag(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function NotSet({ children = "not set" }: { children?: React.ReactNode }) {
@@ -81,8 +103,138 @@ function JsonBlock({ value }: { value: unknown }) {
   )
 }
 
-/** One scalar, by its declared datatype. Containers are the caller's job. */
-function ScalarValue({
+/** Whether a value wants the WHOLE width under its name rather than a cell
+ * beside it: another object, a keyed map, a JSON shape, a paragraph. Anything
+ * that fits on a line stays on the line. */
+function wantsItsOwnLine(spec: PropSpec | undefined, value: unknown): boolean {
+  if (value === undefined || value === null || value === "") return false
+  if (!spec) return typeof value === "object"
+  // A pointer is a pill, however it is stored: the served `{ref}` shape is an
+  // object and reads as one line, so it is not one of these.
+  if (spec.kind === "reference") return false
+  if (spec.keyed) return true
+  if (isObjectKind(spec.kind)) return true
+  if (spec.kind === "text" || spec.kind === "markdown") return true
+  // A value disagreeing with its kind: a bag renders as the JSON block it is.
+  return isBag(value)
+}
+
+/** The fields of one object, as an indented OUTLINE rather than a table.
+ *
+ * A nested table costs a fixed label column per level, so a grant three
+ * objects deep spends most of a 3xl page on gutters and leaves its values in a
+ * column too narrow to read; the dialect allows four. This spends a hairline
+ * and 12px per level instead, and sizes the name column to the widest name IN
+ * THIS BLOCK, so the level's own fields align without charging the level below
+ * for it. A field whose value is itself a block takes the full width under its
+ * name, which is the same shape the page gives a record's own properties. */
+function NestedRows({
+  rows,
+  guide = true,
+  kinds,
+}: {
+  rows: PropertyRow[]
+  /** An item of a container is marked by its ordinal already; a second rule
+   * beside the number says nothing the number did not. */
+  guide?: boolean
+  kinds: KindInfo[]
+}) {
+  return (
+    <div
+      className={cn(
+        "grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-4 gap-y-1.5",
+        guide && "border-l pl-3"
+      )}
+    >
+      {rows.map((row) => {
+        const name = (
+          <span
+            className={cn(
+              "data text-xs text-muted-foreground",
+              row.spec?.description && "cursor-help"
+            )}
+            title={docOf(row.spec)}
+          >
+            {row.name}
+            {row.undeclared && (
+              <span className="text-muted-foreground/70">
+                {" \u00b7 undeclared"}
+              </span>
+            )}
+          </span>
+        )
+        const value = (
+          <div className="min-w-0 text-sm">
+            {row.spec ? (
+              <DeclaredValue spec={row.spec} value={row.value} kinds={kinds} />
+            ) : (
+              <LooseValue value={row.value} />
+            )}
+          </div>
+        )
+        if (wantsItsOwnLine(row.spec, row.value)) {
+          return (
+            <div
+              key={row.name}
+              className="col-span-2 flex min-w-0 flex-col gap-1"
+            >
+              {name}
+              {value}
+            </div>
+          )
+        }
+        return (
+          <React.Fragment key={row.name}>
+            {name}
+            {value}
+          </React.Fragment>
+        )
+      })}
+    </div>
+  )
+}
+
+/** A DECLARED object, read as its fields rather than as a blob. Two rules
+ * decide what a block lists. A single object says the whole declared shape,
+ * unset fields included, exactly as the page does for the record itself: the
+ * knob that exists and holds nothing is worth knowing about. An item of a
+ * CONTAINER says only what it carries, because the shape is said once by the
+ * declaration and repeating "not set" once per row says nothing new. Either
+ * way a key the declaration never named is shown and marked, since hiding data
+ * the record holds would make this view lie. */
+function ObjectBlock({
+  spec,
+  value,
+  dense,
+  kinds,
+}: {
+  spec: PropSpec
+  value: unknown
+  /** An item of a container: list what is here, not the whole shape, and wear
+   * the ordinal rather than a second guide rule. */
+  dense?: boolean
+  kinds: KindInfo[]
+}) {
+  if (!isBag(value)) return <JsonBlock value={value} />
+  const fields = spec.fields ?? []
+  const named = new Set(fields.map((field) => field.name))
+  const rows: PropertyRow[] = []
+  for (const field of fields) {
+    const held = value[field.name]
+    if (dense && (held === undefined || held === null)) continue
+    rows.push({ name: field.name, value: held, spec: field })
+  }
+  for (const key of Object.keys(value).sort()) {
+    if (named.has(key)) continue
+    rows.push({ name: key, value: value[key], undeclared: true })
+  }
+  if (!rows.length) return <NotSet>empty</NotSet>
+  return <NestedRows rows={rows} guide={!dense} kinds={kinds} />
+}
+
+/** A KEYED map: the author names the keys, so each key heads the value it maps
+ * to, and the value renders off the map's own datatype. */
+function KeyedBlock({
   spec,
   value,
   kinds,
@@ -91,10 +243,43 @@ function ScalarValue({
   value: unknown
   kinds: KindInfo[]
 }) {
+  if (!isBag(value)) return <JsonBlock value={value} />
+  const entries = Object.entries(value)
+  if (!entries.length) return <NotSet>empty</NotSet>
+  const item = elementSpec(spec)
+  return (
+    <NestedRows
+      rows={entries.map(([key, held]) => ({
+        name: key,
+        value: held,
+        spec: item,
+      }))}
+      kinds={kinds}
+    />
+  )
+}
+
+/** One scalar, by its declared datatype. Containers are the caller's job. */
+function ScalarValue({
+  spec,
+  value,
+  dense,
+  kinds,
+}: {
+  spec: PropSpec
+  value: unknown
+  dense?: boolean
+  kinds: KindInfo[]
+}) {
   // Before the object arm: a reference carrying link data IS an object, and
-  // rendering it as JSON would bury the pointer in a blob.
+  // rendering it as fields would bury the pointer in a block.
   if (spec.kind === "reference") {
     return <ReferenceValue value={value} kinds={kinds} />
+  }
+  // A declaration that names the fields is the one thing that beats JSON here:
+  // `json` and a bare `object` still read as the shape nobody owns.
+  if (spec.kind === "object" && spec.fields?.length) {
+    return <ObjectBlock spec={spec} value={value} dense={dense} kinds={kinds} />
   }
   if (typeof value === "object" && value !== null) {
     return <JsonBlock value={value} />
@@ -148,8 +333,10 @@ function DeclaredValue({
   if (spec.kind === "secret") {
     return <span className="data text-muted-foreground">{REDACTED}</span>
   }
-  if (spec.keyed || isObjectKind(spec.kind)) {
-    return <JsonBlock value={value} />
+  // The CONTAINER decides before the datatype does, exactly as the form's
+  // control does: a keyed map of objects is keys, not one object.
+  if (spec.keyed) {
+    return <KeyedBlock spec={spec} value={value} kinds={kinds} />
   }
   if (spec.repeated) {
     if (!Array.isArray(value)) {
@@ -159,14 +346,30 @@ function DeclaredValue({
     }
     if (!value.length) return <NotSet>none</NotSet>
     const item = elementSpec(spec)
+    // The ordinal rides the gutter of a repeated OBJECT: a stack of blocks
+    // that all look alike is unreadable without a way to say which is which,
+    // and a declaration may hold the order (an agent's tools do).
+    const blocked = item.kind === "object" && Boolean(item.fields?.length)
     return (
-      <ul className="flex flex-col gap-0.5">
+      <ol className={cn("flex flex-col", blocked ? "gap-2" : "gap-0.5")}>
         {value.map((one, i) => (
-          <li key={i}>
-            <ScalarValue spec={item} value={one} kinds={kinds} />
+          <li
+            key={i}
+            className={
+              blocked ? "flex min-w-0 items-baseline gap-2" : undefined
+            }
+          >
+            {blocked && (
+              <span className="data text-xs text-muted-foreground/70 tabular-nums">
+                {i + 1}
+              </span>
+            )}
+            <div className={blocked ? "min-w-0 flex-1" : undefined}>
+              <ScalarValue spec={item} value={one} dense kinds={kinds} />
+            </div>
           </li>
         ))}
-      </ul>
+      </ol>
     )
   }
   return <ScalarValue spec={spec} value={value} kinds={kinds} />
@@ -186,9 +389,7 @@ function LooseValue({ value }: { value: unknown }) {
 }
 
 function Row({ row, kinds }: { row: PropertyRow; kinds: KindInfo[] }) {
-  const doc = row.spec
-    ? [typeLabel(row.spec), row.spec.description].filter(Boolean).join(" · ")
-    : undefined
+  const doc = docOf(row.spec)
   return (
     <div className="flex min-w-0 flex-col gap-1">
       {/* The name heads its value: same size, heavier weight — a header that

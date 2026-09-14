@@ -76,6 +76,25 @@ const task: KindInfo = {
         kind: "samples.substrate.reamde.dev/people/person",
         repeated: true,
       },
+      // The three container shapes a declaration can name, so the tab is
+      // held to reading each one as its fields rather than as a blob.
+      budget: {
+        type: "object",
+        description: "what this task may spend",
+        fields: {
+          hours: { type: "int", description: "hours it may take" },
+          notes: { type: "string" },
+        },
+      },
+      checklist: {
+        type: "object",
+        repeated: true,
+        fields: {
+          label: { type: "string" },
+          done: { type: "bool" },
+        },
+      },
+      annotations: { type: "string", keyed: true },
     },
   },
 }
@@ -111,6 +130,9 @@ const record: SubstrateRecord = {
       "samples.substrate.reamde.dev/people/person/p3",
     ],
     legacy: "still here",
+    budget: { hours: 4, surprise: "a field nobody declared" },
+    checklist: [{ label: "write it", done: true }, { label: "ship it" }],
+    annotations: { owner: "ada", source: "inbox" },
   },
   labels: {},
   version: 3,
@@ -301,6 +323,53 @@ describe("PropertiesRail", () => {
     const text = container.textContent ?? ""
     expect(text).toContain("Ship the console")
     expect(text).not.toContain("undeclared")
+  })
+
+  it("reads a declared object as its fields, never as a JSON blob", () => {
+    const { container } = renderRail()
+    const text = container.textContent ?? ""
+    expect(text).toContain("hours")
+    expect(text).toContain("4")
+    // The whole declared shape is readable, unset field included...
+    expect(text).toContain("notes")
+    // ...and a key the declaration never named is still shown, and marked.
+    expect(text).toContain("surprise")
+    expect(text).toContain("a field nobody declared")
+    const blob = [...container.querySelectorAll("pre")].find((el) =>
+      el.textContent?.includes("hours")
+    )
+    expect(blob).toBeUndefined()
+  })
+
+  it("reads a repeated object as one numbered block per item", () => {
+    const { container } = renderRail()
+    const items = [...container.querySelectorAll("ol > li")].filter((li) =>
+      li.textContent?.includes("write it")
+    )
+    expect(items).toHaveLength(1)
+    // The ordinal rides the gutter, so a reader can name the second row.
+    expect(items[0].textContent).toContain("1")
+    const text = container.textContent ?? ""
+    expect(text).toContain("ship it")
+    // An item says what it carries: the second row holds no `done`, and
+    // repeating "not set" once per row would say nothing.
+    const second = [...container.querySelectorAll("ol > li")].find((li) =>
+      li.textContent?.includes("ship it")
+    )
+    expect(second?.textContent).not.toContain("done")
+  })
+
+  it("reads a keyed map as its author's keys beside their values", () => {
+    const { container } = renderRail()
+    const text = container.textContent ?? ""
+    expect(text).toContain("owner")
+    expect(text).toContain("ada")
+    expect(text).toContain("source")
+    expect(text).toContain("inbox")
+    const blob = [...container.querySelectorAll("pre")].find((el) =>
+      el.textContent?.includes("inbox")
+    )
+    expect(blob).toBeUndefined()
   })
 
   it("says plainly when there is nothing to show", () => {
