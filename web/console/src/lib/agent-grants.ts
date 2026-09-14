@@ -16,6 +16,8 @@
  * away, and it is pure over the parsed document, so the form lens and the
  * problems panel read one answer. */
 
+import { readReference } from "@/lib/api/types"
+
 /** The gated `runtime: host` function records, by identity. The source of
  * truth is `kinds/substrate.reamde.dev/core/hostfunctions.yaml`; a tool entry
  * names one of them under `function:` exactly as it names any other function. */
@@ -67,8 +69,9 @@ const KIND_KIND = "substrate.reamde.dev/core/kind"
  * an entry the author typed short arrives short and the server canonicalizes
  * it. BOTH spellings name one kind, and this is the only place that knows it. */
 export function valueIdentity(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined
-  const named = value.trim()
+  // A reference is served as `{ref: …}` and authored as the bare path, so
+  // both arrive here; `readReference` is the one place that knows the pair.
+  const named = readReference(value)?.path.trim()
   if (!named) return undefined
   const prefix = `${KIND_KIND}/`
   return named.startsWith(prefix) ? named.slice(prefix.length) : named
@@ -99,8 +102,10 @@ export function hostToolsOf(properties: Record<string, unknown>): string[] {
   const tools = Array.isArray(properties.tools) ? properties.tools : []
   for (const entry of tools) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue
-    const held = (entry as Record<string, unknown>)[TOOL_FUNCTION_FIELD]
-    if (typeof held !== "string") continue
+    const held = readReference(
+      (entry as Record<string, unknown>)[TOOL_FUNCTION_FIELD]
+    )?.path
+    if (!held) continue
     // The entry is a POINTER at a function, so it is the flat path
     // `substrate.reamde.dev/core/function/<identity>`; a short form the
     // server has not canonicalized yet names the same function.

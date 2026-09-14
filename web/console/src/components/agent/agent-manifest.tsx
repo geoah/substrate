@@ -20,7 +20,7 @@ import {
 import { Spinner } from "@/components/ui/spinner"
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "@/lib/api/http"
 import { recordQueryOptions } from "@/lib/api/records"
-import type { SubstrateRecord } from "@/lib/api/types"
+import { readReference, type SubstrateRecord } from "@/lib/api/types"
 
 interface ToolEntry {
   /** The function reference, verbatim off the row. */
@@ -41,7 +41,9 @@ function toolsOf(record: SubstrateRecord): ToolEntry[] {
   for (const item of raw) {
     if (typeof item !== "object" || item === null) continue
     const entry = item as Record<string, unknown>
-    const fn = typeof entry.function === "string" ? entry.function : ""
+    // `function` is a REFERENCE, so the served shape is `{ref: …}` and only
+    // an authored document still carries the bare string.
+    const fn = readReference(entry.function)?.path ?? ""
     if (!fn) continue
     const alias = typeof entry.name === "string" ? entry.name : ""
     out.push({
@@ -59,13 +61,15 @@ function toolsOf(record: SubstrateRecord): ToolEntry[] {
  * `/kind/` is the readable part. */
 function grantKinds(raw: unknown): string[] {
   if (!Array.isArray(raw)) return []
-  return raw
-    .filter((v): v is string => typeof v === "string" && v !== "")
-    .map((path) => {
-      const marker = "/kind/"
-      const at = path.indexOf(marker)
-      return at >= 0 ? path.slice(at + marker.length) : path
-    })
+  const out: string[] = []
+  for (const item of raw) {
+    const path = readReference(item)?.path
+    if (!path) continue
+    const marker = "/kind/"
+    const at = path.indexOf(marker)
+    out.push(at >= 0 ? path.slice(at + marker.length) : path)
+  }
+  return out
 }
 
 export function AgentManifest({ id }: { id: string }) {
