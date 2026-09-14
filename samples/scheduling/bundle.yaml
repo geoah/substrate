@@ -1,16 +1,18 @@
-# The shared scheduling vocabulary: the two traits the repeating kinds and
-# their occurrence logs held as hand-copied properties before. `recurring` is
-# the RRULE triple (recurrence, exdates, timezone); `occurrencelog` is the
-# done-or-skipped mark against one occurrence of a recurring thing. Neither
-# trait carries values, only property presence and datatype, so a binding kind
-# keeps its own enum states and its own owner reference.
+# The shared scheduling vocabulary: `occurrencelog`, the done-or-skipped mark
+# against one occurrence of a recurring thing. The trait carries no values,
+# only property presence and datatype, so a binding kind keeps its own enum
+# states and its own owner reference.
 #
-# It ships no kinds, only traits, so the two packages that repeat things
-# (tasks and calendar) `require` it and bind its traits cross-package, the way
-# every package binds core's `temporal`. It is a separate package rather than
-# core because it is domain vocabulary, not engine machinery: `temporal` is
-# backed by the physical at/endsAt/dueAt columns, these two are ordinary
-# declared properties.
+# `recurring` used to live here too (versions 1 to 3). It is core's now,
+# beside `temporal`, so a provider's series can bind it and the window read
+# keys on one identity: a kind that binds the bare name `recurring` resolves
+# to core's, and a repository that still holds this package's copy from an
+# earlier import keeps it declared, shadowed and inert until it takes this
+# version, which drops it.
+#
+# It ships no kinds, only the trait, so the two packages that repeat things
+# (tasks and calendar) `require` it and bind it cross-package, the way every
+# package binds core's `temporal`.
 #
 # no new actors: writes arrive under the actor of whatever runs.
 kind: substrate.reamde.dev/core/package
@@ -19,12 +21,12 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: scheduling
-  version: 3
+  version: 4
 ---
 # ---- the bundle document: the import unit -----------------------------------
-# A SAMPLE bundle: traits only, imported from the registry. The `installs`
+# A SAMPLE bundle: a trait only, imported from the registry. The `installs`
 # closure is the package's members, which for a traits-only package is the
-# two traits.
+# trait.
 kind: substrate.reamde.dev/core/bundle
 metadata:
   id: samples.substrate.reamde.dev/scheduling
@@ -32,9 +34,8 @@ data:
   authority: samples.substrate.reamde.dev
   package: scheduling
   description: >-
-    Repeat rules, and done or skipped marks, shared by tasks and calendar
-    events so both spell them the same way. It adds no kinds of its own: import
-    it because tasks or calendar needs it.
+    Done or skipped marks against the occurrences of anything that repeats,
+    spelled one way for tasks and calendar events. It adds no kinds of its
+    own: import it because tasks or calendar needs it.
   installs:
-    - samples.substrate.reamde.dev/scheduling/recurring
     - samples.substrate.reamde.dev/scheduling/occurrencelog

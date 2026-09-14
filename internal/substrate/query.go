@@ -97,6 +97,9 @@ type Page struct {
 	// target. One source can point from two sites, so a page of distinct
 	// records needs this beside it to say which properties matched.
 	Matches map[string][]ReferenceSite `json:"matches,omitempty"`
+	// Problems names each series a window read could not expand (a rule too
+	// dense, an unknown zone, no anchor); the page stands without it.
+	Problems []OccurrenceProblem `json:"problems,omitempty"`
 }
 
 // RankedPage is a ranked read's answer: the records in rank order, each one's

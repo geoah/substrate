@@ -194,7 +194,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0040](0040-the-four-occurrence-logs-say-done.md) | The four occurrence logs all say `done`; `medicationschedulelog` loses its `taken` exception | accepted |
 | [0041](0041-body-is-a-declarable-property-and-fts-is-per-property.md) | Body is a declarable, column-backed property, and FTS is per-property | accepted |
 | [0042](0042-every-kind-carries-an-authority.md) | Every kind carries an authority; the URL disambiguates by segment count | accepted |
-| [0043](0043-occurrences-expand-at-read-in-the-api-layer.md) | Occurrences expand at read, in the API layer, never in the engine | accepted |
+| [0043](0043-occurrences-expand-at-read-in-the-api-layer.md) | Occurrences expand at read, in the API layer, never in the engine | superseded |
 | [0044](0044-a-reference-is-the-only-link-between-records.md) | A reference is the only link between records; `data.edges` is removed | accepted |
 | [0045](0045-a-webhook-trigger-is-a-public-endpoint-with-an-optional-key.md) | A webhook trigger is a public endpoint with an optional key | accepted |
 | [0046](0046-a-repository-owns-one-authority-chosen-at-registration.md) | A repository owns one authority, chosen at registration and defaulting to the server's host | superseded |
@@ -232,3 +232,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0078](0078-a-kind-move-is-ordinary-record-writes.md) | A kind move is ordinary record writes: `movedFrom` carries the rows and repoints every reference | accepted |
 | [0079](0079-graphql-is-removed-and-the-records-read-is-one-route.md) | GraphQL is removed, and the records read is one route | accepted |
 | [0080](0080-a-kind-grant-may-glob-and-a-glob-never-reaches-auth-material.md) | A kind grant may glob, and a glob never reaches auth material | accepted |
+| [0080](0080-the-window-read-computes-occurrences-and-recurring-is-core.md) | The window read computes occurrences, and `recurring` and `override` are core traits | accepted |

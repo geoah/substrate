@@ -792,6 +792,10 @@ func (d *fakeDataset) List(_ context.Context, q substrate.Query) (*substrate.Pag
 	implementors := map[string]bool{}
 	if tr := q.Filter.Implements; tr != "" {
 		kinds, ok := d.traits[tr]
+		if !ok && !strings.Contains(tr, "/") {
+			// A bare trait name resolves to core's, as the registry does.
+			kinds, ok = d.traits[vocabulary.PackageCore+"/"+tr]
+		}
 		if !ok {
 			return nil, fmt.Errorf("%w: no type implements %q", substrate.ErrValidation, tr)
 		}
@@ -1212,8 +1216,20 @@ func (d *fakeDataset) StartOAuth(_ context.Context, _ substrate.Actor, record st
 	return "", noSuch("account record", record)
 }
 
-func (d *fakeDataset) TypesImplementing(context.Context, string) ([]substrate.KindInfo, error) {
-	return nil, nil
+func (d *fakeDataset) TypesImplementing(_ context.Context, trait string) ([]substrate.KindInfo, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	kinds, ok := d.traits[trait]
+	if !ok && !strings.Contains(trait, "/") {
+		kinds = d.traits[vocabulary.PackageCore+"/"+trait]
+	}
+	var out []substrate.KindInfo
+	for _, ti := range d.types {
+		if containsString(kinds, ti.Identity) {
+			out = append(out, ti)
+		}
+	}
+	return out, nil
 }
 
 func (d *fakeDataset) InstallBundleClosure(context.Context, substrate.Actor, []map[string]any, []substrate.PutInput, substrate.BundleInstall) ([]*substrate.Record, error) {

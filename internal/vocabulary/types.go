@@ -961,12 +961,23 @@ func (r *Registry) PropertyTypes() []*PropertyType {
 	return out
 }
 
-// ResolveTrait finds a trait by bare name, in the declaring package first and
-// then uniquely across packages — the same rule a short `kind:` pin follows.
+// ResolveTrait finds a trait by bare name: in the declaring package first,
+// then core's, then uniquely across packages — the same rule a short `kind:`
+// pin follows, with one addition. CORE WINS over a same-named trait another
+// package declares, because a trait moving into core (the way `recurring`
+// did, out of the `scheduling` sample) would otherwise turn every existing
+// bare binding in a repository that still holds the old copy ambiguous, and
+// park every package binding it at the next boot. The shadowed copy stays
+// declared and inert until its package drops it.
 func (r *Registry) ResolveTrait(pkg, name string) (*Trait, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if g, ok := r.packages[pkg]; ok {
+		if c, ok := g.Traits[name]; ok {
+			return c, nil
+		}
+	}
+	if g, ok := r.packages[PackageCore]; ok {
 		if c, ok := g.Traits[name]; ok {
 			return c, nil
 		}

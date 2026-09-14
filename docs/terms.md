@@ -24,6 +24,10 @@ nothing, there are none.
 | **property** | A named, typed value on a record, declared by its kind. |
 | **property type** | A named refinement of a base type plus its validations, declared in a package and reusable across its kinds. |
 | **trait** | A contract a kind implements: a set of properties a kind promises to declare, so unrelated kinds can be treated alike. |
+| **series** | A temporal record with a repeat rule (`recurrence`, or `rdates`) under core's `recurring` trait. Its bound slot is the rule's first occurrence; the substrate stores the rule and never expands it into rows. |
+| **occurrence** | One instant a series' rule names. Computed by the window read, never stored: it is served in the record envelope as `<seriesId>_<slot>` with `computed: true`, and a put at that id turns it into an override. |
+| **override** | A temporal record standing in for one occurrence of a series, moved or edited: it names the series in `recurrenceOf` and the slot it replaces in `originalAt`, under core's `override` trait. iCalendar's `RECURRENCE-ID`. |
+| **window read** | A records list whose filter bounds `at` on both ends: the rows in the window plus every series' computed occurrences, minus `exdates` and overridden slots, ordered by slot. |
 | **reference** | A named, directed pointer at one record, declared as a property and stored as an object holding the target's `<kind>/<id>` path under `ref`. The only link between records; it may declare properties of its own, carried beside `ref`. |
 
 ## Truth and derivation

@@ -129,24 +129,35 @@ func TestRdatesWithoutARule(t *testing.T) {
 	wantTimes(t, exp.Times, "2026-07-06T09:00:00Z", "2026-07-07T20:00:00Z")
 }
 
-// Inside [materializedFrom, materializedUntil) the rows are the truth and the
-// expander stays silent; until is exclusive, Google's timeMax convention.
-func TestMaterializedSpanSuppresses(t *testing.T) {
+// The anchor is the first instance whether or not the rule produces it (RFC
+// 5545: DTSTART defines the first instance). rrule-go alone would start this
+// Wednesday rule on the 15th; the Monday it is anchored on is an occurrence
+// too, and an exdate on the anchor removes it like any other slot.
+func TestAnchorIsAnOccurrence(t *testing.T) {
 	r := occurrence.Rule{
-		Recurrence:        "FREQ=DAILY",
-		StartsAt:          utc("2026-07-01T06:00:00Z"),
-		MaterializedFrom:  utc("2026-07-03T00:00:00Z"),
-		MaterializedUntil: utc("2026-07-05T06:00:00Z"),
+		Recurrence: "RRULE:FREQ=WEEKLY;BYDAY=WE;COUNT=2",
+		StartsAt:   utc("2026-07-13T09:00:00Z"), // a Monday
 	}
-	exp := mustExpand(t, r, utc("2026-07-01T00:00:00Z"), utc("2026-07-07T00:00:00Z"), 0)
-	wantTimes(t, exp.Times,
-		"2026-07-01T06:00:00Z", "2026-07-02T06:00:00Z", // before the span
-		"2026-07-05T06:00:00Z", "2026-07-06T06:00:00Z") // at and after until
+	exp := mustExpand(t, r, utc("2026-07-01T00:00:00Z"), utc("2026-08-01T00:00:00Z"), 0)
+	wantTimes(t, exp.Times, "2026-07-13T09:00:00Z", "2026-07-15T09:00:00Z", "2026-07-22T09:00:00Z")
 
-	// A zero from leaves the span open at the past end.
-	r.MaterializedFrom = time.Time{}
-	exp = mustExpand(t, r, utc("2026-07-01T00:00:00Z"), utc("2026-07-07T00:00:00Z"), 0)
-	wantTimes(t, exp.Times, "2026-07-05T06:00:00Z", "2026-07-06T06:00:00Z")
+	r.ExDates = []time.Time{utc("2026-07-13T09:00:00Z")}
+	exp = mustExpand(t, r, utc("2026-07-01T00:00:00Z"), utc("2026-08-01T00:00:00Z"), 0)
+	wantTimes(t, exp.Times, "2026-07-15T09:00:00Z", "2026-07-22T09:00:00Z")
+}
+
+// UNTIL closes a rule without a walk; COUNT and an open rule leave the
+// judgement to Expand.
+func TestEndsBefore(t *testing.T) {
+	at := utc("2026-07-01T00:00:00Z")
+	if !occurrence.EndsBefore("RRULE:FREQ=DAILY;UNTIL=20260601T000000Z", at) {
+		t.Fatal("a rule whose UNTIL passed must end before the instant")
+	}
+	for _, rule := range []string{"FREQ=DAILY;UNTIL=20270601T000000Z", "FREQ=DAILY;COUNT=3", "FREQ=DAILY", "", "not a rule"} {
+		if occurrence.EndsBefore(rule, at) {
+			t.Fatalf("%q must not be judged ended", rule)
+		}
+	}
 }
 
 // The window is [from, to): a slot at from is in, a slot at to is out.

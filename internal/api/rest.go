@@ -97,6 +97,17 @@ func (h *handler) getResource(w http.ResponseWriter, r *http.Request) {
 	// The path carries the whole record reference — the kind, then the id —
 	// so the read is kind-scoped by construction.
 	ent, err := ds.Get(r.Context(), ti.Identity, addr.id)
+	if errors.Is(err, substrate.ErrNotFound) {
+		// A computed occurrence has no row, but it has an id: when the id
+		// reads as `<seriesId>_<slot>` of a live series that produces the
+		// slot, the read answers the envelope the window read would, so
+		// `get -o yaml | apply -f` is a complete path to an override. A
+		// stored record always won above.
+		if computed, ok := h.computedResource(r.Context(), ds, ti.Identity, addr.id); ok {
+			writeJSON(w, http.StatusOK, computed)
+			return
+		}
+	}
 	if err != nil {
 		writeSubstrateError(w, err)
 		return

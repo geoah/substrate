@@ -122,6 +122,18 @@ func (h *handler) getRecords(w http.ResponseWriter, r *http.Request) {
 			}
 			q.Filter.Kinds = kinds
 		}
+		// `at` bounded on both ends is the WINDOW read (window.go): the rows
+		// in the window plus the occurrences computed from every series among
+		// the kinds in play, one page. One bound alone is a plain list.
+		from, to, window, err := windowBounds(q.Filter)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+			return
+		}
+		if window {
+			h.windowList(w, r, ds, q, from, to)
+			return
+		}
 		page, err := ds.List(ctx, q)
 		if errors.Is(err, substrate.ErrStaleHistory) {
 			// The same signal the changefeed gives a cursor from another

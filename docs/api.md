@@ -450,6 +450,58 @@ is a `bad_request` that names it, never a silent success: `orderBy` with `q`,
 ordering column is refused naming the camelCase replacement, and a malformed
 filter document is refused naming the field that would not decode.
 
+### The window read
+
+A list whose filter bounds `at` on **both** ends (`gte` or `gt`, and `lt` or
+`lte`) over kinds that bind `temporal` is a **window read**, and it answers
+with more than rows: every series among the kinds in play (a record of a kind
+binding [`recurring`](data-model.md#traits) whose `recurrence` or `rdates` is
+set) is expanded inside the window, and its occurrences are merged into the
+page beside the plain rows and the overrides, ordered by slot
+([decision 0080](decisions/0080-the-window-read-computes-occurrences-and-recurring-is-core.md)).
+A slot the series' `exdates` names, or that an `override` row claims through
+`recurrenceOf` and `originalAt` (whatever that row's own `at` and kind), is
+left out; the series row itself is never on the page, it is on the timeline
+only through its occurrences.
+
+```http
+GET /api/v1/records
+      ?filter={"implements":"temporal",
+               "properties":{"at":{"gte":"2026-07-01T00:00:00Z","lt":"2026-07-08T00:00:00Z"}}}
+      &orderBy=at
+
+→ {"records": [
+     {"id": "levo_20260701T060000Z", "kind": ".../health/medicationschedule",
+      "properties": {"name": "Levothyroxine", "at": "2026-07-01T06:00:00Z",
+                     "recurrenceOf": {"ref": ".../health/medicationschedule/levo"},
+                     "originalAt": "2026-07-01T06:00:00Z", ...},
+      "version": 0, "computed": true, ...},
+     {"id": "dentist", "kind": ".../calendar/calendarevent", "properties": {...}, "version": 3, ...},
+     ...],
+   "cursor": "w.eyJh…", "head": 4211, "generation": "7f3a0c2e9b1d4e6f"}
+```
+
+A **computed occurrence** is served in the record envelope so nothing has to
+render it differently: the series' kind, the id `<seriesId>_<slot>` (the slot
+in UTC, `YYYYMMDDTHHMMSSZ`), the series' properties with `recurrence`,
+`rdates` and `exdates` removed and the slot written under the series' own
+temporal name (`endsAt` keeps the anchor's duration in the rule's zone's wall
+clock), `recurrenceOf` and `originalAt` filled, `version` 0, and `computed:
+true`. `GET` at that id answers the same envelope while the series produces
+the slot and nothing overrides it, so a `PUT` at the id, the envelope as its
+body, **materializes the occurrence as an override**: that is how one
+instance is moved, edited or given more detail. Cancelling one is adding its
+slot to the series' `exdates`. A stored record at a computed id always wins.
+
+The rules that hold the page correct: `orderBy` is `at`, ascending or
+descending, and nothing else (a `bad_request` names it); the candidate series
+are enumerated whole, and more than 10,000 in one window is a `validation`
+error rather than a short page; a series whose rule the expander cannot walk
+(too dense for its budget, an unknown zone) is named on the page's
+`problems` and the page stands without it; a cursor is pinned to the filter
+and direction it was minted under. One bound alone (`at` with only `gte`) is
+an ordinary list: the rows are filtered as ever and nothing is computed.
+
 ## Pagination
 
 Lists page forward with a keyset cursor carried behind one opaque token. You

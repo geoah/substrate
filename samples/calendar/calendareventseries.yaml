@@ -1,4 +1,5 @@
-# the recurring DEFINITION — RRULE and exceptions, never on the timeline
+# the recurring DEFINITION — RRULE and exceptions; on the timeline only
+# through the occurrences the window read computes from it
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: samples.substrate.reamde.dev/calendar/calendareventseries
@@ -6,16 +7,19 @@ data:
   authority: samples.substrate.reamde.dev
   package: calendar
   description: >-
-    The recurring DEFINITION behind repeating events: its RRULE and the dates
-    that rule skips. It never sits on the timeline itself — the substrate
-    stores the rule and never expands it, and the occurrences are calendarevents
-    pointing back here.
+    The recurring DEFINITION behind repeating events: its RRULE, the dates
+    that rule skips and the first occurrence it counts from. The substrate
+    stores the rule and never expands it into rows; a records read that bounds
+    `at` computes its occurrences beside the calendarevents that override
+    them.
   names:
     singular: calendareventseries
   displayTemplate: "{summary}"
-  # `recurring` contracts the recurrence/exdates/timezone triple. The series is
-  # the DEFINITION and never sits on the timeline, so it binds no `temporal`.
+  # `recurring` (core's) contracts the recurrence/rdates/exdates/timezone
+  # quartet and requires `temporal`: the bound `at` is the rule's DTSTART, the
+  # first occurrence, which is what anchors every other one.
   traits:
+    - temporal(point)
     - recurring
   properties:
     summary:
@@ -38,24 +42,24 @@ data:
     timezone:
       type: timezone
       description: the IANA zone a time-of-day rule resolves in
-    # The rule alone names no instants: DTSTART is what anchors it, so a
-    # reader (or a connector re-deriving occurrences) can expand
-    # deterministically. Named like the trigger schedule's own anchor.
+    # DEPRECATED: the anchor is the bound `at` now (the temporal slot every
+    # series carries). Declared still, because dropping a property a live row
+    # may hold is a narrowing the upgrade refuses; nothing reads it.
     startsAt:
+      deprecated: true
       type: datetime
-      description: the instant the rule counts from (iCalendar's DTSTART)
-    # [materializedFrom, materializedUntil) is the span whose occurrences
-    # exist as calendarevent rows (decision 0043). The connector that writes
-    # the rows stamps it on every full fetch; the occurrences read expands
-    # the rule only OUTSIDE it, because inside the rows are the truth and a
-    # computed twin would double every synced event. Until is exclusive,
-    # Google's timeMax convention. Unset means no occurrence rows exist.
+      description: "deprecated: the instant the rule counts from is `at`"
+    # DEPRECATED: the materialized span that decision 0043 introduced has no
+    # reader since the window read computes occurrences beside the rows and
+    # subtracts every slot an override claims; a twin can no longer appear.
     materializedFrom:
+      deprecated: true
       type: datetime
-      description: the instant occurrence rows are complete from
+      description: "deprecated: no read consults the materialized span"
     materializedUntil:
+      deprecated: true
       type: datetime
-      description: the instant occurrence rows stop before (exclusive)
+      description: "deprecated: no read consults the materialized span"
     calendar:
       type: reference
       kind: calendar

@@ -208,6 +208,13 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 		if err := t.checkID(ty.Identity, id); err != nil {
 			return nil, err
 		}
+		// A series' occurrences are addressed as `<seriesId>_<slot>`, so a
+		// series id long enough to push that past the alphabet's bound would
+		// name occurrences nothing can fetch or override.
+		if ty.Implements(vocabulary.TraitRecurringCore) && len(id) > vocabulary.MaxSeriesIDLen {
+			return nil, fmt.Errorf("%w: %q is longer than %d characters, the most a kind binding recurring admits (its occurrences are addressed as <id>_<slot>)",
+				substrate.ErrValidation, id, vocabulary.MaxSeriesIDLen)
+		}
 	} else if id, err = newID(); err != nil {
 		return nil, err
 	}

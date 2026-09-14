@@ -617,6 +617,28 @@ answers every `Temporal` query. (Temporal properties are the substrate's one
 "hot" trait: they map onto dedicated storage columns, which is why the trait
 lives in core.)
 
+**Repeating things.** Two more core traits sit beside `temporal`, and both
+expect it on the same kind. A kind binding **`recurring`** declares
+`recurrence` (an RFC 5545 rule), `rdates` and `exdates` (instants the rule
+adds and skips) and `timezone`; a record with a rule is a **series**, and
+its bound temporal slot is the rule's `DTSTART`, the first occurrence. A kind
+binding **`override`** declares `recurrenceOf` (a reference at the series)
+and `originalAt` (the slot it replaces); a record with them is an
+**override**, one occurrence of a series that was moved or edited, iCalendar's
+`RECURRENCE-ID`. The substrate stores the rule and never expands it into
+rows ([decision 0039](decisions/0039-the-substrate-stores-a-recurrence-rule-and-never-expands-it.md));
+what it does instead is compute, inside the one read that already answers
+"what is on my timeline": a records list whose filter bounds `at` on both
+ends is a [window read](api.md#the-window-read), and it answers with the rows
+in the window and every series' occurrences beside them, minus `exdates` and
+minus the slots overrides claim
+([decision 0080](decisions/0080-the-window-read-computes-occurrences-and-recurring-is-core.md)).
+Cancelling one occurrence is adding its slot to `exdates`; moving or editing
+one is writing an override, and the computed envelope the read serves is
+already that override, ready to be put back at its own id. A kind may bind
+both traits (a medication schedule holds its own overrides) or one (a
+provider mirror splits them).
+
 **Bundle traits.** A few traits are more than shared properties: the host
 recognizes them by identity and builds behavior on top. These are how a
 [bundle](bundles.md) declares the pieces the substrate's OAuth

@@ -106,6 +106,9 @@ type record struct {
 	Version    int64          `json:"version"`
 	Properties map[string]any `json:"properties"`
 	DeletedAt  string         `json:"deletedAt"`
+	// Computed marks an occurrence the window read derived from a series'
+	// rule rather than a stored row.
+	Computed bool `json:"computed"`
 }
 
 func (r record) prop(name string) string {

@@ -49,6 +49,13 @@ type Record struct {
 	UpdatedAt   time.Time  `json:"updatedAt"`
 	DeletedAt   *time.Time `json:"deletedAt,omitempty"`
 	Finalizers  []string   `json:"finalizers,omitempty"`
+	// Computed marks an occurrence the window read derived from a series'
+	// rule rather than a stored row: the series' kind, the id
+	// `<seriesId>_<slot>`, the series' properties with the slot in the
+	// temporal columns and `recurrenceOf`/`originalAt` filled, version 0.
+	// Writing the envelope back at its id materializes it as an override.
+	// The CLI and the console project it under the envelope's `status`.
+	Computed bool `json:"computed,omitempty"`
 
 	// PropertyMeta is per-property provenance: the manager
 	// the ledger names, when it changed, and the live offers whose value
