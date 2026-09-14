@@ -156,7 +156,12 @@ func (h *handler) windowList(w http.ResponseWriter, r *http.Request, ds substrat
 		writeCompacted(w, head, "cursor was minted against another history; list again")
 		return
 	}
-	page := mergeWindow(wp, from, to, desc, first, after)
+	overrides, err := overrideKinds(ctx, ds)
+	if err != nil {
+		writeSubstrateError(w, err)
+		return
+	}
+	page := mergeWindow(wp, from, to, desc, first, after, overrides)
 	page.Generation = wp.Generation
 	page.Head = wp.Head
 	if carried != nil && carried.H != 0 {
@@ -185,7 +190,7 @@ type windowItem struct {
 // more), each series is complete up to its cap, and the bound is the least of
 // those. The cursor it leaves in Page.Cursor is the last emitted key as raw
 // JSON, which the caller stamps and encodes.
-func mergeWindow(wp *substrate.WindowPage, from, to time.Time, desc bool, first int, after *substrate.WindowKey) *substrate.Page {
+func mergeWindow(wp *substrate.WindowPage, from, to time.Time, desc bool, first int, after *substrate.WindowKey, overrides map[string]bool) *substrate.Page {
 	less := func(a, b substrate.WindowKey) bool {
 		if !a.At.Equal(b.At) {
 			if desc {
@@ -234,7 +239,13 @@ func mergeWindow(wp *substrate.WindowPage, from, to time.Time, desc bool, first 
 	capped := false
 	for _, s := range wp.Series {
 		rule, slotName, empty := ruleOf(s)
-		if empty || occurrence.EndsBefore(rule.Recurrence, from) {
+		if empty {
+			continue
+		}
+		// A rule whose UNTIL passed is skipped without a walk, but only when
+		// nothing else could contribute: an RDATE adds an occurrence
+		// independently of the rule's end.
+		if len(rule.RDates) == 0 && occurrence.EndsBefore(rule.Recurrence, from) {
 			continue
 		}
 		exp, err := occurrence.Expand(rule, from, to, 0)
@@ -272,7 +283,7 @@ func mergeWindow(wp *substrate.WindowPage, from, to time.Time, desc bool, first 
 			count++
 			kk := k
 			lastKey = &kk
-			items = append(items, windowItem{key: k, rec: computedRecord(s, rule, slotName, t, path)})
+			items = append(items, windowItem{key: k, rec: computedRecord(s, rule, slotName, t, path, overrides[s.Kind])})
 		}
 	}
 	if bound != nil {
@@ -368,9 +379,12 @@ func splitComputedID(id string) (seriesID string, at time.Time, ok bool) {
 // computedRecord renders one occurrence in the record envelope: the series'
 // properties with the rule's three removed (an override never carries a
 // rule), the slot under the series' own temporal name, `endsAt` kept at the
-// anchor's wall-clock duration, and the override pair filled so writing the
-// envelope back is an override.
-func computedRecord(s *substrate.Record, rule occurrence.Rule, slotName string, at time.Time, path string) *substrate.Record {
+// anchor's wall-clock duration, and, when the series' kind binds `override`,
+// the override pair filled so writing the envelope back at its id IS an
+// override. A kind that does not bind it (a provider's series mirror) has
+// no declared home for the pair, so its envelope carries the slot alone and
+// is read-only by construction.
+func computedRecord(s *substrate.Record, rule occurrence.Rule, slotName string, at time.Time, path string, overridable bool) *substrate.Record {
 	props := make(map[string]any, len(s.Properties)+2)
 	for k, v := range s.Properties {
 		switch k {
@@ -383,8 +397,10 @@ func computedRecord(s *substrate.Record, rule occurrence.Rule, slotName string, 
 	if end, ok := propInstant(s.Properties, substrate.PropEndsAt); ok {
 		props[substrate.PropEndsAt] = wallClockEnd(rule.StartsAt, end, at, rule.Timezone).Format(time.RFC3339Nano)
 	}
-	props[vocabulary.PropRecurrenceOf] = map[string]any{vocabulary.ReferenceValueKey: path}
-	props[vocabulary.PropOriginalAt] = at.UTC().Format(time.RFC3339Nano)
+	if overridable {
+		props[vocabulary.PropRecurrenceOf] = map[string]any{vocabulary.ReferenceValueKey: path}
+		props[vocabulary.PropOriginalAt] = at.UTC().Format(time.RFC3339Nano)
+	}
 	return &substrate.Record{
 		ID: computedID(s.ID, at), Kind: s.Kind, Title: s.Title,
 		Properties: props, Labels: s.Labels,
@@ -393,9 +409,12 @@ func computedRecord(s *substrate.Record, rule occurrence.Rule, slotName string, 
 	}
 }
 
-// wallClockEnd keeps the anchor's span in the rule's zone's WALL clock: an
-// all-day series that runs local midnight to local midnight keeps doing so
-// across a DST change instead of becoming 23 or 25 hours.
+// wallClockEnd shifts the anchor's span onto an occurrence in the rule's
+// zone's WALL clock: the span is a number of civil days plus a time-of-day
+// difference, applied to the occurrence's local start. A daily 09:00–10:00
+// keeps an hour; an all-day series that runs local midnight to local
+// midnight keeps doing so across a DST change instead of becoming 23 or 25
+// hours; an RDATE at 15:00 on a 09:00 series ends at 16:00, not at 10:00.
 func wallClockEnd(anchorStart, anchorEnd, slot time.Time, zone string) time.Time {
 	loc := time.UTC
 	if zone != "" {
@@ -407,8 +426,26 @@ func wallClockEnd(anchorStart, anchorEnd, slot time.Time, zone string) time.Time
 	d1 := time.Date(ls.Year(), ls.Month(), ls.Day(), 0, 0, 0, 0, time.UTC)
 	d2 := time.Date(le.Year(), le.Month(), le.Day(), 0, 0, 0, 0, time.UTC)
 	days := int(d2.Sub(d1).Hours() / 24)
-	return time.Date(lslot.Year(), lslot.Month(), lslot.Day()+days,
-		le.Hour(), le.Minute(), le.Second(), le.Nanosecond(), loc).UTC()
+	tod := func(t time.Time) time.Duration {
+		return time.Duration(t.Hour())*time.Hour + time.Duration(t.Minute())*time.Minute +
+			time.Duration(t.Second())*time.Second + time.Duration(t.Nanosecond())
+	}
+	sameDay := time.Date(lslot.Year(), lslot.Month(), lslot.Day()+days, 0, 0, 0, 0, loc)
+	return sameDay.Add(tod(lslot) + (tod(le) - tod(ls))).UTC()
+}
+
+// overrideKinds is the set of kinds binding core's `override`: the kinds
+// whose computed envelopes carry the pair a put needs to become one.
+func overrideKinds(ctx context.Context, ds substrate.Dataset) (map[string]bool, error) {
+	infos, err := ds.TypesImplementing(ctx, vocabulary.TraitOverrideCore)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(infos))
+	for _, ti := range infos {
+		out[ti.Identity] = true
+	}
+	return out, nil
 }
 
 // windowSignature pins a cursor to the filter and direction it was minted
@@ -503,7 +540,11 @@ func (h *handler) computedResource(ctx context.Context, ds substrate.Dataset, ki
 			}
 		}
 	}
-	return computedRecord(series, rule, slotName, at, path), true
+	overrides, err := overrideKinds(ctx, ds)
+	if err != nil {
+		return nil, false
+	}
+	return computedRecord(series, rule, slotName, at, path, overrides[kind]), true
 }
 
 // --- property readers ------------------------------------------------------

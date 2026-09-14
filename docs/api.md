@@ -486,12 +486,16 @@ render it differently: the series' kind, the id `<seriesId>_<slot>` (the slot
 in UTC, `YYYYMMDDTHHMMSSZ`), the series' properties with `recurrence`,
 `rdates` and `exdates` removed and the slot written under the series' own
 temporal name (`endsAt` keeps the anchor's duration in the rule's zone's wall
-clock), `recurrenceOf` and `originalAt` filled, `version` 0, and `computed:
-true`. `GET` at that id answers the same envelope while the series produces
-the slot and nothing overrides it, so a `PUT` at the id, the envelope as its
-body, **materializes the occurrence as an override**: that is how one
-instance is moved, edited or given more detail. Cancelling one is adding its
-slot to the series' `exdates`. A stored record at a computed id always wins.
+clock), `version` 0, and `computed: true`. When the series' kind binds
+`override` too (`task` and `medicationschedule` do), the envelope also
+carries `recurrenceOf` and `originalAt`, so a `PUT` at the id, the envelope
+as its body, **materializes the occurrence as an override**: that is how one
+instance is moved, edited or given more detail. `GET` at that id answers the
+same envelope while the series produces the slot and nothing overrides it. A
+kind that does not bind `override` (a provider's series mirror, whose
+exceptions are rows of another kind) gets a read-only envelope without the
+pair. Cancelling one occurrence is adding its slot to the series' `exdates`.
+A stored record at a computed id always wins.
 
 The rules that hold the page correct: `orderBy` is `at`, ascending or
 descending, and nothing else (a `bad_request` names it); the candidate series

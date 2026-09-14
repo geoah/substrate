@@ -318,3 +318,53 @@ func TestComputedEndsAtKeepsTheWallClock(t *testing.T) {
 	}
 	_ = time.Second
 }
+
+// The edges Codex's review named: a kind without `override` gets a read-only
+// envelope (no pair a put would need); an RDATE after the rule's UNTIL still
+// occurs; and an occurrence at another time of day keeps the anchor's
+// duration rather than its end.
+func TestWindowEdgesFromReview(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+	seedWindow(ds)
+	const kindMirror = "providers.example.com/mirror/series"
+	ds.types = append(ds.types, substrate.KindInfo{Identity: kindMirror, Name: "series", Authority: "providers.example.com", Package: "mirror"})
+	ds.seedWindowKinds([]string{kindMirror}, []string{kindMirror}, nil)
+	// Ended in June, but an RDATE lands in the window at 15:00 on a 09:00
+	// series that runs an hour.
+	ds.records["ended"] = &substrate.Record{
+		ID: "ended", Kind: kindMirror, Title: "Ended",
+		Properties: map[string]any{
+			"title": "Ended", "recurrence": "RRULE:FREQ=DAILY;UNTIL=20260601T090000Z",
+			"at": "2026-05-01T09:00:00Z", "endsAt": "2026-05-01T10:00:00Z",
+			"rdates": []any{"2026-07-02T15:00:00Z"},
+		},
+	}
+	rec := env.do(t, http.MethodGet, windowPath("2026-07-01T00:00:00Z", "2026-07-06T00:00:00Z"), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	page := decodeJSON[windowPage](t, rec)
+	var extra *windowRow
+	for i := range page.Records {
+		if page.Records[i].ID == "ended_20260702T150000Z" {
+			extra = &page.Records[i]
+		}
+	}
+	if extra == nil {
+		t.Fatalf("the RDATE after UNTIL was dropped: %v", page.Records)
+	}
+	if extra.Properties["endsAt"] != "2026-07-02T16:00:00Z" {
+		t.Fatalf("endsAt = %v, want the anchor's hour applied to the 15:00 start", extra.Properties["endsAt"])
+	}
+	for _, gone := range []string{"recurrenceOf", "originalAt"} {
+		if _, has := extra.Properties[gone]; has {
+			t.Fatalf("a kind without override got %s in its computed envelope", gone)
+		}
+	}
+	// The dose kind binds override, so its envelope still carries the pair.
+	for _, r := range page.Records {
+		if r.ID == "levo_20260702T060000Z" && r.Properties["recurrenceOf"] == nil {
+			t.Fatalf("the override-binding kind lost its pair: %v", r.Properties)
+		}
+	}
+}

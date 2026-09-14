@@ -57,6 +57,9 @@ func winManifest() []map[string]any {
 		}),
 		kind(winMeeting, "meeting", []any{"temporal(range)"}, map[string]any{
 			"name": map[string]any{"type": "string"},
+			// A property merely CALLED recurrence, on a kind that does not
+			// bind the trait: its rows are rows, never series.
+			"recurrence": map[string]any{"type": "string"},
 		}),
 		kind(winSeries, "series", []any{"temporal(range)", "recurring"}, rule),
 		kind(winException, "exception", []any{"temporal(range)", "override"}, map[string]any{
@@ -101,7 +104,7 @@ func TestWindowReadsRowsSeriesAndOverridesOnOneSnapshot(t *testing.T) {
 		"name": "Levo (evening)", "dueAt": "2026-07-03T18:00:00Z",
 		"recurrenceOf": winDose + "/levo", "originalAt": "2026-07-03T06:00:00Z",
 	})
-	put(winMeeting, "dentist", map[string]any{"name": "Dentist", "at": "2026-07-02T12:00:00Z", "endsAt": "2026-07-02T13:00:00Z"})
+	put(winMeeting, "dentist", map[string]any{"name": "Dentist", "at": "2026-07-02T12:00:00Z", "endsAt": "2026-07-02T13:00:00Z", "recurrence": "every year, roughly"})
 	// A series outside the window's kinds must not be a candidate; a deleted
 	// row must not be anything.
 	put(winMeeting, "gone", map[string]any{"name": "Gone", "at": "2026-07-04T12:00:00Z", "endsAt": "2026-07-04T13:00:00Z"})
@@ -203,6 +206,11 @@ func TestWindowReadsRowsSeriesAndOverridesOnOneSnapshot(t *testing.T) {
 		t.Fatalf("a %d-character series id must be refused, got %v", len(long), err)
 	}
 	put(winMeeting, long, map[string]any{"name": "long but plain", "at": "2026-07-01T08:00:00Z", "endsAt": "2026-07-01T08:30:00Z"})
+	// An override of the recurring kind carries the slot suffix already and
+	// is held to MaxIDLen alone.
+	put(winSeries, strings.Repeat("y", vocabulary.MaxSeriesIDLen)+"_20260708T080000Z", map[string]any{
+		"name": "an override with a long id", "at": "2026-07-08T09:00:00Z", "endsAt": "2026-07-08T09:30:00Z",
+	})
 }
 
 func join(ss []string) string {

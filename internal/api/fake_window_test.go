@@ -95,11 +95,9 @@ func (d *fakeDataset) Window(_ context.Context, q substrate.WindowQuery) (*subst
 		if !passes(e) {
 			continue
 		}
-		if isSeries(e) {
-			if recurring[e.Kind] {
-				page.Series = append(page.Series, e)
-				paths = append(paths, vocabulary.RecordPath(e.Kind, e.ID))
-			}
+		if recurring[e.Kind] && isSeries(e) {
+			page.Series = append(page.Series, e)
+			paths = append(paths, vocabulary.RecordPath(e.Kind, e.ID))
 			continue
 		}
 		k := keyOf(e)

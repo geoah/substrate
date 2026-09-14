@@ -51,8 +51,9 @@ them, the occurrences computed from every series among the kinds in play,
 minus each series' `exdates` and minus every slot an override claims, ordered
 by slot, on one page. A computed occurrence is served in the record envelope
 (the series' kind, the id `<seriesId>_<slot>`, `computed: true`, version 0)
-and a put at that id materializes it as an override; an exdate cancels one
-occurrence. `GET /api/v1/occurrences` is removed.
+and, on a kind that binds `override` too, a put at that id materializes it
+as one; an exdate cancels one occurrence. `GET /api/v1/occurrences` is
+removed.
 
 It beat the agenda read because a second read leaves the timeline read wrong
 and every future consumer rebuilds the merge. It beat properties on

@@ -210,9 +210,12 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 		}
 		// A series' occurrences are addressed as `<seriesId>_<slot>`, so a
 		// series id long enough to push that past the alphabet's bound would
-		// name occurrences nothing can fetch or override.
-		if ty.Implements(vocabulary.TraitRecurringCore) && len(id) > vocabulary.MaxSeriesIDLen {
-			return nil, fmt.Errorf("%w: %q is longer than %d characters, the most a kind binding recurring admits (its occurrences are addressed as <id>_<slot>)",
+		// name occurrences nothing can fetch or override. Judged on the write
+		// being a SERIES (it carries a rule or extra dates): an override or a
+		// plain row of the same kind carries the suffix already and is held
+		// to MaxIDLen alone.
+		if ty.Implements(vocabulary.TraitRecurringCore) && len(id) > vocabulary.MaxSeriesIDLen && writesSeries(in.Properties) {
+			return nil, fmt.Errorf("%w: %q is longer than %d characters, the most a series may have (its occurrences are addressed as <id>_<slot>)",
 				substrate.ErrValidation, id, vocabulary.MaxSeriesIDLen)
 		}
 	} else if id, err = newID(); err != nil {
@@ -264,6 +267,17 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 		// tombstones.
 		resurrect: existing != nil && existing.DeletedAt != nil,
 	}, nil
+}
+
+// writesSeries reports whether a write's properties make the row a series: a
+// recurrence rule, or a non-empty list of extra dates. The same test the
+// window read's candidate predicate applies to a stored row.
+func writesSeries(props map[string]any) bool {
+	if props[vocabulary.PropRecurrence] != nil {
+		return true
+	}
+	list, _ := props[vocabulary.PropRDates].([]any)
+	return len(list) > 0
 }
 
 // checkID polices the id itself, whatever the write does with it: one

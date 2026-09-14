@@ -634,10 +634,12 @@ in the window and every series' occurrences beside them, minus `exdates` and
 minus the slots overrides claim
 ([decision 0080](decisions/0080-the-window-read-computes-occurrences-and-recurring-is-core.md)).
 Cancelling one occurrence is adding its slot to `exdates`; moving or editing
-one is writing an override, and the computed envelope the read serves is
-already that override, ready to be put back at its own id. A kind may bind
-both traits (a medication schedule holds its own overrides) or one (a
-provider mirror splits them).
+one is writing an override, and on a kind that binds both traits the
+computed envelope the read serves is already that override, ready to be put
+back at its own id. A kind may bind both (a medication schedule or a
+repeating task holds its own overrides) or one (a provider mirror splits
+them: its series' envelopes are read-only, its exceptions are rows of
+another kind).
 
 **Bundle traits.** A few traits are more than shared properties: the host
 recognizes them by identity and builds behavior on top. These are how a

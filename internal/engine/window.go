@@ -18,10 +18,16 @@ import (
 // it hands the API layer the complete inputs a correct page needs, so a
 // master and its overrides are never seen in two states.
 
-// seriesPredicate is what makes a row a series: the recurring trait's two ways
-// to name occurrences. The partial index records_recurring_idx (migration
-// 0002) spells the same predicate, so the candidate read is index-backed.
-const seriesPredicate = `(props ? 'recurrence' OR props ? 'rdates')`
+// seriesPredicate is what makes a row of a recurring kind a series: a rule,
+// or a NON-EMPTY list of extra dates (an empty `rdates` is an ordinary row).
+// The partial index records_recurring_idx (migration 0002) spells the same
+// predicate, so the candidate read is index-backed. It is only ever applied
+// beside `kind IN <recurring kinds>`: a temporal kind that happens to declare
+// a property called `recurrence` without binding the trait is not a series.
+// COALESCE keeps the missing-key case a plain false: `jsonb_typeof(NULL)` is
+// NULL, and a NULL inside `NOT (...)` would drop every ordinary row of a
+// recurring kind from the rows query.
+const seriesPredicate = `(props ? 'recurrence' OR (jsonb_typeof(COALESCE(props->'rdates', 'null'::jsonb)) = 'array' AND props->'rdates' <> '[]'::jsonb))`
 
 // slotExpr is a temporal row's position on the timeline whatever column its
 // binding chose: a `temporal(point: dueAt)` kind keeps its slot in due_at and
@@ -82,9 +88,21 @@ func (ds *dataset) Window(ctx context.Context, q substrate.WindowQuery) (*substr
 	}
 	page.Head = head.Int64
 
+	// Only a kind that binds the recurring trait can hold a series; a temporal
+	// kind with a property that merely shares a name is not one, and its rows
+	// stay rows.
+	var seriesKinds []string
+	for _, t := range temporal {
+		if t.Implements(vocabulary.TraitRecurringCore) {
+			seriesKinds = append(seriesKinds, t.Identity)
+		}
+	}
+
 	// --- the rows: plain events and overrides in the window, after the key.
 	rb.add(windowBound(rb, atKinds, dueKinds, q.From, q.To))
-	rb.add(`NOT ` + seriesPredicate)
+	if len(seriesKinds) > 0 {
+		rb.add(`NOT (kind IN ` + rb.jsonArray(seriesKinds) + ` AND ` + seriesPredicate + `)`)
+	}
 	if q.After != nil {
 		rb.add(windowSeek(rb, q.After, q.Desc))
 	}
@@ -111,15 +129,7 @@ func (ds *dataset) Window(ctx context.Context, q substrate.WindowQuery) (*substr
 		page.Rows = append(page.Rows, e)
 	}
 
-	// --- the series: every candidate, whole. Only a kind that binds the
-	// recurring trait can hold one; a temporal kind with a property that
-	// merely shares a name is not a series.
-	var seriesKinds []string
-	for _, t := range temporal {
-		if t.Implements(vocabulary.TraitRecurringCore) {
-			seriesKinds = append(seriesKinds, t.Identity)
-		}
-	}
+	// --- the series: every candidate, whole.
 	if len(seriesKinds) > 0 {
 		sb := &builder{}
 		if _, err := ds.buildFilter(ctx, tx, sb, base); err != nil {
