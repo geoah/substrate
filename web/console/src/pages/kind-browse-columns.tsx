@@ -10,12 +10,12 @@
 import type { DataTableColumn } from "@/components/data-table/data-table"
 
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
+import { ReferenceCell } from "@/components/record/reference-value"
 import { StateBadge } from "@/components/state-badge"
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import {
   cellValue,
   recordTitle,
-  referenceCell,
   relativeTime,
   tableDateTime,
 } from "@/lib/format"
@@ -67,7 +67,11 @@ function Muted({ children }: { children: React.ReactNode }) {
   return <span className="text-muted-foreground">{children}</span>
 }
 
-function propertyCell(prop: DeclaredProperty, value: unknown) {
+function propertyCell(
+  prop: DeclaredProperty,
+  value: unknown,
+  kinds: KindInfo[]
+) {
   if (value === undefined || value === null) return <Muted>—</Muted>
   if (prop.kind === "state") {
     return <StateBadge value={String(value)} initial={prop.initial} />
@@ -85,9 +89,15 @@ function propertyCell(prop: DeclaredProperty, value: unknown) {
     )
   }
   // A reference's stored value is the referent's whole path; the column already
-  // says which kind it points at, so the cell names the record.
-  const text =
-    prop.kind === "reference" ? referenceCell(value) : cellValue(value)
+  // says which kind it points at, so the cell is the referent's pill — a link,
+  // not the `{ref}` a flattened object reads as.
+  if (prop.kind === "reference") {
+    // A repeated reference holding nothing is an empty array, which is a value
+    // the early guard above does not catch.
+    if (Array.isArray(value) && !value.length) return <Muted>—</Muted>
+    return <ReferenceCell value={value} kinds={kinds} />
+  }
+  const text = cellValue(value)
   if (!text) return <Muted>—</Muted>
   // The cell uses its column's whole width; truncation happens only at the
   // column boundary, full value on hover (owner ruling, 2026-08-06 — no
@@ -169,7 +179,10 @@ export function defaultHiddenColumns(kind: KindInfo): string[] {
 }
 
 export function buildColumns(
-  kind: KindInfo
+  kind: KindInfo,
+  /** The registry, so a reference cell can tell a kind it can route to from
+   * one nobody installed. */
+  kinds: KindInfo[]
 ): DataTableColumn<SubstrateRecord>[] {
   const columns: DataTableColumn<SubstrateRecord>[] = []
 
@@ -238,7 +251,7 @@ export function buildColumns(
           description={prop.description}
         />
       ),
-      cell: ({ getValue }) => propertyCell(prop, getValue()),
+      cell: ({ getValue }) => propertyCell(prop, getValue(), kinds),
       meta: { label: prop.name, ...propertySizing(prop) },
     })
   }

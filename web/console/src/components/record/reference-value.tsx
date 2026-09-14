@@ -13,10 +13,60 @@ import { readReference, type KindInfo } from "@/lib/api/types"
 import { kindByIdentity } from "@/lib/definition"
 import { cellValue } from "@/lib/format"
 import { splitRecordPath } from "@/lib/record-path"
+import { cn } from "@/lib/utils"
 
-/** A stored reference read as the pointer it is: the referent's RecordPill
- * when the registry knows the kind; the raw value, inert, when it does not (a
- * reference may name a kind nobody installed).
+/** The pointer alone: the referent's RecordPill when the registry knows the
+ * kind; the raw value, inert, when it does not (a reference may name a kind
+ * nobody installed, and a value may not be a reference at all). Neither case
+ * drops what the record holds.
+ *
+ * `dense` is the table-cell voice: a value that cannot be a pill truncates at
+ * the column boundary instead of wrapping the row taller, and the pill itself
+ * may shrink. */
+function Pointer({
+  value,
+  kinds,
+  dense,
+}: {
+  value: unknown
+  kinds: KindInfo[]
+  dense?: boolean
+}) {
+  const held = readReference(value)
+  if (!held) {
+    const raw =
+      typeof value === "object" ? JSON.stringify(value) : String(value)
+    return (
+      <span
+        className={cn("data", dense ? "truncate" : "break-words")}
+        title={dense ? raw : undefined}
+      >
+        {raw}
+      </span>
+    )
+  }
+  const target = splitRecordPath(held.path)
+  const info = target ? kindByIdentity(kinds, target.kind) : undefined
+  if (!target || !info) {
+    return (
+      <span
+        className={cn("data", dense ? "truncate" : "break-all")}
+        title={dense ? held.path : undefined}
+      >
+        {held.path}
+      </span>
+    )
+  }
+  return (
+    <RecordPill
+      kind={target.kind}
+      id={target.id}
+      className={dense ? "min-w-0" : undefined}
+    />
+  )
+}
+
+/** A stored reference read as the pointer it is.
  *
  * A reference whose declaration carries LINK DATA stores `{ref, <prop>: …}`
  * rather than the bare path, and the link's properties render beside the pill:
@@ -29,32 +79,54 @@ export function ReferenceValue({
   kinds: KindInfo[]
 }) {
   const held = readReference(value)
-  if (!held) {
-    return (
-      <span className="data break-words">
-        {typeof value === "object" ? JSON.stringify(value) : String(value)}
-      </span>
-    )
-  }
-  const target = splitRecordPath(held.path)
-  const info = target ? kindByIdentity(kinds, target.kind) : undefined
-  const pill =
-    target && info ? (
-      <RecordPill kind={target.kind} id={target.id} />
-    ) : (
-      <span className="data break-all">{held.path}</span>
-    )
+  const pointer = <Pointer value={value} kinds={kinds} />
+  if (!held) return pointer
   const link = Object.entries(held.properties)
-  if (!link.length) return pill
+  if (!link.length) return pointer
   return (
     <span className="flex max-w-full min-w-0 items-center gap-2">
-      {pill}
+      {pointer}
       <span
         className="truncate data text-xs text-muted-foreground"
         title={JSON.stringify(held.properties)}
       >
         {link.map(([key, held_]) => `${key}: ${cellValue(held_)}`).join(" · ")}
       </span>
+    </span>
+  )
+}
+
+/** The same pointer in a table CELL: one pill per referent, on one line. A
+ * repeated reference is a pill each, in stored order.
+ *
+ * The link PROPERTIES stay off it, unlike the value above: a cell is one line
+ * that truncates at its column boundary, and link data reads on the record
+ * page, where there is room for it. Without this, every reference column
+ * printed `cellValue`'s summary of the served shape — the literal `{ref}`.
+ *
+ * The click never reaches the row. A table row is itself clickable, so a pill
+ * that let the click bubble would navigate to the referent and then have the
+ * row navigate somewhere else over it. */
+export function ReferenceCell({
+  value,
+  kinds,
+}: {
+  /** One reference, or the array a repeated one stores. */
+  value: unknown
+  kinds: KindInfo[]
+}) {
+  const held = (Array.isArray(value) ? value : [value]).filter(
+    (one) => one !== undefined && one !== null && one !== ""
+  )
+  if (!held.length) return null
+  return (
+    <span
+      className="flex min-w-0 items-center gap-1 overflow-hidden"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {held.map((one, i) => (
+        <Pointer key={i} value={one} kinds={kinds} dense />
+      ))}
     </span>
   )
 }

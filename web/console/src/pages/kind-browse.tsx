@@ -190,8 +190,8 @@ export function KindBrowsePage() {
   }
 
   const columns = useMemo(
-    () => (kindInfo ? buildColumns(kindInfo) : []),
-    [kindInfo]
+    () => (kindInfo ? buildColumns(kindInfo, registry.data ?? []) : []),
+    [kindInfo, registry.data]
   )
   // Only the OPENING set: a reader who has saved a column preference for this
   // kind keeps it, and the Columns menu turns any of these back on.
