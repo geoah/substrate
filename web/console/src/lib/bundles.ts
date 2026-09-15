@@ -208,6 +208,8 @@ export function stepLines(plan: ConversionPlan | undefined): string[] {
         return `renames ${s.from} to ${s.to} on ${s.kind}: ${n} rewritten`
       case "backfill":
         return `backfills ${s.property} with its default on ${s.kind}: ${n} rewritten`
+      case "enter":
+        return `enters ${s.property} at ${s.to} on ${s.kind}: ${n} rewritten`
       case "remap":
         return `rewrites ${s.property} ${s.from} to ${s.to} on ${s.kind}: ${n} rewritten${
           s.lossy

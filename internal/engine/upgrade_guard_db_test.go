@@ -1260,3 +1260,78 @@ func TestATriggerAndAnUpgradeDroppingItsCallableCannotBothLand(t *testing.T) {
 		t.Fatalf("trigger refusal: %v", triggerErr)
 	}
 }
+
+// The boot door enters a shipped machine at open, in the transaction that
+// projects the declaration (decision 0082): a state property added to a kind
+// this repository already holds records of leaves none of them outside it, so
+// the first transition on an old row lands instead of refusing out of "".
+func TestBootUpgradeEntersAShippedStateMachine(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := seededRepository(t)
+	const provider = "substrate.reamde.dev/llm/provider"
+	// A second row beside the seeded one, both written while the kind had no
+	// machine at all.
+	{
+		svc := openTree(t, dsn, shippedTree(t))
+		ds, err := svc.Dataset(ctx, testdb.Repository(t))
+		if err != nil {
+			t.Fatalf("dataset: %v", err)
+		}
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind: provider, ID: "bare", Properties: map[string]any{"wire": "azure"},
+		})
+		_ = svc.Close()
+	}
+	tree := shippedTree(t)
+	patchShipped(t, llmKind(tree, "provider.yaml"), func(doc string) string {
+		const from = "  properties:\n    label:\n"
+		if !strings.Contains(doc, from) {
+			t.Fatal("llm/provider no longer opens its properties with `label`")
+		}
+		doc = strings.Replace(doc, from, "  properties:\n"+
+			"    attention:\n"+
+			"      type: state\n"+
+			"      states:\n"+
+			"        - quiet\n"+
+			"        - raised\n"+
+			"      initial: quiet\n"+
+			"      transitions:\n"+
+			"        - from: quiet\n"+
+			"          to: raised\n"+
+			"    label:\n", 1)
+		return pinVersion(t, doc, "99")
+	})
+	if err := openMoved(t, dsn, tree); err != nil {
+		t.Fatalf("a shipped machine must be entered at open: %v", err)
+	}
+
+	svc := openTree(t, dsn, tree)
+	defer func() { _ = svc.Close() }()
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	// The row written before the machine existed, and a seeded one.
+	for _, id := range []string{"guarded", "bare"} {
+		if got := mustGet(t, ds, provider, id); got.Properties["attention"] != "quiet" {
+			t.Fatalf("%s did not enter the machine: %v", id, got.Properties)
+		}
+	}
+	if got := mustPatch(t, ds, owner, provider, "guarded", substrate.PatchInput{
+		Properties: map[string]any{"attention": "raised"},
+	}); got.Properties["attention"] != "raised" {
+		t.Fatalf("the transition out of the entered state did not land: %v", got.Properties)
+	}
+	// Landed, the preview reports nothing pending: a machine every record
+	// stands in is no step.
+	plans, err := ds.PlanShippedUpgrade(ctx)
+	if err != nil {
+		t.Fatalf("plan the shipped upgrade: %v", err)
+	}
+	for _, p := range plans {
+		if p.Upgrade.Available {
+			t.Fatalf("the landed entry still shows as pending: %+v", p)
+		}
+	}
+}

@@ -698,6 +698,16 @@ mechanical:
 - **Creations are born in the declared `initial` state.** A creating write
   may name any declared state instead (a provider mirroring an item already
   done upstream starts it there); an undeclared state name is refused.
+- **A record that predates the machine is entered at admission.** Declaring a
+  `state` property on a kind that already holds records writes the machine's
+  `initial` state onto every one of them, in the transaction that admits the
+  declaration and as ordinary record writes, counted on the
+  [conversion plan](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)
+  as its own `enter` step
+  ([0082](decisions/0082-a-record-meets-a-new-state-machine-in-its-initial-state.md)).
+  A record holding no state for a declared machine is therefore a bug and
+  never a position: no declared transition leaves it, and the guard refuses
+  every move out of it.
 - **Transitions travel only as `patch`.** A `put` that would move a state is
   refused ("patch does transitions"), so re-applying a document you read can
   never accidentally complete a task.

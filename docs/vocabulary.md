@@ -275,7 +275,9 @@ once. The narrowing diffs that refuse:
   over the stored values that carry them
 
 Widening diffs (a new kind, a new optional property, a new enum value, a new
-state or transition, removing `required:`) always admit. The guard counts, it
+state or transition, removing `required:`) always admit, and a new `state`
+PROPERTY admits too, entering the records that predate it
+([below](#backfilling-and-remapping)). The guard counts, it
 never blanket-refuses the class: removing an enum value no record holds
 admits, and dropping a property admits once every record has nulled it. As a
 minimal example, re-applying the task kind with `abandoned` removed refuses
@@ -407,6 +409,19 @@ seeds creates and nothing else. A required property's default may not be an
 empty value (`""`, `[]`, `{}`), because `required:` refuses those on every
 write; the pair is refused at admission.
 
+**A new `state` property enters every record.** A machine declared on a kind
+that already holds records writes its `initial` state onto every record
+holding no state for it, in the admitting transaction and as ordinary record
+writes, counted as its own `enter` step
+([decision 0082](decisions/0082-a-record-meets-a-new-state-machine-in-its-initial-state.md)).
+A state takes no `default:` and no marker: the machine's own `initial` is the
+value, and there is nothing else it could be. Without this the records would
+stand outside the machine forever — no transition leaves an absent state, and
+a `put` may not move a state at all — so an absent state on a declared machine
+is a bug and never a position. It writes no manager row, because a machine's
+position is nobody's property, and a machine every record already stands in is
+not a step, so admitting the same declaration again enters nothing.
+
 **`renamedFrom:` on a value respells it.** An enum value, or any value in a
 `values:` list, may declare the spelling it replaces:
 
@@ -453,19 +468,21 @@ a `planHash` and the `changelogSeq` it was counted at. The apply then takes
 `confirm: {planHash, changelogSeq}` beside `documents`; without it a lossy
 batch is refused with the `lossy` code, and a confirmation is refused after
 any write since the preview (`conflict`) or for a plan that recounts to
-another hash. A lossless plan (renames, backfills, remaps onto new values)
-runs unconfirmed. `substratectl apply --allow-data-loss` previews first,
+another hash. A lossless plan (renames, backfills, state entries, remaps onto
+new values) runs unconfirmed. `substratectl apply --allow-data-loss` previews first,
 prints the steps and confirms exactly that hash; the console's Registry asks
 before a lossy upgrade. The boot upgrade of the shipped tree has nobody to
 confirm it, so it never runs a lossy step: it refuses and `GET
 /api/v1/vocabulary/upgrade` names the step, cleared by rewriting the records
 it counts.
 
-The four compose. Every step one apply declares against a kind runs in one
-pass over its records, renames first, then backfills, then remaps, then nulls,
-and a record any step touches is rewritten once: one `patch` entry whose
-payload carries `renamed`, `backfilled`, `remapped` or `nulled` beside the
-property names. A converted record is a source write like any other, so the
+The five compose. Every step one apply declares against a kind runs in one
+pass over its records, renames first, then backfills, then state entries, then
+remaps, then nulls, and a record any step touches is rewritten once: one
+`patch` entry whose payload carries `renamed`, `backfilled`, `remapped` or
+`nulled` beside the property names — a state entry says `backfilled` too,
+because the key means a value the record was missing was filled in.
+A converted record is a source write like any other, so the
 records a mapping from its kind projects onto follow it in the same
 transaction, offer rows included. A tombstoned record is neither counted nor
 converted, as for a rename: a put that restores it revives the old spelling.

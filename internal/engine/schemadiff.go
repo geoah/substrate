@@ -166,6 +166,15 @@ const countNonIntPropQuery = `SELECT count(*) FROM records
 // countStateQuery counts live rows holding any state for a machine.
 const countStateQuery = `SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL AND states ? $2`
 
+// countAbsentStateQuery counts live rows standing OUTSIDE a machine: the rows
+// a declaration adding it strands, which the entry step enters at the
+// machine's `initial` (convert.go, decision 0082). A state lives in its own
+// column, so the empty string is counted beside the absent key: the write
+// path reads both as no state, and a row holding one could never transition.
+const countAbsentStateQuery = `SELECT count(*) FROM records
+	WHERE kind = $1 AND deleted_at IS NULL
+	AND (NOT states ? $2 OR states->$2 = '""'::jsonb)`
+
 // countStateValuesQuery counts live rows whose machine sits in one of the
 // given states ($3 is a JSON array of state names).
 const countStateValuesQuery = `SELECT count(*) FROM records
