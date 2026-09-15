@@ -409,8 +409,9 @@ func TestRequiredReferencesEnforcedOnCreate(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("reference-free patch rejected: %v", err)
 	}
-	// A `mustExist` reference naming an id nothing holds is a not-found, never a
-	// silent stub: there is no resolve-by-value any more.
+	// A `mustExist` reference naming an id nothing holds is a refused VALUE,
+	// addressed to the property, never a silent stub: there is no
+	// resolve-by-value any more.
 	if _, err := ds.Put(ctx, slack, substrate.PutInput{
 		Kind: "conversationmessage", ID: "slack:T1:C1:2",
 		Properties: map[string]any{
@@ -420,6 +421,6 @@ func TestRequiredReferencesEnforcedOnCreate(t *testing.T) {
 	}); err == nil {
 		t.Fatal("a reference at an id nothing holds must not create one")
 	} else {
-		wantErr(t, err, substrate.ErrNotFound, "reference at an unheld id")
+		wantRefusal(t, err, substrate.ErrValidation, "props.conversation: reference names")
 	}
 }

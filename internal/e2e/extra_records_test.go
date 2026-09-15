@@ -460,14 +460,20 @@ func xrCaseReferenceWrites(c *C) {
 	c.stepf("`POST …/edges/assignee` is a 404: the link verbs are gone, not deprecated")
 
 	// A reference is never born dangling: `mustExist` refuses the write, at
-	// the property's own site.
+	// the property's own site — as a VALUE problem, because the request
+	// addresses a record that is there and the body is what is wrong (422,
+	// issue 550).
 	status, raw = c.do(http.MethodPut, xrTaskPath(xrRefTask), map[string]any{
 		"properties": map[string]any{"assignee": recPath(personKind, "x-nobody-here")},
 	}, nil)
-	c.requiref(status == http.StatusNotFound, "an assignee at an absent person answered %d, want 404: %s", status, raw)
-	c.requiref(strings.Contains(xrRefusal(c, raw).Error.Message, "props.assignee"),
+	c.requiref(status == http.StatusUnprocessableEntity,
+		"an assignee at an absent person answered %d, want 422: %s", status, raw)
+	danglingRef := xrRefusal(c, raw)
+	c.requiref(danglingRef.Error.Code == "validation" && len(danglingRef.Error.ProblemDetails) == 1 &&
+		danglingRef.Error.ProblemDetails[0].Path == "props.assignee" &&
+		strings.Contains(danglingRef.Error.ProblemDetails[0].Message, "does not exist"),
 		"the refusal does not address the property: %s", raw)
-	c.stepf("a reference at an absent target is a 404 addressed to `props.assignee`")
+	c.stepf("a reference at an absent target is a 422 `validation` addressed to `props.assignee`")
 
 	var linked xrRecord
 	status, raw = c.do(http.MethodPut, xrTaskPath(xrRefTask), map[string]any{
