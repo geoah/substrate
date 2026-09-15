@@ -1340,19 +1340,51 @@ func TestReRegistrationValidatesTheChangedManifest(t *testing.T) {
 		wantErr(t, err, substrate.ErrValidation, "changed manifest")
 	}
 
-	// A reference pinned at a mapped source type is refused the same way:
-	// resolution stays one hop deep.
-	alsoBroken := googleManifest()
-	data, _ = alsoBroken.Manifests[2]["data"].(map[string]any)
-	alsoProps, _ := data["properties"].(map[string]any)
-	alsoProps["friend"] = map[string]any{"type": "reference", "kind": "contact"}
-	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, alsoBroken); err == nil {
-		t.Fatal("a reference at a mapped source type must not register")
-	}
-
 	// And the good one still re-registers.
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, googleManifest()); err != nil {
 		t.Fatalf("re-registering the unchanged manifest: %v", err)
+	}
+}
+
+// A MIRROR MAY POINT AT ITS OWN MIRRORS (record 84). Google's contact is a
+// mapping source onto person, and until this rule went a reference pinned at
+// `contact` was refused at admission — so importing the people mappings
+// retroactively narrowed what the google package itself could declare. The
+// pin is satisfied WITHOUT a hop, which is why the one-hop rule is untouched:
+// the stored value names the contact, and the subject hop still answers for
+// the person-pinned reference beside it.
+func TestAReferenceMayPinAMappingSource(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	installPeopleSources(t, ds)
+
+	withFriend := googleManifest()
+	data, _ := withFriend.Manifests[2]["data"].(map[string]any)
+	props, _ := data["properties"].(map[string]any)
+	props["friend"] = map[string]any{"type": "reference", "kind": "contact"}
+	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, withFriend); err != nil {
+		t.Fatalf("a reference at a mapped source kind must register: %v", err)
+	}
+
+	ada := syncSource(t, ds, people, typeGoogleContact, "g-ada", map[string]any{
+		"name": aname("Ada"), "emails": gemails("ada@example.com"),
+	})
+	grace := syncSource(t, ds, people, typeGoogleContact, "g-grace", map[string]any{
+		"name": aname("Grace"), "emails": gemails("grace@example.com"),
+		"friend": typeGoogleContact + "/" + ada.ID,
+	})
+
+	// The value stayed at the mirror. A hop here would have silently stored
+	// Ada's PERSON, which is the whole reason the provider could not model its
+	// own relations before.
+	got := refPathValue(mustGet(t, ds, grace.Kind, grace.ID), "friend")
+	if want := typeGoogleContact + "/" + ada.ID; got != want {
+		t.Fatalf("friend = %q, want %q", got, want)
+	}
+	// And the subject hop is untouched: the contact still reaches its person.
+	if personOf(t, ds, ada) == "" {
+		t.Fatal("the contact lost its subject")
 	}
 }
 

@@ -80,6 +80,31 @@ its people in. The mapping's `to` is what the write path enforces on that slot:
 a value of another kind is refused, a bare id completes against it, and until a
 mapping exists the slot stays empty.
 
+**A reference may pin a mirror — and mostly should not.** Any reference,
+anywhere, may name a kind some mapping reads as its `from`
+([decision record 0084](decisions/0084-a-reference-may-pin-a-mapping-source-kind.md));
+a pin at the source is satisfied by the value as written, so it never takes the
+hop and the one-hop rule is untouched. That is what lets a provider model its
+API's own relations as references — `issue.assignees` at `github/user[]`,
+`event.attendees` at `google/emailaddress[]`, `message.user` at `slack/user` —
+which it could not do while importing a sample's mappings retroactively
+narrowed what the provider was allowed to declare.
+
+**Outside the provider, point at the subject.** A task's `assignee` belongs at
+`person`, not at one provider's view of a person: the subject hop below lets
+a connector write the `github/user` path it actually holds into that
+person-pinned slot, so nothing is lost by pinning the subject and a merge
+moves every pointer at once. A consumer kind pinned at a mirror instead ties
+itself to one provider, is left dangling when that provider is uninstalled,
+and is not carried by a merge. Pin the mirror when the relation IS the
+provider's — inside its own package — and the subject everywhere else.
+
+**A `match` probe reads the source record's own values**, so it needs a value
+and not a pointer: a source that declares its email addresses as references
+cannot probe them onto `person.emails`, because what the row holds there is a
+record path. A provider that wants its rows matchable keeps the scalar beside
+the reference (`email`, `emailAddresses`) and probes that.
+
 `from:` and `to:` are kind references, so a mapping says exactly which two
 kinds it joins and an installed manifest can name a shipped kind without
 guessing. `map` is assignment-only, keyed by the subject property written: each
