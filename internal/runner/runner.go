@@ -957,8 +957,8 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 		}
 		return map[string]any{"record": e}, nil
 	case "list":
-		var q substrate.Query
-		if err := json.Unmarshal(call.Params, &q); err != nil {
+		q, err := parseListQuery(call.Params)
+		if err != nil {
 			return nil, fmt.Errorf("list: %w", err)
 		}
 		if err := s.requireTypes(q.Filter.Kinds, "list"); err != nil {
@@ -1038,6 +1038,50 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 	default:
 		return nil, fmt.Errorf("unknown host call %q", call.Host)
 	}
+}
+
+// listParams is the `list` host call's wire shape: a substrate.Query with
+// `orderBy` held raw, so either spelling the records route takes parses here
+// too. The shallower field shadows the embedded Query's own `orderBy` for the
+// decode, which is what keeps the wire type the console mirrors untouched.
+type listParams struct {
+	substrate.Query
+	OrderBy json.RawMessage `json:"orderBy,omitempty"`
+}
+
+// parseListQuery decodes a `list` host call. `orderBy` takes the compact
+// string ("at:desc,createdAt") as well as the array of orders, through the one
+// grammar substrate.ParseOrderBy holds both doors to: the SDK forwards
+// whatever a body passed as `order`, and a body that sorts the way a URL does
+// was failing the whole invocation on the spelling alone.
+func parseListQuery(params json.RawMessage) (substrate.Query, error) {
+	var p listParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return substrate.Query{}, err
+	}
+	q := p.Query
+	orders, err := parseHostOrderBy(p.OrderBy)
+	if err != nil {
+		return q, err
+	}
+	q.OrderBy = orders
+	return q, nil
+}
+
+// parseHostOrderBy hands ParseOrderBy the text of either spelling: a JSON
+// string is unquoted first, so its escapes are honored, and an array is passed
+// as written, which ParseOrderBy recognizes by its leading bracket.
+func parseHostOrderBy(raw json.RawMessage) ([]substrate.Order, error) {
+	spec := strings.TrimSpace(string(raw))
+	if spec == "" || spec == "null" {
+		return nil, nil
+	}
+	if spec[0] == '"' {
+		if err := json.Unmarshal([]byte(spec), &spec); err != nil {
+			return nil, fmt.Errorf("orderBy: %w", err)
+		}
+	}
+	return substrate.ParseOrderBy(spec)
 }
 
 // callAllowed reports whether a function identity is in the call allowlist.

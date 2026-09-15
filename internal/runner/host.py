@@ -511,6 +511,11 @@ class Records:
         return self._host.get(kind, id)
 
     def list(self, kinds, where=None, first=None, after=None, order=None):
+        """A page of records: the kinds to read, `where` the filter's property
+        conditions, `first`/`after` the page and cursor, and `order` the sort.
+        `order` takes either shape the records route takes — the compact string
+        ("at", "at:desc,createdAt"; a missing direction means ascending) or a
+        list of {"property": ..., "desc": bool}."""
         flt = {"kinds": _as_kinds(kinds)}
         if where:
             flt["properties"] = where
@@ -599,7 +604,9 @@ class Host:
         return self._call("get", {"kind": kind, "id": id}).get("record")
 
     def list(self, **query):
-        """Records by query (filter, orderBy, first, after) -> page dict."""
+        """Records by query (filter, orderBy, first, after) -> page dict.
+        `orderBy` is either the compact string ("at:desc,createdAt") or a list
+        of {"property": ..., "desc": bool}."""
         return self._call("list", query).get("page") or {}
 
     def search(self, **params):

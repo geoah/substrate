@@ -281,8 +281,9 @@ func parseFirst(r *http.Request) (int, error) {
 }
 
 // parseQuery reads the list parameters: filter, orderBy ("at:desc,createdAt"
-// or JSON), first/after, expand (comma-separated reference properties) and
-// the heavy-data opt-in.
+// or JSON, both through substrate.ParseOrderBy, which the runner's list host
+// call shares), first/after, expand (comma-separated reference properties)
+// and the heavy-data opt-in.
 func parseQuery(r *http.Request) (substrate.Query, error) {
 	v := r.URL.Query()
 	var q substrate.Query
@@ -292,7 +293,7 @@ func parseQuery(r *http.Request) (substrate.Query, error) {
 	}
 	q.Filter = f
 	if raw := v.Get("orderBy"); raw != "" {
-		orders, err := parseOrderBy(raw)
+		orders, err := substrate.ParseOrderBy(raw)
 		if err != nil {
 			return q, err
 		}
@@ -311,32 +312,4 @@ func parseQuery(r *http.Request) (substrate.Query, error) {
 		}
 	}
 	return q, nil
-}
-
-func parseOrderBy(raw string) ([]substrate.Order, error) {
-	if strings.HasPrefix(strings.TrimSpace(raw), "[") {
-		var orders []substrate.Order
-		if err := decodeJSONStrict(strings.NewReader(raw), &orders); err != nil {
-			return nil, errors.New("orderBy: " + err.Error())
-		}
-		return orders, nil
-	}
-	var orders []substrate.Order
-	for _, part := range strings.Split(raw, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		name, dir, _ := strings.Cut(part, ":")
-		o := substrate.Order{Property: strings.TrimSpace(name)}
-		switch strings.ToLower(strings.TrimSpace(dir)) {
-		case "", "asc":
-		case "desc":
-			o.Desc = true
-		default:
-			return nil, errors.New("orderBy: direction must be asc or desc")
-		}
-		orders = append(orders, o)
-	}
-	return orders, nil
 }
