@@ -1,5 +1,12 @@
 package substrate
 
+import (
+	"errors"
+	"strings"
+
+	"github.com/geoah/substrate/internal/strictjson"
+)
+
 // Cond is one property/state/label predicate. Exactly the operators the
 // schema declares for the property's type are legal; others error.
 type Cond struct {
@@ -59,6 +66,41 @@ type ReferenceSite struct {
 type Order struct {
 	Property string `json:"property"`
 	Desc     bool   `json:"desc,omitempty"`
+}
+
+// ParseOrderBy reads either spelling of a sort order the wire accepts: the
+// compact string, a comma-separated list of `property[:asc|desc]`
+// ("at:desc,createdAt", a missing direction meaning asc), or the JSON array of
+// Order objects, recognized by its leading bracket. It lives here because two
+// doors take the same grammar — the records route's `orderBy` query parameter
+// and the runner's `list` host call — and a body that sorts the way a URL does
+// must not be refused for spelling it the short way.
+func ParseOrderBy(raw string) ([]Order, error) {
+	if strings.HasPrefix(strings.TrimSpace(raw), "[") {
+		var orders []Order
+		if err := strictjson.DecodeBytes([]byte(raw), &orders, false); err != nil {
+			return nil, errors.New("orderBy: " + err.Error())
+		}
+		return orders, nil
+	}
+	var orders []Order
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		name, dir, _ := strings.Cut(part, ":")
+		o := Order{Property: strings.TrimSpace(name)}
+		switch strings.ToLower(strings.TrimSpace(dir)) {
+		case "", "asc":
+		case "desc":
+			o.Desc = true
+		default:
+			return nil, errors.New("orderBy: " + o.Property + ": direction must be asc or desc")
+		}
+		orders = append(orders, o)
+	}
+	return orders, nil
 }
 
 // Query is the paged list request.

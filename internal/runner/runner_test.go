@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -34,6 +35,8 @@ type fakeBackend struct {
 	// aliases stands in for the registry: a kind's bare reference against the
 	// identity it resolves to.
 	aliases map[string]string
+	// orderBys is every list's sort, in call order.
+	orderBys [][]substrate.Order
 }
 
 func (f *fakeBackend) Get(ctx context.Context, typ, id string) (*substrate.Record, error) {
@@ -51,6 +54,7 @@ func (f *fakeBackend) Get(ctx context.Context, typ, id string) (*substrate.Recor
 
 func (f *fakeBackend) List(_ context.Context, q substrate.Query) (*substrate.Page, error) {
 	f.lastFirst = q.First
+	f.orderBys = append(f.orderBys, q.OrderBy)
 	var out []*substrate.Record
 	for _, e := range f.records {
 		for _, t := range q.Filter.Kinds {
@@ -204,6 +208,57 @@ def main(input, host):
 	out, _ := res.Output.(map[string]any)
 	if out["pending"] != float64(2) || out["hits"] != float64(0) || out["same"] != true {
 		t.Fatalf("output = %v, want pending 2 over an empty, self-same hits list", res.Output)
+	}
+}
+
+// TestListTakesEitherOrderBySpelling: the SDK forwards whatever a body passed
+// as `order` straight through as `orderBy`, so the host call must read the
+// compact string the records route takes as well as the array of orders — the
+// string used to fail the WHOLE invocation on a decode. One parser
+// (substrate.ParseOrderBy) answers both, and a direction it cannot read is a
+// host error naming the property.
+func TestListTakesEitherOrderBySpelling(t *testing.T) {
+	r := New()
+	spec := Spec{
+		Repository: "t1", Function: "sorter.g.test",
+		Runtime: "python",
+		Source: `
+def main(input, host):
+    host.records.list("widget", order="at:desc,createdAt")
+    host.records.list("widget", order=[{"property": "at", "desc": True}, {"property": "createdAt"}])
+    return {"effects": []}
+`,
+		TimeoutMs: 5000,
+		ReadTypes: []string{"g.test/widgets/widget"},
+	}
+	backend := widgetBackend()
+	if _, err := r.Invoke(context.Background(), spec, testInput(), backend); err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	want := []substrate.Order{{Property: "at", Desc: true}, {Property: "createdAt"}}
+	if len(backend.orderBys) != 2 {
+		t.Fatalf("lists served = %d, want 2", len(backend.orderBys))
+	}
+	for i, got := range backend.orderBys {
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("list %d reached the backend as %+v, want %+v", i, got, want)
+		}
+	}
+
+	bad := spec
+	bad.Function = "badsorter.g.test"
+	bad.Source = `
+def main(input, host):
+    host.records.list("widget", order="at:sideways")
+    return {"effects": []}
+`
+	backend = widgetBackend()
+	_, err := r.Invoke(context.Background(), bad, testInput(), backend)
+	if err == nil || !strings.Contains(err.Error(), "orderBy") || !strings.Contains(err.Error(), "at") {
+		t.Fatalf("a direction that is neither asc nor desc must be refused naming it: %v", err)
+	}
+	if len(backend.orderBys) != 0 {
+		t.Fatal("an unparsable orderBy reached the backend")
 	}
 }
 

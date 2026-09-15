@@ -536,6 +536,12 @@ The builder validates shape locally so a mistake is a body error rather than an
 engine park; the rest is the engine's half, and this is what it holds bodies
 to.
 
+`order` on a `list` takes either spelling the [records
+route](api.md#the-filter-grammar) takes: the compact string (`"at"`,
+`"at:desc,createdAt"`, a missing direction meaning ascending) or a list of
+`{"property": …, "desc": …}`. One parser reads both, so a body may sort the
+way a URL does.
+
 **Reads are scoped and budgeted.** Reads see committed state, never this
 delivery's own staged effects, so a local overlay can never lie. They are held
 to the `permissions.reads` grant: with no `reads:` block the allowlist is
