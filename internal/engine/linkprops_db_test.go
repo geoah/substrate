@@ -7,6 +7,7 @@ package engine_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -437,7 +438,12 @@ func TestMustExistRefusesAMissingTarget(t *testing.T) {
 	if err == nil {
 		t.Fatal("mustExist admitted a reference naming no record")
 	}
-	wantErr(t, err, substrate.ErrNotFound, "does not exist")
+	// A dangling referent is a VALUE problem, addressed to the property: the
+	// record the write addresses is there and one value in the body is wrong,
+	// so the door answers 422 with the path rather than a 404 a client reads as
+	// "the record I addressed is gone" (issue 550).
+	wantProblem(t, err, "props.owner: reference names")
+	wantProblem(t, err, "does not exist")
 
 	src := lpNodeRecord(t, ds, "present", map[string]any{"owner": target.ID})
 	if got := refPathOf(t, ds, src.Kind, src.ID, "owner"); got != vocabulary.RecordPath(lpNode, target.ID) {
@@ -451,6 +457,40 @@ func TestMustExistRefusesAMissingTarget(t *testing.T) {
 		Kind: lpNode, ID: src.ID, Properties: map[string]any{"label": "still pointing", "owner": target.ID},
 	}); err != nil {
 		t.Fatalf("mustExist refused a tombstoned target, which still exists: %v", err)
+	}
+}
+
+// ONE WRITE, EVERY PROBLEM. A dangling referent travels in the problem list,
+// so a write that dangles in three places is refused once, naming all three at
+// their own paths — the element's ordinal included. The early return that
+// carried the first miss out as a not-found reported one of them and left the
+// writer to discover the rest a round trip at a time (issue 550).
+func TestMustExistNamesEveryDanglingReference(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+	props := lpBaseProps()
+	props["owner"] = map[string]any{"type": "reference", "kind": "node", "mustExist": true}
+	props["plain"] = map[string]any{"type": "reference", "kind": "node", "repeated": true, "mustExist": true}
+	if err := lpApply(t, ds, props); err != nil {
+		t.Fatalf("install base type: %v", err)
+	}
+
+	err := lpPut(ds, "dangling everywhere", map[string]any{
+		"owner": "no-such-owner",
+		"plain": []any{"no-such-peer-a", "no-such-peer-b"},
+	})
+	if err == nil {
+		t.Fatal("mustExist admitted three references naming no record")
+	}
+	var ve *substrate.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected a *substrate.ValidationError, got %v", err)
+	}
+	if len(ve.Problems) != 3 {
+		t.Fatalf("want one problem per dangling reference, got %v", ve.Problems)
+	}
+	for _, where := range []string{"props.owner", "props.plain[0]", "props.plain[1]"} {
+		wantProblem(t, err, where+": reference names")
 	}
 }
 

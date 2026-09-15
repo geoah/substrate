@@ -310,8 +310,32 @@ func caseStory01(c *C) {
 		"kind":       taskKind,
 		"properties": map[string]any{"name": "A task aimed at nobody", "assignee": recPath(personKind, "nobody-at-all")},
 	}, nil)
-	c.requiref(status == http.StatusNotFound,
-		"an assignee at an absent person answered %d, want 404: %s", status, raw)
+	// A DANGLING REFERENT IS 422, never 404: the request addresses a kind that
+	// is there and one value in the body is wrong, so it answers like every
+	// other refused value — addressed to the property (issue 550). A 404 here
+	// read as "the record I addressed is gone".
+	c.requiref(status == http.StatusUnprocessableEntity,
+		"an assignee at an absent person answered %d, want 422: %s", status, raw)
+	refusal := xrRefusal(c, raw)
+	c.requiref(refusal.Error.Code == "validation" && len(refusal.Error.ProblemDetails) == 1 &&
+		refusal.Error.ProblemDetails[0].Path == "props.assignee",
+		"the dangling assignee is not addressed as a validation problem: %s", raw)
+	// EVERY dangling reference in one write, each at its own path, ordinal
+	// included: the refusal is one round trip, not one per pointer.
+	status, raw = c.do(http.MethodPost, recordsRoute, map[string]any{
+		"kind": teamKind,
+		"properties": map[string]any{
+			"name":    "A team of nobodies",
+			"members": []any{recPath(personKind, "nobody-at-all"), recPath(personKind, "nobody-either")},
+		},
+	}, nil)
+	c.requiref(status == http.StatusUnprocessableEntity,
+		"two absent members answered %d, want 422: %s", status, raw)
+	refusal = xrRefusal(c, raw)
+	c.requiref(len(refusal.Error.ProblemDetails) == 2 &&
+		refusal.Error.ProblemDetails[0].Path == "props.members[0]" &&
+		refusal.Error.ProblemDetails[1].Path == "props.members[1]",
+		"both dangling members must be addressed by ordinal: %s", raw)
 	status, raw = c.do(http.MethodPost, recordsRoute, map[string]any{
 		"kind": personKind,
 		"properties": map[string]any{
@@ -321,7 +345,7 @@ func caseStory01(c *C) {
 	}, nil)
 	c.requiref(status == http.StatusUnprocessableEntity && strings.Contains(string(raw), "mood"),
 		"an undeclared link property answered %d without naming it: %s", status, raw)
-	c.stepf("refused: an `assignee` naming a team, an `assignee` at an absent person, and a link property (`mood`) `memberOf` does not declare")
+	c.stepf("refused as 422 validation, each at its own property path: an `assignee` naming a team, an `assignee` at an absent person, both absent `members[i]` of one team, and a link property (`mood`) `memberOf` does not declare")
 
 	// The retired shape is refused by name rather than dropped in silence, so
 	// a client written against the old model loses nothing quietly.

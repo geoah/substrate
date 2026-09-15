@@ -468,6 +468,12 @@ refuses a write whose target is absent. Existence, not liveness: a tombstoned
 record still exists and may still be pointed at, so a delete that may yet be
 undone does not invalidate the pointers into it.
 
+A dangling `mustExist` target is a **value problem**, not a missing resource:
+the write is refused `422 validation`, with one entry in `problemDetails` per
+dangling pointer, addressed to the property that holds it (`props.assignee`,
+`props.members[0]`) and listed beside every other problem the same write has.
+A `404` is the answer to an addressed READ of a record that is not there.
+
 `repeated: true` holds a list of references, ordered as authored and refusing a
 duplicate target; `keyed: true` holds a map of them; and a reference is
 admitted inside an object or a keyed map at any declared depth. The

@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -29,10 +28,16 @@ import (
 // keyed map's values, to the declared depth. A position it did not reach would
 // store whatever the writer sent — a bare local name where every reader expects
 // a resolved identity.
+//
+// A DANGLING REFERENT IS A VALUE PROBLEM, not a not-found: the record the
+// request addresses is there and what is wrong is one value in the body, so the
+// miss travels in the problem list like every other refused value — addressed
+// to `props.<name>[i]`, beside the shape problems of the same write, and the
+// door in front of this answers 422. A 404 is for an addressed READ of a
+// referent; a client that got one here retried or gave up on the wrong record
+// (issue 550).
 func (t *txn) validateReferences(ty *vocabulary.Kind, props map[string]any) error {
 	var problems []string
-	t.refMissing = nil
-	defer func() { t.refMissing = nil }()
 	for _, name := range sortedKeys(props) {
 		p, ok := ty.Prop(name)
 		if !ok || !holdsReference(p) {
@@ -47,14 +52,6 @@ func (t *txn) validateReferences(ty *vocabulary.Kind, props map[string]any) erro
 		props[name] = nv
 	}
 	if len(problems) > 0 {
-		// A `mustExist:` miss is a NOT FOUND, not a shape problem, and it
-		// carries that sentinel out whole: it is the same refusal an addressed
-		// read of the referent would give, which is what the door in front of
-		// this maps to a 404. A problem list would flatten it to a 422 and the
-		// caller would have to read the prose to tell the two apart.
-		if len(t.refMissing) > 0 {
-			return t.refMissing[0]
-		}
 		return &substrate.ValidationError{Problems: problems}
 	}
 	return nil
@@ -146,9 +143,6 @@ func (t *txn) normalizeReferenceValue(p *vocabulary.Property, v any, where strin
 	if p.Datatype == vocabulary.DatatypeReference {
 		nv, err := t.normalizeReference(p, v)
 		if err != nil {
-			if errors.Is(err, substrate.ErrNotFound) {
-				t.refMissing = append(t.refMissing, fmt.Errorf("%s: %w", where, err))
-			}
 			return v, []string{fmt.Sprintf("%s: %v", where, err)}
 		}
 		return nv, nil
@@ -280,9 +274,14 @@ func (t *txn) normalizeReference(p *vocabulary.Property, v any) (any, error) {
 		// A TOMBSTONE counts as existing. The record is there, a split can bring
 		// it back, and refusing a pointer at one would make deleting a referent
 		// silently break every later write to the records naming it.
+		//
+		// NO SENTINEL ON THIS ERROR: it becomes one entry of the reference
+		// pass's problem list (validateReferences), which carries ErrValidation
+		// for the whole write, so a sentinel here would only print inside the
+		// problem's own prose.
 		if row == nil {
-			return nil, fmt.Errorf("%w: reference names %s, which does not exist",
-				substrate.ErrNotFound, vocabulary.RecordPath(target.Kind, target.ID))
+			return nil, fmt.Errorf("reference names %s, which does not exist",
+				vocabulary.RecordPath(target.Kind, target.ID))
 		}
 	}
 	path := vocabulary.RecordPath(target.Kind, target.ID)
@@ -389,8 +388,8 @@ func (t *txn) subjectHop(p *vocabulary.Property, target eref, rt *vocabulary.Kin
 		return eref{}, err
 	}
 	if row == nil {
-		return eref{}, fmt.Errorf("%w: reference names %s, which does not exist",
-			substrate.ErrNotFound, vocabulary.RecordPath(target.Kind, target.ID))
+		return eref{}, fmt.Errorf("reference names %s, which does not exist",
+			vocabulary.RecordPath(target.Kind, target.ID))
 	}
 	id, err := t.subjectOf(row, rt, m)
 	if err != nil {

@@ -1094,8 +1094,8 @@ func TestAcceptFailuresAnnotateConflict(t *testing.T) {
 	}
 
 	// A create whose `project` reference names a record that does not exist:
-	// `mustExist` refuses it, and ErrNotFound at accept must annotate too, not
-	// roll back silently.
+	// `mustExist` refuses it as a value problem, and that refusal at accept
+	// must annotate too, not roll back silently.
 	missingRef := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
