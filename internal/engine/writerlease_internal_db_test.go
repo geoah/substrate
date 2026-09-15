@@ -8,9 +8,11 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"net"
 	"net/url"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -249,5 +251,142 @@ func TestWriterLeaseRefusesWritesWhenTheHeartbeatStalls(t *testing.T) {
 	// the whole beat.
 	if elapsed > 4*writerLeaseBeatTimeout {
 		t.Fatalf("the beat took %s; it must be bounded by writerLeaseBeatTimeout (%s)", elapsed, writerLeaseBeatTimeout)
+	}
+}
+
+// An acquisition runs UNDER the mutex every beat needs, so its round trips are
+// bounded by the same deadline. Without that, a stalled pinned connection held
+// the lock past every beat: `lost` was never set, the repositories already
+// held kept accepting writes against a lease nothing had verified, and
+// shutdown waited on the blocked beat.
+func TestWriterLeaseAcquireIsBoundedWhenTheConnectionStalls(t *testing.T) {
+	t.Parallel()
+	dsn := MigratedDSN(t)
+	ctx := context.Background()
+
+	proxy := newStallProxy(t, dsn)
+	through, err := sql.Open("pgx", proxy.dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = through.Close() })
+	var logs bytes.Buffer
+	l := &writerLease{
+		db:      through,
+		log:     slog.New(slog.NewTextHandler(&logs, nil)),
+		stop:    func() {},
+		stopped: make(chan struct{}),
+	}
+	// One lease first, so the stalled acquisition below has something to lose.
+	if err := l.acquire(ctx, "held.example.com"); err != nil {
+		t.Fatalf("take the first lease through the proxy: %v", err)
+	}
+
+	proxy.stall.Store(true)
+	start := time.Now()
+	err = l.acquire(ctx, "second.example.com")
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatalf("an acquisition on a session that never answered reported success:\n%s", logs.String())
+	}
+	if elapsed > 4*writerLeaseBeatTimeout {
+		t.Fatalf("the acquisition took %s; it must be bounded by writerLeaseBeatTimeout (%s)", elapsed, writerLeaseBeatTimeout)
+	}
+	// The session could not be reached, so the lease it was holding cannot be
+	// vouched for: writes are refused until the heartbeat has it back.
+	if l.err() == nil {
+		t.Fatalf("a lease whose session stopped answering mid-acquisition still accepted writes:\n%s", logs.String())
+	}
+	// And the mutex came back: a beat can still run, which is what repairs it.
+	done := make(chan struct{})
+	go func() { l.beat(ctx); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(4 * writerLeaseBeatTimeout):
+		t.Fatal("the beat could not take the lease's mutex after the stalled acquisition")
+	}
+}
+
+// backendPID is the pid of the lease's own session, read through the lease's
+// own connection: the only way to reach the backend a test means to kill.
+func backendPID(t *testing.T, l *writerLease) int {
+	t.Helper()
+	var pid int
+	if err := l.conn.QueryRowContext(context.Background(), `SELECT pg_backend_pid()`).Scan(&pid); err != nil {
+		t.Fatalf("read the lease session's pid: %v", err)
+	}
+	return pid
+}
+
+// A pinned connection that died while the lease held NOTHING is repaired at
+// the next acquisition. There is no beat to notice it — a lease with nothing
+// to prove proves nothing — so a Postgres restart between one registration and
+// the next used to leave every later registration reusing a dead session, and
+// broken until the server restarted.
+func TestWriterLeaseAcquiresAgainAfterAnIdleConnectionDied(t *testing.T) {
+	t.Parallel()
+	dsn := MigratedDSN(t)
+	ctx := context.Background()
+	const taken = "taken.example.com"
+	const next = "next.example.com"
+
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	var logs bytes.Buffer
+	l := &writerLease{
+		db:      db,
+		log:     slog.New(slog.NewTextHandler(&logs, nil)),
+		stop:    func() {},
+		stopped: make(chan struct{}),
+	}
+
+	// Releasing the last lease closes the connection, so it cannot be the one
+	// that rots: that is the first half of the fix.
+	if err := l.acquire(ctx, next); err != nil {
+		t.Fatalf("take a lease: %v", err)
+	}
+	l.release(next)
+	if l.conn != nil {
+		t.Fatal("releasing the last lease left an idle pinned connection behind")
+	}
+
+	// The other way to be left holding nothing: an acquisition REFUSED by
+	// another writer opens the connection and claims nothing. Somebody else
+	// takes the key first.
+	other := leaseProbe(t, dsn)
+	var got bool
+	if err := other.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(`+writerLeaseKeySQL+`)`, taken).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if !got {
+		t.Fatal("the other session could not take the key it needs to hold")
+	}
+	if err := l.acquire(ctx, taken); !errors.Is(err, ErrRepositoryHasAnotherWriter) {
+		t.Fatalf("the refusal must be the lease's: %v", err)
+	}
+	if l.conn == nil {
+		t.Fatal("a refused acquisition left no connection, so this test is not watching the state it means to")
+	}
+
+	// Now that connection dies with nothing held and no beat to see it.
+	pid := backendPID(t, l)
+	if _, err := other.ExecContext(ctx, `SELECT pg_terminate_backend($1)`, pid); err != nil {
+		t.Fatalf("terminate the lease's backend: %v", err)
+	}
+
+	// The next registration must still be able to take its lease.
+	if err := l.acquire(ctx, next); err != nil {
+		t.Fatalf("a registration after an idle connection died could not take its lease: %v\n%s", err, logs.String())
+	}
+	if !slices.Contains(l.held, next) {
+		t.Fatal("the lease reports success without holding the repository")
+	}
+	// Held for real, on the replacement session.
+	if leaseKeyFree(t, other, next) {
+		t.Fatal("another session took the lease the retry claims to hold")
 	}
 }

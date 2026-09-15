@@ -915,18 +915,20 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	// in-progress registration cannot be claimed by anybody, and
 	// reconcileRow's own ask below finds it held by this process.
 	leased, err := s.lease.acquireNew(ctx, authority)
-	if err != nil {
-		return zero, err
-	}
 	// A creation that fails releases only the lease IT took: this process is
 	// not the writer of a repository that does not exist. acquireNew reports
 	// false for one this process already held, which is never this
-	// creation's to hand back.
+	// creation's to hand back. Registered BEFORE the error is read, because
+	// acquireNew can report both — a lease taken on a connection that
+	// replaced a dead one, whose predecessor's leases are not back yet.
 	defer func() {
 		if leased {
 			s.lease.release(authority)
 		}
 	}()
+	if err != nil {
+		return zero, err
+	}
 	repo := Repository{ID: authority, Authority: authority}
 	// The DEK is born with the repository: the seed transaction below already
 	// writes sealed material (the credential, at registration), and it seals

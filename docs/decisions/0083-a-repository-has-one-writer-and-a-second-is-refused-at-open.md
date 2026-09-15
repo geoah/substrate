@@ -67,10 +67,14 @@ every five seconds proves the connection alive — a session's advisory locks
 can only be released by that session or by its end, so a live pinned session
 *is* the lease and nothing has to be read back — and the moment it does not,
 every write is refused with `ErrUnavailable` until every lease the process
-held is taken again. Every round trip a beat makes is bounded well inside the
-interval, because a host that vanished leaves the socket open and a ping on it
-never answers: a session that cannot be proven alive is treated as holding
-nothing, which is the same fail-closed reading. Every beat retries, whether the
+held is taken again. Every round trip the lease makes is bounded well inside the
+interval — an acquisition's as much as a beat's, because an acquisition runs
+under the mutex the beat needs and an unbounded one would hold it past every
+beat. A host that vanished leaves the socket open and a session on it never
+answers, so one that cannot be proven alive is treated as holding nothing,
+which is the same fail-closed reading. A connection that dies while the lease
+holds nothing is nobody's loss and no beat's business, so it is closed with
+the last lease and replaced by the next acquisition's own retry. Every beat retries, whether the
 lease was lost on that beat or several beats earlier with no connection to be
 had, so a Postgres that went away and came back is recovered from without a
 restart. The refusal is an atomic read on the write path, not a round trip.
@@ -109,9 +113,11 @@ refused at open with the named error, closing the first releases the lease for
 the second, a repository registered after the boot check is leased at its own
 open, and a read-only process needs no lease.
 `internal/engine/writerlease_internal_db_test.go`: a lost lease retries on
-every beat while the database is unreachable and clears once it is back, and a
+every beat while the database is unreachable and clears once it is back, a
 heartbeat whose ping never answers refuses writes inside its own deadline
-rather than waiting on it.
+rather than waiting on it, an acquisition on a stalled session is bounded the
+same way and leaves the mutex for the beat that repairs it, and a connection
+that died while the lease held nothing is replaced at the next acquisition.
 `internal/engine/writerleasecreation_internal_db_test.go`: a creation holds the
 lease before its control-plane row exists, a second process cannot claim a
 repository mid-creation, and a creation that fails hands the lease back.

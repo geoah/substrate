@@ -120,7 +120,7 @@ func (l *writerLease) acquire(ctx context.Context, repository string) error {
 // lease. A creation asks this way (engine.go createSeededRepository), so that
 // a creation which fails releases only a lease it introduced and never one
 // this process already holds for a repository it is serving.
-func (l *writerLease) acquireNew(ctx context.Context, repository string) (bool, error) {
+func (l *writerLease) acquireNew(parent context.Context, repository string) (bool, error) {
 	if l == nil {
 		return false, nil
 	}
@@ -135,13 +135,36 @@ func (l *writerLease) acquireNew(ctx context.Context, repository string) (bool, 
 		}
 		return false, nil
 	}
-	conn, err := l.pinned(ctx)
-	if err != nil {
-		return false, err
-	}
+	// BOUNDED, and by the heartbeat's own deadline: this runs under the mutex
+	// every beat needs, so a round trip on a stalled pinned connection would
+	// hold the lock past every beat — `lost` would never be set, the
+	// repositories already held would keep accepting writes against a lease
+	// nothing had verified, and shutdown would wait on the blocked beat. The
+	// caller's context may have no deadline at all (the boot check's does
+	// not), so the deadline is this file's, not the caller's.
+	ctx, cancel := context.WithTimeout(parent, writerLeaseBeatTimeout)
+	defer cancel()
 	var got bool
-	if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(`+writerLeaseKeySQL+`)`, repository).Scan(&got); err != nil {
-		return false, fmt.Errorf("substrate/engine: take the writer lease on %s: %w", repository, err)
+	// TWICE, because the pinned connection may have died while the lease held
+	// nothing — a Postgres restart between one registration and the next, with
+	// no beat to notice because there was nothing to prove. The first failure
+	// discards it and the second opens a fresh one; past that the database is
+	// the problem and not the connection.
+	for attempt := range 2 {
+		conn, err := l.pinned(ctx)
+		if err != nil {
+			return false, err
+		}
+		err = conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(`+writerLeaseKeySQL+`)`, repository).Scan(&got)
+		if err == nil {
+			break
+		}
+		// The session could not be reached, so nothing it holds can be
+		// vouched for either.
+		l.dropConn(err, "substrate: the writer lease's connection failed while taking a lease")
+		if attempt == 1 {
+			return false, fmt.Errorf("substrate/engine: take the writer lease on %s: %w", repository, err)
+		}
 	}
 	if !got {
 		return false, fmt.Errorf("%w: repository %s. One server per database: this one refuses to open the repository rather than write it from a directory of its own. "+
@@ -150,7 +173,39 @@ func (l *writerLease) acquireNew(ctx context.Context, repository string) (bool, 
 			ErrRepositoryHasAnotherWriter, repository, repository)
 	}
 	l.held = append(l.held, repository)
+	// A lease taken on a connection that replaced a dead one is this
+	// repository's and nothing else's: the leases the old session held went
+	// with it, so the refusal stands until the heartbeat has them back.
+	if l.lost.Load() {
+		return true, ErrWriterLeaseLost
+	}
 	return true, nil
+}
+
+// closeConn discards the pinned connection. It is DISCARDED and not returned
+// to the pool: a connection nobody can reach still holds its leases, and
+// ending the session is the only thing that releases them — handing it back
+// would have the pool deal it out again, leases and all. Called with mu held.
+func (l *writerLease) closeConn() {
+	if l.conn == nil {
+		return
+	}
+	_ = l.conn.Raw(func(any) error { return driver.ErrBadConn })
+	_ = l.conn.Close()
+	l.conn = nil
+}
+
+// dropConn is closeConn plus the refusal, for a connection that failed while
+// the process was holding leases on it. The heartbeat takes back whatever was
+// on it. Called with mu held.
+func (l *writerLease) dropConn(cause error, msg string) {
+	if len(l.held) > 0 {
+		// Nothing held is nothing lost: latching here would refuse every
+		// write on behalf of a session that was guarding no repository.
+		l.lost.Store(true)
+		l.log.Error(msg, "repositories", len(l.held), "error", cause)
+	}
+	l.closeConn()
 }
 
 // release gives one repository's lease back. It is for A CREATION THAT FAILED
@@ -171,19 +226,23 @@ func (l *writerLease) release(repository string) {
 	if l.conn == nil {
 		return
 	}
+	// The last lease takes the connection with it. An idle pinned connection
+	// has no job — no lease to hold and, because the beat has nothing to
+	// prove, nothing that would notice it dying — so a Postgres restart
+	// between one registration and the next would otherwise leave every later
+	// acquisition reusing a dead session.
+	if len(l.held) == 0 {
+		l.closeConn()
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), writerLeaseBeatTimeout)
 	defer cancel()
 	if _, err := l.conn.ExecContext(ctx, `SELECT pg_advisory_unlock(`+writerLeaseKeySQL+`)`, repository); err != nil {
 		// The lock outlives a failed unlock and only its own session can drop
 		// it, so the connection goes: ending the session releases this lease
-		// and every other on it, and the refusal below has the heartbeat
-		// retake the ones that are still this process's.
-		l.log.Error("substrate: could not release the writer lease of a creation that failed; discarding its connection, and the leases on it are retaken",
-			"repository", repository, "error", err)
-		l.lost.Store(true)
-		_ = l.conn.Raw(func(any) error { return driver.ErrBadConn })
-		_ = l.conn.Close()
-		l.conn = nil
+		// and every other on it, and the refusal that follows has the
+		// heartbeat retake the ones that are still this process's.
+		l.dropConn(err, "substrate: could not release the writer lease of a creation that failed; discarding its connection, and the leases on it are retaken")
 	}
 }
 
@@ -237,8 +296,10 @@ func (l *writerLease) beat(shutdown context.Context) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if len(l.held) == 0 {
-		// Nothing is claimed yet, so there is no lease to prove: the first
-		// acquire is what opens the connection.
+		// Nothing is claimed, so there is no lease to prove. The connection
+		// is not left to rot either: releasing the last lease closes it
+		// (release), and one an acquisition left behind after being refused
+		// is replaced by that acquisition's own retry.
 		return
 	}
 	// The deadline is derived AFTER the mutex, not before it: a beat that
@@ -290,13 +351,7 @@ func (l *writerLease) dropped(shutdown, ctx context.Context) bool {
 // that writes some repositories and not others would be a second writer of
 // the rest. Called with mu held.
 func (l *writerLease) retake(shutdown, ctx context.Context) {
-	if l.conn != nil {
-		// The old connection is gone as far as the pool is concerned: handing
-		// a broken one back would have it dealt out again.
-		_ = l.conn.Raw(func(any) error { return driver.ErrBadConn })
-		_ = l.conn.Close()
-		l.conn = nil
-	}
+	l.closeConn()
 	conn, err := l.pinned(ctx)
 	if err != nil {
 		if shutdown.Err() == nil {
@@ -344,9 +399,7 @@ func (l *writerLease) close() {
 		// A connection whose unlock failed still holds the leases, so it must
 		// not be pooled: discarding it ends the session, which releases them.
 		l.log.Error("substrate: could not release the writer leases; discarding their connection", "error", err)
-		_ = l.conn.Raw(func(any) error { return driver.ErrBadConn })
 	}
-	_ = l.conn.Close()
-	l.conn = nil
+	l.closeConn()
 	l.held = nil
 }

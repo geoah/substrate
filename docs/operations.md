@@ -409,9 +409,10 @@ a pooler in front of Postgres will do that — and `pg_terminate_backend(pid)`
 on the pid above ends it.
 
 **A dropped connection fails closed.** A heartbeat proves the pinned
-connection alive every five seconds, and every round trip it makes is bounded
-at three: a host that vanished leaves the socket open, so a ping that never
-answers is a lost lease and not something to wait on. The moment the session
+connection alive every five seconds, and every round trip the lease makes —
+the heartbeat's and an acquisition's alike — is bounded at three: a host that
+vanished leaves the socket open, so a session that never answers is a lost
+lease and not something to wait on. The moment the session
 cannot be proven alive the process logs at `ERROR` and refuses every write with
 `503 unavailable` until it has taken back every lease it held. Every later beat
 tries again, so a Postgres that restarted is recovered from without restarting
