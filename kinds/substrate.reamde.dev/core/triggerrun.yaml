@@ -16,9 +16,13 @@ data:
     settles: what fired, what ran, what it applied, and why it parked. Parked
     runs are kept until their failure is retried away; the rest are pruned
     to the newest few per trigger.
-  version: 16
+  version: 17
   names:
     singular: triggerrun
+  # The title reads the STRING and not `callableRef`: a reference renders the
+  # referent's title, and an agent's is its bare local name, so the reference
+  # would drop the package a run has to be read by. `callable` is deprecated
+  # for writers, not for this.
   displayTemplate: "{status}: {callable}"
   indices:
     - properties:
@@ -30,17 +34,29 @@ data:
       kind: substrate.reamde.dev/core/trigger
       required: true
       description: the trigger this delivery belongs to
-    # `callable` and `record` stay strings where `trigger` is a reference:
-    # `record` can name ANY kind, and that kind may be uninstalled while a
-    # delivery is still pending past the cursor, so validating it as a
-    # reference would fail the settle transaction and wedge the trigger: a
-    # run is an audit row and its record pointer must never block the write.
-    # `callable` spells an actor (decision record 0025), which no reference
-    # targets.
+    # `record` stays a string where `trigger` is a reference: it can name ANY
+    # kind, and that kind may be uninstalled while a delivery is still pending
+    # past the cursor, so validating it as a reference would fail the settle
+    # transaction and wedge the trigger — a run is an audit row and its record
+    # pointer must never block the write.
+    #
+    # `callable` and `callableRef` are the one pointer twice. The string came
+    # first and every run still writes it; the reference is what a
+    # `referencing` read follows to find every run of one callable, which a
+    # string match cannot do. It declares no `mustExist` for the reason above:
+    # a callable uninstalled between the fire and the settle must not fail the
+    # run's own write. `callable` drops `required:` because a deprecated
+    # property may not also be required, not because a run may omit it.
     callable:
       type: string
-      required: true
-      description: the callable that ran, as its actor spells it — `function:<authority>:<package>:<name>`
+      deprecated: true
+      description: the id of the function or agent record that ran; `callableRef`
+        is the same pointer as a reference
+    callableRef:
+      type: reference
+      kind: any
+      description: the function or agent record that ran, so `referencing`
+        finds every run of one callable
     mode:
       type: enum
       required: true

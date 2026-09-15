@@ -71,6 +71,18 @@ type trigger struct {
 // runnable reports whether the trigger's callable resolved.
 func (t *trigger) runnable() bool { return t.Callable != nil || t.Agent != nil }
 
+// callablePath is the callable's RECORD path — the value a reference at the
+// function or agent row stores. CallableKind is the LOCAL name parseTrigger
+// kept; only two are dispatchable, so the mapping back to the full kind
+// reference is total.
+func (t *trigger) callablePath() string {
+	kind := kindFunction
+	if t.CallableKind == callableKindAgent {
+		kind = kindAgent
+	}
+	return vocabulary.RecordPath(kind, t.CallableID)
+}
+
 // callableActor is the attribution the callable's writes carry — the
 // self-exclusion key and the effects actor.
 func (t *trigger) callableActor() string {
