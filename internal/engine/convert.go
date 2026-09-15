@@ -1,7 +1,8 @@
 package engine
 
-// A CONVERSION IS ORDINARY RECORD WRITES (decisions 0063, 0066 and 0067). Four
-// declaration changes rewrite live records instead of refusing with a count:
+// A CONVERSION IS ORDINARY RECORD WRITES (decisions 0063, 0066, 0067 and
+// 0082). Five declaration changes rewrite live records instead of refusing
+// with a count:
 //
 //   - a rename: a property naming its previous name with `renamedFrom:` takes
 //     every live record's value under the old name (rename.go has the rows
@@ -10,20 +11,29 @@ package engine
 //     it, or is added as one, has the default written onto every live record
 //     holding no value for it (the key absent, or an empty value, exactly the
 //     rows the write path would refuse `required` on: emptyValue);
+//   - an entry: a `type: state` property whose machine a live record holds no
+//     state for — every record of a kind a machine is added to — enters that
+//     machine's `initial` state (decision 0082). A state is not a value: it
+//     takes no `default:`, and an absent one is the one thing the transition
+//     guard cannot move out of, so a machine nobody entered would be a kind
+//     with records permanently outside it;
 //   - a remap: an enum value naming its previous spelling with `renamedFrom:`
 //     takes every live record's value under the old spelling, in a scalar, a
 //     list or a keyed map;
 //   - a null: a property the candidate no longer declares, and nothing
 //     renames, has its value removed from every live record carrying it.
 //
-// The four compose. Every step a batch declares against one kind runs in one
+// The five compose. Every step a batch declares against one kind runs in one
 // pass over that kind's records, in id order, and a record any step touches is
 // rewritten ONCE: renames first, so a backfill and a remap read the property
-// under the name the candidate declares; then backfills; then remaps; then
-// nulls. One record effect and one changelog entry per rewritten record, a
-// `patch` whose payload names the properties and says which step moved them
-// (`renamed`, `backfilled`, `remapped`, `nulled`), through the same fold every
-// write takes. The fold reads no declaration, so a fresh replay reproduces the
+// under the name the candidate declares; then backfills; then entries; then
+// remaps; then nulls. One record effect and one changelog entry per rewritten
+// record, a `patch` whose payload names the properties and says which step
+// moved them (`renamed`, `backfilled`, `remapped`, `nulled`), through the same
+// fold every write takes. An entry says `backfilled` too: the key means a
+// value the record was missing was filled in, which is what entering a machine
+// is, and where the value came from is the plan's word (`enter`), not the
+// record's. The fold reads no declaration, so a fresh replay reproduces the
 // converted records without ever reading the declaration that converted them.
 // The payload keys are descriptive: the fold replays the effects, never the
 // keys, so a binary before this one reads the entry as the patch it is and
@@ -31,7 +41,10 @@ package engine
 //
 // Who wrote it: a backfilled value is a write by the hand that applied the
 // declaration, so its manager row is that actor at the transaction's tier, as
-// a create that fell back to the default would record. A renamed value keeps
+// a create that fell back to the default would record. An entered state has no
+// manager row, because no state does: a machine's position is not a property
+// anyone owns (write.go records managers for the accepted properties, and a
+// transition accepts its stamps, never the state). A renamed value keeps
 // its manager (rename.go moveManager), and a remapped one keeps its manager
 // too: the value's spelling moved, not who last wrote it. A nulled value has
 // no manager afterwards, no embedding and no sealed material, exactly as a
@@ -90,6 +103,20 @@ type propertyBackfill struct {
 	prop string
 }
 
+// stateEntry is one machine every live record lacking a state for it enters:
+// the kind as the candidate declares it, the state property's name and the
+// machine's `initial` state, read at classification so the rewrite needs no
+// registry of its own. Every machine the candidate declares is classified;
+// the count decides whether it is a step (wire), so a machine every record
+// already stands in costs one count and nothing else, and a machine some
+// record was stranded outside of is entered whenever the declaration is
+// admitted again.
+type stateEntry struct {
+	kind    *vocabulary.Kind
+	prop    string
+	initial string
+}
+
 // enumRemap is one value rename a batch declares: the kind as the candidate
 // declares it, the property (under its candidate name), the spelling live
 // records still hold and the one that takes it.
@@ -122,6 +149,7 @@ type conversionPlan struct {
 	grantPatches int64
 	renames      []propertyRename
 	backfills    []propertyBackfill
+	entries      []stateEntry
 	remaps       []enumRemap
 	nulls        []propertyNull
 }
@@ -129,7 +157,7 @@ type conversionPlan struct {
 // empty reports a plan with nothing to rewrite.
 func (p conversionPlan) empty() bool {
 	return p.moves.empty() && len(p.renames) == 0 && len(p.backfills) == 0 &&
-		len(p.remaps) == 0 && len(p.nulls) == 0
+		len(p.entries) == 0 && len(p.remaps) == 0 && len(p.nulls) == 0
 }
 
 // classifyConversions lists the conversions a batch declares against the
@@ -175,6 +203,17 @@ func classifyConversions(current, candidate *vocabulary.Registry, touched, skip 
 				}
 				if candP.Required && !candP.IsState() && backfillable(candT, candP) && (curP == nil || !curP.Required) {
 					plan.backfills = append(plan.backfills, propertyBackfill{kind: candT, prop: pname})
+				}
+				// EVERY machine the candidate declares, not only the ones this
+				// diff adds: a record outside a declared machine is a record
+				// no transition can move (write.go reads the absent state as
+				// "" and every transition out of it is undeclared), so it is
+				// entered wherever it is found. A machine the stored
+				// declaration already had costs one count and no step, and a
+				// repository stranded by a binary before this one is repaired
+				// the next time its declaration is admitted (decision 0082).
+				if candP.IsState() && candP.Machine != nil {
+					plan.entries = append(plan.entries, stateEntry{kind: candT, prop: pname, initial: candP.Machine.Initial})
 				}
 				if curP == nil || curP.IsState() || candP.IsState() {
 					continue
@@ -265,6 +304,7 @@ type kindConversion struct {
 	kind      *vocabulary.Kind
 	renames   []propertyRename
 	backfills []propertyBackfill
+	entries   []stateEntry
 	remaps    []enumRemap
 	nulls     []propertyNull
 	// filled is each backfilled property's value as the rows receive it: the
@@ -340,6 +380,10 @@ func (p conversionPlan) byKind() []*kindConversion {
 	for _, b := range p.backfills {
 		kc := group(b.kind)
 		kc.backfills = append(kc.backfills, b)
+	}
+	for _, e := range p.entries {
+		kc := group(e.kind)
+		kc.entries = append(kc.entries, e)
 	}
 	for _, m := range p.remaps {
 		kc := group(m.kind)
@@ -418,6 +462,16 @@ func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
 			// was missing on, because the rename moves the rest first.
 			n, err := count(countMissingPropQuery, ident, kc.storedName(b.prop))
 			if err := add(substrate.ConversionStep{Step: substrate.StepBackfill, Kind: ident, Property: b.prop}, n, err); err != nil {
+				return plan, err
+			}
+		}
+		for _, e := range kc.entries {
+			// The rows standing outside the machine, which a machine every live
+			// record already stands in has none of: no step, so the hash a
+			// preview handed out does not move merely because the kind declares
+			// a machine.
+			n, err := count(countAbsentStateQuery, ident, e.prop)
+			if err := add(substrate.ConversionStep{Step: substrate.StepEnter, Kind: ident, Property: e.prop, To: e.initial}, n, err); err != nil {
 				return plan, err
 			}
 		}
@@ -511,6 +565,8 @@ func describeStep(s substrate.ConversionStep) string {
 		return fmt.Sprintf("type %s: property %q renamed to %q on %d live records", s.Kind, s.From, s.To, s.Records)
 	case substrate.StepBackfill:
 		return fmt.Sprintf("type %s: property %q backfilled with its default on %d live records", s.Kind, s.Property, s.Records)
+	case substrate.StepEnter:
+		return fmt.Sprintf("type %s: state property %q entered at %q on %d live records that held no state for it", s.Kind, s.Property, s.To, s.Records)
 	case substrate.StepRemap:
 		line := fmt.Sprintf("type %s: property %q value %q rewritten to %q on %d live records", s.Kind, s.Property, s.From, s.To, s.Records)
 		if s.Lossy {
@@ -718,6 +774,13 @@ func (t *txn) convertKind(kc *kindConversion) (int64, error) {
 		p := bind(kc.storedName(b.prop))
 		holds = append(holds, "(NOT props ? "+p+" OR props->"+p+" IN "+emptyJSONValues+")")
 	}
+	// A state lives in its own column, never under props: the rows to enter
+	// are the ones whose machine has no key there (and the empty string beside
+	// it, which the guard reads as no state too).
+	for _, e := range kc.entries {
+		p := bind(e.prop)
+		holds = append(holds, "(NOT states ? "+p+" OR states->"+p+" = '\"\"'::jsonb)")
+	}
 	for _, m := range kc.remaps {
 		holds = append(holds, "props ? "+bind(kc.storedName(m.prop)))
 	}
@@ -811,6 +874,18 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 		row.Props[b.prop] = kc.filled[b.prop]
 		backfilled = append(backfilled, b.prop)
 		touched[b.prop] = true
+	}
+	var entered []string
+	for _, e := range kc.entries {
+		if row.States[e.prop] != "" {
+			continue
+		}
+		// Where a create is born (write.go), reached by a record that predates
+		// the machine: the position is the machine's own `initial`, and no
+		// transition runs, because there is no state to move out of.
+		row.States[e.prop] = e.initial
+		entered = append(entered, e.prop)
+		touched[e.prop] = true
 	}
 	var remapped map[string]map[string]string
 	for _, m := range kc.remaps {
@@ -917,7 +992,11 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 	if len(renamed) > 0 {
 		payload["renamed"] = renamed
 	}
-	if len(backfilled) > 0 {
+	if len(backfilled) > 0 || len(entered) > 0 {
+		// One key for both: a machine's `initial` and a property's `default`
+		// are the same fact to a reader of the changelog — the apply filled a
+		// value the record was missing.
+		backfilled = append(backfilled, entered...)
 		sort.Strings(backfilled)
 		payload["backfilled"] = backfilled
 	}

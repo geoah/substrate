@@ -110,6 +110,8 @@ func stepLine(s substrate.ConversionStep) string {
 		return fmt.Sprintf("renames %s to %s on %s: %s rewritten", s.From, s.To, s.Kind, n)
 	case substrate.StepBackfill:
 		return fmt.Sprintf("backfills %s with its default on %s: %s rewritten", s.Property, s.Kind, n)
+	case substrate.StepEnter:
+		return fmt.Sprintf("enters %s at %s on %s: %s rewritten", s.Property, s.To, s.Kind, n)
 	case substrate.StepRemap:
 		line := fmt.Sprintf("rewrites %s %s to %s on %s: %s rewritten", s.Property, s.From, s.To, s.Kind, n)
 		if s.Lossy {

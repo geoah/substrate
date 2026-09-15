@@ -892,3 +892,137 @@ func TestRenameBackfillAndRemapComposeIntoOneEntryPerRecord(t *testing.T) {
 	}
 	cvReplays(t, svc, ds)
 }
+
+// A machine added to a kind that already holds records is ENTERED at
+// admission (decision 0082): every record standing outside it takes the
+// declared initial state, as ordinary record writes in the apply's
+// transaction, so the transition guard afterwards reads a state to move out
+// of. Without it the records were permanently stateless — no transition out
+// of "" is declared, and a put may not move a state at all (#545).
+func TestStateEntryEntersEveryRecordThatPredatesTheMachine(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	// One machine from the start, so a record holding another machine's state
+	// (and one that has left its initial) proves the entry touches only the
+	// machine it is for.
+	phase := map[string]any{
+		"type": "state", "states": []any{"draft", "shipped"}, "initial": "draft",
+		"transitions": []any{map[string]any{"from": "draft", "to": "shipped"}},
+	}
+	base := map[string]any{"name": map[string]any{"type": "string"}, "phase": phase}
+	if err := cvApply(t, ds, base); err != nil {
+		t.Fatalf("install the package: %v", err)
+	}
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"name": "a"}})
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"name": "b"}})
+	shipped := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"name": "c"}})
+	shipped = mustPatch(t, ds, owner, cvWidget, shipped.ID, substrate.PatchInput{Properties: map[string]any{"phase": "shipped"}})
+	if shipped.Properties["phase"] != "shipped" {
+		t.Fatalf("the other machine did not move: %v", shipped.Properties)
+	}
+	head := maxSeq(t, ds)
+
+	attention := map[string]any{
+		"type": "state", "states": []any{"quiet", "raised"}, "initial": "quiet",
+		"transitions": []any{map[string]any{"from": "quiet", "to": "raised"}},
+	}
+	docs := cvDocs(map[string]any{"name": base["name"], "phase": phase, "attention": attention})
+	// The preview counts the rows the entry will touch, as its own step: a
+	// machine's initial is not a `default:`, so "backfilled with its default"
+	// would lie.
+	plan, err := ds.PlanVocabularyApply(ctx, owner, docs)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if plan.Lossy || plan.Work != 3 || len(plan.Steps) != 1 {
+		t.Fatalf("plan = %+v (want one lossless step over 3 records)", plan)
+	}
+	if s := plan.Steps[0]; s.Step != substrate.StepEnter || s.Kind != cvWidget || s.Property != "attention" || s.To != "quiet" || s.Records != 3 || s.Lossy {
+		t.Fatalf("step = %+v", s)
+	}
+	// Lossless: it runs unconfirmed (decision 0067).
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+		t.Fatalf("the entry must land unconfirmed: %v", err)
+	}
+	for _, r := range []*substrate.Record{a, b, shipped} {
+		got := mustGet(t, ds, cvWidget, r.ID)
+		if got.Properties["attention"] != "quiet" {
+			t.Fatalf("%s did not enter the machine: %v", r.ID, got.Properties)
+		}
+		if got.Version == r.Version {
+			t.Fatalf("%s was rewritten without moving its version", r.ID)
+		}
+		if want := kindVersion(t, ds, cvWidget); got.KindVersion != want {
+			t.Fatalf("%s carries kindVersion %d, want the declaration's %d", r.ID, got.KindVersion, want)
+		}
+	}
+	// The other machine stands where its own writes left it.
+	if got := mustGet(t, ds, cvWidget, shipped.ID); got.Properties["phase"] != "shipped" {
+		t.Fatalf("the entry moved another machine: %v", got.Properties)
+	}
+	if got := mustGet(t, ds, cvWidget, a.ID); got.Properties["phase"] != "draft" {
+		t.Fatalf("the entry moved another machine: %v", got.Properties)
+	}
+	// A state, not a value: nobody owns a machine's position, so the entry
+	// writes no manager row.
+	var managers int
+	if err := rawDB(t, dsn).QueryRow(`SELECT count(*) FROM property_managers WHERE record_kind = $1 AND property = 'attention'`,
+		cvWidget).Scan(&managers); err != nil {
+		t.Fatal(err)
+	}
+	if managers != 0 {
+		t.Fatalf("the entry wrote %d manager rows, want none", managers)
+	}
+	// One entry per entered record, a patch that says the apply filled it.
+	if n := cvEntries(t, dsn, head, "backfilled"); n != 3 {
+		t.Fatalf("the entry wrote %d record entries, want 3", n)
+	}
+	var filled []byte
+	if err := rawDB(t, dsn).QueryRow(`SELECT payload->'backfilled' FROM changelog WHERE seq > $1 AND kind = $2 AND record_id = $3 AND op = 'patch'`,
+		head, cvWidget, a.ID).Scan(&filled); err != nil {
+		t.Fatalf("read the entry of %s: %v", a.ID, err)
+	}
+	if string(filled) != `["attention"]` {
+		t.Fatalf("the entry's payload says backfilled %s, want [\"attention\"]", filled)
+	}
+
+	// The guard reads a state to move out of now: the declared transition
+	// lands, re-asserting the current state is the no-op every re-delivery
+	// rests on, and an undeclared move still refuses.
+	if got := mustPatch(t, ds, owner, cvWidget, a.ID, substrate.PatchInput{Properties: map[string]any{"attention": "raised"}}); got.Properties["attention"] != "raised" {
+		t.Fatalf("the transition out of the entered state did not land: %v", got.Properties)
+	}
+	quiet := mustGet(t, ds, cvWidget, b.ID)
+	if got := mustPatch(t, ds, owner, cvWidget, b.ID, substrate.PatchInput{Properties: map[string]any{"attention": "quiet"}}); got.Version != quiet.Version {
+		t.Fatalf("re-asserting the entered state wrote a change: %d -> %d", quiet.Version, got.Version)
+	}
+	if _, err := ds.Patch(ctx, owner, cvWidget, a.ID, substrate.PatchInput{Properties: map[string]any{"attention": "quiet"}}); err == nil {
+		t.Fatal("an undeclared transition must still refuse")
+	}
+
+	// Admitting the same declaration again enters nothing: every record
+	// stands in the machine, so the plan has no step and no record moves.
+	versions := map[string]int64{}
+	for _, r := range []*substrate.Record{a, b, shipped} {
+		versions[r.ID] = mustGet(t, ds, cvWidget, r.ID).Version
+	}
+	again, err := ds.PlanVocabularyApply(ctx, owner, docs)
+	if err != nil {
+		t.Fatalf("plan again: %v", err)
+	}
+	if len(again.Steps) != 0 || again.Work != 0 {
+		t.Fatalf("a machine every record stands in was planned again: %+v", again)
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+		t.Fatalf("re-applying the declaration: %v", err)
+	}
+	for id, want := range versions {
+		if got := mustGet(t, ds, cvWidget, id).Version; got != want {
+			t.Fatalf("%s was rewritten by a second admission: %d -> %d", id, want, got)
+		}
+	}
+	// The states are values in the changelog: a replay reproduces them
+	// without reading the declaration that entered them.
+	cvReplays(t, svc, ds)
+}

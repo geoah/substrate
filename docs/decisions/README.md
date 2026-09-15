@@ -233,3 +233,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0079](0079-graphql-is-removed-and-the-records-read-is-one-route.md) | GraphQL is removed, and the records read is one route | accepted |
 | [0080](0080-a-kind-grant-may-glob-and-a-glob-never-reaches-auth-material.md) | A kind grant may glob, and a glob never reaches auth material | accepted |
 | [0081](0081-the-window-read-computes-occurrences-and-recurring-is-core.md) | The window read computes occurrences, and `recurring` and `override` are core traits | accepted |
+| [0082](0082-a-record-meets-a-new-state-machine-in-its-initial-state.md) | A record meets a new state machine in its initial state | accepted |

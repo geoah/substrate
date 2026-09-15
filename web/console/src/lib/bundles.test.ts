@@ -470,7 +470,7 @@ describe("the upgrade preview helpers", () => {
     expect(stepLines({ work: 0, lossy: false })).toEqual([])
     const plan: BundleUpgrade = {
       available: true,
-      work: 7,
+      work: 9,
       lossy: true,
       planHash: "abc",
       changelogSeq: 41,
@@ -488,6 +488,13 @@ describe("the upgrade preview helpers", () => {
           kind: "geoah.example.com/shop/widget",
           property: "size",
           records: 1,
+        },
+        {
+          step: "enter",
+          kind: "geoah.example.com/shop/widget",
+          property: "attention",
+          to: "quiet",
+          records: 2,
         },
         {
           step: "remap",
@@ -510,6 +517,7 @@ describe("the upgrade preview helpers", () => {
     expect(stepLines(plan)).toEqual([
       "renames label to displayLabel on substrate.reamde.dev/llm/provider: 3 live records rewritten",
       "backfills size with its default on geoah.example.com/shop/widget: 1 live record rewritten",
+      "enters attention at quiet on geoah.example.com/shop/widget: 2 live records rewritten",
       "rewrites status active to open on geoah.example.com/shop/widget: 2 live records rewritten (lossy: the records holding either value become one set)",
       "drops color on geoah.example.com/shop/widget: its value leaves 1 live record (lossy: the values stay in the changelog only)",
     ])

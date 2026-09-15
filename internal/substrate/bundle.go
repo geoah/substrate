@@ -139,8 +139,8 @@ type ConversionPlan struct {
 
 // ConversionStep is one record rewrite a declaration change performs.
 type ConversionStep struct {
-	// Step is the rewrite: StepMove, StepRename, StepBackfill, StepRemap or
-	// StepNull.
+	// Step is the rewrite: StepMove, StepRename, StepBackfill, StepEnter,
+	// StepRemap or StepNull.
 	Step string `json:"step"`
 	// Kind is the full reference of the kind whose records move. On a move it
 	// is the kind the rows arrive at.
@@ -150,8 +150,9 @@ type ConversionStep struct {
 	// move, which carries whole records rather than one property.
 	Property string `json:"property"`
 	// From and To are a rename's old and new property names, a remap's old and
-	// new values, or a move's old and new kind references. Empty on a backfill
-	// and a null.
+	// new values, or a move's old and new kind references; on an enter, To is
+	// the initial state the records enter and From is empty. Empty on a
+	// backfill and a null.
 	From string `json:"from,omitempty"`
 	To   string `json:"to,omitempty"`
 	// Records is the number of live records the step rewrites.
@@ -174,6 +175,11 @@ const (
 	// StepBackfill writes a property's declared default onto every record
 	// holding no value for it, where the property becomes required.
 	StepBackfill = "backfill"
+	// StepEnter writes a machine's declared initial state onto every record
+	// holding no state for it — every record of a kind the declaration adds
+	// the machine to (decision record 0082). A state takes no `default:`, so
+	// it is its own step and not a backfill.
+	StepEnter = "enter"
 	// StepRemap rewrites an enum value to its new spelling (`renamedFrom` on
 	// the value entry).
 	StepRemap = "remap"
