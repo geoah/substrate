@@ -416,8 +416,11 @@ lease and not something to wait on. The moment the session
 cannot be proven alive the process logs at `ERROR` and refuses every write with
 `503 unavailable` until it has taken back every lease it held — or until it
 holds none, because a lease guarding nothing has nothing to be lost about.
-Every later beat tries again, so a Postgres that restarted is recovered from
-without restarting the server, and the recovery is logged at `WARN`. It keeps refusing while
+A write is held to that refusal at its door, again once it holds the changelog
+lock, and again immediately before it commits, so a write that queued behind
+another one cannot land under a lease that went away while it waited. Every
+later beat tries again, so a Postgres that restarted is recovered from without
+restarting the server, and the recovery is logged at `WARN`. It keeps refusing while
 another process holds one of its leases, which is the honest answer: stop the
 other one, and run one server.
 

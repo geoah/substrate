@@ -17,6 +17,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // A pool pointed at a port nothing serves: every connection attempt fails
@@ -389,4 +391,71 @@ func TestWriterLeaseAcquiresAgainAfterAnIdleConnectionDied(t *testing.T) {
 	if leaseKeyFree(t, other, next) {
 		t.Fatal("another session took the lease the retry claims to hold")
 	}
+}
+
+// A write that PASSED the lease check at its door and then waited — for a
+// pool connection, for its own body, for the changelog lock another
+// transaction was holding — must not commit under a lease that went away in
+// the meantime. The door check alone let queued writes land past the window
+// this file documents.
+func TestAWriteThatOutlivesItsLeaseIsRefusedBeforeItCommits(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	var lease *writerLease
+	armed := false
+	// The seam fires with the changelog lines PREPARED and the commit not yet
+	// run, holding the changelog lock: exactly where a write that queued
+	// behind another one arrives.
+	ds := newRaceDataset(t, WithTestCommitFault(func(stage string) error {
+		if stage == commitAfterPrepare && armed {
+			lease.lost.Store(true)
+		}
+		return nil
+	}))
+	lease = ds.svc.lease
+	if lease == nil {
+		t.Fatal("the service took no writer lease, so this test proves nothing")
+	}
+	racePut(t, ds, map[string]any{"name": "landed"})
+	head, err := tableChangelogHead(ctx, ds.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	armed = true
+	_, err = ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: raceWidget, Properties: map[string]any{"name": "must not land"},
+	})
+	armed = false
+	if !errors.Is(err, ErrWriterLeaseLost) {
+		t.Fatalf("a write whose lease went while it held the changelog lock was not refused: %v", err)
+	}
+	// The classification matters as much as the refusal: the API answers 503
+	// with a Retry-After for ErrUnavailable, never an invalid token or a
+	// validation problem.
+	if !errors.Is(err, substrate.ErrUnavailable) {
+		t.Fatalf("the refusal must read as unavailable: %v", err)
+	}
+
+	// NOTHING LANDED, in either store.
+	if got, err := tableChangelogHead(ctx, ds.db); err != nil || got != head {
+		t.Fatalf("the changelog head moved %d -> %d (err %v)", head, got, err)
+	}
+	var n int
+	if err := ds.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM records WHERE record_kind = $1`, raceWidget).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("%d widget rows after the refused write, want the one that landed", n)
+	}
+	// And the prepared lines were cut: the file is back at the table's head,
+	// not a line ahead of it.
+	if fileHead := ds.writer.Head(); fileHead != head {
+		t.Fatalf("the refused write left the file at seq %d with the table at %d", fileHead, head)
+	}
+
+	// The refusal LATCHED NOTHING: with the lease back, writing works.
+	lease.lost.Store(false)
+	racePut(t, ds, map[string]any{"name": "after the lease came back"})
 }

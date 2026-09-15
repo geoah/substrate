@@ -581,6 +581,17 @@ func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal boo
 // dataset with no writer (the creation dataset) commits and mirrors nothing;
 // its directory is written from the tables afterwards.
 func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
+	// THE LEASE AGAIN. The check at the write's door (inTx, inRawTx) is as old
+	// as the write: this transaction may have waited for a pool connection,
+	// run a body of any length, and — below — waited out another
+	// transaction's whole commit for the changelog lock, and the heartbeat
+	// may have latched the refusal at any point in that. Each of these is one
+	// atomic load, and the last one is immediately before the commit, so the
+	// window between "this process is the writer" and "this write lands" is
+	// as narrow as it can be made without a round trip.
+	if err := ds.svc.lease.err(); err != nil {
+		return err
+	}
 	if ds.writer == nil || (len(t.pending) == 0 && len(t.sealedMirror) == 0) {
 		return ds.commitAndPublish(tx, t)
 	}
@@ -588,6 +599,9 @@ func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 	defer ds.writerMu.Unlock()
 	if ds.fileErr != nil {
 		return ds.fileErr
+	}
+	if err := ds.svc.lease.err(); err != nil {
+		return err
 	}
 	// Before the manifest and the stage: rows another process committed are
 	// appended first, so the lines below are the file's next and the sealed
@@ -613,6 +627,16 @@ func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 	// The seam is where a test's process dies: nothing below it runs, and
 	// the deferred rollback in inTx is what a crash does to the transaction.
 	if err := ds.svc.commitFault(commitAfterPrepare); err != nil {
+		return err
+	}
+	// The last look at the lease, with the lines prepared and the commit not
+	// yet run. Nothing has landed, so this is a plain refusal: the lines are
+	// cut and the staged files discarded, and it is NOT marked in doubt —
+	// that flag is for a commit that may have committed, and this one
+	// certainly did not.
+	if err := ds.svc.lease.err(); err != nil {
+		ds.abortLines(prepared)
+		ds.discardStaged(staged)
 		return err
 	}
 	err = ds.commitAndPublish(tx, t)

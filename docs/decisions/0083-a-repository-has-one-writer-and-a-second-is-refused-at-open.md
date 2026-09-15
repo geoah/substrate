@@ -80,7 +80,13 @@ empty claim set is one nothing would ever clear — and the next acquisition
 starts clean on a connection of its own. Every beat retries, whether the
 lease was lost on that beat or several beats earlier with no connection to be
 had, so a Postgres that went away and came back is recovered from without a
-restart. The refusal is an atomic read on the write path, not a round trip.
+restart. The refusal is an atomic read on the write path, not a round trip,
+which is what makes it affordable to take three times per write: at the
+write's door, once it holds the changelog lock, and immediately before it
+commits. A write can wait a long time between the first and the last — for a
+pool connection, for its own body, for another transaction's commit — and one
+checked only at the door would land under a lease that went away while it
+queued.
 
 The lease is also taken EARLIER THAN THE REPOSITORY EXISTS, on both paths that
 publish one. A creation writes the repository's own rows first and the
@@ -124,8 +130,10 @@ open, and a read-only process needs no lease.
 every beat while the database is unreachable and clears once it is back, a
 heartbeat whose ping never answers refuses writes inside its own deadline
 rather than waiting on it, an acquisition on a stalled session is bounded the
-same way and leaves the mutex for the beat that repairs it, and a connection
-that died while the lease held nothing is replaced at the next acquisition.
+same way and leaves the mutex for the beat that repairs it, a connection that
+died while the lease held nothing is replaced at the next acquisition, and a
+write whose lease goes after it took the changelog lock is refused before it
+commits, with nothing left in either store.
 `internal/engine/writerleasecreation_internal_db_test.go`: a creation holds the
 lease before its control-plane row exists, a second process cannot claim a
 repository mid-creation, a creation that fails hands the lease back, and one

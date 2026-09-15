@@ -18,13 +18,14 @@ import (
 
 // newRaceDataset provisions a repository with one plain widget kind and hands
 // back the INTERNAL dataset, so tests can drive txn-level paths directly.
-func newRaceDataset(t *testing.T) *dataset {
+func newRaceDataset(t *testing.T, opts ...Option) *dataset {
 	t.Helper()
 	ctx := context.Background()
 	dsn := MigratedDSN(t)
-	svc, err := OpenForTest(t, ctx, dsn,
+	svc, err := OpenForTest(t, ctx, dsn, append([]Option{
 		WithDataRoot(t.TempDir()),
-		WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir))
+		WithCredentialKey(TestCredentialKey), WithKindsDir(SeedKindsDir),
+	}, opts...)...)
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
