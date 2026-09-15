@@ -394,8 +394,12 @@ that speaks to a gateway. A model absent from the table leaves the thread's
 
 ```yaml
 pricing:
-  - {model: claude-opus-5, inputPer1M: 5, outputPer1M: 25}
+  - {model: claude-opus-5, inputPer1M: "5", outputPer1M: "25"}
 ```
+
+The two rates are `decimal` properties, so they are written as quoted strings:
+a bare YAML number rides a float and is refused
+([data model](data-model.md#property-types)).
 
 **Every one of these is declared, not a json blob.** `wire` is an enum of the
 three wires, so a typo is refused at the write; `defaults` is an object of the
@@ -475,7 +479,7 @@ data:
     wire: anthropic
     apiKey: sk-ant-…
     pricing:
-      - {model: claude-opus-5, inputPer1M: 5, outputPer1M: 25}
+      - {model: claude-opus-5, inputPer1M: "5", outputPer1M: "25"}
 ---
 # Azure OpenAI. The deployment endpoint is the row's, and so is the key.
 kind: substrate.reamde.dev/llm/provider
