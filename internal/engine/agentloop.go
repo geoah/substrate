@@ -72,6 +72,12 @@ type agentInvocation struct {
 	// userActor attributes the user message row; empty means the agent's
 	// own actor (triggered runs — the envelope is the machinery talking).
 	userActor substrate.Actor
+	// systemSuffix is the ENGINE's own paragraph under the agent's system
+	// prompt, for a run whose REPLY the engine parses: the judge's reply
+	// contract (judge.go judgeReplyContract). It rides the invocation and not
+	// the declaration, because the contract belongs to the run the engine
+	// asked for and a judge is an ordinary agent everywhere else.
+	systemSuffix string
 	// threadID continues an existing thread (chat); empty mints one.
 	threadID string
 	// parent is the calling agent's thread, on sub-agent invocations.
@@ -1566,13 +1572,27 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, sub *vocabulary.Agent,
 
 // --- the completion transport ------------------------------------------------------
 
+// system is the system prompt this run sends: the agent's own, then the
+// engine's suffix where the invocation carries one. The agent's words come
+// FIRST so the engine's contract is the last thing read, and the declaration
+// is never rewritten to carry it.
+func (l *agentLoop) system() string {
+	switch {
+	case l.in.systemSuffix == "":
+		return l.ag.Prompt
+	case l.ag.Prompt == "":
+		return l.in.systemSuffix
+	}
+	return l.ag.Prompt + "\n\n" + l.in.systemSuffix
+}
+
 // complete runs one model turn through the provider's wire adapter:
 // streaming (deltas through emit) when a client is attached, one-shot
 // otherwise. The wire lives in internal/llm; the loop only ever sees the
 // neutral request and result.
 func (l *agentLoop) complete(ctx context.Context, messages []llm.Message) (*llm.Result, error) {
 	req := llm.Request{
-		Model: l.model, System: l.ag.Prompt, Messages: messages,
+		Model: l.model, System: l.system(), Messages: messages,
 		Tools: l.defs, Params: l.params,
 	}
 	var onDelta func(string)

@@ -1,5 +1,5 @@
 # the owner's rules for the space between an agent wanting a write and the
-# write landing (docs/plans/thread-interactions.md). A policy speaks for the
+# write landing (docs/agents.md, "The policy door"). A policy speaks for the
 # writes its selector matches, strictly INSIDE the emit ceiling: allow lands
 # them, refuse bounces them, gate converts them into recordpatchrequests the
 # owner (or, within thresholds, the policy's judge) decides. When several
@@ -15,12 +15,12 @@
 # write this kind at all: a policy an agent could edit is a gate that agent
 # could open.
 #
-# The judge half (judge/criteria/context/autoAccept/autoRefuse/mode) is
-# DECLARED here so the kind does not churn, and lands in the plan's phase 4:
-# until then a policy's judge is inert data. ALPHA at v1, like the agent
-# vocabulary (core.yaml's marker, ruling A12): nothing runs these properties
-# yet, so they may change or leave without a v1 break. The selector/action
-# half is the stable contract.
+# The judge half (judge/criteria/context/expandReferents/autoAccept/
+# autoRefuse/mode) is LIVE: the engine runs the named agent over what the
+# policy gated and decides only between the thresholds (engine/judge.go).
+# ALPHA at v1, like the agent vocabulary (core.yaml's marker, ruling A12): it
+# may change or leave without a v1 break. The selector/action half is the
+# stable contract.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: substrate.reamde.dev/core/recordpatchpolicy
@@ -31,7 +31,7 @@ data:
     One rule for agent writes: which kinds, ops and agents it speaks for,
     and whether their writes land, gate into recordpatchrequests, or refuse.
     The most restrictive matching policy wins; no match means the write lands.
-  version: 14
+  version: 15
   names:
     singular: recordpatchpolicy
   displayTemplate: "{action}: {localName}"
@@ -106,16 +106,22 @@ data:
         - refuse
       description: what a matched write does — land, convert into a request,
         or bounce
-    # The judge, inert until the plan's phase 4: an agent (tool-less, its
-    # structured verdict is its whole contract) the ENGINE runs over gated
-    # requests, deciding only between the thresholds below. ALPHA at v1 with
-    # everything under it through `mode` — see the marker at the top of this
-    # file.
+    # The judge: an agent (tool-less, its structured verdict is its whole
+    # contract) the ENGINE runs over gated requests, deciding only between the
+    # thresholds below. ALPHA at v1 with everything under it through `mode` —
+    # see the marker at the top of this file.
+    #
+    # THE ENGINE STATES THE REPLY SHAPE, not the policy author: every judge run
+    # carries the contract as a suffix under the judge agent's own prompt
+    # (engine/judge.go judgeReplyContract), because judge.go is what decodes
+    # the answer. `criteria` says what to accept and reject; it never has to
+    # say how to answer.
     judge:
       type: reference
       kind: substrate.reamde.dev/core/agent
-      description: the agent that judges what this policy gates; absent means
-        the owner decides everything
+      description: 'the agent that judges what this policy gates, replying
+        {verdict, confidence, rationale} — a shape the engine states to it;
+        absent means the owner decides everything'
     criteria:
       type: text
       description: the owner's instructions to the judge, in prose
@@ -126,6 +132,14 @@ data:
         - thread
       description: how much the judge reads — the frozen envelope alone (default),
         or the proposing thread's recent turns beside it
+    # ORTHOGONAL TO `context`, which dials the proposing THREAD: a policy may
+    # set both. A judge is tool-less, so a reference in the diff is a pointer
+    # it cannot follow; this hands it what the pointer names, as data, the
+    # ordinary read's redaction applied — a judge never sees a secret.
+    expandReferents:
+      type: bool
+      description: hand the judge every record the diff references, one hop,
+        beside the envelope; off by default
     # TWO INDEPENDENT FLOORS, NOT A BAND. The judge's verdict picks which floor
     # is read: `autoAccept` measures an `accept` verdict and `autoRefuse` a
     # `reject` one, and one reply carries one verdict, so the two never contend
