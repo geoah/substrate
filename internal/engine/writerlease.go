@@ -234,8 +234,6 @@ func (l *writerLease) heartbeat(ctx context.Context) {
 // round trip below is bounded, and the two are told apart afterwards —
 // shutdown is not a lost lease, and a deadline is.
 func (l *writerLease) beat(shutdown context.Context) {
-	ctx, cancel := context.WithTimeout(shutdown, writerLeaseBeatTimeout)
-	defer cancel()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if len(l.held) == 0 {
@@ -243,6 +241,11 @@ func (l *writerLease) beat(shutdown context.Context) {
 		// acquire is what opens the connection.
 		return
 	}
+	// The deadline is derived AFTER the mutex, not before it: a beat that
+	// queued behind an acquire's round trip would otherwise spend its whole
+	// budget waiting and then declare a perfectly live session lost.
+	ctx, cancel := context.WithTimeout(shutdown, writerLeaseBeatTimeout)
+	defer cancel()
 	if !l.lost.Load() && !l.dropped(shutdown, ctx) {
 		return
 	}
