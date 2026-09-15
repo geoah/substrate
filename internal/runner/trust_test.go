@@ -53,10 +53,32 @@ func TestChooseTrust(t *testing.T) {
 		},
 		want: "/usr/lib/ssl/certs",
 	}, {
-		name:  "a capath of plain pem files is a store",
+		// OpenSSL does not LIST a capath: it hashes the subject it wants,
+		// builds `<dir>/<hash>.<n>` and opens that. A directory of plain PEM
+		// files nobody ran `openssl rehash` over is never read, so counting it
+		// would suppress the fallback while every handshake failed.
+		name:  "a capath with only plain .pem files is not a store",
 		paths: verifyPaths{CAPath: "/usr/lib/ssl/certs"},
-		fs:    fakeFS{dirs: map[string][]string{"/usr/lib/ssl/certs": {"ISRG_Root_X1.pem"}}},
-		want:  "/usr/lib/ssl/certs",
+		fs: fakeFS{
+			files: map[string]int64{"/etc/ssl/cert.pem": 333483},
+			dirs: map[string][]string{"/usr/lib/ssl/certs": {
+				"ISRG_Root_X1.pem", "DigiCert_Global_Root_CA.crt",
+			}},
+		},
+		want:     "/etc/ssl/cert.pem",
+		injected: true,
+	}, {
+		// The same directory once it HAS been rehashed: the symlink is what
+		// the lookup opens, and one is enough to make the capath usable.
+		name:  "a rehashed capath beside its plain files is a store",
+		paths: verifyPaths{CAPath: "/usr/lib/ssl/certs"},
+		fs: fakeFS{
+			files: map[string]int64{"/etc/ssl/cert.pem": 333483},
+			dirs: map[string][]string{"/usr/lib/ssl/certs": {
+				"ISRG_Root_X1.pem", hashed,
+			}},
+		},
+		want: "/usr/lib/ssl/certs",
 	}, {
 		// The bug: the framework build's compiled-in directory is empty, so
 		// python reports neither, and the system bundle is named instead.
@@ -88,7 +110,9 @@ func TestChooseTrust(t *testing.T) {
 		paths: verifyPaths{CAPath: "/usr/lib/ssl/certs"},
 		fs: fakeFS{
 			files: map[string]int64{"/etc/ssl/cert.pem": 333483},
-			dirs:  map[string][]string{"/usr/lib/ssl/certs": {"5ed36f99.r0", "README", "openssl.cnf"}},
+			dirs: map[string][]string{"/usr/lib/ssl/certs": {
+				"5ed36f99.r0", "README", "openssl.cnf", "5ed36f99.0.bak",
+			}},
 		},
 		want:     "/etc/ssl/cert.pem",
 		injected: true,
@@ -163,24 +187,30 @@ func TestChooseTrust(t *testing.T) {
 	}
 }
 
-// What a capath entry has to look like to count. The hashed form is the one
-// OpenSSL itself resolves, so getting it wrong would reject a real Debian
-// store; `.r0` is a revocation list and must not stand in for a root.
-func TestIsCertEntry(t *testing.T) {
-	for _, name := range []string{
-		"5ed36f99.0", "5ed36f99.12", "ABCDEF01.0",
-		"ISRG_Root_X1.pem", "ca-certificates.crt",
-	} {
-		if !isCertEntry(name) {
-			t.Errorf("%q is a certificate entry and was rejected", name)
+// What a capath entry has to look like for OpenSSL to open it. The hashed
+// form is the ONLY one the lookup composes, so accepting anything else would
+// call an unrehashed directory a trust store; rejecting a real hashed name
+// would refuse a working Debian store.
+func TestIsHashedCert(t *testing.T) {
+	for _, name := range []string{"5ed36f99.0", "5ed36f99.12", "00000000.9", "abcdef01.0"} {
+		if !isHashedCert(name) {
+			t.Errorf("%q is a hashed certificate entry and was rejected", name)
 		}
 	}
 	for _, name := range []string{
-		"5ed36f99.r0", "README", "openssl.cnf", "",
-		"private", "5ed36f9.0", "5ed36f99g.0", "notahash.0", ".", "cert.key",
+		// A revocation list is not a root.
+		"5ed36f99.r0",
+		// Plain files the lookup never reads, rehashed or not.
+		"ISRG_Root_X1.pem", "ca-certificates.crt", "cert.key",
+		// Uppercase is a spelling the lookup does not compose.
+		"ABCDEF01.0", "5ED36F99.0",
+		// Wrong shape: short, long, non-hex, no sequence, no dot, empty.
+		"5ed36f9.0", "5ed36f991.0", "notahash.0", "5ed36f99.", "5ed36f99", "", ".", "..",
+		// Something appended after the sequence: Cut takes the first dot.
+		"5ed36f99.0.bak",
 	} {
-		if isCertEntry(name) {
-			t.Errorf("%q is not a certificate entry and was accepted", name)
+		if isHashedCert(name) {
+			t.Errorf("%q is not a hashed certificate entry and was accepted", name)
 		}
 	}
 }

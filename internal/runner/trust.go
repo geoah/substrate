@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -128,42 +127,52 @@ func isBundle(fs trustFS, path string) bool {
 	return path != "" && fs.fileSize(path) > 0
 }
 
-// isCertDir reports an OpenSSL hashed directory holding at least one
-// certificate entry.
+// isCertDir reports a capath OpenSSL can actually verify out of: a directory
+// holding at least one HASH-NAMED certificate.
+//
+// Hash-named is the whole rule, because the lookup does not list the
+// directory. OpenSSL takes the subject name it wants, hashes it, builds
+// `<dir>/<hash>.<n>` and opens exactly that; a `ca.pem` sitting there unhashed
+// is never read. So a directory of plain PEM files that nobody ran `openssl
+// rehash` over verifies nothing, and counting it would suppress the fallback
+// and the WARN while every handshake still failed — the same bug as an empty
+// directory, one step subtler.
 func isCertDir(fs trustFS, path string) bool {
 	if path == "" {
 		return false
 	}
 	for _, name := range fs.entries(path) {
-		if isCertEntry(name) {
+		if isHashedCert(name) {
 			return true
 		}
 	}
 	return false
 }
 
-// isCertEntry recognizes the names a certificate wears inside a capath: the
-// hashed form OpenSSL itself looks up (eight hex digits, a dot, a sequence
-// number — `5ed36f99.0`), and the plain files distributions drop beside them.
-// A `.r0` CRL is deliberately not one: a directory holding only revocation
-// lists verifies nothing.
-func isCertEntry(name string) bool {
-	ext := strings.TrimPrefix(filepath.Ext(name), ".")
-	switch ext {
-	case "pem", "crt":
-		return true
-	case "":
+// isHashedCert matches the one name a capath lookup will open: eight lowercase
+// hex digits of the subject hash, a dot, and a sequence number. Lowercase
+// because that is the only spelling the lookup composes, so an uppercase name
+// is unreachable on any case-sensitive filesystem.
+//
+// A `.r0` is excluded by the sequence being digits: that suffix is how a
+// revocation list is named, and a directory holding only CRLs verifies nobody.
+func isHashedCert(name string) bool {
+	hash, seq, ok := strings.Cut(name, ".")
+	if !ok || len(hash) != 8 || seq == "" {
 		return false
 	}
-	base := strings.TrimSuffix(name, "."+ext)
-	if len(base) != 8 || strings.IndexFunc(base, func(r rune) bool { return !isHexDigit(r) }) >= 0 {
-		return false
+	for _, r := range hash {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
 	}
-	return strings.IndexFunc(ext, func(r rune) bool { return r < '0' || r > '9' }) < 0
-}
-
-func isHexDigit(r rune) bool {
-	return (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+	// Cut takes the FIRST dot, so a trailing `.bak` lands here and fails.
+	for _, r := range seq {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // hostFS is the real filesystem.
