@@ -91,6 +91,14 @@ dev:stop` stops the server and not Postgres. `mise run dev:wipe:all` is the
 one that removes the container and the volume, and it takes every tree's dev
 database with it.
 
+A container that is gone does not mean the database is: `docker rm` without
+`-v` leaves the named volume, and the volume is where the database lives. So
+`dev:wipe` starts the container back up to drop the database when it finds the
+volume still there, and treats the database as absent only when neither is.
+Otherwise it would remove the data root and the credential key while leaving
+the database behind, and the next start would reattach it under a freshly
+minted key that opens none of its repositories.
+
 ## Your first user, and the operator hat
 
 Register against the local address and the invite code above, then read

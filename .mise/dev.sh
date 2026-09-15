@@ -185,9 +185,21 @@ db_up() {
 # volume and every other tree's database survive, because they are not this
 # tree's to throw away.
 db_drop() {
-	if [ "$(db_state)" = "absent" ]; then
-		echo "dev: no ${CONTAINER} container, so there is no ${DB_NAME} to drop"
+	# A CONTAINER THAT IS GONE DOES NOT MEAN THE DATABASE IS. `docker rm`
+	# without -v leaves the named volume behind, and the volume is where the
+	# database lives; the container is just a process in front of it. Reading
+	# an absent container as "nothing to drop" would delete this tree's data
+	# root and its credential key and leave its database sitting in the
+	# volume, so the next start would reattach it under a freshly minted key
+	# and every repository in it would refuse to open — the shape a lost keys
+	# volume has, from a command whose whole job was to leave nothing behind.
+	# So only NEITHER of them is absent.
+	if [ "$(db_state)" = "absent" ] && ! docker volume inspect "$VOLUME" >/dev/null 2>&1; then
+		echo "dev: no ${CONTAINER} container and no ${VOLUME} volume, so there is no ${DB_NAME} to drop"
 		return 0
+	fi
+	if [ "$(db_state)" = "absent" ]; then
+		echo "dev: ${CONTAINER} is gone but volume ${VOLUME} is not, so ${DB_NAME} may still be in it; starting the container to drop it"
 	fi
 	db_start
 	if ! db_exists; then
