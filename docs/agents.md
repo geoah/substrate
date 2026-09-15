@@ -367,14 +367,14 @@ may set both:
 ```yaml
 kind: substrate.reamde.dev/core/recordpatchpolicy
 metadata:
-  id: judge-episodes
+  id: judge-tasks
 data:
   properties:
     selector:
       kinds:
         - samples.substrate.reamde.dev/tasks/*
     action: gate
-    judge: samples.substrate.reamde.dev/tasks/referee
+    judge: crew.example.com/bots/referee
     criteria: >-
       reject a summary the cited source does not support
     expandReferents: true
