@@ -67,8 +67,10 @@ every five seconds proves the connection alive — a session's advisory locks
 can only be released by that session or by its end, so a live pinned session
 *is* the lease and nothing has to be read back — and the moment it does not,
 every write is refused with `ErrUnavailable` until every lease the process
-held is taken again. The refusal is an atomic read on the write path, not a
-round trip.
+held is taken again. Every beat retries, whether the lease was lost on that
+beat or several beats earlier with no connection to be had, so a Postgres that
+went away and came back is recovered from without a restart. The refusal is an
+atomic read on the write path, not a round trip.
 
 ### Consequences
 
@@ -95,6 +97,8 @@ round trip.
 refused at open with the named error, closing the first releases the lease for
 the second, a repository registered after the boot check is leased at its own
 open, and a read-only process needs no lease.
+`internal/engine/writerlease_internal_db_test.go`: a lost lease retries on
+every beat while the database is unreachable and clears once it is back.
 `internal/engine/foreignwriter_db_test.go` keeps the catch-up honest by opting
 out of the lease, which is the only way to reach the condition now.
 

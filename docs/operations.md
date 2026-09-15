@@ -411,8 +411,10 @@ on the pid above ends it.
 **A dropped connection fails closed.** A heartbeat proves the pinned
 connection alive every five seconds; the moment it cannot, the process logs at
 `ERROR` and refuses every write with `503 unavailable` until it has taken back
-every lease it held. It keeps refusing if another process took one meanwhile,
-which is the honest answer: restart it, and run one server.
+every lease it held. Every later beat tries again, so a Postgres that
+restarted is recovered from without restarting the server, and the recovery is
+logged at `WARN`. It keeps refusing while another process holds one of its
+leases, which is the honest answer: stop the other one, and run one server.
 
 **The read-only hat takes no lease.** `repository verify` and `repository
 reembed` open with no changelog writer and no lease on purpose, which is what

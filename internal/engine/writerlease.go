@@ -182,24 +182,46 @@ func (l *writerLease) heartbeat(ctx context.Context) {
 func (l *writerLease) beat(ctx context.Context) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.conn == nil || len(l.held) == 0 {
+	if len(l.held) == 0 {
+		// Nothing is claimed yet, so there is no lease to prove: the first
+		// acquire is what opens the connection.
 		return
 	}
-	if !l.lost.Load() {
-		err := l.conn.PingContext(ctx)
-		if err == nil {
-			return
-		}
-		// A canceled heartbeat is Close, not a lost lease: the release runs
-		// next and must not be preceded by a refusal nothing will clear.
-		if ctx.Err() != nil {
-			return
-		}
-		l.lost.Store(true)
-		l.log.Error("substrate: the writer lease's connection dropped, so this process may no longer be any repository's writer; every write is refused until the lease is retaken",
-			"repositories", len(l.held), "error", err)
+	if !l.lost.Load() && !l.dropped(ctx) {
+		return
 	}
+	// The retake runs whether the lease was lost THIS beat or several beats
+	// ago with no connection to be had. A database that was down comes back,
+	// and nothing but this clears the refusal, so a beat that returned early
+	// because the last retake reached nothing would refuse every write for
+	// the rest of the process's life.
 	l.retake(ctx)
+}
+
+// dropped reports whether the pinned session is gone, and latches the refusal
+// when it is. A session's advisory locks are released only by that session or
+// by its end, so a LIVE pinned session is the lease and nothing else has to be
+// read back. Called with mu held.
+func (l *writerLease) dropped(ctx context.Context) bool {
+	if l.conn == nil {
+		// A claim with no connection behind it: a retake that could not reach
+		// the database left it this way, and the leases went with the session.
+		l.lost.Store(true)
+		return true
+	}
+	err := l.conn.PingContext(ctx)
+	if err == nil {
+		return false
+	}
+	// A canceled heartbeat is Close, not a lost lease: the release runs next
+	// and must not be preceded by a refusal nothing will clear.
+	if ctx.Err() != nil {
+		return false
+	}
+	l.lost.Store(true)
+	l.log.Error("substrate: the writer lease's connection dropped, so this process may no longer be any repository's writer; every write is refused until the lease is retaken",
+		"repositories", len(l.held), "error", err)
+	return true
 }
 
 // retake opens a connection of its own and asks for every lease this process
