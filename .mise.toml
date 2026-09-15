@@ -457,9 +457,14 @@ run = "yamlfmt -lint ."
 # change; this is the one you keep open while you work.
 #
 # Every task below is one subcommand of .mise/dev.sh, which holds the shape of
-# it: the container and its volume, the pid and the log under .dev/, and the
-# environment the server boots with (no invite code and no second factor, the
-# console at / when web/console/dist exists).
+# it: the container, the DATABASE THIS TREE OWNS inside it, the pid and the log
+# under .dev/, and the environment the server boots with (no invite code and no
+# second factor, the console at / when web/console/dist exists).
+#
+# ONE DATABASE PER TREE. The container is shared by every checkout and worktree
+# on the box; the database inside it is named after the tree's own directory,
+# so `dev:wipe` and `dev:stop` reach this tree's substrate and no other.
+# `dev:wipe:all` is the one that removes the container.
 #
 # `dev:wipe` is not a convenience — it is the only way back to a FRESH
 # substrate. Registration is one-shot per user and there is no unregister, so
@@ -485,7 +490,7 @@ depends = ["build"]
 run = ".mise/dev.sh up"
 
 [tasks."dev:stop"]
-description = "Stop the background substrate and its Postgres; keeps the data"
+description = "Stop this tree's background substrate; the shared Postgres and the data stay"
 run = ".mise/dev.sh stop"
 
 [tasks."dev:restart"]
@@ -494,8 +499,15 @@ depends = ["build"]
 run = ".mise/dev.sh restart"
 
 [tasks."dev:wipe"]
-description = "Stop everything and DELETE the database: the next start is a fresh substrate"
+description = "Stop this tree's substrate and DROP its database: the next start is a fresh substrate"
 run = ".mise/dev.sh wipe"
+
+[tasks."dev:wipe:all"]
+# dev:wipe drops one database; this removes the container and its volume, which
+# is EVERY tree's dev database on this box. Separate verbs on purpose: the one
+# typed every day must not be able to delete another worktree's substrate.
+description = "dev:wipe, then remove the shared Postgres container — every tree's dev database"
+run = ".mise/dev.sh wipe-all"
 
 [tasks."dev:reset"]
 description = "dev:wipe then dev:up — a fresh substrate, running"
@@ -503,7 +515,7 @@ depends = ["build"]
 run = [".mise/dev.sh wipe", ".mise/dev.sh up"]
 
 [tasks."dev:status"]
-description = "What is running: the database, the substrate, the console, the URLs"
+description = "What is running: the container, this tree's database, the substrate, the console, the URLs"
 run = ".mise/dev.sh status"
 
 [tasks."dev:logs"]
@@ -511,7 +523,7 @@ description = "Follow the background substrate's log"
 run = ".mise/dev.sh logs"
 
 [tasks."dev:dsn"]
-description = "Print the dev DSN — what the operator hat takes as --dsn"
+description = "Print this tree's dev DSN — what the operator hat takes as --dsn"
 quiet = true
 run = ".mise/dev.sh dsn"
 
