@@ -421,11 +421,14 @@ without restarting the server, and the recovery is logged at `WARN`. It keeps re
 another process holds one of its leases, which is the honest answer: stop the
 other one, and run one server.
 
-**A registration is leased before it is published.** The control-plane row is
-a creation's commit point and the repository directory is written after it, so
-the lease is taken before the seed — earlier than either — and a creation that
-fails hands it back. Without that order a second server could see the new row,
-take the lease, open the repository, and have the failing creation erase it.
+**A repository is leased before it is published.** The control-plane row is
+what another process sees, so the lease is taken before it, on both paths that
+write one: a registration takes it before the seed, and the boot import of a
+restored directory takes it before the row it builds from the manifest. Either
+one that fails hands it back. Without that order a second server could see the
+new row and claim the repository — erasing it under a failing registration, or,
+for an import, writing a directory out of the changelog table the import had
+not filled yet while the restored history sat unimported on disk.
 
 **The read-only hat takes no lease.** `repository verify` and `repository
 reembed` open with no changelog writer and no lease on purpose, which is what

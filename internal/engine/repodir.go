@@ -777,6 +777,26 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 	if err := validRepositoryID(m.Authority); err != nil {
 		return out, fmt.Errorf("the manifest names an authority that cannot be a repository id: %w", err)
 	}
+	// THE WRITER LEASE BEFORE THE ROW, for the reason a creation takes it
+	// before its seed (engine.go createSeededRepository). The insert below
+	// publishes the repository while its changelog TABLE IS STILL EMPTY, so
+	// another server that saw the row could take the lease, find a repository
+	// with no entries and write a directory out of nothing — while this
+	// import aborted at the lease with the restored history still on disk and
+	// unimported. Taken here, before the row and before every check that
+	// refuses one, so nothing can claim a directory being imported.
+	leased, err := s.lease.acquireNew(ctx, m.Authority)
+	// An import that fails releases only the lease IT took. Registered before
+	// the error is read, because acquireNew can report both — a lease taken
+	// on a connection that replaced a dead one.
+	defer func() {
+		if leased {
+			s.lease.release(m.Authority)
+		}
+	}()
+	if err != nil {
+		return out, err
+	}
 	// Both reader requirements are checked here, before the row and before
 	// insertEntries writes anything: a refusal from the fold, with the rows
 	// already committed, is the outage the manifest exists to prevent.
@@ -838,7 +858,14 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 	if err := s.stampDialectsFromManifest(ctx, repo, m); err != nil {
 		return out, err
 	}
-	return s.reconcileRow(ctx, repo, true)
+	out, err = s.reconcileRow(ctx, repo, true)
+	if err != nil {
+		return out, err
+	}
+	// The repository exists and its history is in, so the lease is this
+	// process's to keep.
+	leased = false
+	return out, nil
 }
 
 // stampDialectsFromManifest stamps the imported repository with the dialects

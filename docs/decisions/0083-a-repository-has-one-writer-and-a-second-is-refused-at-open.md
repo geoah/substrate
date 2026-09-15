@@ -82,13 +82,18 @@ lease was lost on that beat or several beats earlier with no connection to be
 had, so a Postgres that went away and came back is recovered from without a
 restart. The refusal is an atomic read on the write path, not a round trip.
 
-The lease is also taken EARLIER THAN THE REPOSITORY EXISTS. A creation writes
-the repository's own rows first and the control-plane row last, and the
-directory after that; a lease taken at the directory step would leave a window
-in which another process sees the row, takes the lease and opens the
-repository, and the failing creation's erase would delete what that process is
-serving. So a creation takes the lease before it seeds anything and releases
-it only if it fails.
+The lease is also taken EARLIER THAN THE REPOSITORY EXISTS, on both paths that
+publish one. A creation writes the repository's own rows first and the
+control-plane row last, and the directory after that; a lease taken at the
+directory step would leave a window in which another process sees the row,
+takes the lease and opens the repository, and the failing creation's erase
+would delete what that process is serving. The boot import of a restored
+directory has the mirror of it: the row it builds from the manifest is
+published while the changelog table is still empty, so a process that claimed
+it would write a directory out of nothing while the restored history sat
+unimported. So both take the lease before they write anything, and release it
+only if they fail. Those are the only two statements in the engine that insert
+a `repositories` row.
 
 ### Consequences
 
@@ -125,6 +130,9 @@ that died while the lease held nothing is replaced at the next acquisition.
 lease before its control-plane row exists, a second process cannot claim a
 repository mid-creation, a creation that fails hands the lease back, and one
 that met a dying lease leaves registration working for the next.
+`internal/engine/writerleaseimport_db_test.go`: an import refused by the lease
+publishes no row at all, the same directory imports whole once the lease is
+free, and a failed import hands the key back.
 `internal/engine/foreignwriter_db_test.go` keeps the catch-up honest by opting
 out of the lease, which is the only way to reach the condition now.
 
