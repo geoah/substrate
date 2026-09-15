@@ -442,8 +442,11 @@ func TestAWriteThatOutlivesItsLeaseIsRefusedBeforeItCommits(t *testing.T) {
 		t.Fatalf("the changelog head moved %d -> %d (err %v)", head, got, err)
 	}
 	var n int
+	// `records` is the rows themselves, so its columns are `kind`/`id`; the
+	// `record_kind`/`record_id` pair is how every OTHER table points at one.
+	// Tombstones stay as rows, so live ones are the count.
 	if err := ds.db.QueryRowContext(ctx,
-		`SELECT count(*) FROM records WHERE record_kind = $1`, raceWidget).Scan(&n); err != nil {
+		`SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL`, raceWidget).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 1 {
