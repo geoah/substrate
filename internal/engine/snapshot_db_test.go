@@ -391,7 +391,7 @@ func TestSnapshotRefusesTheLockAndADamagedRepository(t *testing.T) {
 	digest := putBlob(t, ds, []byte("bytes the snapshot needs"))
 	id := repositoryIDOf(t, ds)
 	root := engine.DataRootOf(svc)
-	second, err := reopen(t, dsn, root)
+	second, err := reopenBeside(t, dsn, root)
 	if err != nil {
 		t.Fatalf("a second process could not boot beside the server: %v", err)
 	}

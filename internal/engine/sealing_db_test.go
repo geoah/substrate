@@ -684,7 +684,7 @@ func TestRotateHistoryGenerationRefusesWhileTheServerHoldsTheLock(t *testing.T) 
 	t.Parallel()
 	ctx := context.Background()
 	svc, _, dsn := newDatasetWithDSN(t)
-	second, err := reopen(t, dsn, engine.DataRootOf(svc))
+	second, err := reopenBeside(t, dsn, engine.DataRootOf(svc))
 	if err != nil {
 		t.Fatalf("a second process could not boot beside the server: %v", err)
 	}

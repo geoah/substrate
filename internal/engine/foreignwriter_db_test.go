@@ -18,6 +18,11 @@ import (
 // wrote (#539). The write now appends the other's rows first and lands its
 // own behind them, the directory verifies at the table's head, and the other
 // server's directory catches up the same way at its next write.
+//
+// The writer lease refuses this arrangement at open now (decision 0083), so
+// the second process here takes none: the repair below is what still stands
+// behind a lease a restart or a dropped connection let slip, and it must keep
+// working.
 func TestAWriteAppendsTheRowsAnotherProcessCommitted(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -26,7 +31,8 @@ func TestAWriteAppendsTheRowsAnotherProcessCommitted(t *testing.T) {
 	dir := repoDirOf(t, svc, ds)
 
 	other, err := engine.OpenForTest(t, ctx, dsn, engine.WithKindsDir(engine.SeedKindsDir),
-		engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey))
+		engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+		engine.WithTestSkipWriterLease())
 	if err != nil {
 		t.Fatalf("a second process on the same database: %v", err)
 	}

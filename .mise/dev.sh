@@ -9,11 +9,14 @@
 # while you work — the server restarts in a second because it is a binary from
 # the tree, not an image.
 #
-# All of its state is disposable and lives in two places: the container plus
-# its volume, and .dev/ (the pid, the log, the credential key and the data
-# root). `wipe` removes both, which is the only way to get a FRESH substrate:
-# registration is one-shot per user and there is no unregister, and a data
-# root that outlives its database is imported at the next boot.
+# All of its state is disposable and lives in two places: a DATABASE OF THIS
+# TREE'S OWN inside the shared container, and .dev/ (the pid, the log, the
+# credential key and the data root). `wipe` removes both, which is the only way
+# to get a FRESH substrate: registration is one-shot per user and there is no
+# unregister, and a data root that outlives its database is imported at the
+# next boot. The container and its volume outlive a wipe, because every other
+# checkout and worktree on this box keeps a database in them; `wipe-all`
+# (`mise run dev:wipe:all`) is the one that takes those too.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -25,7 +28,36 @@ readonly VOLUME="${CONTAINER}-data"
 # 5433, not 5432: a Postgres already installed on the box keeps its own port.
 readonly DB_PORT="${SUBSTRATE_DEV_DB_PORT:-5433}"
 readonly PORT="${SUBSTRATE_DEV_PORT:-8080}"
-readonly DSN="postgres://postgres:postgres@127.0.0.1:${DB_PORT}/substrate?sslmode=disable"
+# The database the container bootstraps with, and the only one this script
+# connects to as an administrator: the per-tree databases are created and
+# dropped from it, so `wipe` never has to drop the database it is speaking to.
+readonly BOOTSTRAP_DB="substrate"
+# ONE DATABASE PER TREE, inside the one container. Every checkout and worktree
+# on a box used to share a single `substrate` database while each kept a data
+# root of its own — three servers, three boot upgrades, three trigger
+# dispatchers over one set of repositories, which is how #539 happened. The
+# name is derived from the TREE ROOT'S BASENAME and is readable on purpose
+# (`substrate_substrate` for a checkout at src/substrate, `substrate_issue_554`
+# for a worktree named issue-554), so `psql -l` says which tree owns what and
+# an operator hat never has to guess. TWO TREES WITH THE SAME BASENAME SHARE A
+# DATABASE: name worktrees distinctly, or set SUBSTRATE_DEV_DB_NAME. Every
+# start and `dev:status` print the name so the collision is visible.
+dev_db_name() {
+	local base
+	base="$(basename "$(pwd)")"
+	# Lowercase and fold everything outside the identifier alphabet: an
+	# unquoted mixed-case or hyphenated name is not the name Postgres stores.
+	# printf, not echo, so tr never sees the trailing newline and turns it
+	# into an underscore.
+	base="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_' '_')"
+	# 63 bytes is Postgres's identifier limit and it TRUNCATES SILENTLY past
+	# it, which would make two long-named trees one database without saying
+	# so. Cut here instead, where the name is still printed.
+	printf 'substrate_%.53s\n' "$base"
+}
+DB_NAME="${SUBSTRATE_DEV_DB_NAME:-$(dev_db_name)}"
+readonly DB_NAME
+readonly DSN="postgres://postgres:postgres@127.0.0.1:${DB_PORT}/${DB_NAME}?sslmode=disable"
 readonly STATE=".dev"
 readonly PIDFILE="${STATE}/substrate.pid"
 readonly LOGFILE="${STATE}/substrate.log"
@@ -87,7 +119,10 @@ db_state() {
 	echo "${status:-absent}"
 }
 
-db_up() {
+# db_start brings the SHARED container up and waits for its socket. It is
+# shared by every tree on the box, so nothing here stops it, recreates it or
+# touches its volume: only `wipe-all` does.
+db_start() {
 	case "$(db_state)" in
 	running) ;;
 	# A dev database is thrown away with `dev:wipe`, so it flushes nothing:
@@ -98,7 +133,7 @@ db_up() {
 		docker run -d \
 			--name "$CONTAINER" \
 			-e POSTGRES_PASSWORD=postgres \
-			-e POSTGRES_DB=substrate \
+			-e "POSTGRES_DB=${BOOTSTRAP_DB}" \
 			-v "${VOLUME}:/var/lib/postgresql/data" \
 			-p "127.0.0.1:${DB_PORT}:5432" \
 			"$PG_IMAGE" \
@@ -113,7 +148,7 @@ db_up() {
 	# The server's first act is a migration, so waiting here is what keeps a
 	# start from racing an empty socket.
 	for _ in $(seq 1 60); do
-		if docker exec "$CONTAINER" pg_isready -U postgres -d substrate >/dev/null 2>&1; then
+		if docker exec "$CONTAINER" pg_isready -U postgres -d "$BOOTSTRAP_DB" >/dev/null 2>&1; then
 			return 0
 		fi
 		sleep 1
@@ -122,19 +157,89 @@ db_up() {
 	return 1
 }
 
-db_stop() {
-	if [ "$(db_state)" = "running" ]; then
-		docker stop "$CONTAINER" >/dev/null
-		echo "dev: postgres stopped"
+# db_exists answers from the catalog rather than by connecting to the database
+# itself: a connection attempt cannot tell "no such database" from "not ready
+# yet", and one of those is a create and the other is a wait. It has THREE
+# answers, not two: 0 present, 1 absent, 2 the probe itself failed (Postgres
+# out of connections, restarting after pg_isready). A caller that read a
+# failed probe as "absent" would drop nothing and still throw the data root
+# and the credential key away, so the failure is its own exit code.
+db_exists() {
+	local out
+	if ! out="$(docker exec "$CONTAINER" psql -U postgres -d "$BOOTSTRAP_DB" -tAc \
+		"SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}'" 2>/dev/null)"; then
+		return 2
 	fi
+	[ "$out" = "1" ]
 }
 
-db_wipe() {
+# db_ensure creates THIS TREE'S database on first use. The container ships one
+# database of its own (BOOTSTRAP_DB) and no tree uses it: it is only the
+# administrative door the create and the drop are issued through.
+db_ensure() {
+	if db_exists; then
+		return 0
+	fi
+	docker exec "$CONTAINER" createdb -U postgres "$DB_NAME"
+	echo "dev: database ${DB_NAME} created (one per tree, named after this directory)"
+}
+
+db_up() {
+	db_start
+	db_ensure
+}
+
+# db_drop drops THIS TREE'S database and nothing else: the container, its
+# volume and every other tree's database survive, because they are not this
+# tree's to throw away.
+db_drop() {
+	# A CONTAINER THAT IS GONE DOES NOT MEAN THE DATABASE IS. `docker rm`
+	# without -v leaves the named volume behind, and the volume is where the
+	# database lives; the container is just a process in front of it. Reading
+	# an absent container as "nothing to drop" would delete this tree's data
+	# root and its credential key and leave its database sitting in the
+	# volume, so the next start would reattach it under a freshly minted key
+	# and every repository in it would refuse to open — the shape a lost keys
+	# volume has, from a command whose whole job was to leave nothing behind.
+	# So only NEITHER of them is absent.
+	if [ "$(db_state)" = "absent" ] && ! docker volume inspect "$VOLUME" >/dev/null 2>&1; then
+		echo "dev: no ${CONTAINER} container and no ${VOLUME} volume, so there is no ${DB_NAME} to drop"
+		return 0
+	fi
+	if [ "$(db_state)" = "absent" ]; then
+		echo "dev: ${CONTAINER} is gone but volume ${VOLUME} is not, so ${DB_NAME} may still be in it; starting the container to drop it"
+	fi
+	db_start
+	local probe=0
+	db_exists || probe=$?
+	case "$probe" in
+	0) ;;
+	1)
+		echo "dev: database ${DB_NAME} was already gone"
+		return 0
+		;;
+	*)
+		echo "dev: could not ask ${CONTAINER} whether ${DB_NAME} exists; nothing was wiped" >&2
+		return 1
+		;;
+	esac
+	# A backend still on the database refuses the drop, and after the healthz
+	# guard above the only ones left are connections a dead server never
+	# closed. Terminating them is what makes the wipe idempotent.
+	docker exec "$CONTAINER" psql -U postgres -d "$BOOTSTRAP_DB" -tAc \
+		"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${DB_NAME}'" >/dev/null
+	docker exec "$CONTAINER" dropdb -U postgres --if-exists "$DB_NAME"
+	echo "dev: database ${DB_NAME} dropped (${CONTAINER} and every other tree's database are untouched)"
+}
+
+# db_nuke removes the shared container and its volume — EVERY TREE'S DATABASE
+# ON THIS BOX, not just this one's. Only `wipe-all` calls it.
+db_nuke() {
 	if [ "$(db_state)" != "absent" ]; then
 		docker rm -f "$CONTAINER" >/dev/null
 	fi
 	docker volume rm "$VOLUME" >/dev/null 2>&1 || true
-	echo "dev: database removed (${CONTAINER}, volume ${VOLUME})"
+	echo "dev: container removed (${CONTAINER}, volume ${VOLUME}) — every tree's dev database went with it"
 }
 
 # ---------------------------------------------------------------------------
@@ -147,12 +252,19 @@ db_wipe() {
 # The command name is checked, not just the pid. A pid is not an identity —
 # the kernel reuses numbers — so a pidfile that outlived a crash would aim
 # `dev:stop` at whatever inherited that number. Only our own binary answers.
+#
+# The BASENAME of what ps prints, because the two platforms print different
+# things: Linux gives the short command name (`substrate`) and macOS gives the
+# path the server was started with (`bin/substrate`). Comparing the whole
+# string matched neither reliably, so every `dev:status` said "stopped" and
+# `dev:stop` stopped nothing on a Mac.
 server_pid() {
 	[ -f "$PIDFILE" ] || return 1
-	local pid
-	pid="$(cat "$PIDFILE")"
+	local pid comm
+	pid="$(cat "$PIDFILE" 2>/dev/null || true)"
 	[ -n "$pid" ] || return 1
-	[ "$(ps -p "$pid" -o comm= 2>/dev/null)" = "substrate" ] || return 1
+	comm="$(ps -p "$pid" -o comm= 2>/dev/null || true)"
+	[ "${comm##*/}" = "substrate" ] || return 1
 	echo "$pid"
 }
 
@@ -171,6 +283,14 @@ wait_healthy() {
 		sleep 0.5
 	done
 	return 1
+}
+
+# db_note names this tree's database every time the substrate starts. The name
+# is derived from the directory, so two worktrees with the same basename would
+# otherwise share one database silently; printing it is the whole collision
+# check.
+db_note() {
+	echo "  database: ${DB_NAME} (this tree's own, in ${CONTAINER})"
 }
 
 # totp_note says which door this substrate is running, every time it starts:
@@ -223,7 +343,7 @@ server_start() {
 	# (another checkout's, usually). Starting would die on bind while the
 	# health poll blesses the squatter, so refuse while the port can be moved.
 	if curl -fsS "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1; then
-		echo "dev: something else answers on :${PORT} and it is not this tree's server; stop it or set SUBSTRATE_DEV_PORT" >&2
+		echo "dev: something else answers on :${PORT} and it is not this tree's server — another tree's dev server? stop it or set SUBSTRATE_DEV_PORT" >&2
 		return 1
 	fi
 	mkdir -p "$STATE"
@@ -257,6 +377,7 @@ server_start() {
 		return 1
 	fi
 	echo "dev: substrate up (pid $(cat "$PIDFILE")), $(invite_words)"
+	db_note
 	totp_note
 	urls
 	[ -d "$WEB_DIR" ] || echo "  (no console: mise run console:build, then mise run dev:restart)"
@@ -290,6 +411,7 @@ cmd_run() {
 	fi
 	db_up
 	echo "dev: substrate on :${PORT}, $(invite_words) (ctrl-c to stop)"
+	db_note
 	totp_note
 	urls
 	local web=()
@@ -323,9 +445,12 @@ cmd_totp() {
 	cmd_run
 }
 
+# cmd_stop stops THIS TREE'S SERVER AND NOTHING ELSE. The container is shared
+# by every checkout and worktree on the box, so stopping it here would take
+# somebody else's substrate down with this one; `wipe-all` is the only path
+# that touches it.
 cmd_stop() {
 	server_stop
-	db_stop
 }
 
 cmd_restart() {
@@ -343,17 +468,34 @@ cmd_wipe() {
 		echo "dev: something is still serving :${PORT} — a foreground \`mise run dev\`? stop it first; the database is untouched" >&2
 		return 1
 	fi
-	db_wipe
+	db_drop
 	# The data root goes with the database: a repository directory left behind
 	# would be imported into the fresh database at the next boot, and the
 	# substrate would not be fresh.
 	rm -rf "$DATA_ROOT"
 	rm -rf "$STATE"
-	echo "dev: wiped (database and ${DATA_ROOT}); the next start is a fresh substrate with no users"
+	echo "dev: wiped (${DB_NAME} and ${DATA_ROOT}); the next start is a fresh substrate with no users"
+}
+
+# cmd_wipe_all is `wipe` plus the SHARED CONTAINER: every tree's dev database
+# on this box, not only this one's. It is the way to reclaim the volume, and
+# the reason it is a separate verb is that `dev:wipe` is typed many times a day
+# and must never be able to delete another worktree's substrate.
+cmd_wipe_all() {
+	cmd_wipe
+	db_nuke
 }
 
 cmd_status() {
-	echo "database:  $(db_state)  (${DSN})"
+	# The container's state and THIS TREE'S database, separately: the first is
+	# shared with every other checkout on the box and the second is not, and a
+	# running container with no database of this tree's is an ordinary
+	# post-wipe state, not a fault.
+	local own="absent"
+	[ "$(db_state)" = "running" ] && db_exists && own="present"
+	echo "container: $(db_state)  (${CONTAINER} on 127.0.0.1:${DB_PORT}, shared by every tree)"
+	echo "database:  ${own}  (${DB_NAME} — this tree's own; two trees with the same directory name would share it, so set SUBSTRATE_DEV_DB_NAME)"
+	echo "dsn:       ${DSN}"
 	if server_pid >/dev/null; then
 		local health="unhealthy"
 		curl -fsS "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1 && health="healthy"
@@ -403,8 +545,14 @@ run | totp | up | stop | restart | wipe | status | logs | dsn)
 	shift
 	"cmd_${verb}" "$@"
 	;;
+# A hyphen, not the task's colon: a function name is what the dispatch above
+# builds, and `cmd_wipe:all` is not one.
+wipe-all)
+	shift
+	cmd_wipe_all "$@"
+	;;
 *)
-	echo "usage: .mise/dev.sh {run|totp|up|stop|restart|wipe|status|logs|dsn}" >&2
+	echo "usage: .mise/dev.sh {run|totp|up|stop|restart|wipe|wipe-all|status|logs|dsn}" >&2
 	exit 2
 	;;
 esac

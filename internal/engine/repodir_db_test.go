@@ -54,6 +54,24 @@ func reopen(t *testing.T, dsn, root string) (substrate.Service, error) {
 	return svc, err
 }
 
+// reopenBeside opens a second WRITER over a live server's database and data
+// root — the arrangement the writer lease refuses at open (decision 0083), so
+// it takes none. It is for the tests of the OTHER exclusion, the per-directory
+// flock: two writers on one data root, which is what a verb like rebuild or
+// snapshot meets, and which must keep refusing on its own.
+func reopenBeside(t *testing.T, dsn, root string) (substrate.Service, error) {
+	t.Helper()
+	svc, err := engine.OpenForTest(t, context.Background(), dsn,
+		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithDataRoot(root),
+		engine.WithCredentialKey(engine.TestCredentialKey),
+		engine.WithTestSkipWriterLease())
+	if err == nil {
+		t.Cleanup(func() { _ = svc.Close() })
+	}
+	return svc, err
+}
+
 func mustReopen(t *testing.T, dsn, root string) substrate.Service {
 	t.Helper()
 	svc, err := reopen(t, dsn, root)
@@ -903,7 +921,7 @@ func TestASecondProcessRefusesRebuildWhileTheServerHoldsTheLock(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	second, err := reopen(t, dsn, root)
+	second, err := reopenBeside(t, dsn, root)
 	if err != nil {
 		t.Fatalf("a second process could not boot beside the server: %v", err)
 	}

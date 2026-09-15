@@ -101,6 +101,22 @@ func WithTestCommitFault(fn func(stage string) error) Option {
 	return func(o *options) { o.commitFault = fn }
 }
 
+// WithTestSkipWriterLease opens the service WITHOUT the per-repository writer
+// lease, so a test can be a repository's SECOND writer on purpose — the
+// condition decision 0083 refuses at open and catchUpBeforePrepare still
+// repairs when it arises anyway. Two tests need it: the one that proves the
+// cross-writer catch-up, and the ones that prove the same-data-root flock,
+// which the lease would otherwise refuse one layer earlier. A server has no
+// such option.
+func WithTestSkipWriterLease() Option {
+	return func(o *options) { o.skipWriterLease = true }
+}
+
+// WriterLeaseKeySQL is the lease's advisory-lock key expression, for a test
+// that takes or probes a lease from a session of its own. It is the expression
+// docs/operations.md publishes for reading `pg_locks`.
+const WriterLeaseKeySQL = writerLeaseKeySQL
+
 // The commit stages WithTestCommitFault reports, in the order they run.
 const (
 	CommitBeforeManifest = commitBeforeManifest

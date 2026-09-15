@@ -150,9 +150,12 @@ func (a *app) openEngineWithKey(ctx context.Context, credKey string, readOnly bo
 
 // lockHint says what a writer-lock refusal means to the person at the
 // terminal: the server is running, and this command needs it stopped, while
-// the read-only commands do not.
+// the read-only commands do not. Two refusals say it — the data root's flock
+// (changelogfile.ErrLocked) and the database's writer lease
+// (engine.ErrRepositoryHasAnotherWriter), which is the one a command run
+// against a data root of its own meets.
 func lockHint(err error) error {
-	if err == nil || !errors.Is(err, changelogfile.ErrLocked) {
+	if err == nil || !(errors.Is(err, changelogfile.ErrLocked) || errors.Is(err, engine.ErrRepositoryHasAnotherWriter)) {
 		return err
 	}
 	return fmt.Errorf("%w\n(a server is running against this data root: `repository inspect` and `repository verify` run beside it; `repository rebuild`, `repository rotate-generation`, `repository snapshot`, `repository rewrap` and `user reset` need it stopped first)", err)

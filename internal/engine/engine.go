@@ -67,6 +67,11 @@ type options struct {
 	// dirReadOnly opens the service beside a running server
 	// (WithDirectoryReadOnly): no boot check, no writer, no write.
 	dirReadOnly bool
+	// skipWriterLease opens without the per-repository writer lease
+	// (export_test.go WithTestSkipWriterLease), so a test can be a second
+	// writer on purpose. TESTS ONLY: a server has no such option, because
+	// being the second writer is the thing decision 0083 refuses.
+	skipWriterLease bool
 	// seedLLMSample imports the shipped LLM sample at repository creation.
 	// Default true; OpenForTest sets false so the suite does not pay a
 	// vocabulary apply on every repository.
@@ -269,7 +274,11 @@ type service struct {
 	// readOnly is WithDirectoryReadOnly: this process is not the repository
 	// directories' writer and must not become one (repodir.go).
 	readOnly bool
-	log      *slog.Logger
+	// lease is this process's claim on the repositories it writes
+	// (writerlease.go). Nil on a read-only service, which claims nothing,
+	// and on the test seam that opens a second writer on purpose.
+	lease *writerLease
+	log   *slog.Logger
 	// seedLLMSample imports the shipped LLM sample at repository creation.
 	seedLLMSample bool
 	// seedLLMProviders writes the three keyless vendor rows at creation
@@ -482,7 +491,10 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		_ = admin.Close()
 		return nil, fmt.Errorf("substrate/engine: open the maintenance pool: %w", err)
 	}
-	maint.SetMaxOpenConns(4)
+	// Four for the work, plus one the writer lease pins for the life of the
+	// process (writerlease.go): a cap of four would leave three for a
+	// registration that already holds one of them itself.
+	maint.SetMaxOpenConns(5)
 	s.maint = maint
 	// Role EXISTENCE with the right attributes is one thing; that the pools
 	// ACTUALLY assume them at runtime — and that the DSN user is not itself a
@@ -535,6 +547,14 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		_ = admin.Close()
 		return nil, err
 	}
+	// The writer lease, before the boot check and so before anything is
+	// written: one process writes a repository, and the second refuses to
+	// open it rather than append to a directory of its own
+	// (writerlease.go, decision 0083). A read-only process takes none — it
+	// exists precisely to run beside the writer.
+	if !s.readOnly && !o.skipWriterLease {
+		s.lease = newWriterLease(maint, s.log)
+	}
 	// Every repository's directory against its rows, before anything is
 	// served (repodir.go): a crash left the file a transaction behind, a
 	// restore left a directory with no row, or a wiped data root left a row
@@ -543,6 +563,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	// that owns the directories runs it at its own boot.
 	if !s.readOnly {
 		if err := s.reconcileRepositories(ctx); err != nil {
+			s.lease.close()
 			_ = maint.Close()
 			_ = admin.Close()
 			return nil, err
@@ -622,6 +643,13 @@ func (s *service) Close() error {
 		runner.Shared.Reconcile(context.Background(), ds.Repository().ID, nil)
 		ds.close()
 	}
+	// Emptied, so a second Close does not close one dataset twice: a test
+	// that closes early and a cleanup that closes again are one process
+	// releasing its leases once.
+	s.datasets = map[string]*dataset{}
+	// The leases before the pool that carries them: the release is a
+	// statement on the pinned connection, and a closed pool cannot run one.
+	s.lease.close()
 	err := s.maint.Close()
 	if cerr := s.admin.Close(); err == nil {
 		err = cerr
@@ -722,6 +750,15 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		reg:   vocabulary.NewRegistry(),
 		watch: newBroadcaster(),
 		info:  repo.info(),
+	}
+	// The lease before the directory: the open ladder appends (the dialect
+	// stamps, the shipped-vocabulary upgrade), so a process that is not this
+	// repository's writer must be refused before the first of them and not
+	// discover it at the append. The boot check took the lease on every
+	// repository that had a row then; this covers the ones registered since.
+	if err := s.lease.acquire(ctx, repo.ID); err != nil {
+		ds.close()
+		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
 	}
 	// The directory before every step that writes: the writer opens at the
 	// file's head, which must be the table's, or the ladder's first append
@@ -869,6 +906,29 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	} else if !errors.Is(err, substrate.ErrNotFound) {
 		return zero, err
 	}
+	// THE WRITER LEASE BEFORE THE SEED, and so before the control-plane row.
+	// That row is the creation's commit point and the directory is written
+	// after it, so a lease taken only at the directory step leaves a window
+	// in which ANOTHER process sees the row, takes the lease and opens the
+	// repository — and this creation's failure would then erase the
+	// repository that process is already serving. Taken here, an
+	// in-progress registration cannot be claimed by anybody, and
+	// reconcileRow's own ask below finds it held by this process.
+	leased, err := s.lease.acquireNew(ctx, authority)
+	// A creation that fails releases only the lease IT took: this process is
+	// not the writer of a repository that does not exist. acquireNew reports
+	// false for one this process already held, which is never this
+	// creation's to hand back. Registered BEFORE the error is read, because
+	// acquireNew can report both — a lease taken on a connection that
+	// replaced a dead one, whose predecessor's leases are not back yet.
+	defer func() {
+		if leased {
+			s.lease.release(authority)
+		}
+	}()
+	if err != nil {
+		return zero, err
+	}
 	repo := Repository{ID: authority, Authority: authority}
 	// The DEK is born with the repository: the seed transaction below already
 	// writes sealed material (the credential, at registration), and it seals
@@ -966,6 +1026,8 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	if _, err := s.reconcileRow(ctx, repo, false); err != nil {
 		return fail("directory", fmt.Errorf("substrate/engine: write the repository directory of %s: %w", authority, err))
 	}
+	// The repository exists, so the lease is this process's to keep.
+	leased = false
 	return repo, nil
 }
 

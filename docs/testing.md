@@ -155,7 +155,7 @@ settings through `ALTER SYSTEM`. The one test that starts a container of its
 own (`TestOpenFailsClosedWithoutSafeRoles`) passes `testdb.DurabilityOff()`,
 and a dev database `mise run dev` creates carries the flags on its command
 line (a container created without them keeps the image's defaults until
-`dev:wipe` recreates it).
+`dev:wipe:all` recreates it).
 
 **The data roots on tmpfs.** Every changelog write fsyncs
 ([0062](decisions/0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md)),
