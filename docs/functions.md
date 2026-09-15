@@ -754,9 +754,13 @@ dispatched delivery writes a `substrate.reamde.dev/core/triggerrun` row under th
 `substrate` actor, in the transaction that commits its effects and its cursor
 or fire-state motion: the trigger, the callable, the mode, the seq or fire id,
 the status (`ok`, `skipped` or `parked`), the attempt count and the
-applied-effects summary. Parked runs are kept; the newest twenty non-parked
-runs per trigger stay and older ones tombstone. The direct invocations — a
-manual run, a parked retry, a host call, the call API — mint nothing.
+applied-effects summary. The callable lands twice from the one value —
+`callableRef`, a reference at the function or agent record, which is what
+`filter.referencing` follows to read every run of one callable, and
+`callable`, the deprecated bare id of that record. Parked runs are kept; the
+newest twenty non-parked runs per trigger stay and older ones tombstone. The
+direct invocations — a manual run, a parked retry, a host call, the call API —
+mint nothing.
 
 `substratectl function call <name> --input <json>` invokes one function directly,
 applies its effects under the function's actor, and prints the effect count

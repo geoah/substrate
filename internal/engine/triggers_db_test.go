@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
+	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -187,6 +188,41 @@ func countLiveOf(t *testing.T, ds *dataset, typeIdent string) int {
 		t.Fatal(err)
 	}
 	return n
+}
+
+// A run's `callableRef` declares no `mustExist`, and this is why: the audit
+// row is written after the attempt settled, so a callable uninstalled between
+// the fire and the settle must not fail the write that records what happened.
+// Straight at putRun, because the dispatcher refuses to run a callable it
+// cannot resolve and so cannot reach this state on its own.
+func TestARunSettlesWithItsCallableUninstalled(t *testing.T) {
+	t.Parallel()
+	ds := openCursorDataset(t)
+	ctx := context.Background()
+	const pkg = "widgets.test.dev/widgets"
+	gone := pkg + "/uninstalled"
+	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
+		return tx.putRun(runRecord{
+			trigger:   "on-mirror." + pkg,
+			callable:  vocabulary.RecordPath(kindFunction, gone),
+			mode:      runner.ModeRecord,
+			status:    runStatusOK,
+			attempt:   1,
+			startedAt: time.Now().UTC(),
+		})
+	}); err != nil {
+		t.Fatalf("a run naming an uninstalled callable was refused: %v", err)
+	}
+	var id, callable string
+	if err := ds.db.QueryRowContext(ctx, `
+		SELECT id, props->>'callable' FROM records
+		WHERE kind = $1 AND `+referencePathSQL("props", "callableRef")+` = $2 AND deleted_at IS NULL`,
+		typeTriggerRun, vocabulary.RecordPath(kindFunction, gone)).Scan(&id, &callable); err != nil {
+		t.Fatalf("the run row naming the uninstalled callable: %v", err)
+	}
+	if callable != gone {
+		t.Fatalf("callable %q, want %q: the two spellings are one value", callable, gone)
+	}
 }
 
 func TestCallAtDepthCapRefuses(t *testing.T) {

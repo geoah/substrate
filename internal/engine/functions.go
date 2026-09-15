@@ -575,7 +575,7 @@ func (ds *dataset) dispatchSettlement(tr *trigger, ch substrate.Change, from int
 	}
 	s.record = func(t *txn, res deliverResult) error {
 		return t.putSystemRun(runRecord{
-			trigger: tr.ID, callable: tr.CallableID, mode: runner.ModeRecord,
+			trigger: tr.ID, callable: tr.callablePath(), mode: runner.ModeRecord,
 			seq: ch.Seq, recordID: ch.RecordID, status: runStatusOK,
 			attempt: s.attempt, startedAt: started, effects: res.effects, pages: res.pages,
 		}, true)
@@ -753,7 +753,7 @@ func (ds *dataset) parkAndAdvance(ctx context.Context, tr *trigger, ch substrate
 			}
 		}
 		return t.putRun(runRecord{
-			trigger: tr.ID, callable: tr.CallableID, mode: runner.ModeRecord,
+			trigger: tr.ID, callable: tr.callablePath(), mode: runner.ModeRecord,
 			seq: ch.Seq, recordID: ch.RecordID, status: runStatusParked,
 			attempt: attempts, startedAt: started, errMsg: cause.Error(),
 		})
@@ -777,7 +777,7 @@ func (ds *dataset) recordSkipAndAdvance(ctx context.Context, tr *trigger, ch sub
 			return err
 		}
 		if err := t.putRun(runRecord{
-			trigger: tr.ID, callable: tr.CallableID, mode: runner.ModeRecord,
+			trigger: tr.ID, callable: tr.callablePath(), mode: runner.ModeRecord,
 			seq: ch.Seq, recordID: ch.RecordID, status: runStatusSkipped,
 			attempt: 1, startedAt: started, errMsg: reason,
 		}); err != nil {
@@ -822,7 +822,7 @@ func (ds *dataset) fireSettlement(tr *trigger, mode, fid string, at time.Time, l
 	s := &settlement{ds: ds, trigger: tr.ID, fireID: fid}
 	s.record = func(t *txn, res deliverResult) error {
 		return t.putSystemRun(runRecord{
-			trigger: tr.ID, callable: tr.CallableID, mode: mode,
+			trigger: tr.ID, callable: tr.callablePath(), mode: mode,
 			fireID: fid, status: runStatusOK, attempt: s.attempt,
 			startedAt: started, effects: res.effects, pages: res.pages,
 		}, true)
@@ -890,7 +890,7 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 					return err
 				}
 				return t.putRun(runRecord{
-					trigger: tr.ID, callable: tr.CallableID, mode: mode, fireID: fid,
+					trigger: tr.ID, callable: tr.callablePath(), mode: mode, fireID: fid,
 					status: runStatusSkipped, attempt: 1, startedAt: started, errMsg: err.Error(),
 				})
 			})
@@ -977,7 +977,7 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 			}
 		}
 		return t.putRun(runRecord{
-			trigger: tr.ID, callable: tr.CallableID, mode: mode,
+			trigger: tr.ID, callable: tr.callablePath(), mode: mode,
 			fireID: fid, status: runStatusParked, attempt: attempts,
 			startedAt: started, errMsg: lastErr.Error(),
 		})
@@ -1106,7 +1106,9 @@ const (
 
 // runRecord is one settled delivery attempt, about to become a run record.
 type runRecord struct {
-	trigger   string
+	trigger string
+	// callable is the callable's RECORD path, not its id: the run stores it
+	// twice (putRun says why) and one field is what keeps the two agreeing.
 	callable  string
 	mode      string
 	seq       int64
@@ -1126,14 +1128,24 @@ func (t *txn) putRun(r runRecord) error {
 	if err != nil {
 		return err
 	}
+	// The callable lands twice from the one path: `callableRef`, the reference
+	// a `referencing` read follows to every run of one callable, and
+	// `callable`, the deprecated bare id every reader has always seen. The
+	// reference declares no `mustExist` on purpose — a callable uninstalled
+	// between the fire and the settle must not fail this audit row's write.
+	_, callableID, ok := vocabulary.SplitRecordPath(r.callable)
+	if !ok {
+		return fmt.Errorf("run callable %q is not a record path", r.callable)
+	}
 	props := map[string]any{
-		"trigger":    vocabulary.RecordPath(typeTrigger, r.trigger),
-		"callable":   r.callable,
-		"mode":       r.mode,
-		"status":     r.status,
-		"attempt":    r.attempt,
-		"startedAt":  r.startedAt.Format(time.RFC3339Nano),
-		"finishedAt": t.now.Format(time.RFC3339Nano),
+		"trigger":     vocabulary.RecordPath(typeTrigger, r.trigger),
+		"callable":    callableID,
+		"callableRef": r.callable,
+		"mode":        r.mode,
+		"status":      r.status,
+		"attempt":     r.attempt,
+		"startedAt":   r.startedAt.Format(time.RFC3339Nano),
+		"finishedAt":  t.now.Format(time.RFC3339Nano),
 	}
 	if r.seq > 0 {
 		props["seq"] = r.seq

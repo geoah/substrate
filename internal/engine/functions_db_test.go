@@ -333,6 +333,49 @@ func runRowsOf(t *testing.T, ds substrate.Dataset, triggerID, status string) []*
 	return page.Records
 }
 
+// A run names its callable twice, and the two are one value written twice:
+// `callable`, the deprecated bare id, and `callableRef`, the reference a
+// `referencing` read follows to find every run of one callable — which a
+// string property cannot answer at all.
+func TestARunNamesItsCallableAsAReference(t *testing.T) {
+	t.Parallel()
+	ds := newFnDataset(t,
+		[]enginetest.Trigger{trigOn("mirror", map[string]any{"kinds": []any{widgetType}})},
+		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
+	ctx := context.Background()
+
+	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "one"}})
+	process(t, ds)
+
+	runs := runRowsOf(t, ds, trigID("mirror"), "ok")
+	if len(runs) != 1 {
+		t.Fatalf("ok runs: %d, want 1", len(runs))
+	}
+	fn := fnPackage + "/mirror"
+	fnPath := vocabulary.RecordPath("substrate.reamde.dev/core/function", fn)
+	if got := runs[0].Properties["callable"]; got != fn {
+		t.Errorf("callable %v, want the function record's id %q", got, fn)
+	}
+	if got := storedRefPath(runs[0].Properties["callableRef"]); got != fnPath {
+		t.Errorf("callableRef %q, want %q", got, fnPath)
+	}
+	// The point of the reference: the reverse read answers "every run of this
+	// callable" without a string match on a property nobody can walk.
+	page, err := ds.List(ctx, substrate.Query{
+		Filter: substrate.Filter{
+			Kinds:       []string{triggerRunType},
+			Referencing: &substrate.Referencing{Ref: fnPath},
+		},
+		First: 50,
+	})
+	if err != nil {
+		t.Fatalf("referencing read: %v", err)
+	}
+	if len(page.Records) != 1 || page.Records[0].ID != runs[0].ID {
+		t.Fatalf("referencing %s returned %d records, want the one run %s", fnPath, len(page.Records), runs[0].ID)
+	}
+}
+
 func TestTriggerSelfEchoExclusion(t *testing.T) {
 	t.Parallel()
 	// The trigger watches the very type its callable writes: without
