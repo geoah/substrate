@@ -217,9 +217,24 @@ func TestMetadataNamespaces(t *testing.T) {
 	} else {
 		wantErr(t, err, substrate.ErrForbidden, "foreign annotation namespace")
 	}
-	// Its own namespace is fine, and so is the owner touching anything.
+	// A machine hand is bound to its own actor name, whatever it writes
+	// under: the refusal names the actor and the key.
+	fn := substrate.FunctionActor("samples.substrate.reamde.dev", "tasks", "sweep")
+	_, err := ds.Patch(ctx, fn, task.Kind, task.ID, substrate.PatchInput{
+		Labels: map[string]any{"owner/starred": true},
+	})
+	wantRefusal(t, err, substrate.ErrForbidden, fmt.Sprintf("actor %q may not write key", fn))
+	mustPatch(t, ds, fn, task.Kind, task.ID, substrate.PatchInput{
+		Labels: map[string]any{string(fn) + "/swept": true},
+	})
+	// Its own namespace is fine, and so is the owner touching anything —
+	// including a namespace no actor here owns, which is what makes
+	// `owner/…` a convention a human hand may write rather than a rule.
 	mustPatch(t, ds, engram, task.Kind, task.ID, substrate.PatchInput{Labels: map[string]any{"engram/interrupt": 74}})
 	mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{Labels: map[string]any{"engram/interrupt": 12}})
+	mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{
+		Labels: map[string]any{"owner/starred": true, "mneme/reviewed": true},
+	})
 	// A dotted connector actor owns its dotted namespace.
 	mustPatch(t, ds, gmail, task.Kind, task.ID, substrate.PatchInput{
 		Annotations: map[string]any{"connector:gmail/state": map[string]any{"ok": true}},
@@ -233,6 +248,40 @@ func TestMetadataNamespaces(t *testing.T) {
 	if e.Labels["engram/interrupt"].(float64) != 12 {
 		t.Fatalf("labels = %v", e.Labels)
 	}
+}
+
+// A refused key names the rule it broke, not the one rule the message used to
+// blame. Both halves of a key are lowercase — a key is not a property name —
+// and camelCase is the mistake a writer coming from properties makes, so a
+// key that IS namespaced must never be told it is not (issue 548).
+func TestMetadataKeyRefusalNamesTheRule(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "t"}})
+
+	_, err := ds.Patch(ctx, owner, task.Kind, task.ID, substrate.PatchInput{
+		Annotations: map[string]any{"mneme/feedbackNote": "x"},
+	})
+	wantRefusal(t, err, substrate.ErrValidation,
+		`the name after the slash is lowercase: "feedbacknote" or "feedback-note"`)
+	_, err = ds.Patch(ctx, owner, task.Kind, task.ID, substrate.PatchInput{
+		Labels: map[string]any{"Mneme/reviewed": true},
+	})
+	wantRefusal(t, err, substrate.ErrValidation, `the namespace before the slash is lowercase: "mneme"`)
+	// A key with no slash still reads the shape, which is the only failure
+	// the old message described.
+	_, err = ds.Patch(ctx, owner, task.Kind, task.ID, substrate.PatchInput{
+		Labels: map[string]any{"tier": "gold"},
+	})
+	wantRefusal(t, err, substrate.ErrValidation, `must be a namespaced key ("<actor>/<name>")`)
+
+	// The spelling the message asked for lands, so the refusals above were
+	// about the case and nothing else.
+	mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{
+		Annotations: map[string]any{"mneme/feedbacknote": "x"},
+		Labels:      map[string]any{"mneme/reviewed": true},
+	})
 }
 
 func TestMachineInitialAndTransitions(t *testing.T) {

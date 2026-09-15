@@ -144,7 +144,24 @@ Opinions about a record never get welded into it. They layer on under
 
 The rule of thumb is mechanical: if you need to filter on it, make it a
 label; if it is a blob you only fetch, make it an annotation.
-Writers may only touch their own key namespace.
+
+A key is `<namespace>/<name>`, and both halves are lowercase: a letter first,
+then letters, digits, `_`, `.` and `-`, with `:` also allowed in the namespace
+so a machine hand's own actor name fits
+(`function:web.example.com:harvest/synced`). A key is not a property name, so
+camelCase is refused — `mneme/feedbackNote` is `mneme/feedbacknote` or
+`mneme/feedback-note` — and the refusal names the half and the character at
+fault rather than the shape.
+
+Which namespace a writer may use depends on its **actor**. A human hand — the
+console, `substratectl`, any request under a repository token, which is actor
+`api` — may write any well-formed key, and `owner/…` is the convention for the
+human's own opinions rather than a rule the server holds. Every other actor is
+bound to its own name as the namespace: a function writes under
+`function:<authority>:<package>:<name>/…`, an agent under
+`agent:<authority>:<package>:<name>/…` and a bundle under
+`bundle:<authority>:<package>/…`, so one writer's state cannot be overwritten
+by another's, and a key outside it is refused as forbidden.
 
 ## Kinds and references
 

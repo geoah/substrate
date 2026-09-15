@@ -813,11 +813,14 @@ func sortedKeys[V any](m map[string]V) []string {
 
 func actorNamespace(a substrate.Actor) string { return string(a) }
 
-// metaKeyAllowed enforces the label/annotation namespace rule: the owner may
-// touch any key, every other actor only its own namespace.
+// metaKeyAllowed enforces the label/annotation namespace rule: a human hand
+// (`api`, `console`, `substratectl`) and the engine's own may write any
+// well-formed key, which is what makes the `owner/…` convention theirs to
+// write; every other actor — an agent, a function, a bundle — is bound to its
+// own actor name as the namespace.
 func metaKeyAllowed(actor substrate.Actor, key string) error {
-	if !vocabulary.ValidMetaKey(key) {
-		return fmt.Errorf("%w: %q must be a namespaced key (\"<actor>/<name>\")", substrate.ErrValidation, key)
+	if problem := vocabulary.MetaKeyProblem(key); problem != "" {
+		return fmt.Errorf("%w: %s", substrate.ErrValidation, problem)
 	}
 	if substrate.HumanActors[actor] || actor == substrate.ActorSystem {
 		return nil

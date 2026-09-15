@@ -222,9 +222,8 @@ func metaStrings(meta map[string]any, key, typ string, problems *[]string) map[s
 	}
 	out := make(map[string]string, len(raw))
 	for k, v := range raw {
-		if !ValidMetaKey(k) {
-			*problems = append(*problems, fmt.Sprintf(
-				"%s: metadata.%s: %q must be a namespaced key (\"<actor>/<name>\")", typ, key, k))
+		if problem := MetaKeyProblem(k); problem != "" {
+			*problems = append(*problems, fmt.Sprintf("%s: metadata.%s: %s", typ, key, problem))
 			continue
 		}
 		out[k] = fmt.Sprint(v)

@@ -1,6 +1,7 @@
 package vocabulary
 
 import (
+	"fmt"
 	"net"
 	"regexp"
 	"strings"
@@ -20,6 +21,24 @@ const (
 	// kindRefRE is the kind REFERENCE grammar (ref.go): a bare local name, or
 	// an authority, a package and a name split by the two slashes.
 	kindRefRE = `(` + authorityRE + `/` + wordRE + `/)?` + wordRE
+	// The two halves of a label/annotation key, kept apart so the validator
+	// and the diagnosis (MetaKeyProblem) read one grammar: a refusal that
+	// names a rule the checker does not enforce is worse than a vague one.
+	// The namespace carries an actor, so it admits the domain's colons and an
+	// authority's dots; the `*` is admitted and matched by nothing — no key
+	// is ever read as a glob.
+	metaNamespaceRE = `[a-z][a-z0-9_.*:-]*`
+	metaNameRE      = `[a-z][a-z0-9_.-]*`
+)
+
+// The characters each half of a key admits after its first letter, spelled for
+// the refusal message. They are the classes above, read out.
+const (
+	metaNamespaceChars = `lowercase letters, digits and "_", ".", "-", ":", "*"`
+	metaNameChars      = `lowercase letters, digits and "_", ".", "-"`
+	// metaKeyShape is the form every refusal repeats, so a reader who has
+	// only the message knows what to write.
+	metaKeyShape = `a namespaced key ("<actor>/<name>")`
 )
 
 // Naming rules enforced at load.
@@ -43,7 +62,9 @@ var (
 	// A namespaced label/annotation key is "<actor>/<name>", and an actor may
 	// carry the domain's colons and an authority's dots
 	// (`function:web.bundles.example.com:harvest/synced`).
-	reMetaKey = regexp.MustCompile(`^[a-z][a-z0-9_.*:-]*/[a-z][a-z0-9_.-]*$`)
+	reMetaKey       = regexp.MustCompile(`^` + metaNamespaceRE + `/` + metaNameRE + `$`)
+	reMetaNamespace = regexp.MustCompile(`^` + metaNamespaceRE + `$`)
+	reMetaName      = regexp.MustCompile(`^` + metaNameRE + `$`)
 	// reID is the record-id alphabet. Minted ids are 12 lowercase base32
 	// characters; a writer's own id is its provider key ENCODED into this set,
 	// which is RFC 3986 unreserved (ALPHA / DIGIT / "-" / "." / "_" / "~")
@@ -142,6 +163,88 @@ func RepositoryAuthority(name, host string) string {
 		return ""
 	}
 	return name + "." + host
+}
+
+// MetaKeyProblem says why key is NOT a legal label/annotation key, naming the
+// half and the character at fault, and returns "" for a legal one. The message
+// opens with the key quoted, so a caller adds its own context and nothing
+// else. It is the only place a key refusal is worded: a writer told that an
+// already-namespaced key "must be namespaced" has no way to find the rule
+// actually broken (issue 548).
+//
+// ValidMetaKey is asked first, so a legal key costs one match and the
+// diagnosis runs only on the way to a refusal.
+func MetaKeyProblem(key string) string {
+	if ValidMetaKey(key) {
+		return ""
+	}
+	ns, name, cut := strings.Cut(key, "/")
+	switch {
+	case !cut:
+		return fmt.Sprintf("%q must be %s", key, metaKeyShape)
+	case strings.Contains(name, "/"):
+		return fmt.Sprintf("%q must be %s: it carries %d slashes, and a key carries one",
+			key, metaKeyShape, strings.Count(key, "/"))
+	case ns == "":
+		return fmt.Sprintf("%q must be %s: the namespace before the slash is empty", key, metaKeyShape)
+	case name == "":
+		return fmt.Sprintf("%q must be %s: the name after the slash is empty", key, metaKeyShape)
+	case !reMetaNamespace.MatchString(ns):
+		return fmt.Sprintf("%q: %s", key,
+			metaSegmentProblem(ns, "namespace before the slash", metaNamespaceChars, reMetaNamespace))
+	case !reMetaName.MatchString(name):
+		return fmt.Sprintf("%q: %s", key,
+			metaSegmentProblem(name, "name after the slash", metaNameChars, reMetaName))
+	}
+	// Unreachable while reMetaKey is those two halves and one slash. A vague
+	// refusal still beats calling an illegal key legal.
+	return fmt.Sprintf("%q must be %s", key, metaKeyShape)
+}
+
+// metaSegmentProblem names the rule one half of a key breaks. ok is that
+// half's grammar, and it is asked about single characters rather than a second
+// set of classes being written out here: a lone rune is the first character,
+// and a rune after an "a" is a later one.
+func metaSegmentProblem(seg, which, chars string, ok *regexp.Regexp) string {
+	// camelCase is the mistake worth a suggestion, because every DECLARED
+	// name in the substrate is camelCase and a key is the one thing that is
+	// not: keys stay lowercase so `feedbackNote` and `feedbacknote` cannot be
+	// two keys nobody can tell apart.
+	if lower := strings.ToLower(seg); lower != seg && ok.MatchString(lower) {
+		if kebab := metaKebab(seg); kebab != lower && ok.MatchString(kebab) {
+			return fmt.Sprintf("the %s is lowercase: %q or %q", which, lower, kebab)
+		}
+		return fmt.Sprintf("the %s is lowercase: %q", which, lower)
+	}
+	for i, r := range seg {
+		if i == 0 {
+			if !ok.MatchString(string(r)) {
+				return fmt.Sprintf("the %s starts with %q: it starts with a lowercase letter", which, string(r))
+			}
+			continue
+		}
+		if !ok.MatchString("a" + string(r)) {
+			return fmt.Sprintf("the %s may not carry %q: it is %s", which, string(r), chars)
+		}
+	}
+	return fmt.Sprintf("the %s is %s, starting with a letter", which, chars)
+}
+
+// metaKebab is the camelCase spelling of seg written the way a key may be
+// written: a boundary is an upper-case letter after a lower-case one or a
+// digit, which is where a reader of `feedbackNote` wanted a word break.
+func metaKebab(seg string) string {
+	var b strings.Builder
+	for i, r := range seg {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			prev := seg[i-1]
+			if prev >= 'a' && prev <= 'z' || prev >= '0' && prev <= '9' {
+				b.WriteByte('-')
+			}
+		}
+		b.WriteRune(r)
+	}
+	return strings.ToLower(b.String())
 }
 
 // MetaKeyNamespace returns the writer namespace of a label/annotation key.
