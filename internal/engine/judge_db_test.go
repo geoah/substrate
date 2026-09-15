@@ -1,6 +1,6 @@
 package engine
 
-// The judge (docs/plans/thread-interactions.md phase 4): the engine runs a
+// The judge (docs/agents.md, "The policy door"): the engine runs a
 // tool-less agent over gated (and judge-matched proposed) requests and
 // decides ONLY between the owner's thresholds, under the policy's own actor;
 // everything else — low confidence, escalate verdicts, malformed output, a
@@ -279,4 +279,192 @@ func TestVoluntaryProposalsAreJudgedWhenThePolicyMatches(t *testing.T) {
 		}
 		return false
 	})
+}
+
+// systemOf reads the system prompt one completion request carried: the wire
+// puts it first as a system message.
+func systemOf(t *testing.T, req map[string]any) string {
+	t.Helper()
+	msgs, _ := req["messages"].([]any)
+	if len(msgs) == 0 {
+		t.Fatalf("a completion request with no messages: %+v", req)
+	}
+	first, _ := msgs[0].(map[string]any)
+	if first["role"] != "system" {
+		t.Fatalf("the first message is not the system prompt: %+v", first)
+	}
+	content, _ := first["content"].(string)
+	return content
+}
+
+// TestTheEngineTellsTheJudgeItsReplyContract: the reply shape is the ENGINE's
+// (judge.go decodes it), so the engine says it — the judge agent's own prompt
+// first, the contract under it — and a judge that fences the object anyway
+// (issue #555: Haiku does, having been told not to) is read, not recorded as
+// a parse error.
+func TestTheEngineTellsTheJudgeItsReplyContract(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	gatePolicyWithJudge(t, ds, "contract-widgets", map[string]any{"autoAccept": 0.9})
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-fenced", map[string]any{"name": "wanted"})}}},
+		fakeTurn{content: "held."},
+		fakeTurn{content: "through."},
+	)
+	fake.script("vjudge", fakeTurn{content: haikuFencedVerdict})
+	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget"); err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	req := onlyPatchRequest(t, ds)
+	audit := judgedAnnotation(t, ds, req.ID)
+	if audit["outcome"] != judgedAccepted || audit["verdict"] != "accept" {
+		t.Fatalf("a fenced verdict did not decide: %+v", audit)
+	}
+	requests := fake.requestsOf("vjudge")
+	if len(requests) != 1 {
+		t.Fatalf("judge completions: %d", len(requests))
+	}
+	system := systemOf(t, requests[0])
+	if !strings.HasPrefix(system, "You are verdictor.") {
+		t.Fatalf("the judge's own prompt does not come first: %q", system)
+	}
+	if !strings.Contains(system, judgeReplyContract) {
+		t.Fatalf("the judge was never told its reply contract: %q", system)
+	}
+	// The contract rides the INVOCATION, not the declaration: the agent row
+	// still carries only its author's prompt.
+	ag, err := ds.registry().ResolveAgent(crewPackage + "/verdictor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(ag.Prompt, "JSON") {
+		t.Fatalf("the engine rewrote the judge's declaration: %q", ag.Prompt)
+	}
+}
+
+// TestOrdinaryRunsCarryTheAgentsPromptAlone: the suffix is the judge mode's,
+// so nothing else in the loop grew a paragraph it did not ask for.
+func TestOrdinaryRunsCarryTheAgentsPromptAlone(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	fake.script("chat", fakeTurn{content: "hello."})
+	if _, err := ds.CallAgent(ctx, crewPackage+"/chatter", "hi"); err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	requests := fake.requestsOf("chat")
+	if len(requests) != 1 {
+		t.Fatalf("completions: %d", len(requests))
+	}
+	if system := systemOf(t, requests[0]); system != "You are chatter." {
+		t.Fatalf("an ordinary run's system prompt: %q", system)
+	}
+}
+
+// evidenceWidget writes the record a gated diff will cite: prose the judge
+// must be able to read, and a secret it must not.
+func evidenceWidget(t *testing.T, ds *dataset) {
+	t.Helper()
+	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+		Kind: crewPackage + "/widget", ID: "w-evidence",
+		Properties: map[string]any{"name": "the evidence text", "token": "hunter2"},
+	}); err != nil {
+		t.Fatalf("put the evidence: %v", err)
+	}
+}
+
+// TestJudgeReadsTheDiffsReferentsWhenThePolicyOptsIn: a tool-less judge
+// cannot follow a reference, so `expandReferents` hands it what the diff
+// points at (issue #556) — redacted exactly as a read redacts, so the
+// referent's prose travels and its secret does not.
+func TestJudgeReadsTheDiffsReferentsWhenThePolicyOptsIn(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	evidenceWidget(t, ds)
+	gatePolicyWithJudge(t, ds, "evidenced-widgets", map[string]any{
+		"autoAccept":      0.9,
+		"expandReferents": true,
+	})
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-cited", map[string]any{
+			"name": "derived", "source": crewPackage + "/widget/w-evidence",
+		})}}},
+		fakeTurn{content: "held."},
+		fakeTurn{content: "through."},
+	)
+	fake.script("vjudge",
+		fakeTurn{content: `{"verdict":"accept","confidence":0.95,"rationale":"the source says so"}`},
+	)
+	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget from the evidence"); err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	req := onlyPatchRequest(t, ds)
+	if audit := judgedAnnotation(t, ds, req.ID); audit["outcome"] != judgedAccepted {
+		t.Fatalf("audit: %+v", audit)
+	}
+	requests := fake.requestsOf("vjudge")
+	if len(requests) != 1 {
+		t.Fatalf("judge completions: %d", len(requests))
+	}
+	raw, err := json.Marshal(requests[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := string(raw)
+	if !strings.Contains(sent, "referents") || !strings.Contains(sent, "the evidence text") {
+		t.Fatalf("the judge never saw the record the diff cites: %s", sent)
+	}
+	if strings.Contains(sent, "hunter2") {
+		t.Fatalf("the judge was handed a secret: %s", sent)
+	}
+	// The marker travels JSON-escaped inside the user turn, so the word is
+	// what the assertion can hold: the property is THERE, redacted.
+	if !strings.Contains(sent, "redacted") {
+		t.Fatalf("the referent's sensitive property is missing its redaction marker: %s", sent)
+	}
+}
+
+// TestJudgeWithoutTheDialNeverSeesTheReferent: the expansion is the owner's
+// opt-in, so the default envelope carries the pointer and nothing behind it.
+func TestJudgeWithoutTheDialNeverSeesTheReferent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	evidenceWidget(t, ds)
+	gatePolicyWithJudge(t, ds, "blind-widgets", map[string]any{"autoAccept": 0.9})
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-blind", map[string]any{
+			"name": "derived", "source": crewPackage + "/widget/w-evidence",
+		})}}},
+		fakeTurn{content: "held."},
+		fakeTurn{content: "through."},
+	)
+	fake.script("vjudge",
+		fakeTurn{content: `{"verdict":"accept","confidence":0.95,"rationale":"nothing to check it against"}`},
+	)
+	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget from the evidence"); err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	req := onlyPatchRequest(t, ds)
+	if audit := judgedAnnotation(t, ds, req.ID); audit["outcome"] != judgedAccepted {
+		t.Fatalf("audit: %+v", audit)
+	}
+	requests := fake.requestsOf("vjudge")
+	if len(requests) != 1 {
+		t.Fatalf("judge completions: %d", len(requests))
+	}
+	raw, err := json.Marshal(requests[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := string(raw)
+	// The pointer is in the diff either way; the record behind it is not.
+	if !strings.Contains(sent, "w-evidence") {
+		t.Fatalf("the diff's own pointer went missing: %s", sent)
+	}
+	if strings.Contains(sent, "referents") || strings.Contains(sent, "the evidence text") {
+		t.Fatalf("the referent arrived without the dial: %s", sent)
+	}
 }

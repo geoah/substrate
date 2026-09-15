@@ -4,10 +4,14 @@ package engine
 // propose) names one, the ENGINE runs it and the ENGINE decides; the judge
 // only ever recommends. It is an ordinary agent run TOOL-LESS over a typed
 // projection of exactly what a human reviewer reads (the frozen envelope, the
-// proposer's identity, the policy's criteria, and — only when the policy's
-// `context: thread` opted in — the proposing thread's recent turns, delimited
-// as data). Its whole contract is the structured reply {verdict, confidence,
-// rationale}.
+// proposer's identity, the policy's criteria, and — only where the policy
+// opted in — the proposing thread's recent turns under `context: thread` and
+// the records the diff points at under `expandReferents`, both delimited as
+// data). Its whole contract is the structured reply {verdict, confidence,
+// rationale}, and the ENGINE STATES THAT CONTRACT: every judge run carries
+// judgeReplyContract under the agent's own prompt, because the shape is the
+// engine's to parse and no judge author should have to rediscover it from a
+// runtime error.
 //
 // Routing fails closed at every gap: sub-threshold confidence, an escalate
 // verdict, malformed output, transport failure, a request that moved under
@@ -29,6 +33,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/geoah/substrate/internal/strictjson"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -56,11 +61,31 @@ const (
 // the judge: the most recent prose turns, as data.
 const judgeContextTurns = 6
 
+// judgeReplyContract is the ENGINE's half of a judge's system prompt: the
+// reply shape decodeJudgeVerdict itself enforces, appended to the agent's own
+// prompt on every judge run. The policy author writes the criteria; the shape
+// is never theirs to guess, and stating it here is the only way the two
+// cannot drift apart.
+const judgeReplyContract = `Reply with exactly one JSON object and nothing else: ` +
+	`{"verdict": "accept" | "reject" | "escalate", "confidence": <a number between 0 and 1>, ` +
+	`"rationale": "<one or two sentences>"}. ` +
+	`All three fields are required. No prose before or after the object, and no code fence.`
+
 // judgeVerdict is the judge's structured reply, decoded strictly.
 type judgeVerdict struct {
 	Verdict    string  `json:"verdict"`
 	Confidence float64 `json:"confidence"`
 	Rationale  string  `json:"rationale"`
+}
+
+// judgeReply is the reply as it arrives on the wire, every field a POINTER so
+// a missing one is told apart from a zero: the strict decode refuses an
+// unknown key but says nothing about presence, and a reply without
+// `confidence` would otherwise route as a confident-at-zero verdict.
+type judgeReply struct {
+	Verdict    *string  `json:"verdict"`
+	Confidence *float64 `json:"confidence"`
+	Rationale  *string  `json:"rationale"`
 }
 
 // maybeJudge schedules the judge over a fresh request when the governing
@@ -193,6 +218,19 @@ func (ds *dataset) runJudge(ctx context.Context, req *substrate.Record, rule *po
 	if rule.criteria != "" {
 		envelope["criteria"] = rule.criteria
 	}
+	// The owner's second dial, orthogonal to `context`: the records the diff
+	// points at, so a judge asked whether a proposal matches its evidence can
+	// read the evidence. Tool-less still — this is data in the envelope, not a
+	// hop the judge takes.
+	if rule.expandReferents {
+		referents, err := ds.judgeReferents(ctx, req)
+		if err != nil {
+			return v, "", err
+		}
+		if len(referents) > 0 {
+			envelope["referents"] = referents
+		}
+	}
 	threadID := referenceID(req.Properties["thread"])
 	if threadID != "" {
 		agentID, err := ds.threadAgent(ctx, threadID)
@@ -217,7 +255,9 @@ func (ds *dataset) runJudge(ctx context.Context, req *substrate.Record, rule *po
 		return v, "", err
 	}
 	defer release()
-	res, err := ds.runAgent(ctx, ag, agentInvocation{mode: "judge", user: string(user)})
+	res, err := ds.runAgent(ctx, ag, agentInvocation{
+		mode: "judge", user: string(user), systemSuffix: judgeReplyContract,
+	})
 	if err != nil {
 		return v, "", err
 	}
@@ -230,16 +270,90 @@ func (ds *dataset) runJudge(ctx context.Context, req *substrate.Record, rule *po
 	return v, res.Thread, nil
 }
 
-// decodeJudgeVerdict reads the judge's reply STRICTLY: one JSON object,
-// a declared verdict, confidence in [0,1]. A model that padded its answer
-// with prose fails here and the request escalates — never a lenient parse
-// that guesses what an authorization surface meant.
+// judgeReferents loads every record the diff points at, one hop, as the
+// `referents` half of the envelope: `expandReferents: true` on the policy. A
+// judge is tool-less, so evidence it cannot be handed is evidence it cannot
+// check (#556) — the summary against the message the summary claims.
+//
+// THE DECLARATION DECIDES WHAT A POINTER IS. deriveRefs walks the target
+// kind's declared reference sites over the diff's own properties, so an
+// authored string that merely looks like a record path is not followed and
+// every declared shape (repeated, keyed, nested in an object) is. The rows
+// come back through the ordinary read projection, which REDACTS every
+// sensitive property: a judge never sees a secret. Live rows only, capped at
+// maxExpanded like a page's expansion.
+func (ds *dataset) judgeReferents(ctx context.Context, req *substrate.Record) (map[string]any, error) {
+	diff, _ := req.Properties["diff"].(map[string]any)
+	props, _ := diff["properties"].(map[string]any)
+	if len(props) == 0 {
+		return nil, nil
+	}
+	targetKind, err := ds.requestTargetKind(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	ty, err := ds.resolveType(targetKind)
+	if err != nil {
+		return nil, err
+	}
+	// A stored diff keeps the AUTHORED property shapes, so coercing first is
+	// what makes the bare-id short form under a pinned reference resolvable
+	// here — the same completion the accept would do. A diff the declaration
+	// no longer coerces is read as stored instead, because deriveRefs reads
+	// both stored shapes anyway.
+	if coerced, cerr := coerceProps(ty, props); cerr == nil && coerced != nil {
+		props = coerced
+	}
+	rows := deriveRefs(ty, props)
+	paths := make([]string, 0, len(rows))
+	for _, row := range rows {
+		paths = append(paths, vocabulary.RecordPath(row.Dst.Kind, row.Dst.ID))
+	}
+	loaded, err := ds.loadReferents(ctx, ds.db, paths)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]any, len(loaded))
+	for path, rec := range loaded {
+		out[path] = map[string]any{"kind": rec.Kind, "id": rec.ID, "properties": rec.Properties}
+	}
+	return out, nil
+}
+
+// decodeJudgeVerdict reads the judge's reply STRICTLY: one JSON object, all
+// three fields present, a declared verdict, confidence in [0,1]. A model that
+// padded its answer with prose fails here and the request escalates — never a
+// lenient parse that guesses what an authorization surface meant.
+//
+// The one normalisation before the strict decode is stripOneFence, and it is
+// PRESENTATION, not parsing: a fenced block is the same object in the dress
+// every chat model puts JSON in (#555 — Haiku fences it after being told not
+// to), so unwrapping it changes nothing about what is then required. Prose
+// around the object, a second fence, trailing text and an unknown key all
+// still fail closed.
 func decodeJudgeVerdict(reply string, v *judgeVerdict) error {
-	dec := json.NewDecoder(strings.NewReader(strings.TrimSpace(reply)))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
+	var got judgeReply
+	if err := strictjson.DecodeBytes([]byte(stripOneFence(strings.TrimSpace(reply))), &got, false); err != nil {
 		return fmt.Errorf("the judge's reply is not the verdict object: %w", err)
 	}
+	var missing []string
+	for _, f := range []struct {
+		name    string
+		present bool
+	}{
+		{"verdict", got.Verdict != nil},
+		{"confidence", got.Confidence != nil},
+		{"rationale", got.Rationale != nil},
+	} {
+		if !f.present {
+			missing = append(missing, f.name)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("the judge's reply leaves out %s — the verdict object carries verdict, confidence and rationale",
+			strings.Join(missing, ", "))
+	}
+	v.Verdict, v.Confidence, v.Rationale = *got.Verdict, *got.Confidence, *got.Rationale
 	switch v.Verdict {
 	case judgeVerdictAccept, judgeVerdictReject, judgeVerdictEscalate:
 	default:
@@ -249,6 +363,31 @@ func decodeJudgeVerdict(reply string, v *judgeVerdict) error {
 		return fmt.Errorf("the judge's confidence %v is outside [0,1]", v.Confidence)
 	}
 	return nil
+}
+
+// stripOneFence unwraps ONE Markdown code fence that holds the WHOLE reply:
+// the opening fence on the first line (its info string, ```json most often,
+// is ignored), the closing fence last, nothing after it. One, and never in a
+// loop: a reply still starting with a fence after this reaches the strict
+// decode as the malformed text it is, so a nested fence fails rather than
+// peeling. Anything that is not exactly this shape is returned untouched, for
+// the decode to refuse.
+func stripOneFence(reply string) string {
+	if !strings.HasPrefix(reply, "```") {
+		return reply
+	}
+	// The info string runs to the end of the opening line; without a line
+	// break there is no fenced block, only text that begins with backticks.
+	nl := strings.IndexByte(reply, '\n')
+	if nl < 0 {
+		return reply
+	}
+	body := reply[nl+1:]
+	end := strings.LastIndex(body, "```")
+	if end < 0 || strings.TrimSpace(body[end+3:]) != "" {
+		return reply
+	}
+	return strings.TrimSpace(body[:end])
 }
 
 // decideAsPolicy performs the engine's decision under the POLICY's actor:

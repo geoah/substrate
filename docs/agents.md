@@ -335,6 +335,54 @@ leaves the request for the owner with the verdict on it. The verdict picks
 which threshold is read and one reply carries one verdict, so the two are
 independent floors rather than a band around one score.
 
+**The engine states the reply shape**, so a judge author never has to. Every
+judge run sends the agent's own prompt and then the engine's contract
+paragraph under it: exactly one JSON object, `verdict` one of `accept`,
+`reject` or `escalate`, `confidence` in [0,1], `rationale` a sentence or two,
+all three required, no prose and no fence. The reply is then decoded strictly
+— an unknown key, a missing field, a confidence outside the range or text
+around the object all fail closed into the owner's review, with the reason on
+the request. The one thing normalised before that decode is a single Markdown
+code fence wrapping the whole object, because a model that has been told not
+to fence its JSON still does; a fence around the object is presentation, and
+what is inside it is held to the same rules.
+
+`criteria` is the owner's instructions to the judge, in prose: what to accept
+and what to reject. It never has to describe the reply.
+
+Two dials say how much the judge reads, and they are independent — a policy
+may set both:
+
+- `context: thread` adds the proposing thread's recent prose turns beside the
+  envelope. More signal, and more injection surface: it travels only where the
+  policy asked for it, delimited as data.
+- `expandReferents: true` adds every record the diff points at, one hop, as
+  `referents` keyed by record path. A judge is tool-less, so a reference in
+  the diff is a pointer it cannot follow; this is how a judge asked "is this
+  summary supported by its source?" gets to read the source. The records
+  arrive through the ordinary read projection, so a sensitive property is
+  redacted exactly as it is for any other reader, and the hop is capped like a
+  page's expansion.
+
+```yaml
+kind: substrate.reamde.dev/core/recordpatchpolicy
+metadata:
+  id: judge-tasks
+data:
+  properties:
+    selector:
+      kinds:
+        - samples.substrate.reamde.dev/tasks/*
+    action: gate
+    judge: crew.example.com/bots/referee
+    criteria: >-
+      reject a summary the cited source does not support
+    expandReferents: true
+    mode: enforce
+    autoAccept: 0.9
+    autoRefuse: 0.9
+```
+
 ## Threads, messages, and cost
 
 The conversation state is the run: there is no separate run record. A `thread`

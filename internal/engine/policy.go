@@ -43,18 +43,22 @@ const (
 // policyRule is one recordpatchpolicy record, parsed for the door. The judge
 // half parses beside it so one loader serves both.
 type policyRule struct {
-	id         string
-	version    int64
-	kinds      []string
-	ops        []string
-	agents     []string
-	action     string
-	judge      string
-	criteria   string
-	context    string
-	autoAccept *float64
-	autoRefuse *float64
-	mode       string
+	id       string
+	version  int64
+	kinds    []string
+	ops      []string
+	agents   []string
+	action   string
+	judge    string
+	criteria string
+	context  string
+	// expandReferents hands the judge every record the diff points at, one
+	// hop, beside the envelope. Orthogonal to `context`, which dials the
+	// proposing THREAD: a policy may opt into both.
+	expandReferents bool
+	autoAccept      *float64
+	autoRefuse      *float64
+	mode            string
 }
 
 // loadPolicies reads the live policy records. Owner-authored and few, so the
@@ -90,6 +94,7 @@ func (ds *dataset) loadPolicies(ctx context.Context) ([]policyRule, error) {
 		rule.judge = referenceID(rec.Properties["judge"])
 		rule.criteria, _ = rec.Properties["criteria"].(string)
 		rule.context, _ = rec.Properties["context"].(string)
+		rule.expandReferents, _ = rec.Properties["expandReferents"].(bool)
 		rule.mode, _ = rec.Properties["mode"].(string)
 		if v, ok := anyFloat(rec.Properties["autoAccept"]); ok {
 			rule.autoAccept = &v

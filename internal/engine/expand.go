@@ -166,36 +166,47 @@ func (ds *dataset) expandProperties(types []*vocabulary.Kind, names []string) ([
 const maxExpanded = maxPageSize
 
 // expandReferents loads the referents the page's records name under the
-// expanded properties, once each, keyed by the path AS WRITTEN so a reader
-// joins them by the value it holds. Loading is one query per referent kind on
-// the page's snapshot, LIVE rows only: a merged-away id still has its
-// tombstone under that id, and answering it here would hide the winner. A
-// path the query does not answer is read again by Get, which follows the
+// expanded properties, keyed by the path AS WRITTEN so a reader joins them by
+// the value it holds.
+func (ds *dataset) expandReferents(ctx context.Context, x dbx, names []string, records []*substrate.Record) (map[string]*substrate.Record, error) {
+	var paths []string
+	for _, e := range records {
+		for _, name := range names {
+			paths = append(paths, referencePathsOf(e.Properties[name])...)
+		}
+	}
+	return ds.loadReferents(ctx, x, paths)
+}
+
+// loadReferents loads the records a list of paths names, once each and in one
+// query per kind, on the caller's snapshot. LIVE rows only: a merged-away id
+// still has its tombstone under that id, and answering it here would hide the
+// winner. A path the query does not answer is read again through the
 // former-id trail, so a pointer at a merged-away id resolves to the canonical
 // record. A path neither answers with a live record is dangling and has no
 // entry.
-func (ds *dataset) expandReferents(ctx context.Context, x dbx, names []string, records []*substrate.Record) (map[string]*substrate.Record, error) {
+//
+// The two callers are the page's forward hop (expandReferents above) and the
+// judge's evidence (judge.go judgeReferents), which share the cap: neither
+// may turn one read into an unbounded one.
+func (ds *dataset) loadReferents(ctx context.Context, x dbx, paths []string) (map[string]*substrate.Record, error) {
 	byKind := map[string][]string{}
 	var order []string
 	seen := map[string]bool{}
-	for _, e := range records {
-		for _, name := range names {
-			for _, path := range referencePathsOf(e.Properties[name]) {
-				kind, id, ok := vocabulary.SplitRecordPath(path)
-				if !ok || seen[path] {
-					continue
-				}
-				seen[path] = true
-				order = append(order, path)
-				byKind[kind] = append(byKind[kind], id)
-			}
+	for _, path := range paths {
+		kind, id, ok := vocabulary.SplitRecordPath(path)
+		if !ok || seen[path] {
+			continue
 		}
+		seen[path] = true
+		order = append(order, path)
+		byKind[kind] = append(byKind[kind], id)
 	}
 	if len(order) == 0 {
 		return nil, nil
 	}
 	if len(order) > maxExpanded {
-		return nil, fmt.Errorf("%w: expand would load %d referents, more than %d; lower first or expand fewer properties",
+		return nil, fmt.Errorf("%w: expanding would load %d referents, more than %d; read fewer records or expand fewer properties",
 			substrate.ErrValidation, len(order), maxExpanded)
 	}
 	included := make(map[string]*substrate.Record, len(order))

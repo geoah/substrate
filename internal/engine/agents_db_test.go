@@ -211,8 +211,16 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 	}
 	docs := []map[string]any{
 		vocabulary.PackageManifest(crewPackage, 0),
+		// A widget may cite the widget it was made from and may hold a
+		// secret: the judge's evidence pair (#556) — under
+		// `expandReferents` the referent's prose reaches the judge and its
+		// secret never does.
 		vocabulary.KindManifest(crewPackage, map[string]any{"singular": "widget"},
-			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
+			map[string]any{"properties": map[string]any{
+				"name":   map[string]any{"type": "string"},
+				"source": map[string]any{"type": "reference", "kind": crewPackage + "/widget"},
+				"token":  map[string]any{"type": "secret"},
+			}}),
 		vocabulary.FunctionManifest(crewPackage, "annotate", map[string]any{
 			"description": "writes one annotated task under the id you pass",
 			"runtime":     vocabulary.RuntimePython,
