@@ -63,7 +63,6 @@ func TestChangelogDialectGate(t *testing.T) {
 		t.Fatalf("bump the stored changelog dialect: %v", err)
 	}
 	svc3 := open()
-	defer func() { _ = svc3.Close() }()
 	_, err = svc3.Dataset(ctx, testdb.Repository(t))
 	if err == nil {
 		t.Fatal("a changelog written in a newer dialect must refuse the open")
@@ -94,6 +93,10 @@ func TestChangelogDialectGate(t *testing.T) {
 	}
 
 	// The refusal is stateless: winding the store back reopens the repository.
+	// The refusing process closes first: it took the repository's writer
+	// lease at its boot check, and the next open is a restart, not a second
+	// server (decision 0083).
+	_ = svc3.Close()
 	if _, err := db.ExecContext(ctx, `UPDATE changelog_dialect SET dialect = $1`,
 		engine.MaxChangelogDialect()); err != nil {
 		t.Fatalf("restore the stored changelog dialect: %v", err)

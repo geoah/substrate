@@ -243,6 +243,13 @@ func (s *service) logReconcile(out reconcileOutcome) {
 // and at creation.
 func (s *service) reconcileRow(ctx context.Context, repo Repository, allowImport bool) (reconcileOutcome, error) {
 	out := reconcileOutcome{Repository: repo.ID}
+	// The lease first: this reconcile WRITES (a catch-up, an import, the
+	// manifest), so a process that is not the repository's one writer is
+	// refused here — at the boot check, before it has touched a byte — rather
+	// than at its first append (writerlease.go, decision 0083).
+	if err := s.lease.acquire(ctx, repo.ID); err != nil {
+		return out, err
+	}
 	dir, err := changelogfile.RepoDir(s.dataRoot, repo.ID)
 	if err != nil {
 		return out, err
@@ -1208,6 +1215,9 @@ func (s *service) commitFault(stage string) error {
 func (ds *dataset) commitSealed(tx *sql.Tx, ops []sealedMirrorOp) error {
 	if ds.svc.readOnly {
 		return ErrDirectoryReadOnly
+	}
+	if err := ds.svc.lease.err(); err != nil {
+		return err
 	}
 	return ds.commitAndMirror(tx, &txn{ds: ds, tx: tx, sealedMirror: ops})
 }

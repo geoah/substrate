@@ -380,7 +380,7 @@ Toolchain is [mise](https://mise.jdx.dev): `mise install` once, then:
 
 ```bash
 mise run dev            # Postgres in a container + the server on :8080
-mise run dev:wipe       # delete the database; the next start is fresh
+mise run dev:wipe       # drop this tree's database; the next start is fresh
 mise run console:dev    # the console on :5173, proxying /api to :8080
 mise run test           # the Go suite (Docker needed for the engine half)
 mise run ci             # every CI job, locally
@@ -389,7 +389,9 @@ mise tasks              # everything else
 
 `docker compose up --build` builds an image; `mise run dev` runs the binary from the
 tree, so a change is a restart rather than a rebuild. Registration is
-one-shot per user, so testing it twice means `mise run dev:wipe`.
+one-shot per user, so testing it twice means `mise run dev:wipe`. The container
+is shared by every checkout on the box and the database inside it is named
+after the tree, so a worktree is isolated by default.
 [docs/running-locally.md](docs/running-locally.md) has what those tasks set and
 where the local state lives.
 

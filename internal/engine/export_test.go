@@ -101,6 +101,17 @@ func WithTestCommitFault(fn func(stage string) error) Option {
 	return func(o *options) { o.commitFault = fn }
 }
 
+// WithTestSkipWriterLease opens the service WITHOUT the per-repository writer
+// lease, so a test can be a repository's SECOND writer on purpose — the
+// condition decision 0083 refuses at open and catchUpBeforePrepare still
+// repairs when it arises anyway. Two tests need it: the one that proves the
+// cross-writer catch-up, and the ones that prove the same-data-root flock,
+// which the lease would otherwise refuse one layer earlier. A server has no
+// such option.
+func WithTestSkipWriterLease() Option {
+	return func(o *options) { o.skipWriterLease = true }
+}
+
 // The commit stages WithTestCommitFault reports, in the order they run.
 const (
 	CommitBeforeManifest = commitBeforeManifest

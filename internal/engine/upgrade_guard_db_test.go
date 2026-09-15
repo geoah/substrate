@@ -113,6 +113,13 @@ func seededRepository(t *testing.T) (dsn string) {
 	}); err != nil {
 		t.Fatalf("put the live provider row: %v", err)
 	}
+	// The seeder is CLOSED here, which is the story every test below tells:
+	// binary N wrote the repository and STOPPED, and binary N+1 opens it. It
+	// also releases the repository's writer lease, which a live seeder would
+	// hold against every open under it (decision 0083).
+	if err := svc.Close(); err != nil {
+		t.Fatalf("close the seeding service: %v", err)
+	}
 	return dsn
 }
 
@@ -702,10 +709,12 @@ func TestBootUpgradeRefusesARenameAStoredMappingReads(t *testing.T) {
 			}),
 		}
 	}
-	declare := func(t *testing.T, tree, path string) substrate.Dataset {
+	// The service is the CALLER'S to close: it holds the repository's writer
+	// lease while it is open (decision 0083), and every step below is the
+	// next binary opening the same repository, not a second server.
+	declare := func(t *testing.T, tree, path string) (substrate.Service, substrate.Dataset) {
 		t.Helper()
 		svc := openTree(t, dsn, tree)
-		t.Cleanup(func() { _ = svc.Close() })
 		ds, err := svc.Dataset(ctx, testdb.Repository(t))
 		if err != nil {
 			t.Fatalf("dataset: %v", err)
@@ -713,9 +722,9 @@ func TestBootUpgradeRefusesARenameAStoredMappingReads(t *testing.T) {
 		if _, err := ds.ApplyVocabularyDocuments(ctx, owner, mapping(path)); err != nil {
 			t.Fatalf("declare the mapping: %v", err)
 		}
-		return ds
+		return svc, ds
 	}
-	ds := declare(t, shipping, "login")
+	declaring, ds := declare(t, shipping, "login")
 	mirror := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: gadget, ID: "g1", Properties: map[string]any{"login": "geoah"},
 	})
@@ -723,6 +732,7 @@ func TestBootUpgradeRefusesARenameAStoredMappingReads(t *testing.T) {
 	if got := mustGet(t, ds, subjectKind, subjectID); got.Properties["handle"] != "geoah" {
 		t.Fatalf("the mapping did not project the handle: %v", got.Properties)
 	}
+	_ = declaring.Close()
 
 	// Binary N+2 renames `login` to `username`: the stored mapping's path no
 	// longer resolves against the candidate, so the boot refuses, naming the
@@ -763,7 +773,8 @@ func TestBootUpgradeRefusesARenameAStoredMappingReads(t *testing.T) {
 		t.Fatalf("dataset: %v", err)
 	}
 	_ = svc.Close()
-	declare(t, renaming, "username")
+	declaring, _ = declare(t, renaming, "username")
+	_ = declaring.Close()
 	svc = openTree(t, dsn, renaming)
 	defer func() { _ = svc.Close() }()
 	ds, err = svc.Dataset(ctx, testdb.Repository(t))

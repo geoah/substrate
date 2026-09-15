@@ -78,23 +78,43 @@ by `lint:yaml`, `metadata:` with `id:` under it is the form; flow SEQUENCES
 columns, so do not hand-align them. Settings live in `.yamlfmt` and
 `.yamllint`, one comment per decision.
 
-**A substrate to work against** — a Postgres container of its own on `:5433`
-and the binary from the tree on `:8080`, no invite code, pid, log,
-credential key and data root under `.dev/`. `docker compose up` builds an image; this does not, so a change
+**A substrate to work against** — a Postgres container on `:5433`, a DATABASE
+INSIDE IT NAMED AFTER THIS TREE, and the binary from the tree on `:8080`, no
+invite code, pid, log, credential key and data root under `.dev/`.
+`docker compose up` builds an image; this does not, so a change
 is a restart. Every task is a subcommand of `.mise/dev.sh`.
 
 ```bash
 mise run dev            # foreground; dev:up is the same in the background
 mise run dev:totp       # dev, with the second factor ENFORCED
-mise run dev:status     # database, server, console, URLs, which door
+mise run dev:status     # container, this tree's database, server, console, URLs, which door
 mise run dev:restart    # rebuild and restart; the data stays
+mise run dev:stop       # stop THIS TREE'S server; the shared container keeps running
 mise run dev:logs
-mise run dev:wipe       # DELETE the database and .dev/data: the next start is a fresh substrate
+mise run dev:wipe       # DROP this tree's database and DELETE .dev/data: the next start is a fresh substrate
+mise run dev:wipe:all   # dev:wipe, then remove the container — EVERY tree's dev database
 ```
+
+**One database per tree, inside the one container.** The container is shared by
+every checkout and worktree on the box; the database inside it is
+`substrate_<the tree directory's name>` — `substrate_substrate` for a checkout
+at `src/substrate`, `substrate_issue_554` for a worktree named `issue-554`.
+Every start and `dev:status` print the name. TWO WORKTREES WITH THE SAME
+DIRECTORY NAME SHARE A DATABASE, so name worktrees distinctly or set
+`SUBSTRATE_DEV_DB_NAME`; the shared database is what made three servers sweep,
+upgrade and dispatch over one set of repositories, and the engine now refuses
+the second of them at boot
+([0083](docs/decisions/0083-a-repository-has-one-writer-and-a-second-is-refused-at-open.md)).
+`SUBSTRATE_DEV_DB_CONTAINER` and `SUBSTRATE_DEV_DB_PORT` move the container,
+`SUBSTRATE_DEV_PORT` the server — the HTTP port is still `8080` for everyone,
+and the start refuses rather than bind over another tree's server.
 
 `dev:wipe` matters more than it looks: registration is one-shot per user and
 there is no unregister, so any change to the door is tested by throwing the
-database away — `dev:wipe` here, `docker compose down -v` on the compose path. `bin/substratectl --dsn "$(mise run dev:dsn)" …` is the operator
+database away — `dev:wipe` here, `docker compose down -v` on the compose path.
+It drops THIS TREE'S database and leaves the container and every other tree's
+database alone; `dev:wipe:all` is the one that reclaims the volume.
+`bin/substratectl --dsn "$(mise run dev:dsn)" …` is the operator
 hat against it, and `mise run console:build` puts the console at `/`.
 
 **The dev door has no invite code and no second factor.** Every `dev*` task
@@ -115,9 +135,9 @@ is enforced, and NEVER by setting the TOTP variable outside this tree.
 **The dev substrate has a data root.** Every `dev*` task exports
 `SUBSTRATE_DATA_ROOT` as the absolute path of `.dev/data`, so each
 repository's directory (manifest, changelog segments, sealed files, blobs)
-lands under it, and `dev:wipe` removes it with the database. The two must go
-together: a data root outliving a wiped database is imported at the next
-boot, and a database outliving its root is written back out. The dev tasks
+lands under it, and `dev:wipe` removes it with this tree's database. The two
+must go together: a data root outliving a wiped database is imported at the
+next boot, and a database outliving its root is written back out. The dev tasks
 also mint `SUBSTRATE_CREDENTIAL_KEY` once into `.dev/credential.key` and
 every start reuses it; it wraps each repository's DEK, an operator command
 that writes sealed material (`user reset`) reads the same file, and

@@ -351,16 +351,77 @@ a request uses.
 
 Keep it to **one replica**. The watch signal and the trigger dispatcher are
 in-process, and two dispatchers would serialize on compare-and-swap rather than
-scale. The segment files lean on the same shape: one writer process per data
-root. The writer holds an exclusive advisory lock on
-`<repository>/changelog/.lock` for as long as the repository is open, so a
-second process that opens a repository for writing is refused with a named
-error instead of appending behind the first one's back. Two processes under
-two data roots on one database are not refused, because neither holds the
-other's lock: each finds the other's rows in the changelog table at its next
-write, appends them to its own directory before its own lines and logs an
-error naming the condition. The directories stay whole, but nothing else
-about a second writer is supported: run one.
+scale. The segment files lean on the same shape: one writer process per
+repository.
+
+## One writer per repository, and a second is refused
+
+**Two processes on one database are refused at open**, whether or not they
+share a data root
+([0083](decisions/0083-a-repository-has-one-writer-and-a-second-is-refused-at-open.md)).
+A repository has two exclusions over it, and they cover different halves:
+
+- **The data root's flock.** The writer holds an exclusive advisory lock on
+  `<repository>/changelog/.lock` for as long as the repository is open, so a
+  second process on the SAME data root is refused with a named error instead
+  of appending behind the first one's back.
+- **The database's writer lease.** The server takes a Postgres session-level
+  advisory lock per repository, on one connection pinned for the life of the
+  process, when it opens the repository — at the boot check, before the
+  directory import and before any write. That covers the case the flock
+  cannot see: a second server under a DATA ROOT OF ITS OWN, which holds none
+  of the first one's file locks.
+
+A server that cannot take the lease **does not boot**. The error names the
+repository and the rule:
+
+```text
+substrate/engine: boot check: repository ada.example.com: substrate/engine: another
+process is this repository's writer: repository ada.example.com. One server per
+database: this one refuses to open the repository rather than write it from a
+directory of its own. If no server is running, the holder is a connection that has
+not gone away yet; the lease is the advisory lock hashtext(current_schema() ||
+'|writer|' || 'ada.example.com')::bigint, visible in pg_locks
+```
+
+**To see who holds one**, compute the key and ask `pg_locks`. The key is
+`hashtext(current_schema() || '|writer|' || <repository>)::bigint`, composed
+the way every other advisory lock the engine takes is:
+
+```sql
+WITH k AS (SELECT hashtext(current_schema() || '|writer|' || 'ada.example.com')::bigint AS key)
+SELECT l.pid, a.application_name, a.client_addr, a.backend_start, a.state
+  FROM pg_locks l JOIN pg_stat_activity a USING (pid), k
+ WHERE l.locktype = 'advisory' AND l.objsubid = 1
+   -- pg_locks splits a 64-bit advisory key across two oids; the mask is what
+   -- keeps a negative key's halves unsigned.
+   AND l.classid = ((k.key >> 32) & 4294967295)::oid
+   AND l.objid = (k.key & 4294967295)::oid;
+```
+
+Run it in the schema the server runs in: `current_schema()` is part of the key,
+so a psql session on a different `search_path` computes a different one.
+
+A lease is released by its session ending, so a writer that crashed holds
+nothing once its backend is gone and the next boot simply takes it. A lease
+still held with no server running is a connection that has not gone away yet —
+a pooler in front of Postgres will do that — and `pg_terminate_backend(pid)`
+on the pid above ends it.
+
+**A dropped connection fails closed.** A heartbeat proves the pinned
+connection alive every five seconds; the moment it cannot, the process logs at
+`ERROR` and refuses every write with `503 unavailable` until it has taken back
+every lease it held. It keeps refusing if another process took one meanwhile,
+which is the honest answer: restart it, and run one server.
+
+**The read-only hat takes no lease.** `repository verify` and `repository
+reembed` open with no changelog writer and no lease on purpose, which is what
+leaves them safe to run beside a live server; every other operator command
+opens as a writer and now meets the lease before it meets the flock. The
+cross-writer repair stays behind all of this: a process that does find rows in
+the changelog table its own directory lacks appends them before its own lines
+and logs an error naming the condition, so a lease a restart let slip leaves
+the directories whole rather than latched.
 
 ## Upgrading the binary
 

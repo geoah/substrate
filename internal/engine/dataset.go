@@ -460,6 +460,12 @@ func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal boo
 	if ds.svc.readOnly {
 		return ErrDirectoryReadOnly
 	}
+	// A process whose writer lease dropped may no longer be this
+	// repository's writer, so it writes nothing until the lease is retaken
+	// (writerlease.go). One atomic read, no round trip.
+	if err := ds.svc.lease.err(); err != nil {
+		return err
+	}
 	// A directory that fell behind the tables refuses every write until a
 	// restart: the boot check is the one repair path (repodir.go).
 	if err := ds.directoryErr(); err != nil {
@@ -834,6 +840,9 @@ func metaKeyAllowed(actor substrate.Actor, key string) error {
 func (ds *dataset) inRawTx(ctx context.Context, fn func(*txn) error) error {
 	if ds.svc.readOnly {
 		return ErrDirectoryReadOnly
+	}
+	if err := ds.svc.lease.err(); err != nil {
+		return err
 	}
 	tx, err := ds.db.BeginTx(ctx, nil)
 	if err != nil {

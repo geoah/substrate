@@ -19,13 +19,39 @@ database. `mise tasks` lists the whole family; these are the ones a day needs:
 ```bash
 mise run dev            # foreground; dev:up is the same in the background
 mise run dev:totp       # the same substrate with the second factor ENFORCED
-mise run dev:status     # the database, the server, the console, the URLs
+mise run dev:status     # the container, this tree's database, the server, the console, the URLs
 mise run dev:restart    # rebuild and restart; the data stays
-mise run dev:stop       # stop the server and its Postgres; the data stays
+mise run dev:stop       # stop this tree's server; the shared Postgres and the data stay
 mise run dev:logs
-mise run dev:wipe       # DELETE the database, the volume and .dev/
+mise run dev:wipe       # DROP this tree's database and DELETE .dev/
+mise run dev:wipe:all   # dev:wipe, then remove the container and its volume
 mise run dev:dsn        # the DSN the operator hat takes as --dsn
 ```
+
+## One database per tree
+
+The container is shared by every checkout and worktree on the box, and the
+DATABASE INSIDE IT IS NOT: it is named `substrate_<the tree directory's name>`
+— `substrate_substrate` for a checkout at `src/substrate`,
+`substrate_issue_554` for a worktree named `issue-554`. Every start and
+`mise run dev:status` print the name, and `mise run dev:dsn` names it in the
+DSN, so an operator hat pointed at the wrong tree is visible rather than
+silently productive.
+
+It is one per tree because one for all of them is a footgun with a scar: three
+servers on one database run three boot upgrades, three garbage collections and
+three trigger dispatchers over one set of repositories, each writing a data
+root of its own. A server now refuses to open a repository another process
+holds
+([one writer per repository](operations.md#one-writer-per-repository-and-a-second-is-refused)),
+so the arrangement fails loudly instead of drifting — but the database being
+separate is what keeps it from arising.
+
+Two caveats. TWO TREES WITH THE SAME DIRECTORY NAME SHARE A DATABASE, because
+the name is the directory's and nothing else: name worktrees distinctly, or set
+`SUBSTRATE_DEV_DB_NAME` to something of your own. And the HTTP port is still
+`8080` for every tree, so the second `mise run dev` refuses rather than bind
+over the first and tells you to set `SUBSTRATE_DEV_PORT`.
 
 ## What the dev tasks set
 
@@ -50,13 +76,20 @@ mise run dev:dsn        # the DSN the operator hat takes as --dsn
 
 ## The database, the data root and the key are wiped together
 
-`mise run dev:wipe` removes the volume, the data root and `.dev/` around it,
-and it has to: a data root that outlives its database is imported at the next
-boot, and a database that outlives its root is written back out
-([what happens at boot](operations.md#what-happens-at-boot)).
+`mise run dev:wipe` drops this tree's database and removes the data root and
+`.dev/` around it, and it has to: a data root that outlives its database is
+imported at the next boot, and a database that outlives its root is written
+back out ([what happens at boot](operations.md#what-happens-at-boot)).
 Registration is one-shot per repository and there is no unregister, so testing
 the door a second time means wiping first. `mise run dev:reset` is the wipe and
 a fresh start in one.
+
+It stops at this tree. The container and its volume hold every other
+checkout's database, so `dev:wipe` terminates the backends on its own database,
+drops it, and leaves the container running — which is also why `mise run
+dev:stop` stops the server and not Postgres. `mise run dev:wipe:all` is the
+one that removes the container and the volume, and it takes every tree's dev
+database with it.
 
 ## Your first user, and the operator hat
 
