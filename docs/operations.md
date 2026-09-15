@@ -414,9 +414,10 @@ the heartbeat's and an acquisition's alike — is bounded at three: a host that
 vanished leaves the socket open, so a session that never answers is a lost
 lease and not something to wait on. The moment the session
 cannot be proven alive the process logs at `ERROR` and refuses every write with
-`503 unavailable` until it has taken back every lease it held. Every later beat
-tries again, so a Postgres that restarted is recovered from without restarting
-the server, and the recovery is logged at `WARN`. It keeps refusing while
+`503 unavailable` until it has taken back every lease it held — or until it
+holds none, because a lease guarding nothing has nothing to be lost about.
+Every later beat tries again, so a Postgres that restarted is recovered from
+without restarting the server, and the recovery is logged at `WARN`. It keeps refusing while
 another process holds one of its leases, which is the honest answer: stop the
 other one, and run one server.
 

@@ -139,3 +139,60 @@ func TestASecondProcessCannotClaimARepositoryMidCreation(t *testing.T) {
 		t.Fatalf("the second process claimed a repository mid-creation: %v", claim)
 	}
 }
+
+// A creation that met a DYING lease must not take registration down with it.
+// The lease it releases on the way out is the last one held, and the refusal
+// has to go with it: a beat with nothing to prove returns without trying, so
+// a `lost` left standing over an empty `held` is a refusal nothing clears —
+// every later registration took a fresh lock, was refused by that stale flag,
+// released it again and failed the same way, forever, and past the recovery of
+// the database that caused it.
+func TestACreationThatFailedWithALostLeaseDoesNotBreakTheNextOne(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s, dsn := openBareService(t)
+	probe := leaseProbe(t, dsn)
+	const first = "alice.example.com"
+	const second = "bob.example.com"
+
+	boom := errors.New("test: the creation failed after the seed committed")
+	s.testFailAfterSeed = func() error {
+		// The state a beat leaves after the pinned connection died and the
+		// retake could not reach the database: the refusal latched, and no
+		// connection to unlock this creation's lease on.
+		s.lease.mu.Lock()
+		s.lease.lost.Store(true)
+		s.lease.closeConn()
+		s.lease.mu.Unlock()
+		return boom
+	}
+	if _, err := s.CreateRepository(ctx, first); !errors.Is(err, boom) {
+		t.Fatalf("the seeded creation was expected to fail with the seam's error: %v", err)
+	}
+	// The refusal went out with the last claim.
+	if err := s.lease.err(); err != nil {
+		t.Fatalf("a lease holding nothing is still refusing writes, and no beat will clear it: %v", err)
+	}
+	if len(s.lease.held) != 0 {
+		t.Fatalf("the failed creation kept a claim: %v", s.lease.held)
+	}
+	// The key went with the session that held it, so it is nobody's.
+	if !leaseKeyFree(t, probe, first) {
+		t.Fatal("the failed creation's lease key is still held")
+	}
+
+	// And the next registration lands. Before the fix this returned
+	// ErrWriterLeaseLost and released its own lease again, and every
+	// registration after it did the same.
+	s.testFailAfterSeed = nil
+	if _, err := s.CreateRepository(ctx, second); err != nil {
+		t.Fatalf("a registration after one that met a dying lease: %v", err)
+	}
+	if leaseKeyFree(t, probe, second) {
+		t.Fatal("the repository that was created is not leased by the process that created it")
+	}
+	// The retry of the FIRST name lands too: nothing about it was taken.
+	if _, err := s.CreateRepository(ctx, first); err != nil {
+		t.Fatalf("retry of the name whose creation failed: %v", err)
+	}
+}

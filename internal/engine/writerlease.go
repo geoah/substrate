@@ -223,16 +223,31 @@ func (l *writerLease) release(repository string) {
 		return
 	}
 	l.held = slices.Delete(l.held, i, i+1)
-	if l.conn == nil {
+	// THE LAST CLAIM TAKES THE REFUSAL AND THE CONNECTION WITH IT, whether
+	// or not there is still a connection to close.
+	//
+	// The connection, because an idle pinned one has no job — no lease to
+	// hold and, since a beat with nothing to prove returns without trying,
+	// nothing that would notice it dying — so a Postgres restart between one
+	// registration and the next would leave every later acquisition reusing
+	// a dead session.
+	//
+	// The refusal, because a lease holding nothing has nothing to be lost
+	// about, and no beat would ever clear it: the registration that met a
+	// dying lease releases its claim on the way out, and a `lost` left
+	// standing over an empty `held` made every later registration take a
+	// fresh lock, be refused by that stale flag, release it again and fail
+	// the same way — forever, and past the recovery of the database that
+	// caused it. The next acquisition starts clean, on a connection of its
+	// own.
+	if len(l.held) == 0 {
+		l.lost.Store(false)
+		l.closeConn()
 		return
 	}
-	// The last lease takes the connection with it. An idle pinned connection
-	// has no job — no lease to hold and, because the beat has nothing to
-	// prove, nothing that would notice it dying — so a Postgres restart
-	// between one registration and the next would otherwise leave every later
-	// acquisition reusing a dead session.
-	if len(l.held) == 0 {
-		l.closeConn()
+	if l.conn == nil {
+		// Nothing to unlock on: this lease went with the session, and the
+		// heartbeat is retaking the ones that are still this process's.
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), writerLeaseBeatTimeout)

@@ -73,8 +73,11 @@ under the mutex the beat needs and an unbounded one would hold it past every
 beat. A host that vanished leaves the socket open and a session on it never
 answers, so one that cannot be proven alive is treated as holding nothing,
 which is the same fail-closed reading. A connection that dies while the lease
-holds nothing is nobody's loss and no beat's business, so it is closed with
-the last lease and replaced by the next acquisition's own retry. Every beat retries, whether the
+holds nothing is nobody's loss and no beat's business, so the last claim to be
+released takes both the connection and the refusal with it — a beat with
+nothing to prove returns without trying, so a refusal left standing over an
+empty claim set is one nothing would ever clear — and the next acquisition
+starts clean on a connection of its own. Every beat retries, whether the
 lease was lost on that beat or several beats earlier with no connection to be
 had, so a Postgres that went away and came back is recovered from without a
 restart. The refusal is an atomic read on the write path, not a round trip.
@@ -120,7 +123,8 @@ same way and leaves the mutex for the beat that repairs it, and a connection
 that died while the lease held nothing is replaced at the next acquisition.
 `internal/engine/writerleasecreation_internal_db_test.go`: a creation holds the
 lease before its control-plane row exists, a second process cannot claim a
-repository mid-creation, and a creation that fails hands the lease back.
+repository mid-creation, a creation that fails hands the lease back, and one
+that met a dying lease leaves registration working for the next.
 `internal/engine/foreignwriter_db_test.go` keeps the catch-up honest by opting
 out of the lease, which is the only way to reach the condition now.
 
