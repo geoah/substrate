@@ -80,6 +80,10 @@ type fakeSubstrate struct {
 	// installRefusesLossy makes a bare POST .../install (no confirmation in
 	// the body) answer the server's 403 `lossy`, as a lossy plan does.
 	installRefusesLossy bool
+	// putValidation, when set, makes a record write answer the server's 422
+	// validation envelope carrying these problems — the refusal `apply` meets
+	// when a document types a property wrong.
+	putValidation []string
 
 	requests  []string
 	lastBody  map[string]json.RawMessage
@@ -244,6 +248,25 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func writeError(w http.ResponseWriter, status int, code, msg string, problems []string) {
 	writeJSON(w, status, map[string]any{"error": map[string]any{
 		"code": code, "message": msg, "problems": problems,
+	}})
+}
+
+// writeValidation answers a validation refusal the way internal/api writes
+// one: the engine's problem strings, the message they fold into, AND the same
+// problems field-addressed, each split on its first ": ".
+func writeValidation(w http.ResponseWriter, problems []string) {
+	details := make([]map[string]string, len(problems))
+	for i, p := range problems {
+		path, msg, ok := strings.Cut(p, ": ")
+		if !ok {
+			path, msg = "", p
+		}
+		details[i] = map[string]string{"path": path, "message": msg}
+	}
+	writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": map[string]any{
+		"code":     "validation",
+		"message":  fmt.Sprintf("substrate: validation failed: %v", problems),
+		"problems": problems, "problemDetails": details,
 	}})
 }
 
@@ -972,6 +995,10 @@ func putTitle(in substrate.PutInput) (string, bool) {
 // title leaves the version and updatedAt untouched.
 func (f *fakeSubstrate) handlePut(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
+	if len(f.putValidation) > 0 {
+		writeValidation(w, f.putValidation)
+		return
+	}
 	var in substrate.PutInput
 	_ = json.Unmarshal(mustRaw(f.lastBody), &in)
 	f.mu.Lock()

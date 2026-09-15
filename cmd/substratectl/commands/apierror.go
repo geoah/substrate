@@ -5,15 +5,25 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // apiError is the rendered form of the substrate error envelope
-// {"error":{"code","message","problems"}}.
+// {"error":{"code","message","problems","problemDetails"}}.
 type apiError struct {
-	Status     int
-	Code       string
-	Message    string
-	Problems   []string
+	Status   int
+	Code     string
+	Message  string
+	Problems []string
+	// ProblemDetails is the same validation refusal field-addressed, which a
+	// validation envelope carries beside Problems. It is preferred when
+	// present: a server that only ever fills this one still prints a list.
+	ProblemDetails []substrate.ProblemDetail
+	// Body is the refusal's raw payload, truncated. It is the last resort the
+	// renderer falls back to, so a body this client cannot read still reaches
+	// the person who has to act on it rather than leaving a bare headline.
+	Body       string
 	RetryAfter string
 	// Head and Generation ride a `compacted` refusal: the position the client
 	// re-lists from and resumes at (docs/changelog.md, frames and the horizon).
@@ -134,6 +144,34 @@ func guardHint(path string) string {
 	return "check the state transition guards for the state this record is in"
 }
 
+// problemLines is the refusal's problem list as it prints: the
+// field-addressed details when the envelope carried them, the plain strings
+// otherwise, and blanks dropped either way so the `problems:` heading never
+// stands over nothing (#547).
+func (e *apiError) problemLines() []string {
+	var out []string
+	for _, d := range e.ProblemDetails {
+		path, msg := strings.TrimSpace(d.Path), strings.TrimSpace(d.Message)
+		switch {
+		case path != "" && msg != "":
+			out = append(out, path+": "+msg)
+		case msg != "":
+			out = append(out, msg)
+		case path != "":
+			out = append(out, path)
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	for _, p := range e.Problems {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // renderError writes any error human-first: headline, message, problems as a
 // bullet list, then a hint.
 func renderError(w io.Writer, err error) {
@@ -143,14 +181,21 @@ func renderError(w io.Writer, err error) {
 		return
 	}
 	fmt.Fprintf(w, "error: %s\n", ae.headline())
-	if msg := strings.TrimSpace(ae.Message); msg != "" && msg != ae.headline() {
+	msg := strings.TrimSpace(ae.Message)
+	if msg != "" && msg != ae.headline() {
 		fmt.Fprintf(w, "  %s\n", msg)
 	}
-	if len(ae.Problems) > 0 {
+	problems := ae.problemLines()
+	switch {
+	case len(problems) > 0:
 		fmt.Fprintf(w, "  problems:\n")
-		for _, p := range ae.Problems {
+		for _, p := range problems {
 			fmt.Fprintf(w, "    - %s\n", p)
 		}
+	case msg == "" && ae.Body != "":
+		// An envelope with a code and nothing else to say: the headline alone
+		// names no cause, so the payload goes through verbatim.
+		fmt.Fprintf(w, "  body: %s\n", ae.Body)
 	}
 	if ae.Path != "" {
 		fmt.Fprintf(w, "  request: %s %s (%d)\n", ae.Method, ae.Path, ae.Status)

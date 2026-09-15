@@ -181,22 +181,30 @@ func parseAPIError(resp *http.Response, method, path string) *apiError {
 		Path:       path,
 	}
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	raw := truncate(strings.TrimSpace(string(b)), 400)
+	ae.Body = raw
 	var env struct {
 		Error struct {
-			Code       string   `json:"code"`
-			Message    string   `json:"message"`
-			Problems   []string `json:"problems"`
-			Head       *int64   `json:"head"`
-			Generation string   `json:"generation"`
+			Code     string   `json:"code"`
+			Message  string   `json:"message"`
+			Problems []string `json:"problems"`
+			// Both halves of a validation refusal are read: the engine's
+			// strings and the field-addressed split (substrate.ErrorPayload).
+			// Dropping either leaves the renderer with less than the wire
+			// carried (#547).
+			ProblemDetails []substrate.ProblemDetail `json:"problemDetails"`
+			Head           *int64                    `json:"head"`
+			Generation     string                    `json:"generation"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(b, &env); err == nil && (env.Error.Code != "" || env.Error.Message != "") {
 		ae.Code, ae.Message, ae.Problems = env.Error.Code, env.Error.Message, env.Error.Problems
+		ae.ProblemDetails = env.Error.ProblemDetails
 		ae.Head, ae.Generation = env.Error.Head, env.Error.Generation
 		return ae
 	}
-	if msg := strings.TrimSpace(string(b)); msg != "" {
-		ae.Message = truncate(msg, 400)
+	if raw != "" {
+		ae.Message = raw
 	}
 	if ae.Code == "" {
 		ae.Code = codeForStatus(resp.StatusCode)
