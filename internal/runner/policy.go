@@ -57,7 +57,13 @@ var systemReadOnly = []string{
 	// grant covers everything beneath the path it names, and the substrate runs
 	// as root in the image, so granting the parent would hand a body exactly
 	// the operator-mounted TLS keys this list exists to keep away from it.
-	"/etc/ssl/certs", "/etc/ssl/cert.pem", "/etc/ssl/openssl.cnf",
+	// Every bundle in systemCertBundles must appear here or under a directory
+	// that does, because the runner may name any of them in SSL_CERT_FILE and
+	// a chosen store the body cannot open is the failure this list prevents.
+	// /etc/ssl/ca-bundle.pem is the SUSE spelling and is named as a FILE, for
+	// the reason above: /etc/ssl is not grantable.
+	"/etc/ssl/certs", "/etc/ssl/cert.pem", "/etc/ssl/ca-bundle.pem",
+	"/etc/ssl/openssl.cnf",
 	"/etc/pki/tls/certs", "/etc/pki/tls/cert.pem", "/etc/pki/ca-trust/extracted",
 	"/etc/ca-certificates", "/etc/ca-certificates.conf",
 	// Name resolution: musl and glibc both read all of these.

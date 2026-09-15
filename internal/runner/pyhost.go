@@ -171,12 +171,15 @@ func (r *Runner) startPython(ctx context.Context, spec Spec) (*proc, error) {
 	// TMPDIR is the installation's OWN scratch, not the shared /tmp: the
 	// sandbox grants exactly this directory, so a body's tempfile lands
 	// somewhere no other installation can read.
-	cmd.Env = childEnv(
-		"SUBSTRATE_PY_MODULES="+modsDir,
+	// trustEnv adds SSL_CERT_FILE, and only when this interpreter ships a
+	// certificate store that does not exist — without it a `network:` body on
+	// the python.org macOS build cannot verify any peer (trust.go).
+	cmd.Env = childEnv(append([]string{
+		"SUBSTRATE_PY_MODULES=" + modsDir,
 		"PYTHONUNBUFFERED=1",
 		"PYTHONDONTWRITEBYTECODE=1",
-		"TMPDIR="+tmpDir,
-	)
+		"TMPDIR=" + tmpDir,
+	}, trustEnv()...)...)
 	p, err := r.startCmd(cmd, policyFor(spec, work, extraExec...))
 	if err != nil {
 		return nil, fmt.Errorf("runner: start python: %w", err)
@@ -207,7 +210,11 @@ func (r *Runner) provisionUV(ctx context.Context, hostFile, work, uvCache string
 	if err != nil {
 		return "", err
 	}
-	env := childEnv("UV_CACHE_DIR="+uvCache, "TMPDIR="+tmpDir)
+	// The resolve talks TLS to a package index, so it carries the same
+	// certificate store the body will: an interpreter with no trust store
+	// would otherwise fail the resolve too, and a uv that falls back to its own
+	// roots would trust a different set than the bodies it provisions.
+	env := childEnv(append([]string{"UV_CACHE_DIR=" + uvCache, "TMPDIR=" + tmpDir}, trustEnv()...)...)
 	uvBin, err2 := exec.LookPath("uv")
 	if err = err2; err != nil {
 		return "", fmt.Errorf("runner: uv is not on PATH: %w", err)

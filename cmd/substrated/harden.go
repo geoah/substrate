@@ -18,6 +18,55 @@ func reportSandbox() {
 	slog.Log(context.Background(), level, msg, attrs...)
 }
 
+// reportTrust says what a function body verifies a TLS peer against, beside
+// the sandbox line and for the same reason: it is a per-host property that
+// fails silently and late. An interpreter whose compiled-in certificate store
+// does not exist — the python.org framework build on macOS — makes every
+// function that declares `network:` fail CERTIFICATE_VERIFY_FAILED, and until
+// this line existed nothing at boot said so.
+func reportTrust() {
+	level, msg, attrs := trustReport(runner.Shared.Trust())
+	slog.Log(context.Background(), level, msg, attrs...)
+}
+
+// trustReport builds that line. It takes the result and the error rather than
+// the runner so every branch, including the one only a bare host reaches, is
+// assertable from a test.
+func trustReport(trust runner.TrustStore, err error) (slog.Level, string, []any) {
+	switch {
+	case err != nil:
+		// The interpreter could not be asked. Functions are unavailable
+		// regardless, so this is the milder half of a failure a body start
+		// will report again with its own error.
+		return slog.LevelWarn,
+			"function bodies trust: UNKNOWN — the interpreter could not be asked which certificate store it uses",
+			[]any{"error", err.Error()}
+
+	case trust.Path == "":
+		return slog.LevelWarn,
+			"function bodies trust: NONE — every function that declares `network:` will fail certificate verification",
+			[]any{
+				"reason", "this interpreter names a certificate store that does not exist, and no system bundle was found either",
+				"searched", strings.Join(runner.SystemCertBundles(), ", "),
+				"advice", "install this platform's CA certificates package",
+			}
+
+	case trust.Injected:
+		return slog.LevelInfo,
+			"function bodies trust: the system certificate bundle",
+			[]any{
+				"bundle", trust.Path,
+				"source", "SSL_CERT_FILE",
+				"reason", "this interpreter's own certificate store does not exist",
+			}
+
+	default:
+		return slog.LevelInfo,
+			"function bodies trust: the interpreter's own certificate store",
+			[]any{"bundle", trust.Path, "source", "interpreter default"}
+	}
+}
+
 // sandboxReport builds the boot line. It takes the mode and the report rather
 // than the confiner so the UNSUPPORTED-platform branch can be asserted from a
 // Linux test: that branch is the one a macOS developer actually reads, and it

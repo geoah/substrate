@@ -801,3 +801,25 @@ def main(input, host):
 		t.Fatalf("a body socket reached the blocked address %v times", hits)
 	}
 }
+
+// Every bundle the trust probe may name in SSL_CERT_FILE has to be READABLE
+// inside the sandbox. A chosen store the body cannot open turns a working
+// handshake into a denied read, which is the same failure the certificate
+// grant exists to prevent — and it would look exactly like the missing store
+// the injection is there to fix. Covered means named itself or under a granted
+// directory, never by widening a grant to a parent that also holds keys.
+func TestEveryCertBundleTheRunnerMayChooseIsGranted(t *testing.T) {
+	for _, bundle := range systemCertBundles {
+		granted := false
+		for _, rule := range systemReadOnly {
+			if bundle == rule || strings.HasPrefix(bundle, rule+"/") {
+				granted = true
+				break
+			}
+		}
+		if !granted {
+			t.Errorf("the runner may name %s in SSL_CERT_FILE, but no read grant covers it: "+
+				"add that FILE to systemReadOnly, never its directory", bundle)
+		}
+	}
+}
