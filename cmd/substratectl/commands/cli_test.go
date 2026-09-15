@@ -643,6 +643,104 @@ func TestErrorRenderingProblemsAndHints(t *testing.T) {
 	}
 }
 
+// A refusal never prints a heading over nothing (#547): the field-addressed
+// details are preferred over the strings, a blank problem is dropped along
+// with the heading it would have stood under, and a 422 carrying neither a
+// message nor a problem falls back to the raw body rather than leaving a bare
+// headline.
+func TestErrorRenderingNeverPrintsAnEmptyProblemList(t *testing.T) {
+	cases := []struct {
+		name   string
+		err    *apiError
+		want   []string
+		absent []string
+	}{
+		{
+			name: "details preferred over strings",
+			err: &apiError{
+				Status: 422, Code: "validation", Message: "substrate: validation failed",
+				Problems:       []string{"props.autoAccept: expected a number"},
+				ProblemDetails: []substrate.ProblemDetail{{Path: "props.autoAccept", Message: "expected a number"}},
+			},
+			want: []string{"  problems:\n    - props.autoAccept: expected a number\n"},
+		},
+		{
+			name: "a detail with no path keeps its message",
+			err: &apiError{
+				Status: 422, Code: "validation",
+				ProblemDetails: []substrate.ProblemDetail{{Message: "the document is not a mapping"}},
+				Body:           `{"error":{"code":"validation"}}`,
+			},
+			want:   []string{"    - the document is not a mapping"},
+			absent: []string{"body:"},
+		},
+		{
+			name: "blank problems take the heading with them",
+			err: &apiError{
+				Status: 422, Code: "validation", Message: "substrate: validation failed",
+				Problems: []string{"", "   "},
+			},
+			absent: []string{"problems:", "    - "},
+		},
+		{
+			name: "a code and nothing else prints the body",
+			err:  &apiError{Status: 422, Code: "validation", Body: `{"error":{"code":"validation"}}`},
+			want: []string{`  body: {"error":{"code":"validation"}}`},
+		},
+		{
+			name:   "a message means no body",
+			err:    &apiError{Status: 422, Code: "validation", Message: "substrate: validation failed", Body: `{"error":{}}`},
+			want:   []string{"  substrate: validation failed"},
+			absent: []string{"body:"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			renderError(&buf, tc.err)
+			for _, want := range tc.want {
+				if !strings.Contains(buf.String(), want) {
+					t.Errorf("missing %q in:\n%s", want, buf.String())
+				}
+			}
+			for _, absent := range tc.absent {
+				if strings.Contains(buf.String(), absent) {
+					t.Errorf("unwanted %q in:\n%s", absent, buf.String())
+				}
+			}
+		})
+	}
+}
+
+// End to end, through `apply -f` and the wire: every problem a 422 carries
+// reaches the terminal. The report in #547 was an `apply` printing the
+// `problems:` heading and nothing under it, which is what this pins against.
+func TestApplyRendersEveryProblemA422Carries(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.fake.putValidation = []string{
+		"props.autoAccept: expected a number",
+		"props.autoRefuse: expected a number",
+	}
+	h.stdin.WriteString(manifest("Draft the rack layout"))
+	_, _, err := h.run("apply", "-f", "-")
+	if err == nil {
+		t.Fatal("expected the 422 to fail the apply")
+	}
+	var buf bytes.Buffer
+	renderError(&buf, err)
+	got := buf.String()
+	for _, want := range []string{
+		"error: the substrate rejected this write as invalid\n",
+		"  problems:\n    - props.autoAccept: expected a number\n    - props.autoRefuse: expected a number\n",
+		"request: PUT /api/v1/samples.substrate.reamde.dev/tasks/task/t9 (422)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+}
+
 // The whole registry, identity-ordered, which under the package grammar
 // means the table is read down the AUTHORITY and PACKAGE columns, not the
 // NAME one.
