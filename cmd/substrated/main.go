@@ -92,6 +92,7 @@ func run() error {
 	}
 	setupLogger(cfg.LogLevel)
 	reportSandbox()
+	reportTrust()
 
 	// Before anything opens: the credential key unwraps every repository's
 	// DEK, so a host without valid key material may not boot.

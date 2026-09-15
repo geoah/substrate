@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"log/slog"
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/sandbox"
 )
 
@@ -124,5 +126,76 @@ func TestBootLineWhenTheConnectGateCannotBeServiced(t *testing.T) {
 		if !strings.Contains(advice, want) {
 			t.Fatalf("the advice does not mention %q: %q", want, advice)
 		}
+	}
+}
+
+// The trust line is read by the same person for the same reason: a store that
+// does not exist fails every network body, silently, and only on some hosts.
+// All four branches are asserted here because the interesting one — an
+// interpreter whose compiled-in store is empty — is the python.org macOS
+// build, which no CI machine has.
+
+func TestTrustLineNamesTheSystemBundleWhenTheInterpreterHasNone(t *testing.T) {
+	level, msg, attrs := trustReport(runner.TrustStore{Path: "/etc/ssl/cert.pem", Injected: true}, nil)
+
+	if level != slog.LevelInfo {
+		t.Fatalf("level = %v, want INFO: the store was found, nothing is wrong", level)
+	}
+	if !strings.Contains(msg, "trust") {
+		t.Fatalf("message does not say what bodies trust: %q", msg)
+	}
+	if got := attr(attrs, "bundle"); got != "/etc/ssl/cert.pem" {
+		t.Fatalf("bundle = %q, want the chosen path", got)
+	}
+	// The mechanism is named, because a reader debugging a handshake needs to
+	// know a variable is being set for them.
+	if got := attr(attrs, "source"); got != "SSL_CERT_FILE" {
+		t.Fatalf("source = %q, want SSL_CERT_FILE", got)
+	}
+}
+
+func TestTrustLineNamesTheInterpretersOwnStore(t *testing.T) {
+	level, _, attrs := trustReport(runner.TrustStore{Path: "/usr/lib/ssl/cert.pem"}, nil)
+
+	if level != slog.LevelInfo {
+		t.Fatalf("level = %v, want INFO", level)
+	}
+	if got := attr(attrs, "bundle"); got != "/usr/lib/ssl/cert.pem" {
+		t.Fatalf("bundle = %q, want the interpreter's own path", got)
+	}
+	if got := attr(attrs, "source"); got != "interpreter default" {
+		t.Fatalf("source = %q, want the interpreter default", got)
+	}
+}
+
+// Nothing found anywhere: a WARN that says what breaks and where a store was
+// looked for, not "no trust store configured".
+func TestTrustLineWarnsWhenNothingIsTrusted(t *testing.T) {
+	level, msg, attrs := trustReport(runner.TrustStore{}, nil)
+
+	if level != slog.LevelWarn {
+		t.Fatalf("level = %v, want WARN", level)
+	}
+	if !strings.Contains(msg, "NONE") || !strings.Contains(msg, "network:") {
+		t.Fatalf("message does not name the consequence for a network body: %q", msg)
+	}
+	for _, bundle := range runner.SystemCertBundles() {
+		if !strings.Contains(attr(attrs, "searched"), bundle) {
+			t.Fatalf("searched does not list %s: %q", bundle, attr(attrs, "searched"))
+		}
+	}
+}
+
+func TestTrustLineWarnsWhenTheInterpreterCannotBeAsked(t *testing.T) {
+	level, msg, attrs := trustReport(runner.TrustStore{}, errors.New("python3 not found"))
+
+	if level != slog.LevelWarn {
+		t.Fatalf("level = %v, want WARN", level)
+	}
+	if !strings.Contains(msg, "UNKNOWN") {
+		t.Fatalf("message claims to know something it does not: %q", msg)
+	}
+	if !strings.Contains(attr(attrs, "error"), "python3 not found") {
+		t.Fatalf("the probe failure is not carried: %v", attrs)
 	}
 }

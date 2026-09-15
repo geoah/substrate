@@ -216,6 +216,16 @@ ERROR, not a warning, because a confinement that silently does less than it
 claims is worse than none. A real deployment should run `SUBSTRATE_SANDBOX=enforce`,
 which turns that into a refusal to run bodies at all.
 
+**The boot log also says what bodies trust.** A second line beside the sandbox
+report names the certificate store a body verifies a TLS peer against: the
+interpreter's own where it has one, else the system bundle the runner names in
+`SSL_CERT_FILE` because the interpreter's compiled-in store does not exist —
+the python.org framework build on macOS is that case, and without the line
+every function declaring `network:` failed `CERTIFICATE_VERIFY_FAILED` with
+nothing at boot to say why. A host with no certificate bundle at all gets a
+WARN naming the paths that were looked for; install the platform's CA
+certificates package.
+
 **Landlock and seccomp work in a stock container**: Docker's and containerd's
 default seccomp profiles permit the `landlock_*` and `seccomp` syscalls, and
 neither needs a capability.
