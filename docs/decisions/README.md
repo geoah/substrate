@@ -235,3 +235,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0081](0081-the-window-read-computes-occurrences-and-recurring-is-core.md) | The window read computes occurrences, and `recurring` and `override` are core traits | accepted |
 | [0082](0082-a-record-meets-a-new-state-machine-in-its-initial-state.md) | A record meets a new state machine in its initial state | accepted |
 | [0083](0083-a-repository-has-one-writer-and-a-second-is-refused-at-open.md) | A repository has one writer, and a second is refused at open | accepted |
+| [0084](0084-a-reference-may-pin-a-mapping-source-kind.md) | A reference may pin a mapping's source kind | accepted |

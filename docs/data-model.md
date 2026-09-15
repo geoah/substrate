@@ -424,7 +424,12 @@ The **pin** is `kind:` or `trait:`, and it says which records this property may
 name. `kind: any`, and an absent pin, leave it unconstrained, and then the
 value must carry an explicit kind. Which records a property may name is exactly
 what a client needs to offer a picker. A declaration spelling `to:` is refused
-naming the pin.
+naming the pin. **Any kind may be pinned**, a
+[mapping's source kind included](projection.md#record-mappings)
+([decision 0084](decisions/0084-a-reference-may-pin-a-mapping-source-kind.md)):
+a pin at a mirror kind is satisfied by the value as written, which is how a
+provider models its API's own relations. Outside that provider's own package,
+pin the subject instead and let the hop do the work.
 
 A value is ONE OBJECT, holding the referent's path under the reserved key
 `ref`:

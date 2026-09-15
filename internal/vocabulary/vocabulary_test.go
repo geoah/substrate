@@ -1590,17 +1590,6 @@ data:
   to: x.example.com/x/org
   property: employer
 `,
-		// No reference anywhere may name a mapped source kind: resolution
-		// stays one hop deep (§6.2).
-		"reference onto a source record": recperson("") + `---
-kind: substrate.reamde.dev/core/kind
-metadata: {id: x.example.com/x/note}
-data:
-  authority: x.example.com
-  package: x
-  names: {singular: note}
-  properties: {about: {type: reference, kind: rec}}
-`,
 		"unknown mapping key": recperson(`  fuse: true
 `),
 	}
@@ -1614,6 +1603,88 @@ data:
 			}
 		})
 	}
+
+	// A REFERENCE MAY PIN A MAPPING'S SOURCE KIND (record 84). Against the old
+	// rule both of these failed the load with "no reference may name
+	// x.example.com/x/rec, the source kind of mapping …", which is what made
+	// importing a mapping retroactively narrow what a provider's own mirrors
+	// could declare. The nested site is here too, because the refusal walked
+	// reference FIELDS as well as a kind's own properties.
+	t.Run("a reference may pin a mapping source", func(t *testing.T) {
+		src := recperson("") + `---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/note}
+data:
+  authority: x.example.com
+  package: x
+  names: {singular: note}
+  properties:
+    about: {type: reference, kind: rec}
+    mentions: {type: reference, kind: rec, repeated: true}
+    attribution:
+      type: object
+      fields: {by: {type: reference, kind: rec}}
+`
+		fsys := fstest.MapFS{"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(src)}}
+		reg, err := vocabulary.LoadFS(fsys)
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		note, ok := reg.ByIdentity("x.example.com/x/note")
+		if !ok {
+			t.Fatal("note did not load")
+		}
+		// The pin resolved to the full identity, so the write path compares
+		// identities and never a bare name against one.
+		for _, want := range []string{"about", "mentions"} {
+			if got := note.Props[want].To; got != "x.example.com/x/rec" {
+				t.Fatalf("note.%s pins %q", want, got)
+			}
+		}
+		if got := note.Props["attribution"].Fields["by"].To; got != "x.example.com/x/rec" {
+			t.Fatalf("note.attribution.by pins %q", got)
+		}
+	})
+
+	// The bipartite rule is the one that survives: a mapping's `to` may not be
+	// another mapping's `from`, so a subject hop is never a chain of them.
+	// Record 84 removed the reference refusal and left this one standing.
+	t.Run("bipartite still holds beside a pinned source", func(t *testing.T) {
+		src := recperson("") + `---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/note}
+data:
+  authority: x.example.com
+  package: x
+  names: {singular: note}
+  properties: {about: {type: reference, kind: rec}}
+---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/org}
+data:
+  authority: x.example.com
+  package: x
+  names: {singular: org}
+  properties: {name: {type: string}}
+---
+kind: substrate.reamde.dev/core/recordmapping
+metadata: {id: x.example.com/x/personorg}
+data:
+  authority: x.example.com
+  package: x
+  from: x.example.com/x/person
+  to: x.example.com/x/org
+  property: employer
+`
+		fsys := fstest.MapFS{"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(src)}}
+		_, err := vocabulary.LoadFS(fsys)
+		if err == nil {
+			t.Fatal("expected a load error")
+		}
+		if !strings.Contains(err.Error(), "bipartite") {
+			t.Fatalf("error = %v, want the bipartite refusal", err)
+		}
+	})
 
 	// A `from` in another package resolves at Finalize, not at parse, so its
 	// absence is reported THERE, naming what to import. The message is the

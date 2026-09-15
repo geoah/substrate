@@ -11,8 +11,9 @@ import (
 // That reference declares `subject: true` and the mapping names it, so the
 // write path can refuse to move a subject without reading the mapping set.
 // Everything record 33 ruled about it stands, restated here: created with its
-// record, moved only by merge and split, never `onDelete: cascade`, and no
-// reference anywhere else may land on a mapped source kind.
+// record, moved only by merge and split, and never `onDelete: cascade`. A
+// reference elsewhere MAY pin a mapped source kind (record 84): a pin at the
+// source is satisfied without a hop, so it costs the one-hop rule nothing.
 
 // Merge is how one target property combines contributions: atomic takes one
 // source's value whole, union takes the deduped union of every live source's
@@ -421,17 +422,16 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 // (source kind, subject property), so one mirror kind reaches two subject
 // kinds through two `subject: true` references and two mappings through one
 // reference stay refused (record 49). The source-to-subject graph stays
-// bipartite: a mapping's `to` may never itself be any mapping's `from`, and
-// no reference anywhere may land on a mapped source kind, which keeps
-// resolution one hop deep. Registry-wide, because a mapping installs
-// with its connector long after the vocabulary that names its target was
-// loaded.
+// bipartite: a mapping's `to` may never itself be any mapping's `from`, which
+// is what keeps resolution one hop deep — a pin AT a source kind resolves
+// without a hop at all, so it is not this graph's business (record 84).
+// Registry-wide, because a mapping installs with its connector long after the
+// vocabulary that names its target was loaded.
 func (r *Registry) mappingInvariantProblems() []string {
 	var problems []string
 	// bySlot is the mapping set's key. byFrom is the source-kind index the
-	// bipartite and no-reference rules read; a source's first mapping names
-	// the violation, so the message does not depend on which of its mappings
-	// the loop reached.
+	// bipartite rule reads; a source's first mapping names the violation, so
+	// the message does not depend on which of its mappings the loop reached.
 	bySlot := map[mappingSlot]*Mapping{}
 	byPair := map[mappingSlot]*Mapping{}
 	byFrom := map[string][]*Mapping{}
@@ -463,19 +463,6 @@ func (r *Registry) mappingInvariantProblems() []string {
 			problems = append(problems, fmt.Sprintf(
 				"%s %s: data.to: %s is itself the source of mapping %s — the source→subject graph stays bipartite (record 50)",
 				DocRecordMapping, m.Identity(), m.To, others[0].Identity()))
-		}
-	}
-	// Every declared reference site, nested ones included: a pointer at a source
-	// kind is a second hop whichever level it sits at.
-	for _, t := range r.Kinds() {
-		for _, site := range referenceSites(t) {
-			ms, ok := byFrom[site.Prop.To]
-			if !ok {
-				continue
-			}
-			problems = append(problems, fmt.Sprintf(
-				"%s %s: data.properties.%s: no reference may name %s, the source kind of mapping %s — pin it at %s",
-				DocKind, t.Identity, site.Path, site.Prop.To, ms[0].Identity(), ms[0].To))
 		}
 	}
 	return problems
