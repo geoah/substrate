@@ -159,10 +159,18 @@ db_start() {
 
 # db_exists answers from the catalog rather than by connecting to the database
 # itself: a connection attempt cannot tell "no such database" from "not ready
-# yet", and one of those is a create and the other is a wait.
+# yet", and one of those is a create and the other is a wait. It has THREE
+# answers, not two: 0 present, 1 absent, 2 the probe itself failed (Postgres
+# out of connections, restarting after pg_isready). A caller that read a
+# failed probe as "absent" would drop nothing and still throw the data root
+# and the credential key away, so the failure is its own exit code.
 db_exists() {
-	docker exec "$CONTAINER" psql -U postgres -d "$BOOTSTRAP_DB" -tAc \
-		"SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}'" 2>/dev/null | grep -q '^1$'
+	local out
+	if ! out="$(docker exec "$CONTAINER" psql -U postgres -d "$BOOTSTRAP_DB" -tAc \
+		"SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}'" 2>/dev/null)"; then
+		return 2
+	fi
+	[ "$out" = "1" ]
 }
 
 # db_ensure creates THIS TREE'S database on first use. The container ships one
@@ -202,10 +210,19 @@ db_drop() {
 		echo "dev: ${CONTAINER} is gone but volume ${VOLUME} is not, so ${DB_NAME} may still be in it; starting the container to drop it"
 	fi
 	db_start
-	if ! db_exists; then
+	local probe=0
+	db_exists || probe=$?
+	case "$probe" in
+	0) ;;
+	1)
 		echo "dev: database ${DB_NAME} was already gone"
 		return 0
-	fi
+		;;
+	*)
+		echo "dev: could not ask ${CONTAINER} whether ${DB_NAME} exists; nothing was wiped" >&2
+		return 1
+		;;
+	esac
 	# A backend still on the database refuses the drop, and after the healthz
 	# guard above the only ones left are connections a dead server never
 	# closed. Terminating them is what makes the wipe idempotent.
