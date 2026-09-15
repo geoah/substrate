@@ -182,6 +182,56 @@ func conformanceCases() []codeCase {
 			}
 		},
 	}, {
+		// Issue 553: the accept of a change request whose diff applies
+		// nothing is the request's conflict with the target's state, and it
+		// answers as ONE refusal. It used to be a validation failure wrapped
+		// in a version conflict — a 422 whose message opened "version
+		// conflict" — so a client could tell it neither from a malformed
+		// decision nor from the stale ifVersion above.
+		name: "an accept whose diff applies nothing answers 409 conflict",
+		code: "conflict",
+		run: func(t *testing.T, e *testenv.Env) {
+			const settled = notesPath + "/settled"
+			status, body := e.Do(http.MethodPut, settled, map[string]any{
+				"properties": map[string]any{"subject": "already this"},
+			})
+			wantRecord(t, status, body, http.StatusCreated)
+
+			const reqPath = "/api/v1/substrate.reamde.dev/core/recordpatchrequest/noop"
+			status, body = e.Do(http.MethodPut, reqPath, map[string]any{
+				"properties": map[string]any{
+					"target":    conformanceRef + "/note/settled",
+					"diff":      map[string]any{"properties": map[string]any{"subject": "already this"}},
+					"rationale": "a diff the target already satisfies",
+				},
+			})
+			req := wantRecord(t, status, body, http.StatusCreated)
+
+			status, body = e.Do(http.MethodPatch, reqPath, map[string]any{
+				"ifVersion":  req.Version,
+				"properties": map[string]any{"decision": "accepted"},
+			})
+			wantError(t, status, body, http.StatusConflict, "conflict")
+			if !strings.Contains(string(body), "applied no change") {
+				t.Errorf("the refusal does not name its reason: %s", body)
+			}
+			// The words belong to a stale ifVersion, and the decision's
+			// ifVersion was current: saying them here is the bug.
+			if strings.Contains(string(body), "version conflict") {
+				t.Errorf("the failed accept claims a version conflict: %s", body)
+			}
+
+			// Nothing moved, and the request carries the reason.
+			status, body = e.Do(http.MethodGet, reqPath, nil)
+			after := wantRecord(t, status, body, http.StatusOK)
+			if after.Properties["decision"] != "proposed" {
+				t.Fatalf("the failed accept moved the machine: %+v", after.Properties)
+			}
+			if !strings.Contains(string(body), "applied no change") {
+				t.Errorf("the request carries no conflict annotation naming the reason: %s", body)
+			}
+		},
+	}, {
 		name: "a put that moves a state answers 403 guard",
 		code: "guard",
 		run: func(t *testing.T, e *testenv.Env) {

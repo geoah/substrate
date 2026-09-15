@@ -535,9 +535,12 @@ func (ds *dataset) patchWith(ctx context.Context, actor substrate.Actor, typ, id
 	var dc *diffConflict
 	if errors.As(err, &dc) {
 		// The transition rolled back with the transaction; the conflict
-		// annotation is the record the owner sees.
+		// annotation is the record the owner sees. One reason serves the
+		// annotation, the proposing thread's report and the error, so the
+		// three cannot say different things.
+		reason := refusalReason(dc.err)
 		note := map[string]any{
-			"reason": dc.err.Error(), "at": nowUTC().Format(time.RFC3339Nano),
+			"reason": reason, "at": nowUTC().Format(time.RFC3339Nano),
 		}
 		if aerr := ds.inTx(ctx, actor, true, func(t *txn) error {
 			row, err := t.loadRow(dc.edit, true)
@@ -555,13 +558,13 @@ func (ds *dataset) patchWith(ctx context.Context, actor substrate.Actor, typ, id
 			// an agent told "held for review" waits forever on a request that
 			// can no longer land as reviewed (agentdecision.go).
 			if row.Kind == vocabulary.KindRecordPatchRequest {
-				return t.recordProposalConflict(row, dc.err.Error())
+				return t.recordProposalConflict(row, reason)
 			}
 			return nil
 		}); aerr != nil {
 			return nil, aerr
 		}
-		return nil, fmt.Errorf("%w: %w", substrate.ErrConflict, dc.err)
+		return nil, &substrate.AcceptConflictError{Reason: reason}
 	}
 	if err != nil {
 		return nil, err
@@ -2174,6 +2177,29 @@ func isRequestRefusal(err error) bool {
 		errors.Is(err, substrate.ErrForbidden)
 }
 
+// refusalReason is a request refusal's text with the sentinel prefixes it was
+// wrapped in removed. A failed accept classifies itself — it is the accept
+// that conflicts, under AcceptConflictError — so carrying the inner sentinel
+// through would say the refusal twice and in two different words ("version
+// conflict: validation failed: the diff applied no change"), which is what a
+// client branching on the code could not read (#553). Every message these
+// sentinels wrap on the accept path stands on its own without them.
+func refusalReason(err error) string {
+	msg := err.Error()
+	for trimmed := true; trimmed; {
+		trimmed = false
+		for _, sentinel := range []error{
+			substrate.ErrValidation, substrate.ErrConflict, substrate.ErrGuard,
+			substrate.ErrNotFound, substrate.ErrForbidden, substrate.ErrLossyConversion,
+		} {
+			if prefix := sentinel.Error() + ": "; strings.HasPrefix(msg, prefix) {
+				msg, trimmed = msg[len(prefix):], true
+			}
+		}
+	}
+	return msg
+}
+
 // applyEditDiff materializes an accepted change request in the transition's
 // transaction. It branches on the request's `op`: a patch applies the
 // stored diff to an existing target, a create mints the named record
@@ -2247,7 +2273,7 @@ func (t *txn) applyPatchRequest(edit *erow) error {
 		return err
 	}
 	if row == nil || row.DeletedAt != nil {
-		return fmt.Errorf("%w: patch target %s", substrate.ErrNotFound, target.ID)
+		return fmt.Errorf("%w: patch target %s no longer exists", substrate.ErrNotFound, target.ID)
 	}
 	if err := t.authorizeRequestOp(opPatch, row.Kind); err != nil {
 		return err
