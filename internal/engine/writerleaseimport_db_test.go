@@ -44,7 +44,13 @@ func leaseHeld(t *testing.T, dsn, repository string) (release func()) {
 			return
 		}
 		released = true
-		// Ending the session is what releases it; the pool goes with it.
+		// UNLOCKED EXPLICITLY, on the session that took it. Closing the
+		// connection would also release it — by ending the session — but the
+		// backend's exit is asynchronous, so the import below could still
+		// find the key held. The unlock is synchronous.
+		if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_unlock(`+engine.WriterLeaseKeySQL+`)`, repository); err != nil {
+			t.Errorf("release the lease key: %v", err)
+		}
 		_ = conn.Close()
 		_ = db.Close()
 	}
@@ -76,6 +82,14 @@ func leaseKeyIsFree(t *testing.T, dsn, repository string) bool {
 	var got bool
 	if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(`+engine.WriterLeaseKeySQL+`)`, repository).Scan(&got); err != nil {
 		t.Fatalf("probe the lease key: %v", err)
+	}
+	// GIVEN STRAIGHT BACK. A probe that kept what it took would be the thing
+	// the next acquisition is refused by, and the pooled session outlives the
+	// connection being handed back.
+	if got {
+		if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_unlock(`+engine.WriterLeaseKeySQL+`)`, repository); err != nil {
+			t.Fatalf("give the probed key back: %v", err)
+		}
 	}
 	return got
 }
@@ -122,10 +136,10 @@ func TestAnImportTakesTheLeaseBeforeItPublishesTheRow(t *testing.T) {
 	}
 }
 
-// An import that FAILS hands the lease back: the boot refuses either way, but
-// the key must not be left held by a process that imported nothing, or the
-// next attempt against the same directory would be refused by its own
-// predecessor.
+// An import IN FLIGHT holds the lease, and one that FAILS hands it back. The
+// first is the property that matters — nothing can claim a directory being
+// imported — and the second keeps a second attempt against the same directory
+// from being refused by its own predecessor.
 func TestAFailedImportReleasesTheLease(t *testing.T) {
 	t.Parallel()
 	svc, ds, _ := newDatasetWithDSN(t)
@@ -141,13 +155,22 @@ func TestAFailedImportReleasesTheLease(t *testing.T) {
 	}
 
 	diskFull := errors.New("test: the import failed part way")
+	heldDuring := false
 	_, err := engine.OpenForTest(t, context.Background(), dsn2,
 		engine.WithKindsDir(engine.SeedKindsDir),
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(engine.TestCredentialKey),
-		engine.WithTestImportFault(0, func(string) error { return diskFull }))
+		engine.WithTestImportFault(0, func(string) error {
+			// Mid-import, from a session of its own: the importer must be
+			// holding the key it took before it published the row.
+			heldDuring = !leaseKeyIsFree(t, dsn2, id)
+			return diskFull
+		}))
 	if !errors.Is(err, diskFull) {
 		t.Fatalf("the import was expected to fail with the seam's error: %v", err)
+	}
+	if !heldDuring {
+		t.Fatal("an import in flight did not hold its repository's writer lease")
 	}
 	if !leaseKeyIsFree(t, dsn2, id) {
 		t.Fatal("a failed import kept the repository's writer lease")
