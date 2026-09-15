@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 )
 
@@ -45,13 +47,14 @@ func SystemCertBundles() []string { return slices.Clone(systemCertBundles) }
 
 // TrustStore is the decision, for the child environment and for the boot line.
 type TrustStore struct {
-	// Path is the store in use: the interpreter's own where it has one, else
-	// the system bundle the runner chose. Empty means nothing was found, and
-	// every network body on this host will fail its handshake.
+	// Path is the store in use: the interpreter's own where it has a usable
+	// one, else the system bundle the runner chose. Empty means nothing on
+	// this host holds a certificate, and every network body will fail its
+	// handshake.
 	Path string
 	// Injected distinguishes the two: true when Path is the runner's choice,
 	// passed to every child as SSL_CERT_FILE because the interpreter's own
-	// store does not exist.
+	// store does not exist or holds no certificate.
 	Injected bool
 }
 
@@ -72,45 +75,118 @@ type verifyPaths struct {
 // build compiled in, is not something the runner can know from outside.
 const trustProbe = `import ssl,json; p=ssl.get_default_verify_paths(); print(json.dumps({"cafile":p.cafile,"capath":p.capath,"openssl_cafile":p.openssl_cafile,"openssl_capath":p.openssl_capath}))`
 
+// trustFS is the little the decision needs of a filesystem, and no rule: the
+// rule about what counts as a store lives in chooseTrust, so a test fakes the
+// filesystem without restating the thing under test.
+type trustFS interface {
+	// fileSize is the byte size of an existing regular file, and -1 for
+	// anything else — a directory, a missing path, an unreadable one.
+	fileSize(path string) int64
+	// entries are an existing directory's entry names, and nil for anything
+	// else. Names only: OpenSSL picks a certificate out of a hashed directory
+	// by name, so that is all there is to look at.
+	entries(path string) []string
+}
+
 // chooseTrust is the whole decision: the interpreter's answer, the bundle list
-// and two filesystem predicates in, one TrustStore out. Pure, so the decision
-// can be tested without the python.org build that motivates it.
+// and a filesystem in, one TrustStore out. Pure, so the decision can be tested
+// without the python.org build that motivates it.
 //
-// isFile must report an existing regular file and isDir an existing
-// directory: the distinction OpenSSL itself draws between a concatenated
-// bundle and a hashed directory, and the reason a `capath` is never offered as
-// an SSL_CERT_FILE.
-func chooseTrust(p verifyPaths, bundles []string, isFile, isDir func(string) bool) TrustStore {
-	// The interpreter's own store wins whenever it exists, so an operator who
-	// pointed the host's OpenSSL somewhere keeps that answer and the runner
-	// adds nothing. Re-checking what python already checked keeps the decision
-	// a function of the filesystem alone.
-	if p.CAFile != "" && isFile(p.CAFile) {
+// A path that merely EXISTS is not a store. The python.org installer leaves
+// its `etc/openssl/certs` directory in place and empty, so accepting an
+// existing directory would take the interpreter's word for a store that
+// verifies nothing — and would suppress both the fallback and the warning that
+// say so, which is the whole failure this file exists to end. An empty bundle
+// file is the same mistake in the other shape.
+func chooseTrust(p verifyPaths, bundles []string, fs trustFS) TrustStore {
+	// The interpreter's own store wins wherever it holds certificates, so an
+	// operator who pointed the host's OpenSSL somewhere keeps that answer and
+	// the runner adds nothing.
+	if isBundle(fs, p.CAFile) {
 		return TrustStore{Path: p.CAFile}
 	}
-	if p.CAPath != "" && isDir(p.CAPath) {
+	if isCertDir(fs, p.CAPath) {
 		return TrustStore{Path: p.CAPath}
 	}
 	for _, bundle := range bundles {
-		if isFile(bundle) {
+		if isBundle(fs, bundle) {
 			return TrustStore{Path: bundle, Injected: true}
 		}
 	}
-	// Nothing found: name no store at all rather than one that does not exist.
-	// SSL_CERT_FILE pointing at a missing file is worse than an absent
+	// Nothing found: name no store at all rather than one that cannot verify.
+	// SSL_CERT_FILE pointing at a missing or empty file is worse than an absent
 	// variable — OpenSSL fails the load and the error names the runner's
 	// invention instead of the interpreter's own empty default.
 	return TrustStore{}
 }
 
-func isFile(path string) bool {
-	st, err := os.Stat(path)
-	return err == nil && st.Mode().IsRegular()
+// isBundle reports a concatenated PEM bundle with something in it. Size alone,
+// because parsing to check is the TLS stack's job and a non-empty file that
+// holds no certificate fails loudly at handshake, which is a legible failure;
+// an empty one fails identically to no store at all, which is not.
+func isBundle(fs trustFS, path string) bool {
+	return path != "" && fs.fileSize(path) > 0
 }
 
-func isDir(path string) bool {
+// isCertDir reports an OpenSSL hashed directory holding at least one
+// certificate entry.
+func isCertDir(fs trustFS, path string) bool {
+	if path == "" {
+		return false
+	}
+	for _, name := range fs.entries(path) {
+		if isCertEntry(name) {
+			return true
+		}
+	}
+	return false
+}
+
+// isCertEntry recognizes the names a certificate wears inside a capath: the
+// hashed form OpenSSL itself looks up (eight hex digits, a dot, a sequence
+// number — `5ed36f99.0`), and the plain files distributions drop beside them.
+// A `.r0` CRL is deliberately not one: a directory holding only revocation
+// lists verifies nothing.
+func isCertEntry(name string) bool {
+	ext := strings.TrimPrefix(filepath.Ext(name), ".")
+	switch ext {
+	case "pem", "crt":
+		return true
+	case "":
+		return false
+	}
+	base := strings.TrimSuffix(name, "."+ext)
+	if len(base) != 8 || strings.IndexFunc(base, func(r rune) bool { return !isHexDigit(r) }) >= 0 {
+		return false
+	}
+	return strings.IndexFunc(ext, func(r rune) bool { return r < '0' || r > '9' }) < 0
+}
+
+func isHexDigit(r rune) bool {
+	return (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+}
+
+// hostFS is the real filesystem.
+type hostFS struct{}
+
+func (hostFS) fileSize(path string) int64 {
 	st, err := os.Stat(path)
-	return err == nil && st.IsDir()
+	if err != nil || !st.Mode().IsRegular() {
+		return -1
+	}
+	return st.Size()
+}
+
+func (hostFS) entries(path string) []string {
+	ents, err := os.ReadDir(path)
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(ents))
+	for _, e := range ents {
+		names = append(names, e.Name())
+	}
+	return names
 }
 
 // pythonTrust probes ONCE per process, like pythonInterpreter: the answer is a
@@ -142,7 +218,7 @@ var pythonTrust = sync.OnceValues(func() (TrustStore, error) {
 	if err := json.Unmarshal(out, &paths); err != nil {
 		return TrustStore{}, fmt.Errorf("runner: probe the interpreter's certificate store: %w", err)
 	}
-	return chooseTrust(paths, systemCertBundles, isFile, isDir), nil
+	return chooseTrust(paths, systemCertBundles, hostFS{}), nil
 })
 
 // Trust reports what function bodies will verify TLS against, for the boot
