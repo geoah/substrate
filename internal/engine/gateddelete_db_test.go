@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -70,8 +71,14 @@ func TestGatedDeleteCarriesIfVersionToTheAccept(t *testing.T) {
 	if err == nil {
 		t.Fatal("accepting a delete request whose target moved succeeded")
 	}
-	if !strings.Contains(err.Error(), "conflict") {
+	// The sentinel, not the word: a failed accept names its reason ("ifVersion
+	// 1, stored 2") and classifies itself as a conflict through the error, not
+	// by spelling "conflict" in the message (#553).
+	if !errors.Is(err, substrate.ErrConflict) {
 		t.Fatalf("accept: %v, want a conflict", err)
+	}
+	if !strings.Contains(err.Error(), "ifVersion 1, stored 2") {
+		t.Fatalf("the refused accept does not name the versions: %v", err)
 	}
 	got, err := ds.Get(ctx, crewPackage+"/widget", widget.ID)
 	if err != nil || got.DeletedAt != nil || got.Properties["name"] != "edited since" {

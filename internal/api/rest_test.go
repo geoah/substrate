@@ -172,6 +172,7 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 		code   string
 	}{
 		{"conflict", fmt.Errorf("version: %w", substrate.ErrConflict), http.StatusConflict, codeConflict},
+		{"accept_conflict", &substrate.AcceptConflictError{Reason: "the diff applied no change"}, http.StatusConflict, codeConflict},
 		{"guard", fmt.Errorf("transition: %w", substrate.ErrGuard), http.StatusForbidden, codeGuard},
 		{"forbidden", fmt.Errorf("label ns: %w", substrate.ErrForbidden), http.StatusForbidden, codeForbidden},
 		{"auth", fmt.Errorf("token: %w", substrate.ErrAuth), http.StatusUnauthorized, codeAuth},
@@ -213,5 +214,44 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 	want := []substrate.ProblemDetail{{Path: "name", Message: "required"}, {Path: "asin", Message: "malformed"}}
 	if !reflect.DeepEqual(env2.Error.ProblemDetails, want) {
 		t.Fatalf("problemDetails = %v, want %v", env2.Error.ProblemDetails, want)
+	}
+}
+
+// Issue 553: a failed accept of a change request answers ONE refusal. The
+// engine's AcceptConflictError carries the reason with no inner sentinel, so
+// the wire says 409 conflict with the reason whatever the cause — never the
+// 422 a no-op diff's validation failure used to surface as, and never the
+// words "version conflict", which belong to the caller's own ifVersion.
+func TestRESTFailedAcceptIsConflictWithItsReason(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+
+	const reason = "the diff applied no change — the target already matches the proposed values"
+	ds.errs["Patch"] = &substrate.AcceptConflictError{Reason: reason}
+	defer delete(ds.errs, "Patch")
+
+	rec := env.do(t, http.MethodPatch, peoplePath+"/anyone", tok,
+		map[string]any{"properties": map[string]any{"decision": "accepted"}, "ifVersion": 1})
+	wantErrorCode(t, rec, http.StatusConflict, codeConflict)
+	body := decodeJSON[substrate.ErrorEnvelope](t, rec)
+	if !strings.Contains(body.Error.Message, reason) {
+		t.Fatalf("message does not name the reason: %q", body.Error.Message)
+	}
+	if strings.Contains(body.Error.Message, "version conflict") {
+		t.Fatalf("a failed accept must not claim a version conflict: %q", body.Error.Message)
+	}
+	if len(body.Error.Problems) != 0 {
+		t.Fatalf("a failed accept is not a validation refusal: %v", body.Error.Problems)
+	}
+
+	// The same PATCH under a stale ifVersion is still the version conflict it
+	// always was: the two stay tellable apart by message under one code.
+	ds.errs["Patch"] = fmt.Errorf("%w: ifVersion 1, stored 4", substrate.ErrConflict)
+	rec = env.do(t, http.MethodPatch, peoplePath+"/anyone", tok,
+		map[string]any{"properties": map[string]any{"name": "Ada"}, "ifVersion": 1})
+	wantErrorCode(t, rec, http.StatusConflict, codeConflict)
+	if stale := decodeJSON[substrate.ErrorEnvelope](t, rec); !strings.Contains(stale.Error.Message, "version conflict") {
+		t.Fatalf("a stale ifVersion still reads as a version conflict: %q", stale.Error.Message)
 	}
 }

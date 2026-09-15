@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -473,10 +474,40 @@ func TestAcceptedNoOpDiffFailsTransition(t *testing.T) {
 	}); err == nil {
 		t.Fatal("a no-op diff accepted green")
 	} else {
+		// Issue 553: the failed accept says ONE thing. It is a conflict — the
+		// decision conflicts with the target's state — and it is NOT the
+		// caller's validation failure, whose 422 a client cannot tell from a
+		// malformed decision, nor a "version conflict", whose words belong to
+		// a stale ifVersion.
 		wantErr(t, err, substrate.ErrConflict, "no-op diff")
+		if errors.Is(err, substrate.ErrValidation) {
+			t.Fatalf("a failed accept must not read as a validation failure: %v", err)
+		}
+		if strings.Contains(err.Error(), "version conflict") {
+			t.Fatalf("a failed accept must not claim a version conflict: %v", err)
+		}
+		if !strings.Contains(err.Error(), "applied no change") {
+			t.Fatalf("the failed accept does not name its reason: %v", err)
+		}
+		var ac *substrate.AcceptConflictError
+		if !errors.As(err, &ac) {
+			t.Fatalf("a failed accept is an AcceptConflictError: %T %v", err, err)
+		} else if strings.Contains(ac.Reason, "substrate:") {
+			t.Fatalf("the reason carries a sentinel prefix: %q", ac.Reason)
+		}
 	}
-	if after := mustGet(t, ds, noop.Kind, noop.ID); after.Properties["decision"] != "proposed" {
+	after := mustGet(t, ds, noop.Kind, noop.ID)
+	if after.Properties["decision"] != "proposed" {
 		t.Fatalf("no-op request should stay proposed: %+v", after.Properties)
+	}
+	// The reason the caller read is the reason the request carries.
+	note, ok := after.Annotations["substrate/conflict"].(map[string]any)
+	if !ok {
+		t.Fatalf("no-op request carries no conflict annotation: %+v", after.Annotations)
+	}
+	if reason, _ := note["reason"].(string); !strings.Contains(reason, "applied no change") ||
+		strings.Contains(reason, "substrate:") {
+		t.Fatalf("conflict annotation reason: %q", reason)
 	}
 }
 

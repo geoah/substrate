@@ -432,6 +432,12 @@ or delete — so a callable that can only emit `recordpatchrequest` cannot
 self-accept its way to an arbitrary write. Owner acceptance stays unbounded.
 Every deterministic refusal leaves the request `proposed` and annotates it
 with why, and an accepted diff that changes nothing is a conflict the owner
-sees, never a no-op mistaken for done.
+sees, never a no-op mistaken for done. **A failed accept is one refusal**:
+whatever the cause — the diff applies nothing, the target moved or vanished, a
+guard or the emit ceiling refused it — the decision answers `409 conflict`
+naming that reason, because what conflicts is the decision with the target's
+state. It never says "version conflict", which is the caller's own `ifVersion`
+losing, and it is never the `422 validation` of a malformed decision, so a
+client can branch on the answer.
 
 Next: [the API](api.md), the surface every one of these operations rides.

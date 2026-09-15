@@ -89,3 +89,25 @@ func (e *ValidationError) Error() string {
 	return fmt.Sprintf("%v: %v", ErrValidation, e.Problems)
 }
 func (e *ValidationError) Unwrap() error { return ErrValidation }
+
+// AcceptConflictError is a FAILED accept of a change request: the decision
+// transition rolled back because the change it would perform does not apply to
+// the target as it stands — the diff is a no-op against the stored values, the
+// target moved or vanished, a guard or the accepting actor's emit ceiling
+// refused it, the merge no longer holds. The request stays `proposed` and
+// carries Reason as its conflict annotation.
+//
+// It matches ErrConflict, because the decision conflicts with the state of the
+// target, and it deliberately has NO Unwrap: the inner refusal is the accept's
+// reason, not the caller's own error, so the wire answers one 409 whatever the
+// cause instead of a 422 wrapped in a version conflict the caller's ifVersion
+// never failed (#553). Reason therefore carries no sentinel prefix of its own.
+type AcceptConflictError struct {
+	Reason string
+}
+
+func (e *AcceptConflictError) Error() string {
+	return "substrate: the accepted diff did not apply: " + e.Reason
+}
+
+func (e *AcceptConflictError) Is(target error) bool { return target == ErrConflict }
