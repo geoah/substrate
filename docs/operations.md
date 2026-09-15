@@ -409,12 +409,21 @@ a pooler in front of Postgres will do that — and `pg_terminate_backend(pid)`
 on the pid above ends it.
 
 **A dropped connection fails closed.** A heartbeat proves the pinned
-connection alive every five seconds; the moment it cannot, the process logs at
-`ERROR` and refuses every write with `503 unavailable` until it has taken back
-every lease it held. Every later beat tries again, so a Postgres that
-restarted is recovered from without restarting the server, and the recovery is
-logged at `WARN`. It keeps refusing while another process holds one of its
-leases, which is the honest answer: stop the other one, and run one server.
+connection alive every five seconds, and every round trip it makes is bounded
+at three: a host that vanished leaves the socket open, so a ping that never
+answers is a lost lease and not something to wait on. The moment the session
+cannot be proven alive the process logs at `ERROR` and refuses every write with
+`503 unavailable` until it has taken back every lease it held. Every later beat
+tries again, so a Postgres that restarted is recovered from without restarting
+the server, and the recovery is logged at `WARN`. It keeps refusing while
+another process holds one of its leases, which is the honest answer: stop the
+other one, and run one server.
+
+**A registration is leased before it is published.** The control-plane row is
+a creation's commit point and the repository directory is written after it, so
+the lease is taken before the seed — earlier than either — and a creation that
+fails hands it back. Without that order a second server could see the new row,
+take the lease, open the repository, and have the failing creation erase it.
 
 **The read-only hat takes no lease.** `repository verify` and `repository
 reembed` open with no changelog writer and no lease on purpose, which is what

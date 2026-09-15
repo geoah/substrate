@@ -906,6 +906,27 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	} else if !errors.Is(err, substrate.ErrNotFound) {
 		return zero, err
 	}
+	// THE WRITER LEASE BEFORE THE SEED, and so before the control-plane row.
+	// That row is the creation's commit point and the directory is written
+	// after it, so a lease taken only at the directory step leaves a window
+	// in which ANOTHER process sees the row, takes the lease and opens the
+	// repository — and this creation's failure would then erase the
+	// repository that process is already serving. Taken here, an
+	// in-progress registration cannot be claimed by anybody, and
+	// reconcileRow's own ask below finds it held by this process.
+	leased, err := s.lease.acquireNew(ctx, authority)
+	if err != nil {
+		return zero, err
+	}
+	// A creation that fails releases only the lease IT took: this process is
+	// not the writer of a repository that does not exist. acquireNew reports
+	// false for one this process already held, which is never this
+	// creation's to hand back.
+	defer func() {
+		if leased {
+			s.lease.release(authority)
+		}
+	}()
 	repo := Repository{ID: authority, Authority: authority}
 	// The DEK is born with the repository: the seed transaction below already
 	// writes sealed material (the credential, at registration), and it seals
@@ -1003,6 +1024,8 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	if _, err := s.reconcileRow(ctx, repo, false); err != nil {
 		return fail("directory", fmt.Errorf("substrate/engine: write the repository directory of %s: %w", authority, err))
 	}
+	// The repository exists, so the lease is this process's to keep.
+	leased = false
 	return repo, nil
 }
 
