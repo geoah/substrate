@@ -113,12 +113,34 @@ export interface SubstrateRecord {
   /** The ids this record used to live under, left by merges and server-set. */
   formerIds?: string[]
   propertyMeta?: Record<string, PropertyMeta>
+  /** The source records whose mapping-owned subject slot points at this one,
+   * ordered by kind then id. Arrives only on a single-record read, and is
+   * ABSENT — never an empty array — on a kind no recordmapping targets, so
+   * "nothing maps onto this kind" and "nothing has linked yet" read the
+   * same way they do on the server (decision 0086). */
+  linkedFrom?: LinkedRecord[]
   /** Set on an occurrence a window read COMPUTED from a series' rule rather
    * than read from a stored row: the series' kind, the id `<seriesId>_<slot>`,
    * the series' properties with the slot in its temporal columns and
    * `recurrenceOf`/`originalAt` filled, version 0. Writing the envelope back at
    * its id materializes it as an override. */
   computed?: boolean
+}
+
+/** One inbound mapping-owned link (`substrate.LinkedRecord`): a source record
+ * whose synthesised subject slot points at the record being read, and the
+ * recordmapping that owns that slot. `ref` is the source's record path and
+ * `kind` the same kind said on its own, because grouping by it is what a
+ * reader does with the list. */
+export interface LinkedRecord {
+  ref: string
+  kind: string
+  /** The source record's display title; absent where it has none. */
+  title?: string
+  /** The subject slot on the source kind, which the mapping named. */
+  property: string
+  /** The recordmapping's identity, `<authority>/<package>/<name>`. */
+  mapping: string
 }
 
 /** The one reserved key of a reference value. Every reference is SERVED as an

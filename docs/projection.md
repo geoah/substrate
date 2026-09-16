@@ -153,6 +153,40 @@ Three behaviors fall out of this one document:
 - **Ids that never lie.** After a merge, the losing id resolves to the winner
   forever, and any read by it says so.
 
+### Reading the links back: `linkedFrom`
+
+The link lives on the SOURCE, so nothing among a subject's own properties says
+which mirrors point at it. The subject's single-record read says it instead:
+`GET /api/v1/<kind path>/<id>` carries `linkedFrom`, one entry per source
+record whose mapping-owned subject slot names this record
+([decision record 0086](decisions/0086-a-single-record-read-carries-its-inbound-mapping-owned-links.md)):
+
+```http
+GET /api/v1/samples.substrate.reamde.dev/people/person/9f2k
+
+→ {"id": "9f2k", …,
+   "linkedFrom": [
+     {"ref": "providers.substrate.reamde.dev/github/user/ada",
+      "kind": "providers.substrate.reamde.dev/github/user", "title": "ada",
+      "property": "person",
+      "mapping": "samples.substrate.reamde.dev/people/githubuserperson"}]}
+```
+
+Four things to know about it. It is derived at read time from the mapping set
+and the reference index, so nothing is stored and a mapping installed or
+removed changes the answer on the next read. It counts a pointer written under
+a **former id**, exactly as [`referencing`](api.md#who-points-at-a-record-referencing)
+does, so a merged subject answers for the mirrors that linked to the loser.
+The key is **absent, never empty**, on a kind no mapping targets, which is how
+"nothing maps onto this kind" is told apart from "nothing has linked yet". And
+a **list read never carries it**: it is one query per record, and the reverse
+read is the bulk, paged answer. `linkedFrom` is the mirror question;
+`referencing` is the general one — every record pointing at this one, through
+any property, mapping or not.
+
+The console shows it as the **Linked from** section under a record's
+properties ([web console](console.md#overview-and-data)).
+
 ## Managed properties
 
 The mechanism behind "hand edits survive syncs" is per-property ownership.

@@ -52,10 +52,14 @@ func (ds *dataset) Get(ctx context.Context, typ, id string) (*substrate.Record, 
 	if err != nil {
 		return nil, err
 	}
-	// Single-record reads carry property provenance. Reverse pointers are a
-	// List under Filter.Referencing: they are derived state, and a record can
-	// have an unbounded number of them.
+	// Single-record reads carry property provenance, and the inbound links a
+	// recordmapping owns (linkedfrom.go). The GENERAL reverse read stays a
+	// List under Filter.Referencing: any record can be pointed at from
+	// anywhere, by any property, and that fan-in has to be paged.
 	if e.PropertyMeta, err = ds.propertyMeta(ctx, e); err != nil {
+		return nil, err
+	}
+	if e.LinkedFrom, err = ds.linkedFrom(ctx, ds.db, e); err != nil {
 		return nil, err
 	}
 	if canonical.ID != id {

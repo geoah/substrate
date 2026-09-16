@@ -61,7 +61,12 @@ marks them, and Save is barred while an error stands.
 A record opens on five tabs:
 
 - **Properties**: the declared properties rendered by type, the read view the
-  editor opens from.
+  editor opens from, with **Linked from** under them: the records that map
+  onto this one ([`linkedFrom`](projection.md#reading-the-links-back-linkedfrom)),
+  each a link, with the kind it is a record of and the mapping that owns the
+  slot beside it. On a person that is every provider record which converged on
+  it — the Slack user, the GitHub user, the Google contact — which nothing
+  among the person's own properties would show.
 - **Manifest**: the [envelope](data-model.md#the-envelope), with every kind
   reference and every record reference rendered as a link you can follow.
 - **Activity**: this record's own slice of [the changelog](changelog.md), with the

@@ -229,6 +229,13 @@
     "source": true,
     "version": true
   },
+  "LinkedRecord": {
+    "kind": true,
+    "mapping": true,
+    "property": true,
+    "ref": true,
+    "title": false
+  },
   "LoginRequest": {
     "label": false,
     "password": true,
@@ -364,6 +371,7 @@
     "kind": true,
     "kindVersion": false,
     "labels": true,
+    "linkedFrom": false,
     "properties": true,
     "propertyMeta": false,
     "updatedAt": true,

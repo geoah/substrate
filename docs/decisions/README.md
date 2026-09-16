@@ -237,3 +237,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0083](0083-a-repository-has-one-writer-and-a-second-is-refused-at-open.md) | A repository has one writer, and a second is refused at open | accepted |
 | [0084](0084-a-reference-may-pin-a-mapping-source-kind.md) | A reference may pin a mapping's source kind | accepted |
 | [0085](0085-a-mapping-synthesises-its-subject-slot.md) | A mapping synthesises its subject slot on the source kind | accepted |
+| [0086](0086-a-single-record-read-carries-its-inbound-mapping-owned-links.md) | A single-record read carries its inbound mapping-owned links | accepted |

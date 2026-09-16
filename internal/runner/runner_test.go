@@ -142,6 +142,52 @@ def main(input, host):
 	}
 }
 
+// TestGetFiltersInboundLinksByTheAllowlist: a single-record read carries the
+// records whose mapping-owned subject slot points at it (decision 0086), and
+// each of those names a kind of its own and carries that record's title. The
+// grant that let the body read the record says nothing about them, so the
+// allowlist decides each link the same way it decided the record.
+func TestGetFiltersInboundLinksByTheAllowlist(t *testing.T) {
+	r := New()
+	backend := &fakeBackend{
+		records: map[string]*substrate.Record{
+			"w1": {ID: "w1", Kind: "g.test/widgets/widget", LinkedFrom: []substrate.LinkedRecord{
+				{
+					Ref: "g.test/widgets/widget/w2", Kind: "g.test/widgets/widget",
+					Title: "granted", Property: "widget", Mapping: "g.test/widgets/widgetwidget",
+				},
+				{
+					Ref: "g.test/mirrors/mirror/m9", Kind: "g.test/mirrors/mirror",
+					Title: "ungranted", Property: "widget", Mapping: "g.test/widgets/mirrorwidget",
+				},
+			}},
+		},
+		aliases: map[string]string{"widget": "g.test/widgets/widget"},
+	}
+	spec := Spec{
+		Repository: "t1", Function: "peek.g.test",
+		Runtime: "python",
+		Source: `
+def main(input, host):
+    got = host.get("g.test/widgets/widget", "w1")
+    links = got.get("linkedFrom") or []
+    return {"effects": [{"action": "put", "kind": "g.test/widgets/widget", "id": "out",
+                         "properties": {"kinds": ",".join(l["kind"] for l in links),
+                                        "titles": ",".join(l.get("title", "") for l in links)}}]}
+`,
+		TimeoutMs: 5000,
+		ReadTypes: []string{"g.test/widgets/widget"},
+	}
+	res, err := r.Invoke(context.Background(), spec, testInput(), backend)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	props := res.Effects[0].(map[string]any)["properties"].(map[string]any)
+	if props["kinds"] != "g.test/widgets/widget" || props["titles"] != "granted" {
+		t.Fatalf("the body saw %v, want the granted link alone", props)
+	}
+}
+
 func TestPythonInvokeAndHostCalls(t *testing.T) {
 	r := New()
 	spec := Spec{
