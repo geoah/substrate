@@ -240,3 +240,6 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0086](0086-the-head-of-a-repeated-source-is-spelled-with-brackets.md) | The head of a repeated source is spelled `[]`, in a display template and in `merge: first` | accepted |
 | [0087](0087-an-unresolved-source-parks-instead-of-minting.md) | A source that offers nothing, or that a probe cannot tell apart, parks instead of minting | accepted |
 | [0088](0088-a-single-record-read-carries-its-inbound-mapping-owned-links.md) | A single-record read carries its inbound mapping-owned links | accepted |
+| [0089](0089-a-suggested-mapping-fits-a-source-that-declares-nothing.md) | A suggested mapping fits a source kind that declares nothing under its word | accepted |
+| [0090](0090-the-oauth-surface-takes-an-accounts-full-identity.md) | The OAuth surface takes an account's full identity | accepted |
+| [0091](0091-a-parked-delivery-is-retried-or-forgotten.md) | A parked delivery is retried or forgotten, and both end the row | accepted |

@@ -154,7 +154,9 @@ each trigger's kind, callable, enabled flag, cursor and the head it lags,
 lag, last fire, parked count, pending count, last error and, for a
 webhook trigger, the public path its `WEBHOOK` column prints
 (`/webhooks/<authority>/<trigger-id>`, the URL an external service POSTs to);
-`parked` lists the deliveries it gave up on and `retry` re-runs one; `replay`
+`parked` lists the deliveries it gave up on, `retry` re-runs one and clears it
+however the delivery settles, and `forget` drops one that can never be
+delivered again without running anything; `replay`
 resets a record-sourced trigger's cursor; `run` synthesizes a single delivery;
 and `wake` scans a trigger immediately. Trigger rows are ordinary records, so
 `get` / `apply` / `delete` edit them like anything else.

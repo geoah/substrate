@@ -51,12 +51,44 @@ const (
 // oauthRefreshWindow is how far ahead of expiry the refresh loop acts.
 const oauthRefreshWindow = 10 * time.Minute
 
-// findAccountRef resolves a bare account id WITHIN the accountconfig trait's
-// implementor types (identity is the (type, id) pair, so a bare id names
-// nothing by itself; the trait is the scope the OAuth surface pins). Exactly
-// one live row resolves; two implementor types holding the same id is an
-// ambiguity the caller must break by renaming one.
-func (ds *dataset) findAccountRef(ctx context.Context, recordID string) (eref, error) {
+// findAccountRef resolves what a consent NAMES as its account record, in
+// either of the two spellings the surface takes.
+//
+// THE FULL IDENTITY IS THE EXACT ONE: `<authority>/<package>/<kind>/<id>`
+// names one row and asks nothing of the rest of the repository, which is what
+// two providers whose accounts share an id need — identity is the (kind, id)
+// pair everywhere else in the engine, and `owner` under google and `owner`
+// under slack are two records (record 90, issue #574).
+//
+// A BARE ID still resolves, because it is what a single-provider repository
+// types: it is searched within the accountconfig trait's implementor kinds,
+// the scope the OAuth surface pins, and exactly one live row must answer. Two
+// kinds holding the id is the ambiguity, and the error hands back the full
+// identities — the form this function now takes — rather than telling the
+// caller to rename a record.
+func (ds *dataset) findAccountRef(ctx context.Context, record string) (eref, error) {
+	if kind, id, ok := vocabulary.SplitRecordPath(record); ok {
+		return ds.accountRefAt(ctx, eref{Kind: kind, ID: id})
+	}
+	return ds.searchAccountRef(ctx, record)
+}
+
+// accountRefAt confirms the full identity names a live row. The trait and the
+// bundle's own gates are oauthAccountOf's, so a kind that is not an account
+// config fails there, with that function's message.
+func (ds *dataset) accountRefAt(ctx context.Context, ref eref) (eref, error) {
+	row, err := ds.loadRowDB(ctx, ref)
+	if err != nil {
+		return eref{}, err
+	}
+	if row == nil || row.DeletedAt != nil {
+		return eref{}, fmt.Errorf("%w: record %s", substrate.ErrNotFound, vocabulary.RecordPath(ref.Kind, ref.ID))
+	}
+	return ref, nil
+}
+
+// searchAccountRef is the bare-id half.
+func (ds *dataset) searchAccountRef(ctx context.Context, recordID string) (eref, error) {
 	var idents []string
 	for _, ty := range ds.registry().Kinds() {
 		if ty.Implements(vocabulary.TraitAccountConfigCore) {
@@ -96,8 +128,14 @@ func (ds *dataset) findAccountRef(ctx context.Context, recordID string) (eref, e
 	case 1:
 		return eref{Kind: types[0], ID: recordID}, nil
 	default:
-		return eref{}, fmt.Errorf("%w: id %s names an account record of more than one type (%s) — address it by full identity",
-			substrate.ErrConflict, recordID, strings.Join(types, ", "))
+		// The remedy the message names is one the surface performs: every
+		// candidate is spelled the way this function takes it back.
+		full := make([]string, 0, len(types))
+		for _, ty := range types {
+			full = append(full, vocabulary.RecordPath(ty, recordID))
+		}
+		return eref{}, fmt.Errorf("%w: id %s names an account record of more than one kind — name the one you mean: %s",
+			substrate.ErrConflict, recordID, strings.Join(full, ", "))
 	}
 }
 
@@ -274,6 +312,25 @@ func (ds *dataset) putOAuthFlow(ctx context.Context, nonce string, account eref,
 // consumeOAuthFlow atomically consumes a pending flow — one DELETE …
 // RETURNING, so exactly one callback per started flow wins — and returns its
 // PKCE verifier.
+// accountOfFlow is the account a pending flow was started for: the identity
+// `start` stored beside the verifier. It READS, and consumeOAuthFlow still
+// deletes, so a consent that fails before the exchange (a disabled bundle, a
+// bundle whose client input went away) leaves the state usable once the
+// obstacle is gone, exactly as it did when the id was searched instead.
+func (ds *dataset) accountOfFlow(ctx context.Context, nonce string) (eref, error) {
+	var ref eref
+	err := ds.db.QueryRowContext(ctx, `
+		SELECT record_kind, record_id FROM oauth_flows
+		WHERE nonce_hash = $1 AND expires_at > now()`, hashToken(nonce)).Scan(&ref.Kind, &ref.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return eref{}, fmt.Errorf("%w: unknown or already-used oauth state", substrate.ErrAuth)
+	}
+	if err != nil {
+		return eref{}, err
+	}
+	return ref, nil
+}
+
 func (ds *dataset) consumeOAuthFlow(ctx context.Context, nonce string, account eref) (string, error) {
 	var sealed []byte
 	err := ds.db.QueryRowContext(ctx, `
@@ -318,9 +375,17 @@ func (s *service) CompleteOAuth(ctx context.Context, state, code string) (string
 
 func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code string) error {
 	recordID := st.Record
-	account, err := ds.findAccountRef(ctx, recordID)
+	// THE FLOW ROW IS THE BINDING, not the state's bare id: `start` wrote the
+	// account's full identity into oauth_flows beside the verifier, so the
+	// callback resolves the record the consent was begun for even where a
+	// second provider's account carries the same id (issue #574). Re-searching
+	// the bare id here would have made the ambiguity fatal one step later.
+	account, err := ds.accountOfFlow(ctx, st.Nonce)
 	if err != nil {
 		return err
+	}
+	if account.ID != recordID {
+		return fmt.Errorf("%w: unknown or already-used oauth state", substrate.ErrAuth)
 	}
 	row0, b, err := ds.oauthAccountOf(ctx, account)
 	if err != nil {

@@ -675,6 +675,15 @@ the cursor's position. Every trigger write is admitted: the guard must
 compile, the recurrence and timezone must parse, and the callable must resolve
 to a registered callable of its kind.
 
+**The body a delivery runs is the one the last apply landed.** A dispatcher
+pass reads its triggers once and can then run for minutes — a paged drain, the
+retry backoffs, a repository's whole trigger set — so the callable is resolved
+again in the moment before each delivery rather than once per pass. An apply
+that lands mid-pass reaches the very next delivery, and a callable that
+disappeared in that window skips the delivery with its cursor standing still,
+exactly as one that was already gone when the pass loaded
+([#576](https://github.com/geoah/substrate/issues/576)).
+
 The `when:` guard is the one place [CEL](https://cel.dev) survives. It is a
 boolean over three read-only bindings, `change`, `record` (null after a
 delete), and `repository`. There is deliberately no clock and no way to fetch
@@ -740,7 +749,15 @@ repository.
   callable's fire claims that entry before its loop, so one interrupted
   mid-loop waits under `…/parked` for a hand like every agent delivery.
 - `GET …/trigger/{id}/parked` lists the deliveries the trigger gave up on,
-  and `POST …/trigger/{id}/parked/{failureId}/retry` re-runs one. A
+  `POST …/trigger/{id}/parked/{failureId}/retry` re-runs one, and `DELETE
+  …/trigger/{id}/parked/{failureId}` forgets one — the two ways a parked row
+  ends. A RETRY runs the delivery and settles the row whatever the delivery
+  then does: effects, or a `when` that no longer matches, which is a settled
+  delivery and not a reason to leave the row parked. A FORGET runs nothing and
+  needs nothing to resolve: it is the answer for a delivery that can never be
+  made again — the callable uninstalled, the record deleted, the work done by
+  another route — and it answers `204`, or `404` when the row is already gone
+  ([#579](https://github.com/geoah/substrate/issues/579)). A
   failure's id is the seq of the changelog entry that parked it, so it
   survives a restore ([backups](operations.md#backups)). A webhook request
   is recorded there minus what a replay does not need, from the `202` on:
@@ -755,7 +772,8 @@ repository.
   fire this server is running answers `409`.
 
 `replay` answers the cursor it set; `run`, `wake` and `retry` answer
-`{"ran": n}`, the number of deliveries that applied effects. Every settled
+`{"ran": n}`, the number of deliveries that applied effects, and a forget
+answers no body at all. Every settled
 dispatched delivery writes a `substrate.reamde.dev/core/triggerrun` row under the
 `substrate` actor, in the transaction that commits its effects and its cursor
 or fire-state motion: the trigger, the callable, the mode, the seq or fire id,

@@ -143,6 +143,10 @@ type Dataset interface {
 	WakeTrigger(ctx context.Context, id string) (int, error)
 	TriggerFailures(ctx context.Context, id string) ([]TriggerFailure, error)
 	RetryTriggerFailure(ctx context.Context, id string, failureID int64) (int, error)
+	// ForgetTriggerFailure drops one parked delivery without running it: the
+	// row an operator has judged stale, whose callable or record may be long
+	// gone, and which a retry therefore cannot clear.
+	ForgetTriggerFailure(ctx context.Context, id string, failureID int64) error
 	CallFunction(ctx context.Context, name string, args any) (any, int, error)
 	// ProcessTriggers is the dispatcher pass the service loop drives: each
 	// enabled trigger drains its changelog backlog to head or fires its due

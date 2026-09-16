@@ -117,6 +117,13 @@ var errPagedParked = errors.New("paged drain parked mid-chain")
 // error, observable, never a silent stop.
 var errCausalDepth = errors.New("causal depth cap exceeded")
 
+// errCallableGone marks a callable that stopped resolving between the pass's
+// trigger load and the delivery: the package was uninstalled or pruned under
+// a running pass. The delivery does not run, it does not park, and the cursor
+// stands still — the answer the pass already gives a trigger whose callable
+// was gone when it loaded.
+var errCallableGone = errors.New("trigger callable no longer resolves")
+
 // errCursorMoved marks a cursor (or schedule fire state) compare-and-swap
 // that lost: a replay reset it or a concurrent dispatcher advanced it
 // mid-pass. The losing transaction rolls back whole — effects never land
@@ -201,6 +208,11 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger) (int, 
 			n, next, err := ds.deliverWithRetry(ctx, tr, ch, cursor)
 			ran += n
 			if errors.Is(err, errCursorMoved) {
+				return ran, nil
+			}
+			if errors.Is(err, errCallableGone) {
+				ds.svc.log.Warn("substrate: trigger names a callable that no longer resolves — it is skipped, its cursor stands still",
+					"trigger", tr.ID, "callable", tr.CallableID)
 				return ran, nil
 			}
 			if err != nil {
@@ -331,7 +343,7 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 			}
 			return res.ran, ch.Seq, nil
 		}
-		if errors.Is(err, errCursorMoved) {
+		if errors.Is(err, errCursorMoved) || errors.Is(err, errCallableGone) {
 			return 0, from, err
 		}
 		if errors.Is(err, errClaimedElsewhere) {
@@ -607,6 +619,11 @@ func (ds *dataset) settlementFault(t *txn) error {
 func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change, from int64, depth int, resume pagedProgress, settle *settlement) (deliverResult, error) {
 	var res deliverResult
 	advance := from >= 0
+	// The body that runs is the one the LAST apply landed, not the one this
+	// pass resolved when it loaded its triggers (triggers.go refreshCallable).
+	if err := ds.refreshCallable(tr); err != nil {
+		return res, err
+	}
 	envelope, err := ds.deliveryEnvelope(ctx, ch)
 	if err != nil {
 		return res, err
@@ -806,6 +823,11 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger)
 	for _, at := range due {
 		n, err := ds.deliverFire(ctx, lt.trigger, runner.ModeSchedule, fireID(at), at, &lastFire, nil, nil)
 		ran += n
+		if errors.Is(err, errCallableGone) {
+			ds.svc.log.Warn("substrate: trigger names a callable that no longer resolves — it is skipped, its fire state stands still",
+				"trigger", lt.ID, "callable", lt.CallableID)
+			return ran, nil
+		}
 		if err != nil {
 			return ran, err
 		}
@@ -846,6 +868,12 @@ func (ds *dataset) fireSettlement(tr *trigger, mode, fid string, at time.Time, l
 // rather than reserving another; nil for every other fire.
 func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, lastFire *time.Time, envelope map[string]any, pending *foldFailure) (int, error) {
 	started := nowUTC()
+	// As in deliver: the live body, resolved now rather than at the pass's
+	// trigger load. Once, outside the attempt loop — a chain of retries runs
+	// one body.
+	if err := ds.refreshCallable(tr); err != nil {
+		return 0, err
+	}
 	var lastErr error
 	attempts := triggerAttempts
 	settle := ds.fireSettlement(tr, mode, fid, at, lastFire, started)
@@ -1989,6 +2017,21 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 		var res deliverResult
 		res, derr = ds.deliver(ctx, tr, ch, -1, depth, resume, settle)
 		n = res.ran
+		if derr == nil && res.skipped {
+			// THE GUARD NO LONGER MATCHES, and a skip is a settled delivery,
+			// not a silent success: `deliver` returns before the effect
+			// transaction it would have settled in, so the retirement is
+			// written here or the row survives a retry that answered "retried"
+			// (issue #579 — twenty deliveries of a fixed body, every one
+			// re-parked at attempt 1 because the request they carried had
+			// since been satisfied).
+			if err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+				return settle.settle(t, res)
+			}); err != nil {
+				return 0, err
+			}
+			return 0, nil
+		}
 	}
 	if derr != nil {
 		// The same failure, one attempt older: the ledger rewrites the row
@@ -2013,6 +2056,41 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 		return 0, derr
 	}
 	return n, nil
+}
+
+// ForgetTriggerFailure DROPS one parked delivery without running it: the
+// operator has judged it stale, and nothing else can remove it (issue #579).
+//
+// A retry cannot serve this. It needs a callable that still resolves and a
+// delivery that can still be made, and the rows that outlive their usefulness
+// are exactly the ones where neither holds: a package uninstalled, a record
+// long deleted, a body whose effects landed by another route. The retirement
+// is the same one a delivered retry writes — an unpark through the fold — so a
+// rebuild and a restore both agree the delivery is over.
+//
+// It takes the running claim first, so a forget cannot race a retry that is
+// already running the same failure, and it does NOT resolve the trigger's
+// callable: a parked row whose bundle is gone is the case this exists for.
+func (ds *dataset) ForgetTriggerFailure(ctx context.Context, id string, failureID int64) error {
+	settle := &settlement{ds: ds, trigger: id, retire: failureID}
+	if err := settle.acquire(failureID); err != nil {
+		return err
+	}
+	defer settle.release()
+	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		if err := t.lockFailure(id, failureID); err != nil {
+			return err
+		}
+		if err := t.unparkTx(id, failureID); err != nil {
+			return err
+		}
+		return t.settleDelivery(id)
+	})
+	if err != nil {
+		return err
+	}
+	ds.svc.log.Info("substrate: parked delivery forgotten", "trigger", id, "failure", failureID)
+	return nil
 }
 
 // retryFire re-invokes one parked schedule/webhook fire, same fire id, fire

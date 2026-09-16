@@ -341,7 +341,10 @@ rule is enforced in the write path for REST and the CLI alike, not just in
 the console.
 
 The flow itself is two endpoints. `POST …/oauth/start` takes the
-account record's id as `record` and answers the consent URL as `url`; it is
+account record as `record` — its full identity, `<kind>/<id>`, or a bare id
+where only one account kind holds it — and answers the consent URL as `url`;
+two providers whose accounts share a name (`owner` under each) are why the
+identity form exists, and the ambiguity refusal names both spellings. It is
 owner-tier only (the three interactive clients, never installed code) and refuses
 while the client input does not resolve. The state is HMAC-signed over
 the repository, the record, and a random nonce, expires in fifteen minutes, and
