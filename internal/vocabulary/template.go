@@ -9,8 +9,10 @@ import (
 // tokens. A token is a pipe-separated list of alternatives, the first
 // non-empty one rendering ({name|participants}). An alternative is a
 // property name, a reference property's name (renders the referents' titles), a
-// dotted reference.property (renders the first referent's property), or one of
-// the DERIVED tokens ({snippet}, {localName}, {id}).
+// dotted reference.property (renders the first referent's property), a LIST
+// path ({emails[]} the first value of a repeated property, {names[].displayName}
+// the first entry's field), or one of the DERIVED tokens ({snippet},
+// {localName}, {id}).
 type Template struct {
 	Raw   string
 	Parts []TemplatePart
@@ -29,6 +31,14 @@ type TemplateRef struct {
 	// property.
 	Ref  string
 	Prop string // property name, "" when the alternative is a bare head
+	// List is the `[]` hop: the alternative reads the HEAD of a repeated
+	// property rather than all of it — `{emails[]}` the first value of a
+	// repeated scalar (Ref ""), `{names[].displayName}` the first entry's
+	// field of a repeated object or the first referent's property of a
+	// repeated reference (Ref the head). An empty list renders nothing, so the
+	// token's next alternative gets its turn, which is the whole reason a
+	// provider's verbatim array can title a record.
+	List bool
 	// Derived names a token computed from the record itself rather than read off
 	// a declared property, so it needs no declaration to check against. Every
 	// derived token except {snippet} yields to a REAL property of the same name
@@ -57,10 +67,12 @@ func (r TemplateRef) String() string {
 	switch {
 	case r.Derived != "":
 		return r.Derived
-	case r.Ref != "" && r.Prop != "":
-		return r.Ref + "." + r.Prop
+	case r.Ref != "" && r.List:
+		return r.Ref + "[]." + r.Prop
 	case r.Ref != "":
-		return r.Ref
+		return r.Ref + "." + r.Prop
+	case r.List:
+		return r.Prop + "[]"
 	default:
 		return r.Prop
 	}
@@ -117,17 +129,22 @@ func parseToken(body string) (TemplatePart, error) {
 			continue
 		}
 		name, prop, dotted := strings.Cut(alt, ".")
+		// The `[]` hop is a SUFFIX on the head, the one spelling the map and
+		// match paths already use (ParsePath): `names[].displayName` and
+		// `emails[]`. No subscript — `names[0]` would promise an order the
+		// provider's array does not have.
+		head, list := strings.CutSuffix(name, "[]")
 		if dotted {
-			if !ValidCamel(name) || !ValidCamel(prop) {
+			if !ValidCamel(head) || !ValidCamel(prop) {
 				return part, fmt.Errorf("%q is not reference.property", alt)
 			}
-			part.Alts = append(part.Alts, TemplateRef{Ref: name, Prop: prop})
+			part.Alts = append(part.Alts, TemplateRef{Ref: head, Prop: prop, List: list})
 			continue
 		}
-		if !ValidCamel(alt) {
+		if !ValidCamel(head) {
 			return part, fmt.Errorf("%q is not a property name", alt)
 		}
-		part.Alts = append(part.Alts, TemplateRef{Prop: alt})
+		part.Alts = append(part.Alts, TemplateRef{Prop: head, List: list})
 	}
 	return part, nil
 }
@@ -173,6 +190,12 @@ type Resolver interface {
 	// referents' titles, a named prop asks for that property of the first
 	// referent.
 	Reference(name, prop string) string
+	// First renders the HEAD of a repeated property: field == "" the first
+	// value of a repeated scalar, a named field the first entry's field of a
+	// repeated object (or the first referent's property of a repeated
+	// reference). An empty list is "", which is what lets the next alternative
+	// answer.
+	First(name, field string) string
 	// Derived renders a derived token (DerivedSnippet, DerivedLocalName,
 	// DerivedID) from the record itself.
 	Derived(token string) string
@@ -209,6 +232,10 @@ func (t *Template) Render(r Resolver) string {
 				} else if v = r.Prop(alt.Derived); v == "" {
 					v = r.Reference(alt.Derived, "")
 				}
+			case alt.List && alt.Ref != "":
+				v = r.First(alt.Ref, alt.Prop)
+			case alt.List:
+				v = r.First(alt.Prop, "")
 			case alt.Ref != "":
 				v = r.Reference(alt.Ref, alt.Prop)
 			default:

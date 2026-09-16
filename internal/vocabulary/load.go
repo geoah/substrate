@@ -1022,10 +1022,15 @@ func (l *loader) parseType(doc Document) *Kind {
 // token is a property, a column-backed property or a DERIVED token
 // ({snippet}, {localName}, {id}); a dotted one reads a property of the record a
 // reference names — the referent is another kind's business — or one level into
-// an object property's declared fields.
+// an object property's declared fields; a `[]` one takes the head of a
+// repeated property, which is only a question a repeated property can answer.
 func (l *loader) checkTemplate(where string, t *Kind, tmpl *Template) {
 	for _, ref := range tmpl.Refs() {
 		switch {
+		// The `[]` forms, checked first: they name a repetition, and a head
+		// that is not repeated is the one mistake the bare forms cannot make.
+		case ref.List:
+			l.checkListToken(where, t, ref)
 		// A derived token needs no declaration to check against: it is computed
 		// from the record. But a kind MAY declare a property of the token's
 		// name, and then the declaration is what renders (Template.Render), so
@@ -1060,6 +1065,59 @@ func (l *loader) checkTemplate(where string, t *Kind, tmpl *Template) {
 			l.errf("%s: data.displayTemplate: {%s}: %s declares no property %q",
 				where, ref.Prop, t.Name, ref.Prop)
 		}
+	}
+}
+
+// checkListToken validates the two `[]` forms against the kind's own
+// declarations: `{emails[]}` the head of a repeated property of its own, and
+// `{names[].displayName}` one field out of the head of a repeated object — or
+// one property of the first record a repeated reference names, which is the
+// referent's kind's business exactly as the dotted form's is.
+//
+// A head that is not repeated is refused naming the plain spelling, so the two
+// suffixes cannot both render the same thing and a reader can tell from the
+// token which one the declaration meant.
+func (l *loader) checkListToken(where string, t *Kind, ref TemplateRef) {
+	head := ref.Ref
+	if head == "" {
+		head = ref.Prop
+	}
+	p, declared := t.Props[head]
+	if !declared {
+		l.errf("%s: data.displayTemplate: {%s}: %s declares no property %q", where, ref, t.Name, head)
+		return
+	}
+	if ref.Ref == "" {
+		// A bare `{a[]}` renders a value of the record's own, so it takes the
+		// sensitivity refusal every bare token gets.
+		l.ownToken(where, t, head)
+	}
+	if !p.Repeated {
+		plain := head
+		if ref.Ref != "" {
+			plain = head + "." + ref.Prop
+		}
+		l.errf("%s: data.displayTemplate: {%s}: %s.%s is not repeated — {%s} is the spelling",
+			where, ref, t.Name, head, plain)
+		return
+	}
+	switch {
+	case ref.Ref == "":
+		if p.Datatype == DatatypeObject {
+			l.errf("%s: data.displayTemplate: {%s}: %s is an object — a token ends at a field, never a whole object ({%s[].<field>})",
+				where, ref, head, head)
+		}
+	case p.Datatype == DatatypeReference:
+		// The first referent's property belongs to the referent's kind, which
+		// `kind:` may not even pin, so it is not checkable here; the renderer
+		// answers "" for one that is absent.
+	case p.Datatype == DatatypeObject:
+		if _, ok := p.Fields[ref.Prop]; !ok {
+			l.errf("%s: data.displayTemplate: {%s}: %s has no field %q", where, ref, head, ref.Prop)
+		}
+	default:
+		l.errf("%s: data.displayTemplate: {%s}: %s is %s — only an object or a reference has a field to read",
+			where, ref, head, p.Datatype)
 	}
 }
 

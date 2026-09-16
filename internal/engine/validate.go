@@ -1006,6 +1006,49 @@ func (r *titleResolver) Reference(name, prop string) string {
 	return r.reference(name, prop)
 }
 
+// First renders the head of a repeated property: `{emails[]}` the first value
+// of a repeated scalar, `{names[].displayName}` the first entry's field of a
+// repeated object, `{assignees[].login}` the first referent's property of a
+// repeated reference.
+//
+// THE FIRST ENTRY THAT RENDERS SOMETHING, not entry zero: a provider's array
+// carries the items it carries, and an entry whose field is missing or empty
+// would otherwise title a record with nothing while the next entry held the
+// name. An empty list renders "", which is what hands the token's next
+// alternative its turn.
+func (r *titleResolver) First(name, field string) string {
+	p, ok := r.ty.Prop(name)
+	if !ok || !p.Repeated || p.Sensitive() {
+		return ""
+	}
+	if p.Datatype == vocabulary.DatatypeReference {
+		refs := referenceTargets(r.row.Props[name])
+		for _, ref := range refs {
+			if s := r.referenceProp(ref, field); s != "" {
+				return s
+			}
+		}
+		return ""
+	}
+	items, _ := r.row.Props[name].([]any)
+	for _, item := range items {
+		if field == "" {
+			if s := scalarString(item); s != "" {
+				return s
+			}
+			continue
+		}
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if s := scalarString(m[field]); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
 func scalarString(v any) string {
 	switch s := v.(type) {
 	case nil:

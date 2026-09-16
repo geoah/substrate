@@ -169,6 +169,31 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   kind that declares one, a written `title` is IGNORED rather than refused, so
   a writer that means the heading writes the declared property
   ([decision record 0016](decisions/0016-a-kind-titles-itself-from-a-declared-property.md)).
+- **A `displayTemplate` is literal text and tokens**, and a token is a
+  pipe-separated list of alternatives, the FIRST ONE THAT RENDERS SOMETHING
+  winning (`{displayName|name|id}`). An alternative is one of five things: a
+  property of the kind (`{name}`, and a reference property renders its
+  referents' titles, comma-joined); a dotted hop (`{author.name}` one property
+  of the record a reference names, `{name.displayName}` one field of an object
+  property); a LIST HEAD (`{names[].displayName}` the first entry's field of a
+  repeated object, `{assignees[].login}` the first referent's property of a
+  repeated reference, `{emails[]}` the first value of a repeated scalar); one
+  of the derived tokens `{snippet}`, `{localName}` and `{id}`, each of which
+  yields to a real property of that name; or one of the column-backed names
+  every record carries (`{title}`, `{at}`, `{endsAt}`, `{dueAt}`). `[]` is a SUFFIX on the head and never a
+  subscript — `{names[0].displayName}` is refused, because an index promises an
+  order a provider array does not have — and the entry taken is the first that
+  renders anything, so an entry missing the field does not title a record with
+  nothing. An empty list, an absent property and a missing referent all render
+  nothing and hand the next alternative its turn, which is what lets a mirror
+  whose provider sends arrays title itself
+  ([decision record 0086](decisions/0086-the-head-of-a-repeated-source-is-spelled-with-brackets.md)).
+  Every token is checked against the kind's own declarations at load, so a typo
+  fails on the manifest and not as an empty title: a `[]` head that is not
+  repeated is refused naming the plain spelling, and a sensitive property never
+  renders into a title at all. A dotted token over a repeated object
+  (`{names.displayName}`) still loads and renders nothing;
+  `{names[].displayName}` is the spelling that reads it.
 - **Unknown keys anywhere in `data` are refused**, so a typo cannot be
   silently ignored.
 - **Mapping constraints**: a `recordmapping` is declared by the package that
@@ -189,6 +214,10 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   may not itself be any mapping's `from` (bipartite, one level). Every `map`
   path type-checks against both declared kinds at load, so a disagreement
   fails on the manifest that caused it, never on the first sync that hits it.
+  A rule's `merge:` is what the two ends' repetitions are held to: `union`
+  needs a repeated target, `first` takes the head of a repeated source into a
+  single-valued one, and under neither the two ends must agree
+  ([projection](projection.md#record-mappings) has the behaviour).
 - **States**: `type: state` requires `states` and `transitions`; `initial` is
   a single declared state; every `from`/`to` is a declared state. A stamp
   target declared in `properties` must be a single-valued `datetime`; one

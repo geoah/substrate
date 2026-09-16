@@ -1550,6 +1550,12 @@ data:
 		"unknown merge": recperson(`  map:
     name: {path: name.displayName, merge: fuse}
 `),
+		// first is union's answer from the other side, so it needs a SINGLE
+		// target: onto a repeated one it would write one item where the
+		// declaration holds a list.
+		"first onto a repeated target": recperson(`  map:
+    emails: {path: "emails[].value", merge: first}
+`),
 		"bare [] path": recperson(`  map:
     emails: {path: "emails[]", merge: union}
 `),
@@ -1746,6 +1752,29 @@ data:
 		m, ok := r.MappingFor("x.example.com/x/rec", "person")
 		if !ok || len(m.Match) != 0 || len(m.Map) != 0 {
 			t.Fatalf("link-only mapping = %+v", m)
+		}
+	})
+
+	// `merge: first` takes the head of a repeated source into a single-valued
+	// target — the Google contact's `names[].displayName` onto `person.name`,
+	// the one shape that had no spelling at all before it (upstream ask J).
+	t.Run("merge first takes a repeated source into a single target", func(t *testing.T) {
+		src := recperson(`  map:
+    primaryEmail: {path: "emails[].value", merge: first}
+`)
+		r, err := vocabulary.LoadFS(fstest.MapFS{
+			"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(src)},
+		})
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		m, ok := r.MappingFor("x.example.com/x/rec", "person")
+		if !ok {
+			t.Fatal("the mapping did not load")
+		}
+		rule := m.Map["primaryEmail"]
+		if rule == nil || rule.Merge != vocabulary.MergeFirst || rule.Path.String() != "emails[].value" {
+			t.Fatalf("rule = %+v", rule)
 		}
 	})
 
@@ -2085,11 +2114,51 @@ func TestTemplates(t *testing.T) {
 		t.Fatalf("empty render = %q", got)
 	}
 
+	// THE HEAD OF A LIST. A provider mirrors its API's array verbatim, so the
+	// name a record titles itself with is the first entry's field; an empty
+	// list is an empty alternative and the next one answers.
+	list, err := vocabulary.ParseTemplate("{names[].displayName|resourceName}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := list.Render(testResolver{first: map[string]string{"names[].displayName": "Alex"}}); got != "Alex" {
+		t.Fatalf("list render = %q", got)
+	}
+	if got := list.Render(testResolver{props: map[string]string{"resourceName": "people/c1"}}); got != "people/c1" {
+		t.Fatalf("empty list should fall through, got %q", got)
+	}
+	// The head of a REPEATED SCALAR is the same token without a field.
+	scalars, err := vocabulary.ParseTemplate("{emails[]}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := scalars.Render(testResolver{first: map[string]string{"emails[]": "a@example.com"}}); got != "a@example.com" {
+		t.Fatalf("repeated scalar render = %q", got)
+	}
+	// Every alternative renders back to the spelling it was written in, which
+	// is what the refusals quote.
+	for _, spelling := range []string{"names[].displayName", "emails[]", "author.name", "label"} {
+		tpl, err := vocabulary.ParseTemplate("{" + spelling + "}")
+		if err != nil {
+			t.Fatalf("%s: %v", spelling, err)
+		}
+		if got := tpl.Refs()[0].String(); got != spelling {
+			t.Fatalf("String() = %q, want %q", got, spelling)
+		}
+	}
+	if heads := list.RefHeads(); len(heads) != 1 || heads[0] != "names" {
+		t.Fatalf("list ref heads = %v", heads)
+	}
+
 	// A camelCase name is legal now; a snake one is not a property name.
 	if _, err := vocabulary.ParseTemplate("{displayName}"); err != nil {
 		t.Fatalf("camelCase template: %v", err)
 	}
-	for _, bad := range []string{"{", "}", "{}", "{Name}", "{a.b.c}", "{a|}", "{display_name}"} {
+	// `[]` is a suffix on the head, never a subscript and never mid-path.
+	for _, bad := range []string{
+		"{", "}", "{}", "{Name}", "{a.b.c}", "{a|}", "{display_name}",
+		"{a[0].b}", "{a[].b.c}", "{a[]b}", "{a.b[]}",
+	} {
 		if _, err := vocabulary.ParseTemplate(bad); err == nil {
 			t.Fatalf("expected %q to fail", bad)
 		}
@@ -2120,7 +2189,13 @@ data:
     name:
       type: object
       fields: {displayName: {type: string}}
+    names:
+      type: object
+      repeated: true
+      fields: {displayName: {type: string}}
+    tags: {type: string, repeated: true}
     owner: {type: reference, kind: card}
+    owners: {type: reference, kind: card, repeated: true}
 `
 	}
 	load := func(src string) error {
@@ -2129,13 +2204,17 @@ data:
 		return err
 	}
 	for name, good := range map[string]string{
-		"declared property":   "{label}",
-		"object field":        "{name.displayName}",
-		"referent property":   "{owner.label}",
-		"column-backed":       "{title|body}",
-		"referent titles":     "{owner}",
-		"snippet":             "{snippet}",
-		"fallback into field": "{label|name.displayName}",
+		"declared property":             "{label}",
+		"object field":                  "{name.displayName}",
+		"referent property":             "{owner.label}",
+		"column-backed":                 "{title|body}",
+		"referent titles":               "{owner}",
+		"snippet":                       "{snippet}",
+		"fallback into field":           "{label|name.displayName}",
+		"first of a repeated object":    "{names[].displayName}",
+		"first of a repeated scalar":    "{tags[]}",
+		"first of a repeated reference": "{owners[].label}",
+		"list then fallback":            "{names[].displayName|label}",
 	} {
 		if err := load(typ(good)); err != nil {
 			t.Fatalf("%s: %v", name, err)
@@ -2145,6 +2224,14 @@ data:
 		"undeclared property":  "{nope}",
 		"undeclared field":     "{name.nope}",
 		"undeclared reference": "{friend.label}",
+		// The `[]` forms name a repetition, so a head that is not repeated is
+		// refused naming the plain spelling — the two suffixes never render
+		// the same thing.
+		"list over a single object": "{name[].displayName}",
+		"list over a scalar":        "{label[]}",
+		"list of a whole object":    "{names[]}",
+		"list into a scalar field":  "{tags[].value}",
+		"undeclared list head":      "{nope[].value}",
 	} {
 		err := load(typ(bad))
 		if err == nil {
@@ -2161,6 +2248,9 @@ type testResolver struct {
 	refs    map[string]string
 	snippet string
 	derived map[string]string
+	// first answers the `[]` tokens, keyed by the token's own spelling
+	// ("emails[]", "names[].displayName").
+	first map[string]string
 	// declares is the kind's declared property set where it differs from the
 	// props map — a property declared but EMPTY on the row.
 	declares []string
@@ -2190,6 +2280,13 @@ func (r testResolver) Reference(name, prop string) string {
 		return r.refs[name]
 	}
 	return r.refs[name+"."+prop]
+}
+
+func (r testResolver) First(name, field string) string {
+	if field == "" {
+		return r.first[name+"[]"]
+	}
+	return r.first[name+"[]."+field]
 }
 
 // --- strictness ----------------------------------------------------------

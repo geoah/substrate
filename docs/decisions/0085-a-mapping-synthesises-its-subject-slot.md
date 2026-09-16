@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-16
 decision-makers: George Antoniadis
+amended-by: 0087
 ---
 
 # 0085. A mapping synthesises its subject slot on the source kind

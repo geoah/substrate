@@ -460,6 +460,12 @@ func TestMatchFallsThroughToTheNextProbe(t *testing.T) {
 // ZERO OR SEVERAL candidates mint a fresh subject (§6.2): a shared family
 // address matching two people creates a third rather than guessing —
 // ambiguity resolves in the console, by a human, with merge.
+// A MIRROR THAT DECLARES ITS SLOT `required:` still mints out of an ambiguous
+// probe, because a write that left the slot unset would be refused and the
+// record lost with it (record 0087). That is the declaration's own contract,
+// and the other side of the rule: a slot the mapping synthesises is optional,
+// and there an ambiguous probe parks
+// (TestAnAmbiguousProbeParksInsteadOfMinting).
 func TestAmbiguousMatchCreates(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)

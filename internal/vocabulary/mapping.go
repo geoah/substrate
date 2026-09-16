@@ -17,10 +17,18 @@ import (
 
 // Merge is how one target property combines contributions: atomic takes one
 // source's value whole, union takes the deduped union of every live source's
-// items, only onto repeated properties.
+// items, only onto repeated properties, and first takes the HEAD of a repeated
+// source into a single-valued one.
+//
+// first is union's answer from the other side. A provider that mirrors an API
+// array verbatim (a Google contact's `names[].displayName`) has one value its
+// subject wants and a repetition its subject does not, and without it the
+// address book — the owner's best source of human names — could probe a person
+// by name and never set one.
 const (
 	MergeAtomic = "atomic"
 	MergeUnion  = "union"
+	MergeFirst  = "first"
 )
 
 // Mapping is one parsed recordmapping. From and To are full kind references,
@@ -36,8 +44,10 @@ type Mapping struct {
 	Property string
 	// Match is the ordered identifier probes: when a source record
 	// arrives without a subject, the first probe whose values find candidates
-	// decides — exactly one candidate links, zero or several create a fresh
-	// subject. May be empty: a link-only mapping always creates.
+	// decides — exactly one candidate links, none mints a fresh subject, and
+	// several park the source unlinked rather than mint a duplicate of people
+	// the probe cannot tell apart (record 0087). May be empty: a link-only
+	// mapping always creates.
 	Match []MatchRule
 	// Map is assignment paths per target property, nothing else — no
 	// expression language, computation stays in connector normalize.
@@ -63,7 +73,7 @@ type MatchRule struct {
 // MapRule is one target property's assignment.
 type MapRule struct {
 	Path  Path
-	Merge string // MergeAtomic | MergeUnion
+	Merge string // MergeAtomic | MergeUnion | MergeFirst
 }
 
 // Path is a parsed assignment path: `a` (a property), `a.b` (a
@@ -270,8 +280,8 @@ func (l *loader) parseMapping(d Document) *Mapping {
 		l.checkKeys(mwhere, rd, mapRuleKeys)
 		raw := mstr(rd, "path")
 		if mg := mstr(rd, "merge"); mg != "" {
-			if mg != MergeAtomic && mg != MergeUnion {
-				l.errf("%s.merge: %q is not a merge — \"atomic\" or \"union\"", mwhere, mg)
+			if mg != MergeAtomic && mg != MergeUnion && mg != MergeFirst {
+				l.errf("%s.merge: %q is not a merge — \"atomic\", \"union\" or \"first\"", mwhere, mg)
 				continue
 			}
 			rule.Merge = mg
@@ -400,14 +410,19 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 			errf("%s: %s is %s, %s.%s is %s — a map path type-checks against both ends", mwhere, rule.Path, sp.Datatype, m.To, tname, tp.Datatype)
 			continue
 		}
-		// Cardinality: union needs a repeated target (a scalar path
-		// contributes a singleton, which is legal); a repeated source without
-		// union needs a repeated atomic target of the same kind.
+		// Cardinality. union needs a repeated target (a scalar path
+		// contributes a singleton, which is legal); first is the same question
+		// from the other side and needs a SINGLE one, taking the head of a
+		// repeated source (a single source contributes itself, which is legal
+		// and a no-op); and a repeated source under neither needs a repeated
+		// target of the same kind.
 		switch {
 		case rule.Merge == MergeUnion && !tp.Repeated:
 			errf("%s: merge: union needs a repeated target — %s.%s is not", mwhere, m.To, tname)
-		case rule.Merge != MergeUnion && repeated != tp.Repeated:
-			errf("%s: %s and %s.%s disagree on repetition — a repeated source needs merge: union or a repeated target", mwhere, rule.Path, m.To, tname)
+		case rule.Merge == MergeFirst && tp.Repeated:
+			errf("%s: merge: first takes ONE value — %s.%s is repeated, and merge: union is the one that joins", mwhere, m.To, tname)
+		case rule.Merge == MergeAtomic && repeated != tp.Repeated:
+			errf("%s: %s and %s.%s disagree on repetition — a repeated source needs merge: first for one value or merge: union for a repeated target", mwhere, rule.Path, m.To, tname)
 		}
 	}
 	return problems

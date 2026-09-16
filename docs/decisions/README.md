@@ -237,3 +237,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0083](0083-a-repository-has-one-writer-and-a-second-is-refused-at-open.md) | A repository has one writer, and a second is refused at open | accepted |
 | [0084](0084-a-reference-may-pin-a-mapping-source-kind.md) | A reference may pin a mapping's source kind | accepted |
 | [0085](0085-a-mapping-synthesises-its-subject-slot.md) | A mapping synthesises its subject slot on the source kind | accepted |
+| [0086](0086-the-head-of-a-repeated-source-is-spelled-with-brackets.md) | The head of a repeated source is spelled `[]`, in a display template and in `merge: first` | accepted |
+| [0087](0087-an-unresolved-source-parks-instead-of-minting.md) | A source that offers nothing, or that a probe cannot tell apart, parks instead of minting | accepted |

@@ -138,14 +138,43 @@ against both declared kinds, so a disagreement fails on the manifest that
 caused it, never on the first sync that hits it. Both `match` and `map` may
 be empty: a link-only mapping carries structure and copies nothing.
 
+**`merge` is where the two ends' repetitions are settled**, and there are
+three. `atomic`, the default, takes one source's value whole and needs both
+ends to agree on repetition. `union` takes the deduped union of every live
+source's items and needs a REPEATED target; a single-valued path contributes
+its one value, which is legal. `first` is union's question from the other
+side: the HEAD of a repeated source onto a SINGLE-valued target, which is the
+only rule that admits a Google contact's `names[].displayName` onto
+`person.name` — a provider that mirrors an API array verbatim has one value
+the subject wants and a repetition it does not
+([decision record 0086](decisions/0086-the-head-of-a-repeated-source-is-spelled-with-brackets.md)).
+
+Two things about `first` are worth stating. It is POSITIONAL, and position is
+not primacy: it takes the array's first entry, not the one the provider flagged
+primary, so a provider that does not sort its array meaningfully wants a
+derived scalar instead. And an EMPTY source writes NOTHING rather than an empty
+value: a contact whose `names[]` is empty leaves the person's name to whatever
+else offers one instead of clearing it. The rule applies per source, before the
+selection across sources, so the choice between two contacts that both carry a
+name is the ordinary latest-write-wins.
+
 Three behaviors fall out of this one document:
 
-- **Match, or shell birth.** A `user` arriving without its `person` reference is
-  resolved in the same transaction: exactly one live person carrying that
-  email links; zero, or several, mint a fresh person instead of guessing.
-  Two syncs racing the same new person mint **one** shell. Nothing ever
-  auto-merges; joining two existing people is the owner's manual `merge`, and
-  it is reversible.
+- **Match, shell birth, or park.** A `user` arriving without its `person`
+  reference is resolved in the same transaction: exactly one live person
+  carrying that email links, and none mints a fresh person. Two syncs racing
+  the same new person mint **one** shell. SEVERAL candidates mint nothing: the
+  source parks with its slot unset rather than add a third person the same
+  address then points at, and it resolves on its next write once the owner has
+  settled the ambiguity. A source that offers nothing at all — no probe value
+  and no mapped value — mints nothing either, because a shell born from it is a
+  row no probe can ever match
+  ([decision record 0087](decisions/0087-an-unresolved-source-parks-instead-of-minting.md)).
+  Two callers still mint whatever the source carries, because both need a
+  record to point at: the [subject hop](data-model.md#kinds-and-references),
+  and a source kind that declares its own subject slot `required:`. Nothing
+  ever auto-merges; joining two existing people is the owner's manual `merge`,
+  and it is reversible.
 - **Recompute, with yield.** The person's mapped properties are recomputed
   from all live source records whenever one changes: `name` from the latest
   writer, `emails` as the union of what every source asserts. But a value
@@ -205,8 +234,9 @@ property it follows three rules:
   value alone and records what it would have written as an **alternative**
   beside it. Your edit survives the sync, and so does a function's: a
   bundle write is a visible pin, never a silent freeze.
-- **Select.** Otherwise the latest-updated live source wins (`atomic`) or the
-  union of every live source's items lands (`union`), and the manager becomes
+- **Select.** Otherwise the latest-updated live source wins (`atomic`, and
+  `first` with the head of its repeated path in hand) or the union of every
+  live source's items lands (`union`), and the manager becomes
   the winning source's actor at the machine tier, so the changelog says a name
   came from GitHub, not from "the system". Nothing in a manifest ranks
   sources; ties break deterministically by kind reference, then id.
