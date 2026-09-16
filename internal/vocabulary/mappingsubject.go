@@ -232,3 +232,52 @@ func (r *Registry) replaceKinds(updated map[string]*Kind) {
 		}
 	}
 }
+
+// SynthesizedDeclaration renders a mapping-owned property the way a document
+// would have declared it, for the READ surfaces alone: `KindByRef` merges
+// these into the declaration it serves, so a console reading a kind's
+// properties sees the slot the mapping put there, flagged `managed` and naming
+// the mapping that owns it.
+//
+// It is never written back. The stored declaration row is the DOCUMENT, and
+// the document does not declare this property — which is what keeps
+// `get -o yaml | apply -f` honest and the reconcile the one place the slot
+// comes from.
+func (p *Property) SynthesizedDeclaration() map[string]any {
+	if p.MappedBy == "" {
+		return nil
+	}
+	out := map[string]any{
+		"type":      string(DatatypeReference),
+		"kind":      p.To,
+		"mustExist": true,
+		"subject":   true,
+		"managed":   true,
+		"mappedBy":  p.MappedBy,
+	}
+	if p.DisplayName != "" {
+		out["displayName"] = p.DisplayName
+	}
+	if p.Description != "" {
+		out["description"] = p.Description
+	}
+	if p.Required {
+		out["required"] = true
+	}
+	return out
+}
+
+// MappedProperties lists a kind's mapping-owned properties, by name — what a
+// read surface merges into the declaration it serves.
+func (t *Kind) MappedProperties() map[string]*Property {
+	var out map[string]*Property
+	for _, n := range t.PropOrder {
+		if p := t.Props[n]; p.MappedBy != "" {
+			if out == nil {
+				out = map[string]*Property{}
+			}
+			out[n] = p
+		}
+	}
+	return out
+}
