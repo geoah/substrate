@@ -23,57 +23,6 @@ import (
 
 // --- subject resolution -----------------------------------------------------
 
-// subjectPinned is THE MAPPING AS THE WRITE-TIME PIN (record 49). A mirror
-// kind leaves its `subject: true` reference unpinned, because the kind it
-// reaches belongs to whoever declares the mapping; from the write path's side
-// that slot is pinned all the same, at the mapping's `to`. Without this an
-// unpinned slot would admit a record of ANY kind, and a bare id in it would
-// have no kind to borrow.
-//
-// A TRAIT-pinned slot is pinned at the mapping's `to` as well, and the trait
-// keeps its say: resolveMapping refuses a mapping whose target does not
-// implement it, so narrowing the slot to that one kind can only narrow within
-// what the trait already admits. It is also what lets a bare id complete
-// there, which a trait pin never could.
-//
-// It returns ty untouched unless some subject slot is unpinned AND a mapping
-// fills it, and otherwise a SHALLOW COPY carrying copies of those properties:
-// the registry's kinds are shared across every clone of it (Registry.Clone),
-// so pinning one in place would leak a candidate registry's mapping into the
-// live one and outlive an uninstall.
-func (t *txn) subjectPinned(ty *vocabulary.Kind) *vocabulary.Kind {
-	var pinned map[string]*vocabulary.Property
-	for _, name := range ty.PropOrder {
-		p := ty.Props[name]
-		if !p.Subject || (p.To != "" && p.To != vocabulary.ToAny) {
-			continue
-		}
-		m, ok := t.declarations().MappingFor(ty.Identity, name)
-		if !ok {
-			continue
-		}
-		clone := *p
-		clone.To, clone.ToTrait = m.To, ""
-		if pinned == nil {
-			pinned = map[string]*vocabulary.Property{}
-		}
-		pinned[name] = &clone
-	}
-	if pinned == nil {
-		return ty
-	}
-	out := *ty
-	out.Props = make(map[string]*vocabulary.Property, len(ty.Props))
-	for name, p := range ty.Props {
-		if replaced, ok := pinned[name]; ok {
-			out.Props[name] = replaced
-			continue
-		}
-		out.Props[name] = p
-	}
-	return &out
-}
-
 // subjectTargetOf reads the LIVE record a source record's subject reference
 // names, "" when it names nothing. It reads the refs index rather than the
 // property, so the stored destination is one statement away.

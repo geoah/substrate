@@ -1484,21 +1484,24 @@ data:
 `+rules)
 	}
 	bad := map[string]string{
-		"missing property": mapping("recperson", `  from: x.example.com/x/rec
-  to: x.example.com/x/person
-  property: nosuch
-`),
-		// `other` points at person, but the mapping's property must be the one
-		// the data.to names AND carry the subject shape.
-		"optional property": mapping("recperson", `  from: x.example.com/x/rec
+		// `other` points at person but is not a `subject: true` reference, so
+		// the mapping would silently take a declared slot over: refused as a
+		// collision (record 85).
+		"collides with a declared property": mapping("recperson", `  from: x.example.com/x/rec
   to: x.example.com/x/person
   property: other
 `),
 		// The marker is what the write path reads, so a subject-shaped
-		// reference that does not declare it is still refused.
+		// reference that does not declare it is a collision like any other.
 		"subject marker missing": mapping("recperson", `  from: x.example.com/x/rec
   to: x.example.com/x/person
   property: unmarked
+`),
+		// A scalar under the mapping's word is the same collision, and the
+		// one an author is most likely to write by accident.
+		"collides with a scalar": mapping("recperson", `  from: x.example.com/x/rec
+  to: x.example.com/x/person
+  property: count
 `),
 		"wrong referent kind": mapping("recperson", `  from: x.example.com/x/rec
   to: x.example.com/x/rec
@@ -1765,9 +1768,16 @@ data:
 		if m.Package != "u.example.com/u" || m.To != "u.example.com/u/task" {
 			t.Fatalf("mapping = %+v", m)
 		}
+		// The mirror declares its slot unpinned and optional; the MAPPING is
+		// what pins it, and since record 85 it does so in the registry rather
+		// than at every write.
 		mirror, _ := r.ByIdentity("p.example.com/p/issue")
-		if slot := mirror.Props["task"]; slot.To != "" || slot.Required {
-			t.Fatalf("the mirror's subject slot is unpinned and optional: %+v", slot)
+		slot := mirror.Props["task"]
+		if slot.To != "u.example.com/u/task" || slot.Required {
+			t.Fatalf("the mirror's subject slot = %+v", slot)
+		}
+		if slot.MappedBy != "u.example.com/u/issuetask" || !slot.Managed {
+			t.Fatalf("the slot does not name its mapping: %+v", slot)
 		}
 	})
 

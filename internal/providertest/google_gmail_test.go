@@ -59,13 +59,10 @@ func TestGoogleGmailBundleAdmitsSchema(t *testing.T) {
 	// what carries a match probe.
 	addr := mustKind(t, reg, googleAddressType)
 	mustProps(t, addr, "account", "address", "displayName")
-	ed, ok := addr.Prop("person")
-	if !ok {
-		t.Fatalf("emailaddress declares no `person` slot")
-	}
-	if ed.To != "" || ed.Required || ed.Repeated || ed.Cascades() || !ed.Subject || !ed.MustExist {
-		t.Fatalf("person slot shape wrong: kind=%q required=%v repeated=%v cascades=%v subject=%v mustExist=%v",
-			ed.To, ed.Required, ed.Repeated, ed.Cascades(), ed.Subject, ed.MustExist)
+	// NO SUBJECT SLOT (record 85): the repository's mapping synthesises
+	// `person` on this kind, and the provider names no user vocabulary.
+	if ed, ok := addr.Prop("person"); ok {
+		t.Fatalf("emailaddress still declares a subject slot: %+v", ed)
 	}
 	if ms := reg.MappingsFrom(googleAddressType); len(ms) != 0 {
 		t.Fatalf("the google closure ships %d mappings from emailaddress; a provider ships none", len(ms))

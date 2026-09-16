@@ -41,7 +41,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: google
-  version: 16
+  version: 17
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -480,17 +480,6 @@ data:
     raw:
       type: json
       description: the raw People person as fetched, for provenance and writeback
-    # The subject slot (record 0049): single, never cascading, UNPINNED and
-    # optional, because the kind it reaches is the repository's to choose and
-    # this package owns none. It is left empty on write and a mapping declared
-    # by the owner of that kind is what pins it and fills it.
-    person:
-      type: reference
-      displayName: Person
-      mustExist: true
-      subject: true
-      description: the human this contact record describes, once a mapping
-        says which kind that is
 ---
 # ---- the sync function: the connector runtime's showcase -------------------
 # A PEP 723 Python body that imports google-api-python-client + google-auth
@@ -963,15 +952,6 @@ data:
       displayName: Display name
       description: the name the header or the attendee list carried, when
         it carried one
-    # The subject slot (record 0049): single, never cascading, UNPINNED and
-    # optional, left EMPTY on write. The repository's own mapping pins it.
-    person:
-      type: reference
-      displayName: Person
-      mustExist: true
-      subject: true
-      description: the human this address belongs to, once a mapping says
-        which kind that is
 ---
 # ---- the gmail mirror: one thread ------------------------------------------
 # Derived entirely from the MESSAGE stream — no threads.get call is ever made

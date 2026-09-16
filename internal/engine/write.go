@@ -189,10 +189,6 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 	if err := t.forbidSystemKind(ty, substrate.OpPut); err != nil {
 		return nil, err
 	}
-	// An unpinned subject slot is pinned at its mapping's `to` for the whole
-	// write: coercion completes a bare id from it and normalization admits
-	// that kind alone (record 49).
-	ty = t.subjectPinned(ty)
 	// Global lock order: the registry-dep/subject locks this type needs come
 	// before its own record lock.
 	if err := t.preRecordLocks(ty); err != nil {
@@ -582,9 +578,6 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 		return nil, err
 	}
 	ref.Kind = ty.Identity
-	// The mapping is the pin on an unpinned subject slot, on a patch exactly
-	// as on a put (record 49).
-	ty = t.subjectPinned(ty)
 	// Global lock order: take the registry-dep/subject locks this addressed
 	// record's type needs BEFORE its own record lock (the contract "lock
 	// ordering"). A trigger patch can then never hold record|id while a
@@ -1172,7 +1165,19 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 				}
 				managers[name] = string(actor)
 			default:
-				if err := t.setManager(sp.ref(), name, t.actor, t.tier); err != nil {
+				actor, tier := t.actor, t.tier
+				// A SUBJECT SLOT IS THE MAPPING'S, whoever's write filled it
+				// (record 85). The value is not the writer's opinion — it is
+				// match-or-mint's answer, or the id the writer already had —
+				// and crediting the connector would let a `propertyMeta` read
+				// say a bundle holds the link when only merge and split can
+				// move it. The manager names the declaration instead, at the
+				// machine tier, so recompute and a later resolve are free to
+				// rewrite it.
+				if p, ok := sp.ty.Prop(name); ok && p.MappedBy != "" {
+					actor, tier = substrate.Actor("mapping:"+p.MappedBy), substrate.TierMachine
+				}
+				if err := t.setManager(sp.ref(), name, actor, tier); err != nil {
 					return nil, err
 				}
 			}
@@ -1484,6 +1489,16 @@ func (t *txn) checkManagedProps(sp *applySpec) error {
 	for _, name := range sortedKeys(sp.props) {
 		p, ok := sp.ty.Prop(name)
 		if !ok || !p.Managed {
+			continue
+		}
+		// A SUBJECT SLOT is managed and has its own rule, which is not this
+		// one. A mapping synthesises it `managed: true` so a client renders it
+		// read-only (record 85), but the slot is legitimately WRITTEN at
+		// create — a connector that already knows the subject names it, and
+		// match-or-mint fills it otherwise. checkSubjectWrite is what refuses
+		// the thing managed means here: moving it afterwards, which is merge
+		// and split and nothing else.
+		if p.Subject {
 			continue
 		}
 		var held any

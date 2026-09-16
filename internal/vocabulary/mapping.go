@@ -316,34 +316,30 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 		errf("%s: data.to: unknown type %q", where, m.To)
 		return problems
 	}
-	// The subject reference's shape: a kind's own reference property,
-	// marked `subject: true`, single, mustExist and never cascading. The PIN is
-	// the declaring package's choice (record 49): a mirror kind whose targets
-	// its own package cannot know leaves the reference unpinned and optional,
-	// and the mapping's `to` is the subject kind for that property. A pin, where
-	// there is one, still has to agree with `to`, and a pinned subject is
-	// required.
-	sp, ok := from.Props[m.Property]
-	pinned := ok && sp.To != "" && sp.To != ToAny
+	// The subject slot. THE MAPPING OWNS IT (record 85): a source kind that
+	// declares nothing under this name gets the property synthesised onto it
+	// (mappingsubject.go), which is what lets a provider ship mirrors without
+	// knowing the word its consumer will use. A kind that DOES declare it
+	// keeps its declaration and the mapping stamps the pin — that is a bundle
+	// written before record 85, and a document that was read back out and
+	// applied again.
+	//
+	// So the shape is checked only where a declaration exists, and a
+	// declaration that is not a subject reference is the collision the
+	// reconcile refuses, on its own terms and in one place.
+	sp, declared := from.Props[m.Property]
 	switch {
-	case !ok:
-		errf("%s: data.property: %s declares no property %q", where, m.From, m.Property)
-	case sp.Datatype != DatatypeReference:
-		errf("%s: data.property: %s.%s is %s — a subject is a `type: reference` property", where, m.From, m.Property, sp.Datatype)
-	case pinned && sp.To != m.To:
+	case !declared || sp.MappedBy != "":
+		// Nothing to hold: the slot is the mapping's own, or was already
+		// stamped by it in an earlier pass over this registry.
+	case sp.Datatype != DatatypeReference || !sp.Subject:
+		// Reported by the reconcile (mappingSubjectProblems), which says it
+		// once for every door and names the remedy.
+	case sp.To != "" && sp.To != ToAny && sp.To != m.To:
 		errf("%s: data.property: %s.%s points at %q, not data.to %s", where, m.From, m.Property, sp.To, m.To)
 	case sp.ToTrait != "" && !to.Implements(sp.ToTrait):
 		errf("%s: data.property: %s.%s pins the trait %s, which %s does not implement", where, m.From, m.Property, sp.ToTrait, m.To)
 	default:
-		if !sp.Subject {
-			errf("%s: data.property: %s.%s is missing `subject: true` — the write path reads the marker, not this document", where, m.From, m.Property)
-		}
-		if pinned && !sp.Required {
-			errf("%s: data.property: a subject reference pinned at %s is required: true, because a source record that names its target kind cannot exist without one", where, m.To)
-		}
-		if !sp.MustExist {
-			errf("%s: data.property: the subject reference is mustExist: true — a source record describes a subject that exists", where)
-		}
 		if sp.Repeated || sp.Keyed {
 			errf("%s: data.property: the subject reference is single-valued — a record that describes two things is two records", where)
 		}

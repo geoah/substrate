@@ -2321,6 +2321,7 @@ func (r *Registry) Finalize() error {
 		problems = append(problems, r.resolvePackage(g)...)
 	}
 	problems = append(problems, r.mappingInvariantProblems()...)
+	problems = append(problems, r.mappingSubjectProblems()...)
 	if len(problems) > 0 {
 		return validationError(problems)
 	}
@@ -2343,8 +2344,13 @@ func (r *Registry) Install(g *Package) error {
 	// alone (vocabularywrite.go).
 	problems = append(problems, r.mappingInvariantProblems()...)
 	problems = append(problems, r.crossPackageMappingProblems([]*Package{g})...)
+	// The subject slots LAST, and over the whole registry: a mapping arriving
+	// with this package gives its source kind a slot, and a source kind
+	// arriving here takes the slots the mappings already loaded ask of it.
+	problems = append(problems, r.mappingSubjectProblems()...)
 	if len(problems) > 0 {
 		r.remove(g.Identity)
+		r.mappingSubjectProblems()
 		return validationError(problems)
 	}
 	r.mu.Lock()
@@ -2357,7 +2363,15 @@ func (r *Registry) Install(g *Package) error {
 // It is the candidate-build step of a schema write: clone the live registry,
 // remove the touched groups, install their rebuilt replacements. An identity
 // the registry does not hold is a no-op.
-func (r *Registry) Remove(identity string) { r.remove(identity) }
+func (r *Registry) Remove(identity string) {
+	r.remove(identity)
+	// A removed package takes its mappings with it, and a mapping's subject
+	// slot is the mapping's: the reconcile is what takes the property back off
+	// a source kind in a package that stays (mappingsubject.go). Problems are
+	// dropped here on purpose — this door removes, it does not admit, and
+	// every caller follows it with an InstallAll that reports.
+	r.mappingSubjectProblems()
+}
 
 // InstallAll adds a set of parsed packages and resolves them together, so
 // packages that reference each other install in any order: the shape both the
@@ -2381,10 +2395,15 @@ func (r *Registry) InstallAll(packages []*Package) error {
 	}
 	problems = append(problems, r.mappingInvariantProblems()...)
 	problems = append(problems, r.crossPackageMappingProblems(packages)...)
+	problems = append(problems, r.mappingSubjectProblems()...)
 	if len(problems) > 0 {
 		for _, g := range packages {
 			r.remove(g.Identity)
 		}
+		// The undo runs the reconcile again, so a slot this attempt put on a
+		// kind of a package that STAYS is taken back off it: the removal above
+		// drops the mapping, and the reconcile is what drops the property.
+		r.mappingSubjectProblems()
 		return validationError(problems)
 	}
 	r.mu.Lock()
