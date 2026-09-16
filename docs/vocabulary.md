@@ -177,11 +177,15 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   `from` may name a kind in any package, and it resolves at install. At most
   one mapping per (`from` kind, `property`) pair and one per (`from` kind, `to`
   kind), so one mirror kind reaches two subject kinds through two references
-  and never one kind twice. Its `property` names a reference the from-kind
-  declares `subject: true`, which must be single-valued, `mustExist: true` and
-  never `onDelete: cascade`; the reference is pinned at the mapping's `to` or
-  left unpinned, and a pinned one is `required: true`. An unpinned one is
-  pinned at the mapping's `to` by the write path. A mapping's `to` kind
+  and never one kind twice. Its `property` NAMES A REFERENCE THE MAPPING OWNS:
+  the from-kind declares nothing, and admitting the mapping synthesises the
+  slot on it, single, `mustExist: true`, never cascading, pinned at the
+  mapping's `to` and `managed: true`
+  ([decision record 0085](decisions/0085-a-mapping-synthesises-its-subject-slot.md)).
+  A name the from-kind declares for itself is a collision and refuses the
+  mapping; a `subject: true` reference it already declares is adopted, pin and
+  marker stamped, which is what keeps a bundle written before the rule
+  loading. A mapping's `to` kind
   may not itself be any mapping's `from` (bipartite, one level). Every `map`
   path type-checks against both declared kinds at load, so a disagreement
   fails on the manifest that caused it, never on the first sync that hits it.

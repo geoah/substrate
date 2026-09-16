@@ -536,7 +536,10 @@ the `referencing` filter arm of `GET /api/v1/records` lists the records
 pointing at one, narrowable by the property name and, through `kinds`, the
 source kind ([the API](api.md#who-points-at-a-record-referencing)). A
 `subject: true` reference is the one a [record mapping](projection.md)
-projects along.
+projects along, and the mapping is what puts it there: the source kind
+declares nothing, and admitting the mapping synthesises the reference on it,
+`managed: true`
+([decision 0085](decisions/0085-a-mapping-synthesises-its-subject-slot.md)).
 
 **Blob references.** A `blobref` names stored bytes by their digest. The bytes
 live in the repository's content-addressed blob store

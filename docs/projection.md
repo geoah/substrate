@@ -10,8 +10,9 @@ and tiers, and the merges that join two subjects that turn out to be one.
 ## Record mappings
 
 **What a source holds stays its own record**, pointing at the one subject it
-describes through an ordinary reference. A `recordmapping` names that reference
-and declares how the record's properties reach the subject.
+describes through an ordinary reference. A `recordmapping` NAMES that reference
+into being — the source kind declares nothing — and declares how the record's
+properties reach the subject.
 
 **The package that owns the TARGET kind declares the mapping**, and no other
 ([decision record 0049](decisions/0049-the-owner-of-a-mappings-target-declares-it.md)).
@@ -60,7 +61,7 @@ data:
   package: people                  # the package that owns `person`
   from: providers.substrate.reamde.dev/github/user
   to: samples.substrate.reamde.dev/people/person
-  property: person                 # the source's `subject: true` reference
+  property: person                 # the slot this mapping puts on `user`
   match:                           # first-link probes: how a new record
     - from: email                  #   finds an existing person
       to: emails
@@ -74,11 +75,30 @@ data:
       merge: union
 ```
 
-**The mapping is the pin.** GitHub's `user.person` is declared with no `kind:`
-and no `required:`, because GitHub cannot know which kind a repository keeps
-its people in. The mapping's `to` is what the write path enforces on that slot:
-a value of another kind is refused, a bare id completes against it, and until a
-mapping exists the slot stays empty.
+**THE MAPPING OWNS THE LINK.** `github/user` declares no `person` property at
+all: GitHub cannot know which kind a repository keeps its people in, nor what
+it calls the slot, so it declares neither
+([decision record 0085](decisions/0085-a-mapping-synthesises-its-subject-slot.md)).
+Admitting the mapping SYNTHESISES the reference on the source kind's live
+registry entry — named by `property`, pinned at `to`, single, `mustExist`,
+never cascading, and `managed: true`, which is a client's cue to render it
+read-only. A value of another kind is refused, a bare id completes against the
+pin, and until the mapping exists there is no slot to fill.
+
+Three things follow. A second consumer may map the same source onto its own
+kind under its own word, and neither consumer needs the provider to have
+anticipated either. A mapping whose `property` collides with a property the
+source kind declares FOR ITSELF is refused, naming both, because the mapping
+would otherwise take a declared slot over silently. And removing the mapping
+removes the slot, which is refused while live records still link through it:
+a subject link is not an ordinary optional value, and the only road back from
+clearing one is a full resync.
+
+A source kind MAY still declare the slot itself, and one written before this
+rule does. The declaration then stands — its description, its `required:` —
+and the mapping stamps the pin and the marker onto it, so a bundle that has
+not been rewritten, and a declaration read back out with `get -o yaml` and
+applied again, both land unchanged.
 
 **A reference may pin a mirror — and mostly should not.** Any reference,
 anywhere, may name a kind some mapping reads as its `from`
@@ -232,10 +252,11 @@ owner hold.
 ### Contributing a value
 
 There is exactly one way for a provider to contribute a value without
-pinning it: ship a **source kind** with an empty subject slot and write your
-own records. Your records become live sources once a mapping points them at a
-subject, your values compete in the same selection as every provider's, and
-they release by omission when your records go. The provider's half:
+pinning it: ship a **source kind** and write your own records. Your records
+become live sources once a mapping points them at a subject, your values
+compete in the same selection as every provider's, and they release by
+omission when your records go. The provider's half is its own vocabulary and
+NOTHING ELSE — no slot, no pointer at a kind it does not own:
 
 ```yaml
 kind: substrate.reamde.dev/core/kind
@@ -251,14 +272,13 @@ data:
       type: string
     email:
       type: email
-    person:                        # the subject slot: no kind, not required
-      type: reference
-      mustExist: true
-      subject: true
 ```
 
 The repository's half is the mapping, declared by the package that owns the
-kind being described:
+kind being described. **The mapping brings the slot**: admitting it
+synthesises `person` on `enrichment` — a reference named by `property`, pinned
+at `to`, single, `mustExist`, never cascading and `managed: true`
+([decision record 0085](decisions/0085-a-mapping-synthesises-its-subject-slot.md)).
 
 ```yaml
 kind: substrate.reamde.dev/core/recordmapping
