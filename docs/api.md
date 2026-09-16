@@ -148,6 +148,11 @@ it points at the target, `property` naming the reference and `path` locating
 a nested site (absent at the top level). A `ref` that is not a `<kind>/<id>`
 path, or whose kind is unknown, is `422 validation`.
 
+It is the GENERAL question, and it stays paged for that reason: any record can
+be pointed at from anywhere, by any property. The narrow one — which MIRRORS
+converged on this subject — is answered inline on the single-record read, as
+[`linkedFrom`](#the-flat-record).
+
 ### Creating a record: `POST /api/v1/records`
 
 `POST /api/v1/records` is the one body-addressed write: the body is the put
@@ -217,12 +222,14 @@ PATCH /api/v1/samples.substrate.reamde.dev/tasks/task/kq3v9x2m41pf
 {"properties": {"status": "done"}}
 ```
 
-Read the person GitHub linked up. Single-record reads also carry
-`propertyMeta` (per property: who wrote it, at which tier, and the
-alternatives other sources assert,
-[managed properties](projection.md#managed-properties) explains the
-mechanism), and, if you asked by an id that was merged away, `canonicalId`
-tells you where it went ([merges](projection.md#merges)):
+Read the person GitHub linked up. Single-record reads carry two sidecars a
+list never does. `propertyMeta` is per property: who wrote it, at which tier,
+and the alternatives other sources assert
+([managed properties](projection.md#managed-properties) explains the
+mechanism). `linkedFrom` is the records that map ONTO this one
+([reading the links back](projection.md#reading-the-links-back-linkedfrom)).
+And, if you asked by an id that was merged away, `canonicalId` tells you where
+it went ([merges](projection.md#merges)):
 
 ```http
 GET /api/v1/samples.substrate.reamde.dev/people/person/9f2k
@@ -233,12 +240,34 @@ GET /api/v1/samples.substrate.reamde.dev/people/person/9f2k
      "updatedAt": "2026-08-04T09:12:00Z",
      "alternatives": [
        {"actor": "function:providers.substrate.reamde.dev:github:githubsync",
-        "value": "ada", "updatedAt": "2026-08-04T08:00:00Z"}]}}}
+        "value": "ada", "updatedAt": "2026-08-04T08:00:00Z"}]}},
+   "linkedFrom": [
+     {"ref": "providers.substrate.reamde.dev/github/user/ada",
+      "kind": "providers.substrate.reamde.dev/github/user", "title": "ada",
+      "property": "person",
+      "mapping": "samples.substrate.reamde.dev/people/githubuserperson"},
+     {"ref": "providers.substrate.reamde.dev/slack/user/U42",
+      "kind": "providers.substrate.reamde.dev/slack/user", "title": "Ada L.",
+      "property": "person",
+      "mapping": "samples.substrate.reamde.dev/people/slackuserperson"}]}
 ```
 
 An alternative's `updatedAt` is its source record's, not the target's;
 [reading provenance](projection.md#reading-provenance-propertymeta) has the
 rule.
+
+`linkedFrom` is one entry per source record whose mapping-owned subject slot
+points here: `ref` its record path, `kind` the same kind said on its own,
+`title` its display title, `property` the slot it points from and `mapping`
+the [recordmapping](projection.md#record-mappings) that owns that slot, sorted
+by kind then id. The target is matched by its canonical id AND every former
+id, so a mirror linked before a merge still counts. The key is ABSENT — never
+an empty array — on a kind no mapping targets, so "nothing maps onto this
+kind" and "nothing has linked yet" are the same absence rather than two
+answers. A list read never carries it and there is no opt-in: it is one query
+per record, and [`referencing`](#who-points-at-a-record-referencing) is the
+bulk answer
+([decision record 0088](decisions/0088-a-single-record-read-carries-its-inbound-mapping-owned-links.md)).
 
 ## The five mutations
 

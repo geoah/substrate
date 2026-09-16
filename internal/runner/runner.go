@@ -951,6 +951,11 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 			e = nil
 		}
 		if e != nil {
+			// The inbound mapping-owned links name records of OTHER kinds and
+			// carry their titles, so the allowlist decides each one the same
+			// way it decided the record: a body granted `person` alone learns
+			// nothing about the mirrors that point at it.
+			e.LinkedFrom = s.allowedLinks(e.LinkedFrom)
 			if err := s.chargeRows(1); err != nil {
 				return nil, s.trip(err)
 			}
@@ -1103,6 +1108,19 @@ func (s *readState) allowed(ident string) bool {
 		}
 	}
 	return false
+}
+
+// allowedLinks drops every inbound link whose source kind the allowlist does
+// not cover, and answers nil rather than an empty slice so a body reads the
+// same absence a kind no mapping targets gives it.
+func (s *readState) allowedLinks(links []substrate.LinkedRecord) []substrate.LinkedRecord {
+	var out []substrate.LinkedRecord
+	for _, l := range links {
+		if s.allowed(l.Kind) {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // requireTypes holds a list/search to the allowlist: the request must name

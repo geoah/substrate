@@ -62,4 +62,26 @@ type Record struct {
 	// differs from the stored one. Populated on SINGLE-RECORD reads only —
 	// lists and changes never carry it.
 	PropertyMeta map[string]PropertyMeta `json:"propertyMeta,omitempty"`
+
+	// LinkedFrom is the source records whose mapping-owned subject slot
+	// points at this one: the mirrors that converged on this subject, one
+	// entry each, ordered by kind then id. Populated on SINGLE-RECORD reads
+	// only, and ABSENT — never an empty array — on a kind no recordmapping
+	// targets, so a reader can tell "nothing maps onto this kind" from
+	// "nothing has linked yet" (decision 0088).
+	LinkedFrom []LinkedRecord `json:"linkedFrom,omitempty"`
+}
+
+// LinkedRecord is one inbound mapping-owned link: the source record, and
+// which mapping owns the slot it points from. Ref is the source's record
+// path, "<kind>/<id>", and Kind its kind reference — the same kind Ref
+// carries, said on its own because grouping by it is what a reader does with
+// this list. Title is the source's display title, empty where it has none.
+type LinkedRecord struct {
+	Ref      string `json:"ref"`
+	Kind     string `json:"kind"`
+	Title    string `json:"title,omitempty"`
+	Property string `json:"property"`
+	// Mapping is the recordmapping's identity, "<authority>/<package>/<name>".
+	Mapping string `json:"mapping"`
 }

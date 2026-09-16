@@ -239,3 +239,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0085](0085-a-mapping-synthesises-its-subject-slot.md) | A mapping synthesises its subject slot on the source kind | accepted |
 | [0086](0086-the-head-of-a-repeated-source-is-spelled-with-brackets.md) | The head of a repeated source is spelled `[]`, in a display template and in `merge: first` | accepted |
 | [0087](0087-an-unresolved-source-parks-instead-of-minting.md) | A source that offers nothing, or that a probe cannot tell apart, parks instead of minting | accepted |
+| [0088](0088-a-single-record-read-carries-its-inbound-mapping-owned-links.md) | A single-record read carries its inbound mapping-owned links | accepted |

@@ -13,13 +13,16 @@
  * readable off one record; values the kind never declared show too, marked as
  * such, because hiding data a record carries would make this view lie. A
  * reference carrying LINK DATA renders the referent's pill with the link's own
- * properties beside it. Read-only: Edit is the page's affordance, not this
- * tab's. */
+ * properties beside it. Under the properties sits **Linked from**
+ * (`linked-from.tsx`): the records whose mapping-owned subject slot points at
+ * this one, which nothing on this record's own properties would show. Read-only:
+ * Edit is the page's affordance, not this tab's. */
 
 import * as React from "react"
 
 import { ListIcon } from "lucide-react"
 
+import { LinkedFromSection } from "@/components/record/linked-from"
 import { ReferenceValue } from "@/components/record/reference-value"
 import { StateBadge } from "@/components/state-badge"
 import {
@@ -471,8 +474,12 @@ export function PropertiesRail({
   kinds: KindInfo[]
 }) {
   const rows = rowsOf(record, kind)
+  // The inbound mapping-owned links ride on the single-record read, so they
+  // are here without a second request; a kind no mapping targets carries the
+  // key not at all (decision 0088).
+  const links = record.linkedFrom ?? []
 
-  if (!rows.length) {
+  if (!rows.length && !links.length) {
     return (
       <Empty className="py-10">
         <EmptyHeader>
@@ -491,6 +498,7 @@ export function PropertiesRail({
       {rows.map((row) => (
         <Row key={row.name} row={row} kinds={kinds} />
       ))}
+      <LinkedFromSection links={links} kinds={kinds} />
     </div>
   )
 }

@@ -54,8 +54,10 @@ type Dataset interface {
 	// --- reads ---
 	// Get returns the full record by its (type, id) identity: properties,
 	// labels, annotations and machine states. A reference property carries the
-	// records this one points at; what points BACK is a List under
-	// Filter.Referencing. A former id resolves within the type.
+	// records this one points at; what points BACK through a recordmapping's
+	// subject slot rides beside it as LinkedFrom, and the general reverse read
+	// is a List under Filter.Referencing. A former id resolves within the type,
+	// and LinkedFrom counts pointers written under one.
 	Get(ctx context.Context, typ, id string) (*Record, error)
 	List(ctx context.Context, q Query) (*Page, error)
 	// Window is the engine's half of a window read (occurrence.go): the rows
