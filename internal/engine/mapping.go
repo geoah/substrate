@@ -681,11 +681,18 @@ func (t *txn) subjectSourcesOf(target eref, mappings []*vocabulary.Mapping) ([]m
 // The source's package, not the mapping's: since record 49 the mapping is the
 // TARGET owner's declaration, so crediting its package would say a synced name
 // came from the repository's own vocabulary rather than from Google.
+//
+// THE SUBJECT SLOT IS NOT A CONTRIBUTION and is excluded by name. Its manager
+// is the mapping itself (record 85), written by the engine as the link
+// resolves, and it is written LAST — so without this the most recent row on
+// every freshly synced source record would be the engine's own bookkeeping,
+// and every value that record offers would be attributed to the mapping
+// instead of to the connector that fetched it.
 func (t *txn) sourceActor(src eref, m *vocabulary.Mapping) (string, error) {
 	var actor string
 	err := t.row(`
-		SELECT actor FROM property_managers WHERE record_kind = $1 AND record_id = $2
-		ORDER BY updated_at DESC, property LIMIT 1`, src.Kind, src.ID).Scan(&actor)
+		SELECT actor FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property <> $3
+		ORDER BY updated_at DESC, property LIMIT 1`, src.Kind, src.ID, m.Property).Scan(&actor)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", err
 	}
