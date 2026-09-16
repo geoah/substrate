@@ -37,6 +37,14 @@ type Filter struct {
 	// Deleted: nil = only live records (the default), true = only
 	// tombstoned, false = only live.
 	Deleted *bool `json:"deleted,omitempty"`
+	// Orphaned narrows to the mapping targets the engine has MARKED: a record
+	// of a kind some recordmapping targets, with no live source of its own
+	// left and nothing above the machine tier holding a property — the husk a
+	// deleted or re-seeded source leaves behind. nil is every record, true
+	// only the marked ones, false only the unmarked. It is a derived reading
+	// of the present, so a re-linked record leaves the set on its next write
+	// (docs/projection.md, decision 0092).
+	Orphaned *bool `json:"orphaned,omitempty"`
 	// Referencing narrows to the records holding a reference AT one record:
 	// the reverse read, as a predicate over the refs index rather than a
 	// sub-resource of its own. The target is matched by its canonical id and

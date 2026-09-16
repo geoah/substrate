@@ -52,6 +52,10 @@ type options struct {
 	// flag tells an explicit zero (no ceiling) from the default.
 	conversionCeiling    int64
 	conversionCeilingSet bool
+	// orphanGrace is how long a mapping target must have carried its orphan
+	// mark before the sweep may collect it (WithOrphanCollection). Zero or
+	// less is the default: the mark is made, nothing is collected.
+	orphanGrace time.Duration
 	// catchUpBatch is the page size of the boot's table-to-file catch-up
 	// (appendFromTable); rebuildBatch when not positive. Only a test sets it
 	// (export_test.go), to put a transaction across a page boundary.
@@ -168,6 +172,21 @@ func WithConversionCeiling(n int64) Option {
 	return func(o *options) { o.conversionCeiling, o.conversionCeilingSet = n, true }
 }
 
+// WithOrphanCollection turns the sweep's ORPHAN COLLECTION on and sets its
+// grace window (SUBSTRATE_ORPHAN_GRACE): a mapping target that has carried
+// its orphan mark for longer than grace, and that no live record points at,
+// is tombstoned by the GC sweep and collected with it (orphans.go).
+//
+// Zero or less is off, which is the default and the shipped behavior: the
+// mark is derived either way, so an owner can list what has been orphaned
+// (`filter.orphaned`) on a deployment that collects nothing. Collection is
+// opt-in because "the last source went" is also the shape of a connector
+// outage and of a re-seed in flight, and the cost of being wrong is somebody's
+// records.
+func WithOrphanCollection(grace time.Duration) Option {
+	return func(o *options) { o.orphanGrace = grace }
+}
+
 // WithDirectoryReadOnly opens the service as a second process beside a running
 // server: the operator hat's `repository verify` and `reembed`. Open runs no
 // boot check and no orphan sweep, a dataset opens no changelog writer and
@@ -261,6 +280,9 @@ type service struct {
 	// conversionCeiling is the most live records one declaration change may
 	// rewrite (convert.go admitConversion); zero or less is no ceiling.
 	conversionCeiling int64
+	// orphanGrace is the sweep's orphan-collection window; zero or less
+	// collects nothing (orphans.go collectOrphans).
+	orphanGrace time.Duration
 	// catchUpBatch is the page size of the table-to-file catch-up.
 	catchUpBatch int
 	// blobs is where blob bytes live (WithBlobStore); the fs backend under
@@ -409,6 +431,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		blobs:        o.blobs,
 
 		conversionCeiling: o.conversionCeiling,
+		orphanGrace:       o.orphanGrace,
 		totpDisabled:      o.insecureDisableTOTP,
 		now:               o.now,
 		readOnly:          o.dirReadOnly,

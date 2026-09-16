@@ -620,6 +620,20 @@ func (t *txn) recompute(target eref) error {
 	if t.recomputing {
 		return nil
 	}
+	if err := t.recomputeValues(target); err != nil {
+		return err
+	}
+	// LAST, and outside the value half: the mark is read off what the
+	// recompute leaves behind — no live source, and nothing above the machine
+	// tier holding a property (orphans.go). It runs even where there was
+	// nothing to recompute, because a link-only mapping's target orphans the
+	// same way a copying one's does.
+	return t.syncOrphaned(target)
+}
+
+// recomputeValues is recompute's value half: the offers, and the mapped
+// properties the machine tier still holds.
+func (t *txn) recomputeValues(target eref) error {
 	in, err := t.mappedInputsOf(target)
 	if err != nil || in == nil {
 		return err
@@ -678,22 +692,65 @@ func (t *txn) recompute(target eref) error {
 }
 
 // subjectSourcesOf loads the live records mapped onto a record, each joined
-// through its own mapping's declared subject PROPERTY — an ordinary reference
-// with the same name on a different declaring kind is not one.
+// through its own mapping's declared subject PROPERTY, and credits each to
+// the actor its contributions are attributed to.
+//
+// The sites are subjectSourceSites'; this is the loading half, kept apart
+// because asking WHETHER a target still has a live source (orphans.go
+// isOrphan) must not pay for the rows and the actor lookups.
+func (t *txn) subjectSourcesOf(target eref, mappings []*vocabulary.Mapping) ([]mappedSource, error) {
+	found, err := t.subjectSourceSites(target, mappings)
+	if err != nil {
+		return nil, err
+	}
+	bySlot := map[sourceSlot]*vocabulary.Mapping{}
+	for _, m := range mappings {
+		bySlot[sourceSlot{m.From, m.Property}] = m
+	}
+	var out []mappedSource
+	for _, c := range found {
+		r, err := t.loadRow(eref{Kind: c.typ, ID: c.id}, false)
+		if err != nil {
+			return nil, err
+		}
+		if r == nil {
+			continue
+		}
+		m := bySlot[sourceSlot{c.typ, c.rel}]
+		actor, err := t.sourceActor(r.ref(), m)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, mappedSource{row: r, m: m, actor: actor})
+	}
+	return out, nil
+}
+
+// sourceSlot addresses one mapping's entry point: the source KIND and the
+// subject property on it. One source kind may reach one target through two
+// subject properties (record 49), so the property is half the key.
+type sourceSlot struct{ kind, property string }
+
+// sourceSite is one live source record's link at one slot.
+type sourceSite struct{ rel, id, typ string }
+
+// subjectSourceSites lists the live records whose mapping-owned subject slot
+// names a record — an ordinary reference with the same name on a different
+// declaring kind is not one.
 //
 // It matches every id the target has ever had, not only the canonical one: a
 // merge does not repoint reference values (they resolve forward through the
 // former-id trail on read), so a source synced before its subject won a merge
 // still names the loser id, and recomputing from the canonical id alone would
-// drop that source's contributions on the floor.
-func (t *txn) subjectSourcesOf(target eref, mappings []*vocabulary.Mapping) ([]mappedSource, error) {
+// drop that source's contributions on the floor — or, in the orphan mark's
+// reading, would call a described record undescribed.
+func (t *txn) subjectSourceSites(target eref, mappings []*vocabulary.Mapping) ([]sourceSite, error) {
 	// Keyed by the pair, because one source kind may reach one target through
 	// two subject properties (record 49) and keying by kind alone would drop
 	// the second mapping's sources.
-	type slot struct{ kind, property string }
-	bySlot := map[slot]*vocabulary.Mapping{}
+	bySlot := map[sourceSlot]*vocabulary.Mapping{}
 	for _, m := range mappings {
-		bySlot[slot{m.From, m.Property}] = m
+		bySlot[sourceSlot{m.From, m.Property}] = m
 	}
 	ids, err := t.idsOf(target)
 	if err != nil {
@@ -711,21 +768,20 @@ func (t *txn) subjectSourcesOf(target eref, mappings []*vocabulary.Mapping) ([]m
 	if err != nil {
 		return nil, err
 	}
-	type candidate struct{ rel, id, typ string }
-	var found []candidate
+	var found []sourceSite
 	// Deduped per (kind, id, PROPERTY): one row reaching two targets through
 	// two subject slots is a source of both, and a key without the property
 	// would drop the second slot's contributions. The refs index holds one row
 	// per site, so the same slot cannot repeat here.
-	seen := map[slot]bool{}
+	seen := map[sourceSlot]bool{}
 	for rows.Next() {
-		var c candidate
+		var c sourceSite
 		if err := rows.Scan(&c.rel, &c.id, &c.typ); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
-		site := slot{c.typ + "/" + c.id, c.rel}
-		if _, ok := bySlot[slot{c.typ, c.rel}]; !ok || seen[site] {
+		site := sourceSlot{c.typ + "/" + c.id, c.rel}
+		if _, ok := bySlot[sourceSlot{c.typ, c.rel}]; !ok || seen[site] {
 			continue
 		}
 		seen[site] = true
@@ -736,23 +792,7 @@ func (t *txn) subjectSourcesOf(target eref, mappings []*vocabulary.Mapping) ([]m
 		return nil, err
 	}
 	_ = rows.Close()
-	var out []mappedSource
-	for _, c := range found {
-		r, err := t.loadRow(eref{Kind: c.typ, ID: c.id}, false)
-		if err != nil {
-			return nil, err
-		}
-		if r == nil {
-			continue
-		}
-		m := bySlot[slot{c.typ, c.rel}]
-		actor, err := t.sourceActor(r.ref(), m)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, mappedSource{row: r, m: m, actor: actor})
-	}
-	return out, nil
+	return found, nil
 }
 
 // sourceActor is the actor a source record's contributions are attributed
@@ -1079,6 +1119,15 @@ func (t *txn) afterTombstone(ref eref) error {
 	if _, err := t.exec(`DELETE FROM property_offers WHERE record_kind = $1 AND record_id = $2`,
 		ref.Kind, ref.ID); err != nil {
 		return err
+	}
+	// And its orphan mark, for the same reason: a tombstone is not a live
+	// target, and the mark is a reading of the live set (orphans.go). A put
+	// that brings the record back re-derives it on that write.
+	if len(t.declarations().MappingsTo(ref.Kind)) > 0 {
+		if _, err := t.exec(`UPDATE records SET orphaned_at = NULL WHERE kind = $1 AND id = $2 AND orphaned_at IS NOT NULL`,
+			ref.Kind, ref.ID); err != nil {
+			return err
+		}
 	}
 	return t.recomputeSubjectsOf(ref)
 }

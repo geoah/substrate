@@ -459,6 +459,12 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
 - `ids` narrows to a list of ids within the kinds already selected.
 - `deleted` picks the tombstones: absent or `false` lists only live records,
   `true` lists only soft-deleted ones.
+- `orphaned` picks the **orphaned mapping targets**: `true` lists only the
+  records the engine has marked — a kind something maps onto, no live source
+  left, and nothing above the machine tier holding a property — and `false`
+  only the unmarked. Absent is every record. It is derived state, not a
+  property, so a re-linked record leaves the set on its next write
+  ([the orphan mark](projection.md#when-the-last-source-goes-the-orphan-mark)).
 - `implements` selects every kind carrying one [trait](data-model.md#traits),
   across every package. Every arm narrows, so `implements` intersects with the
   kinds already in play rather than widening them; alone it is the cross-kind

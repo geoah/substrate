@@ -29,6 +29,7 @@ func (a *app) getCommand() *cobra.Command {
 		after       string
 		expand      []string
 		referencing string
+		orphaned    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "get <kind> [id]",
@@ -53,6 +54,9 @@ one hop: -o yaml prints them as further documents after the page, -o json puts
 the page under "records" and the referents under "included", keyed by
 <kind>/<id>. The table formats print the page alone. --referencing <kind>/<id>
 is the reverse read: only the records of this kind that point at that one.
+--orphaned lists the mapping targets the engine marked: rows minted from a
+source that is now gone, with nothing above the machine tier holding a
+property on them.
 
 -w streams this kind's changes instead of listing it; --from and --generation
 resume the stream the way "substratectl watch" does.
@@ -87,6 +91,15 @@ states.`,
 					f.Referencing = &substrate.Referencing{Ref: referencing}
 				})
 				if err != nil {
+					return err
+				}
+			}
+			if cmd.Flags().Changed("orphaned") {
+				// The flag is read through Changed, not through its value:
+				// --orphaned=false is "only the records that are NOT marked",
+				// which is a different question from not asking.
+				mark := orphaned
+				if err := editFilter(q, func(f *substrate.Filter) { f.Orphaned = &mark }); err != nil {
 					return err
 				}
 			}
@@ -133,6 +146,7 @@ states.`,
 	f.StringVar(&after, "after", "", "opaque keyset cursor from a previous page's \"next cursor\" line; resent verbatim")
 	f.StringSliceVar(&expand, "expand", nil, "reference properties whose referents ride along (comma-separated), printed after the page in -o yaml/json")
 	f.StringVar(&referencing, "referencing", "", "only records pointing at this one, as <kind>/<id>")
+	f.BoolVar(&orphaned, "orphaned", false, "only the records the engine marked orphaned: a mapping target whose sources are all gone (--orphaned=false is only the unmarked)")
 	return cmd
 }
 

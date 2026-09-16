@@ -1252,17 +1252,30 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// same transaction recomputes from live sources, so the property refills
 	// on the spot — no unpin verb, no flag lifecycle. The row is reloaded so
 	// the caller sees what the recompute refilled.
-	if changed && !t.recomputing && len(deleted) > 0 &&
-		len(t.declarations().MappingsTo(sp.ty.Identity)) > 0 {
+	mapped := len(t.declarations().MappingsTo(sp.ty.Identity)) > 0
+	recomputed := false
+	if changed && !t.recomputing && len(deleted) > 0 && mapped {
 		if err := t.recompute(sp.ref()); err != nil {
 			return nil, err
 		}
+		recomputed = true
 		fresh, err := t.loadRow(sp.ref(), false)
 		if err != nil {
 			return nil, err
 		}
 		if fresh != nil {
 			row = fresh
+		}
+	}
+
+	// The other half of the orphan mark (orphans.go). A write onto a mapped
+	// target does not recompute it — nothing about its sources changed — but
+	// it may have taken a property above the machine tier, or given the last
+	// one back, and the mark reads both. The recompute above already did it
+	// where it ran.
+	if changed && !t.recomputing && !recomputed && mapped {
+		if err := t.syncOrphaned(sp.ref()); err != nil {
+			return nil, err
 		}
 	}
 
