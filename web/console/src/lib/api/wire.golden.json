@@ -302,6 +302,7 @@
     "implements": false,
     "kinds": false,
     "labels": false,
+    "orphaned": false,
     "properties": false,
     "referencing": false
   },

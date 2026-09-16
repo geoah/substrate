@@ -189,6 +189,8 @@ func filterArmBeyondKinds(f substrate.Filter) string {
 		return "labels"
 	case f.Deleted != nil:
 		return "deleted"
+	case f.Orphaned != nil:
+		return "orphaned"
 	case f.Referencing != nil:
 		return "referencing"
 	}

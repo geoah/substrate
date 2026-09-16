@@ -14,7 +14,20 @@ const gcBatch = 200
 // with no remaining finalizers are hard-deleted, and every record whose
 // `onDelete: cascade` reference named one of them is tombstoned so the next
 // pass collects it. Iterates to a fixpoint within the sweep.
+//
+// Where the deployment asks for it, the sweep also collects ORPHANED MAPPING
+// TARGETS: a marked record past its grace window that nothing live points at
+// is tombstoned and collected like any other (orphans.go). That half is off
+// by default.
 func (ds *dataset) RunGC(ctx context.Context) (int, error) {
+	// Orphans FIRST, so a tombstone this pass writes is purged by the
+	// fixpoint below rather than waiting for the next sweep. It is a no-op
+	// unless the deployment turned collection on (orphans.go), and the
+	// tombstones it writes are counted where every other tombstone is: at the
+	// purge.
+	if _, err := ds.collectOrphans(ctx); err != nil {
+		return 0, err
+	}
 	collected := 0
 	for {
 		n, err := ds.gcPass(ctx)

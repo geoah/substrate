@@ -494,6 +494,15 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 	default:
 		b.add(`deleted_at IS NOT NULL`)
 	}
+	// The orphan mark is a column on the row, derived (orphans.go), so it is
+	// a predicate here and not a property condition: no kind declares it.
+	if f.Orphaned != nil {
+		if *f.Orphaned {
+			b.add(`orphaned_at IS NOT NULL`)
+		} else {
+			b.add(`orphaned_at IS NULL`)
+		}
+	}
 	for _, name := range sortedKeys(f.Properties) {
 		if err := ds.condProp(ctx, b, types, name, f.Properties[name]); err != nil {
 			return nil, err

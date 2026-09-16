@@ -371,6 +371,39 @@ State properties are never recomputed: a state moves through its
 [declared transitions](data-model.md#validation-and-state-machines) or not
 at all, so no amount of syncing can quietly complete a task.
 
+### When the last source goes: the orphan mark
+
+A target minted from a source outlives it. Delete the last GitHub issue that
+projected onto a task — or replace the provider, which purges its rows and
+mints them again under new ids — and recompute empties the mapped properties,
+but the row stays: a husk nothing describes and no probe can ever match. One
+re-seed left 2,727 of them on one repository
+([#578](https://github.com/geoah/substrate/issues/578)).
+
+The engine marks those rows. A record is **orphaned** when all three hold:
+something maps onto its kind, no live record links to it through a mapping's
+subject slot (counted over every id it has ever had, so a merge does not hide
+a source), and every one of its `property_managers` rows is at the machine
+tier — or it has none at all. A property held above machine is a hand's, and a
+record a hand has written on is not a husk, whether that hand was yours or a
+function's. Releasing the hold (the null patch above) makes it one again.
+
+The mark is derived, like an alternative: nothing writes it into the
+changelog, a re-link clears it on the next recompute, and a
+`repository rebuild` derives it again from the records it replayed. It is read
+through the list filter, never through a property:
+
+```http
+GET /api/v1/records?filter={"kinds":["samples.substrate.reamde.dev/tasks/task"],"orphaned":true}
+```
+
+`substratectl get task --orphaned` is the same read. What to do with the list
+is yours: delete from it, re-run the sync that should have re-linked them, or
+leave it. A deployment may also ask the GC sweep to collect them, which is off
+by default and windowed when it is on
+([`SUBSTRATE_ORPHAN_GRACE`](operations.md#collecting-orphaned-mapping-targets),
+[decision record 0089](decisions/0089-an-orphaned-mapping-target-is-marked-and-collected-on-request.md)).
+
 ## Merges
 
 Nothing in the substrate fuses by value: two people holding the same email

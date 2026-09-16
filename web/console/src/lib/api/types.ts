@@ -358,8 +358,10 @@ export interface Cond {
  * `GET /records`). `kinds` names the kinds a list reads — one for a
  * collection, several for a cross-kind read, none for every kind; the ranked
  * read and the tail admit `kinds` alone. `implements` intersects with it;
- * `deleted` absent means live records only; `referencing` is the reverse
- * read. A state property filters through `properties` like any other. */
+ * `deleted` absent means live records only; `orphaned` picks the mapping
+ * targets the engine marked (sources all gone, nothing above the machine
+ * tier holding a property); `referencing` is the reverse read. A state
+ * property filters through `properties` like any other. */
 export interface RecordFilter {
   kinds?: string[]
   implements?: string
@@ -367,6 +369,7 @@ export interface RecordFilter {
   properties?: Record<string, Cond>
   labels?: Record<string, Cond>
   deleted?: boolean
+  orphaned?: boolean
   referencing?: Referencing
 }
 
