@@ -47,6 +47,15 @@ export interface DeclaredProperty {
   onDelete?: string
   /** `reference`: this property is a record mapping's SUBJECT. */
   subject?: boolean
+  /** The ENGINE writes this property, not the client: render it read-only
+   * rather than offering an input the write path will not honor. */
+  managed?: boolean
+  /** The recordmapping that OWNS this property. A mapping synthesises its
+   * subject slot on its source kind, so the kind's own document declares
+   * nothing under this name and the server merges it into the declaration a
+   * read is handed (record 0085). Absent on every property a document
+   * declares for itself. */
+  mappedBy?: string
   /** `reference`: the LINK DATA the declaration hangs off the pointer, by
    * property name. A reference declaring these stores `{ref, <prop>: <val>}`
    * instead of the flat path string. */
@@ -96,6 +105,8 @@ export function declaredProperties(k: KindInfo): DeclaredProperty[] {
       mustExist: def.mustExist === true,
       onDelete: typeof def.onDelete === "string" ? def.onDelete : undefined,
       subject: def.subject === true,
+      managed: def.managed === true,
+      mappedBy: typeof def.mappedBy === "string" ? def.mappedBy : undefined,
       linkProperties: linkPropertyNames(def.properties),
       inverse: typeof def.inverse === "string" ? def.inverse : undefined,
       inverseDescription:
