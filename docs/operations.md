@@ -382,7 +382,7 @@ setting it:
 
 A deployment with the knob set logs a warning at boot naming the window, because
 this is the one loop that deletes records nobody asked it to delete
-([decision 0089](decisions/0089-an-orphaned-mapping-target-is-marked-and-collected-on-request.md)).
+([decision 0092](decisions/0092-an-orphaned-mapping-target-is-marked-and-collected-on-request.md)).
 
 Keep it to **one replica**. The watch signal and the trigger dispatcher are
 in-process, and two dispatchers would serialize on compare-and-swap rather than

@@ -4,7 +4,7 @@ date: 2026-09-16
 decision-makers: George Antoniadis
 ---
 
-# 0089. An orphaned mapping target is marked always and collected only on request
+# 0092. An orphaned mapping target is marked always and collected only on request
 
 ## Context and Problem Statement
 

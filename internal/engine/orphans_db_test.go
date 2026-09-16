@@ -125,7 +125,7 @@ func TestDeletingTheLastSourceMarksTheTargetOrphaned(t *testing.T) {
 // direct write, which pins the same way) is the record's own content, not a
 // projection of a source that has gone. This is the strict reading of the
 // third condition, and the reason the 2,727 task husks carrying a bundle-tier
-// `externalId` are not marked (decision 0089).
+// `externalId` are not marked (decision 0092).
 func TestAPropertyHeldAboveTheMachineTierIsNotAnOrphan(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

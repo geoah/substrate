@@ -43,7 +43,7 @@ type Filter struct {
 	// deleted or re-seeded source leaves behind. nil is every record, true
 	// only the marked ones, false only the unmarked. It is a derived reading
 	// of the present, so a re-linked record leaves the set on its next write
-	// (docs/projection.md, decision 0089).
+	// (docs/projection.md, decision 0092).
 	Orphaned *bool `json:"orphaned,omitempty"`
 	// Referencing narrows to the records holding a reference AT one record:
 	// the reverse read, as a predicate over the refs index rather than a

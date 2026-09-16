@@ -402,7 +402,7 @@ is yours: delete from it, re-run the sync that should have re-linked them, or
 leave it. A deployment may also ask the GC sweep to collect them, which is off
 by default and windowed when it is on
 ([`SUBSTRATE_ORPHAN_GRACE`](operations.md#collecting-orphaned-mapping-targets),
-[decision record 0089](decisions/0089-an-orphaned-mapping-target-is-marked-and-collected-on-request.md)).
+[decision record 0092](decisions/0092-an-orphaned-mapping-target-is-marked-and-collected-on-request.md)).
 
 ## Merges
 
