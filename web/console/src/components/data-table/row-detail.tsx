@@ -10,19 +10,12 @@
  * said as JSON so nothing is dropped. The write's stored replay effects are
  * not on the wire, so there is nothing of them to render or to hide. */
 
-import { useState } from "react"
-import { ChevronRightIcon } from "lucide-react"
-
+import { ChangeActor } from "@/components/change-actor"
 import { ActorChip } from "@/components/actor-chip"
 import { CodeBlock } from "@/components/code-block"
-import { Button } from "@/components/ui/button"
 import type { ChangeRow } from "@/lib/api/types"
 import { cellValue, shortDate, shortTime } from "@/lib/format"
-import {
-  affectedLines,
-  changedProperties,
-  NAMED_PAYLOAD_KEYS,
-} from "@/lib/changelog"
+import { affectedLines, changedProperties } from "@/lib/changelog"
 import { cn } from "@/lib/utils"
 
 /** ONE shape for everything inside the band: a muted label in a fixed column,
@@ -92,32 +85,11 @@ function valuedEntries(
   return Object.entries(map as Record<string, unknown>)
 }
 
-/** The debugging escape hatch: the whole payload, verbatim, closed by default.
- * Every named section above is a READING of this — when the two disagree, this
- * one is right. */
 function RawPayload({ payload }: { payload: Record<string, unknown> }) {
-  const [open, setOpen] = useState(false)
   return (
-    <div className="flex flex-col gap-1.5">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-5 w-fit gap-1 px-1 text-xs font-normal text-muted-foreground"
-        // The band sits inside an expanded table row; without this the click
-        // walks up and collapses the row the reader just opened.
-        onClick={(e) => {
-          e.stopPropagation()
-          setOpen((v) => !v)
-        }}
-      >
-        <ChevronRightIcon
-          className={cn("size-3 transition-transform", open && "rotate-90")}
-        />
-        raw
-      </Button>
-      {open && (
-        <CodeBlock source={JSON.stringify(payload, null, 2)} lang="json" />
-      )}
+    <div className="flex flex-col gap-2">
+      <h3 className="text-sm font-semibold">Raw payload</h3>
+      <CodeBlock source={JSON.stringify(payload, null, 2)} lang="json" />
     </div>
   )
 }
@@ -129,9 +101,6 @@ export function ChangeDetail({ row }: { row: ChangeRow }) {
   const managers = valuedEntries(row.payload, "managers")
   const affected = affectedLines(row)
   const stateOf = new Map(states)
-  const rest = Object.fromEntries(
-    Object.entries(payload).filter(([k]) => !NAMED_PAYLOAD_KEYS.has(k))
-  )
   const op = [
     row.op,
     payload.created === true ? "created" : "",
@@ -146,9 +115,14 @@ export function ChangeDetail({ row }: { row: ChangeRow }) {
           {shortDate(row.ts)} {shortTime(row.ts, true)}
         </span>
       </DetailRow>
-      <DetailRow label="by">
-        <ActorChip actor={row.actor} />
+      <DetailRow label="attribution">
+        <ChangeActor row={row} />
       </DetailRow>
+      {row.actor === "substrate" && (
+        <DetailRow label="committed by">
+          <ActorChip actor={row.actor} />
+        </DetailRow>
+      )}
       <DetailRow label="change">
         <span className="data">
           {op} <span className="text-muted-foreground">· seq {row.seq}</span>
@@ -230,13 +204,6 @@ export function ChangeDetail({ row }: { row: ChangeRow }) {
           </span>
         </DetailRow>
       ))}
-      {Object.keys(rest).length > 0 && (
-        <DetailRow label="payload">
-          <CodeBlock source={JSON.stringify(rest, null, 2)} lang="json" />
-        </DetailRow>
-      )}
-      {/* The disclosure names itself, so it spans both columns rather than
-          repeating "raw" as a label beside a button reading the same. */}
       {Object.keys(payload).length > 0 && (
         <div className="col-span-2 min-w-0">
           <RawPayload payload={payload} />

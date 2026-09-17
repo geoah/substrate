@@ -8,6 +8,9 @@ import {
 } from "@tanstack/react-router"
 import {
   ActivityIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
+  StarIcon,
   BotIcon,
   ChevronRightIcon,
   ChevronsUpDownIcon,
@@ -24,6 +27,8 @@ import {
   UserRoundIcon,
 } from "lucide-react"
 
+import { useSidebarPreferences } from "@/hooks/use-sidebar-preferences"
+import { splitKind } from "@/lib/api/http"
 import { useTheme } from "@/components/theme-provider"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -132,6 +137,7 @@ const fullWidthSub = "mx-0 translate-x-0 border-l-0 px-0 pb-1.5"
 
 function KindLinks({ nav, className }: { nav: PackageNav; className: string }) {
   const params = useParams({ strict: false })
+  const { preferences, busy, change } = useSidebarPreferences()
   return (
     <>
       {nav.kinds.map((k) => (
@@ -142,7 +148,7 @@ function KindLinks({ nav, className }: { nav: PackageNav; className: string }) {
               params.pkg === nav.package &&
               params.name === k.name
             }
-            className={className}
+            className={`${className} pr-9`}
             render={
               <Link
                 to="/data/$authority/$pkg/$name"
@@ -156,6 +162,25 @@ function KindLinks({ nav, className }: { nav: PackageNav; className: string }) {
           >
             <span>{k.name}</span>
           </SidebarMenuSubButton>
+          <button
+            type="button"
+            disabled={busy}
+            aria-label={`${preferences.favorites.includes(k.identity) ? "Unstar" : "Star"} ${k.identity}`}
+            aria-pressed={preferences.favorites.includes(k.identity)}
+            title="Favorite kind"
+            className="absolute top-1 right-2 rounded p-1 text-muted-foreground hover:text-primary disabled:opacity-50"
+            onClick={() =>
+              change({
+                type: "favorite",
+                key: k.identity,
+                starred: !preferences.favorites.includes(k.identity),
+              })
+            }
+          >
+            <StarIcon
+              className={`size-3.5 ${preferences.favorites.includes(k.identity) ? "fill-primary text-primary" : ""}`}
+            />
+          </button>
         </SidebarMenuSubItem>
       ))}
     </>
@@ -169,9 +194,13 @@ function KindLinks({ nav, className }: { nav: PackageNav; className: string }) {
 export function PackageGroup({ nav }: { nav: PackageNav }) {
   const params = useParams({ strict: false })
   const label = nav.package || "local"
+  const { preferences, busy, change } = useSidebarPreferences()
   return (
     <Collapsible
-      defaultOpen
+      open={!preferences.collapsed.includes(nav.identity)}
+      onOpenChange={(open) =>
+        change({ type: "collapse", key: nav.identity, collapsed: !open })
+      }
       className="group/package"
       render={<SidebarMenuSubItem />}
     >
@@ -181,7 +210,7 @@ export function PackageGroup({ nav }: { nav: PackageNav }) {
           params.pkg === nav.package &&
           !params.name
         }
-        className="pr-8 pl-9 text-sidebar-foreground/70"
+        className="pr-8 pl-12 text-sidebar-foreground/70"
         render={
           <Link
             to="/data/$authority/$pkg"
@@ -189,13 +218,13 @@ export function PackageGroup({ nav }: { nav: PackageNav }) {
           />
         }
       >
-        <PackageIcon />
-        <span className="truncate">{label}</span>
+        <span className="truncate font-medium">{label}</span>
       </SidebarMenuSubButton>
       <CollapsibleTrigger
         render={
           <SidebarMenuAction
             className="top-1.5 cursor-pointer"
+            disabled={busy}
             aria-label={`Toggle the kinds in ${label}`}
           />
         }
@@ -204,7 +233,7 @@ export function PackageGroup({ nav }: { nav: PackageNav }) {
       </CollapsibleTrigger>
       <CollapsibleContent>
         <SidebarMenuSub className={fullWidthSub}>
-          <KindLinks nav={nav} className="pl-12" />
+          <KindLinks nav={nav} className="pl-16" />
         </SidebarMenuSub>
       </CollapsibleContent>
     </Collapsible>
@@ -220,9 +249,13 @@ export function PackageGroup({ nav }: { nav: PackageNav }) {
 export function AuthorityGroup({ nav }: { nav: AuthorityNav }) {
   const params = useParams({ strict: false })
   const label = nav.authority || "local"
+  const { preferences, busy, change } = useSidebarPreferences()
   return (
     <Collapsible
-      defaultOpen
+      open={!preferences.collapsed.includes(nav.authority)}
+      onOpenChange={(open) =>
+        change({ type: "collapse", key: nav.authority, collapsed: !open })
+      }
       className="group/collapsible"
       render={<SidebarMenuItem />}
     >
@@ -240,6 +273,7 @@ export function AuthorityGroup({ nav }: { nav: AuthorityNav }) {
         render={
           <SidebarMenuAction
             className="cursor-pointer"
+            disabled={busy}
             aria-label={`Toggle the packages in ${label}`}
           />
         }
@@ -298,6 +332,91 @@ function DataGroups() {
         <AuthorityGroup key={a.authority} nav={a} />
       ))}
     </SidebarMenu>
+  )
+}
+
+export function Favorites() {
+  const { preferences, busy, change } = useSidebarPreferences()
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel>Favorites</SidebarGroupLabel>
+      <SidebarGroupContent>
+        {preferences.favorites.length === 0 && (
+          <p className="px-2 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+            Star a kind in Data to keep it here.
+          </p>
+        )}
+        <SidebarMenu>
+          {preferences.favorites.map((identity, index) => {
+            const parts = splitKind(identity)
+            return (
+              <SidebarMenuItem key={identity}>
+                <SidebarMenuButton
+                  className="h-auto min-h-9 pr-20"
+                  aria-label={identity}
+                  tooltip={identity}
+                  render={
+                    <Link to="/data/$authority/$pkg/$name" params={parts} />
+                  }
+                >
+                  <StarIcon
+                    aria-hidden
+                    className="size-4 shrink-0 text-primary"
+                  />
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="font-medium">{parts.name}</span>
+                    <span className="text-xs break-all whitespace-normal text-muted-foreground">
+                      {parts.authority}/{parts.pkg}
+                    </span>
+                  </span>
+                </SidebarMenuButton>
+                <div className="absolute top-2 right-1 flex group-data-[collapsible=icon]:hidden">
+                  <button
+                    type="button"
+                    className="rounded p-1 hover:bg-accent disabled:opacity-30"
+                    disabled={busy || index === 0}
+                    aria-label={`Move ${identity} up`}
+                    onClick={() =>
+                      change({ type: "move", key: identity, direction: -1 })
+                    }
+                  >
+                    <ArrowUpIcon className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded p-1 hover:bg-accent disabled:opacity-30"
+                    disabled={
+                      busy || index === preferences.favorites.length - 1
+                    }
+                    aria-label={`Move ${identity} down`}
+                    onClick={() =>
+                      change({ type: "move", key: identity, direction: 1 })
+                    }
+                  >
+                    <ArrowDownIcon className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded p-1 text-primary hover:bg-accent"
+                    disabled={busy}
+                    aria-label={`Unstar ${identity}`}
+                    onClick={() =>
+                      change({
+                        type: "favorite",
+                        key: identity,
+                        starred: false,
+                      })
+                    }
+                  >
+                    <StarIcon className="size-3.5 fill-current" />
+                  </button>
+                </div>
+              </SidebarMenuItem>
+            )
+          })}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
   )
 }
 
@@ -424,6 +543,7 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        <Favorites />
         <SidebarGroup>
           <SidebarGroupLabel>Data</SidebarGroupLabel>
           <SidebarGroupContent>

@@ -1,54 +1,19 @@
-/** The Graph tab: what this record points at, what points back, and a way to
- * walk either direction without leaving the page.
- *
- * The LAYOUT is a hierarchy, not a wall of rows: the record on top, then one
- * **Outgoing** and one **Referenced by** section — direction is said once, at the
- * section header, so the rows under it carry no per-row arrows. Inside a
- * section, each group is a small uppercase label (the reference property, or
- * the inverse for fan-in) with the group's kind and count beside it, and every
- * target renders as the RecordPill every other surface uses. A group that
- * shares one kind never repeats it on its rows.
- *
- * The fan-in used to show the raw property name of every inbound row. That
- * reads BACKWARDS: the name is the pointer as the OTHER record spells it, so
- * standing on a thread the fan-in said "thread · llm/message", naming this
- * record instead of what points at it. A group is headed by the declaration's
- * `inverse` — `messages · llm/message` — and falls back to
- * `<property> of <kind>`, which is at least unambiguous, where nobody declared
- * one.
- *
- * TWO DIRECTIONS, and only one of them is a query. Outgoing pointers are the
- * record's own reference-typed properties, so `thread → agent` costs nothing
- * to show — and could not be answered by the fan-in reader at all, which only
- * ever looks the other way. The fan-in is the records route's `referencing`
- * filter, narrowed per group (`filter.kinds` + `referencing.property`) so
- * expanding one pulls that group alone. The route has no total: a count is
- * what the page returned, `N+` while a cursor says there is more.
- *
- * A member expands IN PLACE into the same component, so the graph is walkable
- * to any depth. `path` carries the (kind, id) pairs already open above a node:
- * a cycle — two records naming each other, a thread that is its own parent —
- * would otherwise expand forever. */
-
 import { useMemo, useState } from "react"
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import {
   ArrowDownLeftIcon,
   ArrowUpRightIcon,
   ChevronRightIcon,
-  NetworkIcon,
+  CombineIcon,
   type LucideIcon,
 } from "lucide-react"
 
+import { Link } from "@tanstack/react-router"
+import { CORE_PACKAGE, request } from "@/lib/api/http"
+import { listPath } from "@/lib/api/records"
+import type { Page } from "@/lib/api/types"
 import { RecordPill } from "@/components/record-pill"
 import { Button } from "@/components/ui/button"
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   groupReferencing,
@@ -66,9 +31,7 @@ import {
 import { recordTitle } from "@/lib/format"
 import {
   declaredReferences,
-  inverseLabel,
   kindByIdentity,
-  splitKind,
   type DeclaredProperty,
 } from "@/lib/definition"
 import { splitRecordPath } from "@/lib/record-path"
@@ -87,6 +50,12 @@ interface NodeRef {
   title?: string
 }
 
+function mappedKind(value: unknown): string | undefined {
+  const path = readReference(value)?.path
+  const prefix = `${CORE_PACKAGE}/kind/`
+  return path?.startsWith(prefix) ? path.slice(prefix.length) : path
+}
+
 const keyOf = (ref: NodeRef) => `${ref.kind} ${ref.id}`
 
 /** The route to a record, or undefined when its kind is not installed here —
@@ -97,18 +66,19 @@ function routeOf(kinds: KindInfo[], kind: string) {
   return { authority: info.authority, pkg: info.package, name: info.name }
 }
 
-/** The node as a RecordPill — the one way a record is referenced anywhere.
- * An uninstalled kind hands the pill an unroutable reference on purpose, so
- * it renders its inert form instead of minting a dead link. */
-function NodePill({ node, kinds }: { node: NodeRef; kinds: KindInfo[] }) {
-  const routable = Boolean(routeOf(kinds, node.kind))
-  return (
-    <RecordPill
-      kind={routable ? node.kind : ""}
-      id={node.id}
-      title={node.title}
-      className="min-w-0"
-    />
+function NodeLink({ node, kinds }: { node: NodeRef; kinds: KindInfo[] }) {
+  const route = routeOf(kinds, node.kind)
+  return route ? (
+    <Link
+      to="/data/$authority/$pkg/$name/$id"
+      params={{ ...route, id: node.id }}
+      className="text-sm font-medium break-words text-primary underline-offset-4 hover:underline"
+      title={`${node.kind}/${node.id}`}
+    >
+      {node.title || node.id}
+    </Link>
+  ) : (
+    <span className="text-sm break-words">{node.title || node.id}</span>
   )
 }
 
@@ -130,27 +100,25 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <div className="min-w-0 pt-2 first:pt-0">
+    <section className="min-w-0 rounded-xl border bg-card p-4">
       <div
-        className="flex cursor-default items-center gap-1.5 text-xs font-semibold"
+        className="flex items-center gap-2 text-base font-semibold"
         title={hint}
       >
         <Icon className="size-3.5 text-muted-foreground" />
-        {label}
+        <h2>{label}</h2>
         {count !== undefined && (
           <span className="font-normal text-muted-foreground">
             {typeof count === "number" ? count.toLocaleString() : count}
           </span>
         )}
       </div>
+      <p className="mt-1 mb-4 text-sm text-muted-foreground">{hint}</p>
       <div className="min-w-0">{children}</div>
-    </div>
+    </section>
   )
 }
 
-/** A group's heading: the pointer's name as a small uppercase label, the kind
- * the group shares, and how many rows it holds. The declaration's one-liner
- * rides the label as a native title, not another line of text. */
 function GroupLabel({
   name,
   kind,
@@ -163,28 +131,15 @@ function GroupLabel({
   description?: string
 }) {
   return (
-    <>
-      <span
-        className={cn(
-          "truncate text-[0.65rem] font-medium tracking-wider uppercase",
-          "text-muted-foreground",
-          description && "cursor-help"
-        )}
-        title={description}
-      >
-        {name}
-      </span>
-      {kind && (
-        <span className="shrink-0 data text-[0.7rem] text-muted-foreground/70">
-          {kind}
+    <div className="flex min-w-0 flex-1 flex-col gap-1 py-1">
+      {kind && <span className="data break-all whitespace-normal">{kind}</span>}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span title={description}>
+          Reference property: <code>{name}</code>
         </span>
-      )}
-      {count && (
-        <span className="shrink-0 text-[0.7rem] text-muted-foreground/70">
-          {count}
-        </span>
-      )}
-    </>
+        {count && <span>{count} records</span>}
+      </div>
+    </div>
   )
 }
 
@@ -195,24 +150,27 @@ function Row({
   open,
   onToggle,
   expandable,
+  label,
   children,
   detail,
 }: {
   open: boolean
   onToggle: () => void
   expandable: boolean
+  label: string
   children: React.ReactNode
   detail?: React.ReactNode
 }) {
   return (
     <div className="min-w-0">
-      <div className="flex min-w-0 items-center gap-1.5 py-1">
+      <div className="flex min-w-0 items-center gap-2 py-2">
         {expandable ? (
           <button
             type="button"
             onClick={onToggle}
             className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
-            aria-label={open ? "Collapse" : "Expand"}
+            aria-expanded={open}
+            aria-label={`${open ? "Collapse" : "Expand"} ${label}`}
           >
             <ChevronRightIcon
               className={cn(
@@ -277,7 +235,7 @@ function OutgoingGroup({
   // One kind across the group means the kind is the GROUP's fact; a mixed
   // group (a reference that never declared its target) says it per row.
   const shared = targets.every((t) => t.kind === targets[0].kind)
-    ? splitKind(targets[0].kind).name
+    ? targets[0].kind
     : undefined
   return (
     <div className="min-w-0">
@@ -286,7 +244,7 @@ function OutgoingGroup({
         <span className="w-3.5 shrink-0" />
         <GroupLabel
           name={pointer.name}
-          kind={shared ?? (splitKind(pointer.to ?? "").name || pointer.to)}
+          kind={shared ?? pointer.to}
           count={
             targets.length > 1 ? targets.length.toLocaleString() : undefined
           }
@@ -309,7 +267,6 @@ function OutgoingGroup({
   )
 }
 
-/** One record in the tree: its pill, and — expanded — its own graph. */
 function NodeRow({
   node,
   kinds,
@@ -339,6 +296,7 @@ function NodeRow({
       open={open}
       onToggle={() => setOpen((v) => !v)}
       expandable={expandable}
+      label={`${node.title || node.id} (${node.kind})`}
       detail={
         open && route ? (
           <GraphNode
@@ -354,13 +312,15 @@ function NodeRow({
         ) : undefined
       }
     >
-      <NodePill node={node} kinds={kinds} />
-      {showKind && (
-        <span className="shrink-0 data text-[0.7rem] text-muted-foreground">
-          {splitKind(node.kind).name}
-        </span>
-      )}
-      {meta}
+      <div className="min-w-0 flex-1 space-y-1">
+        <NodeLink node={node} kinds={kinds} />
+        {showKind && (
+          <p className="data break-all text-muted-foreground">
+            Kind: {node.kind}
+          </p>
+        )}
+        {meta}
+      </div>
       {cyclic && (
         <span className="shrink-0 text-[0.7rem] text-muted-foreground/70">
           already above
@@ -398,10 +358,6 @@ function ReferencingGroupRow({
   depth: number
 }) {
   const [open, setOpen] = useState(false)
-  const named = useMemo(
-    () => inverseLabel(kinds, fromKind, property),
-    [kinds, fromKind, property]
-  )
   const rows = useInfiniteQuery({
     ...referencingInfiniteOptions(target, GROUP_PAGE, {
       property,
@@ -426,6 +382,7 @@ function ReferencingGroupRow({
       open={open}
       onToggle={() => setOpen((v) => !v)}
       expandable
+      label={`${fromKind} via ${property}`}
       detail={
         <>
           {rows.isPending && (
@@ -448,6 +405,14 @@ function ReferencingGroupRow({
               meta={<MemberMeta row={row} />}
             />
           ))}
+          {rows.isError && (
+            <p role="alert" className="py-2 text-sm text-destructive">
+              References could not be loaded.{" "}
+              <button className="underline" onClick={() => void rows.refetch()}>
+                Retry
+              </button>
+            </p>
+          )}
           {rows.hasNextPage && (
             <Button
               variant="ghost"
@@ -463,10 +428,9 @@ function ReferencingGroupRow({
       }
     >
       <GroupLabel
-        name={named.label}
-        kind={splitKind(fromKind).name}
+        name={property}
+        kind={fromKind}
         count={opened ?? seenCount(seen, partial)}
-        description={named.description}
       />
     </Row>
   )
@@ -527,10 +491,40 @@ function GraphNode({
       ),
     [referencing.data]
   )
-  const pointing = (referencing.data?.pages ?? []).reduce(
-    (n, p) => n + (p.records?.length ?? 0),
-    0
-  )
+  const mappings = useQuery({
+    queryKey: ["graph-mappings"],
+    queryFn: async ({ signal }) => {
+      const records: SubstrateRecord[] = []
+      let after: string | undefined
+      do {
+        const page = await request<Page>(
+          "GET",
+          listPath({
+            kinds: [`${CORE_PACKAGE}/recordmapping`],
+            first: 500,
+            after,
+          }),
+          undefined,
+          { signal }
+        )
+        records.push(...page.records)
+        after = page.cursor
+      } while (after)
+      return records
+    },
+    staleTime: 30_000,
+  })
+  const isSource = (group: (typeof groups)[number]) =>
+    group.kind === `${CORE_PACKAGE}/recordmerge` ||
+    group.kind === `${CORE_PACKAGE}/recordsplit` ||
+    (mappings.data ?? []).some(
+      (mapping) =>
+        mappedKind(mapping.properties.to) === kind &&
+        mappedKind(mapping.properties.from) === group.kind &&
+        mapping.properties.property === group.property
+    )
+  const incoming = groups.filter((group) => !isSource(group))
+  const sources = groups.filter(isSource)
 
   const outgoing = useMemo(
     () => (record ? outgoingOf(record, kindInfo) : []),
@@ -545,6 +539,16 @@ function GraphNode({
       </div>
     )
   }
+  if (!record && fetched.isError) {
+    return (
+      <p role="alert" className="py-2 text-sm text-destructive">
+        This record could not be loaded.{" "}
+        <button className="underline" onClick={() => void fetched.refetch()}>
+          Retry
+        </button>
+      </p>
+    )
+  }
   if (!record) {
     // A reference may name a row that is not there (only `mustExist` bars it
     // at write, and a purge can still take the target), so this is an ordinary
@@ -557,7 +561,12 @@ function GraphNode({
   }
 
   const nothing = outgoing.length === 0 && groups.length === 0
-  if (nothing && depth > 0) {
+  if (
+    nothing &&
+    depth > 0 &&
+    referencing.isSuccess &&
+    !record.formerIds?.length
+  ) {
     return (
       <p className="py-1 text-xs text-muted-foreground">
         Nothing points here, and it points nowhere.
@@ -565,59 +574,113 @@ function GraphNode({
     )
   }
 
+  function groupRows(selected: typeof groups) {
+    return selected.map((group) => (
+      <ReferencingGroupRow
+        key={`${group.property} ${group.kind}`}
+        target={target}
+        property={group.property}
+        fromKind={group.kind}
+        seen={group.rows.length}
+        partial={Boolean(referencing.hasNextPage)}
+        kinds={kinds}
+        path={path}
+        depth={depth}
+      />
+    ))
+  }
+
   return (
-    <div className="min-w-0">
-      {outgoing.length > 0 && (
-        <Section
-          icon={ArrowUpRightIcon}
-          label="Outgoing"
-          hint="What this record points at"
-          count={outgoing.reduce((n, g) => n + g.targets.length, 0)}
-        >
-          {outgoing.map(({ pointer, targets }) => (
-            <OutgoingGroup
-              key={pointer.name}
-              pointer={pointer}
-              targets={targets}
-              kinds={kinds}
-              path={path}
-              depth={depth}
-            />
-          ))}
-        </Section>
-      )}
-      {groups.length > 0 && (
-        <Section
-          icon={ArrowDownLeftIcon}
-          label="Referenced by"
-          hint="What points at this record"
-          count={seenCount(pointing, Boolean(referencing.hasNextPage))}
-        >
-          {groups.map((group) => (
-            <ReferencingGroupRow
-              key={`${group.property} ${group.kind}`}
-              target={target}
-              property={group.property}
-              fromKind={group.kind}
-              seen={group.rows.length}
-              partial={Boolean(referencing.hasNextPage)}
-              kinds={kinds}
-              path={path}
-              depth={depth}
-            />
-          ))}
-          {referencing.hasNextPage && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-1 text-xs font-normal text-muted-foreground"
-              onClick={() => void referencing.fetchNextPage()}
-              disabled={referencing.isFetchingNextPage}
-            >
-              {referencing.isFetchingNextPage ? "Loading…" : "More groups"}
-            </Button>
+    <div className="grid min-w-0 gap-5">
+      <Section
+        icon={ArrowDownLeftIcon}
+        label="Incoming references"
+        hint="Records that point to this record."
+      >
+        {groupRows(incoming)}
+        {!incoming.length && !referencing.isError && (
+          <p className="text-sm text-muted-foreground">
+            {referencing.isPending
+              ? "Loading references…"
+              : "No incoming references."}
+          </p>
+        )}
+      </Section>
+      <Section
+        icon={ArrowUpRightIcon}
+        label="Outgoing references"
+        hint="Records referenced by this record's properties."
+      >
+        {outgoing.map(({ pointer, targets }) => (
+          <OutgoingGroup
+            key={pointer.name}
+            pointer={pointer}
+            targets={targets}
+            kinds={kinds}
+            path={path}
+            depth={depth}
+          />
+        ))}
+        {!outgoing.length && (
+          <p className="text-sm text-muted-foreground">
+            No outgoing references.
+          </p>
+        )}
+      </Section>
+      <Section
+        icon={CombineIcon}
+        label="Mapped and merged sources"
+        hint="Records that contribute values through a mapping, and the history of merges and splits."
+      >
+        {groupRows(sources)}
+        {(record.formerIds ?? []).map((formerId) => (
+          <div key={formerId} className="flex flex-col gap-1 py-2">
+            <span className="text-sm text-muted-foreground">Merged record</span>
+            <RecordPill kind={kind} id={formerId} />
+          </div>
+        ))}
+        {!sources.length &&
+          !record.formerIds?.length &&
+          !mappings.isError &&
+          !referencing.isError && (
+            <p className="text-sm text-muted-foreground">
+              {mappings.isPending || referencing.isPending
+                ? "Loading mappings…"
+                : "No mapped or merged sources found."}
+            </p>
           )}
-        </Section>
+        {mappings.isError && (
+          <p role="alert" className="text-sm text-destructive">
+            Mappings could not be loaded. Sources may still appear under
+            incoming references.{" "}
+            <button
+              className="underline"
+              onClick={() => void mappings.refetch()}
+            >
+              Retry
+            </button>
+          </p>
+        )}
+      </Section>
+      {referencing.isError && (
+        <p role="alert" className="text-sm text-destructive">
+          References could not be loaded.{" "}
+          <button
+            className="underline"
+            onClick={() => void referencing.refetch()}
+          >
+            Retry
+          </button>
+        </p>
+      )}
+      {referencing.hasNextPage && (
+        <Button
+          variant="outline"
+          onClick={() => void referencing.fetchNextPage()}
+          disabled={referencing.isFetchingNextPage}
+        >
+          {referencing.isFetchingNextPage ? "Loading…" : "Load more references"}
+        </Button>
       )}
     </div>
   )
@@ -636,65 +699,8 @@ export function GraphRail({
   record: SubstrateRecord
   kinds: KindInfo[]
 }) {
-  const kindInfo = kindByIdentity(kinds, record.kind)
-  const outgoing = outgoingOf(record, kindInfo)
-  const referencing = useInfiniteQuery(
-    referencingInfiniteOptions(recordPath(record.kind, record.id), 200)
-  )
-  const empty =
-    outgoing.length === 0 &&
-    !referencing.isPending &&
-    (referencing.data?.pages[0]?.records?.length ?? 0) === 0
-
-  if (referencing.isError) {
-    return (
-      <Empty className="py-10">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <NetworkIcon />
-          </EmptyMedia>
-          <EmptyTitle>The graph didn't load</EmptyTitle>
-          <EmptyDescription>{referencing.error.message}</EmptyDescription>
-        </EmptyHeader>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void referencing.refetch()}
-        >
-          Retry
-        </Button>
-      </Empty>
-    )
-  }
-
-  if (empty) {
-    return (
-      <Empty className="py-10">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <NetworkIcon />
-          </EmptyMedia>
-          <EmptyTitle>Nothing is linked</EmptyTitle>
-          <EmptyDescription>
-            This record points at nothing, and nothing points at it.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    )
-  }
-
   return (
-    <div className="min-w-0 px-4 py-3">
-      {/* The record the graph hangs off, said the way the tree cannot: big.
-          Everything under it points away from or back at this line. */}
-      <div className="flex min-w-0 items-baseline gap-2 pb-2">
-        <span className="truncate text-sm font-semibold">
-          {recordTitle(record.properties) || record.id}
-        </span>
-        <span className="shrink-0 data text-xs text-muted-foreground">
-          {splitKind(record.kind).name}
-        </span>
-      </div>
+    <div className="max-w-5xl min-w-0 p-6">
       <GraphNode
         authority={authority}
         pkg={pkg}

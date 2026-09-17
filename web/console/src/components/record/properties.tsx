@@ -21,6 +21,12 @@ import * as React from "react"
 import { ListIcon } from "lucide-react"
 
 import { ReferenceValue } from "@/components/record/reference-value"
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldTitle,
+} from "@/components/ui/field"
 import { StateBadge } from "@/components/state-badge"
 import {
   Empty,
@@ -389,39 +395,31 @@ function LooseValue({ value }: { value: unknown }) {
 }
 
 function Row({ row, kinds }: { row: PropertyRow; kinds: KindInfo[] }) {
-  const doc = docOf(row.spec)
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      {/* The name heads its value: same size, heavier weight — a header that
-          renders smaller than its body reads as a footnote. */}
-      <div className="flex items-baseline gap-2">
-        <span
-          className={
-            doc
-              ? "cursor-help data text-sm font-medium"
-              : "data text-sm font-medium"
-          }
-          title={doc}
-        >
-          {row.name}
-        </span>
-        {row.spec && (
-          <span className="truncate text-xs text-muted-foreground">
-            {typeLabel(row.spec)}
-          </span>
-        )}
-        {row.undeclared && (
-          <span className="text-xs text-muted-foreground/70">undeclared</span>
-        )}
-      </div>
-      <div className="min-w-0 text-sm">
+    <Field>
+      <FieldTitle className="font-semibold">
+        {row.spec?.label ?? humanizeName(row.name)}
+      </FieldTitle>
+      <div className="min-w-0 rounded-lg border border-input bg-muted/20 px-3 py-2.5 text-sm">
         {row.spec ? (
           <DeclaredValue spec={row.spec} value={row.value} kinds={kinds} />
         ) : (
           <LooseValue value={row.value} />
         )}
       </div>
-    </div>
+      {row.spec?.description && (
+        <FieldDescription>{row.spec.description}</FieldDescription>
+      )}
+      <p className="text-xs text-muted-foreground">
+        Property: <code>{row.name}</code>
+        {row.spec
+          ? ` · ${typeLabel(row.spec)}`
+          : row.undeclared
+            ? " · undeclared"
+            : ""}
+        {row.spec?.managed ? " · managed by the server" : ""}
+      </p>
+    </Field>
   )
 }
 
@@ -437,6 +435,7 @@ function rowsOf(record: SubstrateRecord, kind?: KindInfo): PropertyRow[] {
     for (const spec of systemSpecs(kind)) {
       if (named.has(spec.name)) continue
       named.add(spec.name)
+      if (spec.name === "title" && kind.definition.displayTemplate) continue
       const value = record.properties[spec.name]
       // A system slot is legal on every record and absent on most; an empty
       // row per absent slot would say nothing.
@@ -487,10 +486,10 @@ export function PropertiesRail({
   }
 
   return (
-    <div className="flex max-w-3xl flex-col gap-4 px-6 py-4">
+    <FieldGroup className="max-w-3xl p-6">
       {rows.map((row) => (
         <Row key={row.name} row={row} kinds={kinds} />
       ))}
-    </div>
+    </FieldGroup>
   )
 }

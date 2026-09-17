@@ -1,17 +1,3 @@
-/** Record detail (`/data/:authority/:package/:kind/:id`): the views are TOP TABS
- * (owner ruling, 2026-08-08), no scrolling past one to reach another.
- * **Properties** leads and is the default (issue #38: a clicked row shows its
- * data field by field, not a YAML dump); **Manifest** is the document itself
- * (the YAML view, tinted, annotated and linkified: every key the kind
- * declares hovers with its DATATYPE and its one-liner, and references navigate
- * — reference paths, kinds, actors);
- * **Graph** sits beside Properties (both read the record as data, so they
- * neighbor); Activity and Provenance follow, none stacked underneath.
- * The active tab lives in the URL (`?tab=`) so it is linkable and back-button
- * friendly. An **Edit** action opens the YAML editor for this record. The layout
- * is generic — functions, kinds, triggers, agents and data records all render
- * through it. */
-
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
@@ -49,8 +35,8 @@ import { recordRoute } from "@/router"
  * `?tab=manifest` link still lands where it always did. */
 const TABS = [
   "properties",
-  "graph",
   "manifest",
+  "graph",
   "activity",
   "provenance",
 ] as const
@@ -102,7 +88,7 @@ export function RecordPage() {
             </EmptyTitle>
             <EmptyDescription>
               <span className="data">
-                {authority}/{name}/{id}
+                {authority}/{pkg}/{name}/{id}
               </span>
               : {record.error.message}
             </EmptyDescription>
@@ -135,9 +121,11 @@ export function RecordPage() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-start justify-between gap-3 px-6 pt-5 pb-3">
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold">{title}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight break-words">
+            {title}
+          </h1>
           <p className="data text-xs text-muted-foreground">
-            {authority}/{name}/{e.id}
+            {e.kind}/{e.id}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
@@ -177,8 +165,8 @@ export function RecordPage() {
       >
         <TabsList variant="line" className="mx-4 shrink-0 justify-start">
           <TabsTrigger value="properties">Properties</TabsTrigger>
-          <TabsTrigger value="graph">Graph</TabsTrigger>
           <TabsTrigger value="manifest">Manifest</TabsTrigger>
+          <TabsTrigger value="graph">Graph</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="provenance">Provenance</TabsTrigger>
         </TabsList>

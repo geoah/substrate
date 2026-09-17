@@ -302,7 +302,7 @@ export function TokensPage() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-end justify-between gap-3 px-6 pt-5 pb-2">
         <div>
-          <h1 className="text-lg font-semibold">Tokens</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Tokens</h1>
           <p className="text-xs text-muted-foreground">
             Every way into this repository, including every browser you are
             signed in on. Signing in mints a token. Every token has full access.

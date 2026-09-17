@@ -305,6 +305,12 @@ first label.
 
 ## House rules
 
+- **Give each UI fact a clear role.** Never place unrelated text fragments
+  beside each other without labels or structure. Separate headings, labels,
+  values, status, and actions with hierarchy and spacing. Show full kind and
+  actor references where identity matters; wrap them instead of shortening
+  them. Use the same field labels and descriptions in read and edit views.
+
 - **Never leak the deployment.** This repo goes public. No cluster hostnames,
   no secret names, no internal service URLs — not in code, not in comments,
   not in test fixtures. A default that points at somebody's box is a bug;

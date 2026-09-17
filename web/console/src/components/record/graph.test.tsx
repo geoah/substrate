@@ -1,12 +1,23 @@
 // @vitest-environment jsdom
 /** The Graph tab's layout contract: direction is said once per section
- * (Outgoing/Referenced by), the current record heads the tree, groups carry the
+ * (Outgoing/Incoming references), the current record heads the tree, groups carry the
  * shared kind and the count, and every target is a RecordPill — not a bare
  * link with the kind repeated on every row. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, render, waitFor } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import {
+  cleanup,
+  render,
+  waitFor,
+  screen,
+  within,
+} from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+
+const graphWire = vi.hoisted(() => ({ mapped: false }))
+beforeEach(() => {
+  graphWire.mapped = false
+})
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
@@ -62,6 +73,27 @@ vi.mock("@/lib/api/http", async (importOriginal) => {
           },
         })
       }
+      if (filter.kinds?.includes("substrate.reamde.dev/core/recordmapping"))
+        return Promise.resolve({
+          records: graphWire.mapped
+            ? [
+                {
+                  id: "example.com/tasks/commenttask",
+                  properties: {
+                    from: {
+                      ref: "substrate.reamde.dev/core/kind/notes.substrate.reamde.dev/notes/comment",
+                    },
+                    to: {
+                      ref: "substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/tasks/task",
+                    },
+                    property: "task",
+                  },
+                },
+              ]
+            : [],
+          head: 0,
+          generation: "g1",
+        })
       throw new Error(`unexpected request: ${path}`)
     }),
   }
@@ -143,13 +175,13 @@ function renderRail() {
 afterEach(cleanup)
 
 describe("GraphRail", () => {
-  it("heads the tree with the current record, and says each direction once", async () => {
+  it("shows three distinct reference sections", async () => {
     const { container } = renderRail()
     await waitFor(() => {
-      expect(container.textContent).toContain("Referenced by")
+      expect(container.textContent).toContain("Reference property: task")
     })
     const text = container.textContent ?? ""
-    expect(text).toContain("Ship the console")
+    expect(text).toContain("Mapped and merged sources")
     expect(text).toContain("Outgoing")
     // Direction lives on the section header alone — no per-row arrows left
     // to mistake for one another.
@@ -161,32 +193,54 @@ describe("GraphRail", () => {
     ).toHaveLength(1)
   })
 
-  it("renders every target as a RecordPill that routes to the record", async () => {
+  it("renders every target as a link to the record", async () => {
     const { container } = renderRail()
     const first = [...container.querySelectorAll("a")].find(
       (a) => a.textContent === "p1"
     )
-    expect(first?.className).toContain("rounded-full")
+    expect(first?.className).toContain("text-primary")
     expect(first?.getAttribute("href")).toBe(
       "/data/samples.substrate.reamde.dev/people/person/p1"
     )
     await waitFor(() => {
-      expect(container.textContent).toContain("Referenced by")
+      expect(container.textContent).toContain("Reference property: task")
     })
   })
 
   it("says a group's shared kind once, with its count, never per row", async () => {
     const { container } = renderRail()
     await waitFor(() => {
-      expect(container.textContent).toContain("Referenced by")
+      expect(container.textContent).toContain("Reference property: task")
     })
     const text = container.textContent ?? ""
     // Two assignees, one kind: "person" appears on the group label alone.
-    expect(text.match(/person/g)).toHaveLength(1)
+    expect(text).toContain("samples.substrate.reamde.dev/people/person")
     expect(text).toContain("assignee")
     expect(text).toContain("2")
     // The fan-in group is named from this record's side, with its own count.
-    expect(text).toContain("task of comment")
+    expect(text).toContain("Reference property: task")
+    expect(text).toContain("notes.substrate.reamde.dev/notes/comment")
+    expect(text).not.toContain("task of comment")
+  })
+
+  it("separates declared mapping sources from ordinary incoming references", async () => {
+    graphWire.mapped = true
+    renderRail()
+    const sources = screen
+      .getByRole("heading", { name: "Mapped and merged sources" })
+      .closest("section")!
+    const incoming = screen
+      .getByRole("heading", { name: "Incoming references" })
+      .closest("section")!
+    await waitFor(() =>
+      expect(
+        within(sources).getByText("notes.substrate.reamde.dev/notes/comment")
+      ).toBeTruthy()
+    )
+    expect(
+      within(incoming).queryByText("notes.substrate.reamde.dev/notes/comment")
+    ).toBeNull()
+    expect(within(sources).getByText("2 records")).toBeTruthy()
   })
 
   it("reads a reference carrying link data by the path under `ref`", async () => {
@@ -217,7 +271,7 @@ describe("GraphRail", () => {
       </QueryClientProvider>
     )
     await waitFor(() => {
-      expect(container.textContent).toContain("Referenced by")
+      expect(container.textContent).toContain("Reference property: task")
     })
     const pill = [...container.querySelectorAll("a")].find(
       (a) => a.textContent === "p1"

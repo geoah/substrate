@@ -325,3 +325,19 @@ export function changelogFacetFields(opts: {
   )
   return fields
 }
+
+/** Managers credit value sources, which can differ from the committing actor. */
+export function changeSources(row: ChangeRow): string[] {
+  if (row.actor !== "substrate") return []
+  const managers = row.payload?.managers
+  if (!managers || typeof managers !== "object" || Array.isArray(managers))
+    return []
+  return [
+    ...new Set(
+      Object.values(managers).filter(
+        (actor): actor is string =>
+          typeof actor === "string" && actor !== "" && actor !== row.actor
+      )
+    ),
+  ]
+}
