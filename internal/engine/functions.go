@@ -131,6 +131,32 @@ var errCallableGone = errors.New("trigger callable no longer resolves")
 // resumes from wherever the cursor now points.
 var errCursorMoved = errors.New("trigger cursor moved concurrently")
 
+// errConflictYield marks a delivery that LOST a compare-and-set it had
+// declared it could lose: an effect carrying `ifVersion` plus
+// `onConflict: yield` found the record at another version, so the whole
+// delivery rolled back and wrote nothing. It is not a failure — two
+// invocations racing over one record is the normal shape of a sync whose
+// on-request trigger fires while its scheduled one drains — so it settles as a
+// SKIP with the conflict as its reason, the cursor (or fire state) moves past
+// it, and nothing parks. The winner's write is the one that stands
+// (decision 0093).
+var errConflictYield = fmt.Errorf("%w: a guarded write yielded its version race", substrate.ErrConflict)
+
+// declinedDelivery reports whether a delivery error means ANOTHER INVOCATION
+// owns this work, rather than that this one failed: another dispatch holds the
+// delivery, or a guarded write declared `onConflict: yield` and lost. Either
+// way the transaction rolled back whole, so the delivery settles as a skip and
+// the cursor (or fire state) moves past it.
+//
+// A yield wrapped in errPagedParked is NOT declined: the drain committed pages
+// before it lost the race, so the chain is this pass's to park.
+func declinedDelivery(err error) bool {
+	if errors.Is(err, errPagedParked) {
+		return false
+	}
+	return errors.Is(err, errClaimedElsewhere) || errors.Is(err, errConflictYield)
+}
+
 // ProcessTriggers runs one dispatcher pass: every enabled trigger drains its
 // backlog (record sources) or fires its due occurrence (schedule sources).
 // It returns the number of deliveries that applied effects. Only
@@ -346,9 +372,11 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 		if errors.Is(err, errCursorMoved) || errors.Is(err, errCallableGone) {
 			return 0, from, err
 		}
-		if errors.Is(err, errClaimedElsewhere) {
-			// Another dispatch holds this delivery: it runs it, this pass
-			// moves past it and says so.
+		if declinedDelivery(err) {
+			// Another dispatch holds this delivery, or this one lost a race it
+			// declared it could lose: either way the work is another
+			// invocation's, this pass moves past it and says so. Nothing
+			// committed — the transaction rolled back whole.
 			if err := ds.recordSkipAndAdvance(ctx, tr, ch, from, started, err.Error()); err != nil {
 				return 0, from, err
 			}
@@ -905,9 +933,10 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 		if err == nil {
 			return applied, nil
 		}
-		if errors.Is(err, errClaimedElsewhere) {
-			// Another dispatch holds this fire: move the fire state past it
-			// and say so.
+		if declinedDelivery(err) {
+			// Another dispatch holds this fire, or this one lost a guarded
+			// write's version race it declared it could lose: move the fire
+			// state past it and say so. Either way nothing committed.
 			skip := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 				if lastFire != nil {
 					if err := t.advanceScheduleTx(tr.ID, *lastFire, at); err != nil {
@@ -1429,10 +1458,17 @@ func (ds *dataset) pagedDrain(ctx context.Context, fn *vocabulary.Function, base
 			}
 			if committedAny {
 				// A page error after durable progress parks with the cursor
-				// intact rather than replaying the chain.
+				// intact rather than replaying the chain. A yielded guarded
+				// write parks here too: once pages have committed, this pass
+				// OWNS the chain, the duplicated work the claim exists to
+				// prevent has already happened, and dropping the drain
+				// silently would strand those pages. errPagedParked is what
+				// declinedDelivery reads to tell the two apart.
 				return summary, pages, fmt.Errorf("%w: %w", errPagedParked, err)
 			}
-			// A fresh chain that committed nothing can safely retry from zero.
+			// A fresh chain that committed nothing can safely retry from zero
+			// — or, for a yielded claim on the FIRST page, decline outright:
+			// the drain never started, so there is nothing to resume.
 			return summary, pages, err
 		}
 		summary = merged

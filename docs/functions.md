@@ -244,6 +244,7 @@ change:
 record:
   id: gh-acct-1
   kind: providers.substrate.reamde.dev/github/account
+  version: 41
   properties:
     tokenStatus: connected
 repository:
@@ -255,7 +256,10 @@ repository:
 `changed` names the properties when the payload carries them). `record` is the
 row's state **now**, not the old value, and is `null` after a delete, and its
 `properties` carry everything the record points at, each as an object holding
-the referent's path under `ref`. `repository` carries both names the
+the referent's path under `ref`. `version` is the row's edit counter as this
+delivery read it, which is what a guarded write stamps itself with
+(`host.version(envelope["record"])`, [two invocations over one
+record](#two-invocations-over-one-record)). `repository` carries both names the
 repository has: `authority`,
 the name it publishes kinds and webhook URLs under. A
 schedule or
@@ -469,7 +473,7 @@ cursor advance, every one held to the write allowlist by the kind it names.
 Every effect names its target the same way, a `kind` carrying a kind
 reference:
 
-- **`put`** `{action: put, kind, id, ifAbsent?, ifVersion?, properties?}`.
+- **`put`** `{action: put, kind, id, ifAbsent?, ifVersion?, onConflict?, properties?}`.
   `ifAbsent: true` is create-only: any existing row, live or
   tombstoned, is a no-op, so a minting function never resets state a later
   stage owns. `ifAbsent` must be a boolean, and it cannot combine with
@@ -481,7 +485,16 @@ reference:
   integer the write applies against only if the stored version equals it (a
   non-existent record is version 0), else the whole delivery fails
   `conflict`. It is the safe read-then-conditional-write primitive.
-- **`patch`** `{action: patch, kind, id, properties}`. A state value among the
+- **`onConflict`** (put and patch, beside `ifVersion`) is what LOSING that race
+  means. `park` is the default and today's behaviour: the delivery fails
+  `conflict`, which is what a writer that expected to win wants. `yield` says
+  the race is an ordinary outcome — the whole delivery rolls back, writes
+  nothing and settles as a **skip** with the conflict as its reason, the
+  trigger's cursor moves past it, and nothing parks. It is refused without an
+  `ifVersion` (no precondition, no race to lose) and an unknown value is
+  refused rather than defaulted
+  ([0093](decisions/0093-a-guarded-write-may-declare-that-losing-is-normal.md)).
+- **`patch`** `{action: patch, kind, id, ifVersion?, onConflict?, properties}`. A state value among the
   properties is a transition; re-asserting the current state is a no-op.
 - **`delete`** `{action: delete, kind, id}` tombstones.
 - **`merge`** `{action: merge, kind, id, loser}` (`id` is the winner) and
@@ -509,8 +522,9 @@ host.records.get(kind, id)                        # the record, or None
 host.records.list(kinds, where=None, first=None, after=None, order=None)
 host.records.search(q, kinds, k=None, mode=None)  # hits, with .pending beside them
 host.functions.call(function, input=None)         # permissions.call gated
-host.effects.put(kind, id, properties=None, if_absent=False, if_version=<int>)
-host.effects.patch(kind, id, properties=None, if_version=<int>)
+host.effects.put(kind, id, properties=None, if_absent=False, if_version=<int>,
+                 on_conflict=None)                # None | "park" | "yield"
+host.effects.patch(kind, id, properties=None, if_version=<int>, on_conflict=None)
 host.effects.delete(kind, id)
 host.effects.merge(kind, id, loser)
 host.effects.split(kind, merge)
@@ -527,7 +541,8 @@ host.log(msg)
 `if_version` is unset unless a caller passes one, and the sentinel for that is
 private, so `if_version=0` is a real precondition meaning "no such record". A
 `put` refuses `if_absent` and `if_version` together: `if_absent` makes an
-existing row a no-op before the version check could run.
+existing row a no-op before the version check could run. `on_conflict` needs an
+`if_version` under it, and takes `"park"` or `"yield"` and nothing else.
 
 The `effects` calls stage into a write-only buffer and return a handle, never
 a record: there is no `flush()`, the buffer is the return, and a body either
@@ -576,7 +591,10 @@ owning `bundle`, which is its package identity, the bundle's
 unresolved input's key is absent), the bundle's own
 [settings](bundles.md#settings) under `settings`, and every
 [connection](bundles.md#connections) the bundle declares under `accounts`,
-each flattened to its id, kind and stored properties. For an OAuth bundle the
+each flattened to its id, kind, version and stored properties — the `version`
+is there for the same reason the delivery envelope carries one, because a
+provider sync reaches its account through `config` and never through a host
+read. For an OAuth bundle the
 host resolves each account's credential itself and hands the body a live
 `token` on the account entry, or a `tokenError` string when the grant is dead,
 so one broken account never parks the whole delivery. The OAuth facility's own
@@ -600,6 +618,66 @@ runner is a single JSON line capped at **8 MiB**, and a response that would
 exceed it is replaced by a clear error rather than a truncated frame, which is
 the real reason a body that walks a provider pages instead of returning
 everything at once.
+
+## Two invocations over one record
+
+Nothing stops two invocations of one function running over one record at once:
+an on-request trigger fires while a scheduled one is mid-drain, or an operator
+calls the function directly beside either. For a provider sync that means both
+read the account's cursor, both advance it, and one write wins — duplicated
+work (pages re-read, hydration re-queued), never lost data. The engine offers
+no lock for this, because the dispatcher does not know which records an
+invocation is about to work: a scheduled sweep is one delivery over every
+account, its on-request twin is one delivery per account. The body knows, so
+the body says so, with a guarded write
+([0093](decisions/0093-a-guarded-write-may-declare-that-losing-is-normal.md)).
+
+**Stamp the version you read, and declare that losing is fine.** The version is
+already in hand — `envelope["record"]["version"]` for a record delivery,
+`config["accounts"][n]["version"]` for a provider's account — so the guard costs
+no read:
+
+```python
+acct = config["accounts"][0]
+host.effects.patch(acct["kind"], acct["id"],
+                   properties={"syncCursors": cursors},
+                   if_version=host.version(acct), on_conflict="yield")
+```
+
+The winner's write lands. The loser's whole delivery rolls back, writes
+nothing, and settles as a skip naming the conflict — no park, no alarm, and the
+cursor never goes backwards.
+
+**Claim first if the duplicated WORK is the cost.** A non-paged body's effects
+all commit at the end, so a losing invocation has already done the work by the
+time it finds out. A [paged](#the-sdk) body commits each page before the next
+runs, so it can stake the record on its FIRST page and do the work from the
+second:
+
+```python
+def main(input, host):
+    cur = host.page.resume()
+    if cur is None:                       # page 0: claim, do nothing else
+        acct = host.config()["accounts"][0]
+        host.effects.patch(acct["kind"], acct["id"],
+                           properties={"syncRun": run_id},
+                           if_version=host.version(acct), on_conflict="yield")
+        return {"more": host.page.more({"run": run_id, "stage": "user"})}
+    ...                                   # page 1+: this invocation owns it
+```
+
+A second invocation that starts at the same moment stamps the same version and
+yields before it fetches anything; one that starts later reads `syncRun` off the
+account, sees a run in flight and returns. Two rules bound it: a claim is held
+for the length of ONE drain, not across invocations — there is no expiry and no
+reaper, so a body that wants to know whether an old claim is dead writes a
+timestamp beside it and decides for itself — and a conflict AFTER a page has
+committed is an ordinary park, because by then this invocation owns the chain
+and dropping it would strand the pages it already wrote.
+
+Through the [call API](#driving-triggers) there is a caller to tell, so a
+yielded conflict is answered rather than swallowed: the call fails `conflict`,
+the same 409 a stale `ifVersion` has always produced.
 
 ## Host call
 
@@ -712,7 +790,9 @@ is the function body.
 - **No wedging.** A delivery that keeps failing is parked (3 attempts with
   backoff; a deterministic trip like an allowlist or budget violation, or an
   installation retired by a redeploy mid-delivery, parks on the first) and the trigger's cursor moves on. A false `when` is a skip, not a
-  failure.
+  failure, and so is a guarded write that yielded its version race — a race two
+  triggers are designed to have is not an operator's problem
+  ([two invocations over one record](#two-invocations-over-one-record)).
 
 ## Driving triggers
 

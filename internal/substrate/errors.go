@@ -111,3 +111,27 @@ func (e *AcceptConflictError) Error() string {
 }
 
 func (e *AcceptConflictError) Is(target error) bool { return target == ErrConflict }
+
+// VersionConflictError is a FAILED compare-and-set: the write carried an
+// IfVersion precondition and the stored record does not sit at it (a
+// non-existent record reads as version 0). It matches ErrConflict, so every
+// caller that only knows the sentinel refuses it unchanged and the API still
+// answers one 409 with the same words.
+//
+// It is a typed error rather than a wrapped sentinel because a CAS mismatch is
+// the one conflict a caller may want to tell apart from every other reason a
+// write conflicts (a former id, a failed accept, a lost cursor swap): a
+// function's effect may declare that losing the race is a NORMAL outcome, and
+// the engine can only honor that if it can see which conflict it is holding
+// (decision 0093).
+type VersionConflictError struct {
+	// Want is the precondition the writer asserted; Have is the version the
+	// record actually sits at.
+	Want, Have int64
+}
+
+func (e *VersionConflictError) Error() string {
+	return fmt.Sprintf("%v: ifVersion %d, stored %d", ErrConflict, e.Want, e.Have)
+}
+
+func (e *VersionConflictError) Is(target error) bool { return target == ErrConflict }

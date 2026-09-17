@@ -2734,7 +2734,10 @@ func checkCAS(existing *erow, ifVersion *int64) error {
 		have = existing.Version
 	}
 	if have != *ifVersion {
-		return fmt.Errorf("%w: ifVersion %d, stored %d", substrate.ErrConflict, *ifVersion, have)
+		// Typed, not a bare wrapped sentinel: an effect that declared
+		// `onConflict: yield` needs to tell a LOST RACE from every other
+		// conflict, and the type is what carries that (effects.go).
+		return &substrate.VersionConflictError{Want: *ifVersion, Have: have}
 	}
 	return nil
 }

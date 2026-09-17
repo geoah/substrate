@@ -204,7 +204,11 @@ func (ds *dataset) injectedRecordConfig(ctx context.Context, ty *vocabulary.Kind
 	if row.Title != "" {
 		props["title"] = row.Title
 	}
-	out := map[string]any{"id": row.ID, "kind": row.Kind, "properties": props}
+	// `version` rides beside the properties for the same reason the delivery
+	// envelope carries one: a provider sync reaches its account through
+	// `config.accounts`, never through a host read, and a guarded write needs
+	// the version the invocation actually read (decision 0093).
+	out := map[string]any{"id": row.ID, "kind": row.Kind, "version": row.Version, "properties": props}
 	if len(secretErrors) > 0 {
 		out["secretErrors"] = secretErrors
 	}

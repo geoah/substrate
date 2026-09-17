@@ -366,6 +366,25 @@ def _if_version(action, value):
     return value
 
 
+# The lost-race policies a guarded write may declare. "park" is the default and
+# need not be spelled; "yield" says losing is an ordinary outcome, so the whole
+# delivery rolls back, writes nothing and settles as a skip instead of parking.
+_ON_CONFLICT = ("park", "yield")
+
+
+def _on_conflict(action, value, if_version):
+    if value is None:
+        return None
+    if value not in _ON_CONFLICT:
+        raise ValueError("effects.%s: on_conflict is one of %s, got %r"
+                         % (action, ", ".join(repr(v) for v in _ON_CONFLICT), value))
+    if if_version is None:
+        raise ValueError(
+            "effects.%s: on_conflict needs if_version — without a precondition there is "
+            "no race to lose" % action)
+    return value
+
+
 class Effects:
     """The buffered-effects builder. Each method APPENDS a staged effect to a
     write-only buffer and returns a StagedEffect handle (never a record, never
@@ -375,9 +394,9 @@ class Effects:
     non-empty is refused at return (the two apply orders are unrelated and can
     self-conflict under CAS). No flush() — the buffer IS the return. Shapes are
     validated here (a known action, a well-formed id and type, a boolean
-    ifAbsent, a non-negative integer ifVersion) so a mistake is a clear
-    body error that parks once, not an engine park; the engine stays
-    authoritative for the emit ceiling and type admission."""
+    ifAbsent, a non-negative integer ifVersion, a known onConflict) so a
+    mistake is a clear body error that parks once, not an engine park; the
+    engine stays authoritative for the emit ceiling and type admission."""
 
     def __init__(self):
         self._staged = []
@@ -386,7 +405,8 @@ class Effects:
         self._staged.append(ef)
         return StagedEffect(ef)
 
-    def put(self, kind, id, properties=None, if_absent=False, if_version=_UNSET):
+    def put(self, kind, id, properties=None, if_absent=False, if_version=_UNSET,
+            on_conflict=None):
         ef = {"action": "put", "kind": _need_kind("put", kind),
               "id": _need_id("put", "id", id)}
         props = _opt_map("put", "properties", properties)
@@ -401,9 +421,12 @@ class Effects:
                     "effects.put: if_absent and if_version cannot combine — if_absent makes an "
                     "existing row a no-op before the version check; pick one")
             ef["ifVersion"] = v
+        oc = _on_conflict("put", on_conflict, v)
+        if oc is not None:
+            ef["onConflict"] = oc
         return self._add(ef)
 
-    def patch(self, kind, id, properties=None, if_version=_UNSET):
+    def patch(self, kind, id, properties=None, if_version=_UNSET, on_conflict=None):
         ef = {"action": "patch", "kind": _need_kind("patch", kind),
               "id": _need_id("patch", "id", id)}
         props = _opt_map("patch", "properties", properties)
@@ -412,6 +435,9 @@ class Effects:
         v = _if_version("patch", if_version)
         if v is not None:
             ef["ifVersion"] = v
+        oc = _on_conflict("patch", on_conflict, v)
+        if oc is not None:
+            ef["onConflict"] = oc
         return self._add(ef)
 
     def delete(self, kind, id):
