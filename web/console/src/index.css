@@ -49,11 +49,9 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Dense-lite (locked, ticket 004): cool-slate palette, muted steel-blue
-   primary, sidebar on its own slightly-offset surface. Density is three
-   knobs — root font-size, --spacing, --radius — and nothing per-component. */
+/* Shared readable scale for navigation, tables, forms and page headings. */
 :root {
-  font-size: 13.5px;
+  font-size: 16px;
   --spacing: 0.235rem;
   --radius: 0.4rem;
   --background: oklch(0.99 0.002 250);

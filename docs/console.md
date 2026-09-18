@@ -29,6 +29,11 @@ is. From the records tab you can create one, and from a record you can edit it:
 either way the editor is the same surface, and it goes out as the ordinary
 `put`.
 
+Collapsed authorities and packages, the desktop sidebar state, and favorite
+kinds are saved in the repository's `core/consolepreference` record. Stars add
+kinds to **Favorites** above Data; up and down controls reorder them. Updates
+use version preconditions and retry against fresh state after a conflict.
+
 ## The record editor
 
 Creating and editing a record are two **lenses over one document**, and the
@@ -61,19 +66,17 @@ marks them, and Save is barred while an error stands.
 A record opens on five tabs:
 
 - **Properties**: the declared properties rendered by type, the read view the
-  editor opens from.
+  editor opens from, using the same labels and descriptions with bordered values.
 - **Manifest**: the [envelope](data-model.md#the-envelope), with every kind
   reference and every record reference rendered as a link you can follow.
+- **Graph**: separate incoming references, outgoing references, and mapped or
+  merged sources. Groups show the full kind reference and a labelled reference
+  property. A member expands in place into its own graph. Source grouping reads
+  the installed mapping declarations; merge history includes former record ids.
 - **Activity**: this record's own slice of [the changelog](changelog.md), with the
-  actor on every row and each trigger's delivery state beside it.
-- **Graph**: what this record points at and what points back, as a tree you
-  drill into. Outgoing pointers read
-  straight off the record's references; inbound ones are grouped and paged as the API pages
-  them, each group headed by the name the **declaration** gives that side
-  (`messages · llm/message`, from `inverse:`) rather than the raw property name, which
-  is the same link as the *other* record spells it. A member expands in
-  place into its own graph, so a thread → its messages → the record a tool
-  wrote is three clicks without leaving the page.
+  full actor on every row. Mapping writes distinguish value sources, the engine
+  committing the write, and the initiating actor when recorded. Expanded changes
+  show the raw payload immediately.
 - **Provenance**: which actor wrote each property, and at which
   [tier](terms.md#truth-and-derivation).
 

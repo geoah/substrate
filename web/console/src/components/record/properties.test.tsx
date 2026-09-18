@@ -310,12 +310,12 @@ describe("PropertiesRail", () => {
 
   it("sizes a property's name at least as large as its value, and heavier", () => {
     const { container } = renderRail()
-    const name = [...container.querySelectorAll("span")].find(
-      (el) => el.textContent === "summary"
-    )
+    const name = [
+      ...container.querySelectorAll('[data-slot="field-label"]'),
+    ].find((el) => el.textContent === "Summary")
     // The header outranks its body: same text-sm, font-medium against normal.
     expect(name?.className).toContain("text-sm")
-    expect(name?.className).toContain("font-medium")
+    expect(name?.className).toContain("font-semibold")
   })
 
   it("still shows the data when the registry lacks the kind", () => {

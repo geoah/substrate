@@ -23,14 +23,23 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react"
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
+import {
+  afterEach,
+  beforeEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest"
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
 import { buildKindNav } from "@/lib/api/kinds"
 import type { BundleStatus, KindInfo } from "@/lib/api/types"
-import { AuthorityGroup, SettingsSetupBadge } from "./app-sidebar"
-import { SidebarMenu, SidebarProvider } from "./ui/sidebar"
+import { AuthorityGroup, Favorites, SettingsSetupBadge } from "./app-sidebar"
+import { NavigationProvider } from "./sidebar-preferences"
+import { SidebarMenu } from "./ui/sidebar"
 
 function kind(pkg: string, name: string): KindInfo {
   return {
@@ -51,14 +60,42 @@ const nav = buildKindNav([
   kind("people", "person"),
 ]).authorities[0]
 
+let storedPreferences: Record<string, unknown> = {}
+
+beforeEach(() => {
+  storedPreferences = {}
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "PUT")
+        storedPreferences = JSON.parse(String(init.body)).properties
+      return new Response(
+        JSON.stringify({
+          id: "navigation",
+          kind: "substrate.reamde.dev/core/consolepreference",
+          version: 1,
+          properties: storedPreferences,
+        }),
+        { status: 200 }
+      )
+    })
+  )
+})
+
 function renderTree() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   const rootRoute = createRootRoute({
     component: () => (
-      <SidebarProvider>
-        <SidebarMenu>
-          <AuthorityGroup nav={nav} />
-        </SidebarMenu>
-      </SidebarProvider>
+      <QueryClientProvider client={client}>
+        <NavigationProvider>
+          <Favorites />
+          <SidebarMenu>
+            <AuthorityGroup nav={nav} />
+          </SidebarMenu>
+        </NavigationProvider>
+      </QueryClientProvider>
     ),
   })
   // The paths the links spell have to exist, or the router has no href to
@@ -116,7 +153,10 @@ beforeAll(() => {
     }) as MediaQueryList
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
 describe("the Data tree", () => {
   it("links the authority's own label to its kinds table", async () => {
@@ -129,6 +169,49 @@ describe("the Data tree", () => {
     expect(await href("tasks")).toBe("/data/ada.example.com/tasks")
   })
 
+  it("restores collapsed groups and reordered favorites in a new session", async () => {
+    const first = renderTree()
+    const task = "ada.example.com/tasks/task"
+    const person = "ada.example.com/people/person"
+    async function press(label: string) {
+      const button = await screen.findByRole("button", { name: label })
+      await waitFor(() =>
+        expect((button as HTMLButtonElement).disabled).toBe(false)
+      )
+      fireEvent.click(button)
+    }
+    await press(`Star ${task}`)
+    await waitFor(() => expect(storedPreferences.favorites).toEqual([task]))
+    await press(`Star ${person}`)
+    await waitFor(() =>
+      expect(storedPreferences.favorites).toEqual([task, person])
+    )
+    await press(`Move ${person} up`)
+    await waitFor(() =>
+      expect(storedPreferences.favorites).toEqual([person, task])
+    )
+    await press("Toggle the kinds in tasks")
+    await waitFor(() =>
+      expect(storedPreferences.collapsed).toEqual(["ada.example.com/tasks"])
+    )
+    first.unmount()
+    renderTree()
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: `Move ${person} up` })
+      ).toBeTruthy()
+    )
+    expect(
+      (
+        screen.getByRole("button", {
+          name: `Move ${person} up`,
+        }) as HTMLButtonElement
+      ).disabled
+    ).toBe(true)
+    expect(screen.queryByRole("link", { name: "project" })).toBeNull()
+    expect(screen.getByRole("link", { name: task })).toBeTruthy()
+  })
+
   it("folds and unfolds one package's kinds from its chevron alone", async () => {
     renderTree()
     expect(await href("task")).toBe("/data/ada.example.com/tasks/task")
@@ -137,15 +220,23 @@ describe("the Data tree", () => {
     const chevron = screen.getByRole("button", {
       name: "Toggle the kinds in tasks",
     })
+    await waitFor(() =>
+      expect((chevron as HTMLButtonElement).disabled).toBe(false)
+    )
     fireEvent.click(chevron)
-    expect(screen.queryByRole("link", { name: "task" })).toBeNull()
+    await waitFor(() =>
+      expect(screen.queryByRole("link", { name: "task" })).toBeNull()
+    )
+    expect(storedPreferences.collapsed).toEqual(["ada.example.com/tasks"])
     // Only the package the chevron belongs to folds.
     expect(screen.getByRole("link", { name: "person" })).toBeDefined()
     // The package's own row stays reachable while its kinds are hidden.
     expect(screen.getByRole("link", { name: "tasks" })).toBeDefined()
 
     fireEvent.click(chevron)
-    expect(screen.getByRole("link", { name: "task" })).toBeDefined()
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: "task" })).toBeDefined()
+    )
   })
 })
 

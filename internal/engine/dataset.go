@@ -428,8 +428,9 @@ type txn struct {
 	// contributor's actor — recomputeManagers, per accepted property —
 	// instead of the transaction's, always at the machine tier (attribution
 	// never pins).
-	recomputing       bool
-	recomputeManagers map[string]substrate.Actor
+	recomputeInitiator substrate.Actor
+	recomputing        bool
+	recomputeManagers  map[string]substrate.Actor
 	// causedBy is the changelog seq that caused this transaction's writes —
 	// set only when a function's effects apply, stamped onto every changelog
 	// row so the causal-depth walk can follow the chain.

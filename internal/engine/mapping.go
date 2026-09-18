@@ -637,11 +637,13 @@ func (t *txn) recompute(target eref) error {
 	// the ordinary write path — no-op suppression holds, so re-syncing
 	// identical data writes nothing — and never triggers recompute.
 	was := t.actor
+	t.recomputeInitiator = was
 	t.actor = substrate.ActorSystem
 	t.recomputing, t.recomputeManagers = true, overrides
 	defer func() {
 		t.actor = was
 		t.recomputing, t.recomputeManagers = false, nil
+		t.recomputeInitiator = ""
 	}()
 	_, err = t.patch(target, substrate.PatchInput{Properties: patch})
 	return err
@@ -1056,11 +1058,13 @@ func (t *txn) releaseMachineManaged(target eref, props []string) error {
 		return nil
 	}
 	was := t.actor
+	t.recomputeInitiator = was
 	t.actor = substrate.ActorSystem
 	t.recomputing, t.recomputeManagers = true, nil
 	defer func() {
 		t.actor = was
 		t.recomputing, t.recomputeManagers = false, nil
+		t.recomputeInitiator = ""
 	}()
 	_, err = t.patch(target, substrate.PatchInput{Properties: patch})
 	return err

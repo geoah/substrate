@@ -14,7 +14,7 @@ export function ChangelogPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 px-6 pt-5 pb-1">
-        <h1 className="text-lg font-semibold">Changelog</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Changelog</h1>
         <p className="text-xs text-muted-foreground">
           Every change in this repository, newest first. Open a row to see what
           it did.

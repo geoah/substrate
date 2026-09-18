@@ -492,10 +492,12 @@ describe("RegistryPage", () => {
     return row.nextElementSibling as HTMLElement
   }
 
-  it("says a new repository ships core alone and takes the rest from here", async () => {
+  it("explains the two catalog actions without claiming core is the only seed", async () => {
     renderPage(<RegistryPage />)
     await screen.findByText("people")
-    expect(screen.getByText(/A new repository holds/)).toBeTruthy()
+    expect(
+      screen.getByText(/Connect a provider or import a sample/)
+    ).toBeTruthy()
   })
 
   it("lists the two tiers in their own sections", async () => {
@@ -524,7 +526,7 @@ describe("RegistryPage", () => {
     renderPage(<RegistryPage />)
     const people = await rowOf("people")
     expect(within(people).getByRole("button", { name: "Import" })).toBeTruthy()
-    expect(within(people).getByText(`lands as ${HOME}/people`)).toBeTruthy()
+    expect(within(expand(people)).getByText(/Imports as/)).toBeTruthy()
   })
 
   it("counts kinds and functions, and nothing else", async () => {
@@ -725,7 +727,7 @@ describe("RegistryPage", () => {
     const button = within(google).getByRole("button", { name: "Install all" })
     expect(button.hasAttribute("disabled")).toBe(false)
     expect(
-      within(google).getByText(/needs samples\.substrate\.reamde\.dev\/people/)
+      within(expand(google)).getByText("samples.substrate.reamde.dev/people")
     ).toBeTruthy()
   })
 
@@ -734,11 +736,7 @@ describe("RegistryPage", () => {
     const pebble = await rowOf("pebble")
     // pebble requires tasks; tasks requires people and scheduling. The wire
     // says only the first.
-    expect(
-      within(pebble).getByText(
-        `needs ${HOME}/people, ${HOME}/scheduling, ${HOME}/tasks`
-      )
-    ).toBeTruthy()
+    expect(within(pebble).getByText("Requires packages")).toBeTruthy()
     const detail = expand(pebble)
     expect(within(detail).getByText(`${HOME}/tasks`)).toBeTruthy()
     expect(within(detail).getByText(`${HOME}/people`)).toBeTruthy()
@@ -980,8 +978,9 @@ describe("RegistryPage", () => {
       const tasks = await rowOf("tasks")
       // people is here now, under this repository's own authority, so the
       // chain is scheduling alone.
-      expect(within(tasks).getByText(`needs ${HOME}/scheduling`)).toBeTruthy()
+      expect(within(tasks).getByText("Requires packages")).toBeTruthy()
       const detail = expand(tasks)
+      expect(within(detail).getByText(`${HOME}/scheduling`)).toBeTruthy()
       expect(within(detail).getByText(`${HOME}/people`)).toBeTruthy()
       expect(within(detail).getByText("here")).toBeTruthy()
     })
@@ -1027,7 +1026,7 @@ describe("RegistryPage", () => {
       serve({ statuses: [googleStatus()], catalog: [MOVED, PEOPLE] })
       renderPage(<RegistryPage />)
       const google = await rowOf("google")
-      expect(within(google).getByText("update 1 → 2")).toBeTruthy()
+      expect(within(google).getByText("1 → 2")).toBeTruthy()
       fireEvent.click(within(google).getByRole("button", { name: /Upgrade/ }))
       await waitFor(() => {
         expect(
@@ -1244,7 +1243,7 @@ describe("RegistryPage", () => {
       })
       renderPage(<RegistryPage />)
       const people = await rowOf("people")
-      expect(within(people).getByText("update 4 → 5")).toBeTruthy()
+      expect(within(people).getByText("4 → 5")).toBeTruthy()
       fireEvent.click(within(people).getByRole("button", { name: /Upgrade/ }))
       await waitFor(() =>
         expect(importCalls()).toEqual([{ id: PEOPLE.id, confirm: undefined }])

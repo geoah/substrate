@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from "react"
 import { Link, Outlet, useRouterState } from "@tanstack/react-router"
 import { SearchIcon } from "lucide-react"
 
+import { NavigationProvider } from "@/components/sidebar-preferences"
 import { AppSidebar } from "@/components/app-sidebar"
 import { CommandMenu } from "@/components/command-menu"
 import {
@@ -14,11 +15,7 @@ import {
 } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
-import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar"
+import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { CR_NAME } from "@/lib/api/changerequests"
 import { CORE_AUTHORITY, CORE_PACKAGE, CORE_PACKAGE_NAME } from "@/lib/api/http"
@@ -180,7 +177,7 @@ export function AppShell() {
   }, [])
 
   return (
-    <SidebarProvider>
+    <NavigationProvider>
       <TooltipProvider delay={250}>
         <AppSidebar />
         <SidebarInset className="flex h-svh min-w-0 flex-col overflow-hidden">
@@ -208,6 +205,6 @@ export function AppShell() {
         </SidebarInset>
         <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
       </TooltipProvider>
-    </SidebarProvider>
+    </NavigationProvider>
   )
 }

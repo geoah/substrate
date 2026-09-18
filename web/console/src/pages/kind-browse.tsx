@@ -264,7 +264,9 @@ export function KindBrowsePage() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-start justify-between gap-3 px-6 pt-5 pb-3">
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold">{kindInfo.name}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {kindInfo.name}
+          </h1>
           <p className="text-xs text-muted-foreground">
             {totalText !== undefined ? `${totalText} records in ` : ""}
             <span className="data">
