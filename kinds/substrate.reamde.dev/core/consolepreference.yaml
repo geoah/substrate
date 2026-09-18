@@ -1,0 +1,25 @@
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/consolepreference
+data:
+  authority: substrate.reamde.dev
+  package: core
+  version: 1
+  description: Repository-owned console navigation preferences, shared across
+    sessions.
+  names:
+    singular: consolepreference
+  displayTemplate: "{localName}"
+  properties:
+    collapsed:
+      type: string
+      repeated: true
+      description: Authority and package references whose navigation children
+        are collapsed.
+    favorites:
+      type: string
+      repeated: true
+      description: Favorite kind references in display order.
+    sidebarOpen:
+      type: bool
+      description: Whether the desktop sidebar is expanded.

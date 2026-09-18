@@ -82,7 +82,7 @@ export function AccountPage() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-end justify-between gap-3 px-6 pt-5 pb-2">
         <div>
-          <h1 className="text-lg font-semibold">Account</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Account</h1>
           <p className="text-xs text-muted-foreground">
             Changing your password needs your current password
             {totpRequired && " and code"}. Being signed in is not enough.

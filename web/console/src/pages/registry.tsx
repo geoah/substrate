@@ -705,84 +705,69 @@ function buildColumns(
         <DataTableColumnHeader column={column} title="bundle" />
       ),
       cell: ({ row }) => (
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="truncate font-medium">{row.original.name}</span>
-          </div>
-          <div
-            className="truncate data text-xs text-muted-foreground"
-            title={row.original.catalog?.description || row.original.authority}
-          >
-            {row.original.catalog?.description || row.original.authority}
-          </div>
-        </div>
+        <span
+          className="block py-2 text-sm font-semibold"
+          title={row.original.id}
+        >
+          {row.original.name}
+        </span>
       ),
-      meta: { label: "bundle", size: { min: 220, max: 460, weight: 1.5 } },
+      meta: { label: "bundle", size: { min: 150, max: 320, weight: 1.5 } },
     },
     {
       id: "state",
-      accessorFn: (r) => (r.status ? bundleState(r.status) : "not here"),
+      accessorFn: (r) => (r.status ? bundleState(r.status) : "not installed"),
       enableSorting: false,
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="state" />
+        <DataTableColumnHeader column={column} title="Status" />
       ),
-      // A bundle this repository holds shows its own runtime lifecycle
-      // (enabled / disabled / uninstalled) with the setup chip BESIDE it when
-      // steps stand; one it does not hold shows the invitation, and what the
-      // button will have to take first.
-      cell: ({ row }) => {
-        const missing = row.original.installed
-          ? []
-          : missingChain(chains(row.original))
-        return (
-          <div className="min-w-0">
-            {row.original.status ? (
-              <span className="inline-flex flex-wrap items-center gap-1.5">
-                <BundleStateBadge state={bundleState(row.original.status)} />
-                <SetupBadge count={setupCount(row.original.status)} />
-              </span>
-            ) : (
-              <Badge variant="outline" className="gap-1.5 font-normal">
-                <span className="size-1.5 rounded-full bg-muted-foreground/40" />
-                <span className="data">
-                  {row.original.tier === "sample"
-                    ? "not imported"
-                    : "not installed"}
-                </span>
-              </Badge>
-            )}
-            {/* A sample is rewritten onto this repository's authority on the
-                way in, so the row says the identity it will land under before
-                the button is pressed, since the reader is about to own it. */}
-            {!row.original.status && row.original.tier === "sample" && (
-              <div
-                className="truncate pt-0.5 data text-xs text-muted-foreground"
-                title={`Importing lands ${row.original.id}, yours to edit`}
-              >
-                lands as {row.original.id}
-              </div>
-            )}
-            {missing.length > 0 && (
-              <div
-                className="truncate pt-0.5 data text-xs text-warning"
-                title={chainHint(
-                  missing,
-                  row.original.tier === "sample" ? "Import" : "Install",
-                  row.original.name
-                )}
-              >
-                needs {missing.map((r) => r.package).join(", ")}
-              </div>
-            )}
-            {row.original.upgrade && upgradeAvailable(row.original) && (
-              <div className="truncate pt-0.5 data text-xs text-muted-foreground">
-                update {upgradeMotion(row.original.upgrade)}
-              </div>
-            )}
-          </div>
-        )
-      },
-      meta: { label: "state", width: 170 },
+      cell: ({ row }) =>
+        row.original.status ? (
+          <BundleStateBadge state={bundleState(row.original.status)} />
+        ) : (
+          <span className="text-sm text-muted-foreground">
+            {row.original.tier === "sample" ? "Not imported" : "Not installed"}
+          </span>
+        ),
+      meta: { label: "Status", width: 140 },
+    },
+    {
+      id: "setup",
+      enableSorting: false,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Setup" />
+      ),
+      cell: ({ row }) =>
+        row.original.status ? (
+          setupCount(row.original.status) > 0 ? (
+            <SetupBadge count={setupCount(row.original.status)} />
+          ) : (
+            <span className="text-sm text-muted-foreground">Ready</span>
+          )
+        ) : (
+          <span className="text-sm text-muted-foreground">
+            {missingChain(chains(row.original)).length
+              ? "Requires packages"
+              : "Not started"}
+          </span>
+        ),
+      meta: { label: "Setup", width: 150 },
+    },
+    {
+      id: "version",
+      enableSorting: false,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Update" />
+      ),
+      cell: ({ row }) => (
+        <span className="data">
+          {row.original.upgrade &&
+          (upgradeAvailable(row.original) || upgradeBlocked(row.original))
+            ? upgradeMotion(row.original.upgrade)
+            : "No update"}
+        </span>
+      ),
+      meta: { label: "Update", width: 120 },
     },
     numColumn("kinds", "kinds", (r) => counts(r).kinds),
     numColumn("functions", "functions", (r) => counts(r).functions),
@@ -809,7 +794,7 @@ function buildColumns(
         ) : null,
       meta: {
         label: "action",
-        width: 120,
+        width: 180,
         headerClassName: "text-right",
         cellClassName: "text-right",
       },
@@ -977,7 +962,19 @@ function BundleDisclosure({
 
   return (
     <RowDetail>
-      {catalog?.description && <p>{catalog.description}</p>}
+      <div className="space-y-2">
+        <p className="data break-all">{row.id}</p>
+        {catalog?.description && (
+          <p className="max-w-3xl text-sm leading-relaxed">
+            {catalog.description}
+          </p>
+        )}
+        {!row.status && row.tier === "sample" && (
+          <p className="text-sm text-muted-foreground">
+            Imports as <code>{row.id}</code>, yours to edit.
+          </p>
+        )}
+      </div>
       <div className="flex flex-col gap-2.5">
         {kindRows.length > 0 && (
           <Group
@@ -1193,7 +1190,7 @@ function BundleSection({
     <section className="pb-6">
       <div className="flex items-end justify-between gap-3 px-6 pt-4 pb-2">
         <div>
-          <h2 className="text-sm font-semibold">{title}</h2>
+          <h2 className="text-xl font-semibold">{title}</h2>
           <p className="text-xs text-muted-foreground">{description}</p>
         </div>
         <div className="flex items-center gap-2">
@@ -1333,16 +1330,14 @@ export function RegistryPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 px-6 pt-5 pb-1">
-        <h1 className="text-lg font-semibold">Registry</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Registry</h1>
         <p className="text-xs text-muted-foreground">
           {heldCount.toLocaleString()} of {allRows.length.toLocaleString()} in
           this repository
         </p>
-        <p className="pt-0.5 text-xs text-muted-foreground">
-          A new repository holds{" "}
-          <span className="data">substrate.reamde.dev/core</span> and nothing
-          else. Every other kind comes from here. Expand a row to see what a
-          bundle adds.
+        <p className="mt-2 text-sm text-muted-foreground">
+          Connect a provider or import a sample. Expand a row for its contents
+          and requirements.
         </p>
         {pending.map((item) => (
           <PendingUpgradeNotice key={item.package} item={item} />
@@ -1351,7 +1346,7 @@ export function RegistryPage() {
       <div className="min-h-0 flex-1 overflow-auto">
         <BundleSection
           title="Providers"
-          description="Packages a publisher owns. Installing one keeps the publisher's authority, and its upgrades arrive here."
+          description="Connect your services. Providers stay under their publisher’s authority."
           rows={sections.providers}
           prefsKey="registry.providers"
           emptyTitle="No providers"

@@ -4,7 +4,7 @@
  * nothing the wire said, so the whole payload stays one `raw` toggle away.
  * This test pins both. */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { ChangeRow } from "@/lib/api/types"
@@ -58,9 +58,8 @@ const ROW: ChangeRow = {
 afterEach(cleanup)
 
 describe("ChangeDetail", () => {
-  it("shows the raw payload verbatim once opened", () => {
+  it("shows the raw payload without another disclosure", () => {
     render(<ChangeDetail row={ROW} />)
-    fireEvent.click(screen.getByRole("button", { name: /raw/i }))
     expect(screen.getByText(/"properties"/)).toBeTruthy()
   })
 
@@ -80,9 +79,32 @@ describe("ChangeDetail", () => {
     ).toBeTruthy()
   })
 
-  it("keeps the raw payload closed until asked", () => {
+  it("keeps the raw payload expanded", () => {
     render(<ChangeDetail row={ROW} />)
-    expect(screen.queryByText(/"properties"/)).toBeNull()
+    expect(screen.queryByText(/"properties"/)).toBeTruthy()
+  })
+
+  it("shows full source actors and distinguishes the mapping initiator", () => {
+    const source = "function:providers.substrate.reamde.dev:google:synccontacts"
+    const initiator = "function:example.com:people:promotecontact"
+    render(
+      <ChangeDetail
+        row={{
+          ...ROW,
+          actor: "substrate",
+          payload: {
+            managers: { name: source },
+            mechanism: "mapping",
+            triggeredBy: initiator,
+          },
+        }}
+      />
+    )
+    expect(screen.getAllByText(source).length).toBeGreaterThan(0)
+    expect(screen.getByText(initiator)).toBeTruthy()
+    expect(screen.getByText("Mapping recomputation by the engine")).toBeTruthy()
+    expect(screen.getByText("committed by")).toBeTruthy()
+    expect(screen.getByText("Engine (substrate)")).toBeTruthy()
   })
 
   it("renders a row that names no records without a records section", () => {

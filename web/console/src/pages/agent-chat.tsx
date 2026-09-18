@@ -329,7 +329,9 @@ function ChatSurface({ id }: { id: string }) {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-start justify-between gap-3 px-6 pt-5 pb-3">
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold">{id}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight break-words">
+            {id}
+          </h1>
           <p className="data text-xs text-muted-foreground">
             {thread ? (
               <Link

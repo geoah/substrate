@@ -215,7 +215,7 @@ export function AgentsPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto">
       <div className="shrink-0 px-6 pt-5 pb-2">
-        <h1 className="text-lg font-semibold">Agents</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Agents</h1>
         <p className="text-xs text-muted-foreground">
           {agentRows.length.toLocaleString()} you can chat to
           {hiddenFromChatCount > 0 &&

@@ -1199,6 +1199,10 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		if len(managers) > 0 {
 			payload["managers"] = managers
 		}
+		if t.recomputing {
+			payload["mechanism"] = "mapping"
+			payload["triggeredBy"] = string(t.recomputeInitiator)
+		}
 		if len(sp.states) > 0 {
 			payload["states"] = row.States
 		}

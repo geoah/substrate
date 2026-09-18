@@ -1643,7 +1643,9 @@ export function BundleDetailPage() {
       <div className="flex shrink-0 items-start justify-between gap-3 px-6 pt-5 pb-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <h1 className="text-lg font-semibold">{bundle.name}</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {bundle.name}
+            </h1>
             <BundleStateBadge state={bundleState(bundle)} />
             <SetupBadge count={setupCount(bundle)} />
             {bundle.quarantined && bundle.quarantineReason ? (

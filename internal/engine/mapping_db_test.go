@@ -582,6 +582,20 @@ func TestSamScenario(t *testing.T) {
 		t.Fatalf("phones manager = %q, want %s", meta["phones"].Manager, people)
 	}
 
+	foundMapping := false
+	for _, change := range changesSince(t, ds, 0) {
+		if change.RecordID != sam.ID || change.Payload["mechanism"] != "mapping" {
+			continue
+		}
+		foundMapping = true
+		if change.Actor != substrate.ActorSystem || change.Payload["triggeredBy"] != string(people) {
+			t.Fatalf("mapping attribution = %s, %+v", change.Actor, change.Payload)
+		}
+	}
+	if !foundMapping {
+		t.Fatal("mapping recompute did not record its mechanism and initiating actor")
+	}
+
 	// Releasing a hand edit is a null-patch: the delete clears the value and
 	// its manager, and the SAME transaction refills from live sources.
 	released := mustPatch(t, ds, owner, sam.Kind, sam.ID, substrate.PatchInput{

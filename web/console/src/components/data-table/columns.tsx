@@ -11,6 +11,7 @@
 import type { RowData } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 
+import { ChangeActor } from "@/components/change-actor"
 import { ActorChip } from "@/components/actor-chip"
 import type { DataTableColumn } from "@/components/data-table/data-table"
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
@@ -121,12 +122,9 @@ export function actorColumn<T extends RowData>(opts: {
     },
     meta: {
       label: title,
-      // chips are identity-length (`providers.substrate.reamde.dev/github`): a modest
-      // share with a cap. A caller may pin px instead, though none does now —
-      // the rails dropped theirs, which truncated every chip they held.
       ...(opts.width
         ? { width: opts.width }
-        : { size: { min: 140, max: 240, weight: 0.75 } }),
+        : { size: { min: 240, max: 640, weight: 2 } }),
     },
   }
 }
@@ -197,10 +195,13 @@ export function changeTimeColumn(opts?: {
 export function changeActorColumn(opts?: {
   width?: number
 }): DataTableColumn<ChangeRow> {
-  return actorColumn<ChangeRow>({
-    actor: (row) => row.actor,
-    width: opts?.width,
-  })
+  return {
+    ...actorColumn<ChangeRow>({
+      actor: (row) => row.actor,
+      width: opts?.width,
+    }),
+    cell: ({ row }) => <ChangeActor row={row.original} />,
+  }
 }
 
 /** The op said as its plain verb — created/updated/linked/merged/… */
