@@ -22,11 +22,13 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useReferenceTitles } from "@/hooks/use-reference-titles"
 import { recordQueryOptions } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
-import { ApiError } from "@/lib/api/types"
+import { ApiError, type KindInfo } from "@/lib/api/types"
 import { recordTitle } from "@/lib/format"
 import { linkTargetsOf, manifestYAML } from "@/lib/manifest"
+import { referencePathsOf } from "@/lib/reference-titles"
 import { stateProperties, kindByCollection } from "@/lib/definition"
 import { keyDocsOf } from "@/lib/yaml-annotations"
 import { recordRoute } from "@/router"
@@ -44,15 +46,30 @@ const tabParser = parseAsStringLiteral(TABS)
   .withDefault("properties")
   .withOptions({ history: "push" })
 
+const NO_KINDS: KindInfo[] = []
+
 export function RecordPage() {
   const { authority, pkg, name, id } = recordRoute.useParams()
   const [tab, setTab] = useQueryState("tab", tabParser)
 
   const registry = useQuery(kindsQueryOptions)
+  // One stable empty registry: a fresh `[]` every render would re-derive
+  // every memo that keys on it.
+  const kinds = registry.data ?? NO_KINDS
   const kindInfo = registry.data
     ? kindByCollection(registry.data, authority, pkg, name)
     : undefined
   const record = useQuery(recordQueryOptions(authority, pkg, name, id))
+
+  // A GET does not expand (docs/api.md), so the pointers this record holds
+  // arrive as bare paths and every pill would read as a record id. One
+  // batched list read over them is what makes `assignee` read as a person's
+  // name; the pill falls back to the id for anything it does not answer.
+  const referenced = useMemo(
+    () => (record.data ? referencePathsOf(record.data) : []),
+    [record.data]
+  )
+  const referenceTitles = useReferenceTitles(referenced, kinds)
 
   // The hover vocabulary comes off the kinds query the page already holds —
   // one registry read backs every property tooltip on the manifest.
@@ -177,6 +194,7 @@ export function RecordPage() {
               record={e}
               kind={kindInfo}
               kinds={registry.data ?? []}
+              titles={referenceTitles}
             />
           </ScrollArea>
         </TabsContent>

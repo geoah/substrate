@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   countRecords,
   createRecord,
+  fetchRecordsPage,
   recordIdSegment,
+  referenceTitlesQueryOptions,
   formatCount,
   groupReferencing,
   listPath,
@@ -365,5 +367,150 @@ describe("groupReferencing", () => {
     const groups = groupReferencing([...pageOne, ...pageTwo])
     expect(groups).toHaveLength(1)
     expect(groups[0].rows).toHaveLength(2)
+  })
+})
+
+// ── the expansion, and what happens when the server refuses it ─────────────
+
+describe("expanding a page's references", () => {
+  it("names the reference properties on `expand`, comma-separated", () => {
+    const url = new URL(
+      listPath({
+        authority: "ada.example.com",
+        package: "tasks",
+        name: "task",
+        first: 50,
+        expand: ["assignee", "project"],
+      }),
+      "http://x"
+    )
+    expect(url.searchParams.get("expand")).toBe("assignee,project")
+  })
+
+  it("sends no `expand` at all when the kind declares no reference", () => {
+    const url = new URL(
+      listPath({
+        authority: "ada.example.com",
+        package: "tasks",
+        name: "task",
+        expand: [],
+      }),
+      "http://x"
+    )
+    expect(url.searchParams.has("expand")).toBe(false)
+  })
+
+  describe("the read that degrades", () => {
+    const fetchMock = vi.fn<typeof fetch>()
+    beforeEach(() => vi.stubGlobal("fetch", fetchMock))
+    afterEach(() => {
+      vi.unstubAllGlobals()
+      fetchMock.mockReset()
+    })
+
+    const page = { records: [], head: 1, generation: "g" }
+    const params = {
+      authority: "ada.example.com",
+      package: "tasks",
+      name: "task",
+      first: 50,
+      expand: ["assignee"],
+    }
+
+    // A page whose expansion would load more referents than the server's cap
+    // is `422 validation`. The rows are the page; the titles are a sidecar —
+    // so the read gives up the sidecar, never the rows.
+    it("re-reads without the expansion when the server refuses it", async () => {
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: { code: "validation", message: "expanding would load 600" },
+          }),
+          { status: 422 }
+        )
+      )
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(page)))
+      await expect(fetchRecordsPage(params)).resolves.toEqual(page)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(
+        new URL(
+          String(fetchMock.mock.calls[0][0]),
+          "http://x"
+        ).searchParams.get("expand")
+      ).toBe("assignee")
+      expect(
+        new URL(
+          String(fetchMock.mock.calls[1][0]),
+          "http://x"
+        ).searchParams.has("expand")
+      ).toBe(false)
+    })
+
+    it("gives up only the expansion: a second refusal is the reader's", async () => {
+      fetchMock.mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { code: "validation", message: "no" } }),
+          { status: 422 }
+        )
+      )
+      await expect(fetchRecordsPage(params)).rejects.toThrow()
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    })
+
+    it("never retries a read that asked for no expansion", async () => {
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ error: { code: "validation", message: "no" } }),
+          { status: 422 }
+        )
+      )
+      await expect(
+        fetchRecordsPage({ ...params, expand: [] })
+      ).rejects.toThrow()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it("does not swallow a failure that is not the expansion's", async () => {
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ error: { code: "not_found", message: "no kind" } }),
+          { status: 404 }
+        )
+      )
+      await expect(fetchRecordsPage(params)).rejects.toThrow("no kind")
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+  })
+})
+
+describe("the batched title read a record page makes", () => {
+  it("asks one list read: the kinds, and filter.ids over their ids", () => {
+    const options = referenceTitlesQueryOptions({
+      kinds: ["ada.example.com/people/person", "ada.example.com/tasks/project"],
+      ids: ["p1", "kq3v"],
+    })
+    expect(options.enabled).toBe(true)
+    const url = new URL(
+      listPath({
+        kinds: [
+          "ada.example.com/people/person",
+          "ada.example.com/tasks/project",
+        ],
+        first: 500,
+        filter: { ids: ["p1", "kq3v"] },
+      }),
+      "http://x"
+    )
+    expect(url.pathname).toBe("/api/v1/records")
+    expect(JSON.parse(url.searchParams.get("filter")!)).toEqual({
+      kinds: ["ada.example.com/people/person", "ada.example.com/tasks/project"],
+      ids: ["p1", "kq3v"],
+    })
+  })
+
+  it("asks nothing when nothing resolvable was pointed at", () => {
+    expect(referenceTitlesQueryOptions({ kinds: [], ids: [] }).enabled).toBe(
+      false
+    )
   })
 })

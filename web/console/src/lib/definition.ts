@@ -37,6 +37,9 @@ export interface DeclaredProperty {
   required?: boolean
   /** An enum's admitted set, declaration order — absent on every other kind. */
   values?: EnumValue[]
+  /** `keyed: true`: the value is a MAP from author-chosen keys to this
+   * datatype rather than one value or a list of them. */
+  keyed?: boolean
   /** `reference`-datatype only: the referent kind this reference is pinned to.
    * Absent on an UNPINNED reference, whose value carries the kind. */
   to?: string
@@ -93,6 +96,7 @@ export function declaredProperties(k: KindInfo): DeclaredProperty[] {
       description:
         typeof def.description === "string" ? def.description : undefined,
       repeated: def.repeated === true,
+      keyed: def.keyed === true,
       states: Array.isArray(def.states)
         ? def.states.filter((s): s is string => typeof s === "string")
         : undefined,
@@ -223,6 +227,20 @@ export function resolveReferenceTarget(
  * declares, and the ONE thing that points at another record. */
 export function declaredReferences(k: KindInfo): DeclaredProperty[] {
   return declaredProperties(k).filter((p) => p.kind === "reference")
+}
+
+/** The reference property names a list read may `expand=` for this kind.
+ *
+ * The server resolves each name against the kinds the filter admits and
+ * refuses the whole page (`422 validation`) for one it cannot expand, so this
+ * must be exactly what `engine.expandProperties` admits: a declared
+ * `reference`, single or repeated, and NOT a `keyed:` map of pointers. A
+ * mapping's synthesised subject slot is a declared reference like any other
+ * (it is in the registry's own property set), so it rides along. */
+export function expandableReferences(k: KindInfo): string[] {
+  return declaredReferences(k)
+    .filter((p) => !p.keyed)
+    .map((p) => p.name)
 }
 
 /** What the far side of a reference pointing HERE is called. The name a

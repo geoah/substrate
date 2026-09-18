@@ -13,6 +13,7 @@ import { DataTableColumnHeader } from "@/components/data-table/data-table-column
 import { ReferenceCell } from "@/components/record/reference-value"
 import { StateBadge } from "@/components/state-badge"
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
+import { type ReferenceTitles } from "@/lib/reference-titles"
 import {
   cellValue,
   recordTitle,
@@ -70,7 +71,8 @@ function Muted({ children }: { children: React.ReactNode }) {
 function propertyCell(
   prop: DeclaredProperty,
   value: unknown,
-  kinds: KindInfo[]
+  kinds: KindInfo[],
+  titles?: ReferenceTitles
 ) {
   if (value === undefined || value === null) return <Muted>—</Muted>
   if (prop.kind === "state") {
@@ -95,7 +97,7 @@ function propertyCell(
     // A repeated reference holding nothing is an empty array, which is a value
     // the early guard above does not catch.
     if (Array.isArray(value) && !value.length) return <Muted>—</Muted>
-    return <ReferenceCell value={value} kinds={kinds} />
+    return <ReferenceCell value={value} kinds={kinds} titles={titles} />
   }
   const text = cellValue(value)
   if (!text) return <Muted>—</Muted>
@@ -182,7 +184,12 @@ export function buildColumns(
   kind: KindInfo,
   /** The registry, so a reference cell can tell a kind it can route to from
    * one nobody installed. */
-  kinds: KindInfo[]
+  kinds: KindInfo[],
+  /** Record path → the referent's title, off the page's `included` sidecar
+   * (`expand=`). A reference stores a path and nothing else, so without this
+   * every reference column reads as a record id; absent — the read could not
+   * expand — the pill falls back to the id, which is what it always showed. */
+  titles?: ReferenceTitles
 ): DataTableColumn<SubstrateRecord>[] {
   const columns: DataTableColumn<SubstrateRecord>[] = []
 
@@ -251,7 +258,7 @@ export function buildColumns(
           description={prop.description}
         />
       ),
-      cell: ({ getValue }) => propertyCell(prop, getValue(), kinds),
+      cell: ({ getValue }) => propertyCell(prop, getValue(), kinds, titles),
       meta: { label: prop.name, ...propertySizing(prop) },
     })
   }

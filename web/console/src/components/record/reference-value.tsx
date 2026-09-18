@@ -13,6 +13,7 @@ import { readReference, type KindInfo } from "@/lib/api/types"
 import { kindByIdentity } from "@/lib/definition"
 import { cellValue } from "@/lib/format"
 import { splitRecordPath } from "@/lib/record-path"
+import { type ReferenceTitles } from "@/lib/reference-titles"
 import { cn } from "@/lib/utils"
 
 /** The pointer alone: the referent's RecordPill when the registry knows the
@@ -20,16 +21,24 @@ import { cn } from "@/lib/utils"
  * nobody installed, and a value may not be a reference at all). Neither case
  * drops what the record holds.
  *
+ * `titles` is what the pointer is CALLED. A stored reference carries the
+ * referent's path and nothing else, so the pill would read as a record id
+ * without it; the resolver comes from the surface's own second read (a list's
+ * `included`, a record page's batched read) and is absent wherever no such
+ * read was made, which is the id fallback `RecordPill` has always had.
+ *
  * `dense` is the table-cell voice: a value that cannot be a pill truncates at
  * the column boundary instead of wrapping the row taller, and the pill itself
  * may shrink. */
 function Pointer({
   value,
   kinds,
+  titles,
   dense,
 }: {
   value: unknown
   kinds: KindInfo[]
+  titles?: ReferenceTitles
   dense?: boolean
 }) {
   const held = readReference(value)
@@ -61,6 +70,7 @@ function Pointer({
     <RecordPill
       kind={target.kind}
       id={target.id}
+      title={titles?.get(held.path)}
       className={dense ? "min-w-0" : undefined}
     />
   )
@@ -74,12 +84,15 @@ function Pointer({
 export function ReferenceValue({
   value,
   kinds,
+  titles,
 }: {
   value: unknown
   kinds: KindInfo[]
+  /** Record path → the referent's title; absent, the pill reads as the id. */
+  titles?: ReferenceTitles
 }) {
   const held = readReference(value)
-  const pointer = <Pointer value={value} kinds={kinds} />
+  const pointer = <Pointer value={value} kinds={kinds} titles={titles} />
   if (!held) return pointer
   const link = Object.entries(held.properties)
   if (!link.length) return pointer
@@ -110,10 +123,14 @@ export function ReferenceValue({
 export function ReferenceCell({
   value,
   kinds,
+  titles,
 }: {
   /** One reference, or the array a repeated one stores. */
   value: unknown
   kinds: KindInfo[]
+  /** Record path → the referent's title, off the page's `included` sidecar;
+   * absent (the page could not expand), the pill reads as the id. */
+  titles?: ReferenceTitles
 }) {
   const held = (Array.isArray(value) ? value : [value]).filter(
     (one) => one !== undefined && one !== null && one !== ""
@@ -125,7 +142,7 @@ export function ReferenceCell({
       onClick={(e) => e.stopPropagation()}
     >
       {held.map((one, i) => (
-        <Pointer key={i} value={one} kinds={kinds} dense />
+        <Pointer key={i} value={one} kinds={kinds} titles={titles} dense />
       ))}
     </span>
   )

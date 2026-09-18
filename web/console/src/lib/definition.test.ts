@@ -6,6 +6,7 @@ import {
   declaredProperties,
   declaredReferences,
   describeKey,
+  expandableReferences,
   filterableProperties,
   propertyTypeLabel,
   kindByCollection,
@@ -296,5 +297,46 @@ describe("type labels", () => {
     ).toBe("reference → person")
     // A repeated reference wears the container marker like any other property.
     expect(propertyTypeLabel(by("memberOf"))).toBe("reference → organization[]")
+  })
+})
+
+/** What a list read may ask to expand. The server refuses the WHOLE page for
+ * a name it cannot expand, so this set must be exactly the one
+ * `engine.expandProperties` admits. */
+describe("the reference properties a page may expand", () => {
+  const kind: KindInfo = {
+    identity: "ada.example.com/tasks/task",
+    name: "task",
+    authority: "ada.example.com",
+    package: "tasks",
+    version: 1,
+    source: "installed",
+    description: "",
+    definition: {
+      properties: {
+        name: { type: "string" },
+        assignee: { type: "reference", kind: "ada.example.com/people/person" },
+        watchers: {
+          type: "reference",
+          kind: "ada.example.com/people/person",
+          repeated: true,
+        },
+        // A keyed map of pointers is the one reference shape the server does
+        // not expand; naming it would 422 the page.
+        roles: {
+          type: "reference",
+          kind: "ada.example.com/people/person",
+          keyed: true,
+        },
+      },
+    },
+  }
+
+  it("takes a single and a repeated reference, and nothing else", () => {
+    expect(expandableReferences(kind)).toEqual(["assignee", "watchers"])
+  })
+
+  it("reads the live person kind's own pointer", () => {
+    expect(expandableReferences(person)).toEqual(["memberOf"])
   })
 })
