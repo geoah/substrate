@@ -23,7 +23,7 @@ substratectl export                       # the recovery export, a tar of the re
 `substratectl` addresses a substrate two different ways, and the flags say which.
 
 **The user's hat** speaks HTTP and carries a token: everything above, plus
-`register`, `login`, `logout`, `token`, `trigger`, `function`, `bundle`,
+`register`, `login`, `logout`, `token`, `trigger`, `sync`, `function`, `bundle`,
 `catalog`, `import`, `install` and `export`. It needs a server and a token,
 and it can run anywhere. Changing your own password or second factor is the
 console's account page; the CLI has no command for either.
@@ -162,6 +162,14 @@ webhook trigger, the public path its `WEBHOOK` column prints
 resets a record-sourced trigger's cursor; `run` synthesizes a single delivery;
 and `wake` scans a trigger immediately. Trigger rows are ordinary records, so
 `get` / `apply` / `delete` edit them like anything else.
+
+`substratectl sync status` is the synchronization read over every
+[connection](bundles.md#connections) whose kind binds the core `sync` trait:
+one line per account with its state, whether it is paused, when it last
+synced, whether the owner's request has been served, each stream's state and
+backlog, the parked and lagging deliveries of the triggers on its kind summed,
+and the message or, on an erroring account, the error. To ask for a run,
+patch `syncRequestedAt` on the account; to stop one, patch `syncPaused`.
 
 `substratectl function call <name> --input <json>` invokes one
 [function](functions.md) directly, applies its effects under the function's

@@ -145,7 +145,16 @@ var wireTypes = map[string]any{
 	"BundlePurged":      BundlePurged{},
 	"OAuthStarted":      OAuthStarted{},
 
-	// The automation replies and the webhook door's 202.
+	// The automation replies and the webhook door's 202, and the two shapes
+	// `…/trigger/status` and `…/trigger/{id}/parked` list: the console's
+	// Connections page reads a trigger's lag and its parked deliveries.
+	"TriggerStatus":  TriggerStatus{},
+	"TriggerFailure": TriggerFailure{},
+	// The sync status read: one row per `sync`-trait record, its progress
+	// and its streams.
+	"SyncStatus":      SyncStatus{},
+	"SyncProgress":    SyncProgress{},
+	"SyncStream":      SyncStream{},
 	"TriggerReplayed": TriggerReplayed{},
 	"TriggerRan":      TriggerRan{},
 	"FunctionCalled":  FunctionCalled{},

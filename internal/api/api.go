@@ -286,6 +286,9 @@ func (h *handler) mountResources(r chi.Router) {
 			// immediate scan. Triggers are substrate.reamde.dev/core records, so
 			// the verbs live at that record.
 			h.mountTriggerVerbs(r, corePackage)
+			// Cross-kind, so at the version root like /records: one row per
+			// record of any kind binding the core `sync` trait.
+			r.Get("/sync/status", h.getSyncStatus)
 			// Bundle status is computed; enable/disable, uninstall and purge are
 			// runtime STATE the substrate owns, reached by a PATCH of the bundle
 			// record (patchBundleLifecycle) rather than verbs. `bind` resolves

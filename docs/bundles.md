@@ -448,6 +448,107 @@ implementor of the `accountconfig` trait, which is a plain query
 `…/trait/{id}/implementors` for the kinds themselves), because implementing a
 trait is queryable.
 
+### The sync trait
+
+The token is the facility's; the synchronization is the bundle's, and until
+[decision 0085](decisions/0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md)
+the substrate had no word for it: each sync function wrote its outcome onto
+the account as free text under names it chose, and the console could show
+token status only. The core **`sync`** trait is that word. An account kind
+binds it beside `accountconfig` and redeclares its twelve properties, each
+with a `writer:` — the OWNER's two hands, and the CONNECTOR's ten:
+
+```yaml
+traits: [accountconfig, sync]
+properties:
+  syncRequestedAt:    {type: datetime, writer: owner}      # Sync now
+  syncPaused:         {type: bool, writer: owner}          # Pause / Resume
+  syncState:          {type: string, writer: connector}    # never | running | ok | erroring | throttled
+  syncMessage:        {type: string, writer: connector}    # the one human line
+  lastSyncedAt:       {type: datetime, writer: connector}
+  lastSyncStartedAt:  {type: datetime, writer: connector}  # stamped by the dispatcher
+  lastSyncDurationMs: {type: int, writer: connector}       # stamped by the dispatcher
+  syncRequestedAck:   {type: datetime, writer: connector}  # equals syncRequestedAt once served
+  syncProgress:       {type: json, writer: connector}      # {phase, done, total, pending}
+  syncError:          {type: string, writer: connector}
+  syncErrorAt:        {type: datetime, writer: connector}
+  syncStreams:        {type: json, writer: connector}      # name -> {cursor, lastAt, pending, state, message, requestedAck}
+```
+
+(Flow mappings here for the page's width; a shipped declaration writes each
+as a block, which is what `lint:yaml` admits.) The state is a plain string,
+not a `state` machine: the substrate and the body both write it and no move
+between its five words is illegal, so a machine would only refuse a sync
+([0019](decisions/0019-a-lifecycle-is-a-state-machine-only-where-the-substrate-owns-it.md)).
+`syncProgress` and `syncStreams` are `json`, because a trait contracts a
+datatype and their shape is this prose: progress is one bounded drain's
+`{phase, done, total, pending}`; streams is a map from a stream's name to its
+own `{cursor, lastAt, pending, state, message, requestedAck}`, so a provider
+with several streams (Google's contacts, Gmail and calendar) reports each.
+
+**What the engine does with it.** Around a record-sourced delivery of a
+binding record whose `when` passed, the trigger dispatcher writes
+`syncState: running` and `lastSyncStartedAt` before the body runs, in a
+transaction of its own so the run is visible while it runs; `ok` and
+`lastSyncDurationMs` in the transaction that commits the body's last effects
+(`ok` only where the body left the state at `running` — a body that wrote
+`throttled` or `erroring` itself has said more than the engine knows); and
+`erroring`, `syncError` and `syncErrorAt` in the transaction that parks a
+delivery that failed out, so no reader meets a parked delivery whose record
+still says `running`. The stamps are written under the CALLABLE's own actor at
+the bundle tier, the write context the body's effects use: `writer: connector`
+holds, and a record trigger never delivers its own callable's writes, so a
+stamp cannot fire the trigger that made it. A record whose owner set
+`syncPaused` has its deliveries settled as skips, so a pause stops the sync
+without the body knowing. At open, a record still `running` becomes
+`erroring: interrupted`, because a repository has one writer
+([0083](decisions/0083-a-repository-has-one-writer-and-a-second-is-refused-at-open.md))
+and nothing can be in flight. A SCHEDULE-sourced delivery names no record, so
+the dispatcher stamps nothing around the shipped bundles' hourly runs: there
+the body's own writes are the whole truth.
+
+**What the body does with it.** Everything else, through `host.effects.patch`
+on the account, in the same patch it already makes: `lastSyncedAt` and
+`syncMessage` when a run finishes, `syncState` too on a schedule run (the
+dispatcher is not there to write it), `syncProgress` while a drain pages,
+`syncStreams.<name>` for each stream it owns, `syncError` and `syncErrorAt`
+when it records a failure without raising, and the acknowledgement of a
+request. The **request pair** is how Sync now works: the owner stamps
+`syncRequestedAt`; an on-request trigger on the account kind, guarded on the
+stamp being unanswered, fires the function; the function writes
+`syncRequestedAck` equal to the stamp it served. A provider with several
+functions answers per stream inside `syncStreams.<name>.requestedAck`, guards
+each trigger on its own stream's answer, and writes the account-level
+`syncRequestedAck` once every enabled stream has answered — the shipped
+Google bundle's three `google-<stream>-on-request` triggers are the worked
+example, `coalesce: true` so one request is one delivery per stream.
+
+**Reading it.** `GET /api/v1/sync/status` lists every binding record's
+sync properties joined with the status of the record triggers on its kind
+(cursor, head, lag, parked, pending), one row per account;
+`substratectl sync status` prints the same, and the console's Connections
+page renders it, with a Sync tab on the record page of any binding kind.
+
+**Migrating a bundle.** Bind the trait, declare the twelve properties with
+their writers, add the `syncStreams`/`syncState`/`syncMessage`/`syncRequestedAck`
+writes beside the patch the function already makes, add an on-request
+trigger per function, and bump the package version: every step is additive,
+so the upgrade lands on live accounts without a conversion. Keep the
+bundle's own free-text status properties (`syncStatus`, `<stream>SyncStatus`)
+through that version so a reader of the old shape keeps working; drop them at
+the next major. Of the ad hoc fields the shipped and third-party bundles
+carry today, `syncStatus` maps onto `syncMessage` (its `erroring: …` prefix
+onto `syncState: erroring` plus `syncError`), `lastSyncedAt` is the trait's
+own, `syncRequestedAt` is the trait's own, a per-stream `<stream>SyncRequestedAck`
+lands as `syncStreams.<stream>.requestedAck`, `syncCursors` or `streamCursors`
+land as `syncStreams.<stream>.cursor`, `syncPending` or `<stream>Pending`
+queues land as `syncStreams.<stream>.pending` (a count) or as
+`syncProgress.pending` for one drain, and `<stream>LastSyncedAt` as
+`syncStreams.<stream>.lastAt`. A body's private resume state (a sync token, a
+history id, a backfill anchor, a page token) has no home in the trait and
+stays the bundle's own property; a stream's cursor may still be echoed as a
+count into `syncStreams.<stream>.cursor` for the page to read.
+
 ## The catalog
 
 The **catalog** lists everything shipped in the binary, in the two tiers

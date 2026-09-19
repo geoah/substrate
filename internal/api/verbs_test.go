@@ -150,6 +150,23 @@ func TestTriggerVerbsLiveUnderCore(t *testing.T) {
 	wantStatus(t, rec, http.StatusNotFound)
 }
 
+// TestSyncStatusLivesAtTheRoot: the synchronization read spans every kind
+// binding the `sync` trait, so it sits at the version root beside /records
+// and /catalog, and an empty repository answers the empty list envelope.
+func TestSyncStatusLivesAtTheRoot(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+
+	rec := env.do(t, http.MethodGet, "/api/v1/sync/status", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if body := rec.Body.String(); body != "{\"items\":[]}\n" {
+		t.Fatalf("body = %s, want an empty items list", body)
+	}
+	// No bearer, no answer: the read is the repository's own.
+	rec = env.do(t, http.MethodGet, "/api/v1/sync/status", "", nil)
+	wantStatus(t, rec, http.StatusUnauthorized)
+}
+
 // TestWatchRejectsListParams is ruling A8's unsupported-param rule: a param a
 // mode does not honor is a bad_request naming it, not a silent success.
 func TestWatchRejectsListParams(t *testing.T) {

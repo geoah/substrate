@@ -181,7 +181,10 @@ Google's own shape.
 Three independent streams share one account: contacts, gmail, and calendar.
 Each has its own toggle, its own scope, its own function, its own pair of
 triggers, and its own prefixed cadence anchor and cursor on the account, so one
-stream erroring never stalls another. The account-level `lastSyncedAt` and
+stream erroring never stalls another. Since version 17 the account binds the
+core `sync` trait too, and each stream reports its slice into `syncStreams`
+beside the account-level `syncState` and `syncMessage`
+([connections](bundles.md#connections)). The account-level `lastSyncedAt` and
 `syncStatus` stay shared: they are the rollup every connection reports, and
 whichever stream finishes stamps them.
 

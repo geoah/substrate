@@ -236,3 +236,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0082](0082-a-record-meets-a-new-state-machine-in-its-initial-state.md) | A record meets a new state machine in its initial state | accepted |
 | [0083](0083-a-repository-has-one-writer-and-a-second-is-refused-at-open.md) | A repository has one writer, and a second is refused at open | accepted |
 | [0084](0084-a-records-list-pages-by-offset-beside-the-keyset-cursor.md) | A records list pages by offset beside the keyset cursor | accepted |
+| [0085](0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md) | A sync is a core trait, and the dispatcher stamps it around a delivery | accepted |

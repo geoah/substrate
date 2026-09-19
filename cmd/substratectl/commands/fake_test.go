@@ -219,6 +219,8 @@ func (f *fakeSubstrate) handler() http.Handler {
 	// retired automation.substrate.reamde.dev spelling falls through to the 404 catch-all
 	// rather than passing quietly.
 	mux.HandleFunc("GET "+triggerColPath+"/status", f.handleTriggerStatus)
+	// The synchronization read: cross-kind, at the version root.
+	mux.HandleFunc("GET /api/v1/sync/status", f.handleSyncStatus)
 	mux.HandleFunc("POST "+triggerColPath+"/{id}/run", f.handleTriggerRun)
 	mux.HandleFunc("POST "+triggerColPath+"/{id}/wake", f.handleTriggerWake)
 	// The sample door: the server rehomes the closure and answers with the
@@ -1137,6 +1139,26 @@ func (f *fakeSubstrate) handleTriggerStatus(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]any{"items": []substrate.TriggerStatus{{
 		ID: "classify-page", Kind: substrate.TriggerKindRecord,
 		Callable: "web.substrate.reamde.dev/web/classify", Enabled: true, Cursor: 41, Head: 41,
+	}}})
+}
+
+// handleSyncStatus answers one `sync`-trait account joined with its trigger:
+// an erroring Gmail stream beside a healthy contacts one, a request the sync
+// has not yet acknowledged, and one parked delivery.
+func (f *fakeSubstrate) handleSyncStatus(w http.ResponseWriter, r *http.Request) {
+	f.noteRequest(r)
+	requested := time.Date(2026, 9, 19, 9, 0, 0, 0, time.UTC)
+	synced := requested.Add(-time.Hour)
+	writeJSON(w, http.StatusOK, map[string]any{"items": []substrate.SyncStatus{{
+		Kind: "providers.substrate.reamde.dev/google/account", ID: "george-work", Title: "george@example.com",
+		State: substrate.SyncStateErroring, Error: "gmail: HTTP 403", Message: "ok (12 pending)",
+		LastSyncedAt: &synced, RequestedAt: &requested,
+		Streams: map[string]substrate.SyncStream{
+			"gmail":    {State: substrate.SyncStateErroring, Pending: 12},
+			"contacts": {State: substrate.SyncStateOK},
+		},
+		Parked:   1,
+		Triggers: []substrate.TriggerStatus{{ID: "google-gmail-on-connect", Kind: substrate.TriggerKindRecord, Parked: 3, Lag: 2}},
 	}}})
 }
 

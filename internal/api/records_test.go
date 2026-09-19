@@ -114,7 +114,7 @@ func TestRecordsListCarriesTheGrammar(t *testing.T) {
 
 // `offset` addresses a page by its number and reaches the dataset as it was
 // written; it is refused as a companion to `after` and on the ranked read,
-// which has no keyset (decision 0084).
+// which has no keyset (decision 0085).
 func TestRecordsListOffset(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The numbered bar's contract (decision 0084): which numbers it draws, what
+/** The numbered bar's contract (decision 0085): which numbers it draws, what
  * the range says, and the two places a BOUNDED count must not be believed —
  * a capped total can neither name a last page nor stop Next, because the
  * server's own cursor is what knows whether another page exists. */

@@ -2,7 +2,7 @@
  * every kind ever installed. Server-side everything — the filter, the search,
  * the sort and the page live in the URL (nuqs) and travel to the wire as
  * `?filter=/orderBy=/offset=`. Pagination is NUMBERED: a page is `offset=`
- * on the wire (decision 0084), so every page is one request away and `?page=`
+ * on the wire (decision 0085), so every page is one request away and `?page=`
  * makes one linkable. The bounded count query sizes the bar as well as the
  * header, and Next reads the page's own cursor rather than that count, so a
  * collection past the count's ceiling still pages to its end.
