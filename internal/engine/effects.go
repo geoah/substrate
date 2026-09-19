@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -36,7 +37,14 @@ type effect struct {
 	// read-then-conditional-write primitive — read a version through a host
 	// read, stage the write guarded by it. A non-existent record reads as
 	// version 0.
-	IfVersion  *int64
+	IfVersion *int64
+	// OnConflict is what a LOST IfVersion race means. Empty or
+	// conflictPark is the default — the delivery fails ErrConflict and parks,
+	// which is what a writer that expected to win wants. conflictYield says
+	// the race is an ordinary outcome: the whole delivery rolls back, writes
+	// nothing and settles as a SKIP, the way a false `when` guard does. It is
+	// meaningless without IfVersion and refused there (decision 0093).
+	OnConflict string
 	Properties map[string]any
 	// Loser rides a merge (ID is the winner); MergeID rides a split.
 	Loser   string
@@ -51,12 +59,18 @@ const (
 	effectSplit  = "split"
 )
 
+// The `onConflict` policy values a guarded put or patch may carry.
+const (
+	conflictPark  = "park"  // the default: a lost CAS parks the delivery
+	conflictYield = "yield" // a lost CAS is a skip: nothing writes, nothing parks
+)
+
 // effectKeys is the per-action closed key set. patch still RECOGNIZES
 // "offer" — solely so the decode error can name its removal instead of
 // reporting an anonymous unknown key.
 var effectKeys = map[string]map[string]bool{
-	effectPut:    {"action": true, "kind": true, "id": true, "ifAbsent": true, "ifVersion": true, "properties": true},
-	effectPatch:  {"action": true, "kind": true, "id": true, "properties": true, "offer": true, "ifVersion": true},
+	effectPut:    {"action": true, "kind": true, "id": true, "ifAbsent": true, "ifVersion": true, "onConflict": true, "properties": true},
+	effectPatch:  {"action": true, "kind": true, "id": true, "properties": true, "offer": true, "ifVersion": true, "onConflict": true},
 	effectDelete: {"action": true, "kind": true, "id": true},
 	effectMerge:  {"action": true, "kind": true, "id": true, "loser": true},
 	effectSplit:  {"action": true, "kind": true, "merge": true},
@@ -133,6 +147,9 @@ func (ds *dataset) decodeEffect(fn *vocabulary.Function, v any) (effect, error) 
 		if err := decodeIfVersion(m, &ef); err != nil {
 			return ef, err
 		}
+		if err := decodeOnConflict(m, &ef); err != nil {
+			return ef, err
+		}
 		if ef.IfAbsent && ef.IfVersion != nil {
 			// ifAbsent short-circuits ahead of the version check (an existing
 			// row is a no-op regardless of ifVersion), so the two together
@@ -142,6 +159,9 @@ func (ds *dataset) decodeEffect(fn *vocabulary.Function, v any) (effect, error) 
 		}
 	case effectPatch:
 		if err := decodeIfVersion(m, &ef); err != nil {
+			return ef, err
+		}
+		if err := decodeOnConflict(m, &ef); err != nil {
 			return ef, err
 		}
 		if _, has := m["offer"]; has {
@@ -184,6 +204,33 @@ func decodeIfVersion(m map[string]any, ef *effect) error {
 		return fmt.Errorf("%s: ifVersion is an integer version, got %T", ef.Action, raw)
 	}
 	ef.IfVersion = &n
+	return nil
+}
+
+// decodeOnConflict reads the optional lost-race policy off a put or patch
+// effect. It is refused without an `ifVersion` — there is no race to lose
+// without a precondition, so the key would read as a promise the engine does
+// not keep — and an unknown value is refused rather than defaulted, because
+// quietly reading a plausible-but-wrong word as park would turn a body's
+// declared tolerance into a parked delivery every scheduled pass.
+func decodeOnConflict(m map[string]any, ef *effect) error {
+	raw, has := m["onConflict"]
+	if !has {
+		return nil
+	}
+	s, ok := raw.(string)
+	if !ok {
+		return fmt.Errorf("%s: onConflict is a string, got %T", ef.Action, raw)
+	}
+	switch s {
+	case conflictPark, conflictYield:
+	default:
+		return fmt.Errorf("%s: onConflict is %q or %q, got %q", ef.Action, conflictPark, conflictYield, s)
+	}
+	if ef.IfVersion == nil {
+		return fmt.Errorf("%s: onConflict needs ifVersion — without a precondition there is no race to lose", ef.Action)
+	}
+	ef.OnConflict = s
 	return nil
 }
 
@@ -307,10 +354,28 @@ func (t *txn) applyEffects(emit []string, effects []effect) error {
 	}
 	for _, ef := range effects {
 		if err := t.applyEffect(ef); err != nil {
-			return err
+			return yieldedConflict(ef, err)
 		}
 	}
 	return nil
+}
+
+// yieldedConflict re-labels the one error an effect declared it can lose: a
+// CAS mismatch under `onConflict: yield`. Only a VersionConflictError
+// qualifies, so a former-id conflict or a failed accept underneath the same
+// write still parks — a body tolerates losing ITS race, not every refusal the
+// write path can raise. The delivery paths read errConflictYield and settle
+// the delivery as a skip (functions.go).
+func yieldedConflict(ef effect, err error) error {
+	if ef.OnConflict != conflictYield {
+		return err
+	}
+	var cas *substrate.VersionConflictError
+	if !errors.As(err, &cas) {
+		return err
+	}
+	return fmt.Errorf("%w: %s %s/%s: ifVersion %d, stored %d",
+		errConflictYield, ef.Action, ef.Type, ef.ID, cas.Want, cas.Have)
 }
 
 // applyEffect routes one effect through the ordinary write path inside the

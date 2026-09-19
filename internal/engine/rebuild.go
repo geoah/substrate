@@ -248,11 +248,17 @@ func (t *txn) rederiveOffers() error {
 	if _, err := t.exec(`DELETE FROM property_offers`); err != nil {
 		return fmt.Errorf("substrate/engine: rebuild: clear property_offers: %w", err)
 	}
-	targets := map[string]bool{}
-	for _, m := range t.declarations().Mappings() {
-		targets[m.To] = true
+	targets := orphanTargets(t.declarations())
+	if err := t.deriveOffersOf(targets); err != nil {
+		return err
 	}
-	return t.deriveOffersOf(sortedKeys(targets))
+	// The orphan mark is derived from the same live records (orphans.go), so
+	// it is derived here for the same reason and in the same pass. The STAMP
+	// is this transaction's, not the moment the last source went: a replay
+	// cannot reproduce a clock, and a rebuild restarting the grace window is
+	// the conservative end of that — a collection sweep waits the window out
+	// again rather than collecting on the strength of a mark it just made.
+	return t.deriveOrphansOf(targets)
 }
 
 // recomputeMappingTargets is the vocabulary apply's half of recompute. For
@@ -280,6 +286,14 @@ func (t *txn) recomputeMappingTargets(live, cand *vocabulary.Registry) error {
 			return err
 		}
 		mapped := len(cand.MappingsTo(kind)) > 0
+		if !mapped {
+			// A kind with no mapping left is not a projection of anything, so
+			// no record of it is an orphan and none is ever visited again:
+			// the marks go with the mappings that made them (orphans.go).
+			if err := t.clearOrphanMarks(kind); err != nil {
+				return fmt.Errorf("substrate/engine: clear the orphan marks of %s: %w", kind, err)
+			}
+		}
 		for _, id := range ids {
 			ref := eref{Kind: kind, ID: id}
 			if err := t.releaseMachineManaged(ref, sortedKeys(removed)); err != nil {
@@ -391,10 +405,11 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 		"former_ids": `SELECT to_jsonb(f) FROM (
 				SELECT record_kind, former_id, record_id, created_at
 				FROM former_ids ORDER BY record_kind, former_id) f`,
-		// Whole, updated_at included: a row's stamp is its source record's
-		// (mapping.go syncOffers), so a rebuild derives it too.
+		// Whole, updated_at and source included: a row's stamp and its
+		// source are its source record's (mapping.go syncOffers), so a
+		// rebuild derives them too.
 		"property_offers": `SELECT to_jsonb(o) FROM (
-				SELECT record_kind, record_id, property, actor, value, updated_at
+				SELECT record_kind, record_id, property, actor, value, updated_at, source
 				FROM property_offers ORDER BY record_kind, record_id, property, actor) o`,
 		// The delivery ledger's three replayable tables. trigger_cursors is
 		// left out: its scan position is written outside the ledger

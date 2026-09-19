@@ -42,6 +42,7 @@ boot.
 | `SUBSTRATE_DATA_ROOT`          | required                               | The directory every repository's files live under: `repositories/<authority>/` with the manifest, the changelog segments, the sealed store's files and (on the `fs` blob store) the blob bytes. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
 | `SUBSTRATE_CHANGELOG_SEGMENT_BYTES` | `268435456`                       | The size past which the active changelog segment rotates: the writer fsyncs, writes the finished file's `.sha256` sidecar and opens the next segment. At least 1 MiB. |
 | `SUBSTRATE_CONVERSION_CEILING` | `10000`                                | The most live records one declaration change (a vocabulary apply, a provider upgrade, the boot upgrade) may rewrite in its transaction ([vocabulary evolution](vocabulary.md#backfilling-and-remapping)). A plan above it is refused and the previews list the refusal; `0` removes the ceiling. |
+| `SUBSTRATE_ORPHAN_GRACE`       | — (unset: nothing is collected)        | Turns the GC sweep's **orphan collection** on, and sets the window a marked record waits out first (`168h`, `720h`). A mapping target with no live source, nothing above the machine tier holding a property, and nothing live pointing at it is tombstoned once its mark is older than this. Unset or `0` collects nothing, which is the default: the mark is derived either way and `filter.orphaned` lists it. See [collecting orphaned mapping targets](#collecting-orphaned-mapping-targets). |
 | `SUBSTRATE_CREDENTIAL_KEY`     | required                               | Wraps each repository's data-encryption key (DEK), which encrypts the sealed store: every secret-typed property's material, the password hash, the TOTP seed and stored provider tokens (AES-256-GCM). It is key material, not a passphrase: base64 of exactly 32 bytes, the AES-256 key itself. Generate one with `openssl rand -base64 32`; a host whose key is empty or any other shape refuses to boot, naming the variable (ADR [0024](decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md)). A host whose key does not open the wrapped DEKs the store already holds refuses to boot too, naming each repository, the id of the key its wrap was written under and the id of the key this host holds (`repositories.dek_key_id`: 16 hex digits of a one-way hash over the key, never the key): that is a wrong key or a store from somewhere else. No command re-wraps a live repository's DEK under another host key; a copied directory moves between keys through `repository rewrap` ([restore without the credential key](#restore-without-the-credential-key)). |
 | `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                             | **Local development only.** Stops verifying the second factor, so a password is the whole credential: see [the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally). Boots with a warning, and `GET /.well-known/substrate/server.json` says so. |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                                      | Signs OAuth flow state. Unset mints a random key per boot, with a warning: flows in progress break on restart. |
@@ -345,9 +346,43 @@ minute, the resolution sweep (the recovery path for a resume that a restart or
 a lost lease dropped) every 2 minutes, and the embed-queue drain every minute,
 whether or not any repository holds an embedding provider yet. The GC sweep
 also drops `idempotency_keys` rows past their 24 hour retention
-([idempotency and retries](api.md#idempotency-and-retries)). Each enumerates
+([idempotency and retries](api.md#idempotency-and-retries)), and collects
+orphaned mapping targets where the deployment asked for it
+([below](#collecting-orphaned-mapping-targets)). Each enumerates
 repositories and opens each one through the same row-level-security-bound pool
 a request uses.
+
+### Collecting orphaned mapping targets
+
+A record minted from a mapping's source outlives that source: delete the last
+mirror that projected onto it, or replace a provider (which purges its rows and
+mints them under new ids), and the target's mapped properties recompute away
+while the row stays. The engine always **marks** those rows — `filter.orphaned`
+lists them, `substratectl get <kind> --orphaned` prints them
+([the orphan mark](projection.md#when-the-last-source-goes-the-orphan-mark)) —
+and by default it collects none of them.
+
+`SUBSTRATE_ORPHAN_GRACE` turns the collection on. With a positive duration, the
+GC sweep tombstones every marked record whose mark is older than the window AND
+that no live record points at, and the same sweep collects the tombstone like
+any other. Three things keep it honest, and they are all worth knowing before
+setting it:
+
+- **The window is the guard.** "The last source went" is also what a connector
+  outage, a revoked token and a re-seed in flight look like from inside the
+  engine. Set the window longer than the longest sync gap you would consider
+  normal; a week (`168h`) is a reasonable start on a personal substrate.
+- **A referenced record is never collected.** If anything live still points at
+  it — a task's assignee, a message's author — it is spared however old the
+  mark is, and the mark stays for you to look at.
+- **A rebuild restarts every window.** The mark is derived and its stamp is not
+  in the changelog, so `repository rebuild` re-derives the fact and stamps it
+  now. Nothing is collected sooner because of a rebuild; some things are
+  collected later.
+
+A deployment with the knob set logs a warning at boot naming the window, because
+this is the one loop that deletes records nobody asked it to delete
+([decision 0092](decisions/0092-an-orphaned-mapping-target-is-marked-and-collected-on-request.md)).
 
 Keep it to **one replica**. The watch signal and the trigger dispatcher are
 in-process, and two dispatchers would serialize on compare-and-swap rather than

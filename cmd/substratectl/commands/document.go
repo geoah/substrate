@@ -81,6 +81,9 @@ type statusProperty struct {
 	Manager   string         `yaml:"manager" json:"manager"`
 	Tier      substrate.Tier `yaml:"tier,omitempty" json:"tier,omitempty"`
 	UpdatedAt time.Time      `yaml:"updatedAt" json:"updatedAt"`
+	// Source is the source record ("<kind>/<id>") a machine-held value was
+	// read from, where the read can say so (record 0094).
+	Source string `yaml:"source,omitempty" json:"source,omitempty"`
 	// Alternatives are what the other live sources would write instead —
 	// adopting one is just writing it.
 	Alternatives []statusAlternative `yaml:"alternatives,omitempty" json:"alternatives,omitempty"`
@@ -90,6 +93,8 @@ type statusAlternative struct {
 	Actor     string    `yaml:"actor" json:"actor"`
 	Value     any       `yaml:"value" json:"value"`
 	UpdatedAt time.Time `yaml:"updatedAt" json:"updatedAt"`
+	// Source is the source record the offer is read from.
+	Source string `yaml:"source,omitempty" json:"source,omitempty"`
 }
 
 func (d *document) putInput() (substrate.PutInput, error) {

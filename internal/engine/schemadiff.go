@@ -304,6 +304,22 @@ func typeNarrowings(curT, candT *vocabulary.Kind, moved map[string]string) []nar
 				})
 				continue
 			}
+			if curP.MappedBy != "" {
+				// A SUBJECT SLOT GOING IS THE MAPPING GOING (record 96), and
+				// it is REFUSED while links exist rather than nulled as a
+				// lossy step. An ordinary optional property clears and can be
+				// written back; a subject link cannot — checkSubjectWrite
+				// refuses every move of one, so the only road back from
+				// clearing them is a full resync of every mirror row. The
+				// remedy is the mapping's own: delete it deliberately, having
+				// deleted or merged the subjects it minted.
+				out = append(out, narrowing{
+					format: fmt.Sprintf("type %s: mapping %s is removed while %%d live records still link to a %s through %q — delete those records, or keep the mapping",
+						ident, curP.MappedBy, curP.To, pname),
+					query: countPropQuery, args: []any{ident, pname},
+				})
+				continue
+			}
 			if nullable(curT, curP) {
 				// The apply removes the value from every live record as a
 				// lossy null step, confirmed by the caller (convert.go,

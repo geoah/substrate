@@ -10,6 +10,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -131,6 +132,125 @@ func TestEffectIfAbsentMintsSerialize(t *testing.T) {
 	}
 	if rows != 1 {
 		t.Fatalf("the losing mint wrote: %d changelog rows", rows)
+	}
+}
+
+// TestGuardedEffectYieldsForExactlyOneRacer: two invocations staging the same
+// guarded write over one record, concurrently, from the version they both
+// read. One commits; the other gets errConflictYield and rolls back whole. The
+// record moves exactly once — a lost race is never a lost write.
+func TestGuardedEffectYieldsForExactlyOneRacer(t *testing.T) {
+	ds := newRaceDataset(t)
+	ctx := context.Background()
+	rec := racePut(t, ds, map[string]any{"name": "cursor-0"})
+	read := rec.Version
+
+	apply := func(val string) error {
+		return ds.inTx(ctx, raceActor, false, func(tx *txn) error {
+			return tx.applyEffects([]string{raceWidget}, []effect{{
+				Action: effectPatch, Type: raceWidget, ID: rec.ID,
+				IfVersion: &read, OnConflict: conflictYield,
+				Properties: map[string]any{"name": val},
+			}})
+		})
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, v := range []string{"cursor-a", "cursor-b"} {
+		wg.Add(1)
+		go func(v string) {
+			defer wg.Done()
+			errs <- apply(v)
+		}(v)
+	}
+	wg.Wait()
+	close(errs)
+	won, yielded := 0, 0
+	for err := range errs {
+		switch {
+		case err == nil:
+			won++
+		case errors.Is(err, errConflictYield):
+			yielded++
+		default:
+			t.Fatalf("racer: %v", err)
+		}
+	}
+	if won != 1 || yielded != 1 {
+		t.Fatalf("%d advanced and %d yielded, want one of each", won, yielded)
+	}
+
+	e, err := ds.Get(ctx, raceWidget, rec.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if e.Version != read+1 {
+		t.Fatalf("the record sits at version %d, want %d — both racers wrote", e.Version, read+1)
+	}
+	if name := e.Properties["name"]; name != "cursor-a" && name != "cursor-b" {
+		t.Fatalf("advanced to: %v", name)
+	}
+	// A yield still matches ErrConflict, so the direct-call door — which has a
+	// caller to tell — answers the same 409 it always did.
+	if !errors.Is(errConflictYield, substrate.ErrConflict) {
+		t.Fatal("a yielded conflict stopped reading as a version conflict")
+	}
+}
+
+// TestOnConflictDecode: the policy is a closed set, and it is meaningless
+// without a precondition. A plausible-but-wrong word read as park would turn a
+// body's declared tolerance into a parked delivery every scheduled pass, so
+// decode refuses both mistakes.
+func TestOnConflictDecode(t *testing.T) {
+	t.Parallel()
+	ds := newRaceDataset(t)
+	fn := &vocabulary.Function{
+		Name: "m", Package: racePackage,
+		Caps: vocabulary.FunctionCaps{Emit: []string{raceWidget}},
+	}
+	base := func(extra map[string]any) map[string]any {
+		m := map[string]any{"action": "patch", "kind": raceWidget, "id": "x"}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+
+	ef, err := ds.decodeEffect(fn, base(map[string]any{
+		"ifVersion": float64(4), "onConflict": "yield",
+	}))
+	if err != nil || ef.OnConflict != conflictYield {
+		t.Fatalf("yield decode = %+v, %v", ef, err)
+	}
+	// The default is spellable, and it is what an absent key means.
+	if ef, err := ds.decodeEffect(fn, base(map[string]any{
+		"ifVersion": float64(4), "onConflict": "park",
+	})); err != nil || ef.OnConflict != conflictPark {
+		t.Fatalf("park decode = %+v, %v", ef, err)
+	}
+	if ef, err := ds.decodeEffect(fn, base(map[string]any{"ifVersion": float64(4)})); err != nil || ef.OnConflict != "" {
+		t.Fatalf("absent onConflict decode = %+v, %v", ef, err)
+	}
+
+	if _, err := ds.decodeEffect(fn, base(map[string]any{"onConflict": "yield"})); err == nil ||
+		!strings.Contains(err.Error(), "needs ifVersion") {
+		t.Fatalf("onConflict without ifVersion: %v", err)
+	}
+	if _, err := ds.decodeEffect(fn, base(map[string]any{
+		"ifVersion": float64(4), "onConflict": "skip",
+	})); err == nil || !strings.Contains(err.Error(), "onConflict is") {
+		t.Fatalf("an unknown policy decoded: %v", err)
+	}
+	if _, err := ds.decodeEffect(fn, base(map[string]any{
+		"ifVersion": float64(4), "onConflict": true,
+	})); err == nil || !strings.Contains(err.Error(), "onConflict is a string") {
+		t.Fatalf("a non-string policy decoded: %v", err)
+	}
+	// delete carries no precondition, so the key is not in its closed set.
+	if _, err := ds.decodeEffect(fn, map[string]any{
+		"action": "delete", "kind": raceWidget, "id": "x", "onConflict": "yield",
+	}); err == nil || !strings.Contains(err.Error(), "unknown key") {
+		t.Fatalf("delete accepted onConflict: %v", err)
 	}
 }
 

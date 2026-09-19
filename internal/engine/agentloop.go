@@ -1054,6 +1054,36 @@ func (s queryScope) allows(ident string) bool {
 	return false
 }
 
+// links holds the inbound mapping-owned links of a record to the allowlist:
+// each names a record of ANOTHER kind and carries its title, so a grant on
+// `person` alone must not hand back the mirrors pointing at it. Nil rather
+// than empty, so absence reads the way a kind no mapping targets reads.
+func (s queryScope) links(links []substrate.LinkedRecord) []substrate.LinkedRecord {
+	if s.kinds == nil {
+		return links
+	}
+	var out []substrate.LinkedRecord
+	for _, l := range links {
+		if s.allows(l.Kind) {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// meta holds the provenance sidecar to the allowlist the same way: a source
+// path names a record of another kind (record 0094), so where that kind is
+// not granted the path is blanked and the offer's value and actor stay.
+func (s queryScope) meta(meta map[string]substrate.PropertyMeta) map[string]substrate.PropertyMeta {
+	if s.kinds == nil {
+		return meta
+	}
+	return substrate.MetaWithinKinds(meta, func(path string) bool {
+		kind, _, ok := vocabulary.SplitRecordPath(path)
+		return ok && s.allows(kind)
+	})
+}
+
 // scopeKinds is the allowlist as a list of KINDS, which is what a call naming
 // none is answered with. It is a copy, because the caller rewrites each entry
 // to its identity and the allowlist is the agent's; nil stays nil, which lists
@@ -1120,6 +1150,8 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 			// existence oracle.
 			return toolJSON(map[string]any{"record": nil}), true, 1
 		}
+		e.LinkedFrom = scope.links(e.LinkedFrom)
+		e.PropertyMeta = scope.meta(e.PropertyMeta)
 		return toolJSON(map[string]any{"record": e}), true, 1
 	}
 	q := substrate.Query{First: listDefaultFirst}

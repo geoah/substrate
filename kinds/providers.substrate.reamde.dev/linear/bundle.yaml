@@ -30,7 +30,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: linear
-  version: 13
+  version: 14
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -285,17 +285,6 @@ data:
       type: url
       displayName: URL
       description: the user's Linear profile URL
-    # The subject slot (record 0049): single, never cascading, UNPINNED and
-    # optional, because the kind it reaches is the repository's to choose and
-    # this package owns none. Left empty on write; the repository's own
-    # mapping pins it and fills it.
-    person:
-      type: reference
-      displayName: Person
-      mustExist: true
-      subject: true
-      description: the human this Linear login belongs to, once a mapping
-        says which kind that is
 ---
 # ---- mirror: one Linear team ------------------------------------------------
 # Teams arrive as the issues' team refs — enough to hang the issue→team
@@ -336,11 +325,14 @@ data:
 ---
 # ---- mirror: what Linear holds about one issue ------------------------------
 # One issue per assigned issue, in Linear's own shape (record 53). Id:
-# host.ids.external("linear", account, "issue:<uuid>"). The `assignee` subject
-# reference is left EMPTY on write (the mapping resolves it from
-# assigneeEmail); the `team` reference is set directly by the sync, which knows
-# the mirror id it just minted. `title` is the reserved built-in — the sync
-# writes it, no declaration here.
+# host.ids.external("linear", account, "issue:<uuid>"). NO SUBJECT SLOT is
+# declared here: who the issue is on in the repository's own words, and what
+# the issue IS to it, are both the repository's mappings to name, and the
+# engine synthesises each slot on this kind when its mapping installs
+# (record 0096). What the sync writes is this package's own: `assigneeEmail`,
+# the probe a person mapping matches on, `assigneeUser` where that address is
+# hidden, and `team`, whose mirror id it just minted. `title` is the reserved
+# built-in — the sync writes it, no declaration here.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/linear/issue
@@ -413,28 +405,21 @@ data:
       type: json
       displayName: Raw
       description: the raw issue node as fetched, for provenance
-    # The subject slot (record 0049): single, never cascading, UNPINNED and
-    # optional. Until the repository declares a mapping from this kind, the
-    # sync leaves it empty (or names the viewer's own user mirror, below).
-    assignee:
+    # THIS PACKAGE'S OWN RELATION, and the only assignee pointer it declares
+    # (record 0095 admits a reference at a mapping's source kind, which `user`
+    # is): the Linear member the issue is on. It is written only when the
+    # viewer's address is hidden, where there is no `assigneeEmail` for a
+    # mapping to probe and this mirror is the one record naming that human.
+    # WHO the issue is on in the repository's own words, and WHAT it is, are
+    # both subject slots the repository's mappings synthesise (record 0096) —
+    # this package declares neither.
+    assigneeUser:
       type: reference
-      displayName: Assignee
+      kind: user
+      displayName: Assignee (Linear)
       mustExist: true
-      subject: true
-      description: the human this issue is assigned to, once a mapping says
-        which kind that is
-    # The SECOND subject slot: what the issue is, as opposed to who it is on.
-    # Unpinned and optional like the first, because the kind an issue means to
-    # the repository (a task, a ticket, nothing) is the repository's to choose:
-    # the tasks sample suggests the mapping that fills this, and until one
-    # exists the sync leaves it empty (record 0049).
-    task:
-      type: reference
-      displayName: Task
-      mustExist: true
-      subject: true
-      description: the piece of work this issue is, once a mapping says which
-        kind that is
+      description: the Linear member this issue is assigned to, when the login
+        address is hidden
     team:
       type: reference
       displayName: Team
@@ -724,18 +709,19 @@ data:
             props["assigneeEmail"] = viewer_email
         elif vid:
             # The viewer's address is hidden (admin-restricted visibility), so
-            # there is no probe to match on. Point the slot at the viewer's own
-            # user mirror instead: it is the one record that names this human,
-            # and a repository whose mapping reaches people through the user
-            # mirror resolves it in one hop. The value is the mirror's flat
-            # `<kind>/<id>` path, the same shape google's mirrors write.
+            # there is no probe to match on. Point this package's OWN assignee
+            # pointer at the viewer's user mirror instead: it is the one record
+            # that names this human, and a repository whose mapping reaches
+            # people through the user mirror resolves it in one hop. The value
+            # is the mirror's flat `<kind>/<id>` path, the same shape google's
+            # mirrors write.
             if not noted.get("hidden"):
                 noted["hidden"] = True
                 host.log("linear-issues: viewer email hidden for %s — "
                          "assignees resolve through the viewer's mirror" % aid)
-            props["assignee"] = (USER_TYPE + "/"
-                                 + host.ids.external("linear", aid,
-                                                     "user:" + vid))
+            props["assigneeUser"] = (USER_TYPE + "/"
+                                     + host.ids.external("linear", aid,
+                                                         "user:" + vid))
         else:
             # No address AND no viewer id: nothing to hang identity on, and an
             # issue nobody can attribute is noise. Skip it, loudly, once.

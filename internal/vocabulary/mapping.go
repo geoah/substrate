@@ -11,15 +11,24 @@ import (
 // That reference declares `subject: true` and the mapping names it, so the
 // write path can refuse to move a subject without reading the mapping set.
 // Everything record 33 ruled about it stands, restated here: created with its
-// record, moved only by merge and split, never `onDelete: cascade`, and no
-// reference anywhere else may land on a mapped source kind.
+// record, moved only by merge and split, and never `onDelete: cascade`. A
+// reference elsewhere MAY pin a mapped source kind (record 95): a pin at the
+// source is satisfied without a hop, so it costs the one-hop rule nothing.
 
 // Merge is how one target property combines contributions: atomic takes one
 // source's value whole, union takes the deduped union of every live source's
-// items, only onto repeated properties.
+// items, only onto repeated properties, and first takes the HEAD of a repeated
+// source into a single-valued one.
+//
+// first is union's answer from the other side. A provider that mirrors an API
+// array verbatim (a Google contact's `names[].displayName`) has one value its
+// subject wants and a repetition its subject does not, and without it the
+// address book — the owner's best source of human names — could probe a person
+// by name and never set one.
 const (
 	MergeAtomic = "atomic"
 	MergeUnion  = "union"
+	MergeFirst  = "first"
 )
 
 // Mapping is one parsed recordmapping. From and To are full kind references,
@@ -35,8 +44,10 @@ type Mapping struct {
 	Property string
 	// Match is the ordered identifier probes: when a source record
 	// arrives without a subject, the first probe whose values find candidates
-	// decides — exactly one candidate links, zero or several create a fresh
-	// subject. May be empty: a link-only mapping always creates.
+	// decides — exactly one candidate links, none mints a fresh subject, and
+	// several park the source unlinked rather than mint a duplicate of people
+	// the probe cannot tell apart (record 0087). May be empty: a link-only
+	// mapping always creates.
 	Match []MatchRule
 	// Map is assignment paths per target property, nothing else — no
 	// expression language, computation stays in connector normalize.
@@ -62,7 +73,7 @@ type MatchRule struct {
 // MapRule is one target property's assignment.
 type MapRule struct {
 	Path  Path
-	Merge string // MergeAtomic | MergeUnion
+	Merge string // MergeAtomic | MergeUnion | MergeFirst
 }
 
 // Path is a parsed assignment path: `a` (a property), `a.b` (a
@@ -269,8 +280,8 @@ func (l *loader) parseMapping(d Document) *Mapping {
 		l.checkKeys(mwhere, rd, mapRuleKeys)
 		raw := mstr(rd, "path")
 		if mg := mstr(rd, "merge"); mg != "" {
-			if mg != MergeAtomic && mg != MergeUnion {
-				l.errf("%s.merge: %q is not a merge — \"atomic\" or \"union\"", mwhere, mg)
+			if mg != MergeAtomic && mg != MergeUnion && mg != MergeFirst {
+				l.errf("%s.merge: %q is not a merge — \"atomic\", \"union\" or \"first\"", mwhere, mg)
 				continue
 			}
 			rule.Merge = mg
@@ -315,34 +326,30 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 		errf("%s: data.to: unknown type %q", where, m.To)
 		return problems
 	}
-	// The subject reference's shape: a kind's own reference property,
-	// marked `subject: true`, single, mustExist and never cascading. The PIN is
-	// the declaring package's choice (record 49): a mirror kind whose targets
-	// its own package cannot know leaves the reference unpinned and optional,
-	// and the mapping's `to` is the subject kind for that property. A pin, where
-	// there is one, still has to agree with `to`, and a pinned subject is
-	// required.
-	sp, ok := from.Props[m.Property]
-	pinned := ok && sp.To != "" && sp.To != ToAny
+	// The subject slot. THE MAPPING OWNS IT (record 96): a source kind that
+	// declares nothing under this name gets the property synthesized onto it
+	// (mappingsubject.go), which is what lets a provider ship mirrors without
+	// knowing the word its consumer will use. A kind that DOES declare it
+	// keeps its declaration and the mapping stamps the pin — that is a bundle
+	// written before record 96, and a document that was read back out and
+	// applied again.
+	//
+	// So the shape is checked only where a declaration exists, and a
+	// declaration that is not a subject reference is the collision the
+	// reconcile refuses, on its own terms and in one place.
+	sp, declared := from.Props[m.Property]
 	switch {
-	case !ok:
-		errf("%s: data.property: %s declares no property %q", where, m.From, m.Property)
-	case sp.Datatype != DatatypeReference:
-		errf("%s: data.property: %s.%s is %s — a subject is a `type: reference` property", where, m.From, m.Property, sp.Datatype)
-	case pinned && sp.To != m.To:
+	case !declared || sp.MappedBy != "":
+		// Nothing to hold: the slot is the mapping's own, or was already
+		// stamped by it in an earlier pass over this registry.
+	case sp.Datatype != DatatypeReference || !sp.Subject:
+		// Reported by the reconcile (mappingSubjectProblems), which says it
+		// once for every door and names the remedy.
+	case sp.To != "" && sp.To != ToAny && sp.To != m.To:
 		errf("%s: data.property: %s.%s points at %q, not data.to %s", where, m.From, m.Property, sp.To, m.To)
 	case sp.ToTrait != "" && !to.Implements(sp.ToTrait):
 		errf("%s: data.property: %s.%s pins the trait %s, which %s does not implement", where, m.From, m.Property, sp.ToTrait, m.To)
 	default:
-		if !sp.Subject {
-			errf("%s: data.property: %s.%s is missing `subject: true` — the write path reads the marker, not this document", where, m.From, m.Property)
-		}
-		if pinned && !sp.Required {
-			errf("%s: data.property: a subject reference pinned at %s is required: true, because a source record that names its target kind cannot exist without one", where, m.To)
-		}
-		if !sp.MustExist {
-			errf("%s: data.property: the subject reference is mustExist: true — a source record describes a subject that exists", where)
-		}
 		if sp.Repeated || sp.Keyed {
 			errf("%s: data.property: the subject reference is single-valued — a record that describes two things is two records", where)
 		}
@@ -403,14 +410,19 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 			errf("%s: %s is %s, %s.%s is %s — a map path type-checks against both ends", mwhere, rule.Path, sp.Datatype, m.To, tname, tp.Datatype)
 			continue
 		}
-		// Cardinality: union needs a repeated target (a scalar path
-		// contributes a singleton, which is legal); a repeated source without
-		// union needs a repeated atomic target of the same kind.
+		// Cardinality. union needs a repeated target (a scalar path
+		// contributes a singleton, which is legal); first is the same question
+		// from the other side and needs a SINGLE one, taking the head of a
+		// repeated source (a single source contributes itself, which is legal
+		// and a no-op); and a repeated source under neither needs a repeated
+		// target of the same kind.
 		switch {
 		case rule.Merge == MergeUnion && !tp.Repeated:
 			errf("%s: merge: union needs a repeated target — %s.%s is not", mwhere, m.To, tname)
-		case rule.Merge != MergeUnion && repeated != tp.Repeated:
-			errf("%s: %s and %s.%s disagree on repetition — a repeated source needs merge: union or a repeated target", mwhere, rule.Path, m.To, tname)
+		case rule.Merge == MergeFirst && tp.Repeated:
+			errf("%s: merge: first takes ONE value — %s.%s is repeated, and merge: union is the one that joins", mwhere, m.To, tname)
+		case rule.Merge == MergeAtomic && repeated != tp.Repeated:
+			errf("%s: %s and %s.%s disagree on repetition — a repeated source needs merge: first for one value or merge: union for a repeated target", mwhere, rule.Path, m.To, tname)
 		}
 	}
 	return problems
@@ -421,17 +433,16 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 // (source kind, subject property), so one mirror kind reaches two subject
 // kinds through two `subject: true` references and two mappings through one
 // reference stay refused (record 49). The source-to-subject graph stays
-// bipartite: a mapping's `to` may never itself be any mapping's `from`, and
-// no reference anywhere may land on a mapped source kind, which keeps
-// resolution one hop deep. Registry-wide, because a mapping installs
-// with its connector long after the vocabulary that names its target was
-// loaded.
+// bipartite: a mapping's `to` may never itself be any mapping's `from`, which
+// is what keeps resolution one hop deep — a pin AT a source kind resolves
+// without a hop at all, so it is not this graph's business (record 95).
+// Registry-wide, because a mapping installs with its connector long after the
+// vocabulary that names its target was loaded.
 func (r *Registry) mappingInvariantProblems() []string {
 	var problems []string
 	// bySlot is the mapping set's key. byFrom is the source-kind index the
-	// bipartite and no-reference rules read; a source's first mapping names
-	// the violation, so the message does not depend on which of its mappings
-	// the loop reached.
+	// bipartite rule reads; a source's first mapping names the violation, so
+	// the message does not depend on which of its mappings the loop reached.
 	bySlot := map[mappingSlot]*Mapping{}
 	byPair := map[mappingSlot]*Mapping{}
 	byFrom := map[string][]*Mapping{}
@@ -463,19 +474,6 @@ func (r *Registry) mappingInvariantProblems() []string {
 			problems = append(problems, fmt.Sprintf(
 				"%s %s: data.to: %s is itself the source of mapping %s — the source→subject graph stays bipartite (record 50)",
 				DocRecordMapping, m.Identity(), m.To, others[0].Identity()))
-		}
-	}
-	// Every declared reference site, nested ones included: a pointer at a source
-	// kind is a second hop whichever level it sits at.
-	for _, t := range r.Kinds() {
-		for _, site := range referenceSites(t) {
-			ms, ok := byFrom[site.Prop.To]
-			if !ok {
-				continue
-			}
-			problems = append(problems, fmt.Sprintf(
-				"%s %s: data.properties.%s: no reference may name %s, the source kind of mapping %s — pin it at %s",
-				DocKind, t.Identity, site.Path, site.Prop.To, ms[0].Identity(), ms[0].To))
 		}
 	}
 	return problems

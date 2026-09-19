@@ -230,6 +230,13 @@
     "source": true,
     "version": true
   },
+  "LinkedRecord": {
+    "kind": true,
+    "mapping": true,
+    "property": true,
+    "ref": true,
+    "title": false
+  },
   "LoginRequest": {
     "label": false,
     "password": true,
@@ -268,12 +275,14 @@
   },
   "PropertyAlternative": {
     "actor": true,
+    "source": false,
     "updatedAt": true,
     "value": true
   },
   "PropertyMeta": {
     "alternatives": false,
     "manager": false,
+    "source": false,
     "tier": false,
     "updatedAt": false
   },
@@ -296,6 +305,7 @@
     "implements": false,
     "kinds": false,
     "labels": false,
+    "orphaned": false,
     "properties": false,
     "referencing": false,
     "search": false
@@ -366,6 +376,7 @@
     "kind": true,
     "kindVersion": false,
     "labels": true,
+    "linkedFrom": false,
     "properties": true,
     "propertyMeta": false,
     "updatedAt": true,

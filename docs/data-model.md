@@ -424,7 +424,12 @@ The **pin** is `kind:` or `trait:`, and it says which records this property may
 name. `kind: any`, and an absent pin, leave it unconstrained, and then the
 value must carry an explicit kind. Which records a property may name is exactly
 what a client needs to offer a picker. A declaration spelling `to:` is refused
-naming the pin.
+naming the pin. **Any kind may be pinned**, a
+[mapping's source kind included](projection.md#record-mappings)
+([decision 0095](decisions/0095-a-reference-may-pin-a-mapping-source-kind.md)):
+a pin at a mirror kind is satisfied by the value as written, which is how a
+provider models its API's own relations. Outside that provider's own package,
+pin the subject instead and let the hop do the work.
 
 A value is ONE OBJECT, holding the referent's path under the reserved key
 `ref`:
@@ -531,7 +536,10 @@ the `referencing` filter arm of `GET /api/v1/records` lists the records
 pointing at one, narrowable by the property name and, through `kinds`, the
 source kind ([the API](api.md#who-points-at-a-record-referencing)). A
 `subject: true` reference is the one a [record mapping](projection.md)
-projects along.
+projects along, and the mapping is what puts it there: the source kind
+declares nothing, and admitting the mapping synthesises the reference on it,
+`managed: true`
+([decision 0096](decisions/0096-a-mapping-synthesises-its-subject-slot.md)).
 
 **Blob references.** A `blobref` names stored bytes by their digest. The bytes
 live in the repository's content-addressed blob store

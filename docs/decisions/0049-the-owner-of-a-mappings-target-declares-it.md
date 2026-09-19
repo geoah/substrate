@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-02
 decision-makers: George Antoniadis
+amended-by: 0095, 0096
 ---
 
 # 0049. The owner of a mapping's target declares it and pins the subject

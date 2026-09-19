@@ -104,7 +104,11 @@ cursor a page printed. `--expand prop1,prop2` carries the referents of those ref
 properties back with the page (as further `---` documents in `-o yaml`, under
 an `included` key in `-o json`; the table prints the page alone), and
 `--referencing <kind>/<id>` is the reverse read: only the records of the kind
-that point at that one. `-w` streams that one kind's changes instead of
+that point at that one. `--orphaned` lists the
+[orphaned mapping targets](projection.md#when-the-last-source-goes-the-orphan-mark)
+of that kind — rows minted from a source that is now gone, with nothing above
+the machine tier holding a property (`--orphaned=false` is the complement).
+`-w` streams that one kind's changes instead of
 listing it, resumable with `--from` and `--generation` like `watch`.
 
 `substratectl search <query>` ranks records against a query in the same
@@ -158,7 +162,9 @@ each trigger's kind, callable, enabled flag, cursor and the head it lags,
 lag, last fire, parked count, pending count, last error and, for a
 webhook trigger, the public path its `WEBHOOK` column prints
 (`/webhooks/<authority>/<trigger-id>`, the URL an external service POSTs to);
-`parked` lists the deliveries it gave up on and `retry` re-runs one; `replay`
+`parked` lists the deliveries it gave up on, `retry` re-runs one and clears it
+however the delivery settles, and `forget` drops one that can never be
+delivered again without running anything; `replay`
 resets a record-sourced trigger's cursor; `run` synthesizes a single delivery;
 and `wake` scans a trigger immediately. Trigger rows are ordinary records, so
 `get` / `apply` / `delete` edit them like anything else.

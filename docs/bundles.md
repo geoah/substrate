@@ -341,7 +341,10 @@ rule is enforced in the write path for REST and the CLI alike, not just in
 the console.
 
 The flow itself is two endpoints. `POST …/oauth/start` takes the
-account record's id as `record` and answers the consent URL as `url`; it is
+account record as `record` — its full identity, `<kind>/<id>`, or a bare id
+where only one account kind holds it — and answers the consent URL as `url`;
+two providers whose accounts share a name (`owner` under each) are why the
+identity form exists, and the ambiguity refusal names both spellings. It is
 owner-tier only (the three interactive clients, never installed code) and refuses
 while the client input does not resolve. The state is HMAC-signed over
 the repository, the record, and a random nonce, expires in fifteen minutes, and
@@ -691,9 +694,14 @@ What reaches a `person`, an `emailmessage` or a `task` is the mapping the
 repository declares, from a mirror onto a kind of its own. A mapping onto a
 kind is the declaration of the package that owns that kind
 ([decision record 0049](decisions/0049-the-owner-of-a-mappings-target-declares-it.md)),
-so every mirror ships an unpinned, empty subject slot and the repository fills
-it. Until it does, the mirrors sync and the slots stay empty, which is the
-whole of what an install delivers.
+and the mapping BRINGS THE SLOT WITH IT: installing it synthesises the subject
+reference on the mirror kind, named by the mapping's `property` and pinned at
+its `to`
+([decision record 0096](decisions/0096-a-mapping-synthesises-its-subject-slot.md)).
+A provider therefore declares no slot at all — it ships GitHub, or Google, or
+Linear, and nothing that names a word its consumer might use. Until a mapping
+lands the mirrors sync and reach nothing, which is the whole of what an install
+delivers.
 
 ### Suggested mappings
 
@@ -724,9 +732,12 @@ reach my people" are two different answers.
 | `waiting` | the provider package is absent                      | install it, then import again |
 | `blocked` | the provider is older than the mapping needs        | upgrade it, then import again |
 
-`blocked` carries the resolution problems with it (a subject slot or a mapped
-property the installed version does not declare), so a mapping the shipped
-sample outgrew names what to fix instead of failing the import.
+`blocked` carries the resolution problems with it (a mapped property, a match
+probe or a `from` kind the installed version does not declare), so a mapping
+the shipped sample outgrew names what to fix instead of failing the import. A
+SUBJECT SLOT is never one of them any more: the mapping synthesises its own
+(record 0096), and the one thing that can go wrong there is a collision with a
+property the mirror declares for itself.
 
 **Installing a provider does not land a mapping.** Import the sample AGAIN,
 which is what applies the closure with the mapping in it. That second import

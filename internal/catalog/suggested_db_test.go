@@ -300,10 +300,128 @@ func TestImportingTasksWithLinearInstalledLandsTheIssueMapping(t *testing.T) {
 	}
 }
 
+// olderLinear is a linear package as it stood at version 11, with the `issue`
+// mirror declared however the case under test needs it. Applied by hand, which
+// is the one way a repository can hold a provider's declarations at a shape
+// the shipped closure has moved past.
+func olderLinear(props map[string]any) []map[string]any {
+	return []map[string]any{
+		vocabulary.PackageManifest(linearProviderID, 11),
+		// A second mirror, so a case can pin a reference at a kind of the
+		// provider's own.
+		vocabulary.KindManifest(linearProviderID,
+			map[string]any{"singular": "label"},
+			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
+		vocabulary.KindManifest(linearProviderID,
+			map[string]any{"singular": "issue"},
+			map[string]any{"properties": props}),
+	}
+}
+
 // A provider OLDER than the sample was written against BLOCKS the mapping
 // rather than refusing the import: the door drops it, says which provider to
 // upgrade, and names what did not fit.
+//
+// WHAT "older" MEANS CHANGED WITH RECORD 85 (and record 89, which re-reads this
+// test). A mirror that declares NO slot under the mapping's word is no longer
+// old, it is the normal case — the mapping brings the reference with it. The
+// readings that still block are the three here: the provider spends the word on
+// something of its own (rule 3's collision), it declares the slot as a
+// reference pinned somewhere else, or it predates a property the sample's
+// probes and map rules read.
 func TestASuggestedMappingIsBlockedByAnOlderProvider(t *testing.T) {
+	base := map[string]any{
+		"url":           map[string]any{"type": "url"},
+		"assigneeEmail": map[string]any{"type": "email"},
+		"assignee": map[string]any{
+			"type": "reference", "mustExist": true, "subject": true,
+		},
+	}
+	with := func(name string, decl any) map[string]any {
+		props := map[string]any{}
+		for k, v := range base {
+			props[k] = v
+		}
+		if decl == nil {
+			delete(props, name)
+		} else {
+			props[name] = decl
+		}
+		return props
+	}
+	cases := map[string]struct {
+		props map[string]any
+		names string // what the reader has to be told to look at
+	}{
+		// The word is the provider's own, so the mapping would take a declared
+		// property over silently: refused (record 96, rule 3).
+		"the provider spends the mapping's word on something of its own": {
+			props: with("task", map[string]any{"type": "string"}),
+			names: `already declares "task"`,
+		},
+		// A slot the provider pinned itself, at a kind that is not the one the
+		// mapping fills. The loader refuses the pin, so the door drops it.
+		"the declared slot is pinned at another kind": {
+			props: with("task", map[string]any{
+				"type": "reference", "kind": linearProviderID + "/label",
+				"mustExist": true, "subject": true,
+			}),
+			names: "points at",
+		},
+		// Nothing to do with the subject slot: a mirror too old to carry the
+		// property the mapping's probe and map rule read.
+		"the mirror predates a property the mapping reads": {
+			props: with("url", nil),
+			names: `no property "url"`,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			ds := newDataset(t)
+			c := loadCatalog(t)
+			ctx := context.Background()
+			tasks, ok := c.ByID(tasksSampleID)
+			if !ok {
+				t.Fatalf("no %s in the shipped catalog", tasksSampleID)
+			}
+			landedMapping := homeAuthority + "/tasks/linearissuetask"
+			if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, olderLinear(tc.props)); err != nil {
+				t.Fatalf("apply the older linear package: %v", err)
+			}
+
+			sm := suggestedState(t, tasks, ds, landedMapping)
+			if sm.State != substrate.SuggestedMappingBlocked {
+				t.Fatalf("state = %+v, want blocked against the older provider", sm)
+			}
+			if len(sm.Problems) == 0 {
+				t.Fatal("a blocked mapping reports no problems, so the reader cannot tell what to fix")
+			}
+			if !strings.Contains(strings.Join(sm.Problems, " "), tc.names) {
+				t.Errorf("the problems do not say %q: %v", tc.names, sm.Problems)
+			}
+			if sm.Package != linearProviderID {
+				t.Errorf("package = %q, want the provider to upgrade", sm.Package)
+			}
+
+			// And the import goes THROUGH, without the mapping: a blocked
+			// mapping the reader never wrote must not cost them the sample.
+			importSamples(t, c, ds, peopleSampleID, schedulingSample, tasksSampleID)
+			if _, err := ds.KindByRef(ctx, homeAuthority+"/tasks/task"); err != nil {
+				t.Fatalf("the tasks kinds did not land: %v", err)
+			}
+			if _, err := ds.Get(ctx, mappingKind, landedMapping); !errors.Is(err, substrate.ErrNotFound) {
+				t.Fatalf("the blocked mapping landed: %v", err)
+			}
+		})
+	}
+}
+
+// THE OTHER HALF OF RECORD 85'S RULE 4, at the door: a source kind that still
+// declares the subject slot itself keeps its declaration and the mapping
+// stamps the pin onto it, so the mapping FITS. A repository holding a bundle
+// written before record 96 imports the sample and gets the projection, with no
+// upgrade of the provider first.
+func TestASuggestedMappingFitsASourceThatStillDeclaresTheSlot(t *testing.T) {
 	ds := newDataset(t)
 	c := loadCatalog(t)
 	ctx := context.Background()
@@ -312,52 +430,27 @@ func TestASuggestedMappingIsBlockedByAnOlderProvider(t *testing.T) {
 		t.Fatalf("no %s in the shipped catalog", tasksSampleID)
 	}
 	landedMapping := homeAuthority + "/tasks/linearissuetask"
-
-	// A linear package as it stood at version 11: the `issue` mirror without
-	// the `task` subject slot the tasks sample's mapping fills. Applied by
-	// hand, which is the one way a repository can hold a provider's
-	// declarations at a shape the shipped closure has moved past.
-	older := []map[string]any{
-		vocabulary.PackageManifest(linearProviderID, 11),
-		vocabulary.KindManifest(linearProviderID,
-			map[string]any{"singular": "issue"},
-			map[string]any{
-				"properties": map[string]any{
-					"url":           map[string]any{"type": "url"},
-					"assigneeEmail": map[string]any{"type": "email"},
-					// The `task` slot is NOT here: that is the whole fixture.
-					"assignee": map[string]any{
-						"type": "reference", "mustExist": true, "subject": true,
-					},
-				},
-			}),
-	}
+	older := olderLinear(map[string]any{
+		"url":           map[string]any{"type": "url"},
+		"assigneeEmail": map[string]any{"type": "email"},
+		"assignee": map[string]any{
+			"type": "reference", "mustExist": true, "subject": true,
+		},
+		// Unpinned and not required, which is the shape record 49 left a
+		// mirror's own subject reference in.
+		"task": map[string]any{
+			"type": "reference", "mustExist": true, "subject": true,
+		},
+	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, older); err != nil {
 		t.Fatalf("apply the older linear package: %v", err)
 	}
-
-	sm := suggestedState(t, tasks, ds, landedMapping)
-	if sm.State != substrate.SuggestedMappingBlocked {
-		t.Fatalf("state = %+v, want blocked against a provider with no `task` slot", sm)
+	if sm := suggestedState(t, tasks, ds, landedMapping); sm.State != substrate.SuggestedMappingReady {
+		t.Fatalf("state = %+v, want ready: a declared slot is adopted, not a collision", sm)
 	}
-	if len(sm.Problems) == 0 {
-		t.Fatal("a blocked mapping reports no problems, so the reader cannot tell what to fix")
-	}
-	if !strings.Contains(strings.Join(sm.Problems, " "), "task") {
-		t.Errorf("the problems do not name the missing slot: %v", sm.Problems)
-	}
-	if sm.Package != linearProviderID {
-		t.Errorf("package = %q, want the provider to upgrade", sm.Package)
-	}
-
-	// And the import goes THROUGH, without the mapping: a blocked mapping the
-	// reader never wrote must not cost them the sample.
 	importSamples(t, c, ds, peopleSampleID, schedulingSample, tasksSampleID)
-	if _, err := ds.KindByRef(ctx, homeAuthority+"/tasks/task"); err != nil {
-		t.Fatalf("the tasks kinds did not land: %v", err)
-	}
-	if _, err := ds.Get(ctx, mappingKind, landedMapping); !errors.Is(err, substrate.ErrNotFound) {
-		t.Fatalf("the blocked mapping landed: %v", err)
+	if _, err := ds.Get(ctx, mappingKind, landedMapping); err != nil {
+		t.Fatalf("the mapping did not land onto the declared slot: %v", err)
 	}
 }
 

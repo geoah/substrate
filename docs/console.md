@@ -98,19 +98,46 @@ marks them, and Save is barred while an error stands.
 A record opens on five tabs:
 
 - **Properties**: the declared properties rendered by type, the read view the
-  editor opens from, using the same labels and descriptions with bordered values.
+  editor opens from, using the same labels and descriptions with bordered
+  values.
 - **Manifest**: the [envelope](data-model.md#the-envelope), with every kind
   reference and every record reference rendered as a link you can follow.
-- **Graph**: separate incoming references, outgoing references, and mapped or
-  merged sources. Groups show the full kind reference and a labelled reference
-  property. A member expands in place into its own graph. Source grouping reads
-  the installed mapping declarations; merge history includes former record ids.
+  Under it, marked **derived**, a footer lists the records that map onto this
+  one by mapping, with a way to the Provenance tab: the link lives on the
+  source rows' subject slots, so the envelope cannot carry it, and a reader
+  who looks for "where did this come from" here is not left thinking there
+  is nothing.
+- **Graph**: incoming references and outgoing references, and only those.
+  Groups show the full kind reference and a labelled reference property, and
+  a member expands in place into its own graph. A mirror's mapping-owned slot
+  is one more incoming reference here; which of them are sources is the next
+  tab's question.
 - **Activity**: this record's own slice of [the changelog](changelog.md), with the
   full actor on every row. Mapping writes distinguish value sources, the engine
   committing the write, and the initiating actor when recorded. Expanded changes
   show the raw payload immediately.
-- **Provenance**: which actor wrote each property, and at which
-  [tier](terms.md#truth-and-derivation).
+- **Provenance**: what the record is made of, in two sections. **Sources**
+  groups [`linkedFrom`](projection.md#reading-the-links-back-linkedfrom) by
+  the mapping that brought each record: the mapping's title as a link to its
+  declaration, the source kind as a link to that collection, the count, and
+  which properties its `map` rules contribute, then the members as the
+  standard record pill, one per record, sorted by title, ten at a time. A
+  record merged away into this one sits under **Merged** with the
+  `recordmerge` that joined it and the request that proposed it. **Properties**
+  is the ledger: one row per property with its stored value, its manager as
+  the thing it is (a mapping's function reads as "sync of *kind*", linked to
+  the function, with the full actor on hover), the **source record** the
+  value came from as a pill
+  ([`propertyMeta.source`](projection.md#reading-provenance-propertymeta)),
+  and the [tier](terms.md#truth-and-derivation) as a chip that says what it
+  means for this value; beneath it, every alternative a live source offers as
+  a row of its own — value, actor, source record, when. **Use this** on an
+  alternative writes it, which makes you the manager at the owner tier; the
+  row then reads *held by you* and offers **Release**, which patches the
+  property to null so projection refills it from the sources. Both ask
+  first and name the consequence: a held value ignores fresher source values
+  until released. Manager and tier are explained on hover in the words of
+  [the terms](terms.md#truth-and-derivation).
 
 A merged-away record says so and points at its canonical winner; a tombstoned
 one says so too. The two segments above a kind each have a page of their own:

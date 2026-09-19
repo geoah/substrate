@@ -21,8 +21,9 @@ func (a *app) triggerCommand() *cobra.Command {
 a record subscription, an RRULE schedule, or a webhook wake — to one
 callable. Each record-sourced trigger owns a changelog cursor; status
 shows where every trigger sits, replay rewinds a cursor, run synthesizes
-a single delivery, wake scans a trigger immediately, and parked lists the
-deliveries a trigger gave up on. The trigger rows themselves are ordinary
+a single delivery, wake scans a trigger immediately, parked lists the
+deliveries a trigger gave up on, retry re-runs one and forget drops one
+that can no longer be delivered at all. The trigger rows themselves are ordinary
 records: get/apply/delete them like any other.`,
 	}
 	cmd.AddCommand(
@@ -32,6 +33,7 @@ records: get/apply/delete them like any other.`,
 		a.triggerWakeCommand(),
 		a.triggerParkedCommand(),
 		a.triggerRetryCommand(),
+		a.triggerForgetCommand(),
 	)
 	return cmd
 }
@@ -204,6 +206,35 @@ func (a *app) triggerRetryCommand() *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(a.out, "parked delivery %d of %s retried\n", id, args[0])
+			return nil
+		},
+	}
+}
+
+func (a *app) triggerForgetCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "forget <id> <parked-id>",
+		Short: "Drop one parked delivery WITHOUT running it",
+		Long: `Forget deletes a parked delivery an operator has judged stale: an uninstalled
+callable, a record long deleted, effects that landed by another route. Nothing
+runs. Use retry for a delivery that can still be made — retry is the one that
+re-runs the body, and it clears the row when the delivery settles, a skipped
+guard included.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cl, err := a.client()
+			if err != nil {
+				return err
+			}
+			id, err := strconv.ParseInt(args[1], 10, 64)
+			if err != nil {
+				return fmt.Errorf("parked id %q is not a number (find it with `substratectl trigger parked %s`)", args[1], args[0])
+			}
+			if err := cl.do(cmd.Context(), http.MethodDelete,
+				triggersPath(args[0], "parked", args[1]), nil, nil, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(a.out, "parked delivery %d of %s forgotten\n", id, args[0])
 			return nil
 		},
 	}

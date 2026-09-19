@@ -118,16 +118,24 @@ func TestLinearBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("account type implements oauth2 — client creds belong on the config, not the account")
 	}
 
-	// The mirror types carry their subject SLOTS: single, unpinned and
-	// optional, because the kind they reach is the repository's to choose
-	// (record 49). The issue's team edge is an ordinary pinned reference.
+	// NO SUBJECT SLOTS ANYWHERE IN THE CLOSURE (record 96). `person` on the
+	// user mirror and `assignee`/`task` on the issue were this package
+	// guessing its consumer's nouns; each is synthesized by the mapping that
+	// names it, so the provider declares only what Linear itself has.
 	user := mustKind(t, reg, linearUserType)
-	if ed, ok := user.Prop("person"); !ok || ed.To != "" || ed.Required || ed.Repeated || !ed.Subject {
-		t.Fatalf("user person slot shape wrong: %+v (ok=%v)", ed, ok)
-	}
 	issue := mustKind(t, reg, linearIssueType)
-	if ed, ok := issue.Prop("assignee"); !ok || ed.To != "" || ed.Required || ed.Repeated || !ed.Subject {
-		t.Fatalf("issue assignee slot shape wrong: %+v (ok=%v)", ed, ok)
+	for _, ty := range []*vocabulary.Kind{user, issue} {
+		for _, name := range ty.PropOrder {
+			if ty.Props[name].Subject {
+				t.Fatalf("%s declares subject slot %q; a provider declares none", ty.Identity, name)
+			}
+		}
+	}
+	// What it DOES declare on the issue: its own two pointers. `assigneeUser`
+	// names this package's user mirror — a reference at a mapping's source
+	// kind, which record 0095 admits — and `team` is an ordinary pinned one.
+	if ed, ok := issue.Prop("assigneeUser"); !ok || ed.To != linearUserType || ed.Required || ed.Repeated {
+		t.Fatalf("issue assigneeUser shape wrong: %+v (ok=%v)", ed, ok)
 	}
 	if ed, ok := issue.Prop("team"); !ok || ed.To != linearTeamType || ed.Required {
 		t.Fatalf("issue team edge shape wrong: %+v (ok=%v)", ed, ok)

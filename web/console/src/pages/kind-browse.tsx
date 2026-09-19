@@ -56,7 +56,12 @@ import {
   saveBrowsePrefs,
   toRecordFilter,
 } from "@/lib/filters"
-import { filterableProperties, kindByCollection } from "@/lib/definition"
+import {
+  expandableReferences,
+  filterableProperties,
+  kindByCollection,
+} from "@/lib/definition"
+import { titlesFromIncluded } from "@/lib/reference-titles"
 import {
   buildColumns,
   columnIdOf,
@@ -166,6 +171,17 @@ export function KindBrowsePage() {
     if (page !== 1) void setPageParam(null, { history: "replace" })
   }
 
+  // Every reference this kind declares rides the page read as `expand=`, so
+  // a reference column reads as the referent's NAME instead of the record id
+  // the value carries (owner report, 2026-09-18: a task's `assignee`). It is
+  // one sidecar on the read the table already makes, not a second request,
+  // and a kind whose expansion the server refuses degrades to no expansion
+  // rather than to no rows (`fetchRecordsPage`).
+  const expand = useMemo(
+    () => (kindInfo ? expandableReferences(kindInfo) : []),
+    [kindInfo]
+  )
+
   const listOptions = recordsQueryOptions({
     authority,
     package: pkg,
@@ -174,10 +190,17 @@ export function KindBrowsePage() {
     offset: (page - 1) * PAGE_SIZE,
     filter: recordFilter,
     orderBy: sort,
+    expand,
   })
   const records = useQuery({ ...listOptions, enabled: Boolean(kindInfo) })
 
   const rows = records.data?.records ?? []
+  // Absent `included` — the expansion degraded, or the kind declares no
+  // reference at all — this is empty and every pill reads as its id.
+  const referenceTitles = useMemo(
+    () => titlesFromIncluded(records.data?.included),
+    [records.data]
+  )
   const pageCursor = records.data?.cursor
   // A single page with nothing behind it IS the exact count, for free. Any
   // larger collection pays the bounded count walk, which the numbered bar
@@ -226,8 +249,11 @@ export function KindBrowsePage() {
   }
 
   const columns = useMemo(
-    () => (kindInfo ? buildColumns(kindInfo, registry.data ?? []) : []),
-    [kindInfo, registry.data]
+    () =>
+      kindInfo
+        ? buildColumns(kindInfo, registry.data ?? [], referenceTitles)
+        : [],
+    [kindInfo, registry.data, referenceTitles]
   )
   // Only the OPENING set: a reader who has saved a column preference for this
   // kind keeps it, and the Columns menu turns any of these back on.

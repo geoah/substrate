@@ -1,0 +1,12 @@
+-- The source record behind an offer: the record path ("<kind>/<id>") of the
+-- live source whose contribution the offer's value and stamp are — for an
+-- atomic property the record whose value it is, for a union property the
+-- latest source carrying it (engine/mapping.go syncOffers). DERIVED STORAGE,
+-- like the rest of the table: recompute writes it, the changelog never
+-- carries it, and a rebuild derives it again from the fold. The single-record
+-- read serves it as `source` on every alternative, and on the manager where a
+-- machine-held value is the offer of the actor that holds it (record 0094).
+--
+-- Empty on a row minted before this column existed, until its target next
+-- recomputes; a rebuild fills every row.
+ALTER TABLE property_offers ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT '';

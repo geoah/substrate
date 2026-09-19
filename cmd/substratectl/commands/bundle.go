@@ -200,9 +200,13 @@ collects.`,
 
 func (a *app) bundleConnectCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "connect <account-record-id>",
+		Use:   "connect <kind>/<id>|<account-record-id>",
 		Short: "Start the host OAuth flow for an account record; prints the consent URL",
-		Args:  cobra.ExactArgs(1),
+		Long: `Connect starts the OAuth consent for one account record and prints the URL to
+visit. Name the account by its full identity, <kind>/<id>, or by a bare id
+where only one account kind holds it — two providers whose accounts share a
+name are told to name the one they mean.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, err := a.client()
 			if err != nil {

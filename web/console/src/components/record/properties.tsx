@@ -13,8 +13,14 @@
  * readable off one record; values the kind never declared show too, marked as
  * such, because hiding data a record carries would make this view lie. A
  * reference carrying LINK DATA renders the referent's pill with the link's own
- * properties beside it. Read-only: Edit is the page's affordance, not this
- * tab's. */
+ * properties beside it, and a pill reads as the referent's TITLE where the
+ * page resolved one — a stored reference carries a record path and nothing
+ * else, and a single-record read does not expand, so the titles arrive from
+ * the page's own batched read (`useReferenceTitles`) and the id stands in
+ * wherever one did not. The records whose mapping-owned subject slot points
+ * at this one are NOT here: they are the Provenance tab's Sources section
+ * (`sources.tsx`), beside the property ledger they feed. Read-only: Edit is
+ * the page's affordance, not this tab's. */
 
 import * as React from "react"
 
@@ -36,6 +42,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { type KindInfo, type SubstrateRecord } from "@/lib/api/types"
+import { type ReferenceTitles } from "@/lib/reference-titles"
 import { shortDateTime } from "@/lib/format"
 import {
   REDACTED,
@@ -138,12 +145,14 @@ function NestedRows({
   rows,
   guide = true,
   kinds,
+  titles,
 }: {
   rows: PropertyRow[]
   /** An item of a container is marked by its ordinal already; a second rule
    * beside the number says nothing the number did not. */
   guide?: boolean
   kinds: KindInfo[]
+  titles?: ReferenceTitles
 }) {
   return (
     <div
@@ -172,7 +181,12 @@ function NestedRows({
         const value = (
           <div className="min-w-0 text-sm">
             {row.spec ? (
-              <DeclaredValue spec={row.spec} value={row.value} kinds={kinds} />
+              <DeclaredValue
+                spec={row.spec}
+                value={row.value}
+                kinds={kinds}
+                titles={titles}
+              />
             ) : (
               <LooseValue value={row.value} />
             )}
@@ -213,6 +227,7 @@ function ObjectBlock({
   value,
   dense,
   kinds,
+  titles,
 }: {
   spec: PropSpec
   value: unknown
@@ -220,6 +235,7 @@ function ObjectBlock({
    * the ordinal rather than a second guide rule. */
   dense?: boolean
   kinds: KindInfo[]
+  titles?: ReferenceTitles
 }) {
   if (!isBag(value)) return <JsonBlock value={value} />
   const fields = spec.fields ?? []
@@ -235,7 +251,7 @@ function ObjectBlock({
     rows.push({ name: key, value: value[key], undeclared: true })
   }
   if (!rows.length) return <NotSet>empty</NotSet>
-  return <NestedRows rows={rows} guide={!dense} kinds={kinds} />
+  return <NestedRows rows={rows} guide={!dense} kinds={kinds} titles={titles} />
 }
 
 /** A KEYED map: the author names the keys, so each key heads the value it maps
@@ -244,10 +260,12 @@ function KeyedBlock({
   spec,
   value,
   kinds,
+  titles,
 }: {
   spec: PropSpec
   value: unknown
   kinds: KindInfo[]
+  titles?: ReferenceTitles
 }) {
   if (!isBag(value)) return <JsonBlock value={value} />
   const entries = Object.entries(value)
@@ -261,6 +279,7 @@ function KeyedBlock({
         spec: item,
       }))}
       kinds={kinds}
+      titles={titles}
     />
   )
 }
@@ -271,21 +290,31 @@ function ScalarValue({
   value,
   dense,
   kinds,
+  titles,
 }: {
   spec: PropSpec
   value: unknown
   dense?: boolean
   kinds: KindInfo[]
+  titles?: ReferenceTitles
 }) {
   // Before the object arm: a reference carrying link data IS an object, and
   // rendering it as fields would bury the pointer in a block.
   if (spec.kind === "reference") {
-    return <ReferenceValue value={value} kinds={kinds} />
+    return <ReferenceValue value={value} kinds={kinds} titles={titles} />
   }
   // A declaration that names the fields is the one thing that beats JSON here:
   // `json` and a bare `object` still read as the shape nobody owns.
   if (spec.kind === "object" && spec.fields?.length) {
-    return <ObjectBlock spec={spec} value={value} dense={dense} kinds={kinds} />
+    return (
+      <ObjectBlock
+        spec={spec}
+        value={value}
+        dense={dense}
+        kinds={kinds}
+        titles={titles}
+      />
+    )
   }
   if (typeof value === "object" && value !== null) {
     return <JsonBlock value={value} />
@@ -327,10 +356,12 @@ function DeclaredValue({
   spec,
   value,
   kinds,
+  titles,
 }: {
   spec: PropSpec
   value: unknown
   kinds: KindInfo[]
+  titles?: ReferenceTitles
 }) {
   if (value === undefined || value === null) return <NotSet />
   if (value === "") return <EmptyString />
@@ -342,12 +373,19 @@ function DeclaredValue({
   // The CONTAINER decides before the datatype does, exactly as the form's
   // control does: a keyed map of objects is keys, not one object.
   if (spec.keyed) {
-    return <KeyedBlock spec={spec} value={value} kinds={kinds} />
+    return (
+      <KeyedBlock spec={spec} value={value} kinds={kinds} titles={titles} />
+    )
   }
   if (spec.repeated) {
     if (!Array.isArray(value)) {
       return (
-        <ScalarValue spec={elementSpec(spec)} value={value} kinds={kinds} />
+        <ScalarValue
+          spec={elementSpec(spec)}
+          value={value}
+          kinds={kinds}
+          titles={titles}
+        />
       )
     }
     if (!value.length) return <NotSet>none</NotSet>
@@ -371,14 +409,20 @@ function DeclaredValue({
               </span>
             )}
             <div className={blocked ? "min-w-0 flex-1" : undefined}>
-              <ScalarValue spec={item} value={one} dense kinds={kinds} />
+              <ScalarValue
+                spec={item}
+                value={one}
+                dense
+                kinds={kinds}
+                titles={titles}
+              />
             </div>
           </li>
         ))}
       </ol>
     )
   }
-  return <ScalarValue spec={spec} value={value} kinds={kinds} />
+  return <ScalarValue spec={spec} value={value} kinds={kinds} titles={titles} />
 }
 
 /** A value nobody declared: rendered off its own shape, since there is no
@@ -394,7 +438,15 @@ function LooseValue({ value }: { value: unknown }) {
   return <span className="data break-words">{text}</span>
 }
 
-function Row({ row, kinds }: { row: PropertyRow; kinds: KindInfo[] }) {
+function Row({
+  row,
+  kinds,
+  titles,
+}: {
+  row: PropertyRow
+  kinds: KindInfo[]
+  titles?: ReferenceTitles
+}) {
   return (
     <Field>
       <FieldTitle className="font-semibold">
@@ -402,7 +454,12 @@ function Row({ row, kinds }: { row: PropertyRow; kinds: KindInfo[] }) {
       </FieldTitle>
       <div className="min-w-0 rounded-lg border border-input bg-muted/20 px-3 py-2.5 text-sm">
         {row.spec ? (
-          <DeclaredValue spec={row.spec} value={row.value} kinds={kinds} />
+          <DeclaredValue
+            spec={row.spec}
+            value={row.value}
+            kinds={kinds}
+            titles={titles}
+          />
         ) : (
           <LooseValue value={row.value} />
         )}
@@ -461,6 +518,7 @@ export function PropertiesRail({
   record,
   kind,
   kinds,
+  titles,
 }: {
   record: SubstrateRecord
   /** The record's own declaration; undefined when the registry lacks it, in
@@ -468,6 +526,10 @@ export function PropertiesRail({
   kind?: KindInfo
   /** The registry, so a reference resolves to a route. */
   kinds: KindInfo[]
+  /** Record path → the referent's title. A single-record read does not
+   * expand, so the page resolves them itself (`useReferenceTitles`) and
+   * hands them down; absent, every pointer reads as its record id. */
+  titles?: ReferenceTitles
 }) {
   const rows = rowsOf(record, kind)
 
@@ -488,7 +550,7 @@ export function PropertiesRail({
   return (
     <FieldGroup className="max-w-3xl p-6">
       {rows.map((row) => (
-        <Row key={row.name} row={row} kinds={kinds} />
+        <Row key={row.name} row={row} kinds={kinds} titles={titles} />
       ))}
     </FieldGroup>
   )

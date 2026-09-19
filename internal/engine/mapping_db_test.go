@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
@@ -459,6 +460,12 @@ func TestMatchFallsThroughToTheNextProbe(t *testing.T) {
 // ZERO OR SEVERAL candidates mint a fresh subject (§6.2): a shared family
 // address matching two people creates a third rather than guessing —
 // ambiguity resolves in the console, by a human, with merge.
+// A MIRROR THAT DECLARES ITS SLOT `required:` still mints out of an ambiguous
+// probe, because a write that left the slot unset would be refused and the
+// record lost with it (record 0087). That is the declaration's own contract,
+// and the other side of the rule: a slot the mapping synthesizes is optional,
+// and there an ambiguous probe parks
+// (TestAnAmbiguousProbeParksInsteadOfMinting).
 func TestAmbiguousMatchCreates(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
@@ -1354,19 +1361,51 @@ func TestReRegistrationValidatesTheChangedManifest(t *testing.T) {
 		wantErr(t, err, substrate.ErrValidation, "changed manifest")
 	}
 
-	// A reference pinned at a mapped source type is refused the same way:
-	// resolution stays one hop deep.
-	alsoBroken := googleManifest()
-	data, _ = alsoBroken.Manifests[2]["data"].(map[string]any)
-	alsoProps, _ := data["properties"].(map[string]any)
-	alsoProps["friend"] = map[string]any{"type": "reference", "kind": "contact"}
-	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, alsoBroken); err == nil {
-		t.Fatal("a reference at a mapped source type must not register")
-	}
-
 	// And the good one still re-registers.
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, googleManifest()); err != nil {
 		t.Fatalf("re-registering the unchanged manifest: %v", err)
+	}
+}
+
+// A MIRROR MAY POINT AT ITS OWN MIRRORS (record 95). Google's contact is a
+// mapping source onto person, and until this rule went a reference pinned at
+// `contact` was refused at admission — so importing the people mappings
+// retroactively narrowed what the google package itself could declare. The
+// pin is satisfied WITHOUT a hop, which is why the one-hop rule is untouched:
+// the stored value names the contact, and the subject hop still answers for
+// the person-pinned reference beside it.
+func TestAReferenceMayPinAMappingSource(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	installPeopleSources(t, ds)
+
+	withFriend := googleManifest()
+	data, _ := withFriend.Manifests[2]["data"].(map[string]any)
+	props, _ := data["properties"].(map[string]any)
+	props["friend"] = map[string]any{"type": "reference", "kind": "contact"}
+	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, withFriend); err != nil {
+		t.Fatalf("a reference at a mapped source kind must register: %v", err)
+	}
+
+	ada := syncSource(t, ds, people, typeGoogleContact, "g-ada", map[string]any{
+		"name": aname("Ada"), "emails": gemails("ada@example.com"),
+	})
+	grace := syncSource(t, ds, people, typeGoogleContact, "g-grace", map[string]any{
+		"name": aname("Grace"), "emails": gemails("grace@example.com"),
+		"friend": typeGoogleContact + "/" + ada.ID,
+	})
+
+	// The value stayed at the mirror. A hop here would have silently stored
+	// Ada's PERSON, which is the whole reason the provider could not model its
+	// own relations before.
+	got := refPathValue(mustGet(t, ds, grace.Kind, grace.ID), "friend")
+	if want := typeGoogleContact + "/" + ada.ID; got != want {
+		t.Fatalf("friend = %q, want %q", got, want)
+	}
+	// And the subject hop is untouched: the contact still reaches its person.
+	if personOf(t, ds, ada) == "" {
+		t.Fatal("the contact lost its subject")
 	}
 }
 
@@ -1929,5 +1968,142 @@ func TestSyncAfterASubjectMergeMintsNothing(t *testing.T) {
 	}
 	if n := len(livePersons(t, ds)); n != 2 {
 		t.Fatalf("%d live persons, want the winner and Grace", n)
+	}
+}
+
+// --- record 96: the mapping owns its link ----------------------------------
+
+const typeSlotlessCard = slotlessPackage + "/card"
+
+const slotlessPackage = "cards.connectors.substrate.reamde.dev/cards"
+
+// slotlessManifest is a provider written the way record 96 lets one be
+// written: its own vocabulary and NOTHING that names a consumer's. There is no
+// `person` here, and no `subject: true` anywhere — which is exactly what the
+// old rule made impossible, because the mapping required the source kind to
+// declare the slot before it could name it.
+func slotlessManifest() enginetest.Manifest {
+	return enginetest.Manifest{
+		Name: "cards", Authority: slotlessPackage,
+		Manifests: []map[string]any{
+			vocabulary.PackageManifest(slotlessPackage, 1),
+			vocabulary.ActorManifest(slotlessPackage, string(people)),
+			vocabulary.KindManifest(slotlessPackage,
+				map[string]any{"singular": "card"},
+				map[string]any{
+					"displayTemplate": "{fullName}",
+					"properties": map[string]any{
+						"fullName": map[string]any{"type": "string"},
+						"email":    map[string]any{"type": "email"},
+					},
+				}),
+		},
+	}
+}
+
+func slotlessMapping() map[string]any {
+	return enginetest.PeopleMapping("cardperson", map[string]any{
+		"from": typeSlotlessCard, "property": "person",
+		"match": []any{map[string]any{"from": "email", "to": "emails"}},
+		"map": map[string]any{
+			"name":   map[string]any{"path": "fullName"},
+			"emails": map[string]any{"path": "email", "merge": "union"},
+		},
+	})
+}
+
+// A MAPPING SYNTHESIZES ITS SUBJECT SLOT (record 96). The card mirror declares
+// no `person`; declaring the mapping puts one on it, and everything projection
+// does — match, mint, the link, the recompute — runs against a slot no
+// document ever declared.
+//
+// Against the old rule the mapping itself was refused at admission:
+// "data.property: …/card declares no property \"person\"".
+func TestAMappingSynthesizesItsSubjectSlot(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	installSources(t, ds, []enginetest.Manifest{slotlessManifest()}, []map[string]any{slotlessMapping()})
+
+	// THE READ SURFACE SERVES IT. The document declares no slot, so a client
+	// reading the kind's properties would otherwise be told this mirror has no
+	// link at all; the declaration a read is handed carries the synthesized
+	// one, flagged `managed` and naming its mapping.
+	info, err := ds.KindByRef(ctx, typeSlotlessCard)
+	if err != nil {
+		t.Fatalf("read the card kind: %v", err)
+	}
+	props, _ := info.Definition["properties"].(map[string]any)
+	slot, ok := props["person"].(map[string]any)
+	if !ok {
+		t.Fatalf("the mapping did not put a subject slot on the card mirror: %v", props)
+	}
+	wantMapping := enginetest.SamplePackage("people") + "/cardperson"
+	if slot["kind"] != typePerson || slot["managed"] != true ||
+		slot["subject"] != true || slot["mustExist"] != true || slot["mappedBy"] != wantMapping {
+		t.Fatalf("synthesized slot declaration wrong: %v", slot)
+	}
+	// And it is READ-SIDE ONLY: the stored declaration row is the document,
+	// and the document declares no such property.
+	row, err := ds.Get(ctx, "substrate.reamde.dev/core/kind", typeSlotlessCard)
+	if err != nil {
+		t.Fatalf("read the card declaration row: %v", err)
+	}
+	stored, _ := row.Properties["properties"].(map[string]any)
+	if _, leaked := stored["person"]; leaked {
+		t.Fatalf("the synthesized slot was written into the stored declaration: %v", stored)
+	}
+
+	// The projection runs through it: a card with no subject mints a person,
+	// the link lands on the card, and the mapped values project.
+	c := syncSource(t, ds, people, typeSlotlessCard, "card-1", map[string]any{
+		"fullName": "Ada Lovelace", "email": "ada@example.com",
+	})
+	personID := personOf(t, ds, c)
+	person := mustGet(t, ds, typePerson, personID)
+	if person.Properties["name"] != "Ada Lovelace" {
+		t.Fatalf("the mapping did not project name: %v", person.Properties)
+	}
+
+	// The slot's manager is the MAPPING, at the machine tier: the value is
+	// match-or-mint's answer, not the connector's opinion, and only merge and
+	// split may move it.
+	full, err := ds.Get(ctx, c.Kind, c.ID)
+	if err != nil {
+		t.Fatalf("get the card: %v", err)
+	}
+	meta := full.PropertyMeta["person"]
+	if want := "mapping:" + enginetest.SamplePackage("people") + "/cardperson"; meta.Manager != want {
+		t.Fatalf("person manager = %q, want %q", meta.Manager, want)
+	}
+	if meta.Tier != substrate.TierMachine {
+		t.Fatalf("person tier = %q", meta.Tier)
+	}
+	// The connector still owns what it actually wrote.
+	if m := full.PropertyMeta["fullName"]; m.Manager != string(people) {
+		t.Fatalf("fullName manager = %q, want the connector", m.Manager)
+	}
+}
+
+// A mapping whose `property` names something the source kind declares FOR
+// ITSELF is refused: the mapping would otherwise take a declared slot over
+// silently, and the author is the one who can pick another word.
+func TestAMappingCollidingWithADeclaredPropertyIsRefused(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, slotlessManifest()); err != nil {
+		t.Fatalf("install the card mirror: %v", err)
+	}
+	clash := enginetest.PeopleMapping("cardperson", map[string]any{
+		"from": typeSlotlessCard, "property": "fullName",
+	})
+	err := enginetest.DeclareMappings(ctx, ds, clash)
+	if err == nil {
+		t.Fatal("a mapping naming a declared property must be refused")
+	}
+	wantErr(t, err, substrate.ErrValidation, "a colliding mapping property")
+	if !strings.Contains(err.Error(), "already declares") {
+		t.Fatalf("error = %v, want it to name the collision", err)
 	}
 }

@@ -1172,6 +1172,10 @@ func (d *fakeDataset) RetryTriggerFailure(_ context.Context, id string, _ int64)
 	return 0, noSuch("trigger", id)
 }
 
+func (d *fakeDataset) ForgetTriggerFailure(_ context.Context, id string, _ int64) error {
+	return noSuch("trigger", id)
+}
+
 func (d *fakeDataset) CallFunction(_ context.Context, name string, _ any) (any, int, error) {
 	return nil, 0, noSuch("function", name)
 }

@@ -19,6 +19,7 @@ func (h *handler) mountTriggerVerbs(r chi.Router, authority string) {
 	r.Post("/"+authority+"/trigger/{id}/wake", h.postTriggerWake)
 	r.Get("/"+authority+"/trigger/{id}/parked", h.getTriggerParked)
 	r.Post("/"+authority+"/trigger/{id}/parked/{fid}/retry", h.postTriggerRetry)
+	r.Delete("/"+authority+"/trigger/{id}/parked/{fid}", h.deleteTriggerParked)
 }
 
 // getTriggerStatus is per-trigger visibility: kind, cursor, head, lag, last
@@ -135,6 +136,24 @@ func (h *handler) postTriggerRetry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.TriggerRan{Ran: ran})
+}
+
+// deleteTriggerParked forgets one parked delivery: the row goes, nothing runs.
+// It is the verb for a delivery that can no longer be made — an uninstalled
+// callable, a deleted record, effects that landed another way — which a retry
+// cannot clear because a retry has to run something first.
+func (h *handler) deleteTriggerParked(w http.ResponseWriter, r *http.Request) {
+	ds := DatasetFrom(r.Context())
+	fid, err := strconv.ParseInt(pathParam(r, "fid"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, "a parked failure id is a number")
+		return
+	}
+	if err := ds.ForgetTriggerFailure(r.Context(), pathParam(r, "id"), fid); err != nil {
+		writeSubstrateError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type callRequest struct {

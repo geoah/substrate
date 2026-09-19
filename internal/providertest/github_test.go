@@ -162,18 +162,19 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 		}
 	}
 
-	// The user mirror carries an EMPTY subject slot: single, unpinned and
-	// optional, because the kind it reaches belongs to the repository and this
-	// package owns none (record 49). A mapping the owner of that kind declares
-	// is what pins it.
+	// THE USER MIRROR DECLARES NO SUBJECT SLOT AT ALL (record 96). It used to
+	// carry an empty `person` reference, which meant this package had to know
+	// the word its consumer would use; the mapping synthesizes the slot on
+	// this kind when it installs, so what ships here is GitHub and nothing
+	// else.
 	user := mustKind(t, reg, githubUserType)
-	ed, ok := user.Prop("person")
-	if !ok {
-		t.Fatalf("%s declares no `person` slot", githubUserType)
+	if ed, ok := user.Prop("person"); ok {
+		t.Fatalf("%s still declares a subject slot: %+v", githubUserType, ed)
 	}
-	if ed.To != "" || ed.Required || ed.Repeated || !ed.Subject || !ed.MustExist {
-		t.Fatalf("person slot shape wrong: to=%q required=%v many=%v subject=%v mustExist=%v",
-			ed.To, ed.Required, ed.Repeated, ed.Subject, ed.MustExist)
+	for _, name := range user.PropOrder {
+		if user.Props[name].Subject {
+			t.Fatalf("%s declares subject slot %q; a provider declares none", githubUserType, name)
+		}
 	}
 
 	// The issue and pull-request mirrors each carry a required, single

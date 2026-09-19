@@ -69,12 +69,10 @@ func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 	// optional (record 49). The repository's own mapping pins it.
 	contact := mustKind(t, reg, googleContactType)
 	ed, ok := contact.Prop("person")
-	if !ok {
-		t.Fatalf("contact declares no `person` slot")
-	}
-	if ed.To != "" || ed.Required || ed.Repeated || !ed.Subject || !ed.MustExist {
-		t.Fatalf("person slot shape wrong: to=%q required=%v many=%v subject=%v mustExist=%v",
-			ed.To, ed.Required, ed.Repeated, ed.Subject, ed.MustExist)
+	// NO SUBJECT SLOT (record 96): the mapping synthesizes `person` on this
+	// kind when it installs, so the shipped closure is Google and nothing else.
+	if ok {
+		t.Fatalf("contact still declares a subject slot: %+v", ed)
 	}
 
 	// The closure ships NO mapping: this package owns no person.

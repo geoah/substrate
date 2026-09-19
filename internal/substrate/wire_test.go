@@ -49,6 +49,7 @@ var wireTypes = map[string]any{
 	"ProblemDetail": ProblemDetail{},
 
 	"SubstrateRecord":     Record{},
+	"LinkedRecord":        LinkedRecord{},
 	"ReferenceSite":       ReferenceSite{},
 	"Referencing":         Referencing{},
 	"RankedPage":          RankedPage{},
