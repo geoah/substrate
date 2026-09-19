@@ -1148,6 +1148,10 @@ func (d *fakeDataset) TriggerStatuses(context.Context) ([]substrate.TriggerStatu
 	return nil, nil
 }
 
+func (d *fakeDataset) SyncStatuses(context.Context) ([]substrate.SyncStatus, error) {
+	return nil, nil
+}
+
 func (d *fakeDataset) ReplayTrigger(_ context.Context, id string, _ int64) error {
 	return noSuch("trigger", id)
 }

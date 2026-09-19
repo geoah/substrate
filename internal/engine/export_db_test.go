@@ -429,6 +429,15 @@ func TestExportPinsWithEveryPoolConnectionHeld(t *testing.T) {
 	var armed, gated atomic.Bool
 	atCommit := make(chan struct{})
 	release := make(chan struct{})
+	var releaseOnce sync.Once
+	// The gated write holds writerMu, and the service Close this test's
+	// cleanup runs waits for every write to finish. So a t.Fatal anywhere
+	// below — every one of them is before the close(release) further down —
+	// would hand a blocked write to Close and hang the WHOLE PACKAGE to its
+	// timeout, turning one test's failure into a 30-minute suite panic that
+	// names the wrong thing. Goexit runs this defer before that cleanup.
+	releaseGate := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseGate()
 	_, ds, _ := newDatasetWithDSN(t, engine.WithTestCommitFault(func(stage string) error {
 		if stage == engine.CommitAfterPrepare && armed.Load() && gated.CompareAndSwap(false, true) {
 			close(atCommit)
@@ -452,12 +461,18 @@ func TestExportPinsWithEveryPoolConnectionHeld(t *testing.T) {
 			writeErrs <- err
 		}()
 	}
+	// These two waits are for nine goroutines to be SCHEDULED and reach the
+	// database, not for any work with a rate. Under -covermode=atomic, on a
+	// loaded runner, that took longer than the 30s they used to allow and the
+	// test failed on its own instrumentation (CI, 2026-09-19). The budget is
+	// generous on purpose: it is here to bound a hang, not to time anything.
+	const scheduled = 2 * time.Minute
 	select {
 	case <-atCommit:
-	case <-time.After(30 * time.Second):
+	case <-time.After(scheduled):
 		t.Fatal("no write reached its commit")
 	}
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(scheduled)
 	for s := engine.PoolStats(ds); s.InUse < s.MaxOpenConnections || s.WaitCount == 0; s = engine.PoolStats(ds) {
 		if time.Now().After(deadline) {
 			t.Fatalf("the pool never filled with a writer waiting on it: %+v", s)
@@ -478,7 +493,7 @@ func TestExportPinsWithEveryPoolConnectionHeld(t *testing.T) {
 	// old order, on the mutex); the held write is released only now, so the
 	// export never had a connection to itself.
 	time.Sleep(200 * time.Millisecond)
-	close(release)
+	releaseGate()
 	select {
 	case r := <-result:
 		if r.err != nil {

@@ -11,6 +11,7 @@ import { ProvenanceRail } from "@/components/record/provenance"
 import { SourcesFooter, SourcesSection } from "@/components/record/sources"
 import { YamlView } from "@/components/record/yaml-view"
 import { StateBadge } from "@/components/state-badge"
+import { SyncRail } from "@/components/sync/sync-rail"
 import { Button } from "@/components/ui/button"
 import {
   Empty,
@@ -34,6 +35,7 @@ import { recordTitle } from "@/lib/format"
 import { linkTargetsOf, manifestYAML } from "@/lib/manifest"
 import { referencePathsOf } from "@/lib/reference-titles"
 import { stateProperties, kindByCollection } from "@/lib/definition"
+import { SYNC_TRAIT_IDENTITY, kindHasTrait } from "@/lib/sync"
 import { keyDocsOf } from "@/lib/yaml-annotations"
 import { recordRoute } from "@/router"
 
@@ -41,6 +43,7 @@ import { recordRoute } from "@/router"
  * `?tab=manifest` link still lands where it always did. */
 const TABS = [
   "properties",
+  "sync",
   "manifest",
   "graph",
   "activity",
@@ -82,6 +85,9 @@ export function RecordPage() {
     [record.data]
   )
   const referenceTitles = useReferenceTitles(referenced, kinds)
+  // A kind binding the core `sync` trait grows a Sync tab: the trait's
+  // renderer over this record, beside the properties it reads from.
+  const syncable = kindHasTrait(kindInfo, SYNC_TRAIT_IDENTITY)
 
   // The hover vocabulary comes off the kinds query the page already holds —
   // one registry read backs every property tooltip on the manifest.
@@ -194,6 +200,7 @@ export function RecordPage() {
       >
         <TabsList variant="line" className="mx-4 shrink-0 justify-start">
           <TabsTrigger value="properties">Properties</TabsTrigger>
+          {syncable && <TabsTrigger value="sync">Sync</TabsTrigger>}
           <TabsTrigger value="manifest">Manifest</TabsTrigger>
           <TabsTrigger value="graph">Graph</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
@@ -210,6 +217,13 @@ export function RecordPage() {
             />
           </ScrollArea>
         </TabsContent>
+        {syncable && (
+          <TabsContent value="sync" className="min-h-0 border-t">
+            <ScrollArea className="h-full">
+              <SyncRail record={e} />
+            </ScrollArea>
+          </TabsContent>
+        )}
         <TabsContent value="graph" className="min-h-0 border-t">
           <ScrollArea className="h-full">
             <GraphRail

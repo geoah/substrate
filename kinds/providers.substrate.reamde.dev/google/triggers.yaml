@@ -1,7 +1,7 @@
 # The Google bundle's delivery wiring — ordinary DATA records of core's
 # `trigger` kind (console-editable, changelog-visible, substratectl get/apply/
-# delete like anything else). Six triggers drive the three sync functions, two
-# per stream and never shared:
+# delete like anything else). Nine triggers drive the three sync functions,
+# three per stream and never shared:
 #
 #   account(connected, contacts on, never synced)  --contactssync-->
 #       contact records  (+ the contacts sync-token / cadence-anchor stamp)
@@ -10,6 +10,8 @@
 #   account(connected, calendar on, never synced)  --calendarsync-->
 #       calendar + series + event + emailaddress mirrors
 #   hourly schedules  --each function-->  every due, connected account
+#   account(syncRequestedAt moved, stream not yet acknowledged)  --each function-->
+#       that account, now (the core `sync` trait's request pair, decision 0085)
 #
 # Each on-connect trigger is guarded to fire ONCE per account, on ITS OWN
 # stream's cadence anchor (`contactsLastSyncedAt` / `gmailLastSyncedAt` /
@@ -129,4 +131,88 @@ data:
         recurrence: "FREQ=HOURLY"
         timezone: Europe/London
         startsAt: "2025-01-06T09:00:00Z"
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/calendarsync
+---
+# Sync now: the owner stamps `syncRequestedAt` on the account (the console's
+# button, or a patch), and each stream answers ONCE by writing the same
+# instant into its own `syncStreams.contacts.requestedAck` — the guard drops for
+# that stream alone, so one stream's finish cannot re-fire another's, and the
+# account-level `syncRequestedAck` follows once every enabled stream has
+# answered. Coalesced: the dispatcher's own `running` stamp under another
+# stream's actor lands on this account too, and one delivery per request is
+# what the owner asked for.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: google-contacts-on-request
+data:
+  properties:
+    enabled: true
+    source:
+      record:
+        kinds: [providers.substrate.reamde.dev/google/account]
+        ops: [create, update]
+        coalesce: true
+        when: >-
+          record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
+          == "connected" && "enabledContacts" in record.properties && record.properties.enabledContacts
+          == true && "syncRequestedAt" in record.properties && (!("syncStreams"
+          in record.properties) || !("contacts" in record.properties.syncStreams)
+          || !("requestedAck" in record.properties.syncStreams.contacts) ||
+          record.properties.syncStreams.contacts.requestedAck != record.properties.syncRequestedAt)
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/contactssync
+---
+# Sync now: the owner stamps `syncRequestedAt` on the account (the console's
+# button, or a patch), and each stream answers ONCE by writing the same
+# instant into its own `syncStreams.gmail.requestedAck` — the guard drops for
+# that stream alone, so one stream's finish cannot re-fire another's, and the
+# account-level `syncRequestedAck` follows once every enabled stream has
+# answered. Coalesced: the dispatcher's own `running` stamp under another
+# stream's actor lands on this account too, and one delivery per request is
+# what the owner asked for.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: google-gmail-on-request
+data:
+  properties:
+    enabled: true
+    source:
+      record:
+        kinds: [providers.substrate.reamde.dev/google/account]
+        ops: [create, update]
+        coalesce: true
+        when: >-
+          record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
+          == "connected" && "enabledGmail" in record.properties && record.properties.enabledGmail
+          == true && "syncRequestedAt" in record.properties && (!("syncStreams"
+          in record.properties) || !("gmail" in record.properties.syncStreams)
+          || !("requestedAck" in record.properties.syncStreams.gmail) || record.properties.syncStreams.gmail.requestedAck
+          != record.properties.syncRequestedAt)
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/gmailsync
+---
+# Sync now: the owner stamps `syncRequestedAt` on the account (the console's
+# button, or a patch), and each stream answers ONCE by writing the same
+# instant into its own `syncStreams.calendar.requestedAck` — the guard drops for
+# that stream alone, so one stream's finish cannot re-fire another's, and the
+# account-level `syncRequestedAck` follows once every enabled stream has
+# answered. Coalesced: the dispatcher's own `running` stamp under another
+# stream's actor lands on this account too, and one delivery per request is
+# what the owner asked for.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: google-calendar-on-request
+data:
+  properties:
+    enabled: true
+    source:
+      record:
+        kinds: [providers.substrate.reamde.dev/google/account]
+        ops: [create, update]
+        coalesce: true
+        when: >-
+          record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
+          == "connected" && "enabledCalendar" in record.properties && record.properties.enabledCalendar
+          == true && "syncRequestedAt" in record.properties && (!("syncStreams"
+          in record.properties) || !("calendar" in record.properties.syncStreams)
+          || !("requestedAck" in record.properties.syncStreams.calendar) ||
+          record.properties.syncStreams.calendar.requestedAck != record.properties.syncRequestedAt)
     callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/calendarsync

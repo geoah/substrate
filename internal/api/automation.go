@@ -35,6 +35,20 @@ func (h *handler) getTriggerStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, substrate.Listed(statuses))
 }
 
+// getSyncStatus is the synchronization read: every `sync`-trait record's
+// state, last run, request pair, progress and streams, each joined with the
+// record triggers on its kind. Computed on read, like the trigger status it
+// embeds (decision 0085).
+func (h *handler) getSyncStatus(w http.ResponseWriter, r *http.Request) {
+	ds := DatasetFrom(r.Context())
+	statuses, err := ds.SyncStatuses(r.Context())
+	if err != nil {
+		writeSubstrateError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, substrate.Listed(statuses))
+}
+
 type replayRequest struct {
 	From int64 `json:"from"`
 }

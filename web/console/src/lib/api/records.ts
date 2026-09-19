@@ -10,7 +10,7 @@
  * (`collectionPath`) — and GET/PUT/PATCH/DELETE address it there. A create
  * under a server-minted id is `POST /api/v1/records` with `kind` in the body.
  *
- * PAGINATION, two styles the wire keeps apart (decision 0084). The `cursor` a
+ * PAGINATION, two styles the wire keeps apart (decision 0085). The `cursor` a
  * page returns is an OPAQUE keyset token — the client stores it and resends it
  * VERBATIM as `after=` — and that is what a "load more" feed and the bounded
  * size walk use, because a keyset walk sees every row exactly once. `offset=`

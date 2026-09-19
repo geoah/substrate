@@ -340,7 +340,10 @@ can sit. That is why the trigger verbs live under
 verbs sit beside them — and why `merge` and `split`, which act on two records,
 sit at the version root instead. A record's reverse read is not a verb: it is
 the [`referencing` filter arm](#who-points-at-a-record-referencing) of the
-records route.
+records route. The one cross-kind status read, `GET /api/v1/sync/status`,
+sits at the root for the same reason: it lists every record of any kind
+binding the core `sync` trait, with the trait's properties joined to the
+record triggers on its kind ([connections](bundles.md#connections)).
 
 ### Idempotency and retries
 
@@ -595,7 +598,7 @@ is no next page.
 
 A reader that draws a numbered pagination bar cannot walk to page seven, so
 the list takes `offset` as well: the count of ordered rows to discard before
-the page begins ([decision 0084](decisions/0084-a-records-list-pages-by-offset-beside-the-keyset-cursor.md)).
+the page begins ([decision 0085](decisions/0084-a-records-list-pages-by-offset-beside-the-keyset-cursor.md)).
 
 ```http
 GET /api/v1/records?filter={"kinds":["samples.substrate.reamde.dev/tasks/task"]}&first=50&offset=300

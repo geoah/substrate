@@ -85,8 +85,13 @@ import type {
   SuggestedMapping,
   TOTPEnrollment,
   TokenInfo,
+  SyncProgress,
+  SyncStatus,
+  SyncStream,
+  TriggerFailure,
   TriggerRan,
   TriggerReplayed,
+  TriggerStatus,
   VocabularyPlan,
   WebhookAccepted,
 } from "./types"
@@ -538,6 +543,63 @@ const shippedUpgrade: Shape<ShippedUpgrade> = {
 const bundleUninstalled: Shape<BundleUninstalled> = { uninstalled: true }
 const bundlePurged: Shape<BundlePurged> = { purged: true }
 const oauthStarted: Shape<OAuthStarted> = { url: true }
+const triggerStatus: Shape<TriggerStatus> = {
+  id: true,
+  kind: true,
+  callable: true,
+  enabled: true,
+  cursor: false,
+  head: true,
+  lag: false,
+  lastFire: false,
+  webhookPath: false,
+  parked: true,
+  pending: true,
+  error: false,
+}
+const triggerFailure: Shape<TriggerFailure> = {
+  id: true,
+  trigger: true,
+  seq: false,
+  fireId: false,
+  recordId: false,
+  attempts: true,
+  lastError: true,
+  parkedAt: true,
+}
+const syncStatus: Shape<SyncStatus> = {
+  kind: true,
+  id: true,
+  title: false,
+  state: true,
+  message: false,
+  paused: true,
+  lastSyncedAt: false,
+  lastSyncStartedAt: false,
+  lastSyncDurationMs: false,
+  requestedAt: false,
+  requestedAck: false,
+  progress: false,
+  error: false,
+  errorAt: false,
+  streams: false,
+  parked: true,
+  triggers: true,
+}
+const syncProgress: Shape<SyncProgress> = {
+  phase: false,
+  done: true,
+  total: true,
+  pending: true,
+}
+const syncStream: Shape<SyncStream> = {
+  cursor: false,
+  lastAt: false,
+  pending: true,
+  state: false,
+  message: false,
+  requestedAck: false,
+}
 const triggerReplayed: Shape<TriggerReplayed> = { from: true }
 const triggerRan: Shape<TriggerRan> = { ran: true }
 const functionCalled: Shape<FunctionCalled> = { output: true, effects: true }
@@ -596,6 +658,11 @@ const mirrors: Record<string, Record<string, boolean>> = {
   BundleUninstalled: bundleUninstalled,
   BundlePurged: bundlePurged,
   OAuthStarted: oauthStarted,
+  SyncStatus: syncStatus,
+  SyncProgress: syncProgress,
+  SyncStream: syncStream,
+  TriggerStatus: triggerStatus,
+  TriggerFailure: triggerFailure,
   TriggerReplayed: triggerReplayed,
   TriggerRan: triggerRan,
   FunctionCalled: functionCalled,

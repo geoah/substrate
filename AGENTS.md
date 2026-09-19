@@ -177,6 +177,7 @@ bin/substratectl get task                    # list one kind: GET /api/v1/record
 bin/substratectl get task <id> -o yaml       # one record, apply-able envelope
 bin/substratectl apply -f record.yaml        # put (merge, never prune)
 bin/substratectl watch                       # resumable change stream
+bin/substratectl sync status                 # every connected account's sync state, joined with its triggers (the core `sync` trait)
 bin/substratectl export                      # the recovery export: a tar of the repository directory as of one committed point
 
 # the operator's hat — a DSN, no HTTP

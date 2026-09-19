@@ -325,7 +325,7 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 		return 0, from, err
 	}
 	if depth >= causalDepthCap {
-		if err := ds.parkAndAdvance(ctx, tr, ch, from, 0, started,
+		if err := ds.parkAndAdvance(ctx, tr, ch, from, 0, started, nil,
 			fmt.Errorf("%w: change %d sits %d causes deep (cap %d)", errCausalDepth, ch.Seq, depth, causalDepthCap),
 		); err != nil {
 			return 0, from, err
@@ -362,7 +362,7 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 			if res.skipped {
 				// The guard said no: a skip is a settled attempt — record it
 				// and advance the cursor in one transaction.
-				if err := ds.recordSkipAndAdvance(ctx, tr, ch, from, started, ""); err != nil {
+				if err := ds.recordSkipAndAdvance(ctx, tr, ch, from, started, res.reason); err != nil {
 					return 0, from, err
 				}
 				return 0, ch.Seq, nil
@@ -400,7 +400,7 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 			break
 		}
 	}
-	if err := ds.parkAndAdvance(ctx, tr, ch, from, attempts, started, lastErr); err != nil {
+	if err := ds.parkAndAdvance(ctx, tr, ch, from, attempts, started, settle.sync, lastErr); err != nil {
 		return 0, from, err
 	}
 	return 0, ch.Seq, nil
@@ -411,6 +411,9 @@ type deliverResult struct {
 	ran     int  // 1 when effects applied
 	moved   bool // the cursor advanced (dispatch mode only)
 	skipped bool // the when guard said no
+	// reason says why a skip skipped when the guard was not the reason (a
+	// paused sync); empty for a guard-false, which needs no words.
+	reason  string
 	effects map[string]int
 	pages   int // committed pages when the body paged; 1 for a single-shot body
 }
@@ -468,6 +471,13 @@ type settlement struct {
 	pending *foldFailure
 	// record writes the run record; nil on a retry.
 	record func(t *txn, res deliverResult) error
+	// started is when the dispatch began the delivery; zero on a retry,
+	// which measures from its own start.
+	started time.Time
+	// sync is the delivery's hand on a `sync`-trait record (sync.go): set
+	// by deliver once the guard passed on a record whose kind binds the
+	// trait, nil for every other delivery.
+	sync *syncStamp
 }
 
 // settle is the function path: everything in one transaction with the
@@ -496,7 +506,14 @@ func (s *settlement) settle(t *txn, res deliverResult) error {
 		return err
 	}
 	if s.record != nil {
-		return s.record(t, res)
+		if err := s.record(t, res); err != nil {
+			return err
+		}
+	}
+	// The sync stamps ride the same commit as the effects and the run
+	// record: a delivery cannot settle with its record still `running`.
+	if s.sync != nil && s.sync.stamped {
+		return t.syncSettleOK(s.sync)
 	}
 	return nil
 }
@@ -610,7 +627,7 @@ func (s *settlement) complete(t *txn, claim int64, res deliverResult) error {
 // record.
 func (ds *dataset) dispatchSettlement(tr *trigger, ch substrate.Change, from int64, started time.Time) *settlement {
 	s := &settlement{
-		ds: ds, trigger: tr.ID, seq: ch.Seq,
+		ds: ds, trigger: tr.ID, seq: ch.Seq, started: started,
 		acknowledge: func(t *txn) error { return t.advanceCursorTx(tr.ID, from, ch.Seq) },
 	}
 	s.record = func(t *txn, res deliverResult) error {
@@ -663,6 +680,29 @@ func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change
 	if !ok {
 		res.skipped = true
 		return res, nil
+	}
+	// A record whose kind binds the `sync` trait: a pause skips the delivery
+	// before the body runs, and the first attempt writes `running` in a
+	// transaction of its own so the run is visible while it runs; the
+	// settlement and the park write the other half (sync.go). A manual run
+	// settles nothing, so it stamps nothing either.
+	if settle != nil {
+		if stamp := ds.syncStampFor(tr, ch, envelope, settle.started); stamp != nil {
+			if syncPaused(envelope) {
+				res.skipped = true
+				res.reason = "sync paused: the record's syncPaused is set"
+				return res, nil
+			}
+			if settle.sync == nil {
+				settle.sync = stamp
+			}
+			if !settle.sync.stamped {
+				if err := ds.syncStart(ctx, settle.sync, ch.Seq); err != nil {
+					return res, err
+				}
+				settle.sync.stamped = true
+			}
+		}
 	}
 	mode := runner.ModeRecord
 	if !advance {
@@ -768,7 +808,7 @@ func evalWhen(ctx context.Context, tr *trigger, envelope map[string]any) (bool, 
 // failure's id is the seq of the delivery entry that parks it. An agent
 // delivery already claimed the change (settlement.claim): its cursor moved
 // then, so the park rewrites the claim with the error and moves nothing.
-func (ds *dataset) parkAndAdvance(ctx context.Context, tr *trigger, ch substrate.Change, from int64, attempts int, started time.Time, cause error) error {
+func (ds *dataset) parkAndAdvance(ctx context.Context, tr *trigger, ch substrate.Change, from int64, attempts int, started time.Time, sync *syncStamp, cause error) error {
 	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		id, claimed, err := t.claimedFailure(tr.ID, ch.Seq, "")
 		if err != nil {
@@ -797,11 +837,16 @@ func (ds *dataset) parkAndAdvance(ctx context.Context, tr *trigger, ch substrate
 				return err
 			}
 		}
-		return t.putRun(runRecord{
+		if err := t.putRun(runRecord{
 			trigger: tr.ID, callable: tr.callablePath(), mode: runner.ModeRecord,
 			seq: ch.Seq, recordID: ch.RecordID, status: runStatusParked,
 			attempt: attempts, startedAt: started, errMsg: cause.Error(),
-		})
+		}); err != nil {
+			return err
+		}
+		// The park and the record's `erroring` commit together, so a reader
+		// never meets a parked delivery whose record still says `running`.
+		return t.syncPark(sync, cause)
 	})
 	if err != nil {
 		return err
@@ -2084,7 +2129,10 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 			if err := t.parkTx(tr.ID, f); err != nil {
 				return err
 			}
-			return t.settleDelivery(tr.ID)
+			if err := t.settleDelivery(tr.ID); err != nil {
+				return err
+			}
+			return t.syncPark(settle.sync, derr)
 		})
 		if uerr != nil {
 			return 0, uerr

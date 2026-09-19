@@ -390,6 +390,39 @@
     "state": true,
     "to": true
   },
+  "SyncProgress": {
+    "done": true,
+    "pending": true,
+    "phase": false,
+    "total": true
+  },
+  "SyncStatus": {
+    "error": false,
+    "errorAt": false,
+    "id": true,
+    "kind": true,
+    "lastSyncDurationMs": false,
+    "lastSyncStartedAt": false,
+    "lastSyncedAt": false,
+    "message": false,
+    "parked": true,
+    "paused": true,
+    "progress": false,
+    "requestedAck": false,
+    "requestedAt": false,
+    "state": true,
+    "streams": false,
+    "title": false,
+    "triggers": true
+  },
+  "SyncStream": {
+    "cursor": false,
+    "lastAt": false,
+    "message": false,
+    "pending": true,
+    "requestedAck": false,
+    "state": false
+  },
   "TOTPEnrollment": {
     "otpauthUri": true,
     "totpSecret": true
@@ -400,11 +433,35 @@
     "id": true,
     "label": true
   },
+  "TriggerFailure": {
+    "attempts": true,
+    "fireId": false,
+    "id": true,
+    "lastError": true,
+    "parkedAt": true,
+    "recordId": false,
+    "seq": false,
+    "trigger": true
+  },
   "TriggerRan": {
     "ran": true
   },
   "TriggerReplayed": {
     "from": true
+  },
+  "TriggerStatus": {
+    "callable": true,
+    "cursor": false,
+    "enabled": true,
+    "error": false,
+    "head": true,
+    "id": true,
+    "kind": true,
+    "lag": false,
+    "lastFire": false,
+    "parked": true,
+    "pending": true,
+    "webhookPath": false
   },
   "VocabularyPlan": {
     "blockers": false,

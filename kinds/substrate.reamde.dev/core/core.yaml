@@ -43,7 +43,7 @@ data:
   authority: substrate.reamde.dev
   package: core
   # a maturity statement, not a routing key: no envelope carries a version.
-  version: 29
+  version: 30
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands
@@ -226,3 +226,42 @@ data:
   properties:
     clientId: string
     clientSecret: secret
+---
+# the synchronization a provider's function drives on one connected account:
+# the host-recognized interface behind the console's Connections view and the
+# `sync status` read. An `accountconfig` kind binds it beside the token
+# properties, and every binding kind redeclares the twelve properties with a
+# `writer:` role: `syncRequestedAt` and `syncPaused` are the OWNER's hands
+# (the two things a person does to a sync — ask for one, stop them), the rest
+# are the CONNECTOR's, which the sync function writes through its effects and
+# the trigger dispatcher stamps around a record-sourced delivery under the
+# callable's own actor (engine sync.go). `syncState` is a plain string, not a
+# `state` machine (decision 0085): the substrate and the body both write it
+# and no move between its five words is illegal, so a machine would only
+# refuse a sync. The set is `never`, `running`, `ok`, `erroring` and
+# `throttled`. `syncProgress` is `{phase, done, total, pending}` and
+# `syncStreams` maps a stream name to `{cursor, lastAt, pending, state,
+# message, requestedAck}`; both are `json` because a trait contracts a
+# datatype and their shape is the contract's prose.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/sync
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "the synchronization a function drives on one connected account:
+    its state, its last run, the request that asks for the next one, and its
+    progress per stream"
+  properties:
+    syncState: string
+    syncMessage: string
+    lastSyncedAt: datetime
+    lastSyncStartedAt: datetime
+    lastSyncDurationMs: int
+    syncRequestedAt: datetime
+    syncRequestedAck: datetime
+    syncPaused: bool
+    syncProgress: json
+    syncError: string
+    syncErrorAt: datetime
+    syncStreams: json
