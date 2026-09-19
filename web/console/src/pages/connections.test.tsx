@@ -330,7 +330,7 @@ describe("ConnectionsPage", () => {
     const link = (await screen.findAllByText("google")).find(
       (el) => el.tagName === "A"
     )!
-    const card = link.closest("div.rounded-md")!
+    const card = link.closest<HTMLElement>("div.rounded-md")!
     expect(within(card).getByText("credentials set")).toBeTruthy()
     expect(within(card).getByText("1 connected, 1 pending")).toBeTruthy()
     expect(within(card).getByText(GOOGLE)).toBeTruthy()
