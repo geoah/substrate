@@ -100,14 +100,82 @@ function rowsOf(record: SubstrateRecord, kind?: KindInfo): LedgerRow[] {
 }
 
 /** A value on one line, the whole value on hover. */
-function Value({ value }: { value: unknown }) {
+function Value({ value, className }: { value: unknown; className?: string }) {
   if (value === undefined || value === null) {
-    return <span className="text-muted-foreground/70">not set</span>
+    return (
+      <span className={cn("text-muted-foreground/70", className)}>not set</span>
+    )
   }
   const text = cellValue(value)
   return (
-    <span className="data break-words" title={text}>
+    <span className={cn("data break-words", className)} title={text}>
       {text}
+    </span>
+  )
+}
+
+/** Where a value came from, as one line a reader can say aloud: "from
+ * ‹source record› by ‹sync of user› · via githubuserperson · 8m ago", or
+ * "written by ‹console› · just now" for a hand edit. The two connecting
+ * words carry the hover that explains them, so there is no header row to
+ * explain a column. */
+function Origin({
+  actor,
+  source,
+  mapping,
+  at,
+  titles,
+  kinds,
+}: {
+  actor?: string
+  source?: string
+  mapping?: string
+  at?: string
+  titles: ReadonlyMap<string, string>
+  kinds: KindInfo[]
+}) {
+  const sourceKind = source ? splitRecordPath(source)?.kind : undefined
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+      {source ? (
+        <>
+          <span className="cursor-help" title={WORDS.source}>
+            from
+          </span>
+          <SourcePill source={source} titles={titles} kinds={kinds} />
+          {actor && (
+            <>
+              <span className="cursor-help" title={WORDS.manager}>
+                by
+              </span>
+              <ActorPill actor={actor} sourceKind={sourceKind} />
+            </>
+          )}
+        </>
+      ) : actor ? (
+        <>
+          <span className="cursor-help" title={WORDS.manager}>
+            written by
+          </span>
+          <ActorPill actor={actor} />
+        </>
+      ) : (
+        <span>no manager recorded</span>
+      )}
+      {mapping && (
+        <>
+          <span aria-hidden>·</span>
+          <span className="truncate" title={mapping}>
+            via {splitKind(mapping).name || mapping}
+          </span>
+        </>
+      )}
+      {at && (
+        <>
+          <span aria-hidden>·</span>
+          <span title={at}>{relativeTime(at)}</span>
+        </>
+      )}
     </span>
   )
 }
@@ -149,29 +217,6 @@ function SourcePill({
       id={target.id}
       title={titles.get(source)}
     />
-  )
-}
-
-function Header() {
-  return (
-    <div className="grid grid-cols-[minmax(6rem,1fr)_minmax(0,2fr)_minmax(0,2fr)_auto] items-center gap-x-4 border-b px-4 py-2 text-xs text-muted-foreground">
-      <span>property</span>
-      <span>value</span>
-      <span className="flex items-center gap-1">
-        <span className="cursor-help" title={WORDS.manager}>
-          manager
-        </span>
-        <span aria-hidden>·</span>
-        <span className="cursor-help" title={WORDS.source}>
-          source
-        </span>
-        <span aria-hidden>·</span>
-        <span className="cursor-help" title={WORDS.tier}>
-          tier
-        </span>
-      </span>
-      <span className="text-right">action</span>
-    </div>
   )
 }
 
@@ -228,162 +273,116 @@ export function ProvenanceRail({
     )
   }
 
-  const kindOf = (path: string | undefined) =>
-    path ? splitRecordPath(path)?.kind : undefined
-
   return (
-    <div className="flex min-w-0 flex-col">
-      <div className="flex items-baseline gap-2 pb-2">
+    <div className="flex min-w-0 flex-col gap-3">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <h2 className="text-base font-semibold">Properties</h2>
         <span className="text-sm text-muted-foreground">
           who holds each value, where it came from, and what the sources say
           instead
         </span>
       </div>
-      <div className="min-w-0 rounded-xl border bg-card">
-        <Header />
-        <ul>
-          {rows.map((row) => {
-            const alts = row.meta.alternatives ?? []
-            const held = row.meta.tier === "owner" || row.meta.tier === "bundle"
-            return (
-              <li
-                key={row.name}
-                className="border-b last:border-b-0"
-                data-property={row.name}
-              >
-                <div className="grid grid-cols-[minmax(6rem,1fr)_minmax(0,2fr)_minmax(0,2fr)_auto] items-start gap-x-4 px-4 py-2.5 text-sm">
-                  <span className="data break-all">{row.name}</span>
-                  <div className="min-w-0">
-                    <Value value={row.value} />
-                  </div>
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    {row.meta.manager ? (
-                      <ActorPill
-                        actor={row.meta.manager}
-                        sourceKind={kindOf(row.meta.source)}
-                      />
-                    ) : (
-                      <span className="text-xs text-muted-foreground/70">
-                        no manager recorded
-                      </span>
-                    )}
-                    {row.meta.source && (
-                      <>
-                        <span className="text-xs text-muted-foreground">
-                          from
-                        </span>
-                        <SourcePill
-                          source={row.meta.source}
+      <ul className="flex min-w-0 flex-col gap-3">
+        {rows.map((row) => {
+          const alts = row.meta.alternatives ?? []
+          const held = row.meta.tier === "owner" || row.meta.tier === "bundle"
+          return (
+            <li
+              key={row.name}
+              data-property={row.name}
+              className="flex min-w-0 flex-col gap-2 rounded-xl border bg-card p-4"
+            >
+              <div className="flex min-w-0 items-start justify-between gap-3">
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span className="data text-xs text-muted-foreground">
+                    {row.name}
+                  </span>
+                  <Value value={row.value} className="text-base" />
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {row.meta.manager && <TierChip tier={row.meta.tier} />}
+                  {held && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={() =>
+                        setPending({ kind: "release", property: row.name })
+                      }
+                    >
+                      Release
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <Origin
+                actor={row.meta.manager}
+                source={row.meta.source}
+                mapping={
+                  row.meta.source
+                    ? mappingOfSource(links ?? [], row.meta.source)
+                    : undefined
+                }
+                at={row.meta.updatedAt}
+                titles={titles}
+                kinds={kinds}
+              />
+              {alts.length > 0 && (
+                <div className="mt-1 flex flex-col gap-1.5 border-t pt-2.5">
+                  <p
+                    className="cursor-help text-xs text-muted-foreground"
+                    title={WORDS.alternative}
+                  >
+                    {alts.length === 1
+                      ? "One live source says otherwise"
+                      : `${alts.length} live sources say otherwise`}
+                  </p>
+                  <ul className="flex flex-col gap-1.5">
+                    {alts.map((alt, i) => (
+                      <li
+                        key={`${alt.actor} ${alt.source ?? i}`}
+                        data-alternative
+                        className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-muted/40 px-3 py-2"
+                      >
+                        <Value
+                          value={alt.value}
+                          className="text-sm font-medium text-foreground"
+                        />
+                        <Origin
+                          actor={alt.actor}
+                          source={alt.source}
+                          mapping={
+                            alt.source
+                              ? mappingOfSource(links ?? [], alt.source)
+                              : undefined
+                          }
+                          at={alt.updatedAt}
                           titles={titles}
                           kinds={kinds}
                         />
-                      </>
-                    )}
-                    {row.meta.manager && <TierChip tier={row.meta.tier} />}
-                    {row.meta.updatedAt && (
-                      <span
-                        className="text-xs text-muted-foreground"
-                        title={row.meta.updatedAt}
-                      >
-                        {relativeTime(row.meta.updatedAt)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    {held && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-6 px-2 text-xs"
-                        onClick={() =>
-                          setPending({ kind: "release", property: row.name })
-                        }
-                      >
-                        Release
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                {alts.length > 0 && (
-                  <ul className="mx-4 mb-2.5 rounded-lg border bg-muted/30">
-                    <li
-                      className="border-b px-3 py-1 text-[0.7rem] text-muted-foreground"
-                      title={WORDS.alternative}
-                    >
-                      {alts.length === 1
-                        ? "1 alternative from a live source"
-                        : `${alts.length} alternatives from live sources`}
-                    </li>
-                    {alts.map((alt, i) => {
-                      const mapping = alt.source
-                        ? mappingOfSource(links ?? [], alt.source)
-                        : undefined
-                      return (
-                        <li
-                          key={`${alt.actor} ${alt.source ?? i}`}
-                          className="grid grid-cols-[minmax(0,2fr)_minmax(0,2fr)_auto] items-center gap-x-4 px-3 py-1.5 text-sm"
-                          data-alternative
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="ml-auto h-6 px-2 text-xs"
+                          onClick={() =>
+                            setPending({
+                              kind: "use",
+                              property: row.name,
+                              alternative: alt,
+                            })
+                          }
                         >
-                          <div className="min-w-0">
-                            <Value value={alt.value} />
-                          </div>
-                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                            <ActorPill
-                              actor={alt.actor}
-                              sourceKind={kindOf(alt.source)}
-                            />
-                            {alt.source && (
-                              <>
-                                <span className="text-xs text-muted-foreground">
-                                  from
-                                </span>
-                                <SourcePill
-                                  source={alt.source}
-                                  titles={titles}
-                                  kinds={kinds}
-                                />
-                              </>
-                            )}
-                            {mapping && (
-                              <span
-                                className="truncate text-xs text-muted-foreground"
-                                title={mapping}
-                              >
-                                via {splitKind(mapping).name || mapping}
-                              </span>
-                            )}
-                            <span
-                              className="text-xs text-muted-foreground"
-                              title={alt.updatedAt}
-                            >
-                              {relativeTime(alt.updatedAt)}
-                            </span>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-6 px-2 text-xs"
-                            onClick={() =>
-                              setPending({
-                                kind: "use",
-                                property: row.name,
-                                alternative: alt,
-                              })
-                            }
-                          >
-                            Use this
-                          </Button>
-                        </li>
-                      )
-                    })}
+                          Use this
+                        </Button>
+                      </li>
+                    ))}
                   </ul>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      </div>
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ul>
 
       {pending && (
         <Dialog

@@ -88,28 +88,23 @@ function Group({ group, kinds }: { group: SourceGroup; kinds: KindInfo[] }) {
         {group.description && (
           <p className="text-xs text-muted-foreground">{group.description}</p>
         )}
-        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
-          <dt className="text-muted-foreground">reads</dt>
-          <dd className="min-w-0">
-            <KindLink kind={group.from} kinds={kinds} />
-            <span className="text-muted-foreground">
-              {" "}
-              through its <code>{group.property}</code> slot
+        <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+          <span>reads</span>
+          <KindLink kind={group.from} kinds={kinds} />
+          <span>
+            through its <code>{group.property}</code> slot
+          </span>
+        </p>
+        <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+          <span>contributes</span>
+          {group.contributes.length ? (
+            <span className="data break-words text-foreground">
+              {group.contributes.join(", ")}
             </span>
-          </dd>
-          <dt className="text-muted-foreground">contributes</dt>
-          <dd className="min-w-0">
-            {group.contributes.length ? (
-              <span className="data break-words">
-                {group.contributes.join(", ")}
-              </span>
-            ) : (
-              <span className="text-muted-foreground">
-                nothing: a link-only mapping
-              </span>
-            )}
-          </dd>
-        </dl>
+          ) : (
+            <span>nothing: a link-only mapping</span>
+          )}
+        </p>
       </header>
       <ul className="mt-3 flex flex-wrap gap-1.5">
         {shown.map((m) => (
