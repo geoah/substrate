@@ -3,16 +3,22 @@
  * (shareable views are table stakes) and into the wire's filter grammar.
  *
  * Ops stay small on purpose: `eq` for scalars (comma = membership, `in`),
- * `contains` for repeated properties, and `prefix` for starts-with matching —
- * typed as a trailing `*` in the value (`geo*`). That trailing star is the
- * whole wildcard grammar: the wire's only substring-ish op is `prefix`
- * (LIKE stem%); its `contains` is jsonb membership on repeated values, NOT
- * substring (verified live, 2026-08-06), so `*infix*` is not offered. */
+ * `contains` for repeated properties, `prefix` for starts-with on an
+ * identifier-shaped string (an email, a URL, a phone — typed as a trailing
+ * `*`, `geo*`), and `match` for free text. `match` is the wire's full-text
+ * operator over ONE property's words, in the search grammar: every word must
+ * appear (stemmed, any case), `lay*` is a word prefix, `"a phrase"` wants the
+ * words adjacent, `-word` excludes one, `a OR b` takes either. It is what a
+ * person means when they type into a text filter, so it is the DEFAULT for
+ * string, text and markdown properties, and `=value` is how they ask for the
+ * exact value instead. The wire's `contains` is jsonb membership on repeated
+ * values, NOT substring, so it is only ever reached through `=` on a repeated
+ * field. */
 
 import type { Cond, RecordFilter } from "@/lib/api/types"
 import type { DeclaredProperty } from "@/lib/definition"
 
-export type FilterOp = "eq" | "contains" | "prefix"
+export type FilterOp = "eq" | "contains" | "prefix" | "match"
 
 export interface ActiveFilter {
   field: string
@@ -31,7 +37,7 @@ export function encodeFilter(f: ActiveFilter): string {
 export function decodeFilter(token: string): ActiveFilter | null {
   const m =
     typeof token === "string"
-      ? token.match(/^([\w.]+)~(eq|contains|prefix)~(.*)$/)
+      ? token.match(/^([\w.]+)~(eq|contains|prefix|match)~(.*)$/)
       : null
   if (!m) return null
   try {
@@ -90,6 +96,10 @@ export function toRecordFilter(
       properties[f.field] = { ...properties[f.field], prefix: f.value }
       continue
     }
+    if (f.op === "match") {
+      properties[f.field] = { ...properties[f.field], match: f.value }
+      continue
+    }
     const parts = f.value.includes(",")
       ? f.value
           .split(",")
@@ -109,47 +119,63 @@ export function toRecordFilter(
   return { properties }
 }
 
-/** The op a field filters with: repeated properties match item-wise. */
+/** The exact-value op a field filters with: repeated properties match
+ * item-wise, scalars by equality. */
 export function opFor(prop?: DeclaredProperty): FilterOp {
   return prop?.repeated ? "contains" : "eq"
 }
 
-// ── the value editor's wildcard grammar ─────────────────────────────────────
+// ── the value editor's grammar ──────────────────────────────────────────────
 
-/** Kinds whose values are prose-ish enough that a trailing `*` reads as a
- * wildcard, never as data. Everything else (ints, bools, states…) keeps the
- * character literal. */
-const PREFIXABLE_KINDS = new Set([
-  "string",
-  "text",
-  "markdown",
-  "email",
-  "url",
-  "phone",
-])
+/** Kinds whose values are words: what a person types against them is a
+ * full-text `match`, and `=` asks for the exact value. */
+const TEXT_KINDS = new Set(["string", "text", "markdown"])
 
-/** Whether a field's value editor honors the trailing-`*` wildcard. */
-export function canPrefix(prop?: DeclaredProperty): boolean {
-  return !prop || (!prop.repeated && PREFIXABLE_KINDS.has(prop.kind))
+/** Kinds shaped like identifiers, where a word match means little (an address
+ * is one token to the search dictionary) and starts-with is the useful
+ * wildcard: a trailing `*` on a scalar is `prefix`. */
+const IDENTIFIER_KINDS = new Set(["email", "url", "phone"])
+
+/** Whether typed text on this field is a full-text match. An undeclared
+ * field (no property to consult) is text. */
+export function canMatch(prop?: DeclaredProperty): boolean {
+  return !prop || TEXT_KINDS.has(prop.kind)
 }
 
-/** What the user typed → the filter it means. A trailing `*` on a scalar
- * string-ish field is the starts-with wildcard (`geo*` → prefix "geo");
- * everything else keeps the field's natural op. */
+/** Whether a field's value editor honors the trailing-`*` starts-with
+ * wildcard. */
+export function canPrefix(prop?: DeclaredProperty): boolean {
+  return Boolean(prop && !prop.repeated && IDENTIFIER_KINDS.has(prop.kind))
+}
+
+/** What the user typed → the filter it means. On a text field the words are
+ * a `match` and a leading `=` means the exact value (`=George` → eq George;
+ * on a repeated field, `contains`). On an identifier field a trailing `*` is
+ * starts-with (`geo*` → prefix geo). Everything else keeps the field's
+ * natural exact op, the character literal. */
 export function parseValueInput(
   raw: string,
   prop?: DeclaredProperty
 ): { op: FilterOp; value: string } {
+  if (canMatch(prop)) {
+    if (raw.startsWith("=") && raw.length > 1) {
+      return { op: opFor(prop), value: raw.slice(1) }
+    }
+    return { op: "match", value: raw }
+  }
   if (canPrefix(prop) && raw.length > 1 && raw.endsWith("*")) {
     return { op: "prefix", value: raw.slice(0, -1) }
   }
   return { op: opFor(prop), value: raw }
 }
 
-/** The value as the control (and the editor's draft) shows it: a prefix
- * filter wears its trailing `*` back. */
-export function displayValue(f: ActiveFilter): string {
-  return f.op === "prefix" ? `${f.value}*` : f.value
+/** The value as the control (and the editor's draft) shows it, so what reads
+ * back is what parseValueInput would take again: a prefix filter wears its
+ * trailing `*`, and an exact value on a text field wears its leading `=`. */
+export function displayValue(f: ActiveFilter, prop?: DeclaredProperty): string {
+  if (f.op === "prefix") return `${f.value}*`
+  if (f.op !== "match" && canMatch(prop)) return `=${f.value}`
+  return f.value
 }
 
 // ── per-type persistence (localStorage) ─────────────────────────────────────

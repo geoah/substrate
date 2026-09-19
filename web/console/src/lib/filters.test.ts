@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it } from "vitest"
 
 import {
+  canMatch,
   canPrefix,
   decodeFilter,
   decodeFilters,
@@ -29,7 +30,8 @@ describe("the URL codec", () => {
       { field: "prominence", op: "eq", value: "known" },
       { field: "emails", op: "contains", value: "a+b@x.dev" },
       { field: "name", op: "eq", value: "tilde ~ comma, colon:" },
-      { field: "name", op: "prefix", value: "geo" },
+      { field: "email", op: "prefix", value: "geo" },
+      { field: "name", op: "match", value: `rack lay* -"weekly sync"` },
       { field: "n", op: "eq", value: "" },
     ]
     for (const f of cases) {
@@ -70,6 +72,15 @@ describe("toRecordFilter", () => {
     ).toEqual({ properties: { emails: { contains: "a@x.dev" } } })
   })
 
+  it("writes match verbatim: the server parses the grammar", () => {
+    expect(
+      toRecordFilter(
+        [{ field: "notes", op: "match", value: `rack lay* -"weekly sync"` }],
+        [prop({ name: "notes", kind: "markdown" })]
+      )
+    ).toEqual({ properties: { notes: { match: `rack lay* -"weekly sync"` } } })
+  })
+
   it("coerces by declared kind so jsonb compares like for like", () => {
     expect(
       toRecordFilter(
@@ -107,60 +118,173 @@ describe("opFor", () => {
   })
 })
 
-describe("the trailing-* wildcard", () => {
-  it("turns geo* into a prefix filter on string-ish scalars", () => {
-    expect(parseValueInput("geo*", prop({}))).toEqual({
-      op: "prefix",
-      value: "geo",
+describe("free text on a text field is a full-text match", () => {
+  it("words, stars, phrases and exclusions ride to the server as match", () => {
+    for (const raw of [
+      "rack",
+      "lay*",
+      "*lay*",
+      `"rack layout"`,
+      "rack -lunch",
+    ]) {
+      expect(parseValueInput(raw, prop({}))).toEqual({
+        op: "match",
+        value: raw,
+      })
+    }
+    expect(parseValueInput("rack", prop({ kind: "text" }))).toEqual({
+      op: "match",
+      value: "rack",
     })
+    expect(parseValueInput("rack", prop({ kind: "markdown" }))).toEqual({
+      op: "match",
+      value: "rack",
+    })
+    // a repeated string matches over its items
+    expect(parseValueInput("rack", prop({ repeated: true }))).toEqual({
+      op: "match",
+      value: "rack",
+    })
+    // an undeclared field is text
+    expect(parseValueInput("rack", undefined)).toEqual({
+      op: "match",
+      value: "rack",
+    })
+  })
+
+  it("a leading = asks for the exact value in the field's natural op", () => {
+    expect(parseValueInput("=George", prop({}))).toEqual({
+      op: "eq",
+      value: "George",
+    })
+    expect(parseValueInput("=a,b", prop({}))).toEqual({
+      op: "eq",
+      value: "a,b",
+    })
+    expect(parseValueInput("=tag", prop({ repeated: true }))).toEqual({
+      op: "contains",
+      value: "tag",
+    })
+    // a bare = is a word to match, not an empty exact value
+    expect(parseValueInput("=", prop({}))).toEqual({ op: "match", value: "=" })
+  })
+
+  it("only string, text and markdown fields match", () => {
+    expect(canMatch(prop({}))).toBe(true)
+    expect(canMatch(prop({ kind: "text" }))).toBe(true)
+    expect(canMatch(prop({ kind: "markdown", repeated: true }))).toBe(true)
+    expect(canMatch(undefined)).toBe(true)
+    expect(canMatch(prop({ kind: "email" }))).toBe(false)
+    expect(canMatch(prop({ kind: "enum" }))).toBe(false)
+    expect(canMatch(prop({ kind: "int" }))).toBe(false)
+    expect(canMatch(prop({ kind: "state" }))).toBe(false)
+  })
+})
+
+describe("the trailing-* wildcard on identifier fields", () => {
+  it("turns geo* into a prefix filter on an email, url or phone", () => {
     expect(parseValueInput("geo*", prop({ kind: "email" }))).toEqual({
       op: "prefix",
       value: "geo",
     })
+    expect(parseValueInput("https://x*", prop({ kind: "url" }))).toEqual({
+      op: "prefix",
+      value: "https://x",
+    })
   })
 
   it("leaves plain values, bare *, and non-string kinds alone", () => {
-    expect(parseValueInput("geo", prop({}))).toEqual({
+    expect(parseValueInput("geo", prop({ kind: "email" }))).toEqual({
       op: "eq",
       value: "geo",
     })
-    expect(parseValueInput("*", prop({}))).toEqual({ op: "eq", value: "*" })
+    expect(parseValueInput("*", prop({ kind: "email" }))).toEqual({
+      op: "eq",
+      value: "*",
+    })
     expect(parseValueInput("4*", prop({ name: "n", kind: "int" }))).toEqual({
       op: "eq",
       value: "4*",
     })
     expect(
-      parseValueInput("a*", prop({ kind: "string", repeated: true }))
+      parseValueInput("a*", prop({ kind: "email", repeated: true }))
     ).toEqual({ op: "contains", value: "a*" })
   })
 
   it("writes prefix onto the wire, merged with any eq on the field", () => {
     expect(
-      toRecordFilter([{ field: "name", op: "prefix", value: "geo" }], [])
-    ).toEqual({ properties: { name: { prefix: "geo" } } })
+      toRecordFilter([{ field: "email", op: "prefix", value: "geo" }], [])
+    ).toEqual({ properties: { email: { prefix: "geo" } } })
     expect(
       toRecordFilter(
         [
-          { field: "name", op: "prefix", value: "geo" },
-          { field: "name", op: "eq", value: "george" },
+          { field: "email", op: "prefix", value: "geo" },
+          { field: "email", op: "eq", value: "george@x.dev" },
         ],
         []
       )
-    ).toEqual({ properties: { name: { prefix: "geo", eq: "george" } } })
+    ).toEqual({
+      properties: { email: { prefix: "geo", eq: "george@x.dev" } },
+    })
   })
 
-  it("wears the star back in display", () => {
-    expect(displayValue({ field: "n", op: "prefix", value: "geo" })).toBe(
-      "geo*"
-    )
-    expect(displayValue({ field: "n", op: "eq", value: "geo" })).toBe("geo")
-  })
-
-  it("only string-ish scalars are prefixable", () => {
-    expect(canPrefix(prop({}))).toBe(true)
+  it("only identifier-shaped scalars are prefixable", () => {
+    expect(canPrefix(prop({ kind: "email" }))).toBe(true)
+    expect(canPrefix(prop({ kind: "url" }))).toBe(true)
+    expect(canPrefix(prop({ kind: "phone" }))).toBe(true)
+    expect(canPrefix(prop({}))).toBe(false)
     expect(canPrefix(prop({ kind: "int" }))).toBe(false)
     expect(canPrefix(prop({ kind: "state" }))).toBe(false)
-    expect(canPrefix(prop({ repeated: true }))).toBe(false)
+    expect(canPrefix(prop({ kind: "email", repeated: true }))).toBe(false)
+    expect(canPrefix(undefined)).toBe(false)
+  })
+})
+
+describe("displayValue reads back what parseValueInput takes", () => {
+  it("a prefix wears its star, an exact text value its =, a match is bare", () => {
+    expect(
+      displayValue(
+        { field: "e", op: "prefix", value: "geo" },
+        prop({ kind: "email" })
+      )
+    ).toBe("geo*")
+    expect(displayValue({ field: "n", op: "eq", value: "geo" }, prop({}))).toBe(
+      "=geo"
+    )
+    expect(
+      displayValue(
+        { field: "tags", op: "contains", value: "x" },
+        prop({ repeated: true })
+      )
+    ).toBe("=x")
+    expect(
+      displayValue({ field: "n", op: "match", value: "geo*" }, prop({}))
+    ).toBe("geo*")
+    // a non-text field's exact value is shown as typed
+    expect(
+      displayValue(
+        { field: "prominence", op: "eq", value: "known" },
+        prop({ kind: "state" })
+      )
+    ).toBe("known")
+    expect(
+      displayValue({ field: "n", op: "eq", value: "1" }, prop({ kind: "int" }))
+    ).toBe("1")
+  })
+
+  it("round-trips through parseValueInput", () => {
+    for (const [f, p] of [
+      [{ field: "n", op: "eq", value: "George" }, prop({})],
+      [{ field: "n", op: "match", value: `lay* -"a b"` }, prop({})],
+      [{ field: "e", op: "prefix", value: "geo" }, prop({ kind: "email" })],
+      [{ field: "t", op: "contains", value: "x" }, prop({ repeated: true })],
+      [{ field: "s", op: "eq", value: "known" }, prop({ kind: "state" })],
+    ] as const) {
+      expect(parseValueInput(displayValue(f, p), p)).toEqual({
+        op: f.op,
+        value: f.value,
+      })
+    }
   })
 })
 

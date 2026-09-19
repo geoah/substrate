@@ -25,6 +25,7 @@ import { RecordPage } from "@/pages/record"
 import { RecordEditPage, RecordNewPage } from "@/pages/record-editor"
 import { RegisterPage } from "@/pages/register"
 import { RegistryPage } from "@/pages/registry"
+import { SearchPage } from "@/pages/search"
 import { BundleSettingsPage, SettingsPage } from "@/pages/settings"
 import { TokensPage } from "@/pages/tokens"
 import { KindBrowsePage } from "@/pages/kind-browse"
@@ -87,6 +88,24 @@ export const registryRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/registry",
   component: RegistryPage,
+})
+
+// The ranked read as a page. The page reads its state through nuqs; the
+// route declares the same three keys so a typed navigation (the ⌘K palette
+// handing over a query) can spell them, and so nothing strips them.
+export const searchRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/search",
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { q?: string; mode?: string; kind?: string } => ({
+    q: typeof search.q === "string" && search.q ? search.q : undefined,
+    mode:
+      typeof search.mode === "string" && search.mode ? search.mode : undefined,
+    kind:
+      typeof search.kind === "string" && search.kind ? search.kind : undefined,
+  }),
+  component: SearchPage,
 })
 
 export const bundleDetailRoute = createRoute({
@@ -206,6 +225,7 @@ const routeTree = rootRoute.addChildren([
     homeRoute,
     changelogRoute,
     registryRoute,
+    searchRoute,
     bundleDetailRoute,
     settingsRoute,
     bundleSettingsRoute,

@@ -330,6 +330,11 @@ export interface Cond {
   lte?: unknown
   contains?: unknown
   exists?: boolean
+  /** A full-text match over ONE text property's own words, in the search
+   * grammar (`words`, `"a phrase"`, `-excluded`, `a OR b`, `prefix*`). Only
+   * string-family and prose properties, the title, the body and labels take
+   * it. */
+  match?: string
 }
 
 /** The filter grammar (`substrate.Filter`, `?filter=` as URL-encoded JSON on
@@ -339,6 +344,10 @@ export interface Cond {
  * `deleted` absent means live records only; `referencing` is the reverse
  * read. A state property filters through `properties` like any other. */
 export interface RecordFilter {
+  /** Words against the record's whole search index (every text the kind
+   * indexes), in the search grammar: a PREDICATE, so it composes with every
+   * other arm and the sort, and says nothing about rank — `?q=` ranks. */
+  search?: string
   kinds?: string[]
   implements?: string
   ids?: string[]

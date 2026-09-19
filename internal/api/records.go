@@ -179,6 +179,8 @@ func (h *handler) resolveKinds(w http.ResponseWriter, r *http.Request, ds substr
 // the refusal says what to drop.
 func filterArmBeyondKinds(f substrate.Filter) string {
 	switch {
+	case f.Search != "":
+		return "search"
 	case f.Implements != "":
 		return "implements"
 	case len(f.IDs) > 0:

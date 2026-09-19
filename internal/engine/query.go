@@ -490,6 +490,17 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 	default:
 		b.add(`deleted_at IS NOT NULL`)
 	}
+	if f.Search != "" {
+		// The record's search index, the one column records_fts_idx covers:
+		// every text the kind indexes (validate.go ftsBands), matched by the
+		// grammar the ranked read ranks by, and nothing about rank here — the
+		// list keeps the caller's order.
+		tq, err := tsqueryText("filter.search", f.Search)
+		if err != nil {
+			return nil, err
+		}
+		b.add(`fts @@ to_tsquery('english', ` + b.arg(tq) + `)`)
+	}
 	for _, name := range sortedKeys(f.Properties) {
 		if err := ds.condProp(ctx, b, types, name, f.Properties[name]); err != nil {
 			return nil, err
@@ -546,6 +557,9 @@ func (ds *dataset) condProp(ctx context.Context, b *builder, types []*vocabulary
 	// A state property filters like any other property; only its STORAGE is
 	// the states column.
 	if ds.stateProp(types, name) {
+		if c.Match != "" {
+			return fmt.Errorf("%w: %s is a state — match needs a text property, use eq or in", substrate.ErrValidation, name)
+		}
 		return condJSON(b, `states`, name, c, vocabulary.DatatypeString)
 	}
 	if ds.sensitiveProp(types, name) {
@@ -559,6 +573,11 @@ func (ds *dataset) condProp(ctx context.Context, b *builder, types []*vocabulary
 	if shapes := ds.referenceShapes(types, name); len(shapes) > 0 {
 		return ds.condReference(ctx, b, name, shapes, c)
 	}
+	if c.Match != "" {
+		if err := ds.matchRefusal(types, name); err != nil {
+			return err
+		}
+	}
 	kind := vocabulary.Datatype("")
 	for _, t := range types {
 		if p, ok := t.Prop(name); ok {
@@ -570,6 +589,28 @@ func (ds *dataset) condProp(ctx context.Context, b *builder, types []*vocabulary
 		}
 	}
 	return condJSON(b, `props`, name, c, kind)
+}
+
+// matchRefusal says why `match` does not apply to a property, or nil: every
+// candidate kind declaring it must give it words to match, a string-family or
+// prose datatype, scalar or repeated. A reference is routed to condReference
+// before this asks, and a name no candidate declares is text by default, the
+// way condJSON compares it. Every candidate is checked, not the first, so a
+// filter spanning two kinds that declare one name as prose and as a number is
+// refused rather than casting the number's rows to words.
+func (ds *dataset) matchRefusal(types []*vocabulary.Kind, name string) error {
+	if len(types) == 0 {
+		types = ds.registry().Kinds()
+	}
+	for _, t := range types {
+		p, ok := t.Prop(name)
+		if !ok || vocabulary.IsShortString(p.Datatype) || vocabulary.IsLongText(p.Datatype) {
+			continue
+		}
+		return fmt.Errorf("%w: %s is %s on %s — match needs a text property, use eq, in or the comparison operators",
+			substrate.ErrValidation, name, p.Datatype, t.Identity)
+	}
+	return nil
 }
 
 // referenceShapes collects the DISTINCT declaration shapes of `name` among the
@@ -703,7 +744,7 @@ func (ds *dataset) condReference(ctx context.Context, b *builder, name string, s
 		label string
 		v     any
 	}{
-		{"gt", c.Gt}, {"gte", c.Gte}, {"lt", c.Lt}, {"lte", c.Lte}, {"prefix", c.Prefix},
+		{"gt", c.Gt}, {"gte", c.Gte}, {"lt", c.Lt}, {"lte", c.Lte}, {"prefix", c.Prefix}, {"match", c.Match},
 	} {
 		if p.v != nil && p.v != "" {
 			return fmt.Errorf("%w: %s is a reference — %s does not apply to a pointer, use eq or in",
@@ -895,6 +936,19 @@ func condColumn(b *builder, col string, c substrate.Cond) error {
 	if c.Prefix != "" {
 		b.add(expr + `::text LIKE ` + b.arg(likePrefix(c.Prefix)))
 	}
+	if c.Match != "" {
+		// The two text columns have words; an instant, a version or an id
+		// does not, and prefix is the string operator an id takes.
+		if col != "title" && col != "body" {
+			return fmt.Errorf("%w: %s is not a text property — match needs one, use eq, prefix or the comparison operators",
+				substrate.ErrValidation, col)
+		}
+		tq, err := tsqueryText(col+": match", c.Match)
+		if err != nil {
+			return err
+		}
+		b.add(`to_tsvector('english', coalesce(` + expr + `, '')) @@ to_tsquery('english', ` + b.arg(tq) + `)`)
+	}
 	if c.Exists != nil {
 		if *c.Exists {
 			b.add(expr + ` IS NOT NULL`)
@@ -1012,6 +1066,23 @@ func condJSON(b *builder, col, key string, c substrate.Cond, kind vocabulary.Dat
 			return err
 		}
 		b.add(col + `->(` + b.arg(key) + `::text) @> ` + b.arg(raw) + `::jsonb`)
+	}
+	if c.Match != "" {
+		tq, err := tsqueryText(key+": match", c.Match)
+		if err != nil {
+			return err
+		}
+		// The value's own words, vectorized at read time under the same
+		// dictionary the index uses, so a match on one property agrees with
+		// the index over the whole record. A repeated property is its items
+		// joined; the CASE keeps jsonb_array_elements_text off a scalar,
+		// which it would refuse.
+		k := b.arg(key)
+		v := col + `->(` + k + `::text)`
+		text := `(CASE jsonb_typeof(` + v + `) WHEN 'array' THEN ` +
+			`(SELECT coalesce(string_agg(x.v, ' '), '') FROM jsonb_array_elements_text(` + v + `) AS x(v)) ` +
+			`ELSE coalesce(` + col + `->>(` + k + `::text), '') END)`
+		b.add(`to_tsvector('english', ` + text + `) @@ to_tsquery('english', ` + b.arg(tq) + `)`)
 	}
 	if c.Exists != nil {
 		clause := `jsonb_exists(` + col + `, ` + b.arg(key) + `)`

@@ -36,6 +36,7 @@ interface Crumb {
 function crumbsFor(pathname: string): Crumb[] {
   if (pathname === "/") return [{ label: "Overview" }]
   if (pathname.startsWith("/changelog")) return [{ label: "Changelog" }]
+  if (pathname.startsWith("/search")) return [{ label: "Search" }]
   if (pathname.startsWith("/registry/connections/")) {
     const id = decodeURIComponent(
       pathname.slice("/registry/connections/".length)

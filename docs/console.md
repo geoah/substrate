@@ -14,7 +14,9 @@ also serves a registration page at `/register`, with the invite code as its
 first field.
 
 Four destinations — Overview, Changelog, Registry and Agents — with the
-account behind the session menu.
+account behind the session menu, and **Search** one keystroke away: ⌘K opens
+the palette, which jumps to a page or a kind, or hands what you typed to the
+[Search page](#search) as a records query.
 
 ## Overview and data
 
@@ -29,10 +31,40 @@ is. From the records tab you can create one, and from a record you can edit it:
 either way the editor is the same surface, and it goes out as the ordinary
 `put`.
 
+The records tab narrows two ways, and both travel in the URL so a view can be
+shared. **Filters** are one control per property, offered only for the
+properties the server will filter. Typing into a text property (`string`,
+`text`, `markdown`) is a full-text `match` on that property's own words, in
+the [search grammar](api.md#the-search-grammar): every word must appear,
+`lay*` is a word prefix, `"a phrase"` keeps words together, `-word` excludes,
+`a OR b` takes either, and a leading `=` asks for the exact value instead. An
+email, URL or phone takes the exact value, or a trailing `*` for starts-with;
+a state or an enum offers its values; a comma means any of. The **search box**
+beside the filters is the same grammar against every text the kind indexes at
+once (the filter's `search` arm), composed with the filters and the sort, so
+the table stays a table: the rows that match, in the order you chose, paged
+like any other list.
+
 Collapsed authorities and packages, the desktop sidebar state, and favorite
 kinds are saved in the repository's `core/consolepreference` record. Stars add
 kinds to **Favorites** above Data; up and down controls reorder them. Updates
 use version preconditions and retry against fresh state after a conflict.
+
+## Search
+
+`/search` is the [ranked read](api.md#search) as a page: a query in the
+[search grammar](api.md#the-search-grammar), the kind to narrow to (or every
+kind), and the hits best first, each with the full kind reference and id and
+its raw per-arm score labelled — `words` is the lexical rank, `meaning` the
+embedding similarity. How to rank is the reader's choice and it sticks:
+**Words** (the default: full-text over every indexed text, free, and it
+answers on every repository), **Words + meaning** (the fused hybrid ranking,
+which falls back to words alone where no embeddings provider is configured)
+or **Meaning** alone (embedding similarity over the properties that opted in,
+which needs a provider and spends an embedding call per search). A search the
+server refuses — a mode with no provider behind it, a query with no word in it
+— shows the server's own problem, verbatim. When the semantic index is still
+being built, the page says how many values are pending beside the ranking.
 
 ## The record editor
 

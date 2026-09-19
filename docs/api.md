@@ -423,7 +423,25 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   serves), and every other declared property takes the full grammar (`eq`, `gt`,
   `gte`, `lt`, `lte`, `in`, `prefix`, `contains`, `exists`), compared as its
   declared [property type](data-model.md#property-types). State properties
-  filter here like any other.
+  filter here like any other. `match` is the one operator that reads words
+  rather than values: a query in the [search grammar](#the-search-grammar)
+  against ONE property's own text, so `{"notes": {"match": "rack lay*"}}` is
+  every record whose `notes` holds a word `rack` and a word starting `lay`,
+  in any form and any case. It applies to string-family and prose properties
+  (scalar or repeated, whose items are matched together), `title`, `body` and
+  labels, and is refused by name on a number, an instant, a boolean, a state
+  or a reference, which have no words. It vectorizes the value at read time,
+  so it is exact to the property and not index-backed; the index-backed
+  whole-record form is `search`.
+- `search` narrows to the records whose **search index** matches a query in
+  the [search grammar](#the-search-grammar): every text the kind indexes at
+  once (the title, every string-family property, prose that has not opted
+  out), index-backed. It is a PREDICATE like every other arm, so it composes
+  with `properties`, `labels` and the rest, keeps the caller's `orderBy` and
+  pages by the same keyset cursor. It says nothing about rank: that is `q`,
+  the ranked read, which takes the same grammar and answers scores instead of
+  a page. A query with no word to match (`"*"`, `"-"`) is `422 validation`
+  naming the arm, never an empty page.
 - `labels` matches the short, indexed metadata, and takes the **same condition
   objects** a property does: `{"owner/starred": {"eq": true}}`, never a bare
   value.
@@ -694,7 +712,7 @@ It has two arms:
 - **Lexical**, on by default for every kind. The title and every
   string-family property index into full-text search, weighted in three bands
   (title first, then declared string properties, then the rest), and `q` takes
-  web-search syntax: bare words, quoted phrases, `-exclusions`. A property opts
+  the [search grammar](#the-search-grammar) below. A property opts
   out with `fts: false`; secret-typed properties never index. Changing what a
   kind indexes re-indexes its existing records in the same apply, without
   moving their `version` or `updatedAt`.
@@ -734,6 +752,29 @@ cosine distance between two models' vectors is not a distance. `substratectl
 --dsn … repository reembed <repository>` queues their replacement, which the
 server's drain loop buys a batch at a time. There is no REST verb for it: it is
 the operator's hat, on the box.
+
+### The search grammar
+
+One grammar is read wherever words are matched against a record: the ranked
+read's `q`, the list's [`search`](#the-filter-grammar) arm and a property's
+`match`. It is web-search syntax plus a word prefix, and every word is
+matched in any form (`racks` finds `rack`, the dictionary's stemming) and any
+case:
+
+| You type | It means |
+| --- | --- |
+| `rack layout` | every word, in any order |
+| `lay*` | a word starting with `lay` (a star anywhere in a word marks it a prefix of its letters: `*lay*` and `lay*` are one query, because the index holds whole words and can answer "starts with" but never "contains") |
+| `"rack layout"` | the words adjacent, in that order |
+| `-lunch` | without this word; `-"weekly sync"` without this phrase |
+| `rack OR lunch` | either word (`OR` in capitals; `or` is a word) |
+
+Nothing typed reaches the query parser as an operator: `geo:*` is the word
+`geo:` (which the dictionary reads as `geo`, as a prefix), `a&b` is one word.
+A query that is stars, quotes and dashes alone has no word to match and is
+refused as `422 validation` naming the door (`q`, `filter.search`, or the
+property), never answered as "no matches". The semantic arm embeds the query
+as typed: a prefix means nothing to an embedding.
 
 The substrate does retrieval only: it returns typed records with scores, and
 anything generative built on top (a RAG loop, an assistant) is a client

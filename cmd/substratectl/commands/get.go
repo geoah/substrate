@@ -29,6 +29,7 @@ func (a *app) getCommand() *cobra.Command {
 		after       string
 		expand      []string
 		referencing string
+		search      string
 	)
 	cmd := &cobra.Command{
 		Use:   "get <kind> [id]",
@@ -78,6 +79,12 @@ states.`,
 			q, err := listQuery(filter, selector, limit, orderBy, after)
 			if err != nil {
 				return err
+			}
+			if search != "" {
+				err := editFilter(q, func(f *substrate.Filter) { f.Search = search })
+				if err != nil {
+					return err
+				}
 			}
 			if referencing != "" {
 				if !strings.Contains(referencing, "/") {
@@ -133,6 +140,7 @@ states.`,
 	f.StringVar(&after, "after", "", "opaque keyset cursor from a previous page's \"next cursor\" line; resent verbatim")
 	f.StringSliceVar(&expand, "expand", nil, "reference properties whose referents ride along (comma-separated), printed after the page in -o yaml/json")
 	f.StringVar(&referencing, "referencing", "", "only records pointing at this one, as <kind>/<id>")
+	f.StringVar(&search, "search", "", `only records whose text matches, in the search grammar: words, "a phrase", -excluded, a OR b, prefix*`)
 	return cmd
 }
 
@@ -313,6 +321,6 @@ func scalarValue(s string) any {
 }
 
 func filterIsZero(f substrate.Filter) bool {
-	return len(f.Kinds) == 0 && f.Implements == "" && len(f.IDs) == 0 &&
+	return f.Search == "" && len(f.Kinds) == 0 && f.Implements == "" && len(f.IDs) == 0 &&
 		len(f.Properties) == 0 && len(f.Labels) == 0 && f.Deleted == nil && f.Referencing == nil
 }

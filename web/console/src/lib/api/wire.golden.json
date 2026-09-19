@@ -175,6 +175,7 @@
     "in": false,
     "lt": false,
     "lte": false,
+    "match": false,
     "prefix": false
   },
   "ConversionConfirm": {
@@ -296,7 +297,8 @@
     "kinds": false,
     "labels": false,
     "properties": false,
-    "referencing": false
+    "referencing": false,
+    "search": false
   },
   "RecordPatch": {
     "addFinalizers": false,

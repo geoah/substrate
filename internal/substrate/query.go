@@ -19,13 +19,27 @@ type Cond struct {
 	Lte      any    `json:"lte,omitempty"`
 	Contains any    `json:"contains,omitempty"`
 	Exists   *bool  `json:"exists,omitempty"`
+	// Match is a full-text match over ONE text property's value, in the search
+	// query grammar (words, "phrases", -exclusions, OR, and a trailing * for a
+	// word prefix). Only string-family and prose properties, the title, the
+	// body and labels take it: a number, an instant, a boolean or a pointer
+	// has no words to match. Unlike Filter.Search it reads the value itself,
+	// not the record's search index, so it is exact to the property and is
+	// not index-backed.
+	Match string `json:"match,omitempty"`
 }
 
 // Filter is the grammar of the one generic records query. Filterable ≡
 // indexed ≡ declared. State properties filter through Properties like every
 // other property: there is no separate `states` arm.
 type Filter struct {
-	Kinds []string `json:"kinds,omitempty"`
+	// Search narrows to the records whose search index matches a query in the
+	// search grammar (the same one `q` ranks by): every indexed text of the
+	// record at once, index-backed. It is a PREDICATE, so it composes with
+	// every other arm, the ordering and the keyset cursor: the list stays in
+	// the caller's order and says nothing about rank, which is `q`'s job.
+	Search string   `json:"search,omitempty"`
+	Kinds  []string `json:"kinds,omitempty"`
 	// Implements narrows to a trait or machine interface, cross-authority. It
 	// INTERSECTS with Kinds rather than unioning: every filter arm narrows, so
 	// a list that names its kinds never answers with a row of another. Alone,
