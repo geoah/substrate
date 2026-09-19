@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// `sync status` is one table over the synchronisation read: the account's
+// `sync status` is one table over the synchronization read: the account's
 // state, whether the owner's request has been served, each stream's state
 // and backlog, and the parked and lagging deliveries of the triggers on its
 // kind, summed. An erroring account's line carries the error, not the

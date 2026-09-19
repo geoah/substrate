@@ -221,7 +221,7 @@ func (ds *dataset) settleInterruptedSyncs(ctx context.Context) error {
 	return nil
 }
 
-// SyncStatuses reads every `sync`-trait record's synchronisation: the
+// SyncStatuses reads every `sync`-trait record's synchronization: the
 // trait's properties off the row, joined with the status of each record
 // trigger whose source names the record's kind. The triggers half is the
 // same computation TriggerStatuses answers, done once for the whole list.

@@ -13,7 +13,7 @@ const (
 	SyncStateThrottled = "throttled"
 )
 
-// SyncStatus is one `sync`-trait record's synchronisation as `GET
+// SyncStatus is one `sync`-trait record's synchronization as `GET
 // /api/v1/sync/status` lists it: the trait's own properties read off the
 // record, joined with the status of every record-sourced trigger whose
 // source names the record's kind. Nothing here is stored beyond the record;

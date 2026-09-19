@@ -676,7 +676,7 @@ facility and lifecycle machinery need to see. Three ship in core:
   syncs.
 - **`oauth2`** carries the OAuth client credentials, `clientId` and a
   secret-typed `clientSecret`, for a bundle that speaks OAuth.
-- **`sync`** is the synchronisation a function drives on a Connection: its
+- **`sync`** is the synchronization a function drives on a Connection: its
   state, its last run, the owner's request for the next one, its progress
   and its streams, twelve properties the sync function writes through its
   effects and the trigger dispatcher stamps around a delivery

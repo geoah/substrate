@@ -136,7 +136,7 @@ type Dataset interface {
 	// is one synthesized delivery, a wake is an immediate scan, and
 	// CallFunction is the callable invocation API (`mode: call`).
 	TriggerStatuses(ctx context.Context) ([]TriggerStatus, error)
-	// SyncStatuses is the synchronisation read over every record of a kind
+	// SyncStatuses is the synchronization read over every record of a kind
 	// binding the core `sync` trait: the trait's properties joined with the
 	// record triggers on its kind (decision 0085). Computed, like a trigger's.
 	SyncStatuses(ctx context.Context) ([]SyncStatus, error)

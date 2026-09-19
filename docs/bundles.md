@@ -450,7 +450,7 @@ trait is queryable.
 
 ### The sync trait
 
-The token is the facility's; the synchronisation is the bundle's, and until
+The token is the facility's; the synchronization is the bundle's, and until
 [decision 0085](decisions/0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md)
 the substrate had no word for it: each sync function wrote its outcome onto
 the account as free text under names it chose, and the console could show

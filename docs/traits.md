@@ -208,7 +208,7 @@ opt into twice:
   facility recognizes a provider account and its client credentials,
   whatever the bundle called its kinds; [bundles](bundles.md) puts them to
   work.
-- **`sync`** is how the substrate recognizes the synchronisation a
+- **`sync`** is how the substrate recognizes the synchronization a
   function drives on an account, whatever the bundle called its streams.
   Bind it beside `accountconfig` and three things happen without the bundle
   doing them: the trigger dispatcher stamps a record-sourced delivery's start

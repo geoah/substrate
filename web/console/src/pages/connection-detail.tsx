@@ -658,7 +658,7 @@ export function ConnectionDetailPage() {
         </div>
       </div>
 
-      <Section title="Synchronisation">
+      <Section title="Synchronization">
         {view.syncable ? (
           <SyncSummary
             fields={view.sync}

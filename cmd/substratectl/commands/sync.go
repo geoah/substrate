@@ -11,14 +11,14 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// syncPath is the synchronisation read: cross-kind, so at the version root
+// syncPath is the synchronization read: cross-kind, so at the version root
 // beside /records and /catalog, not under any one kind.
 const syncPath = "/api/v1/sync/status"
 
 func (a *app) syncCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sync",
-		Short: "Inspect the synchronisation of every connected account",
+		Short: "Inspect the synchronization of every connected account",
 		Long: `A provider's account kind binds the core sync trait, and its sync
 function reports through the trait's properties: the state, the last run,
 the request that asks for the next one, and the progress per stream. The

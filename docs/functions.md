@@ -497,7 +497,7 @@ Merge and split are replay-safe by verification instead: re-merging a loser
 already former to the winner, or re-splitting an already-tombstoned merge, is
 a verified no-op, and any other state is a conflict that parks.
 
-**Reporting a sync.** A function that synchronises a provider account
+**Reporting a sync.** A function that synchronizes a provider account
 reports through the core [`sync` trait](bundles.md#the-sync-trait) on the
 account it was delivered, in the same patch effect it already makes for its
 cursor: `lastSyncedAt`, `syncMessage`, `syncState` (on a schedule run, where

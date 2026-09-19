@@ -1,5 +1,5 @@
 /** The Connections page's reads and verbs, every one an existing route: the
- * synchronisation read (`GET /api/v1/sync/status`, one row per record of a
+ * synchronization read (`GET /api/v1/sync/status`, one row per record of a
  * kind binding the core `sync` trait, joined with the record triggers on its
  * kind), the trigger status and parked lists, the trigger records themselves
  * (for a trigger's `when`, which the status does not carry), the run ledger
@@ -41,7 +41,7 @@ const TRIGGERS = corePath("trigger")
 const TRIGGER_KIND = `${CORE_PACKAGE}/trigger`
 const TRIGGER_RUN_KIND = `${CORE_PACKAGE}/triggerrun`
 
-/** Every `sync`-trait record's synchronisation, joined with its triggers. */
+/** Every `sync`-trait record's synchronization, joined with its triggers. */
 export const syncStatusesQueryOptions = queryOptions({
   queryKey: ["sync", "status"],
   queryFn: async ({ signal }) => {

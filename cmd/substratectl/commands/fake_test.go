@@ -219,7 +219,7 @@ func (f *fakeSubstrate) handler() http.Handler {
 	// retired automation.substrate.reamde.dev spelling falls through to the 404 catch-all
 	// rather than passing quietly.
 	mux.HandleFunc("GET "+triggerColPath+"/status", f.handleTriggerStatus)
-	// The synchronisation read: cross-kind, at the version root.
+	// The synchronization read: cross-kind, at the version root.
 	mux.HandleFunc("GET /api/v1/sync/status", f.handleSyncStatus)
 	mux.HandleFunc("POST "+triggerColPath+"/{id}/run", f.handleTriggerRun)
 	mux.HandleFunc("POST "+triggerColPath+"/{id}/wake", f.handleTriggerWake)

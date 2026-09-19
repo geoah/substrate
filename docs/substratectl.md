@@ -163,7 +163,7 @@ resets a record-sourced trigger's cursor; `run` synthesizes a single delivery;
 and `wake` scans a trigger immediately. Trigger rows are ordinary records, so
 `get` / `apply` / `delete` edit them like anything else.
 
-`substratectl sync status` is the synchronisation read over every
+`substratectl sync status` is the synchronization read over every
 [connection](bundles.md#connections) whose kind binds the core `sync` trait:
 one line per account with its state, whether it is paused, when it last
 synced, whether the owner's request has been served, each stream's state and

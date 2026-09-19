@@ -530,7 +530,7 @@ export interface TriggerFailure {
  * sync function both write it and no move between the five is illegal. */
 export type SyncState = "never" | "running" | "ok" | "erroring" | "throttled"
 
-/** One `sync`-trait record's synchronisation as `GET /api/v1/sync/status`
+/** One `sync`-trait record's synchronization as `GET /api/v1/sync/status`
  * lists it (`substrate.SyncStatus`): the trait's properties read off the
  * record, joined with the status of every record trigger whose source names
  * the record's kind. */

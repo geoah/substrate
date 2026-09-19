@@ -150,7 +150,7 @@ func TestTriggerVerbsLiveUnderCore(t *testing.T) {
 	wantStatus(t, rec, http.StatusNotFound)
 }
 
-// TestSyncStatusLivesAtTheRoot: the synchronisation read spans every kind
+// TestSyncStatusLivesAtTheRoot: the synchronization read spans every kind
 // binding the `sync` trait, so it sits at the version root beside /records
 // and /catalog, and an empty repository answers the empty list envelope.
 func TestSyncStatusLivesAtTheRoot(t *testing.T) {

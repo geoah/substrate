@@ -227,7 +227,7 @@ data:
     clientId: string
     clientSecret: secret
 ---
-# the synchronisation a provider's function drives on one connected account:
+# the synchronization a provider's function drives on one connected account:
 # the host-recognized interface behind the console's Connections view and the
 # `sync status` read. An `accountconfig` kind binds it beside the token
 # properties, and every binding kind redeclares the twelve properties with a
@@ -249,7 +249,7 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  description: "the synchronisation a function drives on one connected account:
+  description: "the synchronization a function drives on one connected account:
     its state, its last run, the request that asks for the next one, and its
     progress per stream"
   properties:
