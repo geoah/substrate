@@ -1071,6 +1071,19 @@ func (s queryScope) links(links []substrate.LinkedRecord) []substrate.LinkedReco
 	return out
 }
 
+// meta holds the provenance sidecar to the allowlist the same way: a source
+// path names a record of another kind (record 0094), so where that kind is
+// not granted the path is blanked and the offer's value and actor stay.
+func (s queryScope) meta(meta map[string]substrate.PropertyMeta) map[string]substrate.PropertyMeta {
+	if s.kinds == nil {
+		return meta
+	}
+	return substrate.MetaWithinKinds(meta, func(path string) bool {
+		kind, _, ok := vocabulary.SplitRecordPath(path)
+		return ok && s.allows(kind)
+	})
+}
+
 // scopeKinds is the allowlist as a list of KINDS, which is what a call naming
 // none is answered with. It is a copy, because the caller rewrites each entry
 // to its identity and the allowlist is the agent's; nil stays nil, which lists
@@ -1138,6 +1151,7 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 			return toolJSON(map[string]any{"record": nil}), true, 1
 		}
 		e.LinkedFrom = scope.links(e.LinkedFrom)
+		e.PropertyMeta = scope.meta(e.PropertyMeta)
 		return toolJSON(map[string]any{"record": e}), true, 1
 	}
 	q := substrate.Query{First: listDefaultFirst}

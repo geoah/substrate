@@ -405,10 +405,11 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 		"former_ids": `SELECT to_jsonb(f) FROM (
 				SELECT record_kind, former_id, record_id, created_at
 				FROM former_ids ORDER BY record_kind, former_id) f`,
-		// Whole, updated_at included: a row's stamp is its source record's
-		// (mapping.go syncOffers), so a rebuild derives it too.
+		// Whole, updated_at and source included: a row's stamp and its
+		// source are its source record's (mapping.go syncOffers), so a
+		// rebuild derives them too.
 		"property_offers": `SELECT to_jsonb(o) FROM (
-				SELECT record_kind, record_id, property, actor, value, updated_at
+				SELECT record_kind, record_id, property, actor, value, updated_at, source
 				FROM property_offers ORDER BY record_kind, record_id, property, actor) o`,
 		// The delivery ledger's three replayable tables. trigger_cursors is
 		// left out: its scan position is written outside the ledger

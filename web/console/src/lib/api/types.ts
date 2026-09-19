@@ -198,6 +198,10 @@ export interface PropertyMeta {
    * `owner` and `bundle` hold. Absent on rows written before the tiers. */
   tier?: "owner" | "bundle" | "machine"
   updatedAt?: string
+  /** The source record (`<kind>/<id>`) a machine-held value was read from,
+   * present only where the manager's own offer backs the stored value
+   * (decision 0094). A hand edit and a bundle pin carry none. */
+  source?: string
   alternatives?: PropertyAlternative[]
 }
 
@@ -205,6 +209,9 @@ export interface PropertyAlternative {
   actor: string
   value: unknown
   updatedAt: string
+  /** The source record the offer was read from; absent on a row derived
+   * before the server recorded it. */
+  source?: string
 }
 
 /** The create/upsert write body (`substrate.PutInput`). `kind` is the full

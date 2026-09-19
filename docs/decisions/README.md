@@ -246,3 +246,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0091](0091-a-parked-delivery-is-retried-or-forgotten.md) | A parked delivery is retried or forgotten, and both end the row | accepted |
 | [0092](0092-an-orphaned-mapping-target-is-marked-and-collected-on-request.md) | An orphaned mapping target is marked always and collected only on request | accepted |
 | [0093](0093-a-guarded-write-may-declare-that-losing-is-normal.md) | A guarded write may declare that losing its race is normal | accepted |
+| [0094](0094-propertymeta-names-the-source-record-behind-each-manager-and-alternative.md) | `propertyMeta` names the source record behind each manager and alternative | accepted |

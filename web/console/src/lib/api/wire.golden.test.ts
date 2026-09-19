@@ -162,6 +162,7 @@ const propertyMeta: Shape<PropertyMeta> = {
   manager: false,
   tier: false,
   updatedAt: false,
+  source: false,
   alternatives: false,
 }
 
@@ -169,6 +170,7 @@ const propertyAlternative: Shape<PropertyAlternative> = {
   actor: true,
   value: true,
   updatedAt: true,
+  source: false,
 }
 
 /** PutInput carries `kind`: `POST /records` reads it to place the record, and

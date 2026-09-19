@@ -213,8 +213,9 @@ read is the bulk, paged answer. `linkedFrom` is the mirror question;
 `referencing` is the general one — every record pointing at this one, through
 any property, mapping or not.
 
-The console shows it as the **Linked from** section under a record's
-properties ([web console](console.md#overview-and-data)).
+The console shows it as the **Sources** section of a record's Provenance tab,
+grouped by the mapping that brought each record
+([web console](console.md#the-record-editor)).
 
 ## Managed properties
 
@@ -282,7 +283,8 @@ property it follows three rules:
 
 Single-record reads surface the whole ledger as `propertyMeta`: per property,
 its manager, its tier, when it changed, and the **alternatives**, every live
-source value that differs from the stored one:
+source value that differs from the stored one, each naming the **source
+record** it was read from:
 
 ```json
 "propertyMeta": {
@@ -291,8 +293,14 @@ source value that differs from the stored one:
     "tier": "owner",
     "alternatives": [
       {"actor": "function:providers.substrate.reamde.dev:github:githubsync",
-       "value": "ada"}
+       "value": "ada",
+       "source": "providers.substrate.reamde.dev/github/user/ada"}
     ]
+  },
+  "displayName": {
+    "manager": "function:providers.substrate.reamde.dev:github:githubsync",
+    "tier": "machine",
+    "source": "providers.substrate.reamde.dev/github/user/ada"
   }
 }
 ```
@@ -300,11 +308,17 @@ source value that differs from the stored one:
 The owner typed "Ada Lovelace" by hand, GitHub still says "ada", and both
 facts are on the wire. An alternative's `updatedAt` is the `updatedAt` of the
 source record it comes from (for a union property, the latest of that actor's
-sources carrying it), not the moment the substrate wrote the row: like the
-value, it is a function of the live records, so a `repository rebuild` or a
-restore derives the same alternatives, stamps included. Lists and changes never
-carry `propertyMeta`; only a single-record read assembles it. Adopting an
-alternative is just writing it.
+sources carrying it), not the moment the substrate wrote the row, and its
+`source` is that record's path: like the value, both are a function of the
+live records, so a `repository rebuild` or a restore derives the same
+alternatives, stamps and sources included. The manager carries a `source` too,
+but only where the read can stand behind it: the property is machine-held and
+the manager's own offer backs the stored value (equal to it, or, on a union,
+every item of it among the stored items). A hand edit and a bundle pin name no
+source, because nothing stands behind them but the hand
+([decision record 0094](decisions/0094-propertymeta-names-the-source-record-behind-each-manager-and-alternative.md)).
+Lists and changes never carry `propertyMeta`; only a single-record read
+assembles it. Adopting an alternative is just writing it.
 **Releasing** a hand edit is patching the property to null: the delete clears
 the value and its manager, and the same transaction recomputes from live
 sources, so the property refills on the spot, back to following the sources.

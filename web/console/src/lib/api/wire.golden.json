@@ -275,12 +275,14 @@
   },
   "PropertyAlternative": {
     "actor": true,
+    "source": false,
     "updatedAt": true,
     "value": true
   },
   "PropertyMeta": {
     "alternatives": false,
     "manager": false,
+    "source": false,
     "tier": false,
     "updatedAt": false
   },

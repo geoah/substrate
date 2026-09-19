@@ -94,7 +94,11 @@ func (ds *dataset) idsOf(ctx context.Context, x dbx, canonical eref) ([]string, 
 // ledger — actor AND tier, so a read can tell a bundle pin from an
 // owner's or from a machine row recompute may replace — and the live
 // mapping-projection offers whose value differs (JSON equality) from the
-// stored one, the ALTERNATIVES the console shows beside a held value.
+// stored one, the ALTERNATIVES the console shows beside a held value. Every
+// offer names the source record it was read from, and the manager names one
+// too where the read can stand behind it: the manager holds at the machine
+// tier and its own actor's offer BACKS the stored value (record 0094). The
+// offer row is derived, so nothing here is a second copy of the changelog.
 func (ds *dataset) propertyMeta(ctx context.Context, e *substrate.Record) (map[string]substrate.PropertyMeta, error) {
 	out := map[string]substrate.PropertyMeta{}
 	rows, err := ds.db.QueryContext(ctx,
@@ -118,18 +122,28 @@ func (ds *dataset) propertyMeta(ctx context.Context, e *substrate.Record) (map[s
 		return nil, err
 	}
 	_ = rows.Close()
+	// Which mapped properties are unions, so a machine-held union whose
+	// manager's offer is a subset of the stored items still names its source.
+	union := map[string]bool{}
+	for _, m := range ds.registry().MappingsTo(e.Kind) {
+		for name, rule := range m.Map {
+			if rule.Merge == vocabulary.MergeUnion {
+				union[name] = true
+			}
+		}
+	}
 	rows, err = ds.db.QueryContext(ctx, `
-		SELECT property, actor, value, updated_at FROM property_offers
+		SELECT property, actor, value, updated_at, source FROM property_offers
 		WHERE record_kind = $1 AND record_id = $2 ORDER BY property, actor`, e.Kind, e.ID)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
-		var property, actor string
+		var property, actor, source string
 		var raw []byte
 		var at time.Time
-		if err := rows.Scan(&property, &actor, &raw, &at); err != nil {
+		if err := rows.Scan(&property, &actor, &raw, &at, &source); err != nil {
 			return nil, err
 		}
 		var value any
@@ -145,12 +159,25 @@ func (ds *dataset) propertyMeta(ctx context.Context, e *substrate.Record) (map[s
 		} else if p, ok := ty.Prop(property); ok && p.Sensitive() {
 			value = Redacted
 		}
+		m := out[property]
+		// The manager's own offer standing behind a machine-held value is
+		// the one case the read can say which mirror the value came from.
+		// On a union the stored value is the union across every actor, so
+		// the holding actor's offer backs it as a subset; it is not an
+		// alternative to itself.
+		mine := m.Manager == actor && m.Tier == substrate.TierMachine
+		if mine && offerBacks(e.Properties[property], value, union[property]) {
+			if source != "" {
+				m.Source = source
+				out[property] = m
+			}
+			continue
+		}
 		if jsonEqual(value, e.Properties[property]) {
 			continue
 		}
-		m := out[property]
 		m.Alternatives = append(m.Alternatives, substrate.PropertyAlternative{
-			Actor: actor, Value: value, UpdatedAt: at.UTC(),
+			Actor: actor, Value: value, UpdatedAt: at.UTC(), Source: source,
 		})
 		out[property] = m
 	}
@@ -161,6 +188,38 @@ func (ds *dataset) propertyMeta(ctx context.Context, e *substrate.Record) (map[s
 		return nil, nil
 	}
 	return out, rows.Err()
+}
+
+// offerBacks says whether an offer stands behind the stored value: it is the
+// value (JSON equality), or — on a union property, whose stored value is the
+// union across every actor's sources — every item the offer carries is among
+// the stored items. Redacted stands on both sides of a sensitive property, so
+// an offer there backs the value without revealing either.
+func offerBacks(stored, offer any, union bool) bool {
+	if jsonEqual(offer, stored) {
+		return true
+	}
+	if !union {
+		return false
+	}
+	items, ok := offer.([]any)
+	have, ok2 := stored.([]any)
+	if !ok || !ok2 || len(items) == 0 {
+		return false
+	}
+	for _, item := range items {
+		found := false
+		for _, h := range have {
+			if jsonEqual(item, h) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 // record is the in-transaction projection every mutation returns.

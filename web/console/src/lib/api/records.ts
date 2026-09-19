@@ -20,7 +20,14 @@
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query"
 
 import { fetchChangesPage, type HistoryPosition } from "./changes"
-import { collectionPath, joinKind, request, rootPath, seg } from "./http"
+import {
+  CORE_PACKAGE,
+  collectionPath,
+  joinKind,
+  request,
+  rootPath,
+  seg,
+} from "./http"
 import { ApiError } from "./types"
 import type {
   ChangeRow,
@@ -195,6 +202,76 @@ export function referenceTitlesQueryOptions(scope: {
           kinds: scope.kinds,
           first: TITLE_BATCH,
           filter: { ids: scope.ids.slice(0, TITLE_BATCH) },
+        }),
+        undefined,
+        { signal }
+      ),
+  })
+}
+
+// ── the declarations and history a record's provenance reads ────────────────
+
+/** The recordmapping declarations a set of `linkedFrom` entries name, in ONE
+ * list read: a mapping's record id IS its identity (`<authority>/<package>/
+ * <name>`), so `filter.ids` inside the one kind answers every group's header
+ * — its title, the kind it reads, the properties its `map` rules write. Read
+ * once per record page and held for a minute: a declaration moves rarely, and
+ * the vocabulary apply that moves it is not something this page watches. */
+export function recordMappingsQueryOptions(ids: readonly string[]) {
+  const sorted = [...new Set(ids)].sort()
+  return queryOptions({
+    queryKey: ["record-mappings", sorted],
+    enabled: sorted.length > 0,
+    staleTime: 60_000,
+    queryFn: ({ signal }) =>
+      request<Page>(
+        "GET",
+        listPath({
+          kinds: [`${CORE_PACKAGE}/recordmapping`],
+          first: TITLE_BATCH,
+          filter: { ids: sorted.slice(0, TITLE_BATCH) },
+        }),
+        undefined,
+        { signal }
+      ),
+  })
+}
+
+/** The merges a record WON — the `recordmerge` rows whose `winner` names it —
+ * and the requests that proposed them, each a reverse read narrowed to the
+ * one kind and the one property, so a record that never merged costs one
+ * empty page each and a record with a former id gets its history whole. */
+export function mergesIntoQueryOptions(ref: string, enabled = true) {
+  return queryOptions({
+    queryKey: ["merges-into", ref],
+    enabled,
+    staleTime: 60_000,
+    queryFn: ({ signal }) =>
+      request<Page>(
+        "GET",
+        listPath({
+          kinds: [`${CORE_PACKAGE}/recordmerge`],
+          first: 200,
+          filter: { referencing: { ref, property: "winner" } },
+        }),
+        undefined,
+        { signal }
+      ),
+  })
+}
+
+export function mergeRequestsForQueryOptions(ref: string, enabled = true) {
+  return queryOptions({
+    queryKey: ["merge-requests-for", ref],
+    enabled,
+    staleTime: 60_000,
+    queryFn: ({ signal }) =>
+      request<Page>(
+        "GET",
+        listPath({
+          kinds: [`${CORE_PACKAGE}/recordmergerequest`],
+          first: 200,
+          filter: { referencing: { ref, property: "winner" } },
         }),
         undefined,
         { signal }

@@ -17,16 +17,15 @@
  * page resolved one — a stored reference carries a record path and nothing
  * else, and a single-record read does not expand, so the titles arrive from
  * the page's own batched read (`useReferenceTitles`) and the id stands in
- * wherever one did not. Under the properties sits **Linked from**
- * (`linked-from.tsx`): the records whose mapping-owned subject slot points at
- * this one, which nothing on this record's own properties would show. Read-only:
- * Edit is the page's affordance, not this tab's. */
+ * wherever one did not. The records whose mapping-owned subject slot points
+ * at this one are NOT here: they are the Provenance tab's Sources section
+ * (`sources.tsx`), beside the property ledger they feed. Read-only: Edit is
+ * the page's affordance, not this tab's. */
 
 import * as React from "react"
 
 import { ListIcon } from "lucide-react"
 
-import { LinkedFromSection } from "@/components/record/linked-from"
 import { ReferenceValue } from "@/components/record/reference-value"
 import {
   Field,
@@ -533,12 +532,8 @@ export function PropertiesRail({
   titles?: ReferenceTitles
 }) {
   const rows = rowsOf(record, kind)
-  // The inbound mapping-owned links ride on the single-record read, so they
-  // are here without a second request; a kind no mapping targets carries the
-  // key not at all (decision 0088).
-  const links = record.linkedFrom ?? []
 
-  if (!rows.length && !links.length) {
+  if (!rows.length) {
     return (
       <Empty className="py-10">
         <EmptyHeader>
@@ -557,7 +552,6 @@ export function PropertiesRail({
       {rows.map((row) => (
         <Row key={row.name} row={row} kinds={kinds} titles={titles} />
       ))}
-      <LinkedFromSection links={links} kinds={kinds} />
     </FieldGroup>
   )
 }

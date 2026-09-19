@@ -240,7 +240,8 @@ GET /api/v1/samples.substrate.reamde.dev/people/person/9f2k
      "updatedAt": "2026-08-04T09:12:00Z",
      "alternatives": [
        {"actor": "function:providers.substrate.reamde.dev:github:githubsync",
-        "value": "ada", "updatedAt": "2026-08-04T08:00:00Z"}]}},
+        "value": "ada", "updatedAt": "2026-08-04T08:00:00Z",
+        "source": "providers.substrate.reamde.dev/github/user/ada"}]}},
    "linkedFrom": [
      {"ref": "providers.substrate.reamde.dev/github/user/ada",
       "kind": "providers.substrate.reamde.dev/github/user", "title": "ada",
@@ -252,8 +253,10 @@ GET /api/v1/samples.substrate.reamde.dev/people/person/9f2k
       "mapping": "samples.substrate.reamde.dev/people/slackuserperson"}]}
 ```
 
-An alternative's `updatedAt` is its source record's, not the target's;
-[reading provenance](projection.md#reading-provenance-propertymeta) has the
+An alternative's `updatedAt` is its source record's, not the target's, and
+its `source` is that record's path; a machine-held property's manager names
+its `source` too, where its own offer backs the stored value.
+[Reading provenance](projection.md#reading-provenance-propertymeta) has the
 rule.
 
 `linkedFrom` is one entry per source record whose mapping-owned subject slot

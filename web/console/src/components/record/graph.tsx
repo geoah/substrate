@@ -4,15 +4,10 @@ import {
   ArrowDownLeftIcon,
   ArrowUpRightIcon,
   ChevronRightIcon,
-  CombineIcon,
   type LucideIcon,
 } from "lucide-react"
 
 import { Link } from "@tanstack/react-router"
-import { CORE_PACKAGE, request } from "@/lib/api/http"
-import { listPath } from "@/lib/api/records"
-import type { Page } from "@/lib/api/types"
-import { RecordPill } from "@/components/record-pill"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -48,12 +43,6 @@ interface NodeRef {
   kind: string
   id: string
   title?: string
-}
-
-function mappedKind(value: unknown): string | undefined {
-  const path = readReference(value)?.path
-  const prefix = `${CORE_PACKAGE}/kind/`
-  return path?.startsWith(prefix) ? path.slice(prefix.length) : path
 }
 
 const keyOf = (ref: NodeRef) => `${ref.kind} ${ref.id}`
@@ -491,41 +480,6 @@ function GraphNode({
       ),
     [referencing.data]
   )
-  const mappings = useQuery({
-    queryKey: ["graph-mappings"],
-    queryFn: async ({ signal }) => {
-      const records: SubstrateRecord[] = []
-      let after: string | undefined
-      do {
-        const page = await request<Page>(
-          "GET",
-          listPath({
-            kinds: [`${CORE_PACKAGE}/recordmapping`],
-            first: 500,
-            after,
-          }),
-          undefined,
-          { signal }
-        )
-        records.push(...page.records)
-        after = page.cursor
-      } while (after)
-      return records
-    },
-    staleTime: 30_000,
-  })
-  const isSource = (group: (typeof groups)[number]) =>
-    group.kind === `${CORE_PACKAGE}/recordmerge` ||
-    group.kind === `${CORE_PACKAGE}/recordsplit` ||
-    (mappings.data ?? []).some(
-      (mapping) =>
-        mappedKind(mapping.properties.to) === kind &&
-        mappedKind(mapping.properties.from) === group.kind &&
-        mapping.properties.property === group.property
-    )
-  const incoming = groups.filter((group) => !isSource(group))
-  const sources = groups.filter(isSource)
-
   const outgoing = useMemo(
     () => (record ? outgoingOf(record, kindInfo) : []),
     [record, kindInfo]
@@ -561,12 +515,7 @@ function GraphNode({
   }
 
   const nothing = outgoing.length === 0 && groups.length === 0
-  if (
-    nothing &&
-    depth > 0 &&
-    referencing.isSuccess &&
-    !record.formerIds?.length
-  ) {
+  if (nothing && depth > 0 && referencing.isSuccess) {
     return (
       <p className="py-1 text-xs text-muted-foreground">
         Nothing points here, and it points nowhere.
@@ -574,6 +523,10 @@ function GraphNode({
     )
   }
 
+  // Every pointer at this record is an incoming reference here, a mirror's
+  // mapping-owned subject slot included: this is the GENERAL reverse read.
+  // Which of them are sources, grouped by the mapping that made them, is the
+  // Provenance tab's Sources section (sources.tsx), not a second grouping.
   function groupRows(selected: typeof groups) {
     return selected.map((group) => (
       <ReferencingGroupRow
@@ -597,8 +550,8 @@ function GraphNode({
         label="Incoming references"
         hint="Records that point to this record."
       >
-        {groupRows(incoming)}
-        {!incoming.length && !referencing.isError && (
+        {groupRows(groups)}
+        {!groups.length && !referencing.isError && (
           <p className="text-sm text-muted-foreground">
             {referencing.isPending
               ? "Loading references…"
@@ -624,41 +577,6 @@ function GraphNode({
         {!outgoing.length && (
           <p className="text-sm text-muted-foreground">
             No outgoing references.
-          </p>
-        )}
-      </Section>
-      <Section
-        icon={CombineIcon}
-        label="Mapped and merged sources"
-        hint="Records that contribute values through a mapping, and the history of merges and splits."
-      >
-        {groupRows(sources)}
-        {(record.formerIds ?? []).map((formerId) => (
-          <div key={formerId} className="flex flex-col gap-1 py-2">
-            <span className="text-sm text-muted-foreground">Merged record</span>
-            <RecordPill kind={kind} id={formerId} />
-          </div>
-        ))}
-        {!sources.length &&
-          !record.formerIds?.length &&
-          !mappings.isError &&
-          !referencing.isError && (
-            <p className="text-sm text-muted-foreground">
-              {mappings.isPending || referencing.isPending
-                ? "Loading mappings…"
-                : "No mapped or merged sources found."}
-            </p>
-          )}
-        {mappings.isError && (
-          <p role="alert" className="text-sm text-destructive">
-            Mappings could not be loaded. Sources may still appear under
-            incoming references.{" "}
-            <button
-              className="underline"
-              onClick={() => void mappings.refetch()}
-            >
-              Retry
-            </button>
           </p>
         )}
       </Section>

@@ -964,9 +964,10 @@ func selectValue(union bool, cands []contribution) (any, string) {
 // Unchanged offers write nothing.
 //
 // A row's updated_at is the updated_at of the latest source record carrying
-// the property for that actor, never the transaction's clock: the stamp is a
-// function of the live records exactly as the value is, so a rebuild, which
-// derives the table again (rebuild.go rederiveOffers), reproduces it.
+// the property for that actor, never the transaction's clock, and its source
+// is that record's path: both are a function of the live records exactly as
+// the value is, so a rebuild, which derives the table again (rebuild.go
+// rederiveOffers), reproduces them.
 func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool, srcs []mappedSource) error {
 	current := map[offerKey]offer{}
 	for _, name := range props {
@@ -988,7 +989,10 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 				// so the stamp is not always a contributing source's; it is
 				// the same on the live path and the rebuild, which is what
 				// the stamp has to be.
-				current[offerKey{name, s.actor}] = offer{value: v, at: cands[0].updatedAt}
+				current[offerKey{name, s.actor}] = offer{
+					value: v, at: cands[0].updatedAt,
+					source: vocabulary.RecordPath(cands[0].a, cands[0].b),
+				}
 			}
 			actors[s.actor] = true
 		}
@@ -1029,13 +1033,14 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 			return err
 		}
 		if _, err := t.exec(`
-			INSERT INTO property_offers (record_kind, record_id, property, actor, value, updated_at)
-			VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+			INSERT INTO property_offers (record_kind, record_id, property, actor, value, updated_at, source)
+			VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
 			ON CONFLICT (repository, record_kind, record_id, property, actor) DO UPDATE SET
-				value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
+				value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, source = EXCLUDED.source
 			WHERE property_offers.value IS DISTINCT FROM EXCLUDED.value
-			   OR property_offers.updated_at IS DISTINCT FROM EXCLUDED.updated_at`,
-			target.Kind, target.ID, k.property, k.actor, raw, o.at); err != nil {
+			   OR property_offers.updated_at IS DISTINCT FROM EXCLUDED.updated_at
+			   OR property_offers.source IS DISTINCT FROM EXCLUDED.source`,
+			target.Kind, target.ID, k.property, k.actor, raw, o.at, o.source); err != nil {
 			return err
 		}
 	}
@@ -1045,10 +1050,15 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 // offerKey addresses one property_offers row.
 type offerKey struct{ property, actor string }
 
-// offer is one row's derived content: the value and its source's stamp.
+// offer is one row's derived content: the value, its source's stamp, and the
+// source itself — the record path of the live source the value and the stamp
+// are read from (cands[0]: the latest source carrying the path), which is what
+// lets a read say WHICH mirror an alternative came from rather than only which
+// actor wrote it, when eight mirrors share one actor (record 0094).
 type offer struct {
-	value any
-	at    time.Time
+	value  any
+	at     time.Time
+	source string
 }
 
 func sortedOfferKeys(m map[offerKey]offer) []offerKey {

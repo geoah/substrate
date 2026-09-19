@@ -8,6 +8,7 @@ import { ActivityRail } from "@/components/record/activity"
 import { GraphRail } from "@/components/record/graph"
 import { PropertiesRail } from "@/components/record/properties"
 import { ProvenanceRail } from "@/components/record/provenance"
+import { SourcesFooter, SourcesSection } from "@/components/record/sources"
 import { YamlView } from "@/components/record/yaml-view"
 import { StateBadge } from "@/components/state-badge"
 import { Button } from "@/components/ui/button"
@@ -23,7 +24,10 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useReferenceTitles } from "@/hooks/use-reference-titles"
-import { recordQueryOptions } from "@/lib/api/records"
+import {
+  recordMappingsQueryOptions,
+  recordQueryOptions,
+} from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { ApiError, type KindInfo } from "@/lib/api/types"
 import { recordTitle } from "@/lib/format"
@@ -60,6 +64,14 @@ export function RecordPage() {
     ? kindByCollection(registry.data, authority, pkg, name)
     : undefined
   const record = useQuery(recordQueryOptions(authority, pkg, name, id))
+  // The mapping declarations the record's sources name, ONCE per page: the
+  // Provenance tab's groups and the Manifest's footer both read them.
+  const mappingIds = useMemo(
+    () => (record.data?.linkedFrom ?? []).map((l) => l.mapping),
+    [record.data]
+  )
+  const mappings = useQuery(recordMappingsQueryOptions(mappingIds))
+  const mappingRecords = mappings.data?.records ?? []
 
   // A GET does not expand (docs/api.md), so the pointers this record holds
   // arrive as bare paths and every pill would read as a record id. One
@@ -214,6 +226,11 @@ export function RecordPage() {
             <div className="px-2 pb-2">
               <YamlView source={yaml} docs={docs} targets={targets} />
             </div>
+            <SourcesFooter
+              record={e}
+              mappings={mappingRecords}
+              onOpen={() => void setTab("provenance")}
+            />
           </ScrollArea>
         </TabsContent>
         <TabsContent value="activity" className="min-h-0 border-t">
@@ -223,7 +240,19 @@ export function RecordPage() {
         </TabsContent>
         <TabsContent value="provenance" className="min-h-0 border-t">
           <ScrollArea className="h-full">
-            <ProvenanceRail propertyMeta={e.propertyMeta ?? {}} />
+            <div className="flex max-w-5xl min-w-0 flex-col gap-6 p-6">
+              <SourcesSection
+                record={e}
+                kinds={registry.data ?? []}
+                mappings={mappingRecords}
+                mappingsPending={mappings.isPending && mappingIds.length > 0}
+              />
+              <ProvenanceRail
+                record={e}
+                kind={kindInfo}
+                kinds={registry.data ?? []}
+              />
+            </div>
           </ScrollArea>
         </TabsContent>
       </Tabs>
