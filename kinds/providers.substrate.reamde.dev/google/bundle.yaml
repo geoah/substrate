@@ -41,7 +41,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: google
-  version: 17
+  version: 18
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
