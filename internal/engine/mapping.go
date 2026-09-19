@@ -23,57 +23,6 @@ import (
 
 // --- subject resolution -----------------------------------------------------
 
-// subjectPinned is THE MAPPING AS THE WRITE-TIME PIN (record 49). A mirror
-// kind leaves its `subject: true` reference unpinned, because the kind it
-// reaches belongs to whoever declares the mapping; from the write path's side
-// that slot is pinned all the same, at the mapping's `to`. Without this an
-// unpinned slot would admit a record of ANY kind, and a bare id in it would
-// have no kind to borrow.
-//
-// A TRAIT-pinned slot is pinned at the mapping's `to` as well, and the trait
-// keeps its say: resolveMapping refuses a mapping whose target does not
-// implement it, so narrowing the slot to that one kind can only narrow within
-// what the trait already admits. It is also what lets a bare id complete
-// there, which a trait pin never could.
-//
-// It returns ty untouched unless some subject slot is unpinned AND a mapping
-// fills it, and otherwise a SHALLOW COPY carrying copies of those properties:
-// the registry's kinds are shared across every clone of it (Registry.Clone),
-// so pinning one in place would leak a candidate registry's mapping into the
-// live one and outlive an uninstall.
-func (t *txn) subjectPinned(ty *vocabulary.Kind) *vocabulary.Kind {
-	var pinned map[string]*vocabulary.Property
-	for _, name := range ty.PropOrder {
-		p := ty.Props[name]
-		if !p.Subject || (p.To != "" && p.To != vocabulary.ToAny) {
-			continue
-		}
-		m, ok := t.declarations().MappingFor(ty.Identity, name)
-		if !ok {
-			continue
-		}
-		clone := *p
-		clone.To, clone.ToTrait = m.To, ""
-		if pinned == nil {
-			pinned = map[string]*vocabulary.Property{}
-		}
-		pinned[name] = &clone
-	}
-	if pinned == nil {
-		return ty
-	}
-	out := *ty
-	out.Props = make(map[string]*vocabulary.Property, len(ty.Props))
-	for name, p := range ty.Props {
-		if replaced, ok := pinned[name]; ok {
-			out.Props[name] = replaced
-			continue
-		}
-		out.Props[name] = p
-	}
-	return &out
-}
-
 // subjectTargetOf reads the LIVE record a source record's subject reference
 // names, "" when it names nothing. It reads the refs index rather than the
 // property, so the stored destination is one statement away.
@@ -144,7 +93,11 @@ func (t *txn) subjectOf(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapping
 		// Already canonical: subjectTargetOf resolves the stored id.
 		return linked.ID, nil
 	}
-	target, err := t.matchOrMint(src, srcTy, m)
+	// THE HOP DEMANDS A SUBJECT. Somebody's write names this mirror in a slot
+	// pinned at the subject kind, so there has to be a record to point at:
+	// this is the one caller that mints whatever the source carries, and the
+	// one that still mints out of an ambiguous probe.
+	target, err := t.matchOrMint(src, srcTy, m, true)
 	if err != nil {
 		return "", err
 	}
@@ -178,7 +131,9 @@ func (t *txn) writeSubject(src eref, property string, target eref) error {
 // whose provider carries nothing shared (a contact with neither email nor
 // phone) still describes a person, and refusing the write would lose the
 // record instead of the link. A record whose target was
-// deleted is pointed again the same way.
+// deleted is pointed again the same way. A record that offers NOTHING AT ALL,
+// and one whose probe found several candidates, leaves the slot unset and is
+// resolved again on its next write (matchOrMint, record 0087).
 //
 // It writes the value INTO THE ROW the caller is about to fold, and never
 // through a nested write: the subject is one of the source record's own
@@ -210,9 +165,19 @@ func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) (bo
 			}
 		}
 	}
-	target, err := t.matchOrMint(row, sp.ty, m)
+	// A REQUIRED slot has to be filled or the record does not land at all, so
+	// a kind that declares its own subject reference `required:` (every bundle
+	// written before record 85 does) keeps the old unconditional mint. The
+	// slot a mapping synthesises is not required, and there the write may
+	// leave it unset: a source that offers nothing mints nothing, and an
+	// ambiguous probe parks rather than minting a duplicate (record 0087).
+	slot, declared := sp.ty.Prop(m.Property)
+	target, err := t.matchOrMint(row, sp.ty, m, declared && slot.Required)
 	if err != nil {
 		return false, err
+	}
+	if target == "" {
+		return false, nil
 	}
 	// THE STORED SHAPE, not the bare path. This runs AFTER coercion (write.go
 	// ensureSubject), so nothing downstream normalizes what it writes: a bare
@@ -225,42 +190,65 @@ func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) (bo
 
 // matchOrMint resolves an unpointed source record to its subject: the match
 // probes run in order, and the first probe whose values find candidates
-// decides: exactly one is taken, zero or several mint a fresh subject.
-// A shared family address matching two people creates a third rather than
-// guessing; a probe never merges. It returns the subject's id and writes
+// decides: exactly one is taken. It returns the subject's id and writes
 // nothing onto the source: the caller stores the pointer. The caller holds the
 // record's lock.
-func (t *txn) matchOrMint(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapping) (string, error) {
+//
+// Nothing matched is where mustMint rules. A caller that DEMANDS a subject —
+// the subject hop, or a source kind whose slot is declared `required:` — mints
+// a shell, which is the hub's growth and how a person who exists nowhere else
+// comes to exist. Every other caller gets "" and leaves the slot unset:
+//
+//   - SEVERAL candidates is not no candidates (#577). Minting a third person
+//     out of two who share an address, and then unioning that address onto the
+//     shell, made every later probe on it ambiguous too — convergence that
+//     degraded as more sources synced. The source parks instead, and the next
+//     write after the owner merges the two links it.
+//   - A source with NOTHING TO OFFER mints nothing — the empty shells #578
+//     counts, cut off at their source: 614 Slack users with no profile at all
+//     each minted an empty person. A record that carries no probe value and no
+//     mapped value says nothing about any subject, and a shell born from it is
+//     an empty row nothing can ever match.
+//
+// Both are recoverable on the next write of the source, because an unset slot
+// is resolved again exactly as an absent one is.
+func (t *txn) matchOrMint(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapping, mustMint bool) (string, error) {
 	// Concurrent resolution serializes per subject type: two syncs racing
 	// the same new person must probe one after the other, so the second
 	// finds the shell the first minted. Coarse, and fine at personal scale.
 	if err := t.lockKey("subject|" + m.To); err != nil {
 		return "", err
 	}
-	target, err := t.matchSubject(src, srcTy, m)
+	target, ambiguous, err := t.matchSubject(src, srcTy, m)
 	if err != nil {
 		return "", err
 	}
-	if target == "" {
-		// The shell carries no properties, so a subject kind with a `required:`
-		// property and no `default:` refuses it and the source write fails with
-		// it. That is the declaration's own contract: a kind nothing can create
-		// empty is not one a mapping can mint a subject of.
-		shell, err := t.put(substrate.PutInput{Kind: m.To})
-		if err != nil {
-			return "", fmt.Errorf("substrate/engine: shell subject for %s: %w", src.ID, err)
-		}
-		target = shell.ID
+	if target != "" {
+		return target, nil
 	}
-	return target, nil
+	if !mustMint && (ambiguous || !sourceOffers(src, srcTy, m)) {
+		return "", nil
+	}
+	// The shell carries no properties, so a subject kind with a `required:`
+	// property and no `default:` refuses it and the source write fails with
+	// it. That is the declaration's own contract: a kind nothing can create
+	// empty is not one a mapping can mint a subject of.
+	shell, err := t.put(substrate.PutInput{Kind: m.To})
+	if err != nil {
+		return "", fmt.Errorf("substrate/engine: shell subject for %s: %w", src.ID, err)
+	}
+	return shell.ID, nil
 }
 
 // matchSubject runs the mapping's probes against the target kind the
-// transaction's declarations hold, "" when nothing decides. Only an EXACTLY-ONE candidate set links.
-func (t *txn) matchSubject(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapping) (string, error) {
+// transaction's declarations hold, "" when nothing decides. Only an
+// EXACTLY-ONE candidate set links; `ambiguous` reports the other way of
+// deciding nothing — a probe that found SEVERAL — which the caller must not
+// confuse with a probe that found none.
+func (t *txn) matchSubject(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapping) (string, bool, error) {
 	to, ok := t.declarations().ByIdentity(m.To)
 	if !ok {
-		return "", nil
+		return "", false, nil
 	}
 	for _, probe := range m.Match {
 		values := probeValues(srcTy, src, probe)
@@ -273,18 +261,60 @@ func (t *txn) matchSubject(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapp
 		}
 		candidates, err := t.probeCandidates(m.To, tp, values)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 		if len(candidates) == 0 {
 			continue
 		}
 		// The first probe whose values find candidates decides.
 		if len(candidates) == 1 {
-			return candidates[0], nil
+			return candidates[0], false, nil
 		}
-		return "", nil
+		return "", true, nil
 	}
-	return "", nil
+	return "", false, nil
+}
+
+// sourceOffers reports whether a source record carries anything its mapping
+// can use: one probe value, or one mapped path with a value in it. An empty
+// list and an empty string are nothing, the same as an absent property.
+//
+// A mapping with neither probes nor map rules is link-only: it carries
+// structure and copies nothing, so every record of its source kind describes a
+// subject by being one, and this answers yes for all of them.
+func sourceOffers(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapping) bool {
+	if len(m.Match) == 0 && len(m.Map) == 0 {
+		return true
+	}
+	for _, probe := range m.Match {
+		if len(probeValues(srcTy, src, probe)) > 0 {
+			return true
+		}
+	}
+	for _, name := range m.MapOrder {
+		if carriesValue(contributionOf(mappedSource{row: src, m: m}, name)) {
+			return true
+		}
+	}
+	return false
+}
+
+// carriesValue reports whether an evaluated path found anything to write. An
+// empty list is what a repeated property with no entries evaluates to, and an
+// empty string what a provider writes for a field its payload left blank;
+// neither says anything about a subject.
+func carriesValue(v any) bool {
+	switch x := v.(type) {
+	case nil:
+		return false
+	case []any:
+		return len(x) > 0
+	case string:
+		return strings.TrimSpace(x) != ""
+	case map[string]any:
+		return len(x) > 0
+	}
+	return true
 }
 
 // probeValues extracts one probe's identifier values from a source record,
@@ -590,6 +620,20 @@ func (t *txn) recompute(target eref) error {
 	if t.recomputing {
 		return nil
 	}
+	if err := t.recomputeValues(target); err != nil {
+		return err
+	}
+	// LAST, and outside the value half: the mark is read off what the
+	// recompute leaves behind — no live source, and nothing above the machine
+	// tier holding a property (orphans.go). It runs even where there was
+	// nothing to recompute, because a link-only mapping's target orphans the
+	// same way a copying one's does.
+	return t.syncOrphaned(target)
+}
+
+// recomputeValues is recompute's value half: the offers, and the mapped
+// properties the machine tier still holds.
+func (t *txn) recomputeValues(target eref) error {
 	in, err := t.mappedInputsOf(target)
 	if err != nil || in == nil {
 		return err
@@ -650,22 +694,65 @@ func (t *txn) recompute(target eref) error {
 }
 
 // subjectSourcesOf loads the live records mapped onto a record, each joined
-// through its own mapping's declared subject PROPERTY — an ordinary reference
-// with the same name on a different declaring kind is not one.
+// through its own mapping's declared subject PROPERTY, and credits each to
+// the actor its contributions are attributed to.
+//
+// The sites are subjectSourceSites'; this is the loading half, kept apart
+// because asking WHETHER a target still has a live source (orphans.go
+// isOrphan) must not pay for the rows and the actor lookups.
+func (t *txn) subjectSourcesOf(target eref, mappings []*vocabulary.Mapping) ([]mappedSource, error) {
+	found, err := t.subjectSourceSites(target, mappings)
+	if err != nil {
+		return nil, err
+	}
+	bySlot := map[sourceSlot]*vocabulary.Mapping{}
+	for _, m := range mappings {
+		bySlot[sourceSlot{m.From, m.Property}] = m
+	}
+	var out []mappedSource
+	for _, c := range found {
+		r, err := t.loadRow(eref{Kind: c.typ, ID: c.id}, false)
+		if err != nil {
+			return nil, err
+		}
+		if r == nil {
+			continue
+		}
+		m := bySlot[sourceSlot{c.typ, c.rel}]
+		actor, err := t.sourceActor(r.ref(), m)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, mappedSource{row: r, m: m, actor: actor})
+	}
+	return out, nil
+}
+
+// sourceSlot addresses one mapping's entry point: the source KIND and the
+// subject property on it. One source kind may reach one target through two
+// subject properties (record 49), so the property is half the key.
+type sourceSlot struct{ kind, property string }
+
+// sourceSite is one live source record's link at one slot.
+type sourceSite struct{ rel, id, typ string }
+
+// subjectSourceSites lists the live records whose mapping-owned subject slot
+// names a record — an ordinary reference with the same name on a different
+// declaring kind is not one.
 //
 // It matches every id the target has ever had, not only the canonical one: a
 // merge does not repoint reference values (they resolve forward through the
 // former-id trail on read), so a source synced before its subject won a merge
 // still names the loser id, and recomputing from the canonical id alone would
-// drop that source's contributions on the floor.
-func (t *txn) subjectSourcesOf(target eref, mappings []*vocabulary.Mapping) ([]mappedSource, error) {
+// drop that source's contributions on the floor — or, in the orphan mark's
+// reading, would call a described record undescribed.
+func (t *txn) subjectSourceSites(target eref, mappings []*vocabulary.Mapping) ([]sourceSite, error) {
 	// Keyed by the pair, because one source kind may reach one target through
 	// two subject properties (record 49) and keying by kind alone would drop
 	// the second mapping's sources.
-	type slot struct{ kind, property string }
-	bySlot := map[slot]*vocabulary.Mapping{}
+	bySlot := map[sourceSlot]*vocabulary.Mapping{}
 	for _, m := range mappings {
-		bySlot[slot{m.From, m.Property}] = m
+		bySlot[sourceSlot{m.From, m.Property}] = m
 	}
 	ids, err := t.idsOf(target)
 	if err != nil {
@@ -683,21 +770,20 @@ func (t *txn) subjectSourcesOf(target eref, mappings []*vocabulary.Mapping) ([]m
 	if err != nil {
 		return nil, err
 	}
-	type candidate struct{ rel, id, typ string }
-	var found []candidate
+	var found []sourceSite
 	// Deduped per (kind, id, PROPERTY): one row reaching two targets through
 	// two subject slots is a source of both, and a key without the property
 	// would drop the second slot's contributions. The refs index holds one row
 	// per site, so the same slot cannot repeat here.
-	seen := map[slot]bool{}
+	seen := map[sourceSlot]bool{}
 	for rows.Next() {
-		var c candidate
+		var c sourceSite
 		if err := rows.Scan(&c.rel, &c.id, &c.typ); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
-		site := slot{c.typ + "/" + c.id, c.rel}
-		if _, ok := bySlot[slot{c.typ, c.rel}]; !ok || seen[site] {
+		site := sourceSlot{c.typ + "/" + c.id, c.rel}
+		if _, ok := bySlot[sourceSlot{c.typ, c.rel}]; !ok || seen[site] {
 			continue
 		}
 		seen[site] = true
@@ -708,23 +794,7 @@ func (t *txn) subjectSourcesOf(target eref, mappings []*vocabulary.Mapping) ([]m
 		return nil, err
 	}
 	_ = rows.Close()
-	var out []mappedSource
-	for _, c := range found {
-		r, err := t.loadRow(eref{Kind: c.typ, ID: c.id}, false)
-		if err != nil {
-			return nil, err
-		}
-		if r == nil {
-			continue
-		}
-		m := bySlot[slot{c.typ, c.rel}]
-		actor, err := t.sourceActor(r.ref(), m)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, mappedSource{row: r, m: m, actor: actor})
-	}
-	return out, nil
+	return found, nil
 }
 
 // sourceActor is the actor a source record's contributions are attributed
@@ -734,11 +804,18 @@ func (t *txn) subjectSourcesOf(target eref, mappings []*vocabulary.Mapping) ([]m
 // The source's package, not the mapping's: since record 49 the mapping is the
 // TARGET owner's declaration, so crediting its package would say a synced name
 // came from the repository's own vocabulary rather than from Google.
+//
+// THE SUBJECT SLOT IS NOT A CONTRIBUTION and is excluded by name. Its manager
+// is the mapping itself (record 85), written by the engine as the link
+// resolves, and it is written LAST — so without this the most recent row on
+// every freshly synced source record would be the engine's own bookkeeping,
+// and every value that record offers would be attributed to the mapping
+// instead of to the connector that fetched it.
 func (t *txn) sourceActor(src eref, m *vocabulary.Mapping) (string, error) {
 	var actor string
 	err := t.row(`
-		SELECT actor FROM property_managers WHERE record_kind = $1 AND record_id = $2
-		ORDER BY updated_at DESC, property LIMIT 1`, src.Kind, src.ID).Scan(&actor)
+		SELECT actor FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property <> $3
+		ORDER BY updated_at DESC, property LIMIT 1`, src.Kind, src.ID, m.Property).Scan(&actor)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", err
 	}
@@ -753,12 +830,39 @@ func (t *txn) sourceActor(src eref, m *vocabulary.Mapping) (string, error) {
 
 // contributionOf evaluates one source's contribution to one target property,
 // nil when its mapping does not map it or the path finds nothing.
+//
+// `merge: first` is applied HERE, per rule and not per property, because it is
+// a statement about the SOURCE's repetition and not about how the target
+// combines what its sources offer: the head is what this source contributes,
+// and the selection across sources is the ordinary latest-write-wins.
 func contributionOf(s mappedSource, name string) any {
 	rule, ok := s.m.Map[name]
 	if !ok {
 		return nil
 	}
-	return evalPath(s.row, rule.Path)
+	v := evalPath(s.row, rule.Path)
+	if rule.Merge == vocabulary.MergeFirst {
+		return firstItem(v)
+	}
+	return v
+}
+
+// firstItem is the head of a repeated contribution: a list's first non-null
+// item, a scalar itself, and nil for a list with nothing in it — an EMPTY
+// source contributes nothing rather than an empty value, so a contact whose
+// `names[]` is empty leaves the person's name to whatever else offers one
+// instead of clearing it.
+func firstItem(v any) any {
+	items, ok := v.([]any)
+	if !ok {
+		return v
+	}
+	for _, item := range items {
+		if item != nil {
+			return item
+		}
+	}
+	return nil
 }
 
 // asItems renders a contribution as union items: a list is its items, a
@@ -1017,6 +1121,15 @@ func (t *txn) afterTombstone(ref eref) error {
 	if _, err := t.exec(`DELETE FROM property_offers WHERE record_kind = $1 AND record_id = $2`,
 		ref.Kind, ref.ID); err != nil {
 		return err
+	}
+	// And its orphan mark, for the same reason: a tombstone is not a live
+	// target, and the mark is a reading of the live set (orphans.go). A put
+	// that brings the record back re-derives it on that write.
+	if len(t.declarations().MappingsTo(ref.Kind)) > 0 {
+		if _, err := t.exec(`UPDATE records SET orphaned_at = NULL WHERE kind = $1 AND id = $2 AND orphaned_at IS NOT NULL`,
+			ref.Kind, ref.ID); err != nil {
+			return err
+		}
 	}
 	return t.recomputeSubjectsOf(ref)
 }

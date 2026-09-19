@@ -1,7 +1,14 @@
-import { describe, expect, it } from "vitest"
+// @vitest-environment jsdom
+
+import { createElement, type ReactNode } from "react"
+import { cleanup, render } from "@testing-library/react"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { KindInfo } from "@/lib/api/types"
+import { expandableReferences } from "@/lib/definition"
+import type { ReferenceTitles } from "@/lib/reference-titles"
 import {
+  buildColumns,
   columnIdOf,
   defaultHiddenColumns,
   propertyColumnId,
@@ -66,5 +73,128 @@ describe("the columns a kind opens without", () => {
   // somebody else's vocabulary, so every other kind opens with all of them.
   it("hides nothing on a kind it does not ship", () => {
     expect(defaultHiddenColumns(kind("ada.example.com/tasks/task"))).toEqual([])
+  })
+})
+
+// ── reference columns read as names ────────────────────────────────────────
+
+/** A reference stores the referent's PATH and nothing else, so a cell built
+ * from the value alone prints a record id where a name belongs (owner report,
+ * 2026-09-18: a task's `assignee` read as an id). The page expands its
+ * references on the list read and hands the titles down; what follows is what
+ * the cell does with them, and what it does without them. */
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    to,
+    params,
+    children,
+    ...rest
+  }: {
+    to: string
+    params?: Record<string, string>
+    children: ReactNode
+  }) =>
+    createElement(
+      "a",
+      {
+        href: Object.entries(params ?? {}).reduce(
+          (path, [key, value]) => path.replace(`$${key}`, value),
+          to
+        ),
+        ...rest,
+      },
+      children
+    ),
+}))
+
+const TASK: KindInfo = {
+  ...kind("ada.example.com/tasks/task"),
+  source: "installed",
+  definition: {
+    properties: {
+      assignee: { type: "reference", kind: "ada.example.com/people/person" },
+      watchers: {
+        type: "reference",
+        kind: "ada.example.com/people/person",
+        repeated: true,
+      },
+    },
+  },
+}
+
+const REGISTRY = [TASK, kind("ada.example.com/people/person")]
+
+/** Render one column's cell over one stored value. */
+function renderCell(
+  columnId: string,
+  value: unknown,
+  titles?: ReferenceTitles
+) {
+  const column = buildColumns(TASK, REGISTRY, titles).find(
+    (c) => c.id === columnId
+  )
+  const cell = column?.cell as (ctx: { getValue: () => unknown }) => ReactNode
+  return render(cell({ getValue: () => value }))
+}
+
+afterEach(cleanup)
+
+describe("a reference column", () => {
+  it("reads as the referent's title when the page expanded it", () => {
+    const { container } = renderCell(
+      propertyColumnId("assignee"),
+      { ref: "ada.example.com/people/person/p1" },
+      new Map([["ada.example.com/people/person/p1", "Ada Lovelace"]])
+    )
+    expect(container.textContent).toBe("Ada Lovelace")
+    expect(container.textContent).not.toContain("p1")
+    expect(container.querySelector("a")?.getAttribute("href")).toBe(
+      "/data/ada.example.com/people/person/p1"
+    )
+  })
+
+  // The expansion is a sidecar: a page that could not carry it (the server
+  // refused the expand and the read degraded) still has rows, and the pill
+  // falls back to the id it always showed.
+  it("falls back to the id when no title came back", () => {
+    const { container } = renderCell(propertyColumnId("assignee"), {
+      ref: "ada.example.com/people/person/p1",
+    })
+    expect(container.textContent).toBe("p1")
+    expect(container.querySelector("a")).not.toBeNull()
+  })
+
+  it("titles each referent of a repeated reference", () => {
+    const { container } = renderCell(
+      propertyColumnId("watchers"),
+      [
+        { ref: "ada.example.com/people/person/p1" },
+        { ref: "ada.example.com/people/person/p2" },
+      ],
+      new Map([
+        ["ada.example.com/people/person/p1", "Ada Lovelace"],
+        ["ada.example.com/people/person/p2", "Grace Hopper"],
+      ])
+    )
+    expect(
+      [...container.querySelectorAll("a")].map((a) => a.textContent)
+    ).toEqual(["Ada Lovelace", "Grace Hopper"])
+  })
+
+  // A reference may name a kind nobody installed. There is no page to link
+  // to, the batch never asks about it, and the path reads as inert text.
+  it("stays inert text for a kind the registry does not have", () => {
+    const { container } = renderCell(propertyColumnId("assignee"), {
+      ref: "ada.example.com/crm/lead/7",
+    })
+    expect(container.querySelector("a")).toBeNull()
+    expect(container.textContent).toBe("ada.example.com/crm/lead/7")
+  })
+})
+
+describe("what the page asks the list to expand", () => {
+  it("names every reference the kind declares, and nothing else", () => {
+    expect(expandableReferences(TASK)).toEqual(["assignee", "watchers"])
   })
 })

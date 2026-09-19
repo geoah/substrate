@@ -5,6 +5,7 @@ package config
 import (
 	"encoding/base64"
 	"errors"
+	"time"
 
 	"github.com/kelseyhightower/envconfig"
 )
@@ -38,6 +39,15 @@ type Config struct {
 	// its transaction: a plan whose estimated work is above it is refused and
 	// the previews say so (decision 0067). In records; 0 removes the ceiling.
 	ConversionCeiling int64 `envconfig:"SUBSTRATE_CONVERSION_CEILING" default:"10000"`
+
+	// OrphanGrace turns the GC sweep's ORPHAN COLLECTION on and sets its
+	// grace window: a mapping target whose live sources are all gone, whose
+	// properties are all machine-held, and that no live record points at is
+	// tombstoned once it has carried the mark for this long. UNSET OR ZERO IS
+	// OFF, which is the default: the mark is derived either way and
+	// `filter.orphaned` lists it, so the destructive half is something a
+	// deployment asks for by naming a window. A negative value is refused.
+	OrphanGrace time.Duration `envconfig:"SUBSTRATE_ORPHAN_GRACE" default:"0"`
 
 	// InsecureDisableTOTP takes the SECOND FACTOR OFF the whole door: login,
 	// registration and the credential changes ask for a repository and a
@@ -85,6 +95,9 @@ func Load() (Config, error) {
 func (c Config) Validate() error {
 	if err := c.Data.Validate(); err != nil {
 		return err
+	}
+	if c.OrphanGrace < 0 {
+		return errors.New("SUBSTRATE_ORPHAN_GRACE must not be negative: unset or 0 collects no orphans, and a positive duration (168h) is the window a marked record waits out before the sweep takes it")
 	}
 	return ValidateCredentialKey(c.CredentialKey)
 }

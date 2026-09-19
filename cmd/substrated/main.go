@@ -124,6 +124,14 @@ func run() error {
 		engine.WithCredentialKey(cfg.CredentialKey),
 		engine.WithBlobStore(blobs),
 		engine.WithConversionCeiling(cfg.ConversionCeiling),
+		engine.WithOrphanCollection(cfg.OrphanGrace),
+	}
+	if cfg.OrphanGrace > 0 {
+		// Loud, and at boot: this deployment DELETES records the sweep finds
+		// orphaned, and the window is the only thing between a connector
+		// outage and the collection.
+		slog.Warn("orphan collection is on: the gc sweep tombstones a mapping target whose sources have all been gone for this long",
+			"grace", cfg.OrphanGrace)
 	}
 	if cfg.OAuthCallbackURL != "" {
 		stateKey := cfg.OAuthStateKey

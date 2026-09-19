@@ -111,6 +111,50 @@ func (t *trigger) resolveCallable(reg *vocabulary.Registry) {
 	t.resolveKinds(reg)
 }
 
+// refreshCallable RE-RESOLVES the callable against the live registry, in the
+// moment before it runs (issue #576).
+//
+// A pass resolves every trigger once, at loadTriggers, and a pass is LONG: a
+// paged drain, the retry backoffs and a repository's whole trigger set are all
+// inside one. An apply that lands mid-pass publishes a new registry, and every
+// delivery still holding the pointer from the load would run the body of the
+// apply BEFORE it — "one apply behind", which is exactly how Mneme v6 saw it:
+// a sync re-applied against a fresh mock port kept reaching the previous run's
+// port, and the invocation after it was fine. The registry pointer is swapped
+// whole at commit (commitAndPublish), so reading it again here costs one
+// RLock and is always the published closure.
+//
+// A callable that stopped resolving in that window is errCallableGone: the
+// delivery does not run and the cursor stands still, the same answer the pass
+// gives a trigger whose callable was already gone when it loaded. The bundle
+// LIFECYCLE is not re-read here — admitCallable holds that fence for the
+// delivery and re-checks under it.
+func (ds *dataset) refreshCallable(tr *trigger) error {
+	reg := ds.registry()
+	switch tr.CallableKind {
+	case callableKindAgent:
+		ag, err := reg.ResolveAgent(tr.CallableID)
+		if err != nil {
+			return callableGone(tr)
+		}
+		tr.Agent = ag
+	default:
+		fn, err := reg.ResolveFunction(tr.CallableID)
+		if err != nil {
+			return callableGone(tr)
+		}
+		tr.Callable = fn
+	}
+	return nil
+}
+
+// callableGone is the refusal, carrying BOTH classifications: the sentinel the
+// dispatcher reads to stand still, and the validation class a hand's run or
+// wake is answered with.
+func callableGone(tr *trigger) error {
+	return fmt.Errorf("%w: %w: trigger %s names %s", substrate.ErrValidation, errCallableGone, tr.ID, tr.CallableID)
+}
+
 // resolveKinds canonicalizes an record source's kind patterns against the
 // repository's own vocabulary — the same resolve-at-the-gate the runner's
 // reads allowlist gets. A kind has two spellings, `task` and

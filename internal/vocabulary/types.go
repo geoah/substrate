@@ -253,6 +253,18 @@ type Property struct {
 	// record with a reference at each end.
 	Properties    map[string]*Property
 	PropertyOrder []string
+	// MappedBy names the recordmapping that OWNS this property, and is set by
+	// the engine alone: a mapping synthesises its subject slot on its source
+	// kind (mappingsubject.go, record 85), or stamps the declaration that
+	// already stood there. Empty on every property a document declares for
+	// itself. It is what `propertyMeta.manager` reads as `mapping:<id>`, and
+	// what tells the reconcile which slots are its own to take back.
+	MappedBy string
+	// mappedOver is the declaration MappedBy stamped, nil when the property is
+	// purely synthesised. Unexported because it is the reconcile's undo and
+	// nothing else's business: it is how a registry rebuilt without a mapping
+	// gets its source kind back exactly as the document declares it.
+	mappedOver *Property
 	// Subject marks the reference a recordmapping's source record points at:
 	// the one property whose referent the source record describes (mapping.go).
 	// The mapping document names the property and this marker is what the write

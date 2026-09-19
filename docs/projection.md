@@ -10,8 +10,9 @@ and tiers, and the merges that join two subjects that turn out to be one.
 ## Record mappings
 
 **What a source holds stays its own record**, pointing at the one subject it
-describes through an ordinary reference. A `recordmapping` names that reference
-and declares how the record's properties reach the subject.
+describes through an ordinary reference. A `recordmapping` NAMES that reference
+into being — the source kind declares nothing — and declares how the record's
+properties reach the subject.
 
 **The package that owns the TARGET kind declares the mapping**, and no other
 ([decision record 0049](decisions/0049-the-owner-of-a-mappings-target-declares-it.md)).
@@ -60,7 +61,7 @@ data:
   package: people                  # the package that owns `person`
   from: providers.substrate.reamde.dev/github/user
   to: samples.substrate.reamde.dev/people/person
-  property: person                 # the source's `subject: true` reference
+  property: person                 # the slot this mapping puts on `user`
   match:                           # first-link probes: how a new record
     - from: email                  #   finds an existing person
       to: emails
@@ -74,11 +75,55 @@ data:
       merge: union
 ```
 
-**The mapping is the pin.** GitHub's `user.person` is declared with no `kind:`
-and no `required:`, because GitHub cannot know which kind a repository keeps
-its people in. The mapping's `to` is what the write path enforces on that slot:
-a value of another kind is refused, a bare id completes against it, and until a
-mapping exists the slot stays empty.
+**THE MAPPING OWNS THE LINK.** `github/user` declares no `person` property at
+all: GitHub cannot know which kind a repository keeps its people in, nor what
+it calls the slot, so it declares neither
+([decision record 0085](decisions/0085-a-mapping-synthesises-its-subject-slot.md)).
+Admitting the mapping SYNTHESISES the reference on the source kind's live
+registry entry — named by `property`, pinned at `to`, single, `mustExist`,
+never cascading, and `managed: true`, which is a client's cue to render it
+read-only. A value of another kind is refused, a bare id completes against the
+pin, and until the mapping exists there is no slot to fill.
+
+Three things follow. A second consumer may map the same source onto its own
+kind under its own word, and neither consumer needs the provider to have
+anticipated either. A mapping whose `property` collides with a property the
+source kind declares FOR ITSELF is refused, naming both, because the mapping
+would otherwise take a declared slot over silently. And removing the mapping
+removes the slot, which is refused while live records still link through it:
+a subject link is not an ordinary optional value, and the only road back from
+clearing one is a full resync.
+
+A source kind MAY still declare the slot itself, and one written before this
+rule does. The declaration then stands — its description, its `required:` —
+and the mapping stamps the pin and the marker onto it, so a bundle that has
+not been rewritten, and a declaration read back out with `get -o yaml` and
+applied again, both land unchanged.
+
+**A reference may pin a mirror — and mostly should not.** Any reference,
+anywhere, may name a kind some mapping reads as its `from`
+([decision record 0084](decisions/0084-a-reference-may-pin-a-mapping-source-kind.md));
+a pin at the source is satisfied by the value as written, so it never takes the
+hop and the one-hop rule is untouched. That is what lets a provider model its
+API's own relations as references — `issue.assignees` at `github/user[]`,
+`event.attendees` at `google/emailaddress[]`, `message.user` at `slack/user` —
+which it could not do while importing a sample's mappings retroactively
+narrowed what the provider was allowed to declare.
+
+**Outside the provider, point at the subject.** A task's `assignee` belongs at
+`person`, not at one provider's view of a person: the subject hop below lets
+a connector write the `github/user` path it actually holds into that
+person-pinned slot, so nothing is lost by pinning the subject and a merge
+moves every pointer at once. A consumer kind pinned at a mirror instead ties
+itself to one provider, is left dangling when that provider is uninstalled,
+and is not carried by a merge. Pin the mirror when the relation IS the
+provider's — inside its own package — and the subject everywhere else.
+
+**A `match` probe reads the source record's own values**, so it needs a value
+and not a pointer: a source that declares its email addresses as references
+cannot probe them onto `person.emails`, because what the row holds there is a
+record path. A provider that wants its rows matchable keeps the scalar beside
+the reference (`email`, `emailAddresses`) and probes that.
 
 `from:` and `to:` are kind references, so a mapping says exactly which two
 kinds it joins and an installed manifest can name a shipped kind without
@@ -93,20 +138,83 @@ against both declared kinds, so a disagreement fails on the manifest that
 caused it, never on the first sync that hits it. Both `match` and `map` may
 be empty: a link-only mapping carries structure and copies nothing.
 
+**`merge` is where the two ends' repetitions are settled**, and there are
+three. `atomic`, the default, takes one source's value whole and needs both
+ends to agree on repetition. `union` takes the deduped union of every live
+source's items and needs a REPEATED target; a single-valued path contributes
+its one value, which is legal. `first` is union's question from the other
+side: the HEAD of a repeated source onto a SINGLE-valued target, which is the
+only rule that admits a Google contact's `names[].displayName` onto
+`person.name` — a provider that mirrors an API array verbatim has one value
+the subject wants and a repetition it does not
+([decision record 0088](decisions/0086-the-head-of-a-repeated-source-is-spelled-with-brackets.md)).
+
+Two things about `first` are worth stating. It is POSITIONAL, and position is
+not primacy: it takes the array's first entry, not the one the provider flagged
+primary, so a provider that does not sort its array meaningfully wants a
+derived scalar instead. And an EMPTY source writes NOTHING rather than an empty
+value: a contact whose `names[]` is empty leaves the person's name to whatever
+else offers one instead of clearing it. The rule applies per source, before the
+selection across sources, so the choice between two contacts that both carry a
+name is the ordinary latest-write-wins.
+
 Three behaviors fall out of this one document:
 
-- **Match, or shell birth.** A `user` arriving without its `person` reference is
-  resolved in the same transaction: exactly one live person carrying that
-  email links; zero, or several, mint a fresh person instead of guessing.
-  Two syncs racing the same new person mint **one** shell. Nothing ever
-  auto-merges; joining two existing people is the owner's manual `merge`, and
-  it is reversible.
+- **Match, shell birth, or park.** A `user` arriving without its `person`
+  reference is resolved in the same transaction: exactly one live person
+  carrying that email links, and none mints a fresh person. Two syncs racing
+  the same new person mint **one** shell. SEVERAL candidates mint nothing: the
+  source parks with its slot unset rather than add a third person the same
+  address then points at, and it resolves on its next write once the owner has
+  settled the ambiguity. A source that offers nothing at all — no probe value
+  and no mapped value — mints nothing either, because a shell born from it is a
+  row no probe can ever match
+  ([decision record 0087](decisions/0087-an-unresolved-source-parks-instead-of-minting.md)).
+  Two callers still mint whatever the source carries, because both need a
+  record to point at: the [subject hop](data-model.md#kinds-and-references),
+  and a source kind that declares its own subject slot `required:`. Nothing
+  ever auto-merges; joining two existing people is the owner's manual `merge`,
+  and it is reversible.
 - **Recompute, with yield.** The person's mapped properties are recomputed
   from all live source records whenever one changes: `name` from the latest
   writer, `emails` as the union of what every source asserts. But a value
   **you** wrote is never touched (the next section is the whole rule).
 - **Ids that never lie.** After a merge, the losing id resolves to the winner
   forever, and any read by it says so.
+
+### Reading the links back: `linkedFrom`
+
+The link lives on the SOURCE, so nothing among a subject's own properties says
+which mirrors point at it. The subject's single-record read says it instead:
+`GET /api/v1/<kind path>/<id>` carries `linkedFrom`, one entry per source
+record whose mapping-owned subject slot names this record
+([decision record 0088](decisions/0088-a-single-record-read-carries-its-inbound-mapping-owned-links.md)):
+
+```http
+GET /api/v1/samples.substrate.reamde.dev/people/person/9f2k
+
+→ {"id": "9f2k", …,
+   "linkedFrom": [
+     {"ref": "providers.substrate.reamde.dev/github/user/ada",
+      "kind": "providers.substrate.reamde.dev/github/user", "title": "ada",
+      "property": "person",
+      "mapping": "samples.substrate.reamde.dev/people/githubuserperson"}]}
+```
+
+Four things to know about it. It is derived at read time from the mapping set
+and the reference index, so nothing is stored and a mapping installed or
+removed changes the answer on the next read. It counts a pointer written under
+a **former id**, exactly as [`referencing`](api.md#who-points-at-a-record-referencing)
+does, so a merged subject answers for the mirrors that linked to the loser.
+The key is **absent, never empty**, on a kind no mapping targets, which is how
+"nothing maps onto this kind" is told apart from "nothing has linked yet". And
+a **list read never carries it**: it is one query per record, and the reverse
+read is the bulk, paged answer. `linkedFrom` is the mirror question;
+`referencing` is the general one — every record pointing at this one, through
+any property, mapping or not.
+
+The console shows it as the **Linked from** section under a record's
+properties ([web console](console.md#overview-and-data)).
 
 ## Managed properties
 
@@ -160,8 +268,9 @@ property it follows three rules:
   value alone and records what it would have written as an **alternative**
   beside it. Your edit survives the sync, and so does a function's: a
   bundle write is a visible pin, never a silent freeze.
-- **Select.** Otherwise the latest-updated live source wins (`atomic`) or the
-  union of every live source's items lands (`union`), and the manager becomes
+- **Select.** Otherwise the latest-updated live source wins (`atomic`, and
+  `first` with the head of its repeated path in hand) or the union of every
+  live source's items lands (`union`), and the manager becomes
   the winning source's actor at the machine tier, so the changelog says a name
   came from GitHub, not from "the system". Nothing in a manifest ranks
   sources; ties break deterministically by kind reference, then id.
@@ -207,10 +316,11 @@ owner hold.
 ### Contributing a value
 
 There is exactly one way for a provider to contribute a value without
-pinning it: ship a **source kind** with an empty subject slot and write your
-own records. Your records become live sources once a mapping points them at a
-subject, your values compete in the same selection as every provider's, and
-they release by omission when your records go. The provider's half:
+pinning it: ship a **source kind** and write your own records. Your records
+become live sources once a mapping points them at a subject, your values
+compete in the same selection as every provider's, and they release by
+omission when your records go. The provider's half is its own vocabulary and
+NOTHING ELSE — no slot, no pointer at a kind it does not own:
 
 ```yaml
 kind: substrate.reamde.dev/core/kind
@@ -226,14 +336,13 @@ data:
       type: string
     email:
       type: email
-    person:                        # the subject slot: no kind, not required
-      type: reference
-      mustExist: true
-      subject: true
 ```
 
 The repository's half is the mapping, declared by the package that owns the
-kind being described:
+kind being described. **The mapping brings the slot**: admitting it
+synthesises `person` on `enrichment` — a reference named by `property`, pinned
+at `to`, single, `mustExist`, never cascading and `managed: true`
+([decision record 0085](decisions/0085-a-mapping-synthesises-its-subject-slot.md)).
 
 ```yaml
 kind: substrate.reamde.dev/core/recordmapping
@@ -261,6 +370,39 @@ person's property directly remains possible, and is a pin.
 State properties are never recomputed: a state moves through its
 [declared transitions](data-model.md#validation-and-state-machines) or not
 at all, so no amount of syncing can quietly complete a task.
+
+### When the last source goes: the orphan mark
+
+A target minted from a source outlives it. Delete the last GitHub issue that
+projected onto a task — or replace the provider, which purges its rows and
+mints them again under new ids — and recompute empties the mapped properties,
+but the row stays: a husk nothing describes and no probe can ever match. One
+re-seed left 2,727 of them on one repository
+([#578](https://github.com/geoah/substrate/issues/578)).
+
+The engine marks those rows. A record is **orphaned** when all three hold:
+something maps onto its kind, no live record links to it through a mapping's
+subject slot (counted over every id it has ever had, so a merge does not hide
+a source), and every one of its `property_managers` rows is at the machine
+tier — or it has none at all. A property held above machine is a hand's, and a
+record a hand has written on is not a husk, whether that hand was yours or a
+function's. Releasing the hold (the null patch above) makes it one again.
+
+The mark is derived, like an alternative: nothing writes it into the
+changelog, a re-link clears it on the next recompute, and a
+`repository rebuild` derives it again from the records it replayed. It is read
+through the list filter, never through a property:
+
+```http
+GET /api/v1/records?filter={"kinds":["samples.substrate.reamde.dev/tasks/task"],"orphaned":true}
+```
+
+`substratectl get task --orphaned` is the same read. What to do with the list
+is yours: delete from it, re-run the sync that should have re-linked them, or
+leave it. A deployment may also ask the GC sweep to collect them, which is off
+by default and windowed when it is on
+([`SUBSTRATE_ORPHAN_GRACE`](operations.md#collecting-orphaned-mapping-targets),
+[decision record 0092](decisions/0092-an-orphaned-mapping-target-is-marked-and-collected-on-request.md)).
 
 ## Merges
 

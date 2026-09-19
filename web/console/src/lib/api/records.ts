@@ -21,6 +21,7 @@ import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query"
 
 import { fetchChangesPage, type HistoryPosition } from "./changes"
 import { collectionPath, joinKind, request, rootPath, seg } from "./http"
+import { ApiError } from "./types"
 import type {
   ChangeRow,
   Page,
@@ -109,6 +110,38 @@ export function listPath(p: ListParams): string {
   return `${RECORDS_PATH}?${q}`
 }
 
+/** One page of the list, with its expansion DEGRADING rather than failing.
+ *
+ * `expand` is a sidecar: the page is the rows, and the referents beside them
+ * are how a reference reads as a name instead of an id. But the server
+ * refuses the whole read (`422 validation`) when the expansion would load
+ * more than its page cap of referents — a wide kind at 50 rows a page can
+ * reach it — and a table that 404s its own rows because it asked for nicer
+ * labels is worse than a table of ids. So a 422 on an expanding read is
+ * answered by the same read without one: the rows arrive, `included` does
+ * not, and every pill falls back to the id it always showed.
+ *
+ * Only an expanding read degrades, and only once: without `expand` there is
+ * nothing to give up, and a second 422 is the filter's problem and belongs in
+ * front of the reader. */
+export async function fetchRecordsPage(
+  p: ListParams,
+  signal?: AbortSignal
+): Promise<Page> {
+  try {
+    return await request<Page>("GET", listPath(p), undefined, { signal })
+  } catch (err) {
+    if (!p.expand?.length) throw err
+    if (!(err instanceof ApiError) || err.status !== 422) throw err
+    return request<Page>(
+      "GET",
+      listPath({ ...p, expand: undefined }),
+      undefined,
+      { signal }
+    )
+  }
+}
+
 export function recordsQueryOptions(p: ListParams) {
   return queryOptions({
     queryKey: [
@@ -123,9 +156,49 @@ export function recordsQueryOptions(p: ListParams) {
         expand: p.expand ?? null,
       },
     ],
-    queryFn: ({ signal }) =>
-      request<Page>("GET", listPath(p), undefined, { signal }),
+    queryFn: ({ signal }) => fetchRecordsPage(p, signal),
     placeholderData: (prev) => prev,
+  })
+}
+
+// ── reference titles: the batched read a single record needs ────────────────
+
+/** How many referents one record's page of titles may ask for. The server's
+ * own page cap; a record pointing past it reads the first `first` and the
+ * rest keep their ids. */
+const TITLE_BATCH = 500
+
+/** The titles of a set of referents, in ONE list read.
+ *
+ * A single-record `GET` does not expand (docs/api.md), so the record page
+ * learns what its pointers are called the only other way the wire offers: a
+ * list narrowed by `filter.ids` to the ids those paths name, inside the kinds
+ * they name. One request for the whole page, however many properties and
+ * however many kinds, because `ids` narrows WITHIN the selected kinds and ids
+ * are unique per kind.
+ *
+ * Caller-supplied `kinds` and `ids` are the already-grouped scope
+ * (`titleReadScope`), so a kind the repository never declared — which would
+ * `404` the whole read — never reaches here. */
+export function referenceTitlesQueryOptions(scope: {
+  kinds: string[]
+  ids: string[]
+}) {
+  return queryOptions({
+    queryKey: ["reference-titles", scope.kinds, scope.ids],
+    enabled: scope.kinds.length > 0 && scope.ids.length > 0,
+    staleTime: 60_000,
+    queryFn: ({ signal }) =>
+      request<Page>(
+        "GET",
+        listPath({
+          kinds: scope.kinds,
+          first: TITLE_BATCH,
+          filter: { ids: scope.ids.slice(0, TITLE_BATCH) },
+        }),
+        undefined,
+        { signal }
+      ),
   })
 }
 

@@ -268,8 +268,40 @@ func typeInfo(t *vocabulary.Kind) substrate.KindInfo {
 		Identity: t.Identity, Name: t.Name,
 		Authority: authority, Package: pkg, Version: t.Version,
 		Source: t.Source, Description: t.Description,
-		Definition: authoredKindData(t.Definition),
+		Definition: withMappedProperties(t, authoredKindData(t.Definition)),
 	}
+}
+
+// withMappedProperties merges a kind's MAPPING-OWNED properties into the
+// declaration a read surface is handed (record 85). The document declares no
+// slot — the mapping synthesises it — so a client reading a kind's properties
+// would otherwise be told a mirror has no link at all, and could neither
+// render the value it serves nor say who manages it.
+//
+// READ-SIDE ONLY, and a copy: the map is the REGISTRY's, the stored row is
+// written from the same map, and a declaration a document never carried must
+// not be written back into one. Each entry carries `managed: true` and
+// `mappedBy`, so a client renders it read-only and can name the mapping.
+func withMappedProperties(t *vocabulary.Kind, data map[string]any) map[string]any {
+	mapped := t.MappedProperties()
+	if len(mapped) == 0 {
+		return data
+	}
+	out := make(map[string]any, len(data)+1)
+	for k, v := range data {
+		out[k] = v
+	}
+	props := map[string]any{}
+	if declared, ok := data["properties"].(map[string]any); ok {
+		for k, v := range declared {
+			props[k] = v
+		}
+	}
+	for name, p := range mapped {
+		props[name] = p.SynthesizedDeclaration()
+	}
+	out["properties"] = props
+	return out
 }
 
 // authoredKindData is a kind's declaration without the engine-stamped `version`.

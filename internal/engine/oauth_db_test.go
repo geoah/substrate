@@ -888,3 +888,89 @@ func TestAccountPropertiesAreWriterOwned(t *testing.T) {
 		Properties: map[string]any{"address": "owner@example.com", "enabledMail": true},
 	})
 }
+
+// A SECOND PROVIDER'S ACCOUNT KIND, so two accountconfig kinds can hold a row
+// under the same id — which is what a repository that named both accounts
+// `owner` has (issue #574). It ships no oauth2 metadata: nothing here connects
+// it, it exists to be the other candidate a bare id finds.
+const (
+	chatPackage     = "chat.bundles.substrate.reamde.dev/chat"
+	chatAccountType = chatPackage + "/chataccount"
+)
+
+func chatBundleDocs() []map[string]any {
+	return []map[string]any{
+		vocabulary.PackageManifest(chatPackage, 0),
+		vocabulary.ActorManifest(chatPackage, vocabulary.PackageActor(chatPackage)),
+		vocabulary.BundleManifest(chatPackage, map[string]any{
+			"description": "the chat bundle",
+			"installs":    []any{chatAccountType},
+		}),
+		vocabulary.KindManifest(chatPackage,
+			map[string]any{"singular": "chataccount"},
+			map[string]any{
+				"traits": []any{"accountconfig"},
+				"properties": map[string]any{
+					"tokenRef":      map[string]any{"type": "secret", "writer": "oauth"},
+					"tokenStatus":   map[string]any{"type": "string", "writer": "oauth"},
+					"grantedScopes": map[string]any{"type": "string", "repeated": true, "writer": "oauth"},
+					"handle":        map[string]any{"type": "string", "writer": "owner"},
+				},
+			}),
+	}
+}
+
+// TWO PROVIDERS, ONE ACCOUNT NAME. A bare id names nothing on its own —
+// identity is the (kind, id) pair — so the surface takes the full identity,
+// and the ambiguity error names the very form that resolves it. The callback
+// follows the flow row rather than re-searching the id, so the consent lands
+// on the account it was started for.
+func TestOAuthStartTakesTheAccountsFullIdentity(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, _, _ := installOAuthBundle(t)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, chatBundleDocs()); err != nil {
+		t.Fatalf("install the second bundle: %v", err)
+	}
+	mail := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: mbAccountType, ID: "owner",
+		Properties: map[string]any{"address": "geo@example.com", "enabledMail": true},
+	})
+	chat := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: chatAccountType, ID: "owner", Properties: map[string]any{"handle": "geo"},
+	})
+
+	// The bare id is ambiguous, and the refusal hands back both identities in
+	// the spelling that works.
+	_, err := ds.StartOAuth(ctx, owner, "owner")
+	wantErr(t, err, substrate.ErrConflict, "a bare id held by two account kinds")
+	for _, want := range []string{mbAccountType + "/owner", chatAccountType + "/owner"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name %s: %v", want, err)
+		}
+	}
+
+	// The full identity resolves, and so does the callback: the mail account
+	// is connected and the chat account of the same name is untouched.
+	consent, err := ds.StartOAuth(ctx, owner, vocabulary.RecordPath(mail.Kind, mail.ID))
+	if err != nil {
+		t.Fatalf("start by full identity: %v", err)
+	}
+	record, err := svc.CompleteOAuth(ctx, stateFrom(t, consent), "code-123")
+	if err != nil {
+		t.Fatalf("callback: %v", err)
+	}
+	if record != mail.ID {
+		t.Fatalf("callback record: %s", record)
+	}
+	if got := mustGet(t, ds, mail.Kind, mail.ID); got.Properties["tokenStatus"] != "connected" {
+		t.Fatalf("the addressed account is %v, not connected", got.Properties["tokenStatus"])
+	}
+	if got := mustGet(t, ds, chat.Kind, chat.ID); got.Properties["tokenStatus"] != nil {
+		t.Fatalf("the OTHER provider's account of the same name was connected: %v", got.Properties)
+	}
+
+	// A full identity that names no row is a not-found, not a search.
+	_, err = ds.StartOAuth(ctx, owner, vocabulary.RecordPath(mbAccountType, "nosuch"))
+	wantErr(t, err, substrate.ErrNotFound, "a full identity naming no account")
+}

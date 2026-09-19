@@ -54,8 +54,10 @@ type Dataset interface {
 	// --- reads ---
 	// Get returns the full record by its (type, id) identity: properties,
 	// labels, annotations and machine states. A reference property carries the
-	// records this one points at; what points BACK is a List under
-	// Filter.Referencing. A former id resolves within the type.
+	// records this one points at; what points BACK through a recordmapping's
+	// subject slot rides beside it as LinkedFrom, and the general reverse read
+	// is a List under Filter.Referencing. A former id resolves within the type,
+	// and LinkedFrom counts pointers written under one.
 	Get(ctx context.Context, typ, id string) (*Record, error)
 	List(ctx context.Context, q Query) (*Page, error)
 	// Window is the engine's half of a window read (occurrence.go): the rows
@@ -141,6 +143,10 @@ type Dataset interface {
 	WakeTrigger(ctx context.Context, id string) (int, error)
 	TriggerFailures(ctx context.Context, id string) ([]TriggerFailure, error)
 	RetryTriggerFailure(ctx context.Context, id string, failureID int64) (int, error)
+	// ForgetTriggerFailure drops one parked delivery without running it: the
+	// row an operator has judged stale, whose callable or record may be long
+	// gone, and which a retry therefore cannot clear.
+	ForgetTriggerFailure(ctx context.Context, id string, failureID int64) error
 	CallFunction(ctx context.Context, name string, args any) (any, int, error)
 	// ProcessTriggers is the dispatcher pass the service loop drives: each
 	// enabled trigger drains its changelog backlog to head or fires its due

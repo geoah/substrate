@@ -30,7 +30,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: github
-  version: 11
+  version: 12
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -345,21 +345,6 @@ data:
       type: json
       displayName: Raw payload
       description: the raw /user payload as fetched, for provenance
-    # The subject slot (record 0049): single, never cascading, UNPINNED and
-    # optional, because the kind it reaches is the repository's to choose and
-    # this package owns none. A mapping declared by the owner of that kind is
-    # what pins it and fills it; until then the slot is empty. NOTE the
-    # bipartite rule (record 50): the moment a mapping names user as its
-    # source, no other reference anywhere may point at user, which is why
-    # issues and pull requests carry authorLogin as a property and reach the
-    # human THROUGH this record.
-    person:
-      type: reference
-      displayName: Person
-      mustExist: true
-      subject: true
-      description: the human this GitHub profile describes, once a mapping
-        says which kind that is
 ---
 # ---- mirror: one repository -------------------------------------------------
 # Written whole off GET /user/repos when enabledRepos; issues and PRs also

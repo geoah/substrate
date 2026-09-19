@@ -199,8 +199,15 @@ func Deterministic(err error) bool {
 // change (op, changed property names), the record's CURRENT state — nil
 // after a delete — and the repository, named by its `authority`, which is the
 // one name it has. Only the record's trimmed shape crosses: id, kind
-// reference and properties. The `when:` guard binds this map directly; the
-// runner marshals it to the body.
+// reference, VERSION and properties. The `when:` guard binds this map
+// directly; the runner marshals it to the body.
+//
+// `version` is the record's edit counter as the delivery read it, which is
+// what a body stamps a guarded write with (`host.effects.patch(…,
+// if_version=host.version(envelope["record"]))`). It rides the envelope rather
+// than costing a host read because a delivery has already loaded the row, and
+// because a read a moment later is a different version from the one the
+// delivery is about (decision 0093).
 func Envelope(ch substrate.Change, e *substrate.Record, repositoryAuthority string) map[string]any {
 	change := map[string]any{
 		"seq":   ch.Seq,
@@ -225,6 +232,7 @@ func Envelope(ch substrate.Change, e *substrate.Record, repositoryAuthority stri
 	envelope["record"] = map[string]any{
 		"id":         e.ID,
 		"kind":       e.Kind,
+		"version":    e.Version,
 		"properties": e.Properties,
 	}
 	return envelope

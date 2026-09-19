@@ -62,6 +62,7 @@ import type {
   FunctionCalled,
   InputStatus,
   KindInfo,
+  LinkedRecord,
   MintedToken,
   OAuthStarted,
   OccurrenceProblem,
@@ -133,7 +134,17 @@ const substrateRecord: Shape<SubstrateRecord> = {
   deletedAt: false,
   finalizers: false,
   propertyMeta: false,
+  linkedFrom: false,
   computed: false,
+}
+
+/** One inbound mapping-owned link, on a single-record read. */
+const linkedRecord: Shape<LinkedRecord> = {
+  ref: true,
+  kind: true,
+  title: false,
+  property: true,
+  mapping: true,
 }
 
 /** The reverse read's target, and one site a record points from. */
@@ -203,6 +214,7 @@ const recordFilter: Shape<RecordFilter> = {
   labels: false,
   deleted: false,
   referencing: false,
+  orphaned: false,
 }
 
 const kindInfo: Shape<KindInfo> = {
@@ -534,6 +546,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   ErrorPayload: errorPayload,
   ProblemDetail: problemDetail,
   SubstrateRecord: substrateRecord,
+  LinkedRecord: linkedRecord,
   Referencing: referencing,
   ReferenceSite: referenceSite,
   PropertyMeta: propertyMeta,

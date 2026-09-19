@@ -236,3 +236,13 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0082](0082-a-record-meets-a-new-state-machine-in-its-initial-state.md) | A record meets a new state machine in its initial state | accepted |
 | [0083](0083-a-repository-has-one-writer-and-a-second-is-refused-at-open.md) | A repository has one writer, and a second is refused at open | accepted |
 | [0084](0084-a-records-list-pages-by-offset-beside-the-keyset-cursor.md) | A records list pages by offset beside the keyset cursor | accepted |
+| [0084](0084-a-reference-may-pin-a-mapping-source-kind.md) | A reference may pin a mapping's source kind | accepted |
+| [0085](0085-a-mapping-synthesises-its-subject-slot.md) | A mapping synthesises its subject slot on the source kind | accepted |
+| [0086](0086-the-head-of-a-repeated-source-is-spelled-with-brackets.md) | The head of a repeated source is spelled `[]`, in a display template and in `merge: first` | accepted |
+| [0087](0087-an-unresolved-source-parks-instead-of-minting.md) | A source that offers nothing, or that a probe cannot tell apart, parks instead of minting | accepted |
+| [0088](0088-a-single-record-read-carries-its-inbound-mapping-owned-links.md) | A single-record read carries its inbound mapping-owned links | accepted |
+| [0089](0089-a-suggested-mapping-fits-a-source-that-declares-nothing.md) | A suggested mapping fits a source kind that declares nothing under its word | accepted |
+| [0090](0090-the-oauth-surface-takes-an-accounts-full-identity.md) | The OAuth surface takes an account's full identity | accepted |
+| [0091](0091-a-parked-delivery-is-retried-or-forgotten.md) | A parked delivery is retried or forgotten, and both end the row | accepted |
+| [0092](0092-an-orphaned-mapping-target-is-marked-and-collected-on-request.md) | An orphaned mapping target is marked always and collected only on request | accepted |
+| [0093](0093-a-guarded-write-may-declare-that-losing-is-normal.md) | A guarded write may declare that losing its race is normal | accepted |

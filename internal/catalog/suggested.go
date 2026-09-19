@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -174,7 +175,7 @@ func (b *Bundle) resolveOne(ctx context.Context, ds substrate.Dataset, sm vocabu
 		wire.State = substrate.SuggestedMappingLanded
 		return suggestedResolution{wire: wire, shipped: sm.ID, keep: true}, nil
 	}
-	if problems := fitProblems(sm, from, to); len(problems) > 0 {
+	if problems := fitProblems(sm, from, to, tos); len(problems) > 0 {
 		wire.State = substrate.SuggestedMappingBlocked
 		wire.Problems = problems
 		return suggestedResolution{wire: wire, shipped: sm.ID}, nil
@@ -257,26 +258,18 @@ func (b *Bundle) landedSpelling(id, home string) string {
 // It is the door's own check and a NECESSARY condition rather than the whole
 // of admission: the loader type-checks every path against both declared kinds
 // and stays the authority. What this catches is the case install order
-// creates, a provider OLDER than the sample was written against. Linear at
-// version 11 declares `issue` without the `task` subject slot, so the mapping
-// the tasks sample ships names a property that is not there; keeping it in the
-// batch would refuse the whole import with a message about a mapping the
-// reader never wrote.
-func fitProblems(sm vocabulary.SuggestedMapping, from substrate.KindInfo, to *substrate.KindInfo) []string {
+// creates, a provider OLDER than the sample was written against: a mirror that
+// does not carry the property a `match` probe or a `map` rule reads, or that
+// spends the mapping's own word on something of its own. Keeping such a
+// mapping in the batch would refuse the whole import with a message about a
+// mapping the reader never wrote.
+func fitProblems(sm vocabulary.SuggestedMapping, from substrate.KindInfo, to *substrate.KindInfo, targets []string) []string {
 	var problems []string
 	errf := func(format string, args ...any) {
 		problems = append(problems, fmt.Sprintf(format, args...))
 	}
 	props := declaredProps(from.Definition)
-	subject := asMap(props[sm.Property])
-	switch {
-	case len(subject) == 0:
-		errf("%s declares no property %q, the subject reference this mapping fills", sm.From, sm.Property)
-	case subject["type"] != string(vocabulary.DatatypeReference):
-		errf("%s.%s is %v, not a reference: a subject is a `type: reference` property", sm.From, sm.Property, subject["type"])
-	case subject["subject"] != true:
-		errf("%s.%s is not marked `subject: true`, so no mapping may fill it", sm.From, sm.Property)
-	}
+	problems = append(problems, subjectProblems(sm, from, props, targets)...)
 	for i, mv := range mslice(sm.Data, "match") {
 		if p := pathProblem(sm.From, props, mstr(asMap(mv), "from")); p != "" {
 			errf("match[%d].from: %s", i, p)
@@ -293,6 +286,60 @@ func fitProblems(sm vocabulary.SuggestedMapping, from substrate.KindInfo, to *su
 		if _, ok := declaredProps(to.Definition)[name]; !ok && !columnProp(name) {
 			errf("map.%s: %s declares no property %q", name, to.Identity, name)
 		}
+	}
+	return problems
+}
+
+// subjectProblems reports why the mapping's SUBJECT SLOT would not resolve
+// against the source kind this repository holds.
+//
+// A source kind that declares NOTHING under `property` is the ordinary case
+// and fits: the mapping brings the reference with it when it installs (record
+// 85), which is what lets a provider ship its mirrors without knowing the word
+// its consumer will use. What blocks is that record's rule 3 — a source kind that
+// spends the name on something of ITS OWN, where the mapping would silently
+// take a declared slot over.
+//
+// A kind that declares the name as a `subject: true` reference keeps its
+// declaration and the mapping stamps the pin and the marker onto it (rule 4),
+// so that fits too, and only the shapes the loader refuses ON TOP of the
+// adoption are reported: a pin at another kind, a repeated or keyed slot, a
+// cascading one. Those are the readings an older provider bundle — one written
+// while the source kind still declared the slot itself — can still hold.
+//
+// `targets` is the mapping's `to` in the spellings this door may land it under
+// (shipped, rehomed, or the one identity a door commits to), because the pin a
+// pre-record-85 provider carries names the SHIPPED sample kind while an import
+// rehomes the target onto this repository's own authority.
+func subjectProblems(sm vocabulary.SuggestedMapping, from substrate.KindInfo, props map[string]any, targets []string) []string {
+	decl := asMap(props[sm.Property])
+	if len(decl) == 0 {
+		return nil // the mapping brings its own slot
+	}
+	if decl["type"] != string(vocabulary.DatatypeReference) || decl["subject"] != true {
+		return []string{fmt.Sprintf(
+			"%s already declares %q as %v, and a mapping's property is its own: upgrade the provider past that declaration, or map under another name",
+			sm.From, sm.Property, decl["type"])}
+	}
+	var problems []string
+	errf := func(format string, args ...any) {
+		problems = append(problems, fmt.Sprintf(format, args...))
+	}
+	// A bare pin resolves against the kind that declares it, which is how the
+	// loader reads one.
+	if pin := mstr(decl, "kind"); pin != "" && pin != vocabulary.ToAny {
+		if !strings.Contains(pin, "/") {
+			pin = from.Authority + "/" + from.Package + "/" + pin
+		}
+		if !slices.Contains(targets, pin) {
+			errf("%s.%s points at %q, not %s, the kind this mapping fills", sm.From, sm.Property, pin, targets[0])
+		}
+	}
+	if decl["repeated"] == true || decl["keyed"] == true {
+		errf("%s.%s is repeated, and a subject reference is single-valued", sm.From, sm.Property)
+	}
+	if mstr(decl, "onDelete") == "cascade" {
+		errf("%s.%s cascades, and a subject reference never does", sm.From, sm.Property)
 	}
 	return problems
 }
