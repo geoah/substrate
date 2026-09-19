@@ -112,6 +112,35 @@ func TestRecordsListCarriesTheGrammar(t *testing.T) {
 	}
 }
 
+// `offset` addresses a page by its number and reaches the dataset as it was
+// written; it is refused as a companion to `after` and on the ranked read,
+// which has no keyset (decision 0084).
+func TestRecordsListOffset(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+
+	f := substrate.Filter{Kinds: []string{personKind}}
+	rec := env.do(t, http.MethodGet, filterPath(t, f, "first=25", "offset=100"), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if q := ds.lastQuery; q.First != 25 || q.Offset != 100 || q.After != "" {
+		t.Fatalf("paging = first %d offset %d after %q, want first 25 offset 100 and no cursor", q.First, q.Offset, q.After)
+	}
+
+	// Not a number, and negative, are both refused at the door rather than
+	// reaching the engine as a zero that silently answers page one.
+	for _, bad := range []string{"offset=soon", "offset=-1"} {
+		rec := env.do(t, http.MethodGet, filterPath(t, f, bad), tok, nil)
+		wantStatus(t, rec, http.StatusBadRequest)
+		wantMessage(t, rec, "offset")
+	}
+
+	// The ranked read names its own grammar and refuses the rest by name.
+	rec = env.do(t, http.MethodGet, filterPath(t, f, "q=ada", "offset=10"), tok, nil)
+	wantStatus(t, rec, http.StatusBadRequest)
+	wantMessage(t, rec, "offset")
+}
+
 // With no filter at all the list is every record: there is no collection to
 // scope it, so the route does not invent one.
 func TestRecordsListWithoutAFilterIsEveryKind(t *testing.T) {

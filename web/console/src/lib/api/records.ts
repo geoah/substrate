@@ -10,9 +10,12 @@
  * (`collectionPath`) — and GET/PUT/PATCH/DELETE address it there. A create
  * under a server-minted id is `POST /api/v1/records` with `kind` in the body.
  *
- * PAGINATION: the list `cursor` is an OPAQUE keyset token — the client stores
- * it and resends it VERBATIM as `after=`. There is no offset, so a "load more"
- * walks the server cursor and a size is a bounded cursor walk. */
+ * PAGINATION, two styles the wire keeps apart (decision 0084). The `cursor` a
+ * page returns is an OPAQUE keyset token — the client stores it and resends it
+ * VERBATIM as `after=` — and that is what a "load more" feed and the bounded
+ * size walk use, because a keyset walk sees every row exactly once. `offset=`
+ * is the other: a count of ordered rows to skip, so a numbered page is
+ * reachable in one request. They are alternatives; sending both is refused. */
 
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query"
 
@@ -53,6 +56,9 @@ export interface ListParams {
   first?: number
   /** The opaque keyset cursor a previous page returned, resent VERBATIM. */
   after?: string
+  /** Rows to skip before the page: the numbered-page continuation, and the
+   * ALTERNATIVE to `after` — the wire refuses the two together. */
+  offset?: number
   /** The filter's other arms; `kinds` here is the scope's, not the caller's. */
   filter?: RecordFilter
   /** `"updatedAt:desc"` — the wire's compact orderBy spelling. */
@@ -95,6 +101,7 @@ export function listPath(p: ListParams): string {
   const q = new URLSearchParams()
   q.set("first", String(p.first ?? 50))
   if (p.after) q.set("after", p.after)
+  else if (p.offset) q.set("offset", String(p.offset))
   const filter = listFilter(p)
   if (filter) q.set("filter", JSON.stringify(filter))
   if (p.orderBy) q.set("orderBy", p.orderBy)
@@ -110,6 +117,7 @@ export function recordsQueryOptions(p: ListParams) {
       {
         first: p.first ?? 50,
         after: p.after ?? null,
+        offset: p.offset ?? null,
         filter: listFilter(p) ?? null,
         orderBy: p.orderBy ?? null,
         expand: p.expand ?? null,
@@ -123,9 +131,10 @@ export function recordsQueryOptions(p: ListParams) {
 
 // ── size ──────────────────────────────────────────────────────────────────
 
-/** A collection size. The server has no count and no offset, so a size is a
- * BOUNDED keyset walk: `value` is what was counted, and `capped` is true when
- * the collection outran the walk's ceiling (render it as `value+`). */
+/** A collection size. The server has no count route, so a size is a BOUNDED
+ * keyset walk: `value` is what was counted, and `capped` is true when the
+ * collection outran the walk's ceiling (render it as `value+`, and never as
+ * the last page of a numbered bar — it is a floor). */
 export interface RecordCount {
   value: number
   capped: boolean

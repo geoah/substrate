@@ -22,7 +22,7 @@ segments and the id, which is exactly its
 [decision 0079](decisions/0079-graphql-is-removed-and-the-records-read-is-one-route.md)):
 
 ```http
-GET    /api/v1/records?filter&orderBy&first&after&expand&withAnnotations   # the list
+GET    /api/v1/records?filter&orderBy&first&after|offset&expand&withAnnotations  # the list
 GET    /api/v1/records?q&mode&filter&first                                  # the ranked read
 GET    /api/v1/records?watch=1&filter&from&generation                       # the tail
 POST   /api/v1/records                            # create; the body names `kind`, the server assigns the id
@@ -65,7 +65,7 @@ learn, not one uniform grammar.
 
 | Mode | Selected by | Parameters | Filter arms | Answer |
 | --- | --- | --- | --- | --- |
-| **list** | neither `q` nor `watch=1` | `filter`, `orderBy`, `first`, `after`, `expand`, `withAnnotations` | all of them | `{records, cursor?, head, generation, included?, matches?}` |
+| **list** | neither `q` nor `watch=1` | `filter`, `orderBy`, `first`, `after` or `offset`, `expand`, `withAnnotations` | all of them | `{records, cursor?, head, generation, included?, matches?}` |
 | **ranked** | `q` | `q`, `mode`, `filter`, `first` | `kinds` alone | `{records, scores, pending}` |
 | **watch** | `watch=1` | `watch`, `filter`, `from`, `generation` | `kinds` alone | the ndjson tail |
 
@@ -106,7 +106,7 @@ filtering, `mode` picks the arm, `first` is the hit count, and `filter.kinds`
 narrows the candidates. It carries `records` in rank order, a `scores` sidecar
 keyed by record path, and `pending`; no `cursor`, `head` or `generation`,
 because a ranking has no keyset and opens no single snapshot, so it claims
-none. Every other list parameter (`orderBy`, `after`, `expand`,
+none. Every other list parameter (`orderBy`, `after`, `offset`, `expand`,
 `withAnnotations`) and every filter arm but `kinds` is refused with `q` by
 name: both ranking arms cap candidates BEFORE hydration, so a predicate applied
 to the top-k afterwards would not be the filtered top-k, and the substrate does
@@ -553,11 +553,42 @@ than silently seeking past rows the new predicate admits and answering a short
 page that looked complete. An exhausted list carries no `cursor` at all: there
 is no next page.
 
+### Addressing a page by its number
+
+A reader that draws a numbered pagination bar cannot walk to page seven, so
+the list takes `offset` as well: the count of ordered rows to discard before
+the page begins ([decision 0084](decisions/0084-a-records-list-pages-by-offset-beside-the-keyset-cursor.md)).
+
+```http
+GET /api/v1/records?filter={"kinds":["samples.substrate.reamde.dev/tasks/task"]}&first=50&offset=300
+→ {"records": [...], "cursor": "eyJv…", "head": 4211, "generation": "7f3a0c2e9b1d4e6f"}
+```
+
+`offset` and `after` are **alternatives**, and sending both is refused
+(`422 validation`): a cursor seeks to a position in the order and an offset
+skips a count of rows, so a page cannot do both. Two properties of the keyset
+walk are given up by asking for a page this way, and neither is recoverable:
+
+- **It is not stable.** An offset page is a snapshot of one instant. A row
+  inserted or deleted by a concurrent writer shifts every later page, so a row
+  can be skipped or seen twice across two offset reads. A walk that must see
+  each row exactly once — an export, a sync, an agent reading a feed — pages
+  with `after`.
+- **It costs what it skips.** The rows before the page are ordered and then
+  discarded, so a deep offset page costs more than a shallow one, where a
+  keyset seek costs the same at any depth.
+
+An offset page still returns a `cursor` minted from its last row, so a reader
+that jumped to a page can hand off to a stable walk from there. `offset` is
+refused on the [window read](#the-window-read) (`400 bad_request`), which
+merges computed occurrences into the page and so has no row count to skip, and
+on the ranked read, which has no keyset at all.
+
 Two continuation styles exist, and the parameter name says which you are
 holding. The changelog uses real sequence numbers, `from` forward and `before`
 backward, because a seq is a meaningful ordinal (its history response returns
 a `cursor` seq to pass as the next `before`). Record lists use an opaque
-cursor, passed back as `after`.
+cursor, passed back as `after`, or `offset` for a numbered page.
 
 Every list response also carries the changelog **head** seq captured at the snapshot
 it was served from, pinned once at the walk's start and carried through the
