@@ -291,9 +291,21 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	// exactly once. The token pins the resolved order it was minted for; a
 	// cursor replayed against a different orderBy is refused, not silently
 	// mis-seeked.
+	//
+	// OFFSET is the second, narrower way in, for a reader that addresses a
+	// page by its number (substrate.Query.Offset): it skips a count of
+	// ordered rows instead of seeking past one. The two are alternatives and
+	// never combine. An offset page still mints a keyset cursor from its last
+	// row, so a numbered reader can hand off to a stable walk at any page.
 	// carriedHead is the FIRST page's head, threaded through the cursor so every
 	// page of one walk reports the same head.
 	var carriedHead int64
+	if q.Offset < 0 {
+		return nil, fmt.Errorf("%w: offset must not be negative", substrate.ErrValidation)
+	}
+	if q.Offset > 0 && q.After != "" {
+		return nil, fmt.Errorf("%w: offset and after are alternatives: a cursor seeks to a position and an offset skips a count, so a page cannot do both", substrate.ErrValidation)
+	}
 	if q.After != "" {
 		tok, err := decodeKeyset(q.After)
 		if err != nil {
@@ -331,7 +343,14 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 		keyCols[i] = `(` + t.expr + `)::text AS __k` + strconv.Itoa(i)
 	}
 	limitArg := b.arg(first + 1)
-	sqlText := listSQL(where, keyCols, order, limitArg)
+	// An OFFSET page reads its head fresh (there is no cursor to carry one
+	// through), which is honest: the page is a snapshot of this instant and
+	// the next offset page is a snapshot of the next one.
+	offsetArg := ""
+	if q.Offset > 0 {
+		offsetArg = b.arg(q.Offset)
+	}
+	sqlText := listSQL(where, keyCols, order, limitArg, offsetArg)
 
 	// Records starts non-nil so an empty page serializes `[]`, the array the
 	// wire promises, never `null`.
@@ -417,9 +436,13 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 // OFFSET: continuation is the seek predicate already folded into
 // `where`, so a deep page costs the same as a shallow one. keyCols are the
 // aliased order-key projections that capture the last row's cursor values.
-func listSQL(where string, keyCols []string, order, limitArg string) string {
-	return `SELECT ` + recordCols + `, ` + strings.Join(keyCols, ", ") +
+func listSQL(where string, keyCols []string, order, limitArg, offsetArg string) string {
+	sql := `SELECT ` + recordCols + `, ` + strings.Join(keyCols, ", ") +
 		` FROM records WHERE ` + where + ` ORDER BY ` + order + ` LIMIT ` + limitArg
+	if offsetArg != "" {
+		sql += ` OFFSET ` + offsetArg
+	}
+	return sql
 }
 
 // buildFilter renders the filter's predicates into b and returns the kinds

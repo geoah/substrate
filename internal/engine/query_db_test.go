@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -688,4 +689,97 @@ func TestListIntersectsKindsAndImplements(t *testing.T) {
 			t.Fatalf("error = %v, want a validation error naming the mismatch", err)
 		}
 	})
+}
+
+// OFFSET addresses a page by its number: the same ordered rows a keyset walk
+// would reach, without the walk. The two continuations are alternatives, and
+// a page reached by offset still mints a cursor so the reader can hand off to
+// a stable walk from there (decision 0084).
+func TestListOffset(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+
+	// Six people, named so the title order is the insertion order.
+	for _, name := range []string{"a", "b", "c", "d", "e", "f"} {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": name}})
+	}
+	base := substrate.Query{
+		Filter:  substrate.Filter{Kinds: []string{"person"}},
+		OrderBy: []substrate.Order{{Property: "name"}},
+		First:   2,
+	}
+
+	names := func(page *substrate.Page) []string {
+		out := make([]string, 0, len(page.Records))
+		for _, e := range page.Records {
+			out = append(out, fmt.Sprint(e.Properties["name"]))
+		}
+		return out
+	}
+
+	// Page three by offset is page three by walking.
+	q := base
+	q.Offset = 4
+	jumped, err := ds.List(ctx, q)
+	if err != nil {
+		t.Fatalf("list at offset 4: %v", err)
+	}
+	if got := names(jumped); !slices.Equal(got, []string{"e", "f"}) {
+		t.Fatalf("offset 4 answered %v, want [e f]", got)
+	}
+
+	// The last page is exhausted: no cursor, because there is no next page.
+	if jumped.Cursor != "" {
+		t.Fatalf("the last page carried cursor %q, want none", jumped.Cursor)
+	}
+
+	// A middle offset page mints a cursor, and that cursor continues the
+	// KEYSET walk from where the jump landed.
+	q.Offset = 2
+	middle, err := ds.List(ctx, q)
+	if err != nil {
+		t.Fatalf("list at offset 2: %v", err)
+	}
+	if got := names(middle); !slices.Equal(got, []string{"c", "d"}) {
+		t.Fatalf("offset 2 answered %v, want [c d]", got)
+	}
+	if middle.Cursor == "" {
+		t.Fatal("an offset page with rows behind it carried no cursor: a numbered reader cannot hand off to a stable walk")
+	}
+	q.Offset = 0
+	q.After = middle.Cursor
+	after, err := ds.List(ctx, q)
+	if err != nil {
+		t.Fatalf("walk on from an offset page: %v", err)
+	}
+	if got := names(after); !slices.Equal(got, []string{"e", "f"}) {
+		t.Fatalf("the cursor an offset page minted answered %v, want [e f]", got)
+	}
+
+	// An offset past the end is an empty page, not an error.
+	q = base
+	q.Offset = 99
+	past, err := ds.List(ctx, q)
+	if err != nil {
+		t.Fatalf("list past the end: %v", err)
+	}
+	if len(past.Records) != 0 || past.Cursor != "" {
+		t.Fatalf("offset past the end answered %d rows and cursor %q, want an empty exhausted page", len(past.Records), past.Cursor)
+	}
+
+	// The two continuations are alternatives: together they would seek and
+	// then skip, and either precedence answers a page nobody asked for.
+	q = base
+	q.Offset = 2
+	q.After = middle.Cursor
+	if _, err := ds.List(ctx, q); !errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("offset with after: %v, want a validation error", err)
+	}
+
+	q = base
+	q.Offset = -1
+	if _, err := ds.List(ctx, q); !errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("a negative offset: %v, want a validation error", err)
+	}
 }

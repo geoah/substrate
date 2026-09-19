@@ -14,7 +14,7 @@ import (
 // THE RECORDS ROUTE. Every "read some records" question is one route,
 // `GET /api/v1/records`, in three modes told apart by their parameters:
 //
-//	?filter&orderBy&first&after&expand&withAnnotations   the list
+//	?filter&orderBy&first&after|offset&expand&withAnnotations  the list
 //	?q&mode&filter&first                                  the ranked read
 //	?watch=1&filter&from&generation                       the tail
 //
@@ -36,7 +36,7 @@ const recordsRoute = "/records"
 
 var (
 	// recordsListParams is the list grammar.
-	recordsListParams = []string{"filter", "orderBy", "first", "after", "expand", "withAnnotations"}
+	recordsListParams = []string{"filter", "orderBy", "first", "after", "offset", "expand", "withAnnotations"}
 	// recordsRankedParams is the ranked read's grammar: the query, its mode,
 	// the kind narrowing and the hit count.
 	recordsRankedParams = []string{"q", "mode", "filter", "first"}

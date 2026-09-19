@@ -219,6 +219,15 @@ func TestWindowRefusals(t *testing.T) {
 		t.Fatalf("refusal does not name the rule: %s", rec.Body.String())
 	}
 
+	// A numbered page has no meaning here: the page merges computed
+	// occurrences into the stored rows, so a row count to skip would address
+	// the rows alone and drop the occurrences between them.
+	rec = env.do(t, http.MethodGet, windowPath("2026-07-01T00:00:00Z", "2026-07-06T00:00:00Z", "offset=2"), tok, nil)
+	wantStatus(t, rec, http.StatusBadRequest)
+	if !strings.Contains(rec.Body.String(), "offset is not supported on a window read") {
+		t.Fatalf("refusal does not name offset: %s", rec.Body.String())
+	}
+
 	// A cursor from another filter is refused, not mis-seeked.
 	first := decodeJSON[windowPage](t, env.do(t, http.MethodGet,
 		windowPath("2026-07-01T00:00:00Z", "2026-07-06T00:00:00Z", "first=1"), tok, nil))

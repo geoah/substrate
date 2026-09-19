@@ -12,7 +12,7 @@ func TestListSQLHasNoOffset(t *testing.T) {
 	terms := []orderTerm{{expr: "created_at", desc: true}, {expr: "id", desc: true}}
 	order := renderOrder(terms)
 	keyCols := []string{`(created_at)::text AS __k0`, `(id)::text AS __k1`}
-	sql := listSQL("TRUE", keyCols, order, "$1")
+	sql := listSQL("TRUE", keyCols, order, "$1", "")
 	if strings.Contains(strings.ToUpper(sql), "OFFSET") {
 		t.Fatalf("list SQL carries an OFFSET: %s", sql)
 	}

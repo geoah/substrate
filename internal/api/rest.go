@@ -282,8 +282,9 @@ func parseFirst(r *http.Request) (int, error) {
 
 // parseQuery reads the list parameters: filter, orderBy ("at:desc,createdAt"
 // or JSON, both through substrate.ParseOrderBy, which the runner's list host
-// call shares), first/after, expand (comma-separated reference properties)
-// and the heavy-data opt-in.
+// call shares), first with either continuation (after, the keyset cursor, or
+// offset, the numbered-page skip), expand (comma-separated reference
+// properties) and the heavy-data opt-in.
 func parseQuery(r *http.Request) (substrate.Query, error) {
 	v := r.URL.Query()
 	var q substrate.Query
@@ -303,6 +304,16 @@ func parseQuery(r *http.Request) (substrate.Query, error) {
 		return q, err
 	}
 	q.After = v.Get("after")
+	if raw := v.Get("offset"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			return q, errors.New("offset: not a number")
+		}
+		if n < 0 {
+			return q, errors.New("offset: must not be negative")
+		}
+		q.Offset = n
+	}
 	q.WithAnnotations = v.Get("withAnnotations") == "1"
 	if raw := v.Get("expand"); raw != "" {
 		for _, name := range strings.Split(raw, ",") {

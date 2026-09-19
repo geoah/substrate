@@ -1,9 +1,11 @@
 /** Kind browse (`/data/:authority/:package/:kind`): ONE schema-driven DataTable for
- * every kind ever installed. Server-side everything — the filter and sort live
- * in the URL (nuqs) and travel to the wire as `?filter=/orderBy`. Pagination is
- * keyset: there is no offset and no page-jump, so a
- * cursor stack walks Prev/Next over the opaque `after` tokens the server
- * returns. A bounded count query backs the header total only.
+ * every kind ever installed. Server-side everything — the filter, the search,
+ * the sort and the page live in the URL (nuqs) and travel to the wire as
+ * `?filter=/orderBy=/offset=`. Pagination is NUMBERED: a page is `offset=`
+ * on the wire (decision 0084), so every page is one request away and `?page=`
+ * makes one linkable. The bounded count query sizes the bar as well as the
+ * header, and Next reads the page's own cursor rather than that count, so a
+ * collection past the count's ceiling still pages to its end.
  *
  * TOP TABS, the record page's idiom (owner ask, 2026-08-12): **Records** is the
  * collection, **Definition** is the kind that shapes it — its declaration YAML
@@ -17,13 +19,14 @@ import type { SortingState, Updater } from "@tanstack/react-table"
 import { InboxIcon, PlusIcon, SearchXIcon } from "lucide-react"
 import {
   parseAsArrayOf,
+  parseAsInteger,
   parseAsString,
   parseAsStringLiteral,
   useQueryState,
 } from "nuqs"
 
 import { DataTable, useDataTable } from "@/components/data-table/data-table"
-import { DataTableCursorPagination } from "@/components/data-table/data-table-cursor-pagination"
+import { DataTablePagination } from "@/components/data-table/data-table-pagination"
 import { DataTableFilters } from "@/components/data-table/data-table-filters"
 import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 import { KindDefinition } from "@/components/record/definition"
@@ -98,6 +101,14 @@ export function KindBrowsePage() {
     "search",
     parseAsString.withDefault("")
   )
+  // The page is in the URL too, so a page of a collection is a link. It is
+  // not persisted either: where a reader had got to is not a view
+  // preference, and restoring page 9 on a bare url would open a collection
+  // at rows nobody asked for.
+  const [pageParam, setPageParam] = useQueryState(
+    "page",
+    parseAsInteger.withDefault(1)
+  )
 
   // A BARE url restores the last-used view from localStorage, one dimension
   // at a time; an explicit ?filter=/?sort= always wins (shareable views stay
@@ -141,19 +152,18 @@ export function KindBrowsePage() {
     return words ? { ...base, search: words } : base
   }, [filters, filterFields, search])
 
-  // Keyset pagination: a stack of the opaque `after` cursors visited, one per
-  // page (index 0 = page one, no cursor). There is no offset, so Next walks
-  // the server cursor forward and Prev pops back. A changed view resets it.
-  const [cursorStack, setCursorStack] = useState<(string | undefined)[]>([
-    undefined,
-  ])
-  const [pageIndex, setPageIndex] = useState(0)
+  // A hand-typed ?page= is clamped to a page that exists; the request below
+  // is built from this, never from the raw parameter.
+  const page = Number.isFinite(pageParam)
+    ? Math.max(1, Math.trunc(pageParam))
+    : 1
+  // A changed filter or sort renumbers the whole collection, so the page a
+  // reader was on no longer names the same rows: the view resets to page one.
   const viewKey = `${authority}/${pkg}/${name}|${JSON.stringify(recordFilter ?? null)}|${sort}`
   const [lastViewKey, setLastViewKey] = useState(viewKey)
   if (lastViewKey !== viewKey) {
     setLastViewKey(viewKey)
-    setCursorStack([undefined])
-    setPageIndex(0)
+    if (page !== 1) void setPageParam(null, { history: "replace" })
   }
 
   const listOptions = recordsQueryOptions({
@@ -161,7 +171,7 @@ export function KindBrowsePage() {
     package: pkg,
     name,
     first: PAGE_SIZE,
-    after: cursorStack[pageIndex],
+    offset: (page - 1) * PAGE_SIZE,
     filter: recordFilter,
     orderBy: sort,
   })
@@ -169,14 +179,22 @@ export function KindBrowsePage() {
 
   const rows = records.data?.records ?? []
   const pageCursor = records.data?.cursor
-  // A single cursorless page IS the exact count, for free. A larger collection
-  // pays the bounded count walk (header total only — navigation never needs it).
+  // A single page with nothing behind it IS the exact count, for free. Any
+  // larger collection pays the bounded count walk, which the numbered bar
+  // needs as well as the header — but only for the NUMBERS: Next below reads
+  // the page's own cursor, so a collection past the walk's ceiling still
+  // pages to its end.
   const derivedTotal =
-    records.data && !pageCursor && pageIndex === 0 ? rows.length : undefined
+    records.data && !pageCursor && page === 1 ? rows.length : undefined
   const count = useQuery({
+    // Only once a second page is known to exist: a collection that fits on
+    // one page has already answered its own size above, and the walk is a
+    // second round trip over the same rows.
     ...recordCountQueryOptions(authority, pkg, name, recordFilter),
-    enabled: Boolean(kindInfo) && Boolean(pageCursor),
+    enabled: Boolean(kindInfo) && (page > 1 || Boolean(pageCursor)),
   })
+  const total = derivedTotal ?? count.data?.value
+  const totalCapped = derivedTotal === undefined && count.data?.capped
   const totalText =
     derivedTotal !== undefined
       ? derivedTotal.toLocaleString()
@@ -184,18 +202,27 @@ export function KindBrowsePage() {
         ? formatCount(count.data)
         : undefined
 
-  const hasNext = pageIndex < cursorStack.length - 1 || Boolean(pageCursor)
-  function nextPage() {
-    if (pageIndex < cursorStack.length - 1) {
-      setPageIndex(pageIndex + 1)
-    } else if (pageCursor) {
-      setCursorStack([...cursorStack, pageCursor])
-      setPageIndex(pageIndex + 1)
+  // A ?page= past the end — hand-typed, or bookmarked before rows were
+  // deleted — answers an empty page that reads like an empty collection.
+  // Land on the last page that has rows instead. A CAPPED count is a floor,
+  // so it can never justify moving a reader back.
+  const pageCount =
+    total !== undefined && !totalCapped
+      ? Math.max(1, Math.ceil(total / PAGE_SIZE))
+      : undefined
+  useEffect(() => {
+    if (pageCount !== undefined && page > pageCount) {
+      void setPageParam(pageCount === 1 ? null : pageCount, {
+        history: "replace",
+      })
     }
+  }, [page, pageCount, setPageParam])
+
+  function goToPage(next: number) {
+    void setPageParam(next <= 1 ? null : next)
   }
   function resetPages() {
-    setCursorStack([undefined])
-    setPageIndex(0)
+    if (page !== 1) void setPageParam(null)
   }
 
   const columns = useMemo(
@@ -415,17 +442,15 @@ export function KindBrowsePage() {
                   }
                 />
               </div>
-              <DataTableCursorPagination
-                page={pageIndex + 1}
+              <DataTablePagination
+                page={page}
+                pageSize={PAGE_SIZE}
                 rows={rows.length}
-                hasPrev={pageIndex > 0}
-                hasNext={hasNext}
-                onPrev={() => setPageIndex(Math.max(0, pageIndex - 1))}
-                onNext={nextPage}
-                loading={records.isFetching}
-                summary={
-                  totalText !== undefined ? `${totalText} in total` : undefined
-                }
+                total={total}
+                totalCapped={totalCapped}
+                hasNext={Boolean(pageCursor)}
+                onPage={goToPage}
+                loading={records.isPlaceholderData && records.isFetching}
               />
             </>
           )}

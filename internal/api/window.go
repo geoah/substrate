@@ -115,6 +115,14 @@ func (h *handler) windowList(w http.ResponseWriter, r *http.Request, ds substrat
 			"a window read (filter.properties.at bounded on both ends) orders by at alone, ascending or descending: it merges computed occurrences into the page, and only their slot is known")
 		return
 	}
+	// A window page is rows MERGED with occurrences computed for the slot, so
+	// there is no row count to skip: offset would address a page of the
+	// stored rows alone and silently drop the occurrences between them.
+	if q.Offset > 0 {
+		writeError(w, http.StatusBadRequest, codeBadRequest,
+			"offset is not supported on a window read (filter.properties.at bounded on both ends): it merges computed occurrences into the page, so pages are addressed by cursor alone")
+		return
+	}
 	first := q.First
 	if first <= 0 {
 		first = 50

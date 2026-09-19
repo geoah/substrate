@@ -123,6 +123,19 @@ type Query struct {
 	OrderBy []Order `json:"orderBy,omitempty"`
 	First   int     `json:"first,omitempty"` // default 50, max 500
 	After   string  `json:"after,omitempty"` // opaque cursor
+	// Offset skips this many rows of the ordered result before the page
+	// begins, so a reader that addresses pages by NUMBER can ask for one
+	// directly. It is the ALTERNATIVE to After, never its companion: a
+	// keyset cursor names a position in the order and an offset names a
+	// count of rows to discard, so honoring both would seek and then skip.
+	// Set together they are refused.
+	//
+	// An offset page is a snapshot of one instant and nothing more: a row
+	// inserted or deleted under a concurrent writer shifts every later page,
+	// so a walk that must see each row exactly once pages with After. It also
+	// costs what it skips — the rows before the page are still ordered and
+	// discarded — where a keyset seek does not.
+	Offset int `json:"offset,omitempty"`
 	// WithAnnotations opts heavier data into list responses.
 	WithAnnotations bool `json:"withAnnotations,omitempty"`
 	// Expand names reference properties whose referents the page carries in
