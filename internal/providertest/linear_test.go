@@ -118,9 +118,9 @@ func TestLinearBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("account type implements oauth2 — client creds belong on the config, not the account")
 	}
 
-	// NO SUBJECT SLOTS ANYWHERE IN THE CLOSURE (record 85). `person` on the
+	// NO SUBJECT SLOTS ANYWHERE IN THE CLOSURE (record 96). `person` on the
 	// user mirror and `assignee`/`task` on the issue were this package
-	// guessing its consumer's nouns; each is synthesised by the mapping that
+	// guessing its consumer's nouns; each is synthesized by the mapping that
 	// names it, so the provider declares only what Linear itself has.
 	user := mustKind(t, reg, linearUserType)
 	issue := mustKind(t, reg, linearIssueType)
@@ -133,7 +133,7 @@ func TestLinearBundleAdmitsSchema(t *testing.T) {
 	}
 	// What it DOES declare on the issue: its own two pointers. `assigneeUser`
 	// names this package's user mirror — a reference at a mapping's source
-	// kind, which record 0084 admits — and `team` is an ordinary pinned one.
+	// kind, which record 0095 admits — and `team` is an ordinary pinned one.
 	if ed, ok := issue.Prop("assigneeUser"); !ok || ed.To != linearUserType || ed.Required || ed.Repeated {
 		t.Fatalf("issue assigneeUser shape wrong: %+v (ok=%v)", ed, ok)
 	}

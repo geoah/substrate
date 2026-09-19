@@ -69,7 +69,7 @@ func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 	// optional (record 49). The repository's own mapping pins it.
 	contact := mustKind(t, reg, googleContactType)
 	ed, ok := contact.Prop("person")
-	// NO SUBJECT SLOT (record 85): the mapping synthesises `person` on this
+	// NO SUBJECT SLOT (record 96): the mapping synthesizes `person` on this
 	// kind when it installs, so the shipped closure is Google and nothing else.
 	if ok {
 		t.Fatalf("contact still declares a subject slot: %+v", ed)

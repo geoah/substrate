@@ -47,7 +47,7 @@ import (
 // write "pins like an owner edit" (substrate.Tier), so making it collectable
 // under some conditions makes the tier's meaning conditional; and it would
 // turn an uninstall into a retroactive delete of records the bundle merely
-// touched, which is the class of surprise decision 0085 refuses when it
+// touched, which is the class of surprise decision 0096 refuses when it
 // declines to clear subject links on an uninstall. The cost is stated and
 // accepted: a husk one bundle-tier write landed on is not marked, and the way
 // to give it back to the machine is the documented one — null-patch the

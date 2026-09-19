@@ -5,7 +5,7 @@ decision-makers: George Antoniadis
 amended-by: 0087
 ---
 
-# 0085. A mapping synthesises its subject slot on the source kind
+# 0096. A mapping synthesises its subject slot on the source kind
 
 ## Context and Problem Statement
 
@@ -86,7 +86,7 @@ answers and the guard names them.
 The shipped closures follow: `github`, `google` and `linear` drop the six slots
 they declared, with the package version bumps `kinds:check` demands. Linear's
 `issue` gains `assigneeUser`, a reference at its own `user` mirror — legal
-since [0084](0084-a-reference-may-pin-a-mapping-source-kind.md) — for the one
+since [0095](0095-a-reference-may-pin-a-mapping-source-kind.md) — for the one
 write its sync made into the old `assignee` slot when the viewer's address is
 hidden.
 
@@ -142,7 +142,7 @@ whose slots are synthesised rather than declared.
 Supersedes item 3 of
 [0049](0049-the-owner-of-a-mappings-target-declares-it.md) and nothing else of
 it. Companion to
-[0084](0084-a-reference-may-pin-a-mapping-source-kind.md): together they let a
+[0095](0095-a-reference-may-pin-a-mapping-source-kind.md): together they let a
 provider kind be written as the complete, first-class object its API describes,
 with references for every relation and no pointer at a vocabulary it does not
 own. `docs/kind-design.md` in geoah/mneme-v6 is the design rule this unblocks.

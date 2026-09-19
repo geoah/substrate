@@ -5,14 +5,14 @@ import (
 	"sort"
 )
 
-// THE MAPPING OWNS ITS LINK (record 85). A recordmapping names `property:`, and
+// THE MAPPING OWNS ITS LINK (record 96). A recordmapping names `property:`, and
 // that property is the reference on the SOURCE kind pointing at the subject.
-// Until record 85 the source kind had to declare it, so a provider had to know
+// Until record 96 the source kind had to declare it, so a provider had to know
 // the word its consumer would use — `task` on `github/issue`, `person` on
 // `github/user` — and a second consumer with a different word needed the
 // provider to have anticipated it.
 //
-// Now the mapping synthesises it. The slot storage is unchanged: it is a
+// Now the mapping synthesizes it. The slot storage is unchanged: it is a
 // property the write path fills, exactly as before. What changed is who
 // declares it, and this file is that half — a reconcile over the registry's
 // resolved mappings, re-run by every door that mutates the registry, which
@@ -25,7 +25,7 @@ import (
 // holding a bundle written before it — and what makes a re-applied document
 // that carries the slot round-trip rather than collide.
 
-// subjectPropertyOf builds the reference a mapping synthesises on its source
+// subjectPropertyOf builds the reference a mapping synthesizes on its source
 // kind when the kind declares nothing under that name.
 //
 // SINGLE, `mustExist`, never cascading: a source record describes ONE subject
@@ -53,7 +53,7 @@ func subjectPropertyOf(m *Mapping) *Property {
 // slot, so the declaration stands and the mapping stamps it. The pin is the
 // mapping's whichever way the declaration left it (record 49 had the engine
 // apply this at every write; it is applied once, here, now), and `subject`,
-// `mustExist` and the marker are asserted so a declared slot and a synthesised
+// `mustExist` and the marker are asserted so a declared slot and a synthesized
 // one are the same property to everything downstream.
 func adoptSubjectProperty(declared *Property, m *Mapping) *Property {
 	p := *declared
@@ -121,7 +121,7 @@ func (r *Registry) mappingSubjectProblems() []string {
 func reconcileSubjectSlots(t *Kind, want map[string]*Mapping) (*Kind, bool, []string) {
 	var problems []string
 	// base is the kind's properties with every earlier synthesis undone: a
-	// purely synthesised slot disappears, an adopted one reverts to the
+	// purely synthesized slot disappears, an adopted one reverts to the
 	// declaration it was stamped onto.
 	base := make(map[string]*Property, len(t.Props))
 	order := make([]string, 0, len(t.PropOrder))
@@ -163,7 +163,7 @@ func reconcileSubjectSlots(t *Kind, want map[string]*Mapping) (*Kind, bool, []st
 	if len(added) == 0 && sameProps(t.Props, next) {
 		return t, false, problems
 	}
-	// A synthesised name lands at the END of the declared order, so a
+	// A synthesized name lands at the END of the declared order, so a
 	// declaration's own key order is never reshuffled by a mapping install.
 	sort.Strings(added)
 	out := *t

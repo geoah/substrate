@@ -1167,7 +1167,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 			default:
 				actor, tier := t.actor, t.tier
 				// A SUBJECT SLOT IS THE MAPPING'S, whoever's write filled it
-				// (record 85). The value is not the writer's opinion — it is
+				// (record 96). The value is not the writer's opinion — it is
 				// match-or-mint's answer, or the id the writer already had —
 				// and crediting the connector would let a `propertyMeta` read
 				// say a bundle holds the link when only merge and split can
@@ -1509,8 +1509,8 @@ func (t *txn) checkManagedProps(sp *applySpec) error {
 			continue
 		}
 		// A SUBJECT SLOT is managed and has its own rule, which is not this
-		// one. A mapping synthesises it `managed: true` so a client renders it
-		// read-only (record 85), but the slot is legitimately WRITTEN at
+		// one. A mapping synthesizes it `managed: true` so a client renders it
+		// read-only (record 96), but the slot is legitimately WRITTEN at
 		// create — a connector that already knows the subject names it, and
 		// match-or-mint fills it otherwise. checkSubjectWrite is what refuses
 		// the thing managed means here: moving it afterwards, which is merge

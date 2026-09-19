@@ -35,7 +35,7 @@ synced, which is the opposite of what a hub kind is for
 ## Decision Outcome
 
 Chosen: the third. The slot a mapping synthesises is single, `mustExist` and
-NOT `required` (record 0085), so an unset slot is a legal state the write path
+NOT `required` (record 0096), so an unset slot is a legal state the write path
 already allows — `mustExist` is a rule about a value that exists, not a demand
 that one does. Nothing had to be forced, and no new record kind had to be
 invented to hold a state the absence of a value states exactly.
@@ -55,7 +55,7 @@ caller:
 The subject hop (`references.go`), because somebody's write names this mirror
 in a slot pinned at the subject kind and there has to be a record to point at.
 And a source kind that declares its own subject reference `required:` — every
-bundle written before record 0085 does — because a write that left it unset
+bundle written before record 0096 does — because a write that left it unset
 would be refused by `checkRequiredProps` and the record would be lost instead
 of the link. The rule is therefore: the slot is filled when something demands
 it, and otherwise a source that cannot say who it describes waits.
@@ -81,7 +81,7 @@ a profile onto the empty user — the next sync links it.
   contact with no person. A parked-source read is the obvious follow-up and it
   is not in this change.
 - Bad, because the two demanding callers keep the old behavior, so a
-  pre-0085 bundle whose mirror declares `required: true` still mints out of an
+  pre-0096 bundle whose mirror declares `required: true` still mints out of an
   ambiguous probe. That is the declaration's own contract, and the way out is
   to drop the declaration and let the mapping synthesise the slot.
 - Bad, because nothing collects the shells already minted. This stops the
@@ -103,7 +103,7 @@ that a source with something to say still mints one.
 geoah/mneme-v6 `docs/upstream.md` asks N and O, ticket T-026 items 3 and 4.
 Amends the resolution rule of
 [0049](0049-the-owner-of-a-mappings-target-declares-it.md) as restated by
-[0085](0085-a-mapping-synthesises-its-subject-slot.md); the mapping set's keys
+[0096](0096-a-mapping-synthesises-its-subject-slot.md); the mapping set's keys
 and ownership are untouched. Reopen when a parked source needs to be VISIBLE —
 a list of unresolved sources, or the `onAmbiguous: park | first | mint` knob
 #577 proposes, which is a per-mapping policy rather than the engine's one rule.

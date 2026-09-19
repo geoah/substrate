@@ -78,7 +78,7 @@ data:
 **THE MAPPING OWNS THE LINK.** `github/user` declares no `person` property at
 all: GitHub cannot know which kind a repository keeps its people in, nor what
 it calls the slot, so it declares neither
-([decision record 0085](decisions/0085-a-mapping-synthesises-its-subject-slot.md)).
+([decision record 0096](decisions/0096-a-mapping-synthesises-its-subject-slot.md)).
 Admitting the mapping SYNTHESISES the reference on the source kind's live
 registry entry — named by `property`, pinned at `to`, single, `mustExist`,
 never cascading, and `managed: true`, which is a client's cue to render it
@@ -102,7 +102,7 @@ applied again, both land unchanged.
 
 **A reference may pin a mirror — and mostly should not.** Any reference,
 anywhere, may name a kind some mapping reads as its `from`
-([decision record 0084](decisions/0084-a-reference-may-pin-a-mapping-source-kind.md));
+([decision record 0095](decisions/0095-a-reference-may-pin-a-mapping-source-kind.md));
 a pin at the source is satisfied by the value as written, so it never takes the
 hop and the one-hop rule is untouched. That is what lets a provider model its
 API's own relations as references — `issue.assignees` at `github/user[]`,
@@ -356,7 +356,7 @@ The repository's half is the mapping, declared by the package that owns the
 kind being described. **The mapping brings the slot**: admitting it
 synthesises `person` on `enrichment` — a reference named by `property`, pinned
 at `to`, single, `mustExist`, never cascading and `managed: true`
-([decision record 0085](decisions/0085-a-mapping-synthesises-its-subject-slot.md)).
+([decision record 0096](decisions/0096-a-mapping-synthesises-its-subject-slot.md)).
 
 ```yaml
 kind: substrate.reamde.dev/core/recordmapping

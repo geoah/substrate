@@ -167,8 +167,8 @@ func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) (bo
 	}
 	// A REQUIRED slot has to be filled or the record does not land at all, so
 	// a kind that declares its own subject reference `required:` (every bundle
-	// written before record 85 does) keeps the old unconditional mint. The
-	// slot a mapping synthesises is not required, and there the write may
+	// written before record 96 does) keeps the old unconditional mint. The
+	// slot a mapping synthesizes is not required, and there the write may
 	// leave it unset: a source that offers nothing mints nothing, and an
 	// ambiguous probe parks rather than minting a duplicate (record 0087).
 	slot, declared := sp.ty.Prop(m.Property)
@@ -806,7 +806,7 @@ func (t *txn) subjectSourceSites(target eref, mappings []*vocabulary.Mapping) ([
 // came from the repository's own vocabulary rather than from Google.
 //
 // THE SUBJECT SLOT IS NOT A CONTRIBUTION and is excluded by name. Its manager
-// is the mapping itself (record 85), written by the engine as the link
+// is the mapping itself (record 96), written by the engine as the link
 // resolves, and it is written LAST — so without this the most recent row on
 // every freshly synced source record would be the engine's own bookkeeping,
 // and every value that record offers would be attributed to the mapping

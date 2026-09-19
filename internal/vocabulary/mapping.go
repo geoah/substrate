@@ -12,7 +12,7 @@ import (
 // write path can refuse to move a subject without reading the mapping set.
 // Everything record 33 ruled about it stands, restated here: created with its
 // record, moved only by merge and split, and never `onDelete: cascade`. A
-// reference elsewhere MAY pin a mapped source kind (record 84): a pin at the
+// reference elsewhere MAY pin a mapped source kind (record 95): a pin at the
 // source is satisfied without a hop, so it costs the one-hop rule nothing.
 
 // Merge is how one target property combines contributions: atomic takes one
@@ -326,12 +326,12 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 		errf("%s: data.to: unknown type %q", where, m.To)
 		return problems
 	}
-	// The subject slot. THE MAPPING OWNS IT (record 85): a source kind that
-	// declares nothing under this name gets the property synthesised onto it
+	// The subject slot. THE MAPPING OWNS IT (record 96): a source kind that
+	// declares nothing under this name gets the property synthesized onto it
 	// (mappingsubject.go), which is what lets a provider ship mirrors without
 	// knowing the word its consumer will use. A kind that DOES declare it
 	// keeps its declaration and the mapping stamps the pin — that is a bundle
-	// written before record 85, and a document that was read back out and
+	// written before record 96, and a document that was read back out and
 	// applied again.
 	//
 	// So the shape is checked only where a declaration exists, and a
@@ -435,7 +435,7 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 // reference stay refused (record 49). The source-to-subject graph stays
 // bipartite: a mapping's `to` may never itself be any mapping's `from`, which
 // is what keeps resolution one hop deep — a pin AT a source kind resolves
-// without a hop at all, so it is not this graph's business (record 84).
+// without a hop at all, so it is not this graph's business (record 95).
 // Registry-wide, because a mapping installs with its connector long after the
 // vocabulary that names its target was loaded.
 func (r *Registry) mappingInvariantProblems() []string {

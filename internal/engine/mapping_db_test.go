@@ -463,7 +463,7 @@ func TestMatchFallsThroughToTheNextProbe(t *testing.T) {
 // A MIRROR THAT DECLARES ITS SLOT `required:` still mints out of an ambiguous
 // probe, because a write that left the slot unset would be refused and the
 // record lost with it (record 0087). That is the declaration's own contract,
-// and the other side of the rule: a slot the mapping synthesises is optional,
+// and the other side of the rule: a slot the mapping synthesizes is optional,
 // and there an ambiguous probe parks
 // (TestAnAmbiguousProbeParksInsteadOfMinting).
 func TestAmbiguousMatchCreates(t *testing.T) {
@@ -1367,7 +1367,7 @@ func TestReRegistrationValidatesTheChangedManifest(t *testing.T) {
 	}
 }
 
-// A MIRROR MAY POINT AT ITS OWN MIRRORS (record 84). Google's contact is a
+// A MIRROR MAY POINT AT ITS OWN MIRRORS (record 95). Google's contact is a
 // mapping source onto person, and until this rule went a reference pinned at
 // `contact` was refused at admission — so importing the people mappings
 // retroactively narrowed what the google package itself could declare. The
@@ -1971,13 +1971,13 @@ func TestSyncAfterASubjectMergeMintsNothing(t *testing.T) {
 	}
 }
 
-// --- record 85: the mapping owns its link ----------------------------------
+// --- record 96: the mapping owns its link ----------------------------------
 
 const typeSlotlessCard = slotlessPackage + "/card"
 
 const slotlessPackage = "cards.connectors.substrate.reamde.dev/cards"
 
-// slotlessManifest is a provider written the way record 85 lets one be
+// slotlessManifest is a provider written the way record 96 lets one be
 // written: its own vocabulary and NOTHING that names a consumer's. There is no
 // `person` here, and no `subject: true` anywhere — which is exactly what the
 // old rule made impossible, because the mapping required the source kind to
@@ -2012,14 +2012,14 @@ func slotlessMapping() map[string]any {
 	})
 }
 
-// A MAPPING SYNTHESISES ITS SUBJECT SLOT (record 85). The card mirror declares
+// A MAPPING SYNTHESIZES ITS SUBJECT SLOT (record 96). The card mirror declares
 // no `person`; declaring the mapping puts one on it, and everything projection
 // does — match, mint, the link, the recompute — runs against a slot no
 // document ever declared.
 //
 // Against the old rule the mapping itself was refused at admission:
 // "data.property: …/card declares no property \"person\"".
-func TestAMappingSynthesisesItsSubjectSlot(t *testing.T) {
+func TestAMappingSynthesizesItsSubjectSlot(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
@@ -2027,7 +2027,7 @@ func TestAMappingSynthesisesItsSubjectSlot(t *testing.T) {
 
 	// THE READ SURFACE SERVES IT. The document declares no slot, so a client
 	// reading the kind's properties would otherwise be told this mirror has no
-	// link at all; the declaration a read is handed carries the synthesised
+	// link at all; the declaration a read is handed carries the synthesized
 	// one, flagged `managed` and naming its mapping.
 	info, err := ds.KindByRef(ctx, typeSlotlessCard)
 	if err != nil {
@@ -2041,7 +2041,7 @@ func TestAMappingSynthesisesItsSubjectSlot(t *testing.T) {
 	wantMapping := enginetest.SamplePackage("people") + "/cardperson"
 	if slot["kind"] != typePerson || slot["managed"] != true ||
 		slot["subject"] != true || slot["mustExist"] != true || slot["mappedBy"] != wantMapping {
-		t.Fatalf("synthesised slot declaration wrong: %v", slot)
+		t.Fatalf("synthesized slot declaration wrong: %v", slot)
 	}
 	// And it is READ-SIDE ONLY: the stored declaration row is the document,
 	// and the document declares no such property.
@@ -2051,7 +2051,7 @@ func TestAMappingSynthesisesItsSubjectSlot(t *testing.T) {
 	}
 	stored, _ := row.Properties["properties"].(map[string]any)
 	if _, leaked := stored["person"]; leaked {
-		t.Fatalf("the synthesised slot was written into the stored declaration: %v", stored)
+		t.Fatalf("the synthesized slot was written into the stored declaration: %v", stored)
 	}
 
 	// The projection runs through it: a card with no subject mints a person,

@@ -7,7 +7,7 @@ package engine_test
 // no spelling at all before: a person has one name, and a repeated source
 // could probe one and never set one.
 //
-// It declares NO subject slot — the mapping owns it (record 85) — so it is
+// It declares NO subject slot — the mapping owns it (record 96) — so it is
 // also the fixture for what an unresolved source does: a record that offers
 // nothing mints nothing, and an ambiguous probe parks instead of minting a
 // duplicate (record 0087).

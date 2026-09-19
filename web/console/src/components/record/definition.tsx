@@ -216,7 +216,7 @@ function HoldsCell({ reference }: { reference: DeclaredProperty }) {
   if (reference.onDelete) holds.push(`onDelete: ${reference.onDelete}`)
   if (reference.subject) holds.push("subject")
   // A slot the mapping put here, not the document: say WHICH mapping, because
-  // the kind's own YAML below declares nothing under this name (record 0085).
+  // the kind's own YAML below declares nothing under this name (record 0096).
   if (reference.mappedBy) holds.push(`mapping: ${reference.mappedBy}`)
   else if (reference.managed) holds.push("managed")
   if (reference.linkProperties?.length) {

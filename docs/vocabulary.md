@@ -206,7 +206,7 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   the from-kind declares nothing, and admitting the mapping synthesises the
   slot on it, single, `mustExist: true`, never cascading, pinned at the
   mapping's `to` and `managed: true`
-  ([decision record 0085](decisions/0085-a-mapping-synthesises-its-subject-slot.md)).
+  ([decision record 0096](decisions/0096-a-mapping-synthesises-its-subject-slot.md)).
   A name the from-kind declares for itself is a collision and refuses the
   mapping; a `subject: true` reference it already declares is adopted, pin and
   marker stamped, which is what keeps a bundle written before the rule

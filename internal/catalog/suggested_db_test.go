@@ -354,7 +354,7 @@ func TestASuggestedMappingIsBlockedByAnOlderProvider(t *testing.T) {
 		names string // what the reader has to be told to look at
 	}{
 		// The word is the provider's own, so the mapping would take a declared
-		// property over silently: refused (record 85, rule 3).
+		// property over silently: refused (record 96, rule 3).
 		"the provider spends the mapping's word on something of its own": {
 			props: with("task", map[string]any{"type": "string"}),
 			names: `already declares "task"`,
@@ -419,7 +419,7 @@ func TestASuggestedMappingIsBlockedByAnOlderProvider(t *testing.T) {
 // THE OTHER HALF OF RECORD 85'S RULE 4, at the door: a source kind that still
 // declares the subject slot itself keeps its declaration and the mapping
 // stamps the pin onto it, so the mapping FITS. A repository holding a bundle
-// written before record 85 imports the sample and gets the projection, with no
+// written before record 96 imports the sample and gets the projection, with no
 // upgrade of the provider first.
 func TestASuggestedMappingFitsASourceThatStillDeclaresTheSlot(t *testing.T) {
 	ds := newDataset(t)

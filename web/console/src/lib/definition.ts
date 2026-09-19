@@ -56,7 +56,7 @@ export interface DeclaredProperty {
   /** The recordmapping that OWNS this property. A mapping synthesises its
    * subject slot on its source kind, so the kind's own document declares
    * nothing under this name and the server merges it into the declaration a
-   * read is handed (record 0085). Absent on every property a document
+   * read is handed (record 0096). Absent on every property a document
    * declares for itself. */
   mappedBy?: string
   /** `reference`: the LINK DATA the declaration hangs off the pointer, by

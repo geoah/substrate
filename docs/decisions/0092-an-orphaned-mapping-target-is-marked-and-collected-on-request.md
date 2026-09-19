@@ -62,7 +62,7 @@ twice over. A bundle's direct write "pins like an owner edit"
 tier's meaning conditional on a second, invisible fact. And it would turn an
 uninstall into a retroactive delete of records the bundle merely touched,
 which is the class of surprise
-[0085](0085-a-mapping-synthesises-its-subject-slot.md) already refuses when it
+[0096](0096-a-mapping-synthesises-its-subject-slot.md) already refuses when it
 declines to clear subject links on an uninstall. The cost is stated: a husk
 one bundle-tier write landed on is not marked, and the way to give it back to
 the machine is the documented release — a null patch of the pinned property,

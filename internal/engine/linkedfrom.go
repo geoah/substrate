@@ -10,7 +10,7 @@ import (
 // The inbound half of a mapping-owned link, on the single-record read.
 //
 // A recordmapping NAMES its subject reference into being on its SOURCE kind
-// (record 0085), so a person is pointed AT by a Slack user, a GitHub user and
+// (record 0096), so a person is pointed AT by a Slack user, a GitHub user and
 // a Google contact, and nothing on the person says so: the slot lives on the
 // mirrors. `filter.referencing` answers "who points at this" in general and pages it;
 // this is the narrow question the manifest needs — which MIRRORS converged on

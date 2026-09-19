@@ -162,9 +162,9 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 		}
 	}
 
-	// THE USER MIRROR DECLARES NO SUBJECT SLOT AT ALL (record 85). It used to
+	// THE USER MIRROR DECLARES NO SUBJECT SLOT AT ALL (record 96). It used to
 	// carry an empty `person` reference, which meant this package had to know
-	// the word its consumer would use; the mapping synthesises the slot on
+	// the word its consumer would use; the mapping synthesizes the slot on
 	// this kind when it installs, so what ships here is GitHub and nothing
 	// else.
 	user := mustKind(t, reg, githubUserType)

@@ -305,7 +305,7 @@ func typeNarrowings(curT, candT *vocabulary.Kind, moved map[string]string) []nar
 				continue
 			}
 			if curP.MappedBy != "" {
-				// A SUBJECT SLOT GOING IS THE MAPPING GOING (record 85), and
+				// A SUBJECT SLOT GOING IS THE MAPPING GOING (record 96), and
 				// it is REFUSED while links exist rather than nulled as a
 				// lossy step. An ordinary optional property clears and can be
 				// written back; a subject link cannot — checkSubjectWrite

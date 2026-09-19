@@ -273,8 +273,8 @@ func typeInfo(t *vocabulary.Kind) substrate.KindInfo {
 }
 
 // withMappedProperties merges a kind's MAPPING-OWNED properties into the
-// declaration a read surface is handed (record 85). The document declares no
-// slot — the mapping synthesises it — so a client reading a kind's properties
+// declaration a read surface is handed (record 96). The document declares no
+// slot — the mapping synthesizes it — so a client reading a kind's properties
 // would otherwise be told a mirror has no link at all, and could neither
 // render the value it serves nor say who manages it.
 //

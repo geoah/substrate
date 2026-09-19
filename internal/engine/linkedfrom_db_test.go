@@ -10,7 +10,7 @@ import (
 )
 
 // `linkedFrom` on the single-record read: the mirrors that converged on one
-// subject, which record 0085 moved onto the SOURCE kinds where nothing on the
+// subject, which record 0096 moved onto the SOURCE kinds where nothing on the
 // subject says they exist (record 0088).
 
 const (

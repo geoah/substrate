@@ -4,7 +4,7 @@ date: 2026-09-15
 decision-makers: George Antoniadis
 ---
 
-# 0084. A reference may pin a mapping's source kind
+# 0095. A reference may pin a mapping's source kind
 
 ## Context and Problem Statement
 

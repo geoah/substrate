@@ -329,7 +329,7 @@ data:
 # declared here: who the issue is on in the repository's own words, and what
 # the issue IS to it, are both the repository's mappings to name, and the
 # engine synthesises each slot on this kind when its mapping installs
-# (record 0085). What the sync writes is this package's own: `assigneeEmail`,
+# (record 0096). What the sync writes is this package's own: `assigneeEmail`,
 # the probe a person mapping matches on, `assigneeUser` where that address is
 # hidden, and `team`, whose mirror id it just minted. `title` is the reserved
 # built-in — the sync writes it, no declaration here.
@@ -406,12 +406,12 @@ data:
       displayName: Raw
       description: the raw issue node as fetched, for provenance
     # THIS PACKAGE'S OWN RELATION, and the only assignee pointer it declares
-    # (record 0084 admits a reference at a mapping's source kind, which `user`
+    # (record 0095 admits a reference at a mapping's source kind, which `user`
     # is): the Linear member the issue is on. It is written only when the
     # viewer's address is hidden, where there is no `assigneeEmail` for a
     # mapping to probe and this mirror is the one record naming that human.
     # WHO the issue is on in the repository's own words, and WHAT it is, are
-    # both subject slots the repository's mappings synthesise (record 0085) —
+    # both subject slots the repository's mappings synthesise (record 0096) —
     # this package declares neither.
     assigneeUser:
       type: reference

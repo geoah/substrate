@@ -8,7 +8,7 @@ decision-makers: George Antoniadis
 
 ## Context and Problem Statement
 
-[0085](0085-a-mapping-synthesises-its-subject-slot.md) moved the subject slot
+[0096](0096-a-mapping-synthesises-its-subject-slot.md) moved the subject slot
 onto the SOURCE kind, which is right and leaves the subject blind: a person is
 pointed at by a Slack user, a GitHub user, a Google contact and three Google
 email addresses, and NOTHING the person's read carries says any of them exist.
@@ -115,7 +115,7 @@ the shape, and `PropertiesRail`'s vitest holds the "Linked from" section.
 
 ## More Information
 
-Follows [0085](0085-a-mapping-synthesises-its-subject-slot.md), which created
+Follows [0096](0096-a-mapping-synthesises-its-subject-slot.md), which created
 the blindness, and answers the last of its "left undone" notes from the
 reader's side. [projection.md](../projection.md#reading-the-links-back-linkedfrom)
 is the page. Reopen if a repository declares a mapping whose fan-in is wide

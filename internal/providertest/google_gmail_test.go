@@ -59,7 +59,7 @@ func TestGoogleGmailBundleAdmitsSchema(t *testing.T) {
 	// what carries a match probe.
 	addr := mustKind(t, reg, googleAddressType)
 	mustProps(t, addr, "account", "address", "displayName")
-	// NO SUBJECT SLOT (record 85): the repository's mapping synthesises
+	// NO SUBJECT SLOT (record 96): the repository's mapping synthesizes
 	// `person` on this kind, and the provider names no user vocabulary.
 	if ed, ok := addr.Prop("person"); ok {
 		t.Fatalf("emailaddress still declares a subject slot: %+v", ed)

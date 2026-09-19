@@ -1486,7 +1486,7 @@ data:
 	bad := map[string]string{
 		// `other` points at person but is not a `subject: true` reference, so
 		// the mapping would silently take a declared slot over: refused as a
-		// collision (record 85).
+		// collision (record 96).
 		"collides with a declared property": mapping("recperson", `  from: x.example.com/x/rec
   to: x.example.com/x/person
   property: other
@@ -1613,7 +1613,7 @@ data:
 		})
 	}
 
-	// A REFERENCE MAY PIN A MAPPING'S SOURCE KIND (record 84). Against the old
+	// A REFERENCE MAY PIN A MAPPING'S SOURCE KIND (record 95). Against the old
 	// rule both of these failed the load with "no reference may name
 	// x.example.com/x/rec, the source kind of mapping …", which is what made
 	// importing a mapping retroactively narrow what a provider's own mirrors
@@ -1798,7 +1798,7 @@ data:
 			t.Fatalf("mapping = %+v", m)
 		}
 		// The mirror declares its slot unpinned and optional; the MAPPING is
-		// what pins it, and since record 85 it does so in the registry rather
+		// what pins it, and since record 96 it does so in the registry rather
 		// than at every write.
 		mirror, _ := r.ByIdentity("p.example.com/p/issue")
 		slot := mirror.Props["task"]
