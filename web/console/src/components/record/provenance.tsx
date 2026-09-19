@@ -73,10 +73,13 @@ type Pending =
 
 /** The properties the ledger lists, in the declaration's order and then the
  * rest alphabetically: every property with a manager row or a stored value.
- * A declared property nothing wrote has no provenance to show. */
+ * A declared property nothing wrote has no provenance to show, and the
+ * built-in `title` is derived storage (decision 0016), never anything a
+ * manager holds, so it is not a row. */
 function rowsOf(record: SubstrateRecord, kind?: KindInfo): LedgerRow[] {
   const meta = record.propertyMeta ?? {}
   const names = new Set<string>()
+  const skip = new Set(["title"])
   for (const name of Object.keys(kind?.definition.properties ?? {})) {
     if (name in meta || record.properties[name] !== undefined) names.add(name)
   }
@@ -86,7 +89,7 @@ function rowsOf(record: SubstrateRecord, kind?: KindInfo): LedgerRow[] {
       (n) => record.properties[n] !== undefined
     ),
   ]
-    .filter((n) => !names.has(n))
+    .filter((n) => !names.has(n) && !skip.has(n))
     .sort()
   for (const name of rest) names.add(name)
   return [...names].map((name) => ({

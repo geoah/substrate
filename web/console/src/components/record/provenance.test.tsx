@@ -173,7 +173,8 @@ describe("ProvenanceRail", () => {
     const names = [...container.querySelectorAll("[data-property]")].map((li) =>
       li.getAttribute("data-property")
     )
-    expect(names).toEqual(["name", "displayName", "emails", "title"])
+    // The derived `title` built-in is not a row: nothing manages it.
+    expect(names).toEqual(["name", "displayName", "emails"])
     expect(rowOf(container, "name").textContent).toContain("Ada Lovelace")
   })
 
