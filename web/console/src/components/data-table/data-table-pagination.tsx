@@ -1,5 +1,5 @@
 /** Numbered pagination for offset-addressed lists. A page is a number on the
- * wire (`offset=`, decision 0085), so every page is reachable in one click
+ * wire (`offset=`, decision 0084), so every page is reachable in one click
  * and the bar can say how many there are — the cursor bar beside this one
  * (data-table-cursor-pagination.tsx) is for the feeds where it cannot.
  *

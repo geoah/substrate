@@ -560,7 +560,7 @@ is no next page.
 
 A reader that draws a numbered pagination bar cannot walk to page seven, so
 the list takes `offset` as well: the count of ordered rows to discard before
-the page begins ([decision 0085](decisions/0084-a-records-list-pages-by-offset-beside-the-keyset-cursor.md)).
+the page begins ([decision 0084](decisions/0084-a-records-list-pages-by-offset-beside-the-keyset-cursor.md)).
 
 ```http
 GET /api/v1/records?filter={"kinds":["samples.substrate.reamde.dev/tasks/task"]}&first=50&offset=300
