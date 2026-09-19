@@ -13,8 +13,8 @@ substrate that is open for registration
 also serves a registration page at `/register`, with the invite code as its
 first field.
 
-Four destinations — Overview, Changelog, Registry and Agents — with the
-account behind the session menu, and **Search** one keystroke away: ⌘K opens
+Five destinations — Overview, Changelog, Registry, Connections and Agents —
+with the account behind the session menu, and **Search** one keystroke away: ⌘K opens
 the palette, which jumps to a page or a kind, or hands what you typed to the
 [Search page](#search) as a records query.
 
@@ -167,6 +167,48 @@ lifecycle verbs — disable, enable, uninstall, and the purge that a refused
 uninstall points you at — and its connections: one row per configured provider
 account, where the [OAuth consent flow](bundles.md#the-oauth-facility)
 starts and where a connection's token status is visible.
+
+## Connections
+
+**Connections** is the operations surface over every provider account
+([Connections](bundles.md#connections)): one page, read from the native
+`accountconfig` records the provider bundles ship and the core `sync` trait
+they bind ([0085](decisions/0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md)),
+and every read an existing route. It has two halves.
+
+**Providers** lists every installed bundle whose closure declares an account
+kind, plus every bundle the catalog calls a provider, with its lifecycle
+badge, whether its client credentials are set (the `oauth2`-trait client, or
+a token provider's config; "credentials missing" is what the Registry row's
+setup step means), its accounts counted by token status, and the two doors:
+*Set up* or *Edit* opens the config record's form, whose secret fields are
+write-only and say `set` or `not set` beside their names, never a value;
+*Add account* creates one. **Accounts** is one row per account across all
+providers: a health dot (broken when the grant or the sync is erroring,
+attention when pending, paused or throttled, idle when connected and never
+synced), the provider, the account by its `email` or `displayName`, the
+token status with the granted scopes on hover, the sync state chip with the
+sync's own message in full, the last run as relative time, the cadence, the
+backfill depth, and the parked and lagging deliveries of the triggers on its
+kind. The row's verbs are the four a Connection takes: **Connect** or
+**Reconnect** starts the [OAuth consent](bundles.md#the-oauth-facility) and
+opens the URL it mints at click time; **Sync now** stamps `syncRequestedAt`
+and wakes the on-request triggers; **Pause** and **Resume** flip
+`syncPaused`; **Edit** changes the toggles, frequency and depth through the
+ordinary record dialog; **Disconnect** deletes the record. The page follows
+the [change feed](changelog.md) for the account kinds and the run ledger, so
+a sync's state moves without a reload.
+
+Opening a row is the **account detail**: the trait rendered whole (state,
+message, last run and its duration, the request and whether it was served, a
+progress bar from `syncProgress`, one row per stream from `syncStreams`, the
+last error), the record's other properties with cursors and queues shown as
+counts rather than their bytes, the record triggers on the kind with cursor,
+head, lag, last fire, parked and pending from `…/trigger/status` and a
+*Wake* and *Run* each, the newest `triggerrun` rows of those triggers with
+status and error text, the parked deliveries with a *Retry* each, and the
+bundle's mirror kinds with their live row counts. The same renderer is a
+**Sync** tab on the record page of any kind binding the trait.
 
 ## Agents
 

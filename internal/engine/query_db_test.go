@@ -694,7 +694,7 @@ func TestListIntersectsKindsAndImplements(t *testing.T) {
 // OFFSET addresses a page by its number: the same ordered rows a keyset walk
 // would reach, without the walk. The two continuations are alternatives, and
 // a page reached by offset still mints a cursor so the reader can hand off to
-// a stable walk from there (decision 0084).
+// a stable walk from there (decision 0085).
 func TestListOffset(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

@@ -667,7 +667,7 @@ another kind).
 **Bundle traits.** A few traits are more than shared properties: the host
 recognizes them by identity and builds behavior on top. These are how a
 [bundle](bundles.md) declares the pieces the substrate's OAuth
-facility and lifecycle machinery need to see. Two ship in core:
+facility and lifecycle machinery need to see. Three ship in core:
 
 - **`accountconfig`** is a **Connection** kind. Binding it gives the kind
   `tokenRef` (a secret), `tokenStatus`, and `grantedScopes` (a plain string
@@ -676,6 +676,12 @@ facility and lifecycle machinery need to see. Two ship in core:
   syncs.
 - **`oauth2`** carries the OAuth client credentials, `clientId` and a
   secret-typed `clientSecret`, for a bundle that speaks OAuth.
+- **`sync`** is the synchronisation a function drives on a Connection: its
+  state, its last run, the owner's request for the next one, its progress
+  and its streams, twelve properties the sync function writes through its
+  effects and the trigger dispatcher stamps around a delivery
+  ([0085](decisions/0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md)).
+  [Bundles](bundles.md#connections) has the worked example.
 
 Binding one is the same single line as `temporal`, without a variant. A
 provider account kind declares:

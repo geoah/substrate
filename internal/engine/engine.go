@@ -802,6 +802,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.upgradeShippedVocabulary,
 		ds.ensureDefaultProviders,
 		ds.ensureTriggerCursors,
+		ds.settleInterruptedSyncs,
 		ds.clearDeadReservations,
 	} {
 		if err := step(ctx); err != nil {

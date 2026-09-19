@@ -67,6 +67,7 @@ nothing, there are none.
 | **setting** | A bundle's configuration as an ordinary record, a core `setting` or `secret` at `<bundle id>/<name>`, shipped in the closure and filled in by the user. Ownership is the id prefix alone; a bundle's functions read them as `config.settings.<name>`. Decision record 0076. |
 | **bind** | The explicit step of input resolution: a reference on the bundle's own record row, named for the input, pointing it at a chosen record. `POST /api/v1/substrate.reamde.dev/core/bundle/{id}/bind`; an empty record unbinds. |
 | **account** | One configured connection to a provider: a record of an `accountconfig`-trait kind. The console groups these under **Connections**. |
+| **sync** | The synchronisation a provider's function drives on one account, as the core `sync` trait reports it: a state (`never`, `running`, `ok`, `erroring`, `throttled`), a message, the last run, the owner's request for the next one, progress and streams. The body writes it through its effects; the dispatcher stamps a delivery's start, finish and park. Decision record 0085. |
 | **catalog** | The read-only list of the bundle closures built into the binary, each in one of the two tiers. A source to install or import from, never a package. |
 | **callable** | The union of function and agent — what a trigger binds and what dispatch invokes. |
 | **function** | A callable whose body is inline Python, bounded by its declared `permissions`: `reads`, `writes`, `call`, `network` and `mutations`, five grants in one object on the declaration. |

@@ -497,6 +497,19 @@ Merge and split are replay-safe by verification instead: re-merging a loser
 already former to the winner, or re-splitting an already-tombstoned merge, is
 a verified no-op, and any other state is a conflict that parks.
 
+**Reporting a sync.** A function that synchronises a provider account
+reports through the core [`sync` trait](bundles.md#the-sync-trait) on the
+account it was delivered, in the same patch effect it already makes for its
+cursor: `lastSyncedAt`, `syncMessage`, `syncState` (on a schedule run, where
+the dispatcher is not there to write it), `syncProgress` while a drain pages,
+`syncStreams.<name>` for each stream it owns, and `syncRequestedAck` once it
+has served the owner's `syncRequestedAt`. Around a record-sourced delivery the
+dispatcher writes the other half itself — `running` and the start before the
+body, `ok` and the duration with the body's last effects, `erroring` and the
+cause with a park — under the function's own actor, so the account's kind
+declares those properties `writer: connector` exactly as the ones the body
+writes ([decision 0085](decisions/0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md)).
+
 ## The SDK
 
 The runner passes one `host` object to every body: a namespaced surface whose

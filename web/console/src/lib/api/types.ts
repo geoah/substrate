@@ -481,6 +481,106 @@ export interface WebhookAccepted {
   fire: string
 }
 
+/** One trigger's delivery bookkeeping, computed on read
+ * (`substrate.TriggerStatus`): its cursor and the changelog head for a
+ * record source, the last fire for a schedule, and the parked and pending
+ * counts every source carries. `…/trigger/status` lists one per trigger. */
+export interface TriggerStatus {
+  id: string
+  /** `record` | `schedule` | `webhook`. */
+  kind: string
+  callable: string
+  enabled: boolean
+  /** The record source's acknowledged seq; absent (0) before the first
+   * delivery and on the other two sources. */
+  cursor?: number
+  head: number
+  /** `head - cursor` for a record source; absent at zero. */
+  lag?: number
+  /** The newest schedule occurrence delivered or parked past. */
+  lastFire?: string
+  /** A webhook trigger's public path, relative to the server root. */
+  webhookPath?: string
+  parked: number
+  pending: number
+  /** Names a trigger the dispatcher cannot run: an unparseable row or a
+   * callable that no longer resolves. */
+  error?: string
+}
+
+/** One parked delivery (`substrate.TriggerFailure`): what the trigger gave up
+ * on after its retries. Its `id` is the seq of the changelog entry that
+ * parked it, and the handle `…/parked/{id}/retry` takes. */
+export interface TriggerFailure {
+  id: number
+  trigger: string
+  /** The delivered changelog seq, for a record source; absent when `fireId`
+   * is set. */
+  seq?: number
+  /** The fire id, for a schedule occurrence or a webhook wake. */
+  fireId?: string
+  recordId?: string
+  attempts: number
+  lastError: string
+  parkedAt: string
+}
+
+/** The words a `sync`-trait record's `syncState` carries. A plain string on
+ * the record, not a state machine (decision 0085): the dispatcher and the
+ * sync function both write it and no move between the five is illegal. */
+export type SyncState = "never" | "running" | "ok" | "erroring" | "throttled"
+
+/** One `sync`-trait record's synchronisation as `GET /api/v1/sync/status`
+ * lists it (`substrate.SyncStatus`): the trait's properties read off the
+ * record, joined with the status of every record trigger whose source names
+ * the record's kind. */
+export interface SyncStatus {
+  kind: string
+  id: string
+  /** The record's rendered title, the account's own name. */
+  title?: string
+  /** `syncState`, or `never` when the record carries none. A string on the
+   * wire; the console narrows it to `SyncState` where it renders. */
+  state: string
+  message?: string
+  paused: boolean
+  lastSyncedAt?: string
+  lastSyncStartedAt?: string
+  lastSyncDurationMs?: number
+  /** The request pair: the owner stamps `requestedAt`, the sync answers with
+   * `requestedAck` equal to it once the requested run finished. */
+  requestedAt?: string
+  requestedAck?: string
+  progress?: SyncProgress
+  error?: string
+  errorAt?: string
+  /** The per-stream slice a multi-stream provider reports, by stream name. */
+  streams?: Record<string, SyncStream>
+  /** The record triggers on the kind; a schedule trigger firing the same
+   * callable is not tied to a kind and is not here. */
+  triggers: TriggerStatus[]
+}
+
+/** The trait's `syncProgress` object (`substrate.SyncProgress`): a bounded
+ * drain's phase and counts. */
+export interface SyncProgress {
+  phase?: string
+  done: number
+  total: number
+  pending: number
+}
+
+/** One entry of the trait's `syncStreams` map (`substrate.SyncStream`). */
+export interface SyncStream {
+  /** Whatever shape the provider keeps as its cursor. */
+  cursor?: unknown
+  lastAt?: string
+  pending: number
+  state?: string
+  message?: string
+  requestedAck?: string
+}
+
 /** What a trigger replay answers: the seq the cursor was reset to. */
 export interface TriggerReplayed {
   from: number

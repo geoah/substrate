@@ -41,7 +41,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: google
-  version: 16
+  version: 17
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -170,7 +170,12 @@ data:
     per-calendar cursor, which lives on the calendar row.
   names:
     singular: account
-  traits: [accountconfig]
+  # `sync` is the core trait the Connections page and `sync status` read: the
+  # three stream bodies write its properties beside the legacy per-stream
+  # strings below, and the dispatcher stamps a record-sourced delivery's
+  # start, finish and park onto them (decision 0085). The two owner hands are
+  # `syncRequestedAt` (Sync now) and `syncPaused` (Pause).
+  traits: [accountconfig, sync]
   displayTemplate: "{email}"
   properties:
     # The OAuth facility's hands on the account (writer: oauth — only the
@@ -317,6 +322,77 @@ data:
       # alone" guard let a gmail failure swallow a calendar one entirely.
       # Each stream therefore records its OWN outcome below and only RAISES
       # the rollup (never clears it over the other stream's live failure).
+    # --- the core `sync` trait (decision 0085) -------------------------------
+    # The twelve properties the trait contracts, each with its writer. The
+    # OWNER asks for a run and stops them; the CONNECTOR — the three stream
+    # bodies through their effects, and the dispatcher around a record-sourced
+    # delivery under the body's own actor — writes the rest. `syncStatus` and
+    # the `<stream>SyncStatus` strings above and below stay through this
+    # version so a reader of the old shape keeps working; they go with the
+    # next major.
+    syncRequestedAt:
+      type: datetime
+      writer: owner
+      displayName: Sync requested
+      description: stamped by the owner to ask for a run now; the three on-request
+        triggers fire on it
+    syncPaused:
+      type: bool
+      writer: owner
+      displayName: Paused
+      description: "while true, the dispatcher skips this account's deliveries
+        and the scheduled bodies pass over it"
+    syncState:
+      type: string
+      writer: connector
+      displayName: Sync state
+      description: "never | running | ok | erroring | throttled — the account-level
+        state, raised the way syncStatus is"
+    syncMessage:
+      type: string
+      writer: connector
+      displayName: Sync message
+      description: the one human line the last run left
+    lastSyncStartedAt:
+      type: datetime
+      writer: connector
+      displayName: Last sync started
+      description: when the last record-sourced delivery began, stamped by
+        the dispatcher
+    lastSyncDurationMs:
+      type: int
+      writer: connector
+      displayName: Last sync duration (ms)
+      description: how long the last record-sourced delivery took, stamped
+        by the dispatcher
+    syncRequestedAck:
+      type: datetime
+      writer: connector
+      displayName: Sync request served
+      description: equals syncRequestedAt once every enabled stream has answered
+        that request
+    syncProgress:
+      type: json
+      writer: connector
+      displayName: Sync progress
+      description: "{phase, done, total, pending} for a bounded drain; the
+        streams here report per stream instead"
+    syncError:
+      type: string
+      writer: connector
+      displayName: Sync error
+      description: the last error text, from a stream body or a parked delivery
+    syncErrorAt:
+      type: datetime
+      writer: connector
+      displayName: Sync error at
+      description: when syncError was written
+    syncStreams:
+      type: json
+      writer: connector
+      displayName: Sync streams
+      description: "contacts, gmail and calendar each as {state, message,
+        lastAt, pending, requestedAck}"
     # --- contacts stream state ----------------------------------------------
     contactsSyncToken:
       type: string
@@ -573,7 +649,45 @@ data:
 
 
     def _wants(acct):
-        return bool((acct.get("properties") or {}).get("enabledContacts"))
+        # The owner's pause holds the scheduled path too; the dispatcher
+        # holds the record-sourced one before the body runs.
+        props = acct.get("properties") or {}
+        return bool(props.get("enabledContacts")) and not props.get("syncPaused")
+
+
+    def _trait_stamp(props, stream, state, message, now):
+        # The core `sync` trait's hands (decision 0085), written beside the
+        # legacy per-stream strings this version still carries: this stream's
+        # entry in `syncStreams`, the account-level state and message raised
+        # the way `syncStatus` is (never cleared over another enabled stream's
+        # live failure), and the owner's request acknowledged once every
+        # enabled stream has answered the same `syncRequestedAt`.
+        streams = dict(props.get("syncStreams") or {})
+        entry = dict(streams.get(stream) or {})
+        entry["state"] = state
+        entry["message"] = message
+        if state == "ok":
+            entry["lastAt"] = now
+            entry["pending"] = 0
+        requested = props.get("syncRequestedAt")
+        if requested:
+            entry["requestedAck"] = requested
+        streams[stream] = entry
+        out = {"syncStreams": streams}
+        others = [s for s in ("contacts", "gmail", "calendar")
+                  if s != stream and props.get("enabled" + s.capitalize())]
+        if state == "erroring":
+            out["syncState"] = "erroring"
+            out["syncMessage"] = message
+            out["syncError"] = message
+            out["syncErrorAt"] = now
+        elif not any((streams.get(s) or {}).get("state") == "erroring" for s in others):
+            out["syncState"] = state
+            out["syncMessage"] = message
+        if requested and all((streams.get(s) or {}).get("requestedAck") == requested
+                             for s in others):
+            out["syncRequestedAck"] = requested
+        return out
 
 
     def _due(props):
@@ -903,6 +1017,7 @@ data:
         if not (str(props.get("gmailSyncStatus") or "").startswith("erroring")
                 or str(props.get("calendarSyncStatus") or "").startswith("erroring")):
             stamp["syncStatus"] = "ok"
+        stamp.update(_trait_stamp(props, "contacts", "ok", "ok", now))
         effects.append({"action": "patch", "kind": (acct.get("kind") or ACCOUNT_TYPE), "id": aid,
                         "properties": stamp})
         rest = queue[1:]
@@ -1459,7 +1574,45 @@ data:
 
 
     def _wants(acct):
-        return bool((acct.get("properties") or {}).get("enabledGmail"))
+        # The owner's pause holds the scheduled path too; the dispatcher
+        # holds the record-sourced one before the body runs.
+        props = acct.get("properties") or {}
+        return bool(props.get("enabledGmail")) and not props.get("syncPaused")
+
+
+    def _trait_stamp(props, stream, state, message, now):
+        # The core `sync` trait's hands (decision 0085), written beside the
+        # legacy per-stream strings this version still carries: this stream's
+        # entry in `syncStreams`, the account-level state and message raised
+        # the way `syncStatus` is (never cleared over another enabled stream's
+        # live failure), and the owner's request acknowledged once every
+        # enabled stream has answered the same `syncRequestedAt`.
+        streams = dict(props.get("syncStreams") or {})
+        entry = dict(streams.get(stream) or {})
+        entry["state"] = state
+        entry["message"] = message
+        if state == "ok":
+            entry["lastAt"] = now
+            entry["pending"] = 0
+        requested = props.get("syncRequestedAt")
+        if requested:
+            entry["requestedAck"] = requested
+        streams[stream] = entry
+        out = {"syncStreams": streams}
+        others = [s for s in ("contacts", "gmail", "calendar")
+                  if s != stream and props.get("enabled" + s.capitalize())]
+        if state == "erroring":
+            out["syncState"] = "erroring"
+            out["syncMessage"] = message
+            out["syncError"] = message
+            out["syncErrorAt"] = now
+        elif not any((streams.get(s) or {}).get("state") == "erroring" for s in others):
+            out["syncState"] = state
+            out["syncMessage"] = message
+        if requested and all((streams.get(s) or {}).get("requestedAck") == requested
+                             for s in others):
+            out["syncRequestedAck"] = requested
+        return out
 
 
     def _due(props):
@@ -2062,6 +2215,7 @@ data:
         stamp = {"gmailSyncStatus": status}
         if not str(props.get("syncStatus") or "").startswith("erroring"):
             stamp["syncStatus"] = status
+        stamp.update(_trait_stamp(props, "gmail", "erroring", status, _iso(_now())))
         host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), acct.get("id"), properties=stamp)
 
 
@@ -2352,6 +2506,7 @@ data:
             stamp["gmailHistoryId"] = cur["runHistoryId"]
         if cur.get("anchor"):
             stamp["gmailBackfillAnchorAt"] = cur["anchor"]
+        stamp.update(_trait_stamp(props, "gmail", "ok", status, now))
         host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid, properties=stamp)
         rest = list(cur.get("queue") or [])[1:]
         if rest:
@@ -3159,7 +3314,45 @@ data:
 
 
     def _wants(acct):
-        return bool((acct.get("properties") or {}).get("enabledCalendar"))
+        # The owner's pause holds the scheduled path too; the dispatcher
+        # holds the record-sourced one before the body runs.
+        props = acct.get("properties") or {}
+        return bool(props.get("enabledCalendar")) and not props.get("syncPaused")
+
+
+    def _trait_stamp(props, stream, state, message, now):
+        # The core `sync` trait's hands (decision 0085), written beside the
+        # legacy per-stream strings this version still carries: this stream's
+        # entry in `syncStreams`, the account-level state and message raised
+        # the way `syncStatus` is (never cleared over another enabled stream's
+        # live failure), and the owner's request acknowledged once every
+        # enabled stream has answered the same `syncRequestedAt`.
+        streams = dict(props.get("syncStreams") or {})
+        entry = dict(streams.get(stream) or {})
+        entry["state"] = state
+        entry["message"] = message
+        if state == "ok":
+            entry["lastAt"] = now
+            entry["pending"] = 0
+        requested = props.get("syncRequestedAt")
+        if requested:
+            entry["requestedAck"] = requested
+        streams[stream] = entry
+        out = {"syncStreams": streams}
+        others = [s for s in ("contacts", "gmail", "calendar")
+                  if s != stream and props.get("enabled" + s.capitalize())]
+        if state == "erroring":
+            out["syncState"] = "erroring"
+            out["syncMessage"] = message
+            out["syncError"] = message
+            out["syncErrorAt"] = now
+        elif not any((streams.get(s) or {}).get("state") == "erroring" for s in others):
+            out["syncState"] = state
+            out["syncMessage"] = message
+        if requested and all((streams.get(s) or {}).get("requestedAck") == requested
+                             for s in others):
+            out["syncRequestedAck"] = requested
+        return out
 
 
     def _due(props):
@@ -3584,6 +3777,7 @@ data:
         stamp = {"calendarSyncStatus": status}
         if not str(props.get("syncStatus") or "").startswith("erroring"):
             stamp["syncStatus"] = status
+        stamp.update(_trait_stamp(props, "calendar", "erroring", status, _iso(_now())))
         host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), acct.get("id"), properties=stamp)
 
 
@@ -3843,6 +4037,7 @@ data:
             stamp["syncStatus"] = status
         if cur.get("anchor"):
             stamp["calendarBackfillAnchorAt"] = cur["anchor"]
+        stamp.update(_trait_stamp(props, "calendar", "ok", status, now))
         host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid, properties=stamp)
         rest = list(cur.get("queue") or [])[1:]
         if rest:

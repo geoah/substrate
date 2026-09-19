@@ -32,6 +32,11 @@ const (
 	// TraitOAuth2 marks a kind carrying the standard OAuth client fields;
 	// the oauth2 block's clientInput names an input of such a kind.
 	TraitOAuth2 = "oauth2"
+	// TraitSync marks a kind whose records a function synchronises: the
+	// dispatcher stamps a record-sourced delivery's start, end and park onto
+	// its properties, and the sync status read joins them with the triggers
+	// (decision 0085).
+	TraitSync = "sync"
 )
 
 // The core traits' FULL identities — what every host check compares, exactly
@@ -41,6 +46,7 @@ const (
 const (
 	TraitAccountConfigCore = PackageCore + "/" + TraitAccountConfig
 	TraitOAuth2Core        = PackageCore + "/" + TraitOAuth2
+	TraitSyncCore          = PackageCore + "/" + TraitSync
 )
 
 // The timeline traits. `temporal` backs the hot columns; `recurring` marks a

@@ -208,3 +208,23 @@ opt into twice:
   facility recognizes a provider account and its client credentials,
   whatever the bundle called its kinds; [bundles](bundles.md) puts them to
   work.
+- **`sync`** is how the substrate recognizes the synchronisation a
+  function drives on an account, whatever the bundle called its streams.
+  Bind it beside `accountconfig` and three things happen without the bundle
+  doing them: the trigger dispatcher stamps a record-sourced delivery's start
+  (`syncState: running`, `lastSyncStartedAt`), its finish (`ok` and
+  `lastSyncDurationMs`, in the transaction that commits the body's last
+  effects) and its park (`erroring`, `syncError`, `syncErrorAt`) onto the
+  record under the callable's own actor; a record whose owner set
+  `syncPaused` has its deliveries skipped; and `GET /api/v1/sync/status`
+  lists the record joined with the record triggers on its kind, which the
+  console's Connections page and `substratectl sync status` read. The body
+  owns the rest — `syncMessage`, `lastSyncedAt`, `syncProgress`
+  (`{phase, done, total, pending}`), `syncStreams` (a map of stream name
+  to `{cursor, lastAt, pending, state, message, requestedAck}`) and the
+  acknowledgement of the owner's `syncRequestedAt` — through its effects.
+  `syncState` is a string, not a machine: `never`, `running`, `ok`,
+  `erroring` or `throttled`
+  ([decision 0085](decisions/0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md)).
+  [Connections](bundles.md#connections) has the worked example and the
+  migration from a bundle's own status strings.

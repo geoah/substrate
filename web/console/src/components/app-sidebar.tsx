@@ -21,6 +21,7 @@ import {
   LogOutIcon,
   MoonIcon,
   PackageIcon,
+  PlugZapIcon,
   SlidersHorizontalIcon,
   SunIcon,
   SunMoonIcon,
@@ -82,6 +83,7 @@ const consoleItems = [
   { title: "Overview", to: "/", icon: HomeIcon },
   { title: "Changelog", to: "/changelog", icon: ActivityIcon },
   { title: "Registry", to: "/registry", icon: PackageIcon },
+  { title: "Connections", to: "/connections", icon: PlugZapIcon },
   { title: "Settings", to: "/settings", icon: SlidersHorizontalIcon },
   { title: "Agents", to: "/agents", icon: BotIcon },
 ] as const

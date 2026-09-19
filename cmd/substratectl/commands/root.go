@@ -230,6 +230,7 @@ user and no privileged endpoint: ` + "`user reset`" + `, ` + "`repository inspec
 		a.watchCommand(),
 		a.exportCommand(),
 		a.triggerCommand(),
+		a.syncCommand(),
 		a.functionCommand(),
 		a.bundleCommand(),
 		// The box.

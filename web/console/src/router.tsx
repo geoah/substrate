@@ -18,6 +18,8 @@ import { ChangelogPage } from "@/pages/changelog"
 import { BundleDetailPage } from "@/pages/bundle-detail"
 import { AuthorityPage, PackagePage } from "@/pages/authority"
 import { ChangeRequestDetailPage } from "@/pages/change-request-detail"
+import { ConnectionDetailPage } from "@/pages/connection-detail"
+import { ConnectionsPage } from "@/pages/connections"
 import { HomePage } from "@/pages/home"
 import { LoginPage } from "@/pages/login"
 import { MergeRequestDetailPage } from "@/pages/merge-request-detail"
@@ -112,6 +114,20 @@ export const bundleDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/registry/$id",
   component: BundleDetailPage,
+})
+
+export const connectionsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/connections",
+  component: ConnectionsPage,
+})
+
+// One Connection is one account record, so its address is the record's own
+// kind reference plus the id, the way a data address is (decision 0047).
+export const connectionDetailRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/connections/$authority/$pkg/$name/$id",
+  component: ConnectionDetailPage,
 })
 
 export const settingsRoute = createRoute({
@@ -227,6 +243,8 @@ const routeTree = rootRoute.addChildren([
     registryRoute,
     searchRoute,
     bundleDetailRoute,
+    connectionsRoute,
+    connectionDetailRoute,
     settingsRoute,
     bundleSettingsRoute,
     agentsRoute,
