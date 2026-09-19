@@ -270,7 +270,13 @@ function TriggerRow({
   )
 }
 
-function ParkedList({ triggerIds }: { triggerIds: string[] }) {
+function ParkedList({
+  triggerIds,
+  recordId,
+}: {
+  triggerIds: string[]
+  recordId: string
+}) {
   const queryClient = useQueryClient()
   const parked = useQueries({
     queries: triggerIds.map((id) => triggerParkedQueryOptions(id)),
@@ -295,7 +301,11 @@ function ParkedList({ triggerIds }: { triggerIds: string[] }) {
         description: e.message,
       }),
   })
-  const rows = parked.flatMap((q) => q.data ?? [])
+  // This record's own failures, plus a fire's (a schedule occurrence names
+  // no record and may have touched this one).
+  const rows = parked
+    .flatMap((q) => q.data ?? [])
+    .filter((f) => !f.recordId || f.recordId === recordId)
   if (parked.some((q) => q.isPending))
     return <Skeleton className="h-10 w-full" />
   if (!rows.length) {
@@ -412,7 +422,9 @@ function RunsList({
               >
                 {finished ? tableDateTime(finished) : "—"}
               </td>
-              <td className="py-1.5 pr-3 data break-all">{triggerId}</td>
+              <td className="py-1.5 pr-3 data whitespace-nowrap">
+                {triggerId}
+              </td>
               <td className="py-1.5 pr-3 data">
                 {String(r.properties.mode ?? "")}
               </td>
@@ -427,14 +439,17 @@ function RunsList({
               <td className="py-1.5 break-words">
                 {typeof r.properties.reason === "string" &&
                 r.properties.reason ? (
+                  // The first line names the failure; a runner traceback
+                  // behind it is the parked delivery's to show whole.
                   <span
                     className={
                       status === "parked"
                         ? "text-destructive"
                         : "text-muted-foreground"
                     }
+                    title={r.properties.reason}
                   >
-                    {r.properties.reason}
+                    {r.properties.reason.split("\n")[0]}
                   </span>
                 ) : effects && Object.keys(effects).length ? (
                   <span className="text-muted-foreground">
@@ -721,7 +736,10 @@ export function ConnectionDetailPage() {
       </Section>
 
       <Section title="Parked deliveries">
-        <ParkedList triggerIds={sources.map((s) => s.id)} />
+        <ParkedList
+          triggerIds={sources.map((s) => s.id)}
+          recordId={view.record.id}
+        />
       </Section>
 
       <Section title="Mirrored records">

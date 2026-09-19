@@ -16,7 +16,9 @@ import {
   ArrowUpRightIcon,
   EllipsisIcon,
   KeyRoundIcon,
+  PauseIcon,
   PencilIcon,
+  PlayIcon,
   PlugZapIcon,
   PlusIcon,
   Trash2Icon,
@@ -30,7 +32,7 @@ import { BundleStateBadge, SetupBadge } from "@/components/bundle-state-badge"
 import { RecordConfigForm } from "@/components/record-config-form"
 import {
   HealthDot,
-  SyncActions,
+  SyncNowButton,
   SyncSummary,
 } from "@/components/sync/sync-panel"
 import { Badge } from "@/components/ui/badge"
@@ -80,6 +82,8 @@ import { kindsQueryOptions } from "@/lib/api/kinds"
 import { recordQueryOptions } from "@/lib/api/records"
 import {
   deleteRecord,
+  setSyncPaused,
+  syncStatusesQueryOptions,
   triggerRecordsQueryOptions,
   triggerStatusesQueryOptions,
 } from "@/lib/api/sync"
@@ -107,6 +111,9 @@ function useConnections() {
   const accounts = useQuery(traitRecordsQueryOptions(ACCOUNT_CONFIG_TRAIT))
   const triggers = useQuery(triggerRecordsQueryOptions)
   const triggerStatuses = useQuery(triggerStatusesQueryOptions)
+  // The status read is what knows each record's OWN parked deliveries; the
+  // trigger statuses count every record's.
+  const syncStatuses = useQuery(syncStatusesQueryOptions)
 
   const views = useMemo(
     () =>
@@ -148,6 +155,7 @@ function useConnections() {
     accounts,
     triggers,
     triggerStatuses,
+    syncStatuses,
     views,
     providers,
     pending: statuses.isPending || kinds.isPending || accounts.isPending,
@@ -419,11 +427,28 @@ function ConnectButton({
   )
 }
 
-/** Edit and Disconnect, behind the row's menu. */
+/** Pause or Resume, Edit and Disconnect, behind the row's menu. */
 function RowMenu({ view }: { view: AccountView }) {
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [removing, setRemoving] = useState(false)
+  const pause = useMutation({
+    mutationFn: () => setSyncPaused(view.record, !view.sync.paused),
+    onSuccess: () => {
+      toast.add({
+        type: "success",
+        title: view.sync.paused ? "Sync resumed" : "Sync paused",
+      })
+      void queryClient.invalidateQueries({ queryKey: ["trait", "records"] })
+      void queryClient.invalidateQueries({ queryKey: ["sync"] })
+    },
+    onError: (error) =>
+      toast.add({
+        type: "error",
+        title: view.sync.paused ? "Resume failed" : "Pause failed",
+        description: error.message,
+      }),
+  })
   const disconnect = useMutation({
     mutationFn: () => deleteRecord(view.record),
     onSuccess: () => {
@@ -457,6 +482,15 @@ function RowMenu({ view }: { view: AccountView }) {
           <EllipsisIcon className="size-3.5" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          {view.syncable && (
+            <DropdownMenuItem
+              disabled={pause.isPending}
+              onClick={() => pause.mutate()}
+            >
+              {view.sync.paused ? <PlayIcon /> : <PauseIcon />}
+              {view.sync.paused ? "Resume sync" : "Pause sync"}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             disabled={!view.kind}
             onClick={() => setEditing(true)}
@@ -578,7 +612,7 @@ function accountColumns(): DataTableColumn<AccountRow>[] {
         <DataTableColumnHeader column={column} title="" />
       ),
       cell: ({ row }) => <HealthDot health={row.original.view.health} />,
-      meta: { label: "health", width: 44 },
+      meta: { label: "health", width: 36 },
     },
     {
       id: "provider",
@@ -599,7 +633,7 @@ function accountColumns(): DataTableColumn<AccountRow>[] {
           </div>
         </div>
       ),
-      meta: { label: "provider", size: { min: 140, max: 260, weight: 1 } },
+      meta: { label: "provider", size: { min: 120, max: 200, weight: 0.7 } },
     },
     {
       id: "account",
@@ -630,7 +664,7 @@ function accountColumns(): DataTableColumn<AccountRow>[] {
           </div>
         )
       },
-      meta: { label: "account", size: { min: 180, max: 360, weight: 1.4 } },
+      meta: { label: "account", size: { min: 150, max: 300, weight: 1.1 } },
     },
     {
       id: "token",
@@ -639,7 +673,7 @@ function accountColumns(): DataTableColumn<AccountRow>[] {
         <DataTableColumnHeader column={column} title="token" />
       ),
       cell: ({ row }) => <TokenCell view={row.original.view} />,
-      meta: { label: "token", width: 120 },
+      meta: { label: "token", width: 104 },
     },
     {
       id: "sync",
@@ -654,7 +688,7 @@ function accountColumns(): DataTableColumn<AccountRow>[] {
           compact
         />
       ),
-      meta: { label: "sync", size: { min: 200, max: 480, weight: 1.6 } },
+      meta: { label: "sync", size: { min: 170, max: 400, weight: 1.6 } },
     },
     {
       id: "lastSynced",
@@ -670,7 +704,7 @@ function accountColumns(): DataTableColumn<AccountRow>[] {
           </span>
         )
       },
-      meta: { label: "last synced", width: 110 },
+      meta: { label: "last synced", width: 96 },
     },
     {
       id: "frequency",
@@ -683,7 +717,7 @@ function accountColumns(): DataTableColumn<AccountRow>[] {
           {row.original.view.syncFrequency ?? "—"}
         </span>
       ),
-      meta: { label: "frequency", width: 96 },
+      meta: { label: "frequency", width: 82 },
     },
     {
       id: "depth",
@@ -696,7 +730,7 @@ function accountColumns(): DataTableColumn<AccountRow>[] {
           {row.original.view.backfillDepth ?? "—"}
         </span>
       ),
-      meta: { label: "backfill", width: 96 },
+      meta: { label: "backfill", width: 84 },
     },
     {
       id: "deliveries",
@@ -721,7 +755,7 @@ function accountColumns(): DataTableColumn<AccountRow>[] {
           )}
         </span>
       ),
-      meta: { label: "deliveries", width: 130 },
+      meta: { label: "deliveries", width: 104 },
     },
     {
       id: "actions",
@@ -737,18 +771,17 @@ function accountColumns(): DataTableColumn<AccountRow>[] {
           >
             <ConnectButton view={r.view} disabled={r.connectBlocked} />
             {r.view.syncable && (
-              <SyncActions
+              <SyncNowButton
                 record={r.view.record}
                 paused={r.view.sync.paused}
                 requestTriggerIds={r.requestTriggerIds}
-                size="xs"
               />
             )}
             <RowMenu view={r.view} />
           </div>
         )
       },
-      meta: { label: "actions", width: 330 },
+      meta: { label: "actions", width: 212 },
     },
   ]
 }
@@ -786,6 +819,9 @@ export function ConnectionsPage() {
 
   const rows = useMemo<AccountRow[]>(() => {
     const names = new Map(c.providers.map((p) => [p.id, p.name]))
+    const parkedOf = new Map(
+      (c.syncStatuses.data ?? []).map((s) => [`${s.kind}|${s.id}`, s.parked])
+    )
     return c.views.map((view) => {
       const sources = triggersOnKind(c.triggers.data ?? [], view.record.kind)
       const totals = triggerTotals(
@@ -796,7 +832,9 @@ export function ConnectionsPage() {
         view,
         providerName: names.get(view.provider) ?? view.provider,
         requestTriggerIds: requestTriggers(sources).map((s) => s.id),
-        parked: totals.parked,
+        parked:
+          parkedOf.get(`${view.record.kind}|${view.record.id}`) ??
+          totals.parked,
         lag: totals.lag,
         connectBlocked: Boolean(
           provider &&
@@ -806,7 +844,13 @@ export function ConnectionsPage() {
         ),
       }
     })
-  }, [c.views, c.providers, c.triggers.data, c.triggerStatuses.data])
+  }, [
+    c.views,
+    c.providers,
+    c.triggers.data,
+    c.triggerStatuses.data,
+    c.syncStatuses.data,
+  ])
 
   const columns = useMemo(() => accountColumns(), [])
   const table = useDataTable({

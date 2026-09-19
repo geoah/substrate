@@ -262,6 +262,27 @@ describe("ConnectionsPage", () => {
       if (path === CATALOG_PATH) return jsonResponse(200, { items: [CATALOG] })
       if (path === TRIGGER_STATUS_PATH)
         return jsonResponse(200, { items: TRIGGER_STATUSES })
+      if (path === "/api/v1/sync/status")
+        return jsonResponse(200, {
+          items: [
+            {
+              kind: ACCOUNT,
+              id: "george-work",
+              state: "erroring",
+              paused: false,
+              parked: 1,
+              triggers: [],
+            },
+            {
+              kind: ACCOUNT,
+              id: "george-home",
+              state: "never",
+              paused: false,
+              parked: 0,
+              triggers: [],
+            },
+          ],
+        })
       const filter = filterOf(path)
       if (filter.kinds?.includes("substrate.reamde.dev/core/kind"))
         return jsonResponse(200, { kinds: KINDS })
@@ -357,6 +378,8 @@ describe("ConnectionsPage", () => {
 
     const home = await rowOf("home@example.com")
     expect(within(home).getByText("pending")).toBeTruthy()
+    // Each row's parked count is its own, off the status read.
+    expect(within(home).getByText("none parked")).toBeTruthy()
     // The chip says `never` (no syncState yet) and so does the last-synced
     // cell.
     expect(within(home).getAllByText("never").length).toBe(2)
@@ -388,7 +411,12 @@ describe("ConnectionsPage", () => {
   it("Pause patches syncPaused", async () => {
     renderPage(<ConnectionsPage />)
     const work = await rowOf("george@example.com")
-    fireEvent.click(within(work).getByRole("button", { name: /Pause/ }))
+    fireEvent.click(
+      within(work).getByRole("button", {
+        name: /More actions for george@example.com/,
+      })
+    )
+    fireEvent.click(await screen.findByText("Pause sync"))
     await waitFor(() => expect(calls("PATCH").length).toBe(1))
     expect(calls("PATCH")[0].body).toEqual({
       properties: { syncPaused: true },

@@ -43,6 +43,10 @@ type SyncStatus struct {
 	// Streams is the per-stream slice a multi-stream provider reports, keyed
 	// by the stream's name.
 	Streams map[string]SyncStream `json:"streams,omitempty"`
+	// Parked counts the parked deliveries that name THIS record, across the
+	// triggers on its kind: the account's own failures, where a trigger's
+	// `parked` counts every record's.
+	Parked int64 `json:"parked"`
 	// Triggers is every trigger whose record source matches the kind, with
 	// its cursor, lag, parked and pending counts; a schedule trigger that
 	// fires the same callable is not tied to a kind and is not here.

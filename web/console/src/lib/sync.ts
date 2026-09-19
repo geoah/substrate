@@ -314,7 +314,7 @@ export function providerViews(
     const mine = accounts.filter((a) => a.provider === id)
     const byTokenStatus: Record<string, number> = {}
     for (const a of mine) {
-      const key = a.tokenStatus ?? "unset"
+      const key = a.tokenStatus ?? "not connected"
       byTokenStatus[key] = (byTokenStatus[key] ?? 0) + 1
     }
     out.push({

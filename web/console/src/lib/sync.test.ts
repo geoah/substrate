@@ -250,8 +250,14 @@ describe("providerViews", () => {
     expect(p.configKind?.identity).toBe(`${GOOGLE}/config`)
     expect(p.configRecord).toBe("default")
     expect(p.configured).toBe(true)
-    expect(p.byTokenStatus).toEqual({ connected: 1, pending: 1, unset: 1 })
-    expect(countPhrase(p.byTokenStatus)).toBe("1 connected, 1 pending, 1 unset")
+    expect(p.byTokenStatus).toEqual({
+      connected: 1,
+      pending: 1,
+      "not connected": 1,
+    })
+    expect(countPhrase(p.byTokenStatus)).toBe(
+      "1 connected, 1 not connected, 1 pending"
+    )
   })
 
   it("reads credentials missing off the oauth-client setup item", () => {

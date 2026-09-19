@@ -306,30 +306,33 @@ export function SyncSummary({
   )
 }
 
-/** The trait's two owner hands as buttons. Sync now stamps the request and
- * wakes the on-request triggers the caller resolved for the kind; with none
- * to wake the stamp alone still fires them on the dispatcher's next pass,
- * and the toast says so. */
-export function SyncActions({
-  record,
-  paused,
-  requestTriggerIds,
-  disabled,
-  size = "sm",
-}: {
-  record: Pick<SubstrateRecord, "kind" | "id">
-  paused: boolean
-  requestTriggerIds: string[]
-  disabled?: boolean
-  size?: "sm" | "xs"
-}) {
+function useRefreshSync() {
   const queryClient = useQueryClient()
-  const refresh = () => {
+  return () => {
     void queryClient.invalidateQueries({ queryKey: ["sync"] })
     void queryClient.invalidateQueries({ queryKey: ["trait", "records"] })
     void queryClient.invalidateQueries({ queryKey: ["triggers"] })
     void queryClient.invalidateQueries({ queryKey: ["record"] })
   }
+}
+
+/** Sync now: stamp the request and wake the on-request triggers the caller
+ * resolved for the kind; with none to wake the stamp alone still fires them
+ * on the dispatcher's next pass, and the toast says so. */
+export function SyncNowButton({
+  record,
+  paused,
+  requestTriggerIds,
+  disabled,
+  className,
+}: {
+  record: Pick<SubstrateRecord, "kind" | "id">
+  paused: boolean
+  requestTriggerIds: string[]
+  disabled?: boolean
+  className?: string
+}) {
+  const refresh = useRefreshSync()
   const syncNow = useMutation({
     mutationFn: async () => {
       await requestSync(record)
@@ -358,6 +361,38 @@ export function SyncActions({
         description: error.message,
       }),
   })
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className={cn("h-7 gap-1 px-2 text-xs", className)}
+      disabled={disabled || paused || syncNow.isPending}
+      onClick={() => syncNow.mutate()}
+      title={paused ? "Resume before asking for a run" : "Ask for a run now"}
+    >
+      {syncNow.isPending ? (
+        <Spinner className="size-3" />
+      ) : (
+        <RefreshCwIcon className="size-3" />
+      )}
+      Sync now
+    </Button>
+  )
+}
+
+/** Pause or Resume: the trait's `syncPaused`, the owner's other hand. */
+export function PauseButton({
+  record,
+  paused,
+  disabled,
+  className,
+}: {
+  record: Pick<SubstrateRecord, "kind" | "id">
+  paused: boolean
+  disabled?: boolean
+  className?: string
+}) {
+  const refresh = useRefreshSync()
   const pause = useMutation({
     mutationFn: () => setSyncPaused(record, !paused),
     onSuccess: () => {
@@ -374,38 +409,52 @@ export function SyncActions({
         description: error.message,
       }),
   })
-  const cls = size === "xs" ? "h-7 gap-1 px-2 text-xs" : "gap-1.5"
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={cn("h-7 gap-1 px-2 text-xs", className)}
+      disabled={disabled || pause.isPending}
+      onClick={() => pause.mutate()}
+    >
+      {paused ? (
+        <PlayIcon className="size-3" />
+      ) : (
+        <PauseIcon className="size-3" />
+      )}
+      {paused ? "Resume" : "Pause"}
+    </Button>
+  )
+}
+
+/** The trait's two owner hands side by side: the detail page's and the
+ * record page's toolbar. */
+export function SyncActions({
+  record,
+  paused,
+  requestTriggerIds,
+  disabled,
+}: {
+  record: Pick<SubstrateRecord, "kind" | "id">
+  paused: boolean
+  requestTriggerIds: string[]
+  disabled?: boolean
+}) {
   return (
     <div className="flex items-center gap-1.5">
-      <Button
-        variant="outline"
-        size="sm"
-        className={cls}
-        disabled={disabled || paused || syncNow.isPending}
-        onClick={() => syncNow.mutate()}
-        title={paused ? "Resume before asking for a run" : "Ask for a run now"}
-      >
-        {syncNow.isPending ? (
-          <Spinner className="size-3" />
-        ) : (
-          <RefreshCwIcon className="size-3" />
-        )}
-        Sync now
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className={cls}
-        disabled={disabled || pause.isPending}
-        onClick={() => pause.mutate()}
-      >
-        {paused ? (
-          <PlayIcon className="size-3" />
-        ) : (
-          <PauseIcon className="size-3" />
-        )}
-        {paused ? "Resume" : "Pause"}
-      </Button>
+      <SyncNowButton
+        record={record}
+        paused={paused}
+        requestTriggerIds={requestTriggerIds}
+        disabled={disabled}
+        className="h-8 text-sm"
+      />
+      <PauseButton
+        record={record}
+        paused={paused}
+        disabled={disabled}
+        className="h-8 text-sm"
+      />
     </div>
   )
 }

@@ -556,6 +556,9 @@ export interface SyncStatus {
   errorAt?: string
   /** The per-stream slice a multi-stream provider reports, by stream name. */
   streams?: Record<string, SyncStream>
+  /** The parked deliveries that name THIS record, across the triggers on
+   * its kind; a trigger's own `parked` counts every record's. */
+  parked: number
   /** The record triggers on the kind; a schedule trigger firing the same
    * callable is not tied to a kind and is not here. */
   triggers: TriggerStatus[]

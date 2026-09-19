@@ -154,7 +154,7 @@ def main(input, host):
 	if err != nil {
 		t.Fatalf("sync statuses: %v", err)
 	}
-	if len(statuses) != 1 || statuses[0].State != substrate.SyncStateErroring || statuses[0].Triggers[0].Parked != 1 {
+	if len(statuses) != 1 || statuses[0].State != substrate.SyncStateErroring || statuses[0].Parked != 1 || statuses[0].Triggers[0].Parked != 1 {
 		t.Fatalf("sync statuses = %+v", statuses)
 	}
 }

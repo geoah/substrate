@@ -52,17 +52,21 @@ func (a *app) syncStatusCommand() *cobra.Command {
 				if s.LastSyncedAt != nil {
 					last = humanAge(a.now(), *s.LastSyncedAt)
 				}
-				var parked, lag int64
+				// PARKED is this account's own parked deliveries; LAG is the
+				// kind's triggers' backlog summed, which no record owns alone.
+				var lag int64
 				for _, tr := range s.Triggers {
-					parked += tr.Parked
 					lag += tr.Lag
 				}
 				message := s.Message
 				if s.State == substrate.SyncStateErroring && s.Error != "" {
 					message = s.Error
 				}
+				// One line per account: a message carrying a newline would
+				// break the table.
+				message, _, _ = strings.Cut(message, "\n")
 				fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\t%s\t%s\t%d\t%d\t%s\n",
-					s.Kind, s.ID, s.State, s.Paused, last, syncRequest(s), syncStreams(s), parked, lag, truncate(message, 60))
+					s.Kind, s.ID, s.State, s.Paused, last, syncRequest(s), syncStreams(s), s.Parked, lag, truncate(message, 60))
 			}
 			return tw.Flush()
 		},

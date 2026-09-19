@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -28,7 +29,7 @@ const (
 
 // syncErrorMax bounds the error text a park stamps onto the record: a
 // runner traceback is the parked failure's to keep whole, the record carries
-// the line a person reads.
+// the line a person reads — the first one, cut at this many bytes.
 const syncErrorMax = 500
 
 // syncStamp is one record-sourced delivery's hand on a `sync`-trait record:
@@ -135,7 +136,7 @@ func (t *txn) syncPark(s *syncStamp, cause error) error {
 		}
 		_, err = t.patch(s.ref, substrate.PatchInput{Properties: map[string]any{
 			propSyncState:          substrate.SyncStateErroring,
-			propSyncError:          boundText(cause.Error(), syncErrorMax),
+			propSyncError:          boundText(firstLine(cause.Error()), syncErrorMax),
 			propSyncErrorAt:        t.now.Format(time.RFC3339Nano),
 			propLastSyncDurationMs: s.durationMs(t.now),
 		}})
@@ -250,6 +251,7 @@ func (ds *dataset) SyncStatuses(ctx context.Context) ([]substrate.SyncStatus, er
 	}
 	for _, ty := range kinds {
 		var onKind []substrate.TriggerStatus
+		var triggerIDs []string
 		for _, lt := range triggers {
 			if lt.Record == nil || lt.Err != nil {
 				continue
@@ -259,8 +261,38 @@ func (ds *dataset) SyncStatuses(ctx context.Context) ([]substrate.SyncStatus, er
 					if st, ok := byID[lt.ID]; ok {
 						onKind = append(onKind, st)
 					}
+					triggerIDs = append(triggerIDs, lt.ID)
 					break
 				}
+			}
+		}
+		// The record's own parked deliveries: the failures on the kind's
+		// triggers that name it, keyed by id, in one query per kind.
+		parkedByRecord := map[string]int64{}
+		if len(triggerIDs) > 0 {
+			ids, err := json.Marshal(triggerIDs)
+			if err != nil {
+				return nil, err
+			}
+			prows, err := ds.db.QueryContext(ctx, `
+				SELECT record_id, count(*) FROM trigger_failures
+				WHERE trigger_id IN (SELECT jsonb_array_elements_text($1::jsonb)) AND record_id <> ''
+				GROUP BY record_id`, ids)
+			if err != nil {
+				return nil, err
+			}
+			for prows.Next() {
+				var id string
+				var n int64
+				if err := prows.Scan(&id, &n); err != nil {
+					_ = prows.Close()
+					return nil, err
+				}
+				parkedByRecord[id] = n
+			}
+			_ = prows.Close()
+			if err := prows.Err(); err != nil {
+				return nil, err
 			}
 		}
 		rows, err := ds.db.QueryContext(ctx, `SELECT `+recordCols+` FROM records WHERE kind = $1 AND deleted_at IS NULL ORDER BY id`, ty.Identity)
@@ -274,6 +306,7 @@ func (ds *dataset) SyncStatuses(ctx context.Context) ([]substrate.SyncStatus, er
 				return nil, err
 			}
 			st := syncStatusOf(row)
+			st.Parked = parkedByRecord[row.ID]
 			st.Triggers = append([]substrate.TriggerStatus{}, onKind...)
 			out = append(out, st)
 		}
@@ -376,6 +409,15 @@ func syncTime(p map[string]any, name string) *time.Time {
 	}
 	u := t.UTC()
 	return &u
+}
+
+// firstLine is the message before its first newline: a runner error carries
+// the body's traceback after the line that names the failure.
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return strings.TrimSpace(s[:i])
+	}
+	return s
 }
 
 // boundText cuts a message to at most n bytes on a rune boundary.

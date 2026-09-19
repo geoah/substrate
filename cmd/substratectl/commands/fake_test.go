@@ -1157,7 +1157,8 @@ func (f *fakeSubstrate) handleSyncStatus(w http.ResponseWriter, r *http.Request)
 			"gmail":    {State: substrate.SyncStateErroring, Pending: 12},
 			"contacts": {State: substrate.SyncStateOK},
 		},
-		Triggers: []substrate.TriggerStatus{{ID: "google-gmail-on-connect", Kind: substrate.TriggerKindRecord, Parked: 1, Lag: 2}},
+		Parked:   1,
+		Triggers: []substrate.TriggerStatus{{ID: "google-gmail-on-connect", Kind: substrate.TriggerKindRecord, Parked: 3, Lag: 2}},
 	}}})
 }
 

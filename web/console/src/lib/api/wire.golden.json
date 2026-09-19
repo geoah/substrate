@@ -394,6 +394,7 @@
     "lastSyncStartedAt": false,
     "lastSyncedAt": false,
     "message": false,
+    "parked": true,
     "paused": true,
     "progress": false,
     "requestedAck": false,

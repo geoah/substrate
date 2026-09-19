@@ -569,6 +569,7 @@ const syncStatus: Shape<SyncStatus> = {
   error: false,
   errorAt: false,
   streams: false,
+  parked: true,
   triggers: true,
 }
 const syncProgress: Shape<SyncProgress> = {
