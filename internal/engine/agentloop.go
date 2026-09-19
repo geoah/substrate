@@ -1242,6 +1242,8 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 // ranked arm admits `kinds` alone.
 func rankedFilterArm(f substrate.Filter) string {
 	switch {
+	case f.Search != "":
+		return "search"
 	case f.Implements != "":
 		return "implements"
 	case len(f.IDs) > 0:

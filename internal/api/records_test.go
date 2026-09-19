@@ -75,7 +75,8 @@ func TestRecordsListCarriesTheGrammar(t *testing.T) {
 
 	f := substrate.Filter{
 		Kinds:      []string{personKind},
-		Properties: map[string]substrate.Cond{"company": {Eq: "Analytical"}},
+		Search:     `rack lay* -"weekly sync"`,
+		Properties: map[string]substrate.Cond{"company": {Eq: "Analytical"}, "notes": {Match: "engine*"}},
 	}
 	path := filterPath(t, f, "orderBy="+url.QueryEscape("at:desc,createdAt"), "first=7", "after=cur1",
 		"expand="+url.QueryEscape("manager, author"), "withAnnotations=1")
@@ -88,6 +89,12 @@ func TestRecordsListCarriesTheGrammar(t *testing.T) {
 	}
 	if q.Filter.Properties["company"].Eq != "Analytical" {
 		t.Fatalf("filter.properties lost: %+v", q.Filter.Properties)
+	}
+	if q.Filter.Search != f.Search {
+		t.Fatalf("filter.search = %q, want the query verbatim", q.Filter.Search)
+	}
+	if q.Filter.Properties["notes"].Match != "engine*" {
+		t.Fatalf("filter.properties.notes.match lost: %+v", q.Filter.Properties)
 	}
 	want := []substrate.Order{{Property: "at", Desc: true}, {Property: "createdAt"}}
 	if len(q.OrderBy) != 2 || q.OrderBy[0] != want[0] || q.OrderBy[1] != want[1] {
@@ -326,6 +333,9 @@ func TestRecordsRankedReadRefusesWhatItCannotHonor(t *testing.T) {
 		{filterPath(t, substrate.Filter{Labels: map[string]substrate.Cond{"a": {Eq: 1}}}, "q=x"), "filter.labels"},
 		{filterPath(t, substrate.Filter{Deleted: new(bool)}, "q=x"), "filter.deleted"},
 		{filterPath(t, substrate.Filter{Referencing: &substrate.Referencing{Ref: "k/a/b/c"}}, "q=x"), "filter.referencing"},
+		// `q` IS the search; a second query in the filter would be one of
+		// them silently ignored.
+		{filterPath(t, substrate.Filter{Search: "y"}, "q=x"), "filter.search"},
 	} {
 		rec := env.do(t, http.MethodGet, tc.path, tok, nil)
 		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
@@ -353,6 +363,7 @@ func TestRecordsWatchRefusesWhatItCannotHonor(t *testing.T) {
 		{recordsPath + "?watch=1&q=x", `"q"`},
 		{filterPath(t, substrate.Filter{Properties: map[string]substrate.Cond{"a": {Eq: 1}}}, "watch=1"), "filter.properties"},
 		{filterPath(t, substrate.Filter{Implements: "x"}, "watch=1"), "filter.implements"},
+		{filterPath(t, substrate.Filter{Search: "x"}, "watch=1"), "filter.search"},
 	} {
 		rec := env.do(t, http.MethodGet, tc.path, tok, nil)
 		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)

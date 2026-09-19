@@ -23,6 +23,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import {
+  canMatch,
   canPrefix,
   displayValue,
   opFor,
@@ -121,12 +122,20 @@ function ValueEditor({
     )
   }
 
+  // Free text is a full-text MATCH on the property's own words (the wire's
+  // `match`, in the search grammar); `=` asks for the exact value. Everything
+  // else is the exact value it always was, with a comma for membership.
+  const matches = canMatch(field)
   return (
     <div className="flex flex-col gap-1.5 p-1">
       <Input
         autoFocus
         placeholder={
-          field.repeated ? `${field.name} contains…` : `${field.name} is…`
+          matches
+            ? `${field.name} mentions…`
+            : field.repeated
+              ? `${field.name} contains…`
+              : `${field.name} is…`
         }
         className="h-8 data"
         value={draft}
@@ -136,10 +145,23 @@ function ValueEditor({
         }}
       />
       <span className="px-1 text-xs text-muted-foreground">
-        Press Enter to apply. A comma means any of
-        {canPrefix(field) && (
+        {matches ? (
           <>
-            . <span className="data">geo*</span> means starts with
+            Press Enter to apply. Every word must appear.{" "}
+            <span className="data">lay*</span> is a word prefix,{" "}
+            <span className="data">"a phrase"</span> keeps words together,{" "}
+            <span className="data">-word</span> excludes,{" "}
+            <span className="data">a OR b</span> takes either.{" "}
+            <span className="data">=value</span> means exactly that value
+          </>
+        ) : (
+          <>
+            Press Enter to apply. A comma means any of
+            {canPrefix(field) && (
+              <>
+                . <span className="data">geo*</span> means starts with
+              </>
+            )}
           </>
         )}
       </span>
@@ -184,9 +206,9 @@ function ActiveFilterControl({
               carries the whole value regardless (sweep finding, 2026-08-06) */}
           <span
             className="max-w-72 truncate data"
-            title={displayValue(filter).replaceAll(",", ", ")}
+            title={displayValue(filter, field).replaceAll(",", ", ")}
           >
-            {displayValue(filter).replaceAll(",", ", ")}
+            {displayValue(filter, field).replaceAll(",", ", ")}
           </span>
         </PopoverTrigger>
         <Button
@@ -203,7 +225,7 @@ function ActiveFilterControl({
         {field ? (
           <ValueEditor
             field={field}
-            value={displayValue(filter)}
+            value={displayValue(filter, field)}
             onApply={(value) => {
               if (!value) onRemove()
               else onChange({ ...filter, value })

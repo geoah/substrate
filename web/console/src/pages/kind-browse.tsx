@@ -27,6 +27,7 @@ import { DataTableCursorPagination } from "@/components/data-table/data-table-cu
 import { DataTableFilters } from "@/components/data-table/data-table-filters"
 import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 import { KindDefinition } from "@/components/record/definition"
+import { SearchBox } from "@/components/search-box"
 import { Button } from "@/components/ui/button"
 import {
   Empty,
@@ -90,6 +91,13 @@ export function KindBrowsePage() {
     "filter",
     parseAsArrayOf(parseAsString).withDefault([])
   )
+  // The whole-record text filter, in the URL beside the property filters so a
+  // view that searched is shareable; not in the stored prefs, because a search
+  // is the question of the moment, not the shape of the view.
+  const [search, setSearch] = useQueryState(
+    "search",
+    parseAsString.withDefault("")
+  )
 
   // A BARE url restores the last-used view from localStorage, one dimension
   // at a time; an explicit ?filter=/?sort= always wins (shareable views stay
@@ -127,10 +135,11 @@ export function KindBrowsePage() {
     () => (kindInfo ? filterableProperties(kindInfo) : []),
     [kindInfo]
   )
-  const recordFilter = useMemo(
-    () => toRecordFilter(filters, filterFields),
-    [filters, filterFields]
-  )
+  const recordFilter = useMemo(() => {
+    const base = toRecordFilter(filters, filterFields)
+    const words = search.trim()
+    return words ? { ...base, search: words } : base
+  }, [filters, filterFields, search])
 
   // Keyset pagination: a stack of the opaque `after` cursors visited, one per
   // page (index 0 = page one, no cursor). There is no offset, so Next walks
@@ -258,7 +267,7 @@ export function KindBrowsePage() {
     )
   }
 
-  const hasFilters = filters.length > 0
+  const hasFilters = filters.length > 0 || search.trim().length > 0
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -337,7 +346,20 @@ export function KindBrowsePage() {
                     persist({ filter: tokens })
                   }}
                 />
-                <div className="ml-auto py-2.5 pl-2">
+                <div className="ml-auto flex items-center gap-2 py-2.5 pl-2">
+                  {/* Words against every text this kind indexes (the wire's
+                      `filter.search`), composed with the property filters and
+                      the sort. */}
+                  <SearchBox
+                    className="w-64"
+                    label="Search these records"
+                    placeholder="Search these records…"
+                    value={search}
+                    onChange={(next) => {
+                      void setSearch(next || null)
+                      resetPages()
+                    }}
+                  />
                   <DataTableViewOptions table={table} />
                 </div>
               </div>
@@ -369,7 +391,7 @@ export function KindBrowsePage() {
                         </EmptyTitle>
                         <EmptyDescription>
                           {hasFilters
-                            ? "No record matches the filters you set."
+                            ? "No record matches the filters and search you set."
                             : "Press New to create the first one."}
                         </EmptyDescription>
                       </EmptyHeader>
@@ -380,6 +402,7 @@ export function KindBrowsePage() {
                             size="sm"
                             onClick={() => {
                               void setFilterTokens(null)
+                              void setSearch(null)
                               resetPages()
                               persist({ filter: [] })
                             }}

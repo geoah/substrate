@@ -29,6 +29,13 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) (substr
 	if q == "" {
 		return out, fmt.Errorf("%w: search needs a query", substrate.ErrValidation)
 	}
+	// The lexical arm ranks by the search grammar (tsquery.go), the same text
+	// the list's `search` arm filters by; the semantic arm embeds the query as
+	// typed, stars and all, because a prefix means nothing to an embedding.
+	tq, err := tsqueryText("q", q)
+	if err != nil {
+		return out, err
+	}
 	k := in.K
 	if k <= 0 {
 		k = 20
@@ -102,7 +109,7 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) (substr
 	}
 
 	if mode == substrate.SearchLexical || mode == substrate.SearchHybrid {
-		lex, err := ds.lexical(ctx, q, types, k)
+		lex, err := ds.lexical(ctx, tq, types, k)
 		if err != nil {
 			return out, err
 		}
@@ -195,18 +202,20 @@ type arm struct {
 	demoted bool
 }
 
-func (ds *dataset) lexical(ctx context.Context, q string, types []string, k int) (map[eref]arm, error) {
+// lexical ranks the records whose index matches tq, tsquery text in the search
+// grammar (searchQuery), by ts_rank over the weighted bands.
+func (ds *dataset) lexical(ctx context.Context, tq string, types []string, k int) (map[eref]arm, error) {
 	b := &builder{}
-	qarg := b.arg(q)
+	qarg := b.arg(tq)
 	clause := ""
 	if len(types) > 0 {
 		clause = ` AND kind IN ` + b.jsonArray(types)
 	}
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT kind, id, ts_rank(fts, websearch_to_tsquery('english', `+qarg+`)) AS rank,
+		SELECT kind, id, ts_rank(fts, to_tsquery('english', `+qarg+`)) AS rank,
 		       `+demotion("records")+` AS demoted
 		FROM records
-		WHERE deleted_at IS NULL AND fts @@ websearch_to_tsquery('english', `+qarg+`)`+clause+`
+		WHERE deleted_at IS NULL AND fts @@ to_tsquery('english', `+qarg+`)`+clause+`
 		ORDER BY demoted, rank DESC LIMIT `+b.arg(k), b.args...)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: lexical search: %w", err)

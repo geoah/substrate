@@ -191,9 +191,11 @@ const cond: Shape<Cond> = {
   lte: false,
   contains: false,
   exists: false,
+  match: false,
 }
 
 const recordFilter: Shape<RecordFilter> = {
+  search: false,
   kinds: false,
   implements: false,
   ids: false,

@@ -96,15 +96,19 @@ resolves against the kind registry; when two installed packages declare the same
 name, it needs qualifying, or `--package` to name the package it resolves in
 (every provider bundle installs a `config`, so `config` always needs one). Lists take `--filter` (the
 JSON [filter grammar](api.md#the-filter-grammar)), `-l` label selectors,
-`--order-by`, and `--limit`; `--after` resends the opaque keyset cursor a page
-printed. `--expand prop1,prop2` carries the referents of those reference
+`--search` (words against every text the kind indexes, in the
+[search grammar](api.md#the-search-grammar): `--search 'rack lay*'` is the
+filter's `search` arm, composed with the rest and printed in the list's own
+order), `--order-by`, and `--limit`; `--after` resends the opaque keyset
+cursor a page printed. `--expand prop1,prop2` carries the referents of those reference
 properties back with the page (as further `---` documents in `-o yaml`, under
 an `included` key in `-o json`; the table prints the page alone), and
 `--referencing <kind>/<id>` is the reverse read: only the records of the kind
 that point at that one. `-w` streams that one kind's changes instead of
 listing it, resumable with `--from` and `--generation` like `watch`.
 
-`substratectl search <query>` ranks records against a query: `--mode`
+`substratectl search <query>` ranks records against a query in the same
+[search grammar](api.md#the-search-grammar): `--mode`
 picks `hybrid` (the default), `lexical` or `semantic`, `--kinds` narrows to
 the kinds named (qualified or bare, resolved like `get`), and `--limit` caps
 the hits. The table prints each hit's raw per-arm scores; `-o yaml` and
