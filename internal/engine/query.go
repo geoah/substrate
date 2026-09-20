@@ -575,7 +575,15 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 		for _, t := range types {
 			idents = append(idents, t.Identity)
 		}
-		b.add(`kind = ANY(` + b.textArray(idents) + `)`)
+		// ONE kind binds as a scalar: the declared and reference indexes are
+		// partial on `kind = '<kind>'` (indices.go), and a scalar equality is
+		// the predicate the planner proves them from in every plan shape,
+		// custom or generic; the list form stays for a filter spanning kinds.
+		if len(idents) == 1 {
+			b.add(`kind = ` + b.arg(idents[0]))
+		} else {
+			b.add(`kind = ANY(` + b.textArray(idents) + `)`)
+		}
 	}
 	if len(f.IDs) > 0 {
 		b.add(`id = ANY(` + b.textArray(f.IDs) + `)`)
@@ -671,10 +679,11 @@ func (ds *dataset) condProp(ctx context.Context, b *builder, types []*vocabulary
 		return fmt.Errorf("%w: %s is sensitive and cannot be filtered", substrate.ErrValidation, name)
 	}
 	// A reference value is the object holding a path under `ref`, or the bare
-	// path string a pre-0044 row still holds. It filters by CONTAINMENT, which
-	// reaches into both shapes and is also the only jsonb operator
-	// `records_props_idx` indexes, so a lookup by pointer is index-backed
-	// without any per-kind declaration.
+	// path string a pre-0044 row still holds. A scalar one filters by EQUALITY
+	// on the path expression its kind's reference index is built on
+	// (indices.go), a repeated one by CONTAINMENT, which reaches inside the
+	// array and is the one jsonb operator `records_props_idx` indexes; either
+	// way a lookup by pointer is index-backed without a per-kind declaration.
 	if shapes := ds.referenceShapes(types, name); len(shapes) > 0 {
 		return ds.condReference(ctx, b, name, shapes, c)
 	}
@@ -745,7 +754,7 @@ func (ds *dataset) referenceShapes(types []*vocabulary.Kind, name string) []*voc
 		// that is live now (refs.go splitReferenceValue), so the filter probes
 		// for both whatever the declaration says and two declarations differing
 		// only in `properties:` need one probe set.
-		key := p.To + "\x00" + strconv.FormatBool(p.Repeated)
+		key := p.To + "\x00" + strconv.FormatBool(p.Repeated) + "\x00" + strconv.FormatBool(p.Keyed)
 		if seen[key] {
 			continue
 		}
@@ -753,6 +762,15 @@ func (ds *dataset) referenceShapes(types []*vocabulary.Kind, name string) []*voc
 		out = append(out, p)
 	}
 	return out
+}
+
+// scalarReference reports whether a reference declaration holds ONE path at
+// its property — neither a repeated list nor a keyed map — which is the shape
+// referencePathSQL reads and the kind's reference index (indices.go) is built
+// on. The three readers that depend on that shape (the filter, the ordering
+// and the index) ask this one question.
+func scalarReference(p *vocabulary.Property) bool {
+	return p != nil && p.Datatype == vocabulary.DatatypeReference && !p.Repeated && !p.Keyed
 }
 
 // referenceFilterIDs expands one filter path into every path the same record is
@@ -809,13 +827,15 @@ func referenceFilterPath(name string, p *vocabulary.Property, v any) (string, er
 	return vocabulary.RecordPath(p.To, s), nil
 }
 
-// referenceValue renders one path as the containment probes for a reference
-// property: `{"agent": "substrate.reamde.dev/core/agent/x"}` and
-// `{"agent": {"ref": "substrate.reamde.dev/core/agent/x"}}`, each wrapped in an
-// array when the property is repeated (containment reaches inside an array, so
-// one shape answers "holds this reference" for both). jsonb containment is
-// recursive over objects, so a probe names the pointer and says nothing about
-// the link properties beside it — which is what eq on a reference means.
+// referenceValue renders one path as the containment probes for a REPEATED
+// reference property: `{"seen": ["substrate.reamde.dev/core/agent/x"]}` and
+// `{"seen": [{"ref": "substrate.reamde.dev/core/agent/x"}]}` (containment
+// reaches inside an array, so one shape answers "holds this reference" for
+// both). jsonb containment is recursive over objects, so a probe names the
+// pointer and says nothing about the link properties beside it — which is what
+// eq on a reference means. A scalar reference does not come here: condReference
+// compares its path expression directly (referencePathSQL), which reads both
+// stored spellings in one expression and is what the kind's index is built on.
 //
 // BOTH SHAPES, ALWAYS. Every write stores the object (decision 0044), and a row
 // written before that rule holds the bare path; nothing rewrites one when the
@@ -856,37 +876,69 @@ func (ds *dataset) condReference(ctx context.Context, b *builder, name string, s
 				substrate.ErrValidation, name, p.label)
 		}
 	}
-	// One value, every declared shape, every id the named record has ever had,
-	// every stored spelling, all OR-ed: a filter naming several kinds is asking
-	// each of them — in ITS OWN shape — whether it points here, and a record
-	// merged since the pointer was written is named by more than one path.
+	// Every value, every declared shape, every id the named record has ever
+	// had, every stored spelling, in ONE clause per predicate: a filter naming
+	// several kinds is asking each of them — in ITS OWN shape — whether it
+	// points here, and a record merged since the pointer was written is named
+	// by more than one path.
 	//
 	// The trail is read once per distinct PATH: several shapes completing one
 	// bare id the same way share the read.
 	trail := map[string][]string{}
-	probeAll := func(v any) (string, error) {
-		var clauses []string
-		for _, p := range shapes {
-			path, err := referenceFilterPath(name, p, v)
-			if err != nil {
-				return "", err
-			}
-			paths, cached := trail[path]
-			if !cached {
-				if paths, err = ds.referenceFilterIDs(ctx, path); err != nil {
-					return "", err
-				}
-				trail[path] = paths
-			}
-			for _, one := range paths {
-				probes, err := referenceValue(name, p, one)
+	probeAll := func(values []any) (string, error) {
+		var scalar []string
+		seen := map[string]bool{}
+		var repeated []string
+		for _, v := range values {
+			for _, p := range shapes {
+				path, err := referenceFilterPath(name, p, v)
 				if err != nil {
 					return "", err
 				}
-				for _, probe := range probes {
-					clauses = append(clauses, `props @> `+b.arg(probe)+`::jsonb`)
+				paths, cached := trail[path]
+				if !cached {
+					if paths, err = ds.referenceFilterIDs(ctx, path); err != nil {
+						return "", err
+					}
+					trail[path] = paths
+				}
+				for _, one := range paths {
+					if scalarReference(p) {
+						if !seen[one] {
+							seen[one] = true
+							scalar = append(scalar, one)
+						}
+						continue
+					}
+					probes, err := referenceValue(name, p, one)
+					if err != nil {
+						return "", err
+					}
+					for _, probe := range probes {
+						repeated = append(repeated, `props @> `+b.arg(probe)+`::jsonb`)
+					}
 				}
 			}
+		}
+		// A SCALAR reference compares the path the row points at, read the
+		// way every reader reads it (referencePathSQL: the `{ref}` object's
+		// path, or the bare string a pre-0044 row holds), against ONE bound
+		// text[] — the expression the kind's reference index is built on
+		// (indices.go referenceIndexStatements), so the planner has exact
+		// statistics for the list and an index to walk it with. It replaced a
+		// pair of `props @> {…}` containment probes per value: the planner
+		// estimates a jsonb containment at the default selectivity whatever
+		// the value, so two dozen OR'd probes read as tens of thousands of
+		// rows, and it chose a parallel seq scan that detoasted every large
+		// `props` on a 100k-row table once per probe, tens of seconds for a
+		// handful of rows.
+		//
+		// A REPEATED (or keyed) reference keeps the containment probes: the
+		// value is an array, and `records_props_idx` (jsonb_path_ops) is what
+		// reaches inside one.
+		clauses := repeated
+		if len(scalar) > 0 {
+			clauses = append([]string{referencePathSQL("props", name) + ` = ANY(` + b.textArray(scalar) + `)`}, clauses...)
 		}
 		return `(` + strings.Join(clauses, " OR ") + `)`, nil
 	}
@@ -896,22 +948,18 @@ func (ds *dataset) condReference(ctx context.Context, b *builder, name string, s
 		if v == nil {
 			continue
 		}
-		clause, err := probeAll(v)
+		clause, err := probeAll([]any{v})
 		if err != nil {
 			return err
 		}
 		b.add(clause)
 	}
 	if len(c.In) > 0 {
-		clauses := make([]string, 0, len(c.In))
-		for _, v := range c.In {
-			clause, err := probeAll(v)
-			if err != nil {
-				return err
-			}
-			clauses = append(clauses, clause)
+		clause, err := probeAll(c.In)
+		if err != nil {
+			return err
 		}
-		b.add(`(` + strings.Join(clauses, " OR ") + `)`)
+		b.add(clause)
 	}
 	if c.Exists != nil {
 		if *c.Exists {

@@ -12,7 +12,9 @@ import (
 )
 
 // ensureIndices materializes the `indices:` hints a type declares as partial
-// indexes on the records table — filterable ≡ indexed ≡ declared.
+// indexes on the records table — filterable ≡ indexed ≡ declared — and, for
+// every scalar reference property a type declares, the one index its filter
+// by pointer walks (referenceIndexStatements), which no declaration names.
 //
 // The statements run on the ADMIN pool, not the repository's: substrate_app
 // owns nothing and may not create an index. The index itself is shared — one
@@ -99,6 +101,7 @@ func (s indexStmt) rebuild(ctx context.Context, admin *sql.DB, exists bool) erro
 func indexStatements(types []*vocabulary.Kind) ([]indexStmt, error) {
 	var stmts []indexStmt
 	for _, t := range types {
+		declared := map[string]bool{}
 		for i, cols := range t.Indices {
 			exprs := make([]string, 0, len(cols))
 			for _, c := range cols {
@@ -111,12 +114,55 @@ func indexStatements(types []*vocabulary.Kind) ([]indexStmt, error) {
 			if len(exprs) == 0 {
 				continue
 			}
-			name := "idx_" + derivedID(t.Identity, strconv.Itoa(i))
-			stmts = append(stmts, indexStmt{kind: t.Identity, name: name, stmt: `CREATE INDEX IF NOT EXISTS ` + name +
-				` ON records (repository, ` + strings.Join(exprs, ", ") + `) WHERE kind = ` + sqlLiteral(t.Identity)})
+			declared[strings.Join(exprs, ", ")] = true
+			stmts = append(stmts, indexStatement(t, "idx_"+derivedID(t.Identity, strconv.Itoa(i)), exprs))
 		}
+		stmts = append(stmts, referenceIndexStatements(t, declared)...)
 	}
 	return stmts, nil
+}
+
+// indexStatement renders one partial index on the records table for a kind:
+// `repository` leading so it serves under the row level security predicate,
+// the kind's expressions after it, restricted to the kind's own rows.
+func indexStatement(t *vocabulary.Kind, name string, exprs []string) indexStmt {
+	return indexStmt{kind: t.Identity, name: name, stmt: `CREATE INDEX IF NOT EXISTS ` + name +
+		` ON records (repository, ` + strings.Join(exprs, ", ") + `) WHERE kind = ` + sqlLiteral(t.Identity)}
+}
+
+// referenceIndexStatements renders the index every SCALAR reference property
+// of a kind gets WITHOUT declaring it: one per (kind, property), on the path
+// expression the reference filter compares (query.go condReference,
+// `referencePathSQL = ANY($n::text[])`) and the reference ordering sorts by,
+// partial on the kind like a declared one. A filter by pointer is the read a
+// reference exists for — "the items of this order", "the runs of this
+// trigger" — and left to the generic jsonb containment index the planner
+// could not estimate it: a two-dozen-value `in` on a 100k-row repository is
+// priced at tens of thousands of rows for a handful, and runs as a parallel
+// seq scan measured in tens of seconds. A btree on the expression carries exact
+// statistics and answers the list in one probe per value.
+//
+// Named by (kind, "ref", property) — a different part list from a declared
+// index's (kind, ordinal), so the two cannot collide — and reconciled by the
+// same comment rule as a declared one (ensureIndices). A declaration that
+// already indexes exactly this expression on its own is not doubled: the
+// declared index IS this index, and `declared` is how the caller says so.
+// Repeated and keyed references hold lists and maps, which the expression
+// does not read; their filter stays on the containment index.
+func referenceIndexStatements(t *vocabulary.Kind, declared map[string]bool) []indexStmt {
+	var stmts []indexStmt
+	for _, name := range t.PropOrder {
+		p := t.Props[name]
+		if !scalarReference(p) {
+			continue
+		}
+		expr := `(` + referencePathSQL("props", name) + `)`
+		if declared[expr] {
+			continue
+		}
+		stmts = append(stmts, indexStatement(t, "idx_"+derivedID(t.Identity, "ref", name), []string{expr}))
+	}
+	return stmts
 }
 
 func indexExpr(t *vocabulary.Kind, name string) (string, error) {

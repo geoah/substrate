@@ -3,13 +3,16 @@ package engine_test
 // References as first-class pointers: filterable, renderable in a display
 // template, and enforced when required.
 //
-// The filter is the load-bearing one. A reference stores as a {kind, id}
-// OBJECT, so the generic text comparison every other property filters through
-// (`props->>'x'` against the value's spelling) could never match one — the
-// grammar accepted the filter and returned nothing. It filters by CONTAINMENT
-// now, which is also the one jsonb operator `records_props_idx` indexes, so
-// asking "which rows point at this record" is index-backed for every reference
-// of every kind with no per-kind declaration at all.
+// The filter is the load-bearing one. A reference stores as a `{ref}` OBJECT
+// (or the bare path a pre-0044 row holds), so the generic text comparison every
+// other property filters through (`props->>'x'` against the value's spelling)
+// could never match one — the grammar accepted the filter and returned nothing.
+// A single reference filters by EQUALITY on the path expression that reads
+// both spellings, which every kind's single references are indexed on without
+// a declaration (refindex_db_test.go proves the plan); a repeated one by
+// CONTAINMENT, the one jsonb operator `records_props_idx` indexes. Either way
+// "which rows point at this record" is index-backed for every reference of
+// every kind with no per-kind declaration at all.
 
 import (
 	"context"
