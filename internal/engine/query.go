@@ -296,9 +296,18 @@ func (b *builder) arg(v any) string {
 
 func (b *builder) add(clause string) { b.where = append(b.where, clause) }
 
-func (b *builder) jsonArray(vals []string) string {
-	raw, _ := json.Marshal(vals)
-	return `(SELECT jsonb_array_elements_text(` + b.arg(raw) + `::jsonb))`
+// textArray binds a []string as ONE text[] parameter for `= ANY(...)` /
+// `<> ALL(...)`. It replaced a `IN (SELECT jsonb_array_elements_text($n))`
+// semi-join: the planner could neither estimate that function scan nor push
+// the kind list into the (repository, kind, id) index, so a kind-scoped list
+// over a 100k-row table was a seq scan, and with two dozen OR'd containment
+// probes beside it a 77 s one (geoah.me, 2026-09-20). `= ANY` over a bound
+// array is estimated from the column's statistics and served by the index.
+func (b *builder) textArray(vals []string) string {
+	if vals == nil {
+		vals = []string{}
+	}
+	return b.arg(vals) + `::text[]`
 }
 
 func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page, error) {
@@ -565,10 +574,10 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 		for _, t := range types {
 			idents = append(idents, t.Identity)
 		}
-		b.add(`kind IN ` + b.jsonArray(idents))
+		b.add(`kind = ANY(` + b.textArray(idents) + `)`)
 	}
 	if len(f.IDs) > 0 {
-		b.add(`id IN ` + b.jsonArray(f.IDs))
+		b.add(`id = ANY(` + b.textArray(f.IDs) + `)`)
 	}
 	switch {
 	case f.Deleted == nil || !*f.Deleted:
@@ -1026,7 +1035,7 @@ func condColumn(b *builder, col string, c substrate.Cond) error {
 		for _, v := range c.In {
 			vals = append(vals, fmt.Sprint(v))
 		}
-		b.add(expr + `::text IN ` + b.jsonArray(vals))
+		b.add(expr + `::text = ANY(` + b.textArray(vals) + `)`)
 	}
 	if c.Prefix != "" {
 		b.add(expr + `::text LIKE ` + b.arg(likePrefix(c.Prefix)))
@@ -1150,7 +1159,7 @@ func condJSON(b *builder, col, key string, c substrate.Cond, kind vocabulary.Dat
 		for _, v := range c.In {
 			vals = append(vals, fmt.Sprint(v))
 		}
-		b.add(textExpr() + ` IN ` + b.jsonArray(vals))
+		b.add(textExpr() + ` = ANY(` + b.textArray(vals) + `)`)
 	}
 	if c.Prefix != "" {
 		b.add(textExpr() + ` LIKE ` + b.arg(likePrefix(c.Prefix)))

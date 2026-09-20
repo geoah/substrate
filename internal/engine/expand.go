@@ -56,7 +56,7 @@ func referencingWhere(b *builder, canonical eref, ids []string, property string)
 	if len(ids) == 1 {
 		target = `r.dst = ` + b.arg(ids[0])
 	} else {
-		target = `r.dst IN ` + b.jsonArray(ids)
+		target = `r.dst = ANY(` + b.textArray(ids) + `)`
 	}
 	where := `r.dst_kind = ` + b.arg(canonical.Kind) + ` AND ` + target
 	if property != "" {
@@ -99,7 +99,7 @@ func (ds *dataset) referenceSites(ctx context.Context, x dbx, ref *substrate.Ref
 	rows, err := x.QueryContext(ctx,
 		`SELECT r.src_kind, r.src, r.property, r.path FROM refs r WHERE `+
 			referencingWhere(b, canonical, ids, ref.Property)+
-			` AND (r.src_kind || '/' || r.src) IN `+b.jsonArray(paths)+
+			` AND (r.src_kind || '/' || r.src) = ANY(`+b.textArray(paths)+`)`+
 			` ORDER BY r.src_kind, r.src, r.property, r.path, r.ord`, b.args...)
 	if err != nil {
 		return nil, err
@@ -213,7 +213,7 @@ func (ds *dataset) loadReferents(ctx context.Context, x dbx, paths []string) (ma
 	for _, kind := range sortedKeys(byKind) {
 		b := &builder{}
 		rows, err := x.QueryContext(ctx,
-			`SELECT `+recordCols+` FROM records WHERE kind = `+b.arg(kind)+` AND id IN `+b.jsonArray(byKind[kind])+
+			`SELECT `+recordCols+` FROM records WHERE kind = `+b.arg(kind)+` AND id = ANY(`+b.textArray(byKind[kind])+`)`+
 				` AND deleted_at IS NULL`,
 			b.args...)
 		if err != nil {

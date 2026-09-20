@@ -46,42 +46,42 @@ func (ds *dataset) buildChangeFilter(b *builder, f substrate.ChangeFilter) error
 		if err != nil {
 			return err
 		}
-		b.add(`kind IN ` + b.jsonArray(idents))
+		b.add(`kind = ANY(` + b.textArray(idents) + `)`)
 	}
 	if len(f.ExcludeKinds) > 0 {
 		idents, err := resolveTypes(f.ExcludeKinds)
 		if err != nil {
 			return err
 		}
-		b.add(`kind NOT IN ` + b.jsonArray(idents))
+		b.add(`kind <> ALL(` + b.textArray(idents) + `)`)
 	}
 	if len(f.Ops) > 0 {
 		ops := make([]string, 0, len(f.Ops))
 		for _, o := range f.Ops {
 			ops = append(ops, string(o))
 		}
-		b.add(`op IN ` + b.jsonArray(ops))
+		b.add(`op = ANY(` + b.textArray(ops) + `)`)
 	}
 	if len(f.ExcludeOps) > 0 {
 		ops := make([]string, 0, len(f.ExcludeOps))
 		for _, o := range f.ExcludeOps {
 			ops = append(ops, string(o))
 		}
-		b.add(`op NOT IN ` + b.jsonArray(ops))
+		b.add(`op <> ALL(` + b.textArray(ops) + `)`)
 	}
 	if len(f.Actors) > 0 {
 		actors := make([]string, 0, len(f.Actors))
 		for _, a := range f.Actors {
 			actors = append(actors, string(a))
 		}
-		b.add(`actor IN ` + b.jsonArray(actors))
+		b.add(`actor = ANY(` + b.textArray(actors) + `)`)
 	}
 	if len(f.ExcludeActors) > 0 {
 		actors := make([]string, 0, len(f.ExcludeActors))
 		for _, a := range f.ExcludeActors {
 			actors = append(actors, string(a))
 		}
-		b.add(`actor NOT IN ` + b.jsonArray(actors))
+		b.add(`actor <> ALL(` + b.textArray(actors) + `)`)
 	}
 	if f.RecordID != "" {
 		// A merge and a split each write ONE entry that changes two records:

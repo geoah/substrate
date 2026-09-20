@@ -64,7 +64,7 @@ func (ds *dataset) linkedFrom(ctx context.Context, x dbx, e *substrate.Record) (
 		`SELECT r.src_kind, r.src, r.property, s.title FROM refs r `+
 			`JOIN records s ON s.kind = r.src_kind AND s.id = r.src AND s.deleted_at IS NULL `+
 			`WHERE `+where+
-			` AND (r.src_kind || ' ' || r.property) IN `+b.jsonArray(pairs)+
+			` AND (r.src_kind || ' ' || r.property) = ANY(`+b.textArray(pairs)+`)`+
 			` ORDER BY r.src_kind, r.src, r.property LIMIT `+b.arg(maxLinkedFrom),
 		b.args...)
 	if err != nil {

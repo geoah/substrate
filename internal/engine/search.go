@@ -209,7 +209,7 @@ func (ds *dataset) lexical(ctx context.Context, tq string, types []string, k int
 	qarg := b.arg(tq)
 	clause := ""
 	if len(types) > 0 {
-		clause = ` AND kind IN ` + b.jsonArray(types)
+		clause = ` AND kind = ANY(` + b.textArray(types) + `)`
 	}
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT kind, id, ts_rank(fts, to_tsquery('english', `+qarg+`)) AS rank,
@@ -297,7 +297,7 @@ func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q stri
 	vec := b.arg(pgvector.NewVector(vecs[0]))
 	clause := ""
 	if len(types) > 0 {
-		clause = ` AND e.kind IN ` + b.jsonArray(types)
+		clause = ` AND e.kind = ANY(` + b.textArray(types) + `)`
 	}
 	// ONLY the resolved pair's vectors are scored. Cosine distance between two
 	// models' vectors is not a distance, so a half-finished re-embed returns
