@@ -2141,7 +2141,14 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 		if uerr != nil {
 			return 0, uerr
 		}
-		return 0, derr
+		// The retry's OUTCOME, classified: the delivery ran and failed again,
+		// the row stands one attempt older, and the caller is told so with
+		// the new error's first line (the row keeps the whole text). Bare,
+		// the body's error is no sentinel the API knows, and a hand retrying
+		// a parked delivery whose body still fails would be answered 500
+		// "internal error" with the reason logged and nowhere else.
+		return 0, fmt.Errorf("%w: trigger %s: parked delivery %d ran again and failed, it stays parked at attempt %d: %s",
+			substrate.ErrParked, tr.ID, failureID, int(f.Attempts), firstLine(derr.Error()))
 	}
 	return n, nil
 }

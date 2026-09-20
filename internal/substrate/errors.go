@@ -40,6 +40,17 @@ var (
 	// the body runs. A body fault is a server-side execution fault (500
 	// function_failed), never invalid caller input (422).
 	ErrFunctionFault = errors.New("substrate: function body failed")
+	// ErrParked marks a hand's retry of a parked delivery that RAN AND FAILED
+	// AGAIN: the row stays parked, one attempt older and carrying the new
+	// error, and the message names that error's first line. It is the
+	// retry's own outcome, not a fault of the server answering it (409
+	// parked, never a masked 500 "internal error"): the operator asked for the
+	// delivery to be made and is told why it still cannot be, with the row
+	// under `…/parked` holding the whole text. It is distinct from
+	// ErrValidation, which refuses the retry before anything runs (a callable
+	// that no longer resolves), and from ErrConflict, which is the same row
+	// already being retried.
+	ErrParked = errors.New("substrate: delivery parked")
 	// ErrUnavailable marks an answer the substrate cannot give YET: the state
 	// it needs is still being built, and the same call succeeds later without
 	// the caller changing anything. Semantic search returns it while the

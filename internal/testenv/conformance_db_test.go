@@ -14,6 +14,7 @@ package testenv_test
 // added there with no case here fails this test rather than going untested.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"go/ast"
@@ -29,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testenv"
 )
 
@@ -407,6 +409,42 @@ func conformanceCases() []codeCase {
 				"/api/v1/substrate.reamde.dev/core/function/"+url.PathEscape(conformanceRef+"/faulting")+"/call",
 				map[string]any{"input": map[string]any{}})
 			wantError(t, status, body, http.StatusInternalServerError, "function_failed")
+		},
+	}, {
+		// The same raising body behind a record trigger: the dispatcher parks
+		// the delivery, and a hand's retry runs it again, fails again, and is
+		// told so — the row's state, not a server fault. The dispatcher pass
+		// is the engine's, as substrated's loop runs it.
+		name: "a retry of a parked delivery that fails again answers 409 parked",
+		code: "parked",
+		run: func(t *testing.T, e *testenv.Env) {
+			ctx := context.Background()
+			putRecord(t, e, corePkg+"/trigger", "on-note", map[string]any{"properties": map[string]any{
+				"enabled":  true,
+				"source":   map[string]any{"record": map[string]any{"kinds": []any{conformanceRef + "/note"}}},
+				"callable": corePkg + "/function/" + conformanceRef + "/faulting",
+			}})
+			putRecord(t, e, conformanceRef+"/note", "parked", map[string]any{"properties": map[string]any{"subject": "parks"}})
+			ds, err := e.Service.Dataset(ctx, e.Repository)
+			if err != nil {
+				t.Fatalf("open the dataset: %v", err)
+			}
+			if _, err := ds.ProcessTriggers(ctx); err != nil {
+				t.Fatalf("dispatcher pass: %v", err)
+			}
+			var parked struct {
+				Items []substrate.TriggerFailure `json:"items"`
+			}
+			e.MustJSON(http.MethodGet, "/api/v1/"+corePkg+"/trigger/on-note/parked", nil, &parked)
+			if len(parked.Items) != 1 {
+				t.Fatalf("parked deliveries: %+v, want 1", parked.Items)
+			}
+			status, body := e.Do(http.MethodPost,
+				fmt.Sprintf("/api/v1/%s/trigger/on-note/parked/%d/retry", corePkg, parked.Items[0].ID), map[string]any{})
+			wantError(t, status, body, http.StatusConflict, "parked")
+			if !strings.Contains(string(body), "boom") {
+				t.Fatalf("the refusal does not name the body's error: %s", body)
+			}
 		},
 	}, {
 		// LAST, and it must stay last: it closes the engine under the running
