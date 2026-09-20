@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/metrics"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -75,6 +76,13 @@ type Config struct {
 	// requests per (client IP, repository), per repository and globally; zero
 	// selects the default.
 	AuthInterval time.Duration
+	// Metrics mounts the Prometheus exposition at GET /metrics, unauthenticated
+	// and DB-free like /healthz (SUBSTRATE_METRICS=1). The instruments record
+	// either way; this decides only whether the port SERVES them. Off, the
+	// path is unrouted and falls through like any other unknown one. A
+	// deployment that turns it on keeps the path off its ingress: it is for
+	// the scraper on the pod network, not the internet.
+	Metrics bool
 }
 
 type handler struct {
@@ -116,13 +124,19 @@ func New(cfg Config) http.Handler {
 	// which is what the rate limiter keys on, and no other handler reads
 	// RemoteAddr. Anything that needs a client address behind a proxy has to
 	// name which proxies it trusts first.
-	r.Use(peerAddress, middleware.RequestID, middleware.Recoverer)
+	r.Use(httpMetrics, peerAddress, middleware.RequestID, middleware.Recoverer)
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
+	if cfg.Metrics {
+		// Beside /healthz and outside every prefix: the scraper reads it with
+		// no token, so it must never sit under the bearer check — and the
+		// deployment must never route it from outside (operations.md).
+		r.Get("/metrics", metrics.Handler().ServeHTTP)
+	}
 
 	// GET /.well-known/substrate/server.json is discovery: unversioned,
 	// unauthenticated, and DB-free like /healthz. Its well-known path is what

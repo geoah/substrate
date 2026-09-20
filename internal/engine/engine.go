@@ -31,6 +31,7 @@ import (
 	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/changelogfile"
+	"github.com/geoah/substrate/internal/metrics"
 	"github.com/geoah/substrate/internal/oauthflow"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
@@ -262,6 +263,10 @@ type service struct {
 	// appRole is the role every repository-scoped pool assumes; empty when the
 	// cluster would not let the engine create its roles.
 	appRole string
+	// unregisterMetrics drops the admin and maint pools' sql.DBStats
+	// collectors (internal/metrics) when the service closes, so a test that
+	// opens a service per case does not leave closed pools published.
+	unregisterMetrics []func()
 
 	base *vocabulary.Registry
 	// oauth runs the host connect/refresh flows for oauth2-trait bundles;
@@ -519,6 +524,12 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	// registration that already holds one of them itself.
 	maint.SetMaxOpenConns(5)
 	s.maint = maint
+	// The two process-wide pools, published by role; a repository's pool
+	// publishes itself by authority when it opens (openNew).
+	s.unregisterMetrics = []func(){
+		metrics.RegisterDBStats("admin", admin),
+		metrics.RegisterDBStats("maint", maint),
+	}
 	// Role EXISTENCE with the right attributes is one thing; that the pools
 	// ACTUALLY assume them at runtime — and that the DSN user is not itself a
 	// superuser slipping past — is the check "enforced, not disciplined" needs.
@@ -673,6 +684,9 @@ func (s *service) Close() error {
 	// The leases before the pool that carries them: the release is a
 	// statement on the pinned connection, and a closed pool cannot run one.
 	s.lease.close()
+	for _, unregister := range s.unregisterMetrics {
+		unregister()
+	}
 	err := s.maint.Close()
 	if cerr := s.admin.Close(); err == nil {
 		err = cerr
@@ -848,6 +862,9 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		return prev, nil
 	}
 	s.datasets[repo.ID] = ds
+	// Published by authority; ds.close drops it, so a repository closed and
+	// reopened publishes its live pool and not the one it let go.
+	ds.unregisterMetrics = metrics.RegisterDBStats("repository:"+repo.ID, db)
 	return ds, nil
 }
 

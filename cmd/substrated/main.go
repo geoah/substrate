@@ -211,7 +211,13 @@ func run() error {
 		ConsoleURL:   cfg.ConsoleURL,
 		InviteCode:   cfg.InviteCode,
 		TOTPDisabled: cfg.InsecureDisableTOTP,
+		Metrics:      cfg.Metrics,
 	})
+	if cfg.Metrics {
+		// Loud, and at boot, like the other doors: this port answers /metrics
+		// with no token, and only the deployment keeps it off the internet.
+		slog.Info("SUBSTRATE_METRICS is set: /metrics is served unauthenticated — keep the path off the ingress")
+	}
 	httpSrv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           handler,

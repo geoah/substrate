@@ -194,6 +194,9 @@ type dataset struct {
 	// row that can no longer be written would otherwise warn on every agent
 	// write for the life of the process.
 	warnedPolicies sync.Map
+	// unregisterMetrics drops this pool's sql.DBStats collector on close;
+	// nil on a dataset that never registered one (creation's seed dataset).
+	unregisterMetrics func()
 }
 
 func (ds *dataset) close() {
@@ -203,6 +206,9 @@ func (ds *dataset) close() {
 		_ = ds.writer.Close()
 	}
 	ds.writerMu.Unlock()
+	if ds.unregisterMetrics != nil {
+		ds.unregisterMetrics()
+	}
 	_ = ds.db.Close()
 }
 
