@@ -248,3 +248,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0094](0094-propertymeta-names-the-source-record-behind-each-manager-and-alternative.md) | `propertyMeta` names the source record behind each manager and alternative | accepted |
 | [0095](0095-a-reference-may-pin-a-mapping-source-kind.md) | A reference may pin a mapping's source kind | accepted |
 | [0096](0096-a-mapping-synthesises-its-subject-slot.md) | A mapping synthesises its subject slot on the source kind | accepted |
+| [0097](0097-a-webhook-trigger-declares-the-headers-its-callable-reads.md) | A webhook trigger declares the headers its callable reads | accepted |

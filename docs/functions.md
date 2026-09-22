@@ -280,8 +280,8 @@ repository:
 request:
   method: POST
   contentType: multipart/form-data      # the media type, parameters stripped
-  headers:                              # names lowercased; authorization and
-    x-index-trigger: single-click-hold  # cookie never arrive
+  headers:                              # names lowercased: the body's, plus
+    x-index-trigger: single-click-hold  # the ones source.webhook.headers names
     x-pebble-mode: note
     user-agent: Pebble/1.0
   query: {}
@@ -752,12 +752,23 @@ data:
   authority and `trigger` the record's id,
   delivers one fire carrying the request
   ([the delivery envelope](#the-delivery-envelope)), and an authenticated wake
-  delivers one bare fire. The arm's one field, `key`, is optional: absent, the
+  delivers one bare fire. Both its fields are optional. `key`: absent, the
   endpoint accepts every POST that reaches the server (a substrate on a private
   network wants exactly that); present, a request must carry it as a trailing
   path segment, as `?key=`, or as `Authorization: Bearer`. `substratectl
   trigger status` prints the path; the key stays on the record
   ([decision 0045](decisions/0045-a-webhook-trigger-is-a-public-endpoint-with-an-optional-key.md)).
+  `headers` is the list of header names the callable reads, each matched
+  case-insensitively by exact name (`^[A-Za-z0-9-]{1,64}$`, at most 32, no
+  duplicates): a fire carries those and the ones that describe the body
+  (`content-type`, `content-length`, `content-encoding`, `user-agent`,
+  `date`), and nothing else. Declaring `authorization`,
+  `proxy-authorization`, `cookie` or `set-cookie` is refused at write time,
+  because the door never forwards the credential it was reached with. A
+  trigger written before this rule, with `webhook: {}` or `webhook: {key: …}`,
+  now receives the body-describing headers alone: the record declares, or the
+  header does not arrive
+  ([decision 0097](decisions/0097-a-webhook-trigger-declares-the-headers-its-callable-reads.md)).
 
 `callable` is a [reference](data-model.md#property-types) naming the function
 or [agent](agents.md) to run: its `kind` is `substrate.reamde.dev/core/function` or
@@ -856,13 +867,9 @@ repository.
   survives a restore ([backups](operations.md#backups)). A webhook request
   is recorded there minus what a replay does not need, from the `202` on:
   only the headers that describe the body (`content-type`, `content-length`,
-  `content-encoding`, `user-agent`, `date`) and the exact provider headers
-  the shipped webhook bodies read (GitHub, Stripe, Slack, Linear, Standard
-  Webhooks, `idempotency-key`, `x-request-id`, the Pebble Index app's
-  `x-index-trigger`, `x-index-test`, `x-index-delivery`, `x-index-signature`,
-  `x-index-timestamp`, `x-index-webhook-version` and `x-audio-size`, and the
-  Pebble sample's `x-pebble-mode`) are kept, the
-  query string is dropped, and the body and every inline multipart value are
+  `content-encoding`, `user-agent`, `date`) and the ones the trigger declares
+  in `source.webhook.headers` are kept, the query string is dropped, and the
+  body and every inline multipart value are
   stored in the blob store rather than in the changelog; the fire, a resumed
   fire and a retry all deliver the request with those headers, an empty
   query, and the body and parts as they arrived. A retry of an entry whose

@@ -57,6 +57,11 @@ type trigger struct {
 	// WebhookKey is the credential the public endpoint checks; empty means
 	// the endpoint is open.
 	WebhookKey string
+	// WebhookHeaders is what `source.webhook.headers` declared, lowercased:
+	// the names this trigger's callable reads, and the only ones a fire
+	// carries beside the body-describing set (decision 0097). Nil declares
+	// nothing, which is a fire with the body's headers alone.
+	WebhookHeaders map[string]bool
 
 	CallableKind string
 	CallableID   string
@@ -352,11 +357,11 @@ func parseTrigger(id string, props map[string]any) (*trigger, error) {
 	case "webhook":
 		m, isMap := source["webhook"].(map[string]any)
 		if source["webhook"] != nil && !isMap {
-			return nil, fmt.Errorf("source.webhook: a map, optionally carrying key")
+			return nil, fmt.Errorf("source.webhook: a map, optionally carrying key and headers")
 		}
 		for k := range m {
-			if k != "key" {
-				return nil, fmt.Errorf("source.webhook: unknown key %q — key is the one field", k)
+			if k != "key" && k != "headers" {
+				return nil, fmt.Errorf("source.webhook: unknown key %q — key and headers are the fields", k)
 			}
 		}
 		if raw, has := m["key"]; has && raw != nil {
@@ -366,6 +371,11 @@ func parseTrigger(id string, props map[string]any) (*trigger, error) {
 			}
 			t.WebhookKey = key
 		}
+		headers, err := parseWebhookHeaders(m["headers"])
+		if err != nil {
+			return nil, err
+		}
+		t.WebhookHeaders = headers
 		t.Webhook = true
 	}
 	return t, nil
@@ -375,6 +385,63 @@ func parseTrigger(id string, props map[string]any) (*trigger, error) {
 // segment or a query value without escaping, and long enough that a key is a
 // credential rather than a guess. The kind declares the same pattern.
 var webhookKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,128}$`)
+
+// webhookHeaderPattern is the header-name alphabet, RFC 9110's token narrowed
+// to what a real header uses, and the kind declares it too. A fire carries a
+// declared name only if the door produced it, and the door lowercases every
+// name it forwards, so the comparison is over lowercased names alone.
+var webhookHeaderPattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
+
+// maxWebhookHeaderNames bounds one trigger's declaration. A callable that
+// reads more than 32 headers is not reading headers, and the cap keeps the
+// record, the fire and the parked copy small.
+const maxWebhookHeaderNames = 32
+
+// webhookCredentialHeaders are the names the door never forwards to a
+// callable (internal/api/webhooks.go): whatever credential reached the door
+// is the door's business. Declaring one is refused at write time rather than
+// silently ignored, so the record never promises a header no fire can carry.
+// `set-cookie` is a response header and is listed for the same reason.
+var webhookCredentialHeaders = map[string]bool{
+	"authorization": true, "proxy-authorization": true, "cookie": true, "set-cookie": true,
+}
+
+// parseWebhookHeaders reads `source.webhook.headers`: the header names this
+// trigger's callable reads, lowercased so the compare against the door's
+// lowercased names is exact (decision 0097). The body-describing set arrives
+// whatever the record says, so declaring one of those names is admitted and
+// changes nothing.
+func parseWebhookHeaders(raw any) (map[string]bool, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	list, ok := raw.([]any)
+	if !ok {
+		return nil, fmt.Errorf("source.webhook.headers: a list of header names")
+	}
+	if len(list) > maxWebhookHeaderNames {
+		return nil, fmt.Errorf("source.webhook.headers: at most %d names, got %d", maxWebhookHeaderNames, len(list))
+	}
+	names := make(map[string]bool, len(list))
+	for i, v := range list {
+		name, ok := v.(string)
+		if !ok || !webhookHeaderPattern.MatchString(name) {
+			return nil, fmt.Errorf("source.webhook.headers[%d]: a header name, 1 to 64 characters of [A-Za-z0-9-]", i)
+		}
+		lower := strings.ToLower(name)
+		if webhookCredentialHeaders[lower] {
+			return nil, fmt.Errorf("source.webhook.headers[%d]: %q is a credential the door never forwards, so no fire can carry it", i, lower)
+		}
+		if names[lower] {
+			return nil, fmt.Errorf("source.webhook.headers[%d]: %q is declared twice", i, lower)
+		}
+		names[lower] = true
+	}
+	if len(names) == 0 {
+		return nil, nil
+	}
+	return names, nil
+}
 
 func parseRecordSource(raw any) (*recordSource, error) {
 	m, ok := raw.(map[string]any)

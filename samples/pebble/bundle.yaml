@@ -62,7 +62,10 @@ data:
   #    the id follows `X-Index-Delivery` when the app sends one, the recording
   #    keeps the app's `audioFilename`, and the assistant leaves its
   #    `agentResponse` on the instruction.
-  version: 8
+  # 9: the webhook trigger declares the headers the ingest function reads
+  #    (`source.webhook.headers`), now that the engine keeps no global
+  #    provider allowlist (decision record 0097).
+  version: 9
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -170,8 +173,8 @@ data:
 # Declares no `network:`, so the sandbox denies it sockets: everything it
 # needs is in the envelope. Its writes name both kinds; the instruction put
 # happens only in agent mode, and only when the transcription is non-empty.
-# The headers it reads are on the door's parked-header allowlist
-# (`x-index-*`, `x-pebble-mode`); one that is not would never arrive.
+# The headers it reads (`x-index-*`, `x-pebble-mode`) are declared on its
+# trigger, in `source.webhook.headers`; one that is not would never arrive.
 kind: substrate.reamde.dev/core/function
 metadata:
   id: samples.substrate.reamde.dev/pebble/ingest
