@@ -2,18 +2,23 @@
 
 **Agents are alpha and not part of the frozen v1 contract.** The `agent`
 kind, the agent-loop vocabulary (`llm/provider`, `llm/thread`, `llm/message`,
-`llm/interaction`), and the `/agents` chat and call wire are all alpha and
+`llm/interaction`), and the agent call and chat routes are all alpha and
 unfrozen at v1. They
 are marked alpha in the docs and in [API discovery](api.md#discovery),
 which lists the agent surface under the `agents` feature carrying the
 stability `alpha`, and they may change, or be superseded, without counting as
 a v1 wire break. Treat agents as a preview.
 
+This page is about the agents a substrate runs. A program that uses a
+substrate from outside, with a token, reads
+[Using a substrate from an agent](for-agents.md) instead.
+
 The features of the supported REST surface (`triggers`, `functions`,
 `bundles`, `blobs`, `changefeed`) report `stable`: frozen for v1, additive
-only, so there is a frozen surface to retreat to. `embeddings` is the other
-`alpha` entry. Read [discovery](api.md#discovery) for what each value
-promises, and pin the server version where an alpha break would cost you.
+only, so there is a frozen surface to retreat to. `export` and `search`
+report `beta`, and `embeddings` is the other `alpha` entry. Read
+[discovery](api.md#discovery) for what each value promises, and pin the
+server version where an alpha break would cost you.
 
 An `agent` is a callable whose body is an **LLM loop**, run host-side. It has
 one reference and the same four ways in as a [function](functions.md): a
@@ -45,7 +50,8 @@ metadata: {id: samples.substrate.reamde.dev/readinglist/pageclassifier}
 data:
   authority: samples.substrate.reamde.dev
   package: readinglist
-  description: Classify a fetched page and route it to the reading-list agent.
+  description: Work out whether a page is an article, a tool or a video, then
+    hand it to the curator.
   prompt: |
     You are the page classifier. Read the page in the first message, decide
     whether it is an article, a tool, or a video, set its class with the
@@ -122,6 +128,10 @@ data:
   sub-agent calls, the call API and triggers still dispatch it. An
   llm-as-judge is the shape it exists for. Any agent, marked or not, remains
   selectable as another agent's sub-agent.
+- optional **`resume:`**, `always` or `never`; absent means `always`. It says
+  whether a resolution reported into this agent's thread (a decided proposal,
+  an answered interaction) also resumes the thread. The `system` row lands
+  either way ([the decision loop](#the-decision-loop)).
 
 Tool functions, sub-agents, and every emitted and read kind resolve against
 the registry at admission, where same-batch installs count.
@@ -212,9 +222,10 @@ entry could name only a function.
   `substrate.reamde.dev/core/recordpatchrequest`. It lands one
   [`recordpatchrequest`](projection.md#the-patch-request-sibling), never a
   direct mutation. It carries a `rationale` and an `op`: `patch`, the default,
-  names an existing `target` and a `diff` the accept applies; `create` names a
-  `targetKind`, a stable `targetId` and a `diff` the accept mints
-  create-if-absent; `delete` names an existing `target` the accept tombstones.
+  names an existing `target` with its `kind` and a `diff` the accept applies;
+  `create` names a `kind`, a stable `id` and a `diff` the accept mints
+  create-if-absent; `delete` names an existing `target` with its `kind`, which
+  the accept tombstones.
   The diff is validated and normalised at propose time — the `properties`
   wrapper is required or a bare property map is coerced into it, and every
   property must be writable on the target kind — so a malformed proposal (a
@@ -265,10 +276,13 @@ land together or not at all.
 After commit the thread **resumes**: a continuation with no new user turn, in
 which the replayed system row is what the model reacts to — on the wire it
 travels as user content, since the system slot belongs to the agent's prompt.
-Resume is always-on, best-effort and in-process: a thread that is mid-turn
-refuses the lease and picks the decision up on its next continuation, and a
-request no thread proposed (a human's, a function's) reports and resumes
-nothing.
+Resume is bounded, because a resume is a paid turn: the agent's own
+`resume: never` withholds it (the system row still lands), a resolution the
+thread's own agent performed never resumes that thread, and a per-thread
+budget caps resumes at 20 resolutions an hour, past which the sweep or the
+next continuation picks the rows up. A thread that is mid-turn refuses the
+lease and picks the decision up on its next continuation, and a request no
+thread proposed (a human's, a function's) reports and resumes nothing.
 
 ## Sub-agents, budgets, and the emit ceiling
 
@@ -331,7 +345,8 @@ A policy may name a `judge`, an agent the engine runs over what the policy
 gated, tool-less, replying `{verdict, confidence, rationale}`. It only ever
 recommends: in `mode: enforce` an `accept` verdict at or above `autoAccept`
 accepts and a `reject` at or above `autoRefuse` rejects, and everything else
-leaves the request for the owner with the verdict on it. The verdict picks
+leaves the request for the owner with the verdict on it; in `mode: advise`
+every verdict does. The verdict picks
 which threshold is read and one reply carries one verdict, so the two are
 independent floors rather than a band around one score.
 
@@ -422,7 +437,7 @@ ids only; they never enter a key.
 ## Providers
 
 An `llm/provider` row is one place completions are bought, as pure data:
-`name`, `wire`, `baseURL`, a secret `apiKey`, `headers`, `defaults`
+`label`, `wire`, `baseURL`, a secret `apiKey`, `headers`, `defaults`
 (request params the agent's own `params` merge over), and `pricing`.
 
 **`wire` is a protocol, not a company** — `openai`, `anthropic`, or `azure`,
@@ -489,7 +504,7 @@ demo agents run once that row is keyed. Those that carry `tools:` or
 weakest value their `gpt-5` model accepts; the rows themselves set no
 reasoning default, because the accepted set belongs to the model and one row
 serves several. The LLM example (**Registry →
-Examples**) is the same closure creation already imported, and it ships the
+Samples**) is the same closure creation already imported, and it ships the
 same three rows so a later import onto a repository born before the seed
 still has them. Key one, or write another row yourself as the document
 below. There are no `cheap`/`mid`/`strong` rows: a tier was a model id hiding
@@ -498,7 +513,7 @@ behind a name, and the model is the agent's own word now.
 ### Registering a provider
 
 A provider is a record, so adding one is a write: `apply -f`, or the console at
-**Data → `substrate.reamde.dev/llm` → providers → New**. (The Agents page
+**Data → `substrate.reamde.dev/llm` → `provider` → New**. (The Agents page
 does not list providers: an agent names one by id, and that pointer reads on
 the agent's own record.) All four below are ordinary data documents,
 `data.properties`, never a declaration.
@@ -636,7 +651,10 @@ where they happen:
 ## Calling an agent
 
 `POST /api/v1/substrate.reamde.dev/core/agent/{name}/call` with `{"input": …}` runs the
-loop once: the input becomes the first user message, and the answer carries
+loop once. `{name}` is the agent's full id with each slash written `%2F`
+(`smoke.example.com%2Fsmoke%2Fecho`), or its bare name (`echo`) while exactly
+one agent carries it; the chat route reads it the same way. The input becomes
+the first user message, and the answer carries
 `reply`, `thread`, `status`, `effects` with its `effectsByAction` breakdown,
 `turns`, `toolCalls`, and the token and `costUSD` tallies. Unlike a function
 call, something durable is minted — the thread is the trace.

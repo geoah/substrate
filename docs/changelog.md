@@ -240,10 +240,6 @@ came with, not a proof: the wire payload is redacted, so the consumer cannot
 recompute it, and checking a receipt means running `repository verify` on the
 repository.
 
-One value survives from before the door threaded the **principal**: entries
-written then keep the string `invalid`. No write path produces it now; the
-principal an entry carries is the token id the door verified.
-
 ## The dialect a changelog is written in
 
 Each repository carries a **changelog dialect**: a monotonic integer naming the

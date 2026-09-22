@@ -17,7 +17,7 @@ repository. A repository is:
 - the **records**: the fold of that changelog, which is what reads and queries
   answer from;
 - two side stores: **blobs** (content-addressed bytes) and **sealed** (secret
-  material, wrapped under the substrate's key).
+  material, encrypted under the repository's own key, the DEK).
 
 **The changelog is the truth and the records are its fold.** One piece of code turns
 the first into the second, so a live write and a full rebuild take the same
@@ -36,7 +36,7 @@ remembered seq misses nothing. Nothing prunes or compacts today.
 [The changelog and watch](changelog.md) is the consumer's side of this.
 
 Every entry carries a SHA-256 checksum of its own canonical line, in the
-segment file and in the table alike, and `repository verify` names the first
+segment file and in the table alike, and `repository verify` reports each
 seq whose bytes no longer produce it.
 [The checksum and the segment files](changelog.md#the-checksum-and-the-segment-files)
 says exactly what that does and does not prove.
@@ -91,7 +91,7 @@ data:
     description: the oat kind
     status: open                  # a state property, see Validation below
     dueAt: 2026-08-13T09:00:00Z
-    project:                      # a reference, always an object
+    project:                      # a reference: reads serve this object; a write may send the bare path
       ref: samples.substrate.reamde.dev/tasks/project/infra7
 status:                           # server-set, ignored on input
   version: 4                      # the edit counter
@@ -117,9 +117,10 @@ Three rules make the envelope predictable:
 A property is one key under `data.properties`, and a pointer at another record
 is one of them: a property of `type: reference` holding the target's path,
 `<kind>/<id>`, under the reserved key `ref`. Writing the bare path instead is
-accepted as shorthand and stored as the object. Against a pinned declaration a
-bare id is accepted as the authored short form, because ids are unique per kind;
-unpinned, the value carries the kind or it is refused. Declarations may name
+accepted as shorthand and stored as the object. Against a declaration pinned
+to a kind, a bare id is accepted as the authored short form, because ids are
+unique per kind; under a `trait:` pin or no pin, the value carries the kind or
+it is refused. Declarations may name
 their pin by bare kind
 name (`kind: project`): a bare name resolves in the declaring package first,
 then uniquely across every package, and a name that stays ambiguous refuses
@@ -146,8 +147,8 @@ The rule of thumb is mechanical: if you need to filter on it, make it a
 label; if it is a blob you only fetch, make it an annotation.
 
 A key is `<namespace>/<name>`, and both halves are lowercase: a letter first,
-then letters, digits, `_`, `.` and `-`, with `:` also allowed in the namespace
-so a machine hand's own actor name fits
+then letters, digits, `_`, `.` and `-`, with `:` and `*` also allowed in the
+namespace so a machine hand's own actor name fits
 (`function:web.example.com:harvest/synced`). A key is not a property name, so
 camelCase is refused — `mneme/feedbackNote` is `mneme/feedbacknote` or
 `mneme/feedback-note` — and the refusal names the half and the character at
@@ -190,25 +191,30 @@ The shipped vocabulary is split by subsystem, Kubernetes-style, each subsystem
 its own package: `samples.substrate.reamde.dev/people`,
 `samples.substrate.reamde.dev/messaging`,
 `samples.substrate.reamde.dev/calendar`, `samples.substrate.reamde.dev/tasks`,
-`samples.substrate.reamde.dev/scheduling` (the `recurring` and `occurrencelog`
-traits that `calendar` and `tasks` require), and the function and agent
-examples `notes`, `llm`, `readinglist`, `firecrawl` and `pebble` under the same
-authority — each a bundle you **import** — and the substrate's own machinery
-in `substrate.reamde.dev/core` and the agent runtime's data in
-`substrate.reamde.dev/llm`, which are the two a new repository is seeded
-with. Packages namespace names; they never partition the data: a
+`samples.substrate.reamde.dev/scheduling` (the `occurrencelog` trait that
+`calendar` and `tasks` require; `recurring` is core's now), and the function
+and agent examples `notes`, `llm`, `readinglist`, `firecrawl` and `pebble`
+under the same authority (each a bundle you **import**), and the substrate's
+own machinery in `substrate.reamde.dev/core` and the agent runtime's data in
+`substrate.reamde.dev/llm`, which are the two packages a new repository is
+seeded with. An import lands the closure under your repository's own
+authority, so `samples.substrate.reamde.dev/tasks/task` becomes
+`ada.example.com/tasks/task` in a repository whose authority is
+`ada.example.com`. Registration also imports the `llm` sample and writes three
+keyless `llm/provider` rows (`openai`, `anthropic`, `gemini`), and nothing
+else. Packages namespace names; they never partition the data: a
 reference crosses packages as easily as it stays inside one.
 
 A **kind declaration is itself a record**, living in the repository's own changelog
 like everything else, whatever package it declares into. Your repository was
-seeded with those two when it was created, and everything else — the
-vocabulary above included — arrived as an import you asked for; either way the
-declarations are rows in your repository, not a file the server reads at query
-time. [Vocabulary as records](vocabulary.md) is that whole story.
+seeded with those two packages and the `llm` sample when it was created, and
+everything else (the vocabulary above included) arrived as an import you
+asked for; either way the declarations are rows in your repository, not a file
+the server reads at query time. [Vocabulary as records](vocabulary.md) is that whole story.
 
 The to-do list needs two kinds. **`samples.substrate.reamde.dev/people/person`
-ships in the binary and installs on request**, one record per human, the target
-of every pointer that means "a person":
+ships in the binary as the `people` sample and imports on request**, one
+record per human, the target of every pointer that means "a person":
 
 ```yaml
 kind: samples.substrate.reamde.dev/people/person
@@ -221,10 +227,10 @@ data:
       - ada@example.com
 ```
 
-The task kind we declare ourselves. Kinds are manifests: YAML documents,
-versioned and reviewed in git (or installed by a
-[bundle](bundles.md)). A declaration wears the same envelope as data,
-and its `kind` is always a core kind — the meta-model lives in
+The task kind is the `tasks` sample's, trimmed here to what the record above
+writes. Kinds are manifests: YAML documents, versioned and reviewed in git (or
+installed by a [bundle](bundles.md)). A declaration wears the same envelope as
+data, and its `kind` is always a core kind — the meta-model lives in
 `substrate.reamde.dev/core` whatever package the document declares into:
 
 ```yaml
@@ -236,9 +242,12 @@ data:
   package: tasks                                     # the package declared into
   names:
     singular: task
+  displayTemplate: "{name}"       # the title is derived from name, never written
   traits:
     - "temporal(point: dueAt)"    # dueAt: the temporal trait's point, renamed
   properties:
+    name:
+      type: string
     description:
       type: markdown
     url:
@@ -290,7 +299,9 @@ to be accepted and how a filter compares the value. The operator set follows
 one rule rather than a per-type table: `secret` and `digest` refuse filtering
 entirely, `reference` takes `eq`, `in`, `contains` and `exists`, and every
 other type takes the full grammar (`eq`, `gt`, `gte`, `lt`, `lte`, `in`,
-`prefix`, `contains`, `exists`), compared as its declared type. Nothing else
+`prefix`, `contains`, `exists`), compared as its declared type; `match`, a
+word search over one value, is for string-family and prose properties alone.
+Nothing else
 about a property is special; the built-in `title` and a declared `description`
 are written and filtered the same way.
 
@@ -318,11 +329,12 @@ are written and filtered the same way.
 | `reference`        | a typed pointer at another record: `<kind>/<id>`            |
 | `json`             | escape hatch: a schemaless blob                             |
 
-Our to-do list already uses four: the task's `description` is `markdown`,
-its `url` is a `url`, `dueAt` is a `datetime`, and `status` is a `state`.
+Our to-do list already uses five: the task's `name` is a `string`, its
+`description` is `markdown`, its `url` is a `url`, `dueAt` is a `datetime`,
+and `status` is a `state`.
 Every property may also be declared `repeated: true`, which holds a list of
-its type and filters with `contains`. The built-in `person` uses it for
-addresses:
+its type and filters with `contains`. The `people` sample's `person` uses it
+for addresses:
 
 ```yaml
 emails:
@@ -353,8 +365,9 @@ render order.
 
 **Secrets.** A `secret` property stores a credential. Writes take a string
 like any other property, but the material never lands in the record: the
-engine moves it into the sealed store (encrypted, AES-256-GCM under the
-deployment's credential key) and the record and the changelog carry only an
+engine moves it into the sealed store (encrypted with AES-256-GCM under the
+repository's own DEK, which the host credential key wraps) and the record and
+the changelog carry only an
 opaque ref, so rotation deletes the old material instead of retiring it into
 the immutable changelog. Every read, whatever the surface, returns the sentinel
 `<redacted>`. Applying a document carrying the sentinel back leaves the
@@ -371,18 +384,26 @@ as the value. The `substrate.reamde.dev/core/token` kind stores its hash
 this way ([users and tokens](auth.md)).
 
 **Objects.** An `object` property declares its fields inline. This is how a
-provider's kinds mirror what the upstream service actually sends. In the GitHub
-[provider](bundles-catalog.md#github), issues carry milestones in GitHub's own
-shape:
+provider's kinds mirror what the upstream service actually sends. In the Google
+[provider](bundles-catalog.md#google), a `contact` carries its postal addresses
+in the People API's own shape (trimmed here to four of the fields):
 
 ```yaml
-milestone:
+addresses:
   type: object
+  repeated: true
   fields:
-    name: string
-    number: int
-    state: string
-    dueOn: datetime
+    formattedValue:
+      type: string
+    city:
+      type: string
+    countryCode:
+      type: string
+    metadata:
+      type: object
+      fields:
+        primary:
+          type: bool
 ```
 
 A field is a scalar, a reference or another object, and it carries its own
@@ -431,8 +452,8 @@ a pin at a mirror kind is satisfied by the value as written, which is how a
 provider models its API's own relations. Outside that provider's own package,
 pin the subject instead and let the hop do the work.
 
-A value is ONE OBJECT, holding the referent's path under the reserved key
-`ref`:
+The stored and served value is ONE OBJECT, holding the referent's path under
+the reserved key `ref`:
 
 ```yaml
 provider:
@@ -451,11 +472,11 @@ substrate.reamde.dev/llm/provider/claude` applies and is stored as the
 object above, so a hand-written document stays short. Nothing serves the
 shorthand back.
 
-Against a concrete pin a bare record id is accepted as the authored short form
-too, and canonicalized to the full path on write, so `provider: openai` stores
-as `{ref: substrate.reamde.dev/llm/provider/openai}`; unpinned, a bare id
-names no kind and is refused. A path that contradicts its pin is refused naming
-both ends.
+Against a concrete `kind:` pin a bare record id is accepted as the authored
+short form too, and canonicalized to the full path on write, so `provider:
+openai` stores as `{ref: substrate.reamde.dev/llm/provider/openai}`; under a
+`trait:` pin, `kind: any` or no pin, a bare id names no kind and is refused. A
+path that contradicts its pin is refused naming both ends.
 
 Splitting a path back into its two halves needs no registry, because an
 authority always carries a dot while a package and a kind name never do, and
@@ -785,7 +806,8 @@ Two consequences:
 - A document you `get`, edit, and `apply` back means exactly what it looks
   like; the `status` you carried along is ignored.
 - **Optimistic concurrency** is one field: a write may assert
-  `metadata.ifVersion` with the version it read, and a mismatch is a
+  `metadata.ifVersion` (`ifVersion` in a REST body, and the `ifVersion` query
+  parameter on a `DELETE`) with the version it read, and a mismatch is a
   conflict, so the caller re-reads and retries instead of overwriting a write
   it never saw.
 

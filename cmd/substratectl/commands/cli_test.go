@@ -617,7 +617,7 @@ func TestErrorRenderingProblemsAndHints(t *testing.T) {
 		{
 			name: "lossy apply",
 			err:  &apiError{Status: 403, Code: "lossy", Path: "/api/v1/vocabulary/apply"},
-			want: []string{"error: the schema change removes values", "hint: re-run `substratectl apply --allow-data-loss`"},
+			want: []string{"error: the vocabulary change removes values", "hint: re-run `substratectl apply --allow-data-loss`"},
 		},
 		{
 			name: "lossy install",

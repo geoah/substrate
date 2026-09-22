@@ -157,7 +157,7 @@ func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, held *s
 const failedPreviewBlocker = "the upgrade preview failed; see the server log"
 
 // postCatalogInstall applies a shipped bundle's closure into the caller's
-// repository through the same schema/apply admission path an explicit apply uses —
+// repository through the same vocabulary apply admission path an explicit apply uses —
 // owner-only, atomic, refuse-breakage, idempotent (re-install is the bundle's
 // own upgrade semantics). The response is the installed bundle's computed
 // status.

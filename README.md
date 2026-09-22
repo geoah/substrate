@@ -81,7 +81,8 @@ mise run build:cli
 bin/substratectl register --server http://localhost:8080
 ```
 
-A fresh repository holds the core vocabulary and nothing else. Teach it
+A fresh repository holds the core vocabulary, the `llm` package with three
+keyless provider rows and the LLM sample's agents, and nothing else. Teach it
 yours: kinds are declared in YAML in a package under an authority you name,
 and a declaration is itself a record write. One file declares a package and,
 in it, a project and a task, with typed properties, a state machine, and a
@@ -122,13 +123,14 @@ data:
   names:
     singular: task
   displayTemplate: "{name}"
+  # dueAt is a column every record row carries, so it is bound from the
+  # temporal trait rather than declared: the point variant, renamed.
+  traits:
+    - "temporal(point: dueAt)"
   properties:
     name:
       type: string
       description: what to do
-    dueAt:
-      type: datetime
-      description: when it is due
     priority:
       type: enum
       description: how urgent it is
@@ -200,9 +202,10 @@ bin/substratectl get task --filter '{"properties":{"status":{"eq":"open"}}}'
 
 bin/substratectl patch task milk --state status=done  # stamps completedAt
 
-# Replay the changelog (--from resumes after a sequence number), then keep
-# following it: every write above is in it.
-bin/substratectl watch --from 1
+# Tail the changelog: from here on every write streams as one line, and the
+# opening line prints the sequence and generation a later run resumes from
+# (--from N --generation G).
+bin/substratectl watch
 ```
 
 The same records answer on REST at `/api/v1/geoah.me/chores/task/{id}`, in a
@@ -326,20 +329,15 @@ permissions, triggers, webhooks and the sandbox.
 The agent loop is core: the `agent` kind, its built-in tools and the
 console's chat all ship in the engine, which is why `assistant` needed
 nothing installed. The one thing a substrate cannot invent is an LLM
-provider key. Providers are `llm/provider` records, and the catalog ships a
-**bundle** with two keyless rows (`anthropic`, `openai`) and example agents
-beside them. A bundle is the install unit: a closure like `chores.yaml`,
-installed and removed as one thing, from the console's Registry page or
-from the files under [samples/](samples):
+provider key. Providers are `llm/provider` records, and registration seeded
+three keyless rows (`openai`, `anthropic`, `gemini`) beside the LLM sample's
+agents, so the row `assistant` names already exists. That sample is a
+**bundle**, the install unit: a closure like `chores.yaml`, installed and
+removed as one thing. Its files are under [samples/llm](samples/llm), and
+the console's Registry page installs the rest of the catalog the same way.
 
-```bash
-bin/substratectl apply \
-  -f samples/llm/bundle.yaml \
-  -f samples/llm/providers.yaml
-```
-
-Then put a key on the row `assistant` names. It is an ordinary record
-write, and `apiKey` is secret-typed, so it reads back redacted ever after:
+Put a key on the row `assistant` names. It is an ordinary record write, and
+`apiKey` is secret-typed, so it reads back redacted ever after:
 
 ```bash
 cat <<'EOF' | bin/substratectl apply -f -
@@ -407,6 +405,7 @@ rules. [docs/testing.md](docs/testing.md) maps the test suites.
 | ---------------------------------------------------- | ----------------------------------------------------------------- |
 | [docs/README.md](docs/README.md)                     | the documentation index; the pages build one running example      |
 | [docs/getting-started.md](docs/getting-started.md)   | register, log in, write a record                                  |
+| [docs/for-agents.md](docs/for-agents.md)             | how a program acting with a token reads, writes and recovers      |
 | [docs/data-model.md](docs/data-model.md)             | the repository, its changelog, records, kinds and the envelope    |
 | [docs/api.md](docs/api.md)                           | REST, filters, mutations, errors                                  |
 | [docs/terms.md](docs/terms.md)                       | one word per thing, and the dead words each replaced              |

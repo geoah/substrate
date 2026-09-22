@@ -1,8 +1,9 @@
 # Running one locally
 
 A local substrate is the binary from this tree and a Postgres container beside
-it. `mise run dev` starts both: Postgres on `:5433`, the server on `:8080`,
-invite code `let-me-in`. It serves the API alone until `web/console/dist`
+it. `mise run dev` starts both: Postgres on `:5433` and the server on `:8080`,
+with no invite code (set `SUBSTRATE_INVITE_CODE` in your shell to test the
+gate). It serves the API alone until `web/console/dist`
 exists, because the dev task passes `WEB_DIR` only when that directory is
 there: run `mise run console:build` once and the console is at `/` from the
 next start, or `mise run console:dev` to serve it on `:5173` proxying `/api` to
@@ -38,7 +39,7 @@ DATABASE INSIDE IT IS NOT: it is named `substrate_<the tree directory's name>`
 DSN, so an operator hat pointed at the wrong tree is visible rather than
 silently productive.
 
-It is one per tree because one for all of them is a footgun with a scar: three
+It is one per tree because one shared database failed once (#539): three
 servers on one database run three boot upgrades, three garbage collections and
 three trigger dispatchers over one set of repositories, each writing a data
 root of its own. A server now refuses to open a repository another process
@@ -63,7 +64,9 @@ over the first and tells you to set `SUBSTRATE_DEV_PORT`.
   `mise run dev:status` prints both paths. `dev:wipe` removes `.dev/` whole,
   that file included, so the next start mints a new key: it goes with the
   sealed material it wrapped.
-- `SUBSTRATE_INVITE_CODE` is `let-me-in`.
+- `SUBSTRATE_INVITE_CODE` is whatever your shell holds, and empty by default,
+  so the register door reads none. `mise run test:e2e` sets `let-me-in` for
+  its own run.
 - `SUBSTRATE_INSECURE_DISABLE_TOTP` is `true` on every `dev*` task except
   `dev:totp`, so registering and signing in are a repository name and a
   password. The engine still mints and seals a TOTP seed, and
@@ -101,7 +104,7 @@ minted key that opens none of its repositories.
 
 ## Your first user, and the operator hat
 
-Register against the local address and the invite code above, then read
+Register against the local address (no invite code is asked for), then read
 [getting started](getting-started.md) from there:
 
 ```bash
@@ -110,8 +113,9 @@ bin/substratectl register --server http://localhost:8080 --repository ada
 
 The operator commands take a DSN and a data root instead of a token: `--dsn`
 (or `DATABASE_URL`), which `mise run dev:dsn` prints, and
-`SUBSTRATE_DATA_ROOT`, which an operator command refuses to run without,
-naming the variable. The dev tasks export that variable into the server they
+`SUBSTRATE_DATA_ROOT`, which every operator command that opens the repository
+directory refuses to run without, naming the variable (`repository list`
+reads the database alone). The dev tasks export that variable into the server they
 start, never into your shell, so the command needs it itself.
 `mise run dev:status` prints the two lines to copy: the data root, and the
 credential key the commands that write sealed material read.
@@ -126,9 +130,9 @@ and which of them need the server stopped.
 
 ## Running the binary by hand
 
-Four variables, and the rest have working defaults: `DATABASE_URL`,
-`SUBSTRATE_DATA_ROOT`, `SUBSTRATE_CREDENTIAL_KEY` and
-`SUBSTRATE_INVITE_CODE`. `PORT` is `8080` and `WEB_DIR` names a built console
+Three variables have no default: `DATABASE_URL`, `SUBSTRATE_DATA_ROOT` and
+`SUBSTRATE_CREDENTIAL_KEY`. `SUBSTRATE_INVITE_CODE` is optional, and unset
+the register door reads none. `PORT` is `8080` and `WEB_DIR` names a built console
 to serve at `/` ([configuration](operations.md#configuration) is the full
 table). Postgres needs the `vector` and `pgcrypto` extensions available, and
 the DSN must be allowed to create them and the two roles isolation rests on.

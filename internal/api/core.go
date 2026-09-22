@@ -11,7 +11,7 @@ import (
 
 // Every core collection is an ordinary resource: nothing here has
 // endpoint-shaped collection behavior, and the sole install path is the
-// schema-apply batch.
+// vocabulary apply batch.
 
 // The token endpoints sit beside `/api/…` rather than inside the versioned
 // resource tree, and live in auth_endpoints.go. There is no least-privilege

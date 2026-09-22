@@ -25,17 +25,20 @@ substratectl export                       # the recovery export, a tar of the re
 **The user's hat** speaks HTTP and carries a token: everything above, plus
 `register`, `login`, `logout`, `token`, `trigger`, `sync`, `function`, `bundle`,
 `catalog`, `import`, `install` and `export`. It needs a server and a token,
-and it can run anywhere. Changing your own password or second factor is the
-console's account page; the CLI has no command for either.
+and it can run anywhere.
 
 **The operator's hat** speaks to the box's Postgres directly and holds no token
 at all: `user reset`, `repository list`, `repository inspect`, `repository
 verify`, `repository snapshot`, `repository rebuild`, `repository
-rotate-generation` and `repository reembed`. It needs `--dsn` (or
-`DATABASE_URL`) and `SUBSTRATE_DATA_ROOT`, and without them every operator
-command refuses before touching anything. The one exception is `repository
-rewrap`, which opens a copied repository directory with the user's recovery
-key for a new `SUBSTRATE_CREDENTIAL_KEY` and needs no database at all.
+rotate-generation` and `repository reembed`. Every one of them needs `--dsn`
+(or `DATABASE_URL`) and refuses without it before touching anything. The ones
+that open the repository directory (`verify`, `rebuild`, `reembed`,
+`snapshot`, `rotate-generation` and `user reset`) also need
+`SUBSTRATE_DATA_ROOT`; `repository list` reads the database alone, and
+`repository inspect` reports a missing root instead of refusing. The one
+exception is `repository rewrap`, which opens a copied repository directory
+with the user's recovery key for a new `SUBSTRATE_CREDENTIAL_KEY` and needs
+no database at all.
 [Running a substrate](operations.md) is where that hat lives.
 
 `substratectl version` belongs to neither hat: it prints the client version
@@ -226,8 +229,8 @@ confirms exactly that plan ([bundles](bundles.md#install-and-lifecycle)). A
 sample copy edited since it was imported reads `edited copy` in the column
 and says under the table that importing it again replaces those edits, under
 the same flag.
-`substratectl apply --allow-data-loss` does the same for a schema change of
-your own. `-o json` prints the same rows.
+`substratectl apply --allow-data-loss` does the same for a vocabulary change
+of your own. `-o json` prints the same rows.
 
 ## Exporting
 

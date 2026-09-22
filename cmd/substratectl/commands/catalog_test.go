@@ -372,7 +372,7 @@ func TestInstallWithoutTheFlagIsRefusedWithTheHint(t *testing.T) {
 	var rendered bytes.Buffer
 	renderError(&rendered, err)
 	for _, want := range []string{
-		"error: the schema change removes values from stored records and needs a confirmation",
+		"error: the vocabulary change removes values from stored records and needs a confirmation",
 		"hint: re-run `substratectl install <provider> --allow-data-loss`",
 	} {
 		if !strings.Contains(rendered.String(), want) {

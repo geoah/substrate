@@ -54,8 +54,9 @@ install -d -o 65532 -g 65532 /srv/substrate/data /srv/substrate/keys
 
 `mise run image:smoke ghcr.io/geoah/substrate:0.85.0` boots an image under
 `compose.yaml` against a throwaway Postgres and checks exactly this: the
-process answers `/healthz`, runs as uid 65532, owns its data root and minted
-its key. CI runs it over every image it builds.
+process answers `/healthz`, runs as uid 65532, owns its data root, minted
+its key and names a version at `GET /.well-known/substrate/server.json`. CI
+runs it over every image it builds.
 
 ## Configuration
 
@@ -68,15 +69,15 @@ boot.
 | `PORT`                         | `8080`                                 | The port served.                                                                                          |
 | `LOG_LEVEL`                    | `info`                                 | `debug`, `info`, `warn`, `error`.                                                                         |
 | `WEB_DIR`                      | —                                      | The built console, served at `/`. Empty disables static serving.                                          |
-| `SUBSTRATE_INVITE_CODE`        | — (unset: the door reads no code)      | Gates registration. **Set it before anyone else can reach the port.** See below.                            |
+| `SUBSTRATE_INVITE_CODE`        | — (unset: registration asks for no code) | Gates registration. **Set it before anyone else can reach the port.** See below.                            |
 | `SUBSTRATE_DATA_ROOT`          | required                               | The directory every repository's files live under: `repositories/<authority>/` with the manifest, the changelog segments, the sealed store's files and (on the `fs` blob store) the blob bytes. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
 | `SUBSTRATE_CHANGELOG_SEGMENT_BYTES` | `268435456`                       | The size past which the active changelog segment rotates: the writer fsyncs, writes the finished file's `.sha256` sidecar and opens the next segment. At least 1 MiB. |
 | `SUBSTRATE_CONVERSION_CEILING` | `10000`                                | The most live records one declaration change (a vocabulary apply, a provider upgrade, the boot upgrade) may rewrite in its transaction ([vocabulary evolution](vocabulary.md#backfilling-and-remapping)). A plan above it is refused and the previews list the refusal; `0` removes the ceiling. |
 | `SUBSTRATE_ORPHAN_GRACE`       | — (unset: nothing is collected)        | Turns the GC sweep's **orphan collection** on, and sets the window a marked record waits out first (`168h`, `720h`). A mapping target with no live source, nothing above the machine tier holding a property, and nothing live pointing at it is tombstoned once its mark is older than this. Unset or `0` collects nothing, which is the default: the mark is derived either way and `filter.orphaned` lists it. See [collecting orphaned mapping targets](#collecting-orphaned-mapping-targets). |
 | `SUBSTRATE_CREDENTIAL_KEY`     | required                               | Wraps each repository's data-encryption key (DEK), which encrypts the sealed store: every secret-typed property's material, the password hash, the TOTP seed and stored provider tokens (AES-256-GCM). It is key material, not a passphrase: base64 of exactly 32 bytes, the AES-256 key itself. Generate one with `openssl rand -base64 32`; a host whose key is empty or any other shape refuses to boot, naming the variable (ADR [0024](decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md)). A host whose key does not open the wrapped DEKs the store already holds refuses to boot too, naming each repository, the id of the key its wrap was written under and the id of the key this host holds (`repositories.dek_key_id`: 16 hex digits of a one-way hash over the key, never the key): that is a wrong key or a store from somewhere else. No command re-wraps a live repository's DEK under another host key; a copied directory moves between keys through `repository rewrap` ([restore without the credential key](#restore-without-the-credential-key)). |
 | `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                             | **Local development only.** Stops verifying the second factor, so a password is the whole credential: see [the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally). Boots with a warning, and `GET /.well-known/substrate/server.json` says so. |
-| `SUBSTRATE_OAUTH_STATE_KEY`    | —                                      | Signs OAuth flow state. Unset mints a random key per boot, with a warning: flows in progress break on restart. |
-| `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers.                                                        |
+| `SUBSTRATE_OAUTH_STATE_KEY`    | —                                      | Signs OAuth flow state. With a callback URL set and this unset, the server mints a random key per boot and warns: flows in progress break on restart. |
+| `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers. Unset, the OAuth facility is off and no flow can start. |
 | `SUBSTRATE_CONSOLE_URL`        | —                                      | The console origin the OAuth return-page posts to and falls back to redirecting into. Empty is local dev. |
 | `SUBSTRATE_SANDBOX`            | `best-effort`                          | How hard to confine function bodies: `off`, `best-effort`, or `enforce` (refuse to run a body unconfined). |
 | `SUBSTRATE_SANDBOX_EGRESS_ALLOW` | —                                   | A comma-separated list of CIDRs (or bare addresses) a network body may reach despite the private-range block. A body that declares `permissions.network` reaches the public internet but not the deployment's own loopback, link-local or RFC1918 ranges, so a local provider (a loopback Ollama) needs its address listed here. Empty blocks every private range. |
@@ -180,8 +181,8 @@ Three consequences an operator meets:
   re-pointing either stops the older vectors being scored. `substratectl
   --dsn … repository reembed <repository>` queues their replacement and the
   drain loop buys the vectors a batch at a time, so an interrupted re-embed
-  resumes by itself. There is no REST verb for it: it is the operator's hat,
-  on the box. A gateway swapped behind an unchanged row and model name
+  resumes by itself. There is no REST verb for it: it is an operator command,
+  run on the box ([operator recovery](#operator-recovery)). A gateway swapped behind an unchanged row and model name
   is invisible to the provenance columns, so that case takes `reembed --all`.
 - A repository restored from its directory queues every embeddable property
   by itself, because the vectors were never in the directory
@@ -293,9 +294,9 @@ try to get one.
 
 ## The invite code
 
-`SUBSTRATE_INVITE_CODE` gates the one way a user gets created. Set, the
-register door admits only a request that presents it. Unset, the door reads
-no code and anyone who reaches the port may register — the laptop default,
+`SUBSTRATE_INVITE_CODE` gates the one way a user gets created. Set,
+registration admits only a request that presents it. Unset, registration asks
+for no code and anyone who reaches the port may register: the laptop default,
 which `compose.yaml` ships and the boot log warns about. There is no closed
 state: once the box has its user, keep strangers out with a code nobody is
 given. Registration is rate-limited (paced, with no failure lockout) whether
@@ -637,7 +638,7 @@ point and checks that the entry it names is in the files with that checksum
 ([decision 0065](decisions/0065-a-snapshot-is-a-stopped-server-copy-that-records-its-head.md)).
 
 ```
-SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository snapshot ada /srv/substrate-backup/2026-09-08
+SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository snapshot ada.example.com /srv/substrate-backup/2026-09-08
 ```
 
 **An owner downloads the same snapshot from a running server.**
@@ -701,7 +702,7 @@ checksum …`) and the head it came back at is that seq:
 rsync -a ./substrate-backup/repositories/ "$SUBSTRATE_DATA_ROOT"/repositories/
 SUBSTRATE_DATA_ROOT=… SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substrate   # imports at boot
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository list
-SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada     # once per repository
+SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada.example.com     # once per repository
 ```
 
 **Restoring a dump takes one more step.** A change cursor is a seq under the
@@ -717,7 +718,7 @@ of the dump is imported into the table, one behind it is written from the
 table), stop the server, and rotate each repository:
 
 ```
-DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rotate-generation ada
+DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rotate-generation ada.example.com
 ```
 
 Every client then re-lists once at its next resume instead of continuing past
@@ -843,9 +844,9 @@ These are the [operator hat](substratectl.md#two-hats): no token, `--dsn` (or
 anything without them.
 
 **Four of them run beside a live server; four need it stopped; one takes no
-database.** `repository list`, `repository inspect`, `repository verify` and
-`repository reembed` open the engine read-only, so they run no boot check and
-append nothing: `verify` reports an unfinished final transaction or a table
+database.** `repository list` and `repository inspect` read the tables
+directly; `repository verify` and `repository reembed` open the engine
+read-only, so they run no boot check and append nothing: `verify` reports an unfinished final transaction or a table
 ahead of its file as a finding instead of repairing it, and `reembed` writes
 queue rows, which are not changelog entries. `repository rebuild`,
 `repository rotate-generation`, `repository snapshot` and `user reset` open the
@@ -856,12 +857,12 @@ needs `SUBSTRATE_CREDENTIAL_KEY` and the directory, and no DSN.
 
 ```
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository list
-DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository inspect ada
-SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada
-SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository snapshot ada /srv/substrate-backup/2026-09-08
-DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rebuild ada
-DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rotate-generation ada
-SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl user reset ada
+DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository inspect ada.example.com
+SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada.example.com
+SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository snapshot ada.example.com /srv/substrate-backup/2026-09-08
+DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rebuild ada.example.com
+DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rotate-generation ada.example.com
+SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl user reset ada.example.com
 SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap ./repositories/ada.example.com --identity-file ./recovery.key
 ```
 
@@ -874,8 +875,8 @@ command line:
 
 ```
 docker compose exec substrate substratectl repository list
-docker compose exec substrate substratectl repository verify ada
-docker compose exec substrate substratectl user reset ada
+docker compose exec substrate substratectl repository verify ada.example.com
+docker compose exec substrate substratectl user reset ada.example.com
 ```
 
 Publishing the Postgres port to reach the same commands from the host is a

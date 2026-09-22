@@ -234,7 +234,7 @@ func (h *handler) mountResources(r chi.Router) {
 			// The batch vocabulary verb (a declaration is a record): every
 			// document admitted or none, one transaction, activation on commit.
 			// It stays distinct because a batch of declarations is not record
-			// data and the schema-apply admission is not the generic write path.
+			// data and the vocabulary apply admission is not the generic write path.
 			r.Post("/vocabulary/apply", h.applyVocabulary)
 			// The apply's preview: the guard lines it would refuse on and the
 			// conversion plan it would run, with the hash and changelog head a

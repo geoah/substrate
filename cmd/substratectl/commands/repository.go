@@ -80,7 +80,7 @@ opens the repository first while the snapshot runs meets the same lock. Run it
 with the binary the server runs, as with 'rebuild': the open stamps the
 repository with this binary's dialects, which an older server then refuses.
 
-  SUBSTRATE_CREDENTIAL_KEY=… substratectl repository snapshot ada /srv/substrate-backup/2026-09-08`,
+  SUBSTRATE_CREDENTIAL_KEY=… substratectl repository snapshot ada.example.com /srv/substrate-backup/2026-09-08`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if output != "" && output != "text" && output != "json" {

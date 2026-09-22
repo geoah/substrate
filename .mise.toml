@@ -703,7 +703,7 @@ run = ".mise/changescheck.sh"
 [tasks."ci:go"]
 description = "CI job `go test`: the short suite, then every database package but the engine"
 # The engine package is the other job (`ci:engine`, sharded), so this one is
-# the short suite and the five small database packages: together they are a
+# the short suite and the four small database packages: together they are a
 # few minutes of test time, which is why the short suite rides here rather
 # than on a runner of its own that would spend half its life on setup.
 # internal/providertest is the one that wants more than a database: every

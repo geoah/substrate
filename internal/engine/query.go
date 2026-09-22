@@ -533,7 +533,7 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 			return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 		}
 		if len(impl) == 0 {
-			return nil, fmt.Errorf("%w: no type implements %q", substrate.ErrValidation, f.Implements)
+			return nil, fmt.Errorf("%w: no kind implements %q", substrate.ErrValidation, f.Implements)
 		}
 		// Every predicate in a filter NARROWS: `kinds` and `implements`
 		// intersect, they never union. Unioning them would let a list that
@@ -555,7 +555,7 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 				}
 			}
 			if len(kept) == 0 {
-				return nil, fmt.Errorf("%w: no type in filter.types implements %q", substrate.ErrValidation, f.Implements)
+				return nil, fmt.Errorf("%w: no kind in filter.kinds implements %q", substrate.ErrValidation, f.Implements)
 			}
 			types = kept
 		}

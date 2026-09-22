@@ -21,9 +21,11 @@ trait is a record in your repository: it lists, it GETs, it carries a
 `version` the engine maintains and a `source` that says whether it was seeded
 (`builtin`), arrived with a provider (`published`) or with anything else a
 repository installed (`installed`). Its identity is
-`{authority}/{package}/{name}`, and traits resolve **across packages**: a kind
-binds core's `temporal` without redeclaring it, by bare name while that name is
-unique and by full identity always.
+`{authority}/{package}/{name}`, and traits resolve **across packages**: a
+`traits:` entry is the bare name, which the loader looks up in the declaring
+package first, then in core, then in whichever one other package declares it,
+and refuses as ambiguous when two other packages do. That is how a kind binds
+core's `temporal` without redeclaring it.
 
 A trait contracts **presence and datatype only**. It carries no cardinality
 (a binding kind adds its own `repeated: true`) and no state values (each
@@ -140,7 +142,7 @@ bundle's, that binds the same trait:
 ```http
 GET /api/v1/records?filter={"implements":"perishable"}
 
-→ {"records": [{"id": "oat-milk", "kind": "ada.example.com/pantry/ingredient",
+→ {"records": [{"id": "oat-milk", "kind": "pantry.example/kitchen/ingredient",
                 "properties": {"name": "Oat milk", "title": "Oat milk",
                                "expiresAt": "2026-09-04T00:00:00Z", "opened": true}}, …],
    "head": 4207, "generation": "…"}
@@ -161,20 +163,27 @@ GET /api/v1/records?filter={"implements":"temporal",
                     &orderBy=at
 ```
 
-Run against a repository holding tasks, task logs and calendar events, that
-query answers all three in one ordered page:
+Run against a repository (authority `ada.example.com`) that imported the
+`tasks` and `calendar` samples, that query answers all three kinds in one
+ordered page; each record is the flat wire shape, trimmed here:
 
 ```json
-{ "at": "2026-08-17T06:00:00Z", "id": "t9",                     "kind": "samples.substrate.reamde.dev/tasks/task" }
-{ "at": "2026-08-17T09:30:00Z", "id": "x-cal-standup-20260817", "kind": "samples.substrate.reamde.dev/calendar/calendarevent" }
-{ "at": "2026-08-18T06:20:00Z", "id": "x-tasklog-tue",          "kind": "samples.substrate.reamde.dev/tasks/tasklog" }
+{"id": "t9", "kind": "ada.example.com/tasks/task",
+ "properties": {"name": "Buy milk", "dueAt": "2026-08-17T06:00:00Z"}}
+{"id": "x-cal-standup-20260817", "kind": "ada.example.com/calendar/calendarevent",
+ "properties": {"summary": "Standup", "at": "2026-08-17T09:30:00Z", "endsAt": "2026-08-17T09:45:00Z"}}
+{"id": "x-tasklog-tue", "kind": "ada.example.com/tasks/tasklog",
+ "properties": {"status": "done", "at": "2026-08-18T06:20:00Z"}}
 ```
 
 `temporal` is the one trait whose properties are hot storage columns: `at` and
-`endsAt` filter and order off the columns whatever name the binding chose (a
-task's `dueAt` still answers `properties: {at: …}` under `implements:
-temporal`). Every other trait's properties are the ordinary declared
-properties its implementors carry under the trait's names, so the trait's own
+`endsAt` filter and order off the columns, and a
+[window read](api.md#the-window-read) (a filter bounding `at` on both ends,
+as above) takes a `temporal(point: dueAt)` kind's slot from its `dueAt`
+column, which is why the task lists beside the event. A filter with one bound
+or none reads the `at` column alone. Every other trait's properties are the
+ordinary declared properties its implementors carry under the trait's names,
+so the trait's own
 contracted properties are the ones to filter on; a coincidentally shared extra
 property is one kind's, not the trait's.
 
@@ -219,10 +228,11 @@ opt into twice:
   `syncPaused` has its deliveries skipped; and `GET /api/v1/sync/status`
   lists the record joined with the record triggers on its kind, which the
   console's Connections page and `substratectl sync status` read. The body
-  owns the rest — `syncMessage`, `lastSyncedAt`, `syncProgress`
-  (`{phase, done, total, pending}`), `syncStreams` (a map of stream name
-  to `{cursor, lastAt, pending, state, message, requestedAck}`) and the
-  acknowledgement of the owner's `syncRequestedAt` — through its effects.
+  owns the rest through its effects: `syncMessage`, `lastSyncedAt`,
+  `syncProgress` (`{phase, done, total, pending}`), `syncStreams` (a map of
+  stream name to `{cursor, lastAt, pending, state, message, requestedAck}`)
+  and `syncRequestedAck`, the acknowledgement of the owner's
+  `syncRequestedAt`.
   `syncState` is a string, not a machine: `never`, `running`, `ok`,
   `erroring` or `throttled`
   ([decision 0085](decisions/0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md)).

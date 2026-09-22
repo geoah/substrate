@@ -891,7 +891,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 // and a new declaration rides its authority's (the loader's cascade).
 //
 // A declaration that cannot carry a version of its own — a trait, a
-// function, everything but a kind — moves its AUTHORITY forward instead when
+// function, everything but a kind — moves its PACKAGE forward instead when
 // it changes, since a package's version is a statement about the closure
 // it ships; a delete moves it too, so the prune reads as an upgrade.
 //

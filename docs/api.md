@@ -274,7 +274,8 @@ bulk answer
 
 ## The five mutations
 
-The complete write surface, for every actor, forever. Each one addresses its
+These five mutations are the complete write surface, for every actor, forever.
+Each one addresses its
 target by **full identity**: the kind beside the id (the record path's
 `{authority}/{package}/{kind}` names the kind for `put`, `patch` and `delete`;
 `POST /api/v1/records` and `merge` carry it in the body; an agent's `write`
@@ -654,7 +655,7 @@ reports: the served API versions; the server build; the
 [changelog horizon](changelog.md#frames-and-the-horizon); the reference
 grammar this deployment speaks; the authentication endpoints beside the
 versioned API (`/register`, `/login`, `/tokens`, `/password`, `/totp`); what
-registration asks for and whether it is open at all; the request surface,
+registration asks for; the request surface,
 with its endpoint and its compatibility; and a feature list. No dialect
 is on the wire: the
 [vocabulary](vocabulary.md#vocabulary-evolution-and-the-dialect-contract) and
@@ -760,9 +761,9 @@ added, never removed or narrowed under the same version, except where a
 feature reports `alpha`, which licenses withdrawing one of its routes
 (`POST /api/v1/embeddings/reembed` was withdrawn that way, and re-embedding is
 the operator's `substratectl repository reembed`). A deprecation is
-signalled, not a silent break: a `Warning` HTTP header on the REST response,
-with a minimum sunset window before removal. There is no Kubernetes-style
-multi-version conversion machinery.
+announced in discovery before a removal: a version's `status` in `versions`
+is `served` today, and `deprecated` is the other value the field declares.
+There is no Kubernetes-style multi-version conversion machinery.
 
 ## Search
 
@@ -1011,6 +1012,10 @@ The code set is closed. The client-error codes:
 | `not_found`    | 404  | No such record ADDRESSED by the request; a former id is not this, it resolves ([merges](projection.md#merges)). A referent a write's body names is `validation`, not this. |
 | `rate_limited` | 429  | Slow down; the response carries `Retry-After`.                                                   |
 
+`bad_request` is also the code on a `405` (a wrong method at an `/api` path)
+and on the `413` and `431` a webhook request past its body or header cap
+receives ([webhooks](#webhooks)).
+
 The server-error family is split so a client can tell "try again" from "never
 going to work": `internal` (500, an unexpected fault), `function_failed` (500, a
 callable's body faulted while running, distinct from `validation` so a caller
@@ -1036,7 +1041,7 @@ head, or under a history generation the server does not hold, and a list
 current `head` and `generation`, telling a consumer that has fallen too far
 behind, or resumes after a restore, to re-list rather than silently miss rows.
 
-Every code a request can receive is above; those fourteen strings are the whole
+Every code a request can receive is above; those thirteen strings are the whole
 closed set, and nothing else appears in `error.code`. The
 [policy door](agents.md#the-policy-door)'s `gate` verdict is not one of them: it
 holds an agent's write for the owner's review and surfaces as a tool result

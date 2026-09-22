@@ -14,5 +14,5 @@ type RepositoryInfo struct {
 }
 
 // Connections are accountconfig-trait records and the sole install path is
-// the schema-apply batch verb (a bundle closure): there is no connector
-// registration type and no POST …/connectors door.
+// the vocabulary apply batch verb (a bundle closure): there is no connector
+// registration kind and no POST …/connectors door.

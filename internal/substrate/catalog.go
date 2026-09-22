@@ -208,7 +208,7 @@ type CatalogClosure struct {
 	Triggers         []string          `json:"triggers"`
 	TriggerCallables map[string]string `json:"triggerCallables,omitempty"`
 	// Records are the DATA records the install writes after the declarations
-	// land: a provider's triggers, the llm sample's two keyless provider rows.
+	// land: a provider's triggers, the llm sample's three keyless provider rows.
 	// They are ordinary records the moment they exist (editable, deletable),
 	// and half of what a bundle DOES arrives this way, so a preview that named
 	// only the declarations would hide the very row the reader is about to be

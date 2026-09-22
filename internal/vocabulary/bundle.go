@@ -471,9 +471,8 @@ func (l *loader) parseBundleRequiresAtLeast(where string, requires []string, dat
 }
 
 // parseBundleModules reads the optional `modules:` map (filename → inline
-// source). Every filename is a bare `.py` or `.go` base name — the bundle
-// selects the runtime that imports it — and every source is non-empty and
-// within the inline cap. A path separator or `..` is refused: a module is a
+// source). Every filename is a bare `.py` base name, and every source is
+// non-empty and within the inline cap. A path separator or `..` is refused: a module is a
 // name on the import path, never a way out of the bundle-scoped directory.
 func (l *loader) parseBundleModules(where string, data map[string]any) map[string]string {
 	raw, has := data["modules"]

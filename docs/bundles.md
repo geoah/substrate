@@ -18,9 +18,9 @@ The catalog it comes from has **two doors**, one per tier
 
 ## What a bundle ships
 
-A `bundle` document wears the ordinary envelope — `kind:`, `metadata:`,
-`data:`, and the server-owned `status:` — and declares the one **package it
-owns**. Its `metadata.id` IS that package
+A `bundle` document wears the ordinary
+[envelope](data-model.md#the-envelope) (`kind:`, `metadata:`, `data:`, and the
+server-owned `status:`) and declares the one **package it owns**. Its `metadata.id` IS that package
 ([decision 0047](decisions/0047-a-kind-lives-in-a-package.md)): a closure and
 the thing that installs it can never be spelled apart, and a document whose id
 says anything else is refused naming the package. The package's own word is the
@@ -147,9 +147,11 @@ existed, and the shipped sample claims no upgrade over it.
 The preview also carries the **conversion plan** the install would run
 ([decision 0067](decisions/0067-a-lossy-conversion-runs-only-with-a-confirmation-bound-to-its-preview.md)):
 `steps`, one per record rewrite the closure declares against the live records
-(`move`, `rename`, `backfill`, `remap` and `null`, [vocabulary
-evolution](vocabulary.md#backfilling-and-remapping)), each with the number of
-live records it touches; `work`, the sum of those counts; `lossy`, true when a
+(`move`, `rename`, `backfill`, `enter`, `remap` and `null`, [vocabulary
+evolution](vocabulary.md#backfilling-and-remapping); `enter` writes a state
+machine's initial state onto every record holding none,
+[0082](decisions/0082-a-record-meets-a-new-state-machine-in-its-initial-state.md)),
+each with the number of live records it touches; `work`, the sum of those counts; `lossy`, true when a
 step removes values from the fold (a dropped property nulled, an enum value
 renamed onto a value live records already hold); and `planHash` and
 `changelogSeq`, the plan's identity and the changelog head it was counted at.
@@ -175,7 +177,8 @@ preview lists the refusal among `blockers`.
 
 The seeded `core` package is not a catalog entry, so its preview is its own
 read: `GET /api/v1/vocabulary/upgrade` answers one entry per package the
-binary ships and seeds, `{package, upgrade}`, with the same `upgrade` shape.
+binary ships and seeds, `{package, upgrade}` under an `{items}` envelope, with
+the same `upgrade` shape.
 It is the boot upgrade's decision computed at read against the running
 binary, and `available` says the upgrade has not landed here. Two states
 follow from `blockers`. Refused: a guard refused the boot upgrade, the
@@ -243,16 +246,18 @@ Status is computed, never stored. `GET …/substrate.reamde.dev/core/bundle/stat
 every installed bundle under an `{items}` envelope and
 `…/substrate.reamde.dev/core/bundle/{id}/status` answers
 one: `{id, name, authority, package, installed, enabled, inputs, setup,
-accounts, functions, kinds, liveRecords}`, plus the quarantine pair when it
-applies. `id` is the package the bundle owns, and `name` and `package` are both
-that package's own word.
-`inputs` is each declared input's resolution: `{name, kind, record?, via?}`,
+accounts, functions, kinds, liveRecords, version}`, plus the quarantine pair
+when it applies and, on an imported sample, the `origin`, `originVersion` and
+`modified` its [stamp](#the-two-doors) carries. `id` is the package the bundle
+owns, and `name` and `package` are both that package's own word.
+`inputs` is each declared input's resolution: `{name, kind, description?,
+record?, via?}`,
 where `via` names the matching rule from
 [the resolution order above](#what-a-bundle-ships) (`bound`, `default` or
 `sole`). `setup` lists what stands between the
 bundle and every runtime path it ships (`{code, input?, kind?, record?,
-message}` — codes `missing`, `ambiguous`, `dangling`, `oauth-client`,
-`provider`), mirrors only refusals dispatch would actually make, and is
+message}`: codes `missing`, `ambiguous`, `dangling`, `oauth-client`,
+`provider` and `setting`), mirrors only refusals dispatch would actually make, and is
 empty when the bundle is ready. `POST …/substrate.reamde.dev/core/bundle/{id}/bind` with
 `{input, record}` binds an input to a chosen record (empty `record` unbinds).
 Disable, enable, uninstall and purge are runtime state the substrate owns
@@ -491,7 +496,7 @@ between its five words is illegal, so a machine would only refuse a sync
 datatype and their shape is this prose: progress is one bounded drain's
 `{phase, done, total, pending}`; streams is a map from a stream's name to its
 own `{cursor, lastAt, pending, state, message, requestedAck}`, so a provider
-with several streams (Google's contacts, Gmail and calendar) reports each.
+with several streams (Google's contacts, Gmail, calendar and Drive) reports each.
 
 **What the engine does with it.** Around a record-sourced delivery of a
 binding record whose `when` passed, the trigger dispatcher writes
@@ -527,7 +532,7 @@ stamp being unanswered, fires the function; the function writes
 functions answers per stream inside `syncStreams.<name>.requestedAck`, guards
 each trigger on its own stream's answer, and writes the account-level
 `syncRequestedAck` once every enabled stream has answered — the shipped
-Google bundle's three `google-<stream>-on-request` triggers are the worked
+Google bundle's four `google-<stream>-on-request` triggers are the worked
 example, `coalesce: true` so one request is one delivery per stream.
 
 **Reading it.** `GET /api/v1/sync/status` lists every binding record's
@@ -560,23 +565,27 @@ count into `syncStreams.<stream>.cursor` for the page to read.
 
 The **catalog** lists everything shipped in the binary, in the two tiers
 [0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
-the six **providers** under `kinds/providers.substrate.reamde.dev`, and the
+the seven **providers** under `kinds/providers.substrate.reamde.dev`, and the
 ten **samples** under `samples/` (`people`, `tasks`, `messaging`, `calendar`,
 `scheduling`, and the worked examples `llm`, `notes`, `readinglist`, `pebble`,
-`firecrawl`) a repository takes because creation seeds
-`substrate.reamde.dev/core` alone.
+`firecrawl`). A repository takes a sample itself: registration seeds
+`substrate.reamde.dev/core`, imports the `llm` sample onto the repository's
+own authority with its three keyless `provider` rows (`openai`, `anthropic`,
+`gemini`), and nothing else.
 
 The catalog is a read model over the bundle closures baked in, parsed once at
 boot: each entry carries `id` (the package it ships), `name`, `authority`,
 `package`, `description`, `version`, `tier`, `inputs`, `requires`,
-`suggestedMappings` (each with the state it has here, and the ids it lands
-under, below), and
-`closure`, which previews the `kinds` (each with its description),
-`functions`, `agents` and `mappings` it declares plus the `records` the
-install writes beside them (a bundle's triggers, the llm example's provider
-rows), so the console can show what an install will add before it runs. Every one of those is a record: the
-declarations are records of the core meta-kinds, and `records` are ordinary
-rows the moment they land. A shipped directory carrying no bundle document is not an entry, and a
+`requiresAtLeast`, `suggestedMappings` (each with the state it has here, and
+the ids it lands under, below), the held copy's `origin`, `originVersion` and
+`modified` where this repository holds one, and `closure`, which previews the
+`kinds`, `traits`, `functions` and `agents` it declares (each with its
+description), its `mappings`, its `triggers` with the callable each invokes,
+and the `records` the install writes beside them (a bundle's triggers, the
+llm example's provider rows), so the console can show what an install will
+add before it runs. Every one of those is a record: the declarations are
+records of the core meta-kinds, and `records` are ordinary rows the moment
+they land. A shipped directory carrying no bundle document is not an entry, and a
 malformed one is dropped with a logged warning rather than failing the whole
 catalog.
 
@@ -629,7 +638,7 @@ publisher ships is what the upgrade preview above offers.
 first: every mention of `samples.substrate.reamde.dev` in the decoded documents
 (the ids, the declared `authority`, the reference pins, `installs` and
 `requires`, a function's `writes`, a trigger's selectors, a mapping's
-`from`/`to`, and the authority a function's source spells inside its own text
+`from`/`to`, and the authority a function's source spells inside its own
 text) becomes this repository's own authority, and only then does the closure meet
 admission. A document that still mentions the placeholder afterwards is
 refused. So `samples.substrate.reamde.dev/tasks/task` lands as
@@ -691,7 +700,7 @@ names a sample package, so nothing else needs it.
 **No provider requires a sample package, and every provider installs on a bare
 repository.** A provider ships mirror kinds in its own shape and writes nothing
 else: no `requires:`, no reference pinned at a sample kind, no core row. So the
-console can install any of the six from a repository that has imported nothing,
+console can install any of the seven from a repository that has imported nothing,
 and the Registry's Install button is never disabled for a missing requirement.
 
 What reaches a `person`, an `emailmessage` or a `task` is the mapping the
@@ -710,9 +719,9 @@ delivers.
 ### Suggested mappings
 
 A sample ships the mappings the repository would otherwise have to write. The
-`people` sample declares five, onto its own `person`: from GitHub's `user`,
-from Google's `contact` and `emailaddress`, and from Linear's `user` and an
-issue's `assignee`. The `tasks` sample declares one, from Linear's `issue`
+`people` sample declares four, onto its own `person`: from GitHub's `user`,
+from Google's `contact` and `emailaddress`, and from Linear's `user`. The
+`tasks` sample declares one, from Linear's `issue`
 onto its own `task`. They are the sample's declarations, under its package, so
 an import lands them as yours: edit them, delete them, version them like
 everything else you own.
