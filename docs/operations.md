@@ -517,7 +517,7 @@ body (`content-type`, `content-length`, `content-encoding`, `user-agent`,
 `date`); a header the callable read from the old built-in list
 (`x-github-event`, `stripe-signature`, the Pebble app's `x-index-*`) reads
 as absent until the record lists it under `source.webhook.headers`. Before
-deploying that binary, `substratectl get triggers -o yaml`, find every
+deploying that binary, `substratectl get trigger -o yaml`, find every
 webhook arm, and add the names each callable reads; a re-import of a shipped
 sample does the same for its own trigger but discards a hand-set `key`
 ([functions](functions.md#triggers)).
