@@ -45,6 +45,14 @@ once (the filter's `search` arm), composed with the filters and the sort, so
 the table stays a table: the rows that match, in the order you chose, paged
 like any other list.
 
+A kind that declares a single reference at itself (a team's `parent` pinned at
+`team`, a thread's `parent` thread) opens as a tree. The rows are the records
+that name no parent, and each opens in place onto the records that name it,
+one level per read, in the order the table sorts by. **Nest by parent** in the
+toolbar is on by default and remembered per kind; off, the same rows are a
+flat list. While a filter or a search is set the table is flat regardless, so
+a match is shown wherever it sits.
+
 Collapsed authorities and packages, the desktop sidebar state, and favorite
 kinds are saved in the repository's `core/consolepreference` record. Stars add
 kinds to **Favorites** above Data; up and down controls reorder them. Updates

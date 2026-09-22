@@ -187,6 +187,9 @@ export interface BrowsePrefs {
   filter?: string[]
   /** `property:dir`, absent when the default sort was in effect. */
   sort?: string
+  /** `false` when the reader turned the tree off on a kind that nests by a
+   * parent reference; absent otherwise, the tree being the default. */
+  nest?: boolean
 }
 
 function prefsKey(group: string, name: string): string {
@@ -211,14 +214,16 @@ export function loadBrowsePrefs(
       out.filter = p.filter
     }
     if (typeof p.sort === "string" && p.sort) out.sort = p.sort
-    return out.filter?.length || out.sort ? out : null
+    if (p.nest === false) out.nest = false
+    return out.filter?.length || out.sort || out.nest === false ? out : null
   } catch {
     return null
   }
 }
 
-/** Persist the view; an all-default view (no filters, default sort) removes
- * the entry entirely — clearing filters clears the stored state too. */
+/** Persist the view; an all-default view (no filters, default sort, the tree
+ * on) removes the entry entirely — clearing filters clears the stored state
+ * too. */
 export function saveBrowsePrefs(
   group: string,
   name: string,
@@ -228,7 +233,8 @@ export function saveBrowsePrefs(
     const out: BrowsePrefs = {}
     if (prefs.filter?.length) out.filter = prefs.filter
     if (prefs.sort) out.sort = prefs.sort
-    if (out.filter || out.sort) {
+    if (prefs.nest === false) out.nest = false
+    if (out.filter || out.sort || out.nest === false) {
       localStorage.setItem(prefsKey(group, name), JSON.stringify(out))
     } else {
       localStorage.removeItem(prefsKey(group, name))

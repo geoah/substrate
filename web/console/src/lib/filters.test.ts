@@ -315,6 +315,16 @@ describe("browse prefs persistence", () => {
     expect(localStorage.getItem("substrate.browse.g/t")).toBeNull()
   })
 
+  it("remembers the tree switched off, and only off", () => {
+    saveBrowsePrefs("g", "t", { nest: false })
+    expect(loadBrowsePrefs("g", "t")).toEqual({ nest: false })
+    // on is the default, so it is nothing to store
+    saveBrowsePrefs("g", "t", { nest: true })
+    expect(loadBrowsePrefs("g", "t")).toBeNull()
+    saveBrowsePrefs("g", "t", { filter: ["a~eq~b"], nest: undefined })
+    expect(loadBrowsePrefs("g", "t")).toEqual({ filter: ["a~eq~b"] })
+  })
+
   it("survives garbage in the store", () => {
     localStorage.setItem("substrate.browse.g/t", "{not json")
     expect(loadBrowsePrefs("g", "t")).toBeNull()

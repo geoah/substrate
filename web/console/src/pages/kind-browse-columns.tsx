@@ -10,6 +10,7 @@
 import type { DataTableColumn } from "@/components/data-table/data-table"
 
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
+import { TreeCell } from "@/components/data-table/data-table-tree"
 import { ReferenceCell } from "@/components/record/reference-value"
 import { StateBadge } from "@/components/state-badge"
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
@@ -201,19 +202,25 @@ export function buildColumns(
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="title" />
     ),
+    // The identity cell is where a tree draws its indent and chevron
+    // (TreeCell); in a flat table it is the plain cell.
     cell: ({ row }) => {
       const title = recordTitle(row.original.properties)
-      return title ? (
-        <span className="block truncate font-medium" title={title}>
-          {title}
-        </span>
-      ) : (
-        <span
-          className="block truncate data text-muted-foreground"
-          title={row.original.id}
-        >
-          {row.original.id}
-        </span>
+      return (
+        <TreeCell id={row.original.id}>
+          {title ? (
+            <span className="block truncate font-medium" title={title}>
+              {title}
+            </span>
+          ) : (
+            <span
+              className="block truncate data text-muted-foreground"
+              title={row.original.id}
+            >
+              {row.original.id}
+            </span>
+          )}
+        </TreeCell>
       )
     },
     // the row's identity earns the biggest share, but capped — a title
