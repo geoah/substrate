@@ -764,7 +764,9 @@ data:
   (`content-type`, `content-length`, `content-encoding`, `user-agent`,
   `date`), and nothing else. Declaring `authorization`,
   `proxy-authorization`, `cookie` or `set-cookie` is refused at write time,
-  because the door never forwards the credential it was reached with. A
+  because the door never forwards the credential it was reached with, and so
+  are `host` and `transfer-encoding`, which the HTTP server consumes before
+  any handler sees the request. A
   trigger written before this rule, with `webhook: {}` or `webhook: {key: …}`,
   now receives the body-describing headers alone: the record declares, or the
   header does not arrive

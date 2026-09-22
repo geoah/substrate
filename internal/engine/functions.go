@@ -1024,8 +1024,10 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 	// the schedule state still moves — a poisoned occurrence never wedges the
 	// ones behind it. A built envelope parks with the row in its parked form
 	// (webhooks.go parkedEnvelope), so a retry re-delivers the request that
-	// arrived rather than a bare fire, narrowed again by the same declared
-	// header set the admission used, which is idempotent. A pending row
+	// arrived rather than a bare fire, narrowed by the trigger's declared
+	// header set as it stands now: the same set the admission used unless
+	// the declaration changed meanwhile, and then the narrower of the two,
+	// because a row already narrowed cannot grow a header back. A pending row
 	// already holds that form, and the delivered envelope is not read back
 	// into one: the fire read
 	// the body into it (fireEnvelope), and the bytes must not enter the

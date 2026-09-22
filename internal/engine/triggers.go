@@ -397,13 +397,16 @@ var webhookHeaderPattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
 // record, the fire and the parked copy small.
 const maxWebhookHeaderNames = 32
 
-// webhookCredentialHeaders are the names the door never forwards to a
-// callable (internal/api/webhooks.go): whatever credential reached the door
-// is the door's business. Declaring one is refused at write time rather than
-// silently ignored, so the record never promises a header no fire can carry.
-// `set-cookie` is a response header and is listed for the same reason.
-var webhookCredentialHeaders = map[string]bool{
+// webhookUndeliverableHeaders are the names no fire can carry, so declaring
+// one is refused at write time rather than silently ignored: the record must
+// never promise a header the callable cannot receive (decision 0097). The
+// credentials are the door's business and internal/api/webhooks.go drops them
+// before the service sees a request (`set-cookie` is a response header,
+// listed for the same reason); `host` and `transfer-encoding` are consumed by
+// Go's HTTP server itself and never reach a handler.
+var webhookUndeliverableHeaders = map[string]bool{
 	"authorization": true, "proxy-authorization": true, "cookie": true, "set-cookie": true,
+	"host": true, "transfer-encoding": true,
 }
 
 // parseWebhookHeaders reads `source.webhook.headers`: the header names this
@@ -429,8 +432,8 @@ func parseWebhookHeaders(raw any) (map[string]bool, error) {
 			return nil, fmt.Errorf("source.webhook.headers[%d]: a header name, 1 to 64 characters of [A-Za-z0-9-]", i)
 		}
 		lower := strings.ToLower(name)
-		if webhookCredentialHeaders[lower] {
-			return nil, fmt.Errorf("source.webhook.headers[%d]: %q is a credential the door never forwards, so no fire can carry it", i, lower)
+		if webhookUndeliverableHeaders[lower] {
+			return nil, fmt.Errorf("source.webhook.headers[%d]: %q never reaches a callable (a credential the door keeps, or a header the server consumes), so no fire can carry it", i, lower)
 		}
 		if names[lower] {
 			return nil, fmt.Errorf("source.webhook.headers[%d]: %q is declared twice", i, lower)
