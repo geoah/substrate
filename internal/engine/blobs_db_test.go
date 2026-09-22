@@ -620,6 +620,30 @@ func TestBlobGCTombstonesStoredManifest(t *testing.T) {
 		t.Fatal("the manifest was not tombstoned")
 	}
 
+	// While the tombstone stands, the same bytes may arrive again (a webhook
+	// whose multipart part repeats a value, a re-upload): the put resurrects
+	// the manifest and may name its state, so the upload lands `stored`
+	// rather than refusing on a transition from the tombstone's last state.
+	again, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("orphan to tombstone"), "")
+	if err != nil {
+		t.Fatalf("re-put over the tombstone: %v", err)
+	}
+	if again.Digest != blob.Digest || again.Status != substrate.BlobStored {
+		t.Fatalf("re-put = %+v, want the same digest, stored", again)
+	}
+	if err := raw.QueryRowContext(ctx,
+		`SELECT deleted_at FROM records WHERE id = $1 AND kind = $2`, blob.Digest, "substrate.reamde.dev/core/blob").Scan(&deletedAt); err != nil {
+		t.Fatalf("resurrected manifest: %v", err)
+	}
+	if deletedAt.Valid {
+		t.Fatal("the re-put left the manifest tombstoned")
+	}
+	// Tombstone it again so the rest of the test sees what a later GC does
+	// to a tombstone nobody re-uploaded.
+	if _, err := ds.RunGC(ctx); err != nil {
+		t.Fatalf("gc after the re-put: %v", err)
+	}
+
 	// Ordinary record GC hard-deletes the tombstone on a later pass.
 	if _, err := ds.RunGC(ctx); err != nil {
 		t.Fatalf("second gc: %v", err)

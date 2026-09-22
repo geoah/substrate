@@ -801,12 +801,19 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	}
 
 	// State properties: creations are born in the declared initial state;
-	// transitions belong to patch.
+	// transitions belong to patch. A put that RESURRECTS a tombstone is a
+	// creation here too: the tombstoned row's last state is history, not a
+	// position to transition from, so the write may name any declared state
+	// the way a fresh create may. Without this, a blob manifest the GC
+	// tombstoned refused the next upload of the same bytes for the minutes
+	// until the tombstone was hard-deleted ("put may not move status from
+	// stored to pending"), and a webhook whose multipart part repeated a
+	// value answered 403 (2026-09-22).
 	var pendingDiff, pendingMerge bool
 	// notify is set when this patch performed a transition declared with
 	// `notifies:` — what the marked thread is told below.
 	var notify *resolutionNote
-	if create {
+	if create || sp.resurrect {
 		for _, name := range sortedKeys(sp.ty.Machines) {
 			m := sp.ty.Machines[name]
 			initial := m.Initial
