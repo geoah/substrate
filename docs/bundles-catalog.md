@@ -577,8 +577,10 @@ recording's `audio`. The app adds `X-Index-Webhook-Version: 1`,
 for Double click & hold, `test-event` for the app's "Send test event"),
 `X-Index-Test: true` plus a `test=true` part on a test event, `X-Audio-Size`
 when audio is included, and with signing on `X-Index-Delivery`,
-`X-Index-Timestamp` and `X-Index-Signature`; the door keeps all of them for the
-fire. **The gesture decides the mode**: `single-click-hold` saves a note,
+`X-Index-Timestamp` and `X-Index-Signature`; the `pebble-webhook` trigger
+declares all of them in `source.webhook.headers`, which is what makes them
+reach the function ([functions](functions.md#triggers)). **The gesture
+decides the mode**: `single-click-hold` saves a note,
 `double-click-hold` saves the recording and writes an instruction, a test
 event is acknowledged and saved nowhere, and a request with no gesture header
 is saved as a note. To swap the gestures without touching the repository, add

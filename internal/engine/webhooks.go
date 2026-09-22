@@ -120,9 +120,10 @@ func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key 
 // spool and the pending entry. Every check that fails answers
 // errWebhookRefused. Past the checks the request is written into the ledger
 // as a parked failure carrying pendingWebhookError, in its parked form
-// (parkedEnvelope: the body spooled by digest, the headers narrowed, the
-// query dropped), with the fire id and the receipt time, on a delivery entry
-// of its own whose seq is the row's id. The door answers once that
+// (parkedEnvelope: the body spooled by digest, the headers narrowed to the
+// body's and the ones the trigger declares, the query dropped), with the fire
+// id and the receipt time, on a delivery entry of its own whose seq is the
+// row's id. The door answers once that
 // transaction has committed, which the write path makes durable (decision
 // 0062), so a 202 names a request the substrate holds. The row returned is
 // what the fire runs and what a restart resumes.
@@ -152,7 +153,7 @@ func (ds *dataset) admitWebhook(ctx context.Context, triggerID, key string, req 
 	at := nowUTC()
 	envelope := runner.FireEnvelope(fid, at, ds.Repository().Authority)
 	envelope["request"] = webhookRequestEnvelope(req, parts)
-	payload, err := ds.parkedEnvelope(ctx, envelope)
+	payload, err := ds.parkedEnvelope(ctx, envelope, tr.WebhookHeaders)
 	if err != nil {
 		return nil, foldFailure{}, err
 	}
@@ -409,46 +410,24 @@ func (ds *dataset) fireEnvelope(ctx context.Context, envelope map[string]any, fi
 	return envelope, nil
 }
 
-// parkedHeaderNames are the headers a parked envelope keeps, by exact name.
-// The changelog is history nothing can scrub, so the parked copy of a request
-// carries only what a retry needs to deliver the request again and nothing
-// that could be a credential: the headers that describe the body, and the
-// headers the providers whose webhooks the shipped kinds receive use to
-// identify and sign a delivery. It is a closed list, never a pattern: a name
-// that merely contains a known word (`x-event-authorization`) is not on it.
-// Every other header is dropped from the parked copy and absent on the retry.
-// The webhook arm declares no header of its own; its one field is the
-// substrate's own `key`, which the door checks and never forwards. A provider
-// whose header is missing here is added here, by name.
-var parkedHeaderNames = map[string]bool{
-	// The body.
+// bodyHeaderNames are the headers every webhook fire keeps whatever its
+// trigger declares: the ones that describe the body a callable has to read
+// it, and that a replay has to deliver it again. Everything else arrives
+// only because the trigger record named it in `source.webhook.headers`
+// (decision 0097), matched case-insensitively by exact name and never by
+// pattern. The narrowing is the same for the fire and for the parked copy,
+// because the fire runs the parked bytes: the changelog is history nothing
+// can scrub, so a header nobody declared is dropped before it is written.
+var bodyHeaderNames = map[string]bool{
 	"content-type": true, "content-length": true, "content-encoding": true, "user-agent": true, "date": true,
-	// GitHub.
-	"x-github-event": true, "x-github-delivery": true, "x-github-hook-id": true,
-	"x-hub-signature": true, "x-hub-signature-256": true,
-	// Stripe.
-	"stripe-signature": true,
-	// Slack.
-	"x-slack-signature": true, "x-slack-request-timestamp": true,
-	// Linear.
-	"linear-event": true, "linear-delivery": true, "linear-signature": true,
-	// Standard Webhooks (Svix, Notion and others).
-	"webhook-id": true, "webhook-timestamp": true, "webhook-signature": true,
-	// Request identity a sender attaches for its own retries.
-	"idempotency-key": true, "x-request-id": true,
-	// The Pebble Index 01 app (its webhook contract, version 1): the gesture
-	// that sent the capture, the test-event flag, the delivery id a retry
-	// keeps, the signature pair, the protocol version and the audio size.
-	"x-index-trigger": true, "x-index-test": true, "x-index-delivery": true,
-	"x-index-signature": true, "x-index-timestamp": true, "x-index-webhook-version": true,
-	"x-audio-size": true,
-	// The Pebble sample's own override header, the one the owner types in.
-	"x-pebble-mode": true,
 }
 
-// parkedHeaderKept reports a header the parked copy of a request keeps.
-func parkedHeaderKept(name string) bool {
-	return parkedHeaderNames[strings.ToLower(name)]
+// parkedHeaderKept reports a header the fire and its parked copy keep:
+// body-describing, or one of the names the trigger declared (lowercased at
+// parse time, as the door's names already are).
+func parkedHeaderKept(name string, declared map[string]bool) bool {
+	lower := strings.ToLower(name)
+	return bodyHeaderNames[lower] || declared[lower]
 }
 
 // parkedEnvelope is the parked form of a built envelope, the JSON the failure
@@ -456,16 +435,17 @@ func parkedHeaderKept(name string) bool {
 // the door records at admission (admitWebhook) and what a park rewrites. What
 // differs from the delivered envelope is the policy for a payload that lives
 // in append-only history: the request's headers narrow to the ones
-// parkedHeaderKept admits, the query string is dropped, a multipart request's
-// inline part values leave the envelope for the blob store like its file
-// parts already have (spoolParkedParts), and the raw body leaves the envelope
+// parkedHeaderKept admits under the trigger's declared set, the query string
+// is dropped, a multipart request's inline part values leave the envelope for
+// the blob store like its file parts already have (spoolParkedParts), and the
+// raw body leaves the envelope
 // for the blob store, referenced by digest as `body: {blob, encoding}`. The
 // bytes then live where every other attachment lives, plaintext in the
 // repository's blob store (decision 0031), recoverable with the directory,
 // held against the orphan sweep while the row stands (blobs.go
 // parkedBlobsSQL) and collected once it retires. The changelog line holds
 // the digest and never the body.
-func (ds *dataset) parkedEnvelope(ctx context.Context, envelope map[string]any) (json.RawMessage, error) {
+func (ds *dataset) parkedEnvelope(ctx context.Context, envelope map[string]any, declared map[string]bool) (json.RawMessage, error) {
 	if envelope == nil {
 		return nil, nil
 	}
@@ -481,7 +461,7 @@ func (ds *dataset) parkedEnvelope(ctx context.Context, envelope map[string]any) 
 		if headers, ok := req["headers"].(map[string]any); ok {
 			kept := make(map[string]any, len(headers))
 			for name, v := range headers {
-				if parkedHeaderKept(name) {
+				if parkedHeaderKept(name, declared) {
 					kept[name] = v
 				}
 			}
