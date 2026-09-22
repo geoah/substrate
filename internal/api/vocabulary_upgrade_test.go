@@ -61,7 +61,7 @@ func TestVocabularyUpgradeServesTheShippedPreview(t *testing.T) {
 		Upgrade: substrate.BundleUpgrade{
 			Available: true, From: 16, To: 17,
 			Changes:  []substrate.BundleUpgradeChange{{Kind: "kind", ID: llmPackageRef + "/provider", From: 8, To: 9}},
-			Blockers: []string{`type ` + llmPackageRef + `/provider: property "label" dropped while 1 live records still carry it — null it on them first`},
+			Blockers: []string{`kind ` + llmPackageRef + `/provider: property "label" dropped while 1 live records still carry it — null it on them first`},
 		},
 	}}
 	env := newShippedUpgradeEnv(t, want, nil)

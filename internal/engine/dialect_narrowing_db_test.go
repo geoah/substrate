@@ -702,7 +702,7 @@ func TestConstraintTightenedThroughAPropertyTypeIsRefused(t *testing.T) {
 
 	// The property type alone tightens; the kind document is not resent.
 	_, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{propertyType("^[a-z]{3}$")})
-	wantNarrowingGuard(t, err, `type `+pkg+`/item: property "code" changes its pattern to ^[a-z]{3}$`, "1 live records")
+	wantNarrowingGuard(t, err, `kind `+pkg+`/item: property "code" changes its pattern to ^[a-z]{3}$`, "1 live records")
 
 	// A change the stored value satisfies lands through the same channel.
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{propertyType("^[a-z]{1,8}$")}); err != nil {

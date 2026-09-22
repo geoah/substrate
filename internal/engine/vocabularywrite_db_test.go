@@ -288,7 +288,7 @@ func TestSchemaWritesSerializeDataWritesFlow(t *testing.T) {
 	// Serialization means every type survived: no batch clobbered another.
 	for _, ty := range []string{"alpha", "beta", "gamma", "delta"} {
 		if _, err := ds.KindByRef(ctx, swPackage+"/"+ty); err != nil {
-			t.Fatalf("type %s lost to a concurrent schema write: %v", ty, err)
+			t.Fatalf("kind %s lost to a concurrent vocabulary write: %v", ty, err)
 		}
 	}
 }
