@@ -3,8 +3,9 @@
 # get/apply/delete like anything else). Two triggers, one chain:
 #
 #   ring app  --POST /webhooks/<authority>/pebble-webhook-->  ingest
-#       recording                       (every capture)
-#       recording + instruction         (X-Pebble-Mode: agent)
+#       recording                       (X-Index-Trigger: single-click-hold, Hold & talk)
+#       recording + instruction         (X-Index-Trigger: double-click-hold, Double click & hold)
+#       nothing                         (X-Index-Trigger: test-event, the app's test button)
 #   instruction(create)  --assistant-->  samples.substrate.reamde.dev/tasks/task
 #
 # The webhook endpoint is OPEN: `webhook: {}` sets no key, and the URL is
