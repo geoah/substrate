@@ -281,7 +281,8 @@ request:
   method: POST
   contentType: multipart/form-data      # the media type, parameters stripped
   headers:                              # names lowercased; authorization and
-    x-pebble-mode: note                 # cookie never arrive
+    x-index-trigger: single-click-hold  # cookie never arrive
+    x-pebble-mode: note
     user-agent: Pebble/1.0
   query: {}
   parts:                                # multipart/form-data only
@@ -857,7 +858,10 @@ repository.
   only the headers that describe the body (`content-type`, `content-length`,
   `content-encoding`, `user-agent`, `date`) and the exact provider headers
   the shipped webhook bodies read (GitHub, Stripe, Slack, Linear, Standard
-  Webhooks, `idempotency-key`, `x-request-id`, `x-pebble-mode`) are kept, the
+  Webhooks, `idempotency-key`, `x-request-id`, the Pebble Index app's
+  `x-index-trigger`, `x-index-test`, `x-index-delivery`, `x-index-signature`,
+  `x-index-timestamp`, `x-index-webhook-version` and `x-audio-size`, and the
+  Pebble sample's `x-pebble-mode`) are kept, the
   query string is dropped, and the body and every inline multipart value are
   stored in the blob store rather than in the changelog; the fire, a resumed
   fire and a retry all deliver the request with those headers, an empty

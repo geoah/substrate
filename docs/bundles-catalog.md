@@ -536,21 +536,22 @@ the bodies read as `config.settings.denyDomains`.
 Package `samples.substrate.reamde.dev/pebble`. Voice capture from a Pebble
 Index 01 ring: the phone app POSTs each capture to a webhook, and the bundle
 saves it as a `recording`, plus an `instruction` an agent turns into tasks when
-the capture came from a press-and-hold. It requires
+the capture came from the Double click & hold gesture. It requires
 `samples.substrate.reamde.dev/tasks`, which the agent writes into.
 
 - **Kinds (2)**: `recording` (one capture: the `transcription` it heads itself
-  with, `recordedAt`, `mode`, `client` and the `audio` blob digest) and
-  `instruction` (the agent-mode capture's `text`, pointing back at its
-  recording).
+  with, `recordedAt`, `mode`, `client`, the `audio` blob digest and the app's
+  `audioFilename`) and `instruction` (the agent-mode capture's `text`, pointing
+  back at its recording, and the agent's one-line `agentResponse`).
 - **Functions (1)**: `ingest` writes both records off one webhook fire. The id
-  is derived from the fire id, so a retried delivery updates the same records.
+  is the app's `X-Index-Delivery` when it sends one (with request signing on),
+  else the fire id, so a retried delivery updates the same records.
 - **Triggers (2)**: `pebble-webhook` receives the POST; `pebble-on-instruction`
   delivers each new instruction to the agent.
 - **Agents (1)**: `assistant` reads the open tasks through the `query` host
-  function and writes `samples.substrate.reamde.dev/tasks/task` records through
-  `write`. It names `provider: openai`, which creation seeds:
-  key that row.
+  function, writes `samples.substrate.reamde.dev/tasks/task` records through
+  `write`, and patches its receipt onto the instruction. It names `provider:
+  openai`, which creation seeds: key that row.
 
 **The endpoint** is `POST
 https://<your-substrate-host>/webhooks/<authority>/pebble-webhook`, where
@@ -559,23 +560,37 @@ https://<your-substrate-host>/webhooks/<authority>/pebble-webhook`, where
 open as shipped, and setting `source.webhook.key` on the `pebble-webhook`
 trigger (16 to 128 characters of `[A-Za-z0-9_-]`) makes the server require that
 key as a trailing path segment, as `?key=<key>`, or as a bearer token
-([functions](functions.md#triggers)).
+([functions](functions.md#triggers)). In the Index app (Settings, Webhook),
+each gesture has its own URL, headers and payload mode: give both gestures
+this one URL with "Send" set to Transcription only or Both, and leave "Sign
+requests" off (the door checks its key; the function verifies no HMAC).
 
-**The request** is `multipart/form-data` with four parts: `transcription`
-(text), `audio` (`audio/mp4`), `recordedAt` (milliseconds since the Unix
-epoch, as text) and `client` (the text `ring`). The host stores the audio in
-the repository's blob store before the function runs, and the function writes
-the digest to the recording's `audio`. The two gestures are told apart by a
-header rather than by URL: a single press sends `X-Pebble-Mode: note`, a
-press-and-hold `X-Pebble-Mode: agent`, and a request with neither is saved as
-a note. So the ring app carries the same URL twice, once per header value,
-with "Send" set to transcription and recording. Transcription alone works too;
-the recording then has no `audio`. One fire, mimicked by hand:
+**The request** is version 1 of the app's webhook contract
+(`coredevices/mobileapp`, `INDEX_WEBHOOK_API.md`): `multipart/form-data` with
+`transcription` (text; absent when the mode is Recording only), `audio`
+(`audio/mp4`, `<recordingId>.m4a`; absent when the mode is Transcription
+only), `recordedAt` (milliseconds since the Unix epoch, as text) and `client`
+(the text `ring`). The host stores the audio in the repository's blob store
+before the function runs, and the function writes the digest to the
+recording's `audio`. The app adds `X-Index-Webhook-Version: 1`,
+`X-Index-Trigger` (`single-click-hold` for Hold & talk, `double-click-hold`
+for Double click & hold, `test-event` for the app's "Send test event"),
+`X-Index-Test: true` plus a `test=true` part on a test event, `X-Audio-Size`
+when audio is included, and with signing on `X-Index-Delivery`,
+`X-Index-Timestamp` and `X-Index-Signature`; the door keeps all of them for the
+fire. **The gesture decides the mode**: `single-click-hold` saves a note,
+`double-click-hold` saves the recording and writes an instruction, a test
+event is acknowledged and saved nowhere, and a request with no gesture header
+is saved as a note. To swap the gestures without touching the repository, add
+the custom header `X-Pebble-Mode: note` or `X-Pebble-Mode: agent` to a gesture
+in the app; it overrides the trigger header. Transcription alone works; the
+recording then has no `audio`. One fire, mimicked by hand:
 
 ```bash
 printf '' > empty.m4a
 curl -s -X POST "https://<your-substrate-host>/webhooks/<authority>/pebble-webhook" \
-  -H "X-Pebble-Mode: agent" \
+  -H "X-Index-Webhook-Version: 1" \
+  -H "X-Index-Trigger: double-click-hold" \
   -F "transcription=call the dentist tomorrow morning" \
   -F "recordedAt=$(( $(date +%s) * 1000 ))" \
   -F "client=ring" \

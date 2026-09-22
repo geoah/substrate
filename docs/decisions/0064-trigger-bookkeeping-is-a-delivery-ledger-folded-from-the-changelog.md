@@ -117,7 +117,8 @@ only the headers a replay needs, by exact name and never by pattern
 `content-length`, `content-encoding`, `user-agent`, `date`) and the ones the
 providers whose webhooks the shipped kinds receive identify or sign a
 delivery with (GitHub, Stripe, Slack, Linear, Standard Webhooks,
-`idempotency-key`, `x-request-id`, the Pebble sample's `x-pebble-mode`).
+`idempotency-key`, `x-request-id`, the Pebble Index app's `x-index-*`
+headers and `x-audio-size`, the Pebble sample's `x-pebble-mode`).
 Every other header is dropped, and so is the whole query string, which no
 shipped body reads and where a sender that cannot set headers puts its
 credential; a provider whose header is missing is added by name. The webhook

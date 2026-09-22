@@ -123,6 +123,8 @@ func TestParkedHeadersKeepOnlyWhatAReplayNeeds(t *testing.T) {
 		"content-type": true, "Content-Length": true, "user-agent": true,
 		"x-hub-signature-256": true, "stripe-signature": true, "X-GitHub-Event": true,
 		"x-github-delivery": true, "x-slack-request-timestamp": true, "webhook-id": true,
+		"x-index-trigger": true, "X-Index-Delivery": true, "x-index-test": true, "x-index-signature": true,
+		"x-audio-size": true, "x-pebble-mode": true, "x-index": false, "x-index-secret": false,
 		"authorization": false, "cookie": false, "x-api-key": false, "x-webhook-secret": false,
 		"x-goog-channel-token": false, "x-auth-user": false, "x-test": false, "x-forwarded-for": false,
 		"x-event-authorization": false, "x-signature-token": false, "x-delivery-cookie": false,

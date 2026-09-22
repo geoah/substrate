@@ -186,7 +186,7 @@ func TestWebhookMultipartParts(t *testing.T) {
 	_ = mw.Close()
 
 	rec := postHook(h, "/webhooks/geoah.example.com/pebble-webhook", buf.Bytes(), map[string]string{
-		"Content-Type": mw.FormDataContentType(), "X-Pebble-Mode": "note",
+		"Content-Type": mw.FormDataContentType(), "X-Pebble-Mode": "note", "X-Index-Trigger": "single-click-hold",
 	})
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
@@ -211,7 +211,7 @@ func TestWebhookMultipartParts(t *testing.T) {
 			t.Errorf("part %d = %+v, want %+v", i, got, p)
 		}
 	}
-	if c.req.Headers["x-pebble-mode"] != "note" {
+	if c.req.Headers["x-pebble-mode"] != "note" || c.req.Headers["x-index-trigger"] != "single-click-hold" {
 		t.Fatalf("headers = %v", c.req.Headers)
 	}
 }

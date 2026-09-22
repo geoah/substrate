@@ -1,15 +1,25 @@
 # The Pebble example: voice capture from the Pebble Index 01 ring over a
 # PUBLIC WEBHOOK, and the smallest bundle that shows one.
 #
-# The ring's phone app POSTs multipart/form-data to one URL: the parts are
+# The ring's phone app POSTs multipart/form-data to one URL (version 1 of its
+# webhook contract, coredevices/mobileapp INDEX_WEBHOOK_API.md): the parts are
 # `transcription` (text), `audio` (audio/mp4), `recordedAt` (milliseconds
-# since the epoch, as text) and `client` (the text `ring`). The owner
-# configures that ONE URL twice in the app, once per button gesture, and each
-# gesture carries a different custom header:
+# since the epoch, as text), `client` (the text `ring`) and, on the app's
+# "Send test event", `test` (`true`). The app names the gesture that sent the
+# capture in the `X-Index-Trigger` header, and the owner configures the ONE
+# URL on both gestures:
 #
-#   single press     X-Pebble-Mode: note    saves a recording
-#   press-and-hold   X-Pebble-Mode: agent   saves the recording AND writes an
-#                                           instruction the assistant acts on
+#   Hold & talk           X-Index-Trigger: single-click-hold   saves a recording
+#   Double click & hold   X-Index-Trigger: double-click-hold   saves the recording AND
+#                                                              writes an instruction
+#                                                              the assistant acts on
+#   Send test event       X-Index-Trigger: test-event          acknowledged, saved nowhere
+#
+# A custom header the owner adds in the app, `X-Pebble-Mode: note | agent`,
+# overrides the gesture, so the two can be swapped without touching the
+# repository. With request signing on, the app's `X-Index-Delivery` is a
+# stable id per capture, and the recording's id follows it so a retry updates
+# the same row; without it the fire id is the identity.
 #
 # The URL is the webhook trigger's (triggers.yaml):
 # POST /webhooks/{authority}/pebble-webhook, open unless the owner sets
@@ -22,10 +32,12 @@
 #   1. A WEBHOOK-SOURCED trigger delivering the request under
 #      `envelope.request`: lowercased headers, the parsed parts, a `blob`
 #      digest on the file part.
-#   2. A FUNCTION that routes on a header and writes two kinds, one of them
-#      pointing at the other through a reference property.
+#   2. A FUNCTION that routes on the app's gesture header, skips its test
+#      events, and writes two kinds, one of them pointing at the other
+#      through a reference property.
 #   3. A RECORD-SOURCED trigger that hands each new instruction to an AGENT,
-#      which turns it into tasks through the query and write host functions.
+#      which turns it into tasks through the query and write host functions
+#      and patches a one-line receipt back onto the instruction.
 #
 # The AGENT wants an `llm/provider` row at the id it names (`openai`), which
 # is what the llm sample ships: import that one too and fill in its key, or
@@ -45,7 +57,12 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: pebble
-  version: 7
+  # 8: the app's own contract. The gesture rides `X-Index-Trigger` (the custom
+  #    `X-Pebble-Mode` header stays as an override), a test event is skipped,
+  #    the id follows `X-Index-Delivery` when the app sends one, the recording
+  #    keeps the app's `audioFilename`, and the assistant leaves its
+  #    `agentResponse` on the instruction.
+  version: 8
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -98,7 +115,10 @@ data:
       values:
         - note
         - agent
-      description: the gesture that sent it, from the X-Pebble-Mode header
+      description: >-
+        the gesture that sent it: note for Hold & talk (X-Index-Trigger single-click-hold),
+        agent for Double click & hold (double-click-hold); an X-Pebble-Mode
+        header overrides
     client:
       type: string
       description: the sending client as the app names it (ring)
@@ -108,6 +128,9 @@ data:
     audio:
       type: blobref
       description: the recorded audio, audio/mp4, as stored by the host
+    audioFilename:
+      type: string
+      description: the app's filename for the audio part (<recordingId>.m4a)
 ---
 # ---- the instruction: what agent mode asks for ------------------------------
 # Only a press-and-hold capture writes one, at the same id as its recording.
@@ -138,11 +161,17 @@ data:
       type: reference
       kind: samples.substrate.reamde.dev/pebble/recording
       description: the recording this instruction was transcribed from
+    agentResponse:
+      type: string
+      description: the assistant's one-line receipt, what it did or why it
+        did nothing
 ---
-# ---- the function: route on the header, write the capture -------------------
+# ---- the function: route on the gesture, write the capture ------------------
 # Declares no `network:`, so the sandbox denies it sockets: everything it
 # needs is in the envelope. Its writes name both kinds; the instruction put
 # happens only in agent mode, and only when the transcription is non-empty.
+# The headers it reads are on the door's parked-header allowlist
+# (`x-index-*`, `x-pebble-mode`); one that is not would never arrive.
 kind: substrate.reamde.dev/core/function
 metadata:
   id: samples.substrate.reamde.dev/pebble/ingest
@@ -150,8 +179,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: pebble
   description: >-
-    Turn one webhook request from the Pebble app into a recording, and in
-    agent mode an instruction too. Runs on the pebble-webhook trigger; not
+    Turn one webhook request from the Pebble Index app into a recording, and
+    for a Double click & hold capture an instruction too; a test event is
+    acknowledged and saved nowhere. Runs on the pebble-webhook trigger; not
     meant to be called by hand.
   runtime: python
   timeout: PT10S
@@ -180,18 +210,23 @@ data:
     RECORDING = "samples.substrate.reamde.dev/pebble/recording"
     INSTRUCTION = "samples.substrate.reamde.dev/pebble/instruction"
     MODES = ("note", "agent")
+    # The app's gesture header (INDEX_WEBHOOK_API.md, version 1).
+    BY_TRIGGER = {"single-click-hold": "note", "double-click-hold": "agent"}
+    # The custom header the owner may add in the app to swap the gestures.
+    BY_OVERRIDE = {"note": "note", "agent": "agent", "instruction": "agent"}
     # everything the record id alphabet refuses (vocabulary/naming.go reID)
     NOT_ID = re.compile(r"[^A-Za-z0-9._~:@-]")
 
 
-    def record_id(fire):
-        # The fire id is the delivery's identity: a retried fire lands on the
-        # same record instead of minting a second one.
-        raw = str((fire or {}).get("id") or "")
+    def record_id(headers, fire):
+        # With signing on the app sends X-Index-Delivery, one id per capture
+        # that a retry keeps; otherwise the fire id is the delivery's
+        # identity. Either way a retried fire lands on the same record.
+        raw = str(headers.get("x-index-delivery") or (fire or {}).get("id") or "")
         clean = NOT_ID.sub("", raw).lstrip("._~:@-")
         if not clean:
             clean = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
-        return "pebble-" + clean
+        return "pebble-" + clean[:80]
 
 
     def rfc3339(ms, fallback):
@@ -209,6 +244,7 @@ data:
     def main(input, host):
         envelope = input.get("envelope") or {}
         request = envelope.get("request") or {}
+        headers = {str(k).lower(): str(v) for k, v in (request.get("headers") or {}).items()}
         parts = request.get("parts")
         if not isinstance(parts, list) or not parts:
             # A non-multipart or empty request carries `body`, not `parts`;
@@ -224,20 +260,29 @@ data:
         def value(name):
             return str((by_name.get(name) or {}).get("value") or "").strip()
 
+        # The app's "Send test event": a fixed transcription and no audio,
+        # marked three ways. Acknowledged by the door's 202, saved nowhere.
+        trigger = headers.get("x-index-trigger", "")
+        if (value("test").lower() == "true" or headers.get("x-index-test", "").lower() == "true"
+                or trigger == "test-event"):
+            host.log("pebble: test event from the app, nothing written")
+            return {"output": {"skipped": "test event"}}
+
         text = value("transcription")
         if not text:
-            return {"output": {"skipped": "the transcription part is empty"}}
+            return {"output": {"skipped": "the transcription part is empty "
+                                          "(the gesture's payload mode is Recording only?)"}}
 
-        headers = request.get("headers") or {}
-        mode = str(headers.get("x-pebble-mode") or "note").strip().lower()
-        if mode not in MODES:
-            # An unknown gesture header is saved as a plain note rather than
-            # refused: the capture is still worth keeping.
-            host.log("unknown X-Pebble-Mode %r, saving as note" % mode)
-            mode = "note"
+        mode = BY_OVERRIDE.get(headers.get("x-pebble-mode", "").strip().lower())
+        if not mode:
+            if headers.get("x-pebble-mode"):
+                host.log("unknown X-Pebble-Mode %r, reading the gesture instead" % headers["x-pebble-mode"])
+            # An unknown or absent gesture is saved as a plain note rather
+            # than refused: the capture is still worth keeping.
+            mode = BY_TRIGGER.get(trigger, "note")
 
         fire = envelope.get("fire") or {}
-        rid = record_id(fire)
+        rid = record_id(headers, fire)
         recorded_at = rfc3339(value("recordedAt"), fire.get("at"))
 
         recording = {"transcription": text, "mode": mode}
@@ -248,9 +293,11 @@ data:
             recording["client"] = client
         # The host already stored the file part; `blob` is the blob record's
         # digest, which is exactly what a blobref property holds.
-        blob = (by_name.get("audio") or {}).get("blob")
-        if isinstance(blob, str) and blob:
-            recording["audio"] = blob
+        audio = by_name.get("audio") or {}
+        if isinstance(audio.get("blob"), str) and audio["blob"]:
+            recording["audio"] = audio["blob"]
+            if isinstance(audio.get("filename"), str) and audio["filename"]:
+                recording["audioFilename"] = audio["filename"]
         host.effects.put(RECORDING, rid, properties=recording)
 
         wrote_instruction = False
@@ -264,13 +311,16 @@ data:
             host.effects.put(INSTRUCTION, rid, properties=instruction)
             wrote_instruction = True
 
+        host.log("pebble: %s %s (%s, %d chars%s)" % (
+            mode, rid, trigger or "no gesture header", len(text),
+            ", audio" if "audio" in recording else ""))
         return {"output": {"id": rid, "mode": mode, "instruction": wrote_instruction}}
 ---
 # ---- the assistant: an instruction in, tasks out ----------------------------
 # Delivered by the pebble-on-instruction trigger with one instruction record
 # in the envelope. It reads through query and writes through write, and its
-# writes name the task kind alone, so nothing it is talked into can land
-# anywhere else.
+# writes name the task kind and the instruction it was handed (for its
+# receipt), so nothing it is talked into can land anywhere else.
 kind: substrate.reamde.dev/core/agent
 metadata:
   id: samples.substrate.reamde.dev/pebble/assistant
@@ -279,7 +329,8 @@ data:
   package: pebble
   description: >-
     Turn one spoken instruction from the ring into task records: read the
-    instruction, check for an existing task, create what is missing.
+    instruction, check for an existing task, create what is missing, and leave
+    a one-line receipt on the instruction.
   prompt: |
     You turn the owner's spoken instructions into tasks. The user message is
     a delivery envelope carrying one record of kind
@@ -315,8 +366,15 @@ data:
     Invent the id from the name: lowercase words joined by hyphens, at most
     six words.
 
-    Reply in one short line: the task ids you created, or "already tracked"
-    with the id of the task that covers it.
+    Then ONE last write that patches the instruction you were handed, and
+    nothing else on it:
+
+      {"op": "patch", "kind": "samples.substrate.reamde.dev/pebble/instruction",
+       "id": "<record.id>",
+       "input": {"properties": {"agentResponse": "<one short line>"}}}
+
+    That line is your reply too: the task ids you created, or "already
+    tracked" with the id of the task that covers it.
   provider: openai
   model: gpt-5
   params:
@@ -332,5 +390,7 @@ data:
     reads:
       kinds:
         - samples.substrate.reamde.dev/tasks/task
+        - samples.substrate.reamde.dev/pebble/instruction
     writes:
       - samples.substrate.reamde.dev/tasks/task
+      - samples.substrate.reamde.dev/pebble/instruction

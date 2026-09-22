@@ -436,7 +436,13 @@ var parkedHeaderNames = map[string]bool{
 	"webhook-id": true, "webhook-timestamp": true, "webhook-signature": true,
 	// Request identity a sender attaches for its own retries.
 	"idempotency-key": true, "x-request-id": true,
-	// The Pebble sample's webhook reads its mode from this header.
+	// The Pebble Index 01 app (its webhook contract, version 1): the gesture
+	// that sent the capture, the test-event flag, the delivery id a retry
+	// keeps, the signature pair, the protocol version and the audio size.
+	"x-index-trigger": true, "x-index-test": true, "x-index-delivery": true,
+	"x-index-signature": true, "x-index-timestamp": true, "x-index-webhook-version": true,
+	"x-audio-size": true,
+	// The Pebble sample's own override header, the one the owner types in.
 	"x-pebble-mode": true,
 }
 
