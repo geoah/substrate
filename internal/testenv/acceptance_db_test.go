@@ -995,10 +995,10 @@ func (d *drill) parkAutomations(t *testing.T, e *testenv.Env) substrate.Dataset 
 		"enabled": true, "source": map[string]any{"record": map[string]any{"kinds": []any{gadgetKind}}}, "callable": callable("page"),
 	}})
 	putRecord(t, e, corePkg+"/trigger", "on-hook", map[string]any{"properties": map[string]any{
-		"enabled": true, "source": map[string]any{"webhook": map[string]any{}}, "callable": callable("hook"),
+		"enabled": true, "source": map[string]any{"webhook": map[string]any{"headers": []any{"x-github-event"}}}, "callable": callable("hook"),
 	}})
 	putRecord(t, e, corePkg+"/trigger", "on-hold", map[string]any{"properties": map[string]any{
-		"enabled": true, "source": map[string]any{"webhook": map[string]any{}}, "callable": callable("hold"),
+		"enabled": true, "source": map[string]any{"webhook": map[string]any{"headers": []any{"x-github-event"}}}, "callable": callable("hold"),
 	}})
 	putRecord(t, e, widgetKind, "w1", map[string]any{"properties": map[string]any{"name": "one"}})
 	putRecord(t, e, gadgetKind, "g1", map[string]any{"properties": map[string]any{"name": "big"}})

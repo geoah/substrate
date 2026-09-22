@@ -111,7 +111,9 @@ data:
         # `headers`: the names the callable reads, since an undeclared header
         # never reaches it and never enters the changelog. The door refuses
         # `authorization`, `proxy-authorization`, `cookie` and `set-cookie` by
-        # name: it never forwards a credential it was reached with.
+        # name (it never forwards a credential it was reached with), and
+        # `host` and `transfer-encoding`, which the HTTP server consumes before
+        # any handler sees a request.
         webhook:
           type: object
           description: a public endpoint the callable receives requests from

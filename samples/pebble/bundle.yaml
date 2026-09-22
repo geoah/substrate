@@ -173,8 +173,10 @@ data:
 # Declares no `network:`, so the sandbox denies it sockets: everything it
 # needs is in the envelope. Its writes name both kinds; the instruction put
 # happens only in agent mode, and only when the transcription is non-empty.
-# The headers it reads (`x-index-*`, `x-pebble-mode`) are declared on its
-# trigger, in `source.webhook.headers`; one that is not would never arrive.
+# Its trigger declares the app's whole header contract in
+# `source.webhook.headers` (triggers.yaml); this body reads four of them,
+# `x-index-trigger`, `x-index-test`, `x-index-delivery` and `x-pebble-mode`.
+# A header the trigger does not declare would never arrive here.
 kind: substrate.reamde.dev/core/function
 metadata:
   id: samples.substrate.reamde.dev/pebble/ingest
