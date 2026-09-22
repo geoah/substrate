@@ -1,0 +1,61 @@
+{
+ "ok": true,
+ "user": {
+  "id": "U79WMNTC4QT",
+  "name": "rosalinda-gallimore-vance",
+  "is_bot": false,
+  "updated": 1789497482,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "aba727",
+  "is_email_confirmed": true,
+  "real_name": "Florentinaa Pinewood-Vance",
+  "tz": "Europe/Berlin",
+  "tz_label": "Central European Summer Time",
+  "tz_offset": 7200,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Florentinaa Pinewood-Vance",
+   "display_name": "Alderine Kingsmill-Vance",
+   "avatar_hash": "bfbc5f61af7a",
+   "real_name_normalized": "Florentinaa Pinewood-Vance",
+   "display_name_normalized": "Alderine Kingsmill-Vance",
+   "image_24": "https://avatars.slack-edge.com/2026-04-04/66608100898651_d0fe1ac20ec088f853b7_24.png",
+   "image_32": "https://avatars.slack-edge.com/2026-04-04/66608100898651_d0fe1ac20ec088f853b7_32.png",
+   "image_48": "https://avatars.slack-edge.com/2026-04-04/66608100898651_d0fe1ac20ec088f853b7_48.png",
+   "image_72": "https://avatars.slack-edge.com/2026-04-04/66608100898651_d0fe1ac20ec088f853b7_72.png",
+   "image_192": "https://avatars.slack-edge.com/2026-04-04/66608100898651_d0fe1ac20ec088f853b7_192.png",
+   "image_512": "https://avatars.slack-edge.com/2026-04-04/66608100898651_d0fe1ac20ec088f853b7_512.png",
+   "image_1024": "https://avatars.slack-edge.com/2026-04-04/66608100898651_d0fe1ac20ec088f853b7_1024.png",
+   "image_original": "https://avatars.slack-edge.com/2026-04-04/66608100898651_d0fe1ac20ec088f853b7_original.png",
+   "is_custom_image": true,
+   "first_name": "Florentinaor Coldstream5",
+   "last_name": "Gwendolyn Thornbury",
+   "team": "T0ADATEAM01",
+   "email": "gwendolyna@zephyr-lane.example",
+   "title": "",
+   "phone": "+99 5538873979",
+   "skype": "",
+   "status_text": "The Draft",
+   "status_text_canonical": "",
+   "status_emoji": ":airplane:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "airplane",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/2708-fe0f.png",
+     "unicode": "2708-fe0f"
+    }
+   ],
+   "status_expiration": 1789534800,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0
+  }
+ }
+}

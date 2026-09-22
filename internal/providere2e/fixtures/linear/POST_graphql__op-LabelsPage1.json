@@ -1,0 +1,172 @@
+{
+ "data": {
+  "issueLabels": {
+   "pageInfo": {
+    "hasNextPage": true,
+    "endCursor": "8t0ly3u9-a102-20av-x877-6vd24ty2l976"
+   },
+   "nodes": [
+    {
+     "id": "0152i630-a428-1tu6-tz33-b15ni40h28q4",
+     "name": "verbena-crew",
+     "description": null,
+     "color": "#5e6ad2",
+     "isGroup": false,
+     "groupType": null,
+     "team": {
+      "id": "3w210268-ky81-1849-x860-026w29u90945"
+     },
+     "creator": {
+      "id": "maj4u420-j26s-4f4k-x72y-hwc1464ja801"
+     },
+     "retiredBy": null,
+     "parent": null,
+     "inheritedFrom": null,
+     "createdAt": "2026-08-18T17:48:34.065Z",
+     "updatedAt": "2026-08-18T17:48:34.065Z",
+     "archivedAt": null,
+     "lastAppliedAt": "2026-09-16T21:12:36.262Z",
+     "retiredAt": null
+    },
+    {
+     "id": "3kv0s7b1-5m18-03jo-k948-j35p8s944928",
+     "name": "clover-line",
+     "description": "For the record: The checklist still blocks the open question, for now. This batch will be folded into the shared doc.",
+     "color": "#5e6ad2",
+     "isGroup": false,
+     "groupType": null,
+     "team": {
+      "id": "ac6t4sy6-17j4-293j-rr70-09c41d4c7162"
+     },
+     "creator": {
+      "id": "46q4ar68-27rp-6009-r105-6gv6i2q85sq2"
+     },
+     "retiredBy": null,
+     "parent": null,
+     "inheritedFrom": {
+      "id": "99454j7c-9c61-88j0-r624-9t9vn9875v13"
+     },
+     "createdAt": "2026-09-16T02:47:24.034Z",
+     "updatedAt": "2026-09-16T02:47:24.034Z",
+     "archivedAt": null,
+     "lastAppliedAt": null,
+     "retiredAt": null
+    },
+    {
+     "id": "99454j7c-9c61-88j0-r624-9t9vn9875v13",
+     "name": "clover-line",
+     "description": "One thing: The retry budget now covers one more round of checks, pending one more read. The new index.",
+     "color": "#5e6ad2",
+     "isGroup": false,
+     "groupType": null,
+     "team": {
+      "id": "140to9h4-b3d8-48sl-b0y0-4wl21u037cw4"
+     },
+     "creator": {
+      "id": "46q4ar68-27rp-6009-r105-6gv6i2q85sq2"
+     },
+     "retiredBy": null,
+     "parent": null,
+     "inheritedFrom": null,
+     "createdAt": "2026-09-16T02:47:24.034Z",
+     "updatedAt": "2026-09-16T02:47:24.034Z",
+     "archivedAt": null,
+     "lastAppliedAt": "2026-09-16T02:52:15.897Z",
+     "retiredAt": null
+    },
+    {
+     "id": "915t8v14-b418-64j8-d7q8-y08901552n03",
+     "name": "clover-line",
+     "description": "Following up: The handover needs a second look from next week's window, assuming the counts hold. The.",
+     "color": "#5e6ad2",
+     "isGroup": false,
+     "groupType": null,
+     "team": {
+      "id": "bjvtwz46-5l51-10xv-881a-v4r09o61u020"
+     },
+     "creator": {
+      "id": "46q4ar68-27rp-6009-r105-6gv6i2q85sq2"
+     },
+     "retiredBy": null,
+     "parent": null,
+     "inheritedFrom": {
+      "id": "99454j7c-9c61-88j0-r624-9t9vn9875v13"
+     },
+     "createdAt": "2026-09-16T02:47:24.034Z",
+     "updatedAt": "2026-09-16T02:47:24.034Z",
+     "archivedAt": null,
+     "lastAppliedAt": null,
+     "retiredAt": null
+    },
+    {
+     "id": "26t96382-90bh-1w0m-x00q-2n913us0xhw7",
+     "name": "zinc-room",
+     "description": "One thing: The rollout landed ahead of the second pass, assuming the counts hold. The schedule rolls up into the earlier draft, either way.",
+     "color": "#f2994a",
+     "isGroup": false,
+     "groupType": null,
+     "team": null,
+     "creator": {
+      "id": "pkg3o110-ho50-453b-r53i-tda7t6sd4cft"
+     },
+     "retiredBy": null,
+     "parent": null,
+     "inheritedFrom": null,
+     "createdAt": "2026-07-01T19:43:21.815Z",
+     "updatedAt": "2026-07-01T19:43:21.815Z",
+     "archivedAt": null,
+     "lastAppliedAt": "2026-08-20T23:24:27.395Z",
+     "retiredAt": null
+    },
+    {
+     "id": "52r25051-fnez-78b7-b913-8p3k23v79mi9",
+     "name": "clover-line",
+     "description": "For the record: The estimate rolls up into the owner's sign-off, either way. The dashboard rolls up into.",
+     "color": "#5e6ad2",
+     "isGroup": false,
+     "groupType": null,
+     "team": {
+      "id": "1y336675-ad5i-1w5h-9003-r91u29068133"
+     },
+     "creator": {
+      "id": "46q4ar68-27rp-6009-r105-6gv6i2q85sq2"
+     },
+     "retiredBy": null,
+     "parent": null,
+     "inheritedFrom": {
+      "id": "99454j7c-9c61-88j0-r624-9t9vn9875v13"
+     },
+     "createdAt": "2026-09-16T02:47:24.034Z",
+     "updatedAt": "2026-09-16T02:47:24.034Z",
+     "archivedAt": null,
+     "lastAppliedAt": null,
+     "retiredAt": null
+    },
+    {
+     "id": "7h782dj9-1dj7-82i8-fdmm-2116z5s4c48u",
+     "name": "clover-line",
+     "description": "Heads up \u2014 The queue will be folded into the open question, if nothing else moves. The review quietly.",
+     "color": "#5e6ad2",
+     "isGroup": false,
+     "groupType": null,
+     "team": {
+      "id": "2lf2170j-67h6-86uq-8m56-0u2es9v7333g"
+     },
+     "creator": {
+      "id": "46q4ar68-27rp-6009-r105-6gv6i2q85sq2"
+     },
+     "retiredBy": null,
+     "parent": null,
+     "inheritedFrom": {
+      "id": "99454j7c-9c61-88j0-r624-9t9vn9875v13"
+     },
+     "createdAt": "2026-09-16T02:47:24.034Z",
+     "updatedAt": "2026-09-16T02:47:24.034Z",
+     "archivedAt": null,
+     "lastAppliedAt": null,
+     "retiredAt": null
+    }
+   ]
+  }
+ }
+}

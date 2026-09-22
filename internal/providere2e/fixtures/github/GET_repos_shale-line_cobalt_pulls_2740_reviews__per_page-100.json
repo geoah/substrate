@@ -1,0 +1,242 @@
+[
+ {
+  "id": 7286664748,
+  "node_id": "PRR_kwDPAAAAAeldMETPAAAAAbJRriw",
+  "user": {
+   "login": "tidal",
+   "id": 969375251,
+   "node_id": "BOT_kgDOOcd-Ew",
+   "avatar_url": "https://avatars.githubusercontent.com/in/650598?v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/cinder",
+   "html_url": "https://github.com/apps/cobalt",
+   "followers_url": "https://api.github.com/users/cinder/followers",
+   "following_url": "https://api.github.com/users/cinder/following{/other_user}",
+   "gists_url": "https://api.github.com/users/cinder/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/cinder/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/cinder/subscriptions",
+   "organizations_url": "https://api.github.com/users/cinder/orgs",
+   "repos_url": "https://api.github.com/users/cinder/repos",
+   "events_url": "https://api.github.com/users/cinder/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/cinder/received_events",
+   "type": "Bot",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "The migration now covers the shared doc.\nOne thing: The queue rolls up into the agreed cutoff, pending one more read. The handover should unblock the earlier draft, as discussed.\nThe retry budget was split out of the agreed cutoff.\n\nThe new index now covers the.\n\nThe schedule will be folded into a smaller slice.\nThe rollback plan needs a second look from the earlier draft, as discussed.\n\nThe ingest path landed ahead of a smaller slice.\nThe rollback plan was split out of the earlier draft, for now. The new index now.\nThe checklist depends on the open question, either way. This batch.\n\nThe rollback plan now covers next week's window.\nThe dashboard still blocks a smaller slice, for now.\n- The queue will be folded into the open question, as discussed. This batch rolls.\nThe migration landed ahead of the capacity note, assuming the counts hold. This batch.\nThe rollback plan still blocks the open question, before the window closes.\nThe rollback plan will be folded into a smaller slice, either way. The rollback.\nThe ingest path should.\nThe handover still blocks the open question.\n\nThe schedule landed ahead of the owner's sign-off.\n\nThe rollout should unblock a smaller slice.\nThe retry budget still blocks.\n\nThe checklist rolls up into the earlier draft, if.\n\n- Heads up — The staging cluster depends on the owner's sign-off, once the numbers settle. The staging cluster still.\n- Following up: The checklist rolls up into a smaller slice, unless somebody objects. The checklist landed.\n\nThe rollback plan depends on one more round of checks.\n\nThe checklist was split out of the follow-up thread.\n\nThe draft needs a second look from one more round of checks.\nThe rollout still blocks the.\n\nThe new index quietly changed the agreed cutoff.\nThe staging cluster now covers the.\n\nThe staging cluster still blocks the owner's sign-off.\n\nThe migration now covers.\n\nThe dashboard will be folded into the agreed cutoff.\n\nThe dashboard was split out of the numbers from Friday.\n\nThe new index should unblock the second pass.\n\nThe new index is waiting on a smaller slice.\nThis batch quietly changed.\n\nSummary: The ingest path will be folded into the open question, either way. The review was split out of the agreed cutoff, before the window closes. The queue was.\n\nThe draft needs a second look from the shared doc.\n\nThe rollout rolls up into the owner's sign-off.\nThe schedule needs a second look from next week's window.\n\n* The queue is waiting on the capacity note.\n* The handover now covers the.\n* The migration will be.\n* The checklist landed ahead of one.\n* The dashboard needs a second look from.\n* The estimate depends on a smaller slice.\n* The migration needs a second look from.\n* The dashboard quietly changed the shared doc.\n\nThe review is waiting on the open question.\n\nThe rollback plan still blocks next week's window.\n\nThe retry budget needs a second look from the numbers from Friday, as discussed.",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/shale-line/cobalt/pull/2740#pullrequestreview-4914297015",
+  "pull_request_url": "https://api.github.com/repos/shale-line/cobalt/pulls/2740",
+  "author_association": "NONE",
+  "_links": {
+   "html": {
+    "href": "https://github.com/shale-line/Junction Nine/pull/2740#pullrequestreview-4914297015"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/shale-line/Junction Nine/pulls/2740"
+   }
+  },
+  "submitted_at": "2026-08-12T08:04:40Z",
+  "commit_id": "aa4d753e79d2ba67fbc2a91e8bc2f15a85f3bf9d"
+ },
+ {
+  "id": 6953225672,
+  "node_id": "PRR_kwDPAAAAAeldMETPAAAAAZ5xzcg",
+  "user": {
+   "login": "katarzyna-granholm",
+   "id": 90731541,
+   "node_id": "MDQ6VXNlcjkwNzMxNTQx",
+   "avatar_url": "https://avatars.githubusercontent.com/u/90731541?u=4242a8d367e449c2249fc783de7bf2f061c8a9cf&v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/katarzyna-granholm",
+   "html_url": "https://github.com/katarzyna-granholm",
+   "followers_url": "https://api.github.com/users/katarzyna-granholm/followers",
+   "following_url": "https://api.github.com/users/katarzyna-granholm/following{/other_user}",
+   "gists_url": "https://api.github.com/users/katarzyna-granholm/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/katarzyna-granholm/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/katarzyna-granholm/subscriptions",
+   "organizations_url": "https://api.github.com/users/katarzyna-granholm/orgs",
+   "repos_url": "https://api.github.com/users/katarzyna-granholm/repos",
+   "events_url": "https://api.github.com/users/katarzyna-granholm/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/katarzyna-granholm/received_events",
+   "type": "User",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/shale-line/cobalt/pull/2740#pullrequestreview-4914314178",
+  "pull_request_url": "https://api.github.com/repos/shale-line/cobalt/pulls/2740",
+  "author_association": "MEMBER",
+  "_links": {
+   "html": {
+    "href": "https://github.com/shale-line/Junction Nine/pull/2740#pullrequestreview-4914314178"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/shale-line/Junction Nine/pulls/2740"
+   }
+  },
+  "submitted_at": "2026-08-12T08:06:40Z",
+  "commit_id": "fb18616971f290ea9a1a87a9f02e4fa927a1a893"
+ },
+ {
+  "id": 3301427048,
+  "node_id": "PRR_kwDPAAAAAeldMETOxMfHaA",
+  "user": {
+   "login": "tidal",
+   "id": 969375251,
+   "node_id": "BOT_kgDOOcd-Ew",
+   "avatar_url": "https://avatars.githubusercontent.com/in/650598?v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/cinder",
+   "html_url": "https://github.com/apps/cobalt",
+   "followers_url": "https://api.github.com/users/cinder/followers",
+   "following_url": "https://api.github.com/users/cinder/following{/other_user}",
+   "gists_url": "https://api.github.com/users/cinder/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/cinder/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/cinder/subscriptions",
+   "organizations_url": "https://api.github.com/users/cinder/orgs",
+   "repos_url": "https://api.github.com/users/cinder/repos",
+   "events_url": "https://api.github.com/users/cinder/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/cinder/received_events",
+   "type": "Bot",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/shale-line/cobalt/pull/2740#pullrequestreview-4914320086",
+  "pull_request_url": "https://api.github.com/repos/shale-line/cobalt/pulls/2740",
+  "author_association": "NONE",
+  "_links": {
+   "html": {
+    "href": "https://github.com/shale-line/Junction Nine/pull/2740#pullrequestreview-4914320086"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/shale-line/Junction Nine/pulls/2740"
+   }
+  },
+  "submitted_at": "2026-08-12T08:07:22Z",
+  "commit_id": "fb18616971f290ea9a1a87a9f02e4fa927a1a893"
+ },
+ {
+  "id": 4468581200,
+  "node_id": "PRR_kwDPAAAAAeldMETPAAAAAQpZI1A",
+  "user": {
+   "login": "tidal",
+   "id": 969375251,
+   "node_id": "BOT_kgDOOcd-Ew",
+   "avatar_url": "https://avatars.githubusercontent.com/in/650598?v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/cinder",
+   "html_url": "https://github.com/apps/cobalt",
+   "followers_url": "https://api.github.com/users/cinder/followers",
+   "following_url": "https://api.github.com/users/cinder/following{/other_user}",
+   "gists_url": "https://api.github.com/users/cinder/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/cinder/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/cinder/subscriptions",
+   "organizations_url": "https://api.github.com/users/cinder/orgs",
+   "repos_url": "https://api.github.com/users/cinder/repos",
+   "events_url": "https://api.github.com/users/cinder/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/cinder/received_events",
+   "type": "Bot",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "The schedule rolls up into the.\n\nThe staging cluster landed ahead of the owner's sign-off.\nThe staging cluster now covers the owner's sign-off, if nothing else moves.\n\nThe rollout quietly changed the shared doc.\nThis batch quietly changed the shared doc, after the handover. The migration now.\nThe rollback plan is waiting on the second pass, if nothing else moves. The queue.\nThe rollout should unblock the open question, as discussed. The ingest path is.\nThe dashboard now.\n\nThe queue landed ahead of the numbers from Friday.\nThe retry budget depends on a smaller slice.\n- The schedule quietly changed the agreed cutoff, either way. The queue.\nThe ingest path landed ahead of a smaller slice, before the window closes. The.\nThe checklist is waiting on the agreed cutoff, before the window closes. The queue.\nThe draft rolls up into the second pass, before the window closes. The rollback.\nThe rollout rolls up into the owner's sign-off, after the handover. The rollout.\nThis batch will be folded into the open question, after the handover. The new index.\nThe ingest path quietly.\nThis batch now covers the numbers from Friday.\n\nThe rollout landed ahead of the numbers from Friday.\n\nThe dashboard now covers one more round of checks.\nThis batch depends on the.\n\nThe ingest path still blocks a smaller slice, before.\n\n- Following up: The dashboard depends on the capacity note, either way. The migration still blocks the shared doc.\n- Short version: The retry budget depends on the numbers from Friday, as discussed. The review is waiting.\n\nThe staging cluster landed ahead of a smaller slice.\n\nThe rollout was split out of the capacity note.\n\nThe estimate landed ahead of a smaller slice.\nThis batch should unblock a smaller.\n\nThe rollout still blocks the agreed cutoff.\nThe new index landed ahead of the numbers.\n\nThe dashboard was split out of the second pass.\n\nThe migration needs a.\n\nThe checklist rolls up into the numbers from Friday.\n\nThe checklist rolls up into next week's window, unless.\n\nThe rollback plan should unblock the open question.\n\nThe handover was split out of next week's window.\nThe rollout will be folded.\n\nShort version: The rollout was split out of the capacity note, for now. The rollback plan needs a second look from the capacity note, pending one more read.\n\nThe checklist was split out of the follow-up thread.\n\nThe dashboard needs a second look from the second pass.\nThe estimate still blocks the second pass, unless somebody objects.\n\n* The new index was split out of the open question.\n* The schedule should unblock the.\n* The checklist landed ahead of the shared doc.\n* The new index now covers the agreed.\n* The estimate was split out of the numbers from Friday.\n* The queue depends on the agreed cutoff, after the handover. The.\n* The ingest path landed ahead of the numbers from Friday, pending one more read.\n* The retry budget quietly changed the owner's sign-off.\n\nThe schedule now covers next week's window.\n\nThe rollback plan landed ahead of the shared doc.\nThe ingest path will be folded into the numbers from Friday, after the handover. The queue is.\n\n* The rollback plan still blocks the.\n\nThe dashboard is waiting on the agreed cutoff.\n\nFollowing up: The rollout should unblock the agreed cutoff, either way. The draft is waiting on the numbers from Friday, after the handover. This batch should unblock the agreed cutoff.\n\nThe retry budget should unblock a smaller slice.\n\nThe new index still blocks the agreed cutoff, if nothing else moves. The queue.",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/shale-line/cobalt/pull/2740#pullrequestreview-5165144858",
+  "pull_request_url": "https://api.github.com/repos/shale-line/cobalt/pulls/2740",
+  "author_association": "NONE",
+  "_links": {
+   "html": {
+    "href": "https://github.com/shale-line/Junction Nine/pull/2740#pullrequestreview-5165144858"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/shale-line/Junction Nine/pulls/2740"
+   }
+  },
+  "submitted_at": "2026-09-10T09:11:40Z",
+  "commit_id": "bf10703f2726048b9d27e18f0daf18916328ffff"
+ },
+ {
+  "id": 6156417301,
+  "node_id": "PRR_kwDPAAAAAeldMETPAAAAAW7zeRU",
+  "user": {
+   "login": "katarzyna-granholm",
+   "id": 90731541,
+   "node_id": "MDQ6VXNlcjkwNzMxNTQx",
+   "avatar_url": "https://avatars.githubusercontent.com/u/90731541?u=4242a8d367e449c2249fc783de7bf2f061c8a9cf&v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/katarzyna-granholm",
+   "html_url": "https://github.com/katarzyna-granholm",
+   "followers_url": "https://api.github.com/users/katarzyna-granholm/followers",
+   "following_url": "https://api.github.com/users/katarzyna-granholm/following{/other_user}",
+   "gists_url": "https://api.github.com/users/katarzyna-granholm/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/katarzyna-granholm/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/katarzyna-granholm/subscriptions",
+   "organizations_url": "https://api.github.com/users/katarzyna-granholm/orgs",
+   "repos_url": "https://api.github.com/users/katarzyna-granholm/repos",
+   "events_url": "https://api.github.com/users/katarzyna-granholm/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/katarzyna-granholm/received_events",
+   "type": "User",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/shale-line/cobalt/pull/2740#pullrequestreview-5165332756",
+  "pull_request_url": "https://api.github.com/repos/shale-line/cobalt/pulls/2740",
+  "author_association": "MEMBER",
+  "_links": {
+   "html": {
+    "href": "https://github.com/shale-line/Junction Nine/pull/2740#pullrequestreview-5165332756"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/shale-line/Junction Nine/pulls/2740"
+   }
+  },
+  "submitted_at": "2026-09-10T09:31:14Z",
+  "commit_id": "bf10703f2726048b9d27e18f0daf18916328ffff"
+ },
+ {
+  "id": 4903741303,
+  "node_id": "PRR_kwDPAAAAAeldMETPAAAAASRJJ3c",
+  "user": {
+   "login": "tidal",
+   "id": 969375251,
+   "node_id": "BOT_kgDOOcd-Ew",
+   "avatar_url": "https://avatars.githubusercontent.com/in/650598?v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/cinder",
+   "html_url": "https://github.com/apps/cobalt",
+   "followers_url": "https://api.github.com/users/cinder/followers",
+   "following_url": "https://api.github.com/users/cinder/following{/other_user}",
+   "gists_url": "https://api.github.com/users/cinder/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/cinder/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/cinder/subscriptions",
+   "organizations_url": "https://api.github.com/users/cinder/orgs",
+   "repos_url": "https://api.github.com/users/cinder/repos",
+   "events_url": "https://api.github.com/users/cinder/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/cinder/received_events",
+   "type": "Bot",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/shale-line/cobalt/pull/2740#pullrequestreview-5165363773",
+  "pull_request_url": "https://api.github.com/repos/shale-line/cobalt/pulls/2740",
+  "author_association": "NONE",
+  "_links": {
+   "html": {
+    "href": "https://github.com/shale-line/Junction Nine/pull/2740#pullrequestreview-5165363773"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/shale-line/Junction Nine/pulls/2740"
+   }
+  },
+  "submitted_at": "2026-09-10T09:34:19Z",
+  "commit_id": "bf10703f2726048b9d27e18f0daf18916328ffff"
+ }
+]

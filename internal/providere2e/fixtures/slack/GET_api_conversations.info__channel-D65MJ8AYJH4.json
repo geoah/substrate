@@ -1,0 +1,61 @@
+{
+ "ok": true,
+ "channel": {
+  "id": "D65MJ8AYJH4",
+  "created": 1789462280,
+  "is_org_shared": false,
+  "is_im": true,
+  "is_archived": false,
+  "context_team_id": "T0ADATEAM01",
+  "updated": 1789462280217,
+  "user": "UZYSGS7CBM8",
+  "last_read": "1747665228.670569",
+  "is_open": true,
+  "priority": 0,
+  "unread_count": 0,
+  "unread_count_display": 0,
+  "latest": {
+   "user": "U0ADA0WNER1",
+   "type": "message",
+   "ts": "1747665228.670569",
+   "client_msg_id": "30bce2b7-d82d-51cd-1860-f4126fd4ad70",
+   "text": "The schedule still blocks the.",
+   "team": "T0ADATEAM01",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "8dfgc",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The dashboard should unblock the shared doc."
+        },
+        {
+         "type": "emoji",
+         "name": "Orsolya Hartsfield",
+         "unicode": "1f604"
+        },
+        {
+         "type": "text",
+         "text": " The handover was split out of next week's window."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "harbor_desk",
+     "users": [
+      "UZYSGS7CBM8"
+     ],
+     "count": 1
+    }
+   ]
+  }
+ }
+}

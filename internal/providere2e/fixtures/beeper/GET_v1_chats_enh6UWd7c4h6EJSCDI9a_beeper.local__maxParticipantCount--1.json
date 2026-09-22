@@ -1,0 +1,164 @@
+{
+ "id": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+ "localChatID": "18203",
+ "accountID": "whatsapp",
+ "network": "WhatsApp",
+ "title": "Ilaria Calloway",
+ "description": "The rollout needs a.",
+ "imgURL": null,
+ "type": "single",
+ "isReadOnly": false,
+ "participants": {
+  "items": [
+   {
+    "id": "@whatsapp_fbf-885651003020663:beeper.local",
+    "phoneNumber": "+99 5686635447",
+    "fullName": "Ilaria Calloway",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/kgotf_yMhOzvt7N49pqdtOQYMLXmEkYIqD15BYMlkyVNrYtQB8Kuh9AtfFKQUegF2Q65K2",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@adalovelace:beeper.com",
+    "fullName": "Ada Lovelace",
+    "cannotMessage": false,
+    "isSelf": true,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   }
+  ],
+  "hasMore": false,
+  "total": 2
+ },
+ "lastActivity": "2026-09-15T10:36:16.000Z",
+ "unreadCount": 0,
+ "unreadMentionsCount": 0,
+ "lastReadMessageSortKey": "777690",
+ "draft": null,
+ "reminder": null,
+ "snooze": null,
+ "isArchived": false,
+ "isMarkedUnread": false,
+ "isMuted": false,
+ "isPinned": false,
+ "isLowPriority": false,
+ "messageExpirySeconds": null,
+ "capabilities": {
+  "formatting": {
+   "blockquote": 2,
+   "bold": 2,
+   "code_block": 2,
+   "headers": 1,
+   "inline_code": 2,
+   "inline_link": 1,
+   "italic": 2,
+   "ordered_list": 2,
+   "ordered_list.start": 2,
+   "strikethrough": 2,
+   "unordered_list": 2,
+   "user_link": 2
+  },
+  "attachments": {
+   "fi.mau.gif": {
+    "mimeTypes": {
+     "image/gif": 1,
+     "video/mp4": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 65536,
+    "maxSize": 2097152000
+   },
+   "m.audio": {
+    "mimeTypes": {
+     "audio/aac": 2,
+     "audio/amr": 2,
+     "audio/mp4": 2,
+     "audio/mpeg": 2,
+     "audio/ogg": 2
+    },
+    "caption": -1,
+    "maxSize": 2097152000
+   },
+   "m.file": {
+    "mimeTypes": {
+     "*/*": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 65536,
+    "maxSize": 2097152000
+   },
+   "m.image": {
+    "mimeTypes": {
+     "image/gif": 1,
+     "image/jpeg": 2,
+     "image/png": 1,
+     "image/webp": 1
+    },
+    "caption": 2,
+    "maxCaptionLength": 65536,
+    "maxSize": 2097152000
+   },
+   "m.sticker": {
+    "mimeTypes": {
+     "image/jpeg": 1,
+     "image/png": 1,
+     "image/webp": 2,
+     "video/lottie+json": 1
+    },
+    "caption": -1,
+    "maxSize": 2097152000
+   },
+   "m.video": {
+    "mimeTypes": {
+     "video/3gpp": 2,
+     "video/mp4": 2,
+     "video/quicktime": 1,
+     "video/webm": 1
+    },
+    "caption": 2,
+    "maxCaptionLength": 65536,
+    "maxSize": 2097152000
+   },
+   "dqt.dagosh.kxp1276.voice": {
+    "mimeTypes": {
+     "audio/ogg": 0,
+     "audio/ogg; codecs=opus": 2
+    },
+    "caption": -1,
+    "maxSize": 2097152000
+   }
+  },
+  "maxTextLength": 65536,
+  "locationMessage": 2,
+  "poll": 2,
+  "reply": 2,
+  "edit": 2,
+  "editMaxAge": 900,
+  "delete": 2,
+  "deleteMaxAge": 172800,
+  "reaction": 2,
+  "reactionCount": 1,
+  "disappearingTimer": {
+   "types": [
+    "afterSend"
+   ],
+   "timers": [
+    86400000,
+    604800000,
+    7776000000
+   ]
+  },
+  "readReceipts": true,
+  "typingNotifications": true,
+  "deleteChat": true,
+  "state": {
+   "disappearingTimer": {
+    "level": 2
+   }
+  }
+ }
+}

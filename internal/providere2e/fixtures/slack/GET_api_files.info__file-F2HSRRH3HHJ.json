@@ -1,0 +1,75 @@
+{
+ "ok": true,
+ "file": {
+  "id": "F2HSRRH3HHJ",
+  "created": 1789567418,
+  "timestamp": 1789567418,
+  "mimetype": "application/pdf",
+  "filetype": "pdf",
+  "pretty_type": "PDF",
+  "user": "USF3WB4D5CZ",
+  "user_team": "T0ADATEAM01",
+  "editable": false,
+  "size": 145317,
+  "mode": "hosted",
+  "is_external": false,
+  "external_type": "",
+  "is_public": false,
+  "public_url_shared": false,
+  "display_as_bot": false,
+  "username": "",
+  "name": "The Rollback Plan should",
+  "title": "The Estimate was split out of",
+  "ai_summary": {
+   "id": "Afs4L5829GFB6",
+   "unfurl_enabled": true,
+   "status": "COMPLETED",
+   "content": "Summary: The ingest path rolls up into the agreed cutoff, unless somebody objects. The ingest path was split out.\nThe estimate should unblock one more round of checks, pending one more read.\nQuick note: The handover depends on next week's window, once the numbers settle. The draft should unblock the owner's sign-off."
+  },
+  "is_modified_by_ai": false,
+  "url_private": "https://files.slack.com/files-pri/J2sxoxWBbO51IMabj89iUUb/vidhya_venkat_resume_4.docx.pdf",
+  "url_private_download": "https://files.slack.com/files-pri/J2sxoxWBbO51IMabj89iUUb/download/vidhya_venkat_resume_4.docx.pdf",
+  "media_display_type": "unknown",
+  "thumb_pdf": "https://files.slack.com/files-tmb/MVfwL5ETqPXWVIhzifekfYDBfVuSUYJb8L/vidhya_venkat_resume_4.docx_thumb_pdf.png",
+  "thumb_pdf_w": 935,
+  "thumb_pdf_h": 1210,
+  "permalink": "https://zephyr-lane.slack.com/files/adalovelace/F2HSRRH3HHJ/vidhya_venkat_resume_4.docx.pdf",
+  "permalink_public": "https://brightsea.example/52OCPmq8b59dFCJYwq7JuybH0vOqh37NKc",
+  "is_starred": false,
+  "shares": {
+   "private": {
+    "C8HHHV78RVH": [
+     {
+      "ts": "1747749849.933619",
+      "channel_name": "willow-trellis-zinc-team",
+      "team_id": "T0ADATEAM01",
+      "share_user_id": "USF3WB4D5CZ",
+      "source": "UNKNOWN",
+      "is_silent_share": false,
+      "reply_users": [
+       "U48XXRY7R9U",
+       "USF3WB4D5CZ"
+      ],
+      "reply_users_count": 2,
+      "reply_count": 5,
+      "latest_reply": "1747755044.399029",
+      "thread_ts": "1747749410.959559"
+     }
+    ]
+   }
+  },
+  "channels": [],
+  "groups": [
+   "C8HHHV78RVH"
+  ],
+  "ims": [],
+  "has_more_shares": false,
+  "has_rich_preview": false,
+  "file_access": "visible",
+  "comments_count": 0
+ },
+ "comments": [],
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

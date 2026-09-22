@@ -1,0 +1,7 @@
+{
+ "error": {
+  "code": 403,
+  "message": "Context: The migration is waiting on the capacity note, if nothing else moves. The migration needs a second look from the open question.",
+  "status": "PERMISSION_DENIED"
+ }
+}

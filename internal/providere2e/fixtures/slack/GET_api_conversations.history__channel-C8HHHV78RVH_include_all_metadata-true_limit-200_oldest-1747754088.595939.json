@@ -1,0 +1,55 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747754089.595939",
+   "edited": {
+    "user": "U48XXRY7R9U",
+    "ts": "1747754158.000000"
+   },
+   "client_msg_id": "1a75c6a9-6826-dd69-f909-1d19120ec097",
+   "text": "The <https://everline.example/in/immanuel-gallimore/|The Draft> staging cluster rolls up into.",
+   "team": "T0ADATEAM01",
+   "reply_users_count": 1,
+   "reply_users": [
+    "U48XXRY7R9U"
+   ],
+   "is_locked": false,
+   "subscribed": true,
+   "last_read": "1747754148.988979",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "uH6Lj",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "emoji",
+         "name": "Marek Westbrook",
+         "unicode": "1f9f5"
+        },
+        {
+         "type": "link",
+         "url": "https://everline.example/in/immanuel-gallimore/",
+         "text": "The dashboard still blocks next week's window."
+        },
+        {
+         "type": "text",
+         "text": "The queue depends on the."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

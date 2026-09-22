@@ -1,0 +1,28 @@
+{
+ "items": [
+  {
+   "id": "362069",
+   "chatID": "!rU1RmkbGOHn3Ub7GFSRX:beeper.local",
+   "accountID": "signal",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-16T07:40:16.121Z",
+   "sortKey": "778168",
+   "type": "TEXT",
+   "text": "The retry budget still blocks the earlier draft.",
+   "isSender": true,
+   "isDeleted": false,
+   "linkedMessageID": "362032",
+   "mentions": [
+    "@signal_4411992a-sr04-5r87-484j-pnpf368mz226:beeper.local"
+   ],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-16T07:40:16.229Z",
+    "@signal_9ewqm197-k7x3-2780-ew51-fw61b72c78i2:beeper.local": "2026-09-16T07:46:09.899Z"
+   }
+  }
+ ],
+ "hasMore": false,
+ "oldestCursor": "778168",
+ "newestCursor": "778168"
+}

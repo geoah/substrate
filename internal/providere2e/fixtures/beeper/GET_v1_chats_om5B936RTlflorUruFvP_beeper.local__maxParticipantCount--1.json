@@ -1,0 +1,217 @@
+{
+ "id": "!om5B936RTlflorUruFvP:beeper.local",
+ "localChatID": "20280",
+ "accountID": "discordgo",
+ "network": "Discord",
+ "title": "garnet-team",
+ "description": "",
+ "imgURL": null,
+ "type": "group",
+ "isReadOnly": false,
+ "participants": {
+  "items": [
+   {
+    "id": "@discordgo_402890799400339948:beeper.local",
+    "username": "florentina-nethercliff",
+    "fullName": "Marekel Mortlake-Lowe",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/zxobm_pzyLV32Uh6icY9jdGp5Usi1PESE8CzeifyEY5Idr3LolKXVzvsAD4CWbznRsrQai",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@discordgo_216907743477715316:beeper.local",
+    "username": "renna-blackwood",
+    "fullName": "Delia Underhill",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/mhvzu_b1vx7ANJ1GJj4s7mxh0KbdJMmp0qDfyGbHVwMpvx9WIjJxWJFavPoHbzzg1wr4dA",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@discordgo_285771892363105185:beeper.local",
+    "username": "kalina-wexford",
+    "fullName": "Ember Bellweather",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/demji_CJ4TU6gtk3oGCDgRCRVLf6f8U1bnKguXKb135l8a0mBvLrszd8HPZvDx0kKTltgk",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@discordgo_059737644517465191:beeper.local",
+    "username": "sabra-ravensworth",
+    "fullName": "Ansel Sedgwick",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/rrikb_7I2wwZmNerl7OaJJlXMdEsFYFYEj3xIe15t757ZQmE642OVq5sqfN3t80lx60W4J",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@discordgo_283376710145499961:beeper.local",
+    "username": "sela-tarrington",
+    "fullName": "Bronwen Ufford",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/uocgo_tS5nLzUrN48Ad2xO3mpAFCHJLULjq01dUU58bC0Wr8WLBvuKXA8nEZlBzhxn4j0o",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@discordgo_099714256511618008:beeper.local",
+    "username": "lior-verrinder",
+    "fullName": "Caius Ashgrove-Hale",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/uocda_wzEJmWxPz9wcgBnmvDmltEaNleFTlMo9pYeb32IHZFRPHR2jBJQhXEkdonTYOMoT",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@discordgo_353529414950139401:beeper.local",
+    "username": "hieronymus-jessop-hale",
+    "fullName": "Oriel Ollivant",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/pcmql_vloPMg9fShs78JZuMis2u0Ine7J7sx4belNclMxNOoCUWQHKqB8Gf5wPg1hWIgn8",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@discordgo_434854988369927821:beeper.local",
+    "username": "gwendolyn-netherwood-hale",
+    "fullName": "Magdalena Kirkbride-Hale",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/tdapf_ZmN13blnXgp1KkZg2PuDhX2BDbw5IOO0fABWZn7bXitLxh9zLUqt0owhhdlvfPc5",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@adalovelace:beeper.com",
+    "fullName": "Ada Lovelace",
+    "cannotMessage": false,
+    "isSelf": true,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   }
+  ],
+  "hasMore": false,
+  "total": 9
+ },
+ "lastActivity": "2026-09-15T15:58:59.740Z",
+ "unreadCount": 0,
+ "unreadMentionsCount": 0,
+ "lastReadMessageSortKey": "777920",
+ "draft": null,
+ "reminder": null,
+ "snooze": null,
+ "isArchived": false,
+ "isMarkedUnread": false,
+ "isMuted": true,
+ "isPinned": false,
+ "isLowPriority": false,
+ "messageExpirySeconds": null,
+ "capabilities": {
+  "formatting": {
+   "at_room_mention": 0,
+   "blockquote": 2,
+   "bold": 2,
+   "code_block": 2,
+   "code_block.syntax_highlighting": 2,
+   "custom_emoji": 0,
+   "event_link": 0,
+   "inline_code": 2,
+   "inline_link": 2,
+   "italic": 2,
+   "ordered_list": 2,
+   "ordered_list.jump_value": 0,
+   "ordered_list.start": 2,
+   "room_link": 0,
+   "strikethrough": 2,
+   "unordered_list": 2,
+   "user_link": 2
+  },
+  "attachments": {
+   "fi.mau.gif": {
+    "mimeTypes": {
+     "image/gif": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 2000,
+    "maxSize": 10485760
+   },
+   "m.audio": {
+    "mimeTypes": {
+     "audio/*": 1,
+     "audio/mpeg": 2,
+     "audio/wav": 2,
+     "audio/webm": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 2000,
+    "maxSize": 10485760
+   },
+   "m.file": {
+    "mimeTypes": {
+     "*/*": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 2000,
+    "maxSize": 10485760
+   },
+   "m.image": {
+    "mimeTypes": {
+     "image/*": 1,
+     "image/gif": 2,
+     "image/jpeg": 2,
+     "image/png": 2,
+     "image/webp": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 2000,
+    "maxSize": 10485760
+   },
+   "m.video": {
+    "mimeTypes": {
+     "video/*": 1,
+     "video/mp4": 2,
+     "video/webm": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 2000,
+    "maxSize": 10485760
+   },
+   "dqt.dagosh.kxp1276.voice": {
+    "mimeTypes": {
+     "audio/*": 1,
+     "audio/ogg": 2,
+     "audio/ogg; codecs=opus": 2,
+     "audio/webm": 2,
+     "audio/webm; codecs=opus": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 2000,
+    "maxSize": 10485760
+   }
+  },
+  "maxTextLength": 2000,
+  "thread": 1,
+  "reply": 2,
+  "edit": 2,
+  "delete": 2,
+  "reaction": 2
+ }
+}

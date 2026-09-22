@@ -1,0 +1,342 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "subtype": "bot_message",
+   "text": "The queue <@UDMERTGZQ8N> now covers the earlier draft.\n\nThe retry budget depends on the capacity note.\nThe ingest path should unblock the.\nThe handover rolls up.\nThe queue still blocks <!subteam^S4BGCUYE1KZ> the agreed cutoff, either way.\n\n The handover will be folded into the.",
+   "username": "Orchard Field",
+   "type": "message",
+   "ts": "1747754592.090679",
+   "bot_id": "BLFK8XZ1AEC",
+   "app_id": "AUFLEEC4WZN",
+   "trigger_id": "FtU9QZ3GCUZA",
+   "workflow_id": "WfSRKJ5G1EEP",
+   "thread_ts": "1747754592.090679",
+   "reply_count": 7,
+   "reply_users_count": 2,
+   "latest_reply": "1747755921.446519",
+   "reply_users": [
+    "UZYSGS7CBM8",
+    "UDMERTGZQ8N"
+   ],
+   "is_locked": false,
+   "subscribed": false,
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "hiwOA",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The checklist quietly changed the earlier draft.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "user",
+         "user_id": "UDMERTGZQ8N"
+        },
+        {
+         "type": "text",
+         "text": "\nThis batch now covers a smaller slice."
+        },
+        {
+         "type": "text",
+         "text": "The rollback plan was split out of."
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "The staging cluster will be folded into the shared doc.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "The schedule still blocks the second pass, unless."
+        },
+        {
+         "type": "text",
+         "text": "\n\n"
+        },
+        {
+         "type": "usergroup",
+         "usergroup_id": "S4BGCUYE1KZ"
+        },
+        {
+         "type": "text",
+         "text": " The schedule was split out of a."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "white_check_mark",
+     "users": [
+      "UZYSGS7CBM8"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UZYSGS7CBM8",
+   "type": "message",
+   "ts": "1747755280.203029",
+   "client_msg_id": "731f8ab9-e3d0-8241-2226-2635ca696b1d",
+   "text": "The rollback plan landed ahead of the second pass, before the window closes.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747754592.090679",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "WKq0I",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The rollback plan rolls up into next week's window."
+        },
+        {
+         "type": "emoji",
+         "name": "Beatrijs Abernathy",
+         "unicode": "1f642"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "pray",
+     "users": [
+      "UDMERTGZQ8N"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UDMERTGZQ8N",
+   "type": "message",
+   "ts": "1747755434.741979",
+   "client_msg_id": "c7331e89-5f63-085f-cf47-4f91a332cc70",
+   "text": "This batch rolls up into the owner's sign-off, if nothing else moves.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747754592.090679",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "bCUnr",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The handover now covers the second pass, either way. The retry budget."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "UDMERTGZQ8N",
+   "type": "message",
+   "ts": "1747755440.897709",
+   "client_msg_id": "148657bb-b535-9448-66d8-664a078e7348",
+   "text": "The rollout rolls up into the owner's sign-off.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747754592.090679",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "7halW",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The dashboard rolls up into the shared doc."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "UZYSGS7CBM8",
+   "type": "message",
+   "ts": "1747755635.404419",
+   "client_msg_id": "5f75fd2b-e65d-f001-5088-8bea8c09e954",
+   "text": "Short version: The review still blocks the open question, once the numbers settle. The rollout is.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747754592.090679",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "3KCmy",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "Context: The retry budget will be folded into the open question, either way. This batch depends on the."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "UDMERTGZQ8N",
+   "type": "message",
+   "ts": "1747755703.702929",
+   "client_msg_id": "fff3b3d4-e803-2289-0478-bac7623209ad",
+   "text": "The checklist now covers the capacity note.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747754592.090679",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "Dqfpm",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The staging cluster is waiting on one more round of checks."
+        },
+        {
+         "type": "link",
+         "url": "mailto:zebo@zephyr-lane.example",
+         "text": "The estimate still blocks the earlier draft."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "harbor_bay",
+     "users": [
+      "UZYSGS7CBM8"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UZYSGS7CBM8",
+   "type": "message",
+   "ts": "1747755764.617149",
+   "client_msg_id": "5e6e785d-d1a5-2ef7-e8f4-55e0cfbcf867",
+   "text": "The new index still blocks the open question.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747754592.090679",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "k6u4t",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The checklist now covers the second pass."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "UDMERTGZQ8N",
+   "type": "message",
+   "ts": "1747755921.446519",
+   "client_msg_id": "e712690f-d6c7-9456-c5ac-712e47c39c76",
+   "text": "The rollback plan needs a second look from the.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747754592.090679",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "bICpf",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The review is waiting on the owner's sign-off."
+        },
+        {
+         "type": "emoji",
+         "name": "Beatrijs Abernathy",
+         "unicode": "1f642"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "coral_yard",
+     "users": [
+      "UZYSGS7CBM8"
+     ],
+     "count": 1
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

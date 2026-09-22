@@ -1,0 +1,61 @@
+{
+ "ok": true,
+ "user": {
+  "id": "U9R6YXQL88E",
+  "name": "orielah-verrinder-frost",
+  "is_bot": false,
+  "updated": 1787017302,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "385a86",
+  "is_email_confirmed": true,
+  "real_name": "Emberah Fernsby-Frost",
+  "tz": "America/Los_Angeles",
+  "tz_label": "Pacific Daylight Time",
+  "tz_offset": -25200,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Emberah Fernsby-Frost",
+   "display_name": "Emberah Fernsby-Frost",
+   "avatar_hash": "046b7845bd11",
+   "real_name_normalized": "Emberah Fernsby-Frost",
+   "display_name_normalized": "Emberah Fernsby-Frost",
+   "image_24": "https://avatars.slack-edge.com/2025-10-06/5792205599867_d0faca103380014a0952_24.jpg",
+   "image_32": "https://avatars.slack-edge.com/2025-10-06/5792205599867_d0faca103380014a0952_32.jpg",
+   "image_48": "https://avatars.slack-edge.com/2025-10-06/5792205599867_d0faca103380014a0952_48.jpg",
+   "image_72": "https://avatars.slack-edge.com/2025-10-06/5792205599867_d0faca103380014a0952_72.jpg",
+   "image_192": "https://avatars.slack-edge.com/2025-10-06/5792205599867_d0faca103380014a0952_192.jpg",
+   "image_512": "https://avatars.slack-edge.com/2025-10-06/5792205599867_d0faca103380014a0952_512.jpg",
+   "image_1024": "https://avatars.slack-edge.com/2025-10-06/5792205599867_d0faca103380014a0952_1024.jpg",
+   "image_original": "https://avatars.slack-edge.com/2025-10-06/5792205599867_d0faca103380014a0952_original.jpg",
+   "is_custom_image": true,
+   "first_name": "Oriel2 Jessop4",
+   "last_name": "Hieronymus Wandsworth",
+   "team": "T0ADATEAM01",
+   "email": "ivorah@zephyr-lane.example",
+   "title": "",
+   "phone": "+99 5693459415",
+   "skype": "",
+   "status_text": "",
+   "status_text_canonical": "",
+   "status_emoji": ":baby:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "baby",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/1f476.png",
+     "unicode": "1f476"
+    }
+   ],
+   "status_expiration": 0,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0
+  }
+ }
+}

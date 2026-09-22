@@ -1,0 +1,66 @@
+{
+ "ok": true,
+ "channel": {
+  "id": "DJYGW778PTV",
+  "created": 1787259100,
+  "is_org_shared": false,
+  "is_im": true,
+  "is_archived": false,
+  "context_team_id": "T0ADATEAM01",
+  "updated": 1789403536262,
+  "user": "UBA7GHSV35U",
+  "last_read": "1747586455.447039",
+  "is_open": true,
+  "priority": 0.25839921174535,
+  "unread_count": 0,
+  "unread_count_display": 0,
+  "properties": {
+   "tabs": [
+    {
+     "type": "files",
+     "label": "",
+     "id": "files"
+    }
+   ],
+   "tabz": [
+    {
+     "type": "files"
+    }
+   ]
+  },
+  "latest": {
+   "user": "U0ADA0WNER1",
+   "type": "message",
+   "ts": "1747586455.447039",
+   "client_msg_id": "d8d9905e-235c-b2d9-a855-c0c2b51f47a1",
+   "text": "The new index needs a second look from the earlier draft, assuming the counts hold. The.",
+   "team": "T0ADATEAM01",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "iLACQ",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The handover is waiting on the second pass, unless somebody objects. This batch is."
+        },
+        {
+         "type": "emoji",
+         "name": "Orsolya Hartsfield",
+         "unicode": "1f604"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  }
+ }
+}

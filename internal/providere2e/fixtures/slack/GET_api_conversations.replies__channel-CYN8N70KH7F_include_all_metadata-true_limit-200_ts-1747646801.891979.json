@@ -1,0 +1,258 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "U87FWU6EJ6S",
+   "type": "message",
+   "ts": "1747646801.891979",
+   "client_msg_id": "52b06a13-0e52-09e2-1bf3-dc0ee386bf88",
+   "text": "For the record: The draft <https://kelpwood.example/share/73aead0b-6363-6d27-2de1-c4982d8e1216?day=today&amp;time=ASAP|The Staging> quietly changed the follow-up thread, unless somebody objects. The checklist quietly changed the earlier draft.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747646801.891979",
+   "reply_count": 4,
+   "reply_users_count": 2,
+   "latest_reply": "1747651317.563489",
+   "reply_users": [
+    "UF1731TNMYW",
+    "U87FWU6EJ6S"
+   ],
+   "is_locked": false,
+   "subscribed": false,
+   "attachments": [
+    {
+     "image_url": "https://umbrel.example/images/133dd2ce-6105-8025-142d-aa319ac96a6b/image.jpeg?width=1200&height=630&auto=webp&format=jpg&fit=crop&v=",
+     "image_width": 1200,
+     "image_height": 630,
+     "image_bytes": 242425,
+     "from_url": "https://kelpwood.example/share/73aead0b-6363-6d27-2de1-c4982d8e1216?day=today&time=ASAP",
+     "service_icon": "https://elmshire.example/assets/images/favicons/production/apple-touch-icon-13fe69a113116b6bcd64fac9746c7730e90e7940a8947cb69ebdb1355d214bbe.png",
+     "id": 1,
+     "original_url": "https://kelpwood.example/share/73aead0b-6363-6d27-2de1-c4982d8e1216?day=today&time=ASAP",
+     "fallback": "The migration now covers.",
+     "text": "The ingest path still blocks the capacity note, as.",
+     "title": "The Rollout now covers",
+     "title_link": "https://kelpwood.example/share/73aead0b-6363-6d27-2de1-c4982d8e1216?day=today&time=ASAP",
+     "service_name": "Kelpwood"
+    }
+   ],
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "Dj4VR",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The estimate quietly changed the owner's sign-off."
+        },
+        {
+         "type": "link",
+         "url": "https://kelpwood.example/share/73aead0b-6363-6d27-2de1-c4982d8e1216?day=today&time=ASAP",
+         "text": "The migration is waiting on the follow-up thread."
+        },
+        {
+         "type": "text",
+         "text": "The review still blocks one more round of checks, once."
+        },
+        {
+         "type": "emoji",
+         "name": "Beatrijs Abernathy",
+         "unicode": "1f642"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "tidal_yard",
+     "users": [
+      "UF1731TNMYW",
+      "UMYCCBY3LFJ",
+      "UHQVDLR80QE",
+      "U2ZN7F5559F"
+     ],
+     "count": 4
+    }
+   ]
+  },
+  {
+   "user": "UF1731TNMYW",
+   "type": "message",
+   "ts": "1747649581.483689",
+   "client_msg_id": "4225baaf-0252-b988-7058-141417d0d4e9",
+   "text": "<@U87FWU6EJ6S> Summary: The rollback plan quietly changed the capacity note, once the numbers settle. The retry.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747646801.891979",
+   "parent_user_id": "U87FWU6EJ6S",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "HHfd9",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "user",
+         "user_id": "U87FWU6EJ6S"
+        },
+        {
+         "type": "text",
+         "text": " The handover landed ahead of the second pass."
+        },
+        {
+         "type": "emoji",
+         "name": "Fay Fernsby",
+         "unicode": "1f62d"
+        },
+        {
+         "type": "text",
+         "text": " The dashboard depends on the."
+        },
+        {
+         "type": "emoji",
+         "name": "Hieronymus Gallimore",
+         "unicode": "1f97a"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "U87FWU6EJ6S",
+   "type": "message",
+   "ts": "1747649602.427059",
+   "client_msg_id": "4BD15250-14BF-5868-2F74-78A177049959",
+   "text": "The queue landed ahead of the earlier draft.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747646801.891979",
+   "parent_user_id": "U87FWU6EJ6S",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "GOa4b",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The migration was split out of the shared doc."
+        },
+        {
+         "type": "emoji",
+         "name": "Beatrijs Abernathy",
+         "unicode": "1f642"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "tidal_yard",
+     "users": [
+      "UF1731TNMYW"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UF1731TNMYW",
+   "type": "message",
+   "ts": "1747649614.819229",
+   "client_msg_id": "d10cd4a4-08c0-9905-a179-ab66ce4dfcf2",
+   "text": "The review rolls up into the capacity note.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747646801.891979",
+   "parent_user_id": "U87FWU6EJ6S",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "U48rF",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The draft is waiting on a."
+        },
+        {
+         "type": "emoji",
+         "name": "Casimira Hawksley"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "U87FWU6EJ6S",
+   "type": "message",
+   "ts": "1747651317.563489",
+   "client_msg_id": "cafe485f-9520-ceaa-36c0-900ed79a05a2",
+   "text": "<https://kelpwood.example/orders/71728444466/status?sharing_token=Mdr74w19QgoMzjgcL1YjEFIe|The Ingest Path landed ahead of the shared doc>",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747646801.891979",
+   "parent_user_id": "U87FWU6EJ6S",
+   "attachments": [
+    {
+     "image_url": "https://fernbank.example/_next/static/social_media.d81b3a53.png",
+     "image_width": 1208,
+     "image_height": 630,
+     "image_bytes": 8569,
+     "from_url": "https://kelpwood.example/orders/71728444466/status?sharing_token=Mdr74w19QgoMzjgcL1YjEFIe",
+     "service_icon": "https://fernbank.example/_next/static/apple-touch-icon.3abdadf0.png",
+     "id": 1,
+     "original_url": "https://kelpwood.example/orders/71728444466/status?sharing_token=Mdr74w19QgoMzjgcL1YjEFIe",
+     "fallback": "The estimate now covers the second pass.",
+     "text": "The queue should unblock the owner's sign-off, for now. The review rolls up into next week's window.",
+     "title": "The",
+     "title_link": "https://kelpwood.example/orders/71728444466/status?sharing_token=Mdr74w19QgoMzjgcL1YjEFIe",
+     "service_name": "Kelpwood"
+    }
+   ],
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "OF7F0",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "link",
+         "url": "https://kelpwood.example/orders/71728444466/status?sharing_token=Mdr74w19QgoMzjgcL1YjEFIe",
+         "text": "The draft will be folded into one more round of checks, after.",
+         "truncated": true
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

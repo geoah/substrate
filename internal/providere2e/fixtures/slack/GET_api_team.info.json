@@ -1,0 +1,28 @@
+{
+ "ok": true,
+ "team": {
+  "id": "T0ADATEAM01",
+  "name": "Glasshouse",
+  "url": "https://zephyr-lane.slack.com/",
+  "domain": "zephyr-lane",
+  "email_domain": "verdigris.example,zephyr-lane.example",
+  "avatar_base_url": "https://ca.slack-edge.com/",
+  "is_verified": false,
+  "external_org_migrations": {
+   "date_updated": 1788794327,
+   "current": []
+  },
+  "icon": {
+   "image_default": false,
+   "image_34": "https://avatars.slack-edge.com/2025-07-18/6479722082307_cb651455ed29dc0b0cad_34.png",
+   "image_44": "https://avatars.slack-edge.com/2025-07-18/6479722082307_cb651455ed29dc0b0cad_44.png",
+   "image_68": "https://avatars.slack-edge.com/2025-07-18/6479722082307_cb651455ed29dc0b0cad_68.png",
+   "image_88": "https://avatars.slack-edge.com/2025-07-18/6479722082307_cb651455ed29dc0b0cad_88.png",
+   "image_102": "https://avatars.slack-edge.com/2025-07-18/6479722082307_cb651455ed29dc0b0cad_102.png",
+   "image_230": "https://avatars.slack-edge.com/2025-07-18/6479722082307_cb651455ed29dc0b0cad_230.png",
+   "image_132": "https://avatars.slack-edge.com/2025-07-18/6479722082307_cb651455ed29dc0b0cad_132.png"
+  },
+  "lob_sales_home_enabled": true,
+  "is_sfdc_auto_slack": false
+ }
+}

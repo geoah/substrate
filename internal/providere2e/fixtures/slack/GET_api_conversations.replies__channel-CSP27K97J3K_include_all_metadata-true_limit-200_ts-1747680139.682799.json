@@ -1,0 +1,256 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "subtype": "bot_message",
+   "text": "The ingest <@UDMERTGZQ8N> path will be folded into the numbers from Friday.\n\nThe schedule rolls up into next week's window.\nThe new index should unblock the follow-up thread.\nThe dashboard now.\nThe <!subteam^S4BGCUYE1KZ> staging cluster landed ahead of the.\n\n This batch quietly changed the.",
+   "username": "Orchard Field",
+   "type": "message",
+   "ts": "1747680139.682799",
+   "bot_id": "BLFK8XZ1AEC",
+   "app_id": "AUFLEEC4WZN",
+   "trigger_id": "FtU9QZ3GCUZA",
+   "workflow_id": "WfSRKJ5G1EEP",
+   "thread_ts": "1747680139.682799",
+   "reply_count": 4,
+   "reply_users_count": 3,
+   "latest_reply": "1747757031.286099",
+   "reply_users": [
+    "UM0CRECPWYK",
+    "UDMERTGZQ8N",
+    "UZYSGS7CBM8"
+   ],
+   "is_locked": false,
+   "subscribed": false,
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "QQz9s",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The checklist quietly changed the earlier draft.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "user",
+         "user_id": "UDMERTGZQ8N"
+        },
+        {
+         "type": "text",
+         "text": "\nThis batch now covers a smaller slice."
+        },
+        {
+         "type": "text",
+         "text": "The ingest path was split out of next week's window."
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "The staging cluster will be folded into the shared doc.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "The rollback plan rolls up into the."
+        },
+        {
+         "type": "text",
+         "text": "\n\n"
+        },
+        {
+         "type": "usergroup",
+         "usergroup_id": "S4BGCUYE1KZ"
+        },
+        {
+         "type": "text",
+         "text": " The schedule was split out of a."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "white_check_mark",
+     "users": [
+      "UM0CRECPWYK"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UM0CRECPWYK",
+   "type": "message",
+   "ts": "1747680592.373799",
+   "client_msg_id": "8297bf5e-87ba-12a0-49d2-59bf75ff0721",
+   "text": "The new index quietly changed the follow-up thread.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747680139.682799",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "3eQx2",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The rollout is waiting on the second pass."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "UDMERTGZQ8N",
+   "type": "message",
+   "ts": "1747756769.281539",
+   "client_msg_id": "6c53dc9b-6dcb-9f1e-2070-2ba36854ffb0",
+   "text": "The dashboard rolls up into a smaller slice, either way. The retry budget rolls up into a smaller slice.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747680139.682799",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "a8urD",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "This batch depends on one."
+        },
+        {
+         "type": "link",
+         "url": "mailto:theodora@zephyr-lane.example",
+         "text": "theodora@zephyr-lane.example"
+        },
+        {
+         "type": "text",
+         "text": "The handover rolls up into the second pass."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "white_check_mark",
+     "users": [
+      "UZYSGS7CBM8"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UZYSGS7CBM8",
+   "type": "message",
+   "ts": "1747756984.046359",
+   "client_msg_id": "b1f688a9-582e-9af8-725a-7465448b0afb",
+   "text": "The ingest path is waiting on the follow-up thread, after the handover. The.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747680139.682799",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "b5TE3",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The checklist rolls up into the follow-up thread, unless."
+        },
+        {
+         "type": "emoji",
+         "name": "Beatrijs Abernathy",
+         "unicode": "1f642"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "+1",
+     "users": [
+      "UDMERTGZQ8N"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UDMERTGZQ8N",
+   "type": "message",
+   "ts": "1747757031.286099",
+   "client_msg_id": "a4a47ca9-cbca-9ad7-cca2-4af4a1840dba",
+   "text": "The queue still blocks the shared doc.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747680139.682799",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "ajrw7",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The staging cluster still blocks the open question."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "coral_yard",
+     "users": [
+      "UZYSGS7CBM8"
+     ],
+     "count": 1
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

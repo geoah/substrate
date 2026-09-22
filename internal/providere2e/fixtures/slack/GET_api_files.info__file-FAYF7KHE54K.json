@@ -1,0 +1,83 @@
+{
+ "ok": true,
+ "file": {
+  "id": "FAYF7KHE54K",
+  "created": 1789498964,
+  "timestamp": 1789498964,
+  "mimetype": "image/png",
+  "filetype": "png",
+  "pretty_type": "PNG",
+  "user": "UM0CRECPWYK",
+  "user_team": "T0ADATEAM01",
+  "editable": false,
+  "size": 99673,
+  "mode": "hosted",
+  "is_external": false,
+  "external_type": "",
+  "is_public": true,
+  "public_url_shared": false,
+  "display_as_bot": false,
+  "username": "",
+  "name": "The Staging",
+  "title": "The Rollout",
+  "is_modified_by_ai": false,
+  "url_private": "https://files.slack.com/files-pri/Nc0VSq6EKxju9BtYqDvLGDu/image.png",
+  "url_private_download": "https://files.slack.com/files-pri/Nc0VSq6EKxju9BtYqDvLGDu/download/image.png",
+  "media_display_type": "unknown",
+  "thumb_64": "https://files.slack.com/files-tmb/SIHzzEKipahcWSJzxcRA5Z7fIDw7N6Hdyi/image_64.png",
+  "thumb_80": "https://files.slack.com/files-tmb/SIHzzEKipahcWSJzxcRA5Z7fIDw7N6Hdyi/image_80.png",
+  "thumb_360": "https://files.slack.com/files-tmb/SIHzzEKipahcWSJzxcRA5Z7fIDw7N6Hdyi/image_360.png",
+  "thumb_360_w": 360,
+  "thumb_360_h": 225,
+  "thumb_480": "https://files.slack.com/files-tmb/SIHzzEKipahcWSJzxcRA5Z7fIDw7N6Hdyi/image_480.png",
+  "thumb_480_w": 480,
+  "thumb_480_h": 300,
+  "thumb_160": "https://files.slack.com/files-tmb/SIHzzEKipahcWSJzxcRA5Z7fIDw7N6Hdyi/image_160.png",
+  "thumb_720": "https://files.slack.com/files-tmb/SIHzzEKipahcWSJzxcRA5Z7fIDw7N6Hdyi/image_720.png",
+  "thumb_720_w": 720,
+  "thumb_720_h": 449,
+  "original_w": 1484,
+  "original_h": 926,
+  "thumb_tiny": "mGhlcQ80uVbaEeDQcmEZuRf/nkNy4/bcexgLXPslJN+5Dq4Zl3iaTvF3Meo68RRDPDGNqdMJjKEdqbJEhufM7log6y9qHm6/YgI1xWrPwvc07VkEkChKe9YvX3R8OZq6S4gP",
+  "permalink": "https://zephyr-lane.slack.com/files/adalovelace/FAYF7KHE54K/image.png",
+  "permalink_public": "https://brightsea.example/fUJ0dpkDmHRCRMFDlJu2pJKd4M62OXWgXy",
+  "is_starred": false,
+  "shares": {
+   "public": {
+    "CSP27K97J3K": [
+     {
+      "ts": "1747681376.387269",
+      "channel_name": "pewter-room",
+      "team_id": "T0ADATEAM01",
+      "share_user_id": "UM0CRECPWYK",
+      "source": "UNKNOWN",
+      "is_silent_share": false,
+      "reply_users": [
+       "UT0Y90KCSPH",
+       "UM0CRECPWYK",
+       "UZYSGS7CBM8",
+       "U00"
+      ],
+      "reply_users_count": 4,
+      "reply_count": 35,
+      "latest_reply": "1747771357.537059",
+      "thread_ts": "1747680178.877549"
+     }
+    ]
+   }
+  },
+  "channels": [
+   "CSP27K97J3K"
+  ],
+  "groups": [],
+  "ims": [],
+  "has_more_shares": false,
+  "has_rich_preview": false,
+  "file_access": "visible",
+  "comments_count": 0
+ },
+ "comments": [],
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

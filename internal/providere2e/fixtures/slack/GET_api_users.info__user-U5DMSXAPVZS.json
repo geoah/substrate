@@ -1,0 +1,61 @@
+{
+ "ok": true,
+ "user": {
+  "id": "U5DMSXAPVZS",
+  "name": "bartholomewo-goodspeed-bell",
+  "is_bot": false,
+  "updated": 1789466354,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "c386df",
+  "is_email_confirmed": true,
+  "real_name": "Wilder Underhill",
+  "tz": "America/Los_Angeles",
+  "tz_label": "Pacific Daylight Time",
+  "tz_offset": -25200,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "is_scim_provisioned": true,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Wilder Underhill",
+   "display_name": "Wilder Underhill",
+   "avatar_hash": "023c04235e26",
+   "real_name_normalized": "Wilder Underhill",
+   "display_name_normalized": "Wilder Underhill",
+   "image_24": "https://avatars.slack-edge.com/2026-08-23/98194794984776_0b4f8cdd77c127456eaf_24.jpg",
+   "image_32": "https://avatars.slack-edge.com/2026-08-23/98194794984776_0b4f8cdd77c127456eaf_32.jpg",
+   "image_48": "https://avatars.slack-edge.com/2026-08-23/98194794984776_0b4f8cdd77c127456eaf_48.jpg",
+   "image_72": "https://avatars.slack-edge.com/2026-08-23/98194794984776_0b4f8cdd77c127456eaf_72.jpg",
+   "image_192": "https://avatars.slack-edge.com/2026-08-23/98194794984776_0b4f8cdd77c127456eaf_192.jpg",
+   "image_512": "https://avatars.slack-edge.com/2026-08-23/98194794984776_0b4f8cdd77c127456eaf_512.jpg",
+   "image_1024": "https://avatars.slack-edge.com/2026-08-23/98194794984776_0b4f8cdd77c127456eaf_1024.jpg",
+   "image_original": "https://avatars.slack-edge.com/2026-08-23/98194794984776_0b4f8cdd77c127456eaf_original.jpg",
+   "is_custom_image": true,
+   "first_name": "Caiusine Mortlake-Vance",
+   "last_name": "Alderine Prendergast-Vance",
+   "team": "T0ADATEAM01",
+   "email": "wilder@zephyr-lane.example",
+   "title": "",
+   "phone": "+99 5075566360",
+   "skype": "",
+   "status_text": "The Review",
+   "status_text_canonical": "The",
+   "status_emoji": ":face_with_thermometer:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "face_with_thermometer",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/1f912.png",
+     "unicode": "1f912"
+    }
+   ],
+   "status_expiration": 1789513199,
+   "huddle_state": "default_unset"
+  }
+ }
+}

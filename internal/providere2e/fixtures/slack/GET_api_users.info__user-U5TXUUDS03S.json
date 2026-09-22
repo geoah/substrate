@@ -1,0 +1,61 @@
+{
+ "ok": true,
+ "user": {
+  "id": "U5TXUUDS03S",
+  "name": "gila-vasquez-lowe-frost",
+  "is_bot": false,
+  "updated": 1789352212,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "53b759",
+  "is_email_confirmed": true,
+  "real_name": "Nilsa Yewtree-Frost",
+  "tz": "America/New_York",
+  "tz_label": "Eastern Daylight Time",
+  "tz_offset": -14400,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Nilsa Yewtree-Frost",
+   "display_name": "Tova Wandsworth-Frost",
+   "avatar_hash": "9cd704791c73",
+   "real_name_normalized": "Nilsa Yewtree-Frost",
+   "display_name_normalized": "Tova Wandsworth-Frost",
+   "image_24": "https://avatars.slack-edge.com/2025-10-03/3752117494989_7798efa55b3a81b0ad27_24.png",
+   "image_32": "https://avatars.slack-edge.com/2025-10-03/3752117494989_7798efa55b3a81b0ad27_32.png",
+   "image_48": "https://avatars.slack-edge.com/2025-10-03/3752117494989_7798efa55b3a81b0ad27_48.png",
+   "image_72": "https://avatars.slack-edge.com/2025-10-03/3752117494989_7798efa55b3a81b0ad27_72.png",
+   "image_192": "https://avatars.slack-edge.com/2025-10-03/3752117494989_7798efa55b3a81b0ad27_192.png",
+   "image_512": "https://avatars.slack-edge.com/2025-10-03/3752117494989_7798efa55b3a81b0ad27_512.png",
+   "image_1024": "https://avatars.slack-edge.com/2025-10-03/3752117494989_7798efa55b3a81b0ad27_1024.png",
+   "image_original": "https://avatars.slack-edge.com/2025-10-03/3752117494989_7798efa55b3a81b0ad27_original.png",
+   "is_custom_image": true,
+   "first_name": "Tova Wandsworth-Frost",
+   "last_name": "Ivor Hartsfield",
+   "team": "T0ADATEAM01",
+   "email": "selaa@zephyr-lane.example",
+   "title": "The",
+   "phone": "+99 5716780621",
+   "skype": "",
+   "status_text": "",
+   "status_text_canonical": "",
+   "status_emoji": ":statue_of_liberty:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "statue_of_liberty",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/1f5fd.png",
+     "unicode": "1f5fd"
+    }
+   ],
+   "status_expiration": 0,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0
+  }
+ }
+}

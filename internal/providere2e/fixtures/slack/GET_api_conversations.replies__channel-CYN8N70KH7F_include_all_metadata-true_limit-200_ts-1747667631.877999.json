@@ -1,0 +1,266 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "U87FWU6EJ6S",
+   "type": "message",
+   "ts": "1747667631.877999",
+   "client_msg_id": "23c2fde5-1282-ef22-1a36-1bcb92990094",
+   "text": "The review will be folded into the numbers from Friday.\nHeads up — The checklist now covers the numbers from Friday, for now. The new index now covers the owner's sign-off.\nSummary: The estimate was split out of the agreed cutoff, for now. The retry budget should unblock the shared doc, before the window closes. The retry budget quietly changed the capacity note.\nThe dashboard is waiting on the open question, if nothing else moves.\nOne thing: The queue needs a second look from the numbers from Friday, as discussed. The checklist will be folded into the earlier draft, as discussed.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747667631.877999",
+   "reply_count": 3,
+   "reply_users_count": 3,
+   "latest_reply": "1747679297.778369",
+   "reply_users": [
+    "U4RWLTWENY5",
+    "UJ18LMHG4KF",
+    "U87FWU6EJ6S"
+   ],
+   "is_locked": false,
+   "subscribed": false,
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "zh2mh",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "This batch depends on next week's window.\nThe review quietly."
+        },
+        {
+         "type": "text",
+         "text": "The draft rolls up into.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "emoji",
+         "name": "Perrin Ravensworth",
+         "unicode": "1f37b"
+        },
+        {
+         "type": "text",
+         "text": " The draft needs a second look from the owner's sign-off."
+        },
+        {
+         "type": "text",
+         "text": " The review is waiting on next week's window.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\nShort version: The new index now covers the follow-up thread, as discussed. The rollout rolls up into one more round of checks, once the numbers settle."
+        },
+        {
+         "type": "emoji",
+         "name": "Kestrel Redmayne",
+         "unicode": "1f60a"
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "The dashboard depends on the shared doc, unless.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "emoji",
+         "name": "Quintilian Rackham",
+         "unicode": "2705",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "The rollout now covers a smaller slice.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\nFollowing up: The staging cluster rolls up into the follow-up thread, for now. The estimate still blocks the follow-up thread, after the handover."
+        },
+        {
+         "type": "emoji",
+         "name": "Rosalind Yewtree",
+         "unicode": "1f331"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "rapids_bay",
+     "users": [
+      "U4JZ9Z4S8QV",
+      "U4CY3DBX08T"
+     ],
+     "count": 2
+    },
+    {
+     "name": "x",
+     "users": [
+      "U4JZ9Z4S8QV",
+      "U0ADA0WNER1",
+      "UJ18LMHG4KF",
+      "U4RWLTWENY5",
+      "U5DMSXAPVZS",
+      "UHQVDLR80QE",
+      "UP8P1KS86P1"
+     ],
+     "count": 7
+    }
+   ]
+  },
+  {
+   "user": "U4RWLTWENY5",
+   "type": "message",
+   "ts": "1747669454.383899",
+   "client_msg_id": "20c0ac65-da96-f03e-c2d2-9011d1e12385",
+   "text": "The retry budget should unblock the numbers from Friday, as discussed.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747667631.877999",
+   "parent_user_id": "U87FWU6EJ6S",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "IUidf",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The migration will be folded into the capacity note, pending one more read."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "white_check_mark",
+     "users": [
+      "U87FWU6EJ6S"
+     ],
+     "count": 1
+    },
+    {
+     "name": "tidal_yard",
+     "users": [
+      "U4RWLTWENY5"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UJ18LMHG4KF",
+   "type": "message",
+   "ts": "1747678115.125609",
+   "client_msg_id": "ce15f3c1-5a32-2256-bff8-1141c842f307",
+   "text": "The staging cluster will be folded into the shared doc, after the handover.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747667631.877999",
+   "parent_user_id": "U87FWU6EJ6S",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "j2doE",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The new index quietly changed the owner's sign-off, either way."
+        },
+        {
+         "type": "emoji",
+         "name": "Isadora Brackwater",
+         "unicode": "1f606"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "U87FWU6EJ6S",
+   "type": "message",
+   "ts": "1747679297.778369",
+   "client_msg_id": "DC46ACF1-398C-C286-D663-DE1214F8B7F5",
+   "text": "The rollout still blocks the shared doc, assuming the <@UJ18LMHG4KF> counts hold.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747667631.877999",
+   "parent_user_id": "U87FWU6EJ6S",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "yGUcl",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The queue is waiting on one more round."
+        },
+        {
+         "type": "emoji",
+         "name": "Leonidas Tarrington",
+         "unicode": "1f64c"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "user",
+         "user_id": "UJ18LMHG4KF"
+        },
+        {
+         "type": "text",
+         "text": " "
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

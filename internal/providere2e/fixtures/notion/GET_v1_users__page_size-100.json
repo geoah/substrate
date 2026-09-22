@@ -1,0 +1,98 @@
+{
+  "object": "list",
+  "results": [
+    {
+      "object": "user",
+      "id": "18169d08-643c-8973-7cd1-12f6f32687ee",
+      "name": "Ned Danforth",
+      "avatar_url": "https://lh3.googleusercontent.com/a-/QHc43Onym6LoPYB5N9e2_IjnRYJdX1i4zrCr5OLfACd6=s100",
+      "type": "person",
+      "person": {
+        "email": "florentina@inbox.example",
+        "email_verified": true
+      }
+    },
+    {
+      "object": "user",
+      "id": "75e7b1a5-ec6d-900b-b746-851caee31ca4",
+      "name": "Zadiea Ufford-Hale",
+      "avatar_url": "https://lh3.googleusercontent.com/a-/IUoC5mS9L3yOben4VnXzpgjFpLCPy4k99UE0LNPCh8cAo6v=s100",
+      "type": "person",
+      "person": {
+        "email": "ada@ada.example.com",
+        "email_verified": true
+      }
+    },
+    {
+      "object": "user",
+      "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f",
+      "name": "Quintilian Vandermere",
+      "avatar_url": null,
+      "type": "bot",
+      "bot": {
+        "owner": {
+          "type": "workspace",
+          "workspace": true
+        },
+        "workspace_name": "Drifthouse",
+        "workspace_id": "55f96b0a-f658-9f8a-4146-9e623a1b8240",
+        "workspace_limits": {
+          "max_file_upload_size_in_bytes": 5368709120
+        }
+      }
+    },
+    {
+      "object": "user",
+      "id": "b64a9fda-0c47-a5ce-7072-048b75cd6077",
+      "name": "Renna Duquesne",
+      "avatar_url": "https://glasshouse.example/public.notion-static.com/i3r3t168-1i8v-2h95-u9go-v3l0951ed586/Hcsld_16.uzv",
+      "type": "bot",
+      "bot": {}
+    },
+    {
+      "object": "user",
+      "id": "b2327ff0-4f44-2b6a-4056-759b21318c2d",
+      "name": "Caius Westbrook",
+      "avatar_url": null,
+      "type": "bot",
+      "bot": {}
+    },
+    {
+      "object": "user",
+      "id": "7ecfaa08-b823-a1c0-f654-28cc19bcbaf5",
+      "name": "Ember Abernathy",
+      "avatar_url": "https://glasshouse.example/public.notion-static.com/1841j0wa-1zkv-2lbr-2ysy-92866551e05t/36dt82kh-p95c-4cu9-v073-0t378g47r988.mtt",
+      "type": "bot",
+      "bot": {}
+    },
+    {
+      "object": "user",
+      "id": "6b498dcc-4d57-d5cc-2082-42ab7e14625e",
+      "name": "Lex Netherwood",
+      "avatar_url": "https://glasshouse.example/public.notion-static.com/382y94k7-37fd-8e7l-s670-203b3405scrm/hjlvrq-njsm.pjt",
+      "type": "bot",
+      "bot": {}
+    },
+    {
+      "object": "user",
+      "id": "06bd9783-f153-2e0f-e829-376e13fca665",
+      "name": "Hollis Ellery",
+      "avatar_url": "https://glasshouse.example/public.notion-static.com/51915782-j2fw-07ho-07j5-834w487196tp/sbklkc-tlxz-nlpyl-wecu.krz",
+      "type": "bot",
+      "bot": {}
+    },
+    {
+      "object": "user",
+      "id": "4543de57-6dbc-b18a-e72a-543d50b91948",
+      "name": "Juniper Yewtree",
+      "avatar_url": null,
+      "type": "bot",
+      "bot": {}
+    }
+  ],
+  "next_cursor": null,
+  "has_more": false,
+  "type": "user",
+  "user": {},
+  "request_id": "fae66ee4-985b-436e-b790-6eaa3f506a89"
+}

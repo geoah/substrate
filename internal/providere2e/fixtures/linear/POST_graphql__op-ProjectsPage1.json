@@ -1,0 +1,655 @@
+{
+ "data": {
+  "projects": {
+   "pageInfo": {
+    "hasNextPage": true,
+    "endCursor": "1o1r249r-3323-7951-qo9t-3etu397062ls"
+   },
+   "nodes": [
+    {
+     "id": "159n7y93-r769-0lr2-d9u7-1u359ycoybj3",
+     "updateReminderFrequencyInWeeks": null,
+     "updateReminderFrequency": null,
+     "frequencyResolution": "weekly",
+     "updateRemindersDay": null,
+     "updateRemindersHour": null,
+     "name": "Undertow",
+     "description": "The staging cluster quietly changed the earlier draft.",
+     "slugId": "25y523go7pgf",
+     "icon": "Shield",
+     "color": "#f2c94c",
+     "startDateResolution": null,
+     "targetDateResolution": null,
+     "trashed": null,
+     "sortOrder": -72805.57,
+     "prioritySortOrder": -470317.79,
+     "priority": 0,
+     "health": null,
+     "issueCountHistory": [
+      5,
+      37,
+      51,
+      69,
+      71,
+      100,
+      122,
+      148,
+      155,
+      165,
+      213
+     ],
+     "completedIssueCountHistory": [
+      1,
+      11,
+      26,
+      30,
+      36,
+      42,
+      58,
+      71,
+      77,
+      84,
+      89
+     ],
+     "scopeHistory": [
+      5,
+      37,
+      51,
+      69,
+      71,
+      100,
+      122,
+      148,
+      155,
+      165,
+      213
+     ],
+     "completedScopeHistory": [
+      1,
+      11,
+      26,
+      30,
+      36,
+      42,
+      58,
+      71,
+      77,
+      84,
+      89
+     ],
+     "inProgressScopeHistory": [
+      1,
+      3,
+      4,
+      9,
+      5,
+      22,
+      16,
+      21,
+      23,
+      21,
+      24
+     ],
+     "labelIds": [],
+     "url": "https://linear.app/zephyr-lane/project/undertow-25y523go7pgf",
+     "identifier": null,
+     "resourceCount": 0,
+     "progress": 0.47619047619047616,
+     "scope": 231,
+     "slackChannelId": null,
+     "microsoftTeamsChannelId": null,
+     "content": "",
+     "priorityLabel": "No priority",
+     "status": {
+      "id": "85313o39-zc47-1408-m22a-2e5v5i5efweu"
+     },
+     "creator": {
+      "id": "784837xq-941t-71vq-0sz7-1i619l33260r"
+     },
+     "lead": {
+      "id": "651dj1c1-9316-19zf-8hrq-pcqp7h3y81t4"
+     },
+     "leadTeam": {
+      "id": "50v9r041-l70t-64we-22g0-68uok7yij373"
+     },
+     "convertedFromIssue": null,
+     "lastAppliedTemplate": null,
+     "lastUpdate": null,
+     "favorite": {
+      "id": "n7596031-59y8-1p6o-rv7t-yb0540309l7k"
+     },
+     "teams": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "50v9r041-l70t-64we-22g0-68uok7yij373"
+       }
+      ]
+     },
+     "members": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "651dj1c1-9316-19zf-8hrq-pcqp7h3y81t4"
+       },
+       {
+        "id": "784837xq-941t-71vq-0sz7-1i619l33260r"
+       }
+      ]
+     },
+     "createdAt": "2026-06-26T09:29:17.070Z",
+     "updatedAt": "2026-08-24T23:24:04.528Z",
+     "archivedAt": null,
+     "projectUpdateRemindersPausedUntilAt": null,
+     "startDate": "2026-06-26",
+     "targetDate": null,
+     "startedAt": "2026-06-26T09:29:17.104Z",
+     "completedAt": null,
+     "canceledAt": null,
+     "autoArchivedAt": null,
+     "healthUpdatedAt": null
+    },
+    {
+     "id": "10r0q329-t823-621k-bcsn-r1zk4083h4l3",
+     "updateReminderFrequencyInWeeks": null,
+     "updateReminderFrequency": null,
+     "frequencyResolution": "weekly",
+     "updateRemindersDay": null,
+     "updateRemindersHour": null,
+     "name": "Inlet Guild",
+     "description": "Quick note: The migration rolls up into the open question, unless somebody objects. The new index needs a second look from the follow-up thread.",
+     "slugId": "0bc831x13n6l",
+     "icon": null,
+     "color": "#5e6ad2",
+     "startDateResolution": null,
+     "targetDateResolution": null,
+     "trashed": null,
+     "sortOrder": -146559,
+     "prioritySortOrder": -146559,
+     "priority": 0,
+     "health": null,
+     "issueCountHistory": [],
+     "completedIssueCountHistory": [],
+     "scopeHistory": [],
+     "completedScopeHistory": [],
+     "inProgressScopeHistory": [],
+     "labelIds": [],
+     "url": "https://linear.app/zephyr-lane/project/inlet-guild-0bc831x13n6l",
+     "identifier": null,
+     "resourceCount": 0,
+     "progress": 0.13157894736842105,
+     "scope": 57,
+     "slackChannelId": null,
+     "microsoftTeamsChannelId": null,
+     "content": "The ingest path depends on the follow-up thread, before the.\n\n## The estimate is waiting on the follow-up thread.\n\nFollowing up: The draft landed ahead of the second pass, pending one more read. The rollback plan should unblock the second pass, after the handover. The migration should unblock one more round of checks, either way. The new index landed ahead of the shared doc, unless somebody objects. The rollback plan landed ahead of the numbers from Friday.\n\n## The new index is waiting on one more round of checks.\n\nFollowing up: The handover should unblock the second pass, as discussed. The ingest path should unblock the follow-up thread, as discussed. The review was split out of the shared doc, after the handover. The staging cluster is waiting on the earlier draft, if nothing else moves. The estimate quietly changed one more round of checks, as discussed. The migration rolls up into a smaller slice, as discussed. The retry budget will be folded into the agreed cutoff, after the handover. The draft quietly changed the open question.\n\nHeads up \u2014 The migration quietly changed the open question, after the handover. The review should unblock the numbers from Friday, unless somebody objects. The staging cluster depends on the agreed cutoff, assuming the counts hold. The draft was split out of the capacity note, unless somebody objects. This batch landed ahead of the follow-up thread, pending one more read. The checklist should unblock the numbers from Friday, after the handover. The estimate now covers the agreed cutoff.\n\n## The dashboard rolls up into one more round of checks.\n\nQuick note: The checklist landed ahead of one more round of checks, either way. The staging cluster depends on the agreed cutoff, assuming the counts hold. The estimate depends on the numbers from Friday, assuming the counts hold. The schedule still blocks the follow-up thread.\n\nThe schedule was split out of the agreed cutoff, for now. The ingest.",
+     "priorityLabel": "No priority",
+     "status": {
+      "id": "559a1s94-715e-0p6d-i25l-2jv20043727z"
+     },
+     "creator": {
+      "id": "maj4u420-j26s-4f4k-x72y-hwc1464ja801"
+     },
+     "lead": {
+      "id": "94nadc23-k6g9-07b6-b6yb-203h78zrjq9g"
+     },
+     "leadTeam": {
+      "id": "3w210268-ky81-1849-x860-026w29u90945"
+     },
+     "convertedFromIssue": null,
+     "lastAppliedTemplate": null,
+     "lastUpdate": null,
+     "favorite": null,
+     "teams": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "3w210268-ky81-1849-x860-026w29u90945"
+       }
+      ]
+     },
+     "members": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "94nadc23-k6g9-07b6-b6yb-203h78zrjq9g"
+       }
+      ]
+     },
+     "createdAt": "2026-08-18T22:19:02.464Z",
+     "updatedAt": "2026-09-08T15:56:45.311Z",
+     "archivedAt": null,
+     "projectUpdateRemindersPausedUntilAt": null,
+     "startDate": null,
+     "targetDate": "2026-12-05",
+     "startedAt": null,
+     "completedAt": null,
+     "canceledAt": null,
+     "autoArchivedAt": null,
+     "healthUpdatedAt": null
+    },
+    {
+     "id": "6utog058-wtmp-7e2x-1km4-699rz3h26994",
+     "updateReminderFrequencyInWeeks": null,
+     "updateReminderFrequency": null,
+     "frequencyResolution": "weekly",
+     "updateRemindersDay": null,
+     "updateRemindersHour": null,
+     "name": "Jetty Watch",
+     "description": "Quick note: The dashboard is waiting on the capacity note, for now. The migration landed ahead of one more round of checks, as discussed. The handover depends on the owner's sign-off.",
+     "slugId": "v1663053651c",
+     "icon": ":mag:",
+     "color": "#95a2b3",
+     "startDateResolution": null,
+     "targetDateResolution": null,
+     "trashed": null,
+     "sortOrder": -184711,
+     "prioritySortOrder": -184711,
+     "priority": 2,
+     "health": "onTrack",
+     "issueCountHistory": [
+      26
+     ],
+     "completedIssueCountHistory": [
+      7
+     ],
+     "scopeHistory": [
+      26
+     ],
+     "completedScopeHistory": [
+      7
+     ],
+     "inProgressScopeHistory": [
+      10
+     ],
+     "labelIds": [],
+     "url": "https://linear.app/zephyr-lane/project/jetty-watch-v1663053651c",
+     "identifier": null,
+     "resourceCount": 2,
+     "progress": 0.36538461538461536,
+     "scope": 26,
+     "slackChannelId": null,
+     "microsoftTeamsChannelId": null,
+     "content": "## The estimate quietly changed the numbers from Friday.\n\nHeads up \u2014 This batch should unblock one more round of checks, either way. The review should unblock the numbers from Friday, as discussed. The staging cluster is waiting on the shared doc, after the handover. The review landed ahead of the capacity note, assuming the counts hold. The staging cluster quietly changed a smaller slice, pending one more read. The staging cluster landed ahead of one more round of checks.\n\n## The dashboard rolls up.\n\n* Summary: This batch depends on the owner's sign-off, either way. The rollback plan depends on next week's window, for now. The estimate quietly changed the shared doc.\n* One thing: The estimate landed ahead of the open question, either way. The estimate now covers the earlier draft, either way. The staging cluster depends on a smaller slice.\n* Short version: The estimate rolls up into the second pass, after the handover. The retry budget now covers the agreed cutoff.\n\n## The handover is waiting on the second pass.\n\n* The migration still blocks the numbers from Friday, as discussed.\n* This batch still blocks the owner's sign-off, for now. The estimate is waiting on the second pass.\n* One thing: The retry budget is waiting on next week's window, either way. The ingest https://linear.app/zephyr-lane/issue/link-2 path now covers the owner's sign-off.\n\nThe queue still blocks the.",
+     "priorityLabel": "High",
+     "status": {
+      "id": "85313o39-zc47-1408-m22a-2e5v5i5efweu"
+     },
+     "creator": {
+      "id": "f7094s73-a059-02w7-8370-lm443333wj9m"
+     },
+     "lead": {
+      "id": "f7094s73-a059-02w7-8370-lm443333wj9m"
+     },
+     "leadTeam": {
+      "id": "140to9h4-b3d8-48sl-b0y0-4wl21u037cw4"
+     },
+     "convertedFromIssue": null,
+     "lastAppliedTemplate": null,
+     "lastUpdate": {
+      "id": "rs429c19-yj18-7c76-e360-4v7wu56z8x88"
+     },
+     "favorite": null,
+     "teams": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "140to9h4-b3d8-48sl-b0y0-4wl21u037cw4"
+       }
+      ]
+     },
+     "members": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "f7094s73-a059-02w7-8370-lm443333wj9m"
+       }
+      ]
+     },
+     "createdAt": "2026-09-08T16:46:55.651Z",
+     "updatedAt": "2026-09-08T16:46:55.651Z",
+     "archivedAt": null,
+     "projectUpdateRemindersPausedUntilAt": null,
+     "startDate": "2026-09-08",
+     "targetDate": null,
+     "startedAt": "2026-09-08T16:46:55.739Z",
+     "completedAt": null,
+     "canceledAt": null,
+     "autoArchivedAt": null,
+     "healthUpdatedAt": "2026-09-08T20:30:37.373Z"
+    },
+    {
+     "id": "8ri105xf-p2gf-1d13-7319-796434ru7552",
+     "updateReminderFrequencyInWeeks": null,
+     "updateReminderFrequency": 1,
+     "frequencyResolution": "weekly",
+     "updateRemindersDay": "Friday",
+     "updateRemindersHour": 15,
+     "name": "Zenith Line",
+     "description": "Heads up \u2014 The draft now covers a smaller slice, assuming the counts hold. The review was split out of next week's window, after the handover. The migration is waiting on the second pass, for now. The handover now covers one more round of checks.",
+     "slugId": "9f89u9e2xi57",
+     "icon": null,
+     "color": "#f2994a",
+     "startDateResolution": null,
+     "targetDateResolution": null,
+     "trashed": null,
+     "sortOrder": 249782.16,
+     "prioritySortOrder": 0,
+     "priority": 2,
+     "health": "onTrack",
+     "issueCountHistory": [
+      166,
+      234,
+      267
+     ],
+     "completedIssueCountHistory": [
+      55,
+      82,
+      118
+     ],
+     "scopeHistory": [
+      166,
+      234,
+      267
+     ],
+     "completedScopeHistory": [
+      55,
+      82,
+      118
+     ],
+     "inProgressScopeHistory": [
+      29,
+      47,
+      58
+     ],
+     "labelIds": [],
+     "url": "https://linear.app/zephyr-lane/project/zenith-line-9f89u9e2xi57",
+     "identifier": null,
+     "resourceCount": 3,
+     "progress": 0.5193050193050193,
+     "scope": 259,
+     "slackChannelId": "CJXGFZQB2K4",
+     "microsoftTeamsChannelId": null,
+     "content": "## The queue depends on the owner's sign-off.\n\nFor the record: The rollback plan now covers a smaller slice, if nothing else moves. The ingest path was split out of the owner's sign-off, assuming the counts hold. The dashboard will be folded into the shared doc, assuming the counts hold. The migration still blocks the capacity note, if nothing else moves. The retry budget should unblock the follow-up thread, once the numbers settle. The new index rolls up into the capacity note, pending one more read. The dashboard quietly changed the earlier draft.\n\n## The schedule was split out of.\n\n* Following up: The staging cluster should unblock the numbers from Friday, for now. The queue will be folded into the owner's sign-off, if nothing else moves. The staging cluster depends on the owner's sign-off, unless somebody objects. The handover was split out of one more round of checks.\n* For the record: The dashboard needs a second look from the owner's sign-off, unless somebody objects.\n* Following up: The new index quietly changed the open question, as discussed. This batch depends on one more round of checks, once the numbers settle. The staging cluster needs a second look from a smaller slice, pending one more read. The ingest path still blocks the follow-up thread, unless somebody objects. The checklist needs a second look from a smaller slice, either way. The rollout still blocks one more round of checks, as discussed. The estimate depends on the numbers from Friday, after the handover. The handover now covers the second pass, either way. The handover will be folded into the owner's sign-off, as discussed. The draft needs a second look from the capacity note.\n\n## The staging cluster will be folded into the earlier draft.\n\n* Summary: The migration landed ahead of next week's window, as discussed. The new index is waiting on the open question, before the window closes. The rollout should unblock the shared doc.\n* Quick note: The draft will be folded into the follow-up thread, either way. This batch rolls up into the capacity note, unless somebody objects.\n* For the record: The dashboard now covers one more round of checks, for now. The retry budget rolls up into the open question, either way. The draft is waiting on the numbers from Friday, either way. The review will be folded into the follow-up thread, once the numbers settle. The ingest path now covers the second pass.\n* Summary: The checklist depends on the follow-up thread, before the window closes. The queue rolls up into the capacity note.\n* Summary: The new index should unblock the agreed cutoff, before the window closes. The checklist.\n* For the record: The schedule rolls up into the agreed cutoff, after the handover. The dashboard is waiting on the open question.\n\nSummary: The checklist was split out of the owner's sign-off, assuming the counts hold. The rollback plan now covers the agreed cutoff.\n\n## The rollback plan still.\n\n 1. Following up: The retry budget needs a second look from the second pass, assuming the counts hold. The review needs a second look from the owner's sign-off.\n 2. The schedule rolls up into a smaller slice.\n 3. Heads up \u2014 The estimate will be folded into a smaller slice, before the window closes. The estimate should unblock the earlier draft, for now.\n 4. The ingest path now covers the second pass, once the numbers settle.\n 5. The retry budget depends on the numbers from Friday, for now. The draft was.\n 6. The ingest path is waiting on the follow-up thread, unless.\n 7. The ingest path is waiting on the owner's sign-off.\n 8. Following up: The estimate depends on the follow-up thread, pending one more read. The new index.\n 9. This batch depends on the follow-up thread.\n10. The migration still.\n11. The handover quietly changed the.\n12. The staging cluster is.\n13. The review quietly changed the second pass.\n14. The review rolls up into the agreed cutoff.\n\n## The retry budget quietly changed the earlier draft.\n\n* Context: The review depends on the capacity note, if nothing else moves. The rollback plan needs a second look from the agreed cutoff.\n* For the record: The queue is waiting on the second pass, as discussed. The checklist now covers the capacity note.\n* Summary: The ingest path will be folded into the numbers from Friday, once the numbers settle. The rollout was split out of the second pass.\n* Summary: The rollout is waiting on the follow-up thread, unless somebody objects. The rollback plan still blocks the owner's sign-off, once the numbers settle. The migration rolls up into the agreed cutoff, before the window closes.\n* The rollout was split out of the open question, after the handover. The dashboard landed.",
+     "priorityLabel": "High",
+     "status": {
+      "id": "85313o39-zc47-1408-m22a-2e5v5i5efweu"
+     },
+     "creator": {
+      "id": "0tu4n7ua-4h94-7e19-540l-0ibq2esq6g26"
+     },
+     "lead": {
+      "id": "684s51q7-30f8-1n46-30q0-0k965894134y"
+     },
+     "leadTeam": {
+      "id": "bjvtwz46-5l51-10xv-881a-v4r09o61u020"
+     },
+     "convertedFromIssue": null,
+     "lastAppliedTemplate": null,
+     "lastUpdate": {
+      "id": "655eu83r-2z02-2987-2810-89yx85qc21s0"
+     },
+     "favorite": null,
+     "teams": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "bjvtwz46-5l51-10xv-881a-v4r09o61u020"
+       },
+       {
+        "id": "26153x51-89l5-7sy7-840k-9w97b2567lmq"
+       }
+      ]
+     },
+     "members": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "368pg7j1-u66e-13cr-mw0x-567k5c0541m2"
+       },
+       {
+        "id": "jj73ndo9-4762-21gu-w5yi-8d72204bl0ba"
+       },
+       {
+        "id": "vu848tdp-5okh-2w73-f2d2-45pvy16z08d5"
+       },
+       {
+        "id": "6s1136f4-5k4f-10y8-nb22-757hqp685941"
+       },
+       {
+        "id": "10o9w92p-v9j5-4357-923o-c65s519l4yxs"
+       },
+       {
+        "id": "33z62349-0w7v-1h71-vq76-k19fm6394171"
+       },
+       {
+        "id": "0tu4n7ua-4h94-7e19-540l-0ibq2esq6g26"
+       },
+       {
+        "id": "d9w8dg30-001d-4924-i22n-9z4m610197b8"
+       },
+       {
+        "id": "x266m58k-9f9u-0979-9m87-9680025h3638"
+       },
+       {
+        "id": "684s51q7-30f8-1n46-30q0-0k965894134y"
+       },
+       {
+        "id": "5r266a95-d33d-7876-3557-819u50h6512d"
+       }
+      ]
+     },
+     "createdAt": "2026-08-12T17:11:28.827Z",
+     "updatedAt": "2026-09-14T22:52:22.137Z",
+     "archivedAt": null,
+     "projectUpdateRemindersPausedUntilAt": null,
+     "startDate": "2026-08-12",
+     "targetDate": "2026-10-15",
+     "startedAt": "2026-08-25T21:26:19.850Z",
+     "completedAt": null,
+     "canceledAt": null,
+     "autoArchivedAt": null,
+     "healthUpdatedAt": "2026-09-12T01:17:23.537Z"
+    },
+    {
+     "id": "28030xy7-xwxz-91z8-88yp-5t7z796ps537",
+     "updateReminderFrequencyInWeeks": null,
+     "updateReminderFrequency": null,
+     "frequencyResolution": "weekly",
+     "updateRemindersDay": null,
+     "updateRemindersHour": null,
+     "name": "Anvil Line",
+     "description": "",
+     "slugId": "rx45x688w991",
+     "icon": null,
+     "color": "#f2994a",
+     "startDateResolution": null,
+     "targetDateResolution": null,
+     "trashed": null,
+     "sortOrder": 225936.94,
+     "prioritySortOrder": 45.02,
+     "priority": 1,
+     "health": null,
+     "issueCountHistory": [
+      181,
+      220,
+      283,
+      295
+     ],
+     "completedIssueCountHistory": [
+      91,
+      118,
+      131,
+      136
+     ],
+     "scopeHistory": [
+      181,
+      220,
+      283,
+      295
+     ],
+     "completedScopeHistory": [
+      91,
+      118,
+      131,
+      136
+     ],
+     "inProgressScopeHistory": [
+      44,
+      16,
+      35,
+      37
+     ],
+     "labelIds": [],
+     "url": "https://linear.app/zephyr-lane/project/anvil-line-rx45x688w991",
+     "identifier": null,
+     "resourceCount": 0,
+     "progress": 0.4966216216216216,
+     "scope": 296,
+     "slackChannelId": null,
+     "microsoftTeamsChannelId": null,
+     "content": "",
+     "priorityLabel": "Urgent",
+     "status": {
+      "id": "85313o39-zc47-1408-m22a-2e5v5i5efweu"
+     },
+     "creator": {
+      "id": "pkg3o110-ho50-453b-r53i-tda7t6sd4cft"
+     },
+     "lead": {
+      "id": "pkg3o110-ho50-453b-r53i-tda7t6sd4cft"
+     },
+     "leadTeam": {
+      "id": "m0su437x-3289-9b7i-c02y-j5667mh5s579"
+     },
+     "convertedFromIssue": null,
+     "lastAppliedTemplate": null,
+     "lastUpdate": null,
+     "favorite": null,
+     "teams": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "m0su437x-3289-9b7i-c02y-j5667mh5s579"
+       }
+      ]
+     },
+     "members": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "pkg3o110-ho50-453b-r53i-tda7t6sd4cft"
+       }
+      ]
+     },
+     "createdAt": "2026-07-01T19:40:38.603Z",
+     "updatedAt": "2026-08-21T17:51:35.490Z",
+     "archivedAt": null,
+     "projectUpdateRemindersPausedUntilAt": null,
+     "startDate": "2026-08-19",
+     "targetDate": null,
+     "startedAt": "2026-08-19T00:07:31.914Z",
+     "completedAt": null,
+     "canceledAt": null,
+     "autoArchivedAt": null,
+     "healthUpdatedAt": null
+    },
+    {
+     "id": "86fibzt9-u27h-1845-9p41-m3ac92p97g0v",
+     "updateReminderFrequencyInWeeks": null,
+     "updateReminderFrequency": null,
+     "frequencyResolution": "weekly",
+     "updateRemindersDay": null,
+     "updateRemindersHour": null,
+     "name": "Quayside Bay",
+     "description": "",
+     "slugId": "41w37a1nb99q",
+     "icon": null,
+     "color": "#f2c94c",
+     "startDateResolution": null,
+     "targetDateResolution": null,
+     "trashed": null,
+     "sortOrder": -187746,
+     "prioritySortOrder": -187746,
+     "priority": 0,
+     "health": null,
+     "issueCountHistory": [],
+     "completedIssueCountHistory": [],
+     "scopeHistory": [],
+     "completedScopeHistory": [],
+     "inProgressScopeHistory": [],
+     "labelIds": [],
+     "url": "https://linear.app/zephyr-lane/project/quayside-bay-41w37a1nb99q",
+     "identifier": null,
+     "resourceCount": 0,
+     "progress": 0,
+     "scope": 4,
+     "slackChannelId": null,
+     "microsoftTeamsChannelId": null,
+     "content": "Following up: The migration was split out of the second pass, unless somebody objects. The staging cluster landed ahead of the agreed cutoff.",
+     "priorityLabel": "No priority",
+     "status": {
+      "id": "559a1s94-715e-0p6d-i25l-2jv20043727z"
+     },
+     "creator": {
+      "id": "7528uu8p-4ox1-46e1-lpk4-z4k13549ixiu"
+     },
+     "lead": null,
+     "leadTeam": {
+      "id": "ac6t4sy6-17j4-293j-rr70-09c41d4c7162"
+     },
+     "convertedFromIssue": null,
+     "lastAppliedTemplate": null,
+     "lastUpdate": null,
+     "favorite": null,
+     "teams": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "ac6t4sy6-17j4-293j-rr70-09c41d4c7162"
+       }
+      ]
+     },
+     "members": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": []
+     },
+     "createdAt": "2026-09-16T00:06:37.921Z",
+     "updatedAt": "2026-09-16T00:06:37.921Z",
+     "archivedAt": null,
+     "projectUpdateRemindersPausedUntilAt": null,
+     "startDate": null,
+     "targetDate": null,
+     "startedAt": null,
+     "completedAt": null,
+     "canceledAt": null,
+     "autoArchivedAt": null,
+     "healthUpdatedAt": null
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,40 @@
+{
+ "records": [
+  {
+   "id": 742812004,
+   "user_id": 4021873,
+   "created_at": "2026-09-12T07:12:15.902Z",
+   "updated_at": "2026-09-12T07:12:15.902Z",
+   "start": "2026-09-12T07:12:08.556Z",
+   "timezone_offset": "+01:00",
+   "score_state": "PENDING_SCORE"
+  },
+  {
+   "id": 742690155,
+   "user_id": 4021873,
+   "created_at": "2026-09-11T06:31:50.223Z",
+   "updated_at": "2026-09-12T07:44:30.117Z",
+   "start": "2026-09-11T06:31:44.219Z",
+   "end": "2026-09-12T07:12:08.556Z",
+   "timezone_offset": "+01:00",
+   "score_state": "UNSCORABLE"
+  },
+  {
+   "id": 742573640,
+   "user_id": 4021873,
+   "created_at": "2026-09-10T05:58:38.415Z",
+   "updated_at": "2026-09-11T10:02:55.884Z",
+   "start": "2026-09-10T05:58:31.002Z",
+   "end": "2026-09-11T06:31:44.219Z",
+   "timezone_offset": "+01:00",
+   "score_state": "SCORED",
+   "score": {
+    "strain": 14.9071,
+    "kilojoule": 12903.774,
+    "average_heart_rate": 78,
+    "max_heart_rate": 178
+   }
+  }
+ ],
+ "next_token": "MjAyNjA5MTA2MjM"
+}

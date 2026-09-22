@@ -1,0 +1,61 @@
+{
+ "ok": true,
+ "user": {
+  "id": "UD9B8M0VNV8",
+  "name": "alistairah-redmayne-quill",
+  "is_bot": false,
+  "updated": 1789353940,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "e85d72",
+  "is_email_confirmed": true,
+  "real_name": "Ruiine Jorvik-Quill",
+  "tz": "America/New_York",
+  "tz_label": "Eastern Daylight Time",
+  "tz_offset": -14400,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Ruiine Jorvik-Quill",
+   "display_name": "Ruiine Jorvik-Quill",
+   "avatar_hash": "bcaccdc4de61",
+   "real_name_normalized": "Ruiine Jorvik-Quill",
+   "display_name_normalized": "Ruiine Jorvik-Quill",
+   "image_24": "https://avatars.slack-edge.com/2026-03-26/69188369949710_3c8454c0421b9789eaf7_24.jpg",
+   "image_32": "https://avatars.slack-edge.com/2026-03-26/69188369949710_3c8454c0421b9789eaf7_32.jpg",
+   "image_48": "https://avatars.slack-edge.com/2026-03-26/69188369949710_3c8454c0421b9789eaf7_48.jpg",
+   "image_72": "https://avatars.slack-edge.com/2026-03-26/69188369949710_3c8454c0421b9789eaf7_72.jpg",
+   "image_192": "https://avatars.slack-edge.com/2026-03-26/69188369949710_3c8454c0421b9789eaf7_192.jpg",
+   "image_512": "https://avatars.slack-edge.com/2026-03-26/69188369949710_3c8454c0421b9789eaf7_512.jpg",
+   "image_1024": "https://avatars.slack-edge.com/2026-03-26/69188369949710_3c8454c0421b9789eaf7_1024.jpg",
+   "image_original": "https://avatars.slack-edge.com/2026-03-26/69188369949710_3c8454c0421b9789eaf7_original.jpg",
+   "is_custom_image": true,
+   "first_name": "Arius Cranfield6",
+   "last_name": "Sebastiano Ravensworth-Hale",
+   "team": "T0ADATEAM01",
+   "email": "huxine.zabriskie-quill@zephyr-lane.example",
+   "title": "",
+   "phone": "+99 5418578360",
+   "skype": "",
+   "status_text": "The Review",
+   "status_text_canonical": "",
+   "status_emoji": ":statue_of_liberty:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "statue_of_liberty",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/1f5fd.png",
+     "unicode": "1f5fd"
+    }
+   ],
+   "status_expiration": 1789851600,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0
+  }
+ }
+}

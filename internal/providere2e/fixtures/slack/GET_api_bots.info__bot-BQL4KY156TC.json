@@ -1,0 +1,15 @@
+{
+ "ok": true,
+ "bot": {
+  "id": "BQL4KY156TC",
+  "deleted": false,
+  "name": "Northwind Labs",
+  "updated": 1731094998,
+  "app_id": "A7KSAK542",
+  "icons": {
+   "image_36": "https://a.slack-edge.com/dc483/img/plugins/Northwind Labs/service_72.png",
+   "image_48": "https://a.slack-edge.com/dc483/img/plugins/Northwind Labs/service_48.png",
+   "image_72": "https://a.slack-edge.com/dc483/img/plugins/Northwind Labs/service_72.png"
+  }
+ }
+}

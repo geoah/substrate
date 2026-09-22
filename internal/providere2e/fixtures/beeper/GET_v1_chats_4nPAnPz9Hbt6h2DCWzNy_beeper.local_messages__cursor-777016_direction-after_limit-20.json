@@ -1,0 +1,38 @@
+{
+ "items": [
+  {
+   "id": "361490",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_bqw-00362899478925:beeper.local",
+   "senderName": "Finn Yelverton-Hale",
+   "timestamp": "2026-09-14T16:56:49.000Z",
+   "sortKey": "777016",
+   "type": "TEXT",
+   "text": "Short version: The ingest path still blocks the agreed cutoff, once the numbers settle. The migration is waiting on the numbers from Friday, either way. The review is waiting on the open question.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "links": [
+    {
+     "url": "https://meridian-stack-works.example/",
+     "title": "The Retry Budget",
+     "summary": "The review was split out of the owner's sign-off, pending one more read. This.",
+     "img": "mxc://local.beeper.com/fwktd_nWuVUmk1O8xR9sDVxeBhmTdckbR3s03rwSl4c5stDqnbARpykRBgAZK9srWZbP6E?vmtrczjqoPhedSinpFWDC=ioMpBDRbNJGaAmayp9vjSbU8OuwzWDMvqGZqLBtlKb0MWDlWJiN8cAV6UkSMLWzVDqLjhmUrY3GlEZZtQzlrwkG4MCBtuzT8RpntKRy4UPtLH4ugOCMNFBHZWHKZESBmCXEsMCxaKlewMIsqQcvmYWL3EaVUQeAiDrV6rPX2fDW1BOorymG9LkgzUIHfArhmctUmGQYPYJXgIT94HcVjFgPFjUZXS6NUX5p9MyNocUdlg5OvCMPcNGzel2NjJtetPfPfL7I3xQGcRCUlFPPloCF1Yj2kWzr8mPP9Sa4zrRY2VUQ8llhaWaKyeSY8Sg8ak9AhwL0tRHQmUSOwZ01qJ9nqq0UdJ0PBSqUfdIY4WLUwCfjiE3LxEVDgoBplDWDyFPXpCuAtyYfrLEjkblaWElNpXrw7pNGzCBCVVk6xmiiGNNeZUEKoICX0OyvqsiAibJ",
+     "imgSize": {
+      "height": 140,
+      "width": 140
+     }
+    }
+   ],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T16:56:56.698Z",
+    "@whatsapp_bqw-00362899478925:beeper.local": "2026-09-14T16:56:51.241Z"
+   },
+   "isUnread": false
+  }
+ ],
+ "hasMore": false,
+ "oldestCursor": "777016",
+ "newestCursor": "777016"
+}

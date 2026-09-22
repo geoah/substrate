@@ -1,0 +1,30 @@
+{
+ "id": "25fy2lyutj47u7c5",
+ "historyId": "30547191",
+ "messages": [
+  {
+   "id": "7r364g743z13snx4",
+   "threadId": "25fy2lyutj47u7c5",
+   "labelIds": [
+    "SENT"
+   ],
+   "snippet": "Context: The ingest path landed ahead of the second pass, before the window closes. The ingest path was split out of the capacity note, either way. The staging cluster quietly changed the follow-up thread.",
+   "historyId": "30547191",
+   "internalDate": "1788865872000",
+   "sizeEstimate": 32661
+  },
+  {
+   "id": "5p262v3169248099",
+   "threadId": "25fy2lyutj47u7c5",
+   "labelIds": [
+    "VFQKRDJQD",
+    "OGRPGRXN_HZBUUEYW",
+    "INBOX"
+   ],
+   "snippet": "For the record: The estimate now covers a smaller slice, pending one more read. The ingest path landed ahead of the second pass, either way. The dashboard will be folded into the agreed cutoff, before the window closes.",
+   "historyId": "30546905",
+   "internalDate": "1788869700000",
+   "sizeEstimate": 28622
+  }
+ ]
+}

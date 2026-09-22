@@ -1,0 +1,315 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "UF1731TNMYW",
+   "type": "message",
+   "ts": "1747649835.282909",
+   "client_msg_id": "2467005a-ae42-182c-29de-dceb6015af54",
+   "text": "<@U87FWU6EJ6S> Summary: The ingest path needs a second look from next week's window, pending one more read. The staging cluster depends.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747649835.282909",
+   "reply_count": 6,
+   "reply_users_count": 4,
+   "latest_reply": "1747659111.379149",
+   "reply_users": [
+    "U87FWU6EJ6S",
+    "U2KMMH91X84",
+    "UFK60H4FBZJ",
+    "U0ADA0WNER1"
+   ],
+   "is_locked": false,
+   "subscribed": true,
+   "last_read": "1747659111.379149",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "SaWic",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "user",
+         "user_id": "U87FWU6EJ6S"
+        },
+        {
+         "type": "text",
+         "text": " The checklist should unblock the agreed cutoff."
+        },
+        {
+         "type": "emoji",
+         "name": "Jacqueline Foxcroft"
+        },
+        {
+         "type": "text",
+         "text": " The checklist needs a second look from the numbers from Friday."
+        },
+        {
+         "type": "emoji",
+         "name": "Vex Halloway",
+         "unicode": "1f60b"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "U87FWU6EJ6S",
+   "type": "message",
+   "ts": "1747649881.753519",
+   "client_msg_id": "9efc7105-a2ca-2bd2-7eb1-70818e8b3afe",
+   "text": "The schedule needs a second look from the shared doc, assuming the counts hold. The.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747649835.282909",
+   "parent_user_id": "UF1731TNMYW",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "goHDj",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The draft still blocks the second pass, before the window closes."
+        },
+        {
+         "type": "emoji",
+         "name": "Beatrijs Abernathy",
+         "unicode": "1f642"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "U2KMMH91X84",
+   "type": "message",
+   "ts": "1747649955.788539",
+   "client_msg_id": "8a2efa8a-b21e-3652-897b-0ecc31828607",
+   "text": "One thing: This batch will be folded into the follow-up thread, once the numbers settle. This batch depends on the shared doc, once the numbers settle. This batch should unblock the numbers from Friday.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747649835.282909",
+   "parent_user_id": "UF1731TNMYW",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "hYewb",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "Short version: The checklist now covers one more round of checks, either way. The ingest path needs a second look from the agreed cutoff, once the numbers settle. The schedule was."
+        },
+        {
+         "type": "emoji",
+         "name": "Jacqueline Foxcroft"
+        },
+        {
+         "type": "text",
+         "text": " The queue quietly changed a smaller slice."
+        },
+        {
+         "type": "emoji",
+         "name": "Orsolya Hartsfield",
+         "unicode": "1f604"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "eyes",
+     "users": [
+      "U3V8Q0FR2KR",
+      "UF1731TNMYW",
+      "U4RWLTWENY5"
+     ],
+     "count": 3
+    }
+   ]
+  },
+  {
+   "user": "UFK60H4FBZJ",
+   "type": "message",
+   "ts": "1747650216.977249",
+   "client_msg_id": "bf2a40ae-f488-f360-176c-d7352a471410",
+   "text": "The migration landed ahead of the agreed cutoff.\nThe dashboard was split out of the capacity note, for now. The staging cluster.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747649835.282909",
+   "parent_user_id": "UF1731TNMYW",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "kMvyA",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The staging cluster now covers next week's window.\nThe queue is waiting on the open question, if nothing else moves. The review was."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "+1",
+     "users": [
+      "U0ADA0WNER1"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "U2KMMH91X84",
+   "type": "message",
+   "ts": "1747650326.571369",
+   "client_msg_id": "18786f90-d9ca-51b1-e4b9-6bcf7e61b2ca",
+   "text": "Heads up — The handover landed ahead of the numbers from Friday, unless somebody objects. The.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747649835.282909",
+   "parent_user_id": "UF1731TNMYW",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "YHWmi",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The rollback plan depends on the agreed cutoff, assuming the counts hold. The review is."
+        },
+        {
+         "type": "emoji",
+         "name": "Orsolya Hartsfield",
+         "unicode": "1f604"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "U0ADA0WNER1",
+   "type": "message",
+   "ts": "1747659019.940409",
+   "client_msg_id": "dc0626bb-4b2a-2077-3ee2-7290cf6f73b0",
+   "text": "<@U2KMMH91X84> The handover rolls up into the second pass.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747649835.282909",
+   "parent_user_id": "UF1731TNMYW",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "N4wNz",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "user",
+         "user_id": "U2KMMH91X84"
+        },
+        {
+         "type": "text",
+         "text": " The staging cluster will be folded into the open question."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "U0ADA0WNER1",
+   "type": "message",
+   "ts": "1747659111.379149",
+   "client_msg_id": "140c7420-2344-628d-adcf-506dd7de920d",
+   "text": "The schedule <#C25CVNLLJLZ> landed ahead of the capacity note.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747649835.282909",
+   "parent_user_id": "UF1731TNMYW",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "NPEuz",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The new index needs a second look from next week's window."
+        },
+        {
+         "type": "channel",
+         "channel_id": "C25CVNLLJLZ"
+        },
+        {
+         "type": "text",
+         "text": " The new index rolls up into the shared doc."
+        },
+        {
+         "type": "emoji",
+         "name": "Gwendolyn Kirkbride",
+         "unicode": "1f61b"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "heart",
+     "users": [
+      "UF1731TNMYW"
+     ],
+     "count": 1
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

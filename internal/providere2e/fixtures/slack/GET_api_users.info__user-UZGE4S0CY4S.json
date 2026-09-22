@@ -1,0 +1,62 @@
+{
+ "ok": true,
+ "user": {
+  "id": "UZGE4S0CY4S",
+  "name": "galenel-halloway-lowe",
+  "is_bot": false,
+  "updated": 1789444800,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "e23f99",
+  "is_email_confirmed": true,
+  "real_name": "Daxka Goodspeed-Lowe",
+  "tz": "America/New_York",
+  "tz_label": "Eastern Daylight Time",
+  "tz_offset": -14400,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "is_scim_provisioned": true,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Daxka Goodspeed-Lowe",
+   "display_name": "Daxka Goodspeed-Lowe",
+   "avatar_hash": "ccb9c16a7c95",
+   "real_name_normalized": "Daxka Goodspeed-Lowe",
+   "display_name_normalized": "Daxka Goodspeed-Lowe",
+   "image_24": "https://avatars.slack-edge.com/2026-06-07/12895809814225_aa242bdbed2cecc54e93_24.jpg",
+   "image_32": "https://avatars.slack-edge.com/2026-06-07/12895809814225_aa242bdbed2cecc54e93_32.jpg",
+   "image_48": "https://avatars.slack-edge.com/2026-06-07/12895809814225_aa242bdbed2cecc54e93_48.jpg",
+   "image_72": "https://avatars.slack-edge.com/2026-06-07/12895809814225_aa242bdbed2cecc54e93_72.jpg",
+   "image_192": "https://avatars.slack-edge.com/2026-06-07/12895809814225_aa242bdbed2cecc54e93_192.jpg",
+   "image_512": "https://avatars.slack-edge.com/2026-06-07/12895809814225_aa242bdbed2cecc54e93_512.jpg",
+   "image_1024": "https://avatars.slack-edge.com/2026-06-07/12895809814225_aa242bdbed2cecc54e93_1024.jpg",
+   "image_original": "https://avatars.slack-edge.com/2026-06-07/12895809814225_aa242bdbed2cecc54e93_original.jpg",
+   "is_custom_image": true,
+   "first_name": "Daxka Goodspeed-Lowe",
+   "last_name": "Cy Ellery",
+   "team": "T0ADATEAM01",
+   "email": "ineska@zephyr-lane.example",
+   "title": "",
+   "phone": "+99 5150383162",
+   "skype": "",
+   "status_text": "The Ingest Path depends on",
+   "status_text_canonical": "",
+   "status_emoji": ":spiral_calendar_pad:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "spiral_calendar_pad",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/1f5d3-fe0f.png",
+     "unicode": "1f5d3-fe0f"
+    }
+   ],
+   "status_expiration": 1789531200,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0
+  }
+ }
+}

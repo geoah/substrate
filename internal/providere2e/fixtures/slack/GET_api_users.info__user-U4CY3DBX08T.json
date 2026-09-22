@@ -1,0 +1,62 @@
+{
+ "ok": true,
+ "user": {
+  "id": "U4CY3DBX08T",
+  "name": "josephinaka-coldstream-crane",
+  "is_bot": false,
+  "updated": 1789472026,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "53b759",
+  "is_email_confirmed": true,
+  "real_name": "Nikhilyn Eastcott-Crane",
+  "tz": "America/Los_Angeles",
+  "tz_label": "Pacific Daylight Time",
+  "tz_offset": -25200,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "is_scim_provisioned": true,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Nikhilyn Eastcott-Crane",
+   "display_name": "Fabienyn Dunmore-Crane",
+   "avatar_hash": "cd03f72f400d",
+   "real_name_normalized": "Nikhilyn Eastcott-Crane",
+   "display_name_normalized": "Fabienyn Dunmore-Crane",
+   "image_24": "https://avatars.slack-edge.com/2026-06-15/64495790555629_45e6d625547a272905a9_24.jpg",
+   "image_32": "https://avatars.slack-edge.com/2026-06-15/64495790555629_45e6d625547a272905a9_32.jpg",
+   "image_48": "https://avatars.slack-edge.com/2026-06-15/64495790555629_45e6d625547a272905a9_48.jpg",
+   "image_72": "https://avatars.slack-edge.com/2026-06-15/64495790555629_45e6d625547a272905a9_72.jpg",
+   "image_192": "https://avatars.slack-edge.com/2026-06-15/64495790555629_45e6d625547a272905a9_192.jpg",
+   "image_512": "https://avatars.slack-edge.com/2026-06-15/64495790555629_45e6d625547a272905a9_512.jpg",
+   "image_1024": "https://avatars.slack-edge.com/2026-06-15/64495790555629_45e6d625547a272905a9_1024.jpg",
+   "image_original": "https://avatars.slack-edge.com/2026-06-15/64495790555629_45e6d625547a272905a9_original.jpg",
+   "is_custom_image": true,
+   "first_name": "Fabienyn Dunmore-Crane",
+   "last_name": "Joa Halloway-Frost",
+   "team": "T0ADATEAM01",
+   "email": "juniperyn@zephyr-lane.example",
+   "title": "",
+   "phone": "+99 5021423216",
+   "skype": "",
+   "status_text": "The Staging Cluster was split out of the capacity note",
+   "status_text_canonical": "",
+   "status_emoji": ":no_entry:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "no_entry",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/26d4.png",
+     "unicode": "26d4"
+    }
+   ],
+   "status_expiration": 1789801199,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0
+  }
+ }
+}

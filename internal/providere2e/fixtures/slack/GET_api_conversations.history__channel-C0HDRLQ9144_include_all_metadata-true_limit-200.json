@@ -1,0 +1,149 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747674380.100249",
+   "client_msg_id": "4B66498F-3C4E-0E0F-5060-96FC431A8205",
+   "text": "The new index still blocks one more round of checks.",
+   "team": "T0ADATEAM01",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "5ZeCA",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The review landed ahead of the follow-up thread."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747674374.318809",
+   "client_msg_id": "88E100BA-F404-A074-9AE0-AF018A80D68D",
+   "text": "The migration is waiting on a smaller slice, if nothing else moves. The ingest path now.",
+   "team": "T0ADATEAM01",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "CjkN0",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The estimate needs a second look from the numbers from Friday, either way. The queue."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747674340.850599",
+   "client_msg_id": "b39e33fe-5231-e852-c3a4-31c00cda44b6",
+   "text": "The queue quietly.",
+   "team": "T0ADATEAM01",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "Zw9pR",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The queue should."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747674332.347289",
+   "client_msg_id": "5FD358B0-4601-FCA1-75E6-F34EBFEFEB91",
+   "text": "Quick note: The new index landed ahead of the agreed cutoff, after the handover. The queue needs a second look from the second pass.",
+   "team": "T0ADATEAM01",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "4qFRL",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "One thing: The ingest path quietly changed the earlier draft, before the window closes. The ingest path now covers the shared doc."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "U0ADA0WNER1",
+   "type": "message",
+   "ts": "1747672322.293019",
+   "client_msg_id": "a0976170-af25-4ea8-6200-80db7e3a6a96",
+   "text": "<@U48XXRY7R9U> The estimate landed ahead of the open question.",
+   "team": "T0ADATEAM01",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "LYI7w",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "user",
+         "user_id": "U48XXRY7R9U"
+        },
+        {
+         "type": "text",
+         "text": " The ingest path needs a second look from the second pass."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "pin_count": 0,
+ "channel_actions_ts": null,
+ "channel_actions_count": 0,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

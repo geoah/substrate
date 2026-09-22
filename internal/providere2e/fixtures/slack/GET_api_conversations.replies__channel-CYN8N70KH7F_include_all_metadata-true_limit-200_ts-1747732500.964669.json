@@ -1,0 +1,244 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "UPR094VDGYV",
+   "type": "message",
+   "ts": "1747732500.964669",
+   "client_msg_id": "b569cc31-4384-8d6d-2468-3758d6cf3d14",
+   "text": "The schedule will be folded <@UPR094VDGYV> into a smaller slice, as discussed. The queue was.\n\nContext: The estimate now covers one more <https://docs.google.com/forms/d/e/Wvgf5qqfzxK1IjVkNbiRZsFHBBCoX0qErGRXQkvp1hZPB0TE8xPTnBOP/viewform?usp=header|The Draft will be> round of checks, if nothing else moves. The rollout landed ahead of the agreed cutoff, after the handover. The rollback plan now covers a smaller slice.\n\nThe staging cluster landed ahead of the.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747732500.964669",
+   "reply_count": 5,
+   "reply_users_count": 3,
+   "latest_reply": "1747750230.774199",
+   "reply_users": [
+    "U3V8Q0FR2KR",
+    "U0ADA0WNER1",
+    "UPR094VDGYV"
+   ],
+   "is_locked": false,
+   "subscribed": true,
+   "last_read": "1747750230.774199",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "8ULiH",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The review still blocks the shared doc."
+        },
+        {
+         "type": "emoji",
+         "name": "Calder Upshaw",
+         "unicode": "1f42b"
+        },
+        {
+         "type": "text",
+         "text": "The dashboard is waiting on the open question."
+        },
+        {
+         "type": "user",
+         "user_id": "UPR094VDGYV"
+        },
+        {
+         "type": "text",
+         "text": "The draft quietly changed the agreed cutoff.\n\nThe new index needs a second look from the second pass, if nothing else moves."
+        },
+        {
+         "type": "link",
+         "url": "https://docs.google.com/forms/d/e/Wvgf5qqfzxK1IjVkNbiRZsFHBBCoX0qErGRXQkvp1hZPB0TE8xPTnBOP/viewform?usp=header",
+         "text": "The checklist was."
+        },
+        {
+         "type": "text",
+         "text": " Heads up — The schedule now covers the second pass, once the numbers settle. The retry budget now.\n\nThe rollback plan landed ahead of one."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "onyx_gate",
+     "users": [
+      "U2KMMH91X84"
+     ],
+     "count": 1
+    },
+    {
+     "name": "raised_hands",
+     "users": [
+      "U4JZ9Z4S8QV",
+      "UZYSGS7CBM8",
+      "UKPKP2THUMN",
+      "U4RWLTWENY5",
+      "UF1731TNMYW",
+      "U0ADA0WNER1",
+      "UYADD0WW9TN"
+     ],
+     "count": 7
+    },
+    {
+     "name": "tidal_yard",
+     "users": [
+      "U4JZ9Z4S8QV",
+      "UKPKP2THUMN",
+      "U4RWLTWENY5",
+      "UF1731TNMYW",
+      "U0ADA0WNER1"
+     ],
+     "count": 5
+    },
+    {
+     "name": "sedge_works",
+     "users": [
+      "U87FWU6EJ6S",
+      "UKPKP2THUMN",
+      "UJ18LMHG4KF",
+      "U4RWLTWENY5",
+      "UF1731TNMYW",
+      "U0ADA0WNER1"
+     ],
+     "count": 6
+    },
+    {
+     "name": "clover_core",
+     "users": [
+      "U3V8Q0FR2KR",
+      "UF1731TNMYW",
+      "U0ADA0WNER1"
+     ],
+     "count": 3
+    },
+    {
+     "name": "tidal_lab",
+     "users": [
+      "U6MN840S994"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "U3V8Q0FR2KR",
+   "type": "message",
+   "ts": "1747735690.258749",
+   "client_msg_id": "03bddf61-c6e2-09bb-cff5-40aa4ffc34c0",
+   "text": "The rollout rolls up into next week's window.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747732500.964669",
+   "parent_user_id": "UPR094VDGYV",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "ip4MA",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The staging cluster rolls up into one."
+        },
+        {
+         "type": "emoji",
+         "name": "Pim Verrinder",
+         "unicode": "1f440"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "thinking_face",
+     "users": [
+      "U0ADA0WNER1"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "U0ADA0WNER1",
+   "type": "message",
+   "ts": "1747736324.645869",
+   "client_msg_id": "8d96c2f2-5492-8d24-9071-f3b482468bad",
+   "text": "The rollout rolls up into the capacity note.\nThe handover landed ahead of a.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747732500.964669",
+   "parent_user_id": "UPR094VDGYV",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "S4o6c",
+     "elements": [
+      {
+       "type": "rich_text_quote",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The draft is waiting on next week's window."
+        }
+       ]
+      },
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The checklist is waiting on the capacity note."
+        },
+        {
+         "type": "emoji",
+         "name": "Gus Orrington",
+         "unicode": "1f602"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "emoji",
+         "name": "Ulric Cranfield",
+         "unicode": "2764-fe0f"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "rapids_bay",
+     "users": [
+      "UPR094VDGYV"
+     ],
+     "count": 1
+    },
+    {
+     "name": "heavy_plus_sign",
+     "users": [
+      "U3V8Q0FR2KR"
+     ],
+     "count": 1
+    }
+   ]
+  }
+ ],
+ "has_more": true,
+ "response_metadata": {
+  "next_cursor": "bmV4dF90czo5OTI1ODI2MTM5ODEwNTk4"
+ }
+}

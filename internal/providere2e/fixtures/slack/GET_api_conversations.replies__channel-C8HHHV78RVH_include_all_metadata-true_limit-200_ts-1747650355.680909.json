@@ -1,0 +1,203 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747650355.680909",
+   "client_msg_id": "b916a71d-9fb6-92b3-5c02-5157bdfc08e3",
+   "text": "<@UXQUMNTTWLM> The review <@U0ADA0WNER1> now covers the agreed cutoff, once.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747650355.680909",
+   "reply_count": 1,
+   "reply_users_count": 1,
+   "latest_reply": "1747653397.929199",
+   "reply_users": [
+    "U48XXRY7R9U"
+   ],
+   "is_locked": false,
+   "subscribed": true,
+   "last_read": "1747653397.929199",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "KYx1N",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "user",
+         "user_id": "UXQUMNTTWLM"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "user",
+         "user_id": "U0ADA0WNER1"
+        },
+        {
+         "type": "text",
+         "text": " The rollout is waiting on next week's window."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "mica_room",
+     "users": [
+      "U0ADA0WNER1",
+      "U9PYDDC3C8T",
+      "U3D76EMMQ3S"
+     ],
+     "count": 3
+    },
+    {
+     "name": "tidal_yard",
+     "users": [
+      "U0ADA0WNER1",
+      "U9PYDDC3C8T",
+      "U3D76EMMQ3S"
+     ],
+     "count": 3
+    },
+    {
+     "name": "raised_hands",
+     "users": [
+      "U0ADA0WNER1",
+      "U3D76EMMQ3S"
+     ],
+     "count": 2
+    },
+    {
+     "name": "saffron_watch",
+     "users": [
+      "U9PYDDC3C8T"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "subtype": "thread_broadcast",
+   "user": "U48XXRY7R9U",
+   "thread_ts": "1747650355.680909",
+   "root": {
+    "user": "U48XXRY7R9U",
+    "type": "message",
+    "ts": "1747650355.680909",
+    "client_msg_id": "b916a71d-9fb6-92b3-5c02-5157bdfc08e3",
+    "text": "<@UXQUMNTTWLM> The retry <@U0ADA0WNER1> budget rolls up into the agreed cutoff.",
+    "team": "T0ADATEAM01",
+    "thread_ts": "1747650355.680909",
+    "reply_count": 1,
+    "reply_users_count": 1,
+    "latest_reply": "1747653397.929199",
+    "reply_users": [
+     "U48XXRY7R9U"
+    ],
+    "is_locked": false,
+    "subscribed": true,
+    "last_read": "1747653397.929199",
+    "blocks": [
+     {
+      "type": "rich_text",
+      "block_id": "KYx1N",
+      "elements": [
+       {
+        "type": "rich_text_section",
+        "elements": [
+         {
+          "type": "user",
+          "user_id": "UXQUMNTTWLM"
+         },
+         {
+          "type": "text",
+          "text": " "
+         },
+         {
+          "type": "user",
+          "user_id": "U0ADA0WNER1"
+         },
+         {
+          "type": "text",
+          "text": " The rollback plan landed ahead of the earlier draft."
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "type": "message",
+   "ts": "1747653397.929199",
+   "client_msg_id": "375c43ab-87bc-8bb1-654e-18411aad6e46",
+   "text": "The review now covers a smaller slice.",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "iegCj",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The draft depends on the numbers from Friday."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "tada",
+     "users": [
+      "U5012H5QR34",
+      "USF3WB4D5CZ",
+      "U0ADA0WNER1",
+      "U857VE5R9Z6",
+      "U9PYDDC3C8T",
+      "UGJLNWUPYRX",
+      "U3D76EMMQ3S"
+     ],
+     "count": 7
+    },
+    {
+     "name": "raised_hands",
+     "users": [
+      "U5012H5QR34",
+      "U0ADA0WNER1",
+      "U857VE5R9Z6",
+      "U3D76EMMQ3S"
+     ],
+     "count": 4
+    },
+    {
+     "name": "onyx_gate",
+     "users": [
+      "USF3WB4D5CZ"
+     ],
+     "count": 1
+    },
+    {
+     "name": "saffron_watch",
+     "users": [
+      "U9PYDDC3C8T"
+     ],
+     "count": 1
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

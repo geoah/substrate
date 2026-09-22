@@ -1,0 +1,74 @@
+{
+ "ok": true,
+ "file": {
+  "id": "FFVFYB972EN",
+  "created": 1789468170,
+  "timestamp": 1789468170,
+  "mimetype": "image/png",
+  "filetype": "png",
+  "pretty_type": "PNG",
+  "user": "U2KMMH91X84",
+  "user_team": "T0ADATEAM01",
+  "editable": false,
+  "size": 62874,
+  "mode": "hosted",
+  "is_external": false,
+  "external_type": "",
+  "is_public": true,
+  "public_url_shared": false,
+  "display_as_bot": false,
+  "username": "",
+  "name": "The Staging",
+  "title": "The Rollout",
+  "is_modified_by_ai": false,
+  "url_private": "https://files.slack.com/files-pri/ggjaz6Jx8HGJF0jv0IJmGOK/image.png",
+  "url_private_download": "https://files.slack.com/files-pri/ggjaz6Jx8HGJF0jv0IJmGOK/download/image.png",
+  "media_display_type": "unknown",
+  "thumb_64": "https://files.slack.com/files-tmb/JCw48AkuyW1cIeTiQhQzwhArEcFCczL2wq/image_64.png",
+  "thumb_80": "https://files.slack.com/files-tmb/JCw48AkuyW1cIeTiQhQzwhArEcFCczL2wq/image_80.png",
+  "thumb_360": "https://files.slack.com/files-tmb/JCw48AkuyW1cIeTiQhQzwhArEcFCczL2wq/image_360.png",
+  "thumb_360_w": 217,
+  "thumb_360_h": 200,
+  "thumb_160": "https://files.slack.com/files-tmb/JCw48AkuyW1cIeTiQhQzwhArEcFCczL2wq/image_160.png",
+  "original_w": 434,
+  "original_h": 400,
+  "thumb_tiny": "f+wV782EID+4NUrQQ4LJajiKwAbSPORTGjmrC73R26r60znirmTPunGsZHGWynlytbkR3JDsDmq2Y1EBprxGdpEDsJ0GlZoD5frWn/woUp0sXXhm9vlQ5YBRXBAVufWGPjz3E4nBvWhbtnrZb/zmSqo9vb/jvOiJ5xnUAzxG/boX0uEN2UJr5iKsUO0eKux6sbAOHpgc8TfsMYGPPxUq9yMKb3CamlUE6rvv2SarFXiCUFOBOjX8MX83TbNdxPf8+runR8WrxH/d79yxhzXZkvYS1qtBp7Od6eO/JOg393xLZlu+eDAC4cKhZPvD8+8xx1ks9bsntqaA8BSGfmWM+l6dAzOw3Bq4mq4emHCbECXSXKLMfREHJfn=",
+  "permalink": "https://zephyr-lane.slack.com/files/adalovelace/FFVFYB972EN/image.png",
+  "permalink_public": "https://brightsea.example/w2tB41z4BaDt6ePlTZRSt0eIsVofeTuB1I",
+  "is_starred": false,
+  "shares": {
+   "public": {
+    "CYN8N70KH7F": [
+     {
+      "ts": "1747650592.835789",
+      "channel_name": "zinc-line",
+      "team_id": "T0ADATEAM01",
+      "share_user_id": "U2KMMH91X84",
+      "source": "UNKNOWN",
+      "is_silent_share": false,
+      "reply_users": [
+       "U2KMMH91X84"
+      ],
+      "reply_users_count": 1,
+      "reply_count": 2,
+      "latest_reply": "1747653986.021489",
+      "thread_ts": "1747649407.049899"
+     }
+    ]
+   }
+  },
+  "channels": [
+   "CYN8N70KH7F"
+  ],
+  "groups": [],
+  "ims": [],
+  "has_more_shares": false,
+  "has_rich_preview": false,
+  "file_access": "visible",
+  "comments_count": 0
+ },
+ "comments": [],
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

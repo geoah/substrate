@@ -1,0 +1,35 @@
+{
+  "_hosts": "api.github.com is the API; the OAuth pair lives on github.com and is named by its PATH PREFIX, not by its host — the sync body builds a repository stub's htmlUrl out of a bare `https://github.com/` literal, and rewriting THAT would put a loopback port into the mirrored data.",
+  "hosts": [
+    "https://api.github.com",
+    "https://github.com/login/oauth"
+  ],
+  "_account": "backfillDepth `all` means the first search carries no `updated:>=` floor, so its query — and therefore the recording name — is a function of the login alone and not of the wall clock. Every committed fixture is named for that query.",
+  "account": {
+    "syncFrequency": "hourly",
+    "backfillDepth": "all"
+  },
+  "config": {
+    "clientId": "e2e-client-id",
+    "clientSecret": "e2e-client-secret"
+  },
+  "_triggers": "github-on-connect drives the first sync. github-on-request stays enabled because scenario.py uses it for the forced second pass: a schedule fires at most once an hour and a direct `function call` runs one invocation without draining the paged checkpoint, so `syncRequestedAt` is the only way to ask for a sync. github-scheduled is left OFF for the run so catch-up fires cannot race the drain.",
+  "triggers": [
+    "github-on-connect",
+    "github-on-request"
+  ],
+  "settleSeconds": 240,
+  "seed": {
+    "accountId": "owner-github",
+    "_note": "the seed run is the owner's real account; the id carries the provider because the engine's OAuth surface resolves a BARE account id across every accountconfig kind and refuses a clash (two providers both naming their seed account `owner` collide)",
+    "continueRounds": 80,
+    "settleSeconds": 300
+  },
+  "continue": {
+    "property": "syncRequestedAt",
+    "value": "now"
+  },
+  "_continue": "the sync parks whatever hydration a bounded drain could not finish on the account itself (`syncPending`), and a round that starts with a backlog walks NO search — it hydrates and nothing else, so `deferred: <queue> xN` shrinks strictly round on round. github-on-request re-fires it when syncRequestedAt moves; the runner stamps it until nothing is pending. Eighty rounds is far more than the owner's account needs (it converges in one to five), and the ceiling is there for an account that grew between runs.",
+  "mockPort": 48111,
+  "_mockPort": "fixed so the rewired function body is identical run to run (see tools/e2e.py preferred_port and upstream ask M / substrate#576)"
+}

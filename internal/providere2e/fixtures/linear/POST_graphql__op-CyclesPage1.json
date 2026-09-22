@@ -1,0 +1,379 @@
+{
+ "data": {
+  "cycles": {
+   "pageInfo": {
+    "hasNextPage": true,
+    "endCursor": "73s4266m-sp17-30v1-0r31-2q2vc4p1z182"
+   },
+   "nodes": [
+    {
+     "id": "5q757ro2-6z8t-48b8-462e-d8259g5932yv",
+     "number": 9,
+     "name": "nimbus",
+     "description": null,
+     "issueCountHistory": [
+      217,
+      217,
+      219,
+      223,
+      229,
+      229,
+      230,
+      232,
+      240,
+      241,
+      241,
+      241,
+      241,
+      241,
+      245,
+      249
+     ],
+     "completedIssueCountHistory": [
+      0,
+      0,
+      3,
+      3,
+      9,
+      11,
+      12,
+      13,
+      25,
+      25,
+      27,
+      27,
+      27,
+      30,
+      33,
+      36
+     ],
+     "scopeHistory": [
+      335,
+      335,
+      337,
+      341,
+      347,
+      347,
+      348,
+      350,
+      358,
+      359,
+      359,
+      359,
+      359,
+      359,
+      363,
+      367
+     ],
+     "completedScopeHistory": [
+      0,
+      0,
+      3,
+      3,
+      9,
+      11,
+      12,
+      13,
+      25,
+      25,
+      27,
+      27,
+      27,
+      30,
+      33,
+      36
+     ],
+     "inProgressScopeHistory": [
+      221,
+      221,
+      221,
+      226,
+      227,
+      225,
+      225,
+      226,
+      222,
+      223,
+      221,
+      221,
+      221,
+      218,
+      219,
+      220
+     ],
+     "isActive": true,
+     "isFuture": false,
+     "isPast": false,
+     "progress": 0.287598944591029,
+     "isNext": false,
+     "isPrevious": false,
+     "team": {
+      "id": "275y5901-kz13-8umm-i405-21ul86iex577"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-08-03T08:07:53.472Z",
+     "updatedAt": "2026-09-16T20:09:11.866Z",
+     "archivedAt": null,
+     "startsAt": "2026-08-31T07:00:00.000Z",
+     "endsAt": "2026-09-28T07:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    },
+    {
+     "id": "2630297f-p96h-9479-3732-mg5o02z6i8mt",
+     "number": 30,
+     "name": "basalt",
+     "description": null,
+     "issueCountHistory": [],
+     "completedIssueCountHistory": [],
+     "scopeHistory": [],
+     "completedScopeHistory": [],
+     "inProgressScopeHistory": [],
+     "isActive": false,
+     "isFuture": true,
+     "isPast": false,
+     "progress": 0,
+     "isNext": true,
+     "isPrevious": false,
+     "team": {
+      "id": "nms29592-6l05-2716-669b-251t9828q396"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-09-14T07:47:37.591Z",
+     "updatedAt": "2026-09-14T07:47:37.591Z",
+     "archivedAt": null,
+     "startsAt": "2026-09-21T07:00:00.000Z",
+     "endsAt": "2026-09-28T07:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    },
+    {
+     "id": "1v2250jm-cl24-41ag-8842-6xr7s02173fs",
+     "number": 37,
+     "name": null,
+     "description": null,
+     "issueCountHistory": [],
+     "completedIssueCountHistory": [],
+     "scopeHistory": [],
+     "completedScopeHistory": [],
+     "inProgressScopeHistory": [],
+     "isActive": false,
+     "isFuture": true,
+     "isPast": false,
+     "progress": 0,
+     "isNext": false,
+     "isPrevious": false,
+     "team": {
+      "id": "125w8i47-1976-0607-bs6d-5u22p37p8s0c"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-09-16T07:47:53.146Z",
+     "updatedAt": "2026-09-16T07:47:53.146Z",
+     "archivedAt": null,
+     "startsAt": "2026-09-30T07:00:00.000Z",
+     "endsAt": "2026-10-07T07:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    },
+    {
+     "id": "2191n819-649k-8s08-vhk3-5dt1wa76q847",
+     "number": 35,
+     "name": null,
+     "description": null,
+     "issueCountHistory": [
+      115,
+      116
+     ],
+     "completedIssueCountHistory": [
+      2,
+      3
+     ],
+     "scopeHistory": [
+      115,
+      116
+     ],
+     "completedScopeHistory": [
+      2,
+      3
+     ],
+     "inProgressScopeHistory": [
+      101,
+      101
+     ],
+     "isActive": true,
+     "isFuture": false,
+     "isPast": false,
+     "progress": 0.2564102564102564,
+     "isNext": false,
+     "isPrevious": false,
+     "team": {
+      "id": "m0su437x-3289-9b7i-c02y-j5667mh5s579"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-09-07T07:58:05.752Z",
+     "updatedAt": "2026-09-16T07:35:04.663Z",
+     "archivedAt": null,
+     "startsAt": "2026-09-14T07:00:00.000Z",
+     "endsAt": "2026-09-21T07:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    },
+    {
+     "id": "421q8s2j-y607-3f68-wv5x-yixn31j0d2bt",
+     "number": 39,
+     "name": null,
+     "description": null,
+     "issueCountHistory": [],
+     "completedIssueCountHistory": [],
+     "scopeHistory": [],
+     "completedScopeHistory": [],
+     "inProgressScopeHistory": [],
+     "isActive": false,
+     "isFuture": true,
+     "isPast": false,
+     "progress": 0,
+     "isNext": false,
+     "isPrevious": false,
+     "team": {
+      "id": "98593p38-4153-8942-e8ib-4zr4o454k846"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-09-16T04:47:07.065Z",
+     "updatedAt": "2026-09-16T04:47:07.065Z",
+     "archivedAt": null,
+     "startsAt": "2026-09-30T04:00:00.000Z",
+     "endsAt": "2026-10-07T04:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    },
+    {
+     "id": "5ibq9508-iqji-8600-4r4t-h1g98954270o",
+     "number": 22,
+     "name": "cobalt",
+     "description": null,
+     "issueCountHistory": [],
+     "completedIssueCountHistory": [],
+     "scopeHistory": [],
+     "completedScopeHistory": [],
+     "inProgressScopeHistory": [],
+     "isActive": false,
+     "isFuture": true,
+     "isPast": false,
+     "progress": 0,
+     "isNext": false,
+     "isPrevious": false,
+     "team": {
+      "id": "26153x51-89l5-7sy7-840k-9w97b2567lmq"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-09-14T07:47:22.594Z",
+     "updatedAt": "2026-09-14T07:47:22.594Z",
+     "archivedAt": null,
+     "startsAt": "2026-10-26T07:00:00.000Z",
+     "endsAt": "2026-11-02T08:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    },
+    {
+     "id": "7x526231-8hn4-4x2o-p368-136q100pm751",
+     "number": 36,
+     "name": null,
+     "description": null,
+     "issueCountHistory": [],
+     "completedIssueCountHistory": [],
+     "scopeHistory": [],
+     "completedScopeHistory": [],
+     "inProgressScopeHistory": [],
+     "isActive": false,
+     "isFuture": true,
+     "isPast": false,
+     "progress": 0,
+     "isNext": true,
+     "isPrevious": false,
+     "team": {
+      "id": "m0su437x-3289-9b7i-c02y-j5667mh5s579"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-09-14T07:47:19.591Z",
+     "updatedAt": "2026-09-14T07:47:19.591Z",
+     "archivedAt": null,
+     "startsAt": "2026-09-21T07:00:00.000Z",
+     "endsAt": "2026-09-28T07:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    },
+    {
+     "id": "g5ch3z5k-0u25-9642-9a5x-vd73k76i6l98",
+     "number": 6,
+     "name": null,
+     "description": null,
+     "issueCountHistory": [
+      91,
+      96
+     ],
+     "completedIssueCountHistory": [
+      1,
+      4
+     ],
+     "scopeHistory": [
+      91,
+      96
+     ],
+     "completedScopeHistory": [
+      1,
+      4
+     ],
+     "inProgressScopeHistory": [
+      70,
+      72
+     ],
+     "isActive": true,
+     "isFuture": false,
+     "isPast": false,
+     "progress": 0.32142857142857145,
+     "isNext": false,
+     "isPrevious": false,
+     "team": {
+      "id": "3w210268-ky81-1849-x860-026w29u90945"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-08-17T04:58:25.760Z",
+     "updatedAt": "2026-09-16T04:41:15.666Z",
+     "archivedAt": null,
+     "startsAt": "2026-09-14T04:00:00.000Z",
+     "endsAt": "2026-09-28T04:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    },
+    {
+     "id": "fpc5i1r2-8r0d-08h7-7v82-vpy16s504680",
+     "number": 38,
+     "name": "sedge",
+     "description": null,
+     "issueCountHistory": [],
+     "completedIssueCountHistory": [],
+     "scopeHistory": [],
+     "completedScopeHistory": [],
+     "inProgressScopeHistory": [],
+     "isActive": false,
+     "isFuture": true,
+     "isPast": false,
+     "progress": 0,
+     "isNext": false,
+     "isPrevious": false,
+     "team": {
+      "id": "6r9a0846-9z00-9736-1588-j9e7f067965r"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-09-16T04:47:07.063Z",
+     "updatedAt": "2026-09-16T04:47:07.063Z",
+     "archivedAt": null,
+     "startsAt": "2026-10-07T04:00:00.000Z",
+     "endsAt": "2026-10-14T04:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    }
+   ]
+  }
+ }
+}

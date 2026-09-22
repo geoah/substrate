@@ -1,0 +1,41 @@
+{
+  "_hosts": "WHOOP serves the OAuth dance and the data API from ONE host under two path prefixes — api.prod.whoop.com/oauth and api.prod.whoop.com/developer — so the rewire names the PREFIXES, not the host. Replacing the bare host instead would leave `/developer` in every path, and the recordings (and the raw pull that writes them) are named for the paths the sync asks for: /v2/cycle, not /developer/v2/cycle.",
+  "hosts": [
+    "https://api.prod.whoop.com/developer",
+    "https://api.prod.whoop.com/oauth"
+  ],
+  "config": {
+    "clientId": "e2e-client-id",
+    "clientSecret": "e2e-client-secret"
+  },
+  "_account": "every collection on, because each one is a kind and a run with a toggle off proves nothing about it. `backfillDepth: all` pins the first floor at the bundle's fixed pre-WHOOP epoch rather than at `now - 30 days`, so the first run's requests are a function of the account alone and do not move with the wall clock — which keeps what the scenario asserts against `__mock/requests` reproducible. The floors of every LATER run come off the cursors and are clock-derived by construction, so every recording in this set is named the page-relaxed way (`limit` and `start` dropped) and matches either run. See README.md, \"How a windowed collection is replayed\".",
+  "account": {
+    "enabledProfile": true,
+    "enabledCycles": true,
+    "enabledRecovery": true,
+    "enabledSleep": true,
+    "enabledWorkouts": true,
+    "syncFrequency": "hourly",
+    "backfillDepth": "all"
+  },
+  "_triggers": "whoop-on-connect drives the first sync. whoop-on-request stays enabled because scenario.py uses it for the forced second pass: a schedule fires at most once an hour and a direct `function call` runs one invocation without draining the paged checkpoint, so `syncRequestedAt` is the only way to ask for a sync. whoop-scheduled is left OFF for the run so catch-up fires cannot race the drain.",
+  "triggers": [
+    "whoop-on-connect",
+    "whoop-on-request"
+  ],
+  "settleSeconds": 300,
+  "_settleSeconds": "300, not the 120 default: four agents share one dev substrate and a Google seed running beside this one pushes the trigger's settle past three minutes. It is a ceiling on waiting, not a delay.",
+  "seed": {
+    "accountId": "owner-whoop",
+    "_note": "the seed run is the owner's real account; the id carries the provider because the engine's OAuth surface resolves a BARE account id across every accountconfig kind and refuses a clash (two providers both naming their seed account `owner` collide)",
+    "continueRounds": 20,
+    "settleSeconds": 300
+  },
+  "continue": {
+    "property": "syncRequestedAt",
+    "value": "now"
+  },
+  "_continue": "the sync acknowledges the generation it acted on in `syncRequestedAck`, and whoop-on-request fires exactly while the pair disagrees. The runner stamps `syncRequestedAt` to CONTINUE a bounded drain and to RE-DRIVE a re-seeded account at all: a purge leaves the account row (and its `lastSyncedAt`) standing, so the on-connect guard is already false on a second seed and nothing else would fire.",
+  "mockPort": 48116,
+  "_mockPort": "fixed so the rewired function body is identical run to run — the engine serves the PREVIOUS apply's body (substrate#576), so a moving port makes the first drain of every run call a dead mock"
+}

@@ -1,0 +1,61 @@
+{
+ "ok": true,
+ "user": {
+  "id": "U6T02SQ93N9",
+  "name": "eli-quarrier",
+  "is_bot": false,
+  "updated": 1789492802,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "4cc091",
+  "is_email_confirmed": true,
+  "real_name": "Finn Goodspeed",
+  "tz": "Europe/Berlin",
+  "tz_label": "Central European Summer Time",
+  "tz_offset": 7200,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Finn Goodspeed",
+   "display_name": "Ines Fairholm",
+   "avatar_hash": "73d395b9f7c9",
+   "real_name_normalized": "Finn Goodspeed",
+   "display_name_normalized": "Ines Fairholm",
+   "image_24": "https://avatars.slack-edge.com/2025-10-13/2786576033901_8db54155329dda0c60c0_24.jpg",
+   "image_32": "https://avatars.slack-edge.com/2025-10-13/2786576033901_8db54155329dda0c60c0_32.jpg",
+   "image_48": "https://avatars.slack-edge.com/2025-10-13/2786576033901_8db54155329dda0c60c0_48.jpg",
+   "image_72": "https://avatars.slack-edge.com/2025-10-13/2786576033901_8db54155329dda0c60c0_72.jpg",
+   "image_192": "https://avatars.slack-edge.com/2025-10-13/2786576033901_8db54155329dda0c60c0_192.jpg",
+   "image_512": "https://avatars.slack-edge.com/2025-10-13/2786576033901_8db54155329dda0c60c0_512.jpg",
+   "image_1024": "https://avatars.slack-edge.com/2025-10-13/2786576033901_8db54155329dda0c60c0_1024.jpg",
+   "image_original": "https://avatars.slack-edge.com/2025-10-13/2786576033901_8db54155329dda0c60c0_original.jpg",
+   "is_custom_image": true,
+   "first_name": "Ines Fairholm",
+   "last_name": "Uma Oakhurst",
+   "team": "T0ADATEAM01",
+   "email": "kip@zephyr-lane.example",
+   "title": "",
+   "phone": "+99 5919678620",
+   "skype": "",
+   "status_text": "The Estimate will",
+   "status_text_canonical": "",
+   "status_emoji": ":bridge_at_night:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "bridge_at_night",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/1f309.png",
+     "unicode": "1f309"
+    }
+   ],
+   "status_expiration": 0,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0
+  }
+ }
+}

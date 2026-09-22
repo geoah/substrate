@@ -1,0 +1,25 @@
+{
+ "key": "mit",
+ "name": "Dax Ravensworth",
+ "spdx_id": "MIT",
+ "url": "https://api.github.com/licenses/mit",
+ "node_id": "MDc6TGljZW5zZTg1",
+ "html_url": "http://northwind-labs.example/licenses/mit/",
+ "description": "For the record: The schedule rolls up into the follow-up thread, before the window closes. The ingest path is waiting on one more round of checks, either way. The estimate is waiting on the follow-up thread, once the numbers settle.",
+ "implementation": "Short version: The migration will be folded into next week's window, once the numbers settle. The review depends on next week's window, unless somebody objects. The handover was split out of a smaller slice, either way. The schedule still blocks the numbers from Friday.",
+ "permissions": [
+  "commercial-use",
+  "modifications",
+  "distribution",
+  "private-use"
+ ],
+ "conditions": [
+  "include-copyright"
+ ],
+ "limitations": [
+  "liability",
+  "warranty"
+ ],
+ "body": "The rollout should unblock the earlier draft.\n\nThe ingest path should unblock.\n\nThe review was split out of the follow-up thread, as discussed. The review quietly.\nThe rollback plan depends on the second pass, pending one more read. The migration.\nThe new index quietly changed the agreed cutoff, as discussed. The draft needs a.\nThe draft should unblock the numbers from Friday, unless somebody objects.\nThe handover rolls up into the earlier draft, after the handover. The.\nThe migration still blocks next week's window, either way.\n\nThe queue will be folded into one more round of checks, once the numbers settle.\nThe staging cluster rolls up into the earlier draft.\n\nThe schedule quietly changed the shared doc, as discussed. The draft will be.\nThe review still blocks one more round of checks, assuming the counts hold.\nThe retry budget now covers the follow-up thread, pending one more read. The.\nThe dashboard is waiting on next week's window, assuming the counts hold.\nThe rollback plan is waiting on the earlier draft, as discussed. The migration.\nThe handover needs a second look from the capacity note, as discussed. The rollout.\nThe new index was split out of the open question.",
+ "featured": true
+}

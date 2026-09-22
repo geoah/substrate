@@ -1,0 +1,26 @@
+{
+ "items": [
+  {
+   "id": "361841",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-15T10:36:16.000Z",
+   "sortKey": "777690",
+   "type": "TEXT",
+   "text": "The draft was split out of the open question.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T12:29:31.077Z",
+    "@whatsapp_fbf-885651003020663:beeper.local": "2026-09-15T10:36:16.934Z"
+   },
+   "isUnread": false
+  }
+ ],
+ "hasMore": false,
+ "oldestCursor": "777690",
+ "newestCursor": "777690"
+}

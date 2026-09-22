@@ -1,0 +1,698 @@
+{
+ "items": [
+  {
+   "id": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "localChatID": "15287",
+   "accountID": "whatsapp",
+   "network": "WhatsApp",
+   "title": "Leonidas Everly",
+   "description": "The checklist rolls up.",
+   "imgURL": null,
+   "type": "single",
+   "isReadOnly": false,
+   "participants": {
+    "items": [
+     {
+      "id": "@whatsapp_vcw-51244731133315:beeper.local",
+      "phoneNumber": "+99 5296906004",
+      "fullName": "Leonidas Everly",
+      "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/sjsxg_hcFqHXgEAy6WduhotxaJw90uHu30uHjX9SyJWx7rJaikcwTzwdARPKo4avum9qng",
+      "cannotMessage": false,
+      "isSelf": false,
+      "isAdmin": false,
+      "isPending": false,
+      "isNetworkBot": false
+     },
+     {
+      "id": "@adalovelace:beeper.com",
+      "fullName": "Ada Lovelace",
+      "cannotMessage": false,
+      "isSelf": true,
+      "isAdmin": false,
+      "isPending": false,
+      "isNetworkBot": false
+     }
+    ],
+    "hasMore": false,
+    "total": 2
+   },
+   "lastActivity": "2026-09-15T12:32:08.763Z",
+   "unreadCount": 0,
+   "unreadMentionsCount": 0,
+   "lastReadMessageSortKey": "777774",
+   "draft": null,
+   "reminder": null,
+   "snooze": null,
+   "isArchived": false,
+   "isMarkedUnread": false,
+   "isMuted": false,
+   "isPinned": false,
+   "isLowPriority": false,
+   "messageExpirySeconds": null,
+   "capabilities": {
+    "formatting": {
+     "blockquote": 2,
+     "bold": 2,
+     "code_block": 2,
+     "headers": 1,
+     "inline_code": 2,
+     "inline_link": 1,
+     "italic": 2,
+     "ordered_list": 2,
+     "ordered_list.start": 2,
+     "strikethrough": 2,
+     "unordered_list": 2,
+     "user_link": 2
+    },
+    "attachments": {
+     "fi.mau.gif": {
+      "mimeTypes": {
+       "image/gif": 1,
+       "video/mp4": 2
+      },
+      "caption": 2,
+      "maxCaptionLength": 65536,
+      "maxSize": 2097152000
+     },
+     "m.audio": {
+      "mimeTypes": {
+       "audio/aac": 2,
+       "audio/amr": 2,
+       "audio/mp4": 2,
+       "audio/mpeg": 2,
+       "audio/ogg": 2
+      },
+      "caption": -1,
+      "maxSize": 2097152000
+     },
+     "m.file": {
+      "mimeTypes": {
+       "*/*": 2
+      },
+      "caption": 2,
+      "maxCaptionLength": 65536,
+      "maxSize": 2097152000
+     },
+     "m.image": {
+      "mimeTypes": {
+       "image/gif": 1,
+       "image/jpeg": 2,
+       "image/png": 1,
+       "image/webp": 1
+      },
+      "caption": 2,
+      "maxCaptionLength": 65536,
+      "maxSize": 2097152000
+     },
+     "m.sticker": {
+      "mimeTypes": {
+       "image/jpeg": 1,
+       "image/png": 1,
+       "image/webp": 2,
+       "video/lottie+json": 1
+      },
+      "caption": -1,
+      "maxSize": 2097152000
+     },
+     "m.video": {
+      "mimeTypes": {
+       "video/3gpp": 2,
+       "video/mp4": 2,
+       "video/quicktime": 1,
+       "video/webm": 1
+      },
+      "caption": 2,
+      "maxCaptionLength": 65536,
+      "maxSize": 2097152000
+     },
+     "dqt.dagosh.kxp1276.voice": {
+      "mimeTypes": {
+       "audio/ogg": 0,
+       "audio/ogg; codecs=opus": 2
+      },
+      "caption": -1,
+      "maxSize": 2097152000
+     }
+    },
+    "maxTextLength": 65536,
+    "locationMessage": 2,
+    "poll": 2,
+    "reply": 2,
+    "edit": 2,
+    "editMaxAge": 900,
+    "delete": 2,
+    "deleteMaxAge": 172800,
+    "reaction": 2,
+    "reactionCount": 1,
+    "disappearingTimer": {
+     "types": [
+      "afterSend"
+     ],
+     "timers": [
+      86400000,
+      604800000,
+      7776000000
+     ]
+    },
+    "readReceipts": true,
+    "typingNotifications": true,
+    "deleteChat": true,
+    "state": {
+     "disappearingTimer": {
+      "level": 2
+     }
+    }
+   },
+   "preview": {
+    "id": "361881",
+    "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+    "accountID": "whatsapp",
+    "senderID": "@adalovelace:beeper.com",
+    "senderName": "Ada Lovelace",
+    "timestamp": "2026-09-15T12:31:51.843Z",
+    "sortKey": "777770",
+    "type": "TEXT",
+    "text": "Context: The rollout still blocks the capacity note, assuming the counts hold. The dashboard is waiting on next week's window.",
+    "isSender": true,
+    "isDeleted": false,
+    "mentions": [],
+    "seen": {
+     "@adalovelace:beeper.com": "2026-09-15T12:31:51.919Z"
+    }
+   }
+  },
+  {
+   "id": "!om5B936RTlflorUruFvP:beeper.local",
+   "localChatID": "20280",
+   "accountID": "discordgo",
+   "network": "Discord",
+   "title": "garnet-team",
+   "description": "",
+   "imgURL": null,
+   "type": "group",
+   "isReadOnly": false,
+   "participants": {
+    "items": [
+     {
+      "id": "@discordgo_402890799400339948:beeper.local",
+      "username": "florentina-nethercliff",
+      "fullName": "Marekel Mortlake-Lowe",
+      "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/zxobm_pzyLV32Uh6icY9jdGp5Usi1PESE8CzeifyEY5Idr3LolKXVzvsAD4CWbznRsrQai",
+      "cannotMessage": false,
+      "isSelf": false,
+      "isAdmin": false,
+      "isPending": false,
+      "isNetworkBot": false
+     },
+     {
+      "id": "@discordgo_216907743477715316:beeper.local",
+      "username": "renna-blackwood",
+      "fullName": "Delia Underhill",
+      "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/mhvzu_b1vx7ANJ1GJj4s7mxh0KbdJMmp0qDfyGbHVwMpvx9WIjJxWJFavPoHbzzg1wr4dA",
+      "cannotMessage": false,
+      "isSelf": false,
+      "isAdmin": false,
+      "isPending": false,
+      "isNetworkBot": false
+     },
+     {
+      "id": "@discordgo_285771892363105185:beeper.local",
+      "username": "kalina-wexford",
+      "fullName": "Ember Bellweather",
+      "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/demji_CJ4TU6gtk3oGCDgRCRVLf6f8U1bnKguXKb135l8a0mBvLrszd8HPZvDx0kKTltgk",
+      "cannotMessage": false,
+      "isSelf": false,
+      "isAdmin": false,
+      "isPending": false,
+      "isNetworkBot": false
+     },
+     {
+      "id": "@discordgo_059737644517465191:beeper.local",
+      "username": "sabra-ravensworth",
+      "fullName": "Ansel Sedgwick",
+      "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/rrikb_7I2wwZmNerl7OaJJlXMdEsFYFYEj3xIe15t757ZQmE642OVq5sqfN3t80lx60W4J",
+      "cannotMessage": false,
+      "isSelf": false,
+      "isAdmin": false,
+      "isPending": false,
+      "isNetworkBot": false
+     },
+     {
+      "id": "@discordgo_283376710145499961:beeper.local",
+      "username": "sela-tarrington",
+      "fullName": "Bronwen Ufford",
+      "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/uocgo_tS5nLzUrN48Ad2xO3mpAFCHJLULjq01dUU58bC0Wr8WLBvuKXA8nEZlBzhxn4j0o",
+      "cannotMessage": false,
+      "isSelf": false,
+      "isAdmin": false,
+      "isPending": false,
+      "isNetworkBot": false
+     },
+     {
+      "id": "@discordgo_099714256511618008:beeper.local",
+      "username": "lior-verrinder",
+      "fullName": "Caius Ashgrove-Hale",
+      "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/uocda_wzEJmWxPz9wcgBnmvDmltEaNleFTlMo9pYeb32IHZFRPHR2jBJQhXEkdonTYOMoT",
+      "cannotMessage": false,
+      "isSelf": false,
+      "isAdmin": false,
+      "isPending": false,
+      "isNetworkBot": false
+     },
+     {
+      "id": "@discordgo_353529414950139401:beeper.local",
+      "username": "hieronymus-jessop-hale",
+      "fullName": "Oriel Ollivant",
+      "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/pcmql_vloPMg9fShs78JZuMis2u0Ine7J7sx4belNclMxNOoCUWQHKqB8Gf5wPg1hWIgn8",
+      "cannotMessage": false,
+      "isSelf": false,
+      "isAdmin": false,
+      "isPending": false,
+      "isNetworkBot": false
+     },
+     {
+      "id": "@discordgo_434854988369927821:beeper.local",
+      "username": "gwendolyn-netherwood-hale",
+      "fullName": "Magdalena Kirkbride-Hale",
+      "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/tdapf_ZmN13blnXgp1KkZg2PuDhX2BDbw5IOO0fABWZn7bXitLxh9zLUqt0owhhdlvfPc5",
+      "cannotMessage": false,
+      "isSelf": false,
+      "isAdmin": false,
+      "isPending": false,
+      "isNetworkBot": false
+     },
+     {
+      "id": "@adalovelace:beeper.com",
+      "fullName": "Ada Lovelace",
+      "cannotMessage": false,
+      "isSelf": true,
+      "isAdmin": false,
+      "isPending": false,
+      "isNetworkBot": false
+     }
+    ],
+    "hasMore": false,
+    "total": 9
+   },
+   "lastActivity": "2026-09-15T15:58:59.740Z",
+   "unreadCount": 0,
+   "unreadMentionsCount": 0,
+   "lastReadMessageSortKey": "777920",
+   "draft": null,
+   "reminder": null,
+   "snooze": null,
+   "isArchived": false,
+   "isMarkedUnread": false,
+   "isMuted": true,
+   "isPinned": false,
+   "isLowPriority": false,
+   "messageExpirySeconds": null,
+   "capabilities": {
+    "formatting": {
+     "at_room_mention": 0,
+     "blockquote": 2,
+     "bold": 2,
+     "code_block": 2,
+     "code_block.syntax_highlighting": 2,
+     "custom_emoji": 0,
+     "event_link": 0,
+     "inline_code": 2,
+     "inline_link": 2,
+     "italic": 2,
+     "ordered_list": 2,
+     "ordered_list.jump_value": 0,
+     "ordered_list.start": 2,
+     "room_link": 0,
+     "strikethrough": 2,
+     "unordered_list": 2,
+     "user_link": 2
+    },
+    "attachments": {
+     "fi.mau.gif": {
+      "mimeTypes": {
+       "image/gif": 2
+      },
+      "caption": 2,
+      "maxCaptionLength": 2000,
+      "maxSize": 10485760
+     },
+     "m.audio": {
+      "mimeTypes": {
+       "audio/*": 1,
+       "audio/mpeg": 2,
+       "audio/wav": 2,
+       "audio/webm": 2
+      },
+      "caption": 2,
+      "maxCaptionLength": 2000,
+      "maxSize": 10485760
+     },
+     "m.file": {
+      "mimeTypes": {
+       "*/*": 2
+      },
+      "caption": 2,
+      "maxCaptionLength": 2000,
+      "maxSize": 10485760
+     },
+     "m.image": {
+      "mimeTypes": {
+       "image/*": 1,
+       "image/gif": 2,
+       "image/jpeg": 2,
+       "image/png": 2,
+       "image/webp": 2
+      },
+      "caption": 2,
+      "maxCaptionLength": 2000,
+      "maxSize": 10485760
+     },
+     "m.video": {
+      "mimeTypes": {
+       "video/*": 1,
+       "video/mp4": 2,
+       "video/webm": 2
+      },
+      "caption": 2,
+      "maxCaptionLength": 2000,
+      "maxSize": 10485760
+     },
+     "dqt.dagosh.kxp1276.voice": {
+      "mimeTypes": {
+       "audio/*": 1,
+       "audio/ogg": 2,
+       "audio/ogg; codecs=opus": 2,
+       "audio/webm": 2,
+       "audio/webm; codecs=opus": 2
+      },
+      "caption": 2,
+      "maxCaptionLength": 2000,
+      "maxSize": 10485760
+     }
+    },
+    "maxTextLength": 2000,
+    "thread": 1,
+    "reply": 2,
+    "edit": 2,
+    "delete": 2,
+    "reaction": 2
+   },
+   "preview": {
+    "id": "361937",
+    "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+    "accountID": "discordgo",
+    "senderID": "@discordgo_059737644517465191:beeper.local",
+    "senderName": "Ansel Sedgwick",
+    "timestamp": "2026-09-15T15:51:44.294Z",
+    "sortKey": "777917",
+    "type": "TEXT",
+    "text": "Heads up — The handover is waiting on the capacity note, pending one more read. The checklist will be folded into a smaller slice, unless somebody objects. The draft now covers the earlier draft, either way. The new index now covers the follow-up thread, unless somebody objects. The dashboard is waiting on a smaller slice, either way. The draft rolls up into the earlier draft, for now. The handover depends on the owner's sign-off, either way. The queue landed ahead of the agreed cutoff, if nothing else moves. The staging cluster will be folded into one more round of checks, once the numbers settle. The draft was split out of one more round of checks, once the numbers settle.",
+    "isSender": false,
+    "isDeleted": false,
+    "mentions": [],
+    "isUnread": false
+   }
+  },
+  {
+   "id": "!rU1RmkbGOHn3Ub7GFSRX:beeper.local",
+   "localChatID": "20423",
+   "accountID": "signal",
+   "network": "Signal",
+   "title": "spruce",
+   "description": "",
+   "imgURL": "/Users/sdtqu/Library/Application Support/BeeperTexts/media/local.beeper.com/iuyfj_f7gIfju1zteaAJXBBe0CANBGsR1ajohoNrfhozw6GjJnYkxvEqqKNWJvaKQjxQlO",
+   "type": "group",
+   "isReadOnly": false,
+   "participants": {
+    "items": [
+     {
+      "id": "@signal_4411992a-sr04-5r87-484j-pnpf368mz226:beeper.local",
+      "phoneNumber": "+99 5833342041",
+      "fullName": "Hollis Innsbrook",
+      "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/ewdwr_TPbmGO37qKKV4KhSAGwogVuLk0wycrvuqJj54H2cXIL6WIxgcI4lCni3cqc9kOPp",
+      "cannotMessage": false,
+      "isSelf": false,
+      "isAdmin": false,
+      "isPending": false,
+      "isNetworkBot": false
+     },
+     {
+      "id": "@signal_s327as3u-4v66-5m99-f754-92n5zp448735:beeper.local",
+      "phoneNumber": "+99 5535274568",
+      "fullName": "Anastasia Upshaw",
+      "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/hpamb_B3nloIwKBWamlgFPLXm4IbDfOQYMLFjVxQ9lOWqT4ISXrzHINXMSYvRzmAEoBrye",
+      "cannotMessage": false,
+      "isSelf": false,
+      "isAdmin": false,
+      "isPending": false,
+      "isNetworkBot": false
+     },
+     {
+      "id": "@signal_9ewqm197-k7x3-2780-ew51-fw61b72c78i2:beeper.local",
+      "fullName": "Casimira Danforth",
+      "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/usldi_cbEN1LzPYOD60Y6mG0eK5bMbPtl1ahQwz9EF3TqocwSRijOPLu5IKeKaWIYTigl2",
+      "cannotMessage": false,
+      "isSelf": false,
+      "isAdmin": false,
+      "isPending": false,
+      "isNetworkBot": false
+     },
+     {
+      "id": "@adalovelace:beeper.com",
+      "fullName": "Ada Lovelace",
+      "cannotMessage": false,
+      "isSelf": true,
+      "isAdmin": false,
+      "isPending": false,
+      "isNetworkBot": false
+     }
+    ],
+    "hasMore": false,
+    "total": 4
+   },
+   "lastActivity": "2026-09-16T07:40:16.121Z",
+   "unreadCount": 0,
+   "unreadMentionsCount": 0,
+   "lastReadMessageSortKey": "778168",
+   "draft": null,
+   "reminder": null,
+   "snooze": null,
+   "isArchived": false,
+   "isMarkedUnread": false,
+   "isMuted": false,
+   "isPinned": true,
+   "isLowPriority": false,
+   "messageExpirySeconds": null,
+   "capabilities": {
+    "formatting": {
+     "blockquote": 1,
+     "bold": 2,
+     "code_block": 2,
+     "headers": 1,
+     "inline_code": 2,
+     "inline_link": 1,
+     "italic": 2,
+     "ordered_list": 1,
+     "ordered_list.start": 1,
+     "spoiler": 2,
+     "strikethrough": 2,
+     "unordered_list": 1,
+     "user_link": 2
+    },
+    "attachments": {
+     "fi.mau.gif": {
+      "mimeTypes": {
+       "image/gif": 2,
+       "video/mp4": 2
+      },
+      "caption": 2,
+      "maxSize": 104857600
+     },
+     "m.audio": {
+      "mimeTypes": {
+       "audio/aac": 2,
+       "audio/flac": 2,
+       "audio/mp3": 2,
+       "audio/mpeg": 2
+      },
+      "maxSize": 104857600
+     },
+     "m.file": {
+      "mimeTypes": {
+       "*/*": 2
+      },
+      "caption": 2,
+      "maxCaptionLength": 2000,
+      "maxSize": 104857600
+     },
+     "m.image": {
+      "mimeTypes": {
+       "image/avif": 2,
+       "image/bmp": 2,
+       "image/gif": 2,
+       "image/jpeg": 2,
+       "image/png": 2,
+       "image/webp": 2
+      },
+      "caption": 2,
+      "maxCaptionLength": 2000,
+      "maxSize": 104857600,
+      "maxWidth": 4096,
+      "maxHeight": 4096
+     },
+     "m.sticker": {
+      "mimeTypes": {
+       "image/apng": 2,
+       "image/gif": 1,
+       "image/png": 2,
+       "image/webp": 1
+      },
+      "caption": -1,
+      "maxSize": 104857600
+     },
+     "m.video": {
+      "mimeTypes": {
+       "video/mp4": 2,
+       "video/ogg": 2,
+       "video/webm": 2
+      },
+      "caption": 2,
+      "maxCaptionLength": 2000,
+      "maxSize": 104857600
+     },
+     "dqt.dagosh.kxp1276.voice": {
+      "mimeTypes": {
+       "audio/aac": 2,
+       "audio/ogg": 1
+      },
+      "caption": -1,
+      "maxSize": 104857600,
+      "maxDuration": 3600
+     }
+    },
+    "maxTextLength": 2000,
+    "locationMessage": 1,
+    "poll": 2,
+    "reply": 2,
+    "edit": 2,
+    "editMaxCount": 10,
+    "editMaxAge": 86400,
+    "delete": 2,
+    "deleteMaxAge": 86400,
+    "messageRequest": {
+     "acceptWithMessage": 1,
+     "acceptWithButton": 2
+    },
+    "reaction": 2,
+    "reactionCount": 1,
+    "disappearingTimer": {
+     "types": [
+      "afterRead"
+     ]
+    },
+    "readReceipts": true,
+    "typingNotifications": true,
+    "deleteChat": true,
+    "participantActions": {
+     "ban": 2,
+     "invite": 2,
+     "kick": 2,
+     "leave": 2,
+     "revokeInvite": 2
+    },
+    "state": {
+     "disappearingTimer": {
+      "level": 2
+     },
+     "avatar": {
+      "level": 2
+     },
+     "title": {
+      "level": 2
+     },
+     "description": {
+      "level": 2
+     }
+    }
+   },
+   "preview": {
+    "id": "362068",
+    "chatID": "!rU1RmkbGOHn3Ub7GFSRX:beeper.local",
+    "accountID": "signal",
+    "senderID": "@adalovelace:beeper.com",
+    "senderName": "Ada Lovelace",
+    "timestamp": "2026-09-16T07:39:58.134Z",
+    "sortKey": "778166",
+    "type": "TEXT",
+    "text": "The review should unblock the numbers from Friday.",
+    "isSender": true,
+    "isDeleted": false,
+    "linkedMessageID": "362020",
+    "mentions": [
+     "@signal_4411992a-sr04-5r87-484j-pnpf368mz226:beeper.local"
+    ]
+   }
+  },
+  {
+   "id": "!I9oG53hQwBITFcFWDz2b:beeper.local",
+   "localChatID": "20606",
+   "accountID": "matrix",
+   "network": "Beeper (Matrix)",
+   "title": "Isadora Prendergast",
+   "description": null,
+   "imgURL": "/Users/sdtqu/Library/Application Support/BeeperTexts/media/beeper.com/4703f91l99ntv4d045t7gbmp19gs06g5611368k0",
+   "type": "single",
+   "isReadOnly": false,
+   "participants": {
+    "items": [
+     {
+      "id": "@adalovelace:beeper.com",
+      "fullName": "Ada Lovelace",
+      "cannotMessage": false,
+      "isSelf": true,
+      "isAdmin": true,
+      "isPending": false,
+      "isNetworkBot": false
+     }
+    ],
+    "hasMore": false,
+    "total": 1
+   },
+   "lastActivity": "2026-09-08T18:02:26.735Z",
+   "unreadCount": 0,
+   "unreadMentionsCount": 0,
+   "lastReadMessageSortKey": "758141",
+   "draft": null,
+   "reminder": null,
+   "snooze": null,
+   "isArchived": false,
+   "isMarkedUnread": false,
+   "isMuted": false,
+   "isPinned": false,
+   "isLowPriority": false,
+   "messageExpirySeconds": null,
+   "merge": {
+    "chatIDs": [
+     "!Y8n7PhEsguhYVEFeBIXV:beeper.local",
+     "!3s83Lo4McWbyWCCspecd:beeper.local"
+    ],
+    "defaultChatID": "!Y8n7PhEsguhYVEFeBIXV:beeper.local"
+   },
+   "preview": {
+    "id": "358284",
+    "chatID": "!I9oG53hQwBITFcFWDz2b:beeper.local",
+    "accountID": "matrix",
+    "senderID": "@signal_4411992a-sr04-5r87-484j-pnpf368mz226:beeper.local",
+    "senderName": "@signal_4411992a-sr04-5r87-484j-pnpf368mz226:beeper.local",
+    "timestamp": "2026-09-08T18:02:26.735Z",
+    "sortKey": "771673",
+    "text": "This batch depends on a smaller slice.",
+    "isSender": false,
+    "isUnread": false
+   }
+  }
+ ],
+ "hasMore": false,
+ "oldestCursor": null,
+ "newestCursor": "1750520071000:15258"
+}

@@ -1,0 +1,61 @@
+{
+ "ok": true,
+ "user": {
+  "id": "U08RZLD26AW",
+  "name": "mareko-linscott-moore",
+  "is_bot": false,
+  "updated": 1789409348,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "9b3b45",
+  "is_email_confirmed": true,
+  "real_name": "Xeniao Brackwater-Moore",
+  "tz": "America/Los_Angeles",
+  "tz_label": "Pacific Daylight Time",
+  "tz_offset": -25200,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Xeniao Brackwater-Moore",
+   "display_name": "Ilariao Whitfield-Moore",
+   "avatar_hash": "b7d234cddaf7",
+   "real_name_normalized": "Xeniao Brackwater-Moore",
+   "display_name_normalized": "Ilariao Whitfield-Moore",
+   "image_24": "https://avatars.slack-edge.com/2026-02-23/78271556079901_69dc792737d0c1527841_24.jpg",
+   "image_32": "https://avatars.slack-edge.com/2026-02-23/78271556079901_69dc792737d0c1527841_32.jpg",
+   "image_48": "https://avatars.slack-edge.com/2026-02-23/78271556079901_69dc792737d0c1527841_48.jpg",
+   "image_72": "https://avatars.slack-edge.com/2026-02-23/78271556079901_69dc792737d0c1527841_72.jpg",
+   "image_192": "https://avatars.slack-edge.com/2026-02-23/78271556079901_69dc792737d0c1527841_192.jpg",
+   "image_512": "https://avatars.slack-edge.com/2026-02-23/78271556079901_69dc792737d0c1527841_512.jpg",
+   "image_1024": "https://avatars.slack-edge.com/2026-02-23/78271556079901_69dc792737d0c1527841_1024.jpg",
+   "image_original": "https://avatars.slack-edge.com/2026-02-23/78271556079901_69dc792737d0c1527841_original.jpg",
+   "is_custom_image": true,
+   "first_name": "Ilariao Whitfield-Moore",
+   "last_name": "Mirrena Upshaw-Hale",
+   "team": "T0ADATEAM01",
+   "email": "zadieo@zephyr-lane.example",
+   "title": "The Retry",
+   "phone": "+99 5851891446",
+   "skype": "",
+   "status_text": "The Draft",
+   "status_text_canonical": "",
+   "status_emoji": ":palm_tree:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "palm_tree",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/1f334.png",
+     "unicode": "1f334"
+    }
+   ],
+   "status_expiration": 0,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0
+  }
+ }
+}

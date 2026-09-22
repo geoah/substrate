@@ -1,0 +1,62 @@
+{
+ "ok": true,
+ "user": {
+  "id": "UG92HCCLRJ0",
+  "name": "quintiliana-ashgrove-hale",
+  "is_bot": false,
+  "updated": 1789182410,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "a2a5dc",
+  "is_email_confirmed": true,
+  "real_name": "Isadoraa Ironside-Hale",
+  "tz": "Europe/Berlin",
+  "tz_label": "Central European Summer Time",
+  "tz_offset": 7200,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "has_2fa": true,
+  "two_factor_type": "app",
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Isadoraa Ironside-Hale",
+   "display_name": "Isadoraa Ironside-Hale",
+   "avatar_hash": "7c0ab4653257",
+   "real_name_normalized": "Isadoraa Ironside-Hale",
+   "display_name_normalized": "Isadoraa Ironside-Hale",
+   "image_24": "https://avatars.slack-edge.com/2026-07-30/20372572901737_cc36331ac1ee819b51a8_24.jpg",
+   "image_32": "https://avatars.slack-edge.com/2026-07-30/20372572901737_cc36331ac1ee819b51a8_32.jpg",
+   "image_48": "https://avatars.slack-edge.com/2026-07-30/20372572901737_cc36331ac1ee819b51a8_48.jpg",
+   "image_72": "https://avatars.slack-edge.com/2026-07-30/20372572901737_cc36331ac1ee819b51a8_72.jpg",
+   "image_192": "https://avatars.slack-edge.com/2026-07-30/20372572901737_cc36331ac1ee819b51a8_192.jpg",
+   "image_512": "https://avatars.slack-edge.com/2026-07-30/20372572901737_cc36331ac1ee819b51a8_512.jpg",
+   "image_1024": "https://avatars.slack-edge.com/2026-07-30/20372572901737_cc36331ac1ee819b51a8_1024.jpg",
+   "image_original": "https://avatars.slack-edge.com/2026-07-30/20372572901737_cc36331ac1ee819b51a8_original.jpg",
+   "is_custom_image": true,
+   "first_name": "Xiomaraor Granholm4",
+   "last_name": "Dov Vasquez-Lowe",
+   "team": "T0ADATEAM01",
+   "email": "nathanaela@zephyr-lane.example",
+   "title": "",
+   "phone": "+99 5366273779",
+   "skype": "",
+   "status_text": "",
+   "status_text_canonical": "",
+   "status_emoji": ":spruce-loop:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "spruce-loop",
+     "display_url": "https://emoji.slack-edge.com/T0ADATEAM01/spruce-loop/fdcb4f02f9e5d576.jpg"
+    }
+   ],
+   "status_expiration": 0,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0,
+   "start_date": "2023-12-12"
+  }
+ }
+}

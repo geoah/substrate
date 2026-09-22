@@ -1,0 +1,77 @@
+{
+ "ok": true,
+ "file": {
+  "id": "FU7BCKRHMWD",
+  "created": 1789497809,
+  "timestamp": 1789497809,
+  "mimetype": "image/png",
+  "filetype": "png",
+  "pretty_type": "PNG",
+  "user": "UT0Y90KCSPH",
+  "user_team": "T0ADATEAM01",
+  "editable": false,
+  "size": 48588,
+  "mode": "hosted",
+  "is_external": false,
+  "external_type": "",
+  "is_public": true,
+  "public_url_shared": false,
+  "display_as_bot": false,
+  "username": "",
+  "name": "The Handover depends on one more round",
+  "title": "The Review will be folded into the",
+  "is_modified_by_ai": false,
+  "url_private": "https://files.slack.com/files-pri/2exUC5n2UGzC5j4gwQLh1en/screenshot_2026-09-15_at_2.43.20___pm.png",
+  "url_private_download": "https://files.slack.com/files-pri/2exUC5n2UGzC5j4gwQLh1en/download/screenshot_2026-09-15_at_2.43.20___pm.png",
+  "media_display_type": "unknown",
+  "thumb_64": "https://files.slack.com/files-tmb/KE4R2vfWMxZwwJcAteoJaBzzlAc9fr64pQ/screenshot_2026-09-15_at_2.43.20___pm_64.png",
+  "thumb_80": "https://files.slack.com/files-tmb/KE4R2vfWMxZwwJcAteoJaBzzlAc9fr64pQ/screenshot_2026-09-15_at_2.43.20___pm_80.png",
+  "thumb_360": "https://files.slack.com/files-tmb/KE4R2vfWMxZwwJcAteoJaBzzlAc9fr64pQ/screenshot_2026-09-15_at_2.43.20___pm_360.png",
+  "thumb_360_w": 240,
+  "thumb_360_h": 360,
+  "thumb_160": "https://files.slack.com/files-tmb/KE4R2vfWMxZwwJcAteoJaBzzlAc9fr64pQ/screenshot_2026-09-15_at_2.43.20___pm_160.png",
+  "original_w": 536,
+  "original_h": 804,
+  "thumb_tiny": "KVT3bw8v3XO1PdCpygia2f0x6JeeGhma3myDdyOtRVvjvwkZTBqUpJWstszHuqZ8elx7634HTWiiZS+4T+WGfvqL5Y2xqYB5VHI484BTY5q5Flee",
+  "permalink": "https://zephyr-lane.slack.com/files/adalovelace/FU7BCKRHMWD/screenshot_2026-09-15_at_2.43.20___pm.png",
+  "permalink_public": "https://brightsea.example/oCejWZR7gJWFznkDegA4LtnIDo2tZ2W6Yx",
+  "is_starred": false,
+  "shares": {
+   "public": {
+    "CSP27K97J3K": [
+     {
+      "ts": "1747680210.731019",
+      "channel_name": "pewter-room",
+      "team_id": "T0ADATEAM01",
+      "share_user_id": "UT0Y90KCSPH",
+      "source": "UNKNOWN",
+      "is_silent_share": false,
+      "reply_users": [
+       "UT0Y90KCSPH",
+       "UM0CRECPWYK",
+       "UZYSGS7CBM8",
+       "U00"
+      ],
+      "reply_users_count": 4,
+      "reply_count": 35,
+      "latest_reply": "1747771357.537059",
+      "thread_ts": "1747680178.877549"
+     }
+    ]
+   }
+  },
+  "channels": [
+   "CSP27K97J3K"
+  ],
+  "groups": [],
+  "ims": [],
+  "has_more_shares": false,
+  "has_rich_preview": false,
+  "file_access": "visible",
+  "comments_count": 0
+ },
+ "comments": [],
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

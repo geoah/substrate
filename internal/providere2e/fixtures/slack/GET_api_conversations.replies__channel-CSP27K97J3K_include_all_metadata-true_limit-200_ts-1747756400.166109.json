@@ -1,0 +1,357 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "subtype": "bot_message",
+   "text": "The draft <@U4RWLTWENY5> depends on the agreed cutoff.\n\nThis batch rolls up into the follow-up thread.\nThe draft rolls up into one more round of checks.\nThe draft will be.\nThe handover is waiting on the second <!subteam^S4BGCUYE1KZ> pass, unless somebody objects. The.\n\n The rollout now covers the shared doc.",
+   "username": "Orchard Field",
+   "type": "message",
+   "ts": "1747756400.166109",
+   "bot_id": "BLFK8XZ1AEC",
+   "app_id": "AUFLEEC4WZN",
+   "trigger_id": "FtU9QZ3GCUZA",
+   "workflow_id": "WfSRKJ5G1EEP",
+   "thread_ts": "1747756400.166109",
+   "reply_count": 7,
+   "reply_users_count": 3,
+   "latest_reply": "1747761778.525379",
+   "reply_users": [
+    "UZYSGS7CBM8",
+    "U4RWLTWENY5",
+    "U0ADA0WNER1"
+   ],
+   "is_locked": false,
+   "subscribed": true,
+   "last_read": "1747761778.525379",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "1Zcdk",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The checklist quietly changed the earlier draft.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "user",
+         "user_id": "U4RWLTWENY5"
+        },
+        {
+         "type": "text",
+         "text": "\nThis batch now covers a smaller slice."
+        },
+        {
+         "type": "text",
+         "text": "The ingest path rolls up into the numbers from Friday."
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "The staging cluster will be folded into the shared doc.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "The estimate depends on the second pass, after the handover. The new index."
+        },
+        {
+         "type": "text",
+         "text": "\n\n"
+        },
+        {
+         "type": "usergroup",
+         "usergroup_id": "S4BGCUYE1KZ"
+        },
+        {
+         "type": "text",
+         "text": " The schedule was split out of a."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "UZYSGS7CBM8",
+   "type": "message",
+   "ts": "1747756665.392649",
+   "client_msg_id": "ef6e51cb-ea95-4752-5e4a-202ba3b9adfa",
+   "text": "The rollback plan still blocks the numbers from Friday, after the handover.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747756400.166109",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "SP3C1",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The retry budget is waiting on the owner's sign-off, either way."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "U4RWLTWENY5",
+   "type": "message",
+   "ts": "1747756937.348859",
+   "client_msg_id": "50c960f2-16f0-40a0-68ba-66f862f5c555",
+   "text": "Following up: The retry budget is waiting on a smaller slice, either way. The review needs a second look from a smaller slice.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747756400.166109",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "SrOh6",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "For the record: The schedule will be folded into the capacity note, as discussed. The estimate was split out of the follow-up thread."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "U0ADA0WNER1",
+   "type": "message",
+   "ts": "1747761311.728649",
+   "client_msg_id": "ee6e9b7c-70b7-9389-0a39-fa6f3e7f9864",
+   "text": "The schedule was split out of the numbers from Friday.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747756400.166109",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "GUF9j",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The draft quietly changed the follow-up thread."
+        },
+        {
+         "type": "emoji",
+         "name": "Gus Orrington",
+         "unicode": "1f602"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "joy",
+     "users": [
+      "U4RWLTWENY5"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "U0ADA0WNER1",
+   "type": "message",
+   "ts": "1747761653.548419",
+   "client_msg_id": "3dc815ee-3a36-3208-198d-b7c1a0db7632",
+   "text": "<@U4RWLTWENY5> The estimate quietly changed the earlier draft, pending one more read.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747756400.166109",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "lTOUs",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "user",
+         "user_id": "U4RWLTWENY5"
+        },
+        {
+         "type": "text",
+         "text": " The retry budget quietly changed the follow-up thread, either way. The."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "raised_hands",
+     "users": [
+      "UZYSGS7CBM8",
+      "U4RWLTWENY5"
+     ],
+     "count": 2
+    },
+    {
+     "name": "tidal_yard",
+     "users": [
+      "U4RWLTWENY5"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "U0ADA0WNER1",
+   "type": "message",
+   "ts": "1747761703.939729",
+   "client_msg_id": "64527637-0d6e-a862-5745-16f2ad4e0f7d",
+   "text": "<@U4RWLTWENY5> The migration was split out of the capacity note.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747756400.166109",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "9mVbd",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "user",
+         "user_id": "U4RWLTWENY5"
+        },
+        {
+         "type": "text",
+         "text": " The migration quietly changed the second pass."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "UZYSGS7CBM8",
+   "type": "message",
+   "ts": "1747761715.595939",
+   "client_msg_id": "B90C1344-76C0-7DD6-A5D3-4AFE3D4EC1D1",
+   "text": "<@U0ADA0WNER1> This batch quietly.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747756400.166109",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "zt8fG",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "user",
+         "user_id": "U0ADA0WNER1"
+        },
+        {
+         "type": "text",
+         "text": " The review is waiting on."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "U0ADA0WNER1",
+   "type": "message",
+   "ts": "1747761778.525379",
+   "client_msg_id": "3cfeaab3-ba01-2641-cc96-080690deff3a",
+   "text": "<@U4RWLTWENY5> The staging cluster should unblock the agreed cutoff, pending one more read. The.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747756400.166109",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "WaQHU",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "user",
+         "user_id": "U4RWLTWENY5"
+        },
+        {
+         "type": "text",
+         "text": " The review rolls up into the numbers from Friday, if nothing else moves. The staging."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "mica_crew",
+     "users": [
+      "U4RWLTWENY5"
+     ],
+     "count": 1
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

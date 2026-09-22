@@ -1,0 +1,577 @@
+{
+ "data": {
+  "workflowStates": {
+   "pageInfo": {
+    "hasNextPage": true,
+    "endCursor": "8o5b795r-9ko3-339u-194z-67u65p5e5h7f"
+   },
+   "nodes": [
+    {
+     "id": "6180s5mw-90we-4e85-g975-94c739z514zv",
+     "name": "onyx",
+     "color": "#e2e2e2",
+     "description": null,
+     "position": 1,
+     "type": "unstarted",
+     "team": {
+      "id": "5j48370i-u1c2-382y-o689-i5w03738l103"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-07-16T19:36:11.062Z",
+     "updatedAt": "2026-07-16T19:36:11.062Z",
+     "archivedAt": null
+    },
+    {
+     "id": "91f0y4if-2864-4995-p2b2-3c81a0461i15",
+     "name": "fathom",
+     "color": "#f2c94c",
+     "description": null,
+     "position": 2,
+     "type": "started",
+     "team": {
+      "id": "bjvtwz46-5l51-10xv-881a-v4r09o61u020"
+     },
+     "inheritedFrom": {
+      "id": "d2s44gb7-3p22-8yv4-z548-91869pcp4y4f"
+     },
+     "createdAt": "2026-01-16T15:59:22.868Z",
+     "updatedAt": "2026-01-16T15:59:22.868Z",
+     "archivedAt": null
+    },
+    {
+     "id": "1ru41253-842b-94qq-nhs8-0b31c521578b",
+     "name": "fathom",
+     "color": "#f2c94c",
+     "description": null,
+     "position": 2,
+     "type": "started",
+     "team": {
+      "id": "3w210268-ky81-1849-x860-026w29u90945"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-03-25T15:47:15.855Z",
+     "updatedAt": "2026-03-25T15:47:15.855Z",
+     "archivedAt": null
+    },
+    {
+     "id": "7wh23745-2507-185c-x515-3lx59r320546",
+     "name": "lattice",
+     "color": "#0f783c",
+     "description": "The migration will be folded.",
+     "position": 1002,
+     "type": "started",
+     "team": {
+      "id": "275y5901-kz13-8umm-i405-21ul86iex577"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2025-12-30T23:16:17.489Z",
+     "updatedAt": "2025-12-30T23:16:17.489Z",
+     "archivedAt": null
+    },
+    {
+     "id": "9397fp8u-k029-15b4-1rop-g8659x2l10i9",
+     "name": "flint",
+     "color": "#5e6ad2",
+     "description": null,
+     "position": 3,
+     "type": "completed",
+     "team": {
+      "id": "140to9h4-b3d8-48sl-b0y0-4wl21u037cw4"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-01-16T15:59:22.868Z",
+     "updatedAt": "2026-01-16T15:59:22.868Z",
+     "archivedAt": null
+    },
+    {
+     "id": "8204a9w2-c7o0-9p9u-d7g0-753d9u8905a5",
+     "name": "lattice",
+     "color": "#0f783c",
+     "description": "The dashboard was split out of.",
+     "position": 1002,
+     "type": "started",
+     "team": {
+      "id": "140to9h4-b3d8-48sl-b0y0-4wl21u037cw4"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-01-16T15:59:22.868Z",
+     "updatedAt": "2026-01-16T15:59:22.868Z",
+     "archivedAt": null
+    },
+    {
+     "id": "7e89r421-6d83-52o7-1412-3g2197o73971",
+     "name": "reef",
+     "color": "#95a2b3",
+     "description": null,
+     "position": 5,
+     "type": "duplicate",
+     "team": {
+      "id": "5j48370i-u1c2-382y-o689-i5w03738l103"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-07-16T19:36:11.062Z",
+     "updatedAt": "2026-07-16T19:36:11.062Z",
+     "archivedAt": null
+    },
+    {
+     "id": "918h6773-npyz-8huy-m80s-a0bn70206er0",
+     "name": "maple",
+     "color": "#95a2b3",
+     "description": null,
+     "position": 4,
+     "type": "canceled",
+     "team": {
+      "id": "bjvtwz46-5l51-10xv-881a-v4r09o61u020"
+     },
+     "inheritedFrom": {
+      "id": "31jo1838-7385-1f2y-647m-xsuxkty12jr8"
+     },
+     "createdAt": "2026-01-16T15:59:22.868Z",
+     "updatedAt": "2026-01-16T15:59:22.868Z",
+     "archivedAt": null
+    },
+    {
+     "id": "6p1868zb-u60v-00h6-3554-ru70s35x04my",
+     "name": "maple",
+     "color": "#95a2b3",
+     "description": null,
+     "position": 4,
+     "type": "canceled",
+     "team": {
+      "id": "5j48370i-u1c2-382y-o689-i5w03738l103"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-07-16T19:36:11.062Z",
+     "updatedAt": "2026-07-16T19:36:11.062Z",
+     "archivedAt": null
+    },
+    {
+     "id": "68l4fwns-3y50-95xe-w87p-0xldlv575ula",
+     "name": "onyx",
+     "color": "#e2e2e2",
+     "description": null,
+     "position": 1,
+     "type": "unstarted",
+     "team": {
+      "id": "bjvtwz46-5l51-10xv-881a-v4r09o61u020"
+     },
+     "inheritedFrom": {
+      "id": "86j41va0-7l33-6155-k87y-91a2g96f10ck"
+     },
+     "createdAt": "2026-01-16T15:59:22.868Z",
+     "updatedAt": "2026-01-16T15:59:22.868Z",
+     "archivedAt": null
+    },
+    {
+     "id": "4et6i143-w7b4-0e94-004q-t6908ky7d9ae",
+     "name": "reef",
+     "color": "#95a2b3",
+     "description": null,
+     "position": 5,
+     "type": "duplicate",
+     "team": {
+      "id": "88as4971-3y79-2828-v37q-ng39en8r7107"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-08-03T16:41:53.827Z",
+     "updatedAt": "2026-08-03T16:41:53.827Z",
+     "archivedAt": null
+    },
+    {
+     "id": "2b8015rr-789i-5y01-0n1h-p383056lm72l",
+     "name": "fathom",
+     "color": "#f2c94c",
+     "description": null,
+     "position": 2,
+     "type": "started",
+     "team": {
+      "id": "88as4971-3y79-2828-v37q-ng39en8r7107"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-08-03T16:41:53.827Z",
+     "updatedAt": "2026-08-03T16:41:53.827Z",
+     "archivedAt": null
+    },
+    {
+     "id": "5u9l9901-g41m-0o77-5262-6745805l2j7h",
+     "name": "lattice",
+     "color": "#0f783c",
+     "description": "The draft now covers the second pass.",
+     "position": 1002,
+     "type": "started",
+     "team": {
+      "id": "m0su437x-3289-9b7i-c02y-j5667mh5s579"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-01-16T08:22:15.215Z",
+     "updatedAt": "2026-01-16T08:22:15.215Z",
+     "archivedAt": null
+    },
+    {
+     "id": "72964z11-m554-6ba2-0rt7-4x16nh2z38e5",
+     "name": "larch",
+     "color": "#bec2c8",
+     "description": null,
+     "position": 0,
+     "type": "backlog",
+     "team": {
+      "id": "88as4971-3y79-2828-v37q-ng39en8r7107"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-08-03T16:41:53.827Z",
+     "updatedAt": "2026-08-03T16:41:53.827Z",
+     "archivedAt": null
+    },
+    {
+     "id": "320l2965-7ygo-410d-8z91-zodxi4k537r9",
+     "name": "onyx",
+     "color": "#e2e2e2",
+     "description": null,
+     "position": 1,
+     "type": "unstarted",
+     "team": {
+      "id": "88as4971-3y79-2828-v37q-ng39en8r7107"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-08-03T16:41:53.827Z",
+     "updatedAt": "2026-08-03T16:41:53.827Z",
+     "archivedAt": null
+    },
+    {
+     "id": "rt6226m1-2331-8154-7i6j-48hs21itn385",
+     "name": "flint",
+     "color": "#5e6ad2",
+     "description": null,
+     "position": 3,
+     "type": "completed",
+     "team": {
+      "id": "50v9r041-l70t-64we-22g0-68uok7yij373"
+     },
+     "inheritedFrom": {
+      "id": "9397fp8u-k029-15b4-1rop-g8659x2l10i9"
+     },
+     "createdAt": "2026-01-16T15:59:22.868Z",
+     "updatedAt": "2026-01-16T15:59:22.868Z",
+     "archivedAt": null
+    },
+    {
+     "id": "kn3wcpgk-22wx-8n1q-91j6-80n954fhpzfg",
+     "name": "lattice",
+     "color": "#0f783c",
+     "description": "The checklist was split out of.",
+     "position": 1002,
+     "type": "started",
+     "team": {
+      "id": "88as4971-3y79-2828-v37q-ng39en8r7107"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-08-03T16:41:53.827Z",
+     "updatedAt": "2026-08-03T16:41:53.827Z",
+     "archivedAt": null
+    },
+    {
+     "id": "zhoxv84z-5721-1739-y39m-lsk2b78wgopg",
+     "name": "flint",
+     "color": "#5e6ad2",
+     "description": null,
+     "position": 3,
+     "type": "completed",
+     "team": {
+      "id": "88as4971-3y79-2828-v37q-ng39en8r7107"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-08-03T16:41:53.827Z",
+     "updatedAt": "2026-08-03T16:41:53.827Z",
+     "archivedAt": null
+    },
+    {
+     "id": "f2737606-4t8e-7196-6634-43ny96c58667",
+     "name": "flint",
+     "color": "#5e6ad2",
+     "description": null,
+     "position": 3,
+     "type": "completed",
+     "team": {
+      "id": "5j48370i-u1c2-382y-o689-i5w03738l103"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-07-16T19:36:11.062Z",
+     "updatedAt": "2026-07-16T19:36:11.062Z",
+     "archivedAt": null
+    },
+    {
+     "id": "c8tf0823-0nc9-1859-w8b3-7638996t72vi",
+     "name": "larch",
+     "color": "#bec2c8",
+     "description": null,
+     "position": 0,
+     "type": "backlog",
+     "team": {
+      "id": "5j48370i-u1c2-382y-o689-i5w03738l103"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-07-16T19:36:11.062Z",
+     "updatedAt": "2026-07-16T19:36:11.062Z",
+     "archivedAt": null
+    },
+    {
+     "id": "dwn8wm96-0oj7-967l-b362-7747z7t04760",
+     "name": "lattice",
+     "color": "#0f783c",
+     "description": "The estimate was split out of.",
+     "position": 0,
+     "type": "started",
+     "team": {
+      "id": "5j48370i-u1c2-382y-o689-i5w03738l103"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-07-16T19:36:11.062Z",
+     "updatedAt": "2026-07-16T19:36:11.062Z",
+     "archivedAt": null
+    },
+    {
+     "id": "r6t990u1-46fu-868j-8915-056n51fad635",
+     "name": "fathom",
+     "color": "#f2c94c",
+     "description": null,
+     "position": 2,
+     "type": "started",
+     "team": {
+      "id": "275y5901-kz13-8umm-i405-21ul86iex577"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2025-01-23T02:23:29.818Z",
+     "updatedAt": "2025-01-23T02:23:29.818Z",
+     "archivedAt": null
+    },
+    {
+     "id": "sqd60ne8-b483-6228-xq10-438jx3q1c42s",
+     "name": "fathom",
+     "color": "#f2c94c",
+     "description": null,
+     "position": 2,
+     "type": "started",
+     "team": {
+      "id": "3560e9bv-k61c-07b3-6b96-946u3m260c3z"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-01-12T21:52:11.192Z",
+     "updatedAt": "2026-02-03T05:09:17.352Z",
+     "archivedAt": null
+    },
+    {
+     "id": "dk805gs4-m2d4-77xl-5519-49a71oc3wl4n",
+     "name": "maple",
+     "color": "#95a2b3",
+     "description": null,
+     "position": 4,
+     "type": "canceled",
+     "team": {
+      "id": "88as4971-3y79-2828-v37q-ng39en8r7107"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-08-03T16:41:53.827Z",
+     "updatedAt": "2026-08-03T16:41:53.827Z",
+     "archivedAt": null
+    },
+    {
+     "id": "f8ga08o4-0023-9g42-bw4h-0a0692101146",
+     "name": "fathom",
+     "color": "#f2c94c",
+     "description": null,
+     "position": 2,
+     "type": "started",
+     "team": {
+      "id": "5j48370i-u1c2-382y-o689-i5w03738l103"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-07-16T19:36:11.062Z",
+     "updatedAt": "2026-07-16T19:36:11.062Z",
+     "archivedAt": null
+    },
+    {
+     "id": "to83n653-lv67-2176-25u0-hnc2d3k61f26",
+     "name": "larch",
+     "color": "#bec2c8",
+     "description": null,
+     "position": 0,
+     "type": "backlog",
+     "team": {
+      "id": "275y5901-kz13-8umm-i405-21ul86iex577"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2025-01-23T02:23:29.818Z",
+     "updatedAt": "2025-01-23T02:23:29.818Z",
+     "archivedAt": null
+    },
+    {
+     "id": "7m5f6ts4-86l7-5e34-84fe-y72k55158e6t",
+     "name": "maple",
+     "color": "#95a2b3",
+     "description": null,
+     "position": 4,
+     "type": "canceled",
+     "team": {
+      "id": "3w210268-ky81-1849-x860-026w29u90945"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-03-25T15:47:15.855Z",
+     "updatedAt": "2026-03-25T15:47:15.855Z",
+     "archivedAt": null
+    },
+    {
+     "id": "4unsvg48-a990-2y3b-k5t3-y30077mjom9j",
+     "name": "hazel",
+     "color": "#FC7840",
+     "description": "The schedule landed ahead.",
+     "position": 0,
+     "type": "triage",
+     "team": {
+      "id": "18z39105-e179-14sf-9799-so99312110av"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-02-25T17:46:42.839Z",
+     "updatedAt": "2026-02-25T17:46:42.839Z",
+     "archivedAt": null
+    },
+    {
+     "id": "7fr7d413-ud0g-4222-ht32-l2414754ke87",
+     "name": "hazel",
+     "color": "#FC7840",
+     "description": "The schedule should.",
+     "position": 0,
+     "type": "triage",
+     "team": {
+      "id": "2lf2170j-67h6-86uq-8m56-0u2es9v7333g"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-02-25T17:46:42.839Z",
+     "updatedAt": "2026-02-25T17:46:42.839Z",
+     "archivedAt": null
+    },
+    {
+     "id": "2926j796-6w5x-42e8-n78t-x999m557m22j",
+     "name": "larch",
+     "color": "#bec2c8",
+     "description": null,
+     "position": 0,
+     "type": "backlog",
+     "team": {
+      "id": "3w210268-ky81-1849-x860-026w29u90945"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-03-25T15:47:15.855Z",
+     "updatedAt": "2026-03-25T15:47:15.855Z",
+     "archivedAt": null
+    },
+    {
+     "id": "8t3w421r-n474-8j89-t7qt-kzx0910ff863",
+     "name": "larch",
+     "color": "#bec2c8",
+     "description": null,
+     "position": 0,
+     "type": "backlog",
+     "team": {
+      "id": "140to9h4-b3d8-48sl-b0y0-4wl21u037cw4"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-01-16T15:59:22.868Z",
+     "updatedAt": "2026-01-16T15:59:22.868Z",
+     "archivedAt": null
+    },
+    {
+     "id": "31jo1838-7385-1f2y-647m-xsuxkty12jr8",
+     "name": "maple",
+     "color": "#95a2b3",
+     "description": null,
+     "position": 4,
+     "type": "canceled",
+     "team": {
+      "id": "140to9h4-b3d8-48sl-b0y0-4wl21u037cw4"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-01-16T15:59:22.868Z",
+     "updatedAt": "2026-01-16T15:59:22.868Z",
+     "archivedAt": null
+    },
+    {
+     "id": "5kg922d9-9w84-8156-9pp1-d013x043ug10",
+     "name": "hazel",
+     "color": "#FC7840",
+     "description": "The new index quietly.",
+     "position": 0,
+     "type": "triage",
+     "team": {
+      "id": "140to9h4-b3d8-48sl-b0y0-4wl21u037cw4"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-02-25T17:46:42.839Z",
+     "updatedAt": "2026-02-25T17:46:42.839Z",
+     "archivedAt": null
+    },
+    {
+     "id": "0o57s9u8-2273-221s-1prc-g8vi350w8093",
+     "name": "maple",
+     "color": "#95a2b3",
+     "description": null,
+     "position": 4,
+     "type": "canceled",
+     "team": {
+      "id": "3560e9bv-k61c-07b3-6b96-946u3m260c3z"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-01-12T21:52:11.192Z",
+     "updatedAt": "2026-02-03T05:09:17.354Z",
+     "archivedAt": null
+    },
+    {
+     "id": "5tp13k82-2ku2-7a91-4mf5-08v0yk440q6c",
+     "name": "larch",
+     "color": "#bec2c8",
+     "description": null,
+     "position": 0,
+     "type": "backlog",
+     "team": {
+      "id": "m0su437x-3289-9b7i-c02y-j5667mh5s579"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-01-16T08:22:15.215Z",
+     "updatedAt": "2026-01-16T08:22:15.215Z",
+     "archivedAt": null
+    },
+    {
+     "id": "9s01w19e-d95p-1wh4-ikv2-wi6m7pow1kms",
+     "name": "hazel",
+     "color": "#FC7840",
+     "description": "The migration quietly.",
+     "position": 0,
+     "type": "triage",
+     "team": {
+      "id": "ac6t4sy6-17j4-293j-rr70-09c41d4c7162"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-02-25T17:46:42.839Z",
+     "updatedAt": "2026-02-25T17:46:42.839Z",
+     "archivedAt": null
+    },
+    {
+     "id": "012q1pt3-h27a-7362-k5n1-zhb1057307a5",
+     "name": "maple",
+     "color": "#95a2b3",
+     "description": null,
+     "position": 4,
+     "type": "canceled",
+     "team": {
+      "id": "ac6t4sy6-17j4-293j-rr70-09c41d4c7162"
+     },
+     "inheritedFrom": {
+      "id": "31jo1838-7385-1f2y-647m-xsuxkty12jr8"
+     },
+     "createdAt": "2026-01-16T15:59:22.868Z",
+     "updatedAt": "2026-01-16T15:59:22.868Z",
+     "archivedAt": null
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,471 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747754088.595939",
+   "edited": {
+    "user": "U48XXRY7R9U",
+    "ts": "1747754158.000000"
+   },
+   "client_msg_id": "88945668-6c50-154e-7710-3cb403fffaed",
+   "text": "The <https://everline.example/in/immanuel-gallimore/|The Draft> staging cluster rolls up into.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747754088.595939",
+   "reply_count": 1,
+   "reply_users_count": 1,
+   "latest_reply": "1747754148.988979",
+   "reply_users": [
+    "U48XXRY7R9U"
+   ],
+   "is_locked": false,
+   "subscribed": true,
+   "last_read": "1747754148.988979",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "uH6Lj",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "emoji",
+         "name": "Marek Westbrook",
+         "unicode": "1f9f5"
+        },
+        {
+         "type": "link",
+         "url": "https://everline.example/in/immanuel-gallimore/",
+         "text": "The dashboard still blocks next week's window."
+        },
+        {
+         "type": "text",
+         "text": "The queue depends on the."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "USF3WB4D5CZ",
+   "type": "message",
+   "ts": "1747749410.959559",
+   "client_msg_id": "18d7c068-153c-986b-dadc-50ff370dcaea",
+   "text": "The checklist <https://everline.example/in/valentina-amberly/|The New> is waiting on next week's window.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747749410.959559",
+   "reply_count": 5,
+   "reply_users_count": 2,
+   "latest_reply": "1747755044.399029",
+   "reply_users": [
+    "USF3WB4D5CZ",
+    "U48XXRY7R9U"
+   ],
+   "is_locked": false,
+   "subscribed": true,
+   "last_read": "1747755044.399029",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "wKRuL",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "emoji",
+         "name": "Marek Westbrook",
+         "unicode": "1f9f5"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "link",
+         "url": "https://everline.example/in/valentina-amberly/",
+         "text": "This batch quietly changed the earlier draft."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747747515.357889",
+   "edited": {
+    "user": "U48XXRY7R9U",
+    "ts": "1747754171.000000"
+   },
+   "client_msg_id": "34e94e13-7c87-2f20-dbe5-d1577dd72ad3",
+   "text": "The <https://coppergate.example/candidate-searches/nimbus/right-side/candidates/demetrios-oakhurst/Thimble/2f979d9a-5d5a-6493-19d5-ef80f50b272a/feed|The Review now> migration rolls up into the earlier draft, pending.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747747515.357889",
+   "reply_count": 1,
+   "reply_users_count": 1,
+   "latest_reply": "1747747581.182909",
+   "reply_users": [
+    "U48XXRY7R9U"
+   ],
+   "is_locked": false,
+   "subscribed": true,
+   "last_read": "1747747581.182909",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "uqgg4",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "emoji",
+         "name": "Marek Westbrook",
+         "unicode": "1f9f5"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "link",
+         "url": "https://coppergate.example/candidate-searches/nimbus/right-side/candidates/demetrios-oakhurst/Thimble/2f979d9a-5d5a-6493-19d5-ef80f50b272a/feed",
+         "text": "The migration was split out of the earlier draft."
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "emoji",
+         "name": "Rui Orrington",
+         "unicode": "2b50"
+        },
+        {
+         "type": "emoji",
+         "name": "Ida Sedgwick",
+         "unicode": "1f31f"
+        },
+        {
+         "type": "emoji",
+         "name": "Rui Orrington",
+         "unicode": "2b50"
+        },
+        {
+         "type": "text",
+         "text": "The draft needs a second."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747665835.906169",
+   "client_msg_id": "3B16EB2E-1568-204A-8894-6E2E54FB7657",
+   "text": "Short <@UXQUMNTTWLM> version: The staging cluster still blocks the owner's sign-off, assuming the counts hold. The ingest path was split out of the open question.",
+   "team": "T0ADATEAM01",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "blnMV",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": " The migration quietly changed the agreed cutoff."
+        },
+        {
+         "type": "user",
+         "user_id": "UXQUMNTTWLM"
+        },
+        {
+         "type": "text",
+         "text": " The dashboard was split out of next."
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "text",
+         "text": "Summary: The dashboard still blocks the agreed cutoff, either way. The ingest path will be folded into the second pass."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747661337.669369",
+   "client_msg_id": "5b8794d1-e140-0416-51df-20238ef314db",
+   "text": "The <https://coppergate.example/candidates/beatrijs-pinewood/active/right-side/candidates/demetrios-stonebridge/Thimble/e7e4c355-f2c0-f1f6-2d3e-f12a17ae0853|The Migration> draft is waiting on the second pass.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747661337.669369",
+   "reply_count": 1,
+   "reply_users_count": 1,
+   "latest_reply": "1747661371.895589",
+   "reply_users": [
+    "U48XXRY7R9U"
+   ],
+   "is_locked": false,
+   "subscribed": true,
+   "last_read": "1747661371.895589",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "g0CEF",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "emoji",
+         "name": "Marek Westbrook",
+         "unicode": "1f9f5"
+        },
+        {
+         "type": "link",
+         "url": "https://coppergate.example/candidates/beatrijs-pinewood/active/right-side/candidates/demetrios-stonebridge/Thimble/e7e4c355-f2c0-f1f6-2d3e-f12a17ae0853",
+         "text": "The review is waiting on the numbers from Friday.",
+         "style": {
+          "bold": true
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "+1",
+     "users": [
+      "U0ADA0WNER1"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "subtype": "thread_broadcast",
+   "user": "U48XXRY7R9U",
+   "thread_ts": "1747650355.680909",
+   "root": {
+    "user": "U48XXRY7R9U",
+    "type": "message",
+    "ts": "1747650355.680909",
+    "client_msg_id": "b916a71d-9fb6-92b3-5c02-5157bdfc08e3",
+    "text": "<@UXQUMNTTWLM> The checklist <@U0ADA0WNER1> will be folded into next week's.",
+    "team": "T0ADATEAM01",
+    "thread_ts": "1747650355.680909",
+    "reply_count": 1,
+    "reply_users_count": 1,
+    "latest_reply": "1747653397.929199",
+    "reply_users": [
+     "U48XXRY7R9U"
+    ],
+    "is_locked": false,
+    "subscribed": true,
+    "last_read": "1747653397.929199",
+    "blocks": [
+     {
+      "type": "rich_text",
+      "block_id": "KYx1N",
+      "elements": [
+       {
+        "type": "rich_text_section",
+        "elements": [
+         {
+          "type": "user",
+          "user_id": "UXQUMNTTWLM"
+         },
+         {
+          "type": "text",
+          "text": " "
+         },
+         {
+          "type": "user",
+          "user_id": "U0ADA0WNER1"
+         },
+         {
+          "type": "text",
+          "text": " The queue landed ahead of next week's window."
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "type": "message",
+   "ts": "1747653397.929199",
+   "client_msg_id": "375c43ab-87bc-8bb1-654e-18411aad6e46",
+   "text": "The retry budget depends on the earlier draft.",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "iegCj",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The migration needs a second look from the earlier draft."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "tada",
+     "users": [
+      "U5012H5QR34",
+      "USF3WB4D5CZ",
+      "U0ADA0WNER1",
+      "U857VE5R9Z6",
+      "U9PYDDC3C8T",
+      "UGJLNWUPYRX",
+      "U3D76EMMQ3S"
+     ],
+     "count": 7
+    },
+    {
+     "name": "raised_hands",
+     "users": [
+      "U5012H5QR34",
+      "U0ADA0WNER1",
+      "U857VE5R9Z6",
+      "U3D76EMMQ3S"
+     ],
+     "count": 4
+    },
+    {
+     "name": "onyx_gate",
+     "users": [
+      "USF3WB4D5CZ"
+     ],
+     "count": 1
+    },
+    {
+     "name": "saffron_watch",
+     "users": [
+      "U9PYDDC3C8T"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747650355.680909",
+   "client_msg_id": "b916a71d-9fb6-92b3-5c02-5157bdfc08e3",
+   "text": "<@UXQUMNTTWLM> The checklist <@U0ADA0WNER1> landed ahead of the numbers.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747650355.680909",
+   "reply_count": 1,
+   "reply_users_count": 1,
+   "latest_reply": "1747653397.929199",
+   "reply_users": [
+    "U48XXRY7R9U"
+   ],
+   "is_locked": false,
+   "subscribed": true,
+   "last_read": "1747653397.929199",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "KYx1N",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "user",
+         "user_id": "UXQUMNTTWLM"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "user",
+         "user_id": "U0ADA0WNER1"
+        },
+        {
+         "type": "text",
+         "text": " The new index landed ahead of the shared doc."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "mica_room",
+     "users": [
+      "U0ADA0WNER1",
+      "U9PYDDC3C8T",
+      "U3D76EMMQ3S"
+     ],
+     "count": 3
+    },
+    {
+     "name": "tidal_yard",
+     "users": [
+      "U0ADA0WNER1",
+      "U9PYDDC3C8T",
+      "U3D76EMMQ3S"
+     ],
+     "count": 3
+    },
+    {
+     "name": "raised_hands",
+     "users": [
+      "U0ADA0WNER1",
+      "U3D76EMMQ3S"
+     ],
+     "count": 2
+    },
+    {
+     "name": "saffron_watch",
+     "users": [
+      "U9PYDDC3C8T"
+     ],
+     "count": 1
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "pin_count": 1,
+ "channel_actions_ts": null,
+ "channel_actions_count": 0,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

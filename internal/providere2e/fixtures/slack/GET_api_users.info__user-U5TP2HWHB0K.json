@@ -1,0 +1,62 @@
+{
+ "ok": true,
+ "user": {
+  "id": "U5TP2HWHB0K",
+  "name": "ilariaine-kettleby-vance",
+  "is_bot": false,
+  "updated": 1789226634,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "e06b56",
+  "is_email_confirmed": true,
+  "real_name": "Leandroka Brackwater-Vance",
+  "tz": "America/Los_Angeles",
+  "tz_label": "Pacific Daylight Time",
+  "tz_offset": -25200,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Leandroka Brackwater-Vance",
+   "display_name": "Cy Ellery",
+   "avatar_hash": "56589be41a84",
+   "real_name_normalized": "Leandroka Brackwater-Vance",
+   "display_name_normalized": "Cy Ellery",
+   "image_24": "https://avatars.slack-edge.com/2025-12-08/91942054687266_99b44dfecfef7bd4f86d_24.jpg",
+   "image_32": "https://avatars.slack-edge.com/2025-12-08/91942054687266_99b44dfecfef7bd4f86d_32.jpg",
+   "image_48": "https://avatars.slack-edge.com/2025-12-08/91942054687266_99b44dfecfef7bd4f86d_48.jpg",
+   "image_72": "https://avatars.slack-edge.com/2025-12-08/91942054687266_99b44dfecfef7bd4f86d_72.jpg",
+   "image_192": "https://avatars.slack-edge.com/2025-12-08/91942054687266_99b44dfecfef7bd4f86d_192.jpg",
+   "image_512": "https://avatars.slack-edge.com/2025-12-08/91942054687266_99b44dfecfef7bd4f86d_512.jpg",
+   "image_1024": "https://avatars.slack-edge.com/2025-12-08/91942054687266_99b44dfecfef7bd4f86d_1024.jpg",
+   "image_original": "https://avatars.slack-edge.com/2025-12-08/91942054687266_99b44dfecfef7bd4f86d_original.jpg",
+   "is_custom_image": true,
+   "first_name": "Mirren5 Jorvik4",
+   "last_name": "Marek Verrinder",
+   "team": "T0ADATEAM01",
+   "email": "emberka@zephyr-lane.example",
+   "title": "The Review still blocks the",
+   "phone": "+99 5115960285",
+   "skype": "",
+   "status_text": "The New Index depends on",
+   "status_text_canonical": "",
+   "status_emoji": ":palm_tree:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "palm_tree",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/1f334.png",
+     "unicode": "1f334"
+    }
+   ],
+   "status_expiration": 1790092800,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0,
+   "start_date": "2024-08-11"
+  }
+ }
+}

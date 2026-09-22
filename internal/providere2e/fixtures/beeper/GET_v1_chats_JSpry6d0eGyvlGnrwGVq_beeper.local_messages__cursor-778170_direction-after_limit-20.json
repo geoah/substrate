@@ -1,0 +1,21 @@
+{
+ "items": [
+  {
+   "id": "362070",
+   "chatID": "!JSpry6d0eGyvlGnrwGVq:beeper.local",
+   "accountID": "telegram",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-16T07:40:33.304Z",
+   "sortKey": "778170",
+   "type": "REACTION",
+   "isSender": true,
+   "isHidden": true,
+   "isDeleted": false,
+   "linkedMessageID": "362062"
+  }
+ ],
+ "hasMore": false,
+ "oldestCursor": "778170",
+ "newestCursor": "778170"
+}

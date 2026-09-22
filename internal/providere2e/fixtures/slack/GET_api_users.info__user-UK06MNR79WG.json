@@ -1,0 +1,60 @@
+{
+ "ok": true,
+ "user": {
+  "id": "UK06MNR79WG",
+  "name": "demetrios-fairholm-hale",
+  "is_bot": false,
+  "updated": 1789435610,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "5b89d5",
+  "is_email_confirmed": true,
+  "real_name": "Jarek Jorvik",
+  "tz": "Europe/Berlin",
+  "tz_label": "Central European Summer Time",
+  "tz_offset": 7200,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "is_scim_provisioned": true,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Jarek Jorvik",
+   "display_name": "Jarek Jorvik",
+   "avatar_hash": "f4496cb16856",
+   "real_name_normalized": "Jarek Jorvik",
+   "display_name_normalized": "Jarek Jorvik",
+   "image_24": "https://avatars.slack-edge.com/2026-07-31/51005779123898_48e6a2d91bb93a209e2f_24.jpg",
+   "image_32": "https://avatars.slack-edge.com/2026-07-31/51005779123898_48e6a2d91bb93a209e2f_32.jpg",
+   "image_48": "https://avatars.slack-edge.com/2026-07-31/51005779123898_48e6a2d91bb93a209e2f_48.jpg",
+   "image_72": "https://avatars.slack-edge.com/2026-07-31/51005779123898_48e6a2d91bb93a209e2f_72.jpg",
+   "image_192": "https://avatars.slack-edge.com/2026-07-31/51005779123898_48e6a2d91bb93a209e2f_192.jpg",
+   "image_512": "https://avatars.slack-edge.com/2026-07-31/51005779123898_48e6a2d91bb93a209e2f_512.jpg",
+   "image_1024": "https://avatars.slack-edge.com/2026-07-31/51005779123898_48e6a2d91bb93a209e2f_1024.jpg",
+   "image_original": "https://avatars.slack-edge.com/2026-07-31/51005779123898_48e6a2d91bb93a209e2f_original.jpg",
+   "is_custom_image": true,
+   "first_name": "Ivora Jardine-Hale",
+   "last_name": "Xiomara Kirkbride-Hale",
+   "team": "T0ADATEAM01",
+   "email": "jarek@zephyr-lane.example",
+   "title": "",
+   "phone": "+99 5467739726",
+   "skype": "",
+   "status_text": "",
+   "status_text_canonical": "",
+   "status_emoji": ":amber:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "amber",
+     "display_url": "https://emoji.slack-edge.com/T0ADATEAM01/amber/73f82e9f4c5b7d44.png"
+    }
+   ],
+   "status_expiration": 0,
+   "huddle_state": "default_unset"
+  }
+ }
+}

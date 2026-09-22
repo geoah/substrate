@@ -1,0 +1,61 @@
+{
+ "ok": true,
+ "user": {
+  "id": "UVXZ5ATVFG0",
+  "name": "hermioneine-brackwater-ashby",
+  "is_bot": false,
+  "updated": 1789470003,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "4cc091",
+  "is_email_confirmed": true,
+  "real_name": "Kalinael Calloway-Ashby",
+  "tz": "America/New_York",
+  "tz_label": "Eastern Daylight Time",
+  "tz_offset": -14400,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "is_scim_provisioned": true,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Kalinael Calloway-Ashby",
+   "display_name": "Kalinael Calloway-Ashby",
+   "avatar_hash": "641c4e036b16",
+   "real_name_normalized": "Kalinael Calloway-Ashby",
+   "display_name_normalized": "Kalinael Calloway-Ashby",
+   "image_24": "https://avatars.slack-edge.com/2026-05-25/22474381231535_1c844fb85834c9430dd9_24.jpg",
+   "image_32": "https://avatars.slack-edge.com/2026-05-25/22474381231535_1c844fb85834c9430dd9_32.jpg",
+   "image_48": "https://avatars.slack-edge.com/2026-05-25/22474381231535_1c844fb85834c9430dd9_48.jpg",
+   "image_72": "https://avatars.slack-edge.com/2026-05-25/22474381231535_1c844fb85834c9430dd9_72.jpg",
+   "image_192": "https://avatars.slack-edge.com/2026-05-25/22474381231535_1c844fb85834c9430dd9_192.jpg",
+   "image_512": "https://avatars.slack-edge.com/2026-05-25/22474381231535_1c844fb85834c9430dd9_512.jpg",
+   "image_1024": "https://avatars.slack-edge.com/2026-05-25/22474381231535_1c844fb85834c9430dd9_1024.jpg",
+   "image_original": "https://avatars.slack-edge.com/2026-05-25/22474381231535_1c844fb85834c9430dd9_original.jpg",
+   "is_custom_image": true,
+   "first_name": "Leandroah Pinewood-Frost",
+   "last_name": "Rosalinda Ufford-Frost",
+   "team": "T0ADATEAM01",
+   "email": "orielel@zephyr-lane.example",
+   "title": "",
+   "phone": "+99 5202831738",
+   "skype": "",
+   "status_text": "The Review still",
+   "status_text_canonical": "",
+   "status_emoji": ":ember:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "ember",
+     "display_url": "https://emoji.slack-edge.com/T0ADATEAM01/ember/597cbe8627c9baa7.png"
+    }
+   ],
+   "status_expiration": 1789646400,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0
+  }
+ }
+}

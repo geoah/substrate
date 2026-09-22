@@ -1,0 +1,50 @@
+{
+  "_note": "This bundle is TOKEN-authorized, not OAuth: Linear's OAuth application is not registered for this workspace and a personal API key reads everything the viewer can see, so the manifest ships no `oauth2:` block and the runner's oauth/start step cannot apply to it (provider-practices §7).",
+  "auth": "token",
+  "configKind": "providers.substrate.reamde.dev/linear/config",
+  "configId": "default",
+  "config": {
+    "apiKey": "lin_api_e2e-personal-key"
+  },
+  "accountKind": "providers.substrate.reamde.dev/linear/account",
+  "accountId": "e2e",
+  "account": {
+    "displayName": "Linear (e2e)",
+    "enabledWorkspace": true,
+    "enabledProjects": true,
+    "enabledIssues": true,
+    "syncFrequency": "hourly",
+    "backfillDepth": "all"
+  },
+  "_window": "all, and deliberately. A time-relative floor against a FIXED recording set is a test that passes today and fails on Thursday: the cut holds issues updated in one real month, and `last30d` empties the issues walk the moment the fixtures age past the window. `all` means the floor is empty and the mirror must hold every node the cut holds, which is the assertion worth making. The recording NAME is the operation name alone, so the floor never decides which file answers.",
+  "hosts": [
+    "https://api.linear.app"
+  ],
+  "triggers": [
+    "linear-on-connect",
+    "linear-on-request"
+  ],
+  "_triggers": "linear-scheduled is left OFF for a run: an hourly catch-up fire racing the drain proves nothing. linear-on-request stays, because the scenario's second sync IS a syncRequestedAt stamp and a direct `function call` would run one invocation without draining the paged checkpoint.",
+  "settleSeconds": 240,
+  "seedCredential": {
+    "property": "apiKey",
+    "match": "lin_api_"
+  },
+  "continue": {
+    "property": "syncRequestedAt",
+    "value": "now"
+  },
+  "_continue": "A cold walk of the owner's workspace (13,000 issues at 25 a page, plus the teams, members, states, labels, projects and cycles) does not fit in one drain of 512 invocations and two minutes. The body parks the stage, its page number, its cursor and its floor on the account (`syncPending`) and stamps `ok (deferred: <stage> x1)`; the runner stamps this property to continue and waits again, and the walk picks up where it stopped rather than restarting.",
+  "seed": {
+    "accountId": "owner-linear",
+    "_note": "the seed run is the owner's real workspace; the id carries the provider because the engine's OAuth surface resolves a BARE account id across every accountconfig kind and refuses a clash (two providers both naming their seed account `owner` collide)",
+    "continueRounds": 120,
+    "settleSeconds": 300,
+    "account": {
+      "backfillDepth": "last30d"
+    },
+    "_account": "the SEED runs against the owner's real workspace, where `all` is 13,178 issues and the raw pull holds one month of them; the window stays 30 days there, which is what `tools/rawpull/linear.py --days 30` recorded."
+  },
+  "mockPort": 48114,
+  "_mockPort": "fixed so the rewired function body is identical run to run (see tools/e2e.py preferred_port and T-010 / substrate#576). 48111 github, 48112 google, 48113 slack, 48114 linear, 48115 notion."
+}

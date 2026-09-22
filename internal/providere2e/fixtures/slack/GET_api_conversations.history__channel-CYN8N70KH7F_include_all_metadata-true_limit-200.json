@@ -1,0 +1,1003 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "U4JZ9Z4S8QV",
+   "type": "message",
+   "ts": "1747772474.093419",
+   "client_msg_id": "72172272-185A-5AAF-C688-6FEA80CA4CF6",
+   "text": "One thing: The rollback plan needs a second look from next week's window, once the numbers settle. This batch depends <@U87FWU6EJ6S> on one more round of checks, as discussed.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747772474.093419",
+   "reply_count": 1,
+   "reply_users_count": 1,
+   "latest_reply": "1747772859.533469",
+   "reply_users": [
+    "UPCFXW6YGLD"
+   ],
+   "is_locked": false,
+   "subscribed": false,
+   "attachments": [
+    {
+     "fallback": "Short version: The handover will be folded into the open question, assuming the counts hold. This batch still.\nFollowing up: The draft now covers the capacity note, for now. The queue now covers the second pass, after the <https://bellrock.example/trips/reflection-company-retreat-november-2026-registration-wilder-retreats-9562088838#about-the-retreat|The Rollout will be folded into> handover. The dashboard landed ahead of a smaller slice, after the handover. The ingest path rolls up into the follow-up thread.\n\nShort version: The dashboard landed ahead of the shared doc, assuming the counts hold. The review now covers the open question, assuming the counts hold. The review was split out of the earlier draft, assuming the counts hold. The staging cluster was split out of next week's window, pending one more read. The schedule is waiting on a smaller slice, as discussed. The rollout rolls up into the follow-up thread.\n\nOne thing: The draft needs a second look from the follow-up thread, before the window closes. The draft depends on a smaller slice, as discussed. The estimate rolls up into the shared doc.\n\nThe queue will be folded into the open question.",
+     "ts": "1747771411.482689",
+     "author_id": "UN8FQD4VCWZ",
+     "author_subname": "Galenine Linscott-Vance",
+     "channel_id": "CT1DXHB41W9",
+     "channel_team": "T0ADATEAM01",
+     "is_msg_unfurl": true,
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "cpsOv",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "emoji",
+           "name": "Magdalena Quarrier",
+           "unicode": "2708-fe0f"
+          },
+          {
+           "type": "text",
+           "text": " "
+          },
+          {
+           "type": "text",
+           "text": "The review depends on the owner's sign-off, for now.",
+           "style": {
+            "bold": true
+           }
+          },
+          {
+           "type": "text",
+           "text": "\nThe draft now covers one more round of checks."
+          },
+          {
+           "type": "text",
+           "text": "The schedule quietly changed the open question, before.",
+           "style": {
+            "bold": true
+           }
+          },
+          {
+           "type": "text",
+           "text": "The rollout still blocks the follow-up thread, before the window closes. The."
+          },
+          {
+           "type": "link",
+           "url": "https://bellrock.example/trips/reflection-company-retreat-november-2026-registration-wilder-retreats-9562088838#about-the-retreat",
+           "text": "The rollback plan rolls up into the."
+          },
+          {
+           "type": "text",
+           "text": " The checklist landed ahead of a smaller slice."
+          },
+          {
+           "type": "text",
+           "text": "The ingest path rolls up into next week's window.",
+           "style": {
+            "bold": true
+           }
+          },
+          {
+           "type": "text",
+           "text": "The estimate is waiting on the agreed cutoff.\n"
+          },
+          {
+           "type": "text",
+           "text": "The queue rolls up into the.",
+           "style": {
+            "bold": true
+           }
+          },
+          {
+           "type": "text",
+           "text": " After Friday, "
+          },
+          {
+           "type": "text",
+           "text": "The retry budget should.",
+           "style": {
+            "bold": true
+           }
+          },
+          {
+           "type": "text",
+           "text": "Summary: The dashboard landed ahead of the shared doc, as discussed. The draft now covers the follow-up thread, if nothing else moves. This batch was split out of the capacity note, unless somebody objects. The queue is waiting on the second pass, as discussed. The migration rolls up into the earlier draft, after the handover.\n\nThe staging cluster now covers one."
+          },
+          {
+           "type": "text",
+           "text": "The draft will be folded into a smaller slice.",
+           "style": {
+            "bold": true
+           }
+          },
+          {
+           "type": "text",
+           "text": " This batch needs a second look from the capacity note."
+          },
+          {
+           "type": "text",
+           "text": "The ingest path still.",
+           "style": {
+            "bold": true
+           }
+          },
+          {
+           "type": "text",
+           "text": "The rollout quietly changed the agreed cutoff."
+          },
+          {
+           "type": "emoji",
+           "name": "Sebastiano Ashgrove",
+           "unicode": "2728"
+          },
+          {
+           "type": "text",
+           "text": "\n\nThe review quietly changed the second pass."
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "text": "This batch will be folded into next week's window, for now. The.\nFollowing up: This batch should unblock a smaller slice, once the numbers settle. The staging cluster was split out <https://bellrock.example/trips/reflection-company-retreat-november-2026-registration-wilder-retreats-9562088838#about-the-retreat|The Rollout will be folded into> of the shared doc, as discussed. The schedule will be folded into the numbers from Friday.\n\nQuick note: The new index now covers the open question, pending one more read. The new index depends on the agreed cutoff, unless somebody objects. The new index will be folded into the second pass, pending one more read. The draft needs a second look from next week's window, unless somebody objects. This batch quietly changed the second pass, either way. The migration is waiting on the follow-up thread.\n\nFollowing up: The queue now covers one more round of checks, after the handover. The retry budget still blocks next week's window, once the numbers settle. The estimate now covers the open question.\n\nThe draft is waiting on the owner's sign-off, as.",
+     "author_name": "Galenine Linscott-Vance",
+     "author_link": "https://zephyr-lane.slack.com/lumen/UN8FQD4VCWZ",
+     "author_icon": "https://avatars.slack-edge.com/2026-03-02/39887295675719_9732c7ec46ef5f1bb154_48.jpg",
+     "mrkdwn_in": [
+      "text"
+     ],
+     "private_channel_prompt": true,
+     "color": "D0D0D0",
+     "is_share": true,
+     "from_url": "https://zephyr-lane.slack.com/archives/CT1DXHB41W9/p1747771411482689",
+     "id": 1,
+     "footer": "The Staging"
+    }
+   ],
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "ysf7c",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The review should unblock the agreed cutoff."
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "text",
+         "text": "The staging cluster landed ahead of the owner's sign-off, pending one more read. The ingest."
+        },
+        {
+         "type": "text",
+         "text": " The draft was split out of the capacity note."
+        },
+        {
+         "type": "text",
+         "text": "The migration now covers the numbers from Friday."
+        },
+        {
+         "type": "user",
+         "user_id": "U87FWU6EJ6S"
+        },
+        {
+         "type": "text",
+         "text": " The draft now covers one more round."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "U0ADA0WNER1",
+   "type": "message",
+   "ts": "1747765477.168109",
+   "edited": {
+    "user": "U0ADA0WNER1",
+    "ts": "1747765481.000000"
+   },
+   "client_msg_id": "2a491bdf-fb56-6cf5-91e8-93b1bd247dfd",
+   "text": "The draft now covers the open question, before.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747765477.168109",
+   "reply_count": 2,
+   "reply_users_count": 2,
+   "latest_reply": "1747765996.653479",
+   "reply_users": [
+    "U2KBDERZ6MA",
+    "UP8P1KS86P1"
+   ],
+   "is_locked": false,
+   "subscribed": true,
+   "last_read": "1747765996.653479",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "xJhvT",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The migration still blocks the open question."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "aspen_works",
+     "users": [
+      "UPCFXW6YGLD"
+     ],
+     "count": 1
+    },
+    {
+     "name": "heart",
+     "users": [
+      "U4JZ9Z4S8QV",
+      "UF1731TNMYW"
+     ],
+     "count": 2
+    }
+   ]
+  },
+  {
+   "user": "UPCFXW6YGLD",
+   "type": "message",
+   "ts": "1747764427.661249",
+   "client_msg_id": "c4f364df-e7bb-8430-7928-ac70c96a16cf",
+   "text": "The dashboard <https://kelpwood.example/share/8acd6c12-fa6b-2174-6bdc-d3799e4ac506?day=today&amp;time=ASAP|The Queue rolls up into the second pass> needs a second look from the agreed cutoff.",
+   "team": "T0ADATEAM01",
+   "attachments": [
+    {
+     "image_url": "https://umbrel.example/images/f66622ea-ce18-b3e3-ab0d-d6faf091654b/image.jpeg?width=1200&height=630&auto=webp&format=jpg&fit=crop&v=",
+     "image_width": 1200,
+     "image_height": 630,
+     "image_bytes": 232053,
+     "from_url": "https://kelpwood.example/share/8acd6c12-fa6b-2174-6bdc-d3799e4ac506?day=today&time=ASAP",
+     "service_icon": "https://elmshire.example/assets/images/favicons/production/apple-touch-icon-13fe69a113116b6bcd64fac9746c7730e90e7940a8947cb69ebdb1355d214bbe.png",
+     "id": 1,
+     "original_url": "https://kelpwood.example/share/8acd6c12-fa6b-2174-6bdc-d3799e4ac506?day=today&time=ASAP",
+     "fallback": "The staging cluster depends on.",
+     "text": "The checklist quietly changed the capacity note, assuming the counts hold.",
+     "title": "The Draft now covers a smaller",
+     "title_link": "https://kelpwood.example/share/8acd6c12-fa6b-2174-6bdc-d3799e4ac506?day=today&time=ASAP",
+     "service_name": "Kelpwood"
+    }
+   ],
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "0voQK",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The new index should unblock the agreed cutoff."
+        },
+        {
+         "type": "link",
+         "url": "https://kelpwood.example/share/8acd6c12-fa6b-2174-6bdc-d3799e4ac506?day=today&time=ASAP",
+         "text": "The schedule is waiting on the follow-up thread.",
+         "truncated": true
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "U2ZN7F5559F",
+   "type": "message",
+   "ts": "1747762466.332739",
+   "client_msg_id": "3746d127-c5a5-b2d4-98be-b43f1c0defcf",
+   "text": "<https://kelpwood.example/share/ae0dc452-d44c-7f62-3404-5ac6e29c4064?day=today&amp;time=ASAP|The Queue rolls up into the second pass> The dashboard quietly changed the owner's sign-off.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747762466.332739",
+   "reply_count": 2,
+   "reply_users_count": 1,
+   "latest_reply": "1747765515.071909",
+   "reply_users": [
+    "U2ZN7F5559F"
+   ],
+   "is_locked": false,
+   "subscribed": false,
+   "attachments": [
+    {
+     "image_url": "https://umbrel.example/images/f8af6acd-d5e9-7668-b431-d70bf4baa4a2/image.jpeg?width=1200&height=630&auto=webp&format=jpg&fit=crop&v=",
+     "image_width": 1200,
+     "image_height": 630,
+     "image_bytes": 183750,
+     "from_url": "https://kelpwood.example/share/ae0dc452-d44c-7f62-3404-5ac6e29c4064?day=today&time=ASAP",
+     "service_icon": "https://elmshire.example/assets/images/favicons/production/apple-touch-icon-13fe69a113116b6bcd64fac9746c7730e90e7940a8947cb69ebdb1355d214bbe.png",
+     "id": 1,
+     "original_url": "https://kelpwood.example/share/ae0dc452-d44c-7f62-3404-5ac6e29c4064?day=today&time=ASAP",
+     "fallback": "The checklist needs a second look from a smaller slice.",
+     "text": "The rollback plan should unblock the open question, unless somebody objects.",
+     "title": "The Ingest Path",
+     "title_link": "https://kelpwood.example/share/ae0dc452-d44c-7f62-3404-5ac6e29c4064?day=today&time=ASAP",
+     "service_name": "Kelpwood"
+    }
+   ],
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "RJ0Dl",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "link",
+         "url": "https://kelpwood.example/share/ae0dc452-d44c-7f62-3404-5ac6e29c4064?day=today&time=ASAP",
+         "text": "The new index rolls up into the shared doc.",
+         "truncated": true
+        },
+        {
+         "type": "text",
+         "text": " This batch landed ahead of the agreed cutoff."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "white_check_mark",
+     "users": [
+      "UKPKP2THUMN",
+      "UMYCCBY3LFJ",
+      "U0ADA0WNER1"
+     ],
+     "count": 3
+    }
+   ]
+  },
+  {
+   "user": "U87FWU6EJ6S",
+   "type": "message",
+   "ts": "1747747810.717089",
+   "client_msg_id": "d2db2061-194c-689f-a733-2d7b121c5673",
+   "text": "The ingest path quietly changed the second pass, for now. The review was split.\nHeads up — The rollout was split out of a smaller slice, for now. The retry budget needs a second look from the owner's sign-off, pending one more read.\nThe review still blocks the.\nThe dashboard now covers the owner's sign-off, after the handover.\nThe draft will be folded into the owner's sign-off, once.\nQuick note: The rollout is waiting on the second pass, either way. The draft landed ahead of the earlier draft, after the handover.\nThe draft depends on a smaller slice, for now.\nFor the record: The rollback plan depends on a smaller slice, if nothing else moves. This batch landed ahead of one more round of checks, pending one more read. The rollout is waiting on the owner's sign-off, before the window closes. The migration will be folded into a smaller slice.\nFollowing up: The review landed ahead of the owner's sign-off, either way. This batch still blocks the shared doc, unless somebody objects. The retry budget depends on one more round of checks.\nFollowing up: The rollout needs a second look from the second pass, before the window closes. The queue should unblock the agreed cutoff.",
+   "team": "T0ADATEAM01",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "ohHXq",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "emoji",
+         "name": "Jarek Vasquez-Lowe",
+         "unicode": "2600-fe0f"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "text",
+         "text": "The draft depends on the second pass, unless somebody objects.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "emoji",
+         "name": "Jarek Vasquez-Lowe",
+         "unicode": "2600-fe0f"
+        },
+        {
+         "type": "text",
+         "text": "\nThe estimate should unblock the numbers from."
+        },
+        {
+         "type": "text",
+         "text": "The retry budget was split out of the owner's sign-off.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "The dashboard now covers."
+        },
+        {
+         "type": "text",
+         "text": "The migration depends on the follow-up thread.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "The migration was split out of the."
+        },
+        {
+         "type": "emoji",
+         "name": "Zenobia Pinewood"
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "emoji",
+         "name": "Gil Thornbury",
+         "unicode": "1f4c5"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "text",
+         "text": "The dashboard was split out of the second pass.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "emoji",
+         "name": "Emmerich Linscott",
+         "unicode": "1f5d3-fe0f"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "text",
+         "text": "The review now covers.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": " The draft should unblock next week's window."
+        },
+        {
+         "type": "emoji",
+         "name": "Emmerich Linscott",
+         "unicode": "1f5d3-fe0f"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "text",
+         "text": "The queue depends on one more round of checks.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": " The schedule still blocks the capacity note.\nThe ingest path landed."
+        },
+        {
+         "type": "text",
+         "text": "The checklist is waiting on a smaller slice.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "The ingest path rolls up into the owner's sign-off, before the window closes."
+        },
+        {
+         "type": "text",
+         "text": "The rollback plan now covers the owner's sign-off.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "The queue now covers the capacity note."
+        },
+        {
+         "type": "emoji",
+         "name": "Kestrel Redmayne",
+         "unicode": "1f60a"
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "emoji",
+         "name": "Ivor Wexford",
+         "unicode": "1f455"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "text",
+         "text": "The schedule depends on the.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\nThe handover landed ahead of the agreed cutoff, once the numbers settle."
+        },
+        {
+         "type": "text",
+         "text": "The retry budget was split out of the follow-up thread.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "The review quietly changed the open question, unless somebody objects."
+        },
+        {
+         "type": "text",
+         "text": "The rollout quietly changed the agreed cutoff, pending one more read.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "The new index needs a second look from the capacity note."
+        },
+        {
+         "type": "emoji",
+         "name": "Hana Mortlake",
+         "unicode": "1f64f"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "text",
+         "text": "The rollout quietly changed the owner's sign-off, if.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": " Short version: The review depends on the agreed cutoff, assuming the counts hold. The draft will be folded into the agreed cutoff.\nThe checklist is waiting on the follow-up thread."
+        },
+        {
+         "type": "text",
+         "text": "The draft was split out of the open question.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": " The dashboard was split out of next week's window, as discussed."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "star2",
+     "users": [
+      "U6MN840S994"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UZYSGS7CBM8",
+   "type": "message",
+   "ts": "1747745123.088169",
+   "client_msg_id": "7289f3c7-d276-3f4b-2a7e-d68284dc976a",
+   "text": "The schedule quietly changed the earlier draft, unless somebody objects. The checklist is.",
+   "team": "T0ADATEAM01",
+   "attachments": [
+    {
+     "fallback": "Quick note: The checklist will be folded into the numbers <!here> from Friday, pending one more read. The schedule now covers the owner's sign-off.\n\nShort version: The queue now covers the second pass, if nothing else moves. The dashboard now covers the shared doc, for now. The checklist still blocks the open question.\n\nShort version: The queue quietly changed the shared doc, before the window closes. The staging cluster now covers the open question, for now. The rollback plan was split out of the earlier draft, for now. The checklist depends on next week's window.\n\nHeads up — The dashboard landed ahead of the follow-up thread, pending one more read. The new index.",
+     "ts": "1747662903.598449",
+     "author_id": "UZYSGS7CBM8",
+     "author_subname": "Galen3 Whitfield3",
+     "channel_id": "CYN8N70KH7F",
+     "channel_team": "T0ADATEAM01",
+     "is_msg_unfurl": true,
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "Xu61L",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "broadcast",
+           "range": "here"
+          },
+          {
+           "type": "text",
+           "text": " "
+          },
+          {
+           "type": "emoji",
+           "name": "Quilla Zenner",
+           "unicode": "26a0-fe0f"
+          },
+          {
+           "type": "text",
+           "text": " "
+          },
+          {
+           "type": "text",
+           "text": "The estimate now covers the capacity note, if.",
+           "style": {
+            "bold": true
+           }
+          },
+          {
+           "type": "text",
+           "text": " "
+          },
+          {
+           "type": "emoji",
+           "name": "Quilla Zenner",
+           "unicode": "26a0-fe0f"
+          },
+          {
+           "type": "text",
+           "text": "\n\nThe schedule needs a second look from the capacity note, for now."
+          },
+          {
+           "type": "text",
+           "text": "The handover now covers one more.",
+           "style": {
+            "bold": true
+           }
+          },
+          {
+           "type": "text",
+           "text": " The draft depends on the."
+          },
+          {
+           "type": "text",
+           "text": "The rollout now covers.",
+           "style": {
+            "bold": true
+           }
+          },
+          {
+           "type": "text",
+           "text": "The rollback plan will be folded into the second pass.\n"
+          },
+          {
+           "type": "emoji",
+           "name": "Xiomara Applebury",
+           "unicode": "1f6a8"
+          },
+          {
+           "type": "text",
+           "text": "The handover rolls up into the owner's sign-off, if nothing else moves."
+          },
+          {
+           "type": "emoji",
+           "name": "Xiomara Applebury",
+           "unicode": "1f6a8"
+          },
+          {
+           "type": "text",
+           "text": "The rollout now covers the second pass."
+          },
+          {
+           "type": "text",
+           "text": "The schedule rolls up into the earlier draft, if.",
+           "style": {
+            "bold": true
+           }
+          },
+          {
+           "type": "text",
+           "text": "The draft needs a second look from the agreed cutoff, as discussed.\n\nShort version: The rollback plan needs a second look from the open question, pending one more read."
+          },
+          {
+           "type": "emoji",
+           "name": "Hana Mortlake",
+           "unicode": "1f64f"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "text": "<!here> The review rolls up into the numbers from Friday, pending one more read.\n\nSummary: The dashboard rolls up into the numbers from Friday, after the handover. The staging cluster quietly changed the second pass, pending one more read.\n\nContext: The ingest path rolls up into one more round of checks, either way. The estimate landed ahead of the earlier draft, pending one more read. The rollout now covers the shared doc, as discussed. The review is waiting on the shared doc.\n\nQuick note: The queue still blocks the numbers from Friday, assuming the counts hold. The queue depends.",
+     "author_name": "Galen3 Whitfield3",
+     "author_link": "https://zephyr-lane.slack.com/lumen/UZYSGS7CBM8",
+     "author_icon": "https://avatars.slack-edge.com/2026-09-13/74211024508620_03983f3f4da86b7f1140_48.jpg",
+     "mrkdwn_in": [
+      "text"
+     ],
+     "color": "D0D0D0",
+     "is_share": true,
+     "from_url": "https://zephyr-lane.slack.com/archives/CYN8N70KH7F/p1747662903598449",
+     "id": 1,
+     "footer": "The Ingest Path"
+    }
+   ],
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "chSvU",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The checklist was split out of the owner's sign-off, as discussed. The rollback."
+        },
+        {
+         "type": "emoji",
+         "name": "Elowen Granholm",
+         "unicode": "1f680"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "sedge_works",
+     "users": [
+      "U87FWU6EJ6S",
+      "U4RWLTWENY5"
+     ],
+     "count": 2
+    },
+    {
+     "name": "warning",
+     "users": [
+      "U6MN840S994"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "U87FWU6EJ6S",
+   "type": "message",
+   "ts": "1747740186.195439",
+   "client_msg_id": "254B0E34-0522-5C57-83BE-7DED687AAD15",
+   "text": "The review landed ahead of the.",
+   "team": "T0ADATEAM01",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "T3cRS",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The retry budget should unblock."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "tidal_yard",
+     "users": [
+      "U4JZ9Z4S8QV",
+      "U4RWLTWENY5",
+      "U1FRHDSC8JS",
+      "UZYSGS7CBM8"
+     ],
+     "count": 4
+    }
+   ]
+  },
+  {
+   "user": "UGGQHQPXLA9",
+   "type": "message",
+   "ts": "1747737333.566299",
+   "client_msg_id": "a9896f0d-2a39-0ec7-338e-22cad0866664",
+   "text": "<https://kelpwood.example/share/ce2ed450-69bd-a8db-431d-817b7008ed30?day=today&amp;time=ASAP|The Queue rolls up into the second pass> The new index quietly changed the owner's sign-off.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747737333.566299",
+   "reply_count": 2,
+   "reply_users_count": 1,
+   "latest_reply": "1747740344.689189",
+   "reply_users": [
+    "UGGQHQPXLA9"
+   ],
+   "is_locked": false,
+   "subscribed": false,
+   "attachments": [
+    {
+     "image_url": "https://umbrel.example/images/31132aaa-8078-736f-1768-815a59c547fe/image.jpeg?width=1200&height=630&auto=webp&format=jpg&fit=crop&v=",
+     "image_width": 1200,
+     "image_height": 630,
+     "image_bytes": 192807,
+     "from_url": "https://kelpwood.example/share/ce2ed450-69bd-a8db-431d-817b7008ed30?day=today&time=ASAP",
+     "service_icon": "https://elmshire.example/assets/images/favicons/production/apple-touch-icon-13fe69a113116b6bcd64fac9746c7730e90e7940a8947cb69ebdb1355d214bbe.png",
+     "id": 1,
+     "original_url": "https://kelpwood.example/share/ce2ed450-69bd-a8db-431d-817b7008ed30?day=today&time=ASAP",
+     "fallback": "The schedule should.",
+     "text": "The estimate now covers the owner's sign-off.",
+     "title": "The Migration still",
+     "title_link": "https://kelpwood.example/share/ce2ed450-69bd-a8db-431d-817b7008ed30?day=today&time=ASAP",
+     "service_name": "Kelpwood"
+    }
+   ],
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "MJLFt",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "link",
+         "url": "https://kelpwood.example/share/ce2ed450-69bd-a8db-431d-817b7008ed30?day=today&time=ASAP",
+         "text": "The review still blocks the numbers from Friday.",
+         "truncated": true
+        },
+        {
+         "type": "text",
+         "text": " This batch needs a second look from the numbers from Friday."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "tidal_yard",
+     "users": [
+      "U2KBDERZ6MA"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "U0ADA0WNER1",
+   "type": "message",
+   "ts": "1747737149.033719",
+   "client_msg_id": "ba902908-099b-4bf2-1a0e-abb8fc6a6241",
+   "text": "The checklist still blocks next <https://kelpwood.example/share/7839102d-d06c-1934-7549-108af6bd1f19?day=today&amp;time=ASAP|The Queue rolls up into the second pass> week's window, before the window closes. The.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747737149.033719",
+   "reply_count": 2,
+   "reply_users_count": 1,
+   "latest_reply": "1747740615.937519",
+   "reply_users": [
+    "U0ADA0WNER1"
+   ],
+   "is_locked": false,
+   "subscribed": true,
+   "last_read": "1747740615.937519",
+   "attachments": [
+    {
+     "image_url": "https://umbrel.example/images/ba0a5e52-b5b0-4901-6bbb-de99132fd9d8/image.jpeg?width=1200&height=630&auto=webp&format=jpg&fit=crop&v=",
+     "image_width": 1200,
+     "image_height": 630,
+     "image_bytes": 263445,
+     "from_url": "https://kelpwood.example/share/7839102d-d06c-1934-7549-108af6bd1f19?day=today&time=ASAP",
+     "service_icon": "https://elmshire.example/assets/images/favicons/production/apple-touch-icon-13fe69a113116b6bcd64fac9746c7730e90e7940a8947cb69ebdb1355d214bbe.png",
+     "id": 1,
+     "original_url": "https://kelpwood.example/share/7839102d-d06c-1934-7549-108af6bd1f19?day=today&time=ASAP",
+     "fallback": "The migration should.",
+     "text": "The draft rolls up into the agreed cutoff, after.",
+     "title": "The Estimate depends",
+     "title_link": "https://kelpwood.example/share/7839102d-d06c-1934-7549-108af6bd1f19?day=today&time=ASAP",
+     "service_name": "Kelpwood"
+    }
+   ],
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "DLnuv",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The migration rolls up into the open question, before the window closes. The queue."
+        },
+        {
+         "type": "link",
+         "url": "https://kelpwood.example/share/7839102d-d06c-1934-7549-108af6bd1f19?day=today&time=ASAP",
+         "text": "The draft is waiting on the capacity note.",
+         "truncated": true
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "tidal_yard",
+     "users": [
+      "UF1731TNMYW"
+     ],
+     "count": 1
+    },
+    {
+     "name": "white_check_mark",
+     "users": [
+      "UF1731TNMYW"
+     ],
+     "count": 1
+    }
+   ]
+  }
+ ],
+ "has_more": true,
+ "response_metadata": {
+  "next_cursor": "bmV4dF90czo5ODMwMDcwNTk3Mjg1OTA3"
+ }
+}

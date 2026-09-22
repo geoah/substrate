@@ -1,0 +1,38 @@
+{
+ "kind": "calendar#events",
+ "items": [
+  {
+   "kind": "calendar#event",
+   "etag": "\"3550393671939166\"",
+   "id": "6v8l3c3qlmxmp1543wvb5ti1x2",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=NnY4bDNjM3FsbXhtcDR8MD71dmI1dGkxeDIgZ3lma3BsZHhpbHJjZ2JjZW90Y3hkZmVpeHltbXJAYw",
+   "created": "2026-01-12T16:21:34.000Z",
+   "updated": "2026-04-03T07:13:55.969000Z",
+   "summary": "The Staging Cluster was split",
+   "creator": {
+    "email": "c_6c0ee8a049a95c4a285bbe0598185bf4@group.calendar.google.com",
+    "self": true
+   },
+   "organizer": {
+    "email": "c_6c0ee8a049a95c4a285bbe0598185bf4@group.calendar.google.com",
+    "self": true
+   },
+   "start": {
+    "dateTime": "2026-01-14T19:30:00Z",
+    "timeZone": "Europe/London"
+   },
+   "end": {
+    "dateTime": "2026-01-14T22:00:00Z",
+    "timeZone": "Europe/London"
+   },
+   "iCalUID": "6v8l3c3qlmxmp1543wvb5ti1x2@google.com",
+   "sequence": 1,
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  }
+ ],
+ "nextSyncToken": "fixture-sync-token-1-c_6c0ee8a049-2"
+}

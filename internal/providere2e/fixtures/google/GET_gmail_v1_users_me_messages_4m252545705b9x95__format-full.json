@@ -1,0 +1,95 @@
+{
+ "id": "4m252545705b9x95",
+ "threadId": "4a37699738058472",
+ "labelIds": [
+  "UNREAD",
+  "JOMCLDKQ_KBMDUQI",
+  "INBOX"
+ ],
+ "snippet": "Context: The retry budget should unblock the follow-up thread, pending one more read. The rollback plan landed ahead of the open question, for now. The schedule quietly changed the second pass, either way.",
+ "payload": {
+  "partId": "",
+  "mimeType": "multipart/mixed",
+  "filename": "",
+  "headers": [
+   {
+    "name": "Date",
+    "value": "Tue, 08 Sep 2026 07:53:20 -0700"
+   },
+   {
+    "name": "From",
+    "value": "\"Calder Danforth\" <xenia@umbrel.example>"
+   },
+   {
+    "name": "Message-ID",
+    "value": "<caius@umbrel-group.example>"
+   },
+   {
+    "name": "Subject",
+    "value": "The Checklist needs a second look from"
+   },
+   {
+    "name": "Mime-Version",
+    "value": "1.0"
+   },
+   {
+    "name": "Content-Type",
+    "value": "multipart/mixed; boundary=\"--==_mimepart_6aa021602715a_c211b8764f4\"; charset=UTF-8"
+   },
+   {
+    "name": "Content-Transfer-Encoding",
+    "value": "7bit"
+   }
+  ],
+  "body": {
+   "size": 0
+  },
+  "parts": [
+   {
+    "partId": "0",
+    "mimeType": "text/plain",
+    "filename": "",
+    "headers": [
+     {
+      "name": "Content-Type",
+      "value": "text/plain; charset=UTF-8"
+     },
+     {
+      "name": "Content-Transfer-Encoding",
+      "value": "7bit"
+     }
+    ],
+    "body": {
+     "size": 680,
+     "data": "VGhlIHJvbGxvdXQgaXMgd2FpdGluZyBvbiB0aGUgc2Vjb25kIHBhc3MuCgpUaGUgcm9sbG91dCByb2xscyB1cCBpbnRvIGEgc21hbGxlciBzbGljZSwgZm9yIG5vdy4KClRoZSBuZXcgaW5kZXggcXVpZXRseSBjaGFuZ2VkIHRoZS4KVGhlIHF1ZXVlIHdpbGwgYmUgZm9sZGVkIGludG8gdGhlIGVhcmxpZXIgZHJhZnQsIG9uY2UuCgoKVGhpcyBiYXRjaCBsYW5kZWQgYWhlYWQgb2YgdGhlIGVhcmxpZXIgZHJhZnQuClRoZSByZXRyeSBidWRnZXQgcXVpZXRseS4KCgpUaGUgbmV3IGluZGV4IGlzIHdhaXRpbmcgb24gb25lIG1vcmUgcm91bmQgb2YgY2hlY2tzLgpUaGUgZGFzaGJvYXJkIHNob3VsZCB1bmJsb2NrIHRoZSBvd25lcidzIHNpZ24tb2ZmLgoKVGhlIHF1ZXVlIHF1aWV0bHkgY2hhbmdlZCB0aGUgc2Vjb25kIHBhc3MuClRoZSBzdGFnaW5nIGNsdXN0ZXIgaXMgd2FpdGluZyBvbiB0aGUgb3duZXIncy4KVGhlIHJldHJ5IGJ1ZGdldCB3aWxsIGJlLgoKClRoZSBlc3RpbWF0ZSB3aWxsIGJlIGZvbGRlZCBpbnRvIHRoZSBlYXJsaWVyIGRyYWZ0LgpUaGUgc2NoZWR1bGUgbm93IGNvdmVycyB0aGUuClRoZSBzdGFnaW5nIGNsdXN0ZXIuClRoZSBzdGFnaW5nIGNsdXN0ZXIgbm93IGNvdmVycyB0aGUuCgoqIFRoZSBzdGFnaW5nIGNsdXN0ZXIgbm93IGNvdmVycyB0aGUgZm9sbG93LXVwIHRocmVhZC4"
+    }
+   },
+   {
+    "partId": "1",
+    "mimeType": "application/pdf",
+    "filename": "hazel-indigo-pebble-sync.pdf",
+    "headers": [
+     {
+      "name": "Content-Type",
+      "value": "application/pdf"
+     },
+     {
+      "name": "Content-Transfer-Encoding",
+      "value": "base64"
+     },
+     {
+      "name": "Content-Disposition",
+      "value": "attachment; filename=hazel-indigo-pebble-sync.pdf"
+     }
+    ],
+    "body": {
+     "attachmentId": "GFMgfZ6et4iawWkXIV4yesZ_sp2sl-ts_1xFrueL9ri998MVtMXV_o8VoJwc3Di0GWl0P6HOCVkgBVhWa6gS9kkOArHrC_63cpVpc9QXBltlG8qMUBIyKDcEVsxVxSM7TmPeRtbjgQIfZPRS8hMHYNBrYIFQVtSJV1C_0_eJ-bWvN6JFt2L4NdtyRNhBJ-dNC4_olWqpLH7vMhokPbythsln3-7PlDwv-MEvz7a3RcJkHSr67kSsseGeqhnpY8VmxIdNt3eMM4-HdcIAVhwpOxCV_7SnGJ0p7wDp4bT0mg5NMuAR9ze15XDqySF6MykOIVvduXtQ8Y8tTaAi2_Hkb2-rOg5RFdGbbKSYm9wvyPEZ_MioGX-faJezDxoXKZzbhw7JS8oA6ViiEJbI3ohx",
+     "size": 59205
+    }
+   }
+  ]
+ },
+ "sizeEstimate": 86331,
+ "historyId": "30546118",
+ "internalDate": "1788879200000"
+}

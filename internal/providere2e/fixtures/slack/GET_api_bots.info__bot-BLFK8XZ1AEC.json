@@ -1,0 +1,17 @@
+{
+ "ok": true,
+ "bot": {
+  "id": "BLFK8XZ1AEC",
+  "deleted": false,
+  "name": "Orchard Field",
+  "updated": 1782498996,
+  "app_id": "AUFLEEC4WZN",
+  "user_id": "UWHJ64YUAAV",
+  "icons": {
+   "image_36": "https://avatars.slack-edge.com/2026-01-09/76778033661992_7990ef6740285821f945_36.png",
+   "image_48": "https://avatars.slack-edge.com/2026-01-09/76778033661992_7990ef6740285821f945_48.png",
+   "image_72": "https://avatars.slack-edge.com/2026-01-09/76778033661992_7990ef6740285821f945_72.png"
+  },
+  "is_workflow_bot": true
+ }
+}

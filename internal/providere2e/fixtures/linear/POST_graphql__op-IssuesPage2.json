@@ -1,0 +1,1115 @@
+{
+ "data": {
+  "issues": {
+   "pageInfo": {
+    "hasNextPage": false,
+    "endCursor": "4203u59q-3a0y-2m53-4j59-ilo5268f3c7k"
+   },
+   "nodes": [
+    {
+     "id": "8s228789-3vh1-03ck-w00q-17uu99k90qxq",
+     "number": 439,
+     "title": "The Staging Cluster now covers the owner's sign-off",
+     "priority": 4,
+     "estimate": null,
+     "sortOrder": -245805,
+     "prioritySortOrder": -240372,
+     "slaType": "all",
+     "trashed": null,
+     "previousIdentifiers": [],
+     "subIssueSortOrder": null,
+     "reactionData": [],
+     "priorityLabel": "Low",
+     "trusted": null,
+     "integrationSourceType": null,
+     "inheritsSharedAccess": false,
+     "identifier": "PCY-439",
+     "url": "https://linear.app/zephyr-lane/issue/PCY-439/the-staging-cluster-now-covers-the-owner-s-sign-off",
+     "branchName": "elia-zenner-vance/pcy-439-the-staging-cluster-now-covers-the-owner-s-sign-off",
+     "customerTicketCount": 0,
+     "description": "## The checklist quietly changed the agreed cutoff.\n\nOne thing: The schedule should unblock the numbers from Friday, before the window closes. The review rolls up into the follow-up thread, if nothing else moves.\n\n## The draft still blocks the follow-up thread.\n\nHeads up \u2014 The migration is waiting on the owner's sign-off, assuming the counts hold. The draft now covers the second pass, if nothing else moves. The rollout is waiting on the owner's sign-off, either way. The estimate depends on the numbers from Friday, once the numbers settle. The new index now covers one more round of checks, for now. The staging cluster needs a second look from the agreed cutoff.\n\nFollowing up: The retry budget should unblock the second pass, assuming the counts hold. The new index was split out of one more round of checks, once the numbers settle.\n\n## The ingest path should unblock the capacity note.\n\n* Summary: The dashboard depends on the earlier draft, either way. The handover is waiting on the open question, once the numbers settle.\n* Summary: The schedule was split out of one more round of checks, before the window closes. This batch will be folded.\n* One thing: The retry budget needs a second look from the owner's sign-off, as discussed. The rollout depends on the follow-up thread.\n* The schedule rolls up into the agreed cutoff.\n* Quick note: The dashboard quietly changed one more round of checks, before the window closes. The handover will be folded into the second pass, after the handover.\n\n## The schedule now covers the agreed cutoff.\n\n* For the record: The review still blocks a smaller slice, unless somebody objects. The migration needs a second look from the capacity note.\n* The estimate rolls up into the numbers from Friday.\n* Quick note: The estimate needs a second look from the agreed cutoff, assuming the counts hold. The schedule should unblock.\n* This batch landed ahead of the follow-up thread.\n\n## The staging cluster quietly changed one more round of checks.\n\n* The draft rolls up into the numbers from Friday, if nothing else moves. The review.\n* The checklist was split out of the open question, if nothing else moves. The.\n* The ingest path landed ahead of the second pass, either way. The ingest path.\n* Context: The new index rolls up into the numbers from Friday, as discussed. The rollout still blocks.\n* The checklist was split out of the capacity note, assuming.",
+     "team": {
+      "id": "50v9r041-l70t-64we-22g0-68uok7yij373"
+     },
+     "cycle": null,
+     "project": {
+      "id": "159n7y93-r769-0lr2-d9u7-1u359ycoybj3"
+     },
+     "projectMilestone": {
+      "id": "6lg6e6dx-82p9-5rjo-13j1-a52z200893m6"
+     },
+     "lastAppliedTemplate": null,
+     "recurringIssueTemplate": null,
+     "creator": {
+      "id": "bfck70e6-9m7n-6s1i-h19z-4834y4l42n31"
+     },
+     "externalUserCreator": null,
+     "assignee": {
+      "id": "651dj1c1-9316-19zf-8hrq-pcqp7h3y81t4"
+     },
+     "delegate": null,
+     "snoozedBy": null,
+     "state": {
+      "id": "rt6226m1-2331-8154-7i6j-48hs21itn385"
+     },
+     "sourceComment": null,
+     "botActor": null,
+     "favorite": null,
+     "sharedAccess": {
+      "isShared": false,
+      "viewerHasOnlySharedAccess": false,
+      "sharedWithCount": 0,
+      "disallowedIssueFields": [],
+      "sharedWithUsers": []
+     },
+     "parent": null,
+     "reactions": [],
+     "asksRequester": null,
+     "asksExternalUserRequester": null,
+     "labels": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": []
+     },
+     "subscribers": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "651dj1c1-9316-19zf-8hrq-pcqp7h3y81t4"
+       },
+       {
+        "id": "bfck70e6-9m7n-6s1i-h19z-4834y4l42n31"
+       }
+      ]
+     },
+     "createdAt": "2026-08-25T19:50:13.796Z",
+     "updatedAt": "2026-09-16T22:09:09.371Z",
+     "archivedAt": null,
+     "startedAt": "2026-08-28T14:56:30.916Z",
+     "completedAt": "2026-09-16T22:09:09.342Z",
+     "startedTriageAt": null,
+     "triagedAt": null,
+     "canceledAt": null,
+     "autoClosedAt": null,
+     "autoArchivedAt": null,
+     "dueDate": null,
+     "slaStartedAt": null,
+     "slaMediumRiskAt": null,
+     "slaHighRiskAt": null,
+     "slaBreachesAt": null,
+     "addedToProjectAt": "2026-08-25T19:50:13.959Z",
+     "addedToCycleAt": null,
+     "addedToTeamAt": "2026-08-25T19:50:13.959Z",
+     "snoozedUntilAt": null,
+     "suggestionsGeneratedAt": null,
+     "comments": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "id": "84y47388-c0vp-4g3p-ef95-42q7q09321hv",
+     "number": 1136,
+     "title": "The Draft now covers the capacity note",
+     "priority": 2,
+     "estimate": null,
+     "sortOrder": -128275,
+     "prioritySortOrder": -672018,
+     "slaType": "all",
+     "trashed": null,
+     "previousIdentifiers": [],
+     "subIssueSortOrder": null,
+     "reactionData": [],
+     "priorityLabel": "High",
+     "trusted": null,
+     "integrationSourceType": null,
+     "inheritsSharedAccess": false,
+     "identifier": "XHT-1136",
+     "url": "https://linear.app/zephyr-lane/issue/XHT-1136/the-draft-now-covers-the-capacity-note",
+     "branchName": "tovah-fernsby-moore/xht-1136-the-draft-now-covers-the-capacity-note",
+     "customerTicketCount": 0,
+     "description": "Context: The estimate rolls up into one more round of checks, as discussed. The estimate now covers the capacity note, unless somebody objects.\n\nThe dashboard landed ahead of the earlier draft.\n\n* This batch was split out of the agreed cutoff, either way. The staging cluster should.\n* Context: The staging cluster was split out of the agreed cutoff, once the numbers settle. The review still blocks the owner's sign-off, for now. The retry budget now covers a smaller slice.\n* Heads up \u2014 The rollout was split out of the follow-up thread, unless somebody objects. The staging cluster quietly changed one more round of checks.\n\nThe staging cluster still blocks the open question.\n\n* The ingest path was split out of a smaller slice, for now. The dashboard needs a second look.\n* The retry budget rolls up into the capacity note, pending one more read. The schedule now.\n* Heads up \u2014 The new index rolls up into the agreed cutoff, for now. The ingest path now covers the open question, assuming the counts hold.\n* The rollback plan is waiting on the second pass, assuming the counts hold. The ingest.\n* For the record: The checklist depends on the follow-up thread, as discussed. This batch is waiting on the agreed cutoff, pending one more read.\n* The estimate landed ahead of the open question, either way. The new.\n\nFollowing up: The schedule should unblock a smaller slice, for now. The schedule is waiting on the owner's sign-off, for now. The new index needs a second look from a smaller slice.\n\nHeads up \u2014 The rollout now covers the owner's sign-off, once the numbers settle. The new index still blocks the follow-up thread, unless somebody objects. The draft landed ahead of a smaller slice, for now.\n\n## The dashboard depends on the.\n\nSummary: The estimate should unblock the owner's sign-off, after the handover. The new index still blocks the shared doc, if nothing else moves. The staging cluster needs a second look from the earlier draft, unless somebody objects. The draft is waiting on the agreed cutoff, once the numbers settle. The checklist is waiting on the numbers from Friday, after the handover. The draft is waiting on the second pass, unless somebody objects. The handover should unblock a smaller slice, for now. The handover landed ahead of the second pass, after the handover. This batch should unblock the follow-up thread, for now. This batch needs a second look from one more round of checks, unless somebody objects. The migration landed ahead of the open question, once the numbers settle. The new index was split out of the agreed cutoff, either way. The checklist needs a second look from the earlier draft, pending one more read. The estimate quietly changed the shared doc, once the numbers settle. https://linear.app/zephyr-lane/issue/link-7 The checklist should unblock the earlier draft.\n\n## The new index should.\n\n- Short version: The checklist depends on the numbers from Friday, pending one more read. The estimate is waiting on the earlier draft, after the handover. This batch depends on the open question, pending one more read. The checklist will be folded into the second pass, unless somebody objects. The draft rolls up into the second pass, as discussed. The ingest path https://linear.app/zephyr-lane/issue/link-8 still blocks the shared doc, pending one more read.\n- Following up: The queue needs a second look from the capacity note, before the window closes. The queue still blocks the shared doc, assuming the counts hold. The schedule landed ahead of the numbers from Friday, for now. The rollback plan needs a second look from the shared doc, either way. The review is waiting on next week's window, once the numbers settle. The schedule now covers the open question, once the numbers settle. This batch will be https://linear.app/zephyr-lane/issue/link-9 folded into the owner's sign-off.\n- Quick note: The ingest path quietly changed a smaller slice, for now. The new index is waiting on the owner's sign-off, unless somebody objects. The schedule still blocks the earlier draft, pending one more read. The rollout needs a second look from the second pass, unless somebody objects. The ingest path should unblock the open question, before the window closes. The retry budget still blocks the open question, pending one more read. The queue will be folded into the agreed cutoff, assuming the counts hold. The ingest path rolls up into the numbers from https://linear.app/zephyr-lane/issue/link-10 Friday.\n- Quick note: The staging cluster depends on the open question, as discussed. The dashboard is waiting on the agreed cutoff, before the window closes. The handover should unblock the follow-up thread, after the handover. The checklist now covers the capacity note, either way. The review now covers the open question, for now. The queue rolls up into the numbers from Friday, assuming the counts hold. The review still blocks the follow-up thread, assuming the counts hold. The rollout will be folded into the agreed cutoff, unless somebody objects. The draft now covers the capacity note.\n\nFollowing up: This batch is waiting on the second pass, before the window closes. The migration needs a second look from the numbers from Friday, if nothing else moves. The retry budget depends on the agreed cutoff, if nothing else moves. The retry budget is waiting on the shared doc, for now. This batch depends on the agreed cutoff, unless somebody objects.\n\nQuick note: The rollout quietly changed a smaller slice, pending one more read. The review should unblock the shared doc, either way. The migration https://linear.app/zephyr-lane/issue/link-11 depends on the shared doc, if nothing else moves. The dashboard is waiting on the agreed cutoff, after the handover. The https://linear.app/zephyr-lane/issue/link-12 retry budget now covers the follow-up thread, assuming the counts hold. The queue is waiting on the numbers from Friday, for now. The review quietly changed the owner's sign-off, assuming the counts hold. The draft will be folded into the numbers from Friday, assuming the counts hold.",
+     "team": {
+      "id": "3w210268-ky81-1849-x860-026w29u90945"
+     },
+     "cycle": {
+      "id": "g5ch3z5k-0u25-9642-9a5x-vd73k76i6l98"
+     },
+     "project": {
+      "id": "10r0q329-t823-621k-bcsn-r1zk4083h4l3"
+     },
+     "projectMilestone": {
+      "id": "07yiu83g-zj0x-5s1j-d193-j104x0275402"
+     },
+     "lastAppliedTemplate": null,
+     "recurringIssueTemplate": null,
+     "creator": {
+      "id": "94nadc23-k6g9-07b6-b6yb-203h78zrjq9g"
+     },
+     "externalUserCreator": null,
+     "assignee": null,
+     "delegate": null,
+     "snoozedBy": null,
+     "state": {
+      "id": "1ru41253-842b-94qq-nhs8-0b31c521578b"
+     },
+     "sourceComment": null,
+     "botActor": null,
+     "favorite": null,
+     "sharedAccess": {
+      "isShared": false,
+      "viewerHasOnlySharedAccess": false,
+      "sharedWithCount": 0,
+      "disallowedIssueFields": [],
+      "sharedWithUsers": []
+     },
+     "parent": null,
+     "reactions": [],
+     "asksRequester": null,
+     "asksExternalUserRequester": null,
+     "labels": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "0152i630-a428-1tu6-tz33-b15ni40h28q4"
+       }
+      ]
+     },
+     "subscribers": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "94nadc23-k6g9-07b6-b6yb-203h78zrjq9g"
+       }
+      ]
+     },
+     "createdAt": "2026-09-07T18:06:19.625Z",
+     "updatedAt": "2026-09-16T21:12:44.096Z",
+     "archivedAt": null,
+     "startedAt": "2026-09-16T15:49:56.365Z",
+     "completedAt": null,
+     "startedTriageAt": null,
+     "triagedAt": null,
+     "canceledAt": null,
+     "autoClosedAt": null,
+     "autoArchivedAt": null,
+     "dueDate": "2026-09-18",
+     "slaStartedAt": null,
+     "slaMediumRiskAt": null,
+     "slaHighRiskAt": null,
+     "slaBreachesAt": null,
+     "addedToProjectAt": "2026-09-07T18:06:19.752Z",
+     "addedToCycleAt": "2026-09-16T15:49:56.604Z",
+     "addedToTeamAt": "2026-09-07T18:06:19.752Z",
+     "snoozedUntilAt": null,
+     "suggestionsGeneratedAt": null,
+     "comments": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "id": "5n62g60v-389q-7im9-4067-6j7l68dk6364",
+     "number": 245,
+     "title": "The Dashboard landed ahead of the agreed",
+     "priority": 2,
+     "estimate": null,
+     "sortOrder": -25517.03,
+     "prioritySortOrder": -97.88,
+     "slaType": "all",
+     "trashed": null,
+     "previousIdentifiers": [],
+     "subIssueSortOrder": null,
+     "reactionData": [],
+     "priorityLabel": "High",
+     "trusted": null,
+     "integrationSourceType": null,
+     "inheritsSharedAccess": false,
+     "identifier": "JKK-245",
+     "url": "https://linear.app/zephyr-lane/issue/JKK-245/the-dashboard-landed-ahead-of-the-agreed",
+     "branchName": "yevgenia-kirkbride/jkk-245-the-dashboard-landed-ahead-of-the-agreed",
+     "customerTicketCount": 0,
+     "description": "For the record: The checklist depends on next week's window, as discussed. The queue still blocks the earlier draft, once https://linear.app/zephyr-lane/issue/link-8 the numbers settle. The schedule rolls up into a smaller slice, as discussed. The dashboard now covers a smaller slice, assuming the counts hold.\n\nShort version: The staging cluster is waiting on the second pass, for now. The retry budget now covers one more round of checks, as discussed. The checklist depends on next week's window, once the numbers settle. This batch landed ahead of the open question, once the numbers settle. The checklist is waiting on next week's window, for now. The estimate quietly changed the agreed cutoff, unless somebody objects. The draft will be folded into the follow-up thread.\n\nThe estimate needs a second look from the.\n\n* Context: The migration landed ahead of the numbers from Friday, as discussed. The queue now covers the shared doc, for now. The review rolls up into the owner's sign-off.\n* Heads up \u2014 The dashboard landed ahead of the shared doc, for now. The checklist rolls up into the follow-up https://linear.app/zephyr-lane/issue/link-9 thread, once the numbers settle.\n* For the record: The ingest path landed ahead of the agreed cutoff, assuming the counts hold. This batch will be folded into the agreed cutoff, after the handover. The migration rolls up into the earlier draft.\n* Summary: The rollback plan rolls up into next week's window, if nothing else moves. This batch landed.\n* Context: The retry budget landed ahead of the open question, as discussed. The queue is waiting on the second pass.\n* Quick note: The checklist needs a second look from the earlier draft, pending one more read. The schedule quietly changed the second pass, pending one more read. The staging cluster needs a second.\n\nContext: The retry budget quietly changed the capacity note, once the numbers settle. The queue was split out of the numbers from Friday, after the handover. The estimate rolls up into the earlier draft, before the window closes. The ingest path depends on the numbers from Friday, once the numbers settle. The migration needs a second look from the numbers from Friday, pending one more read. https://linear.app/zephyr-lane/issue/link-10 The estimate needs a second look from the capacity note.\n\nContext: The https://linear.app/zephyr-lane/issue/link-11 ingest path depends on one more round of checks, after the handover. The dashboard https://linear.app/zephyr-lane/issue/link-12 needs a second look from the shared doc, once the numbers settle.\n\n## The https://linear.app/zephyr-lane/issue/link-13 migration needs a second look from.\n\nShort version: The staging cluster quietly changed the follow-up thread, after the handover. The queue depends on a smaller slice, https://linear.app/zephyr-lane/issue/link-14 before the window closes. The draft will be folded into the owner's sign-off, after the handover. The draft landed ahead of the earlier draft, after the handover. The ingest path rolls up into one more round of checks, for now. This batch now covers the numbers from Friday, once the numbers settle. The staging cluster landed ahead of the follow-up thread.\n\nQuick note: The dashboard will be folded into the numbers from Friday, pending one more read. The rollback plan is waiting on the second pass, unless somebody objects. The rollback plan landed ahead of the numbers from Friday, if nothing else moves. The new index quietly changed the earlier draft.\n\nThe ingest path now covers the numbers from Friday, either way. The new index depends on the shared doc.",
+     "team": {
+      "id": "bjvtwz46-5l51-10xv-881a-v4r09o61u020"
+     },
+     "cycle": null,
+     "project": {
+      "id": "8ri105xf-p2gf-1d13-7319-796434ru7552"
+     },
+     "projectMilestone": {
+      "id": "dz018pt5-p7h3-45ab-a8g2-942k15mq2693"
+     },
+     "lastAppliedTemplate": null,
+     "recurringIssueTemplate": null,
+     "creator": {
+      "id": "10o9w92p-v9j5-4357-923o-c65s519l4yxs"
+     },
+     "externalUserCreator": null,
+     "assignee": {
+      "id": "33z62349-0w7v-1h71-vq76-k19fm6394171"
+     },
+     "delegate": null,
+     "snoozedBy": null,
+     "state": {
+      "id": "918h6773-npyz-8huy-m80s-a0bn70206er0"
+     },
+     "sourceComment": null,
+     "botActor": null,
+     "favorite": null,
+     "sharedAccess": {
+      "isShared": false,
+      "viewerHasOnlySharedAccess": false,
+      "sharedWithCount": 0,
+      "disallowedIssueFields": [],
+      "sharedWithUsers": []
+     },
+     "parent": null,
+     "reactions": [],
+     "asksRequester": null,
+     "asksExternalUserRequester": null,
+     "labels": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": []
+     },
+     "subscribers": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "10o9w92p-v9j5-4357-923o-c65s519l4yxs"
+       },
+       {
+        "id": "33z62349-0w7v-1h71-vq76-k19fm6394171"
+       },
+       {
+        "id": "684s51q7-30f8-1n46-30q0-0k965894134y"
+       },
+       {
+        "id": "44799e27-8l88-6w2e-4ar3-9019p440q731"
+       }
+      ]
+     },
+     "createdAt": "2026-08-31T23:43:50.460Z",
+     "updatedAt": "2026-09-16T19:50:15.800Z",
+     "archivedAt": null,
+     "startedAt": "2026-08-31T23:43:50.487Z",
+     "completedAt": null,
+     "startedTriageAt": null,
+     "triagedAt": null,
+     "canceledAt": "2026-09-16T19:50:15.786Z",
+     "autoClosedAt": null,
+     "autoArchivedAt": null,
+     "dueDate": "2026-09-21",
+     "slaStartedAt": null,
+     "slaMediumRiskAt": null,
+     "slaHighRiskAt": null,
+     "slaBreachesAt": null,
+     "addedToProjectAt": "2026-08-31T23:43:50.499Z",
+     "addedToCycleAt": null,
+     "addedToTeamAt": "2026-08-31T23:43:50.499Z",
+     "snoozedUntilAt": null,
+     "suggestionsGeneratedAt": null,
+     "comments": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "0mg7388w-d3n5-049k-h9q4-54d774y5n6kr",
+        "body": "Summary: The estimate will be folded into the shared doc, as discussed. The estimate rolls up into the follow-up thread, unless somebody objects. The staging cluster now covers a smaller slice, once the numbers settle. This batch now covers the owner's sign-off, once the numbers settle. This batch now covers the numbers from Friday.\n\nFor the record: The queue should unblock the shared doc, once the numbers settle. The rollback plan is waiting on one more round of checks, as discussed. The migration depends on the open question, if nothing else moves. The rollback plan still blocks the owner's sign-off, unless somebody objects. The schedule quietly changed the shared doc, as discussed.\n\nHeads up \u2014 The staging cluster was split out of the owner's sign-off, as discussed. The handover is waiting on the second pass, either way. The retry budget quietly changed a smaller slice, pending one more read. The new index still blocks the owner's sign-off, assuming the counts hold.\n\nFollowing up: The staging cluster will be folded into a smaller slice, pending one more read. The rollout should unblock the owner's sign-off.",
+        "documentContentId": null,
+        "projectUpdateId": null,
+        "initiativeUpdateId": null,
+        "initiativeId": null,
+        "quotedText": null,
+        "reactionData": [],
+        "isArtificialAgentSessionRoot": false,
+        "url": "https://linear.app/zephyr-lane/issue/JKK-245/the-dashboard-landed-ahead-of-the-agreed#comment-0mg7388w",
+        "hideInLinear": false,
+        "issue": {
+         "id": "5n62g60v-389q-7im9-4067-6j7l68dk6364"
+        },
+        "post": null,
+        "project": null,
+        "parent": null,
+        "resolvingUser": null,
+        "resolvingComment": null,
+        "user": {
+         "id": "10o9w92p-v9j5-4357-923o-c65s519l4yxs"
+        },
+        "externalUser": null,
+        "botActor": null,
+        "onBehalfOf": null,
+        "reactions": [],
+        "createdAt": "2026-09-04T22:26:39.396Z",
+        "updatedAt": "2026-09-04T22:26:39.372Z",
+        "archivedAt": null,
+        "resolvedAt": null,
+        "editedAt": null
+       },
+       {
+        "id": "hf88mggl-3156-40t6-j93t-n9su7zxu279m",
+        "body": "One thing: The checklist will be folded into the earlier draft, for now. The queue landed ahead of the owner's sign-off.\n\nThe queue needs a second look.",
+        "documentContentId": null,
+        "projectUpdateId": null,
+        "initiativeUpdateId": null,
+        "initiativeId": null,
+        "quotedText": null,
+        "reactionData": [
+         {
+          "emoji": "pray",
+          "reactions": [
+           {
+            "id": "6ew805dp-7814-28a8-9v6w-58tn0te51nnk",
+            "userId": "684s51q7-30f8-1n46-30q0-0k965894134y",
+            "reactedAt": "2026-09-01T00:35:17.792Z"
+           }
+          ]
+         }
+        ],
+        "isArtificialAgentSessionRoot": false,
+        "url": "https://linear.app/zephyr-lane/issue/JKK-245/the-dashboard-landed-ahead-of-the-agreed#comment-hf88mggl",
+        "hideInLinear": false,
+        "issue": {
+         "id": "5n62g60v-389q-7im9-4067-6j7l68dk6364"
+        },
+        "post": null,
+        "project": null,
+        "parent": null,
+        "resolvingUser": null,
+        "resolvingComment": null,
+        "user": {
+         "id": "10o9w92p-v9j5-4357-923o-c65s519l4yxs"
+        },
+        "externalUser": null,
+        "botActor": null,
+        "onBehalfOf": null,
+        "reactions": [
+         {
+          "id": "6ew805dp-7814-28a8-9v6w-58tn0te51nnk",
+          "emoji": "pray",
+          "issue": null,
+          "comment": {
+           "id": "hf88mggl-3156-40t6-j93t-n9su7zxu279m"
+          },
+          "projectUpdate": null,
+          "initiativeUpdate": null,
+          "post": null,
+          "user": {
+           "id": "684s51q7-30f8-1n46-30q0-0k965894134y"
+          },
+          "externalUser": null,
+          "createdAt": "2026-09-01T00:35:17.792Z",
+          "updatedAt": "2026-09-01T00:35:17.792Z",
+          "archivedAt": null
+         }
+        ],
+        "createdAt": "2026-08-31T23:58:15.605Z",
+        "updatedAt": "2026-09-01T00:35:17.876Z",
+        "archivedAt": null,
+        "resolvedAt": null,
+        "editedAt": null
+       }
+      ]
+     }
+    },
+    {
+     "id": "j08x8f28-957n-7296-413n-9d619lpr5556",
+     "number": 495,
+     "title": "The Checklist quietly changed the second pass",
+     "priority": 0,
+     "estimate": null,
+     "sortOrder": -274500,
+     "prioritySortOrder": -352055,
+     "slaType": "all",
+     "trashed": null,
+     "previousIdentifiers": [
+      "SQES-573"
+     ],
+     "subIssueSortOrder": 1890,
+     "reactionData": [],
+     "priorityLabel": "No priority",
+     "trusted": null,
+     "integrationSourceType": null,
+     "inheritsSharedAccess": false,
+     "identifier": "SKX-495",
+     "url": "https://linear.app/zephyr-lane/issue/SKX-495/the-checklist-quietly-changed-the-second-pass",
+     "branchName": "alistair-calloway/skx-495-the-checklist-quietly-changed-the-second-pass",
+     "customerTicketCount": 0,
+     "description": "For the record: The new index was split out of a smaller slice, once the numbers settle. The checklist now covers one more round of checks, pending one more read. The schedule still blocks one more round of checks, before the window closes. The estimate rolls up into the open question.\n\nThe migration should unblock the capacity note.\n\n* The staging cluster needs a second look from the agreed cutoff, as discussed.\n* The estimate depends on the open question, as discussed. The.\n* Context: The ingest path quietly changed the agreed cutoff, before the window closes. The rollout.\n* Quick note: This batch depends on the follow-up thread, assuming the counts hold. The rollout was split.",
+     "team": {
+      "id": "140to9h4-b3d8-48sl-b0y0-4wl21u037cw4"
+     },
+     "cycle": null,
+     "project": {
+      "id": "j29506o7-051n-40n8-n746-q8i6j37ej3q8"
+     },
+     "projectMilestone": null,
+     "lastAppliedTemplate": null,
+     "recurringIssueTemplate": null,
+     "creator": {
+      "id": "f7094s73-a059-02w7-8370-lm443333wj9m"
+     },
+     "externalUserCreator": null,
+     "assignee": null,
+     "delegate": null,
+     "snoozedBy": null,
+     "state": {
+      "id": "9397fp8u-k029-15b4-1rop-g8659x2l10i9"
+     },
+     "sourceComment": null,
+     "botActor": null,
+     "favorite": null,
+     "sharedAccess": {
+      "isShared": false,
+      "viewerHasOnlySharedAccess": false,
+      "sharedWithCount": 0,
+      "disallowedIssueFields": [],
+      "sharedWithUsers": []
+     },
+     "parent": {
+      "id": "8qne1o42-p5r9-190k-6dj1-m2o3oxnx2bz8"
+     },
+     "reactions": [],
+     "asksRequester": null,
+     "asksExternalUserRequester": null,
+     "labels": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": []
+     },
+     "subscribers": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "f7094s73-a059-02w7-8370-lm443333wj9m"
+       }
+      ]
+     },
+     "createdAt": "2026-04-29T14:51:14.965Z",
+     "updatedAt": "2026-09-16T18:08:51.832Z",
+     "archivedAt": null,
+     "startedAt": "2026-04-29T15:23:29.086Z",
+     "completedAt": "2026-05-05T11:04:18.151Z",
+     "startedTriageAt": null,
+     "triagedAt": null,
+     "canceledAt": null,
+     "autoClosedAt": null,
+     "autoArchivedAt": null,
+     "dueDate": null,
+     "slaStartedAt": null,
+     "slaMediumRiskAt": null,
+     "slaHighRiskAt": null,
+     "slaBreachesAt": null,
+     "addedToProjectAt": "2026-04-29T14:53:21.185Z",
+     "addedToCycleAt": null,
+     "addedToTeamAt": "2026-04-29T14:53:21.185Z",
+     "snoozedUntilAt": null,
+     "suggestionsGeneratedAt": null,
+     "comments": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "id": "70brx9yg-w046-5jo8-4074-27en094bu904",
+     "number": 1431,
+     "title": "This Batch now covers the shared doc",
+     "priority": 0,
+     "estimate": null,
+     "sortOrder": -375625,
+     "prioritySortOrder": -803734,
+     "slaType": "all",
+     "trashed": null,
+     "previousIdentifiers": [],
+     "subIssueSortOrder": null,
+     "reactionData": [],
+     "priorityLabel": "No priority",
+     "trusted": null,
+     "integrationSourceType": "slack",
+     "inheritsSharedAccess": false,
+     "identifier": "SKX-1431",
+     "url": "https://linear.app/zephyr-lane/issue/SKX-1431/this-batch-now-covers-the-shared-doc",
+     "branchName": "florentinaah-vandermere-rhys/skx-1431-this-batch-now-covers-the-shared-doc",
+     "customerTicketCount": 0,
+     "description": "This batch should unblock the numbers from https://linear.app/zephyr-lane/issue/link-2 Friday.\n\nThe review rolls up into the shared doc.\n\nSummary: The retry budget depends on the agreed cutoff, assuming the counts hold. The checklist landed ahead of the capacity note, before the window closes.\n\nThe estimate was split out of the shared doc.\n\nFor the record: This batch still blocks the agreed cutoff, pending one more read. The dashboard now covers the agreed cutoff, as discussed. The handover will be folded into the earlier draft, pending one more read. The draft depends on the agreed cutoff, once the numbers settle. The rollout will be folded into the earlier draft.\n\nThe ingest path needs a second look from the agreed cutoff.\n\n* Summary: The estimate landed ahead of the agreed cutoff, for now. The migration quietly changed the open question, if nothing else moves. The review depends on the owner's sign-off, unless somebody objects. The migration quietly changed the shared doc.\n* Summary: This batch still blocks the owner's sign-off, assuming the counts hold. The retry budget rolls up into the open question, for now. The rollback plan needs a second look from the follow-up thread, before the window closes. The queue needs a second look from next week's window.\n* Heads up \u2014 The dashboard needs a second look from the earlier draft, if nothing else moves. The queue depends on next week's window.\n\nThe rollback plan depends on the agreed cutoff.\n\n1. The draft quietly changed the owner's sign-off, pending one more read.\n2. One thing: The checklist was split out of one more round of checks, unless somebody objects. The estimate needs a second look from the capacity note, for now. The staging cluster rolls up into the capacity note.\n3. Short version: The dashboard needs a second look from the second pass, for now. The handover quietly changed the follow-up thread.\n\nOne thing: The schedule now covers one more round of checks, either way. The queue landed ahead of the owner's sign-off, before the window closes.",
+     "team": {
+      "id": "140to9h4-b3d8-48sl-b0y0-4wl21u037cw4"
+     },
+     "cycle": null,
+     "project": {
+      "id": "6utog058-wtmp-7e2x-1km4-699rz3h26994"
+     },
+     "projectMilestone": null,
+     "lastAppliedTemplate": null,
+     "recurringIssueTemplate": null,
+     "creator": {
+      "id": "rc9ab601-98su-3290-m8lo-94147o351lhb"
+     },
+     "externalUserCreator": null,
+     "assignee": {
+      "id": "f7094s73-a059-02w7-8370-lm443333wj9m"
+     },
+     "delegate": null,
+     "snoozedBy": null,
+     "state": {
+      "id": "8204a9w2-c7o0-9p9u-d7g0-753d9u8905a5"
+     },
+     "sourceComment": null,
+     "botActor": null,
+     "favorite": null,
+     "sharedAccess": {
+      "isShared": false,
+      "viewerHasOnlySharedAccess": false,
+      "sharedWithCount": 0,
+      "disallowedIssueFields": [],
+      "sharedWithUsers": []
+     },
+     "parent": null,
+     "reactions": [],
+     "asksRequester": null,
+     "asksExternalUserRequester": null,
+     "labels": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "b81h5677-b3c6-0429-35jk-361l20v0m967"
+       }
+      ]
+     },
+     "subscribers": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "rc9ab601-98su-3290-m8lo-94147o351lhb"
+       },
+       {
+        "id": "f7094s73-a059-02w7-8370-lm443333wj9m"
+       }
+      ]
+     },
+     "createdAt": "2026-09-14T14:02:01.368Z",
+     "updatedAt": "2026-09-16T18:08:51.832Z",
+     "archivedAt": null,
+     "startedAt": "2026-09-14T16:41:04.118Z",
+     "completedAt": null,
+     "startedTriageAt": null,
+     "triagedAt": null,
+     "canceledAt": null,
+     "autoClosedAt": null,
+     "autoArchivedAt": null,
+     "dueDate": null,
+     "slaStartedAt": null,
+     "slaMediumRiskAt": null,
+     "slaHighRiskAt": null,
+     "slaBreachesAt": null,
+     "addedToProjectAt": "2026-09-14T15:50:05.768Z",
+     "addedToCycleAt": null,
+     "addedToTeamAt": "2026-09-14T14:02:01.512Z",
+     "snoozedUntilAt": null,
+     "suggestionsGeneratedAt": null,
+     "comments": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "7770qh66-1953-6457-pg0s-kzw6f6rwb7j1",
+        "body": "Short version: The handover still blocks one more round of checks, either way. The ingest path is waiting on the follow-up thread, unless somebody objects. The review now covers the earlier draft, after the handover. The handover should unblock a smaller slice, after the handover.\n\nThe estimate needs a second look from next week's window, if nothing else moves. The.\n- One thing: The new index should unblock the agreed cutoff, before the window closes. The handover still blocks the follow-up thread, before the window closes. The dashboard was split out of the agreed cutoff, assuming the counts hold. The rollback plan rolls up into the follow-up thread.\n- One thing: The checklist landed ahead of the owner's sign-off, if nothing else moves. The migration quietly changed the second pass, assuming the counts hold. The ingest path is waiting on the second pass, as discussed. The rollback plan still blocks the follow-up thread, after the handover. This batch depends on the capacity note, before the window closes. The retry budget rolls up into the numbers from Friday, as discussed. The review was split out of the follow-up thread, as discussed.\n\nFollowing up: The rollout will be folded into the shared doc, unless somebody objects. The queue needs a second look from next week's window, after the handover. This batch quietly changed the agreed cutoff, if nothing else moves. The queue quietly changed the second pass, once the numbers settle. The new index will be folded into the follow-up thread, once the numbers settle. The estimate depends on the capacity note.\n\nThe new index rolls up into the follow-up thread, after the handover.",
+        "documentContentId": null,
+        "projectUpdateId": null,
+        "initiativeUpdateId": null,
+        "initiativeId": null,
+        "quotedText": null,
+        "reactionData": [],
+        "isArtificialAgentSessionRoot": false,
+        "url": "https://linear.app/zephyr-lane/issue/SKX-1431/this-batch-now-covers-the-shared-doc#comment-7770qh66",
+        "hideInLinear": false,
+        "issue": {
+         "id": "70brx9yg-w046-5jo8-4074-27en094bu904"
+        },
+        "post": null,
+        "project": null,
+        "parent": null,
+        "resolvingUser": null,
+        "resolvingComment": null,
+        "user": {
+         "id": "f7094s73-a059-02w7-8370-lm443333wj9m"
+        },
+        "externalUser": null,
+        "botActor": null,
+        "onBehalfOf": null,
+        "reactions": [],
+        "createdAt": "2026-09-14T16:57:45.056Z",
+        "updatedAt": "2026-09-14T16:58:04.063Z",
+        "archivedAt": null,
+        "resolvedAt": null,
+        "editedAt": "2026-09-14T16:58:04.032Z"
+       },
+       {
+        "id": "6bh27q18-og5o-1hf1-7abu-w776418j0785",
+        "body": "Heads up \u2014 The dashboard landed ahead of one more round of checks, once the numbers settle. The migration will be folded into a smaller slice, once the numbers settle. The rollback plan needs a.\n\nShort version: The ingest path should unblock the earlier draft, before the window closes. The checklist quietly changed the capacity note, either way. The staging cluster quietly changed a smaller slice, unless somebody objects. The review depends on the agreed cutoff, assuming the counts hold. The migration quietly changed the agreed cutoff, either way. The estimate will be folded into the open question, as discussed. The queue landed ahead of the owner's sign-off.\n\nQuick note: The staging cluster was split out of a smaller slice, as discussed. The estimate now covers the follow-up thread, after the handover. The review still blocks the shared doc, unless somebody objects. This batch will be folded into the earlier draft, as discussed. The checklist quietly changed a smaller slice.\n\nShort version: The migration should unblock the agreed cutoff, for now. The estimate rolls up into next week's window, if nothing else moves. The checklist still blocks the shared doc, once the numbers settle. The schedule will be folded into next week's window, once the numbers settle. The migration should unblock the numbers from Friday, assuming the counts hold. The rollout will be folded into the numbers from Friday, for now. The staging cluster needs a second look from the agreed cutoff, pending one more read. The schedule still blocks next week's window, for now. The rollout depends on the owner's sign-off, assuming the counts hold. The retry budget quietly changed one more round of checks, unless somebody objects. The checklist needs a second look from the shared doc.\n\nFor the record: The handover was split out of the agreed cutoff, before the window closes. The rollback plan rolls up into the earlier draft, before the window closes. The dashboard rolls up into the numbers from Friday, if nothing else moves. The ingest path needs a second look from next week's window.",
+        "documentContentId": null,
+        "projectUpdateId": null,
+        "initiativeUpdateId": null,
+        "initiativeId": null,
+        "quotedText": null,
+        "reactionData": [],
+        "isArtificialAgentSessionRoot": false,
+        "url": "https://linear.app/zephyr-lane/issue/SKX-1431/this-batch-now-covers-the-shared-doc#comment-6bh27q18",
+        "hideInLinear": false,
+        "issue": {
+         "id": "70brx9yg-w046-5jo8-4074-27en094bu904"
+        },
+        "post": null,
+        "project": null,
+        "parent": null,
+        "resolvingUser": null,
+        "resolvingComment": null,
+        "user": {
+         "id": "f7094s73-a059-02w7-8370-lm443333wj9m"
+        },
+        "externalUser": null,
+        "botActor": null,
+        "onBehalfOf": null,
+        "reactions": [],
+        "createdAt": "2026-09-14T15:50:04.644Z",
+        "updatedAt": "2026-09-14T15:50:04.499Z",
+        "archivedAt": null,
+        "resolvedAt": null,
+        "editedAt": null
+       }
+      ]
+     }
+    },
+    {
+     "id": "kx5g91q7-f0h3-5a9t-215g-l1mn2u3q8p6y",
+     "number": 1311,
+     "title": "The Ingest Path is waiting on the",
+     "priority": 0,
+     "estimate": null,
+     "sortOrder": -265341,
+     "prioritySortOrder": -265340.54,
+     "slaType": "all",
+     "trashed": true,
+     "previousIdentifiers": [],
+     "subIssueSortOrder": 960.84,
+     "reactionData": [],
+     "priorityLabel": "No priority",
+     "trusted": null,
+     "integrationSourceType": null,
+     "inheritsSharedAccess": false,
+     "identifier": "PYI-1311",
+     "url": "https://linear.app/zephyr-lane/issue/PYI-1311/the-ingest-path-is-waiting-on-the",
+     "branchName": "lumenel-norbury-ashby/pyi-1311-the-ingest-path-is-waiting-on-the",
+     "customerTicketCount": 0,
+     "description": "The rollback plan quietly changed the.",
+     "team": {
+      "id": "275y5901-kz13-8umm-i405-21ul86iex577"
+     },
+     "cycle": null,
+     "project": null,
+     "projectMilestone": null,
+     "lastAppliedTemplate": null,
+     "recurringIssueTemplate": null,
+     "creator": {
+      "id": "js81lr05-9703-9d2i-klln-h48m20480785"
+     },
+     "externalUserCreator": null,
+     "assignee": null,
+     "delegate": null,
+     "snoozedBy": null,
+     "state": {
+      "id": "to83n653-lv67-2176-25u0-hnc2d3k61f26"
+     },
+     "sourceComment": null,
+     "botActor": null,
+     "favorite": null,
+     "sharedAccess": {
+      "isShared": false,
+      "viewerHasOnlySharedAccess": false,
+      "sharedWithCount": 0,
+      "disallowedIssueFields": [],
+      "sharedWithUsers": []
+     },
+     "parent": {
+      "id": "135o8ajf-or69-0p9q-i363-ix6l169d4pj6"
+     },
+     "reactions": [],
+     "asksRequester": null,
+     "asksExternalUserRequester": null,
+     "labels": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": []
+     },
+     "subscribers": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "js81lr05-9703-9d2i-klln-h48m20480785"
+       }
+      ]
+     },
+     "createdAt": "2026-09-16T11:43:04.297Z",
+     "updatedAt": "2026-09-16T11:43:04.297Z",
+     "archivedAt": "2026-09-16T12:16:34.976Z",
+     "startedAt": null,
+     "completedAt": null,
+     "startedTriageAt": null,
+     "triagedAt": null,
+     "canceledAt": null,
+     "autoClosedAt": null,
+     "autoArchivedAt": null,
+     "dueDate": null,
+     "slaStartedAt": null,
+     "slaMediumRiskAt": null,
+     "slaHighRiskAt": null,
+     "slaBreachesAt": null,
+     "addedToProjectAt": null,
+     "addedToCycleAt": null,
+     "addedToTeamAt": "2026-09-16T11:43:04.355Z",
+     "snoozedUntilAt": null,
+     "suggestionsGeneratedAt": null,
+     "comments": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "id": "174yl240-0ou9-3yo6-177y-zh5b2w4iv330",
+     "number": 973,
+     "title": "The Handover needs a second look from",
+     "priority": 1,
+     "estimate": null,
+     "sortOrder": -680971.27,
+     "prioritySortOrder": -404646.57,
+     "slaType": "all",
+     "trashed": null,
+     "previousIdentifiers": [],
+     "subIssueSortOrder": null,
+     "reactionData": [
+      {
+       "emoji": "eyes",
+       "reactions": [
+        {
+         "id": "ief52442-98wq-4pe2-0888-buo6c40b63x9",
+         "userId": "0w4336i3-5ixl-95v5-3r19-0bw759g74kh1",
+         "reactedAt": "2026-09-10T15:26:28.260Z"
+        }
+       ]
+      },
+      {
+       "emoji": "pray",
+       "reactions": [
+        {
+         "id": "9gwfq5jg-ze7a-52x6-9028-to7u0c4e8xmn",
+         "userId": "is96w535-7p12-94n1-92rc-2v94d084wdq5",
+         "reactedAt": "2026-09-10T16:09:23.469Z"
+        }
+       ]
+      }
+     ],
+     "priorityLabel": "Urgent",
+     "trusted": null,
+     "integrationSourceType": null,
+     "inheritsSharedAccess": false,
+     "identifier": "NCPS-973",
+     "url": "https://linear.app/zephyr-lane/issue/NCPS-973/the-handover-needs-a-second-look-from",
+     "branchName": "ansel-sedgwick/ncps-973-the-handover-needs-a-second-look-from",
+     "customerTicketCount": 0,
+     "description": "Summary: The rollback plan quietly changed the open question, before the window closes. The staging cluster will be folded into the capacity note, after the handover.\n\nThe retry budget rolls up into the owner's sign-off.\n\n* Summary: The estimate landed ahead of the earlier draft, once the numbers settle. The dashboard needs a second look from the owner's sign-off, unless somebody objects.\n* Heads up \u2014 The schedule landed ahead of the agreed cutoff, if nothing else moves. The rollback plan was split out of a smaller slice, assuming the counts hold.\n* The staging cluster now covers the agreed cutoff.\n\nHeads up \u2014 The draft depends on the follow-up thread, if nothing else moves. The estimate is waiting on a smaller slice.",
+     "team": {
+      "id": "3560e9bv-k61c-07b3-6b96-946u3m260c3z"
+     },
+     "cycle": null,
+     "project": {
+      "id": "6u12m95i-f740-8419-v6lo-2w564urmn9r9"
+     },
+     "projectMilestone": null,
+     "lastAppliedTemplate": {
+      "id": "o46t630a-ik6b-3152-9060-3am5a0w72543"
+     },
+     "recurringIssueTemplate": null,
+     "creator": {
+      "id": "4423uf6b-99g7-06i5-73s5-c462855h118v"
+     },
+     "externalUserCreator": null,
+     "assignee": {
+      "id": "4423uf6b-99g7-06i5-73s5-c462855h118v"
+     },
+     "delegate": null,
+     "snoozedBy": null,
+     "state": {
+      "id": "sqd60ne8-b483-6228-xq10-438jx3q1c42s"
+     },
+     "sourceComment": null,
+     "botActor": null,
+     "favorite": null,
+     "sharedAccess": {
+      "isShared": false,
+      "viewerHasOnlySharedAccess": false,
+      "sharedWithCount": 0,
+      "disallowedIssueFields": [],
+      "sharedWithUsers": []
+     },
+     "parent": null,
+     "reactions": [
+      {
+       "id": "ief52442-98wq-4pe2-0888-buo6c40b63x9",
+       "emoji": "eyes",
+       "issue": {
+        "id": "174yl240-0ou9-3yo6-177y-zh5b2w4iv330"
+       },
+       "comment": null,
+       "projectUpdate": null,
+       "initiativeUpdate": null,
+       "post": null,
+       "user": {
+        "id": "0w4336i3-5ixl-95v5-3r19-0bw759g74kh1"
+       },
+       "externalUser": null,
+       "createdAt": "2026-09-10T15:26:28.260Z",
+       "updatedAt": "2026-09-10T15:26:28.260Z",
+       "archivedAt": null
+      },
+      {
+       "id": "9gwfq5jg-ze7a-52x6-9028-to7u0c4e8xmn",
+       "emoji": "pray",
+       "issue": {
+        "id": "174yl240-0ou9-3yo6-177y-zh5b2w4iv330"
+       },
+       "comment": null,
+       "projectUpdate": null,
+       "initiativeUpdate": null,
+       "post": null,
+       "user": {
+        "id": "is96w535-7p12-94n1-92rc-2v94d084wdq5"
+       },
+       "externalUser": null,
+       "createdAt": "2026-09-10T16:09:23.469Z",
+       "updatedAt": "2026-09-10T16:09:23.469Z",
+       "archivedAt": null
+      }
+     ],
+     "asksRequester": null,
+     "asksExternalUserRequester": null,
+     "labels": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": []
+     },
+     "subscribers": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "4423uf6b-99g7-06i5-73s5-c462855h118v"
+       },
+       {
+        "id": "z669a5m1-z48c-532x-nl0b-1h1d7yv7sr2a"
+       },
+       {
+        "id": "0w4336i3-5ixl-95v5-3r19-0bw759g74kh1"
+       },
+       {
+        "id": "x0n5y23j-1xj6-22ur-2974-k0x0j63608bn"
+       },
+       {
+        "id": "is96w535-7p12-94n1-92rc-2v94d084wdq5"
+       }
+      ]
+     },
+     "createdAt": "2026-09-10T15:21:27.112Z",
+     "updatedAt": "2026-09-15T10:23:02.014Z",
+     "archivedAt": null,
+     "startedAt": "2026-09-14T10:48:49.163Z",
+     "completedAt": null,
+     "startedTriageAt": null,
+     "triagedAt": null,
+     "canceledAt": null,
+     "autoClosedAt": null,
+     "autoArchivedAt": null,
+     "dueDate": null,
+     "slaStartedAt": null,
+     "slaMediumRiskAt": null,
+     "slaHighRiskAt": null,
+     "slaBreachesAt": null,
+     "addedToProjectAt": "2026-09-10T15:21:27.266Z",
+     "addedToCycleAt": null,
+     "addedToTeamAt": "2026-09-10T15:21:27.266Z",
+     "snoozedUntilAt": null,
+     "suggestionsGeneratedAt": null,
+     "comments": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "ii1r2xtl-36l7-13p1-n3f6-313f0nz40886",
+        "body": "The retry budget should unblock https://linear.app/zephyr-lane/issue/link-2 next week's window, once the numbers settle.",
+        "documentContentId": null,
+        "projectUpdateId": null,
+        "initiativeUpdateId": null,
+        "initiativeId": null,
+        "quotedText": null,
+        "reactionData": [],
+        "isArtificialAgentSessionRoot": false,
+        "url": "https://linear.app/zephyr-lane/issue/NCPS-973/the-handover-needs-a-second-look-from#comment-ii1r2xtl",
+        "hideInLinear": false,
+        "issue": {
+         "id": "174yl240-0ou9-3yo6-177y-zh5b2w4iv330"
+        },
+        "post": null,
+        "project": null,
+        "parent": null,
+        "resolvingUser": null,
+        "resolvingComment": null,
+        "user": {
+         "id": "is96w535-7p12-94n1-92rc-2v94d084wdq5"
+        },
+        "externalUser": null,
+        "botActor": null,
+        "onBehalfOf": null,
+        "reactions": [],
+        "createdAt": "2026-09-10T16:24:25.286Z",
+        "updatedAt": "2026-09-10T16:24:25.258Z",
+        "archivedAt": null,
+        "resolvedAt": null,
+        "editedAt": null
+       }
+      ]
+     }
+    },
+    {
+     "id": "135o8ajf-or69-0p9q-i363-ix6l169d4pj6",
+     "number": 1309,
+     "title": "The Rollout was split",
+     "priority": 0,
+     "estimate": null,
+     "sortOrder": -263399,
+     "prioritySortOrder": -263260.48,
+     "slaType": "all",
+     "trashed": null,
+     "previousIdentifiers": [],
+     "subIssueSortOrder": null,
+     "reactionData": [],
+     "priorityLabel": "No priority",
+     "trusted": null,
+     "integrationSourceType": null,
+     "inheritsSharedAccess": false,
+     "identifier": "PYI-1309",
+     "url": "https://linear.app/zephyr-lane/issue/PYI-1309/the-rollout-was-split",
+     "branchName": "lumenel-norbury-ashby/pyi-1309-the-rollout-was-split",
+     "customerTicketCount": 0,
+     "description": "The ingest path will be folded into a smaller slice, assuming.",
+     "team": {
+      "id": "275y5901-kz13-8umm-i405-21ul86iex577"
+     },
+     "cycle": null,
+     "project": null,
+     "projectMilestone": null,
+     "lastAppliedTemplate": null,
+     "recurringIssueTemplate": null,
+     "creator": {
+      "id": "js81lr05-9703-9d2i-klln-h48m20480785"
+     },
+     "externalUserCreator": null,
+     "assignee": null,
+     "delegate": null,
+     "snoozedBy": null,
+     "state": {
+      "id": "to83n653-lv67-2176-25u0-hnc2d3k61f26"
+     },
+     "sourceComment": null,
+     "botActor": null,
+     "favorite": null,
+     "sharedAccess": {
+      "isShared": false,
+      "viewerHasOnlySharedAccess": false,
+      "sharedWithCount": 0,
+      "disallowedIssueFields": [],
+      "sharedWithUsers": []
+     },
+     "parent": null,
+     "reactions": [],
+     "asksRequester": null,
+     "asksExternalUserRequester": null,
+     "labels": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": []
+     },
+     "subscribers": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": [
+       {
+        "id": "js81lr05-9703-9d2i-klln-h48m20480785"
+       }
+      ]
+     },
+     "createdAt": "2026-09-16T11:42:28.734Z",
+     "updatedAt": "2026-09-16T11:57:41.136Z",
+     "archivedAt": null,
+     "startedAt": null,
+     "completedAt": null,
+     "startedTriageAt": null,
+     "triagedAt": null,
+     "canceledAt": null,
+     "autoClosedAt": null,
+     "autoArchivedAt": null,
+     "dueDate": null,
+     "slaStartedAt": null,
+     "slaMediumRiskAt": null,
+     "slaHighRiskAt": null,
+     "slaBreachesAt": null,
+     "addedToProjectAt": null,
+     "addedToCycleAt": null,
+     "addedToTeamAt": "2026-09-16T11:42:28.808Z",
+     "snoozedUntilAt": null,
+     "suggestionsGeneratedAt": null,
+     "comments": {
+      "pageInfo": {
+       "hasNextPage": false
+      },
+      "nodes": []
+     }
+    }
+   ]
+  }
+ }
+}

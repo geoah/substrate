@@ -1,0 +1,122 @@
+{
+ "castAddresses": [
+  "ada@ada.example.com",
+  "ada@zephyr-lane.example",
+  "alder@junction-nine.example",
+  "alistair.birchall@junction-nine.example",
+  "anastasia@inbox.example",
+  "anastasiaa@zephyr-lane.example",
+  "ariah.quillfeather-quill@zephyr-lane.example",
+  "bartholomew@junction-nine.example",
+  "beatrijs@junction-nine.example",
+  "bo.quillfeather@inbox.example",
+  "bronwen.jorvik@junction-nine.example",
+  "c_6c0ee8a049a95c4a285bbe0598185bf4@group.calendar.google.com",
+  "c_fb424bbfb0054da287b87717a03ace49@group.calendar.google.com",
+  "caius.amberly@junction-nine.example",
+  "casimira.oakhurst@inbox.example",
+  "cate@kelpwood-works.example",
+  "chris@zephyr-lane.example",
+  "dorit@junction-nine.example",
+  "edda.drummond@inbox.example",
+  "elowen.zenner@zephyr-lane.example",
+  "elowen@junction-nine.example",
+  "ember@junction-nine.example",
+  "ember@quarryhill-group.example",
+  "evangelina@inbox.example",
+  "evangelina@junction-nine.example",
+  "fabien@junction-nine.example",
+  "ferdinand@postbox.example",
+  "finn@junction-nine.example",
+  "florentina@inbox.example",
+  "gilda@junction-nine.example",
+  "gilo.brackwater2@zephyr-lane.example",
+  "guinevere@junction-nine.example",
+  "guinevere@postbox.example",
+  "gwendolyn.ravensworth@junction-nine.example",
+  "halcyon@junction-nine.example",
+  "hermione@junction-nine.example",
+  "hermione@postbox.example",
+  "hieronymus.quimby@junction-nine.example",
+  "hieronymus@junction-nine.example",
+  "hux@junction-nine.example"
+ ],
+ "calendars": [
+  "ada@zephyr-lane.example",
+  "c_6c0ee8a049a95c4a285bbe0598185bf4@group.calendar.google.com",
+  "c_970ad613abe5486e8d624be92b533b3c@group.calendar.google.com",
+  "c_699db5a7460c841241a7dc192495f9f9@group.calendar.google.com"
+ ],
+ "updatedEvent": {
+  "calendarId": "c_6c0ee8a049a95c4a285bbe0598185bf4@group.calendar.google.com",
+  "eventId": "6v8l3c3qlmxmp1543wvb5ti1x2",
+  "updated": "2026-04-03T07:13:55.969000Z",
+  "summary": "The Staging Cluster was split"
+ },
+ "movedInstance": {
+  "calendarId": "ada@zephyr-lane.example",
+  "eventId": "6bu99zo3bf8lzt8e5g2vuuhinc_14863516J680159B",
+  "recurringEventId": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689",
+  "originalStartTime": {
+   "dateTime": "2026-09-17T10:00:00+01:00",
+   "timeZone": "Europe/Athens"
+  },
+  "start": {
+   "dateTime": "2026-09-18T10:00:00+01:00",
+   "timeZone": "Europe/Athens"
+  }
+ },
+ "ordinalRule": {
+  "calendarId": "ada@zephyr-lane.example",
+  "eventId": "1qkb1pso6ejdirk99218ogniaj_B48678843O572121",
+  "rule": "RRULE:FREQ=MONTHLY;BYDAY=-1TH",
+  "start": {
+   "dateTime": "2026-09-24T12:00:00-04:00",
+   "timeZone": "America/Los_Angeles"
+  },
+  "timeZone": "America/Los_Angeles"
+ },
+ "directory": {
+  "resourceNames": [
+   "people/112024786481541082319",
+   "people/115336770975630144157",
+   "people/165469664996838945286",
+   "people/277266237859805887384",
+   "people/375147093641124507484",
+   "people/383952588056990027169",
+   "people/593116141786341668464",
+   "people/652286493603673878654",
+   "people/821850028311537986140",
+   "people/973268535736932751744"
+  ],
+  "dual": "people/115336770975630144157"
+ },
+ "drive": {
+  "files": [
+   "0DBRZ53PczrpRShbZm6peSw36q0jxL2xar8ra20L0Ml8",
+   "0FgQpUk57dXVXIxiISLgaEmtjOxS6LWhi",
+   "0yx1IpBrYkViUJXvb4zC91bxr3dTfeC14mVuS5a-iK6W",
+   "292NqjMkH6dVThR8g4SnvtXBy9DpeR6znV3NWXYF_07t",
+   "3bJMYxC84PzYsvNn5Ee7SPyFDxDjeOSRSZHs-YEopfsU",
+   "45h6E24FrWIfZBf2OUifi9YiNQL5tulXF",
+   "5BI_pKB7MnphA8W4u0tfjifxHTRd5SmKE",
+   "5n0WVUbNGaW9jKOzqV32fRtjPxit6OGctq0BNjNPNTCc",
+   "63uMp3o2DndpIeaa4rSDCTOoWEyIYIO_M",
+   "8G7w5xm-4O0jXWoHRB2u3VoGcUk2",
+   "9bBkh5ARHPPl79BrIm-5Xd0QHsj07Nghj2dj6WO8tPZQ"
+  ],
+  "exportable": [
+   "0DBRZ53PczrpRShbZm6peSw36q0jxL2xar8ra20L0Ml8",
+   "0yx1IpBrYkViUJXvb4zC91bxr3dTfeC14mVuS5a-iK6W",
+   "292NqjMkH6dVThR8g4SnvtXBy9DpeR6znV3NWXYF_07t",
+   "5n0WVUbNGaW9jKOzqV32fRtjPxit6OGctq0BNjNPNTCc"
+  ],
+  "refusedExport": "3bJMYxC84PzYsvNn5Ee7SPyFDxDjeOSRSZHs-YEopfsU",
+  "changedFile": {
+   "fileId": "0yx1IpBrYkViUJXvb4zC91bxr3dTfeC14mVuS5a-iK6W",
+   "modifiedTime": "2026-08-10T14:37:26.233Z",
+   "version": "189"
+  },
+  "removedFileId": "4V3GfmVh3bA0jXHEeIHwtI8kIISV"
+ }
+}

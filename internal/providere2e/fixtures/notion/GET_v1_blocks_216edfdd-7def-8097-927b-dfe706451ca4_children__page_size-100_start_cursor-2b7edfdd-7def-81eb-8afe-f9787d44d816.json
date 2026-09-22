@@ -1,0 +1,760 @@
+{
+  "object": "list",
+  "results": [
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-81eb-8afe-f9787d44d816",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:24:00.000Z",
+      "last_edited_time": "2025-11-26T16:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Draft rolls up into the shared doc"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-81ba-adee-c6f22d4e336e",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:24:00.000Z",
+      "last_edited_time": "2025-11-26T16:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Draft quietly changed the earlier draft"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-81a8-88c4-fd3881b7aa84",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:24:00.000Z",
+      "last_edited_time": "2025-11-26T16:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Ingest Path now covers the open question"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-8115-bea4-c1501a0cc340",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:24:00.000Z",
+      "last_edited_time": "2025-11-26T16:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Ingest Path should unblock the open question"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-810d-be67-cce7c8b2c64c",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:24:00.000Z",
+      "last_edited_time": "2025-11-26T16:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Review now covers the capacity note"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-816d-98c8-d6f68f9b22c6",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:24:00.000Z",
+      "last_edited_time": "2025-11-26T16:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Migration needs a second look from one more round of checks"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-8176-9f7a-f28e42f6d6df",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:24:00.000Z",
+      "last_edited_time": "2025-11-26T16:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Staging Cluster rolls up"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-812f-98a4-f37b492cdbd2",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:24:00.000Z",
+      "last_edited_time": "2025-11-26T16:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The New Index landed ahead of the numbers from Friday"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-815d-a0f9-ed97aa3cf0b2",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:24:00.000Z",
+      "last_edited_time": "2025-11-26T16:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Rollout now covers next week's window"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-81cc-9442-c9d1b33aa2e6",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:25:00.000Z",
+      "last_edited_time": "2025-11-26T16:25:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Schedule will be folded into next week's window"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-8145-88c0-d8329dfe46fd",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:54:00.000Z",
+      "last_edited_time": "2025-11-26T16:54:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Ingest Path landed ahead of the numbers from Friday"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-813f-88a6-ec0b8ae2164d",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:54:00.000Z",
+      "last_edited_time": "2025-11-26T16:55:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Schedule needs a second look from a smaller slice"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-818a-a979-e10485968fe9",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:55:00.000Z",
+      "last_edited_time": "2025-11-26T16:55:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Rollout still blocks the second pass"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-817e-88a1-d6302abb9c9c",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:55:00.000Z",
+      "last_edited_time": "2025-11-26T16:55:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Ingest Path landed ahead of next week's window"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-8126-81f2-d17f619b4d22",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:55:00.000Z",
+      "last_edited_time": "2025-11-26T16:55:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Rollback Plan needs a second look from"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-819d-ad0c-df8b1f47ceaa",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:55:00.000Z",
+      "last_edited_time": "2025-11-26T16:55:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The New Index was split out of the owner's sign-off"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-81a4-8357-e41dc2bb5207",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:55:00.000Z",
+      "last_edited_time": "2025-11-26T16:55:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Review now covers the"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-819b-9e26-ee2f18a7c57e",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:55:00.000Z",
+      "last_edited_time": "2025-11-26T16:55:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Dashboard quietly changed the follow-up thread"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-8118-b5a5-df6e34959e5e",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:55:00.000Z",
+      "last_edited_time": "2025-11-26T16:55:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Handover will be folded into one more round"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-8177-b627-d51d13d8a388",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T16:55:00.000Z",
+      "last_edited_time": "2025-11-26T16:55:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Queue landed ahead of the open question"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-81d8-9ab8-d4f94e99db57",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T17:24:00.000Z",
+      "last_edited_time": "2025-11-26T17:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Migration is waiting on the agreed cutoff"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-81c0-8c20-f51daa440559",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T17:24:00.000Z",
+      "last_edited_time": "2025-11-26T17:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Queue landed ahead of the second pass"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-8167-8000-d6ef30e87106",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T17:24:00.000Z",
+      "last_edited_time": "2025-11-26T17:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Review depends on next week's window"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-81f0-8d9f-fc9a0f2976bb",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T17:24:00.000Z",
+      "last_edited_time": "2025-11-26T17:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Handover was split out of the shared doc"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-81fb-a451-f457815ab450",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T17:24:00.000Z",
+      "last_edited_time": "2025-11-26T17:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Estimate rolls up into the open question"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-811c-9b97-d2fc98ad0a63",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T17:24:00.000Z",
+      "last_edited_time": "2025-11-26T17:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Rollback Plan rolls up into a smaller slice"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-814c-a92b-eb7acbe168bf",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T17:24:00.000Z",
+      "last_edited_time": "2025-11-26T17:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Migration needs a second"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-816a-b143-d32665720a39",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T17:24:00.000Z",
+      "last_edited_time": "2025-11-26T17:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Estimate depends on the open question"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-817a-98c0-d77adab9a039",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T17:24:00.000Z",
+      "last_edited_time": "2025-11-26T17:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Retry Budget still blocks next week's window"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2b7edfdd-7def-81e2-bf62-caba130cce90",
+      "parent": {
+        "type": "page_id",
+        "page_id": "216edfdd-7def-8097-927b-dfe706451ca4"
+      },
+      "created_time": "2025-11-26T17:24:00.000Z",
+      "last_edited_time": "2025-11-26T17:24:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": true,
+      "in_trash": false,
+      "type": "child_page",
+      "child_page": {
+        "title": "The Handover now covers the earlier draft"
+      },
+      "archived": false
+    }
+  ],
+  "next_cursor": null,
+  "has_more": false,
+  "type": "block",
+  "block": {},
+  "request_id": "498ffec4-90ea-4c69-9688-96969d46a740"
+}

@@ -1,0 +1,77 @@
+{
+ "contactGroups": [
+  {
+   "resourceName": "contactGroups/17070bdf8a313ee3",
+   "etag": "Ce+pUMIXFF8=",
+   "metadata": {
+    "updateTime": "2013-12-21T21:33:52.828001Z"
+   },
+   "groupType": "USER_CONTACT_GROUP",
+   "name": "The Schedule",
+   "formattedName": "The Estimate"
+  },
+  {
+   "resourceName": "contactGroups/34d64bc10b8bb30c",
+   "etag": "u3HuPNxRlHy=",
+   "metadata": {
+    "updateTime": "2017-04-21T12:56:30.809001Z"
+   },
+   "groupType": "USER_CONTACT_GROUP",
+   "name": "The Queue",
+   "formattedName": "The New Index",
+   "memberCount": 1
+  },
+  {
+   "resourceName": "contactGroups/starred",
+   "groupType": "SYSTEM_CONTACT_GROUP",
+   "name": "starred",
+   "formattedName": "Starred",
+   "memberCount": 10
+  },
+  {
+   "resourceName": "contactGroups/friends",
+   "groupType": "SYSTEM_CONTACT_GROUP",
+   "name": "friends",
+   "formattedName": "Friends"
+  },
+  {
+   "resourceName": "contactGroups/family",
+   "groupType": "SYSTEM_CONTACT_GROUP",
+   "name": "family",
+   "formattedName": "Family"
+  },
+  {
+   "resourceName": "contactGroups/coworkers",
+   "groupType": "SYSTEM_CONTACT_GROUP",
+   "name": "coworkers",
+   "formattedName": "Coworkers"
+  },
+  {
+   "resourceName": "contactGroups/myContacts",
+   "groupType": "SYSTEM_CONTACT_GROUP",
+   "name": "myContacts",
+   "formattedName": "My Contacts",
+   "memberCount": 151
+  },
+  {
+   "resourceName": "contactGroups/chatBuddies",
+   "groupType": "SYSTEM_CONTACT_GROUP",
+   "name": "chatBuddies",
+   "formattedName": "Chat contacts"
+  },
+  {
+   "resourceName": "contactGroups/all",
+   "groupType": "SYSTEM_CONTACT_GROUP",
+   "name": "all",
+   "formattedName": "All Contacts",
+   "memberCount": 151
+  },
+  {
+   "resourceName": "contactGroups/blocked",
+   "groupType": "SYSTEM_CONTACT_GROUP",
+   "name": "blocked",
+   "formattedName": "Blocked"
+  }
+ ],
+ "totalItems": 10
+}

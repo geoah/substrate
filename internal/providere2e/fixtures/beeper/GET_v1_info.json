@@ -1,0 +1,33 @@
+{
+ "app": {
+  "name": "Beeper",
+  "version": "4.3.113",
+  "bundle_id": "com.automattic.beeper.desktop"
+ },
+ "platform": {
+  "os": "darwin",
+  "arch": "arm64",
+  "release": "v24.14.0"
+ },
+ "server": {
+  "status": "running",
+  "base_url": "http://localhost:23373",
+  "port": 23373,
+  "hostname": "0.0.0.0",
+  "remote_access": true,
+  "mcp_enabled": true
+ },
+ "endpoints": {
+  "oauth": {
+   "authorization_endpoint": "http://localhost:23373/oauth/authorize",
+   "token_endpoint": "http://localhost:23373/oauth/token",
+   "introspection_endpoint": "http://localhost:23373/oauth/introspect",
+   "userinfo_endpoint": "http://localhost:23373/oauth/userinfo",
+   "revocation_endpoint": "http://localhost:23373/oauth/revoke",
+   "registration_endpoint": "http://localhost:23373/oauth/register"
+  },
+  "spec": "http://localhost:23373/v1/spec",
+  "mcp": "http://localhost:23373/v0/mcp",
+  "ws_events": "http://localhost:23373/v1/ws"
+ }
+}

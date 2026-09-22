@@ -1,0 +1,117 @@
+[
+ {
+  "accountID": "matrix",
+  "loginID": "@adalovelace:beeper.com",
+  "bridge": {
+   "id": "matrix",
+   "type": "matrix",
+   "provider": "cloud"
+  },
+  "network": "Beeper",
+  "user": {
+   "id": "@adalovelace:beeper.com",
+   "email": "galen@nightjar.example",
+   "fullName": "Zadiea Ufford-Hale",
+   "displayText": "Zadiea Ufford-Hale",
+   "username": "adalovelace:beeper.com",
+   "isSelf": true
+  },
+  "status": "connected"
+ },
+ {
+  "accountID": "discordgo",
+  "loginID": "555518678673957094",
+  "bridge": {
+   "id": "discordgo",
+   "type": "discordgo",
+   "provider": "cloud"
+  },
+  "network": "Discord",
+  "user": {
+   "id": "555518678673957094",
+   "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/aenoz_yeALt43uHdcWDvuyz5hBVnmgO7LvUOyvkwG8AqSlBW9xL3TPc84o21w4WwhNTvHq",
+   "email": "ada@ada.example.com",
+   "fullName": "Ada Lovelace",
+   "phoneNumber": "+99 5769777850",
+   "displayText": "@adalovelace",
+   "username": "adalovelace",
+   "isSelf": true
+  },
+  "status": "connected"
+ },
+ {
+  "accountID": "facebookgo",
+  "loginID": "393270335495658",
+  "bridge": {
+   "id": "facebookgo",
+   "type": "facebookgo",
+   "provider": "cloud"
+  },
+  "network": "Facebook",
+  "user": {
+   "id": "393270335495658",
+   "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/dgfoj_lbnzPyFBZ86YUiDWGZfLTui5p4LA9tlh1e0ceS9O8I6KCgonVqcaWVz9B1BGOpfl",
+   "fullName": "Zadiea Ufford-Hale",
+   "displayText": "Zadiea Ufford-Hale",
+   "isSelf": true
+  },
+  "status": "connected"
+ },
+ {
+  "accountID": "signal",
+  "loginID": "3368b15h-1986-581y-u76z-e96v55u36kkc",
+  "bridge": {
+   "id": "signal",
+   "type": "signal",
+   "provider": "cloud"
+  },
+  "network": "Signal",
+  "user": {
+   "id": "3368b15h-1986-581y-u76z-e96v55u36kkc",
+   "fullName": "Zadiea Ufford-Hale",
+   "phoneNumber": "+99 5769777850",
+   "displayText": "+99 5802972888",
+   "isSelf": true
+  },
+  "status": "connected"
+ },
+ {
+  "accountID": "telegram",
+  "loginID": "728935953",
+  "bridge": {
+   "id": "telegram",
+   "type": "telegram",
+   "provider": "cloud"
+  },
+  "network": "Telegram",
+  "user": {
+   "id": "728935953",
+   "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/beeper.com/z7496r2w0m9986t833y8mkvew331y01i1038jq15",
+   "fullName": "Zadiea Ufford-Hale",
+   "phoneNumber": "+99 5769777850",
+   "displayText": "@adalovelace",
+   "username": "adalovelace",
+   "isSelf": true
+  },
+  "status": "connected"
+ },
+ {
+  "accountID": "whatsapp",
+  "loginID": "778663512229",
+  "bridge": {
+   "id": "whatsapp",
+   "type": "whatsapp",
+   "provider": "cloud"
+  },
+  "network": "WhatsApp",
+  "user": {
+   "id": "778663512229",
+   "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/kozmr_OYZNOUHPJz3WVDDrbEARw2nscmHAwRgnoD4gjqh7BB87IqKtrPGnnxifxCE6yXqt",
+   "fullName": "Ada Lovelace",
+   "phoneNumber": "+99 5769777850",
+   "displayText": "+99 5802972888",
+   "isSelf": true
+  },
+  "status": "connected"
+ }
+]

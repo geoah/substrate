@@ -1,0 +1,69 @@
+{
+ "items": [
+  {
+   "id": "@signal_4411992a-sr04-5r87-484j-pnpf368mz226:beeper.local",
+   "phoneNumber": "+99 5833342041",
+   "fullName": "Hollis Innsbrook",
+   "imgURL": "mxc://local.beeper.com/ewdwr_TPbmGO37qKKV4KhSAGwogVuLk0wycrvuqJj54H2cXIL6WIxgcI4lCni3cqc9kOPp"
+  },
+  {
+   "id": "@signal_s327as3u-4v66-5m99-f754-92n5zp448735:beeper.local",
+   "phoneNumber": "+99 5535274568",
+   "fullName": "Anastasia Upshaw",
+   "imgURL": "mxc://local.beeper.com/hpamb_B3nloIwKBWamlgFPLXm4IbDfOQYMLFjVxQ9lOWqT4ISXrzHINXMSYvRzmAEoBrye"
+  },
+  {
+   "id": "@signal_9ewqm197-k7x3-2780-ew51-fw61b72c78i2:beeper.local",
+   "fullName": "Casimira Danforth",
+   "imgURL": "mxc://local.beeper.com/usldi_cbEN1LzPYOD60Y6mG0eK5bMbPtl1ahQwz9EF3TqocwSRijOPLu5IKeKaWIYTigl2"
+  },
+  {
+   "id": "@signal_ua221460-avdj-4m3e-e19i-26cj172q4t51:beeper.local",
+   "fullName": "Bex Ashgrove",
+   "imgURL": "mxc://local.beeper.com/uesuz_Vhx51WdrUAMzZrApVoMeK0rnC87PNfAv3YPs5oQCIS4azIJKPC5GJOyW8ergqpKS"
+  },
+  {
+   "id": "pni_k109z48g-6y03-9887-9n0f-9z4cr3ygd43a",
+   "phoneNumber": "+99 5706539117",
+   "fullName": "Ivor Hartsfield"
+  },
+  {
+   "id": "pni_8087h506-799u-5z4l-o976-04239465w14z",
+   "phoneNumber": "+99 5914779602",
+   "fullName": "Rosalind Whitfield"
+  },
+  {
+   "id": "pni_jx24z148-4859-6e46-44r6-kz16jyn71v99",
+   "phoneNumber": "+99 5370105641",
+   "fullName": "Persephone Yelverton"
+  },
+  {
+   "id": "pni_2hm38v4b-5nis-1926-5724-772jfg84oa7b",
+   "phoneNumber": "+99 5873789320",
+   "fullName": "Torin Fairholm"
+  },
+  {
+   "id": "pni_9572131t-4y12-523s-eh62-tr921497h5op",
+   "phoneNumber": "+99 5666305086",
+   "fullName": "Cate Marchetti"
+  },
+  {
+   "id": "pni_90758ob2-p9u9-02xq-41o2-85i5arfd4a72",
+   "phoneNumber": "+99 5842281563",
+   "fullName": "Quintilian Yewtree"
+  },
+  {
+   "id": "pni_0133w5l5-606y-175z-tb21-pu4xwq803hjg",
+   "phoneNumber": "+99 5861440734",
+   "fullName": "Ivorel Bellweather-Lowe"
+  },
+  {
+   "id": "pni_06g01ls7-pbn8-9z7b-dy04-b84h9k04060u",
+   "phoneNumber": "+99 5416963125",
+   "fullName": "Xenia Orrington"
+  }
+ ],
+ "hasMore": false,
+ "oldestCursor": null,
+ "newestCursor": null
+}

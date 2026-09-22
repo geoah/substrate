@@ -1,0 +1,898 @@
+{
+ "id": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+ "localChatID": "15183",
+ "accountID": "whatsapp",
+ "network": "WhatsApp",
+ "title": "willow",
+ "description": "The queue rolls up into the follow-up thread, after the handover.",
+ "imgURL": "/Users/sdtqu/Library/Application Support/BeeperTexts/media/local.beeper.com/hvxkb_nZHjBVh4EwdZfXQX4mjZlbEpTY8JS9Qh3i1qdD2n3DwkJnvrhyJFxSk1CGBsaoTl",
+ "type": "group",
+ "isReadOnly": false,
+ "participants": {
+  "items": [
+   {
+    "id": "@whatsapp_emm-97286179926084:beeper.local",
+    "phoneNumber": "+99 5051433847",
+    "fullName": "+99 5051433847",
+    "imgURL": "mxc://local.beeper.com/oxfwf_JZHPHAJe9ZQHXi10td62IRuw4NS595vtRT4IZZudgRZ3Lo3aX60fcE1BeswvLX92",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_far-88079926493051:beeper.local",
+    "phoneNumber": "+99 5987145101",
+    "fullName": "+99 5987145101",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/ootbe_VxibZj78wyifSQZRCrTgEslaRvqhRD0msb6KbWulLD6YHGtr7EX2N4Mbep3Pygj9",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_owi-134579456389160:beeper.local",
+    "phoneNumber": "+99 5617050509",
+    "fullName": "+99 5617050509",
+    "imgURL": "mxc://local.beeper.com/vxxtq_23T5DwOTqjjnzARnc51znv0UXyVU1h85mFymWcW1TlaaKO956I0O84B0V5Ub3Yf1",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_quk-32985917084886:beeper.local",
+    "phoneNumber": "+99 5181261510",
+    "fullName": "+99 5181261510",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_wup-15318737838237:beeper.local",
+    "phoneNumber": "+99 5825106463",
+    "fullName": "+99 5825106463",
+    "imgURL": "mxc://local.beeper.com/yaffj_09fnFmzqccyvkEnTYeKW0clnKTCaiXZBl9tP9EldXIggk2APm870jh52M25MehPk",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_cew-48343754904004:beeper.local",
+    "phoneNumber": "+99 5765914130",
+    "fullName": "+99 5765914130",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_oiq-665762431966653:beeper.local",
+    "phoneNumber": "+99 5098756336",
+    "fullName": "+99 5098756336",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_lbw-181570930815238:beeper.local",
+    "phoneNumber": "+99 5195552507",
+    "fullName": "+99 5195552507",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/kdaot_qe5ukuT8wmLtTvVaCuUxMuPz0Dsr1KTG32mQ50i2XjxAExTkVWm8HwqphLgdwQub",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_ypp-121476026744359:beeper.local",
+    "phoneNumber": "+99 5537952882",
+    "fullName": "+99 5537952882",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_qhp-645567756401042:beeper.local",
+    "phoneNumber": "+99 5915319541",
+    "fullName": "+99 5915319541",
+    "imgURL": "mxc://local.beeper.com/vcykd_xqu6uLMvmVfmiVuTGbbixIb0ctHSzgz33OXVHsvbcf5CuWpTue08wIyxbvmBl3E3",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_brn-984999389664967:beeper.local",
+    "phoneNumber": "+99 5998490346",
+    "fullName": "+99 5998490346",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_ttn-654833625127236:beeper.local",
+    "phoneNumber": "+99 5580707597",
+    "fullName": "+99 5580707597",
+    "imgURL": "mxc://local.beeper.com/phxjp_zEAE87yatKP7yztENp4F8F3rA8vVhQJAubNDIBU0lnTlMtcXU3p29mmORtNT98G3",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_tni-98636147754348:beeper.local",
+    "phoneNumber": "+99 5607717215",
+    "fullName": "+99 5607717215",
+    "imgURL": "mxc://local.beeper.com/mtylg_sOKgq7Pvl6uxkMnHRiTxqaqCoRK10Jkae8rMcFnc86Dgk24s4oWqSbpmznK9XmOH",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_swp-443432499686661:beeper.local",
+    "phoneNumber": "+99 5657288606",
+    "fullName": "+99 5657288606",
+    "imgURL": "mxc://local.beeper.com/jmpip_Mvumc54T1WVZTdB5B0MGrTA6Hb9ksPtwtgM1fXz2jkM5b5o4B2t6HDJbaITJAp0Y",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_mik-320269662449473:beeper.local",
+    "phoneNumber": "+99 5292847597",
+    "fullName": "+99 5292847597",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_slr-57823875333326:beeper.local",
+    "phoneNumber": "+99 5381569179",
+    "fullName": "+99 5381569179",
+    "imgURL": "mxc://local.beeper.com/ythtu_LqV5ZzjwEDYr5tK0HoXWp4tubhitMGHloyk0goLES21ra4RhzSdwwBLJob4J3QLm",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_pxq-94595095776318:beeper.local",
+    "phoneNumber": "+99 5580157849",
+    "fullName": "+99 5580157849",
+    "imgURL": "mxc://local.beeper.com/tavva_DQNCJBbFNTEQLxpUbQ3FHsRBP6vglBDcacaOs8g5Sf6ytH0AqG4l4jcWMNGpt9Wd",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_dbr-185346557864293:beeper.local",
+    "phoneNumber": "+99 5270655405",
+    "fullName": "+99 5270655405",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_koj-67078480236884:beeper.local",
+    "phoneNumber": "+99 5919873684",
+    "fullName": "+99 5919873684",
+    "imgURL": "mxc://local.beeper.com/fryet_IP1YzaidtTlsHVOPiz5wWefAOGtoPzreSZ2xbu6xyi2XHJwtu3kj4B01DhPU9Sw0",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_oyd-472635477156484:beeper.local",
+    "phoneNumber": "+99 5432831443",
+    "fullName": "+99 5432831443",
+    "imgURL": "mxc://local.beeper.com/ompgu_qHBpFp8kX4pyI8dJcIDmdZCjl7hFVxkdNXUUCcivUtqTK1oCHMWM2sXeL2FzvzCR",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_jkf-974555383577312:beeper.local",
+    "phoneNumber": "+99 5516231087",
+    "fullName": "+99 5516231087",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/nmprj_xUQqihWqmPfBi1QfM7Qhm00cVnmUlw7FyPc0zevM2ZqFJ21ziooMZXltQWV6uuwA",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_ccp-857109800602876:beeper.local",
+    "phoneNumber": "+99 5948324619",
+    "fullName": "+99 5948324619",
+    "imgURL": "mxc://local.beeper.com/dawfb_p70gJfBrXnYk3HAi9TmofSwNggSHQ2unKxxZBRIzE087vZNbv6Rtt1hfsQxVZrly",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_laa-977238125281725:beeper.local",
+    "phoneNumber": "+99 5722386154",
+    "fullName": "+99 5722386154",
+    "imgURL": "mxc://local.beeper.com/byiar_liPWc6xNTBNeMXoYspwF3bREp9BMuewUf6WmgbIlTTOb4VhbDaeZWFNocwZTwM2w",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_jxw-54457035731260:beeper.local",
+    "phoneNumber": "+99 5157790242",
+    "fullName": "Jarek Foxcroft",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_byy-57638202435686:beeper.local",
+    "phoneNumber": "+99 5197399524",
+    "fullName": "Kai Quillfeather",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/rnssq_ku1K1KZRE3vjovzxjKXKdojcv3sHVuonuuWohOl1arboqDYOWLkEr8aaVlDwwTXu",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_dea-26935816448623:beeper.local",
+    "phoneNumber": "+99 5218597647",
+    "fullName": "Wilder Netherwood",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/cxfbg_qD5PLkP0YJ364zgfx5RJ3flDWWu1XshpYAYZEjy1opKD0CbrtdRDkbJJBquh7f8y",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_ltu-000743689734928:beeper.local",
+    "phoneNumber": "+99 5057888199",
+    "fullName": "Xan Hawksley",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/hsuvx_IKPanLBhPVsRUg3vMGoJvqDYRPuGE6Srh6nRksfYzyMd4BE3yhCHCDrEqIbI0kPb",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_puu-587863068310197:beeper.local",
+    "phoneNumber": "+99 5189119642",
+    "fullName": "Lumen Amberly",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/fkvcs_17Xi9CrH4rIbn7tNO7rDZopAKipUfXbd7xh3rMvLI9pNb2YIBAMKtuj93NWLf8LX",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_czo-1109915342256:beeper.local",
+    "phoneNumber": "+99 5906010886",
+    "fullName": "Uma Ironside",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/qrqpp_kzpYLLwYZM3tpO01gFjB5uSnyTYqyuwfkXTqf2PAy7qZekaS0WVtgSqIdegZWSQj",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_jhg-926688761511039:beeper.local",
+    "phoneNumber": "+99 5113608604",
+    "fullName": "Tov Vandermere",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/wvqzj_x9yOegYhR657NKOldymq1pEZuHF2nQLFvILHeSNpqEOv905p7ZigbfLuS2gNZuO1",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_ppg-032675849807942:beeper.local",
+    "phoneNumber": "+99 5562277580",
+    "fullName": "Nikhil Coldstream",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_bdi-553800948916834:beeper.local",
+    "phoneNumber": "+99 5320285521",
+    "fullName": "Chris Brackwater",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/tswlx_Dn87Kb4jkwEAnxPzT635mSnnqb8YmWDbIvWuTCdkaNkDuZ0t2mlo38BLGsh7Tk3m",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_xds-53884558424611:beeper.local",
+    "phoneNumber": "+99 5288938949",
+    "fullName": "Cy Quarrier",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_ilr-17987979122922:beeper.local",
+    "phoneNumber": "+99 5885615576",
+    "fullName": "Dax Kingsmill",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/mijbr_EvTMC1vYI2R4vLkUhIznDxe4wUpCRcF1Nov7ArdNbv7hCnc5nciKHrchbcJLz7cm",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_otn-6607559740258:beeper.local",
+    "phoneNumber": "+99 5554985891",
+    "fullName": "Alder Dunmore",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/cjryx_QM0Wlt6rLwqTYqrFwBuEndjx63GJkMTkgf8wDTcgMHbMqScogkAaE4cEBSsYnNDl",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_kxm-872800406689795:beeper.local",
+    "phoneNumber": "+99 5114923892",
+    "fullName": "Zadie Larkspur",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/vufun_TyymrVmHrIhGlK6Kv36d7E8NJOlzct11qNFBTTj81rKb7luLuHS36hMWPTH1rqPc",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_ztd-158422498057806:beeper.local",
+    "phoneNumber": "+99 5537526342",
+    "fullName": "Nils Mortlake",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/hfurp_CZl4pmgYMc55PgXRuUoltHJeOJFiEHyG5v1YOSKLXZ3JFqjOLGAhJAnlXDlbS2lH",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_yvy-091451901373699:beeper.local",
+    "phoneNumber": "+99 5166364142",
+    "fullName": "Yusra Vasquez-Lowe",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/mcuzk_waTUxGrwxqcrCzGTDv1DVh8BavG2EAsQ652i2mDNZB9CgsXesK3KVbJS0yxXT6ZJ",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_cbm-85714281889456:beeper.local",
+    "phoneNumber": "+99 5018452550",
+    "fullName": "Yara Nethercliff",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_bqw-00362899478925:beeper.local",
+    "phoneNumber": "+99 5506248683",
+    "fullName": "Finn Yelverton-Hale",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/diwmc_MEDrx4lybm9us8l9xQzfoEiQt2rYA6STnv4H7yMcx51rhmxiKuGewM1y9l6x86dz",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_eku-0472336894763:beeper.local",
+    "phoneNumber": "+99 5876850717",
+    "fullName": "Ulysses Kirkbride",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/vzzti_WZAYEWxBRV9rM2jBgSfLC5mdLPQGs3INT94LTYFKU3kpGaAaMPSnPudcN6lhntNG",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_esu-95787414048857:beeper.local",
+    "phoneNumber": "+99 5243650384",
+    "fullName": "Hana Jardine",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/ddnsl_koLzBkKc9NKRrab0I821W0YSjMqyYGBoc3ISxkRqYuf1XUDwvlcqPmSGCVDHjt4U",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_tqn-12779029352214:beeper.local",
+    "phoneNumber": "+99 5092717746",
+    "fullName": "Kestrel Wandsworth",
+    "imgURL": "mxc://local.beeper.com/dnfmk_uEcJKiO5Qpy0aR5vgbrc6LHWjnPLVQTlUhMl6EI6Z45yVw3WYLBIJ53EmfwEoKkt",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_zjo-94700653066890:beeper.local",
+    "phoneNumber": "+99 5209627177",
+    "fullName": "Juniper Redmayne",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/crgmz_P5VNgGDm9cemEWHSi38bXDrX4tyXMGpyGwO2J8KojDYs4hxuC70RB9IvhfGgnpAt",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_zuz-452315286722839:beeper.local",
+    "phoneNumber": "+99 5719519222",
+    "fullName": "Marek Drummond",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/isskp_VZIXazgmAefty7pk38F9axbIs82JxRMT9ZImyqXQvdAkg3IuzLhHzam3HFV4WvBG",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_bsv-266389528607659:beeper.local",
+    "phoneNumber": "+99 5535274568",
+    "fullName": "Josephina Duquesne",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/pnnkt_FhYLUirCL1qJshSzoymMMFNpy2gJnoHSRCQqnS0J5CiX1kIRuUQ1k5mO0R3TCQ04",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_pme-28968306748297:beeper.local",
+    "phoneNumber": "+99 5408458015",
+    "fullName": "Fenwick Ellery",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/nklfv_dKtlyEBCipBp0fg94wXtjFyAR8dcpdj6GoizZIHocakoBUHPhCHGB85cTywo9Rt3",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_ftd-347267817084402:beeper.local",
+    "phoneNumber": "+99 5383672311",
+    "fullName": "Orsolya Lambourne",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_jvj-447162657419102:beeper.local",
+    "phoneNumber": "+99 5025850464",
+    "fullName": "Zeb Ollivant",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_ktq-574717631491779:beeper.local",
+    "phoneNumber": "+99 5278292764",
+    "fullName": "Ulric Quimby",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/uzavh_4s88lS0JP0fAlI4v3fZ9wJ7M2iPNEFBBvbvnJ5eE3PtR5x8tXd6HVOzYLiQJ4qO9",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_zrf-039847612197928:beeper.local",
+    "phoneNumber": "+99 5771974024",
+    "fullName": "Rui Birchall",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/tednb_fAfUtvPxUFbS8zNxWiI7G5fnVhaIV0gIUCE9Z94INBTkBgB6BBx7NUyFh3p7wK6g",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_mtw-342837134270442:beeper.local",
+    "phoneNumber": "+99 5207611449",
+    "fullName": "Perrin Brackwater",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/xxbab_4B529c8uhCHwuTWrA6ckwdtwtAVQQyomqP5Mn4StYqyGsdJPc9BHKQydNVNPDMLV",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_wyx-072667368800624:beeper.local",
+    "phoneNumber": "+99 5882108008",
+    "fullName": "Ari Stonebridge",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/kpanj_3Age7ZT2FZJzHGtDAzM3VvDy6dwiIdTnSwNJtQqXoExSqKg0VDe1jrupgnjgg5dW",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_yhf-438407107412148:beeper.local",
+    "phoneNumber": "+99 5216292833",
+    "fullName": "Bartholomew Thornbury",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/ytqeh_6AHwt7lYNq2pOKl18BEeA1rcWiVfhL6izmpXkMV0klErCikNFsuHBfaEs4mJrazQ",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_mgc-460677124009615:beeper.local",
+    "phoneNumber": "+99 5065476252",
+    "fullName": "Gus Kettleby",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/jtglq_0rUDY87fiKgcEiqYN0YwPtBsWVE6QGjGqpZw3wpqbVesl6lkEcikxkbvZzJe4M3f",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_inq-957578681684009:beeper.local",
+    "phoneNumber": "+99 5686876106",
+    "fullName": "Quilla Rackham",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/yfrys_Ws8UDRr6nIKgjoBhWZ1fQUCYEzTW5XY7DI0juDvyrYaC7DNZ54R2E1eYOnufx1nc",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_dce-286247994661066:beeper.local",
+    "phoneNumber": "+99 5469495522",
+    "fullName": "Jae Yewtree",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/uzfsx_IAMBu4RbBvB9ixEHOHsMN0g4wWrd1kUUYlkO0YdyXuUtDceA4q0RAXQoM0i5cpgP",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_klj-81311768263380:beeper.local",
+    "phoneNumber": "+99 5066159945",
+    "fullName": "Emmerich Ingleby",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/dugid_Q67MXz4aAvHpyrlpwg4CRQawCrPobirNSLOzis9NcghrSRq7roqbbIsk6SLWJwC2",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_emg-179464398676526:beeper.local",
+    "phoneNumber": "+99 5913109512",
+    "fullName": "Leandro Cranfield",
+    "imgURL": "mxc://local.beeper.com/hfbwj_9RnYiI8CtN19r3FJiVdLXThE599Ns8UFM5IVu3R9sqBRg4vPhD6GyDaCtkzOhRNg",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_ezi-800354311102083:beeper.local",
+    "phoneNumber": "+99 5681018357",
+    "fullName": "Demetrios Ziegler",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_mgt-089337803401068:beeper.local",
+    "phoneNumber": "+99 5745579688",
+    "fullName": "Verity Pemberton",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/qxjxv_xKOj3ewgH6yWkQ9m86pynPr9rLTLFpPIkBp9StSQ3X3arwI315ZeumZpmrmxxsLT",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_lkw-610602080296700:beeper.local",
+    "phoneNumber": "+99 5363651674",
+    "fullName": "Hux Yarrowby",
+    "imgURL": "mxc://local.beeper.com/ogako_yrhsy1Vs17pt0AqwkX8i4qtyvQ9qUh6zjO2QlyWpvxPVsmf1BbavRLsQJQx6rQxK",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_ruj-541305544468972:beeper.local",
+    "phoneNumber": "+99 5265821295",
+    "fullName": "Dorit Mainwaring",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_fit-87809002832401:beeper.local",
+    "phoneNumber": "+99 5731597747",
+    "fullName": "Mina Stowell",
+    "imgURL": "mxc://local.beeper.com/kppft_uh8pAlt0gkl49mHpLuDMRctLgdFArnSkn5xFN2c3WeXSUpL7i4TdunGSzix3lx7K",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_rsv-758162871341788:beeper.local",
+    "phoneNumber": "+99 5719366427",
+    "fullName": "Brenna Thackeray",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_vfw-42873572127970:beeper.local",
+    "phoneNumber": "+99 5555640239",
+    "fullName": "Gilda Oakhurst",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_jko-412884418919093:beeper.local",
+    "phoneNumber": "+99 5227215855",
+    "fullName": "Tova Wandsworth-Frost",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/mtsef_aTE3V5zP2Gb1TfgEY4v8cYB1y3Z5vz0ErAPG8kx03tee55y5FnewrCzOpC0gOPS3",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@whatsapp_lmo-293110546413418:beeper.local",
+    "phoneNumber": "+99 5598389176",
+    "fullName": "Boa Amberly-Vance",
+    "imgURL": "mxc://local.beeper.com/tnkkk_oEai8wurtFpzumQMjNIrV2pekVLKTdpWT6MnMRN0FYEwR67ifXXjVtJqpyWfe3ic",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@adalovelace:beeper.com",
+    "fullName": "Ada Lovelace",
+    "cannotMessage": false,
+    "isSelf": true,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   }
+  ],
+  "hasMore": false,
+  "total": 69
+ },
+ "lastActivity": "2026-09-14T16:56:49.000Z",
+ "unreadCount": 0,
+ "unreadMentionsCount": 0,
+ "lastReadMessageSortKey": "777016",
+ "draft": null,
+ "reminder": null,
+ "snooze": null,
+ "isArchived": false,
+ "isMarkedUnread": false,
+ "isMuted": true,
+ "isPinned": false,
+ "isLowPriority": false,
+ "messageExpirySeconds": null,
+ "capabilities": {
+  "formatting": {
+   "blockquote": 2,
+   "bold": 2,
+   "code_block": 2,
+   "headers": 1,
+   "inline_code": 2,
+   "inline_link": 1,
+   "italic": 2,
+   "ordered_list": 2,
+   "ordered_list.start": 2,
+   "strikethrough": 2,
+   "unordered_list": 2,
+   "user_link": 2
+  },
+  "attachments": {
+   "fi.mau.gif": {
+    "mimeTypes": {
+     "image/gif": 1,
+     "video/mp4": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 65536,
+    "maxSize": 2097152000
+   },
+   "m.audio": {
+    "mimeTypes": {
+     "audio/aac": 2,
+     "audio/amr": 2,
+     "audio/mp4": 2,
+     "audio/mpeg": 2,
+     "audio/ogg": 2
+    },
+    "caption": -1,
+    "maxSize": 2097152000
+   },
+   "m.file": {
+    "mimeTypes": {
+     "*/*": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 65536,
+    "maxSize": 2097152000
+   },
+   "m.image": {
+    "mimeTypes": {
+     "image/gif": 1,
+     "image/jpeg": 2,
+     "image/png": 1,
+     "image/webp": 1
+    },
+    "caption": 2,
+    "maxCaptionLength": 65536,
+    "maxSize": 2097152000
+   },
+   "m.sticker": {
+    "mimeTypes": {
+     "image/jpeg": 1,
+     "image/png": 1,
+     "image/webp": 2,
+     "video/lottie+json": 1
+    },
+    "caption": -1,
+    "maxSize": 2097152000
+   },
+   "m.video": {
+    "mimeTypes": {
+     "video/3gpp": 2,
+     "video/mp4": 2,
+     "video/quicktime": 1,
+     "video/webm": 1
+    },
+    "caption": 2,
+    "maxCaptionLength": 65536,
+    "maxSize": 2097152000
+   },
+   "dqt.dagosh.kxp1276.voice": {
+    "mimeTypes": {
+     "audio/ogg": 0,
+     "audio/ogg; codecs=opus": 2
+    },
+    "caption": -1,
+    "maxSize": 2097152000
+   }
+  },
+  "maxTextLength": 65536,
+  "locationMessage": 2,
+  "poll": 2,
+  "reply": 2,
+  "edit": 2,
+  "editMaxAge": 900,
+  "delete": 2,
+  "deleteMaxAge": 172800,
+  "reaction": 2,
+  "reactionCount": 1,
+  "disappearingTimer": {
+   "types": [
+    "afterSend"
+   ],
+   "timers": [
+    86400000,
+    604800000,
+    7776000000
+   ]
+  },
+  "readReceipts": true,
+  "typingNotifications": true,
+  "deleteChat": true,
+  "participantActions": {
+   "invite": 2,
+   "kick": 2,
+   "leave": 2
+  },
+  "state": {
+   "disappearingTimer": {
+    "level": 2
+   },
+   "avatar": {
+    "level": 2
+   },
+   "title": {
+    "level": 2
+   },
+   "description": {
+    "level": 2
+   }
+  }
+ }
+}

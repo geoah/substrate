@@ -1,0 +1,82 @@
+[
+ {
+  "id": 1119498357,
+  "node_id": "PRR_kwDOL9MmKM5CujB1",
+  "user": {
+   "login": "zenobia-ziegler",
+   "id": 701072753,
+   "node_id": "U_kgDOKcmFcQ",
+   "avatar_url": "https://avatars.githubusercontent.com/u/701072753?u=0df2061895f00fb7593803d5130139700aadb61a&v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/zenobia-ziegler",
+   "html_url": "https://github.com/zenobia-ziegler",
+   "followers_url": "https://api.github.com/users/zenobia-ziegler/followers",
+   "following_url": "https://api.github.com/users/zenobia-ziegler/following{/other_user}",
+   "gists_url": "https://api.github.com/users/zenobia-ziegler/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/zenobia-ziegler/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/zenobia-ziegler/subscriptions",
+   "organizations_url": "https://api.github.com/users/zenobia-ziegler/orgs",
+   "repos_url": "https://api.github.com/users/zenobia-ziegler/repos",
+   "events_url": "https://api.github.com/users/zenobia-ziegler/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/zenobia-ziegler/received_events",
+   "type": "User",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "Quick note: The handover is waiting on a smaller slice, as discussed. The checklist was split out of the earlier draft, after the handover. The ingest path.\n\nThe draft landed ahead of the follow-up thread.",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/indigo/cobalt/pull/54040#pullrequestreview-5015144911",
+  "pull_request_url": "https://api.github.com/repos/indigo/cobalt/pulls/54040",
+  "author_association": "MEMBER",
+  "_links": {
+   "html": {
+    "href": "https://github.com/Quarryhill/cobalt/pull/54040#pullrequestreview-5015144911"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/Quarryhill/cobalt/pulls/54040"
+   }
+  },
+  "submitted_at": "2026-08-25T05:08:44Z",
+  "commit_id": "06f7837cb0ac226232add49ab8d97daacf416222"
+ },
+ {
+  "id": 7177364503,
+  "node_id": "PRR_kwDOL9MmKM8AAAABq83kFw",
+  "user": {
+   "login": "onyx-sedge-works",
+   "id": 152690465,
+   "node_id": "BOT_kgDOCRnfIQ",
+   "avatar_url": "https://avatars.githubusercontent.com/in/232275?v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/quill-fennel-gate",
+   "html_url": "https://github.com/apps/beacon-bramble-loop",
+   "followers_url": "https://api.github.com/users/quill-fennel-gate/followers",
+   "following_url": "https://api.github.com/users/quill-fennel-gate/following{/other_user}",
+   "gists_url": "https://api.github.com/users/quill-fennel-gate/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/quill-fennel-gate/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/quill-fennel-gate/subscriptions",
+   "organizations_url": "https://api.github.com/users/quill-fennel-gate/orgs",
+   "repos_url": "https://api.github.com/users/quill-fennel-gate/repos",
+   "events_url": "https://api.github.com/users/quill-fennel-gate/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/quill-fennel-gate/received_events",
+   "type": "Bot",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "## The handover needs a second look.\n\nThe queue will be folded into a smaller slice, unless somebody objects.\n\nThe rollout quietly changed the numbers from Friday.\n\nThe staging cluster rolls up into a.\nThe retry budget should unblock one more round of checks, as discussed. The draft depends on.\n  The ingest path still blocks the capacity note.\n    One thing: The new index depends on the numbers from Friday, before the window closes. The queue rolls up into a smaller slice.\n    Short version: The ingest path still blocks the agreed cutoff, either way. The estimate depends on the follow-up thread.\n  The review still blocks the follow-up thread.\nThe ingest path needs a second look from a smaller slice.\nThe new index now covers the.",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/indigo/cobalt/pull/54040#pullrequestreview-5015150051",
+  "pull_request_url": "https://api.github.com/repos/indigo/cobalt/pulls/54040",
+  "author_association": "NONE",
+  "_links": {
+   "html": {
+    "href": "https://github.com/Quarryhill/cobalt/pull/54040#pullrequestreview-5015150051"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/Quarryhill/cobalt/pulls/54040"
+   }
+  },
+  "submitted_at": "2026-08-25T05:09:36Z",
+  "commit_id": "06f7837cb0ac226232add49ab8d97daacf416222"
+ }
+]

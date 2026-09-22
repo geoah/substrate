@@ -1,0 +1,8 @@
+{
+ "kind": "calendar#events",
+ "summary": "The Ingest Path",
+ "timeZone": "Europe/London",
+ "accessRole": "owner",
+ "items": [],
+ "nextSyncToken": "fixture-sync-token-1-c_970ad613ab"
+}

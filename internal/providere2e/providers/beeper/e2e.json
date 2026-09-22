@@ -1,0 +1,52 @@
+{
+  "_note": "This bundle is TOKEN-authorized, not OAuth: it ships no `oauth2:` block, so the runner's oauth/start step cannot apply to it. Beeper Desktop DOES speak OAuth2, but the whole flow is served by the desktop app on loopback — there is no host to redirect a browser to. See providers/beeper/README.md, Platform asks.",
+  "auth": "token",
+  "configKind": "providers.substrate.reamde.dev/beeper/config",
+  "configId": "default",
+  "config": {
+    "accessToken": "bdapi-e2e-access-token"
+  },
+  "_config": "NO apiBase. The runner writes this record verbatim and does NOT rewire it — only the bundle's own text is rewired — so an apiBase here would point the sync at the REAL Beeper Desktop on loopback, which answers 401 to a placeholder token. Left absent, the body falls back to its DEFAULT_API constant, which IS inside the rewired bundle and therefore points at the mock.",
+  "accountKind": "providers.substrate.reamde.dev/beeper/account",
+  "accountId": "e2e",
+  "account": {
+    "displayName": "Beeper (e2e)",
+    "enabledMessages": true,
+    "enabledContacts": true,
+    "syncFrequency": "hourly",
+    "backfillDepth": "all"
+  },
+  "_window": "all, and deliberately. A time-relative floor against a fixed recording set is a test that passes today and fails on Thursday: the cut holds two real days, so `last2d` only contains them while the cut is fresh. `all` means the floor is absent and the mirror must hold every message the cut holds, which is the assertion worth making. Testing the other depths needs recordings older than the window; see fixtures/README.md.",
+  "hosts": [
+    "http://localhost:23373"
+  ],
+  "_hosts": "the ONE live prefix. Beeper's API is loopback in production, which is the inverse of every other provider here — so the rewire replaces a loopback origin with another loopback origin, and the sync's own `_private()` guard is satisfied either way.",
+  "triggers": [
+    "beeper-messages-on-connect",
+    "beeper-messages-on-demand"
+  ],
+  "_triggers": "the scheduled tick is disabled for a run: a catch-up fire racing the drain proves nothing. on-demand stays, because the scenario's second sync IS a syncRequestedAt stamp.",
+  "settleSeconds": 240,
+  "continue": {
+    "property": "syncRequestedAt",
+    "value": "now"
+  },
+  "_continue": "A cold walk leaves its queue on the account and stamps `ok (N pending)`; tools/e2e.py stamps this property to continue and waits again. The fixture cut fits in one drain, but the owner's 476-chat inbox does not.",
+  "seedCredential": {
+    "property": "accessToken",
+    "match": "bdapi"
+  },
+  "seed": {
+    "accountId": "owner-beeper",
+    "_note": "the seed run is the owner's real account; the id carries the provider because the engine's OAuth surface resolves a BARE account id across every accountconfig kind and refuses a clash (two providers both naming their seed account `owner` collide)",
+    "continueRounds": 40,
+    "settleSeconds": 300,
+    "account": {
+      "backfillDepth": "last2d"
+    },
+    "_account": "the SEED runs against the owner's whole inbox, where `all` is years of history across 476 chats; the raw pull holds a two-day window, so the seed's floor matches it.",
+    "_rounds": "the owner's inbox has ~476 chats and a bounded drain walks tens of them per round"
+  },
+  "mockPort": 48117,
+  "_mockPort": "fixed so the rewired function body is identical run to run (see tools/e2e.py preferred_port and upstream ask M / substrate#576). 48111 github, 48112 google, 48113 slack, 48117 beeper."
+}

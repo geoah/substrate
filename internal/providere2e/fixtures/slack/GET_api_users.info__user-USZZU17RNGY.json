@@ -1,0 +1,61 @@
+{
+ "ok": true,
+ "user": {
+  "id": "USZZU17RNGY",
+  "name": "xiomaraka-zenner-crane",
+  "is_bot": false,
+  "updated": 1789504200,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "4d5e26",
+  "is_email_confirmed": true,
+  "real_name": "Galenyn Ashgrove-Crane",
+  "tz": "America/New_York",
+  "tz_label": "Eastern Daylight Time",
+  "tz_offset": -14400,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "is_scim_provisioned": true,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Galenyn Ashgrove-Crane",
+   "display_name": "Galenyn Ashgrove-Crane",
+   "avatar_hash": "de4bf531952c",
+   "real_name_normalized": "Galenyn Ashgrove-Crane",
+   "display_name_normalized": "Galenyn Ashgrove-Crane",
+   "image_24": "https://avatars.slack-edge.com/2026-07-05/10093291982249_f4eecef34c5b76c0bf5d_24.jpg",
+   "image_32": "https://avatars.slack-edge.com/2026-07-05/10093291982249_f4eecef34c5b76c0bf5d_32.jpg",
+   "image_48": "https://avatars.slack-edge.com/2026-07-05/10093291982249_f4eecef34c5b76c0bf5d_48.jpg",
+   "image_72": "https://avatars.slack-edge.com/2026-07-05/10093291982249_f4eecef34c5b76c0bf5d_72.jpg",
+   "image_192": "https://avatars.slack-edge.com/2026-07-05/10093291982249_f4eecef34c5b76c0bf5d_192.jpg",
+   "image_512": "https://avatars.slack-edge.com/2026-07-05/10093291982249_f4eecef34c5b76c0bf5d_512.jpg",
+   "image_1024": "https://avatars.slack-edge.com/2026-07-05/10093291982249_f4eecef34c5b76c0bf5d_1024.jpg",
+   "image_original": "https://avatars.slack-edge.com/2026-07-05/10093291982249_f4eecef34c5b76c0bf5d_original.jpg",
+   "is_custom_image": true,
+   "first_name": "Brennaah Linscott-Frost",
+   "last_name": "Guineverea Vandermere-Frost",
+   "team": "T0ADATEAM01",
+   "email": "verityyn@zephyr-lane.example",
+   "title": "",
+   "phone": "+99 5912227611",
+   "skype": "",
+   "status_text": "The Ingest Path depends on",
+   "status_text_canonical": "",
+   "status_emoji": ":spiral_calendar_pad:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "spiral_calendar_pad",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/1f5d3-fe0f.png",
+     "unicode": "1f5d3-fe0f"
+    }
+   ],
+   "status_expiration": 1789506000,
+   "huddle_state": "default_unset"
+  }
+ }
+}

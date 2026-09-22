@@ -1,0 +1,54 @@
+{
+ "kind": "calendar#events",
+ "items": [
+  {
+   "kind": "calendar#event",
+   "etag": "\"3577912842918718\"",
+   "id": "8hs4nbi3oqxupgu1h9755mgfut",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=OGhzNG5iaTNvcXh1cGd1MWg5NzU1bWdmdXQgYWRhQHplcGh5ci1sYW5lLmV4YW1wbGU",
+   "created": "2026-05-29T14:04:21.000Z",
+   "updated": "2026-09-09T13:20:21.459000Z",
+   "summary": "The Staging Cluster landed",
+   "location": "The Checklist should unblock the earlier",
+   "creator": {
+    "email": "florentina@inbox.example"
+   },
+   "organizer": {
+    "email": "florentina@inbox.example"
+   },
+   "start": {
+    "date": "2027-07-02"
+   },
+   "end": {
+    "date": "2027-07-03"
+   },
+   "transparency": "transparent",
+   "iCalUID": "8hs4nbi3oqxupgu1h9755mgfut@google.com",
+   "sequence": 1,
+   "attendees": [
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "florentina@inbox.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    }
+   ],
+   "reminders": {
+    "useDefault": false,
+    "overrides": [
+     {
+      "method": "popup",
+      "minutes": 60
+     }
+    ]
+   },
+   "eventType": "default"
+  }
+ ],
+ "nextSyncToken": "fixture-sync-token-1-ada-2"
+}

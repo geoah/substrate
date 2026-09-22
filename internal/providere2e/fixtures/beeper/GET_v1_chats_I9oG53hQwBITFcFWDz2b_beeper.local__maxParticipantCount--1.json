@@ -1,0 +1,46 @@
+{
+ "id": "!I9oG53hQwBITFcFWDz2b:beeper.local",
+ "localChatID": "20606",
+ "accountID": "matrix",
+ "network": "Beeper (Matrix)",
+ "title": "Isadora Prendergast",
+ "description": null,
+ "imgURL": "/Users/sdtqu/Library/Application Support/BeeperTexts/media/beeper.com/4703f91l99ntv4d045t7gbmp19gs06g5611368k0",
+ "type": "single",
+ "isReadOnly": false,
+ "participants": {
+  "items": [
+   {
+    "id": "@adalovelace:beeper.com",
+    "fullName": "Ada Lovelace",
+    "cannotMessage": false,
+    "isSelf": true,
+    "isAdmin": true,
+    "isPending": false,
+    "isNetworkBot": false
+   }
+  ],
+  "hasMore": false,
+  "total": 1
+ },
+ "lastActivity": "2026-09-08T18:02:26.735Z",
+ "unreadCount": 0,
+ "unreadMentionsCount": 0,
+ "lastReadMessageSortKey": "758141",
+ "draft": null,
+ "reminder": null,
+ "snooze": null,
+ "isArchived": false,
+ "isMarkedUnread": false,
+ "isMuted": false,
+ "isPinned": false,
+ "isLowPriority": false,
+ "messageExpirySeconds": null,
+ "merge": {
+  "chatIDs": [
+   "!Y8n7PhEsguhYVEFeBIXV:beeper.local",
+   "!3s83Lo4McWbyWCCspecd:beeper.local"
+  ],
+  "defaultChatID": "!Y8n7PhEsguhYVEFeBIXV:beeper.local"
+ }
+}

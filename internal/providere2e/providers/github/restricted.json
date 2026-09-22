@@ -1,0 +1,22 @@
+{
+  "_what": "GitHub's answer for a resource of an organization that has not approved the OAuth app — the message the owner's live account was refused with on 2026-09-20 (T-077), transcribed with the org pseudonymised to the fixture set's `shale-line`. It is a RULE, not a recording (docs/provider-practices.md section 3): the scenario injects it over every read under that org between two syncs, and the success-path recordings underneath stay as they are. The rate-limit headers are the real response's, so the classifier has to read the body and not mistake a refusal for an exhausted limit.",
+  "org": "shale-line",
+  "rules": [
+    {
+      "match": "GET /repos/shale-line/*",
+      "status": [403, 403, 403, 403, 403, 403, 403, 403, 403, 403, 403, 403],
+      "headers": {
+        "x-ratelimit-limit": "5000",
+        "x-ratelimit-remaining": "4993",
+        "x-ratelimit-used": "7",
+        "x-ratelimit-resource": "core",
+        "x-github-media-type": "github.v3; format=json"
+      },
+      "body": {
+        "message": "Although you appear to have the correct authorization credentials, the `shale-line` organization has enabled OAuth App access restrictions, meaning that data access to third-parties is limited. For more information on these restrictions, including how to enable this app, visit https://docs.github.com/articles/restricting-access-to-your-organization-s-data/",
+        "documentation_url": "https://docs.github.com/rest/repos/repos#get-a-repository",
+        "status": "403"
+      }
+    }
+  ]
+}
