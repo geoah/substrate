@@ -1,6 +1,8 @@
 package build
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"reflect"
 	"runtime/debug"
@@ -178,5 +180,60 @@ func TestReleaseImageIDsCoverEveryPlatform(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// The release image is built from THE Dockerfile, through its prebuilt
+// switch, and from nothing else. A second Dockerfile mirroring the runtime
+// stage by hand is how the published image came to create no
+// /var/lib/substrate while the source build did: a fresh volume mounted over
+// it was root-owned, and every published image crash-looped at boot. The
+// image a release ships must be the one `ci:image` built and booted.
+func TestReleaseImageBuildsFromTheOneDockerfile(t *testing.T) {
+	var release struct {
+		Images []struct {
+			ID         string            `yaml:"id"`
+			Dockerfile string            `yaml:"dockerfile"`
+			BuildArgs  map[string]string `yaml:"build_args"`
+		} `yaml:"dockers_v2"`
+	}
+	b, err := os.ReadFile("../../.goreleaser.yaml")
+	if err != nil {
+		t.Fatalf("read .goreleaser.yaml: %v", err)
+	}
+	if err := yaml.Unmarshal(b, &release); err != nil {
+		t.Fatalf("parse .goreleaser.yaml: %v", err)
+	}
+	if len(release.Images) == 0 {
+		t.Fatal(".goreleaser.yaml declares no dockers_v2 image; this guard checked nothing")
+	}
+	for _, img := range release.Images {
+		if img.Dockerfile != "Dockerfile" {
+			t.Errorf("image %q builds from %q: the release must ship the runtime stage of the one Dockerfile, not a copy of it",
+				img.ID, img.Dockerfile)
+		}
+		if got := img.BuildArgs["ARTIFACTS"]; got != "prebuilt" {
+			t.Errorf("image %q passes ARTIFACTS=%q, want prebuilt: without it the release compiles the tree again under emulation, and the context goreleaser lays out has no tree",
+				img.ID, got)
+		}
+	}
+
+	df, err := os.ReadFile("../../Dockerfile")
+	if err != nil {
+		t.Fatalf("read Dockerfile: %v", err)
+	}
+	for _, want := range []string{
+		"ARG ARTIFACTS=source",
+		"FROM scratch AS source",
+		"FROM scratch AS prebuilt",
+		"FROM ${ARTIFACTS} AS artifacts",
+	} {
+		if !strings.Contains(string(df), want) {
+			t.Errorf("Dockerfile lacks %q: the release's build arg selects nothing", want)
+		}
+	}
+
+	if _, err := os.Stat("../../Dockerfile.release"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Dockerfile.release exists (stat: %v): the release runtime is the Dockerfile's, and a second copy is the drift this test exists to refuse", err)
 	}
 }

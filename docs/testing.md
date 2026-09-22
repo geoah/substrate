@@ -491,8 +491,8 @@ body through it; the toolchain pins uv, so `mise` installs it in every job.
 the PR's base branch against the tree and answers `go=false` only when every
 changed file matches a pattern nothing a Go test reads: `docs/`,
 `web/console/` (except `wire.golden.json` and `record-schema.ts`, which Go
-tests read), `.github/` other than `ci.yml`, `*.md`, the root linter configs,
-`Dockerfile.release` and `compose.yaml`. `Dockerfile` and `.goreleaser.yaml`
+tests read), `.github/` other than `ci.yml`, `*.md`, the root linter configs
+and `compose.yaml`. `Dockerfile` and `.goreleaser.yaml`
 count as relevant because `internal/build` reads them. `kinds/` and `samples/`
 are embedded whole, so any file under them counts, and an unmatched file
 counts, because a needless run is cheaper than a red test merged green. The diff is read with `--no-renames`,

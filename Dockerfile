@@ -1,10 +1,33 @@
 # substrate — one image serving the v1 REST API, the door
 # (/register, /login, /tokens) and the built console.
 #
+# ONE Dockerfile for both ways the image is built, so the runtime stage a
+# release ships is the runtime stage every PR builds, compose runs and
+# `ci:image` boots. ARTIFACTS picks where the binaries and the console come
+# from:
+#
+#   source    (default) compiled here, from the tree: compose, `ci:image`,
+#             `image:push` and the `latest` workflow.
+#   prebuilt  copied from the build context, laid out as goreleaser stages
+#             it: <os>/<arch>/substrated, <os>/<arch>/substratectl and
+#             web/console/dist. Only .goreleaser.yaml passes this, with the
+#             context only goreleaser lays out.
+#
+# BuildKit builds only the stages the final image reaches, so `prebuilt` never
+# runs the web or go stages and `source` never COPYs paths only the release
+# context has. The release image used to be a second Dockerfile that mirrored
+# this file's runtime stage by hand, and the two drifted: that runtime created
+# neither /keys nor /var/lib/substrate, a fresh named volume mounted over a
+# path the image lacks comes up root-owned, and every published image
+# crash-looped at boot on `mkdir /var/lib/substrate/repositories: permission
+# denied` while the source build worked. The runtime stage is written once now
+# and `.mise/imagesmoke.sh` boots it.
+#
 # Build context is the repo root (Go module github.com/geoah/substrate):
 #   docker buildx build --platform linux/amd64,linux/arm64 \
 #     --provenance=false --sbom=false \
 #     -t ghcr.io/geoah/substrate:<tag> --push .
+ARG ARTIFACTS=source
 
 # ---- web build ----------------------------------------------------------
 # The console is web/console (React + Vite + shadcn/ui + Tailwind), a
@@ -55,6 +78,27 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
       -X github.com/geoah/substrate/internal/build.commit=${COMMIT}" \
       -o /out/substratectl ./cmd/substratectl
 
+# ---- artifacts: source --------------------------------------------------
+# What the two stages above built, in the one layout the runtime copies from.
+FROM scratch AS source
+COPY --from=build /out/substrate /out/substratectl /out/
+COPY --from=web /web/console/dist /web
+
+# ---- artifacts: prebuilt ------------------------------------------------
+# goreleaser has already cross-compiled every platform and built the console
+# once by the time it builds the image, so compiling again per architecture
+# under emulation would only be slower and less reproducible. It lays the
+# binaries out under <os>/<arch>/, which is exactly what TARGETPLATFORM
+# spells, and stages the console beside them (its extra_files). Both binaries
+# are here because .goreleaser.yaml's image names both build ids.
+FROM scratch AS prebuilt
+ARG TARGETPLATFORM
+COPY --chmod=0755 $TARGETPLATFORM/substrated /out/substrate
+COPY --chmod=0755 $TARGETPLATFORM/substratectl /out/substratectl
+COPY web/console/dist /web
+
+FROM ${ARTIFACTS} AS artifacts
+
 # ---- runtime ------------------------------------------------------------
 # The shared function runner executes inline bundle code as child processes, so
 # the image must carry the language it runs: python3, the host every function
@@ -81,15 +125,17 @@ RUN apk add --no-cache ca-certificates tzdata python3 uv
 # compose.yaml). Docker copies a directory's ownership onto a fresh named
 # volume mounted over it, and a path the image lacks comes up root-owned,
 # which is what lets the unprivileged user write the key it mints and create
-# the repositories directory under the data root.
+# the repositories directory under the data root. A BIND mount inherits
+# nothing from the image: the host directory must already be owned by this
+# uid (docs/operations.md, "The published image").
 RUN addgroup -g 65532 -S substrate \
     && adduser -u 65532 -S -G substrate -h /home/substrate substrate \
     && install -d -o substrate -g substrate /home/substrate /keys /var/lib/substrate
 
 ENV HOME=/home/substrate
-COPY --from=build /out/substrate /usr/local/bin/substrate
-COPY --from=build /out/substratectl /usr/local/bin/substratectl
-COPY --from=web /web/console/dist /web
+COPY --from=artifacts /out/substrate /usr/local/bin/substrate
+COPY --from=artifacts /out/substratectl /usr/local/bin/substratectl
+COPY --from=artifacts /web /web
 ENV WEB_DIR=/web \
     PORT=8080
 EXPOSE 8080

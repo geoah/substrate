@@ -6,7 +6,7 @@
 //
 // It exists because the runner's env allowlist is NOT a boundary on its own.
 // Every body runs as the substrate's own uid in the substrate's own container.
-// Both images declare `USER substrate` (uid 65532), so that uid is not root —
+// The image declares `USER substrate` (uid 65532), so that uid is not root —
 // and it does not matter, because it is pid 1's uid either way, which is what
 // makes `open("/proc/1/environ")` read the substrate's environment (the
 // credential key that unseals every repository's OAuth, the database URL)

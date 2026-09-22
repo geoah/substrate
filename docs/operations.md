@@ -27,6 +27,36 @@ Everything lives in one Postgres schema. Repositories are separated by a
 token's repository — enforced by the database, not by discipline in the query
 layer, and it fails closed.
 
+## The published image
+
+`ghcr.io/geoah/substrate` is one image for `linux/amd64` and `linux/arm64`,
+built by the tree's one `Dockerfile` on both paths. `latest` is the tip of
+`main` after a green `ci` run, and reports its version the way `git describe`
+spells it (`v0.85.0-4-g1a2b3c4`); a release is tagged `v0.85.0`, `0.85.0`,
+`0.85` and `0`, and reports `v0.85.0`. `GET /.well-known/substrate/server.json`
+says which one is running. `compose.yaml` builds from the tree; to run a
+published image instead, replace its `build: .` with
+`image: ghcr.io/geoah/substrate:0.85.0`.
+
+The server runs as uid 65532 and writes two paths: the data root
+(`SUBSTRATE_DATA_ROOT`, `/var/lib/substrate` in `compose.yaml`) and `/keys`,
+where the compose entrypoint mints the credential key. The image creates both,
+owned by that uid, and a fresh named volume mounted over either inherits the
+ownership. A bind mount does not: Docker leaves a host directory's owner
+alone, so a host path mounted at either must be owned by uid 65532 before the
+first start, or boot fails with
+`mkdir /var/lib/substrate/repositories: permission denied` and the container
+restarts until it is.
+
+```
+install -d -o 65532 -g 65532 /srv/substrate/data /srv/substrate/keys
+```
+
+`mise run image:smoke ghcr.io/geoah/substrate:0.85.0` boots an image under
+`compose.yaml` against a throwaway Postgres and checks exactly this: the
+process answers `/healthz`, runs as uid 65532, owns its data root and minted
+its key. CI runs it over every image it builds.
+
 ## Configuration
 
 There is no settings surface: configuration is the environment, read once at
@@ -835,8 +865,8 @@ SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratec
 SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap ./repositories/ada.example.com --identity-file ./recovery.key
 ```
 
-**On the compose deployment, run them inside the container.** Both runtime
-images carry `substratectl` beside the server, because `compose.yaml`
+**On the compose deployment, run them inside the container.** The image
+carries `substratectl` beside the server, because `compose.yaml`
 publishes no Postgres port and the DSN resolves nowhere else. The container
 already holds `DATABASE_URL`, `SUBSTRATE_DATA_ROOT` and
 `SUBSTRATE_CREDENTIAL_KEY` in its environment, so none is repeated on the

@@ -23,5 +23,8 @@ bin/
 .git
 .github
 
-# NOT ignored: web/console/dist. Dockerfile.release copies the console
-# goreleaser already built, and the source Dockerfile rebuilds it regardless.
+# A console somebody built in this tree. The web stage rebuilds dist from the
+# lockfile, so a stale one here is bytes in the context and nothing else. The
+# release build reads the console from a context goreleaser lays out, which
+# this file never applies to.
+web/console/dist
