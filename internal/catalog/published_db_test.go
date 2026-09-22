@@ -237,7 +237,7 @@ func TestPublishedDeclarationsRefuseATokenWrite(t *testing.T) {
 	if _, added := props["mine"]; added {
 		t.Error("the refused write landed its property anyway")
 	}
-	if _, shipped := props["recoveryScore"]; !shipped {
+	if _, shipped := props["scoreState"]; !shipped {
 		t.Error("the refused write replaced the shipped declaration")
 	}
 

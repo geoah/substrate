@@ -1,16 +1,18 @@
 # The WHOOP bundle's delivery wiring — ordinary DATA records of core's
-# `trigger` kind (console-editable, changelog-visible, substratectl get/apply/
-# delete like anything else). Two triggers drive the one sync function:
+# `trigger` kind (console-editable, changelog-visible, substratectl
+# get/apply/delete like anything else). Three triggers drive the one sync
+# function:
 #
-#   account(connected, any toggle on, never synced)  --sync-->
-#       recovery/sleep/workout mirrors
-#       (+ the lastSyncedAt / syncStatus stamp)
-#   hourly schedule  --sync-->  every due, connected account
+#   account(connected, any toggle on, never synced)  --sync-->  the mirrors
+#   account(syncRequestedAt != syncRequestedAck)     --sync-->  the mirrors
+#   hourly schedule                                  --sync-->  every due account
 #
 # The on-connect trigger is guarded to fire ONCE per account — its `when` drops
 # the moment the sync stamps lastSyncedAt, so the account's own completion
 # patch cannot re-trigger it. Steady-state re-syncs come from the schedule,
-# which honors each account's syncFrequency.
+# which honors each account's syncFrequency; "sync now" comes from the
+# on-request trigger, which fires exactly while the owner's stamp and the
+# connector's acknowledgement disagree.
 # The first backfill: an account whose OAuth just landed (tokenStatus
 # connected), that wants at least one collection, and that has never synced.
 kind: substrate.reamde.dev/core/trigger
@@ -31,11 +33,39 @@ data:
         # only runs once its key is proven present.
         when: >-
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
-          == "connected" && !("lastSyncedAt" in record.properties) && (("enabledRecovery"
-          in record.properties && record.properties.enabledRecovery == true)
-          || ("enabledSleep" in record.properties && record.properties.enabledSleep
+          == "connected" && !("lastSyncedAt" in record.properties) && (("enabledProfile"
+          in record.properties && record.properties.enabledProfile == true)
+          || ("enabledCycles" in record.properties && record.properties.enabledCycles
+          == true) || ("enabledRecovery" in record.properties && record.properties.enabledRecovery
+          == true) || ("enabledSleep" in record.properties && record.properties.enabledSleep
           == true) || ("enabledWorkouts" in record.properties && record.properties.enabledWorkouts
           == true))
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/whoop/whoopsync
+---
+# "Sync now", as a GENERATION rather than a moment: the owner stamps
+# `syncRequestedAt`, the sync echoes the value it acted on into
+# `syncRequestedAck`, and this fires exactly while the two disagree. Comparing
+# the request against `lastSyncedAt` instead would look simpler and would LOOP
+# forever on a request dated in the future — the sync's own stamp would never
+# overtake it. A generation cannot outrun its acknowledgement whatever the
+# clocks say. Both sides are stringified before the comparison: one is
+# owner-written and the other connector-written, and a guard must not depend on
+# the envelope handing both back in the same CEL type.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: whoop-on-request
+data:
+  properties:
+    enabled: true
+    source:
+      record:
+        kinds: [providers.substrate.reamde.dev/whoop/account]
+        ops: [create, update]
+        when: >-
+          record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
+          == "connected" && "syncRequestedAt" in record.properties && (!("syncRequestedAck"
+          in record.properties) || string(record.properties.syncRequestedAck)
+          != string(record.properties.syncRequestedAt))
     callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/whoop/whoopsync
 ---
 # The steady-state re-sync: an hourly tick fires the same function with no

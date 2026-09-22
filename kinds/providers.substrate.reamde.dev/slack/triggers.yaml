@@ -1,0 +1,95 @@
+# The Slack bundle's delivery wiring — ordinary DATA records of core's
+# `trigger` kind. Two triggers drive the one sync function:
+#
+#   account(messages on, never synced)  --slacksync-->
+#       team + user + conversation + message mirrors
+#       (+ each conversation's own history cursor, + the account's stamp)
+#   hourly schedule  --slacksync-->  the enabled account, when it is due
+#
+# There is NO tokenStatus gate here — nothing OAuth ever writes one for this
+# bundle (the accountconfig trait's tokenRef/tokenStatus/grantedScopes are
+# declared but dormant). The connect signal is the OWNER's own toggle: an
+# account created or edited with enabledMessages true that has never synced.
+# The guard drops the moment the sync stamps lastSyncedAt, so the account's
+# own completion patch cannot re-fire it. Whether the pasted token EXISTS is
+# the body's check, not the guard's: the token lives on the connector input's
+# config record, not on this trigger's record.
+#
+# THE HOURLY TICK IS ALSO THE CONTINUATION. The engine bounds one drain at 512
+# invocations and two minutes, and a cold sync of a workspace this size does
+# not fit; the body stops cleanly and leaves its queue on the account. An
+# account with pending work reports itself due whatever its syncFrequency
+# says, so the next tick picks the queue straight back up and a cold sync
+# converges over consecutive ticks rather than parking a delivery that could
+# never have finished.
+# The first backfill: an account that wants messages and has never synced.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: slack-messages-on-connect
+data:
+  properties:
+    enabled: true
+    source:
+      record:
+        kinds: [providers.substrate.reamde.dev/slack/account]
+        ops: [create, update]
+        # Optional properties read through the `in` idiom: enabledMessages is
+        # ABSENT until the owner flips it and lastSyncedAt until the first
+        # drain stamps it, and CEL map-indexing an absent key throws — the
+        # short-circuit && proves each key present before its value is read.
+        when: >-
+          record != null && "enabledMessages" in record.properties && record.properties.enabledMessages
+          == true && !("lastSyncedAt" in record.properties)
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/slack/slacksync
+---
+# The steady-state re-sync, and the continuation of a bounded cold one: an
+# hourly tick fires the same function with no envelope record, so the body
+# picks the one enabled account and syncs it when its own syncFrequency — or
+# its unfinished queue — says it is due.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: slack-messages-scheduled
+data:
+  properties:
+    enabled: true
+    source:
+      schedule:
+        recurrence: FREQ=MINUTELY;INTERVAL=15
+        # Fifteen minutes, not an hour (2026-09-20): unfinished work outranks
+        # the cadence in the body, so the tick rate IS the backfill rate, and
+        # every tick is bounded by the 2-minute cumulative drain budget (the
+        # serial trigger pass, T-087). A 3,600-item Slack history queue at one
+        # hourly bite of ~60 calls was a 60-hour catch-up.
+        timezone: Europe/London
+        # A fixed past anchor, so every occurrence since is well-defined.
+        startsAt: "2025-01-06T09:00:00Z"
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/slack/slacksync
+---
+# "Sync now". The owner (or a console button, or an e2e scenario) stamps
+# `syncRequestedAt` with the current time and this fires, bypassing the
+# cadence entirely — a record delivery syncs ITS account whether or not the
+# schedule would have called it due.
+#
+# It cannot loop. The guard is "the request is newer than the last completed
+# sync", and the sync's own last effect is to stamp `lastSyncedAt` at a later
+# instant, so the connector's own patch closes the condition behind it. That
+# is also why it is a REQUEST TIME rather than a boolean: a boolean would
+# need someone to unset it, and only the owner may write an owner-tier
+# property — the connector could not.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: slack-messages-on-demand
+data:
+  properties:
+    enabled: true
+    source:
+      record:
+        kinds: [providers.substrate.reamde.dev/slack/account]
+        ops: [create, update]
+        # The `in` idiom again: both keys are optional, and CEL map-indexing
+        # an absent one throws, so each is proved present before it is read.
+        when: >-
+          record != null && "enabledMessages" in record.properties && record.properties.enabledMessages
+          == true && "syncRequestedAt" in record.properties && (!("lastSyncedAt"
+          in record.properties) || record.properties.syncRequestedAt > record.properties.lastSyncedAt)
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/slack/slacksync

@@ -184,7 +184,7 @@ tier sections
 ([0048](decisions/0048-providers-are-published-samples-are-copied.md)), taken
 and untaken together, with a quarantine badge on one that needs re-installing.
 **Providers** are the packages a publisher owns (Google, GitHub, Linear,
-WHOOP, Notion, Beeper) and their row's button is *Install*, under the
+WHOOP, Notion, Beeper, Slack) and their row's button is *Install*, under the
 authority that publishes them; the upgrade offer lands here. **Samples** are
 the vocabulary to copy (people, tasks, calendar, and the worked LLM, notes,
 reading-list and pebble examples) and their button is *Import as yours*, with the row

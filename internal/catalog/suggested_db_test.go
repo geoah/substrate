@@ -238,11 +238,10 @@ func TestImportingTasksWithLinearInstalledLandsTheIssueMapping(t *testing.T) {
 	issue, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: linearIssue, ID: "issue-1",
 		Properties: map[string]any{
-			"account":       linearAccount + "/" + mustAccount(t, ds, linearAccount),
-			"title":         "Ship the mappings",
-			"identifier":    "ENG-1",
-			"url":           "https://linear.app/acme/issue/ENG-1",
-			"assigneeEmail": "ada@example.com",
+			"account":    linearAccount + "/" + mustAccount(t, ds, linearAccount),
+			"issueTitle": "Ship the mappings",
+			"identifier": "ENG-1",
+			"url":        "https://linear.app/acme/issue/ENG-1",
 		},
 	})
 	if err != nil {
@@ -265,39 +264,10 @@ func TestImportingTasksWithLinearInstalledLandsTheIssueMapping(t *testing.T) {
 	if got, _ := task.Properties["url"].(string); !strings.HasSuffix(got, "/ENG-1") {
 		t.Errorf("url = %v, want the issue's own link", task.Properties["url"])
 	}
-	// The issue's OTHER subject slot is the people sample's mapping, landed by
-	// the import above, and it minted a person for the assignee address: one
-	// mirror kind reaching two of this repository's kinds through two slots,
-	// one mapping each (record 0049). A shell person is the honest answer to
-	// an address no person carries yet, and the projection's own rule
-	// (zero-or-several candidates mint) is what produces it.
-	personKind, personID := subjectOf(t, ds, linearIssue, issue.ID, "assignee")
-	if personID == "" {
-		t.Fatal("the assignee slot is empty, so the people sample's issue mapping did not mint")
-	}
-	if personKind != homeAuthority+"/people/person" {
-		t.Fatalf("the assignee slot points at %s, not this repository's person", personKind)
-	}
-	person, err := ds.Get(ctx, personKind, personID)
-	if err != nil {
-		t.Fatalf("get the minted person: %v", err)
-	}
-	// A SHELL, and empty on purpose. The issue DOES carry an assignee address,
-	// so the probe runs; no person in this repository holds that address yet,
-	// and zero candidates mint rather than guess. What lands is bare, because
-	// the issue mapping carries a `match` block and no `map` block: an issue
-	// describes work, and nothing of it belongs on the human, not even the
-	// address the probe matched on. Prominence stays at its initial `utility`
-	// until an address book or the owner promotes the person.
-	if got := storedStrings(person.Properties["emails"]); len(got) != 0 {
-		t.Errorf("the minted person carries %v; the issue mapping maps nothing", got)
-	}
-	if person.Properties["name"] != nil {
-		t.Errorf("the issue mapping copied %v onto the person; an issue describes work, not a human", person.Properties["name"])
-	}
-	if person.Properties["prominence"] != "utility" {
-		t.Errorf("prominence = %v, want the initial utility", person.Properties["prominence"])
-	}
+	// The issue's `assignee` is a reference at the provider's own `user`
+	// mirror since linear 15, so the people sample maps the user and not the
+	// issue: a person is reached through the user mirror, and the task
+	// projection above is the only mapping this mirror carries.
 }
 
 // olderLinear is a linear package as it stood at version 11, with the `issue`
@@ -332,6 +302,7 @@ func olderLinear(props map[string]any) []map[string]any {
 func TestASuggestedMappingIsBlockedByAnOlderProvider(t *testing.T) {
 	base := map[string]any{
 		"url":           map[string]any{"type": "url"},
+		"issueTitle":    map[string]any{"type": "string"},
 		"assigneeEmail": map[string]any{"type": "email"},
 		"assignee": map[string]any{
 			"type": "reference", "mustExist": true, "subject": true,
@@ -432,6 +403,7 @@ func TestASuggestedMappingFitsASourceThatStillDeclaresTheSlot(t *testing.T) {
 	landedMapping := homeAuthority + "/tasks/linearissuetask"
 	older := olderLinear(map[string]any{
 		"url":           map[string]any{"type": "url"},
+		"issueTitle":    map[string]any{"type": "string"},
 		"assigneeEmail": map[string]any{"type": "email"},
 		"assignee": map[string]any{
 			"type": "reference", "mustExist": true, "subject": true,

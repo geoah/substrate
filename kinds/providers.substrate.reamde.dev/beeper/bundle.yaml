@@ -1,45 +1,154 @@
-# The Beeper bundle — the substrate's first NON-OAUTH connector.
+# The Beeper bundle — one machine's Beeper inbox, mirrored.
 #
-# Beeper is a Matrix homeserver: the credential is a pasted access token, not
-# an OAuth grant, so this bundle carries NO `oauth2:` manifest block and its
-# config type wears NO oauth2 trait. It composes from the same primitive set
-# as the Google bundle — bundle + kind + function + trigger — and proves
-# the OTHER credential path the runner supports: a connector's OWN config
-# secrets (an apiToken it needs to call its provider) ARE injected by the
-# runner and scrubbed from what it returns.
+# Beeper bridges WhatsApp, Telegram, Signal, iMessage, Discord, Facebook,
+# Instagram, Twitter/X, Slack and Matrix into one inbox, and Beeper Desktop
+# serves that inbox over a LOCAL HTTP API: the Beeper Client API v5.0.0,
+# discovered at `GET /v1/info` and described, in OpenAPI, at `GET /v1/spec`.
+# This bundle mirrors that API's own object model — the bridges, the chat
+# accounts, the people, the chats and the messages in them. It reads; it never
+# sends, reacts, edits, archives or marks read, and it never fetches a byte of
+# media.
 #
-# SYNC-ONLY: this bundle reads rooms and messages. It never sends — outbound
-# needs the outbox contract (issue 009), which is pending. See docs/bundles-catalog.md.
+# BEEPER IS MATRIX, AND THE API IS NOT A HOMESERVER. Every identity here is a
+# Matrix one — a chat id IS a room id (`!FQsel…:beeper.local`), a person IS an
+# MXID (`@telegram_398442673:beeper.local` for a bridged contact,
+# `@<user>:beeper.com` for a real Beeper user), and a bbctl-registered custom
+# bridge puts its ghosts under the same `beeper.local` namespace. But the
+# ROUTES are Beeper's own: `/v1/chats`, `/v1/chats/{id}/messages`,
+# `/v1/accounts`. There is no `/_matrix/client/v3/sync` to walk here and no
+# hungryserv credential to walk it with, so the kinds are named for the
+# resources this API actually serves. §5 of the guide is explicit: a kind is
+# the API's noun. The noun is `chat`, and the substrate sample's
+# Matrix-homeserver `room` (which carried `raw` and a string `sender`) is
+# retired with this version. README.md, "What changed in version 11".
+#
+# WRITTEN TO docs/kind-design.md (v4). What that decided here:
+#
+#   * ONE PRODUCT, SO NO PRODUCT PREFIX (§5). Google's bundle holds Calendar,
+#     Gmail and People, so its kinds carry their product. Beeper's holds ONE
+#     product — the Beeper Client API — whose whole job is that a WhatsApp
+#     chat and a Telegram chat are the same shape. `chat`, not `beeperchat`.
+#     The NETWORK is a property (`chat.network`) and a reference
+#     (`chat.chatAccount`), never a name prefix.
+#   * NO HUB KIND. `user` is not one: Beeper publishes the `User` schema, it
+#     has its own endpoint (`/v1/accounts/{id}/contacts/list` returns exactly
+#     it), and the id is Beeper's, not one this bundle invented. A hub kind
+#     would have to say it is ours (§3); this one does not, because it is not.
+#   * TWO KINDS CALLED "ACCOUNT", AND ONLY ONE OF THEM IS ONE. `account` is
+#     the CONNECTION (the accountconfig trait, the owner's toggles, the
+#     connector's own progress). Beeper's own `Account` — "a chat account
+#     added to Beeper", one per bridged login — is a MIRROR with its own
+#     endpoint AND a second home inside `Bridge.accounts`, so by §3's two-part
+#     test it is its own kind: `chataccount`.
+#   * TWO ENDPOINTS RETURNING ONE RESOURCE ARE ONE KIND (§3). `GET /v1/chats`
+#     and `GET /v1/chats/{chatID}` both return a `Chat`; they write the same
+#     `chat` row, keyed on the chat's own id, and only the SECOND is
+#     authoritative (it is the one that can return every participant). Same
+#     for `/v1/accounts` and `Bridge.accounts` into `chataccount`, and for
+#     `/v1/chats/{id}/messages` and a chat's `preview` into `message`.
+#   * NO `raw`, and `json` exactly three times: `chataccount.capabilities` and
+#     `chat.capabilities` (a map of msgtype to a map of mime type to a support
+#     level, five levels deep and keyed by strings the bridges invent), and
+#     `message.seen`, which the schema declares as a three-way union of a
+#     bool, an instant, and a map of participant id to either. Each says why
+#     in its own description.
+#   * NO DERIVED PROPERTY. Beeper's OWN facts about the caller stay, because
+#     they are the API's: `user.isSelf`, `message.isSender`,
+#     `message.isUnread`, `chat.isMarkedUnread`, `chat.unreadMentionsCount`.
+#     Nothing computes `fromOwner`, `isDirect`, `isGroup` or a message count:
+#     `isDirect` is `type eq single`, and "from me" is `sender` filtered at
+#     `account.user`.
+#   * NO ID BESIDE A REFERENCE, and the API's `…ID` suffix goes with it.
+#     `senderID` → `sender → user`, `chatID` → `chat → chat`, `accountID` →
+#     `chatAccount → chataccount`, `linkedMessageID` → `linkedMessage →
+#     message`, `mergedIntoChatID` → `mergedIntoChat → chat`, `merge.chatIDs`
+#     → `merge.chats → chat[]`, `reactions[].participantID` →
+#     `reactions[].participant → user`. The only `…Id` a row carries is its
+#     own, plus `loginId`, which is the BRIDGE's login and not a row here.
+#   * NO SYNC BOOKKEEPING ON A MIRROR (§1). Beeper's `oldestCursor` and
+#     `newestCursor` are the PAGINATION's, not the chat's, so they live in
+#     `chatsync` — a state kind with a cascading reference at the chat and
+#     `writer: connector` on every property it may carry one — and a page of
+#     history never bumps the chat's version. The chat-list walk, the queue a
+#     bounded drain left behind and the failure list stay on the account,
+#     where per-STREAM state belongs.
+#   * NO `person` SLOT, and none is declared at all: decision record 0085 has
+#     a `recordmapping` synthesise its own subject slot on `beeper/user`, so
+#     this bundle knows nothing about Mneme and a user row still reads back
+#     with one.
+#   * NO TEMPORAL TRAIT ON `chat` (§4, and this is a change from version 10's
+#     shape). A chat's only instant is `lastActivity`, which is a MUTATION
+#     mark — the same fact as Slack's `updated` — not the moment the chat came
+#     into being, and this API publishes no creation instant for a chat at
+#     all. Binding it would put every chat on the timeline at the moment
+#     somebody last typed in it. So `lastActivity` is declared as an ordinary
+#     `datetime` and the trait is not bound. `message` DOES bind
+#     `temporal(point)`: `timestamp` is when the message happened.
+#
+# ENUMS, WHERE BEEPER CLOSES THE SET. Unlike Slack, Beeper publishes an
+# OpenAPI description, and its reference nowhere tells a client to tolerate a
+# value it does not know (§2's closed-set test), so a schema `enum` is an
+# `enum` here: `message.type`, `chat.type`, `chataccount.status`,
+# `bridge.status`, the `provider` of both, `attachment.type`,
+# `draft.attachments.type` and `sendStatus.status`. `bridge.type` and the two
+# `network` fields are NOT: the schema types them `string` and documents them
+# by example ("such as matrix, discordgo, slackgo"), and a bridge Beeper ships
+# next week would refuse the page. Every enum value is spelled by §2's rule
+# (lowercase, `_` and `-` dropped) with the API's exact spelling as its label,
+# and the sync carries the same label→value table rather than a regex — a
+# value no table holds leaves the property ABSENT instead of refusing a page.
+#
+# WHY A PASTED TOKEN AND NOT `oauth2:`. Beeper Desktop DOES speak OAuth2 —
+# RFC 7591 dynamic registration, PKCE, the lot — but the whole flow is served
+# by the desktop app on loopback, so there is no host for the substrate's
+# OAuth facility to redirect a browser to and no client the owner registers
+# once. The credential is what Beeper Desktop hands out: a bearer token,
+# pasted. So: no `oauth2:` block, and the token lives on the CONFIG record,
+# because every secret-typed property of an accountconfig-trait kind is sealed
+# at rest and the runner injects account properties AS STORED — a token pasted
+# on the account would reach the sync body as ciphertext.
+#
+# THE ORIGIN IS LOOPBACK BY DEFAULT, AND THAT IS PRODUCTION. Every other
+# provider here pins a public https origin and admits loopback only as a test
+# seam; Beeper is the inverse. `config.apiBase` defaults to
+# `http://localhost:23373`, and the body admits only a PRIVATE origin —
+# loopback, RFC 1918, or the CGNAT range a tailnet hands out — so the owner
+# can point it at the machine Beeper Desktop actually runs on and no further.
 #
 # Install:   substratectl apply -f bundle.yaml -f triggers.yaml
-# Configure: create a config record — the homeserver base URL and the
-#   pasted access token; the `connector` input resolves it (sole record,
-#   the one named `default`, or a bound one). The token lives HERE, not on
-#   the account, by engine necessity: every secret-typed property on an
-#   accountconfig-trait type is AEAD-sealed at the storage boundary
-#   (write.go sealSecretProps, review-google #3) and the runner injects
-#   account properties AS STORED — an account-held token would reach the
-#   sync body as ciphertext. An injected input's own secret arrives usable
-#   (and the invocation scrubber holds it to the runner boundary). One
-#   consequence: ONE Beeper account per repository — and the sync ENFORCES
-#   it (fleet F8): only the lexicographically-first live account syncs; any
-#   other live account row is stamped `syncStatus: ignored: duplicate
-#   account …`.
-# Connect:   create an account (your @user id, enabledMessages: true).
-#   No OAuth flow: the on-connect trigger fires straight off the create.
-# ---- the owned package --------------------------------------------------------
+# Configure: create a config record with the pasted token.
+# Connect:   create an account with enabledMessages true.
+# ---- the owned package ----------------------------------------------------
 kind: substrate.reamde.dev/core/package
 metadata:
   id: providers.substrate.reamde.dev/beeper
 data:
   authority: providers.substrate.reamde.dev
   package: beeper
-  version: 10
+  # 13 — T-084, the core `sync` trait: the account kind binds
+  # `[accountconfig, sync]` and declares the trait's twelve properties with
+  # their writers, and the sync body writes them beside the legacy
+  # `syncStatus`/`lastSyncedAt`/`streamCursors` fields on every run. Nothing
+  # is renamed, narrowed or dropped.
+  #
+  # 12 — T-047: `user.phoneNumber` is a `string`, which is the type the API
+  # gives it. `phone` refused values the API sends and made the person
+  # mapping's `phoneNumber -> phones` map illegal, so a contact offering only
+  # a number minted a person and copied nothing onto it.
+  #
+  # 11 — the guide rewrite (T-018). Version 10 was substrate's own sample: a
+  # Matrix-homeserver mirror of two kinds, `room` and `message`, each carrying
+  # a `raw` blob beside four typed fields and a `sender` that was a string.
+  # This version mirrors the Beeper Client API's whole object model instead,
+  # with no raw, no derived property, every relation a reference and every
+  # closed set an enum. A changed declaration shipping the same version
+  # reaches no repository, which is why this moves.
+  version: 13
 ---
 # ---- the bundle document: the install unit --------------------------------
-# NO `oauth2:` block — an oauth2 block would demand a client input, and this
-# bundle authenticates with a pasted token, so the manifest stays
-# credential-flow-free and StartOAuth refuses the bundle.
+# NO `oauth2:` block: an oauth2 block demands a client input wearing the
+# oauth2 trait, the loader holds the two paired both ways, and this bundle
+# authenticates with a token the desktop app hands out.
 kind: substrate.reamde.dev/core/bundle
 metadata:
   id: providers.substrate.reamde.dev/beeper
@@ -47,32 +156,30 @@ data:
   authority: providers.substrate.reamde.dev
   package: beeper
   description: >-
-    Keeps a copy of your Beeper chats and their messages, from every network
-    it bridges. It takes a token you paste rather than a sign-in, and it reads
-    only: it cannot send.
-  # The one declared input: the connector record the sync body reads.
-  # `inject: functions` hands the resolved record (token in plaintext inside
-  # the runner boundary) to every invocation under config.inputs.connector.
+    Keeps a copy of your Beeper inbox — every network it bridges, the people
+    in it, your chats and their messages. It takes a token Beeper Desktop
+    hands out, it reads only, and it downloads no media.
   inputs:
     connector:
       kind: providers.substrate.reamde.dev/beeper/config
       inject: functions
-      description: the Beeper homeserver URL and the pasted access token
+      description: the Beeper Desktop origin and the token it hands out
   installs:
     - providers.substrate.reamde.dev/beeper/config
     - providers.substrate.reamde.dev/beeper/account
-    - providers.substrate.reamde.dev/beeper/room
+    - providers.substrate.reamde.dev/beeper/bridge
+    - providers.substrate.reamde.dev/beeper/chataccount
+    - providers.substrate.reamde.dev/beeper/user
+    - providers.substrate.reamde.dev/beeper/label
+    - providers.substrate.reamde.dev/beeper/chat
     - providers.substrate.reamde.dev/beeper/message
+    - providers.substrate.reamde.dev/beeper/chatsync
     - providers.substrate.reamde.dev/beeper/messagessync
 ---
 # ---- the config type: the `connector` input's kind -------------------------
-# NOT oauth2: there is no client id/secret pair and no host-run flow. The
-# access token is the connector's OWN provider credential, secret-typed and
-# owner-written: redacted on every read surface, blank-on-edit, injected into
-# the sync body's config and scrubbed from everything that leaves the runner.
-# It sits on THIS type (not the account) because a non-accountconfig kind
-# stores it un-sealed and the injected input hands it over usable — see the
-# header note.
+# NOT oauth2, and deliberately no client id or secret: a kind wearing the
+# oauth2 trait holds the client pair and NOTHING ELSE, so parking a client
+# here is the one move that would make an eventual OAuth revision impossible.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/beeper/config
@@ -80,39 +187,44 @@ data:
   authority: providers.substrate.reamde.dev
   package: beeper
   description: >-
-    The Beeper homeserver and the Matrix access token this bundle spends,
-    the record the bundle's connector input resolves. The token is owner-written
-    and origin-pinned: it travels to a beeper.com host over https and nowhere
-    else.
+    The Beeper Desktop origin this bundle talks to and the access token it
+    spends. The bundle's connector input resolves one record of this kind;
+    the token is sealed against read-back and the origin must be a private
+    one, so an owner edit cannot become an exfiltration channel.
   names:
     singular: config
-  displayTemplate: "Beeper at {homeserverUrl}"
+  displayTemplate: Beeper at {apiBase}
   properties:
-    homeserverUrl:
-      type: url
-      writer: owner
-      displayName: Homeserver URL
-      # Origin-pinned (fleet F1): the body refuses to send the token anywhere
-      # except https on a beeper.com host, or loopback (the test seam).
-      description: "the Matrix homeserver base URL, defaulting to https://matrix.beeper.com
-        — must be https on a beeper.com host (or loopback for tests); the
-        token goes nowhere else"
+    # the connection's own scalars — there is no identity here, because the
+    # connector input resolves the sole record of this kind.
     accessToken:
       type: secret
       writer: owner
       displayName: Access token
-      description: "the pasted Beeper access token (bbctl or Beeper Desktop)
-        — redacted on read, injected only into the sync body and scrubbed
-        on the way out"
+      description: >-
+        the bearer token Beeper Desktop hands out. Redacted on read, injected
+        only into the sync body, and never sent to a public origin
+    apiBase:
+      type: url
+      writer: owner
+      displayName: API base
+      # Unlike every other provider here, loopback IS production: Beeper
+      # Desktop serves this API on the machine it runs on.
+      description: >-
+        the Beeper Desktop origin, default http://localhost:23373. Another
+        host works only if it is private and remote access is on
 ---
-# ---- the account type: one connected Beeper account ------------------------
-# accountconfig WITHOUT oauth2 — the non-OAuth shape this bundle exists to
-# prove. The trait still contracts tokenRef/tokenStatus/grantedScopes onto the
-# type (schema loader, trait property contracts), so they are declared below
-# as DORMANT: writer: oauth means only the OAuth facility may ever set them,
-# and no OAuth flow runs for this bundle, so they stay absent for the row's
-# whole life. The trigger therefore gates on the owner's toggle plus the
-# connector's own completion marker, never on tokenStatus.
+# ---- the account type: one connected Beeper Desktop ------------------------
+# accountconfig WITHOUT oauth2. The trait contracts tokenRef/tokenStatus/
+# grantedScopes onto every implementing type, so they are declared DORMANT:
+# `writer: oauth` means only the OAuth facility may ever set them, and no flow
+# runs for this bundle.
+#
+# THIS IS NOT A MIRROR. It is the connection: the owner's toggles, who the
+# token turned out to be, and the connector's own per-STREAM state. What it
+# learned about itself it holds as a REFERENCE — `user` — rather than as a
+# copy of the owner's Beeper id, because that row is mirrored and a copy of a
+# referent is a derived property (§1).
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/beeper/account
@@ -120,180 +232,990 @@ data:
   authority: providers.substrate.reamde.dev
   package: beeper
   description: >-
-    One connected Beeper account: the owner's sync toggles and the connector's
-    own progress. The account trait's OAuth hands are declared but stay dormant,
-    since no OAuth flow ever runs for this bundle.
+    One connected Beeper Desktop: the owner's sync toggles, the Beeper identity
+    the token turned out to belong to, and where each stream's walk stopped.
+    The accountconfig trait's OAuth hands are declared but stay dormant, since
+    no OAuth flow ever runs for this bundle.
   names:
     singular: account
-  traits: [accountconfig]
-  displayTemplate: "{userId}"
+  # `sync` is the core trait the Connections page and `substratectl sync
+  # status` read (decision 0085): the sync body writes its twelve properties
+  # beside the legacy `syncStatus`/`lastSyncedAt` pair, and the dispatcher
+  # stamps a record-sourced delivery's start, finish and park onto them. The
+  # two OWNER hands are `syncRequestedAt` (Sync now) and `syncPaused` (Pause).
+  traits: [accountconfig, sync]
+  displayTemplate: "{displayName|user.fullName}"
   properties:
-    # Who this account is — informational, typed by the owner (nothing
-    # verifies it against the token; the sync never needs it).
-    userId:
+    # The accountconfig trait's contracted properties — DORMANT here.
+    tokenRef:
+      type: secret
+      writer: oauth
+      displayName: Token reference
+      description: >-
+        accountconfig trait contract — unused: the token lives on the bundle
+        config, and no OAuth flow runs
+    tokenStatus:
+      type: string
+      writer: oauth
+      displayName: Connection status
+      description: >-
+        accountconfig trait contract — unused: no OAuth flow ever reports
+        a status here. Connection health reads off syncStatus
+    grantedScopes:
+      type: string
+      repeated: true
+      writer: oauth
+      displayName: Granted scopes
+      description: >-
+        accountconfig trait contract — unused. Beeper Desktop mints `read
+        write` whatever is asked for; this bundle calls no write route
+    # The owner's hands.
+    displayName:
       type: string
       writer: owner
-      displayName: User ID
-      description: "the account's Matrix id, e.g. @you:beeper.com"
-    # The owner's hands: the sync gate and the room filter.
+      displayName: Name
+      description: a name for this connection, shown wherever the account
+        is listed
     enabledMessages:
       type: bool
       writer: owner
       displayName: Messages
-      description: sync this account's bridged rooms and messages
-    roomFilter:
+      description: >-
+        sync this Beeper's networks, people, chats and messages — one toggle,
+        because one token opens all of them at once
+    enabledContacts:
+      type: bool
+      writer: owner
+      displayName: Address books
+      description: >-
+        also walk each bridge's address book, which is where a person with
+        no open chat appears. One extra call per connected network
+    chatFilter:
       type: string
       writer: owner
-      displayName: Room filter
-      # Evaluated against the stored mirror when an incremental delta omits
-      # the fields, so a partial /sync never drops a matching room (P1).
-      description: "optional case-insensitive substring a room's name or network
-        must contain to sync; empty syncs everything"
+      description: >-
+        optional case-insensitive substring a chat's title must contain for
+        its MESSAGES to sync. Every chat is still mirrored
+    # The `sync` trait's two OWNER hands (decision 0085). `syncRequestedAt`
+    # predates the trait and keeps its meaning exactly; `syncPaused` is new.
+    syncRequestedAt:
+      type: datetime
+      writer: owner
+      displayName: Sync requested
+      description: >-
+        stamp this with the current time to ask for a sync now, whatever the
+        cadence says. The next completed sync closes the request
+    syncPaused:
+      type: bool
+      writer: owner
+      displayName: Paused
+      description: >-
+        while true the dispatcher skips this account's deliveries and the
+        scheduled walk passes over it. A drain already queued stays queued
     syncFrequency:
       type: enum
       values:
-        - value: off
+        - value: "off"
           label: Off
         - value: hourly
-          label: "Every hour"
+          label: Every hour
         - value: daily
-          label: "Once a day"
+          label: Once a day
       required: true
       default: hourly
       writer: owner
       displayName: Sync frequency
-      description: "the scheduled sync cadence for this account (default hourly)"
+      description: the scheduled sync cadence for this account (default hourly)
     backfillDepth:
       type: enum
       values:
         - value: none
-          label: "Don't backfill"
+          label: Don't backfill
+        - value: last2d
+          label: Last two days
         - value: last30d
-          label: "Last 30 days"
+          label: Last 30 days
         - value: last90d
-          label: "Last 90 days"
+          label: Last 90 days
         - value: last1y
-          label: "Last year"
+          label: Last year
         - value: all
           label: Everything
       required: true
       default: last30d
       writer: owner
       displayName: Backfill depth
-      # A drain walks at most 2,000 events per room and records where it
-      # stopped in backfillResume, so deeper history arrives across runs.
-      description: "how far back the first sync walks each room's history
-        (default the last 30 days); none means from connect time forward"
-    # The accountconfig trait's contracted properties — DORMANT here. The
-    # trait requires them on every implementing type; writer: oauth restricts
-    # them to the OAuth facility's actor, and this bundle never runs a flow,
-    # so nothing ever writes them. Declared to satisfy the contract, kept
-    # oauth-written so a stranger cannot squat on them either.
-    tokenRef:
-      type: secret
-      writer: oauth
-      displayName: Token reference
-      description: "accountconfig trait contract — unused: Beeper is not OAuth,
-        the pasted token lives on the bundle config"
-    tokenStatus:
-      type: string
-      writer: oauth
-      displayName: Connection status
-      description: "accountconfig trait contract — unused: no OAuth flow ever
-        reports a status here"
-    grantedScopes:
-      type: string
-      repeated: true
-      writer: oauth
-      displayName: Granted scopes
-      description: "accountconfig trait contract — unused: no consent, no
-        scopes"
-    # Connector STATE the sync body owns (writer: connector — only installed
-    # bundle code may set these).
-    syncToken:
+      description: >-
+        how far back the first walk of each chat pages before it stops (default
+        the last 30 days); none means from connect time forward
+    # What the TOKEN turned out to be — a reference, not a copy.
+    user:
+      type: reference
+      kind: user
+      displayName: You
+      description: >-
+        the Beeper identity this token belongs to, from the connected account
+        whose `user.isSelf` is true. Who "me" is in every message here
+    # Connector STATE, per STREAM. A per-CHAT cursor lives on beeper/chatsync,
+    # not here and not on the chat.
+    serverVersion:
       type: string
       writer: connector
-      displayName: Sync token
-      description: "the Matrix /sync next_batch token — stored after each
-        run's messages commit (or with the un-walked rooms preserved in backfillResume),
-        so the next run is incremental"
+      displayName: Beeper Desktop version
+      description: >-
+        `info.app.version` — which build of Beeper Desktop answered. Fields
+        appear by version, so which one is answering is a fact worth keeping
+    streamCursors:
+      type: json
+      writer: connector
+      displayName: Stream cursors
+      description: >-
+        where each stream stopped: the chat-list cursor, the queues a capped
+        drain has not reached, and what failed. Opaque, rewritten whole
     lastSyncedAt:
       type: datetime
       writer: connector
-      displayName: Last synced
-      description: when messages last finished syncing — the cadence anchor
-        and the on-connect trigger's completion marker
+      displayName: Last attempted
+      description: >-
+        when the sync last ATTEMPTED a walk — the cadence anchor. A bounded
+        drain moves it too, so it is not evidence anything finished
+    lastCompletedAt:
+      type: datetime
+      writer: connector
+      displayName: Last completed
+      description: >-
+        when a walk last ran to the end with no work left. The cold test reads
+        this, not lastSyncedAt: a drain that stopped on its own bounds is
+        still a first sync
+    retryNotBefore:
+      type: datetime
+      writer: connector
+      displayName: Retry not before
+      description: >-
+        the instant a 429's Retry-After named, honoured by the scheduler for
+        every call. Absent when nothing is holding the account back
     syncStatus:
       type: string
       writer: connector
       displayName: Sync status
-      description: "the last sync outcome — ok, ok (N rooms backfill pending),
-        erroring: <reason>, or ignored: duplicate account"
-    backfillResume:
+      description: >-
+        the last sync outcome — ok, ok (N pending), erroring: <reason>, ignored:
+        duplicate account, and a trailing [N failed] when work has exhausted
+        its retries
+    # --- the core `sync` trait's connector hands (decision 0085) -------------
+    # The ten properties the trait contracts that the CONNECTOR writes; the
+    # owner's two (`syncRequestedAt`, `syncPaused`) are above. The sync body
+    # writes them BESIDE `syncStatus`, `lastSyncedAt`, `lastCompletedAt` and
+    # `streamCursors`, which keep their meaning exactly — nothing here
+    # replaces them, and a reader of the old shape keeps working.
+    #
+    # ONE function drives both streams, so there is no second body to clear a
+    # live failure of: `syncState` is the whole run's outcome and the
+    # per-stream entries below are the breakdown.
+    syncState:
+      type: string
+      writer: connector
+      displayName: Sync state
+      description: >-
+        never | running | ok | erroring | throttled — the account-level state.
+        `ok` while a bounded drain still has work (the count rides in syncProgress),
+        `throttled` while a 429's Retry-After holds it
+    syncMessage:
+      type: string
+      writer: connector
+      displayName: Sync message
+      description: >-
+        the one human line the last run left — the same sentence syncStatus
+        carries, so the two never disagree
+    lastSyncStartedAt:
+      type: datetime
+      writer: connector
+      displayName: Last sync started
+      description: >-
+        when the last run began. The dispatcher stamps it around a record-sourced
+        delivery; the body stamps it on the scheduled path, which names no
+        record
+    lastSyncDurationMs:
+      type: int
+      writer: connector
+      displayName: Last sync duration (ms)
+      description: >-
+        how long the last run took, stamped by the dispatcher for a record-sourced
+        delivery and by the body on the scheduled path
+    syncRequestedAck:
+      type: datetime
+      writer: connector
+      displayName: Sync request served
+      description: >-
+        equals syncRequestedAt once every stream has answered that request
+        — for this bundle, once a walk has run out of work
+    syncProgress:
       type: json
       writer: connector
-      displayName: Backfill resume
-      # Written when a walk stops at the per-drain page cap or a provider
-      # error cuts a drain short; the next run resumes from these tokens.
-      description: "rooms whose history walk did not finish — a map of room
-        id to the /messages token and cutoff the next run resumes from"
+      displayName: Sync progress
+      description: >-
+        "{phase, done, total, pending}" for the bounded drain: the phase it
+        stopped in, the calls it spent, and the work its own queues still
+        hold
+    syncError:
+      type: string
+      writer: connector
+      displayName: Sync error
+      description: >-
+        the last error text, from the body or from a parked delivery. Never
+        cleared by a later success — syncState is what says it is over
+    syncErrorAt:
+      type: datetime
+      writer: connector
+      displayName: Sync error at
+      description: when syncError was written
+    syncStreams:
+      type: json
+      writer: connector
+      displayName: Sync streams
+      description: >-
+        chats and messages, each as "{state, message, lastAt, pending, requestedAck}".
+        The drain walks both in one function; `pending` is that stream's own
+        share of the queues
 ---
-# ---- the room mirror: one bridged chat ------------------------------------
-# What Beeper holds about one room, in Matrix's own shape. Its id is the
-# provider key — account + Matrix room id through host.ids.external — and the
-# row is written mint-then-patch: put-if-absent creates it, and each delta
-# patches ONLY the fields it carried, so a partial /sync (lazy-loaded state,
-# an owner-only timeline window) never erases a name or resets a network.
+# ---- mirror: one bridge Beeper can run ------------------------------------
+# `GET /v1/bridges` lists every bridge the install could use, connected or
+# not. There is no sibling read: `GET /v1/bridges/{id}` returns the same
+# Bridge object the list already carried, so the sync does not call it and the
+# raw pull does not record it.
+#
+# `accounts` is an array of the SAME Account schema `/v1/accounts` returns,
+# which is the second half of §3's test and why `chataccount` is a kind:
+# references, never inlined.
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: providers.substrate.reamde.dev/beeper/room
+  id: providers.substrate.reamde.dev/beeper/bridge
 data:
   authority: providers.substrate.reamde.dev
   package: beeper
   description: >-
-    What Beeper holds about one bridged chat, in Matrix's own shape: the room
-    id, its name where it has one, and which network it bridges. Written mint-then-patch,
-    so a partial sync never erases a name.
+    One bridge this Beeper can run — a network, and where it runs. Mirrors
+    the Bridge schema of GET /v1/bridges (Beeper Client API v5.0.0); the `items`
+    envelope is the only omission and there is no hypermedia. The list is
+    authoritative. No instant of its own, so no temporal trait.
   names:
-    singular: room
-  displayTemplate: "{name|roomId}"
+    singular: bridge
+  displayTemplate: "{displayName|bridgeId}"
   properties:
-    # NOT a reference, and every `account:` in this closure reads the same way:
-    # the connector writes it as provenance on synced rows, and retyping a live
-    # string property to a reference is a NARROWING the boot upgrade refuses
-    # while rows hold the old shape — it would strand every released store.
+    # identity
     account:
       type: reference
       kind: account
       required: true
       onDelete: cascade
       displayName: Account
-      description: the account this room was synced from
-    roomId:
+      description: the account this bridge was synced through
+    bridgeId:
       type: string
-      displayName: Room ID
-      description: "the Matrix room id, e.g. !abc:beeper.local"
-    name:
+      required: true
+      displayName: Bridge ID
+      description: >-
+        `id` — the bridge's own identifier, which the bridge endpoints take.
+        A cloud bridge is named for its network (whatsapp, discordgo)
+    # the object's own scalars, in the API reference's order
+    type:
+      type: string
+      displayName: Type
+      description: >-
+        `type` — the underlying bridge implementation: matrix, discordgo,
+        slackgo, whatsapp, telegram, twitter. Documented by example, so not
+        an enum
+    provider:
+      type: enum
+      values:
+        - value: cloud
+          label: cloud
+        - value: selfhosted
+          label: self-hosted
+        - value: local
+          label: local
+        - value: platformsdk
+          label: platform-sdk
+      displayName: Runs
+      description: >-
+        `provider` — where accounts for this bridge run. Schema-closed, so
+        an enum; spelled by rule (self-hosted → selfhosted)
+    displayName:
       type: string
       displayName: Name
-      description: the room's display name (m.room.name), absent on unnamed
-        DMs
+      description: "`displayName` — the bridge's name as Beeper shows it"
     network:
       type: string
       displayName: Network
-      description: "the bridged network, derived from ghost-sender prefixes
-        (whatsapp, telegram, signal, ...); beeper when unrecognized"
-    raw:
-      type: json
-      displayName: Raw summary
-      description: the room's /sync summary as fetched, for provenance
+      description: >-
+        `network` — the network grouping Beeper counts accounts and limits
+        against, which several bridge ids can share
+    activeAccountCount:
+      type: int
+      displayName: Active accounts
+      description: >-
+        `activeAccountCount` — how many accounts for this network are active
+        on this device
+    supportsMultipleAccounts:
+      type: bool
+      displayName: Multiple accounts
+      description: >-
+        `supportsMultipleAccounts` — whether this bridge admits more than
+        one active account for the network
+    status:
+      type: enum
+      values:
+        - value: available
+          label: available
+        - value: connected
+          label: connected
+        - value: limitreached
+          label: limit_reached
+        - value: temporarilyunavailable
+          label: temporarily_unavailable
+        - value: disabled
+          label: disabled
+      displayName: Status
+      description: >-
+        `status` — whether this bridge can be used to connect a new account.
+        Schema-closed; spelled by rule (limit_reached → limitreached)
+    statusText:
+      type: string
+      displayName: Status text
+      description: >-
+        `statusText` — Beeper's own wording for the status, in account-management
+        language
+    # relations
+    accounts:
+      type: reference
+      kind: chataccount
+      repeated: true
+      displayName: Accounts
+      description: >-
+        `accounts` — the connected accounts for this bridge. The same Account
+        schema /v1/accounts returns, so references rather than copies
 ---
-# ---- the message mirror: one bridged message -------------------------------
-# One row per Matrix event, keyed by account + event id — event ids are
-# globally unique and immutable, so message writes are if_absent puts: a
-# re-read is a no-op, never a rewrite. The room reference is filled by the sync
-# (rooms commit earlier in the same drain); `onDelete: cascade` so a deleted
-# room takes its mirrored messages with it.
+# ---- mirror: one chat account ---------------------------------------------
+# Beeper's OWN `Account`: one bridged network's login. Its own endpoint
+# (`/v1/accounts/{accountID}`) AND a second home inside `Bridge.accounts` —
+# both halves of §3's test, so a kind. The sync reads it from the list and
+# from the bridge walk, which are two paths to one resource and therefore one
+# kind (§3); it does not call the single read, which returns nothing more.
+#
+# `bridge` here is the AccountBridge sub-object `{id, type, provider}`: it has
+# an id and its own endpoint, so it is a REFERENCE, and its other two fields
+# are the bridge row's rather than copied down.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/beeper/chataccount
+data:
+  authority: providers.substrate.reamde.dev
+  package: beeper
+  description: >-
+    One chat account added to Beeper — a login on one bridged network. Mirrors
+    the Account schema of GET /v1/accounts (Beeper Client API v5.0.0), which
+    also arrives embedded in a Bridge's `accounts`; both write this one kind.
+    No envelope, no hypermedia, no instant, so no temporal trait.
+  names:
+    singular: chataccount
+  displayTemplate: "{network|chatAccountId}"
+  properties:
+    # identity
+    account:
+      type: reference
+      kind: account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this chat account was synced through
+    chatAccountId:
+      type: string
+      required: true
+      displayName: Chat account ID
+      description: >-
+        `accountID` — the id every account-scoped route takes, and the id
+        each chat and message names its account by
+    # the object's own scalars, in the API reference's order
+    loginId:
+      type: string
+      displayName: Login ID
+      description: >-
+        `loginID` — the bridge login this account came from, when known. One
+        login can carry several chat accounts
+    network:
+      type: string
+      displayName: Network
+      description: >-
+        `network` — the network's name for a human (WhatsApp, Telegram). Omitted
+        when Beeper does not know it
+    status:
+      type: enum
+      values:
+        - value: connected
+          label: connected
+        - value: connecting
+          label: connecting
+        - value: backfilling
+          label: backfilling
+        - value: connectionrequired
+          label: connection_required
+        - value: reconnectrequired
+          label: reconnect_required
+        - value: attentionrequired
+          label: attention_required
+        - value: disconnected
+          label: disconnected
+        - value: disabled
+          label: disabled
+      displayName: Status
+      description: >-
+        `status` — the connection state. Schema-closed, so an enum; spelled
+        by rule (connection_required → connectionrequired)
+    statusText:
+      type: string
+      displayName: Status text
+      description: "`statusText` — Beeper's own wording for the status"
+    capabilities:
+      type: json
+      displayName: Capabilities
+      # §1's heterogeneous clause, and the schema's own words: this is
+      # `additionalProperties` with `x-stainless-any`, i.e. an OPEN map whose
+      # values may be anything. There is no shape to declare.
+      description: >-
+        `capabilities` — what this account can do at runtime. json because
+        the schema declares the map OPEN: any key, any value, and no shape
+        to type
+    # relations
+    bridge:
+      type: reference
+      kind: bridge
+      displayName: Bridge
+      description: >-
+        `bridge` — the bridge running this account, from its {id, type, provider}
+        stub. The type and the provider are the bridge row's
+    user:
+      type: reference
+      kind: user
+      displayName: You here
+      description: >-
+        `user` — this network's own identity for the owner: the handle, phone
+        or address the bridge logged in as
+---
+# ---- mirror: one person, as Beeper knows them -----------------------------
+# Beeper's `User`: the sender of a message, an entry in a chat's participant
+# list, the identity of a connected account, a row in a bridge's address book.
+# One id space across all four, so one kind, and `/v1/accounts/{id}/contacts/
+# list` is its own endpoint — §3's test passes twice over.
+#
+# The per-chat membership flags Beeper adds to this schema (`Participant` =
+# User + isAdmin/isPending/isNetworkBot) are NOT here: they are facts about a
+# MEMBERSHIP, not about a person, and they ride as link properties on
+# `chat.participants` (§2, link data that is a few flat scalars).
+#
+# THIS IS THE KIND A PERSON MAPPING PROBES. It carries the three identity
+# values a network hands over — `phoneNumber`, `email`, `username` — beside
+# the display name, and it declares no `person` slot: decision record 0085 has
+# the mapping synthesise that itself.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/beeper/user
+data:
+  authority: providers.substrate.reamde.dev
+  package: beeper
+  description: >-
+    One person Beeper knows, on whatever network it learned them from. Mirrors
+    the User schema (Beeper Client API v5.0.0) as it arrives on a sender,
+    a participant, an account's own identity and a contact-list entry; the
+    contact list is authoritative, the rest are thin and patch. No envelope,
+    no instant, so no temporal trait.
+  names:
+    singular: user
+  displayTemplate: "{fullName|username|displayText|phoneNumber|userId}"
+  properties:
+    # identity
+    account:
+      type: reference
+      kind: account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this person was synced through
+    userId:
+      type: string
+      required: true
+      displayName: User ID
+      description: >-
+        `id` — the stable Beeper user id, which is a Matrix MXID: a bridged
+        contact is @<bridge>_<network id>:beeper.local, a Beeper user @<name>:beeper.com
+    # the object's own scalars, in the API reference's order
+    username:
+      type: string
+      displayName: Handle
+      description: >-
+        `username` — the network's own handle where it has one (@alice). Network-specific,
+        and not globally unique
+    phoneNumber:
+      type: string
+      displayName: Phone
+      # `string`, NOT `phone`, and that is the API's own typing (§2: the
+      # property is the type the API gives). The schema types this `string`
+      # and documents E.164 in PROSE — which a bridge does not always honour,
+      # since it hands over the number the way the contact saved it. Typing it
+      # `phone` refused a value the API happily sends, and made the person
+      # mapping's `phoneNumber → phones` map illegal against `person.phones`,
+      # which is a string for exactly the same reason (T-047).
+      description: >-
+        `phoneNumber` — the number the bridge exposes, as Beeper sends it:
+        the schema says E.164 in prose and types it a string, so this does
+        too. WhatsApp, Signal and Telegram have one
+    email:
+      type: email
+      displayName: Email
+      description: >-
+        `email` — where the bridge exposes one. Not guaranteed verified, and
+        a value that does not parse is not written
+    fullName:
+      type: string
+      displayName: Name
+      description: "`fullName` — the display name clients show, emoji and
+        all"
+    displayText:
+      type: string
+      displayName: Display text
+      description: >-
+        `displayText` — what Beeper Desktop renders for this person. Sent
+        by 4.3.113 and absent from the published schema; described, not dropped
+    imgUrl:
+      type: string
+      displayName: Avatar
+      # Not `url`: the schema says this may be a remote URL, an mxc:// handle,
+      # a data URL or a local file path, and three of those are not addresses
+      # `url` would admit.
+      description: >-
+        `imgURL` — the avatar as a remote URL, an mxc:// handle, a data URL
+        or a local file path. A string, because only some of those are URLs
+    cannotMessage:
+      type: bool
+      displayName: Cannot message
+      description: >-
+        `cannotMessage` — Beeper cannot open a chat with this person: blocked,
+        restricted, or no DM path on the network
+    isSelf:
+      type: bool
+      displayName: You
+      # The API's OWN fact about the caller, which §1 keeps.
+      description: >-
+        `isSelf` — this row is the connected identity's own. Beeper's fact
+        about the caller, not a flag this bundle computed
+---
+# ---- mirror: one chat label -----------------------------------------------
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/beeper/label
+data:
+  authority: providers.substrate.reamde.dev
+  package: beeper
+  description: >-
+    One label the owner can put on a chat. Mirrors the Label schema of GET
+    /v1/labels (Beeper Client API v5.0.0), which also arrives embedded in
+    a chat's `labels`; the list is authoritative. No envelope, no hypermedia,
+    no instant, so no temporal trait.
+  names:
+    singular: label
+  displayTemplate: "{name|labelId}"
+  properties:
+    # identity
+    account:
+      type: reference
+      kind: account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this label was synced through
+    labelId:
+      type: string
+      required: true
+      displayName: Label ID
+      description: "`id` — the label's own identifier, which a chat's `labels`
+        names it by"
+    # the object's own scalars
+    name:
+      type: string
+      displayName: Name
+      description: "`name` — the label as the owner spelled it"
+---
+# ---- mirror: one chat, on whatever network it came from -------------------
+# `GET /v1/chats` lists them and `GET /v1/chats/{chatID}` is one whole. They
+# return ONE resource, so they write one kind (§3), keyed on the chat's own id
+# — a Matrix room id. Only the single read is AUTHORITATIVE: the list caps the
+# roster at 100 participants, and the sync asks the single read for
+# `maxParticipantCount=-1`, which is the only way to see every member.
+#
+# `preview` is not a property. The list's item schema is `ChatWithPreview` —
+# a Chat plus the chat's last message WHOLE — and a Message has its own
+# identity and its own endpoint, so §3 makes it a `message` ROW. The sync
+# mirrors it and points nothing at it: Beeper publishes no "latest message"
+# field on the Chat resource itself, and inventing one would be a derived
+# property.
+#
+# NO isDirect / isGroup: `type` says which, and a second spelling of one fact
+# is derived. The pagination cursors are the LIST's, not the chat's, and live
+# in `chatsync`.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/beeper/chat
+data:
+  authority: providers.substrate.reamde.dev
+  package: beeper
+  description: >-
+    One conversation, on whatever network Beeper bridged it from; its id is
+    a Matrix room id. Mirrors the Chat schema of GET /v1/chats and GET /v1/chats/{chatID}
+    — the single read, with maxParticipantCount=-1, is the authoritative one.
+    Omits the list envelope and the roster's own `hasMore`. `lastActivity`
+    is a mutation mark, so no trait.
+  names:
+    singular: chat
+  displayTemplate: "{chatTitle|chatId}"
+  properties:
+    # identity
+    account:
+      type: reference
+      kind: account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this chat was synced through
+    chatId:
+      type: string
+      required: true
+      displayName: Chat ID
+      description: >-
+        `id` — the chat's id across Beeper, which IS a Matrix room id (!FQsel…:beeper.local).
+        Every message route takes it
+    localChatId:
+      type: string
+      displayName: Local chat ID
+      description: >-
+        `localChatID` — this installation's own short id for the chat, which
+        the input routes also accept. Not stable across installs
+    # the object's own scalars, in the API reference's order
+    network:
+      type: string
+      displayName: Network
+      description: >-
+        `network` — the human-readable network name Beeper renders this chat
+        under. Display-only; `chatAccount` is the fact
+    chatTitle:
+      type: string
+      displayName: Title
+      # `title` is reserved at every level (§5), so the rename is by rule.
+      description: >-
+        `title` — the chat's display title as Beeper computes it: the group's
+        name, or the other person's on a direct chat
+    description:
+      type: text
+      displayName: Topic
+      description: >-
+        `description` — the group's description or topic, where the network
+        has one
+    imgUrl:
+      type: string
+      displayName: Avatar
+      description: >-
+        `imgURL` — the chat avatar, a local filesystem path into this machine's
+        media cache. A string, because that is not a URL
+    type:
+      type: enum
+      values:
+        - value: single
+          label: single
+        - value: group
+          label: group
+      displayName: Type
+      description: >-
+        `type` — single for a direct chat, group for a group. Schema-closed,
+        so an enum. "Is this a DM" is `type eq single`
+    isReadOnly:
+      type: bool
+      displayName: Read-only
+      description: >-
+        `isReadOnly` — messages cannot be sent here: an announcement channel,
+        or a group the owner has left
+    unreadCount:
+      type: int
+      displayName: Unread
+      description: >-
+        `unreadCount` — how many messages are unread for the connected identity.
+        Beeper's own count, not one this bundle took
+    unreadMentionsCount:
+      type: int
+      displayName: Unread mentions
+      description: >-
+        `unreadMentionsCount` — unread messages mentioning the connected identity
+        or @room. Beeper's fact about the caller
+    lastReadMessageSortKey:
+      type: string
+      displayName: Read up to
+      description: >-
+        `lastReadMessageSortKey` — the sortKey of the last message read here.
+        A message's sort key, not an instant
+    isArchived:
+      type: bool
+      displayName: Archived
+      description: "`isArchived` — the owner archived this chat"
+    isMarkedUnread:
+      type: bool
+      displayName: Marked unread
+      description: >-
+        `isMarkedUnread` — the owner marked it unread by hand, whatever unreadCount
+        says
+    isMuted:
+      type: bool
+      displayName: Muted
+      description: "`isMuted` — notifications are off for this chat"
+    isPinned:
+      type: bool
+      displayName: Pinned
+      description: "`isPinned` — the chat is pinned to the top of the inbox"
+    isLowPriority:
+      type: bool
+      displayName: Low priority
+      description: >-
+        `isLowPriority` — the owner marked the chat low priority, which Beeper's
+        own search excludes by default
+    messageExpirySeconds:
+      type: int
+      displayName: Disappearing after
+      description: >-
+        `messageExpirySeconds` — the disappearing-message timer in seconds,
+        where the network has one
+    capabilities:
+      type: json
+      displayName: Capabilities
+      # NOT a depth claim: `ChatCapabilities` is declarable in shape. It is
+      # json because `attachments` is a KEYED map (msgtype) whose value object
+      # holds ANOTHER keyed map (mime type -> support level), and §6 records
+      # that the dialect refuses `json` as an object field and refuses `keyed`
+      # + `repeated` together — a keyed map inside a keyed map's value is
+      # unverified. T-041 is the ticket that tries it.
+      description: >-
+        `capabilities` — what can be sent here: formatting, attachment kinds
+        and their mime types. json because it nests a keyed map inside a keyed
+        map's value (T-041)
+    # relations
+    chatAccount:
+      type: reference
+      kind: chataccount
+      displayName: Chat account
+      description: >-
+        `accountID` — the chat account this conversation belongs to. A reference,
+        because the chat account is mirrored
+    participants:
+      type: reference
+      kind: user
+      repeated: true
+      displayName: Members
+      # `participants.items`, with the three Participant-only flags as LINK
+      # data: they are facts about a membership and about neither end of it.
+      description: >-
+        `participants.items` — everyone in the chat. The membership's own
+        flags ride on the link, because they belong to neither end
+      properties:
+        isAdmin:
+          type: bool
+          description: "`isAdmin` — this member has admin rights in this chat"
+        isPending:
+          type: bool
+          description: "`isPending` — invited, and has not joined yet"
+        isNetworkBot:
+          type: bool
+          description: >-
+            `isNetworkBot` — an automated account of the network rather than
+            a person
+    preview:
+      type: reference
+      kind: message
+      displayName: Latest message
+      # ChatWithPreview = Chat + `preview`, a whole Message. §3: an embedded
+      # object with its own identity and its own endpoint is a kind and a
+      # reference, so the message is mirrored as its own row and pointed at,
+      # never inlined. Written from the LIST read, which is the only call that
+      # carries it; the single read does not, and an absent field is not a
+      # null (§1).
+      description: >-
+        `preview` — the chat's newest message, which GET /v1/chats carries
+        WHOLE. Mirrored as its own row and referenced; the single read does
+        not carry it
+    labels:
+      type: reference
+      kind: label
+      repeated: true
+      displayName: Labels
+      description: >-
+        `labels` — the labels on this chat. Absent when it has none, and when
+        labels are not enabled for the owner at all
+    mergedIntoChat:
+      type: reference
+      kind: chat
+      displayName: Merged into
+      description: >-
+        `mergedIntoChatID` — the merged chat this one is a member of, when
+        a person's conversations are grouped across networks
+    merge:
+      type: object
+      displayName: Merge
+      description: >-
+        `merge` — present when THIS chat is the merged one. It holds no messages
+        of its own; they are in the member chats
+      fields:
+        chats:
+          type: reference
+          kind: chat
+          repeated: true
+          description: >-
+            `merge.chatIDs` — the member chats grouped by this merged chat
+        defaultChat:
+          type: reference
+          kind: chat
+          description: >-
+            `merge.defaultChatID` — the member a send routes to when the owner
+            picked one. Per-device; absent means most recently active
+    draft:
+      type: object
+      displayName: Draft
+      description: >-
+        `draft` — the unsent message the owner left in this chat, as Beeper
+        stored it
+      fields:
+        text:
+          type: text
+          description: "`draft.text` — the rich-text draft body"
+        attachments:
+          type: object
+          keyed: true
+          description: >-
+            `draft.attachments` — the draft's attachments, keyed by attachment
+            id
+          fields:
+            id:
+              type: string
+              description: "`id` — the draft attachment's identifier"
+            type:
+              type: enum
+              values:
+                - value: file
+                  label: file
+                - value: gif
+                  label: gif
+                - value: recordedaudio
+                  label: recorded_audio
+              description: >-
+                `type` — file, gif or recorded audio. Schema-closed; spelled
+                by rule (recorded_audio → recordedaudio)
+            mimeType:
+              type: string
+              description: "`mimeType` — the media type, where known"
+            fileName:
+              type: string
+              description: "`fileName` — the original filename, where available"
+            filePath:
+              type: string
+              description: >-
+                `filePath` — where the draft's bytes sit on this machine
+            fileSize:
+              type: decimal
+              description: >-
+                `fileSize` — the size in bytes, where known. The schema types
+                it `number`, so decimal
+            stickerId:
+              type: string
+              description: >-
+                `stickerID` — the sticker's identifier, when the draft attachment
+                is one
+            audioDurationSeconds:
+              type: decimal
+              description: >-
+                `audioDurationSeconds` — the recording's length, where known
+            size:
+              type: object
+              description: "`size` — the attachment's pixel dimensions"
+              fields:
+                width:
+                  type: decimal
+                  description: "`size.width` — width in pixels"
+                height:
+                  type: decimal
+                  description: "`size.height` — height in pixels"
+    reminder:
+      type: object
+      displayName: Reminder
+      description: >-
+        `reminder` — the reminder set on this chat, or absent when none is
+      fields:
+        remindAt:
+          type: datetime
+          description: "`reminder.remindAt` — when the reminder should fire"
+        dismissOnIncomingMessage:
+          type: bool
+          description: >-
+            `reminder.dismissOnIncomingMessage` — cancel it if somebody messages
+            here first
+    snooze:
+      type: object
+      displayName: Snooze
+      description: "`snooze` — the snooze on this chat, or absent when none
+        is"
+      fields:
+        snoozeUntil:
+          type: datetime
+          description: "`snooze.snoozeUntil` — when the snooze expires"
+        userSnoozedAt:
+          type: datetime
+          description: "`snooze.userSnoozedAt` — when the owner set it"
+    # instants
+    lastActivity:
+      type: datetime
+      displayName: Last activity
+      # NOT the temporal trait's `at` (§4): this is a mutation mark, the same
+      # fact as Slack's `updated`, and this API publishes no creation instant
+      # for a chat at all.
+      description: >-
+        `lastActivity` — when something last happened here. A mutation mark,
+        so it feeds no trait: the chat did not begin at this instant
+    # fields from the sibling read: GET /v1/chats/{chatID} with
+    # maxParticipantCount=-1, which is the only read that returns them all.
+    #
+    # `participants.hasMore` is NOT here. It is the embedded list's PAGINATION
+    # flag — "this read was capped" — which is §1's response-envelope omission
+    # class and not a fact about the chat: the same chat is `true` read through
+    # the list and `false` read singly, so a row carrying it flips on every
+    # walk. What a reader wants is `participantsTotal` beside the length of
+    # `participants`, and what the SYNC wants it reads off the live payload.
+    participantsTotal:
+      type: int
+      displayName: Member count
+      description: >-
+        `participants.total` — how many members the chat has, which Beeper
+        states; it exceeds `participants` when a read was capped
+---
+# ---- mirror: one message, on any network ----------------------------------
+# `GET /v1/chats/{chatID}/messages` pages them, a chat's `preview` carries the
+# newest one whole, and `GET /v1/messages/search` returns the same schema:
+# three paths, one resource, one kind (§3). The list envelope is omitted.
+#
+# ONE KIND FOR EVERY TYPE. A reaction, a sticker and a voice note are the same
+# identity on the same route, and `type` says which — the schema CLOSES that
+# set, so it is an enum rather than Slack's growing `subtype`. `timestamp` IS
+# `at` through temporal(point) and is not declared twice.
+#
+# `attachments`, `links`, `reactions` and `sendStatus` are OBJECTS, not kinds:
+# none has an endpoint of its own and no second kind's payload carries one, so
+# both halves of §3's test fail. Their fields that name somebody Beeper
+# mirrors ARE references, inside the object.
+#
+# NO MEDIA BYTES. An attachment's `id` is usually an `mxc://` handle and
+# `srcURL` is where the bytes are; both are declared and neither is ever
+# fetched. `/v1/assets/*` is not in the sync's vocabulary.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/beeper/message
@@ -301,95 +1223,495 @@ data:
   authority: providers.substrate.reamde.dev
   package: beeper
   description: >-
-    One bridged Matrix message, keyed by its globally unique event id, so
-    a write is put-if-absent and a re-read is a no-op. The sender is a Matrix
-    id, often a bridge ghost rather than a human's own.
+    One message in one chat, on whatever network sent it. Mirrors the Message
+    schema of GET /v1/chats/{chatID}/messages (Beeper Client API v5.0.0),
+    which a chat's `preview` and the search return too; every one of them
+    is the whole object, so all three are authoritative. Omits the list envelope;
+    there is no hypermedia. `timestamp` feeds `at`.
   names:
     singular: message
-  displayTemplate: "{sender}: {text}"
+  traits:
+    - temporal(point)
+  displayTemplate: "{senderName|sender.fullName}: {text}"
   properties:
+    # identity
     account:
       type: reference
       kind: account
       required: true
       onDelete: cascade
       displayName: Account
-      description: the account this message was synced from
-    roomId:
+      description: the account this message was synced through
+    messageId:
       type: string
-      displayName: Room ID
-      description: the Matrix room id this event arrived in, verbatim
-    eventId:
+      required: true
+      displayName: Message ID
+      description: >-
+        `id` — the message's id, which the single-message route takes. Unique
+        within its chat, and spelled by the bridge that made it
+    sortKey:
       type: string
-      displayName: Event ID
-      description: "the Matrix event id ($...), globally unique — the provider
-        key behind this row's id"
-    sender:
-      type: string
-      displayName: Sender
-      description: "the sender's Matrix id — a bridge ghost like @whatsapp_15551234567:beeper.local,
-        or the owner's own id"
-    msgtype:
-      type: string
-      displayName: Message type
-      description: "the Matrix msgtype (m.text, m.image, m.notice, ...)"
-    # `text`, not `body`: `body` is the engine's own computed column on every
-    # record, so a declared property may not take the name.
+      displayName: Sort key
+      description: >-
+        `sortKey` — the unique, sortable key messages order by. Not an instant:
+        a chat's read marker names a message by this, not by time
+    # the object's own scalars, in the API reference's order
+    type:
+      type: enum
+      values:
+        - value: text
+          label: TEXT
+        - value: notice
+          label: NOTICE
+        - value: image
+          label: IMAGE
+        - value: video
+          label: VIDEO
+        - value: voice
+          label: VOICE
+        - value: audio
+          label: AUDIO
+        - value: file
+          label: FILE
+        - value: sticker
+          label: STICKER
+        - value: location
+          label: LOCATION
+        - value: reaction
+          label: REACTION
+      displayName: Type
+      description: >-
+        `type` — the content type. Schema-closed, so an enum, spelled by rule
+        (TEXT → text). Not required: the schema does not require it
     text:
       type: text
+      embed: true
       displayName: Text
-      description: the message text as the bridge rendered it
-    sentAt:
-      type: datetime
-      displayName: Sent at
-      description: when the message was sent (origin_server_ts)
-    raw:
-      type: json
-      displayName: Raw event
-      description: the raw Matrix event as fetched, for provenance
-    room:
+      description: >-
+        `text` — the body as rich text, in Matrix conventions. Absent on a
+        message that is only an attachment or a reaction
+    senderName:
+      type: string
+      displayName: Sender name
+      # NOT a copy of `sender.fullName`: this is the name resolved AT THIS
+      # MESSAGE, which a later rename does not rewrite.
+      description: >-
+        `senderName` — the sender's name as resolved when this message landed,
+        which a later rename of the person does not rewrite
+    isSender:
+      type: bool
+      displayName: From you
+      description: >-
+        `isSender` — the connected identity sent this. Beeper's own fact about
+        the caller, not a flag this bundle computed
+    isHidden:
+      type: bool
+      displayName: Hidden
+      description: >-
+        `isHidden` — Beeper hides this from normal display. True on the REACTION
+        rows that carry a reaction as a message of its own
+    isDeleted:
+      type: bool
+      displayName: Deleted
+      description: >-
+        `isDeleted` — the message was deleted and Beeper kept the row
+    isUnread:
+      type: bool
+      displayName: Unread
+      description: >-
+        `isUnread` — unread for the connected identity. Beeper's fact about
+        the caller; the schema says it may be omitted entirely
+    mentionsRoom:
+      type: bool
+      displayName: Mentions everyone
+      # The other half of decoding `mentions` (§2, two namespaces in one
+      # array): every entry is either a user id, which becomes a reference,
+      # or the literal `@room`, which is not a person.
+      description: >-
+        decoded from the `@room` entry of `mentions`, which names everybody
+        in the chat and is not a user. The rest are references
+    # relations
+    chat:
       type: reference
-      kind: providers.substrate.reamde.dev/beeper/room
-      displayName: Room
+      kind: chat
+      required: true
+      onDelete: cascade
+      displayName: Chat
+      description: >-
+        `chatID` — the chat this message is in. Required, because the schema
+        requires it on every message
+    chatAccount:
+      type: reference
+      kind: chataccount
+      displayName: Chat account
+      description: "`accountID` — the chat account this message came through"
+    sender:
+      type: reference
+      kind: user
+      displayName: Sender
+      description: >-
+        `senderID` — who sent it, as the fully qualified MXID, which carries
+        the bridge and the homeserver on a network identity
+    linkedMessage:
+      type: reference
+      kind: message
+      displayName: In reply to
+      description: >-
+        `linkedMessageID` — the message this replies to, or the one a REACTION
+        row reacts to. No mustExist: it may be older than the window
+    mentions:
+      type: reference
+      kind: user
+      repeated: true
+      displayName: Mentions
+      description: >-
+        `mentions` — the people named in the body. `@room` is not one of them
+        and lands on mentionsRoom; null means a legacy message
+    attachments:
+      type: object
+      repeated: true
+      displayName: Attachments
+      description: >-
+        `attachments` — the files sent with this message, as METADATA. No
+        endpoint of its own and no second kind carries one, so an object
+      fields:
+        id:
+          type: string
+          description: >-
+            `id` — the attachment's identifier, usually an mxc:// handle.
+            A handle, never fetched
+        type:
+          type: enum
+          values:
+            - value: unknown
+              label: unknown
+            - value: img
+              label: img
+            - value: video
+              label: video
+            - value: audio
+              label: audio
+          description: >-
+            `type` — the attachment's kind. Schema-closed, so an enum
+        srcUrl:
+          type: string
+          description: >-
+            `srcURL` — where the bytes are. A public URL or a local file path,
+            temporary either way, so a string
+        mimeType:
+          type: string
+          description: "`mimeType` — the media type, where known (image/png)"
+        fileName:
+          type: string
+          description: "`fileName` — the original filename, where available"
+        fileSize:
+          type: decimal
+          description: >-
+            `fileSize` — the size in bytes, where known. The schema types
+            it `number`, so decimal
+        isGif:
+          type: bool
+          description: "`isGif` — the attachment is a GIF"
+        isSticker:
+          type: bool
+          description: "`isSticker` — the attachment is a sticker"
+        isVoiceNote:
+          type: bool
+          description: >-
+            `isVoiceNote` — a voice note rather than an audio file
+        duration:
+          type: decimal
+          description: "`duration` — the length in seconds, on audio and video"
+        posterImg:
+          type: string
+          description: >-
+            `posterImg` — a video's poster frame. Temporary or device-local,
+            so a string
+        transcription:
+          type: object
+          description: >-
+            `transcription` — what Beeper transcribed a voice note to, where
+            it did
+          fields:
+            transcription:
+              type: text
+              description: "`transcription` — the transcribed text"
+            engine:
+              type: string
+              description: "`engine` — which engine produced it"
+            language:
+              type: string
+              description: "`language` — the language detected or selected"
+        size:
+          type: object
+          description: "`size` — the attachment's pixel dimensions"
+          fields:
+            width:
+              type: decimal
+              description: "`size.width` — width in pixels"
+            height:
+              type: decimal
+              description: "`size.height` — height in pixels"
+    links:
+      type: object
+      repeated: true
+      displayName: Link previews
+      description: >-
+        `links` — the link previews Beeper resolved for this message
+      fields:
+        url:
+          type: url
+          description: "`url` — the resolved link"
+        originalUrl:
+          type: url
+          description: >-
+            `originalURL` — what the body said, when the resolved URL differs
+            (a shortener, a redirect)
+        favicon:
+          type: string
+          description: >-
+            `favicon` — the site's icon. Temporary or device-local, so a string
+        img:
+          type: string
+          description: >-
+            `img` — the preview image. Temporary or device-local, so a string
+        linkTitle:
+          type: string
+          description: >-
+            `title` — the preview's headline. Renamed by rule, because `title`
+            is reserved at every level
+        summary:
+          type: text
+          description: "`summary` — the preview's description"
+        imgSize:
+          type: object
+          description: "`imgSize` — the preview image's pixel dimensions"
+          fields:
+            width:
+              type: decimal
+              description: "`imgSize.width` — width in pixels"
+            height:
+              type: decimal
+              description: "`imgSize.height` — height in pixels"
+    reactions:
+      type: object
+      repeated: true
+      displayName: Reactions
+      # Repeated OBJECT, not a repeated reference: the schema says one person
+      # may react more than once, and a repeated reference refuses a duplicate
+      # target.
+      description: >-
+        `reactions` — who reacted with what. An object, because a person may
+        react more than once and each entry carries its own key
+      fields:
+        id:
+          type: string
+          description: >-
+            `id` — the reaction's identifier: the participant id, or it joined
+            to the key where a network admits several per person
+        reactionKey:
+          type: string
+          description: >-
+            `reactionKey` — the reaction itself: an emoji, a shortcode, or
+            a key the network invented
+        emoji:
+          type: bool
+          description: >-
+            `emoji` — the reactionKey is an emoji rather than a shortcode
+            or a network key
+        imgUrl:
+          type: string
+          description: >-
+            `imgURL` — a custom reaction's image. Temporary or device-local,
+            so a string
+        participant:
+          type: reference
+          kind: user
+          description: >-
+            `participantID` — who reacted. A reference, because the person
+            is mirrored
+    sendStatus:
+      type: object
+      displayName: Send status
+      description: >-
+        `sendStatus` — what happened to a message this account sent. Absent
+        on anything received
+      fields:
+        status:
+          type: enum
+          values:
+            - value: success
+              label: SUCCESS
+            - value: pending
+              label: PENDING
+            - value: failretriable
+              label: FAIL_RETRIABLE
+            - value: failpermanent
+              label: FAIL_PERMANENT
+          description: >-
+            `sendStatus.status` — how the send went. Schema-closed; spelled
+            by rule (FAIL_RETRIABLE → failretriable)
+        reason:
+          type: string
+          description: >-
+            `sendStatus.reason` — the machine-readable failure reason, on
+            a failure
+        message:
+          type: string
+          description: >-
+            `sendStatus.message` — the human-readable status or failure message
+        internalError:
+          type: text
+          description: >-
+            `sendStatus.internalError` — the network adapter's own diagnostic.
+            Beeper says not to show it to a person
+        timestamp:
+          type: datetime
+          description: >-
+            `sendStatus.timestamp` — when this send-status event happened
+        deliveredToUsers:
+          type: reference
+          kind: user
+          repeated: true
+          description: >-
+            `sendStatus.deliveredToUsers` — who the network reported delivery
+            to. References, because they are mirrored people
+    seen:
+      type: json
+      displayName: Read receipts
+      # §1's heterogeneous clause: the schema declares a three-way anyOf, and
+      # no single declared shape holds all three without losing one.
+      description: >-
+        `seen` — the read state. json because the schema is a three-way union:
+        a bool, an instant, or a map of participant id to either
+    # instants
+    editedTimestamp:
+      type: datetime
+      displayName: Edited
+      description: >-
+        `editedTimestamp` — when the message was edited, where Beeper knows.
+        Absent on a message nobody edited
+---
+# ---- the connector's per-chat state ---------------------------------------
+# NOT A MIRROR. The cursors Beeper hands back name a page boundary in a list
+# request and change every time a page is read: they are the PAGINATION's, not
+# the chat's. Keeping them on `chat` would bump the mirrored row's version on
+# every page of history and fire every trigger watching it, so they live here,
+# behind a required cascading reference, written only by the connector.
+#
+# One row per chat, id host.ids.external("beeper", account, "chatsync/<chat
+# id>"). It cascades from the chat, which cascades from the account, so
+# disconnecting an account collects all three.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/beeper/chatsync
+data:
+  authority: providers.substrate.reamde.dev
+  package: beeper
+  description: >-
+    Where this connector's walk of one chat got to: the page cursors, how
+    far back the backfill reached, and the last outcome. Connector-written
+    state, kept off the chat so a page of history never bumps the mirrored
+    row.
+  names:
+    singular: chatsync
+  displayTemplate: "{chat.chatTitle}"
+  properties:
+    # identity
+    chat:
+      type: reference
+      kind: chat
       required: true
       mustExist: true
       onDelete: cascade
-      description: the mirrored room this message belongs to
+      displayName: Chat
+      description: >-
+        the chat this state belongs to. Required and cascading — the state
+        dies with the chat. A reference takes no `writer:` (Platform asks)
+    # the connector's own state
+    newestCursor:
+      type: string
+      writer: connector
+      displayName: Forward cursor
+      description: >-
+        the `newestCursor` of the newest page read here. The next run asks
+        direction=after from it and gets only what arrived since
+    oldestCursor:
+      type: string
+      writer: connector
+      displayName: Backfill cursor
+      description: >-
+        the `oldestCursor` of the oldest page read here. The backfill asks
+        direction=before from it until it reaches the window floor
+    backfilledThrough:
+      type: datetime
+      writer: connector
+      displayName: Backfilled through
+      description: >-
+        the oldest message instant this chat has been walked back to. The
+        account's backfillDepth is the floor it stops at
+    backfillComplete:
+      type: bool
+      writer: connector
+      displayName: Backfill done
+      description: >-
+        the backfill reached the window floor or the start of the chat, so
+        later runs only page forward
+    messagesStatus:
+      type: string
+      writer: connector
+      displayName: Status
+      description: >-
+        the last outcome for THIS chat — ok, or the error that stopped it.
+        One unreadable chat never stops the rest
+    wholeReadAt:
+      type: datetime
+      writer: connector
+      displayName: Whole read at
+      description: >-
+        when GET /v1/chats/{id}?maxParticipantCount=-1 last answered for this
+        chat — the authoritative read, which a warm walk repeats only when
+        the list says the roster is still truncated
+    lastSyncedAt:
+      type: datetime
+      writer: connector
+      displayName: Last synced
+      description: when this chat's messages were last walked
 ---
 # ---- the sync function -----------------------------------------------------
-# A PEP 723 Python body speaking the plain Matrix client-server API over
-# requests. Per invocation it makes AT MOST ONE Matrix HTTP call — a /sync
-# (with the account's stored next_batch as `since`), or one
-# /rooms/{id}/messages history page — and pages EVERYTHING off the causal
-# chain via the paged-checkpoint more/resume contract:
+# A PEP 723 Python body speaking the Beeper Client API over requests. Per
+# invocation it makes AT MOST ONE Beeper HTTP call and pages everything off the
+# causal chain through the more/resume contract:
 #
-#   sync      ONE /sync. Matrix has no room pagination, so the body reduces
-#             every mentioned room to a small descriptor (id, name, network,
-#             summary — never the raw events) and hands the list off through
-#             host.page.more. It stages nothing, so the frame stays small
-#             however many rooms a bridged account holds (fleet F6 / P0).
-#   rooms     each invocation mirrors at most 25 rooms — put-if-absent +
-#             patch of ONLY the delta-carried fields (P1) — and queues one
-#             history job per room with news.
-#   backfill  ONE /messages page per invocation, newest-first, down to the
-#             cutoff; a room that hits the per-drain page cap is recorded in
-#             the account's backfillResume so the next run RESUMES the walk
-#             (Codex H5) — truncation is never silent.
+#   info      ONE GET /v1/info. The only unauthenticated call; stamps the
+#             account with which build of Beeper Desktop answered.
+#   accounts  ONE GET /v1/accounts -> chataccount + user mirrors, and the
+#             account's own `user` reference, taken from the connected account
+#             whose user.isSelf is true.
+#   bridges   ONE GET /v1/bridges -> bridge mirrors, and the chataccount rows
+#             embedded in each one.
+#   labels    ONE GET /v1/labels -> label mirrors.
+#   contacts  ONE page of /v1/accounts/{id}/contacts/list per invocation, per
+#             connected account, when the owner enables address books.
+#   chats     ONE page of /v1/chats per invocation -> chat mirrors from the
+#             list shape, the `preview` message, and the queue of chats whose
+#             whole read and history are still to come.
+#   whole     ONE GET /v1/chats/{id}?maxParticipantCount=-1 per queued chat:
+#             the AUTHORITATIVE read, and the only one with every participant.
+#   messages  ONE page of /v1/chats/{id}/messages per invocation, from THAT
+#             chat's own stored cursor on its chatsync row.
 #
-# Ids are host.ids.external("beeper", account, event/room id); messages are
-# if_absent puts (event ids are immutable). The account's syncToken/
-# lastSyncedAt/syncStatus stamp is the LAST effect of a drain, after every
-# message committed — a crash mid-drain re-reads from the old token and the
-# if_absent puts absorb the overlap. A provider failure stamps
-# `syncStatus: erroring: <reason>` with the un-walked rooms preserved in
-# backfillResume, instead of parking the chain (fleet F2/F3). One account
-# per repository is enforced (fleet F8): only the lexicographically-first live
-# account syncs.
+# THE DRAIN IS SELF-BOUNDED: the engine gives it 512 invocations and two
+# minutes (internal/engine/functions.go) and this inbox has 476 chats, so the
+# body watches its own clock (75s) and call count (300) and stops cleanly —
+# the queue goes to the account's streamCursors and the status says how much is
+# left. An account with pending work is due whatever its cadence says, so the
+# hourly tick is also the continuation.
 #
-# emit names the two mirror types plus the account (the stamps); reads names
-# the room mirror — the roomFilter's fallback surface when a delta omits the
-# fields, and the resumed-walk existence check. No real Matrix call runs at
-# admission; the closure test drives the body against a fake homeserver.
+# IT READS ONLY, AND IT DOWNLOADS NOTHING. Eight GET routes, listed above.
+# `/v1/assets/download`, `/v1/assets/serve`, every POST, PUT, PATCH and DELETE
+# and every `mxc://` handle are outside its vocabulary: an attachment is
+# mirrored as metadata and its bytes stay where they are.
 kind: substrate.reamde.dev/core/function
 metadata:
   id: providers.substrate.reamde.dev/beeper/messagessync
@@ -397,26 +1719,32 @@ data:
   authority: providers.substrate.reamde.dev
   package: beeper
   description: >-
-    Sync a Beeper account's bridged messages over the Matrix /sync API, mirror
-    rooms and messages page by page, and store the next_batch token for the
-    next incremental run. Read-only.
+    Sync one Beeper Desktop over its local Client API — its bridges, people,
+    chats and messages — one page per invocation, advancing each chat's own
+    cursor on its sync-state row. Read-only; it fetches no media.
   runtime: python
   timeout: PT30S
   permissions:
     writes:
-      - providers.substrate.reamde.dev/beeper/room
+      - providers.substrate.reamde.dev/beeper/bridge
+      - providers.substrate.reamde.dev/beeper/chataccount
+      - providers.substrate.reamde.dev/beeper/user
+      - providers.substrate.reamde.dev/beeper/label
+      - providers.substrate.reamde.dev/beeper/chat
+      - providers.substrate.reamde.dev/beeper/chatsync
       - providers.substrate.reamde.dev/beeper/message
       - providers.substrate.reamde.dev/beeper/account
     reads:
       kinds:
-        - providers.substrate.reamde.dev/beeper/room
-      # A rooms page evaluates the filter fallback for at most 25 rooms; a
-      # backfill page checks at most one resumed room.
+        - providers.substrate.reamde.dev/beeper/chat
+        - providers.substrate.reamde.dev/beeper/chatsync
+        - providers.substrate.reamde.dev/beeper/message
       budgets:
-        calls: 40
+        calls: 600
+        rows: 2000
     network:
-      - "matrix.beeper.com"
-      - "beeper.com"
+      - localhost
+      - 127.0.0.1
   source: |
     # /// script
     # requires-python = ">=3.11"
@@ -424,108 +1752,462 @@ data:
     #   "requests==2.32.3",
     # ]
     # ///
-    """Beeper message sync — at most one Matrix HTTP call per invocation.
+    """Beeper Desktop sync — at most one Beeper HTTP call per invocation.
 
-    The pasted access token arrives injected on the connector input
-    (config.inputs.connector.properties.accessToken — the connector-own-secret
-    path; the OAuth facility is not involved and no tokenStatus ever exists). The
-    token leaves this body ONLY toward a pinned origin — https on a
-    beeper.com host, or loopback (the test seam); an owner-editable
-    homeserverUrl pointing anywhere else parks the delivery with a clear
-    error BEFORE any request is made (F1).
+    The token arrives injected on the connector input
+    (`config.inputs.connector.properties.accessToken`) and leaves this body only
+    toward a PRIVATE origin: loopback, an RFC 1918 address, or the CGNAT range a
+    tailnet hands out. Beeper Desktop's API is served by the desktop app and is
+    never on the public internet, so a public host in `apiBase` parks the sync
+    with a clear error before any request is made — the inverse of every other
+    provider here, which pins a public https origin and admits loopback only as a
+    test seam.
 
-    Paged end to end, so no frame is ever sized by the account (F6/P0):
-    the sync phase reduces the /sync response to small room descriptors and
-    stages nothing; the rooms phase mirrors at most ROOMS_PER_PAGE rooms per
-    invocation; the backfill phase fetches one /messages page per
-    invocation. Room mirrors are put-if-absent + patch of only the fields
-    the delta carried (P1) — a partial /sync never erases a name or resets
-    a network, and the roomFilter falls back to the stored mirror when the
-    delta omits the fields. A room that hits the per-drain page cap is
-    recorded in backfillResume and RESUMED by the next run (H5).
+    EIGHT GET ROUTES, AND NO OTHERS. `/v1/info`, `/v1/accounts`, `/v1/bridges`,
+    `/v1/labels`, `/v1/accounts/{id}/contacts/list`, `/v1/chats`,
+    `/v1/chats/{id}` and `/v1/chats/{id}/messages`. Nothing here posts, edits,
+    reacts, archives or marks read, and NO MEDIA BYTES ARE EVER FETCHED: an
+    attachment's `mxc://` handle and its `srcURL` are mirrored as metadata and
+    never opened, and `/v1/assets/*` is outside this body's vocabulary.
 
-    Cursor discipline: the account's syncToken (Matrix next_batch) is
-    stamped only after a drain's messages have all committed; message puts
-    are if_absent on immutable event ids, so a replayed window is a no-op.
-    A provider failure stamps `syncStatus: erroring: <reason>` — with every
-    un-walked room preserved in backfillResume — instead of parking (F2/F3).
-    One account per repository is ENFORCED (F8): the lexicographically-first
-    live account syncs; every other live account row is stamped ignored.
+    Paged end to end, so no frame is ever sized by the inbox: one Beeper page per
+    invocation, and the queue of chats still to walk rides in the cursor as ids
+    alone. The drain bounds ITSELF, on its own clock and its own call count,
+    because the engine's bounds (512 invocations, two minutes) are tighter than a
+    cold walk of a 476-chat inbox.
+
+    EVERY RELATION IS A REFERENCE. A mirrored row's id is
+    `host.ids.external("beeper", account, "<kind>/<key>")`, which is
+    deterministic, so a pointer at a bridge, a chat account, a person, a chat or a
+    message is composed rather than looked up. Nothing is stored twice: no raw
+    payload, no sender name lifted out of a user row, no owner-relative flag, no
+    count of a list the row already holds.
+
+    PER-CHAT CURSORS LIVE IN `chatsync`. Beeper's `oldestCursor`/`newestCursor`
+    are the pagination's, not the chat's — writing them onto the chat would bump
+    the mirrored row's version on every page of history and fire every trigger
+    watching it.
     """
     import datetime as _dt
-    import json
+    import ipaddress
+    import re
+    import time
     import urllib.parse
 
     import requests
 
-    ROOM_TYPE = "providers.substrate.reamde.dev/beeper/room"
-    MESSAGE_TYPE = "providers.substrate.reamde.dev/beeper/message"
     ACCOUNT_TYPE = "providers.substrate.reamde.dev/beeper/account"
-    DEFAULT_HOMESERVER = "https://matrix.beeper.com"
-    # A secret that arrives still sealed marks the engine's accountconfig
-    # sealing (write.go) — it means the token was pasted onto the WRONG type.
+    BRIDGE_TYPE = "providers.substrate.reamde.dev/beeper/bridge"
+    CHATACCOUNT_TYPE = "providers.substrate.reamde.dev/beeper/chataccount"
+    USER_TYPE = "providers.substrate.reamde.dev/beeper/user"
+    LABEL_TYPE = "providers.substrate.reamde.dev/beeper/label"
+    CHAT_TYPE = "providers.substrate.reamde.dev/beeper/chat"
+    MESSAGE_TYPE = "providers.substrate.reamde.dev/beeper/message"
+    CHATSYNC_TYPE = "providers.substrate.reamde.dev/beeper/chatsync"
+
+    DEFAULT_API = "http://localhost:23373"
+    # A secret that arrives still sealed means the token was pasted onto the WRONG
+    # type: the engine seals an accountconfig's secrets at rest.
     SEALED_PREFIX = "substrate:sealsecret:v1:"
-    TIMELINE_LIMIT = 10     # names + bridge detection only — never staged
-    ROOMS_PER_PAGE = 25     # rooms mirrored per invocation frame (F6)
-    BACKFILL_PAGE = 100
-    MAX_BACKFILL_PAGES = 20  # per room PER DRAIN; a cap hit resumes next run
-    HTTP_TIMEOUT = 25
-    REASON_MAX = 200        # an erroring stamp is a status line, never a body
-    IGNORED_STATUS = ("ignored: duplicate account (this provider is "
-                      "one-account-per-repository until issue 011)")
+    # Beeper documents `limit` up to 200 on the chat list and the contact list.
+    # The message route documents no `limit` at all and answers 20 either way; the
+    # sync names it anyway, because the recording's NAME is the query string and
+    # the raw pull names it too.
+    CHAT_PAGE = 200
+    CONTACT_PAGE = 200
+    MESSAGE_PAGE = 20
+    # -1 is "every participant", against a default of 100 that silently truncates
+    # a big group's roster. This is what makes the single read AUTHORITATIVE.
+    ALL_PARTICIPANTS = -1
+    HTTP_TIMEOUT = 20
+    REASON_MAX = 200
+    # The self-imposed drain bounds, both comfortably inside the engine's.
+    DRAIN_SECONDS = 75
+    DRAIN_CALLS = 300
+    # What "come back later" means when Beeper does not say. It is a local server
+    # and rate limits are not its habit, so this is a floor rather than a policy;
+    # the cap stops a mistyped header from parking the account for a week.
+    DEFAULT_RETRY_AFTER = 30
+    MAX_RETRY_AFTER = 3600
+    RETRY_MAX = 3
+    FAILED_MAX = 200
+    IGNORED_STATUS = ("ignored: duplicate account (one token addresses one "
+                      "Beeper Desktop)")
 
-    # Lazy-load members and drop presence/ephemeral noise: the sync wants
-    # names and enough timeline to spot the bridge, nothing else — the
-    # messages themselves arrive through the paged /messages walk.
-    SYNC_FILTER = json.dumps({
-        "presence": {"types": []},
-        "account_data": {"types": []},
-        "room": {
-            "state": {"types": ["m.room.name"], "lazy_load_members": True},
-            "timeline": {"limit": TIMELINE_LIMIT},
-            "ephemeral": {"types": []},
-            "account_data": {"types": []},
-        },
-    }, separators=(",", ":"))
+    BACKFILL_DAYS = {"none": 0, "last2d": 2, "last30d": 30, "last90d": 90,
+                     "last1y": 365, "all": -1}
 
-    # Beeper bridge ghost prefixes -> network names (the v4 bridge map,
-    # localpart spelling: @whatsapp_15551234567:beeper.local).
-    BRIDGES = {
-        "whatsapp": "whatsapp", "whatsappgo": "whatsapp",
-        "telegram": "telegram", "telegramgo": "telegram",
-        "signal": "signal", "signalgo": "signal",
-        "imessage": "imessage", "imessagego": "imessage",
-        "discord": "discord", "discordgo": "discord",
-        "slack": "slack", "slackgo": "slack",
-        "instagram": "instagram", "instagramgo": "instagram",
-        "twitter": "twitter", "twittergo": "twitter",
-        "facebook": "messenger", "messenger": "messenger",
-        "gmessages": "gmessages", "linkedin": "linkedin",
-    }
+    # `mentions` holds user ids and this one sentinel, which names everybody in
+    # the chat and is not a person (§2, two namespaces in one array).
+    ROOM_MENTION = "@room"
 
-    BACKFILL_DAYS = {"none": 0, "last30d": 30, "last90d": 90, "last1y": 365, "all": -1}
+    # THE ENUM TABLES, API label -> declared value. Held as tables rather than
+    # computed, because §2 wants the same label->value map on the declaration and
+    # in the sync: a value no table holds leaves the property ABSENT and the page
+    # still lands, rather than one new status costing an account its whole run.
+    PROVIDERS = {"cloud": "cloud", "self-hosted": "selfhosted", "local": "local",
+                 "platform-sdk": "platformsdk"}
+    BRIDGE_STATUS = {"available": "available", "connected": "connected",
+                     "limit_reached": "limitreached",
+                     "temporarily_unavailable": "temporarilyunavailable",
+                     "disabled": "disabled"}
+    ACCOUNT_STATUS = {"connected": "connected", "connecting": "connecting",
+                      "backfilling": "backfilling",
+                      "connection_required": "connectionrequired",
+                      "reconnect_required": "reconnectrequired",
+                      "attention_required": "attentionrequired",
+                      "disconnected": "disconnected", "disabled": "disabled"}
+    CHAT_TYPES = {"single": "single", "group": "group"}
+    MESSAGE_TYPES = {t: t.lower() for t in
+                     ("TEXT", "NOTICE", "IMAGE", "VIDEO", "VOICE", "AUDIO",
+                      "FILE", "STICKER", "LOCATION", "REACTION")}
+    ATTACHMENT_TYPES = {"unknown": "unknown", "img": "img", "video": "video",
+                        "audio": "audio"}
+    SEND_STATUS = {"SUCCESS": "success", "PENDING": "pending",
+                   "FAIL_RETRIABLE": "failretriable",
+                   "FAIL_PERMANENT": "failpermanent"}
+    DRAFT_ATTACHMENT_TYPES = {"file": "file", "gif": "gif",
+                              "recorded_audio": "recordedaudio"}
+
+    # PERMANENT failures. Beeper has already answered the question and asking
+    # again cannot change the answer: the chat is gone, the id does not resolve,
+    # the token lacks the scope. Retrying one is not resilience — a retried unit
+    # of work keeps the drain reporting itself pending forever.
+    def _is_permanent_status(code):
+        """Every 4xx except the two that mean "ask again": 408 and 429. A named
+        list missed 409 and 451 (Codex review), and the class is the rule."""
+        return 400 <= int(code or 0) < 500 and int(code) not in (408, 429)
 
 
-    def _pinned(base):
-        # F1 origin pinning: the pasted token leaves this body only over
-        # https to a beeper.com host, or to loopback (the test seam). An
-        # owner-editable URL that fails the rule never sees a request.
+    class Beeper(Exception):
+        def __init__(self, route, detail, status=0):
+            super().__init__("%s: %s" % (route, detail))
+            self.route = route
+            self.detail = detail
+            self.status = status
+
+
+    class RateLimited(Exception):
+        def __init__(self, retry_after):
+            super().__init__("rate limited")
+            self.retry_after = retry_after
+
+        def not_before(self):
+            # `Retry-After` is documented as a delay in SECONDS or an HTTP date,
+            # and `int()` on the second form threw (Codex review).
+            raw = self.retry_after
+            try:
+                secs = int(str(raw).strip())
+            except (TypeError, ValueError):
+                secs = DEFAULT_RETRY_AFTER
+                try:
+                    import email.utils as _eu
+                    when = _eu.parsedate_to_datetime(str(raw))
+                    if when is not None:
+                        if when.tzinfo is None:
+                            when = when.replace(tzinfo=_dt.timezone.utc)
+                        secs = int((when - _dt.datetime.now(
+                            _dt.timezone.utc)).total_seconds())
+                except Exception:  # noqa: BLE001 — an unparsable header is a delay
+                    secs = DEFAULT_RETRY_AFTER
+            secs = max(1, min(secs, MAX_RETRY_AFTER))
+            return (_dt.datetime.now(_dt.timezone.utc)
+                    + _dt.timedelta(seconds=secs)).isoformat()
+
+
+    # ---------------------------------------------------------------- origin
+
+    def _private(base):
+        """Beeper Desktop serves this API on the machine it runs on, or across a
+        private network the owner turned remote access on for. Nothing else is a
+        place this token may go."""
         u = urllib.parse.urlsplit(base)
         host = (u.hostname or "").lower()
-        if host in ("127.0.0.1", "localhost", "::1"):
+        if u.scheme not in ("http", "https"):
+            return False
+        if host in ("localhost", "::1") or host.endswith(".localhost"):
             return True
-        return u.scheme == "https" and (
-            host == "beeper.com" or host.endswith(".beeper.com"))
+        if host.endswith(".ts.net"):          # a tailnet MagicDNS name
+            return True
+        try:
+            addr = ipaddress.ip_address(host)
+        except ValueError:
+            return False
+        # `is_private` covers RFC 1918 and loopback; CGNAT (100.64/10) is what a
+        # tailnet hands out and Python does not call it private.
+        return addr.is_private or addr.is_loopback or addr in ipaddress.ip_network(
+            "100.64.0.0/10")
+
+
+    # ------------------------------------------------------------- the clock
+
+    def _now_iso():
+        """SUB-SECOND, deliberately. `syncRequestedAt > lastSyncedAt` is the
+        on-demand trigger's whole guard, and a request landing in the same SECOND
+        as the stamp is not greater than it — which is how the owner's Slack seed
+        stalled with the two equal (provider-practices §4)."""
+        return _dt.datetime.now(_dt.timezone.utc).isoformat()
+
+
+    def _iso(v):
+        """Beeper sends RFC 3339 with a zone everywhere, so this NORMALISES rather
+        than converts — and refuses anything else rather than guessing."""
+        if not isinstance(v, str) or not v:
+            return None
+        try:
+            # The sub-second part SURVIVES: Beeper sends milliseconds, two messages
+            # in one second are ordinary, and `at` is what orders them.
+            return _dt.datetime.fromisoformat(
+                v.replace("Z", "+00:00")).astimezone(_dt.timezone.utc).isoformat()
+        except ValueError:
+            return None
+
+
+    def _clean(v):
+        """One string, safe to store. Real chat data is not always valid UTF-8: a
+        NUL or a lone surrogate comes back from Postgres as a bare `internal
+        error`, so it is stripped HERE, at the source, and never in the engine."""
+        if not isinstance(v, str):
+            return v
+        if "\x00" in v:
+            v = v.replace("\x00", "")
+        try:
+            v.encode("utf-8")
+        except UnicodeEncodeError:
+            v = v.encode("utf-8", "ignore").decode("utf-8")
+        return v
+
+
+    # THE CONSTRAINED TYPES, GUARDED AT THE SOURCE.
+    #
+    # `email` and `url` are validated by the engine, and a value it refuses fails
+    # the WHOLE WRITE — which parks the drain mid-chain and costs the account its
+    # run, exactly the way a wrongly closed enum would (§2). A bridge is a lossy
+    # place: a Discord "email" can be a handle and a link preview's URL is
+    # whatever the sender typed. So each is LEFT ABSENT where it does not parse,
+    # and the reference it would have made is omitted with it.
+    #
+    # `phoneNumber` is NOT on this list any more: it is a `string`, the type the
+    # API gives it, so nothing a bridge sends can refuse the write (T-047).
+    def _email(v):
+        """An address that does not parse is not written (§2)."""
+        if not isinstance(v, str):
+            return None
+        s = v.strip()
+        return s if ("@" in s and "." in s.split("@")[-1] and " " not in s) else None
+
+
+    def _url(v):
+        """An absolute http(s) URL, or nothing. A link preview carries whatever
+        the sender typed, and `mxc://` handles live on `srcUrl`, which is a
+        string precisely because it is not always an address."""
+        if not isinstance(v, str):
+            return None
+        s = v.strip()
+        return s if s[:7].lower() in ("http://",) or s[:8].lower() == "https://" else None
+
+
+    def _dec(v):
+        """A `decimal` is written as a STRING: the engine refuses a bare JSON
+        number, because one rides float64 and may already have been rounded by
+        the time it reaches the write. Beeper types every size, byte count and
+        duration as `number`, so every one of them goes through here."""
+        if v is None or isinstance(v, bool):
+            return None
+        if isinstance(v, int):
+            return str(v)
+        if isinstance(v, float):
+            return repr(v)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+        return None
 
 
     def _wants(acct):
         return bool((acct.get("properties") or {}).get("enabledMessages"))
 
 
+    def _pending(cur):
+        """Is there work left? Every queue AND every mid-page continuation — a
+        paused chat-list cursor, a half-walked chat, a half-read address book are
+        all unfinished, and counting only the queues reports a settled account
+        with a page outstanding."""
+        if not isinstance(cur, dict):
+            return 0
+        n = sum(len(cur.get(k) or []) for k in
+                ("queue", "msgq", "contacts", "retry"))
+        n += sum(1 for k in ("work", "contact") if cur.get(k))
+        if cur.get("cursor") or (cur.get("phase") or "done") != "done":
+            n += 1
+        return n
+
+
+    # ------------------------------------------------- the core `sync` trait
+    #
+    # Decision 0085: an accountconfig kind binds the core `sync` trait and the
+    # body writes its twelve properties, so the Connections page and `substratectl
+    # sync status` render this account without knowing it is Beeper. Everything
+    # below derives from the drain's OWN bookkeeping — `streamCursors` — so the
+    # trait and the legacy `syncStatus` string can never disagree.
+    #
+    # THE TWO STREAMS ARE PHASES, not functions. One body walks the whole inbox in
+    # eight phases; what a reader wants to see is the WORK — the chats, and what
+    # was said in them — so the phases are grouped into the two streams the ticket
+    # names and each phase's queues are attributed to its stream. The per-stream
+    # `pending` counts therefore SUM to `_pending()` exactly, which is the
+    # invariant that keeps the breakdown honest.
+    STREAM_PHASES = (
+        ("chats", ("info", "accounts", "bridges", "labels", "contacts", "chats",
+                   "whole")),
+        ("messages", ("messages",)),
+    )
+    STREAM_NAMES = tuple(s for s, _ in STREAM_PHASES)
+    PHASE_STREAM = {p: s for s, ps in STREAM_PHASES for p in ps}
+    # The order the walk runs its phases in: a stream has ANSWERED a request only
+    # once the walk has gone past every phase of it.
+    PHASE_ORDER = ("info", "accounts", "bridges", "labels", "contacts", "chats",
+                   "whole", "messages")
+    # Every queue `_pending()` counts, attributed to the stream that drains it.
+    # `retry` is counted here exactly as `_pending()` counts it, entry by entry:
+    # a retry carries the KIND of work it is, so it lands on the right stream.
+    QUEUE_STREAM = {"queue": "chats", "contacts": "chats", "msgq": "messages"}
+    WORK_STREAM = {"work": "messages", "contact": "chats"}
+    RETRY_STREAM = {"messages": "messages", "whole": "chats", "contacts": "chats"}
+
+
+    def _stream_pending(cur):
+        """This walk's unfinished work, split by stream. Sums to `_pending()`."""
+        out = {s: 0 for s in STREAM_NAMES}
+        if not isinstance(cur, dict):
+            return out
+        for key, stream in QUEUE_STREAM.items():
+            out[stream] += len(cur.get(key) or [])
+        for entry in cur.get("retry") or []:
+            kind = entry[0] if isinstance(entry, (list, tuple)) and entry else ""
+            out[RETRY_STREAM.get(kind, "chats")] += 1
+        for key, stream in WORK_STREAM.items():
+            if cur.get(key):
+                out[stream] += 1
+        phase = cur.get("phase") or "done"
+        if cur.get("cursor") or phase != "done":
+            out[PHASE_STREAM.get(phase, "chats")] += 1
+        return out
+
+
+    def _walked(stream, phase):
+        """Has the walk gone past every phase this stream owns?"""
+        if (phase or "done") == "done":
+            return True
+        if phase not in PHASE_ORDER:
+            return False
+        last = max(PHASE_ORDER.index(p) for s, ps in STREAM_PHASES
+                   if s == stream for p in ps)
+        return PHASE_ORDER.index(phase) > last
+
+
+    def _trait(props, cursors, state, message, now, run=None, at_phase=None):
+        """The trait's properties for this stamp, as a patch fragment.
+
+        `state` is the run's outcome — `ok`, `throttled` or `erroring`. A bounded
+        drain is `ok`: the work it left is a COUNT (`syncProgress.pending`), not a
+        failure, and the account reports itself due so the next tick continues it.
+        `running` is never written by this body — the dispatcher owns it around a
+        record-sourced delivery, and writing it on the scheduled path (which names
+        no record, so nothing settles it) would strand the account there.
+        """
+        props = props or {}
+        cursors = cursors if isinstance(cursors, dict) else {}
+        run = run or {}
+        phase = cursors.get("phase") or "done"
+        per = _stream_pending(cursors)
+        left = _pending(cursors)
+        requested = props.get("syncRequestedAt")
+        # WHICH stream failed: the one owning the phase the walk died in. A
+        # failure with no phase at all (the `info` probe, before any walk) is
+        # every stream's, because nothing was reached.
+        failed = PHASE_STREAM.get(at_phase or phase) if state == "erroring" else None
+        streams = dict(props.get("syncStreams") or {})
+        for stream in STREAM_NAMES:
+            entry = dict(streams.get(stream) or {})
+            entry["message"] = message
+            entry["pending"] = per.get(stream, 0)
+            if state == "erroring":
+                entry["state"] = ("erroring" if failed in (None, stream)
+                                  else entry.get("state") or "ok")
+            elif state == "throttled":
+                # The deadline holds the whole account, not one queue.
+                entry["state"] = "throttled"
+            else:
+                entry["state"] = "ok"
+                if not entry["pending"] and _walked(stream, phase):
+                    entry["lastAt"] = now
+                    if requested:
+                        entry["requestedAck"] = requested
+            streams[stream] = entry
+        out = {
+            "syncState": state,
+            "syncMessage": message,
+            "syncStreams": streams,
+            # The drain's own bookkeeping: the phase it stopped in, the calls it
+            # spent (its budget is what bounds it) and the work its queues hold.
+            "syncProgress": {"phase": phase,
+                             "done": int(run.get("calls") or 0),
+                             "total": int(run.get("calls") or 0) + left,
+                             "pending": left},
+        }
+        if state == "erroring":
+            out["syncError"] = message
+            out["syncErrorAt"] = now
+        # The request is served once every stream has answered THIS request —
+        # which for a one-function provider means the walk ran out of work.
+        if requested and all((streams.get(s) or {}).get("requestedAck") == requested
+                             for s in STREAM_NAMES):
+            out["syncRequestedAck"] = requested
+        # The SCHEDULED path stamps its own start and duration: a schedule-sourced
+        # delivery names no record, so the dispatcher stamps nothing around it
+        # (decision 0085). A record-sourced one is the dispatcher's, and the body
+        # keeps its hands off.
+        started = run.get("startedAt")
+        if run.get("scheduled") and started:
+            out["lastSyncStartedAt"] = _dt.datetime.fromtimestamp(
+                started, _dt.timezone.utc).isoformat()
+            out["lastSyncDurationMs"] = int(max(0.0, time.time() - started) * 1000)
+        return out
+
+
+    def _before_deadline(props):
+        """False while a 429's Retry-After has not passed. Every entry path asks."""
+        nb = props.get("retryNotBefore")
+        if not nb:
+            return True
+        try:
+            when = _dt.datetime.fromisoformat(str(nb).replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        return _dt.datetime.now(_dt.timezone.utc) >= when
+
+
     def _due(props):
+        # THE OWNER'S PAUSE holds the scheduled path (T-084). A record-sourced
+        # delivery never reaches the body at all — the dispatcher settles a paused
+        # record's deliveries as skips (decision 0085) — so this is the only door
+        # the pause has to close here. Work already queued stays queued: a pause
+        # is "stop walking", not "throw the drain away".
+        if props.get("syncPaused"):
+            return False
+        # A rate-limit deadline outranks EVERYTHING, pending work included.
+        if not _before_deadline(props):
+            return False
+        cur = props.get("streamCursors")
         freq = (props.get("syncFrequency") or "hourly").lower()
         if freq == "off":
-            return False
+            # Scheduling is off, so no NEW walk starts — but work already queued is
+            # drained to completion rather than stranded mid-chat.
+            return bool(isinstance(cur, dict) and _pending(cur))
+        # Unfinished work outranks the cadence: a cold sync converges over
+        # consecutive ticks instead of waiting a day between bites.
+        if isinstance(cur, dict) and _pending(cur):
+            return True
         last = props.get("lastSyncedAt")
         if not last:
             return True
@@ -537,272 +2219,1039 @@ data:
         return _dt.datetime.now(_dt.timezone.utc) - seen >= _dt.timedelta(hours=hours)
 
 
-    def _now_iso():
-        return _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat()
-
-
-    def _get(base, path, token, params):
-        resp = requests.get(base + path, params=params, timeout=HTTP_TIMEOUT,
-                            headers={"Authorization": "Bearer " + token})
-        if resp.status_code >= 400:
-            raise RuntimeError("matrix GET %s: %d %s"
-                               % (path, resp.status_code, resp.text[:200]))
-        return resp.json()
-
-
-    def _network(events):
-        # The bridged network, read off ghost-sender localparts: the prefix
-        # before the first underscore (or a trailing "bot") names the bridge.
-        # None when NO event names one — absence of evidence, never "beeper":
-        # a delta window holding only the owner's replies must not overwrite
-        # a stored network (P1).
-        for ev in events:
-            s = ev.get("sender") or ""
-            if not s.startswith("@") or ":" not in s:
-                continue
-            local = s[1:s.index(":")]
-            if "_" in local:
-                bridge = local.split("_", 1)[0].lower()
-                if bridge in BRIDGES:
-                    return BRIDGES[bridge]
-            if local.endswith("bot") and local[:-3].lower() in BRIDGES:
-                return BRIDGES[local[:-3].lower()]
-        return None
-
-
-    def _room_name(state_events, timeline_events):
-        # m.room.name can ride in the state block or inline in the timeline.
-        name = ""
-        for ev in list(state_events) + list(timeline_events):
-            if ev.get("type") == "m.room.name":
-                name = (ev.get("content") or {}).get("name") or name
-        return name
-
-
-    def _mirror_room(host, aid, rid, name, network, summary):
-        # Mint-then-patch (P1): put-if-absent creates the row with what this
-        # window knows (network falls back to "beeper" only AT MINT); the
-        # patch then carries ONLY the fields the delta actually held, so a
-        # partial /sync — lazy-loaded state, an owner-only timeline — never
-        # erases a name or resets a network, and an identical patch is
-        # no-op-suppressed.
-        eid = host.ids.external("beeper", aid, rid)
-        mint = {"account": aid, "roomId": rid, "network": network or "beeper"}
-        if name:
-            mint["name"] = name
-        if summary:
-            mint["raw"] = summary
-        host.effects.put(ROOM_TYPE, eid, properties=mint, if_absent=True)
-        patch = {"account": aid, "roomId": rid}
-        if name:
-            patch["name"] = name
-        if network:
-            patch["network"] = network
-        if summary:
-            patch["raw"] = summary
-        host.effects.patch(ROOM_TYPE, eid, properties=patch)
-        return eid
-
-
-    def _passes_filter(host, flt, eid, name, network):
-        # The roomFilter, against what is KNOWN: the delta's fields when
-        # present, the stored mirror's otherwise (P1) — a partial delta must
-        # not make a matching room silently stop syncing.
-        if not flt:
-            return True
-        if flt in ("%s %s" % (name or "", network or "")).lower():
-            return True
-        if name and network:
-            return False
-        stored = host.records.get(ROOM_TYPE, eid) or {}
-        sp = stored.get("properties") or {}
-        hay = "%s %s" % (name or sp.get("name") or "",
-                         network or sp.get("network") or "")
-        return flt in hay.lower()
-
-
-    def _put_message(host, aid, room_eid, rid, ev, cutoff=None):
-        # Only real messages mirror; a redacted event has no body and skips.
-        # An event older than the walk's floor is not this run's news — the
-        # cutoff bounds what a backfill page stages, so a "none"-depth
-        # account never inhales pre-connect history off a page's tail.
-        if ev.get("type") != "m.room.message":
-            return False
-        content = ev.get("content") or {}
-        body = content.get("body")
-        event_id = ev.get("event_id") or ""
-        if not event_id or body is None:
-            return False
-        ts = ev.get("origin_server_ts")
-        if cutoff and isinstance(ts, (int, float)) and ts < cutoff:
-            return False
-        props = {"account": aid, "room": room_eid,
-                 "roomId": rid, "eventId": event_id,
-                 "sender": ev.get("sender") or "", "text": str(body), "raw": ev}
-        if content.get("msgtype"):
-            props["msgtype"] = content["msgtype"]
-        if isinstance(ts, (int, float)):
-            props["sentAt"] = _dt.datetime.fromtimestamp(
-                ts / 1000.0, _dt.timezone.utc).replace(microsecond=0).isoformat()
-        host.effects.put(MESSAGE_TYPE, host.ids.external("beeper", aid, event_id),
-                         properties=props, if_absent=True)
-        return True
-
-
-    def _cutoff_ms(props, first):
-        # First sync: the backfillDepth window ("none" -> None: from connect
-        # time forward, F4). Incremental: back to the last completed sync,
-        # so the walk fills exactly the gap — and when an erroring drain
-        # advanced the token WITHOUT completing (no lastSyncedAt yet), fall
-        # back to the window rather than silently skip the walk.
-        if not first:
-            try:
-                seen = _dt.datetime.fromisoformat(
-                    str(props.get("lastSyncedAt")).replace("Z", "+00:00"))
-                return int(seen.timestamp() * 1000)
-            except (TypeError, ValueError):
-                pass
-        days = BACKFILL_DAYS.get((props.get("backfillDepth") or "last30d").lower(), 30)
-        if days == 0:
+    def _floor(props, cold):
+        """The instant the backfill stops at, from the owner's backfillDepth. A
+        warm run has no floor: it pages forward from the stored cursor."""
+        if not cold:
             return None
+        days = BACKFILL_DAYS.get((props.get("backfillDepth") or "last30d").lower(), 30)
         if days < 0:
-            return 0
-        floor = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)
-        return int(floor.timestamp() * 1000)
+            return ""          # `all`: no floor at all
+        if days == 0:
+            return _now_iso()  # `none`: nothing older than now
+        return (_dt.datetime.now(_dt.timezone.utc)
+                - _dt.timedelta(days=days)).isoformat()
 
 
-    def _stamp(host, acct, aid, next_batch, pending):
-        # The drain's LAST effect: everything before it has committed, so the
-        # completion marker (which drops the on-connect guard) and the token
-        # (which makes the next run incremental) never precede their
-        # messages. A non-empty pending map is DISCLOSED truncation (H5):
-        # the status says so and backfillResume carries the resume tokens.
+    # ---------------------------------------------------------------- the wire
+
+    def _call(base, token, path, params=None):
+        """One GET. Beeper answers a plain JSON body — no `ok` envelope — and
+        signals failure with the status and `{message, code}`."""
+        r = requests.get(base + path, params=params or None,
+                         headers={"Authorization": "Bearer " + token,
+                                  "Accept": "application/json"},
+                         timeout=HTTP_TIMEOUT)
+        if r.status_code == 429:
+            raise RateLimited(r.headers.get("Retry-After"))
+        if r.status_code >= 400:
+            try:
+                err = r.json()
+                detail = "%s %s" % (r.status_code,
+                                    err.get("message") or err.get("code") or "")
+            except ValueError:
+                detail = "%s" % r.status_code
+            raise Beeper(path, detail.strip(), r.status_code)
+        try:
+            return r.json()
+        except ValueError:
+            raise Beeper(path, "response was not JSON", r.status_code)
+
+
+    def _chatpath(cid, suffix=""):
+        return "/v1/chats/" + urllib.parse.quote(cid, safe="") + suffix
+
+
+    def _acctpath(caid, suffix=""):
+        return "/v1/accounts/" + urllib.parse.quote(caid, safe="") + suffix
+
+
+    # ------------------------------------------------------- ids and effects
+
+    def _rid(host, aid, key):
+        return host.ids.external("beeper", aid, key)
+
+
+    def _bridge_ref(host, aid, bid):
+        return _rid(host, aid, "bridge/%s" % bid) if bid else None
+
+
+    def _chataccount_ref(host, aid, caid):
+        return _rid(host, aid, "chataccount/%s" % caid) if caid else None
+
+
+    def _user_ref(host, aid, uid):
+        return _rid(host, aid, "user/%s" % uid) if uid else None
+
+
+    def _label_ref(host, aid, lid):
+        return _rid(host, aid, "label/%s" % lid) if lid else None
+
+
+    def _chat_ref(host, aid, cid):
+        return _rid(host, aid, "chat/%s" % cid) if cid else None
+
+
+    def _message_ref(host, aid, cid, mid):
+        return _rid(host, aid, "message/%s/%s" % (cid, mid)) if (cid and mid) else None
+
+
+    def _chatsync_ref(host, aid, cid):
+        return _rid(host, aid, "chatsync/%s" % cid) if cid else None
+
+
+    def _refs(host, aid, ids, maker):
+        """A list of references, de-duplicated, in the order the API gave them — a
+        repeated reference refuses a duplicate target."""
+        out = []
+        for i in ids or []:
+            r = maker(host, aid, i)
+            if r and r not in out:
+                out.append(r)
+        return out
+
+
+    def _live(props):
+        """The same properties with the explicit deletes removed — what a MINT may
+        carry, since a create cannot delete a property it never had."""
+        return {k: v for k, v in props.items() if v is not None}
+
+
+    def _self_free(eid, props):
+        """The same properties with any reference at THIS row removed: the engine
+        checks a reference's target at write time and at the CREATE the row does
+        not exist yet. The patch, which runs once the row is there, puts it back."""
+        return {k: v for k, v in props.items() if v != eid}
+
+
+    def _put(host, typ, eid, props):
+        """Mint-then-patch. The mint is if_absent because a provider key is
+        immutable; the patch moves only what this payload carried, so a thinner
+        read never erases what a fuller one filled in.
+
+        ABSENT and EXPLICIT are different, and both are load-bearing. A field the
+        payload did not carry is not in `props` at all. A field the payload carried
+        as an explicit clear IS in `props`, as `None`, and only the patch carries
+        it (§1, the write contract)."""
+        if not eid or not props:
+            return
+        host.effects.put(typ, eid, properties=_self_free(eid, _live(props)),
+                         if_absent=True)
+        host.effects.patch(typ, eid, properties=props)
+
+
+    def _take(dst, src, pairs, cast=None):
+        """Copy the API's fields onto the row under their declared names.
+
+        An ABSENT field stays absent: a payload that did not carry a field never
+        nulls one a fuller payload filled in. An EXPLICIT null, empty string,
+        empty list or empty map is a CLEAR and is carried through as `None`, which
+        the patch turns into a delete — except that `""` is never written through,
+        because half of these properties are `email`, `url` or `phone` and the
+        empty string is not a legal value of any of them (§1)."""
+        for key, api in pairs:
+            if api not in src:
+                continue
+            v = src[api]
+            if v is None or v == "" or v == [] or v == {}:
+                dst[key] = None          # an explicit clear, not an absence
+                continue
+            dst[key] = cast(v) if cast else (_clean(v) if isinstance(v, str) else v)
+
+
+    def _enum(table, v, where, host):
+        """A value the table does not hold is NOT written: an enum refuses the
+        whole page, and one unknown status must not lose a day of messages."""
+        if v is None:
+            return None
+        got = table.get(v)
+        if got is None and v != "":
+            host.log("beeper: %s has an undeclared value %r; leaving it unset"
+                     % (where, v))
+        return got
+
+
+    def _obj(fields):
+        """An object value with every absent field dropped, or None when nothing
+        survived — so an empty object is never written over a full one."""
+        out = {k: v for k, v in fields.items() if v is not None and v != []}
+        return out or None
+
+
+    # --------------------------------------------------------------- the rows
+
+    def _user_row(host, aid, u):
+        """One person, from wherever Beeper named them: a sender stub, a
+        participant entry, an account's own identity, a contact.
+
+        The three Participant-only flags are NOT written here — they belong to a
+        MEMBERSHIP and ride on `chat.participants`' link."""
+        uid = (u or {}).get("id")
+        if not uid:
+            return None
+        props = {"account": aid, "userId": _clean(uid)}
+        _take(props, u, [("username", "username"), ("fullName", "fullName"),
+                         ("phoneNumber", "phoneNumber"),
+                         ("displayText", "displayText"), ("imgUrl", "imgURL"),
+                         ("cannotMessage", "cannotMessage"), ("isSelf", "isSelf")])
+        # `phoneNumber` goes through verbatim: it is a `string`, the type the API
+        # gives it (T-047), so there is nothing to normalise and nothing a bridge
+        # can send that the write would refuse. `email` is still a validated type,
+        # and a value the engine refuses fails the WHOLE write — so an address
+        # that does not parse is not written, and the reference it would have made
+        # is omitted (§2).
+        if "email" in u:
+            raw = u["email"]
+            if raw is None or raw == "":
+                props["email"] = None          # an explicit clear
+            else:
+                got = _email(_clean(raw))
+                if got:
+                    props["email"] = got
+                else:
+                    host.log("beeper: user %s has an unusable email; leaving it "
+                             "unset" % uid)
+        _put(host, USER_TYPE, _user_ref(host, aid, uid), props)
+        return _user_ref(host, aid, uid)
+
+
+    def _chataccount_row(host, aid, a):
+        """One connected chat account. Its `user` is the owner's identity ON THAT
+        NETWORK — a different row per bridge, which is why the account's own
+        `user` is read off the entry whose `user.isSelf` is true rather than off
+        whichever came back first."""
+        caid = (a or {}).get("accountID")
+        if not caid:
+            return None
+        props = {"account": aid, "chatAccountId": _clean(caid)}
+        _take(props, a, [("loginId", "loginID"), ("network", "network"),
+                         ("statusText", "statusText"),
+                         ("capabilities", "capabilities")])
+        st = _enum(ACCOUNT_STATUS, a.get("status"), "chataccount.status", host)
+        if st:
+            props["status"] = st
+        stub = a.get("bridge") or {}
+        bid = stub.get("id")
+        if bid:
+            props["bridge"] = _bridge_ref(host, aid, bid)
+            # THE MATRIX BRIDGE IS NOT IN /v1/bridges. `GET /v1/bridges` lists the
+            # networks Beeper can CONNECT, and Beeper's own Matrix account is not
+            # one of them — so this reference would dangle for the one account
+            # that matters most. The stub carries the bridge's id, type and
+            # provider, which is what a thin row is; a later bridge walk patches
+            # the rest. A dangling reference is a signal to mint, never a reason
+            # to drop the relation (provider-practices §6).
+            thin = {"account": aid, "bridgeId": _clean(bid)}
+            if stub.get("type"):
+                thin["type"] = _clean(stub["type"])
+            prov = _enum(PROVIDERS, stub.get("provider"), "bridge.provider", host)
+            if prov:
+                thin["provider"] = prov
+            host.effects.put(BRIDGE_TYPE, _bridge_ref(host, aid, bid),
+                             properties=thin, if_absent=True)
+        uref = _user_row(host, aid, a.get("user"))
+        if uref:
+            props["user"] = uref
+        _put(host, CHATACCOUNT_TYPE, _chataccount_ref(host, aid, caid), props)
+        return _chataccount_ref(host, aid, caid)
+
+
+    def _bridge_row(host, aid, b):
+        """One bridge, and every chat account it carries — `Bridge.accounts` is
+        the same Account schema /v1/accounts returns, so each becomes a row and
+        the bridge points at it."""
+        bid = (b or {}).get("id")
+        if not bid:
+            return None
+        props = {"account": aid, "bridgeId": _clean(bid)}
+        _take(props, b, [("type", "type"), ("displayName", "displayName"),
+                         ("network", "network"),
+                         ("activeAccountCount", "activeAccountCount"),
+                         ("supportsMultipleAccounts", "supportsMultipleAccounts"),
+                         ("statusText", "statusText")])
+        prov = _enum(PROVIDERS, b.get("provider"), "bridge.provider", host)
+        if prov:
+            props["provider"] = prov
+        st = _enum(BRIDGE_STATUS, b.get("status"), "bridge.status", host)
+        if st:
+            props["status"] = st
+        if "accounts" in b:
+            accounts = []
+            for a in b.get("accounts") or []:
+                ref = _chataccount_row(host, aid, a)
+                if ref and ref not in accounts:
+                    accounts.append(ref)
+            # An explicit empty list is a clear: a bridge whose last account was
+            # removed says so by sending `[]`.
+            props["accounts"] = accounts or None
+        _put(host, BRIDGE_TYPE, _bridge_ref(host, aid, bid), props)
+        return _bridge_ref(host, aid, bid)
+
+
+    def _label_row(host, aid, lab):
+        lid = (lab or {}).get("id")
+        if not lid:
+            return None
+        props = {"account": aid, "labelId": _clean(lid)}
+        _take(props, lab, [("name", "name")])
+        _put(host, LABEL_TYPE, _label_ref(host, aid, lid), props)
+        return _label_ref(host, aid, lid)
+
+
+    def _participants(host, aid, chat):
+        """`participants.items` as a repeated reference carrying the membership's
+        own flags as LINK data — the one place this bundle uses link properties,
+        because isAdmin/isPending/isNetworkBot are facts about a membership and
+        about neither end of it."""
+        block = (chat.get("participants") or {})
+        out, seen = [], set()
+        for p in block.get("items") or []:
+            ref = _user_row(host, aid, p)
+            if not ref or ref in seen:
+                continue
+            seen.add(ref)
+            link = {"ref": ref}
+            for key in ("isAdmin", "isPending", "isNetworkBot"):
+                if isinstance(p.get(key), bool):
+                    link[key] = p[key]
+            out.append(link)
+        return out
+
+
+    def _draft(host, chat):
+        draft = chat.get("draft")
+        if not isinstance(draft, dict) or not draft:
+            return None
+        attachments = {}
+        for att_id, da in (draft.get("attachments") or {}).items():
+            one = {}
+            _take(one, da, [("id", "id"), ("mimeType", "mimeType"),
+                            ("fileName", "fileName"), ("filePath", "filePath"),
+                            ("stickerId", "stickerID")])
+            # `att_id`, not `key`: the inner loop used to shadow the map's own key
+            # and every attachment landed under "audioDurationSeconds", so a draft
+            # with two attachments kept one (Codex review, blocker 1).
+            for key, api in (("fileSize", "fileSize"),
+                             ("audioDurationSeconds", "audioDurationSeconds")):
+                got = _dec(da.get(api))
+                if got is not None:
+                    one[key] = got
+            dt = _enum(DRAFT_ATTACHMENT_TYPES, da.get("type"),
+                       "draft.attachments.type", host)
+            if dt:
+                one["type"] = dt
+            size = da.get("size") or {}
+            if size:
+                one["size"] = _obj({"width": _dec(size.get("width")),
+                                    "height": _dec(size.get("height"))})
+            one = {k: v for k, v in one.items() if v is not None}
+            if one:
+                attachments[_clean(att_id)] = one
+        return _obj({"text": _clean(draft.get("text")),
+                     "attachments": attachments or None})
+
+
+    def _thin_chat(host, aid, cid):
+        """A chat named only by a reference. It carries what that pointer carried
+        — its account and its id — and nothing else; a fuller read patches it."""
+        if not cid:
+            return
+        host.effects.put(CHAT_TYPE, _chat_ref(host, aid, cid),
+                         properties={"account": aid, "chatId": _clean(cid)},
+                         if_absent=True)
+
+
+    def _chat_row(host, aid, c, whole):
+        """One chat. `whole` says this came from GET /v1/chats/{chatID} with
+        maxParticipantCount=-1, which is the AUTHORITATIVE read: only there may
+        the roster be replaced, because a LIST read caps it at 100 and must not
+        shrink one a whole read filled in."""
+        cid = (c or {}).get("id")
+        if not cid:
+            return None
+        props = {"account": aid, "chatId": _clean(cid)}
+        _take(props, c, [("localChatId", "localChatID"), ("network", "network"),
+                         ("chatTitle", "title"), ("description", "description"),
+                         ("imgUrl", "imgURL"), ("isReadOnly", "isReadOnly"),
+                         ("unreadCount", "unreadCount"),
+                         ("unreadMentionsCount", "unreadMentionsCount"),
+                         ("lastReadMessageSortKey", "lastReadMessageSortKey"),
+                         ("isArchived", "isArchived"),
+                         ("isMarkedUnread", "isMarkedUnread"),
+                         ("isMuted", "isMuted"), ("isPinned", "isPinned"),
+                         ("isLowPriority", "isLowPriority"),
+                         ("messageExpirySeconds", "messageExpirySeconds"),
+                         ("capabilities", "capabilities")])
+        ct = _enum(CHAT_TYPES, c.get("type"), "chat.type", host)
+        if ct:
+            props["type"] = ct
+        # `lastActivity` is a MUTATION MARK, so it is an ordinary datetime and
+        # feeds no trait (§4): a chat did not begin when somebody last typed.
+        last = _iso(c.get("lastActivity"))
+        if last:
+            props["lastActivity"] = last
+
+        caid = c.get("accountID")
+        if caid:
+            props["chatAccount"] = _chataccount_ref(host, aid, caid)
+        if c.get("mergedIntoChatID"):
+            props["mergedIntoChat"] = _chat_ref(host, aid, c["mergedIntoChatID"])
+            _thin_chat(host, aid, c["mergedIntoChatID"])
+        merge = c.get("merge") or {}
+        if merge:
+            props["merge"] = _obj({
+                "chats": _refs(host, aid, merge.get("chatIDs"), _chat_ref),
+                "defaultChat": _chat_ref(host, aid, merge.get("defaultChatID")),
+            })
+            # A MERGED CHAT'S MEMBERS ARE NOT IN THE LIST. Beeper says a client
+            # rendering merged chats as one conversation should "hide chats
+            # carrying mergedIntoChatID", and /v1/chats does exactly that — so
+            # these references point at chats no walk will ever reach. A thin row
+            # is minted for each so the pointer resolves; a later read fills it
+            # in, and a dangling reference is a signal to walk, never a reason to
+            # drop the relation (Slack's `x_files` lesson, provider-practices §6).
+            for member in (merge.get("chatIDs") or []):
+                _thin_chat(host, aid, member)
+            _thin_chat(host, aid, merge.get("defaultChatID"))
+        if "labels" in c:
+            labels = [r for r in
+                      (_label_row(host, aid, lab) for lab in c.get("labels") or [])
+                      if r]
+            props["labels"] = labels or None
+
+        block = c.get("participants") or {}
+        if "participants" in c:
+            people = _participants(host, aid, c)
+            # A capped list read must not shrink a roster a whole read filled in.
+            if people and (whole or not block.get("hasMore")):
+                props["participants"] = people
+            if isinstance(block.get("total"), int):
+                props["participantsTotal"] = block["total"]
+            # `participants.hasMore` is the embedded list's pagination flag and is
+            # not mirrored (§1, the response envelope): the same chat reads `true`
+            # through the list and `false` read singly, so a row carrying it would
+            # flip on every walk. It is still what decides whether to re-read.
+
+        draft = _draft(host, c)
+        if "draft" in c:
+            props["draft"] = draft          # explicit null clears it
+        rem = c.get("reminder")
+        if "reminder" in c:
+            props["reminder"] = _obj({
+                "remindAt": _iso((rem or {}).get("remindAt")),
+                "dismissOnIncomingMessage":
+                    (rem or {}).get("dismissOnIncomingMessage")}) if rem else None
+        sn = c.get("snooze")
+        if "snooze" in c:
+            props["snooze"] = _obj({
+                "snoozeUntil": _iso((sn or {}).get("snoozeUntil")),
+                "userSnoozedAt": _iso((sn or {}).get("userSnoozedAt"))}) if sn else None
+        _put(host, CHAT_TYPE, _chat_ref(host, aid, cid), props)
+        return _chat_ref(host, aid, cid)
+
+
+    def _attachments(host, aid, m):
+        out = []
+        for a in m.get("attachments") or []:
+            one = {}
+            _take(one, a, [("id", "id"), ("srcUrl", "srcURL"),
+                           ("mimeType", "mimeType"), ("fileName", "fileName"),
+                           ("isGif", "isGif"), ("isSticker", "isSticker"),
+                           ("isVoiceNote", "isVoiceNote"),
+                           ("posterImg", "posterImg")])
+            for key, api in (("fileSize", "fileSize"), ("duration", "duration")):
+                got = _dec(a.get(api))
+                if got is not None:
+                    one[key] = got
+            at = _enum(ATTACHMENT_TYPES, a.get("type"), "attachment.type", host)
+            if at:
+                one["type"] = at
+            tr = a.get("transcription") or {}
+            if tr:
+                one["transcription"] = _obj({
+                    "transcription": _clean(tr.get("transcription")),
+                    "engine": tr.get("engine"), "language": tr.get("language")})
+            size = a.get("size") or {}
+            if size:
+                one["size"] = _obj({"width": _dec(size.get("width")),
+                                    "height": _dec(size.get("height"))})
+            one = {k: v for k, v in one.items() if v is not None}
+            if one:
+                out.append(one)
+        return out
+
+
+    # `_links` has no `host` to log through, so it leaves its notes here and the
+    # caller drains them.
+    _LOG: list[str] = []
+
+
+    def _links(m):
+        out = []
+        for lp in m.get("links") or []:
+            one = {}
+            _take(one, lp, [("favicon", "favicon"), ("img", "img"),
+                            ("linkTitle", "title"), ("summary", "summary")])
+            for key, api in (("url", "url"), ("originalUrl", "originalURL")):
+                raw = _clean(lp.get(api))
+                got = _url(raw)
+                if got:
+                    one[key] = got
+                elif raw:
+                    # Declared `url` because Beeper RESOLVES a preview's address
+                    # and every one in the owner's corpus is absolute http(s). One
+                    # that is not is not written — and says so, so the exception
+                    # is visible rather than silent (Codex review).
+                    _LOG.append("beeper: a link preview's %s is not an absolute "
+                                "http(s) URL; leaving it unset" % api)
+            size = lp.get("imgSize") or {}
+            if size:
+                one["imgSize"] = _obj({"width": _dec(size.get("width")),
+                                       "height": _dec(size.get("height"))})
+            one = {k: v for k, v in one.items() if v is not None}
+            if one:
+                out.append(one)
+        return out
+
+
+    def _reactions(host, aid, m):
+        """A repeated OBJECT, not a repeated reference: the schema says a network
+        may let one person react twice, and a repeated reference refuses a
+        duplicate target. The person inside it IS a reference."""
+        out = []
+        for r in m.get("reactions") or []:
+            one = {}
+            _take(one, r, [("id", "id"), ("reactionKey", "reactionKey"),
+                           ("emoji", "emoji"), ("imgUrl", "imgURL")])
+            pid = r.get("participantID")
+            if pid:
+                one["participant"] = _user_ref(host, aid, pid)
+            one = {k: v for k, v in one.items() if v is not None}
+            if one:
+                out.append(one)
+        return out
+
+
+    def _send_status(host, aid, m):
+        ss = m.get("sendStatus") or {}
+        if not ss:
+            return None
+        one = {}
+        _take(one, ss, [("reason", "reason"), ("message", "message"),
+                        ("internalError", "internalError")])
+        st = _enum(SEND_STATUS, ss.get("status"), "sendStatus.status", host)
+        if st:
+            one["status"] = st
+        ts = _iso(ss.get("timestamp"))
+        if ts:
+            one["timestamp"] = ts
+        delivered = _refs(host, aid, ss.get("deliveredToUsers"), _user_ref)
+        if delivered:
+            one["deliveredToUsers"] = delivered
+        return _obj(one)
+
+
+    def _mint_actors(host, aid, m):
+        """Every person this message names, minted from the id alone so the
+        references resolve. A fuller read — the roster, the address book — patches
+        the row later; a thin mint never overwrites one."""
+        ids = {m.get("senderID")}
+        for r in m.get("reactions") or []:
+            ids.add(r.get("participantID"))
+        for uid in (m.get("mentions") or []):
+            if uid != ROOM_MENTION:
+                ids.add(uid)
+        for uid in ((m.get("sendStatus") or {}).get("deliveredToUsers") or []):
+            ids.add(uid)
+        for uid in sorted(i for i in ids if i):
+            _put(host, USER_TYPE, _user_ref(host, aid, uid),
+                 {"account": aid, "userId": _clean(uid)})
+
+
+    def _message_row(host, aid, m):
+        """One message. `timestamp` IS `at`; `mentions` splits losslessly into
+        references plus the `@room` sentinel; `seen` stays json because the schema
+        declares a three-way union no single declared shape holds."""
+        mid, cid = (m or {}).get("id"), (m or {}).get("chatID")
+        if not mid or not cid:
+            return None
+        _mint_actors(host, aid, m)
+        props = {"account": aid, "messageId": _clean(mid),
+                 "chat": _chat_ref(host, aid, cid)}
+        _take(props, m, [("sortKey", "sortKey"), ("text", "text"),
+                         ("senderName", "senderName"), ("isSender", "isSender"),
+                         ("isHidden", "isHidden"), ("isDeleted", "isDeleted"),
+                         ("isUnread", "isUnread"), ("seen", "seen")])
+        mt = _enum(MESSAGE_TYPES, m.get("type"), "message.type", host)
+        if mt:
+            props["type"] = mt
+        at = _iso(m.get("timestamp"))
+        if at:
+            props["at"] = at
+        edited = _iso(m.get("editedTimestamp"))
+        if edited:
+            props["editedTimestamp"] = edited
+
+        if m.get("accountID"):
+            props["chatAccount"] = _chataccount_ref(host, aid, m["accountID"])
+        if m.get("senderID"):
+            props["sender"] = _user_ref(host, aid, m["senderID"])
+        if m.get("linkedMessageID"):
+            props["linkedMessage"] = _message_ref(host, aid, cid,
+                                                  m["linkedMessageID"])
+        # `mentions` is a list of user ids plus, possibly, the literal `@room`.
+        # null means a legacy message Beeper cannot decode, and is left absent.
+        if isinstance(m.get("mentions"), list):
+            named = [x for x in m["mentions"] if x and x != ROOM_MENTION]
+            props["mentions"] = _refs(host, aid, named, _user_ref) or None
+            props["mentionsRoom"] = True if ROOM_MENTION in m["mentions"] else None
+
+        if "attachments" in m:
+            props["attachments"] = _attachments(host, aid, m) or None
+        if "links" in m:
+            props["links"] = _links(m) or None
+            while _LOG:
+                host.log(_LOG.pop(0))
+        if "reactions" in m:
+            props["reactions"] = _reactions(host, aid, m) or None
+        if "sendStatus" in m:
+            props["sendStatus"] = _send_status(host, aid, m)
+
+        _put(host, MESSAGE_TYPE, _message_ref(host, aid, cid, mid), props)
+        return _message_ref(host, aid, cid, mid)
+
+
+    # ------------------------------------------------------- the state kind
+
+    def _chatsync_get(host, aid, cid):
+        return (host.records.get(CHATSYNC_TYPE,
+                                 _chatsync_ref(host, aid, cid)) or {}
+                ).get("properties") or {}
+
+
+    def _chatsync_put(host, aid, cid, props):
+        """Written ONLY here, and only with `writer: connector` properties — a page
+        of history must never bump the chat's own version."""
+        eid = _chatsync_ref(host, aid, cid)
+        base = {"chat": _chat_ref(host, aid, cid)}
+        base.update({k: v for k, v in props.items() if v is not None})
+        host.effects.put(CHATSYNC_TYPE, eid, properties=base, if_absent=True)
+        host.effects.patch(CHATSYNC_TYPE, eid, properties=base)
+
+
+    # ------------------------------------------------------------- the stamps
+
+    def _why_class(reason):
+        """The CLASS of a failure reason, for the status line and the log."""
+        text = str(reason or "").strip()
+        if text.startswith("permanent: "):
+            text = text[len("permanent: "):]
+        head = text.split()[0] if text.split() else "unknown"
+        return head[:32]
+
+
+    def _permanent(err):
+        return isinstance(err, Beeper) and _is_permanent_status(err.status)
+
+
+    def _failed(resume, kind, ident, err, **rest):
+        """One unit of work that failed, KEPT — and retried only if retrying can
+        possibly help. A PERMANENT one is recorded ONCE and never retried, because
+        the drain cannot converge while work it can never finish keeps reporting
+        itself pending. Either way the entry stays on `account.streamCursors.failed`
+        as `[kind, ident, attempts, why]`."""
+        attempts = {}
+        for row in resume.get("failed") or []:
+            attempts[(row[0], repr(row[1]))] = row[2]
+        n = attempts.get((kind, repr(ident)), 0) + 1
+        failed = [row for row in (resume.get("failed") or [])
+                  if (row[0], repr(row[1])) != (kind, repr(ident))]
+        why = str(getattr(err, "detail", err))[:REASON_MAX]
+        permanent = _permanent(err)
+        failed.append([kind, ident, n, ("permanent: " if permanent else "") + why])
+        out = dict(resume, failed=failed[-FAILED_MAX:], **rest)
+        if not permanent and n <= RETRY_MAX:
+            out["retry"] = list(resume.get("retry") or []) + [[kind, ident]]
+        return out
+
+
+    def _stamp(host, acct, aid, cursors, note="", not_before=None, completed=True,
+               run=None):
+        """The drain's LAST effect: everything before it has committed, so the
+        completion marker never precedes its messages."""
         typ = ((acct or {}).get("kind") or ACCOUNT_TYPE) or ACCOUNT_TYPE
-        status = "ok"
-        if pending:
-            status = "ok (%d room%s backfill pending)" % (
-                len(pending), "" if len(pending) == 1 else "s")
-        props = {"lastSyncedAt": _now_iso(), "syncStatus": status,
-                 "backfillResume": pending or {}}
-        if next_batch:
-            props["syncToken"] = next_batch
+        pending = _pending(cursors)
+        if pending and note:
+            status = "ok (%d pending, %s)" % (pending, note)
+        elif pending:
+            status = "ok (%d pending)" % pending
+        elif note:
+            status = "ok (%s)" % note
+        else:
+            status = "ok"
+        failed = cursors.get("failed") or []
+        if failed:
+            by_why = {}
+            for row in failed:
+                key = "%s/%s" % (row[0], _why_class(row[3] if len(row) > 3 else ""))
+                by_why[key] = by_why.get(key, 0) + 1
+            top = sorted(by_why.items(), key=lambda kv: -kv[1])[:3]
+            status += " [%d failed: %s]" % (
+                len(failed), ", ".join("%s x%d" % (k, n) for k, n in top))
+            host.log("beeper: %d units of work failed; streamCursors.failed holds "
+                     "[kind, id, attempts, why] for each. By class: %s"
+                     % (len(failed),
+                        ", ".join("%s x%d" % (k, n)
+                                  for k, n in sorted(by_why.items(),
+                                                     key=lambda kv: -kv[1]))))
+        status = status[:REASON_MAX]
+        now = _now_iso()
+        props = {
+            # `lastSyncedAt` is the last ATTEMPT — it is what the cadence reads.
+            # Whether the walk FINISHED is a different fact with its own field.
+            "lastSyncedAt": now,
+            "syncStatus": status,
+            "streamCursors": cursors,
+            "retryNotBefore": not_before,
+        }
+        if completed and not pending:
+            props["lastCompletedAt"] = now
+        # The core `sync` trait, BESIDE the pair above and derived from the same
+        # facts (T-084). A rate-limited stop is the trait's `throttled`; a bounded
+        # one is `ok` with the count in `syncProgress`.
+        props.update(_trait(((acct or {}).get("properties") or {}), cursors,
+                            "throttled" if not_before else "ok", status, now,
+                            run=run))
         host.effects.patch(typ, aid, properties=props)
 
 
-    def _erroring(host, acct, aid, reason, extra=None):
-        # F2/F3: a provider failure stamps THIS account erroring — bounded
-        # reason, no lastSyncedAt (the run did not complete, the eventual ok
-        # run must not find its window floor advanced past records it never
-        # saw) — and the delivery completes instead of parking.
-        props = {"syncStatus": "erroring: " + str(reason)[:REASON_MAX]}
-        if extra:
-            props.update(extra)
-        host.effects.patch(((acct or {}).get("kind") or ACCOUNT_TYPE) or ACCOUNT_TYPE, aid,
-                           properties=props)
+    def _erroring(host, acct, aid, reason, cursors=None, attempted=False,
+                  run=None, at_phase=None):
+        """A provider failure stamps THIS account erroring and the delivery
+        completes instead of parking. `lastSyncedAt` is the last ATTEMPT, and a
+        failed walk IS one — leaving it unstamped kept the on-connect trigger's
+        guard open and re-fired the same failing walk (Codex review)."""
+        why = str(reason)[:REASON_MAX]
+        props = {"syncStatus": "erroring: " + why}
+        if attempted:
+            props["lastSyncedAt"] = _now_iso()
+        if cursors is not None:
+            props["streamCursors"] = cursors
+        # `at_phase` is the phase the walk DIED in, which a permanent failure
+        # rewrites to `done` in the cursors before it gets here — so the stream
+        # that failed is named explicitly rather than read back off them.
+        props.update(_trait(((acct or {}).get("properties") or {}), cursors,
+                            "erroring", why, _now_iso(), run=run,
+                            at_phase=at_phase))
+        host.effects.patch(((acct or {}).get("kind") or ACCOUNT_TYPE) or ACCOUNT_TYPE,
+                           aid, properties=props)
 
 
-    def _backfill_page(host, base, token, aid, job, pending):
-        # ONE /rooms/{id}/messages page, walking backwards from the job's
-        # token until the cutoff, the history's end, or the per-drain page
-        # cap. Returns the advanced job, or None when this room is done for
-        # this drain — a cap hit records the room in `pending` so the next
-        # run resumes the walk (H5), never a silent abandonment.
-        if job.get("resumed") and not job.get("checked"):
-            # A resumed room may have been deleted since the cap hit — drop
-            # its walk rather than staging messages into a void.
-            if host.records.get(ROOM_TYPE, job["eid"]) is None:
-                host.log("beeper: resumable room %s is gone; dropping its walk"
-                         % job["room"])
-                return None
-            job = dict(job, checked=True)
-        path = "/_matrix/client/v3/rooms/%s/messages" % urllib.parse.quote(job["room"])
-        resp = _get(base, path, token,
-                    {"dir": "b", "from": job["from"], "limit": BACKFILL_PAGE})
-        chunk = resp.get("chunk") or []
-        cutoff = job.get("cutoff")
-        oldest = None
-        for ev in chunk:
-            _put_message(host, aid, job["eid"], job["room"], ev, cutoff)
-            ts = ev.get("origin_server_ts")
-            if isinstance(ts, (int, float)) and (oldest is None or ts < oldest):
-                oldest = ts
-        end = resp.get("end") or ""
-        pages = job.get("pages", 0) + 1
-        if (not chunk or not end
-                or (cutoff and oldest is not None and oldest < cutoff)):
-            return None
-        if pages >= MAX_BACKFILL_PAGES:
-            pending[job["room"]] = {"from": end, "cutoff": cutoff}
-            return None
-        return dict(job, pages=pages, **{"from": end})
+    def _budget_left(resume, calls=1):
+        started = resume.get("startedAt") or 0
+        spent = resume.get("calls") or 0
+        if spent + calls > DRAIN_CALLS:
+            return False
+        return (time.time() - started) < DRAIN_SECONDS
 
 
-    def _rooms_page(host, resume, accounts):
-        # One bounded slice of the room list: mirror at most ROOMS_PER_PAGE
-        # rooms (mint-then-patch), queue their history jobs, hand the rest
-        # off. The frame holds at most 25 rooms' puts+patches — never the
-        # whole account.
-        aid = resume.get("account") or ""
-        rooms = list(resume.get("rooms") or [])
-        jobs = list(resume.get("jobs") or [])
-        flt = resume.get("filter") or ""
-        cutoff = resume.get("cutoff")
-        nb = resume.get("nextBatch") or ""
-        first = bool(resume.get("first"))
-        batch, rest = rooms[:ROOMS_PER_PAGE], rooms[ROOMS_PER_PAGE:]
-        for desc in batch:
-            rid = desc.get("room") or ""
-            if not rid:
+    def _spend(resume):
+        return dict(resume, calls=(resume.get("calls") or 0) + 1)
+
+
+    # -------------------------------------------------------------- the phases
+
+    def _phase_info(host, base, token, resume):
+        """The only unauthenticated call Beeper has, and the one that says which
+        build answered — fields appear by version."""
+        body = _call(base, token, "/v1/info") or {}
+        version = ((body.get("app") or {}).get("version"))
+        if version:
+            host.effects.patch(ACCOUNT_TYPE, resume["account"],
+                               properties={"serverVersion": _clean(version)})
+        return dict(resume, phase="accounts")
+
+
+    def _phase_accounts(host, base, token, resume):
+        """Every connected chat account, and with it the owner's own identity on
+        each network. The account's `user` is the one whose `user.isSelf` is true
+        on the MATRIX account — the Beeper identity itself — falling back to the
+        first self identity any bridge reports."""
+        aid = resume["account"]
+        body = _call(base, token, "/v1/accounts")
+        rows = body if isinstance(body, list) else (body or {}).get("items") or []
+        contacts, me, fallback = [], None, None
+        for a in rows:
+            _chataccount_row(host, aid, a)
+            caid = a.get("accountID")
+            if caid:
+                contacts.append(caid)
+            user = a.get("user") or {}
+            if user.get("id") and user.get("isSelf"):
+                if (a.get("bridge") or {}).get("type") == "matrix":
+                    me = user["id"]
+                elif fallback is None:
+                    fallback = user["id"]
+        owner = me or fallback
+        if owner:
+            # A reference, never a copy of the id: the user row is mirrored and
+            # its id is its own (§1).
+            host.effects.patch(ACCOUNT_TYPE, aid,
+                               properties={"user": _user_ref(host, aid, owner)})
+        return dict(resume, phase="bridges",
+                    contacts=contacts if resume.get("wantContacts") else [])
+
+
+    def _phase_bridges(host, base, token, resume):
+        aid = resume["account"]
+        body = _call(base, token, "/v1/bridges") or {}
+        for b in (body.get("items") or []):
+            _bridge_row(host, aid, b)
+        return dict(resume, phase="labels")
+
+
+    def _phase_labels(host, base, token, resume):
+        aid = resume["account"]
+        body = _call(base, token, "/v1/labels")
+        rows = body if isinstance(body, list) else (body or {}).get("items") or []
+        for lab in rows:
+            _label_row(host, aid, lab)
+        return dict(resume, phase="contacts")
+
+
+    def _phase_contacts(host, base, token, resume):
+        """One page of one bridge's address book per invocation. This is where a
+        person with no open chat appears, which is why it is worth the call."""
+        aid = resume["account"]
+        queue = list(resume.get("contacts") or [])
+        if not queue:
+            return dict(resume, phase="chats", contact=None, cursor="")
+        caid = queue[0]
+        work = resume.get("contact") or {}
+        if work.get("account") != caid:
+            work = {"account": caid, "cursor": ""}
+        params = {"limit": CONTACT_PAGE}
+        if work["cursor"]:
+            params["cursor"] = work["cursor"]
+            params["direction"] = "before"
+        try:
+            body = _call(base, token, _acctpath(caid, "/contacts/list"), params)
+        except RateLimited:
+            raise
+        except Exception as e:  # noqa: BLE001 — one address book's failure is its own
+            return _failed(resume, "contacts", caid, e, contacts=queue[1:],
+                           contact=None)
+        for u in (body.get("items") or []):
+            _user_row(host, aid, u)
+        nxt = body.get("oldestCursor") or ""
+        if body.get("hasMore") and nxt and nxt != work["cursor"] and body.get("items"):
+            return dict(resume, contact={"account": caid, "cursor": nxt})
+        return dict(resume, contacts=queue[1:], contact=None)
+
+
+    def _phase_chats(host, base, token, resume):
+        """One page of the chat list per invocation. Every item is a
+        `ChatWithPreview`: the chat, and its newest message WHOLE — which is
+        mirrored as a message row rather than thrown away (the Slack `latest`
+        lesson, provider-practices §8)."""
+        aid = resume["account"]
+        params = {"limit": CHAT_PAGE}
+        if resume.get("cursor"):
+            params["cursor"] = resume["cursor"]
+            params["direction"] = "before"
+        body = _call(base, token, "/v1/chats", params)
+        queue = list(resume.get("queue") or [])
+        msgq = list(resume.get("msgq") or [])
+        name_filter = resume.get("filter") or ""
+        for c in (body.get("items") or []):
+            cid = c.get("id")
+            if not cid:
                 continue
-            eid = host.ids.external("beeper", aid, rid)
-            name = desc.get("name") or ""
-            net = desc.get("net")
-            if not _passes_filter(host, flt, eid, name, net):
+            _chat_row(host, aid, c, whole=False)
+            preview = c.get("preview")
+            if isinstance(preview, dict) and preview.get("id"):
+                # The list's own `preview` is a whole Message and its chat is this
+                # one, whatever the payload says. TWO ROWS THAT REFERENCE EACH
+                # OTHER ARE THREE EFFECTS (§3): the chat is minted above, the
+                # message here, and the link is patched on last — the engine
+                # checks a reference's target at write time and the message did
+                # not exist when the chat was created.
+                ref = _message_row(host, aid,
+                                   dict(preview, chatID=preview.get("chatID") or cid))
+                if ref:
+                    host.effects.patch(CHAT_TYPE, _chat_ref(host, aid, cid),
+                                       properties={"preview": ref})
+            if name_filter and name_filter not in (c.get("title") or "").lower():
                 continue
-            _mirror_room(host, aid, rid, name, net, desc.get("summary"))
-            # The history walk starts from THIS sync's token and stops at the
-            # cutoff. First sync walks every room (the backfill window);
-            # steady state walks only rooms whose delta held events.
-            if cutoff is not None and nb and (first or desc.get("ev")):
-                jobs.append({"room": rid, "eid": eid, "from": nb,
-                             "cutoff": cutoff, "pages": 0})
-        if rest:
-            return {"more": host.page.more(dict(resume, rooms=rest, jobs=jobs))}
-        if jobs:
-            return {"more": host.page.more(dict(resume, phase="backfill",
-                                                rooms=[], jobs=jobs))}
-        _stamp(host, accounts.get(aid), aid, nb, dict(resume.get("pending") or {}))
-        return {"output": {"account": aid}}
+            state = _chatsync_get(host, aid, cid)
+            # The AUTHORITATIVE read is asked for once per chat, and again only
+            # while the list still says the roster is truncated.
+            truncated = bool(((c.get("participants") or {}).get("hasMore")))
+            if (not state.get("wholeReadAt") or truncated) and cid not in queue:
+                queue.append(cid)
+            if cid not in msgq:
+                msgq.append(cid)
+        nxt = body.get("oldestCursor") or ""
+        if body.get("hasMore") and nxt and nxt != resume.get("cursor") and body.get("items"):
+            return dict(resume, cursor=nxt, queue=queue, msgq=msgq)
+        return dict(resume, phase="whole", cursor="", queue=queue, msgq=msgq)
 
 
-    def _backfill_drive(host, base, token, resume, accounts):
-        # One /messages page for the job at the head of the queue. A provider
-        # failure here stamps erroring WITH every un-walked room preserved in
-        # backfillResume — the token may advance because the gaps it skips
-        # ride in the resume map (F2/F3 + H5).
-        aid = resume.get("account") or ""
-        acct = accounts.get(aid)
-        jobs = list(resume.get("jobs") or [])
-        pending = dict(resume.get("pending") or {})
-        nb = resume.get("nextBatch") or ""
-        if jobs:
-            try:
-                job = _backfill_page(host, base, token, aid, jobs[0], pending)
-            except Exception as e:
-                for j in jobs:
-                    pending.setdefault(j["room"], {"from": j["from"],
-                                                   "cutoff": j.get("cutoff")})
-                extra = {"backfillResume": pending}
-                if nb:
-                    extra["syncToken"] = nb
-                _erroring(host, acct, aid, e, extra)
-                return {"output": {"account": aid, "erroring": True}}
-            jobs = ([job] if job else []) + jobs[1:]
-        if jobs:
-            return {"more": host.page.more(dict(resume, jobs=jobs,
-                                                pending=pending))}
-        _stamp(host, acct, aid, nb, pending)
-        return {"output": {"account": aid}}
+    def _phase_whole(host, base, token, resume):
+        """GET /v1/chats/{id}?maxParticipantCount=-1 — the authoritative read, and
+        the only one that returns every participant."""
+        aid = resume["account"]
+        queue = list(resume.get("queue") or [])
+        if not queue:
+            return dict(resume, phase="messages", queue=[])
+        cid = queue[0]
+        try:
+            body = _call(base, token, _chatpath(cid),
+                         {"maxParticipantCount": ALL_PARTICIPANTS})
+        except RateLimited:
+            raise
+        except Exception as e:  # noqa: BLE001 — one chat's failure is its own
+            # The reason lands on the chat's STATE row, never on the mirror, and
+            # the queue moves on: one unreadable chat never stops the rest.
+            _chatsync_put(host, aid, cid,
+                          {"messagesStatus":
+                           str(getattr(e, "detail", e))[:REASON_MAX]})
+            return _failed(resume, "whole", cid, e, queue=queue[1:])
+        if isinstance(body, dict) and body.get("id"):
+            _chat_row(host, aid, body, whole=True)
+            _chatsync_put(host, aid, cid, {"wholeReadAt": _now_iso()})
+        return dict(resume, queue=queue[1:])
+
+
+    def _phase_messages(host, base, token, resume):
+        """One page of one chat's history per invocation, from that chat's own
+        stored cursor on its `chatsync` row.
+
+        Two walks, and the state kind says which this chat is in. A COLD chat
+        backfills: the first page carries no cursor (Beeper answers newest-first),
+        and each next page asks `direction=before` from the previous page's
+        `oldestCursor` until the backfill window's floor or the start of the chat.
+        A chat whose backfill is complete pages FORWARD, `direction=after` from
+        its stored `newestCursor`, and sees only what has arrived since."""
+        aid = resume["account"]
+        msgq = list(resume.get("msgq") or [])
+        if not msgq:
+            return dict(resume, phase="done", msgq=[], work=None)
+        cid = msgq[0]
+        state = _chatsync_get(host, aid, cid)
+        work = resume.get("work") or {}
+        if work.get("chat") != cid:
+            complete = bool(state.get("backfillComplete"))
+            work = {"chat": cid,
+                    "mode": "after" if complete else "before",
+                    "cursor": (state.get("newestCursor") or "") if complete
+                              else (state.get("oldestCursor") or ""),
+                    "newest": state.get("newestCursor") or "",
+                    "oldest": state.get("oldestCursor") or "",
+                    "seen": 0, "floorHit": False}
+        params = {"limit": MESSAGE_PAGE}
+        if work["cursor"]:
+            params["cursor"] = work["cursor"]
+            params["direction"] = work["mode"]
+        try:
+            body = _call(base, token, _chatpath(cid, "/messages"), params)
+        except RateLimited:
+            raise
+        except Exception as e:  # noqa: BLE001
+            # One chat's failure is that chat's business. The queue moves on and
+            # the reason lands on the STATE row, never on the mirror.
+            _chatsync_put(host, aid, cid,
+                          {"messagesStatus": str(getattr(e, "detail", e))[:REASON_MAX]})
+            return _failed(resume, "messages", cid, e, msgq=msgq[1:], work=None)
+
+        floor = resume.get("floor")
+        items = body.get("items") or []
+        oldest_seen = None
+        for m in items:
+            if not m.get("id"):
+                continue
+            _message_row(host, aid, dict(m, chatID=m.get("chatID") or cid))
+            ts = _iso(m.get("timestamp"))
+            if ts and (oldest_seen is None or ts < oldest_seen):
+                oldest_seen = ts
+        work["seen"] = (work.get("seen") or 0) + len(items)
+        if body.get("newestCursor") and (work["mode"] == "after"
+                                         or not work.get("newest")):
+            work["newest"] = body["newestCursor"]
+        # `oldestCursor` and `backfilledThrough` describe how far BACK this chat
+        # has been walked, so only a backfill page moves them: a forward page's
+        # oldest boundary is recent and would erase the backfill's (Codex review).
+        if work["mode"] == "before" and body.get("oldestCursor"):
+            work["oldest"] = body["oldestCursor"]
+        if floor and oldest_seen and oldest_seen < floor:
+            work["floorHit"] = True
+
+        patch = {"messagesStatus": "ok", "lastSyncedAt": _now_iso()}
+        if work.get("newest"):
+            patch["newestCursor"] = work["newest"]
+        if work["mode"] == "before":
+            if work.get("oldest"):
+                patch["oldestCursor"] = work["oldest"]
+            if oldest_seen:
+                patch["backfilledThrough"] = oldest_seen
+
+        more = bool(body.get("hasMore")) and bool(items)
+        nxt = body.get("oldestCursor")
+        if work["mode"] == "before":
+            # A cursor that does not MOVE is not progress. Beeper answering
+            # `hasMore: true` with the page boundary it was already given would
+            # otherwise walk this chat forever, one bounded drain after another,
+            # and the account would never converge (Codex review, blocker 5).
+            stalled = more and (not nxt or nxt == work["cursor"])
+            if stalled:
+                patch["messagesStatus"] = ("stopped: the backfill cursor did not "
+                                           "advance past %s" % (nxt or "<none>"))
+            done = work["floorHit"] or not more or stalled
+            if done:
+                patch["backfillComplete"] = True
+                _chatsync_put(host, aid, cid, patch)
+                return dict(resume, msgq=msgq[1:], work=None)
+            _chatsync_put(host, aid, cid, patch)
+            return dict(resume, work=dict(work, cursor=nxt))
+        # Forward: keep asking while Beeper says there is more after this page.
+        _chatsync_put(host, aid, cid, patch)
+        if more and body.get("newestCursor") and body["newestCursor"] != work["cursor"]:
+            return dict(resume, work=dict(work, cursor=body["newestCursor"]))
+        return dict(resume, msgq=msgq[1:], work=None)
+
+
+    PHASES = {
+        "info": _phase_info,
+        "accounts": _phase_accounts,
+        "bridges": _phase_bridges,
+        "labels": _phase_labels,
+        "contacts": _phase_contacts,
+        "chats": _phase_chats,
+        "whole": _phase_whole,
+        "messages": _phase_messages,
+    }
+
+
+    def _carry(resume):
+        """What survives a bounded drain into the account's streamCursors: the work
+        the next run picks up, and nothing bulky."""
+        return {
+            "phase": resume.get("phase") or "done",
+            "cursor": resume.get("cursor") or "",
+            # THE FLOOR is part of the work: a drain that stopped on its own
+            # bounds must come back with the window it was walking, not with none.
+            "floor": resume.get("floor"),
+            "cold": bool(resume.get("cold")),
+            "filter": resume.get("filter") or "",
+            "wantContacts": bool(resume.get("wantContacts")),
+            "failed": list(resume.get("failed") or [])[:FAILED_MAX],
+            "retry": list(resume.get("retry") or [])[:FAILED_MAX],
+            "contacts": list(resume.get("contacts") or []),
+            "queue": list(resume.get("queue") or []),
+            "msgq": list(resume.get("msgq") or []),
+            "contact": resume.get("contact"),
+            "work": resume.get("work"),
+        }
 
 
     def main(input, host):
@@ -810,59 +3259,90 @@ data:
         conf = (((cfg.get("inputs") or {}).get("connector") or {}).get("properties")) or {}
         accounts = {a.get("id"): a for a in (cfg.get("accounts") or [])}
         token = conf.get("accessToken") or ""
-        base = (conf.get("homeserverUrl") or DEFAULT_HOMESERVER).rstrip("/")
+        base = (conf.get("apiBase") or DEFAULT_API).rstrip("/")
 
         if not token:
-            host.log("beeper: the connector input carries no accessToken "
-                     "(or did not resolve); nothing to sync")
+            host.log("beeper: the connector input carries no accessToken (or did "
+                     "not resolve); nothing to sync")
             return {"output": {"skipped": "unconfigured"}}
         if token.startswith(SEALED_PREFIX):
-            # A token pasted onto the ACCOUNT would arrive like this: the
-            # engine seals every secret on an accountconfig-trait type and
-            # injects it as stored. The connector's config record is the
-            # usable slot.
-            host.log("beeper: accessToken arrived sealed — paste it on the "
-                     "config, not the account")
+            host.log("beeper: accessToken arrived sealed — paste it on the config, "
+                     "not the account")
             return {"output": {"skipped": "sealed-token"}}
-        if not _pinned(base):
-            # F1: the token goes NOWHERE but a pinned origin — park loudly,
-            # before any request carries the credential.
+        if not _private(base):
             raise RuntimeError(
-                "beeper: homeserverUrl %r is not a pinned origin (https on a "
-                "beeper.com host, or loopback); refusing to send the access "
-                "token" % base)
+                "beeper: apiBase %r is not a private origin (loopback, RFC 1918, "
+                "CGNAT or a .ts.net name); refusing to send the token" % base)
 
         resume = host.page.resume() or None
         if resume:
-            phase = resume.get("phase")
-            if phase == "rooms":
-                return _rooms_page(host, resume, accounts)
-            if phase == "backfill":
-                return _backfill_drive(host, base, token, resume, accounts)
-            return {"output": {}}
+            aid = resume.get("account") or ""
+            acct = accounts.get(aid)
+            phase = resume.get("phase") or "done"
+            if phase == "done":
+                _stamp(host, acct, aid, _carry(dict(resume, phase="done")),
+                       run=resume)
+                return {"output": {"account": aid, "calls": resume.get("calls") or 0}}
+            if not _budget_left(resume):
+                # The engine gives a drain 512 invocations and two minutes; a cold
+                # walk of this inbox is bigger than that. Stop cleanly, hand the
+                # queue to the next run, and say how much is left.
+                _stamp(host, acct, aid, _carry(resume), note="drain bounded",
+                       completed=False, run=resume)
+                return {"output": {"account": aid, "pending": True,
+                                   "calls": resume.get("calls") or 0}}
+            try:
+                nxt = PHASES[phase](host, base, token, _spend(resume))
+            except RateLimited as rl:
+                # The exact phase, page and window are already in `resume`, so the
+                # retry RESUMES rather than restarting.
+                _stamp(host, acct, aid, _carry(resume), note="rate limited",
+                       not_before=rl.not_before(), completed=False, run=resume)
+                return {"output": {"account": aid, "rateLimited": True,
+                                   "retryAfter": rl.retry_after}}
+            except Exception as e:  # noqa: BLE001 — every failure is the account's status
+                # A PERMANENT failure of a stream phase ENDS the walk. Leaving the
+                # phase where it stopped keeps `_pending` true, which reports the
+                # account due on every tick forever — the 401 that can never come
+                # good would be retried for the rest of the day (provider-practices
+                # §5; Codex review, blocker 4). A transient one keeps its place.
+                carried = _carry(resume)
+                if _permanent(e):
+                    carried["phase"] = "done"
+                _erroring(host, acct, aid, getattr(e, "detail", e), carried,
+                          attempted=True, run=resume, at_phase=phase)
+                return {"output": {"account": aid, "erroring": True,
+                                   "permanent": _permanent(e)}}
+            if (nxt.get("phase") or "done") == "done":
+                _stamp(host, acct, aid, _carry(nxt), run=nxt)
+                return {"output": {"account": aid, "calls": nxt.get("calls") or 0}}
+            return {"more": host.page.more(nxt)}
 
-        # A fresh delivery. F8 one-account enforcement first: the
-        # lexicographically-first live account is THE account; every other
-        # live row is stamped ignored (an identical stamp no-op-suppresses,
-        # and this body's own patch cannot re-fire the on-connect trigger).
+        # A fresh delivery. ONE account per repository: one token addresses one
+        # Beeper Desktop, so the lexicographically-first live account is THE
+        # account and every other live row is stamped ignored.
         live = sorted(aid for aid, a in accounts.items() if _wants(a))
         primary = live[0] if live else ""
         for dup in live[1:]:
-            host.effects.patch((accounts[dup].get("kind") or ACCOUNT_TYPE) or ACCOUNT_TYPE, dup,
-                               properties={"syncStatus": IGNORED_STATUS})
+            host.effects.patch((accounts[dup].get("kind") or ACCOUNT_TYPE) or ACCOUNT_TYPE,
+                               dup, properties={"syncStatus": IGNORED_STATUS})
 
-        # The delivery envelope splits the identity: record.type is the LOCAL
-        # name and record.authority the authority — rejoin them before
-        # comparing, or the record path never matches (the previous prefix
-        # check against the full identity silently never did).
         record = (input.get("envelope") or {}).get("record") or {}
-        etype = (record.get("kind") or "")
-        if etype == ACCOUNT_TYPE:
-            # Record-triggered: a connect or edit syncs ITS account — unless
-            # it is not the repository's one live account.
+        # WHICH PATH this run came in on, because the two are stamped by different
+        # hands: the dispatcher writes `lastSyncStartedAt` and
+        # `lastSyncDurationMs` around a RECORD-sourced delivery, and a
+        # SCHEDULE-sourced one names no record, so there the body stamps them
+        # itself (decision 0085).
+        scheduled = (record.get("kind") or "") != ACCOUNT_TYPE
+        if not scheduled:
             aid = record.get("id") or ""
             if aid != primary:
                 return {"output": {"account": aid, "ignored": True}}
+            # A RATE-LIMIT DEADLINE BINDS EVERY DOOR. `_due()` guards the
+            # scheduled path; a record delivery used to walk straight past it, so
+            # "sync now" could call before the instant Beeper named (Codex review).
+            if not _before_deadline((accounts.get(aid) or {}).get("properties") or {}):
+                return {"output": {"account": aid, "rateLimited": True}}
         else:
             # Schedule-triggered: the one live account, when due.
             if not primary or not _due(accounts[primary].get("properties") or {}):
@@ -873,63 +3353,54 @@ data:
         if acct is None or not _wants(acct):
             return {"output": {"synced": 0}}
         props = acct.get("properties") or {}
+        stored = props.get("streamCursors")
+        stored = stored if isinstance(stored, dict) else {}
 
-        # ONE /sync — reduced to descriptors, never staged (F6/P0): Matrix
-        # has no room pagination, so the ROOMS become the paged units and
-        # the raw events never ride in a frame or a cursor.
-        since = props.get("syncToken") or ""
-        params = {"filter": SYNC_FILTER, "timeout": 0}
-        if since:
-            params["since"] = since
-        try:
-            resp = _get(base, "/_matrix/client/v3/sync", token, params)
-        except Exception as e:
-            _erroring(host, acct, aid, e)
-            return {"output": {"account": aid, "erroring": True}}
-
-        first = not since
-        cutoff = _cutoff_ms(props, first)
-        next_batch = resp.get("next_batch") or since
-        rooms = []
-        for rid, room in ((resp.get("rooms") or {}).get("join") or {}).items():
-            timeline = room.get("timeline") or {}
-            events = timeline.get("events") or []
-            desc = {"room": rid}
-            name = _room_name((room.get("state") or {}).get("events") or [], events)
-            if name:
-                desc["name"] = name
-            net = _network(events)
-            if net:
-                desc["net"] = net
-            summary = room.get("summary") or {}
-            if summary:
-                desc["summary"] = summary
-            if events:
-                desc["ev"] = 1
-            rooms.append(desc)
-
-        # Resumable history walks a capped (or erroring) earlier drain left
-        # behind: seed them as jobs so truncated rooms drain to completion
-        # across runs (H5).
-        jobs = []
-        stored = props.get("backfillResume")
-        if isinstance(stored, dict):
-            for rid in sorted(stored):
-                st = stored[rid]
-                if not isinstance(st, dict) or not st.get("from"):
-                    continue
-                jobs.append({"room": rid,
-                             "eid": host.ids.external("beeper", aid, rid),
-                             "from": st["from"], "cutoff": st.get("cutoff"),
-                             "pages": 0, "resumed": True})
-
-        if not rooms and not jobs:
-            _stamp(host, acct, aid, next_batch, {})
-            return {"output": {"account": aid, "rooms": 0}}
-
-        cursor = {"phase": "rooms" if rooms else "backfill",
-                  "account": aid, "rooms": rooms, "jobs": jobs,
-                  "nextBatch": next_batch, "cutoff": cutoff, "first": first,
-                  "filter": (props.get("roomFilter") or "").strip().lower(),
-                  "pending": {}}
+        cold = not props.get("lastCompletedAt")
+        # A FINISHED walk's floor is spent. Only UNFINISHED work carries its
+        # window forward; a new walk computes a new one, or a chat discovered
+        # tomorrow would be backfilled against yesterday's cutoff (Codex review).
+        resuming = bool(stored.get("phase")) and stored.get("phase") != "done"
+        cursor = {
+            "account": aid,
+            "filter": (props.get("chatFilter") or "").strip().lower(),
+            "wantContacts": bool(props.get("enabledContacts")),
+            # A resumed cold walk keeps the floor it started with; only a fresh one
+            # computes a new one.
+            "cold": (bool(stored.get("cold")) if resuming and
+                     stored.get("cold") is not None else cold),
+            "floor": (stored.get("floor") if resuming
+                      and stored.get("floor") is not None else _floor(props, cold)),
+            "startedAt": time.time(), "calls": 0,
+            # Carried so every stamp of this walk, bounded or not, knows which
+            # path it came in on and when it started.
+            "scheduled": scheduled,
+            # Unfinished work from a bounded drain resumes where it stopped; a
+            # finished one starts the walk again from the top.
+            "phase": stored.get("phase") or "info",
+            "cursor": stored.get("cursor") or "",
+            "failed": list(stored.get("failed") or []),
+            "retry": list(stored.get("retry") or []),
+            "contacts": list(stored.get("contacts") or []),
+            "queue": list(stored.get("queue") or []),
+            "msgq": list(stored.get("msgq") or []),
+            "contact": stored.get("contact"),
+            "work": stored.get("work"),
+        }
+        if cursor["phase"] == "done" or not stored.get("phase"):
+            # A NEW WALK. The failure list is this walk's diagnosis, not a
+            # permanent record: a chat whose read 404'd last time is asked again
+            # from the top, because the reason may have gone away.
+            cursor["phase"] = "info"
+            cursor["failed"] = []
+            cursor["retry"] = []
+        # Work that failed last time goes BACK in the queues at the top of the next
+        # walk, so recovery does not wait for a new message to arrive.
+        for kind, ident in cursor.pop("retry", []) or []:
+            if kind == "messages":
+                cursor["msgq"].append(ident)
+            elif kind == "whole":
+                cursor["queue"].append(ident)
+            elif kind == "contacts":
+                cursor["contacts"].append(ident)
         return {"more": host.page.more(cursor)}

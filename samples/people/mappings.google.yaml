@@ -22,26 +22,27 @@ data:
   match:
     # Block style, and the paths quoted: `[]` is a flow-sequence opener in
     # YAML flow context, so `{from: emails[].value}` would not parse.
-    - from: "emails[].value"
+    - from: "emailAddresses[].value"
       to: emails
   map:
     name:
-      path: name.displayName
+      path: "names[].displayName"
+      merge: first
     displayName:
-      path: name.displayName
+      path: "names[].displayName"
+      merge: first
     emails:
-      path: "emails[].value"
+      path: "emailAddresses[].value"
       merge: union
     phones:
-      path: "phones[].value"
+      path: "phoneNumbers[].value"
       merge: union
 ---
 # emailaddress → person: every address a mail header or an attendee list
 # carries is one of these, and this is what makes an address-book contact and a
-# mail sender converge on ONE person. `displayName` maps onto the person's
-# `name` and DELIBERATELY NOT onto `displayName`: a header's "Alice Example" is
-# weaker than an address book's nickname, and atomic selection is latest-write
-# wins, so mail volume would otherwise clobber the contact's contribution.
+# mail sender converge on ONE person. The mirror carries the address and the
+# account it was seen through and nothing else (google 30): the name beside an
+# address in a header stays on the message row, so no name reaches the person.
 kind: substrate.reamde.dev/core/recordmapping
 metadata:
   id: samples.substrate.reamde.dev/people/googleaddressperson
@@ -58,8 +59,6 @@ data:
     - from: address
       to: emails
   map:
-    name:
-      path: displayName
     emails:
       path: address
       merge: union

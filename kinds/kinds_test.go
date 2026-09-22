@@ -266,17 +266,13 @@ func TestEveryDeclarationKindAdmitsEveryOrigin(t *testing.T) {
 // a kind that ships without a displayTemplate fails this test, and one that
 // gains a template has to leave the list.
 func TestEveryKindDeclaresADisplayTemplate(t *testing.T) {
-	// the eight bundle mirrors
-	// carry the provider's own title and move with the built-in slot's
-	// retirement (issue 68).
+	// The three sample kinds that still carry the writer's title in the
+	// built-in slot and move with its retirement (issue 68). The provider
+	// mirrors that used to sit here declare a displayTemplate since the
+	// bundles were replaced with the mneme-tested versions.
 	onTheSlot := map[string]bool{
 		"samples.substrate.reamde.dev/firecrawl/webdocument": true,
-		"providers.substrate.reamde.dev/github/issue":        true,
-		"providers.substrate.reamde.dev/github/pullrequest":  true,
-		"providers.substrate.reamde.dev/linear/issue":        true,
 		"samples.substrate.reamde.dev/notes/note":            true,
-		"providers.substrate.reamde.dev/notion/database":     true,
-		"providers.substrate.reamde.dev/notion/page":         true,
 		"samples.substrate.reamde.dev/readinglist/page":      true,
 	}
 	declared := map[string]bool{}
@@ -462,7 +458,7 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 		to    string
 		count int
 	}{
-		{samples.Authority + "/people/person", 5},
+		{samples.Authority + "/people/person", 4},
 		{samples.Authority + "/tasks/task", 1},
 	} {
 		if got := reg.MappingsTo(want.to); len(got) != want.count {
@@ -577,11 +573,11 @@ func TestEverySampleRehomesOntoARepositoryAuthority(t *testing.T) {
 	if _, ok := reg.ByIdentity(samples.Authority + "/tasks/task"); ok {
 		t.Errorf("%s/tasks/task is live after a rehome that should have moved it", samples.Authority)
 	}
-	// The six suggested mappings were the ones dropped, and nothing that
+	// The five suggested mappings were the ones dropped, and nothing that
 	// projects onto the repository's own kinds survived: on a repository with
 	// no provider, an import delivers kinds and no projection.
-	if len(dropped) != 6 {
-		t.Errorf("dropped %d suggested mappings, want the 6 the tree ships: %v", len(dropped), dropped)
+	if len(dropped) != 5 {
+		t.Errorf("dropped %d suggested mappings, want the 5 the tree ships: %v", len(dropped), dropped)
 	}
 	for _, to := range []string{home + "/people/person", home + "/tasks/task"} {
 		if got := reg.MappingsTo(to); len(got) != 0 {

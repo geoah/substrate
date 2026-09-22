@@ -820,8 +820,8 @@ func TestCatalogListsSuggestedMappingsAndTheirState(t *testing.T) {
 			google = len(item.SuggestedMappings)
 		}
 	}
-	if people != 5 {
-		t.Errorf("the people sample reports %d suggested mappings, want 5", people)
+	if people != 4 {
+		t.Errorf("the people sample reports %d suggested mappings, want 4", people)
 	}
 	if google != 0 {
 		t.Errorf("the google provider reports %d suggested mappings, want none: a provider declares no mapping", google)
