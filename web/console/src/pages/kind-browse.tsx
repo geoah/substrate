@@ -10,7 +10,14 @@
  * TOP TABS, the record page's idiom (owner ask, 2026-08-12): **Records** is the
  * collection, **Definition** is the kind that shapes it — its declaration YAML
  * and the properties it declares. The active tab lives in `?tab=` so it
- * is linkable, and both tabs read the ONE kinds query this page already makes. */
+ * is linkable, and both tabs read the ONE kinds query this page already makes.
+ *
+ * A TREE where the kind allows one: a single reference pinned at the kind
+ * itself (a team's `parent` team) nests the collection. The page's rows are
+ * then the records naming no parent, and each opens onto the records naming
+ * it (`hooks/use-record-tree.ts`). `?nest=false` draws the same rows flat; a
+ * filter or a search draws them flat regardless, so a match is shown wherever
+ * it sits rather than hidden under a parent that does not match. */
 
 import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -19,6 +26,7 @@ import type { SortingState, Updater } from "@tanstack/react-table"
 import { InboxIcon, PlusIcon, SearchXIcon } from "lucide-react"
 import {
   parseAsArrayOf,
+  parseAsBoolean,
   parseAsInteger,
   parseAsString,
   parseAsStringLiteral,
@@ -28,6 +36,7 @@ import {
 import { DataTable, useDataTable } from "@/components/data-table/data-table"
 import { DataTablePagination } from "@/components/data-table/data-table-pagination"
 import { DataTableFilters } from "@/components/data-table/data-table-filters"
+import { RowTreeProvider } from "@/components/data-table/data-table-tree"
 import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 import { KindDefinition } from "@/components/record/definition"
 import { SearchBox } from "@/components/search-box"
@@ -43,6 +52,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useRecordTree } from "@/hooks/use-record-tree"
 import {
   recordsQueryOptions,
   recordCountQueryOptions,
@@ -61,7 +71,9 @@ import {
   filterableProperties,
   kindByCollection,
 } from "@/lib/definition"
+import { nestingProperty, rootsFilter } from "@/lib/record-tree"
 import { titlesFromIncluded } from "@/lib/reference-titles"
+import { cn } from "@/lib/utils"
 import {
   buildColumns,
   columnIdOf,
@@ -114,6 +126,13 @@ export function KindBrowsePage() {
     "page",
     parseAsInteger.withDefault(1)
   )
+  // The tree switch: in the URL beside the sort so a flat view is shareable,
+  // and in the stored prefs so a reader who turned it off stays off. On by
+  // default, and shown only on a kind that can nest at all.
+  const [nest, setNest] = useQueryState(
+    "nest",
+    parseAsBoolean.withDefault(true)
+  )
 
   // A BARE url restores the last-used view from localStorage, one dimension
   // at a time; an explicit ?filter=/?sort= always wins (shareable views stay
@@ -129,15 +148,19 @@ export function KindBrowsePage() {
     if (!params.has("sort") && stored.sort) {
       void setSort(stored.sort, { history: "replace" })
     }
+    if (!params.has("nest") && stored.nest === false) {
+      void setNest(false, { history: "replace" })
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per collection
   }, [authority, pkg, name])
 
   /** Write-through: the store always mirrors the view the handlers just set. */
-  function persist(next: { filter?: string[]; sort?: string }) {
+  function persist(next: { filter?: string[]; sort?: string; nest?: boolean }) {
     saveBrowsePrefs(`${authority}/${pkg}`, name, {
       filter: next.filter ?? filterTokens,
       sort:
         (next.sort ?? sort) === DEFAULT_SORT ? undefined : (next.sort ?? sort),
+      nest: (next.nest ?? nest) ? undefined : false,
     })
   }
 
@@ -157,14 +180,36 @@ export function KindBrowsePage() {
     return words ? { ...base, search: words } : base
   }, [filters, filterFields, search])
 
+  // The reference this kind nests by, where it declares one at itself.
+  const nestProperty = useMemo(
+    () =>
+      kindInfo && registry.data
+        ? nestingProperty(registry.data, kindInfo)
+        : undefined,
+    [kindInfo, registry.data]
+  )
+  const hasFilters = filters.length > 0 || search.trim().length > 0
+  // A filter or a search draws the table flat: a match nested under a parent
+  // that does not match would otherwise be a row the reader cannot reach.
+  const nesting = nestProperty !== undefined && nest && !hasFilters
+  // What the page reads: the whole view, or only the records naming no parent.
+  const listFilter = useMemo(
+    () =>
+      nesting && nestProperty
+        ? rootsFilter(recordFilter, nestProperty.name)
+        : recordFilter,
+    [nesting, nestProperty, recordFilter]
+  )
+
   // A hand-typed ?page= is clamped to a page that exists; the request below
   // is built from this, never from the raw parameter.
   const page = Number.isFinite(pageParam)
     ? Math.max(1, Math.trunc(pageParam))
     : 1
-  // A changed filter or sort renumbers the whole collection, so the page a
-  // reader was on no longer names the same rows: the view resets to page one.
-  const viewKey = `${authority}/${pkg}/${name}|${JSON.stringify(recordFilter ?? null)}|${sort}`
+  // A changed filter, sort or tree switch renumbers the whole collection, so
+  // the page a reader was on no longer names the same rows: the view resets to
+  // page one.
+  const viewKey = `${authority}/${pkg}/${name}|${JSON.stringify(recordFilter ?? null)}|${sort}|${nesting ? "tree" : "flat"}`
   const [lastViewKey, setLastViewKey] = useState(viewKey)
   if (lastViewKey !== viewKey) {
     setLastViewKey(viewKey)
@@ -188,38 +233,60 @@ export function KindBrowsePage() {
     name,
     first: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
-    filter: recordFilter,
+    filter: listFilter,
     orderBy: sort,
     expand,
   })
   const records = useQuery({ ...listOptions, enabled: Boolean(kindInfo) })
 
-  const rows = records.data?.records ?? []
+  // The page's own rows are the tree's roots; under the tree the table draws
+  // each open root's children right after it.
+  const roots = records.data?.records ?? []
+  const tree = useRecordTree({
+    kind: kindInfo,
+    property: nesting ? nestProperty : undefined,
+    roots,
+    filter: recordFilter,
+    orderBy: sort,
+    expand,
+  })
+  const rows = tree.rows
   // Absent `included` — the expansion degraded, or the kind declares no
-  // reference at all — this is empty and every pill reads as its id.
+  // reference at all — this is empty and every pill reads as its id. The
+  // tree's level reads expand the same properties, so their referents join.
   const referenceTitles = useMemo(
-    () => titlesFromIncluded(records.data?.included),
-    [records.data]
+    () => titlesFromIncluded({ ...records.data?.included, ...tree.included }),
+    [records.data, tree.included]
   )
   const pageCursor = records.data?.cursor
   // A single page with nothing behind it IS the exact count, for free. Any
   // larger collection pays the bounded count walk, which the numbered bar
   // needs as well as the header — but only for the NUMBERS: Next below reads
   // the page's own cursor, so a collection past the walk's ceiling still
-  // pages to its end.
+  // pages to its end. Under the tree these count the top-level rows, which is
+  // what the bar pages through.
   const derivedTotal =
-    records.data && !pageCursor && page === 1 ? rows.length : undefined
+    records.data && !pageCursor && page === 1 ? roots.length : undefined
   const count = useQuery({
     // Only once a second page is known to exist: a collection that fits on
     // one page has already answered its own size above, and the walk is a
     // second round trip over the same rows.
-    ...recordCountQueryOptions(authority, pkg, name, recordFilter),
+    ...recordCountQueryOptions(authority, pkg, name, listFilter),
     enabled: Boolean(kindInfo) && (page > 1 || Boolean(pageCursor)),
   })
   const total = derivedTotal ?? count.data?.value
   const totalCapped = derivedTotal === undefined && count.data?.capped
-  const totalText =
-    derivedTotal !== undefined
+  // The header counts the collection, which under the tree is more than the
+  // top-level rows: the same bounded walk over the view's own filter says.
+  const collectionCount = useQuery({
+    ...recordCountQueryOptions(authority, pkg, name, recordFilter),
+    enabled: Boolean(kindInfo) && nesting,
+  })
+  const totalText = nesting
+    ? collectionCount.data
+      ? formatCount(collectionCount.data)
+      : undefined
+    : derivedTotal !== undefined
       ? derivedTotal.toLocaleString()
       : count.data
         ? formatCount(count.data)
@@ -320,8 +387,6 @@ export function KindBrowsePage() {
     )
   }
 
-  const hasFilters = filters.length > 0 || search.trim().length > 0
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-start justify-between gap-3 px-6 pt-5 pb-3">
@@ -400,6 +465,34 @@ export function KindBrowsePage() {
                   }}
                 />
                 <div className="ml-auto flex items-center gap-2 py-2.5 pl-2">
+                  {nestProperty && (
+                    <label
+                      className={cn(
+                        "flex h-8 shrink-0 items-center gap-2 rounded-lg border px-2.5 text-sm text-muted-foreground",
+                        hasFilters
+                          ? "opacity-50"
+                          : "cursor-pointer hover:text-foreground"
+                      )}
+                      title={
+                        hasFilters
+                          ? "Flat while a filter or a search is set, so a match shows wherever it sits"
+                          : `The rows are the ${kindInfo.name} records with no ${nestProperty.name}; each opens onto the ones naming it`
+                      }
+                    >
+                      <input
+                        type="checkbox"
+                        className="accent-primary"
+                        checked={nest}
+                        disabled={hasFilters}
+                        onChange={(e) => {
+                          void setNest(e.target.checked)
+                          resetPages()
+                          persist({ nest: e.target.checked })
+                        }}
+                      />
+                      Nest by <span className="data">{nestProperty.name}</span>
+                    </label>
+                  )}
                   {/* Words against every text this kind indexes (the wire's
                       `filter.search`), composed with the property filters and
                       the sort. */}
@@ -417,61 +510,69 @@ export function KindBrowsePage() {
                 </div>
               </div>
               <div className="min-h-0 flex-1 overflow-auto">
-                <DataTable
-                  table={table}
-                  loading={records.isPlaceholderData && records.isFetching}
-                  onRowClick={(row) =>
-                    void navigate({
-                      to: "/data/$authority/$pkg/$name/$id",
-                      params: {
-                        authority: authority,
-                        pkg: pkg,
-                        name,
-                        id: row.id,
-                      },
-                    })
+                <RowTreeProvider
+                  tree={
+                    tree.active
+                      ? { nodes: tree.nodes, toggle: tree.toggle }
+                      : null
                   }
-                  empty={
-                    <Empty className="py-16">
-                      <EmptyHeader>
-                        <EmptyMedia variant="icon">
-                          <InboxIcon />
-                        </EmptyMedia>
-                        <EmptyTitle>
-                          {hasFilters
-                            ? "Nothing matches"
-                            : `No ${kindInfo.name} records yet`}
-                        </EmptyTitle>
-                        <EmptyDescription>
-                          {hasFilters
-                            ? "No record matches the filters and search you set."
-                            : "Press New to create the first one."}
-                        </EmptyDescription>
-                      </EmptyHeader>
-                      {hasFilters && (
-                        <EmptyContent>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              void setFilterTokens(null)
-                              void setSearch(null)
-                              resetPages()
-                              persist({ filter: [] })
-                            }}
-                          >
-                            Clear filters
-                          </Button>
-                        </EmptyContent>
-                      )}
-                    </Empty>
-                  }
-                />
+                >
+                  <DataTable
+                    table={table}
+                    loading={records.isPlaceholderData && records.isFetching}
+                    onRowClick={(row) =>
+                      void navigate({
+                        to: "/data/$authority/$pkg/$name/$id",
+                        params: {
+                          authority: authority,
+                          pkg: pkg,
+                          name,
+                          id: row.id,
+                        },
+                      })
+                    }
+                    empty={
+                      <Empty className="py-16">
+                        <EmptyHeader>
+                          <EmptyMedia variant="icon">
+                            <InboxIcon />
+                          </EmptyMedia>
+                          <EmptyTitle>
+                            {hasFilters
+                              ? "Nothing matches"
+                              : `No ${kindInfo.name} records yet`}
+                          </EmptyTitle>
+                          <EmptyDescription>
+                            {hasFilters
+                              ? "No record matches the filters and search you set."
+                              : "Press New to create the first one."}
+                          </EmptyDescription>
+                        </EmptyHeader>
+                        {hasFilters && (
+                          <EmptyContent>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                void setFilterTokens(null)
+                                void setSearch(null)
+                                resetPages()
+                                persist({ filter: [] })
+                              }}
+                            >
+                              Clear filters
+                            </Button>
+                          </EmptyContent>
+                        )}
+                      </Empty>
+                    }
+                  />
+                </RowTreeProvider>
               </div>
               <DataTablePagination
                 page={page}
                 pageSize={PAGE_SIZE}
-                rows={rows.length}
+                rows={roots.length}
                 total={total}
                 totalCapped={totalCapped}
                 hasNext={Boolean(pageCursor)}
