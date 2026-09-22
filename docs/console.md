@@ -11,12 +11,15 @@ holds a token exactly like a script does: a session is its
 [token record](auth.md#tokens), which is why logging out revokes it. A
 substrate that is open for registration
 also serves a registration page at `/register`, with the invite code as its
-first field.
+first field where the substrate reads one.
 
-Five destinations — Overview, Changelog, Registry, Connections and Agents —
-with the account behind the session menu, and **Search** one keystroke away: ⌘K opens
-the palette, which jumps to a page or a kind, or hands what you typed to the
-[Search page](#search) as a records query.
+Six destinations (Overview, Changelog, Registry, Connections, Settings and
+Agents), with the account behind the session menu, and **Search** one
+keystroke away: ⌘K opens the palette, which jumps to a page or a kind, or
+hands what you typed to the [Search page](#search) as a records query.
+**Settings** lists every bundle that ships a `setting` or `secret` record,
+one row each, and `/settings/{id}` is that bundle's form; the same records
+are on the bundle's own Registry page.
 
 ## Overview and data
 
@@ -155,7 +158,7 @@ package, and `/data/{authority}/{package}` tables the one package's kinds.
 ## Changelog
 
 [The changelog](changelog.md), newest first, one row per committed change, expanded
-in place to its payload and the records it moved. Filters cover kind, actor, op, and free text, and the
+in place to its payload and the records it moved. Filters cover authority, kind, actor, op, a time range and free text, and the
 same view tails live. It is the audit trail and the debugging surface in one,
 because there is only one changelog.
 
@@ -186,8 +189,9 @@ and untaken together, with a quarantine badge on one that needs re-installing.
 **Providers** are the packages a publisher owns (Google, GitHub, Linear,
 WHOOP, Notion, Beeper, Slack) and their row's button is *Install*, under the
 authority that publishes them; the upgrade offer lands here. **Samples** are
-the vocabulary to copy (people, tasks, calendar, and the worked LLM, notes,
-reading-list and pebble examples) and their button is *Import as yours*, with the row
+the vocabulary to copy (`people`, `tasks`, `calendar`, `scheduling`,
+`messaging`, `notes`, `readinglist`, `pebble`, `firecrawl` and `llm`) and
+their button is *Import*, with the row
 previewing the identity it will land under (`ada.example.com/tasks`) before it
 is pressed. A held copy is offered *Upgrade* too, through the import door,
 when the binary ships the sample at a newer version than the copy was taken
@@ -197,7 +201,9 @@ before it sends the preview's confirmation
 A requirement the repository holds below the closure's `requiresAtLeast`
 floor disables the button, naming both versions. A bundle applied outside
 the shipped catalog has no tier and is listed on its own.
-Taking one shows what the closure added. An installed bundle carries its
+Taking one reports where it landed (`tasks imported as ada.example.com/tasks`)
+and, when the closure ships an empty required setting, opens the bundle page
+at its setup form. An installed bundle carries its
 lifecycle verbs — disable, enable, uninstall, and the purge that a refused
 uninstall points you at — and its connections: one row per configured provider
 account, where the [OAuth consent flow](bundles.md#the-oauth-facility)
@@ -261,7 +267,7 @@ cards fill in live and are replaced by the stored rows when it settles.
 
 The [`llm/provider`](agents.md#providers) rows are **not** on this page: an agent
 names a provider by id, and that pointer reads on the agent's own record.
-They live under Data → `substrate.reamde.dev/llm` → providers, and
+They live under Data → `substrate.reamde.dev/llm` → `provider`, and
 [registering one](agents.md#registering-a-provider) is an ordinary record
 write.
 

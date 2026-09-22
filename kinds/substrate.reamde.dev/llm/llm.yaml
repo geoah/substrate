@@ -19,7 +19,7 @@
 # packages instead — `notifies:` in the loader, which cannot read a trustworthy
 # source, and the quarantine refusal — and record 0077 says why each.
 #
-# ALPHA at v1: this vocabulary and the /agents chat+call wire are explicitly
+# ALPHA at v1: this vocabulary and the agent call and chat routes are explicitly
 # ALPHA and UNFROZEN (ruling A12). They may change or be superseded without a
 # v1 wire break.
 kind: substrate.reamde.dev/core/package

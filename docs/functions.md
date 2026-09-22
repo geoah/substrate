@@ -195,7 +195,7 @@ body. Core ships four of them, and they are the agent
 
 They are **ordinary function records**: seeded into every new repository,
 delivered to an existing one by the [boot upgrade](vocabulary.md), listed in
-the `functions` collection, and named by an agent under `function:` like any
+the `function` collection, and named by an agent under `function:` like any
 other function. Their declarations are
 `kinds/substrate.reamde.dev/core/hostfunctions.yaml`, and the `description` and
 `arguments:` there are exactly what a model is shown, rendered by the same code
@@ -248,7 +248,6 @@ record:
   properties:
     tokenStatus: connected
 repository:
-  owner: geoah
   authority: geoah.example.com
 ```
 
@@ -259,11 +258,9 @@ row's state **now**, not the old value, and is `null` after a delete, and its
 the referent's path under `ref`. `version` is the row's edit counter as this
 delivery read it, which is what a guarded write stamps itself with
 (`host.version(envelope["record"])`, [two invocations over one
-record](#two-invocations-over-one-record)). `repository` carries both names the
-repository has: `authority`,
-the name it publishes kinds and webhook URLs under. A
-schedule or
-webhook delivery has no changelog entry underneath it, so its envelope carries
+record](#two-invocations-over-one-record)). `repository` carries the repository's `authority`, the name it publishes
+kinds and webhook URLs under. A schedule or webhook delivery has no changelog
+entry underneath it, so its envelope carries
 `fire` (the fire's `id` and `at`) and `repository` in place of `change` and
 `record`.
 
@@ -275,7 +272,6 @@ fire:
   id: hook-k7f3x2m9ab4c
   at: 2026-09-02T12:00:00Z
 repository:
-  owner: geoah
   authority: geoah.example.com
 request:
   method: POST
@@ -773,8 +769,9 @@ data:
   ([decision 0097](decisions/0097-a-webhook-trigger-declares-the-headers-its-callable-reads.md)).
 
 `callable` is a [reference](data-model.md#property-types) naming the function
-or [agent](agents.md) to run: its `kind` is `substrate.reamde.dev/core/function` or
-`substrate.reamde.dev/core/agent`, and its `id` is that callable's own reference.
+or [agent](agents.md) to run, written as one `<kind>/<id>` path (the example
+above): the kind is `substrate.reamde.dev/core/function` or
+`substrate.reamde.dev/core/agent`, and the id is that callable's own reference.
 `enabled` defaults to true, and setting it false stops delivery without losing
 the cursor's position. Every trigger write is admitted: the guard must
 compile, the recurrence and timezone must parse, and the callable must resolve

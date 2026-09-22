@@ -16,8 +16,8 @@ properties reach the subject.
 
 **The package that owns the TARGET kind declares the mapping**, and no other
 ([decision record 0049](decisions/0049-the-owner-of-a-mappings-target-declares-it.md)).
-A provider ships mirror kinds whose subject slot is unpinned and empty, and
-nothing that names a kind it does not own; the package that owns the kind
+A provider ships mirror kinds and nothing that names a kind it does not own;
+the package that owns the kind
 those mirrors describe says how they reach it, and edits, versions and deletes
 that declaration like everything else it owns. A mapping onto somebody else's
 kind is refused, whichever end the declaring package owns.
@@ -25,8 +25,8 @@ kind is refused, whichever end the declaring package owns.
 Three rules follow. **`from` may name a kind in any package**, and it resolves
 when the mapping is installed, so a mapping naming a provider that is absent
 fails on that document. That is why a sample's shipped mappings are
-conditional: the two catalog doors drop the ones whose provider this repository
-does not hold rather than refuse the whole import
+conditional: the catalog's install and import verbs drop the ones whose
+provider this repository does not hold rather than refuse the whole import
 ([suggested mappings](bundles.md#suggested-mappings)).
 
 **One mapping per (source kind, subject property), and one per (source kind,
@@ -48,7 +48,7 @@ source kind that a mapping's paths no longer type-check against is refused the
 same way, on the mapping that stopped fitting.
 
 This is the mapping that says GitHub's `user` mirror describes a `person`. You
-do not have to write it: the people sample SHIPS it, and five more like it, as
+do not have to write it: the people sample SHIPS it, and three more like it, as
 [suggested mappings](bundles.md#suggested-mappings) the import admits once the
 provider they read is installed.
 
@@ -105,14 +105,14 @@ anywhere, may name a kind some mapping reads as its `from`
 ([decision record 0095](decisions/0095-a-reference-may-pin-a-mapping-source-kind.md));
 a pin at the source is satisfied by the value as written, so it never takes the
 hop and the one-hop rule is untouched. That is what lets a provider model its
-API's own relations as references — `issue.assignees` at `github/user[]`,
-`event.attendees` at `google/emailaddress[]`, `message.user` at `slack/user` —
-which it could not do while importing a sample's mappings retroactively
-narrowed what the provider was allowed to declare.
+API's own relations as references (`issue.assignees` at `github/user[]`,
+`calendarevent.attendees[].address` at `google/emailaddress`, `message.user`
+at `slack/user`), which it could not do while importing a sample's mappings
+retroactively narrowed what the provider was allowed to declare.
 
 **Outside the provider, point at the subject.** A task's `assignee` belongs at
 `person`, not at one provider's view of a person: the subject hop below lets
-a connector write the `github/user` path it actually holds into that
+a provider's function write the `github/user` path it actually holds into that
 person-pinned slot, so nothing is lost by pinning the subject and a merge
 moves every pointer at once. A consumer kind pinned at a mirror instead ties
 itself to one provider, is left dangling when that provider is uninstalled,
@@ -147,7 +147,7 @@ side: the HEAD of a repeated source onto a SINGLE-valued target, which is the
 only rule that admits a Google contact's `names[].displayName` onto
 `person.name` — a provider that mirrors an API array verbatim has one value
 the subject wants and a repetition it does not
-([decision record 0088](decisions/0086-the-head-of-a-repeated-source-is-spelled-with-brackets.md)).
+([decision record 0086](decisions/0086-the-head-of-a-repeated-source-is-spelled-with-brackets.md)).
 
 Two things about `first` are worth stating. It is POSITIONAL, and position is
 not primacy: it takes the array's first entry, not the one the provider flagged
@@ -162,8 +162,9 @@ Three behaviors fall out of this one document:
 
 - **Match, shell birth, or park.** A `user` arriving without its `person`
   reference is resolved in the same transaction: exactly one live person
-  carrying that email links, and none mints a fresh person. Two syncs racing
-  the same new person mint **one** shell. SEVERAL candidates mint nothing: the
+  carrying that email links, and none mints a fresh person, a **shell** with
+  no properties. Two syncs racing the same new person mint **one** shell.
+  SEVERAL candidates mint nothing: the
   source parks with its slot unset rather than add a third person the same
   address then points at, and it resolves on its next write once the owner has
   settled the ambiguity. A source that offers nothing at all — no probe value
@@ -256,7 +257,7 @@ a different tier changes what already-minted tokens may do from their next
 write onward. Renaming an actor never changes write semantics.
 
 Beside the actor and the tier, a manager row records the **principal** of the
-write that set it: the token id the door resolved, where the actor is only
+write that set it: the token id the API resolved, where the actor is only
 what the caller claimed. The manager and tier a read reports are the actor and
 its standing; the principal is in the store and on the
 [changelog](changelog.md) entry that wrote it, which is where "which token
@@ -289,7 +290,7 @@ record** it was read from:
 ```json
 "propertyMeta": {
   "name": {
-    "manager": "owner",
+    "manager": "console",
     "tier": "owner",
     "alternatives": [
       {"actor": "function:providers.substrate.reamde.dev:github:githubsync",
@@ -576,7 +577,7 @@ verb through review instead of on its own authority.
 
 Three rules keep the review honest. **The reviewed envelope is immutable**:
 once a request is proposed, `op`, `targetKind`, `targetId`, `diff` and the
-`target` reference is frozen, and a write that would change them is refused, so
+`target` reference are frozen, and a write that would change them is refused, so
 the values the reviewer read cannot be swapped underneath them. `decision` and
 `rationale` stay mutable, because deciding is the point. **The decision is
 optimistic**: an owner's accept or reject must carry `ifVersion`, the request

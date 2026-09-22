@@ -19,7 +19,7 @@ agents, rehomed onto the repository's own authority). Everything else,
 including the task kinds used below, is a
 [sample you import](builtin-kinds.md). A deployment with an **invite code**
 configured admits only a request that presents it; the local substrate from
-`docker compose up` has none and reads none.
+`docker compose up` or `mise run dev` has none and reads none.
 [Users, tokens, and actors](auth.md#the-invite-code) has the detail.
 
 Registration needs three things from you: a repository name, a password, and a
@@ -57,7 +57,8 @@ substratectl register --repository ada.example.com --invite-code CODE \
 Underneath, registration is two HTTP calls, and only the second writes
 anything. The response carries the token secret, shown exactly once, and a
 recovery key exists either way: `substratectl register` generates the pair
-itself and saves the key for you, while a raw HTTP request that names no
+itself and hands you the key (saved to 1Password when `op` is signed in,
+printed once otherwise), while a raw HTTP request that names no
 `recoveryPublicKey` gets a one-time server-minted `recoveryKey` back.
 [Users, tokens, and actors](auth.md) documents the wire, recovery fields
 included.
@@ -74,7 +75,7 @@ substratectl login --server https://substrate.example --repository ada.example.c
 POST /login
 {"repository": "ada.example.com", "password": "…", "totpCode": "123456", "label": "laptop"}
 
-→ 201 {"token": {…}, "secret": "substrate_tok_…"}
+→ 201 {"token": {…}, "secret": "substrate_tok_…", "repository": "ada.example.com"}
 ```
 
 There is no session object beside it: a session **is** a token record, and
@@ -82,13 +83,14 @@ There is no session object beside it: a session **is** a token record, and
 
 ## Write your first record
 
-Registration seeded the core vocabulary only, so the task kinds are not there
-yet. IMPORT the sample that ships them from the catalog built into the binary,
-and the kind exists. A catalog id is a package identity,
+Registration seeded `core`, `llm` and the LLM sample, so the task kinds are
+not there yet. IMPORT the sample that ships them from the catalog built into
+the binary, and the kind exists. A catalog id is a package identity,
 `{authority}/{package}`, so the slash in it is percent-encoded to stay one path
-segment. Tasks name an assignee and bind the `recurring` trait, so `people`
-and `scheduling` are imported first: a bundle whose `requires:` is not met is
-refused:
+segment. A task names an assignee (a `person` from `people`) and its `tasklog`
+binds the `occurrencelog` trait from `scheduling`, so the tasks bundle
+`requires:` both and they are imported first: a bundle whose `requires:` is
+not met is refused:
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" \

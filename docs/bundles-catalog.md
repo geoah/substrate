@@ -1,9 +1,10 @@
 # Bundles catalog
 
-The substrate ships twelve of these bundles in the binary, in the two tiers
+The catalog in the binary serves seventeen bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws. (The vocabulary samples beside them, `people`, `tasks`, `calendar` and
-the rest, are in [built-in kinds](builtin-kinds.md).)
+draws: seven providers and ten samples. This page covers twelve of them; the
+five vocabulary samples (`people`, `tasks`, `calendar`, `messaging` and
+`scheduling`) are in [built-in kinds](builtin-kinds.md).
 
 **Seven providers**: Google, GitHub, Linear, WHOOP, Notion, Beeper and Slack.
 Each is a package its publisher owns, installed under
@@ -62,7 +63,7 @@ thing, and the Records column counts them.
 | LLM           | Sample   | Key, per row   | 1     | 0         | 3       | 6      |
 | Notes         | Sample   | none           | 1     | 2         | 0       | 2      |
 | Firecrawl     | Sample   | API key        | 1     | 2         | 2       | 0      |
-| Reading list  | Sample   | none           | 2     | 4         | 5       | 3      |
+| Reading list  | Sample   | none           | 2     | 4         | 6       | 3      |
 | Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
 
 ## Connecting an OAuth provider
@@ -117,9 +118,10 @@ that row and they run. A later import of this bundle onto a repository born
 before the seed writes the same three rows and the same agents.
 
 - `substrate` is the one to chat with: it reads the whole graph through the
-  `query` built-in, writes nothing directly, proposes every change as a
-  `recordpatchrequest` the owner decides on, and asks clarifying questions
-  through the `ask` built-in.
+  `query` built-in, writes a change the owner asked for through `write`,
+  proposes a change it inferred as a `recordpatchrequest` the owner decides
+  on, and asks clarifying questions through the `ask` built-in. Its prompt is
+  what chooses between `write` and `propose`.
 - `substrateEditor` writes scratchpads directly through the `write` built-in,
   the demo for engine-stamped `changes` on a thread's tool rows.
 - `substrateArbiter` is a judge you point a trigger at: it accepts or rejects a
@@ -160,10 +162,13 @@ which is the capability envelope in one closure.
 
 Both agents name `provider: openai`, so running them wants that
 `llm/provider` row keyed — [creation seeds it](agents.md#providers), keyless.
-Calling an agent is an API call, not a CLI verb:
+Calling an agent is an API call, not a CLI verb. The path segment is the
+agent's id, `<authority>/notes/notekeeper` once the import has rehomed it, with
+each slash written `%2F`; the bare name `notekeeper` also resolves while only
+one agent carries it ([calling an agent](agents.md#calling-an-agent)):
 
 ```bash
-curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/notekeeper/call" \
+curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/<authority>%2Fnotes%2Fnotekeeper/call" \
   -H "Authorization: Bearer $SUBSTRATE_TOKEN" -H 'Content-Type: application/json' \
   -d '{"input": {"text": "id: my-note\n\nSomething worth keeping."}}'
 ```
@@ -1228,7 +1233,9 @@ Its functions are deterministic stubs, because the bundle exists to exercise
 the machinery rather than talk to a provider. Its one knob is a shipped
 [`setting`](bundles.md#settings) record, `denyDomains`: a
 comma-separated list of URL pieces `findurls` skips, empty as shipped, which
-the bodies read as `config.settings.denyDomains`.
+the bodies read as `config.settings.denyDomains`. The closure also ships one
+`digest` record, `latest`, with an empty `summary`: the rollup only ever
+proposes a patch, and a patch of a record that is not there is refused.
 
 ## Pebble (sample)
 

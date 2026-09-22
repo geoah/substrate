@@ -448,7 +448,7 @@ function UpgradeButton({
           : `${row.name} upgraded.`,
       })
       seedBundleStatus(queryClient, status)
-      // The upgrade lands schema the whole console reads, and the catalog's
+      // The upgrade lands vocabulary the whole console reads, and the catalog's
       // preview must re-read as current: refresh everything.
       void queryClient.invalidateQueries()
       refetchBundleStateSoon(queryClient)

@@ -26,9 +26,9 @@ the vocabulary you import.
 | `organization` | An org a person belongs to: employer, workspace, publisher.                                                                             |
 | `team`         | A working group finer than an organization: members, leads, and nesting through `parent`.                                               |
 
-This sample also ships five **suggested mappings** onto its own `person`, from
-GitHub's `user`, Google's `contact` and `emailaddress`, and Linear's `user` and
-an issue's `assignee`. Each is admitted only where you already hold the
+This sample also ships four **suggested mappings** onto its own `person`, from
+GitHub's `user`, Google's `contact` and `emailaddress`, and Linear's `user`.
+Each is admitted only where you already hold the
 provider it reads, and reported `waiting` for that provider otherwise
 ([suggested mappings](bundles.md#suggested-mappings)). Installing the provider
 afterwards does not land it: import this sample again, and then a GitHub
@@ -53,13 +53,12 @@ value says so and falls back to they/them.
 
 ## samples.substrate.reamde.dev/scheduling (a sample)
 
-Traits only, no kinds. `calendar` and `tasks` `require` it and bind its two
-traits across packages, the way every package binds core's `temporal`
-([traits](traits.md)).
+One trait and no kinds. `calendar` and `tasks` both `require` it, and `tasklog`
+binds its trait across packages, the way `task` binds core's `temporal`,
+`recurring` and `override` ([traits](traits.md)).
 
 | Trait           | What it is                                                                                                                         |
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `recurring`     | An RFC 5545 RRULE the substrate stores and never expands: `recurrence`, `rdates`, `exdates`, `timezone`.                           |
 | `occurrencelog` | The done-or-skipped mark against one occurrence of a recurring record: `status`, `scheduledAt`, `details`. Absence means missed.   |
 
 ## samples.substrate.reamde.dev/calendar (a sample)
@@ -94,7 +93,7 @@ speaks:
 
 | Kind                 | What it is                                                                                                                                          |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `repository`         | The repository describing itself from the inside: its id, the authority it owns (the same value, and its `name` too), and a lifecycle state.        |
+| `repository`         | The repository describing itself from the inside: the `authority` it owns, which is its id (`name` is deprecated and holds the same value), and a `lifecycle` state (`active`, `suspended`, `deleting`). |
 | `credential`         | The one record (id `self`) holding your auth material by reference into the sealed store ([users and tokens](auth.md)).                                         |
 | `recoverykey`        | The one record (id `self`) holding the age recipient the user enrolled and the repository's data-encryption key wrapped to it; only the user's age identity opens the wrap.  |
 | `token`              | One bearer credential: label, optional expiry, and the hash of its secret.                                                                          |
@@ -108,6 +107,7 @@ speaks:
 | `recordpatchpolicy`  | An owner's standing rule for an agent's writes: a `selector` (kinds, ops, agents) and an `action` of `allow`, `gate` or `refuse` ([the policy door](agents.md#the-policy-door)). |
 | `setting`            | One configuration value a bundle needs, at `<bundle id>/<name>`: `value` as a string, held on write to a `type` of `string`, `url`, `int`, `bool` or `enum` with `values` ([settings](bundles.md#settings)). |
 | `secret`             | The same, with `value` typed `secret`: sealed at rest, injected only into its own bundle's functions, never read back.                               |
+| `consolepreference`  | The console's navigation preferences for the repository, shared across sessions: `collapsed`, `favorites`, `sidebarOpen`.                            |
 
 The delivery machinery is core's too, declared as data kinds so a trigger is
 console-editable and changelog-visible like anything else
@@ -118,11 +118,15 @@ console-editable and changelog-visible like anything else
 | `trigger` | One binding of a source (a record subscription, a schedule, or a public webhook endpoint) to one callable, owning the delivery cursor. |
 | `triggerrun` | One trigger delivery attempt, written after it settles: the delivery ledger's row. Parked runs stay until retried away; the rest are pruned to the newest few per trigger. |
 
-The ten [declarable kinds](vocabulary.md#the-declarable-kinds) — `authority`,
+The ten [declarable kinds](vocabulary.md#the-declarable-kinds) (`authority`,
 `package`, `kind`, `propertytype`, `trait`, `recordmapping`, `function`,
-`agent`, `bundle`, `actor` — live in core too, and so do the three shipped traits:
-`temporal`, which puts a record on the timeline, and the `accountconfig` and
-`oauth2` interfaces the OAuth facility recognizes.
+`agent`, `bundle`, `actor`) live in core too, and so do the six shipped traits:
+`temporal`, which puts a record on the timeline; `recurring` and `override`,
+the repeat rule and the moved occurrence ([traits](traits.md)); `sync`, the
+state a provider's function reports on one connected account; and
+`accountconfig` and `oauth2`, which the OAuth facility recognizes. Core also
+ships four host functions as `function` records (`query`, `write`, `propose`,
+`ask`), the built-ins an agent calls ([agents](agents.md)).
 
 ## substrate.reamde.dev/llm
 

@@ -418,7 +418,7 @@ func TestBundleUpgradeRefusesATightenedPatternWithLiveRows(t *testing.T) {
 		docs[0] = vocabulary.PackageManifest(mbPackage, 2)
 		return docs
 	}
-	want := `type ` + mbItemType + `: property "name" changes its pattern to ^[a-z]+$`
+	want := `kind ` + mbItemType + `: property "name" changes its pattern to ^[a-z]+$`
 
 	plan, err := ds.PlanBundleUpgrade(ctx, closure("^[a-z]+$"))
 	if err != nil {

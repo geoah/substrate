@@ -5,7 +5,7 @@ package engine
 // A user is a `repositories` row, and everything else about them is a RECORD
 // in the repository they own:
 //
-//   - `substrate.reamde.dev/core/credential`, singleton id `self` — the
+//   - `substrate.reamde.dev/core/credential`, the one row, id `self` — the
 //     repository it admits to plus two refs into the sealed store. The material itself (an argon2id
 //     password hash, a TOTP seed) is NEVER in the changelog and never in a record's
 //     data, so the changelog carries an audit trail — "the credential changed at T"

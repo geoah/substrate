@@ -24,8 +24,8 @@ has full access to its repository. There are no tenants, no identities, no
 user-managed keys, no sharing, no scopes and no roles.
 
 There is no written contract document. **The code is the contract**; the tests
-are what it promises. A replacement will be written from the code, small, when
-someone needs it.
+are what it promises. One will be written from the code, small, when someone
+needs it.
 
 ## Build and run
 
@@ -148,8 +148,8 @@ key refuses to boot.
 each start a pgvector testcontainer, and they starve under a full-tree parallel
 run — `go test ./...` can fail there while `go test ./internal/engine/...` passes
 clean. A `*_db_test.go` failure that looks arbitrary usually is; confirm it
-alone before believing it. The full engine suite takes about 70 s on a
-16 core machine (docs/testing.md says where the time goes).
+alone before believing it. The full engine suite (`mise run test:db:engine`)
+takes about 106 s on 16 cores (docs/testing.md says where the time goes).
 
 **`mise run test:llm` is the live suite** — the wire adapters and one whole
 agent chain against the REAL OpenAI and Anthropic APIs. It runs when
@@ -209,7 +209,7 @@ to the same admission. The import REHOMES the closure onto the repository's own
 authority, so what lands is `<authority>/tasks/task`, not the shipped spelling
 (record 0048). A PROVIDER (`providers.substrate.reamde.dev/google`) takes the
 other door, `…/install`, and lands under the authority that publishes it. A
-snippet that opens with `get people` on a fresh substrate is wrong.
+snippet that opens with `get person` on a fresh substrate is wrong.
 
 Config is `~/.config/substratectl/config.yaml` (override with
 `SUBSTRATECTL_CONFIG`): named contexts of `{name, server, repository, token,
@@ -253,7 +253,7 @@ words, and what each one replaced:
 | **trait**     | a contract a kind implements                               | capability   |
 | **vocabulary**| kinds, traits and property types together; `/vocabulary/apply` | schema   |
 | **changelog** | the append-only sequence of deltas; the `changelog` table  | log          |
-| **bundle**    | the install unit, named for the package it ships; `/bundles`, and the `bundle` tier | extension |
+| **bundle**    | the install unit, named for the package it ships; a record of core's `bundle` kind, and the `bundle` tier | extension |
 | **provider**  | a catalog tier: a package a publisher owns, INSTALLED under the authority that publishes it | integration |
 | **sample**    | the other catalog tier: a package the user copies, IMPORTED under the repository's own authority | example, vocabulary bundle |
 | **input**     | a bundle's named configuration need; one record resolves per input (bound reference, the id `default`, then the sole record) | config, configType, singleton |
@@ -284,7 +284,7 @@ The **package** is the unit. A kind may pin its own `version`, else it takes
 its package's; a stored closure the loader refuses parks its package; and
 `authorizeDeclarationWrite` reads the package row's `source`, so the seeded
 `substrate.reamde.dev/core` is the one closure a repository's token may not
-write. A bundle owns at least one package and its id IS that package.
+write. A bundle owns one package and its id IS that package.
 
 `substrate.reamde.dev` is a **placeholder**. Moving kind identity to URLs (so
 anyone can publish kinds from a git repo without owning DNS) is real design
@@ -322,7 +322,7 @@ first label.
   fake (`internal/api/fake_test.go`).
 - **The top level stays empty.** Every Go package is under `internal/` (or
   `cmd/`), and the two exceptions are the vocabulary as files: `kinds/` (the
-  seeded `core` package and the shipped providers) and `samples/` (the sample
+  seeded `core` and `llm` packages and the shipped providers) and `samples/` (the sample
   packages a repository copies), each with the one Go file that embeds it. No
   package is named for a language construct: no `types.go`, no `iface.go`, no
   `utils`. An interface lives with the subject it describes.

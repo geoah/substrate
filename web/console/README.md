@@ -2,8 +2,8 @@
 
 The shadcn-native console for the substrate. The app only ever speaks
 **same-origin** `/api/v1` — in production one host serves both the SPA
-and the API; in dev the Vite proxy (`vite.config.ts`) forwards `/api` and
-`/healthz` to a substrate.
+and the API; in dev the Vite proxy (`vite.config.ts`) forwards `/api`,
+`/healthz` and `/.well-known` to a substrate.
 
 ## Local dev
 
@@ -18,9 +18,10 @@ VITE_PROXY_SUBSTRATE=https://substrate.example.com pnpm dev
 ```
 
 `VITE_PROXY_SUBSTRATE` is the only knob — nothing in `src/` hardcodes a host.
-Sign in on `/login` with a username, a password and the current TOTP code (the
-door says at `GET /api` whether it wants the third: `mise run dev` runs with the
-factor off, `mise run dev:totp` with it on). What comes back is a token RECORD
+Sign in on `/login` with a repository name, a password and the current TOTP
+code (`GET /.well-known/substrate/server.json` says in `registration.totpRequired`
+whether the door wants the third: `mise run dev` runs with the factor off,
+`mise run dev:totp` with it on). What comes back is a token RECORD
 and its secret — there is no session beside it, so what the browser keeps in
 localStorage is a `substrate_tok_…` like any other client's, and a 401 anywhere
 drops it.
@@ -28,7 +29,7 @@ drops it.
 ## Checks
 
 ```bash
-pnpm typecheck   # tsc --noEmit
+pnpm typecheck   # tsc --build --force
 pnpm lint        # eslint
 pnpm fmt:check   # prettier --check
 pnpm test        # vitest run
@@ -39,21 +40,26 @@ pnpm build       # tsc -b && vite build
 
 ## Pages
 
-| Route                             | Surface                                                                                                            |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `/login`, `/register`             | the door; everything else needs a session                                                                          |
-| `/`                               | overview                                                                                                           |
-| `/changelog`                      | the repository's change feed                                                                                       |
-| `/registry`, `/registry/:id`      | the catalog: install, upgrade, lifecycle verbs, input resolution + bind, accountconfig trait query + OAuth connect |
-| `/agents`, `/agents/:id`          | declared agents + llm rows; the `:id` route is the ndjson streaming chat                                           |
-| `/merge-requests/:id`             | a duplicate-suggestion verdict                                                                                     |
-| `/data/:authority`                | one authority's packages                                                                                           |
-| `/data/:authority/:pkg`           | one package's collections                                                                                          |
-| `/data/:authority/:pkg/:name`     | browse a kind's records                                                                                            |
-| `/data/:authority/:pkg/:name/new` | create a record                                                                                                    |
-| `/data/:authority/:pkg/:name/:id` | one record, and `/edit` beside it                                                                                  |
-| `/actors/:id`                     | an actor's view                                                                                                    |
-| `/account`, `/account/tokens`     | the account, and the tokens it has minted                                                                          |
+| Route                                    | Surface                                                                                                            |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `/login`, `/register`                    | the door; everything else needs a session                                                                          |
+| `/`                                      | overview                                                                                                           |
+| `/changelog`                             | the repository's change feed                                                                                       |
+| `/registry`, `/registry/:id`             | the catalog: install, upgrade, lifecycle verbs, input resolution + bind, accountconfig trait query + OAuth connect |
+| `/search`                                | the ranked read (`GET /api/v1/records?q=`) as a page                                                               |
+| `/connections`                           | every provider account: token status, sync state, and the connect, sync now, edit and disconnect verbs             |
+| `/connections/:authority/:pkg/:name/:id` | one account: its record, its `sync` trait, its triggers and their runs                                             |
+| `/settings`, `/settings/:id`             | every bundle that ships a `setting` or `secret` record; the `:id` route is that bundle's form                      |
+| `/agents`, `/agents/:id`                 | declared agents; the `:id` route is the ndjson streaming chat                                                      |
+| `/merge-requests/:id`                    | a duplicate-suggestion verdict                                                                                     |
+| `/change-requests/:id`                   | a proposed change, what accepting it would do, and its verdict                                                     |
+| `/data/:authority`                       | one authority's packages                                                                                           |
+| `/data/:authority/:pkg`                  | one package's collections                                                                                          |
+| `/data/:authority/:pkg/:name`            | browse a kind's records                                                                                            |
+| `/data/:authority/:pkg/:name/new`        | create a record                                                                                                    |
+| `/data/:authority/:pkg/:name/:id`        | one record, and `/edit` beside it                                                                                  |
+| `/actors/:id`                            | an actor's view                                                                                                    |
+| `/account`, `/account/tokens`            | the account, and the tokens it has minted                                                                          |
 
 `/account/tokens` is deliberately not `/tokens`: the API door answers
 `GET /tokens`, so a browser refreshing that path would be handed JSON.

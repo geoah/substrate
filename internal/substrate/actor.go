@@ -3,7 +3,7 @@ package substrate
 import "strings"
 
 // Actor is the attributed identity of a writer ("console", "substratectl",
-// "bundle:gmail.bundles.example.com", "substrate"). Attribution, not
+// "bundle:example.com:mail", "substrate"). Attribution, not
 // authorization.
 //
 // THE ACTOR DOMAIN is closed:

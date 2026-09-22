@@ -621,8 +621,8 @@ func firstOr(names []string, fallback string) string {
 
 // parseTraitVariantProps reads one variant's properties. A variant's properties
 // are built-in datatypes only: the variants exist for the machinery bound to
-// record columns, and a refinement is authority-local while a trait resolves
-// across authorities.
+// record columns, and a refinement is package-local while a trait resolves
+// across packages.
 func (l *loader) parseTraitVariantProps(where string, props map[string]any) map[string]Datatype {
 	out := map[string]Datatype{}
 	for _, pname := range sortedKeys(props) {
@@ -824,7 +824,7 @@ func (l *loader) parseType(doc Document) *Kind {
 		return nil
 	}
 	if !ValidName(name) {
-		l.errf("%s: data.names.singular: type names are one lowercase word [a-z][a-z0-9]*", where)
+		l.errf("%s: data.names.singular: kind names are one lowercase word [a-z][a-z0-9]*", where)
 		return nil
 	}
 	// The type's identity is its metadata.id and must agree with the names

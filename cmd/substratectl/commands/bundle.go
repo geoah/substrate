@@ -32,12 +32,12 @@ func (a *app) bundleCommand() *cobra.Command {
 		Use:     "bundle",
 		Short:   "Inspect and drive installed bundles",
 		Aliases: []string{"bundles"},
-		Long: `Bundles are the install unit: one atomic apply of a whole closure (types,
+		Long: `Bundles are the install unit: one atomic apply of a whole closure (kinds,
 traits, mappings, functions, agents) under an owned authority. Lifecycle is
 three verbs, walked in order — disable stops execution reversibly and keeps
-the data and schema; purge is the explicit, separately confirmed deletion of
+the data and vocabulary; purge is the explicit, separately confirmed deletion of
 the authority's data through the finalizer flow (refused while running, so
-disable first); uninstall tears down the schema and callables (refused while
+disable first); uninstall tears down the vocabulary and callables (refused while
 data lives, so purge first). Install and upgrade are ` + "`substratectl apply`" + ` of the
 closure. connect starts the host OAuth flow for an account record.`,
 	}
@@ -154,7 +154,7 @@ func (a *app) bundleDisableCommand(verb string, disabled bool, short string) *co
 func (a *app) bundleUninstallCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "uninstall <id>",
-		Short: "Tear down the schema, callables and runtime registration; refused while live data remains (purge first)",
+		Short: "Tear down the vocabulary, callables and runtime registration; refused while live data remains (purge first)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var res struct {

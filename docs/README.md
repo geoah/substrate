@@ -26,6 +26,8 @@ API call that completes a task.
 
 - [Terms](terms.md) — one word per thing, and the dead words they replaced
 - [Getting started](getting-started.md) — register, log in, write a record
+- [Using a substrate from an agent](for-agents.md): what a program acting
+  with a token reads first, how it reads and writes, and what it never does
 
 ## The model
 

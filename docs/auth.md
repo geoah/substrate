@@ -11,7 +11,8 @@ your account too.
 ## The invite code
 
 Registering creates the user and, in the same transaction, the repository,
-seeded with the shipped vocabulary. One **invite code**, configured on the
+seeded with the `core` and `llm` packages, three keyless `llm/provider` rows
+(`openai`, `anthropic`, `gemini`) and the LLM sample. One **invite code**, configured on the
 service as `SUBSTRATE_INVITE_CODE`, gates that door: with one set,
 `/register` and `/register/enroll` admit only a request that presents it, and
 a wrong one is `401 auth`. The code is compared in constant time.
@@ -82,9 +83,9 @@ beside the token secret: that `recoveryKey` is what opens the repository's
 client that generated its own pair sends `recoveryPublicKey` instead and no
 key comes back.
 
-That second call is **one creation act**: the seed of the shipped vocabulary,
-the sealed material, the credential record and the first token all commit as
-one transaction in the new repository's changelog, and the control-plane row that
+That second call is **one creation act**: the seed (the `core` and `llm`
+packages and the provider rows), the sealed material, the credential record and
+the first token all commit as one transaction in the new repository's changelog, and the control-plane row that
 _is_ the user is written last, so the user exists exactly when the repository
 is already complete. Anything that fails before that erases what it wrote: a
 failed registration creates nothing, and no order of failures leaves a
@@ -102,7 +103,7 @@ POST /login
 {"repository": "ada.example.com", "password": "…", "totpCode": "123456", "label": "laptop"}
 
 → 201 {"token": {"id": "…", "label": "laptop", "createdAt": "…"},
-       "secret": "substrate_tok_…"}
+       "secret": "substrate_tok_…", "repository": "ada.example.com"}
 ```
 
 **There is no session concept beside the token.** A session _is_ a token
@@ -146,8 +147,9 @@ Four things follow from a token being a record:
 - **Expiry is optional and server-enforced.** A token past its `expiresAt`
   fails authentication with an `auth` error, no revoke step needed. A token
   without one lives until it is deleted.
-- **They list and read like anything else.** `GET …/substrate.reamde.dev/core/token` is
-  an ordinary collection read, and every mint and revocation is a row in the
+- **They list and read like anything else.**
+  `GET /api/v1/records?filter={"kinds":["substrate.reamde.dev/core/token"]}`
+  is an ordinary list, and every mint and revocation is a row in the
   [changelog](changelog.md).
 
 Present one on every request under `/api`:
@@ -197,9 +199,9 @@ lock, so two requests racing on one code cannot both win.
 
 ## Rate limits
 
-Registration and the credential endpoints are the substrate's unauthenticated
-write paths beside the [webhook door](api.md#webhooks), so they share one
-posture. Attempts are paced to
+Registration, login and the credential endpoints are the substrate's
+unauthenticated write paths beside the [webhook door](api.md#webhooks), so they
+share one posture. Attempts are paced to
 one per five seconds, keyed by (client IP, repository) and by repository alone,
 under one global bucket 32 attempts wide, so a flood is bounded without an
 honest login waiting out somebody else's. There is no failure lockout: a

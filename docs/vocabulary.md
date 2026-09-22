@@ -13,7 +13,7 @@ Ten kinds declare everything:
 | Kind                           | Declares                                              | Taught on                                         |
 | ------------------------------ | ----------------------------------------------------- | ------------------------------------------------- |
 | `substrate.reamde.dev/core/authority`     | one authority: the DNS name packages publish under    | [Data model](data-model.md#kinds-and-references) |
-| `substrate.reamde.dev/core/package`       | one package: the group its kinds live in, and its version | [Data model](data-model.md#kinds-and-references) |
+| `substrate.reamde.dev/core/package`       | one package: the set of kinds one authority versions together, and its version | [Data model](data-model.md#kinds-and-references) |
 | `substrate.reamde.dev/core/kind`          | one kind: the properties its records carry            | [Data model](data-model.md#kinds-and-references) |
 | `substrate.reamde.dev/core/propertytype`  | one custom property type: a refinement of a base type | [Data model](data-model.md#property-types)       |
 | `substrate.reamde.dev/core/trait`         | one trait, bound by kinds                             | [Data model](data-model.md#traits)               |
@@ -36,8 +36,9 @@ them differently is a load error, never a silent rename. A `propertytype`,
 `<authority>/<package>/<name>` form. A `package`'s id is
 `<authority>/<package>`, and a `bundle`'s id is the package it owns
 (`providers.substrate.reamde.dev/google`). An `authority` document's id is the
-DNS name itself, and an `actor`'s id is a bare word. So the closure header, a
-package, is seven lines:
+DNS name itself, and an `actor`'s id is a bare word, or the
+`bundle:<authority>:<package>` actor of the package that declares it. So the
+closure header, a package, is seven lines:
 
 ```yaml
 kind: substrate.reamde.dev/core/package
@@ -67,9 +68,13 @@ there, each an ordinary changelog entry attributed to the hand that wrote it and
 auditable in the [changelog](changelog.md):
 
 - **The seed, once, at creation.** Creating a repository writes the binary's
-  embedded tree into the new repository's changelog as ordinary record entries,
-  under the actor `bundle:core`, in the same transaction as the repository
-  itself. After that the tree has no standing over that repository: nothing
+  shipped vocabulary, the `substrate.reamde.dev` authority (`core` and `llm`),
+  into the new repository's changelog as ordinary record entries, under the
+  actor `bundle:core`, in the same transaction as the repository itself. The
+  provider closures embedded beside it are the catalog, not the seed, and the
+  LLM sample is imported in the same creation
+  ([getting started](getting-started.md#registration)). After that the tree
+  has no standing over that repository: nothing
   re-projects it at open, and nothing is ever pruned. A shipped package the
   tree stops declaring stays in every repository that already holds it.
 - **The boot-time upgrade, at the first open under a new binary.** Every
@@ -94,7 +99,7 @@ Install and apply are one path. `POST …/vocabulary/apply` with
 `{"documents": […]}` is the batch verb, the same closure an install applies,
 and where `substratectl apply` routes any vocabulary documents it is given. A generic
 PUT, PATCH, or DELETE of a vocabulary record is a batch of one. On every one
-of these doors the engine maintains the `version` itself: an incoming value is
+of these paths the engine maintains the `version` itself: an incoming value is
 honored only when it moves past the stored one, a changed definition lands at
 stored+1, an unchanged one keeps its stored version, and a changed or deleted
 declaration that cannot carry a version of its own (a trait, a function)
@@ -108,7 +113,7 @@ upgrade, an install, which is what the actors `substrate` and
 `forbidden`, and neither actor form can be claimed by a request.
 
 A **provider** package is refused on the same terms. Installing one from the
-catalog's provider tier (`providers.substrate.reamde.dev/google` and the five
+catalog's provider tier (`providers.substrate.reamde.dev/google` and the six
 beside it) writes `source: published` on its package row and its declarations,
 and afterwards a `POST …/vocabulary/apply` naming that package is `403`,
 whoever holds the token. The publisher ships each change with a version bump
@@ -259,9 +264,8 @@ shape; the API surfaces the refusal as `503 repository temporarily
 unavailable`, never as an invalid token, and
 [upgrading the binary](operations.md#upgrading-the-binary) is where that lands
 on an operator. A repository's stored dialect is internal to its own store and
-never appears on the wire; what
-[API discovery](api.md#discovery) reports is the binary's maximum, which is
-the number a client actually needs. The next number is spent when a release
+never appears on the wire, and [API discovery](api.md#discovery) does not
+report the binary's maximum either. The next number is spent when a release
 changes what a stored declaration row holds, together with the step that
 rewrites the rows and stamps the new number in the same transaction.
 
@@ -347,17 +351,22 @@ the changelog keeps, and a lossy one runs only when you confirm the plan you
 previewed ([below](#backfilling-and-remapping)).
 
 **Moving: `movedFrom:` carries the records.** A KIND may declare the reference
-it used to be spelled as, and admitting it on a repository that still declares
-that kind carries every live row here, same id and same properties, repoints
-every live reference at it, and tombstones the old rows: one transaction,
-ordinary record writes, one `move` step on the conversion plan saying how many
-records travelled ([decision
+it used to be spelled as. The boot upgrade of the shipped tree honors it: on a
+repository that still declares the old kind, it carries every live row here,
+same id and same properties, repoints every live reference at it, and
+tombstones the old rows: one transaction, ordinary record writes, one `move`
+step on the conversion plan saying how many records travelled ([decision
 0078](decisions/0078-a-kind-move-is-ordinary-record-writes.md)). The old kind
-stays declared and empty, never pruned and never retired, and a second
-admission finds nothing to move. A move that would strand a property (one the
-old kind declares and the new one neither declares nor renames) is refused,
-because the rows travel with their properties untouched. This is how the agent
-runtime's four kinds left `core` for `substrate.reamde.dev/llm`.
+stays declared and empty, never pruned and never retired, and a second open
+finds nothing to move. The two kinds declare the same properties, because the
+rows travel with their properties untouched: a property only one of them
+declares, or one the new kind takes over under a new name, refuses the move.
+A kind a `recordmapping` names at either end, or one that declares a subject
+reference, is not moved. Through `POST …/vocabulary/apply` the key is stored
+and no records move: a `movedFrom:` naming a kind the repository still
+declares is refused, naming the shipped tree as the one path that moves
+records in this build. This is how the agent runtime's four kinds left `core`
+for `substrate.reamde.dev/llm`.
 
 **Renaming: `renamedFrom:` moves the values.** A property may declare the name
 it replaces:
@@ -422,7 +431,7 @@ The deployment caps it: a plan whose summed record count is above
 way through is the expand-and-contract route, declaring the new shape beside
 the old one and moving the records through ordinary writes first. The boot
 upgrade of the shipped tree converts the same way, at the first open of a
-repository under the binary that ships the rename, and reports the count as
+repository under the binary that ships the rename, and logs the count as
 `convertedRecords`.
 
 ### Backfilling and remapping
@@ -569,7 +578,7 @@ declaration row, so a rebuild and `get -o yaml` carry it; the engine copies a
 stored entry into every later document of the same package or kind, so a
 document that omits the list does not lift it and the list never shrinks
 while the row stands; and a declaration of a retired name is refused on every
-door with the same sentence, `a retired name is never declared again`: the
+path with the same sentence, `a retired name is never declared again`: the
 apply verb, a bundle install or a sample import (a rehomed sample that
 declares a name the repository retired under the same package is refused
 too), the boot upgrade of the shipped tree, and `mise run kinds:check` for the
@@ -711,8 +720,8 @@ logged with its admission reason, left out of the live registry (its kinds
 refuse writes and its callables do not run), and marked `quarantined: true`
 with a `quarantineReason` on its `package` record. The package is the unit, so
 one broken closure parks it and leaves every other package its authority
-publishes serving. The console surfaces
-such a bundle as "needs re-install". Re-applying a valid closure clears
+publishes serving. The console shows such a bundle with the state
+`quarantined`. Re-applying a valid closure clears
 the marker, and so does a later open under a binary that relaxed the contract
 again.
 

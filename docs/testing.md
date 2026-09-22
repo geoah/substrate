@@ -9,24 +9,27 @@ suites are where most of the behaviour is actually pinned down.
 | Suite | Task | Wants | Roughly |
 | ----- | ---- | ----- | ------- |
 | Short | `mise run test:short` | nothing | seconds |
-| Database | `mise run test:db` | Docker, or a DSN | ~2 minutes |
-| Both | `mise run test` | the same | ~2 minutes |
+| Database | `mise run test:db` | Docker, or a DSN; `uv` and `python3` for the provider suite | ~2 minutes, plus 8 to 12 for the provider suite |
+| Providers | `mise run test:db:providers` | Docker, or a DSN; `uv` and `python3` | 8 to 12 minutes |
+| Both | `mise run test` | the same as `test:db` | ~2 minutes, plus 8 to 12 for the provider suite |
 | Race | `mise run test:race` | nothing | ~1 minute |
 | Coverage | `mise run test:coverage` | the same as `test` | ~2 minutes |
 | Console | `mise run console:test` | pnpm | seconds |
 | Live | `mise run test:llm` | provider keys, money | ~1 minute |
 | End-to-end | `mise run test:e2e` | Docker; leaves data | ~2 minutes |
 
-`mise run test` is the one to run before pushing. `mise run ci` is the whole
-pipeline as CI runs it, including the linters, the console and an image build.
+`mise run test` is the one to run before pushing. `mise run ci` is the
+pipeline as CI runs it, including the linters, the console and an image build,
+except the provider suite (`ci:providers`), which it does not run.
 
 **The short suite** is everything that needs no database: the API against its
 hand-written fake (`internal/api/fake_test.go`), the CLI's commands, the
 vocabulary, the sandbox, the runner's protocol. It is fast enough to run on
 every save.
 
-**The database suites** are the engine, the catalog and the whole-server
-harness. They are the ones that hold the real contracts, because the changelog,
+**The database suites** are the engine, the catalog, the provider suites
+(`internal/providertest`, `internal/providere2e`), `cmd/substratectl`'s
+database cases and the whole-server harness (`internal/testenv`). They are the ones that hold the real contracts, because the changelog,
 the fold and admission are only themselves against Postgres.
 
 ## The database suites
@@ -93,7 +96,7 @@ mise run test:db:engine                # about 106 s on 16 cores; the answer you
 go test ./internal/engine/ -run TestFold -v
 ```
 
-The engine package is about 765 top-level tests: about 106 s of wall time on a
+The engine package is roughly 850 top-level tests: about 106 s of wall time on a
 16 core machine (best of three runs, measured 2026-09-10; 117 s on the same
 box before the fixture stopped importing the sample packages no test reads)
 and longer on a 4 vCPU CI runner, where a shard's log says what it costs, so
@@ -102,9 +105,10 @@ the comment above is this machine's number, not a promise.
 `test:db:engine` is the engine package with `test:db`'s flags, and it is also
 the task CI shards: with `SHARD` and `SHARDS` in the environment it runs one
 slice of the package (`SHARD=3 SHARDS=8 mise run test:db:engine`), which is
-how a red shard is reproduced by number. `test:db:rest` is every other
-database package, `internal/providertest` among them. The cut is described
-under [What CI runs](#what-ci-runs).
+how a red shard is reproduced by number. `test:db:rest` is every database
+package but the engine and the provider suite (`internal/providere2e`, which
+`test:db:providers` runs on a job of its own); `internal/providertest` is among
+them. The cut is described under [What CI runs](#what-ci-runs).
 
 ### The engine fixture, and where the time goes
 
@@ -124,14 +128,16 @@ exactly a fresh install: nothing on either side. The migration runner's
 advisory lock is keyed on `current_schema()`, like the engine's other three
 (no effect on a deployment, which is one schema per database), so tests
 migrating in parallel do not queue behind each other; that is what the
-packages still on `testdb.NewSchema` (catalog, testenv, substratectl) get.
+packages still on `testdb.NewSchema` (catalog, providere2e, testenv) get.
 The from-empty migration runs three times per engine binary: the template
 build, `TestRepositoryProvisioningAndProjections` and
 `TestAssertPoolPrincipalRejectsSuperuser`.
 
 **One opener per binary.** `engine.OpenForTest(t, ctx, dsn, opts...)` is
-`engine.Open` with the shipped core kinds (`engine.CoreKindsDir`), the
-binary's credential key and the test's TOTP clock; every open in the engine's
+`engine.Open` with the shipped seed tree (`engine.SeedKindsDir`), the
+binary's credential key, the test's TOTP clock, and the LLM sample and
+provider seeds off (`WithLLMSampleSeed(false)`, `WithLLMProviderSeed(false)`);
+every open in the engine's
 own binary goes through it, and a caller's options win where they name the
 same thing. It lives in `export_test.go`, so a package across the line cannot
 call it: `internal/providertest` keeps its own opener and its own template
@@ -153,9 +159,9 @@ containers keep their data directory on a tmpfs (`--tmpfs` in the job's
 `SUBSTRATE_TEST_DATABASE_DISPOSABLE=true` and `testdb` applies the same three
 settings through `ALTER SYSTEM`. The one test that starts a container of its
 own (`TestOpenFailsClosedWithoutSafeRoles`) passes `testdb.DurabilityOff()`,
-and a dev database `mise run dev` creates carries the flags on its command
-line (a container created without them keeps the image's defaults until
-`dev:wipe:all` recreates it).
+and the shared dev container `mise run dev` starts carries the flags on its
+command line (a container created without them keeps the image's defaults
+until `dev:wipe:all` recreates it).
 
 **The data roots on tmpfs.** Every changelog write fsyncs
 ([0062](decisions/0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md)),
@@ -173,8 +179,8 @@ separate registry build, narrowing classification, declaration projection and
 index pass, which is why a fixture names what it needs rather than importing
 the shipped five. `newDataset` is the external half's default and
 `openInternalDataset` the internal half's; `newVocabularyDataset(t, names...)`
-imports exactly the packages a test names, and the twenty-one tests that read
-a messaging or calendar kind name theirs. Both halves' `importVocabulary`
+imports exactly the packages a test names, and the tests that read a messaging
+or calendar kind name theirs. Both halves' `importVocabulary`
 refuses an empty name list, because `enginetest.ImportVocabulary` reads that
 as all five and a caller who wants all five says `enginetest.Vocabulary...`.
 This is worth 11 s of the suite's wall clock, 117 s to 106 s.
@@ -429,8 +435,8 @@ suite's key gate.
 The suite reads its whole environment from those variables, so it runs against
 any substrate, not only the dev one: `SUBSTRATE_E2E_SERVER` is the base URL,
 `SUBSTRATE_E2E_INVITE` the invite code (default `let-me-in`),
-`SUBSTRATE_E2E_DSN` and `SUBSTRATE_E2E_CTL` the operator hat the `dsn` cases
-need, `SUBSTRATE_E2E_CREDENTIAL_KEY` the key those commands read, and
+`SUBSTRATE_E2E_DSN` and `SUBSTRATE_E2E_CTL` the operator hat
+([two hats](substratectl.md#two-hats)) the `dsn` cases need, `SUBSTRATE_E2E_CREDENTIAL_KEY` the key those commands read, and
 `SUBSTRATE_E2E_REPORT_DIR` where the report lands. Point them at a throwaway
 server of your own when the shared dev stack is somebody else's.
 
@@ -454,9 +460,10 @@ pipeline is reproducible on a laptop:
 | lint | `ci:lint` | formatting, every linter, the release config, and the two diff guards: the `kinds/` and `samples/` version bump (`kinds:check`) and the write-once files (`frozen:check`) | always |
 | cross compile | `ci:cross` | build and vet for linux and darwin, amd64 and arm64 | always |
 | changes | `ci:changes` | reads the diff against the base branch and answers `go=true` or `go=false`: does any changed file reach a Go test? | always |
-| go test | `ci:go` | the short suite, then every database package but the engine (`test:db:rest`) | when `go=true` |
+| go test | `ci:go` | the short suite, then every database package but the engine and the provider suite (`test:db:rest`) | when `go=true` |
 | engine 1/8 to 8/8 | `ci:engine` | one shard of the engine package each (`test:db:engine` with `SHARD` and `SHARDS`) | when `go=true` |
-| go gate | (in the workflow) | the one check to require: red unless `changes` succeeded and `go test` and every shard succeeded or were skipped by its answer | always |
+| providers e2e | `ci:providers` | the provider suite (`test:db:providers`): `internal/providere2e` syncs seven provider closures against a `substrated` it starts, over recorded upstreams | when `go=true` |
+| go gate | (in the workflow) | the one check to require: red unless `changes` succeeded and `go test`, every shard and `providers e2e` succeeded or were skipped by its answer | always |
 | coverage | `ci:coverage` | the whole suite, unsharded, with the coverage profile kept as an artifact | push to `main` |
 | race | `ci:race` | the short suite under `-race` | always |
 | audit | `ci:audit` | govulncheck and pnpm audit | always |
@@ -497,8 +504,8 @@ count as relevant because `internal/build` reads them. `kinds/` and `samples/`
 are embedded whole, so any file under them counts, and an unmatched file
 counts, because a needless run is cheaper than a red test merged green. The diff is read with `--no-renames`,
 so a Go file moved onto an inert path is seen on both sides, and a base the
-script cannot resolve fails the job rather than answering `false`. `go test`
-and the engine shards carry `if: needs.changes.outputs.go == 'true'`. A push
+script cannot resolve fails the job rather than answering `false`. `go test`,
+the engine shards and `providers e2e` carry `if: needs.changes.outputs.go == 'true'`. A push
 to `main` answers `true` without diffing, and runs `coverage` besides.
 
 `go gate` is the check to require. GitHub counts a skipped job as passing for
@@ -506,8 +513,8 @@ a required check, the gated jobs are skipped both when `changes` answers
 `false` and when `changes` itself fails, and a skipped matrix is one `engine`
 job rather than eight named shards, so a ruleset naming `go test` or a shard
 would let a PR whose gate crashed merge untested. `go gate` runs after all of
-them with `if: always()` and fails unless `changes` succeeded and `go test`
-and the engine matrix each succeeded or were skipped. On a docs-only PR it is
+them with `if: always()` and fails unless `changes` succeeded and `go test`,
+the engine matrix and `providers e2e` each succeeded or were skipped. On a docs-only PR it is
 green with no suite run; on a Go PR it is the suite's verdict.
 
 A shard runs under `-timeout 12m` inside a 15 minute job, so a hang dies by
@@ -522,10 +529,11 @@ must give, including the unresolvable base that must fail, and the shard
 partition (`.mise/shardselect.sh`) is run over a fixed list that the eight
 shards together must reproduce exactly once.
 
-`mise run test`, `test:db` and `test:coverage` are untouched by the cut: each
-is still the whole suite, sequential, on one machine, and `mise run ci` runs
-`ci:coverage` in place of `ci:go` and the shards, because it is the same tests
-once with the profile.
+`mise run test` and `test:db` are untouched by the cut: each is still the
+whole suite, sequential, on one machine. `test:coverage` is the same without
+the provider suite, and `mise run ci` runs `ci:coverage` in place of `ci:go`
+and the shards, because it is the same tests once with the profile; it runs
+no `ci:providers`.
 
 Next: the [built-in kinds](builtin-kinds.md), the vocabulary a repository
 can import.

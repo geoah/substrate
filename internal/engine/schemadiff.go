@@ -290,7 +290,7 @@ func typeNarrowings(curT, candT *vocabulary.Kind, moved map[string]string) []nar
 				// undeclared, and the move would replace it and collide the
 				// manager, offer and embedding rows keyed on the two names.
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: property %q renamed to %q while %%d live records already carry a value under %q — clear it on them first",
+					format: fmt.Sprintf("kind %s: property %q renamed to %q while %%d live records already carry a value under %q — clear it on them first",
 						ident, pname, to, to),
 					query: countPropQuery, args: []any{ident, to},
 				})
@@ -299,7 +299,7 @@ func typeNarrowings(curT, candT *vocabulary.Kind, moved map[string]string) []nar
 			}
 			if curP.IsState() {
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: state property %q dropped while %%d live records hold a state — resolve them first", ident, pname),
+					format: fmt.Sprintf("kind %s: state property %q dropped while %%d live records hold a state — resolve them first", ident, pname),
 					query:  countStateQuery, args: []any{ident, pname},
 				})
 				continue
@@ -314,7 +314,7 @@ func typeNarrowings(curT, candT *vocabulary.Kind, moved map[string]string) []nar
 				// remedy is the mapping's own: delete it deliberately, having
 				// deleted or merged the subjects it minted.
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: mapping %s is removed while %%d live records still link to a %s through %q — delete those records, or keep the mapping",
+					format: fmt.Sprintf("kind %s: mapping %s is removed while %%d live records still link to a %s through %q — delete those records, or keep the mapping",
 						ident, curP.MappedBy, curP.To, pname),
 					query: countPropQuery, args: []any{ident, pname},
 				})
@@ -327,7 +327,7 @@ func typeNarrowings(curT, candT *vocabulary.Kind, moved map[string]string) []nar
 				continue
 			}
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: property %q dropped while %%d live records still carry it — null it on them first", ident, pname),
+				format: fmt.Sprintf("kind %s: property %q dropped while %%d live records still carry it — null it on them first", ident, pname),
 				query:  countPropQuery, args: []any{ident, pname},
 			})
 			continue
@@ -353,7 +353,7 @@ func typeNarrowings(curT, candT *vocabulary.Kind, moved map[string]string) []nar
 		}
 		q, args := missingValueCount(candT, ident, pname)
 		out = append(out, narrowing{
-			format: fmt.Sprintf("type %s: property %q is added as required while %%d live records lack it — backfill or delete them first",
+			format: fmt.Sprintf("kind %s: property %q is added as required while %%d live records lack it — backfill or delete them first",
 				ident, pname),
 			query: q, args: args,
 		})
@@ -376,14 +376,14 @@ func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, c
 			q, what = countStateQuery, "a state"
 		}
 		out = append(out, narrowing{
-			format: fmt.Sprintf("type %s: property %q changes kind (state and value do not convert) while %%d live records hold %s — migrate them first",
+			format: fmt.Sprintf("kind %s: property %q changes kind (state and value do not convert) while %%d live records hold %s — migrate them first",
 				ident, pname, what),
 			query: q, args: []any{ident, pname},
 		})
 	case curP.IsState():
 		if removed := removedStrings(curP.Machine.States, candP.Machine.States); len(removed) > 0 {
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: state property %q removes state(s) %s while %%d live records occupy one — transition them first",
+				format: fmt.Sprintf("kind %s: state property %q removes state(s) %s while %%d live records occupy one — transition them first",
 					ident, pname, quotedList(removed)),
 				query: countStateValuesQuery, args: []any{ident, pname, jsonArray(removed)},
 			})
@@ -410,7 +410,7 @@ func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, c
 			case candP.Datatype == vocabulary.DatatypeInt &&
 				!curP.Repeated && !curP.Keyed && !candP.Repeated && !candP.Keyed:
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: property %q changes kind %s → %s while %%d live records hold values that are not integers — migrate them first",
+					format: fmt.Sprintf("kind %s: property %q changes kind %s → %s while %%d live records hold values that are not integers — migrate them first",
 						ident, pname, from, to),
 					query: countNonIntPropQuery, args: []any{ident, pname},
 				})
@@ -422,13 +422,13 @@ func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, c
 			case stringToEnum(curP, candP):
 				q, args := valuesOutsidePath(ident, containerPath(nil, curP, pname), candP.ValueStrings())
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: property %q changes kind %s → %s while %%d live records hold a value outside %s; rewrite them first",
+					format: fmt.Sprintf("kind %s: property %q changes kind %s → %s while %%d live records hold a value outside %s; rewrite them first",
 						ident, pname, from, to, quotedList(candP.ValueStrings())),
 					query: q, args: args,
 				})
 			default:
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: property %q changes kind %s → %s while %%d live records hold values of the old kind — migrate them first",
+					format: fmt.Sprintf("kind %s: property %q changes kind %s → %s while %%d live records hold values of the old kind — migrate them first",
 						ident, pname, from, to),
 					query: countPropQuery, args: []any{ident, pname},
 				})
@@ -445,7 +445,7 @@ func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, c
 			if len(removed) > 0 {
 				q, args := valuesAtPath(ident, containerPath(nil, curP, pname), removed)
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: property %q removes value(s) %s while %%d live records hold one — rewrite them first",
+					format: fmt.Sprintf("kind %s: property %q removes value(s) %s while %%d live records hold one — rewrite them first",
 						ident, pname, quotedList(removed)),
 					query: q, args: args,
 				})
@@ -456,7 +456,7 @@ func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, c
 			if curP.Datatype == vocabulary.DatatypeReference && refTargetNarrows(curP.To, candP.To) {
 				q, args := countRefOffTarget(ident, pname, acceptedTargets(candP.To, moved))
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: reference %q narrows its target to %s while %%d live records point elsewhere — repoint them first",
+					format: fmt.Sprintf("kind %s: reference %q narrows its target to %s while %%d live records point elsewhere — repoint them first",
 						ident, pname, candP.To),
 					query: q, args: args,
 				})
@@ -468,7 +468,7 @@ func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, c
 				q, args := keysOutsidePattern(ident, mapPath(nil, pname),
 					vocabulary.KeyPatternRegexp(candP.KeyPattern))
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: property %q tightens its keys to %s while %%d live records hold a key it refuses — rekey them first",
+					format: fmt.Sprintf("kind %s: property %q tightens its keys to %s while %%d live records hold a key it refuses — rekey them first",
 						ident, pname, candP.KeyPattern),
 					query: q, args: args,
 				})
@@ -488,7 +488,7 @@ func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, c
 		if !curP.Required && candP.Required && !backfillable(candT, candP) {
 			q, args := missingValueCount(candT, ident, pname)
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: property %q becomes required while %%d live records lack it: declare a default to backfill them, or write them first", ident, pname),
+				format: fmt.Sprintf("kind %s: property %q becomes required while %%d live records lack it: declare a default to backfill them, or write them first", ident, pname),
 				query:  q, args: args,
 			})
 		}
@@ -604,7 +604,7 @@ func referenceNarrowings(ident, pname string, curP, candP *vocabulary.Property) 
 	// write to that row could re-assert.
 	if !curP.MustExist && candP.MustExist {
 		out = append(out, narrowing{
-			format: fmt.Sprintf("type %s: reference %q requires its target to exist while %%d live references name a record that does not — repoint or clear them first",
+			format: fmt.Sprintf("kind %s: reference %q requires its target to exist while %%d live references name a record that does not — repoint or clear them first",
 				ident, pname),
 			query: countDanglingRefQuery, args: []any{ident, pname},
 		})
@@ -629,7 +629,7 @@ func linkPropNarrowings(ident, pname string, curP, candP *vocabulary.Property) [
 		curL, candL := curP.Properties[lname], candP.Properties[lname]
 		if candL == nil {
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: reference %q drops link property %q while %%d live references still carry it — null it on them first",
+				format: fmt.Sprintf("kind %s: reference %q drops link property %q while %%d live references still carry it — null it on them first",
 					ident, pname, lname),
 				query: countLinkPropQuery, args: []any{ident, pname, lname},
 			})
@@ -639,20 +639,20 @@ func linkPropNarrowings(ident, pname string, curP, candP *vocabulary.Property) [
 			switch {
 			case candL.Datatype == vocabulary.DatatypeInt:
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: reference %q changes link property %q from %s to int while %%d live references hold values that are not integers — migrate them first",
+					format: fmt.Sprintf("kind %s: reference %q changes link property %q from %s to int while %%d live references hold values that are not integers — migrate them first",
 						ident, pname, lname, curL.Datatype),
 					query: countLinkPropNonIntQuery, args: []any{ident, pname, lname},
 				})
 			case stringToEnum(curL, candL):
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: reference %q changes link property %q from string to enum while %%d live references hold a value outside %s; rewrite them first",
+					format: fmt.Sprintf("kind %s: reference %q changes link property %q from string to enum while %%d live references hold a value outside %s; rewrite them first",
 						ident, pname, lname, quotedList(candL.ValueStrings())),
 					query: countLinkPropOutsideValuesQuery,
 					args:  []any{ident, pname, lname, jsonArray(candL.ValueStrings())},
 				})
 			default:
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: reference %q changes link property %q from %s to %s while %%d live references hold values of the old kind — migrate them first",
+					format: fmt.Sprintf("kind %s: reference %q changes link property %q from %s to %s while %%d live references hold values of the old kind — migrate them first",
 						ident, pname, lname, curL.Datatype, candL.Datatype),
 					query: countLinkPropQuery, args: []any{ident, pname, lname},
 				})
@@ -661,14 +661,14 @@ func linkPropNarrowings(ident, pname string, curP, candP *vocabulary.Property) [
 		}
 		if removed := removedStrings(curL.ValueStrings(), candL.ValueStrings()); len(removed) > 0 {
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: reference %q removes value(s) %s from link property %q while %%d live references hold one — rewrite them first",
+				format: fmt.Sprintf("kind %s: reference %q removes value(s) %s from link property %q while %%d live references hold one — rewrite them first",
 					ident, pname, quotedList(removed), lname),
 				query: countLinkPropValuesQuery, args: []any{ident, pname, lname, jsonArray(removed)},
 			})
 		}
 		if !curL.Required && candL.Required {
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: reference %q makes link property %q required while %%d live references lack it — backfill them first",
+				format: fmt.Sprintf("kind %s: reference %q makes link property %q required while %%d live references lack it — backfill them first",
 					ident, pname, lname),
 				query: countMissingLinkPropQuery, args: []any{ident, pname, lname},
 			})
@@ -687,7 +687,7 @@ func linkPropNarrowings(ident, pname string, curP, candP *vocabulary.Property) [
 			continue
 		}
 		out = append(out, narrowing{
-			format: fmt.Sprintf("type %s: reference %q adds link property %q as required while %%d live references lack it — clear them or drop the requirement",
+			format: fmt.Sprintf("kind %s: reference %q adds link property %q as required while %%d live references lack it — clear them or drop the requirement",
 				ident, pname, lname),
 			query: countMissingLinkPropQuery, args: []any{ident, pname, lname},
 		})
@@ -998,7 +998,7 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 		if candF == nil {
 			q, args := fieldPresence(ident, path, fname)
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: object %q drops field %q while %%d live records still carry it — null it on them first",
+				format: fmt.Sprintf("kind %s: object %q drops field %q while %%d live records still carry it — null it on them first",
 					ident, label, fname),
 				query: q, args: args,
 			})
@@ -1010,7 +1010,7 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 			if stringToEnum(curF, candF) {
 				q, args := valuesOutsidePath(ident, containerPath(path, curF, fname), candF.ValueStrings())
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: object %q field %q changes kind %s → %s while %%d live records hold a value outside %s; rewrite them first",
+					format: fmt.Sprintf("kind %s: object %q field %q changes kind %s → %s while %%d live records hold a value outside %s; rewrite them first",
 						ident, label, fname, kindShape(curF), kindShape(candF), quotedList(candF.ValueStrings())),
 					query: q, args: args,
 				})
@@ -1018,7 +1018,7 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 			}
 			q, args := fieldPresence(ident, path, fname)
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: object %q field %q changes kind %s → %s while %%d live records hold the old kind — migrate them first",
+				format: fmt.Sprintf("kind %s: object %q field %q changes kind %s → %s while %%d live records hold the old kind — migrate them first",
 					ident, label, fname, kindShape(curF), kindShape(candF)),
 				query: q, args: args,
 			})
@@ -1028,7 +1028,7 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 			q, args := keysOutsidePattern(ident, mapPath(path, fname),
 				vocabulary.KeyPatternRegexp(candF.KeyPattern))
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: object %q field %q tightens its keys to %s while %%d live records hold a key it refuses — rekey them first",
+				format: fmt.Sprintf("kind %s: object %q field %q tightens its keys to %s while %%d live records hold a key it refuses — rekey them first",
 					ident, label, fname, candF.KeyPattern),
 				query: q, args: args,
 			})
@@ -1039,7 +1039,7 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 		if removed := removedStrings(curF.ValueStrings(), candF.ValueStrings()); len(removed) > 0 {
 			q, args := valuesAtPath(ident, containerPath(path, curF, fname), removed)
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: object %q field %q removes value(s) %s while %%d live records hold one — rewrite them first",
+				format: fmt.Sprintf("kind %s: object %q field %q removes value(s) %s while %%d live records hold one — rewrite them first",
 					ident, label, fname, quotedList(removed)),
 				query: q, args: args,
 			})
@@ -1047,7 +1047,7 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 		if !curF.Required && candF.Required {
 			q, args := fieldEmpty(ident, path, fname)
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: object %q field %q becomes required while %%d live records hold an object without a value for it; backfill them first",
+				format: fmt.Sprintf("kind %s: object %q field %q becomes required while %%d live records hold an object without a value for it; backfill them first",
 					ident, label, fname),
 				query: q, args: args,
 			})
@@ -1057,7 +1057,7 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 		if curF.Datatype == vocabulary.DatatypeReference && refTargetNarrows(curF.To, candF.To) {
 			q, args := refOutsidePath(ident, next, candF.To)
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: object %q reference %q narrows its target to %s while %%d live records point elsewhere — repoint them first",
+				format: fmt.Sprintf("kind %s: object %q reference %q narrows its target to %s while %%d live records point elsewhere — repoint them first",
 					ident, label, fname, candF.To),
 				query: q, args: args,
 			})
@@ -1078,7 +1078,7 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 		}
 		q, args := fieldEmpty(ident, path, fname)
 		out = append(out, narrowing{
-			format: fmt.Sprintf("type %s: object %q adds field %q as required while %%d live records hold an object without it; backfill or clear them first",
+			format: fmt.Sprintf("kind %s: object %q adds field %q as required while %%d live records hold an object without it; backfill or clear them first",
 				ident, label, fname),
 			query: q, args: args,
 		})
@@ -1144,13 +1144,13 @@ func constraintNarrowings(ident, subject string, path []fieldStep, curP, candP *
 		// holding one: conservative, and the guard says why.
 		q, args := sealedPresence(ident, path)
 		out = append(out, narrowing{
-			format: fmt.Sprintf("type %s: %s changes its pattern to %s while %%d live records hold a sealed value, which cannot be checked against a pattern; rewrite them first",
+			format: fmt.Sprintf("kind %s: %s changes its pattern to %s while %%d live records hold a sealed value, which cannot be checked against a pattern; rewrite them first",
 				ident, subject, candP.Pattern),
 			query: q, args: args,
 		})
 	case patternTightens(curP, candP):
 		out = append(out, narrowing{
-			format: fmt.Sprintf("type %s: %s changes its pattern to %s while %%d live records hold a value it refuses; rewrite them first",
+			format: fmt.Sprintf("kind %s: %s changes its pattern to %s while %%d live records hold a value it refuses; rewrite them first",
 				ident, subject, candP.Pattern),
 			query:   propValuesQuery,
 			args:    []any{ident, path[0].key},
@@ -1160,7 +1160,7 @@ func constraintNarrowings(ident, subject string, path []fieldStep, curP, candP *
 	if minRaises(curP, candP) {
 		q, args := boundOutsidePath(ident, path, candP.Datatype, "<", *candP.Min)
 		out = append(out, narrowing{
-			format: fmt.Sprintf("type %s: %s requires values >= %v while %%d live records hold a smaller one; rewrite them first",
+			format: fmt.Sprintf("kind %s: %s requires values >= %v while %%d live records hold a smaller one; rewrite them first",
 				ident, subject, *candP.Min),
 			query: q, args: args,
 		})
@@ -1168,7 +1168,7 @@ func constraintNarrowings(ident, subject string, path []fieldStep, curP, candP *
 	if maxLowers(curP, candP) {
 		q, args := boundOutsidePath(ident, path, candP.Datatype, ">", *candP.Max)
 		out = append(out, narrowing{
-			format: fmt.Sprintf("type %s: %s requires values <= %v while %%d live records hold a larger one; rewrite them first",
+			format: fmt.Sprintf("kind %s: %s requires values <= %v while %%d live records hold a larger one; rewrite them first",
 				ident, subject, *candP.Max),
 			query: q, args: args,
 		})
@@ -1186,7 +1186,7 @@ func linkConstraintNarrowings(ident, pname, lname string, curL, candL *vocabular
 	var out []narrowing
 	if patternTightens(curL, candL) {
 		out = append(out, narrowing{
-			format: fmt.Sprintf("type %s: reference %q changes link property %q's pattern to %s while %%d live references hold a value it refuses; rewrite them first",
+			format: fmt.Sprintf("kind %s: reference %q changes link property %q's pattern to %s while %%d live references hold a value it refuses; rewrite them first",
 				ident, pname, lname, candL.Pattern),
 			query: linkPropValuesQuery, args: []any{ident, pname, lname},
 			strands: patternStrands([]fieldStep{{key: lname}}, candL.Pattern),
@@ -1195,7 +1195,7 @@ func linkConstraintNarrowings(ident, pname, lname string, curL, candL *vocabular
 	if minRaises(curL, candL) {
 		q, args := linkBoundOutside(ident, pname, lname, candL.Datatype, "<", *candL.Min)
 		out = append(out, narrowing{
-			format: fmt.Sprintf("type %s: reference %q requires link property %q >= %v while %%d live references hold a smaller one; rewrite them first",
+			format: fmt.Sprintf("kind %s: reference %q requires link property %q >= %v while %%d live references hold a smaller one; rewrite them first",
 				ident, pname, lname, *candL.Min),
 			query: q, args: args,
 		})
@@ -1203,7 +1203,7 @@ func linkConstraintNarrowings(ident, pname, lname string, curL, candL *vocabular
 	if maxLowers(curL, candL) {
 		q, args := linkBoundOutside(ident, pname, lname, candL.Datatype, ">", *candL.Max)
 		out = append(out, narrowing{
-			format: fmt.Sprintf("type %s: reference %q requires link property %q <= %v while %%d live references hold a larger one; rewrite them first",
+			format: fmt.Sprintf("kind %s: reference %q requires link property %q <= %v while %%d live references hold a larger one; rewrite them first",
 				ident, pname, lname, *candL.Max),
 			query: q, args: args,
 		})
@@ -1425,7 +1425,7 @@ func renameGuards(current, candidate *vocabulary.Registry, renames []propertyRen
 	for _, r := range renames {
 		if cur, ok := current.ByIdentity(r.kind.Identity); ok {
 			if _, declared := cur.Props[r.to]; declared {
-				out = append(out, fmt.Sprintf("type %s: property %q renamed to %q, which the stored declaration already declares; a rename takes a name the kind does not have, so drop %q or pick another name",
+				out = append(out, fmt.Sprintf("kind %s: property %q renamed to %q, which the stored declaration already declares; a rename takes a name the kind does not have, so drop %q or pick another name",
 					r.kind.Identity, r.from, r.to, r.to))
 			}
 		}

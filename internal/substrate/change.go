@@ -114,7 +114,7 @@ type ChangeFilter struct {
 	// addressed to one of them. The scope follows the addressed pair only,
 	// never the winner's later writes under a merged-away id.
 	RecordID string `json:"recordId,omitempty"`
-	// Q is a case-insensitive substring matched against the row's type,
+	// Q is a case-insensitive substring matched against the row's kind,
 	// actor, record id and payload text — the feed's one search box, a
 	// cheap ILIKE at personal scale.
 	Q string `json:"q,omitempty"`

@@ -32,7 +32,7 @@
 # caller's — every effect a delivery applies carries the CALLABLE's actor.
 #
 # ALPHA at v1: the agent kind, the `llm` package's vocabulary and the
-# /agents chat+call wire are explicitly ALPHA and UNFROZEN (ruling A12). They
+# agent call and chat routes are explicitly ALPHA and UNFROZEN (ruling A12). They
 # may change or be superseded without a v1 wire break the
 # Agents section. recordpatchpolicy's judge half carries the same marker, in
 # its own file.

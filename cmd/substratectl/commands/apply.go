@@ -81,7 +81,7 @@ and a later --as apply over a copy you edited since is refused until it is
 confirmed, exactly like a re-import. One package per run: an input carrying
 several package documents is refused, because one request names one origin.
 
-A schema change that removes values from stored records (a dropped property
+A vocabulary change that removes values from stored records (a dropped property
 records still carry, an enum value renamed onto one the declaration keeps) is
 refused until it is confirmed. --allow-data-loss previews the plan first
 (` + "`POST /api/v1/vocabulary/plan`" + `), prints the steps that remove
@@ -147,7 +147,7 @@ The removed values stay in the changelog.`,
 	// treats a string flag's empty NoOptDefVal as "a value is required", so
 	// `--as` alone would be a usage error rather than a default.
 	cmd.Flags().BoolVar(&asMine, "as-mine", false, "rehome the input under this repository's own authority")
-	cmd.Flags().BoolVar(&allowDataLoss, "allow-data-loss", false, "preview the schema change and confirm the plan even where it removes values from stored records")
+	cmd.Flags().BoolVar(&allowDataLoss, "allow-data-loss", false, "preview the vocabulary change and confirm the plan even where it removes values from stored records")
 	return cmd
 }
 

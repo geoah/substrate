@@ -797,7 +797,7 @@ func (d *fakeDataset) List(_ context.Context, q substrate.Query) (*substrate.Pag
 			kinds, ok = d.traits[vocabulary.PackageCore+"/"+tr]
 		}
 		if !ok {
-			return nil, fmt.Errorf("%w: no type implements %q", substrate.ErrValidation, tr)
+			return nil, fmt.Errorf("%w: no kind implements %q", substrate.ErrValidation, tr)
 		}
 		for _, k := range kinds {
 			implementors[k] = true

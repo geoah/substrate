@@ -60,7 +60,7 @@ func (e *apiError) headline() string {
 		// "a transition" describes something that is not there.
 		switch {
 		case strings.Contains(e.Path, "/vocabulary/apply"):
-			return "the schema change was refused: it would break stored data"
+			return "the vocabulary change was refused: it would break stored data"
 		case strings.Contains(e.Path, "/bundle/"):
 			return "the bundle's state does not allow this"
 		}
@@ -68,7 +68,7 @@ func (e *apiError) headline() string {
 	case "not_found":
 		return "no such resource"
 	case "lossy":
-		return "the schema change removes values from stored records and needs a confirmation"
+		return "the vocabulary change removes values from stored records and needs a confirmation"
 	case "forbidden":
 		return "forbidden"
 	case "auth":

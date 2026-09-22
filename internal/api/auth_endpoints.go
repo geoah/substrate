@@ -359,7 +359,7 @@ func (h *handler) getTokens(w http.ResponseWriter, r *http.Request) {
 
 // deleteToken revokes: it deletes the token record, which is the same write
 // the ordinary record surface performs at
-// DELETE /api/v1/substrate.reamde.dev/core/tokens/{id}. No row means no access — there
+// DELETE /api/v1/substrate.reamde.dev/core/token/{id}. No row means no access — there
 // is no revocation list and nothing to expire.
 func (h *handler) deleteToken(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
