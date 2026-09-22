@@ -1,0 +1,41 @@
+{
+ "items": [
+  {
+   "id": "361940",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@discordgo_059737644517465191:beeper.local",
+   "senderName": "Ansel Sedgwick",
+   "timestamp": "2026-09-15T15:58:59.740Z",
+   "sortKey": "777920",
+   "type": "IMAGE",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T16:03:15.183Z",
+    "@discordgo_059737644517465191:beeper.local": "2026-09-15T15:58:59.999Z"
+   },
+   "attachments": [
+    {
+     "id": "mxc://local.beeper.com/lchkx_h8JiGFcoc74FYoif07lj4I7jM32Sb27X9IXicLOPmDipjS1aRfKhEwKwQ6EMpSxM",
+     "type": "img",
+     "mimeType": "image/png",
+     "fileName": "bramble-saffron-quartz-yard.png",
+     "fileSize": 176817,
+     "isGif": false,
+     "isSticker": false,
+     "size": {
+      "width": 847,
+      "height": 1051
+     },
+     "srcURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/lchkx_h8JiGFcoc74FYoif07lj4I7jM32Sb27X9IXicLOPmDipjS1aRfKhEwKwQ6EMpSxM"
+    }
+   ],
+   "isUnread": false
+  }
+ ],
+ "hasMore": false,
+ "oldestCursor": "777920",
+ "newestCursor": "777920"
+}

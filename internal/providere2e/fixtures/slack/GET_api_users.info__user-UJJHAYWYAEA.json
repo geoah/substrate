@@ -1,0 +1,61 @@
+{
+ "ok": true,
+ "user": {
+  "id": "UJJHAYWYAEA",
+  "name": "yevgeniaine-quillfeather-ashby",
+  "is_bot": false,
+  "updated": 1789498232,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "a2a5dc",
+  "is_email_confirmed": true,
+  "real_name": "Dorotheaine Jessop-Ashby",
+  "tz": "America/New_York",
+  "tz_label": "Eastern Daylight Time",
+  "tz_offset": -14400,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "is_scim_provisioned": true,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Dorotheaine Jessop-Ashby",
+   "display_name": "Dorotheaine Jessop-Ashby",
+   "avatar_hash": "a7c0c66a68fd",
+   "real_name_normalized": "Dorotheaine Jessop-Ashby",
+   "display_name_normalized": "Dorotheaine Jessop-Ashby",
+   "image_24": "https://avatars.slack-edge.com/2026-05-17/39557210802441_aadec30fa7126723f44f_24.jpg",
+   "image_32": "https://avatars.slack-edge.com/2026-05-17/39557210802441_aadec30fa7126723f44f_32.jpg",
+   "image_48": "https://avatars.slack-edge.com/2026-05-17/39557210802441_aadec30fa7126723f44f_48.jpg",
+   "image_72": "https://avatars.slack-edge.com/2026-05-17/39557210802441_aadec30fa7126723f44f_72.jpg",
+   "image_192": "https://avatars.slack-edge.com/2026-05-17/39557210802441_aadec30fa7126723f44f_192.jpg",
+   "image_512": "https://avatars.slack-edge.com/2026-05-17/39557210802441_aadec30fa7126723f44f_512.jpg",
+   "image_1024": "https://avatars.slack-edge.com/2026-05-17/39557210802441_aadec30fa7126723f44f_1024.jpg",
+   "image_original": "https://avatars.slack-edge.com/2026-05-17/39557210802441_aadec30fa7126723f44f_original.jpg",
+   "is_custom_image": true,
+   "first_name": "Quintiliana Jessop-Frost",
+   "last_name": "Ola Cranfield-Frost",
+   "team": "T0ADATEAM01",
+   "email": "quintilianine@zephyr-lane.example",
+   "title": "The Rollout should",
+   "phone": "+99 5107171069",
+   "skype": "",
+   "status_text": "The Draft was split out of the",
+   "status_text_canonical": "",
+   "status_emoji": ":lichen-anchor-larch-bay:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "lichen-anchor-larch-bay",
+     "display_url": "https://emoji.slack-edge.com/T0ADATEAM01/lichen-anchor-larch-bay/e6807b0aedbc9da3.gif"
+    }
+   ],
+   "status_expiration": 0,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0
+  }
+ }
+}

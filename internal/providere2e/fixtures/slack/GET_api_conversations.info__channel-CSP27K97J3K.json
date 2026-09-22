@@ -1,0 +1,94 @@
+{
+ "ok": true,
+ "channel": {
+  "id": "CSP27K97J3K",
+  "created": 1764694659,
+  "creator": "UF82Q2XD66Z",
+  "is_org_shared": false,
+  "is_im": false,
+  "context_team_id": "T0ADATEAM01",
+  "updated": 1788274956542,
+  "name": "pewter-room",
+  "name_normalized": "pewter-room",
+  "is_channel": true,
+  "is_group": false,
+  "is_mpim": false,
+  "is_private": false,
+  "is_archived": false,
+  "is_general": false,
+  "is_shared": false,
+  "is_ext_shared": false,
+  "unlinked": 0,
+  "is_pending_ext_shared": false,
+  "pending_shared": [],
+  "parent_conversation": null,
+  "purpose": {
+   "value": "The review landed ahead of the owner's sign-off, assuming the counts hold. The ingest path.",
+   "creator": "UF82Q2XD66Z",
+   "last_set": 1767970987
+  },
+  "topic": {
+   "value": "The schedule will be folded into the numbers from Friday.",
+   "creator": "UF82Q2XD66Z",
+   "last_set": 1767971169
+  },
+  "shared_team_ids": [
+   "T0ADATEAM01"
+  ],
+  "pending_connected_team_ids": [],
+  "is_member": true,
+  "last_read": "1747129378.557019",
+  "properties": {
+   "meeting_notes": {
+    "file_id": "FSZZ4KSC7QX"
+   },
+   "tabs": [
+    {
+     "type": "workflows",
+     "label": "",
+     "id": "workflows"
+    },
+    {
+     "type": "files",
+     "label": "",
+     "id": "files"
+    },
+    {
+     "id": "CtJD5J2TEBX2",
+     "type": "canvas",
+     "data": {
+      "file_id": "FSZZ4KSC7QX",
+      "shared_ts": "1768522487.635739"
+     },
+     "label": ""
+    }
+   ],
+   "tabz": [
+    {
+     "type": "workflows"
+    },
+    {
+     "type": "files"
+    },
+    {
+     "id": "CtJD5J2TEBX2",
+     "type": "canvas",
+     "data": {
+      "file_id": "FSZZ4KSC7QX",
+      "shared_ts": "1768522487.635739"
+     }
+    }
+   ],
+   "channel_workflows": [
+    {
+     "workflow_trigger_id": "FtU9QZ3GCUZA",
+     "title": "Orchard Field"
+    }
+   ],
+   "has_slack_connect_invite_created": true
+  },
+  "previous_names": [
+   "maple-loop"
+  ]
+ }
+}

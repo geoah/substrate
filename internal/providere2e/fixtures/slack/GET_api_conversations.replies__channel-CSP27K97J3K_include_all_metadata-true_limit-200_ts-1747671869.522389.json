@@ -1,0 +1,366 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "subtype": "bot_message",
+   "text": "The ingest <@UR965F3PC1A> path now covers the open question.\n\nThe draft depends on the shared doc.\nThe review depends on the.\nThe handover is.\nThe schedule is waiting on one <!subteam^S4BGCUYE1KZ> more round of checks.\n\n The estimate depends on next week's window.",
+   "username": "Orchard Field",
+   "type": "message",
+   "ts": "1747671869.522389",
+   "bot_id": "BLFK8XZ1AEC",
+   "app_id": "AUFLEEC4WZN",
+   "trigger_id": "FtU9QZ3GCUZA",
+   "workflow_id": "WfSRKJ5G1EEP",
+   "thread_ts": "1747671869.522389",
+   "reply_count": 7,
+   "reply_users_count": 2,
+   "latest_reply": "1747672951.227599",
+   "reply_users": [
+    "UEBYB826YLG",
+    "UM0CRECPWYK"
+   ],
+   "is_locked": false,
+   "subscribed": false,
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "MeW0D",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The checklist quietly changed the earlier draft.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "user",
+         "user_id": "UR965F3PC1A"
+        },
+        {
+         "type": "text",
+         "text": "\nThis batch now covers a smaller slice."
+        },
+        {
+         "type": "text",
+         "text": "The staging cluster depends."
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "The staging cluster will be folded into the shared doc.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "The review rolls up into the numbers from Friday."
+        },
+        {
+         "type": "text",
+         "text": "\n\n"
+        },
+        {
+         "type": "usergroup",
+         "usergroup_id": "S4BGCUYE1KZ"
+        },
+        {
+         "type": "text",
+         "text": " The schedule was split out of a."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "white_check_mark",
+     "users": [
+      "UM0CRECPWYK"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UEBYB826YLG",
+   "type": "message",
+   "ts": "1747671894.105099",
+   "client_msg_id": "ce5e1b9d-e936-458e-5836-bbb96fd79994",
+   "text": "The estimate <@UEBYB826YLG> landed ahead of next <@UR965F3PC1A> week's window.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747671869.522389",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "zOLWT",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The estimate still blocks the second pass."
+        },
+        {
+         "type": "user",
+         "user_id": "UEBYB826YLG"
+        },
+        {
+         "type": "text",
+         "text": " The handover was split out of the shared doc."
+        },
+        {
+         "type": "user",
+         "user_id": "UR965F3PC1A"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "lattice_crew",
+     "users": [
+      "UR965F3PC1A"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UM0CRECPWYK",
+   "type": "message",
+   "ts": "1747671936.250979",
+   "client_msg_id": "89d0059e-784e-4d42-61e5-4b8d20ff70e3",
+   "text": "The queue depends on the agreed cutoff, as discussed. The dashboard.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747671869.522389",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "gMr9l",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The handover was split out of the second pass, once the numbers settle."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "UEBYB826YLG",
+   "type": "message",
+   "ts": "1747672073.891039",
+   "client_msg_id": "9e34314a-7629-c953-3876-f31d4a913b3a",
+   "text": "Summary: The migration depends on the shared doc, once the numbers settle. The dashboard will be folded into the capacity note.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747671869.522389",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "Cgypx",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "For the record: The rollout now covers the capacity note, assuming the counts hold. The estimate now covers the owner's sign-off."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "UEBYB826YLG",
+   "type": "message",
+   "ts": "1747672091.176109",
+   "client_msg_id": "ffab8f38-8adf-9d11-b941-ac495fc62ff3",
+   "text": "Following up: This batch now covers the second pass, after the handover. This batch needs a second.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747671869.522389",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "Bnlc3",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "Quick note: The schedule needs a second look from the open question, assuming the counts hold."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "UEBYB826YLG",
+   "type": "message",
+   "ts": "1747672202.304869",
+   "client_msg_id": "0be88122-fc49-da69-47ab-7d096f79530f",
+   "text": "The checklist depends on the open question, unless somebody objects. The schedule still.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747671869.522389",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "fcBC8",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The draft will be folded into the capacity note, after the handover. The retry budget."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "UM0CRECPWYK",
+   "type": "message",
+   "ts": "1747672631.469779",
+   "client_msg_id": "0f847a48-8946-7940-3ec0-9ca5d3108836",
+   "text": "<@UEBYB826YLG> Heads up — The staging cluster depends on the earlier draft, <https://zephyr-lane.bellrock.example> before the window closes. The retry budget landed ahead of next week's window, as discussed. The rollback plan is waiting on next week's window.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747671869.522389",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "3mavK",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "user",
+         "user_id": "UEBYB826YLG"
+        },
+        {
+         "type": "text",
+         "text": " This batch should unblock next week's window, either way."
+        },
+        {
+         "type": "link",
+         "url": "https://zephyr-lane.bellrock.example"
+        },
+        {
+         "type": "text",
+         "text": "Heads up — The migration is waiting on the capacity note, unless somebody objects. The checklist was split out."
+        },
+        {
+         "type": "emoji",
+         "name": "Sebastiano Ashgrove",
+         "unicode": "1f643"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "UEBYB826YLG",
+   "type": "message",
+   "ts": "1747672951.227599",
+   "client_msg_id": "70ae8219-36e2-e378-b643-89b59856fd75",
+   "text": "The rollback plan needs a second look from one more round of checks.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747671869.522389",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "tMNvJ",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The handover landed ahead of next week's window."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "tidal_desk",
+     "users": [
+      "UM0CRECPWYK"
+     ],
+     "count": 1
+    },
+    {
+     "name": "copper_yard",
+     "users": [
+      "UM0CRECPWYK"
+     ],
+     "count": 1
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

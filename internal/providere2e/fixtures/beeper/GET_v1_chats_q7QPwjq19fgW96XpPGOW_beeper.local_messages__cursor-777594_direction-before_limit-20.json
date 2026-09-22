@@ -1,0 +1,373 @@
+{
+ "items": [
+  {
+   "id": "361800",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_vcw-51244731133315:beeper.local",
+   "senderName": "Leonidas Everly",
+   "timestamp": "2026-09-15T09:32:36.000Z",
+   "sortKey": "777593",
+   "type": "TEXT",
+   "text": "The draft was split out of the follow-up thread.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T09:45:09.084Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361788",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-15T09:10:06.840Z",
+   "sortKey": "777554",
+   "type": "TEXT",
+   "text": "The ingest path will be folded into the agreed cutoff.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T09:10:06.931Z"
+   }
+  },
+  {
+   "id": "361787",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_vcw-51244731133315:beeper.local",
+   "senderName": "Leonidas Everly",
+   "timestamp": "2026-09-15T09:09:45.000Z",
+   "sortKey": "777553",
+   "type": "TEXT",
+   "text": "The staging cluster will be folded into the open question.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T09:10:06.931Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361786",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-15T09:09:41.477Z",
+   "sortKey": "777550",
+   "type": "TEXT",
+   "text": "Context: The review was split out of the follow-up thread, pending one more read. The dashboard should unblock the follow-up thread.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T09:09:41.565Z"
+   }
+  },
+  {
+   "id": "361785",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-15T09:09:29.431Z",
+   "sortKey": "777547",
+   "type": "TEXT",
+   "text": "The staging cluster is waiting on the shared doc.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T09:09:29.517Z"
+   }
+  },
+  {
+   "id": "361784",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_vcw-51244731133315:beeper.local",
+   "senderName": "Leonidas Everly",
+   "timestamp": "2026-09-15T09:09:22.000Z",
+   "sortKey": "777546",
+   "type": "TEXT",
+   "text": "The queue needs a second look from the agreed cutoff.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T09:09:29.517Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361783",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_vcw-51244731133315:beeper.local",
+   "senderName": "Leonidas Everly",
+   "timestamp": "2026-09-15T09:09:17.000Z",
+   "sortKey": "777545",
+   "type": "IMAGE",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T09:09:29.517Z"
+   },
+   "attachments": [
+    {
+     "id": "mxc://local.beeper.com/qleab_7qDAdvjAbhPhuJz9VWWCW6Ho218OnopPphb0IvjCj7fGbKg3ZiXNJrLvQ4bP1wQs",
+     "type": "img",
+     "mimeType": "image/jpeg",
+     "fileName": "quartz.jpg",
+     "fileSize": 368966,
+     "isGif": false,
+     "isSticker": false,
+     "size": {
+      "width": 1080,
+      "height": 1920
+     },
+     "srcURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/qleab_7qDAdvjAbhPhuJz9VWWCW6Ho218OnopPphb0IvjCj7fGbKg3ZiXNJrLvQ4bP1wQs"
+    }
+   ],
+   "isUnread": false
+  },
+  {
+   "id": "361782",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_vcw-51244731133315:beeper.local",
+   "senderName": "Leonidas Everly",
+   "timestamp": "2026-09-15T09:09:10.000Z",
+   "sortKey": "777544",
+   "type": "TEXT",
+   "text": "The review is waiting on a smaller slice.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T09:09:29.517Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361781",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-15T09:09:04.455Z",
+   "sortKey": "777541",
+   "type": "TEXT",
+   "text": "The staging cluster will be folded into the shared doc.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T09:09:04.545Z"
+   }
+  },
+  {
+   "id": "361780",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_vcw-51244731133315:beeper.local",
+   "senderName": "Leonidas Everly",
+   "timestamp": "2026-09-15T09:09:02.000Z",
+   "sortKey": "777540",
+   "type": "TEXT",
+   "text": "The checklist rolls up into the earlier draft.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T09:09:04.545Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361779",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-15T09:08:59.138Z",
+   "sortKey": "777537",
+   "type": "TEXT",
+   "text": "The dashboard now covers the second pass.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T09:08:59.226Z"
+   }
+  },
+  {
+   "id": "361778",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-15T09:08:56.213Z",
+   "sortKey": "777534",
+   "type": "TEXT",
+   "text": "The new index landed ahead of the open question.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T09:08:56.298Z"
+   }
+  },
+  {
+   "id": "361776",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_vcw-51244731133315:beeper.local",
+   "senderName": "Leonidas Everly",
+   "timestamp": "2026-09-15T09:08:50.000Z",
+   "sortKey": "777531",
+   "type": "TEXT",
+   "text": "The staging cluster was split out of the follow-up thread.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T09:08:56.298Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361775",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-15T09:08:44.318Z",
+   "sortKey": "777528",
+   "type": "TEXT",
+   "text": "The retry budget still blocks the second pass.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T09:08:44.414Z"
+   }
+  },
+  {
+   "id": "361774",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-15T09:08:35.344Z",
+   "sortKey": "777525",
+   "type": "TEXT",
+   "text": "The dashboard now covers.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T09:08:35.433Z"
+   }
+  },
+  {
+   "id": "361772",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_vcw-51244731133315:beeper.local",
+   "senderName": "Leonidas Everly",
+   "timestamp": "2026-09-15T09:08:12.000Z",
+   "sortKey": "777523",
+   "type": "TEXT",
+   "text": "Context: The rollout is waiting on the agreed cutoff, before the window closes. The migration was split out of.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T09:08:35.433Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361500",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-14T17:36:06.195Z",
+   "sortKey": "777029",
+   "type": "TEXT",
+   "text": "The new index should unblock next week's window.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T17:36:06.330Z"
+   }
+  },
+  {
+   "id": "361491",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_vcw-51244731133315:beeper.local",
+   "senderName": "Leonidas Everly",
+   "timestamp": "2026-09-14T17:11:04.000Z",
+   "sortKey": "777018",
+   "type": "TEXT",
+   "text": "The retry budget needs a.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T17:36:06.330Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361360",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_vcw-51244731133315:beeper.local",
+   "senderName": "Leonidas Everly",
+   "timestamp": "2026-09-14T11:07:14.000Z",
+   "sortKey": "776795",
+   "type": "TEXT",
+   "text": "The rollback plan landed ahead of one more round of checks.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T11:08:43.983Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361359",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_vcw-51244731133315:beeper.local",
+   "senderName": "Leonidas Everly",
+   "timestamp": "2026-09-14T11:07:10.000Z",
+   "sortKey": "776794",
+   "type": "TEXT",
+   "text": "The draft depends on the shared doc, either way. The estimate now covers the.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T11:08:43.983Z"
+   },
+   "isUnread": false
+  }
+ ],
+ "hasMore": false,
+ "oldestCursor": "776794",
+ "newestCursor": "777593"
+}

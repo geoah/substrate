@@ -1,0 +1,49 @@
+{
+  "object": "database",
+  "id": "215edfdd-7def-818e-bd80-f842d5dd3bef",
+  "title": [
+    {
+      "type": "text",
+      "text": {
+        "content": "The rollout landed ahead of the shared doc.",
+        "link": null
+      },
+      "annotations": {
+        "bold": false,
+        "italic": false,
+        "strikethrough": false,
+        "underline": false,
+        "code": false,
+        "color": "default"
+      },
+      "plain_text": "The rollout landed ahead of the shared doc.",
+      "href": null
+    }
+  ],
+  "description": [],
+  "parent": {
+    "type": "workspace",
+    "workspace": true
+  },
+  "is_inline": false,
+  "database_type": null,
+  "in_trash": false,
+  "is_locked": false,
+  "created_time": "2025-06-17T12:00:48.023+00:00",
+  "last_edited_time": "2026-04-05T11:24:35.823+00:00",
+  "data_sources": [
+    {
+      "id": "215edfdd-7def-8161-84be-000b5ddb0d3e",
+      "name": "Kestrel Yarrowby"
+    }
+  ],
+  "icon": {
+    "type": "emoji",
+    "emoji": "\ud83c\udf0e"
+  },
+  "cover": null,
+  "url": "https://app.notion.com/p/The-rollout-landed-ahead-of-the-shared-doc-215edfdd7def818ebd80f842d5dd3bef",
+  "public_url": null,
+  "archived": false,
+  "request_id": "aab967ac-0bd2-48da-90ab-250eabaa7306"
+}

@@ -1,0 +1,326 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "UZEZZJJXC8P",
+   "type": "message",
+   "ts": "1747729356.728089",
+   "client_msg_id": "51F7FEFC-FF0A-5196-92BB-4F141A7741CC",
+   "text": "Heads up — The draft landed ahead of the numbers from Friday, pending one more read. The retry budget needs a second look from the follow-up thread, before the window closes.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747729356.728089",
+   "reply_count": 7,
+   "reply_users_count": 3,
+   "latest_reply": "1747730695.678389",
+   "reply_users": [
+    "U4JZ9Z4S8QV",
+    "UZYSGS7CBM8",
+    "U0ADA0WNER1"
+   ],
+   "is_locked": false,
+   "subscribed": true,
+   "last_read": "1747730695.678389",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "k3cVc",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "Quick note: This batch now covers the capacity note, either way. The rollback plan still blocks the earlier draft, before the window closes. The new index quietly."
+        },
+        {
+         "type": "emoji",
+         "name": "Zenobia Brackwater",
+         "unicode": "1f605"
+        },
+        {
+         "type": "text",
+         "text": " "
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "joy",
+     "users": [
+      "U0ADA0WNER1"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "U4JZ9Z4S8QV",
+   "type": "message",
+   "ts": "1747729785.248169",
+   "client_msg_id": "D2B3CBB3-8ACC-7784-6472-17ED6F7188A1",
+   "text": "The draft was split out of the second pass.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747729356.728089",
+   "parent_user_id": "UZEZZJJXC8P",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "oL1FD",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The new index will be folded into the numbers."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "joy",
+     "users": [
+      "U0ADA0WNER1"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UZYSGS7CBM8",
+   "type": "message",
+   "ts": "1747729836.023919",
+   "client_msg_id": "9243a3ec-c2ac-60f4-dabc-03ddd7b409f8",
+   "text": "The estimate will be folded into next week's window, either way.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747729356.728089",
+   "parent_user_id": "UZEZZJJXC8P",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "zzUV0",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The rollout depends on next week's window, before the window closes."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "U0ADA0WNER1",
+   "type": "message",
+   "ts": "1747729985.162939",
+   "client_msg_id": "4f503747-c43d-a1a6-4f94-91caffce2120",
+   "text": "Summary: The checklist quietly changed the follow-up thread, pending one more read. This batch rolls up into the capacity note.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747729356.728089",
+   "parent_user_id": "UZEZZJJXC8P",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "zJ6Qj",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "Summary: The rollout needs a second look from next week's window, once the numbers settle. The staging cluster now covers the second pass."
+        },
+        {
+         "type": "emoji",
+         "name": "Gus Orrington",
+         "unicode": "1f602"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "joy",
+     "users": [
+      "U4JZ9Z4S8QV",
+      "U87FWU6EJ6S",
+      "UZEZZJJXC8P",
+      "UVH35QJVZVE",
+      "UJ18LMHG4KF",
+      "U6MN840S994"
+     ],
+     "count": 6
+    },
+    {
+     "name": "tamarisk",
+     "users": [
+      "UJ58U06PE7U",
+      "UJ18LMHG4KF"
+     ],
+     "count": 2
+    }
+   ]
+  },
+  {
+   "user": "U4JZ9Z4S8QV",
+   "type": "message",
+   "ts": "1747730018.208729",
+   "client_msg_id": "54a1c4db-b79d-1bae-eace-04104b1be1c4",
+   "text": "The retry budget will be folded into the agreed cutoff.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747729356.728089",
+   "parent_user_id": "UZEZZJJXC8P",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "Pj4xF",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The estimate was split out of the second pass."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "U4JZ9Z4S8QV",
+   "type": "message",
+   "ts": "1747730617.540239",
+   "client_msg_id": "F67848B4-36BE-312B-9170-F5E397E73DCB",
+   "text": "The new index rolls up into the shared doc, either way. The draft should unblock one more.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747729356.728089",
+   "parent_user_id": "UZEZZJJXC8P",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "iA0Aq",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The queue now covers."
+        },
+        {
+         "type": "text",
+         "text": "The rollout quietly changed the follow-up thread."
+        },
+        {
+         "type": "text",
+         "text": " The staging cluster still blocks the numbers from Friday, after."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "U0ADA0WNER1",
+   "type": "message",
+   "ts": "1747730673.909149",
+   "client_msg_id": "3f1fe9ad-6c1e-598d-2630-713ca24f18fb",
+   "text": "The migration now covers the follow-up thread.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747729356.728089",
+   "parent_user_id": "UZEZZJJXC8P",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "AfRR7",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The retry budget now covers the earlier draft."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "U4JZ9Z4S8QV",
+   "type": "message",
+   "ts": "1747730695.678389",
+   "client_msg_id": "FECA9977-3EFC-2287-C3ED-730A31896A83",
+   "text": "The new index now covers the.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747729356.728089",
+   "parent_user_id": "UZEZZJJXC8P",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "S1vHc",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The retry budget was split."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "joy",
+     "users": [
+      "U0ADA0WNER1"
+     ],
+     "count": 1
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

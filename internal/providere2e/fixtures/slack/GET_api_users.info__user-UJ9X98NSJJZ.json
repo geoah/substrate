@@ -1,0 +1,61 @@
+{
+ "ok": true,
+ "user": {
+  "id": "UJ9X98NSJJZ",
+  "name": "gilah-everly-quill",
+  "is_bot": false,
+  "updated": 1789474773,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "e7392d",
+  "is_email_confirmed": true,
+  "real_name": "Hanaah Fernsby-Quill",
+  "tz": "America/Los_Angeles",
+  "tz_label": "Pacific Daylight Time",
+  "tz_offset": -25200,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Hanaah Fernsby-Quill",
+   "display_name": "Hanaah Fernsby-Quill",
+   "avatar_hash": "cce168669bcb",
+   "real_name_normalized": "Hanaah Fernsby-Quill",
+   "display_name_normalized": "Hanaah Fernsby-Quill",
+   "image_24": "https://avatars.slack-edge.com/2026-03-24/54823015709399_4d9409083e2d56e62adb_24.jpg",
+   "image_32": "https://avatars.slack-edge.com/2026-03-24/54823015709399_4d9409083e2d56e62adb_32.jpg",
+   "image_48": "https://avatars.slack-edge.com/2026-03-24/54823015709399_4d9409083e2d56e62adb_48.jpg",
+   "image_72": "https://avatars.slack-edge.com/2026-03-24/54823015709399_4d9409083e2d56e62adb_72.jpg",
+   "image_192": "https://avatars.slack-edge.com/2026-03-24/54823015709399_4d9409083e2d56e62adb_192.jpg",
+   "image_512": "https://avatars.slack-edge.com/2026-03-24/54823015709399_4d9409083e2d56e62adb_512.jpg",
+   "image_1024": "https://avatars.slack-edge.com/2026-03-24/54823015709399_4d9409083e2d56e62adb_1024.jpg",
+   "image_original": "https://avatars.slack-edge.com/2026-03-24/54823015709399_4d9409083e2d56e62adb_original.jpg",
+   "is_custom_image": true,
+   "first_name": "Adaus Ellery9",
+   "last_name": "Torina Whitfield-Hale",
+   "team": "T0ADATEAM01",
+   "email": "wrenah@zephyr-lane.example",
+   "title": "",
+   "phone": "+99 5794177116",
+   "skype": "",
+   "status_text": "The Rollout should unblock next week's window",
+   "status_text_canonical": "",
+   "status_emoji": ":palm_tree:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "palm_tree",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/1f334.png",
+     "unicode": "1f334"
+    }
+   ],
+   "status_expiration": 1789761600,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0
+  }
+ }
+}

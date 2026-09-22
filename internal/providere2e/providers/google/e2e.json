@@ -1,0 +1,49 @@
+{
+  "accountId": "e2e",
+  "configId": "default",
+  "config": {
+    "clientId": "e2e-client-id",
+    "clientSecret": "e2e-client-secret"
+  },
+  "account": {
+    "enabledContacts": true,
+    "enabledGmail": true,
+    "enabledCalendar": true,
+    "enabledDrive": true,
+    "syncFrequency": "hourly",
+    "backfillDepth": "all"
+  },
+  "hosts": [
+    "https://accounts.google.com",
+    "https://oauth2.googleapis.com",
+    "https://people.googleapis.com",
+    "https://gmail.googleapis.com",
+    "https://www.googleapis.com"
+  ],
+  "triggers": [
+    "google-contacts-on-connect",
+    "google-gmail-on-connect",
+    "google-calendar-on-connect",
+    "google-drive-on-connect",
+    "google-contacts-on-request",
+    "google-gmail-on-request",
+    "google-calendar-on-request",
+    "google-drive-on-request"
+  ],
+  "settleSeconds": 420,
+  "seed": {
+    "accountId": "owner-google",
+    "_note": "the seed run is the owner's real account; the id carries the provider because the engine's OAuth surface resolves a BARE account id across every accountconfig kind and refuses a clash (two providers both naming their seed account `owner` collide)",
+    "continueRounds": 40,
+    "settleSeconds": 420
+  },
+  "mockPort": 48112,
+  "_mockPort": "fixed so the rewired function body is identical run to run \u2014 the engine serves the PREVIOUS apply's body (substrate#576), so a moving port makes the first drain of every run call a dead mock",
+  "continue": {
+    "property": "syncRequestedAt",
+    "value": "now"
+  },
+  "_continue": "the three streams stamp `<stream>SyncRequestedAck` with the request generation they acted on, and google-<stream>-on-request fires exactly while the pair disagrees. The runner stamps `syncRequestedAt` to CONTINUE a bounded drain and to RE-DRIVE a re-seeded account at all: a purge leaves the account row (and its `*LastSyncedAt`) standing, so every on-connect guard is already false on a second seed and nothing else would fire.",
+  "_faults": "NO faults.json ON DISK, DELIBERATELY. tools/e2e.py loads providers/<p>/e2e/faults.json whenever the FILE EXISTS \u2014 it is not gated on --mode \u2014 so a committed matrix would inject 429s, 500s and 404s into the owner SEED as well as the e2e. Every case is POSTed to /__mock/faults by e2e/scenario.py instead, guarded by MODE == e2e, which also lets each one run against an account that is already ok and assert what changed.",
+  "_drive": "T-088: the fourth stream. `enabledDrive` rides beside the other three toggles, and its on-connect/on-request pair is kept enabled like theirs; the scheduled trigger is disabled for the run as every schedule is."
+}

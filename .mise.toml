@@ -117,10 +117,16 @@ description = "The suites that want a database: a pgvector container, or SUBSTRA
 #
 # ./cmd/substratectl/...: the operator hat's `*_db_test.go` opens a real
 # database; the rest of that package runs again here, cheaply.
-# -timeout 30m: the engine suite alone runs 4 to 10 minutes depending on the
+#
+# ./internal/providere2e/...: the provider suites. That one starts a real
+# substrated and replays recorded upstream traffic through seven provider
+# bundles, ten minutes of wall time, and it wants `uv` and `python3` as well
+# as a database (it skips itself without them).
+#
+# -timeout 45m: the engine suite alone runs 4 to 10 minutes depending on the
 # machine, and Go's default of 10m has killed it on a slow CI runner with no
-# test failing. The CI job's own budget is 40 minutes; this stays inside it.
-run = "go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/engine/... ./internal/catalog/... ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/..."
+# test failing. It was 30m before internal/providere2e joined.
+run = "go test -count=1 -p 1 -timeout 45m -skip '^TestLive' ./internal/engine/... ./internal/catalog/... ./internal/providere2e/... ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/..."
 
 # `test:db` cut in two for the runner. The engine package is most of the
 # suite's time, so CI runs it as parallel shards and every other database
@@ -135,10 +141,20 @@ description = "The engine suite alone, or one shard of it: SHARD and SHARDS from
 run = ".mise/engineshard.sh"
 
 [tasks."test:db:rest"]
-description = "Every database package but the engine: catalog, providertest, testenv, substratectl"
+description = "Every database package but the engine and the provider suite: catalog, providertest, testenv, substratectl"
 # -p 1 for the same reason `test:db` has it: one binary at a time against one
 # server, so no two race on CREATE EXTENSION.
 run = "go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/catalog/... ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/..."
+
+[tasks."test:db:providers"]
+description = "The provider suite: seven closures synced end to end against a substrated the test starts, over recorded upstreams"
+# Its own task and its own CI job (`providers e2e`), not a line in
+# test:db:rest: one run is eight to twelve minutes on a laptop and longer on a
+# runner, past the `go test` job's budget. -p 1 keeps it alone on the box: the
+# suite pins one mock port per provider, so two of it at once would serve one
+# provider's recordings to another's sync. It wants `uv` and `python3` beside
+# the database and skips itself without them.
+run = "go test -count=1 -p 1 -timeout 55m -skip '^TestLive' ./internal/providere2e/..."
 
 [tasks."test:race"]
 description = "The short suite under the race detector"
@@ -692,7 +708,8 @@ description = "CI job `go test`: the short suite, then every database package bu
 # than on a runner of its own that would spend half its life on setup.
 # internal/providertest is the one that wants more than a database: every
 # case there warms a provider closure's PEP 723 body, so the job caches
-# ~/.cache/uv beside the Go caches (.github/workflows/ci.yml).
+# ~/.cache/uv beside the Go caches (.github/workflows/ci.yml). The provider
+# suite (internal/providere2e) runs in the `providers e2e` job instead.
 #
 # SUBSTRATE_TEST_REQUIRE_SANDBOX: internal/sandbox and internal/runner skip
 # their confinement cases where the kernel offers no Landlock or no seccomp, so
@@ -706,6 +723,12 @@ description = "CI job `go test`: the short suite, then every database package bu
 # `test` is: the two halves must not share one small machine at once.
 env = { SUBSTRATE_TEST_REQUIRE_SANDBOX = "1" }
 run = ["mise run test:short", "mise run test:db:rest"]
+
+[tasks."ci:providers"]
+description = "CI job `providers e2e`: the provider suite, alone on its runner"
+# Its own job because of its length and its needs (a database, `uv`, a
+# `python3` the sandbox can exec), see `test:db:providers`.
+depends = ["test:db:providers"]
 
 [tasks."ci:engine"]
 description = "CI job `engine N/M`: one shard of the engine suite; SHARD and SHARDS from the environment"

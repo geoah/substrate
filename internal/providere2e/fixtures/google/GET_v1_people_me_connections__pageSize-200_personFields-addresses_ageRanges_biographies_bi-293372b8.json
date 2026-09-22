@@ -1,0 +1,2053 @@
+{
+ "connections": [
+  {
+   "resourceName": "people/v9565204969802204975",
+   "etag": "%EhIBAgMFBgcJCgsMEC41Nz0+P0AaBAECBQciDHpBV0F4TFJ5Y1E4PQ==",
+   "metadata": {
+    "sources": [
+     {
+      "type": "CONTACT",
+      "id": "v0352g799000358",
+      "etag": "#zAWAxLRycQ8=",
+      "updateTime": "2026-08-02T07:35:45.379222Z"
+     },
+     {
+      "type": "PROFILE",
+      "id": "707997185275317809470",
+      "etag": "#nQrw97v3Y4U=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER"
+       ]
+      },
+      "updateTime": "2026-09-13T11:50:51.701983Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "v0352g799000358"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Theodora Ravensworth",
+     "familyName": "Delia Rackham",
+     "givenName": "Nikhil Coldstream",
+     "displayNameLastFirst": "Torin Blackwood",
+     "unstructuredName": "Theodora Ravensworth"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "v0352g799000358"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/contacts/DZ2zwoQa6NHGcARHGyhBNdk3wIkKrvEWDRAmrcRvUuTJ60RcFfjTBMIH=s100"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "PROFILE",
+       "id": "707997185275317809470"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/AEK-PvEYY15GwbTWoMGshPLXoiFhIUqUm_X7_EFDLGl0VDiZrpE0nQy2=s100"
+    }
+   ],
+   "birthdays": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "v0352g799000358"
+      }
+     }
+    }
+   ],
+   "addresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "v0352g799000358"
+      },
+      "sourcePrimary": true
+     },
+     "formattedValue": "49 rowan\nhazel 28840",
+     "type": "home",
+     "formattedType": "Home",
+     "streetAddress": "49 rowan",
+     "city": "hazel",
+     "postalCode": "28840"
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "v0352g799000358"
+      },
+      "sourcePrimary": true
+     },
+     "value": "zenobia@inbox.example",
+     "type": "other",
+     "formattedType": "Other"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "v0352g799000358"
+      }
+     },
+     "value": "ember@quarryhill-group.example",
+     "type": "other",
+     "formattedType": "Other"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "v0352g799000358"
+      }
+     },
+     "value": "kalina@postbox.example",
+     "type": "other",
+     "formattedType": "Other"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "v0352g799000358"
+      },
+      "sourcePrimary": true
+     },
+     "value": "+99 5775166076",
+     "canonicalForm": "+995146444576",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    }
+   ],
+   "biographies": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "v0352g799000358"
+      }
+     },
+     "value": "The draft quietly changed the owner's sign-off.",
+     "contentType": "TEXT_PLAIN"
+    }
+   ],
+   "urls": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "v0352g799000358"
+      },
+      "sourcePrimary": true
+     },
+     "value": "http://www.google.com/xrpzincj/707997185275317809470",
+     "type": "profile",
+     "formattedType": "Profile"
+    }
+   ]
+  },
+  {
+   "resourceName": "people/q9345041395657904557",
+   "etag": "%EhIBAgMFBgcJCgsMEC41Nz0+P0AaBAECBQciDGhUcVRjRnlJdGJZPQ==",
+   "metadata": {
+    "sources": [
+     {
+      "type": "CONTACT",
+      "id": "o6340006u3050qb",
+      "etag": "#hTqTcFyItbY=",
+      "updateTime": "2021-06-14T09:52:55.090697Z"
+     },
+     {
+      "type": "PROFILE",
+      "id": "800831835572729081413",
+      "etag": "#AvlPqtijfvY=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER"
+       ]
+      },
+      "updateTime": "2026-05-06T06:27:34.875320Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "o6340006u3050qb"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Lex Goodspeed",
+     "familyName": "Nathanael Yelverton",
+     "givenName": "Jae Ellery",
+     "displayNameLastFirst": "Isadora Ironside",
+     "unstructuredName": "Lex Goodspeed"
+    }
+   ],
+   "nicknames": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "o6340006u3050qb"
+      }
+     },
+     "value": "Jae Ellery"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "o6340006u3050qb"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/contacts/QF5uzfAvGGvzXBaMWq1WATp8bRz4Hr3k1eu_u2k3gOKSUFnj4EtyWVlj=s100"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "PROFILE",
+       "id": "800831835572729081413"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/EJP-YaIB6Npq1BrcuuXmJbTpm8kQlU2if7hoOJf1I3hXLjgjZhNFAd8Y=s100"
+    }
+   ],
+   "birthdays": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "o6340006u3050qb"
+      }
+     },
+     "date": {
+      "year": 1958,
+      "month": 11,
+      "day": 3
+     }
+    }
+   ],
+   "addresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "o6340006u3050qb"
+      },
+      "sourcePrimary": true
+     },
+     "formattedValue": "garnet coral quill 54804\nquill\n54804\n",
+     "type": "home",
+     "formattedType": "Home",
+     "streetAddress": "garnet coral quill 54804",
+     "region": "quill",
+     "postalCode": "54804"
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "o6340006u3050qb"
+      },
+      "sourcePrimary": true
+     },
+     "value": "uma@verdigris-group.example",
+     "type": "other",
+     "formattedType": "Other"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "o6340006u3050qb"
+      }
+     },
+     "value": "katarzyna@inbox.example",
+     "type": "other",
+     "formattedType": "Other"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "o6340006u3050qb"
+      },
+      "sourcePrimary": true
+     },
+     "value": "+99 5390960522",
+     "canonicalForm": "+995390960522",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "o6340006u3050qb"
+      }
+     },
+     "value": "+99 5267879733",
+     "canonicalForm": "+995267879733",
+     "type": "home",
+     "formattedType": "Home"
+    }
+   ],
+   "biographies": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "o6340006u3050qb"
+      }
+     },
+     "value": "The draft now covers the earlier draft.",
+     "contentType": "TEXT_PLAIN"
+    }
+   ]
+  },
+  {
+   "resourceName": "people/t0429803252342030597",
+   "etag": "%EhIBAgMFBgcJCgsMEC41Nz0+P0AaBAECBQciDENWcEJzSDRuczljPQ==",
+   "metadata": {
+    "sources": [
+     {
+      "type": "CONTACT",
+      "id": "r90p2138w60rm11",
+      "etag": "#CVpBsH4ns9c=",
+      "updateTime": "2021-06-14T09:49:31.109978Z"
+     },
+     {
+      "type": "PROFILE",
+      "id": "859588093962009626165",
+      "etag": "#QXHJIDEWM8U=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER"
+       ]
+      },
+      "updateTime": "2026-09-14T22:51:13.024719Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "r90p2138w60rm11"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Octavian Vandermere",
+     "familyName": "Fabien Sedgwick",
+     "givenName": "Persephone Upshaw",
+     "displayNameLastFirst": "Brenna Jardine",
+     "unstructuredName": "Octavian Vandermere"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "PROFILE",
+       "id": "859588093962009626165"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/PTE-IoBDdRpNIGVtdWGQ_TU2j1iYMKl0905MQO1Jkc24BAvyupsPJ2r=s100"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "r90p2138w60rm11"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/cm/BRWRVa_YVUhs-bGNGdWv19tY_9PE8omt3pqbG17zICRNRR2zD6guqUsq-uKVw5FNym0i94bx5q=s100",
+     "default": true
+    }
+   ],
+   "birthdays": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "r90p2138w60rm11"
+      }
+     },
+     "date": {
+      "year": 1989,
+      "month": 4,
+      "day": 17
+     }
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "r90p2138w60rm11"
+      },
+      "sourcePrimary": true
+     },
+     "value": "anastasia@inbox.example",
+     "type": "home",
+     "formattedType": "Home"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "r90p2138w60rm11"
+      },
+      "sourcePrimary": true
+     },
+     "value": "+99 5130291650",
+     "canonicalForm": "+995130291650",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    }
+   ]
+  },
+  {
+   "resourceName": "people/p0590191453453337566",
+   "etag": "%EhIBAgMFBgcJCgsMEC41Nz0+P0AaBAECBQciDDUvNUozdUZ3b2s0PQ==",
+   "metadata": {
+    "sources": [
+     {
+      "type": "CONTACT",
+      "id": "85138c247ct1mt45",
+      "etag": "#5/5J3uFwok4=",
+      "updateTime": "2021-06-14T09:49:39.792372Z"
+     },
+     {
+      "type": "PROFILE",
+      "id": "005743401501268941596",
+      "etag": "#ASAJwwXwRS8=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER"
+       ]
+      },
+      "updateTime": "2026-09-08T07:09:54.227087Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "85138c247ct1mt45"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Marek Yarrowby",
+     "familyName": "Emmerich Applebury",
+     "givenName": "Fenwick Jessop",
+     "displayNameLastFirst": "Josephina Kirkbride",
+     "unstructuredName": "Marek Yarrowby"
+    }
+   ],
+   "nicknames": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "85138c247ct1mt45"
+      }
+     },
+     "value": "Fenwick Jessop"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "85138c247ct1mt45"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/contacts/EC1eioT9vWIhYVLoANXDPEwdzXyJfopE3FzZBVvjfs_iAtQhAFRljfAI=s100"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "PROFILE",
+       "id": "005743401501268941596"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/PEF-ClZQpPGFf71JLG6xzIcJO9IgpyHVPHW6sqHKeivT_LTyVTpDSb=s100",
+     "default": true
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "85138c247ct1mt45"
+      },
+      "sourcePrimary": true
+     },
+     "value": "guinevere@postbox.example",
+     "type": "other",
+     "formattedType": "Other"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "85138c247ct1mt45"
+      },
+      "sourcePrimary": true
+     },
+     "value": "+99 5148256811",
+     "canonicalForm": "+995148256811",
+     "type": "home",
+     "formattedType": "Home"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "85138c247ct1mt45"
+      }
+     },
+     "value": "+99 5520379143",
+     "canonicalForm": "+995520379143",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    }
+   ]
+  },
+  {
+   "resourceName": "people/b2521250678924319843",
+   "etag": "%EhIBAgMFBgcJCgsMEC41Nz0+P0AaBAECBQciDGdXZmVKaDhvUTI0PQ==",
+   "metadata": {
+    "sources": [
+     {
+      "type": "CONTACT",
+      "id": "698921558rrk7zj4",
+      "etag": "#gWfeJh8oQ24=",
+      "updateTime": "2022-07-26T00:40:31.055775Z"
+     },
+     {
+      "type": "PROFILE",
+      "id": "400973059711997077974",
+      "etag": "#jvRrnbp2hIs=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER"
+       ]
+      },
+      "updateTime": "2026-09-14T20:41:04.767391Z"
+     },
+     {
+      "type": "PROFILE",
+      "id": "917239514159913561708",
+      "etag": "#X5amY+vM5MM=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER"
+       ]
+      },
+      "updateTime": "2026-09-15T12:11:42.422399Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "698921558rrk7zj4"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Mirren Kirkbride",
+     "familyName": "Halcyon Quillfeather",
+     "givenName": "Oriel Ollivant",
+     "displayNameLastFirst": "Halcyon Whitfield",
+     "unstructuredName": "Mirren Kirkbride"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "698921558rrk7zj4"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/contacts/BV0ryxIir8GzPYhOPleGLb48ViGV8sPAefat6Bvq5_rqHsqp8TSHsHSH=s100"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "PROFILE",
+       "id": "400973059711997077974"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/LXU-McGjJxvL_6Cr6_ofwy57pGaCI-dBZjSdJklphoLBnHl4Rk2vA7U5-z=s100"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "PROFILE",
+       "id": "917239514159913561708"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/WJO-HpJpM50ipAc_ZZRYRGD7UqGEiBYE6LEnnYmHba-IqpYe9gFttt7=s100"
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "698921558rrk7zj4"
+      },
+      "sourcePrimary": true
+     },
+     "value": "ulric@inbox.example",
+     "type": "home",
+     "formattedType": "Home"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "698921558rrk7zj4"
+      }
+     },
+     "value": "zadie@verdigris-works.example",
+     "type": "other",
+     "formattedType": "Other"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "698921558rrk7zj4"
+      }
+     },
+     "value": "juniper@fernbank-works.example",
+     "type": "work",
+     "formattedType": "Work"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "698921558rrk7zj4"
+      },
+      "sourcePrimary": true
+     },
+     "value": "+99 5518128989",
+     "canonicalForm": "+995897782297",
+     "type": "other",
+     "formattedType": "Other"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "698921558rrk7zj4"
+      }
+     },
+     "value": "+99 5133169581",
+     "canonicalForm": "+995020569561",
+     "type": "work",
+     "formattedType": "Work"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "698921558rrk7zj4"
+      }
+     },
+     "value": "+99 5160534706",
+     "canonicalForm": "+995005005765",
+     "type": "home",
+     "formattedType": "Home"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "698921558rrk7zj4"
+      }
+     },
+     "value": "+99 5651825824",
+     "canonicalForm": "+995651825824",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    }
+   ],
+   "urls": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "698921558rrk7zj4"
+      },
+      "sourcePrimary": true
+     },
+     "value": "http://www.google.com/xrpzincj/400973059711997077974",
+     "type": "profile",
+     "formattedType": "Profile"
+    }
+   ]
+  },
+  {
+   "resourceName": "people/j6025464710240261530",
+   "etag": "%EhIBAgMFBgcJCgsMEC41Nz0+P0AaBAECBQciDHpBV0F4TFJ5Y1E4PQ==",
+   "metadata": {
+    "sources": [
+     {
+      "type": "CONTACT",
+      "id": "0236297r2196k394",
+      "etag": "#zAWAxLRycQ8=",
+      "updateTime": "2026-08-02T07:35:45.379222Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "0236297r2196k394"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Hollis Quarrier",
+     "familyName": "Gwendolyn Everly",
+     "givenName": "Ivor Pinewood",
+     "displayNameLastFirst": "Casimira Duquesne",
+     "unstructuredName": "Hollis Quarrier"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "0236297r2196k394"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/contacts/JA5lmmKVpuUKuP1ykjb8Zbbau0o9JrLW-wHTsSKz31oCx9XGXSlxfNtW=s100"
+    }
+   ],
+   "birthdays": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "0236297r2196k394"
+      }
+     },
+     "date": {
+      "year": 1958,
+      "month": 1,
+      "day": 29
+     }
+    }
+   ],
+   "addresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "0236297r2196k394"
+      },
+      "sourcePrimary": true
+     },
+     "formattedValue": "03 beacon\nwren 01743",
+     "type": "home",
+     "formattedType": "Home",
+     "streetAddress": "03 beacon",
+     "city": "wren",
+     "postalCode": "01743"
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "0236297r2196k394"
+      },
+      "sourcePrimary": true
+     },
+     "value": "ilaria@junction-nine-works.example",
+     "type": "other",
+     "formattedType": "Other"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "0236297r2196k394"
+      },
+      "sourcePrimary": true
+     },
+     "value": "+99 5758630492",
+     "canonicalForm": "+995758630492",
+     "type": "home",
+     "formattedType": "Home"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "0236297r2196k394"
+      }
+     },
+     "value": "+99 5370545128",
+     "canonicalForm": "+995317310678",
+     "type": "homeFax",
+     "formattedType": "Home Fax"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "0236297r2196k394"
+      }
+     },
+     "value": "+99 5709561893",
+     "canonicalForm": "+995709561893",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "0236297r2196k394"
+      }
+     },
+     "value": "+99 5596644110",
+     "canonicalForm": "+995931273162",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "0236297r2196k394"
+      }
+     },
+     "value": "+99 5896765006",
+     "canonicalForm": "+995896765006",
+     "type": "work",
+     "formattedType": "Work"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "0236297r2196k394"
+      }
+     },
+     "value": "+99 5772384182",
+     "canonicalForm": "+995772384182",
+     "type": "work",
+     "formattedType": "Work"
+    }
+   ],
+   "biographies": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "0236297r2196k394"
+      }
+     },
+     "value": "For the record: The rollback plan needs a second look from the earlier draft, either way. The staging cluster quietly changed the follow-up thread.",
+     "contentType": "TEXT_PLAIN"
+    }
+   ],
+   "urls": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "0236297r2196k394"
+      },
+      "sourcePrimary": true
+     },
+     "value": "http://kelpwood.example/xfwozqk.gan?id=6942640825",
+     "type": "other",
+     "formattedType": "Other"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "0236297r2196k394"
+      }
+     },
+     "value": "fb://profile/1835518315",
+     "type": "other",
+     "formattedType": "Other"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "0236297r2196k394"
+      }
+     },
+     "value": "http://www.google.com/xrpzincj/105803272893348109769",
+     "type": "profile",
+     "formattedType": "Profile"
+    }
+   ],
+   "organizations": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "0236297r2196k394"
+      },
+      "sourcePrimary": true
+     },
+     "name": "Yellowhammer Works"
+    }
+   ]
+  },
+  {
+   "resourceName": "people/v2218953366315893837",
+   "etag": "%EhIBAgMFBgcJCgsMEC41Nz0+P0AaBAECBQciDGVCOXMvOWNwL2xZPQ==",
+   "metadata": {
+    "sources": [
+     {
+      "type": "CONTACT",
+      "id": "95v36hb36w9r2a53",
+      "etag": "#eB9s/9cp/lY=",
+      "updateTime": "2021-06-14T09:49:47.681185Z"
+     },
+     {
+      "type": "PROFILE",
+      "id": "731964816425886067692",
+      "etag": "#F+PGlej2M2I=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER"
+       ]
+      },
+      "updateTime": "2026-09-11T11:01:51.350591Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "95v36hb36w9r2a53"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Quintilian Yewtree",
+     "givenName": "Quintilian Yewtree",
+     "displayNameLastFirst": "Quintilian Yewtree",
+     "unstructuredName": "Quintilian Yewtree"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "PROFILE",
+       "id": "731964816425886067692"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/TUM-KoLN8Sum5fJxKIdA6KKPLTUaRQftlG-b8Zoy6_JR5SDqpwivf4pu=s100"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "95v36hb36w9r2a53"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/cm/PWQJTy2Lw-Q-iX7KkotWRyEn8OCnIPcQwajGPt-0T7lXM-TXpyuz1hC_kv_U9T0D0nWGjHh2NB=s100",
+     "default": true
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "95v36hb36w9r2a53"
+      },
+      "sourcePrimary": true
+     },
+     "value": "edda.drummond@inbox.example",
+     "type": "home",
+     "formattedType": "Home"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "95v36hb36w9r2a53"
+      },
+      "sourcePrimary": true
+     },
+     "value": "+99 5656817409",
+     "canonicalForm": "+995842281563",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    }
+   ]
+  },
+  {
+   "resourceName": "people/u2913339445223730741",
+   "etag": "%EhIBAgMFBgcJCgsMEC41Nz0+P0AaBAECBQciDHpBV0F4TFJ5Y1E4PQ==",
+   "metadata": {
+    "sources": [
+     {
+      "type": "CONTACT",
+      "id": "9864cl972qp329c3",
+      "etag": "#zAWAxLRycQ8=",
+      "updateTime": "2026-08-02T07:35:45.379222Z"
+     },
+     {
+      "type": "PROFILE",
+      "id": "049406727992691002263",
+      "etag": "#C7Vdl7MOMB4=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER"
+       ]
+      },
+      "updateTime": "2026-08-11T22:10:12.087855Z"
+     },
+     {
+      "type": "PROFILE",
+      "id": "327249231422898737159",
+      "etag": "#NtzErxCmkME=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER"
+       ]
+      },
+      "updateTime": "2023-03-26T15:25:25.699206Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "9864cl972qp329c3"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Ansel Linscott",
+     "familyName": "Priya Stowell",
+     "givenName": "Fabienia Danforth-Rhys",
+     "displayNameLastFirst": "Verity Jorvik",
+     "unstructuredName": "Ansel Linscott"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "9864cl972qp329c3"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/contacts/YW5ayzYq0Cl5wkom-_jawwbmgo7srHoF2P7C_AIXQ1ZY08qlJClNjyRQ=s100"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "PROFILE",
+       "id": "049406727992691002263"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/MXI-SyGtqHjdCufVDAtQ_l75GzMODsJoTrWJgWXmZeH3YEU3Vu3RfDwbnt=s100"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "PROFILE",
+       "id": "327249231422898737159"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/UBV-XaAC8Nx6Qh7mdA8oKiw-t0IvUtHeKaZDhaYrf4ONdosUHSHb3Q=s100",
+     "default": true
+    }
+   ],
+   "birthdays": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "9864cl972qp329c3"
+      }
+     },
+     "date": {
+      "year": 1982,
+      "month": 3,
+      "day": 20
+     }
+    }
+   ],
+   "addresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "9864cl972qp329c3"
+      },
+      "sourcePrimary": true
+     },
+     "formattedValue": "4 bramble yarrow, sable reef\nclover indigo, cobalt birch thicket\nosprey ember",
+     "type": "home",
+     "formattedType": "Home",
+     "streetAddress": "4 bramble yarrow, sable reef",
+     "city": "clover indigo",
+     "region": "cobalt",
+     "postalCode": "birch thicket",
+     "country": "United Kingdom"
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "9864cl972qp329c3"
+      },
+      "sourcePrimary": true
+     },
+     "value": "hermione@postbox.example",
+     "type": "home",
+     "formattedType": "Home"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "9864cl972qp329c3"
+      }
+     },
+     "value": "immanuel@inbox.example",
+     "type": "apple id",
+     "formattedType": "apple id"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "9864cl972qp329c3"
+      },
+      "sourcePrimary": true
+     },
+     "value": "+99 5085472435",
+     "canonicalForm": "+995530462249",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "9864cl972qp329c3"
+      }
+     },
+     "value": "+99 5723515287",
+     "canonicalForm": "+995273442867",
+     "type": "mobile (ita)",
+     "formattedType": "mobile (ita)"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "9864cl972qp329c3"
+      }
+     },
+     "value": "+99 5905425139",
+     "canonicalForm": "+995376721645",
+     "type": "home (ita)",
+     "formattedType": "home (ita)"
+    }
+   ],
+   "urls": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "9864cl972qp329c3"
+      },
+      "sourcePrimary": true
+     },
+     "value": "http://www.google.com/xrpzincj/327249231422898737159",
+     "type": "profile",
+     "formattedType": "Profile"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "9864cl972qp329c3"
+      }
+     },
+     "value": "http://www.google.com/xrpzincj/049406727992691002263",
+     "type": "profile",
+     "formattedType": "Profile"
+    }
+   ]
+  },
+  {
+   "resourceName": "people/u5869442435699199477",
+   "etag": "%EhIBAgMFBgcJCgsMEC41Nz0+P0AaBAECBQciDHpBV0F4TFJ5Y1E4PQ==",
+   "metadata": {
+    "sources": [
+     {
+      "type": "CONTACT",
+      "id": "645f489r5z313217",
+      "etag": "#zAWAxLRycQ8=",
+      "updateTime": "2026-08-02T07:35:45.379222Z"
+     },
+     {
+      "type": "PROFILE",
+      "id": "261018366560682581368",
+      "etag": "#iVJhLvfi3T4=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER"
+       ]
+      },
+      "updateTime": "2026-09-11T17:51:04.834479Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "645f489r5z313217"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Josephina Mainwaring",
+     "familyName": "Alistair Underhill",
+     "givenName": "Beatrijs Vasquez-Lowe",
+     "middleName": "Alistair Ingleby",
+     "displayNameLastFirst": "Demetrios Abernathy",
+     "unstructuredName": "Josephina Mainwaring"
+    }
+   ],
+   "nicknames": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "645f489r5z313217"
+      }
+     },
+     "value": "Dov Norbury"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "645f489r5z313217"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/contacts/VG1ihlSY4KD7EfWHQcrXvNt-Ld2RuKnNFiAd4DudE6aNHCoDmHwfISNc=s100"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "PROFILE",
+       "id": "261018366560682581368"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/BAF-SbZreBgJowQX5irMV7OSULzRzU3LAnSdFIQHNUJUHyY_8Bhp9p=s100",
+     "default": true
+    }
+   ],
+   "addresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "645f489r5z313217"
+      }
+     },
+     "formattedValue": "juniper sorrel",
+     "type": "work",
+     "formattedType": "Work",
+     "postalCode": "juniper sorrel",
+     "countryCode": "GB"
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "645f489r5z313217"
+      },
+      "sourcePrimary": true
+     },
+     "value": "cate@kelpwood-works.example",
+     "type": "home",
+     "formattedType": "Home"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "645f489r5z313217"
+      }
+     },
+     "value": "cate@kelpwood-works.example",
+     "type": "work",
+     "formattedType": "Work"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "645f489r5z313217"
+      }
+     },
+     "value": "casimira.oakhurst@inbox.example",
+     "type": "other",
+     "formattedType": "Other"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "645f489r5z313217"
+      }
+     },
+     "value": "+99 5420152372",
+     "canonicalForm": "+995445924665",
+     "type": "work",
+     "formattedType": "Work"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "645f489r5z313217"
+      }
+     },
+     "value": "+99 5903879080",
+     "canonicalForm": "+995930513024",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    }
+   ],
+   "urls": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "645f489r5z313217"
+      }
+     },
+     "value": "http://www.google.com/xrpzincj/118212413727031369261",
+     "type": "profile",
+     "formattedType": "Profile"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "645f489r5z313217"
+      }
+     },
+     "value": "http://www.google.com/xrpzincj/261018366560682581368",
+     "type": "profile",
+     "formattedType": "Profile"
+    }
+   ]
+  },
+  {
+   "resourceName": "people/s610968135510338501",
+   "etag": "%EhIBAgMFBgcJCgsMEC41Nz0+P0AaBAECBQciDGdXZmVKaDhvUTI0PQ==",
+   "metadata": {
+    "sources": [
+     {
+      "type": "CONTACT",
+      "id": "189lg431u86957g",
+      "etag": "#gWfeJh8oQ24=",
+      "updateTime": "2022-07-26T00:40:31.055775Z"
+     },
+     {
+      "type": "PROFILE",
+      "id": "471561191361771428995",
+      "etag": "#Z+BYMCmZnKc=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER"
+       ]
+      },
+      "updateTime": "2023-03-22T06:39:00.045994Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "189lg431u86957g"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Leandro Orrington",
+     "familyName": "Demetrios Prendergast",
+     "givenName": "Brenna Quimby",
+     "displayNameLastFirst": "Immanuel Kingsmill",
+     "unstructuredName": "Leandro Orrington"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "189lg431u86957g"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/contacts/WX0vqkV0y5pL7PVu3pI0cmxY_uUqbNkdacUZHTSB09HIBWr0CSGkXlNk=s100"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "PROFILE",
+       "id": "471561191361771428995"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/VAM-JpGSyaLbZsDAVqg1dbmLcYWiCd4THIsaRKnRzzEaQvGFdeogAa8=s100"
+    }
+   ],
+   "birthdays": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "189lg431u86957g"
+      }
+     },
+     "date": {
+      "year": 1987,
+      "month": 5,
+      "day": 12
+     }
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "189lg431u86957g"
+      },
+      "sourcePrimary": true
+     },
+     "value": "evangelina@inbox.example",
+     "type": "other",
+     "formattedType": "Other"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "189lg431u86957g"
+      },
+      "sourcePrimary": true
+     },
+     "value": "+99 5636725935",
+     "canonicalForm": "+995636725935",
+     "type": "pager",
+     "formattedType": "Pager"
+    }
+   ],
+   "biographies": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "189lg431u86957g"
+      }
+     },
+     "value": "The retry budget still blocks the second pass, unless.",
+     "contentType": "TEXT_PLAIN"
+    }
+   ],
+   "urls": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "189lg431u86957g"
+      },
+      "sourcePrimary": true
+     },
+     "value": "http://kelpwood.example/xrsug.loenslpoaganaa",
+     "type": "other",
+     "formattedType": "Other"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "189lg431u86957g"
+      }
+     },
+     "value": "fb://profile/1010183532",
+     "type": "homePage",
+     "formattedType": "Home Page"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "189lg431u86957g"
+      }
+     },
+     "value": "http://www.google.com/xrpzincj/471561191361771428995",
+     "type": "profile",
+     "formattedType": "Profile"
+    }
+   ]
+  },
+  {
+   "resourceName": "people/w4872458464731070078",
+   "etag": "%EhIBAgMFBgcJCgsMEC41Nz0+P0AaBAECBQciDGdXZmVKaDhvUTI0PQ==",
+   "metadata": {
+    "sources": [
+     {
+      "type": "CONTACT",
+      "id": "8d597ij11y21103j",
+      "etag": "#gWfeJh8oQ24=",
+      "updateTime": "2022-07-26T00:40:31.055775Z"
+     },
+     {
+      "type": "PROFILE",
+      "id": "016849661004169998104",
+      "etag": "#HdOWkRMp+JQ=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER"
+       ]
+      },
+      "updateTime": "2026-09-13T08:16:14.277327Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "8d597ij11y21103j"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Dax Verrinder",
+     "familyName": "Gil Hawksley",
+     "givenName": "Finn Jorvik",
+     "displayNameLastFirst": "Mae Amberly",
+     "unstructuredName": "Dax Verrinder"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "8d597ij11y21103j"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/contacts/NX2wqoPxjnlGVdEXjnhL6D_D7VDJgZ9C4bFz5FLkw4dEOZOhX1Pt_Vv4=s100"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "PROFILE",
+       "id": "016849661004169998104"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/KWB-DcYvuyx5r5UAVuCNDJTtghYByzrbQg71Z8nqHD8pAntsWZolyeQU=s100",
+     "default": true
+    }
+   ],
+   "birthdays": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "8d597ij11y21103j"
+      }
+     },
+     "date": {
+      "year": 1989,
+      "month": 10,
+      "day": 10
+     }
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "8d597ij11y21103j"
+      },
+      "sourcePrimary": true
+     },
+     "value": "ferdinand@postbox.example",
+     "type": "other",
+     "formattedType": "Other"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "8d597ij11y21103j"
+      }
+     },
+     "value": "pim.rackham-hale@inbox.example",
+     "type": "other",
+     "formattedType": "Other"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "8d597ij11y21103j"
+      },
+      "sourcePrimary": true
+     },
+     "value": "+99 5919030504",
+     "canonicalForm": "+995969743915",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "8d597ij11y21103j"
+      }
+     },
+     "value": "+99 5132985770",
+     "canonicalForm": "+995376222530",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "8d597ij11y21103j"
+      }
+     },
+     "value": "+99 5882954483",
+     "canonicalForm": "+995762695189",
+     "type": "DE Mobile",
+     "formattedType": "DE Mobile"
+    }
+   ],
+   "biographies": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "8d597ij11y21103j"
+      }
+     },
+     "value": "The rollout should unblock next week's window.",
+     "contentType": "TEXT_PLAIN"
+    }
+   ],
+   "urls": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "8d597ij11y21103j"
+      },
+      "sourcePrimary": true
+     },
+     "value": "http://www.google.com/xrpzincj/016849661004169998104",
+     "type": "profile",
+     "formattedType": "Profile"
+    }
+   ]
+  },
+  {
+   "resourceName": "people/z344204773211252796",
+   "etag": "%EhIBAgMFBgcJCgsMEC41Nz0+P0AaBAECBQciDHdYNE9nV0ViV3RnPQ==",
+   "metadata": {
+    "sources": [
+     {
+      "type": "CONTACT",
+      "id": "42lpt348k74ania",
+      "etag": "#wX4OgWEbWtg=",
+      "updateTime": "2017-02-18T13:35:56.923001Z"
+     },
+     {
+      "type": "PROFILE",
+      "id": "103049096890578882852",
+      "etag": "#BGuLr9ErTw4=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER"
+       ]
+      },
+      "updateTime": "2026-09-12T17:14:26.278879Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "PROFILE",
+       "id": "103049096890578882852"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/EUU-DmVYz1J3E6fB1jrHyIXMyQ-32xmCPTuZGVhep_G4rJkC85wt2ZrfAv=s100"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "CONTACT",
+       "id": "42lpt348k74ania"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/cm/ILCEFn_cl3Y5GAl6htbv3-91tiYLPCH1X8pXyikgsksjOQPCgoF-fEu5PveEZoPOk67IsxYyDA=s100",
+     "default": true
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "CONTACT",
+       "id": "42lpt348k74ania"
+      },
+      "sourcePrimary": true
+     },
+     "value": "renna@inbox.example",
+     "type": "home",
+     "formattedType": "Home"
+    }
+   ]
+  },
+  {
+   "resourceName": "people/115336770975630144157",
+   "etag": "%EiMBAgMFBgcICQoLDA0ODxATFBUWGSEiIyQlJicuNDU3PT4/QBoDAQcI",
+   "metadata": {
+    "sources": [
+     {
+      "type": "CONTACT",
+      "id": "115336770975630144157"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "locales": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "115336770975630144157"
+      }
+     },
+     "value": "en"
+    }
+   ],
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "115336770975630144157"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Elowenia Redmayne-Rhys",
+     "familyName": "Yara Birchall",
+     "givenName": "Sabra5 Innsbrook9",
+     "displayNameLastFirst": "Jae Wandsworth",
+     "unstructuredName": "Elowenia Redmayne-Rhys"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "PROFILE",
+       "id": "115336770975630144157"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/WVU-CjNlavUSSLoOPVm_smQsUoXvZEbjOyH-0JXkcoUkQNCIQdrlR5rnZVMCNoIG4PbOPf7k9RSLK6Dv4_USPf7Pe3Vy2KUFJra02NW_RJ_P8a6-RaZs8qHN9CX3Vh6d5LFsdICPDszzZgScZnF8opzlO3g1rcZ0xZvfe0_Zr687RqYxsN3eFjVhJEd945jsGffAm3l2Nr5nC4W8yDWqdD4md9ebeK1cYe9U0myab7vIXqDPL8ztQjY2x2igd5G7_ixDFvgKkojFAae1j5zzIntb9qh2BEtkdiSCFGbn77k-mEpZkrUq5IAcKT5cAiZgbHQugoDSl9cAlcLSQB1jXDwT68B7ob2qpUgJF49D1lIoL8CzryK3YytZEFwPU2qF0HjJa8SZkkw0zeshN6VSdZlgTL3ulTWtIpmusGg1zTITUDycwKMmif3bMtxQIllrPfmmVBu7cwclng0ryOeHvdAUhbW_b0fuyZwQHXfzCQ8sq-4mrTgBiB7E5EzxZ7DyIeZdE2GJakL0LtHDUhF7IklWi0CeHV4hsQ4S6gZp_GWWqDs5eGvQBwzmCSxV5kw-4C8gBb_ESnbQbv2TxwppPDeWDrSVhmECYJYvxV1YIVN1GWcjp0v7UcrTDb50be0BgAaV_kBvLsMcj-Jdkf4yBFJf0EaJXwIZaEAyMNm8xOBbRI3P0SHGOYeXg_JhOMVCaN94Qjlu55r4CYr0Op8sz2F5Urw68rUJFFhuadfWQ3jobPomcSR2P4r4oLGPTyIS3itA7Edj0v3fdR0RyVDLsQpwB63WSlZre65h8K4CvdyyV3Lemuheta4n08Lu9DNTLjKViuNTaaZp1p93VPfocuD5UbYv9RAV3gYPDIKXpXcEkFbVvhtu-aZvNSLOl7sJc4m3zqyH33XajziiqL0BcC8WDEM7OL-XpT9VYeky3dcAsiPX2lWiDlM0D0sXxf1fTNgrf2ninpL_ZvClPJ0T6vDG8x5tnVroQPwZKKGScb9qvz7AYOvRr-yTyMNKwXzBUV6uoiGs0m62u_xnrGfBmyaNplX6i7X_NXw8bAuP05pcZfC4IX2d0eRDSNh9BYvWiIYxHLNNKe9_SW9l9_9Hpu-Ltv=s100"
+    }
+   ],
+   "genders": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "115336770975630144157"
+      }
+     },
+     "value": "male",
+     "formattedValue": "Male"
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "verified": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "115336770975630144157"
+      },
+      "sourcePrimary": true
+     },
+     "value": "nadiaia@zephyr-lane.example"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "115336770975630144157"
+      }
+     },
+     "value": "+99 5978427861",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    }
+   ],
+   "organizations": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "115336770975630144157"
+      },
+      "sourcePrimary": true
+     },
+     "type": "work",
+     "formattedType": "Work",
+     "name": "Fernbank",
+     "department": "The Staging",
+     "title": "The Staging Cluster",
+     "location": "526 fennel harbor, 377, granite, NY 08413"
+    }
+   ],
+   "memberships": [
+    {
+     "metadata": {
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "115336770975630144157"
+      }
+     },
+     "domainMembership": {
+      "inViewerDomain": true
+     }
+    }
+   ],
+   "locations": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "115336770975630144157"
+      }
+     },
+     "value": "ember",
+     "type": "desk",
+     "buildingId": "37-9fu-Agc"
+    }
+   ]
+  }
+ ],
+ "nextSyncToken": "MisA2Rc-NAAAABIIqbOv6qjxlgMQqbOv6qjxlgPiqRkijDyJhwiAByaoxNiFOiQ2YWE1NzY2Yy0wMDAwLTJmNjAtOGI4MC0yNDA1ODg2YmQ1YzQ=",
+ "totalPeople": 151,
+ "totalItems": 151
+}

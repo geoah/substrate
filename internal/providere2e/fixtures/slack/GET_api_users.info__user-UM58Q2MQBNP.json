@@ -1,0 +1,62 @@
+{
+ "ok": true,
+ "user": {
+  "id": "UM58Q2MQBNP",
+  "name": "xiomaraa-stowell-moore",
+  "is_bot": false,
+  "updated": 1789412879,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "4ec0d6",
+  "is_email_confirmed": true,
+  "real_name": "Theodoraa Kettleby-Moore",
+  "tz": "Europe/Berlin",
+  "tz_label": "Central European Summer Time",
+  "tz_offset": 7200,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Theodoraa Kettleby-Moore",
+   "display_name": "Cy Ellery",
+   "avatar_hash": "fbf8e290211a",
+   "real_name_normalized": "Theodoraa Kettleby-Moore",
+   "display_name_normalized": "Cy Ellery",
+   "image_24": "https://avatars.slack-edge.com/2026-03-02/98128015245665_df2ece0e18fa8a3e242b_24.png",
+   "image_32": "https://avatars.slack-edge.com/2026-03-02/98128015245665_df2ece0e18fa8a3e242b_32.png",
+   "image_48": "https://avatars.slack-edge.com/2026-03-02/98128015245665_df2ece0e18fa8a3e242b_48.png",
+   "image_72": "https://avatars.slack-edge.com/2026-03-02/98128015245665_df2ece0e18fa8a3e242b_72.png",
+   "image_192": "https://avatars.slack-edge.com/2026-03-02/98128015245665_df2ece0e18fa8a3e242b_192.png",
+   "image_512": "https://avatars.slack-edge.com/2026-03-02/98128015245665_df2ece0e18fa8a3e242b_512.png",
+   "image_1024": "https://avatars.slack-edge.com/2026-03-02/98128015245665_df2ece0e18fa8a3e242b_1024.png",
+   "image_original": "https://avatars.slack-edge.com/2026-03-02/98128015245665_df2ece0e18fa8a3e242b_original.png",
+   "is_custom_image": true,
+   "first_name": "Persephoneor Ollivant5",
+   "last_name": "Ulrica Hartsfield-Hale",
+   "team": "T0ADATEAM01",
+   "email": "ulyssesa@zephyr-lane.example",
+   "title": "The Staging Cluster will be",
+   "phone": "+99 5731246540",
+   "skype": "",
+   "status_text": "",
+   "status_text_canonical": "",
+   "status_emoji": ":bridge_at_night:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "bridge_at_night",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/1f309.png",
+     "unicode": "1f309"
+    }
+   ],
+   "status_expiration": 1789801199,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0,
+   "start_date": "2024-11-03"
+  }
+ }
+}

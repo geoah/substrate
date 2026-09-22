@@ -1,0 +1,61 @@
+{
+ "ok": true,
+ "user": {
+  "id": "UM7EFVUUCL4",
+  "name": "tovah-fernsby-moore",
+  "is_bot": false,
+  "updated": 1789355876,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "43761b",
+  "is_email_confirmed": true,
+  "real_name": "Huxah Gallimore-Moore",
+  "tz": "Europe/Berlin",
+  "tz_label": "Central European Summer Time",
+  "tz_offset": 7200,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Huxah Gallimore-Moore",
+   "display_name": "Huxah Gallimore-Moore",
+   "avatar_hash": "af17379f2ae7",
+   "real_name_normalized": "Huxah Gallimore-Moore",
+   "display_name_normalized": "Huxah Gallimore-Moore",
+   "image_24": "https://avatars.slack-edge.com/2026-02-02/85675116929369_a778d2b9dfc4f3698c58_24.jpg",
+   "image_32": "https://avatars.slack-edge.com/2026-02-02/85675116929369_a778d2b9dfc4f3698c58_32.jpg",
+   "image_48": "https://avatars.slack-edge.com/2026-02-02/85675116929369_a778d2b9dfc4f3698c58_48.jpg",
+   "image_72": "https://avatars.slack-edge.com/2026-02-02/85675116929369_a778d2b9dfc4f3698c58_72.jpg",
+   "image_192": "https://avatars.slack-edge.com/2026-02-02/85675116929369_a778d2b9dfc4f3698c58_192.jpg",
+   "image_512": "https://avatars.slack-edge.com/2026-02-02/85675116929369_a778d2b9dfc4f3698c58_512.jpg",
+   "image_1024": "https://avatars.slack-edge.com/2026-02-02/85675116929369_a778d2b9dfc4f3698c58_1024.jpg",
+   "image_original": "https://avatars.slack-edge.com/2026-02-02/85675116929369_a778d2b9dfc4f3698c58_original.jpg",
+   "is_custom_image": true,
+   "first_name": "Yaraus Linscott4",
+   "last_name": "Sabra Rackham-Hale",
+   "team": "T0ADATEAM01",
+   "email": "kaiah@zephyr-lane.example",
+   "title": "The",
+   "phone": "+99 5714501306",
+   "skype": "",
+   "status_text": "The Rollback Plan landed",
+   "status_text_canonical": "",
+   "status_emoji": ":red_circle:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "red_circle",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/1f534.png",
+     "unicode": "1f534"
+    }
+   ],
+   "status_expiration": 0,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0
+  }
+ }
+}

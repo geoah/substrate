@@ -1,0 +1,8 @@
+{
+ "kind": "calendar#events",
+ "summary": "c_699db5a7460c841241a7dc192495f9f9@group.calendar.google.com",
+ "timeZone": "America/Los_Angeles",
+ "accessRole": "freeBusyReader",
+ "items": [],
+ "nextSyncToken": "fixture-sync-token-1-c_699db5a746"
+}

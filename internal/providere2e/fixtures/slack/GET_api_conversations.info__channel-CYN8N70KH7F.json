@@ -1,0 +1,126 @@
+{
+ "__responses": [
+  {
+   "__response": {
+    "status": 500
+   },
+   "body": {
+    "ok": false,
+    "error": "internal_error"
+   }
+  },
+  {
+   "ok": true,
+   "channel": {
+    "id": "CYN8N70KH7F",
+    "created": 1744660712,
+    "creator": "UVH35QJVZVE",
+    "is_org_shared": false,
+    "is_im": false,
+    "context_team_id": "T0ADATEAM01",
+    "updated": 1787559557144,
+    "name": "zinc-line",
+    "name_normalized": "zinc-line",
+    "is_channel": true,
+    "is_group": false,
+    "is_mpim": false,
+    "is_private": false,
+    "is_archived": false,
+    "is_general": false,
+    "is_shared": false,
+    "is_ext_shared": false,
+    "unlinked": 0,
+    "is_pending_ext_shared": false,
+    "pending_shared": [],
+    "parent_conversation": null,
+    "purpose": {
+     "value": "The schedule now covers the.\nThe new index now covers the second pass.",
+     "creator": "U7C92GV5ZKF",
+     "last_set": 1787559557
+    },
+    "topic": {
+     "value": "",
+     "creator": "",
+     "last_set": 0
+    },
+    "shared_team_ids": [
+     "T0ADATEAM01"
+    ],
+    "pending_connected_team_ids": [],
+    "is_member": true,
+    "last_read": "1747676604.180349",
+    "properties": {
+     "meeting_notes": {
+      "file_id": "FMM21TP23QE"
+     },
+     "tabs": [
+      {
+       "type": "files",
+       "label": "",
+       "id": "files"
+      },
+      {
+       "type": "bookmarks",
+       "label": "",
+       "id": "bookmarks"
+      },
+      {
+       "id": "Ct3QUJZMJCDL",
+       "label": "Drifthouse",
+       "type": "canvas",
+       "data": {
+        "file_id": "FMM21TP23QE",
+        "shared_ts": "1755808838.763239"
+       }
+      },
+      {
+       "id": "CtSJTAKATW27",
+       "type": "canvas",
+       "data": {
+        "file_id": "FVVR2T7MZGJ",
+        "shared_ts": "1784550902.868199"
+       },
+       "label": ""
+      },
+      {
+       "type": "workflows",
+       "label": "",
+       "id": "workflows"
+      }
+     ],
+     "tabz": [
+      {
+       "type": "files"
+      },
+      {
+       "type": "bookmarks"
+      },
+      {
+       "id": "Ct3QUJZMJCDL",
+       "label": "Drifthouse",
+       "type": "canvas",
+       "data": {
+        "file_id": "FMM21TP23QE",
+        "shared_ts": "1755808838.763239"
+       }
+      },
+      {
+       "id": "CtSJTAKATW27",
+       "type": "canvas",
+       "data": {
+        "file_id": "FVVR2T7MZGJ",
+        "shared_ts": "1784550902.868199"
+       }
+      },
+      {
+       "type": "workflows"
+      }
+     ]
+    },
+    "previous_names": [
+     "rowan-bay"
+    ]
+   }
+  }
+ ]
+}

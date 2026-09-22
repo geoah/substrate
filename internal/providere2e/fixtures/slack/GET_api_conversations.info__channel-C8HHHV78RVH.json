@@ -1,0 +1,66 @@
+{
+ "ok": true,
+ "channel": {
+  "id": "C8HHHV78RVH",
+  "created": 1776671685,
+  "creator": "U48XXRY7R9U",
+  "is_org_shared": false,
+  "is_im": false,
+  "context_team_id": "T0ADATEAM01",
+  "updated": 1789161180523,
+  "name": "willow-trellis-zinc-team",
+  "name_normalized": "willow-trellis-zinc-team",
+  "is_channel": true,
+  "is_group": false,
+  "is_mpim": false,
+  "is_private": true,
+  "is_archived": false,
+  "is_general": false,
+  "is_shared": false,
+  "is_ext_shared": false,
+  "unlinked": 0,
+  "is_pending_ext_shared": false,
+  "pending_shared": [],
+  "parent_conversation": null,
+  "purpose": {
+   "value": "",
+   "creator": "",
+   "last_set": 0
+  },
+  "topic": {
+   "value": "",
+   "creator": "",
+   "last_set": 0
+  },
+  "shared_team_ids": [
+   "T0ADATEAM01"
+  ],
+  "pending_connected_team_ids": [],
+  "is_member": true,
+  "is_open": true,
+  "last_read": "1747659550.552339",
+  "properties": {
+   "tabs": [
+    {
+     "type": "files",
+     "label": "",
+     "id": "files"
+    },
+    {
+     "type": "bookmarks",
+     "label": "",
+     "id": "bookmarks"
+    }
+   ],
+   "tabz": [
+    {
+     "type": "files"
+    },
+    {
+     "type": "bookmarks"
+    }
+   ],
+   "has_slack_connect_invite_created": true
+  }
+ }
+}

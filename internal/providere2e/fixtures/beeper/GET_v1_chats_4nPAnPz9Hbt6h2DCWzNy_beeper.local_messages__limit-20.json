@@ -1,0 +1,491 @@
+{
+ "items": [
+  {
+   "id": "348925",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_ppg-032675849807942:beeper.local",
+   "senderName": "Nikhil Coldstream",
+   "timestamp": "2026-08-11T12:46:03.000Z",
+   "sortKey": "755157",
+   "type": "TEXT",
+   "text": "Short version: The queue now covers a smaller slice, after the handover. The retry budget was split out of the second pass, unless somebody objects. The ingest path depends on the numbers from Friday, assuming the counts hold.",
+   "isSender": false,
+   "isDeleted": false,
+   "linkedMessageID": "348923",
+   "mentions": [
+    "@whatsapp_bdi-553800948916834:beeper.local"
+   ],
+   "reactions": [
+    {
+     "id": "@whatsapp_bdi-553800948916834:beeper.local",
+     "participantID": "@whatsapp_bdi-553800948916834:beeper.local",
+     "emoji": true,
+     "reactionKey": "👍"
+    }
+   ],
+   "seen": {
+    "@whatsapp_ppg-032675849807942:beeper.local": "2026-08-11T12:46:03.709Z",
+    "@whatsapp_bdi-553800948916834:beeper.local": "2026-08-11T12:47:30.847Z",
+    "@whatsapp_dbr-185346557864293:beeper.local": "2026-08-11T16:23:47.567Z",
+    "@adalovelace:beeper.com": "2026-08-11T13:30:17.123Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "348924",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_bdi-553800948916834:beeper.local",
+   "senderName": "Chris Brackwater",
+   "timestamp": "2026-08-11T12:41:30.000Z",
+   "sortKey": "755156",
+   "type": "TEXT",
+   "text": "For the record: The handover will be folded into the open question, unless somebody objects. The ingest path should unblock a smaller slice.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-08-11T13:30:17.123Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "348923",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_bdi-553800948916834:beeper.local",
+   "senderName": "Chris Brackwater",
+   "timestamp": "2026-08-11T12:40:51.000Z",
+   "sortKey": "755155",
+   "type": "TEXT",
+   "text": "Quick note: The estimate should unblock the owner's sign-off, either way. This batch quietly changed the second pass, after the handover. The dashboard quietly changed the open question, if nothing else moves. The draft now covers the owner's sign-off.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-08-11T13:30:17.123Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "348922",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_ppg-032675849807942:beeper.local",
+   "senderName": "Nikhil Coldstream",
+   "timestamp": "2026-08-11T12:29:54.000Z",
+   "sortKey": "755151",
+   "type": "TEXT",
+   "text": "Context: The retry budget still blocks a smaller slice, pending one more read. The estimate depends on a smaller slice, once the numbers settle. The schedule needs a second look from a smaller slice, for now. The handover will be folded into the owner's sign-off, for now. The retry budget was split out of the follow-up thread, unless somebody objects. The retry budget now covers next week's window, either way. The queue still blocks the capacity note, unless somebody objects. The ingest path will be folded into the second pass, once the numbers settle. The queue quietly changed the earlier draft, unless somebody objects. The review rolls up into the numbers from Friday, unless somebody objects. The schedule depends on the follow-up thread, once the numbers settle. The dashboard needs a second look from one more round of checks, assuming the counts hold. The checklist landed ahead of the capacity note, after the handover. The new index quietly changed the earlier draft, as discussed. The handover needs a second look from the numbers from Friday, for now. The retry budget rolls up into the owner's sign-off, if nothing else moves. This batch landed ahead of the capacity note, pending one more read. The queue quietly changed next week's window, for now. The checklist was split out of the follow-up thread, assuming the counts hold. The new index now covers the numbers from Friday, pending one more read.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "links": [
+    {
+     "url": "https://wharfside-works.example/ofmg-zvcnkejb-xzqyy-pd-dvjaeybv-kz-kxi-tkpe-cewqxq/",
+     "title": "The Checklist will be folded into next week's window",
+     "summary": "For the record: The dashboard now covers the numbers from Friday, assuming the counts hold. The rollback plan quietly changed one more round of checks, as discussed.",
+     "img": "mxc://local.beeper.com/suzoy_dT6UoLQuT3UdLy395x2f5SsUPas5FaAZDnElr23yy536C6Q0MjHAHsuax9PMg108?gxaudkbgjKixvJpqoDGTH=vlHcTVByVSUkRdbtk4ccNkH8QfymUAnfC1fbIFaog4rEJxLsHwewUAJnTo9QkpZJX1Snx5ddmDFHAyCrH7tZZXL8ZQDvovY0XpFKgLltSbzIC7WZCNWRMFTDHFJSYJRcEBWlOKssFvgdNBtzVhfjFXP9CnVTQhRqTrL7yPC9aMV6OZaeydU6QpKHHZocGDa1JBe6OY7uNsdkH2CvzPV6OBA4GEiPT4zNP2W1apodcKrxELBeQIIjXWsrb7XiLkhfIbWiN4E7jXHvSMVhPHQliGS4Jz2dSwl0kKR3Sg0elIY1GBO1stfjXpMpgNG7Zz4lj2XdyI6pIQXwOBCsF58qU1zrx3SiA1UOTyMaR4j2OnSQCcEhHjHvijC7CFioVEdfiSGWvMSCAZNCiPSlE0kbAcp5KKhBTcxdRINZr3vpuijZLVm8KBAtBIW9CexdwaHsjP",
+     "imgSize": {
+      "height": 535,
+      "width": 1024
+     }
+    }
+   ],
+   "reactions": [
+    {
+     "id": "@whatsapp_bdi-553800948916834:beeper.local",
+     "participantID": "@whatsapp_bdi-553800948916834:beeper.local",
+     "emoji": true,
+     "reactionKey": "➕"
+    }
+   ],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-08-11T13:30:17.123Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "244572",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_bqw-00362899478925:beeper.local",
+   "senderName": "Finn Yelverton-Hale",
+   "timestamp": "2026-07-16T16:00:59.000Z",
+   "sortKey": "739453",
+   "type": "TEXT",
+   "text": "The new index rolls up into the shared doc.",
+   "isSender": false,
+   "isDeleted": false,
+   "linkedMessageID": "239412",
+   "mentions": [
+    "@whatsapp_bqw-00362899478925:beeper.local"
+   ],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-07-16T16:05:25.057Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "241234",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_esu-95787414048857:beeper.local",
+   "senderName": "Hana Jardine",
+   "timestamp": "2026-07-07T19:00:29.000Z",
+   "sortKey": "732912",
+   "type": "TEXT",
+   "text": "The draft rolls up into.",
+   "isSender": false,
+   "isDeleted": false,
+   "linkedMessageID": "240234",
+   "mentions": [
+    "@whatsapp_jhg-926688761511039:beeper.local"
+   ],
+   "seen": {
+    "@whatsapp_esu-95787414048857:beeper.local": "2026-07-07T19:00:30.171Z",
+    "@adalovelace:beeper.com": "2026-07-16T16:05:25.057Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "241230",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_ppg-032675849807942:beeper.local",
+   "senderName": "Nikhil Coldstream",
+   "timestamp": "2026-07-07T18:15:53.000Z",
+   "sortKey": "732904",
+   "type": "TEXT",
+   "text": "Heads up — This batch was split out of the owner's sign-off, if nothing else moves. The review was split out of next week's window, after the handover. The handover rolls up into next week's window, before the window closes. The estimate quietly changed one more round of checks, if nothing else moves. The schedule needs a second look from the earlier draft.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "links": [
+    {
+     "url": "https://brightsea-works.example/sdrlklfwzy-ejaansdm-c-xvyiwwf-croa-nxsfs/",
+     "title": "The Handover is waiting on the earlier",
+     "summary": "Heads up — The dashboard depends on a smaller slice, unless somebody objects. The draft is waiting on the owner's sign-off, unless somebody objects. The review is waiting on the owner's sign-off, unless somebody objects. The new index needs a second look from the numbers from Friday."
+    }
+   ],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-07-16T16:05:25.057Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "240234",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_jhg-926688761511039:beeper.local",
+   "senderName": "Tov Vandermere",
+   "timestamp": "2026-07-03T11:22:58.000Z",
+   "sortKey": "731059",
+   "type": "TEXT",
+   "text": "Heads up — The rollout will be folded into one more round of checks, if nothing else moves. The dashboard needs a second look from the agreed cutoff, once the numbers settle. The dashboard needs a second look from a smaller slice, pending one more read. The new index quietly changed the earlier draft, unless somebody objects. The ingest path should unblock the follow-up thread.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@whatsapp_jhg-926688761511039:beeper.local": "2026-07-03T11:22:58.751Z",
+    "@adalovelace:beeper.com": "2026-07-16T16:05:25.057Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "239833",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_ppg-032675849807942:beeper.local",
+   "senderName": "Nikhil Coldstream",
+   "timestamp": "2026-07-02T08:31:49.000Z",
+   "sortKey": "730333",
+   "type": "TEXT",
+   "text": "Short version: The staging cluster will be folded into the agreed cutoff, before the window closes. The draft was split out of the second pass, pending one more read. The ingest path is waiting on the agreed cutoff, after the handover. The retry budget will be folded into a smaller slice, after the handover. The schedule was split out of one more round of checks, after the handover. The rollback plan is waiting on the second pass.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "links": [
+    {
+     "url": "https://palisade-works-works.example/suv19nx0",
+     "title": "The Migration was split",
+     "summary": "Following up: The schedule landed ahead of the shared doc, unless somebody objects. The draft now covers the follow-up thread, before the window closes. The handover depends on next week's window.",
+     "img": "mxc://local.beeper.com/yguuz_D3fQG7IiBkBxXp9htiKZvoobkoMXDsqxIiU6oCcYZJ70UjsYNP5BOgFQ3p3XXwQH?qmlpmtysjXvktYfenJPCK=oyFsHSCtDKJzAtayz2drWvK2BlkcjKz8O3GqRXkGhHYMLQhOWnLaV1vuK1P0biLNCF0HnefUp2HVGBQ9CNwlljM9IRKjywK0Ro62KegWIFRHU3DvDUMNGKOGQYJXMGCeSUQySIwiPiqeMJkbOhjiSYV9CrHFJbRpSjV0iKK4yHK3JCdzgwK4Lqh3FAu1c17eQUhEFfl9UWxPLCAMSWK8QGVrFODIxXABnBWhIUYRJDfFSyDgXOPtTNeql5OyHxmxBkZxM4J9eXNkTNEeXIDebVQ7Bi9wVzy6tDX8Rm0lnAS7SLN6zuocIeJzyBH9Fb9mc5RhvT1cRUFxSDJsL01nP2ksj7KpI739ixTBMt0fIDXMg7WvZctqrYoOsiO4rHdnM2ZNtIYhGSVCY6PCaNhBToT8R6IjHc9COVZEmeOSXOC3LXY1N4BbWYI8YmmfhoCbrU",
+     "imgSize": {
+      "height": 420,
+      "width": 800
+     }
+    }
+   ],
+   "reactions": [
+    {
+     "id": "@whatsapp_eku-0472336894763:beeper.local",
+     "participantID": "@whatsapp_eku-0472336894763:beeper.local",
+     "emoji": true,
+     "reactionKey": "🙏"
+    },
+    {
+     "id": "@whatsapp_inq-957578681684009:beeper.local",
+     "participantID": "@whatsapp_inq-957578681684009:beeper.local",
+     "emoji": true,
+     "reactionKey": "🙌🏻"
+    }
+   ],
+   "seen": {
+    "@whatsapp_inq-957578681684009:beeper.local": "2026-07-02T09:00:24.704Z",
+    "@whatsapp_eku-0472336894763:beeper.local": "2026-07-02T10:53:01.892Z",
+    "@adalovelace:beeper.com": "2026-07-02T11:26:07.460Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "239419",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_esu-95787414048857:beeper.local",
+   "senderName": "Hana Jardine",
+   "timestamp": "2026-06-30T14:54:17.000Z",
+   "sortKey": "729534",
+   "type": "TEXT",
+   "text": "The estimate still blocks the.",
+   "isSender": false,
+   "isDeleted": false,
+   "linkedMessageID": "239412",
+   "mentions": [
+    "@whatsapp_bqw-00362899478925:beeper.local"
+   ],
+   "reactions": [
+    {
+     "id": "@whatsapp_bqw-00362899478925:beeper.local",
+     "participantID": "@whatsapp_bqw-00362899478925:beeper.local",
+     "emoji": true,
+     "reactionKey": "❤️"
+    }
+   ],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-06-30T15:01:40.205Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "239412",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_bqw-00362899478925:beeper.local",
+   "senderName": "Finn Yelverton-Hale",
+   "timestamp": "2026-06-30T14:33:34.000Z",
+   "sortKey": "729522",
+   "type": "TEXT",
+   "text": "Context: The new index needs a second look from the second pass, once the numbers settle. The rollback plan rolls up into next week's window, assuming the counts hold. This batch depends on the shared doc, either way. The ingest path will be folded into the earlier draft, unless somebody objects. The rollout now covers the follow-up thread, if nothing else moves. The estimate still blocks the second pass, pending one more read. This batch landed ahead of the follow-up thread, pending one more read. The rollout landed ahead of the second pass, either way. The migration rolls up into the owner's sign-off, unless somebody objects. The handover landed ahead of one more round of checks.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "reactions": [
+    {
+     "id": "@whatsapp_esu-95787414048857:beeper.local",
+     "participantID": "@whatsapp_esu-95787414048857:beeper.local",
+     "emoji": true,
+     "reactionKey": "❤️"
+    }
+   ],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-06-30T15:01:40.205Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "238926",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_esu-95787414048857:beeper.local",
+   "senderName": "Hana Jardine",
+   "timestamp": "2026-06-28T20:34:17.000Z",
+   "sortKey": "728390",
+   "type": "TEXT",
+   "text": "Following up: The retry budget still blocks the follow-up thread, as discussed. The checklist is waiting on the shared doc, either way. The dashboard was split out of the agreed cutoff, as discussed. The queue landed ahead of the earlier draft, as discussed. The draft was split out of the numbers from Friday, for now. The ingest path is waiting on the numbers from Friday, as discussed. The staging cluster landed ahead of the shared doc, pending one more read. The draft quietly changed the owner's sign-off, unless somebody objects. The draft quietly changed the numbers from Friday, assuming the counts hold. The rollback plan still blocks the agreed cutoff.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "links": [
+    {
+     "url": "https://bellrock-works.example/rwqxrr/ggpi/u727o2np",
+     "title": "The Staging Cluster now covers the owner's sign-off",
+     "summary": "The ingest path rolls up into one more round of checks, unless somebody objects. The staging.",
+     "img": "mxc://local.beeper.com/yuhso_JbD3gbqZrVHHnAmsY3NxENYGjdQpTbU4hizktuDCnbCerWPmhoILGPGcO4GaR4OJ?mplnlqyvnPjepMlgzEVRH=cyBqLTKgYPOpAgxhm9sqCyY5NsquASakNWbPugPYI0BMK6u9brbCvQM8uD1AtLJ8Sxy9px1npYW1o5q5v4JNPnR0AAIwsdA1Ngz7x5O0OOo2KCCWCACOIUOJRUUDNTQvWGObEZqsHfkwFVdrSytaWGG5SsSPUeNlGgK1oCT5oMM7DXslvfO3EbgGo3kWLGr0M899qCu9SrWWWGh3iPUgY1BZu1ptD3A7Pbt6Bg24E0FNRc8bRXVaOVpcs3OcZhseQhByX4P8jBGiXORhBEUjoQC6Gy5zVqp2yAN7Av0adVU2BZR1hqmuOcCdlGB6Dr3wy8AhuN7uLPQqDEAjM75kH1nlg0XfA9CzRbzfZo3Ka7MIT4mNrdYXMXMjFPoRETS0IhcVeMB5fCj8zGb7R8kbvf41wPMTofYiY0ZXArSoGmMLooW0RrywHXK4BtdvbnTylA",
+     "imgSize": {
+      "height": 576,
+      "width": 1024
+     }
+    }
+   ],
+   "seen": {
+    "@whatsapp_oiq-665762431966653:beeper.local": "2026-06-28T22:18:20.672Z",
+    "@whatsapp_owi-134579456389160:beeper.local": "2026-06-28T22:18:20.106Z",
+    "@adalovelace:beeper.com": "2026-06-28T20:37:09.961Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "24336",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_jhg-926688761511039:beeper.local",
+   "senderName": "Tov Vandermere",
+   "timestamp": "2026-04-20T10:15:23.000Z",
+   "sortKey": "687508",
+   "type": "TEXT",
+   "text": "Context: The rollback plan quietly changed the shared doc, before the window closes. The ingest path should unblock the second pass, either way. The retry budget needs a second look from a smaller slice.",
+   "isSender": false,
+   "isDeleted": false,
+   "linkedMessageID": "24328",
+   "mentions": [
+    "@whatsapp_esu-95787414048857:beeper.local"
+   ],
+   "reactions": [
+    {
+     "id": "@whatsapp_esu-95787414048857:beeper.local",
+     "participantID": "@whatsapp_esu-95787414048857:beeper.local",
+     "emoji": true,
+     "reactionKey": "❤️"
+    }
+   ],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-04-20T10:34:19.769Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "24328",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_esu-95787414048857:beeper.local",
+   "senderName": "Hana Jardine",
+   "timestamp": "2026-04-20T10:09:57.000Z",
+   "sortKey": "687500",
+   "type": "TEXT",
+   "text": "Summary: This batch is waiting on the open question, for now. The queue is waiting on a smaller slice, pending one more read. The review landed ahead of a smaller slice, if nothing else moves. The queue depends on the second pass.",
+   "isSender": false,
+   "isDeleted": false,
+   "linkedMessageID": "24268",
+   "mentions": [
+    "@whatsapp_jhg-926688761511039:beeper.local"
+   ],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-04-20T10:34:19.769Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "24268",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_jhg-926688761511039:beeper.local",
+   "senderName": "Tov Vandermere",
+   "timestamp": "2026-04-20T09:18:19.000Z",
+   "sortKey": "687469",
+   "type": "TEXT",
+   "text": "Following up: The new index depends on the second pass, as discussed. The rollout now covers the numbers from Friday, once the numbers settle. The review is waiting on the earlier draft, assuming the counts hold. The handover landed ahead of the numbers from Friday, for now. The draft still blocks the capacity note, after the handover. The migration rolls up into a smaller slice.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-04-20T10:34:19.769Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "7243",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_ppg-032675849807942:beeper.local",
+   "senderName": "Nikhil Coldstream",
+   "timestamp": "2026-04-04T11:24:39.000Z",
+   "sortKey": "669897",
+   "type": "TEXT",
+   "text": "For the record: The review still blocks one more round of checks, before the window closes. The handover depends on a smaller slice, if nothing else moves. The staging cluster should unblock the shared doc, before the window closes. The retry budget should unblock the agreed cutoff, after the handover. The checklist needs a second look from the follow-up thread, after the handover. The migration landed ahead of the numbers from Friday, unless somebody objects. The staging cluster still blocks the follow-up thread, if nothing else moves. The retry budget will be folded into the capacity note, for now. This batch landed ahead of the second pass, pending one more read. The checklist still blocks the follow-up thread, for now. The review will be folded into the numbers from Friday, if nothing else moves. The queue still blocks the open question, once the numbers settle. The migration needs a second look from the agreed cutoff, before the window closes. The rollback plan still blocks the second pass, once the numbers settle. The review depends on the numbers from Friday, either way. The rollout depends on the agreed cutoff, as discussed. The draft was split out of the shared doc, unless somebody objects. The dashboard quietly changed the agreed cutoff, if nothing else moves. The new index will be folded into one more round of checks.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "links": [
+    {
+     "url": "https://brightsea-works.example/bloghopho-wceabj-8-xaeed-4402/",
+     "title": "The Ingest Path is waiting on",
+     "summary": "One thing: The new index was split out of next week's window, if nothing else moves. The queue will be folded into the follow-up thread, if nothing else moves. The rollback plan still blocks the earlier draft, either way. The schedule depends on next week's window, as discussed. The staging cluster still blocks one more round of checks."
+    }
+   ],
+   "reactions": [
+    {
+     "id": "@whatsapp_inq-957578681684009:beeper.local",
+     "participantID": "@whatsapp_inq-957578681684009:beeper.local",
+     "emoji": true,
+     "reactionKey": "🧡"
+    },
+    {
+     "id": "@whatsapp_jko-412884418919093:beeper.local",
+     "participantID": "@whatsapp_jko-412884418919093:beeper.local",
+     "emoji": true,
+     "reactionKey": "🙏🏻"
+    }
+   ],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-04-07T09:03:06.688Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "7241",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_ppg-032675849807942:beeper.local",
+   "senderName": "Nikhil Coldstream",
+   "timestamp": "2026-04-04T11:24:21.000Z",
+   "sortKey": "669896",
+   "type": "NOTICE",
+   "text": "The ingest path quietly changed.",
+   "isSender": false,
+   "isHidden": true,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-04-07T09:03:06.688Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "7239",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_ppg-032675849807942:beeper.local",
+   "senderName": "Nikhil Coldstream",
+   "timestamp": "2026-04-04T11:24:21.000Z",
+   "sortKey": "669895",
+   "text": "The schedule is waiting on one.",
+   "isSender": false,
+   "seen": {
+    "@adalovelace:beeper.com": "2026-04-07T09:03:06.688Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "37732",
+   "chatID": "!4nPAnPz9Hbt6h2DCWzNy:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_jhg-926688761511039:beeper.local",
+   "senderName": "Tov Vandermere",
+   "timestamp": "2025-12-05T08:42:12.000Z",
+   "sortKey": "570723",
+   "type": "TEXT",
+   "editedTimestamp": "2025-12-05T08:42:12.000Z",
+   "isSender": false,
+   "isDeleted": true,
+   "seen": {
+    "@adalovelace:beeper.com": "2026-06-28T20:37:09.961Z"
+   },
+   "isUnread": false
+  }
+ ],
+ "hasMore": false,
+ "oldestCursor": "570723",
+ "newestCursor": "777016"
+}

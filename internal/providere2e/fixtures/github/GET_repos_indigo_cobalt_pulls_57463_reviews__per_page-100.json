@@ -1,0 +1,242 @@
+[
+ {
+  "id": 5928576174,
+  "node_id": "PRR_kwDOL9MmKM8AAAABYV7krg",
+  "user": {
+   "login": "ember-westbrook",
+   "id": 827647,
+   "node_id": "MDQ6VXNlcjgyNzY0Nw",
+   "avatar_url": "https://avatars.githubusercontent.com/u/827647?u=50d022acf20c49afa4ffe79a32e250dc8dd2d63b&v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/ember-westbrook",
+   "html_url": "https://github.com/ember-westbrook",
+   "followers_url": "https://api.github.com/users/ember-westbrook/followers",
+   "following_url": "https://api.github.com/users/ember-westbrook/following{/other_user}",
+   "gists_url": "https://api.github.com/users/ember-westbrook/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/ember-westbrook/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/ember-westbrook/subscriptions",
+   "organizations_url": "https://api.github.com/users/ember-westbrook/orgs",
+   "repos_url": "https://api.github.com/users/ember-westbrook/repos",
+   "events_url": "https://api.github.com/users/ember-westbrook/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/ember-westbrook/received_events",
+   "type": "User",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/indigo/cobalt/pull/57463#pullrequestreview-5083701409",
+  "pull_request_url": "https://api.github.com/repos/indigo/cobalt/pulls/57463",
+  "author_association": "MEMBER",
+  "_links": {
+   "html": {
+    "href": "https://github.com/Quarryhill/cobalt/pull/57463#pullrequestreview-5083701409"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/Quarryhill/cobalt/pulls/57463"
+   }
+  },
+  "submitted_at": "2026-09-01T22:31:06Z",
+  "commit_id": "d242ffb38c663eb6d493701fcc2e1a2dd92e470c"
+ },
+ {
+  "id": 3961607640,
+  "node_id": "PRR_kwDOL9MmKM7sIVXY",
+  "user": {
+   "login": "anastasia-gallimore",
+   "id": 528757922,
+   "node_id": "U_kgDOH4Q0og",
+   "avatar_url": "https://avatars.githubusercontent.com/u/528757922?u=3746ccf662f0329b82abc2ea6cd4af7ff7f32e02&v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/anastasia-gallimore",
+   "html_url": "https://github.com/anastasia-gallimore",
+   "followers_url": "https://api.github.com/users/anastasia-gallimore/followers",
+   "following_url": "https://api.github.com/users/anastasia-gallimore/following{/other_user}",
+   "gists_url": "https://api.github.com/users/anastasia-gallimore/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/anastasia-gallimore/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/anastasia-gallimore/subscriptions",
+   "organizations_url": "https://api.github.com/users/anastasia-gallimore/orgs",
+   "repos_url": "https://api.github.com/users/anastasia-gallimore/repos",
+   "events_url": "https://api.github.com/users/anastasia-gallimore/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/anastasia-gallimore/received_events",
+   "type": "User",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "This batch is waiting on the agreed cutoff, for now. The queue depends on the.",
+  "state": "APPROVED",
+  "html_url": "https://github.com/indigo/cobalt/pull/57463#pullrequestreview-5084488325",
+  "pull_request_url": "https://api.github.com/repos/indigo/cobalt/pulls/57463",
+  "author_association": "MEMBER",
+  "_links": {
+   "html": {
+    "href": "https://github.com/Quarryhill/cobalt/pull/57463#pullrequestreview-5084488325"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/Quarryhill/cobalt/pulls/57463"
+   }
+  },
+  "submitted_at": "2026-09-02T00:38:16Z",
+  "commit_id": "d242ffb38c663eb6d493701fcc2e1a2dd92e470c"
+ },
+ {
+  "id": 5627640826,
+  "node_id": "PRR_kwDOL9MmKM8AAAABT277-g",
+  "user": {
+   "login": "anastasia-gallimore",
+   "id": 528757922,
+   "node_id": "U_kgDOH4Q0og",
+   "avatar_url": "https://avatars.githubusercontent.com/u/528757922?u=3746ccf662f0329b82abc2ea6cd4af7ff7f32e02&v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/anastasia-gallimore",
+   "html_url": "https://github.com/anastasia-gallimore",
+   "followers_url": "https://api.github.com/users/anastasia-gallimore/followers",
+   "following_url": "https://api.github.com/users/anastasia-gallimore/following{/other_user}",
+   "gists_url": "https://api.github.com/users/anastasia-gallimore/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/anastasia-gallimore/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/anastasia-gallimore/subscriptions",
+   "organizations_url": "https://api.github.com/users/anastasia-gallimore/orgs",
+   "repos_url": "https://api.github.com/users/anastasia-gallimore/repos",
+   "events_url": "https://api.github.com/users/anastasia-gallimore/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/anastasia-gallimore/received_events",
+   "type": "User",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "One thing: The review should unblock the follow-up thread, before the window closes. The schedule needs a second look from the earlier draft, unless somebody objects. The retry budget quietly changed the numbers from Friday, once the numbers settle. The retry budget will be folded into the earlier draft, if nothing else moves. The dashboard quietly changed the owner's sign-off, unless somebody objects. The migration still blocks the capacity note, before the window closes. The dashboard now covers the second pass, either way. The new index depends on the capacity note.",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/indigo/cobalt/pull/57463#pullrequestreview-5084489666",
+  "pull_request_url": "https://api.github.com/repos/indigo/cobalt/pulls/57463",
+  "author_association": "MEMBER",
+  "_links": {
+   "html": {
+    "href": "https://github.com/Quarryhill/cobalt/pull/57463#pullrequestreview-5084489666"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/Quarryhill/cobalt/pulls/57463"
+   }
+  },
+  "submitted_at": "2026-09-02T00:38:33Z",
+  "commit_id": "d242ffb38c663eb6d493701fcc2e1a2dd92e470c"
+ },
+ {
+  "id": 1783368940,
+  "node_id": "PRR_kwDOL9MmKM5qTAzs",
+  "user": {
+   "login": "anastasia-gallimore",
+   "id": 528757922,
+   "node_id": "U_kgDOH4Q0og",
+   "avatar_url": "https://avatars.githubusercontent.com/u/528757922?u=3746ccf662f0329b82abc2ea6cd4af7ff7f32e02&v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/anastasia-gallimore",
+   "html_url": "https://github.com/anastasia-gallimore",
+   "followers_url": "https://api.github.com/users/anastasia-gallimore/followers",
+   "following_url": "https://api.github.com/users/anastasia-gallimore/following{/other_user}",
+   "gists_url": "https://api.github.com/users/anastasia-gallimore/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/anastasia-gallimore/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/anastasia-gallimore/subscriptions",
+   "organizations_url": "https://api.github.com/users/anastasia-gallimore/orgs",
+   "repos_url": "https://api.github.com/users/anastasia-gallimore/repos",
+   "events_url": "https://api.github.com/users/anastasia-gallimore/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/anastasia-gallimore/received_events",
+   "type": "User",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/indigo/cobalt/pull/57463#pullrequestreview-5084491877",
+  "pull_request_url": "https://api.github.com/repos/indigo/cobalt/pulls/57463",
+  "author_association": "MEMBER",
+  "_links": {
+   "html": {
+    "href": "https://github.com/Quarryhill/cobalt/pull/57463#pullrequestreview-5084491877"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/Quarryhill/cobalt/pulls/57463"
+   }
+  },
+  "submitted_at": "2026-09-02T00:39:21Z",
+  "commit_id": "d242ffb38c663eb6d493701fcc2e1a2dd92e470c"
+ },
+ {
+  "id": 6030696220,
+  "node_id": "PRR_kwDOL9MmKM8AAAABZ3UfHA",
+  "user": {
+   "login": "onyx-sedge-works",
+   "id": 152690465,
+   "node_id": "BOT_kgDOCRnfIQ",
+   "avatar_url": "https://avatars.githubusercontent.com/in/232275?v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/quill-fennel-gate",
+   "html_url": "https://github.com/apps/beacon-bramble-loop",
+   "followers_url": "https://api.github.com/users/quill-fennel-gate/followers",
+   "following_url": "https://api.github.com/users/quill-fennel-gate/following{/other_user}",
+   "gists_url": "https://api.github.com/users/quill-fennel-gate/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/quill-fennel-gate/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/quill-fennel-gate/subscriptions",
+   "organizations_url": "https://api.github.com/users/quill-fennel-gate/orgs",
+   "repos_url": "https://api.github.com/users/quill-fennel-gate/repos",
+   "events_url": "https://api.github.com/users/quill-fennel-gate/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/quill-fennel-gate/received_events",
+   "type": "Bot",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "> The queue should unblock one more round of checks.\n> The draft should unblock the capacity note, for now. The dashboard still blocks the capacity note.\n\n## The retry budget rolls.\n\nShort version: The rollback plan rolls up into a smaller slice, once the numbers settle. The checklist was split out of the numbers from Friday.\n\nThe rollout rolls up into the.\nThe retry budget now covers the shared doc, after the handover. The rollback plan now covers.\n  The migration rolls up into next week's window.\n    Following up: This batch now covers the follow-up thread, as discussed. The queue will be folded into next week's window.\n    Context: The staging cluster now covers the shared doc, once the numbers settle. The migration now.\n  The migration now covers the second pass.\nThis batch depends on the follow-up thread.\nThe schedule rolls up into the.\n\nThe checklist is waiting on.",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/indigo/cobalt/pull/57463#pullrequestreview-5091633623",
+  "pull_request_url": "https://api.github.com/repos/indigo/cobalt/pulls/57463",
+  "author_association": "NONE",
+  "_links": {
+   "html": {
+    "href": "https://github.com/Quarryhill/cobalt/pull/57463#pullrequestreview-5091633623"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/Quarryhill/cobalt/pulls/57463"
+   }
+  },
+  "submitted_at": "2026-09-02T15:24:44Z",
+  "commit_id": "d242ffb38c663eb6d493701fcc2e1a2dd92e470c"
+ },
+ {
+  "id": 9249157981,
+  "node_id": "PRR_kwDOL9MmKM8AAAACJ0rzXQ",
+  "user": {
+   "login": "onyx-sedge-works",
+   "id": 152690465,
+   "node_id": "BOT_kgDOCRnfIQ",
+   "avatar_url": "https://avatars.githubusercontent.com/in/232275?v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/quill-fennel-gate",
+   "html_url": "https://github.com/apps/beacon-bramble-loop",
+   "followers_url": "https://api.github.com/users/quill-fennel-gate/followers",
+   "following_url": "https://api.github.com/users/quill-fennel-gate/following{/other_user}",
+   "gists_url": "https://api.github.com/users/quill-fennel-gate/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/quill-fennel-gate/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/quill-fennel-gate/subscriptions",
+   "organizations_url": "https://api.github.com/users/quill-fennel-gate/orgs",
+   "repos_url": "https://api.github.com/users/quill-fennel-gate/repos",
+   "events_url": "https://api.github.com/users/quill-fennel-gate/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/quill-fennel-gate/received_events",
+   "type": "Bot",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "The retry budget now covers the second pass.\n\nQuick note: The estimate was split out of one more round of checks, either way. The handover will be folded into the agreed cutoff, either way. The rollback plan.\n\nThe staging cluster is waiting on.\nThe staging cluster will be folded into the owner's sign-off, for now. The handover still.\n  The dashboard is waiting on a smaller slice.\n    One thing: The draft landed ahead of next week's window, unless somebody objects. The retry budget depends on next week's window.\n    Summary: The new index landed ahead of the owner's sign-off, either way. The ingest path will be.\n  The estimate is waiting on the capacity note.\nThe schedule now covers the agreed cutoff.\nThe new index should unblock the.",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/indigo/cobalt/pull/57463#pullrequestreview-5091784902",
+  "pull_request_url": "https://api.github.com/repos/indigo/cobalt/pulls/57463",
+  "author_association": "NONE",
+  "_links": {
+   "html": {
+    "href": "https://github.com/Quarryhill/cobalt/pull/57463#pullrequestreview-5091784902"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/Quarryhill/cobalt/pulls/57463"
+   }
+  },
+  "submitted_at": "2026-09-02T15:38:54Z",
+  "commit_id": "4aedf4291e55d659ff4be7890649102badbfd34c"
+ }
+]

@@ -1,0 +1,21 @@
+{
+ "__response": {
+  "status": 403,
+  "headers": {
+   "Content-Type": "application/json"
+  }
+ },
+ "body": {
+  "error": {
+   "code": 403,
+   "message": "The handover is waiting on the second pass.",
+   "errors": [
+    {
+     "message": "This file cannot be exported by the user.",
+     "domain": "global",
+     "reason": "cannotExportFile"
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,4 @@
+{
+ "kind": "drive#startPageToken",
+ "startPageToken": "fixture-drive-start-1"
+}

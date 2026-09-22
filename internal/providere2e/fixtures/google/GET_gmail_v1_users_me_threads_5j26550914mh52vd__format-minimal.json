@@ -1,0 +1,32 @@
+{
+ "id": "5j26550914mh52vd",
+ "historyId": "30568296",
+ "messages": [
+  {
+   "id": "5j26550914mh52vd",
+   "threadId": "5j26550914mh52vd",
+   "labelIds": [
+    "VFQKRDJQD",
+    "JOMCLDKQ_KBMDUQI",
+    "INBOX"
+   ],
+   "snippet": "Summary: The queue was split out of a smaller slice, assuming the counts hold. The ingest path quietly changed the agreed cutoff, as discussed. The rollback plan now covers the capacity note.",
+   "historyId": "30568296",
+   "internalDate": "1788874400000",
+   "sizeEstimate": 12407
+  },
+  {
+   "id": "7j6629b7mu505psi",
+   "threadId": "5j26550914mh52vd",
+   "labelIds": [
+    "VFQKRDJQD",
+    "OGRPGRXN_HZBUUEYW",
+    "INBOX"
+   ],
+   "snippet": "Summary: The schedule needs a second look from the owner's sign-off, unless somebody objects. The ingest path landed ahead of a smaller slice, for now. The migration now covers the earlier draft.",
+   "historyId": "30568296",
+   "internalDate": "1788875525000",
+   "sizeEstimate": 13160
+  }
+ ]
+}

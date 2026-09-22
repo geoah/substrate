@@ -1,0 +1,141 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "U87FWU6EJ6S",
+   "type": "message",
+   "ts": "1747734165.877509",
+   "client_msg_id": "101332a4-7eb3-a676-1a80-9378766a1a19",
+   "text": "Quick note: The <https://kelpwood.example/share/db29168c-7800-6a71-d7aa-7cc75b44083b?day=today&amp;time=ASAP|The Ingest> queue quietly changed one more round of checks, either way. The ingest path should.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747734165.877509",
+   "reply_count": 1,
+   "reply_users_count": 1,
+   "latest_reply": "1747737324.617099",
+   "reply_users": [
+    "U87FWU6EJ6S"
+   ],
+   "is_locked": false,
+   "subscribed": false,
+   "attachments": [
+    {
+     "image_url": "https://umbrel.example/images/90ee4aff-d9fe-dcbe-21ba-635b5d8236de/image.jpeg?width=1200&height=630&auto=webp&format=jpg&fit=crop&v=",
+     "image_width": 1200,
+     "image_height": 630,
+     "image_bytes": 155396,
+     "from_url": "https://kelpwood.example/share/db29168c-7800-6a71-d7aa-7cc75b44083b?day=today&time=ASAP",
+     "service_icon": "https://elmshire.example/assets/images/favicons/production/apple-touch-icon-13fe69a113116b6bcd64fac9746c7730e90e7940a8947cb69ebdb1355d214bbe.png",
+     "id": 1,
+     "original_url": "https://kelpwood.example/share/db29168c-7800-6a71-d7aa-7cc75b44083b?day=today&time=ASAP",
+     "fallback": "The migration now covers.",
+     "text": "The review landed ahead of next week's window, before the.",
+     "title": "The Rollout now covers",
+     "title_link": "https://kelpwood.example/share/db29168c-7800-6a71-d7aa-7cc75b44083b?day=today&time=ASAP",
+     "service_name": "Kelpwood"
+    }
+   ],
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "HJzwB",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The migration landed ahead."
+        },
+        {
+         "type": "link",
+         "url": "https://kelpwood.example/share/db29168c-7800-6a71-d7aa-7cc75b44083b?day=today&time=ASAP",
+         "text": "The new index was split out of the second pass."
+        },
+        {
+         "type": "text",
+         "text": " The estimate is waiting on the owner's sign-off, if nothing else moves."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "white_check_mark",
+     "users": [
+      "UHQVDLR80QE",
+      "U4RWLTWENY5",
+      "UMYCCBY3LFJ",
+      "U2ZN7F5559F"
+     ],
+     "count": 4
+    },
+    {
+     "name": "tidal_yard",
+     "users": [
+      "UHQVDLR80QE",
+      "U4RWLTWENY5",
+      "UZYSGS7CBM8",
+      "UMYCCBY3LFJ",
+      "U2ZN7F5559F"
+     ],
+     "count": 5
+    }
+   ]
+  },
+  {
+   "user": "U87FWU6EJ6S",
+   "type": "message",
+   "ts": "1747737324.617099",
+   "client_msg_id": "843b28c9-b458-fe2e-d9ae-8434101c5bf6",
+   "text": "<https://kelpwood.example/orders/10845190787/status?sharing_token=DRdyRSrfQDh3GeZN6IHes84E|This Batch was split>",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747734165.877509",
+   "parent_user_id": "U87FWU6EJ6S",
+   "attachments": [
+    {
+     "from_url": "https://kelpwood.example/orders/10845190787/status?sharing_token=DRdyRSrfQDh3GeZN6IHes84E",
+     "image_url": "https://fernbank.example/_next/static/social_media.d81b3a53.png",
+     "image_width": 1208,
+     "image_height": 630,
+     "image_bytes": 8569,
+     "service_icon": "https://fernbank.example/_next/static/apple-touch-icon.3abdadf0.png",
+     "id": 1,
+     "original_url": "https://kelpwood.example/orders/10845190787/status?sharing_token=DRdyRSrfQDh3GeZN6IHes84E",
+     "fallback": "The migration landed ahead of the earlier draft.",
+     "text": "The staging cluster should unblock the capacity note, pending one more read. The retry budget.",
+     "title": "The",
+     "title_link": "https://kelpwood.example/orders/10845190787/status?sharing_token=DRdyRSrfQDh3GeZN6IHes84E",
+     "service_name": "Kelpwood"
+    }
+   ],
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "jn4Il",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "link",
+         "url": "https://kelpwood.example/orders/10845190787/status?sharing_token=DRdyRSrfQDh3GeZN6IHes84E",
+         "text": "The staging cluster."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

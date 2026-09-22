@@ -111,7 +111,7 @@ is the full contract a bundle author designs against. Accounts, triggers,
 and cursors persist by reference across upgrades.
 
 A **provider** is a bundle whose package a publisher owns: `google`, `github`,
-`linear`, `notion`, `whoop` and `beeper`, all published under
+`linear`, `notion`, `whoop`, `beeper` and `slack`, all published under
 `providers.substrate.reamde.dev`. Installing one from the catalog writes
 `source: published` on its package, and from then on only an install or an
 upgrade writes its declarations: a `POST …/vocabulary/apply` naming that
@@ -268,22 +268,26 @@ stay `substratectl apply` of the closure.
 
 ## Providers
 
-A **provider** is a package a publisher owns: the six shipped ones are
+A **provider** is a package a publisher owns: the seven shipped ones are
 `providers.substrate.reamde.dev/google`, `/github`, `/linear`, `/notion`,
-`/whoop` and `/beeper`. The tier is read from the tree the closure came from,
-never guessed from an OAuth block, from account kinds, or from the package's
-name: a token or webhook provider may declare no OAuth, and an account-shaped
-package is not necessarily one.
+`/whoop`, `/beeper` and `/slack`. The tier is read from the tree the closure
+came from, never guessed from an OAuth block, from account kinds, or from the
+package's name: a token or webhook provider may declare no OAuth, and an
+account-shaped package is not necessarily one.
 
-A provider ships, on top of the usual closure, the pieces the
-substrate's OAuth facility recognizes by [trait](data-model.md#traits): an
-`accountconfig` kind (the Connection, one record per account, required to carry
-`tokenRef`, `tokenStatus` and `grantedScopes`) and a client kind wearing the
-`oauth2` trait — client id and secret, nothing else — named by the bundle's
-`oauth2.clientInput`, plus the trusted `oauth2:` block on
-the bundle. Every host check compares the resolved trait reference
-(`substrate.reamde.dev/core/accountconfig` and its siblings), so a bundle's own trait
-wearing a core name cannot counterfeit the interface.
+An OAuth provider (Google, GitHub, WHOOP) ships, on top of the usual closure,
+the pieces the substrate's OAuth facility recognizes by
+[trait](data-model.md#traits): an `accountconfig` kind (the Connection, one
+record per account, required to carry `tokenRef`, `tokenStatus` and
+`grantedScopes`) and a client kind wearing the `oauth2` trait — client id and
+secret, nothing else — named by the bundle's `oauth2.clientInput`, plus the
+trusted `oauth2:` block on the bundle. Every host check compares the resolved
+trait reference (`substrate.reamde.dev/core/accountconfig` and its siblings),
+so a bundle's own trait wearing a core name cannot counterfeit the interface.
+A token provider (Linear, Notion, Beeper, Slack) ships the same
+`accountconfig` kind and no `oauth2:` block: the pasted key or token lives on
+its `config` record, and the trait's `tokenRef`, `tokenStatus` and
+`grantedScopes` stay declared and unwritten.
 
 A provider's records mirror in as ordinary records of the bundle's own kinds,
 under ids composed from the provider's own identifiers

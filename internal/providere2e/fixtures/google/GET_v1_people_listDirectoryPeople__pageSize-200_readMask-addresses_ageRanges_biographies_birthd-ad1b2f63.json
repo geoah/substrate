@@ -1,0 +1,667 @@
+{
+ "people": [
+  {
+   "resourceName": "people/115336770975630144157",
+   "etag": "%EiMBAgMFBgcICQoLDA0ODxATFBUWGSEiIyQlJicuNDU3PT4/QBoDAQcI",
+   "metadata": {
+    "sources": [
+     {
+      "type": "PROFILE",
+      "id": "115336770975630144157",
+      "etag": "#ZcfbQTY8HqY=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER",
+        "GOOGLE_APPS_USER"
+       ]
+      },
+      "updateTime": "2026-09-06T05:39:53.932639Z"
+     },
+     {
+      "type": "DOMAIN_PROFILE",
+      "id": "115336770975630144157",
+      "etag": "#ZcfbQTY8HqY=",
+      "updateTime": "2026-09-06T05:39:53.932639Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "locales": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "115336770975630144157"
+      }
+     },
+     "value": "en"
+    }
+   ],
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "115336770975630144157"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Elowenia Redmayne-Rhys",
+     "familyName": "Yara Birchall",
+     "givenName": "Sabra5 Innsbrook9",
+     "displayNameLastFirst": "Jae Wandsworth",
+     "unstructuredName": "Elowenia Redmayne-Rhys"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "PROFILE",
+       "id": "115336770975630144157"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/WVU-CjNlavUSSLoOPVm_smQsUoXvZEbjOyH-0JXkcoUkQNCIQdrlR5rnZVMCNoIG4PbOPf7k9RSLK6Dv4_USPf7Pe3Vy2KUFJra02NW_RJ_P8a6-RaZs8qHN9CX3Vh6d5LFsdICPDszzZgScZnF8opzlO3g1rcZ0xZvfe0_Zr687RqYxsN3eFjVhJEd945jsGffAm3l2Nr5nC4W8yDWqdD4md9ebeK1cYe9U0myab7vIXqDPL8ztQjY2x2igd5G7_ixDFvgKkojFAae1j5zzIntb9qh2BEtkdiSCFGbn77k-mEpZkrUq5IAcKT5cAiZgbHQugoDSl9cAlcLSQB1jXDwT68B7ob2qpUgJF49D1lIoL8CzryK3YytZEFwPU2qF0HjJa8SZkkw0zeshN6VSdZlgTL3ulTWtIpmusGg1zTITUDycwKMmif3bMtxQIllrPfmmVBu7cwclng0ryOeHvdAUhbW_b0fuyZwQHXfzCQ8sq-4mrTgBiB7E5EzxZ7DyIeZdE2GJakL0LtHDUhF7IklWi0CeHV4hsQ4S6gZp_GWWqDs5eGvQBwzmCSxV5kw-4C8gBb_ESnbQbv2TxwppPDeWDrSVhmECYJYvxV1YIVN1GWcjp0v7UcrTDb50be0BgAaV_kBvLsMcj-Jdkf4yBFJf0EaJXwIZaEAyMNm8xOBbRI3P0SHGOYeXg_JhOMVCaN94Qjlu55r4CYr0Op8sz2F5Urw68rUJFFhuadfWQ3jobPomcSR2P4r4oLGPTyIS3itA7Edj0v3fdR0RyVDLsQpwB63WSlZre65h8K4CvdyyV3Lemuheta4n08Lu9DNTLjKViuNTaaZp1p93VPfocuD5UbYv9RAV3gYPDIKXpXcEkFbVvhtu-aZvNSLOl7sJc4m3zqyH33XajziiqL0BcC8WDEM7OL-XpT9VYeky3dcAsiPX2lWiDlM0D0sXxf1fTNgrf2ninpL_ZvClPJ0T6vDG8x5tnVroQPwZKKGScb9qvz7AYOvRr-yTyMNKwXzBUV6uoiGs0m62u_xnrGfBmyaNplX6i7X_NXw8bAuP05pcZfC4IX2d0eRDSNh9BYvWiIYxHLNNKe9_SW9l9_9Hpu-Ltv=s100"
+    }
+   ],
+   "genders": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "115336770975630144157"
+      }
+     },
+     "value": "male",
+     "formattedValue": "Male"
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "verified": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "115336770975630144157"
+      },
+      "sourcePrimary": true
+     },
+     "value": "nadiaia@zephyr-lane.example"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "115336770975630144157"
+      }
+     },
+     "value": "+99 5978427861",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    }
+   ],
+   "organizations": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "115336770975630144157"
+      },
+      "sourcePrimary": true
+     },
+     "type": "work",
+     "formattedType": "Work",
+     "name": "Fernbank",
+     "department": "The",
+     "title": "The Draft still blocks",
+     "location": "526 fennel harbor, 377, granite, NY 08413"
+    }
+   ],
+   "memberships": [
+    {
+     "metadata": {
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "115336770975630144157"
+      }
+     },
+     "domainMembership": {
+      "inViewerDomain": true
+     }
+    }
+   ],
+   "locations": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "115336770975630144157"
+      }
+     },
+     "value": "ember",
+     "type": "desk",
+     "buildingId": "37-9fu-Agc"
+    }
+   ]
+  },
+  {
+   "resourceName": "people/375147093641124507484",
+   "etag": "%EiMBAgMFBgcICQoLDA0ODxATFBUWGSEiIyQlJicuNDU3PT4/QBoDAQcI",
+   "metadata": {
+    "sources": [
+     {
+      "type": "PROFILE",
+      "id": "375147093641124507484",
+      "etag": "#1/VwGl4gqVs=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER",
+        "GOOGLE_APPS_USER"
+       ]
+      },
+      "updateTime": "2026-08-27T13:47:32.453552Z"
+     },
+     {
+      "type": "DOMAIN_PROFILE",
+      "id": "375147093641124507484",
+      "etag": "#1/VwGl4gqVs=",
+      "updateTime": "2026-08-27T13:47:32.453552Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "375147093641124507484"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Isadora Kirkbride",
+     "familyName": "Zeb Thackeray",
+     "givenName": "Dorothea Ironside",
+     "displayNameLastFirst": "Ida Jorvik",
+     "unstructuredName": "Isadora Kirkbride"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "PROFILE",
+       "id": "375147093641124507484"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a/WMp6fdJXcgw8My9KgrN2RcQfU1Lf9hZV5A71cNCGhv6CbnsAXQJmXC=s100",
+     "default": true
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "verified": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "375147093641124507484"
+      },
+      "sourcePrimary": true
+     },
+     "value": "quin.sedgwick@zephyr-lane.example"
+    }
+   ],
+   "memberships": [
+    {
+     "metadata": {
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "375147093641124507484"
+      }
+     },
+     "domainMembership": {
+      "inViewerDomain": true
+     }
+    }
+   ]
+  },
+  {
+   "resourceName": "people/383952588056990027169",
+   "etag": "%EiMBAgMFBgcICQoLDA0ODxATFBUWGSEiIyQlJicuNDU3PT4/QBoDAQcI",
+   "metadata": {
+    "sources": [
+     {
+      "type": "PROFILE",
+      "id": "383952588056990027169",
+      "etag": "#8H7URQM7FcU=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER",
+        "GOOGLE_APPS_USER"
+       ]
+      },
+      "updateTime": "2026-01-20T18:25:12.314267Z"
+     },
+     {
+      "type": "DOMAIN_PROFILE",
+      "id": "383952588056990027169",
+      "etag": "#8H7URQM7FcU=",
+      "updateTime": "2026-01-20T18:25:12.314267Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "383952588056990027169"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Josephina Thornbury",
+     "familyName": "Anastasia Mortlake",
+     "givenName": "Emmerich Norbury",
+     "displayNameLastFirst": "Hermione Pemberton",
+     "unstructuredName": "Josephina Thornbury"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "PROFILE",
+       "id": "383952588056990027169"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a/IHq7esZ9zFVPuNCJIBIMl1HktaCGBP9_gm7m55Zx1MSmsqH-qg9ZvQ=s100",
+     "default": true
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "verified": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "383952588056990027169"
+      },
+      "sourcePrimary": true
+     },
+     "value": "kai@zephyr-lane.example"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "383952588056990027169"
+      }
+     },
+     "value": "leandro.wexford@inbox.example",
+     "type": "work",
+     "formattedType": "Work"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "383952588056990027169"
+      }
+     },
+     "value": "+99 5457445442",
+     "type": "work",
+     "formattedType": "Work"
+    }
+   ],
+   "memberships": [
+    {
+     "metadata": {
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "383952588056990027169"
+      }
+     },
+     "domainMembership": {
+      "inViewerDomain": true
+     }
+    }
+   ]
+  },
+  {
+   "resourceName": "people/112024786481541082319",
+   "etag": "%EiMBAgMFBgcICQoLDA0ODxATFBUWGSEiIyQlJicuNDU3PT4/QBoDAQcI",
+   "metadata": {
+    "sources": [
+     {
+      "type": "PROFILE",
+      "id": "112024786481541082319",
+      "etag": "#/aqB7pVJaHU=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER",
+        "GOOGLE_APPS_USER"
+       ]
+      },
+      "updateTime": "2026-09-17T15:45:45.071103Z"
+     },
+     {
+      "type": "DOMAIN_PROFILE",
+      "id": "112024786481541082319",
+      "etag": "#/aqB7pVJaHU=",
+      "updateTime": "2026-09-17T15:45:45.071103Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "locales": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "112024786481541082319"
+      }
+     },
+     "value": "en"
+    }
+   ],
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "112024786481541082319"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Persephone Ashgrove",
+     "familyName": "Ilaria Pemberton",
+     "givenName": "Sebastianoa Netherwood-Moore",
+     "displayNameLastFirst": "Perrin Linscott",
+     "unstructuredName": "Persephone Ashgrove"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "PROFILE",
+       "id": "112024786481541082319"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a/JVm3juD0lfXoVXLQyK_gFEmu7GHKwZRmX0XMDvNfljE89HFjkQ_LbE=s100",
+     "default": true
+    }
+   ],
+   "genders": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "112024786481541082319"
+      }
+     },
+     "value": "female",
+     "formattedValue": "Female"
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "verified": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "112024786481541082319"
+      },
+      "sourcePrimary": true
+     },
+     "value": "anastasiaa@zephyr-lane.example"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "112024786481541082319"
+      }
+     },
+     "value": "+99 5641322176",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    }
+   ],
+   "organizations": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "112024786481541082319"
+      },
+      "sourcePrimary": true
+     },
+     "type": "work",
+     "formattedType": "Work",
+     "name": "Fernbank",
+     "department": "The",
+     "title": "The Staging Cluster",
+     "location": "780 verbena marlin, vesper 716, indigo clover, CA 70683"
+    }
+   ],
+   "memberships": [
+    {
+     "metadata": {
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "112024786481541082319"
+      }
+     },
+     "domainMembership": {
+      "inViewerDomain": true
+     }
+    }
+   ],
+   "locations": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "112024786481541082319"
+      }
+     },
+     "value": "ember",
+     "type": "desk",
+     "buildingId": "IK Blvqbu"
+    }
+   ]
+  },
+  {
+   "resourceName": "people/165469664996838945286",
+   "etag": "%EiMBAgMFBgcICQoLDA0ODxATFBUWGSEiIyQlJicuNDU3PT4/QBoDAQcI",
+   "metadata": {
+    "sources": [
+     {
+      "type": "PROFILE",
+      "id": "165469664996838945286",
+      "etag": "#hZoGQtegPHg=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER",
+        "GOOGLE_APPS_USER"
+       ]
+      },
+      "updateTime": "2026-09-11T17:46:27.989599Z"
+     },
+     {
+      "type": "DOMAIN_PROFILE",
+      "id": "165469664996838945286",
+      "etag": "#hZoGQtegPHg=",
+      "updateTime": "2026-09-11T17:46:27.989599Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "locales": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "165469664996838945286"
+      }
+     },
+     "value": "en"
+    }
+   ],
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "165469664996838945286"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Nikhilyn Eastcott-Crane",
+     "familyName": "Joa Halloway-Frost",
+     "givenName": "Fabienyn Dunmore-Crane",
+     "displayNameLastFirst": "Nils Yarrowby",
+     "unstructuredName": "Nikhilyn Eastcott-Crane"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "PROFILE",
+       "id": "165469664996838945286"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/GWS-OzRifpGeAXiOUxB75_V7l7DWq-wVxyaw5sa7va6LBdUiGu2BHjX6CaKRf_wp6U6XMpl7llR2S9EcUMTQd_D7CuqkJZ8_GNP10nKTY3BJnve3432Y-nkt7CN4Vi0l6xAL3-XzE3NPcah99lHF6e-0PXmm9cWS1HoiIlAXUHtlgB2bX3gRAHfNrWQzvgN34GqQpTSFjYMgs9Go1Ay9YmbrYZ8jX8ywMfDkZzLbcRVRwxrk90L67636OBdy_Sy12yB2JzGsEhNwJwscNl-VyVpQRk-oR4eTEBSAI1dvlf6EL0uMTQ07ZYgoCKT83xRyMXvbRN9X-iQy-Lk4c2m7xYm7dGVdJ13ZEsDAVSt9GFs7D3ZZAQh47nM-gSwgRT79Vthm-AMnGHYgaESx-a8XbficnqP6wgNxBusV5-rfv88L-UO9FWioZUUDVmwKo77yep9th7ZiVuAZ9NydWQ9EZ0b5JrI7DEDnUHAN-Pq0GL33pdmLO-Y3E_MHDimz2pjxe6Tr5EUmot4LDMtgGkNtlo7rZ3J1Cq7pXMria5yJfTRQ5GsY2I1vLD2BkT7LGa60sEVEFB412kzzMrP_oWRjgDIrljokchis_C7CuGwdj-kxRV4C9zHqN-oR5etnIWzqUHYvAugIncENDWT3iJxrm2rGtmYawFBP9dxIrP1L1z2DvmLBWu96Vm8hH_Knc8tdNrzra8HeMX66FGJS0hCPzof6pSYJd50gjFwBrIGNrDJjJKgIDjiSLoPS98nGftwpj8yE015DTY9vTuUaWQYzPOqhOs6ZPa8iieaWcxbos2_uBhR5n5x3FvGkBDERTZ3TNR34jm-TlY5X0k1ar8EMLI3uPtRi-OelZi1k-fQVu0jO8ffeKIKtOEc78u9qYg4PHz2rUdLqjPmktSrUhTvaXUdHDNp1cTqLw1pyQzc6vH085erS4Piio8jn-CM5YkV_pjQPl4ZphamYEfiMN72yqG3qjDIKllwMtjSU_QDS-ES0szSjb9rncr65as6pFpvHFcGxdTl3SesLBX6hhbtum-HcBnRVYKvUzr8s_v0rWDC7CEDQQxdjA1NcIMXH9ToHUq7wecn0NmBXjsseii6WSLGDVLO=s100"
+    }
+   ],
+   "genders": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "165469664996838945286"
+      }
+     },
+     "value": "male",
+     "formattedValue": "Male"
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "verified": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "165469664996838945286"
+      },
+      "sourcePrimary": true
+     },
+     "value": "juniperyn@zephyr-lane.example"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "165469664996838945286"
+      }
+     },
+     "value": "+99 5868997120",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    }
+   ],
+   "organizations": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "165469664996838945286"
+      },
+      "sourcePrimary": true
+     },
+     "type": "work",
+     "formattedType": "Work",
+     "name": "Fernbank",
+     "department": "The",
+     "title": "The New Index landed",
+     "location": "681 nimbus coral, onyx 5, indigo clover, CA 70683"
+    }
+   ],
+   "memberships": [
+    {
+     "metadata": {
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "165469664996838945286"
+      }
+     },
+     "domainMembership": {
+      "inViewerDomain": true
+     }
+    }
+   ],
+   "locations": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "165469664996838945286"
+      }
+     },
+     "value": "ember",
+     "type": "desk",
+     "buildingId": "IK Blvqbu",
+     "floor": "5"
+    }
+   ]
+  }
+ ],
+ "nextPageToken": "fixture-page-2-directory"
+}

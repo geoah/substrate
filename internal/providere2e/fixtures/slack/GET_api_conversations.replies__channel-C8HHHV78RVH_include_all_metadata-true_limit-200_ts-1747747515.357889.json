@@ -1,0 +1,124 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747747515.357889",
+   "edited": {
+    "user": "U48XXRY7R9U",
+    "ts": "1747754171.000000"
+   },
+   "client_msg_id": "34e94e13-7c87-2f20-dbe5-d1577dd72ad3",
+   "text": "The <https://coppergate.example/candidate-searches/nimbus/right-side/candidates/demetrios-oakhurst/Thimble/2f979d9a-5d5a-6493-19d5-ef80f50b272a/feed|The Review now> draft is waiting on the follow-up thread, pending one.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747747515.357889",
+   "reply_count": 1,
+   "reply_users_count": 1,
+   "latest_reply": "1747747581.182909",
+   "reply_users": [
+    "U48XXRY7R9U"
+   ],
+   "is_locked": false,
+   "subscribed": true,
+   "last_read": "1747747581.182909",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "uqgg4",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "emoji",
+         "name": "Marek Westbrook",
+         "unicode": "1f9f5"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "link",
+         "url": "https://coppergate.example/candidate-searches/nimbus/right-side/candidates/demetrios-oakhurst/Thimble/2f979d9a-5d5a-6493-19d5-ef80f50b272a/feed",
+         "text": "This batch is waiting on the follow-up thread."
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "emoji",
+         "name": "Rui Orrington",
+         "unicode": "2b50"
+        },
+        {
+         "type": "emoji",
+         "name": "Ida Sedgwick",
+         "unicode": "1f31f"
+        },
+        {
+         "type": "emoji",
+         "name": "Rui Orrington",
+         "unicode": "2b50"
+        },
+        {
+         "type": "text",
+         "text": "The schedule now covers."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747747581.182909",
+   "client_msg_id": "ef3adb73-3997-6cda-7141-baa8848ed5b2",
+   "text": "<@UXQUMNTTWLM> The review <@U0ADA0WNER1> now covers a smaller slice, either way. The new index should.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747747515.357889",
+   "parent_user_id": "U48XXRY7R9U",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "BkXeO",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "user",
+         "user_id": "UXQUMNTTWLM"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "user",
+         "user_id": "U0ADA0WNER1"
+        },
+        {
+         "type": "text",
+         "text": " The rollout now covers the owner's sign-off, for now. The schedule rolls."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

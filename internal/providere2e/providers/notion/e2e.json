@@ -1,0 +1,50 @@
+{
+  "_note": "This bundle is TOKEN-authorized, not OAuth: a Notion INTERNAL integration has no consent flow at all, so the manifest ships no `oauth2:` block and the runner's oauth/start step cannot apply to it.",
+  "auth": "token",
+  "configKind": "providers.substrate.reamde.dev/notion/config",
+  "configId": "default",
+  "config": {
+    "integrationToken": "ntn_e2e-integration-token"
+  },
+  "accountKind": "providers.substrate.reamde.dev/notion/account",
+  "accountId": "e2e",
+  "account": {
+    "displayName": "Notion (e2e)",
+    "enabledPages": true,
+    "enabledBlocks": true,
+    "syncFrequency": "hourly",
+    "backfillDepth": "all"
+  },
+  "_window": "all, and deliberately. A time-relative floor against a FIXED recording set is a test that passes today and fails on Thursday: the cut holds objects last edited in 2025 and 2026, and `last90d` would empty the search walk the moment the fixtures age past the window. `all` means the floor is empty and the mirror must hold every object the cut holds, which is the assertion worth making. The SEED keeps the account's own default.",
+  "hosts": [
+    "https://api.notion.com"
+  ],
+  "triggers": [
+    "notion-on-connect",
+    "notion-on-request"
+  ],
+  "_triggers": "notion-scheduled is left OFF for a run: an hourly catch-up fire racing the drain proves nothing. notion-on-request stays, because the scenario's second sync IS a syncRequestedAt stamp and a direct `function call` would run one invocation without draining the paged checkpoint.",
+  "settleSeconds": 240,
+  "seedCredential": {
+    "property": "integrationToken",
+    "match": "ntn_"
+  },
+  "continue": {
+    "property": "syncRequestedAt",
+    "value": "now"
+  },
+  "_continue": "A cold walk of the owner's workspace (16,979 objects over 170 search pages, plus one block walk per page) does not fit in one drain of 512 invocations and two minutes. The body leaves its queue on the account (`syncPending`) and stamps `ok (deferred: blocks xN)`; the runner stamps this property to continue and waits again, and a round that starts with a backlog walks NO search, so the count shrinks strictly round on round.",
+  "seed": {
+    "accountId": "owner-notion",
+    "_note": "the seed run is the owner's real workspace; the id carries the provider because the engine's OAuth surface resolves a BARE account id across every accountconfig kind and refuses a clash (two providers both naming their seed account `owner` collide)",
+    "continueRounds": 300,
+    "settleSeconds": 900,
+    "account": {
+      "backfillDepth": "all"
+    },
+    "_account": "ALL, AND FOR THE SAME REASON THE E2E USES IT (T-045). A seed does not talk to Notion; it replays raw/notion, which is a FIXED set of recordings whose newest object is the moment the pull was taken. `backfillDepth` is relative to the WALL CLOCK, and the search walk is DESCENDING by last_edited_time and stops at the first item below its floor — so a pull older than the window stops the walk at item ONE. The first seed ran `last90d` against a pull taken 126 days earlier and landed 9 users and 0 pages, with syncStatus `ok`, because nothing had failed. A time-relative floor against a fixed recording set measures the age of the PULL, not the sync. `python3 tools/rawpull/notion.py --coverage --coverage-days 90` reproduces it offline in one second.",
+    "_rounds": "300, not 120. The corpus is 23,957 recordings replaying 23,360 requests (1,211,984 blocks under 16,977 pages). A round is bounded by the engine at 512 invocations, and one Notion invocation is one `blocks/<id>/children?page_size=100` fetch, so a SATURATED round retires at most 512 requests and the walk needs 23,360/512 = 46 rounds at best. Rounds that hit the 200k-effect ceiling first retire fewer, so 120 was never going to converge and 300 is 46 with 6x headroom. settleSeconds is 900 because a round that writes tens of thousands of blocks takes minutes to go quiet, and the previous 300 was sized for a round that wrote a few hundred."
+  },
+  "mockPort": 48115,
+  "_mockPort": "fixed so the rewired function body is identical run to run (see tools/e2e.py preferred_port and T-010 / substrate#576). 48111 github, 48112 google, 48113 slack, 48115 notion."
+}

@@ -1,0 +1,62 @@
+{
+ "ok": true,
+ "user": {
+  "id": "U1J6XGJJZYZ",
+  "name": "quillaia-zenner-ashby",
+  "is_bot": false,
+  "updated": 1789466795,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "a63024",
+  "is_email_confirmed": true,
+  "real_name": "Halcyonia Duquesne-Ashby",
+  "tz": "Europe/Berlin",
+  "tz_label": "Central European Summer Time",
+  "tz_offset": 7200,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "is_scim_provisioned": true,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Halcyonia Duquesne-Ashby",
+   "display_name": "Sabraia Blackwood-Ashby",
+   "avatar_hash": "c90d0a077e4b",
+   "real_name_normalized": "Halcyonia Duquesne-Ashby",
+   "display_name_normalized": "Sabraia Blackwood-Ashby",
+   "image_24": "https://avatars.slack-edge.com/2026-07-31/68004340065284_bca543cb1e2980bb7589_24.jpg",
+   "image_32": "https://avatars.slack-edge.com/2026-07-31/68004340065284_bca543cb1e2980bb7589_32.jpg",
+   "image_48": "https://avatars.slack-edge.com/2026-07-31/68004340065284_bca543cb1e2980bb7589_48.jpg",
+   "image_72": "https://avatars.slack-edge.com/2026-07-31/68004340065284_bca543cb1e2980bb7589_72.jpg",
+   "image_192": "https://avatars.slack-edge.com/2026-07-31/68004340065284_bca543cb1e2980bb7589_192.jpg",
+   "image_512": "https://avatars.slack-edge.com/2026-07-31/68004340065284_bca543cb1e2980bb7589_512.jpg",
+   "image_1024": "https://avatars.slack-edge.com/2026-07-31/68004340065284_bca543cb1e2980bb7589_1024.jpg",
+   "image_original": "https://avatars.slack-edge.com/2026-07-31/68004340065284_bca543cb1e2980bb7589_original.jpg",
+   "is_custom_image": true,
+   "first_name": "Hollisa Quimby-Hale",
+   "last_name": "Immanuela Amberly-Hale",
+   "team": "T0ADATEAM01",
+   "email": "deliaia@zephyr-lane.example",
+   "title": "",
+   "phone": "+99 5980176194",
+   "skype": "",
+   "status_text": "The Rollout is waiting on the",
+   "status_text_canonical": "",
+   "status_emoji": ":no_entry:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "no_entry",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/26d4.png",
+     "unicode": "26d4"
+    }
+   ],
+   "status_expiration": 1789945200,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0
+  }
+ }
+}

@@ -2,8 +2,8 @@
 #
 # A mapping onto a kind is declared by the package that owns that kind
 # (docs/decisions/0049), so the issue → task projection lives here, in the
-# package that owns `task`, and the linear provider ships `issue` with an empty
-# `task` slot instead. The import DROPS this document (and its `installs:`
+# package that owns `task`. The linear provider declares no `task` property,
+# and this mapping synthesises the slot (docs/decisions/0096). The import DROPS this document (and its `installs:`
 # entry) while providers.substrate.reamde.dev/linear is absent, and lands it on
 # the next import once the provider is installed.
 #
@@ -34,6 +34,6 @@ data:
       to: url
   map:
     name:
-      path: title
+      path: issueTitle
     url:
       path: url

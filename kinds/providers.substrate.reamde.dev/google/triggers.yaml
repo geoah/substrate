@@ -1,17 +1,24 @@
 # The Google bundle's delivery wiring — ordinary DATA records of core's
 # `trigger` kind (console-editable, changelog-visible, substratectl get/apply/
-# delete like anything else). Nine triggers drive the three sync functions,
-# three per stream and never shared:
+# delete like anything else). TWELVE triggers drive the four sync functions,
+# three per stream and never shared: the first backfill, the hourly cadence,
+# and "sync now":
 #
 #   account(connected, contacts on, never synced)  --contactssync-->
 #       contact records  (+ the contacts sync-token / cadence-anchor stamp)
 #   account(connected, gmail on, never synced)     --gmailsync-->
-#       thread + message + emailaddress mirrors
+#       gmailthread + gmailmessage + emailaddress mirrors
 #   account(connected, calendar on, never synced)  --calendarsync-->
-#       calendar + series + event + emailaddress mirrors
+#       calendar + calendarseries + calendarevent + emailaddress mirrors
+#   account(connected, drive on, never synced)     --syncdrive-->
+#       drivefile + emailaddress mirrors  (T-088)
 #   hourly schedules  --each function-->  every due, connected account
-#   account(syncRequestedAt moved, stream not yet acknowledged)  --each function-->
-#       that account, now (the core `sync` trait's request pair, decision 0085)
+#
+# UNCHANGED from package version 16, and deliberately: the guards below are
+# the one part of this closure the raw-shape rewrite did not touch. They read
+# each stream's OWN cadence anchor rather than the shared rollup, which is
+# what an end-to-end test depends on when it connects one account and expects
+# exactly three first syncs.
 #
 # Each on-connect trigger is guarded to fire ONCE per account, on ITS OWN
 # stream's cadence anchor (`contactsLastSyncedAt` / `gmailLastSyncedAt` /
@@ -48,7 +55,7 @@ data:
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledContacts" in record.properties && record.properties.enabledContacts
           == true && !("contactsLastSyncedAt" in record.properties)
-    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/contactssync
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/synccontacts
 ---
 # The steady-state re-sync: an hourly tick fires the same function with no
 # envelope record, so the body iterates every connected, contacts-enabled
@@ -66,7 +73,7 @@ data:
         # A fixed past anchor, so every occurrence since is well-defined
         # (occurrences compute forward from startsAt).
         startsAt: "2025-01-06T09:00:00Z"
-    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/contactssync
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/synccontacts
 ---
 # Gmail's first backfill. Same guarded-`in` idiom, on gmail's own toggle and
 # gmail's own completion marker — a contacts sync stamping its state can never
@@ -85,7 +92,7 @@ data:
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledGmail" in record.properties && record.properties.enabledGmail
           == true && !("gmailLastSyncedAt" in record.properties)
-    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/gmailsync
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/syncgmail
 ---
 # Gmail's steady-state re-sync: hourly, honoring each account's syncFrequency.
 # Hourly is also what keeps a historyId inside Google's retention window.
@@ -100,7 +107,7 @@ data:
         recurrence: "FREQ=HOURLY"
         timezone: Europe/London
         startsAt: "2025-01-06T09:00:00Z"
-    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/gmailsync
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/syncgmail
 ---
 # Calendar's first backfill, on calendar's own toggle and completion marker.
 kind: substrate.reamde.dev/core/trigger
@@ -117,7 +124,7 @@ data:
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledCalendar" in record.properties && record.properties.enabledCalendar
           == true && !("calendarLastSyncedAt" in record.properties)
-    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/calendarsync
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/synccalendar
 ---
 # Calendar's steady-state re-sync.
 kind: substrate.reamde.dev/core/trigger
@@ -131,16 +138,19 @@ data:
         recurrence: "FREQ=HOURLY"
         timezone: Europe/London
         startsAt: "2025-01-06T09:00:00Z"
-    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/calendarsync
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/synccalendar
 ---
-# Sync now: the owner stamps `syncRequestedAt` on the account (the console's
-# button, or a patch), and each stream answers ONCE by writing the same
-# instant into its own `syncStreams.contacts.requestedAck` — the guard drops for
-# that stream alone, so one stream's finish cannot re-fire another's, and the
-# account-level `syncRequestedAck` follows once every enabled stream has
-# answered. Coalesced: the dispatcher's own `running` stamp under another
-# stream's actor lands on this account too, and one delivery per request is
-# what the owner asked for.
+# "SYNC NOW" for the contacts stream. A record trigger on the same account
+# kind, firing exactly while `syncRequestedAt` and this stream's own
+# `contactsSyncRequestedAck` disagree — a GENERATION, not a moment, so a
+# request dated in the future cannot loop.
+#
+# This is the only trigger that can re-drive a stream whose
+# `contactsLastSyncedAt` is already stamped, which is every stream of a
+# RE-SEEDED account: `bundle purge` deletes the package's rows but the
+# account row survives, so the on-connect guard above is already false when
+# the seed runs a second time. It is also how the runner re-drives a first
+# sync that ended `erroring`.
 kind: substrate.reamde.dev/core/trigger
 metadata:
   id: google-contacts-on-request
@@ -151,24 +161,28 @@ data:
       record:
         kinds: [providers.substrate.reamde.dev/google/account]
         ops: [create, update]
-        coalesce: true
+        # The same guarded-`in` idiom as every other trigger here: CEL
+        # map-indexing an absent key throws and parks the delivery, and every
+        # one of these properties is absent on a fresh account.
         when: >-
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledContacts" in record.properties && record.properties.enabledContacts
-          == true && "syncRequestedAt" in record.properties && (!("syncStreams"
-          in record.properties) || !("contacts" in record.properties.syncStreams)
-          || !("requestedAck" in record.properties.syncStreams.contacts) ||
-          record.properties.syncStreams.contacts.requestedAck != record.properties.syncRequestedAt)
-    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/contactssync
+          == true && "syncRequestedAt" in record.properties && (!("contactsSyncRequestedAck"
+          in record.properties) || string(record.properties.contactsSyncRequestedAck)
+          != string(record.properties.syncRequestedAt))
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/synccontacts
 ---
-# Sync now: the owner stamps `syncRequestedAt` on the account (the console's
-# button, or a patch), and each stream answers ONCE by writing the same
-# instant into its own `syncStreams.gmail.requestedAck` — the guard drops for
-# that stream alone, so one stream's finish cannot re-fire another's, and the
-# account-level `syncRequestedAck` follows once every enabled stream has
-# answered. Coalesced: the dispatcher's own `running` stamp under another
-# stream's actor lands on this account too, and one delivery per request is
-# what the owner asked for.
+# "SYNC NOW" for the gmail stream. A record trigger on the same account
+# kind, firing exactly while `syncRequestedAt` and this stream's own
+# `gmailSyncRequestedAck` disagree — a GENERATION, not a moment, so a
+# request dated in the future cannot loop.
+#
+# This is the only trigger that can re-drive a stream whose
+# `gmailLastSyncedAt` is already stamped, which is every stream of a
+# RE-SEEDED account: `bundle purge` deletes the package's rows but the
+# account row survives, so the on-connect guard above is already false when
+# the seed runs a second time. It is also how the runner re-drives a first
+# sync that ended `erroring`.
 kind: substrate.reamde.dev/core/trigger
 metadata:
   id: google-gmail-on-request
@@ -179,24 +193,28 @@ data:
       record:
         kinds: [providers.substrate.reamde.dev/google/account]
         ops: [create, update]
-        coalesce: true
+        # The same guarded-`in` idiom as every other trigger here: CEL
+        # map-indexing an absent key throws and parks the delivery, and every
+        # one of these properties is absent on a fresh account.
         when: >-
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledGmail" in record.properties && record.properties.enabledGmail
-          == true && "syncRequestedAt" in record.properties && (!("syncStreams"
-          in record.properties) || !("gmail" in record.properties.syncStreams)
-          || !("requestedAck" in record.properties.syncStreams.gmail) || record.properties.syncStreams.gmail.requestedAck
-          != record.properties.syncRequestedAt)
-    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/gmailsync
+          == true && "syncRequestedAt" in record.properties && (!("gmailSyncRequestedAck"
+          in record.properties) || string(record.properties.gmailSyncRequestedAck)
+          != string(record.properties.syncRequestedAt))
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/syncgmail
 ---
-# Sync now: the owner stamps `syncRequestedAt` on the account (the console's
-# button, or a patch), and each stream answers ONCE by writing the same
-# instant into its own `syncStreams.calendar.requestedAck` — the guard drops for
-# that stream alone, so one stream's finish cannot re-fire another's, and the
-# account-level `syncRequestedAck` follows once every enabled stream has
-# answered. Coalesced: the dispatcher's own `running` stamp under another
-# stream's actor lands on this account too, and one delivery per request is
-# what the owner asked for.
+# "SYNC NOW" for the calendar stream. A record trigger on the same account
+# kind, firing exactly while `syncRequestedAt` and this stream's own
+# `calendarSyncRequestedAck` disagree — a GENERATION, not a moment, so a
+# request dated in the future cannot loop.
+#
+# This is the only trigger that can re-drive a stream whose
+# `calendarLastSyncedAt` is already stamped, which is every stream of a
+# RE-SEEDED account: `bundle purge` deletes the package's rows but the
+# account row survives, so the on-connect guard above is already false when
+# the seed runs a second time. It is also how the runner re-drives a first
+# sync that ended `erroring`.
 kind: substrate.reamde.dev/core/trigger
 metadata:
   id: google-calendar-on-request
@@ -207,12 +225,81 @@ data:
       record:
         kinds: [providers.substrate.reamde.dev/google/account]
         ops: [create, update]
-        coalesce: true
+        # The same guarded-`in` idiom as every other trigger here: CEL
+        # map-indexing an absent key throws and parks the delivery, and every
+        # one of these properties is absent on a fresh account.
         when: >-
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledCalendar" in record.properties && record.properties.enabledCalendar
-          == true && "syncRequestedAt" in record.properties && (!("syncStreams"
-          in record.properties) || !("calendar" in record.properties.syncStreams)
-          || !("requestedAck" in record.properties.syncStreams.calendar) ||
-          record.properties.syncStreams.calendar.requestedAck != record.properties.syncRequestedAt)
-    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/calendarsync
+          == true && "syncRequestedAt" in record.properties && (!("calendarSyncRequestedAck"
+          in record.properties) || string(record.properties.calendarSyncRequestedAck)
+          != string(record.properties.syncRequestedAt))
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/synccalendar
+---
+# Drive's first backfill (T-088). Same guarded-`in` idiom, on drive's own
+# toggle and drive's own completion marker — no other stream's stamp can
+# satisfy or falsify it. This is also the FIRST Drive call an account
+# connected under package version 29 or earlier makes, which is where the
+# body learns the grant predates `drive.readonly` and records
+# `needsreconsent` instead of erroring; the guard stays open (no
+# `driveLastSyncedAt`) until the owner reconnects and the stream completes.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: google-drive-on-connect
+data:
+  properties:
+    enabled: true
+    source:
+      record:
+        kinds: [providers.substrate.reamde.dev/google/account]
+        ops: [create, update]
+        when: >-
+          record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
+          == "connected" && "enabledDrive" in record.properties && record.properties.enabledDrive
+          == true && !("driveLastSyncedAt" in record.properties)
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/syncdrive
+---
+# Drive's steady-state re-sync: hourly, honoring each account's syncFrequency.
+# Hourly is also what keeps a changes start page token inside Google's
+# retention window.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: google-drive-scheduled
+data:
+  properties:
+    enabled: true
+    source:
+      schedule:
+        recurrence: "FREQ=HOURLY"
+        timezone: Europe/London
+        startsAt: "2025-01-06T09:00:00Z"
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/syncdrive
+---
+# "SYNC NOW" for the drive stream. A record trigger on the same account
+# kind, firing exactly while `syncRequestedAt` and this stream's own
+# `driveSyncRequestedAck` disagree — a GENERATION, not a moment, so a
+# request dated in the future cannot loop.
+#
+# This is the only trigger that can re-drive a stream whose
+# `driveLastSyncedAt` is already stamped, which is every stream of a
+# RE-SEEDED account: `bundle purge` deletes the package's rows but the
+# account row survives, so the on-connect guard above is already false when
+# the seed runs a second time. It is also how the runner re-drives a first
+# sync that ended `erroring`.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: google-drive-on-request
+data:
+  properties:
+    enabled: true
+    source:
+      record:
+        kinds: [providers.substrate.reamde.dev/google/account]
+        ops: [create, update]
+        when: >-
+          record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
+          == "connected" && "enabledDrive" in record.properties && record.properties.enabledDrive
+          == true && "syncRequestedAt" in record.properties && (!("driveSyncRequestedAck"
+          in record.properties) || string(record.properties.driveSyncRequestedAck)
+          != string(record.properties.syncRequestedAt))
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/syncdrive

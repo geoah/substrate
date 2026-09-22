@@ -1,0 +1,2402 @@
+{
+ "kind": "calendar#events",
+ "summary": "The",
+ "timeZone": "Europe/London",
+ "accessRole": "owner",
+ "items": [
+  {
+   "kind": "calendar#event",
+   "etag": "\"3577912842918718\"",
+   "id": "8hs4nbi3oqxupgu1h9755mgfut",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=OGhzNG5iaTNvcXh1cGd1MWg5NzU1bWdmdXQgYWRhQHplcGh5ci1sYW5lLmV4YW1wbGU",
+   "created": "2026-05-29T14:04:21.000Z",
+   "updated": "2026-09-09T12:20:21.459Z",
+   "summary": "The Draft",
+   "location": "The Checklist should unblock the earlier",
+   "creator": {
+    "email": "florentina@inbox.example"
+   },
+   "organizer": {
+    "email": "florentina@inbox.example"
+   },
+   "start": {
+    "date": "2027-07-02"
+   },
+   "end": {
+    "date": "2027-07-03"
+   },
+   "transparency": "transparent",
+   "iCalUID": "8hs4nbi3oqxupgu1h9755mgfut@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "florentina@inbox.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    }
+   ],
+   "reminders": {
+    "useDefault": false,
+    "overrides": [
+     {
+      "method": "popup",
+      "minutes": 60
+     }
+    ]
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3577912842918718\"",
+   "id": "8hs4nbi3oqxupgu1h9755mgfut",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=OGhzNG5iaTNvcXh1cGd1MWg5NzU1bWdmdXQgYWRhQHplcGh5ci1sYW5lLmV4YW1wbGU",
+   "created": "2026-05-29T14:04:21.000Z",
+   "updated": "2026-09-09T12:20:21.459Z",
+   "summary": "The Dashboard",
+   "location": "The Dashboard needs a second look from the",
+   "creator": {
+    "email": "florentina@inbox.example"
+   },
+   "organizer": {
+    "email": "florentina@inbox.example"
+   },
+   "start": {
+    "date": "2027-07-02"
+   },
+   "end": {
+    "date": "2027-07-03"
+   },
+   "transparency": "transparent",
+   "iCalUID": "8hs4nbi3oqxupgu1h9755mgfut@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "florentina@inbox.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    }
+   ],
+   "reminders": {
+    "useDefault": false,
+    "overrides": [
+     {
+      "method": "popup",
+      "minutes": 60
+     }
+    ]
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579098990679358\"",
+   "id": "66hbpntwlp55tijy18d9tflk09",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=NTduZG5qYmFtdTM4emlxczU4eDltcXdkMTVfNjA4NDU4NjNGOTg1OTg3ViBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-09-11T06:21:48.000Z",
+   "updated": "2026-09-16T09:04:55.339Z",
+   "summary": "The",
+   "description": "Quick note: This batch needs a second look from the numbers from Friday, for now. The new index still blocks one more round of checks.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-09-16T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-09-16T10:30:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurrence": [
+    "RRULE:FREQ=WEEKLY;BYDAY=WE"
+   ],
+   "iCalUID": "66hbpntwlp55tijy18d9tflk09@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "orsolya.redmayne@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "tentative"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "rosalind@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "oriel.mainwaring@inbox.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "8uz89ri2gc6lpa1u8c9nwhsucb",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=OXlkODVhazBrazNnc3o2ajVzMm90YXVpdXFfNDI3OTQyNjRCMzMxMTA0SCBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Review",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-02-19T10:00:00Z",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-02-19T10:30:00Z",
+    "timeZone": "Europe/Athens"
+   },
+   "recurrence": [
+    "RRULE:FREQ=WEEKLY;UNTIL=20260318T215959Z;BYDAY=TH"
+   ],
+   "iCalUID": "8uz89ri2gc6lpa1u8c9nwhsucb@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    }
+   ],
+   "hangoutLink": "https://meet.google.com/mzr-jcwm-npy",
+   "conferenceData": {
+    "entryPoints": [
+     {
+      "entryPointType": "video",
+      "uri": "https://meet.google.com/mzr-jcwm-npy",
+      "label": "The retry budget was split."
+     },
+     {
+      "entryPointType": "more",
+      "uri": "https://bellrock.example/agz-ksrg-mny?pin=9996783794909",
+      "pin": "2947601959929"
+     },
+     {
+      "regionCode": "GR",
+      "entryPointType": "phone",
+      "uri": "tel:+995645819081",
+      "label": "The estimate still blocks the open question.",
+      "pin": "350658444"
+     }
+    ],
+    "conferenceSolution": {
+     "key": {
+      "type": "hangoutsMeet"
+     },
+     "name": "Cobalt Row",
+     "iconUri": "https://fonts.gstatic.com/s/a/qjbqsqlxhehj/ydcn_4705z2/a4/mpj-751wm/vkfh_siyd_0473m4_ryiir_8p_fnm_794pg.onb"
+    },
+    "conferenceId": "agz-ksrg-mny"
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "8zi73wv6xy7cgu4w5s7xlaeavk_38264272G622980J",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=OHppNzN3djZ4eTdjZ3U0dzVzN3hsYWVhdmtfMzgyNjQyNzJHNjIyOTgwSiBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The New Index",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-03-19T10:00:00Z",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-03-19T11:00:00Z",
+    "timeZone": "Europe/Athens"
+   },
+   "recurringEventId": "8sd66om0ng9vpy3g8r9zmrczrk_X68471882Q319393",
+   "originalStartTime": {
+    "dateTime": "2026-03-19T10:00:00Z",
+    "timeZone": "Europe/Athens"
+   },
+   "iCalUID": "8sd66om0ng9vpy3g8r9zmrczrk_X68471882Q319393@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "elowen@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hermione@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "jacqueline@junction-nine.example",
+     "responseStatus": "needsAction"
+    }
+   ],
+   "hangoutLink": "https://meet.google.com/mzr-jcwm-npy",
+   "conferenceData": {
+    "entryPoints": [
+     {
+      "entryPointType": "video",
+      "uri": "https://meet.google.com/mzr-jcwm-npy",
+      "label": "This batch should unblock the."
+     },
+     {
+      "entryPointType": "more",
+      "uri": "https://bellrock.example/agz-ksrg-mny?pin=9996783794909",
+      "pin": "2947601959929"
+     },
+     {
+      "regionCode": "GR",
+      "entryPointType": "phone",
+      "uri": "tel:+995645819081",
+      "label": "The new index will be folded into the numbers from Friday.",
+      "pin": "350658444"
+     }
+    ],
+    "conferenceSolution": {
+     "key": {
+      "type": "hangoutsMeet"
+     },
+     "name": "Cobalt Row",
+     "iconUri": "https://fonts.gstatic.com/s/a/qjbqsqlxhehj/ydcn_4705z2/a4/mpj-751wm/vkfh_siyd_0473m4_ryiir_8p_fnm_794pg.onb"
+    },
+    "conferenceId": "agz-ksrg-mny"
+   },
+   "guestsCanModify": true,
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "8lo86sl4wc2hat0q3c3iemgaay_73916828R283424F",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=OGxvODZzbDR3YzJoYXQwcTNjM2llbWdhYXlfNzM5MTY4MjhSMjgzNDI0RiBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Review",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-04-17T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-04-17T10:30:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurringEventId": "6jb10ot2td2rar0n8d9pmkntvb_A27363053L845264",
+   "originalStartTime": {
+    "dateTime": "2026-04-16T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "iCalUID": "6jb10ot2td2rar0n8d9pmkntvb_A27363053L845264@google.com",
+   "sequence": 1,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    }
+   ],
+   "hangoutLink": "https://meet.google.com/mzr-jcwm-npy",
+   "conferenceData": {
+    "entryPoints": [
+     {
+      "entryPointType": "video",
+      "uri": "https://meet.google.com/mzr-jcwm-npy",
+      "label": "The staging cluster rolls up."
+     },
+     {
+      "entryPointType": "more",
+      "uri": "https://bellrock.example/agz-ksrg-mny?pin=9996783794909",
+      "pin": "2947601959929"
+     },
+     {
+      "regionCode": "GR",
+      "entryPointType": "phone",
+      "uri": "tel:+995645819081",
+      "label": "The draft now covers the capacity note.",
+      "pin": "350658444"
+     }
+    ],
+    "conferenceSolution": {
+     "key": {
+      "type": "hangoutsMeet"
+     },
+     "name": "Cobalt Row",
+     "iconUri": "https://fonts.gstatic.com/s/a/qjbqsqlxhehj/ydcn_4705z2/a4/mpj-751wm/vkfh_siyd_0473m4_ryiir_8p_fnm_794pg.onb"
+    },
+    "conferenceId": "agz-ksrg-mny"
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "1ra75hi2eo2vhg7x5m1islifwd_56929765O560178W",
+   "status": "cancelled",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=MXJhNzVoaTJlbzJ2aGc3eDVtMWlzbGlmd2RfNTY5Mjk3NjVPNTYwMTc4VyBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Queue",
+   "description": "The dashboard will be folded into the second pass.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-04-30T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-04-30T10:30:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurringEventId": "4jk63aa5im7pxu7e9p8udsloiw_I35079590E967994",
+   "originalStartTime": {
+    "dateTime": "2026-04-30T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "iCalUID": "4jk63aa5im7pxu7e9p8udsloiw_I35079590E967994@google.com",
+   "sequence": 1,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alistair.birchall@junction-nine.example",
+     "responseStatus": "accepted"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "7ej89ea5un0yio4s2h9cuufoov_05347823M785616G",
+   "status": "cancelled",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=N2VqODllYTV1bjB5aW80czJoOWN1dWZvb3ZfMDUzNDc4MjNNNzg1NjE2RyBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Migration",
+   "description": "One thing: The review quietly changed the follow-up thread, before the window closes. The handover.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-06-11T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-06-11T10:30:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurringEventId": "5wu47kd7ev7eis2c8e3yopkhmq_G48533745A794227",
+   "originalStartTime": {
+    "dateTime": "2026-06-11T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "iCalUID": "5wu47kd7ev7eis2c8e3yopkhmq_G48533745A794227@google.com",
+   "sequence": 1,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alistair.birchall@junction-nine.example",
+     "responseStatus": "accepted"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "0vw42zs6xa9csr8f4p4gotlndn_92587848V951269O",
+   "status": "cancelled",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=MHZ3NDJ6czZ4YTljc3I4ZjRwNGdvdGxuZG5fOTI1ODc4NDhWOTUxMjY5TyBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Estimate",
+   "description": "Short version: The draft landed ahead of the numbers from Friday, once the numbers settle. The.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-07-02T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-07-02T10:30:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurringEventId": "5wu47kd7ev7eis2c8e3yopkhmq_G48533745A794227",
+   "originalStartTime": {
+    "dateTime": "2026-07-02T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "iCalUID": "5wu47kd7ev7eis2c8e3yopkhmq_G48533745A794227@google.com",
+   "sequence": 1,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alistair.birchall@junction-nine.example",
+     "responseStatus": "accepted"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "7ds23he3uh2ipo8m6j6pclewti_13703118W626268J",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=N2RzMjNoZTN1aDJpcG84bTZqNnBjbGV3dGlfMTM3MDMxMThXNjI2MjY4SiBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Staging",
+   "description": "Heads up — The new index was split out of the owner's sign-off, pending one more read. The checklist.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-07-09T11:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-07-09T11:30:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurringEventId": "5wu47kd7ev7eis2c8e3yopkhmq_G48533745A794227",
+   "originalStartTime": {
+    "dateTime": "2026-07-09T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "iCalUID": "5wu47kd7ev7eis2c8e3yopkhmq_G48533745A794227@google.com",
+   "sequence": 1,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "alistair.birchall@junction-nine.example",
+     "responseStatus": "needsAction"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "7fv12ey3bn0tbd8t5h4njrgsdn_55076827M891472G",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=N2Z2MTJleTNibjB0YmQ4dDVoNG5qcmdzZG5fNTUwNzY4MjdNODkxNDcyRyBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Ingest",
+   "description": "Summary: This batch rolls up into the capacity note, before the window closes. The staging cluster.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-07-16T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-07-16T10:30:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurringEventId": "5wu47kd7ev7eis2c8e3yopkhmq_G48533745A794227",
+   "originalStartTime": {
+    "dateTime": "2026-07-16T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "iCalUID": "5wu47kd7ev7eis2c8e3yopkhmq_G48533745A794227@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alistair.birchall@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "jacqueline@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "1of12rc3ox8zsf7a7l6muwjxpc_19041628S331683Y",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=MW9mMTJyYzNveDh6c2Y3YTdsNm11d2p4cGNfMTkwNDE2MjhTMzMxNjgzWSBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Estimate",
+   "description": "Short version: The migration should unblock the open question, if nothing else moves. The schedule.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-08-06T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-08-06T11:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurringEventId": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689",
+   "originalStartTime": {
+    "dateTime": "2026-08-06T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "iCalUID": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alistair.birchall@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "rosalind@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "orsolya.redmayne@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "elowen@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "fabien@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "3bm95ke5mi7trs1k9b7pmkgjvi_77994126T131785E",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=M2JtOTVrZTVtaTd0cnMxazliN3Bta2dqdmlfNzc5OTQxMjZUMTMxNzg1RSBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Handover",
+   "description": "Context: The schedule is waiting on next week's window, unless somebody objects. The handover now.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-08-20T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-08-20T11:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurringEventId": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689",
+   "originalStartTime": {
+    "dateTime": "2026-08-20T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "iCalUID": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "declined"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alistair.birchall@junction-nine.example",
+     "responseStatus": "accepted"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "8vu61zi7aa0bkc2i2x8mghyjnx_78616773R589942U",
+   "status": "cancelled",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=OHZ1NjF6aTdhYTBia2MyaTJ4OG1naHlqbnhfNzg2MTY3NzNSNTg5OTQyVSBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Review",
+   "description": "Quick note: The staging cluster depends on the open question, either way. The dashboard still blocks.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-08-27T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-08-27T11:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurringEventId": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689",
+   "originalStartTime": {
+    "dateTime": "2026-08-27T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "iCalUID": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689@google.com",
+   "sequence": 1,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alistair.birchall@junction-nine.example",
+     "responseStatus": "accepted"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "8nd01om2dc7wgy9o9y4pziyuko_89938870S164167H",
+   "status": "cancelled",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=OG5kMDFvbTJkYzd3Z3k5bzl5NHB6aXl1a29fODk5Mzg4NzBR7M4MR58RAKWhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Rollback",
+   "description": "Following up: The estimate now covers the agreed cutoff, either way. The dashboard is waiting on the.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-09-03T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-09-03T11:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurringEventId": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689",
+   "originalStartTime": {
+    "dateTime": "2026-09-03T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "iCalUID": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689@google.com",
+   "sequence": 1,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alistair.birchall@junction-nine.example",
+     "responseStatus": "accepted"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "6te51kb8uu4jzs0g6p9qtvfbxi_80564317B733467X",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=NnRlNTFrYjh1dTRqenMwZzZwOXF0dmZieGlfODA1NjQzMTdCNzMzNDY3WCBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Retry",
+   "description": "One thing: The dashboard quietly changed the second pass, unless somebody objects. This batch will be.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-09-10T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-09-10T11:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurringEventId": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689",
+   "originalStartTime": {
+    "dateTime": "2026-09-10T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "iCalUID": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alistair.birchall@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "rosalind@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "orsolya.redmayne@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "jacqueline@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "6bu99zo3bf8lzt8e5g2vuuhinc_14863516J680159B",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=NmJ1OTl6bzNiZjhsenQ4ZTVnMnZ1dWhpbmNfMTQ4NjM1MTZKNjgwMTU5QiBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Draft",
+   "description": "Short version: The new index rolls up into the numbers from Friday, once the numbers settle. The.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-09-18T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-09-18T11:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurringEventId": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689",
+   "originalStartTime": {
+    "dateTime": "2026-09-17T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "iCalUID": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689@google.com",
+   "sequence": 1,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "alistair.birchall@junction-nine.example",
+     "responseStatus": "needsAction"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "8sd66om0ng9vpy3g8r9zmrczrk_X68471882Q319393",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=OHppNzN3djZ4eTdjZ3U0dzVzN3hsYWVhdmtfMzgyNjQyNzJHNjIyOTgwSiBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Checklist",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-03-19T10:00:00Z",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-03-19T10:30:00Z",
+    "timeZone": "Europe/Athens"
+   },
+   "recurrence": [
+    "RRULE:FREQ=WEEKLY;UNTIL=20260325T215959Z;BYDAY=TH"
+   ],
+   "iCalUID": "8sd66om0ng9vpy3g8r9zmrczrk_X68471882Q319393@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "accepted"
+    }
+   ],
+   "hangoutLink": "https://meet.google.com/mzr-jcwm-npy",
+   "conferenceData": {
+    "entryPoints": [
+     {
+      "entryPointType": "video",
+      "uri": "https://meet.google.com/mzr-jcwm-npy",
+      "label": "The estimate will be folded."
+     },
+     {
+      "entryPointType": "more",
+      "uri": "https://bellrock.example/agz-ksrg-mny?pin=9996783794909",
+      "pin": "2947601959929"
+     },
+     {
+      "regionCode": "GR",
+      "entryPointType": "phone",
+      "uri": "tel:+995645819081",
+      "label": "The handover is waiting on the agreed cutoff.",
+      "pin": "350658444"
+     }
+    ],
+    "conferenceSolution": {
+     "key": {
+      "type": "hangoutsMeet"
+     },
+     "name": "Cobalt Row",
+     "iconUri": "https://fonts.gstatic.com/s/a/qjbqsqlxhehj/ydcn_4705z2/a4/mpj-751wm/vkfh_siyd_0473m4_ryiir_8p_fnm_794pg.onb"
+    },
+    "conferenceId": "agz-ksrg-mny"
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "6jb10ot2td2rar0n8d9pmkntvb_A27363053L845264",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=NmRuMzR5bDlpeDhscGY5dDhrMGxwemxnem1fODMyOTEwOTBNMTc3NDMyUyBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Schedule",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-03-26T10:00:00Z",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-03-26T10:30:00Z",
+    "timeZone": "Europe/Athens"
+   },
+   "recurrence": [
+    "RRULE:FREQ=WEEKLY;UNTIL=20260422T205959Z;BYDAY=TH"
+   ],
+   "iCalUID": "6jb10ot2td2rar0n8d9pmkntvb_A27363053L845264@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    }
+   ],
+   "hangoutLink": "https://meet.google.com/mzr-jcwm-npy",
+   "conferenceData": {
+    "entryPoints": [
+     {
+      "entryPointType": "video",
+      "uri": "https://meet.google.com/mzr-jcwm-npy",
+      "label": "The checklist quietly changed."
+     },
+     {
+      "entryPointType": "more",
+      "uri": "https://bellrock.example/agz-ksrg-mny?pin=9996783794909",
+      "pin": "2947601959929"
+     },
+     {
+      "regionCode": "GR",
+      "entryPointType": "phone",
+      "uri": "tel:+995645819081",
+      "label": "The new index landed ahead of the shared doc.",
+      "pin": "350658444"
+     }
+    ],
+    "conferenceSolution": {
+     "key": {
+      "type": "hangoutsMeet"
+     },
+     "name": "Cobalt Row",
+     "iconUri": "https://fonts.gstatic.com/s/a/qjbqsqlxhehj/ydcn_4705z2/a4/mpj-751wm/vkfh_siyd_0473m4_ryiir_8p_fnm_794pg.onb"
+    },
+    "conferenceId": "agz-ksrg-mny"
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "4jk63aa5im7pxu7e9p8udsloiw_I35079590E967994",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=N2N4MDZ3eDB3bTV0c2czazVlMGd1eW1ham1fODEyMzI5NzVMODc1ODI2SyBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Checklist",
+   "description": "The migration is waiting on the earlier draft.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-04-23T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-04-23T10:30:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurrence": [
+    "RRULE:FREQ=WEEKLY;UNTIL=20260520T205959Z;BYDAY=TH"
+   ],
+   "iCalUID": "4jk63aa5im7pxu7e9p8udsloiw_I35079590E967994@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alistair.birchall@junction-nine.example",
+     "responseStatus": "accepted"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "5wu47kd7ev7eis2c8e3yopkhmq_G48533745A794227",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=MmliMDZyazRqeDBsaG4ycjV0MWZhemJncm5fMDUyMTQyNjVaOTQ4NDA2RyBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Review is",
+   "description": "Heads up — The review quietly changed the shared doc, once the numbers settle. The rollback plan.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-05-21T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-05-21T10:30:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurrence": [
+    "RRULE:FREQ=WEEKLY;UNTIL=20260805T205959Z;BYDAY=TH"
+   ],
+   "iCalUID": "5wu47kd7ev7eis2c8e3yopkhmq_G48533745A794227@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alistair.birchall@junction-nine.example",
+     "responseStatus": "accepted"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=MW9mMTJyYzNveDh6c2Y3YTdsNm11d2p4cGNfMTkwNDE2MjhTMzMxNjgzWSBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Migration",
+   "description": "Short version: The migration rolls up into one more round of checks, assuming the counts hold.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-08-06T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-08-06T11:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurrence": [
+    "RRULE:FREQ=WEEKLY;BYDAY=TH"
+   ],
+   "iCalUID": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alistair.birchall@junction-nine.example",
+     "responseStatus": "accepted"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579254467702526\"",
+   "id": "307yqahc76w58dqqln36qh6542_08559711M788935Q",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=MzA3eXFhaGM3Nnc1OGRxcWxuMzZxaDY1NDJfMDg1NTk3MTFNNzg4OTM1USBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-01-07T14:05:30.000Z",
+   "updated": "2026-09-17T06:40:33.851Z",
+   "summary": "This Batch",
+   "creator": {
+    "email": "hieronymus@junction-nine.example"
+   },
+   "organizer": {
+    "email": "hieronymus@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-07-13T09:00:00+01:00",
+    "timeZone": "Asia/Nicosia"
+   },
+   "end": {
+    "dateTime": "2026-07-13T09:50:00+01:00",
+    "timeZone": "Asia/Nicosia"
+   },
+   "recurringEventId": "256pevdj06w96slbtb27oj6754_C34890142G800531",
+   "originalStartTime": {
+    "dateTime": "2026-07-13T09:00:00+01:00",
+    "timeZone": "Asia/Nicosia"
+   },
+   "iCalUID": "256pevdj06w96slbtb27oj6754_C34890142G800531@google.com",
+   "sequence": 1,
+   "attendees": [
+    {
+     "email": "isadora@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "gilda@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "rosalind@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "priya.larkspur@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "beatrijs@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "nathanael@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "guinevere@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "renna@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hux@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "elowen@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "leonidas@junction-nine.example",
+     "displayName": "Kai Zenner",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "halcyon@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ulysses@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    }
+   ],
+   "extendedProperties": {
+    "The rollout rolls up into a smaller slice.": {
+     "The ingest path needs a second look from the agreed cutoff.": "72101070471",
+     "The queue now covers next week's window.": "72101070471",
+     "The retry budget rolls up into a smaller slice.": "{\"The rollout rolls up into next week's window.\":\"The Review\",\"This batch will be folded into one more round of checks.\":3,\"The handover landed ahead of the agreed cutoff.\":\"9AHXZPJRsut68oXq7jTLJN==\",\"The draft still blocks the earlier draft.\":false}",
+     "The rollback plan quietly changed one more round of checks.": "The rollout should unblock the shared doc, either way."
+    }
+   },
+   "conferenceData": {
+    "entryPoints": [
+     {
+      "entryPointType": "video",
+      "uri": "https://orchard-field.example/j/72101070471?pwd=fXrVTPyOhjxvumyhBrYgrcqPryR9X9.9&jst=2",
+      "label": "The handover now covers the shared doc, if nothing else moves. This batch is.",
+      "meetingCode": "72101070471",
+      "passcode": "488708"
+     },
+     {
+      "regionCode": "US",
+      "entryPointType": "phone",
+      "uri": "tel:+995217541929,,72101070471#",
+      "label": "The review should unblock the shared doc.",
+      "passcode": "488708"
+     },
+     {
+      "entryPointType": "more",
+      "uri": "https://www.google.com/url?q=https%3A%2F%2Fharborlight.example%2Faddon%2Fnlnzruolml%2Ftpzaew%3FmeetingUuid%3Dw0lxquMKE4Fn4ORMt1DIsc%250J%258V%26signature%3D8j2418t7328974w966q56z4ko8382t9q120rndl0512xn2369g323y89iqw96hv7%26v%3D1&sa=D&source=calendar&usg=FTsDsm1_8lT5dAEFWbj63Sqfuurb"
+     }
+    ],
+    "conferenceSolution": {
+     "key": {
+      "type": "addOn"
+     },
+     "name": "Wharfside",
+     "iconUri": "https://lh3.googleusercontent.com/pw/QJ-NWYEhbvHGoB-9VeHA53ZLsh_LKCnQiJrI2xqoEXlaVZYRPGoWw89loPnKIONEL3Pg50kSeWEes-cuKRe1aR-Yd0XX2OmLCv-Mkodd6rLARI-zelNTgf9NWZ4mr9ZyugGJUKNuTMtSWoPFUeHamgxWaV8B=s128-no"
+    },
+    "conferenceId": "72101070471",
+    "notes": "Summary: The dashboard still blocks a smaller slice, once the numbers settle. The migration landed ahead of the numbers from Friday, once the numbers settle. The queue quietly changed the owner's sign-off, unless somebody objects. The staging cluster rolls up into the shared doc, as discussed. The dashboard was split out of the earlier draft, after the handover. The rollout should unblock the earlier draft, once the numbers settle. The queue now covers next week's window.",
+    "parameters": {
+     "addOnParameters": {
+      "parameters": {
+       "scriptId": "1O_9DeEljSH2vrECr8XeFYYRxFFiowFKOivqSDz316BlBcDXrF00BXrkO",
+       "realMeetingId": "84057651689",
+       "creatorUserId": "70QTQKSJT7e0RHAeVm-Hew",
+       "meetingUuid": "j0lwszRAT6Cb5HBIy3UTyw==",
+       "meetingType": "2",
+       "originalEventId": "781tstrf78t92cnkjx01pp3443"
+      }
+     }
+    }
+   },
+   "guestsCanModify": true,
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579262248566558\"",
+   "id": "f37w61c8x8709tj4mh305jj954766hb5",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=ZjM3dzYxYzh4ODcwOXRqNG1oMzA1amo5NTQ3NjZoYjUgYWRhQHplcGh5ci1sYW5lLmV4YW1wbGU",
+   "created": "2026-09-17T07:45:23.000Z",
+   "updated": "2026-09-17T07:45:24.283Z",
+   "summary": "The Dashboard",
+   "creator": {
+    "email": "ada@zephyr-lane.example",
+    "self": true
+   },
+   "organizer": {
+    "email": "ada@zephyr-lane.example",
+    "self": true
+   },
+   "start": {
+    "dateTime": "2026-09-22T19:00:00+01:00",
+    "timeZone": "Europe/London"
+   },
+   "end": {
+    "dateTime": "2026-09-22T22:00:00+01:00",
+    "timeZone": "Europe/London"
+   },
+   "iCalUID": "f37w61c8x8709tj4mh305jj954766hb5@google.com",
+   "sequence": 0,
+   "guestsCanModify": true,
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579347559242238\"",
+   "id": "_7km35d1k65ujmt8q87h25x0g86b20aa35ic5quu92y8hsnyw2q1aere952",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=XzdrbTM1ZDFrNjV1am10OHE4N2gyNXgwZzg2YjIwYWEzNWljNXF1dTkyeThoc255dzJxMWFlcmU5NTIgYWRhQHplcGh5ci1sYW5lLmV4YW1wbGU",
+   "created": "2026-08-26T13:39:58.000Z",
+   "updated": "2026-09-17T19:36:19.621Z",
+   "summary": "This Batch was split out of the",
+   "description": "The handover landed ahead of the second pass.\nThe review is waiting on.\nThe retry budget was split out of the owner's sign-off.\nThe ingest path needs a second look from the numbers from Friday.\nThe rollout landed ahead.\n\nThe schedule depends on the open question, after the handover. The rollout.\n\nThe rollback plan should unblock the open question.\nThe review landed ahead of the capacity note.",
+   "location": "The Staging",
+   "creator": {
+    "email": "ada@zephyr-lane.example",
+    "self": true
+   },
+   "organizer": {
+    "email": "ada@zephyr-lane.example",
+    "self": true
+   },
+   "start": {
+    "dateTime": "2026-09-17T20:55:00+01:00",
+    "timeZone": "America/Los_Angeles"
+   },
+   "end": {
+    "dateTime": "2026-09-17T23:03:00+01:00",
+    "timeZone": "America/Los_Angeles"
+   },
+   "transparency": "transparent",
+   "iCalUID": "778P7362-219Z-3802-HB89-X9Y5A9RR65L5",
+   "sequence": 5,
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579098990679358\"",
+   "id": "66hbpntwlp55tijy18d9tflk09",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=NTduZG5qYmFtdTM4emlxczU4eDltcXdkMTVfNjA4NDU4NjNGOTg1OTg3ViBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-09-11T06:21:48.000Z",
+   "updated": "2026-09-16T09:04:55.339Z",
+   "summary": "The",
+   "description": "For the record: The rollback plan should unblock a smaller slice, once the numbers settle. The rollback plan will be folded into the follow-up thread.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-09-16T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-09-16T10:30:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurrence": [
+    "RRULE:FREQ=WEEKLY;BYDAY=WE"
+   ],
+   "iCalUID": "66hbpntwlp55tijy18d9tflk09@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "orsolya.redmayne@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "tentative"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "rosalind@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "oriel.mainwaring@inbox.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "8uz89ri2gc6lpa1u8c9nwhsucb",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=OXlkODVhazBrazNnc3o2ajVzMm90YXVpdXFfNDI3OTQyNjRCMzMxMTA0SCBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Rollout",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-02-19T10:00:00Z",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-02-19T10:30:00Z",
+    "timeZone": "Europe/Athens"
+   },
+   "recurrence": [
+    "RRULE:FREQ=WEEKLY;UNTIL=20260318T215959Z;BYDAY=TH"
+   ],
+   "iCalUID": "8uz89ri2gc6lpa1u8c9nwhsucb@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    }
+   ],
+   "hangoutLink": "https://meet.google.com/mzr-jcwm-npy",
+   "conferenceData": {
+    "entryPoints": [
+     {
+      "entryPointType": "video",
+      "uri": "https://meet.google.com/mzr-jcwm-npy",
+      "label": "The estimate still blocks the."
+     },
+     {
+      "entryPointType": "more",
+      "uri": "https://bellrock.example/agz-ksrg-mny?pin=9996783794909",
+      "pin": "2947601959929"
+     },
+     {
+      "regionCode": "GR",
+      "entryPointType": "phone",
+      "uri": "tel:+995645819081",
+      "label": "The ingest path landed ahead of the second pass.",
+      "pin": "350658444"
+     }
+    ],
+    "conferenceSolution": {
+     "key": {
+      "type": "hangoutsMeet"
+     },
+     "name": "Cobalt Row",
+     "iconUri": "https://fonts.gstatic.com/s/a/qjbqsqlxhehj/ydcn_4705z2/a4/mpj-751wm/vkfh_siyd_0473m4_ryiir_8p_fnm_794pg.onb"
+    },
+    "conferenceId": "agz-ksrg-mny"
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "6te51kb8uu4jzs0g6p9qtvfbxi_80564317B733467X",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=NnRlNTFrYjh1dTRqenMwZzZwOXF0dmZieGlfODA1NjQzMTdCNzMzNDY3WCBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Retry",
+   "description": "Context: The retry budget should unblock the capacity note, assuming the counts hold. The new index.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-09-10T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-09-10T11:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurringEventId": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689",
+   "originalStartTime": {
+    "dateTime": "2026-09-10T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "iCalUID": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alistair.birchall@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "rosalind@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "orsolya.redmayne@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "jacqueline@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "6bu99zo3bf8lzt8e5g2vuuhinc_14863516J680159B",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=NmJ1OTl6bzNiZjhsenQ4ZTVnMnZ1dWhpbmNfMTQ4NjM1MTZKNjgwMTU5QiBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Migration",
+   "description": "Following up: The queue landed ahead of the owner's sign-off, for now. The handover rolls up into the.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-09-18T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-09-18T11:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurringEventId": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689",
+   "originalStartTime": {
+    "dateTime": "2026-09-17T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "iCalUID": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689@google.com",
+   "sequence": 1,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "alistair.birchall@junction-nine.example",
+     "responseStatus": "needsAction"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  },
+  {
+   "kind": "calendar#event",
+   "etag": "\"3579178069772766\"",
+   "id": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689",
+   "status": "confirmed",
+   "htmlLink": "https://www.google.com/judptxsp/event?eid=MW9mMTJyYzNveDh6c2Y3YTdsNm11d2p4cGNfMTkwNDE2MjhTMzMxNjgzWSBhZGFAemVwaHlyLWxhbmUuZXhhbXBsZQ",
+   "created": "2026-02-12T14:19:26.000Z",
+   "updated": "2026-09-16T20:03:54.886Z",
+   "summary": "The Checklist",
+   "description": "Heads up — The draft still blocks one more round of checks, either way. The retry budget rolls up.",
+   "creator": {
+    "email": "yusra@junction-nine.example"
+   },
+   "organizer": {
+    "email": "yusra@junction-nine.example"
+   },
+   "start": {
+    "dateTime": "2026-08-06T10:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "end": {
+    "dateTime": "2026-08-06T11:00:00+01:00",
+    "timeZone": "Europe/Athens"
+   },
+   "recurrence": [
+    "RRULE:FREQ=WEEKLY;BYDAY=TH"
+   ],
+   "iCalUID": "6uk70sf6vn2wdl3q1g4epzmskh_Y28612269C473689@google.com",
+   "sequence": 0,
+   "attendees": [
+    {
+     "email": "bartholomew@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "yusra@junction-nine.example",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "ada@zephyr-lane.example",
+     "self": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "verity@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alder@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "hieronymus@junction-nine.example",
+     "optional": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "isadora@junction-nine.example",
+     "optional": true,
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "hieronymus.quimby@junction-nine.example",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "alistair.birchall@junction-nine.example",
+     "responseStatus": "accepted"
+    }
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "eventType": "default"
+  }
+ ],
+ "nextPageToken": "fixture-page-2-ada"
+}

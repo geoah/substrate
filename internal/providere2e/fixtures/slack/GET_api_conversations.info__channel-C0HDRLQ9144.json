@@ -1,0 +1,74 @@
+{
+ "ok": true,
+ "channel": {
+  "id": "C0HDRLQ9144",
+  "created": 1771423517,
+  "creator": "U48XXRY7R9U",
+  "is_org_shared": false,
+  "is_im": false,
+  "context_team_id": "T0ADATEAM01",
+  "updated": 1789489922312,
+  "name": "shale-ember-beacon-team",
+  "name_normalized": "shale-ember-beacon-team",
+  "is_channel": true,
+  "is_group": false,
+  "is_mpim": true,
+  "is_private": true,
+  "is_archived": false,
+  "is_general": false,
+  "is_shared": false,
+  "is_ext_shared": false,
+  "unlinked": 0,
+  "is_pending_ext_shared": false,
+  "pending_shared": [],
+  "parent_conversation": null,
+  "purpose": {
+   "value": "The rollout now covers the follow-up thread, if.",
+   "creator": "U48XXRY7R9U",
+   "last_set": 1771423517
+  },
+  "topic": {
+   "value": "",
+   "creator": "",
+   "last_set": 0
+  },
+  "shared_team_ids": [
+   "T0ADATEAM01"
+  ],
+  "pending_connected_team_ids": [],
+  "is_member": true,
+  "is_open": true,
+  "last_read": "1747674380.100249",
+  "properties": {
+   "tabs": [
+    {
+     "type": "files",
+     "label": "",
+     "id": "files"
+    },
+    {
+     "id": "CtDZ2XFAQ9DN",
+     "type": "canvas",
+     "data": {
+      "file_id": "FNWN6ZN7LZG",
+      "shared_ts": "1771490966.198979"
+     },
+     "label": ""
+    }
+   ],
+   "tabz": [
+    {
+     "type": "files"
+    },
+    {
+     "id": "CtDZ2XFAQ9DN",
+     "type": "canvas",
+     "data": {
+      "file_id": "FNWN6ZN7LZG",
+      "shared_ts": "1771490966.198979"
+     }
+    }
+   ]
+  }
+ }
+}

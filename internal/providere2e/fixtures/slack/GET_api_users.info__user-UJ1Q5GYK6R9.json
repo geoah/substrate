@@ -1,0 +1,62 @@
+{
+ "ok": true,
+ "user": {
+  "id": "UJ1Q5GYK6R9",
+  "name": "liorine-zabriskie-rhys",
+  "is_bot": false,
+  "updated": 1789346839,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "d55aef",
+  "is_email_confirmed": true,
+  "real_name": "Idaine Thornbury-Rhys",
+  "tz": "America/New_York",
+  "tz_label": "Eastern Daylight Time",
+  "tz_offset": -14400,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Idaine Thornbury-Rhys",
+   "display_name": "Idaine Thornbury-Rhys",
+   "avatar_hash": "4f3be6ddd490",
+   "real_name_normalized": "Idaine Thornbury-Rhys",
+   "display_name_normalized": "Idaine Thornbury-Rhys",
+   "image_24": "https://avatars.slack-edge.com/2026-04-06/77082844915260_5a08ad25665cc13720cc_24.png",
+   "image_32": "https://avatars.slack-edge.com/2026-04-06/77082844915260_5a08ad25665cc13720cc_32.png",
+   "image_48": "https://avatars.slack-edge.com/2026-04-06/77082844915260_5a08ad25665cc13720cc_48.png",
+   "image_72": "https://avatars.slack-edge.com/2026-04-06/77082844915260_5a08ad25665cc13720cc_72.png",
+   "image_192": "https://avatars.slack-edge.com/2026-04-06/77082844915260_5a08ad25665cc13720cc_192.png",
+   "image_512": "https://avatars.slack-edge.com/2026-04-06/77082844915260_5a08ad25665cc13720cc_512.png",
+   "image_1024": "https://avatars.slack-edge.com/2026-04-06/77082844915260_5a08ad25665cc13720cc_1024.png",
+   "image_original": "https://avatars.slack-edge.com/2026-04-06/77082844915260_5a08ad25665cc13720cc_original.png",
+   "is_custom_image": true,
+   "first_name": "Minaus Thornbury10",
+   "last_name": "Hermionea Kettleby-Hale",
+   "team": "T0ADATEAM01",
+   "email": "lexine@zephyr-lane.example",
+   "title": "",
+   "phone": "+99 5967019278",
+   "skype": "",
+   "status_text": "The Draft",
+   "status_text_canonical": "",
+   "status_emoji": ":statue_of_liberty:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "statue_of_liberty",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/1f5fd.png",
+     "unicode": "1f5fd"
+    }
+   ],
+   "status_expiration": 0,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0,
+   "start_date": "2024-12-08"
+  }
+ }
+}

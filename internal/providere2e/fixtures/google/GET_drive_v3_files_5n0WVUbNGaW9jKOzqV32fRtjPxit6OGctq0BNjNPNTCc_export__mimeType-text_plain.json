@@ -1,0 +1,9 @@
+{
+ "__response": {
+  "status": 200,
+  "headers": {
+   "Content-Type": "text/plain"
+  }
+ },
+ "body": "The dashboard will be folded into the follow-up thread.\nThe schedule still.\n\nThe rollback plan is waiting on a smaller slice, assuming.\n\nThis batch landed ahead of the second pass.\n\nThe handover rolls up into the earlier draft.\nThe staging cluster still blocks next week's window.\n\nThe draft is waiting on the earlier draft, if nothing else moves.\n\nThe rollout was split out of.\n\nQuick note: The dashboard quietly changed the numbers from Friday, after the handover. The new index rolls.\n\nThe rollout should unblock the capacity note, unless somebody objects.\n\nThe review needs a second look from next week's window, assuming the counts hold.\n\nThe staging cluster needs a second look from the open question, for now.\n\nThe rollout depends on the follow-up thread."
+}

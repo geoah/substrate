@@ -1,20 +1,28 @@
 # The Linear bundle's delivery wiring — ordinary DATA records of core's
-# `trigger` kind (console-editable, changelog-visible, substratectl get/apply/
-# delete like anything else). Two triggers drive the one function:
+# `trigger` kind (console-editable, changelog-visible, `substratectl
+# get/apply/delete` like anything else). Three triggers drive the one sync:
 #
-#   account(connected, issues on, never synced)  --issuessync-->
-#       user + team + issue mirrors  (+ the lastSyncedAt stamp)
-#   hourly schedule  --issuessync-->  every due, connected account
+#   account(a toggle on, never synced)  --linearsync-->  the mirrors
+#   hourly schedule                     --linearsync-->  the account, when due
+#   syncRequestedAt != syncRequestedAck --linearsync-->  "sync now"
 #
-# The on-connect trigger is guarded to fire ONCE per account — its `when`
-# drops the moment the sync stamps lastSyncedAt, so the account's own
-# completion patch cannot re-trigger it. Steady-state re-syncs come from the
-# schedule, which honors each account's syncFrequency.
-# The first backfill: an account whose OAuth just landed (tokenStatus
-# connected), that wants issues, and that has never synced yet.
+# There is NO tokenStatus gate: nothing OAuth ever writes one for this bundle
+# (the accountconfig trait's tokenRef / tokenStatus / grantedScopes are
+# declared but dormant). The connect signal is the OWNER's own toggle — an
+# account created or edited with a feature on that has never synced. Whether
+# the pasted key EXISTS is the body's check, not the guard's: the key lives on
+# the connector input's config record, not on this trigger's record.
+#
+# THE HOURLY TICK IS ALSO THE CONTINUATION. The engine bounds one drain at 512
+# invocations and two minutes, and a cold walk of a 13,000-issue workspace
+# does not fit; the body stops cleanly and parks the walk on the account
+# (`syncPending`). An account with a parked walk reports itself DUE whatever
+# its syncFrequency says, so the next tick picks the walk straight back up and
+# a cold sync converges over consecutive ticks instead of parking a delivery
+# that could never have finished (provider-practices §4).
 kind: substrate.reamde.dev/core/trigger
 metadata:
-  id: linear-issues-on-connect
+  id: linear-on-connect
 data:
   properties:
     enabled: true
@@ -22,32 +30,64 @@ data:
       record:
         kinds: [providers.substrate.reamde.dev/linear/account]
         ops: [create, update]
-        # Every optional property is read through the `in` idiom: tokenStatus
-        # (writer: oauth) and enabledIssues are ABSENT on a freshly-created
-        # account (pre-OAuth), and CEL map-indexing an absent key throws — an
-        # unguarded read would skip the delivery instead of matching it. The
-        # short-circuit `&&` means the value read only runs once its key is
-        # proven present.
+        # Every optional property is read through the `in` idiom: a toggle is
+        # ABSENT until the owner flips it and `lastSyncedAt` until the first
+        # drain stamps it, and CEL map-indexing an absent key THROWS — an
+        # unguarded read parks the delivery ("no such key") instead of
+        # skipping it. The short-circuit `&&` proves each key present before
+        # its value is read.
         when: >-
-          record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
-          == "connected" && "enabledIssues" in record.properties && record.properties.enabledIssues
-          == true && !("lastSyncedAt" in record.properties)
-    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/linear/issuessync
+          record != null && (("enabledWorkspace" in record.properties && record.properties.enabledWorkspace
+          == true) || ("enabledProjects" in record.properties && record.properties.enabledProjects
+          == true) || ("enabledIssues" in record.properties && record.properties.enabledIssues
+          == true)) && !("lastSyncedAt" in record.properties)
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/linear/linearsync
 ---
-# The steady-state re-sync: an hourly tick fires the same function with no
-# envelope record, so the body iterates every connected, issues-enabled
-# account and syncs the ones due by their own syncFrequency.
+# The steady-state re-sync, and the continuation of a bounded cold one: an
+# hourly tick fires the same function with no envelope record, so the body
+# picks every enabled account and syncs the ones their own syncFrequency — or
+# their parked walk — says are due.
 kind: substrate.reamde.dev/core/trigger
 metadata:
-  id: linear-issues-scheduled
+  id: linear-scheduled
 data:
   properties:
     enabled: true
     source:
       schedule:
-        recurrence: "FREQ=HOURLY"
+        recurrence: FREQ=HOURLY
         timezone: Europe/London
         # A fixed past anchor, so every occurrence since is well-defined
         # (occurrences compute forward from startsAt).
-        startsAt: "2025-01-06T09:00:00Z"
-    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/linear/issuessync
+        startsAt: "2025-01-06T09:15:00Z"
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/linear/linearsync
+---
+# "Sync now": the owner stamped `syncRequestedAt` (the console's button, or
+# `substratectl patch --prop syncRequestedAt=…`). The guard is a GENERATION
+# comparison, not a time one: it fires while the request differs from the
+# `syncRequestedAck` the sync echoes back, and the sync's own stamp closes it.
+#
+# Guarding on `syncRequestedAt > lastSyncedAt` instead has two failure modes
+# the providers before this one both paid for: a request dated in the FUTURE
+# loops forever, because the sync's own stamp can never overtake it; and a
+# request landing in the SAME SECOND as a whole-second stamp is not greater
+# than it, so the guard closes and nothing can drive the account again
+# (provider-practices §4). A generation cannot outrun its acknowledgement
+# whatever the clocks say. Both sides are stringified before the comparison:
+# one is owner-written and the other connector-written, and a guard must not
+# depend on the envelope handing both back in the same CEL type.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: linear-on-request
+data:
+  properties:
+    enabled: true
+    source:
+      record:
+        kinds: [providers.substrate.reamde.dev/linear/account]
+        ops: [create, update]
+        when: >-
+          record != null && "syncRequestedAt" in record.properties && (!("syncRequestedAck"
+          in record.properties) || string(record.properties.syncRequestedAt)
+          != string(record.properties.syncRequestedAck))
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/linear/linearsync

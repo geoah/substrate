@@ -1,0 +1,25 @@
+{
+ "items": [
+  {
+   "id": "361882",
+   "chatID": "!q7QPwjq19fgW96XpPGOW:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-15T12:32:08.763Z",
+   "sortKey": "777774",
+   "type": "TEXT",
+   "text": "The schedule now covers the owner's sign-off, after.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T12:32:08.846Z",
+    "@whatsapp_vcw-51244731133315:beeper.local": "2026-09-15T12:42:47.348Z"
+   }
+  }
+ ],
+ "hasMore": false,
+ "oldestCursor": "777774",
+ "newestCursor": "777774"
+}

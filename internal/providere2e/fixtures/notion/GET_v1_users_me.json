@@ -1,0 +1,19 @@
+{
+  "object": "user",
+  "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f",
+  "name": "Quintilian Vandermere",
+  "avatar_url": null,
+  "type": "bot",
+  "bot": {
+    "owner": {
+      "type": "workspace",
+      "workspace": true
+    },
+    "workspace_name": "Drifthouse",
+    "workspace_id": "55f96b0a-f658-9f8a-4146-9e623a1b8240",
+    "workspace_limits": {
+      "max_file_upload_size_in_bytes": 5368709120
+    }
+  },
+  "request_id": "5427f283-f883-4f4c-9881-e0eb663ae775"
+}

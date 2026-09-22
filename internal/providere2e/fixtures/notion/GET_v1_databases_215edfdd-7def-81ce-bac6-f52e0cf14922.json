@@ -1,0 +1,49 @@
+{
+  "object": "database",
+  "id": "215edfdd-7def-81ce-bac6-f52e0cf14922",
+  "title": [
+    {
+      "type": "text",
+      "text": {
+        "content": "The queue depends on a smaller slice.",
+        "link": null
+      },
+      "annotations": {
+        "bold": false,
+        "italic": false,
+        "strikethrough": false,
+        "underline": false,
+        "code": false,
+        "color": "default"
+      },
+      "plain_text": "The queue depends on a smaller slice.",
+      "href": null
+    }
+  ],
+  "description": [],
+  "parent": {
+    "type": "workspace",
+    "workspace": true
+  },
+  "is_inline": false,
+  "database_type": null,
+  "in_trash": false,
+  "is_locked": false,
+  "created_time": "2025-06-17T11:39:58.539+00:00",
+  "last_edited_time": "2026-05-14T20:53:00.289+00:00",
+  "data_sources": [
+    {
+      "id": "215edfdd-7def-811f-83a1-000b8d940215",
+      "name": "Leandro Cranfield"
+    }
+  ],
+  "icon": {
+    "type": "emoji",
+    "emoji": "\ud83d\udcd6"
+  },
+  "cover": null,
+  "url": "https://app.notion.com/p/The-queue-depends-on-a-smaller-slice-215edfdd7def81cebac6f52e0cf14922",
+  "public_url": null,
+  "archived": false,
+  "request_id": "e5210cd8-ebf9-4cb8-b7c3-6a41a202fce1"
+}

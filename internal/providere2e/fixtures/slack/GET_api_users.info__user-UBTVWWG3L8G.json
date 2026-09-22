@@ -1,0 +1,61 @@
+{
+ "ok": true,
+ "user": {
+  "id": "UBTVWWG3L8G",
+  "name": "marekine-ziegler-frost",
+  "is_bot": false,
+  "updated": 1789360201,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "e7392d",
+  "is_email_confirmed": true,
+  "real_name": "Wilderine Kingsmill-Frost",
+  "tz": "America/New_York",
+  "tz_label": "Eastern Daylight Time",
+  "tz_offset": -14400,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Wilderine Kingsmill-Frost",
+   "display_name": "Wilderine Kingsmill-Frost",
+   "avatar_hash": "37a0298e40b6",
+   "real_name_normalized": "Wilderine Kingsmill-Frost",
+   "display_name_normalized": "Wilderine Kingsmill-Frost",
+   "image_24": "https://avatars.slack-edge.com/2025-11-04/6579855554000_23c2c2dda75044e1ea12_24.png",
+   "image_32": "https://avatars.slack-edge.com/2025-11-04/6579855554000_23c2c2dda75044e1ea12_32.png",
+   "image_48": "https://avatars.slack-edge.com/2025-11-04/6579855554000_23c2c2dda75044e1ea12_48.png",
+   "image_72": "https://avatars.slack-edge.com/2025-11-04/6579855554000_23c2c2dda75044e1ea12_72.png",
+   "image_192": "https://avatars.slack-edge.com/2025-11-04/6579855554000_23c2c2dda75044e1ea12_192.png",
+   "image_512": "https://avatars.slack-edge.com/2025-11-04/6579855554000_23c2c2dda75044e1ea12_512.png",
+   "image_1024": "https://avatars.slack-edge.com/2025-11-04/6579855554000_23c2c2dda75044e1ea12_1024.png",
+   "image_original": "https://avatars.slack-edge.com/2025-11-04/6579855554000_23c2c2dda75044e1ea12_original.png",
+   "is_custom_image": true,
+   "first_name": "Renna4 Fernsby6",
+   "last_name": "Vex Stowell",
+   "team": "T0ADATEAM01",
+   "email": "anseline@zephyr-lane.example",
+   "title": "The Rollout landed ahead of",
+   "phone": "+99 5293177896",
+   "skype": "",
+   "status_text": "The Review",
+   "status_text_canonical": "",
+   "status_emoji": ":statue_of_liberty:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "statue_of_liberty",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/1f5fd.png",
+     "unicode": "1f5fd"
+    }
+   ],
+   "status_expiration": 1789875000,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0
+  }
+ }
+}

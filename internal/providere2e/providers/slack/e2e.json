@@ -1,0 +1,50 @@
+{
+  "_note": "This bundle is TOKEN-authorized, not OAuth: it ships no `oauth2:` block, so the runner's oauth/start step cannot apply to it. `auth: token` is the key tools/e2e.py needs to grow — see providers/slack/README.md, Platform asks #A.",
+  "auth": "token",
+  "configKind": "providers.substrate.reamde.dev/slack/config",
+  "configId": "default",
+  "config": {
+    "userToken": "xoxp-e2e-user-token"
+  },
+  "accountKind": "providers.substrate.reamde.dev/slack/account",
+  "accountId": "e2e",
+  "account": {
+    "displayName": "Slack (e2e)",
+    "enabledMessages": true,
+    "enabledMembers": true,
+    "syncFrequency": "hourly",
+    "backfillDepth": "all"
+  },
+  "hosts": [
+    "https://slack.com"
+  ],
+  "triggers": [
+    "slack-messages-on-connect",
+    "slack-messages-on-demand"
+  ],
+  "settleSeconds": 240,
+  "_window": "all, and deliberately. `last2d` made the run depend on the WALL CLOCK: the recordings hold two real days, so the window only contained them while the cut was fresh, and the fixtures' instants are shifted off the real calendar anyway (fixtures/README.md). A time-relative floor against a fixed recording set is a test that passes today and fails on Thursday. `all` means the floor is 0 and the mirror must hold every message the cut holds, which is the assertion worth making. Testing the other depths needs recordings older than the window; see fixtures/README.md.",
+  "_triggers": "The scheduled tick is disabled for a run: a catch-up fire racing the drain proves nothing. on-demand stays, because the scenario's second sync IS a syncRequestedAt stamp.",
+  "seedCredential": {
+    "property": "userToken",
+    "match": "xoxp-"
+  },
+  "continue": {
+    "property": "syncRequestedAt",
+    "value": "now"
+  },
+  "_continue": "A cold walk of this workspace does not fit in one drain (512 invocations, two minutes, 916 readable conversations). The body leaves its queue on the account and stamps `ok (N pending)`; tools/e2e.py stamps this property to continue and waits again. Platform asks #B.",
+  "seed": {
+    "accountId": "owner-slack",
+    "_note": "the seed run is the owner's real account; the id carries the provider because the engine's OAuth surface resolves a BARE account id across every accountconfig kind and refuses a clash (two providers both naming their seed account `owner` collide)",
+    "continueRounds": 120,
+    "settleSeconds": 300,
+    "account": {
+      "backfillDepth": "last2d"
+    },
+    "_account": "the SEED runs against the owner's whole workspace, where `all` is 3,865 conversations of history; the window stays two days there.",
+    "_rounds": "the owner's workspace has ~3,900 conversations and a bounded drain walks ~100 per round"
+  },
+  "mockPort": 48113,
+  "_mockPort": "fixed so the rewired function body is identical run to run (see tools/e2e.py preferred_port and upstream ask M / substrate#576)"
+}

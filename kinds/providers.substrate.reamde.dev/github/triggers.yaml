@@ -56,3 +56,29 @@ data:
         # (occurrences compute forward from startsAt).
         startsAt: "2025-01-06T09:30:00Z"
     callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/github/githubsync
+---
+# "Sync now": the owner stamped `syncRequestedAt` (the console's button, or
+# `substratectl patch --prop syncRequestedAt=…`). The guard is a GENERATION
+# comparison, not a time one: it fires while the request differs from the
+# `syncRequestedAck` the sync echoes back, and the sync's own stamp closes it.
+# Guarding on `syncRequestedAt > lastSyncedAt` instead would loop forever on a
+# request dated in the future, because the stamp could never overtake it.
+# Both sides are stringified before the comparison: one is owner-written and
+# the other connector-written, and a guard must not depend on the envelope
+# handing both back in the same CEL type.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: github-on-request
+data:
+  properties:
+    enabled: true
+    source:
+      record:
+        kinds: [providers.substrate.reamde.dev/github/account]
+        ops: [create, update]
+        when: >-
+          record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
+          == "connected" && "syncRequestedAt" in record.properties && (!("syncRequestedAck"
+          in record.properties) || string(record.properties.syncRequestedAck)
+          != string(record.properties.syncRequestedAt))
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/github/githubsync

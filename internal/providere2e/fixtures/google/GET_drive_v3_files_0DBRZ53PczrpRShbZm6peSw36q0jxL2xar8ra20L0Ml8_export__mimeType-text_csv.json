@@ -1,0 +1,9 @@
+{
+ "__response": {
+  "status": 200,
+  "headers": {
+   "Content-Type": "text/csv"
+  }
+ },
+ "body": "The queue will be folded into the open question.\nThe rollout depends on the numbers from Friday, unless somebody objects.\nThe retry budget.\nThe draft should unblock the capacity note, pending one.\nThe draft rolls up into the shared doc.\nFollowing up: The new index still blocks the follow-up thread, pending one more read. The review landed ahead of the owner's sign-off.\nThe migration needs a second look from the second pass.\nThe rollout was split out of one.\nThe rollback plan still blocks the owner's sign-off.\nThe draft rolls up.\nThe dashboard now.\nThe dashboard now covers the capacity note.\nThe review will be folded into the capacity note.\nThe checklist needs a second look from.\nThe ingest path will be folded into the agreed cutoff.\nThe staging cluster needs a second look from the numbers from Friday."
+}

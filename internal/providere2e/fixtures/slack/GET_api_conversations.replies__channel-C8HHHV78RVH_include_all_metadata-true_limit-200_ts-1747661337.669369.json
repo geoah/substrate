@@ -1,0 +1,101 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747661337.669369",
+   "client_msg_id": "5b8794d1-e140-0416-51df-20238ef314db",
+   "text": "The <https://coppergate.example/candidates/beatrijs-pinewood/active/right-side/candidates/demetrios-stonebridge/Thimble/e7e4c355-f2c0-f1f6-2d3e-f12a17ae0853|The Migration> rollback plan is waiting on the shared doc.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747661337.669369",
+   "reply_count": 1,
+   "reply_users_count": 1,
+   "latest_reply": "1747661371.895589",
+   "reply_users": [
+    "U48XXRY7R9U"
+   ],
+   "is_locked": false,
+   "subscribed": true,
+   "last_read": "1747661371.895589",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "g0CEF",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "emoji",
+         "name": "Marek Westbrook",
+         "unicode": "1f9f5"
+        },
+        {
+         "type": "link",
+         "url": "https://coppergate.example/candidates/beatrijs-pinewood/active/right-side/candidates/demetrios-stonebridge/Thimble/e7e4c355-f2c0-f1f6-2d3e-f12a17ae0853",
+         "text": "The rollout landed ahead of a smaller slice.",
+         "style": {
+          "bold": true
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "+1",
+     "users": [
+      "U0ADA0WNER1"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747661371.895589",
+   "client_msg_id": "daad3811-622d-fa1e-ae51-697a5c359030",
+   "text": "<@UXQUMNTTWLM> The schedule <@U0ADA0WNER1> should unblock the numbers from Friday.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747661337.669369",
+   "parent_user_id": "U48XXRY7R9U",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "zjQaE",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "user",
+         "user_id": "UXQUMNTTWLM"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "user",
+         "user_id": "U0ADA0WNER1"
+        },
+        {
+         "type": "text",
+         "text": " The estimate still blocks the open question."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

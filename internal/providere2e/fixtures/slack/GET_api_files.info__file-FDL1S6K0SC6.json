@@ -1,0 +1,80 @@
+{
+ "ok": true,
+ "file": {
+  "id": "FDL1S6K0SC6",
+  "created": 1789497787,
+  "timestamp": 1789497787,
+  "mimetype": "image/png",
+  "filetype": "png",
+  "pretty_type": "PNG",
+  "user": "UT0Y90KCSPH",
+  "user_team": "T0ADATEAM01",
+  "editable": false,
+  "size": 34057,
+  "mode": "hosted",
+  "is_external": false,
+  "external_type": "",
+  "is_public": true,
+  "public_url_shared": false,
+  "display_as_bot": false,
+  "username": "",
+  "name": "The Estimate",
+  "title": "The Handover",
+  "is_modified_by_ai": false,
+  "url_private": "https://files.slack.com/files-pri/gaNkF6plT4nowsenwfF4B7w/astra_error.png",
+  "url_private_download": "https://files.slack.com/files-pri/gaNkF6plT4nowsenwfF4B7w/download/astra_error.png",
+  "media_display_type": "unknown",
+  "thumb_64": "https://files.slack.com/files-tmb/2uoKWWjbZPjgjWOrvNWuTaw38iwDJqC9qj/astra_error_64.png",
+  "thumb_80": "https://files.slack.com/files-tmb/2uoKWWjbZPjgjWOrvNWuTaw38iwDJqC9qj/astra_error_80.png",
+  "thumb_360": "https://files.slack.com/files-tmb/2uoKWWjbZPjgjWOrvNWuTaw38iwDJqC9qj/astra_error_360.png",
+  "thumb_360_w": 360,
+  "thumb_360_h": 73,
+  "thumb_480": "https://files.slack.com/files-tmb/2uoKWWjbZPjgjWOrvNWuTaw38iwDJqC9qj/astra_error_480.png",
+  "thumb_480_w": 480,
+  "thumb_480_h": 97,
+  "thumb_160": "https://files.slack.com/files-tmb/2uoKWWjbZPjgjWOrvNWuTaw38iwDJqC9qj/astra_error_160.png",
+  "original_w": 1366,
+  "original_h": 276,
+  "thumb_tiny": "KNYoaUu6fXYuuwpFeLbAOPtw6d5e07fiNXtkkZ21Ax0+YZWXoibmV2jt6SB8+zHT+GoLeOmzZuv7Ks==",
+  "permalink": "https://zephyr-lane.slack.com/files/adalovelace/FDL1S6K0SC6/astra_error.png",
+  "permalink_public": "https://brightsea.example/WuwfleH2RqUPRurQL49B6z4Z89ToiH7K8V",
+  "is_starred": false,
+  "shares": {
+   "public": {
+    "CSP27K97J3K": [
+     {
+      "ts": "1747680188.798929",
+      "channel_name": "pewter-room",
+      "team_id": "T0ADATEAM01",
+      "share_user_id": "UT0Y90KCSPH",
+      "source": "UNKNOWN",
+      "is_silent_share": false,
+      "reply_users": [
+       "UT0Y90KCSPH",
+       "UM0CRECPWYK",
+       "UZYSGS7CBM8",
+       "U00"
+      ],
+      "reply_users_count": 4,
+      "reply_count": 35,
+      "latest_reply": "1747771357.537059",
+      "thread_ts": "1747680178.877549"
+     }
+    ]
+   }
+  },
+  "channels": [
+   "CSP27K97J3K"
+  ],
+  "groups": [],
+  "ims": [],
+  "has_more_shares": false,
+  "has_rich_preview": false,
+  "file_access": "visible",
+  "comments_count": 0
+ },
+ "comments": [],
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

@@ -1,0 +1,109 @@
+{
+ "kind": "calendar#calendarList",
+ "etag": "\"p327qhdtflrr9c0o\"",
+ "nextSyncToken": "CI-ot6-u9pYDEhFnZW9yZ2VAbm9vZGxlcy5ncg==",
+ "items": [
+  {
+   "kind": "calendar#calendarListEntry",
+   "etag": "\"1758999756316399\"",
+   "id": "ada@zephyr-lane.example",
+   "summary": "The Staging",
+   "timeZone": "Europe/London",
+   "colorId": "6",
+   "backgroundColor": "#f4be40",
+   "foregroundColor": "#ffffff",
+   "selected": true,
+   "accessRole": "owner",
+   "defaultReminders": [
+    {
+     "method": "popup",
+     "minutes": 15
+    },
+    {
+     "method": "popup",
+     "minutes": 60
+    }
+   ],
+   "notificationSettings": {
+    "notifications": [
+     {
+      "type": "eventCreation",
+      "method": "email"
+     },
+     {
+      "type": "eventChange",
+      "method": "email"
+     },
+     {
+      "type": "eventCancellation",
+      "method": "email"
+     },
+     {
+      "type": "eventResponse",
+      "method": "email"
+     }
+    ]
+   },
+   "primary": true,
+   "conferenceProperties": {
+    "allowedConferenceSolutionTypes": [
+     "hangoutsIda"
+    ]
+   }
+  },
+  {
+   "kind": "calendar#calendarListEntry",
+   "etag": "\"1768228558038799\"",
+   "id": "c_6c0ee8a049a95c4a285bbe0598185bf4@group.calendar.google.com",
+   "summary": "c_6c0ee8a049a95c4a285bbe0598185bf4@group.calendar.google.com",
+   "timeZone": "Europe/London",
+   "colorId": "5",
+   "backgroundColor": "#ff7537",
+   "foregroundColor": "#000000",
+   "selected": true,
+   "accessRole": "reader",
+   "defaultReminders": [],
+   "conferenceProperties": {
+    "allowedConferenceSolutionTypes": [
+     "hangoutsIda"
+    ]
+   }
+  },
+  {
+   "kind": "calendar#calendarListEntry",
+   "etag": "\"1599760173146000\"",
+   "id": "c_970ad613abe5486e8d624be92b533b3c@group.calendar.google.com",
+   "summary": "The Rollout should",
+   "timeZone": "Europe/London",
+   "dataOwner": "quilla@ironvale.example",
+   "colorId": "18",
+   "backgroundColor": "#b99aff",
+   "foregroundColor": "#000000",
+   "selected": true,
+   "accessRole": "owner",
+   "defaultReminders": [],
+   "conferenceProperties": {
+    "allowedConferenceSolutionTypes": [
+     "hangoutsIda"
+    ]
+   }
+  },
+  {
+   "kind": "calendar#calendarListEntry",
+   "etag": "\"1774011797336015\"",
+   "id": "c_699db5a7460c841241a7dc192495f9f9@group.calendar.google.com",
+   "summary": "c_699db5a7460c841241a7dc192495f9f9@group.calendar.google.com",
+   "timeZone": "America/Los_Angeles",
+   "colorId": "4",
+   "backgroundColor": "#fa573c",
+   "foregroundColor": "#000000",
+   "accessRole": "freeBusyReader",
+   "defaultReminders": [],
+   "conferenceProperties": {
+    "allowedConferenceSolutionTypes": [
+     "hangoutsIda"
+    ]
+   }
+  }
+ ]
+}

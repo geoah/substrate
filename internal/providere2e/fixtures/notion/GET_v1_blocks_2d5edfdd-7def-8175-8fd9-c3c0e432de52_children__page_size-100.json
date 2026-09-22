@@ -1,0 +1,1335 @@
+{
+  "object": "list",
+  "results": [
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-817e-9afe-da2f5bb967c7",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "heading_1",
+      "heading_1": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Quick note: The rollout will be folded into the open question, as discussed. The estimate is waiting on next week's window, after the handover.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Quick note: The rollout will be folded into the open question, as discussed. The estimate is waiting on next week's window, after the handover.",
+            "href": null
+          }
+        ],
+        "is_toggleable": false,
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-8171-8890-c8f086beaf56",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "heading_2",
+      "heading_2": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "The review quietly changed the second pass, after the handover. The.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "The review quietly changed the second pass, after the handover. The.",
+            "href": null
+          }
+        ],
+        "is_toggleable": false,
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-81d7-945a-ec600d9fc6d1",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "For the record: The retry budget depends on a smaller slice, unless somebody objects. The queue still blocks the owner's sign-off.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "For the record: The retry budget depends on a smaller slice, unless somebody objects. The queue still blocks the owner's sign-off.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-819d-9021-f9d1ac9554db",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "The checklist is waiting on the.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "The checklist is waiting on the.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-8106-b6c9-d2e4e0852a19",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "The draft quietly changed the shared doc.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "The draft quietly changed the shared doc.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-814b-98ab-f6d00cb3d296",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "heading_2",
+      "heading_2": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "For the record: The staging cluster needs a second look from the follow-up thread, either way. The staging cluster.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "For the record: The staging cluster needs a second look from the follow-up thread, either way. The staging cluster.",
+            "href": null
+          }
+        ],
+        "is_toggleable": false,
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-8132-8fba-c356ce8560f0",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Summary: The migration is waiting on the capacity note, pending one more read. The rollback plan landed ahead of the shared doc, either way. This batch quietly changed the owner's sign-off, unless somebody objects. The draft rolls up into a smaller slice, either way. The estimate was split out of one more round of checks, for now. The retry budget now covers a smaller slice, as discussed. The draft will be folded into the agreed cutoff, assuming the counts hold. The draft landed ahead of the agreed cutoff, either way. The staging cluster rolls up into the open question, after the handover. The rollout is waiting on the owner's sign-off.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Summary: The migration is waiting on the capacity note, pending one more read. The rollback plan landed ahead of the shared doc, either way. This batch quietly changed the owner's sign-off, unless somebody objects. The draft rolls up into a smaller slice, either way. The estimate was split out of one more round of checks, for now. The retry budget now covers a smaller slice, as discussed. The draft will be folded into the agreed cutoff, assuming the counts hold. The draft landed ahead of the agreed cutoff, either way. The staging cluster rolls up into the open question, after the handover. The rollout is waiting on the owner's sign-off.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-812c-975e-ff7202c911d9",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "heading_2",
+      "heading_2": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Quick note: The retry budget now covers the capacity note, either way. The new index now covers the follow-up thread, if nothing else moves.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Quick note: The retry budget now covers the capacity note, either way. The new index now covers the follow-up thread, if nothing else moves.",
+            "href": null
+          }
+        ],
+        "is_toggleable": false,
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-8193-b3a1-da062c69090b",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "One thing: The new index rolls up into next week's window, before the window closes. This batch will be folded into the capacity note, as discussed. The rollback plan was split out of the numbers from Friday, if nothing else moves. The ingest path was split out of the shared doc, assuming the counts hold. The queue will be folded into the second pass, either way. The rollout should unblock the agreed cutoff, if nothing else moves. This batch will be folded into the agreed cutoff, once the numbers settle. The draft depends on a smaller slice, unless somebody objects. The retry budget depends on the second pass, once the numbers settle. The rollback plan should unblock the capacity note, once the numbers settle. The ingest path now covers the follow-up thread, if nothing else moves. The retry budget should unblock the shared doc, after the handover. The draft should unblock the earlier draft, as discussed. The checklist was split out of the follow-up thread.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "One thing: The new index rolls up into next week's window, before the window closes. This batch will be folded into the capacity note, as discussed. The rollback plan was split out of the numbers from Friday, if nothing else moves. The ingest path was split out of the shared doc, assuming the counts hold. The queue will be folded into the second pass, either way. The rollout should unblock the agreed cutoff, if nothing else moves. This batch will be folded into the agreed cutoff, once the numbers settle. The draft depends on a smaller slice, unless somebody objects. The retry budget depends on the second pass, once the numbers settle. The rollback plan should unblock the capacity note, once the numbers settle. The ingest path now covers the follow-up thread, if nothing else moves. The retry budget should unblock the shared doc, after the handover. The draft should unblock the earlier draft, as discussed. The checklist was split out of the follow-up thread.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-814e-b416-c6786f589d19",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Heads up \u2014 The queue needs a second look from the agreed cutoff, after the handover. The dashboard now covers a smaller slice, either way. The handover needs a second look from the open question, as discussed. The dashboard quietly changed the agreed cutoff, either way. The rollback plan landed ahead of the earlier draft, either way. The new index is waiting on the numbers from Friday, as discussed. The draft now covers next week's window, for now. The checklist still blocks the numbers from Friday, before the window closes. The new index still blocks the capacity note, for now. The staging cluster was split out of the second pass, either way. The migration will be folded into the follow-up thread, for now. The staging cluster was split out of a smaller slice, for now. The staging cluster still blocks one more round of checks, assuming the counts hold. The estimate landed ahead of the second pass, once the numbers settle. The estimate needs a second look from the follow-up thread, before the window closes. The migration will be folded into the agreed cutoff, if nothing else moves. The checklist quietly changed the follow-up thread, either way. The new index rolls up into a smaller slice, pending one more read. The queue quietly changed the open question, assuming the counts hold. The schedule rolls up into the shared doc.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Heads up \u2014 The queue needs a second look from the agreed cutoff, after the handover. The dashboard now covers a smaller slice, either way. The handover needs a second look from the open question, as discussed. The dashboard quietly changed the agreed cutoff, either way. The rollback plan landed ahead of the earlier draft, either way. The new index is waiting on the numbers from Friday, as discussed. The draft now covers next week's window, for now. The checklist still blocks the numbers from Friday, before the window closes. The new index still blocks the capacity note, for now. The staging cluster was split out of the second pass, either way. The migration will be folded into the follow-up thread, for now. The staging cluster was split out of a smaller slice, for now. The staging cluster still blocks one more round of checks, assuming the counts hold. The estimate landed ahead of the second pass, once the numbers settle. The estimate needs a second look from the follow-up thread, before the window closes. The migration will be folded into the agreed cutoff, if nothing else moves. The checklist quietly changed the follow-up thread, either way. The new index rolls up into a smaller slice, pending one more read. The queue quietly changed the open question, assuming the counts hold. The schedule rolls up into the shared doc.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-81b4-a75c-efbd706425d4",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "For the record: The checklist landed ahead of the shared doc, before the window closes. This batch landed ahead of the second pass, as discussed. The queue needs a second look from the capacity note, unless somebody objects. The staging cluster should unblock the capacity note, pending one more read. The ingest path depends on one more round of checks, after the handover. The draft depends on the agreed cutoff.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "For the record: The checklist landed ahead of the shared doc, before the window closes. This batch landed ahead of the second pass, as discussed. The queue needs a second look from the capacity note, unless somebody objects. The staging cluster should unblock the capacity note, pending one more read. The ingest path depends on one more round of checks, after the handover. The draft depends on the agreed cutoff.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-8173-bda6-cec894d1139a",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "The rollout was split out of the shared doc, as discussed. The estimate should unblock.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "The rollout was split out of the shared doc, as discussed. The estimate should unblock.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-8186-9479-de3460d1595c",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "The schedule will be folded into the follow-up thread, pending one more read.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "The schedule will be folded into the follow-up thread, pending one more read.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-81d8-a64b-e4dc1d42984f",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "The rollback plan should unblock the agreed cutoff.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "The rollback plan should unblock the agreed cutoff.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-811b-a9d1-cb509bccd70f",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Following up: The retry budget should unblock the capacity note, assuming the counts hold. The estimate will be folded into the owner's sign-off, either way. The estimate now covers the shared doc, once the numbers settle. The retry budget depends on the follow-up thread, after the handover. The rollback plan quietly changed one more round of checks.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Following up: The retry budget should unblock the capacity note, assuming the counts hold. The estimate will be folded into the owner's sign-off, either way. The estimate now covers the shared doc, once the numbers settle. The retry budget depends on the follow-up thread, after the handover. The rollback plan quietly changed one more round of checks.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-816e-a7da-d026640d8650",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Summary: The estimate rolls up into the earlier draft, pending one more read. The estimate should unblock next week's window, before the window closes. The handover now covers the numbers from Friday.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Summary: The estimate rolls up into the earlier draft, pending one more read. The estimate should unblock next week's window, before the window closes. The handover now covers the numbers from Friday.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-81b3-82a9-eb9ecb6dc42d",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Short version: The queue depends on one more round of checks, once the numbers settle. The migration needs a second look from the follow-up thread, pending one more read. This batch still blocks the open question, as discussed. The review is waiting on next week's window, as discussed. The ingest path will be folded into the shared doc, for now. The review still blocks the agreed cutoff, assuming the counts hold.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Short version: The queue depends on one more round of checks, once the numbers settle. The migration needs a second look from the follow-up thread, pending one more read. This batch still blocks the open question, as discussed. The review is waiting on next week's window, as discussed. The ingest path will be folded into the shared doc, for now. The review still blocks the agreed cutoff, assuming the counts hold.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-8132-aca4-eae48a06beb6",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Context: The new index is waiting on one more round of checks, if nothing else moves. The staging cluster still blocks the capacity note, pending one more read. The dashboard was split out of the agreed cutoff, if nothing else moves. The review still blocks next week's window, for now. The queue rolls up into one more round of checks.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Context: The new index is waiting on one more round of checks, if nothing else moves. The staging cluster still blocks the capacity note, pending one more read. The dashboard was split out of the agreed cutoff, if nothing else moves. The review still blocks next week's window, for now. The queue rolls up into one more round of checks.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-8108-a358-ecc8d83d3884",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "The rollback plan depends on next week's window.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "The rollback plan depends on next week's window.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-81c6-8e63-f55b208b87b5",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Quick note: The staging cluster still blocks the shared doc, pending one more read. The checklist depends on the earlier draft, before the window closes. The rollback plan rolls up into one more round of checks, for now. The review still blocks the owner's sign-off, after the handover. The retry budget landed ahead of the second pass, unless somebody objects. The retry budget needs a second look from the capacity note.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Quick note: The staging cluster still blocks the shared doc, pending one more read. The checklist depends on the earlier draft, before the window closes. The rollback plan rolls up into one more round of checks, for now. The review still blocks the owner's sign-off, after the handover. The retry budget landed ahead of the second pass, unless somebody objects. The retry budget needs a second look from the capacity note.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-8151-ab16-de22231c9563",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Context: The ingest path needs a second look from the agreed cutoff, after the handover. The new index still blocks the shared doc, as discussed. The dashboard should unblock the numbers from Friday, for now. The review depends on the numbers from Friday, assuming the counts hold. The estimate depends on the earlier draft, once the numbers settle. The checklist depends on the earlier draft, if nothing else moves. The draft depends on the owner's sign-off, after the handover. The review needs a second look from the earlier draft, as discussed. The ingest path still blocks the agreed cutoff, if nothing else moves. The review is waiting on the open question, for now. The new index needs a second look from the capacity note.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Context: The ingest path needs a second look from the agreed cutoff, after the handover. The new index still blocks the shared doc, as discussed. The dashboard should unblock the numbers from Friday, for now. The review depends on the numbers from Friday, assuming the counts hold. The estimate depends on the earlier draft, once the numbers settle. The checklist depends on the earlier draft, if nothing else moves. The draft depends on the owner's sign-off, after the handover. The review needs a second look from the earlier draft, as discussed. The ingest path still blocks the agreed cutoff, if nothing else moves. The review is waiting on the open question, for now. The new index needs a second look from the capacity note.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-8174-9697-d09ed4ca900f",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "The checklist needs a second look from.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "The checklist needs a second look from.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-8179-9b6f-d12a8ded2b80",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Quick note: The rollout landed ahead of next week's window, once the numbers settle. This batch will be folded into the open question.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Quick note: The rollout landed ahead of next week's window, once the numbers settle. This batch will be folded into the open question.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-8196-9020-eef7d750c424",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "One thing: The new index still blocks one more round of checks, after the handover. The handover landed ahead of the shared doc, pending one more read. The dashboard will be folded into the shared doc, unless somebody objects. The review landed ahead of the owner's sign-off, for now. The checklist depends on a smaller slice.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "One thing: The new index still blocks one more round of checks, after the handover. The handover landed ahead of the shared doc, pending one more read. The dashboard will be folded into the shared doc, unless somebody objects. The review landed ahead of the owner's sign-off, for now. The checklist depends on a smaller slice.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-816d-9145-d43d8f24aede",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Short version: The draft rolls up into the numbers from Friday, assuming the counts hold. The retry budget was split out of the second pass, once the numbers settle. The handover still blocks the owner's sign-off, either way. The rollback plan should unblock next week's window, either way. The estimate needs a second look from the open question, if nothing else moves. The handover was split out of the follow-up thread.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Short version: The draft rolls up into the numbers from Friday, assuming the counts hold. The retry budget was split out of the second pass, once the numbers settle. The handover still blocks the owner's sign-off, either way. The rollback plan should unblock next week's window, either way. The estimate needs a second look from the open question, if nothing else moves. The handover was split out of the follow-up thread.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-811e-846e-e2275dfe6d9f",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Summary: The ingest path depends on a smaller slice, pending one more read. The dashboard is waiting on the shared doc, either way. The rollout is waiting on one more round of checks, after the handover. The rollback plan is waiting on a smaller slice, once the numbers settle. The rollout now covers the follow-up thread, pending one more read. The rollout was split out of the earlier draft, as discussed.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Summary: The ingest path depends on a smaller slice, pending one more read. The dashboard is waiting on the shared doc, either way. The rollout is waiting on one more round of checks, after the handover. The rollback plan is waiting on a smaller slice, once the numbers settle. The rollout now covers the follow-up thread, pending one more read. The rollout was split out of the earlier draft, as discussed.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-81f5-8b43-d7b918636935",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Summary: The rollback plan quietly changed the earlier draft, assuming the counts hold. The rollout was split out of next week's window, either way. The checklist needs a second look from the follow-up thread, before the window closes. This batch quietly changed the open question, as discussed. The staging cluster now covers the follow-up thread, before the window closes. The draft depends on the numbers from Friday, once the numbers settle. The schedule landed ahead of the owner's sign-off, if nothing else moves. The rollout needs a second look from the numbers from Friday, pending one more read. The queue still blocks a smaller slice, either way. The queue rolls up into the second pass, unless somebody objects. The dashboard was split out of the second pass, either way.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Summary: The rollback plan quietly changed the earlier draft, assuming the counts hold. The rollout was split out of next week's window, either way. The checklist needs a second look from the follow-up thread, before the window closes. This batch quietly changed the open question, as discussed. The staging cluster now covers the follow-up thread, before the window closes. The draft depends on the numbers from Friday, once the numbers settle. The schedule landed ahead of the owner's sign-off, if nothing else moves. The rollout needs a second look from the numbers from Friday, pending one more read. The queue still blocks a smaller slice, either way. The queue rolls up into the second pass, unless somebody objects. The dashboard was split out of the second pass, either way.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-81f4-85f7-c040624732b2",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "heading_2",
+      "heading_2": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "The queue needs a second look from the owner's sign-off, once the numbers settle.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "The queue needs a second look from the owner's sign-off, once the numbers settle.",
+            "href": null
+          }
+        ],
+        "is_toggleable": false,
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-8174-a023-dc649bd8a655",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Context: The retry budget rolls up into the owner's sign-off, if nothing else moves. The ingest path needs a second look.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Context: The retry budget rolls up into the owner's sign-off, if nothing else moves. The ingest path needs a second look.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "2d5edfdd-7def-81ed-bb91-dbf472911aeb",
+      "parent": {
+        "type": "page_id",
+        "page_id": "2d5edfdd-7def-8175-8fd9-c3c0e432de52"
+      },
+      "created_time": "2025-12-26T17:44:00.000Z",
+      "last_edited_time": "2025-12-26T17:44:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "c1c9ed06-8fc1-fe3d-291e-e95393e8502f"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Quick note: The ingest path will be folded into a smaller slice, before the window closes. The migration still blocks one more round of checks, for now. The retry budget rolls up into next week's window, before the window closes. The staging cluster is waiting on a smaller slice, before the window closes. The estimate landed ahead of the agreed cutoff, after the handover. The retry budget will be folded into the capacity note, once the numbers settle. The checklist still blocks the follow-up thread, unless somebody objects. The handover depends on the follow-up thread, assuming the counts hold. The rollback plan now covers a smaller slice, if nothing else moves. The checklist should unblock the earlier draft, if nothing else moves. The checklist rolls up into one more round of checks, either way. The retry budget was split out of the follow-up thread, as discussed. The staging cluster should unblock the follow-up thread, once the numbers settle. The queue quietly changed next week's window, as discussed. The dashboard now covers the agreed cutoff, either way. The estimate was split out of the second pass, if nothing else moves. The draft landed ahead of one more round of checks, assuming the counts hold. The ingest path depends on one more round of checks, for now. The handover should unblock the numbers from Friday, unless somebody objects. The schedule was split out of the agreed cutoff, pending one more read. The queue quietly changed the open question, pending one more read. The migration is waiting on the agreed cutoff, as discussed. The schedule is waiting on the owner's sign-off.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Quick note: The ingest path will be folded into a smaller slice, before the window closes. The migration still blocks one more round of checks, for now. The retry budget rolls up into next week's window, before the window closes. The staging cluster is waiting on a smaller slice, before the window closes. The estimate landed ahead of the agreed cutoff, after the handover. The retry budget will be folded into the capacity note, once the numbers settle. The checklist still blocks the follow-up thread, unless somebody objects. The handover depends on the follow-up thread, assuming the counts hold. The rollback plan now covers a smaller slice, if nothing else moves. The checklist should unblock the earlier draft, if nothing else moves. The checklist rolls up into one more round of checks, either way. The retry budget was split out of the follow-up thread, as discussed. The staging cluster should unblock the follow-up thread, once the numbers settle. The queue quietly changed next week's window, as discussed. The dashboard now covers the agreed cutoff, either way. The estimate was split out of the second pass, if nothing else moves. The draft landed ahead of one more round of checks, assuming the counts hold. The ingest path depends on one more round of checks, for now. The handover should unblock the numbers from Friday, unless somebody objects. The schedule was split out of the agreed cutoff, pending one more read. The queue quietly changed the open question, pending one more read. The migration is waiting on the agreed cutoff, as discussed. The schedule is waiting on the owner's sign-off.",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "archived": false
+    }
+  ],
+  "next_cursor": "2d5edfdd-7def-81a1-9937-e7943d4801bc",
+  "has_more": true,
+  "type": "block",
+  "block": {},
+  "request_id": "036a16df-5899-4d8a-a852-6a99cb9ce83e"
+}

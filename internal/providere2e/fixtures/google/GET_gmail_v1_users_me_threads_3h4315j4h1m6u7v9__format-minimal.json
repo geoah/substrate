@@ -1,0 +1,30 @@
+{
+ "id": "3h4315j4h1m6u7v9",
+ "historyId": "30542601",
+ "messages": [
+  {
+   "id": "3h4315j4h1m6u7v9",
+   "threadId": "3h4315j4h1m6u7v9",
+   "labelIds": [
+    "JOMCLDKQ_KBMDUQI",
+    "INBOX"
+   ],
+   "snippet": "For the record: This batch landed ahead of the follow-up thread, either way. The handover will be folded into the owner's sign-off, after the handover. The estimate landed ahead of a smaller slice.",
+   "historyId": "30542601",
+   "internalDate": "1788863998000",
+   "sizeEstimate": 9717
+  },
+  {
+   "id": "2d8813x9d3a9e007",
+   "threadId": "3h4315j4h1m6u7v9",
+   "labelIds": [
+    "OGRPGRXN_HZBUUEYW",
+    "INBOX"
+   ],
+   "snippet": "Heads up — The dashboard landed ahead of the shared doc, after the handover. The migration should unblock the numbers from Friday, after the handover. The retry budget rolls up into a smaller slice.",
+   "historyId": "30542601",
+   "internalDate": "1788864063000",
+   "sizeEstimate": 9644
+  }
+ ]
+}

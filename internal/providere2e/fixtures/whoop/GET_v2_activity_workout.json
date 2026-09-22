@@ -1,0 +1,99 @@
+{
+ "records": [
+  {
+   "id": "e61b4f8a-71c0-4d3e-9a52-b8470f2c9d13",
+   "user_id": 4021873,
+   "created_at": "2026-09-12T09:31:02.771Z",
+   "updated_at": "2026-09-12T09:31:02.771Z",
+   "start": "2026-09-12T08:44:11.900Z",
+   "end": "2026-09-12T09:28:50.337Z",
+   "timezone_offset": "+01:00",
+   "sport_name": "walking",
+   "score_state": "UNSCORABLE"
+  },
+  {
+   "id": "8be3017c-52d9-4a16-b84f-c90d27e6135a",
+   "user_id": 4021873,
+   "created_at": "2026-09-11T12:05:31.442Z",
+   "updated_at": "2026-09-11T12:41:09.006Z",
+   "start": "2026-09-11T11:14:50.118Z",
+   "end": "2026-09-11T12:02:37.220Z",
+   "timezone_offset": "+01:00",
+   "sport_name": "padel",
+   "score_state": "SCORED",
+   "score": {
+    "strain": 9.1183,
+    "average_heart_rate": 128,
+    "max_heart_rate": 166,
+    "kilojoule": 1884.11523,
+    "percent_recorded": 91.0,
+    "distance_meter": 2104.66015625,
+    "zone_durations": {
+     "zone_zero_milli": 240000,
+     "zone_one_milli": 618000,
+     "zone_two_milli": 1104000,
+     "zone_three_milli": 802000,
+     "zone_four_milli": 102000,
+     "zone_five_milli": 0
+    }
+   }
+  },
+  {
+   "id": "2a7f6b94-8c15-4de0-a17c-6b03e5947f28",
+   "user_id": 4021873,
+   "created_at": "2026-09-10T08:12:44.913Z",
+   "updated_at": "2026-09-10T08:59:31.207Z",
+   "start": "2026-09-10T07:30:02.441Z",
+   "end": "2026-09-10T08:11:55.663Z",
+   "timezone_offset": "+01:00",
+   "sport_name": "weightlifting",
+   "score_state": "SCORED",
+   "score": {
+    "strain": 6.4172,
+    "average_heart_rate": 104,
+    "max_heart_rate": 138,
+    "kilojoule": 1103.22168,
+    "percent_recorded": 98.0,
+    "zone_durations": {
+     "zone_zero_milli": 602000,
+     "zone_one_milli": 1284000,
+     "zone_two_milli": 588000,
+     "zone_three_milli": 24000,
+     "zone_four_milli": 0,
+     "zone_five_milli": 0
+    }
+   }
+  },
+  {
+   "id": "d05c9a71-4e38-4c02-9b6d-3f1a7c82e540",
+   "v1_id": 55210488,
+   "user_id": 4021873,
+   "created_at": "2026-09-08T18:44:10.772Z",
+   "updated_at": "2026-09-08T19:22:03.118Z",
+   "start": "2026-09-08T17:51:22.004Z",
+   "end": "2026-09-08T18:39:47.881Z",
+   "timezone_offset": "+01:00",
+   "sport_name": "running",
+   "sport_id": 0,
+   "score_state": "SCORED",
+   "score": {
+    "strain": 10.7734,
+    "average_heart_rate": 141,
+    "max_heart_rate": 172,
+    "kilojoule": 2184.90332,
+    "percent_recorded": 100.0,
+    "distance_meter": 8412.44921875,
+    "altitude_gain_meter": 71.2338867,
+    "altitude_change_meter": -1.4038086,
+    "zone_durations": {
+     "zone_zero_milli": 180000,
+     "zone_one_milli": 402000,
+     "zone_two_milli": 918000,
+     "zone_three_milli": 1104000,
+     "zone_four_milli": 288000,
+     "zone_five_milli": 13000
+    }
+   }
+  }
+ ]
+}

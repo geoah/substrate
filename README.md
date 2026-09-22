@@ -31,7 +31,7 @@ same API. [docs/README.md](docs/README.md) draws the comparison out.
   (full-text and vector search) and tails them.
 - **Bundles.** Vocabulary, functions and agents install and uninstall as one
   unit. The catalog compiled into the binary ships sync for Google, GitHub,
-  Linear, Notion, Beeper and Whoop, so a mailbox or a calendar becomes
+  Linear, Notion, Slack, Beeper and Whoop, so a mailbox or a calendar becomes
   records you own rather than an API you rent, plus Firecrawl functions
   agents can call to search and read the web.
 - **Functions and triggers.** A function is real Python code, stored
@@ -356,7 +356,7 @@ The console's Agents page can then chat with `assistant`, which reads your
 tasks and writes them back through the same API as everything else.
 [docs/agents.md](docs/agents.md) has the rest: wires, pricing, sub-agents,
 budgets. The same catalog carries the provider sync bundles (Google,
-GitHub, Linear, Notion, Beeper, Whoop) and vocabularies (tasks, people,
+GitHub, Linear, Notion, Slack, Beeper, Whoop) and vocabularies (tasks, people,
 calendar, messaging and more): [docs/bundles.md](docs/bundles.md) is the
 model, [docs/bundles-catalog.md](docs/bundles-catalog.md) what ships
 today.

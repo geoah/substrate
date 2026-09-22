@@ -1,0 +1,242 @@
+[
+ {
+  "id": 1539490098,
+  "node_id": "PRR_kwDPAAAAAeldMETOW8LBMg",
+  "user": {
+   "login": "tidal",
+   "id": 969375251,
+   "node_id": "BOT_kgDOOcd-Ew",
+   "avatar_url": "https://avatars.githubusercontent.com/in/650598?v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/cinder",
+   "html_url": "https://github.com/apps/cobalt",
+   "followers_url": "https://api.github.com/users/cinder/followers",
+   "following_url": "https://api.github.com/users/cinder/following{/other_user}",
+   "gists_url": "https://api.github.com/users/cinder/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/cinder/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/cinder/subscriptions",
+   "organizations_url": "https://api.github.com/users/cinder/orgs",
+   "repos_url": "https://api.github.com/users/cinder/repos",
+   "events_url": "https://api.github.com/users/cinder/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/cinder/received_events",
+   "type": "Bot",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "The new index needs a second look.\n\nThe ingest path is waiting on the owner's sign-off.\nThe new index is waiting on the capacity note, for now. The ingest path.\n\nThis batch landed ahead of the follow-up thread.\nThe queue quietly changed the open question, before the window closes. The new index.\nThe draft was split out of the follow-up thread, pending one more read.\n\nThe new index now covers the second pass.\nThe review needs a second look from the owner's sign-off, pending one more read.\n- The rollback plan needs a second look from one more round of checks.\nThe draft should unblock the shared doc, either way. The queue now covers the agreed cutoff.\nThe dashboard was split out of the agreed cutoff, pending one more read. The.\nThe ingest path quietly changed the shared doc, once the numbers settle.\nThe review rolls up into next week's window, after the handover. The ingest path.\nThe estimate still blocks the earlier draft, for now. The dashboard depends.\nThe rollback plan still blocks one more round of checks, as discussed. The.\nThis batch depends on the second pass, as discussed. The dashboard.\nThe estimate now covers the owner's sign-off, before the window closes. The.\nThe dashboard is waiting on.\n\nThe retry budget should unblock the numbers from Friday.\nThe handover should unblock the capacity note, before the window closes. The queue landed ahead.\n- The checklist is waiting on a smaller slice, assuming the counts hold. The estimate.\nThe new index needs a second look from the owner's sign-off, if nothing else moves.\nThe migration landed ahead of the open question, once the numbers settle. The review.\nThe new index will be folded into the earlier draft, for now. The new.\nThe ingest path is waiting on the follow-up thread, after the handover. The staging.\nThe draft depends on the earlier draft, as discussed. The handover needs a.\nThe handover now covers the second pass, before the window closes. This batch.\nThe handover still.\n- The estimate was split out of the numbers from Friday, assuming the counts hold.\nThe schedule will be folded into the follow-up thread, either way. The new index.\nThe queue now covers next week's window, if nothing else moves.\nThe handover should unblock the agreed cutoff, either way. The new index should.\nThe staging cluster depends on the capacity note, assuming the counts hold.\nThe rollout will be folded into a smaller slice, assuming the counts hold.\nThe rollout quietly changed the follow-up thread, if nothing else moves. The.\nThe staging cluster is waiting on one more round of checks, if nothing else moves.\nThe checklist landed ahead of the numbers from Friday, once the.\nThe checklist will be folded into the shared doc, for now. The new index depends on.\nThe rollout is waiting on the open question.\n\nThe staging cluster is waiting on next week's window.\nThe new index now covers the second pass, assuming the counts hold. The review should.\n- The ingest path should unblock the agreed cutoff, either way. This batch was split.\nThe new index is waiting on a smaller slice, pending one more read. The checklist.\nThe ingest path needs a second look from a smaller slice, before the window closes.\nThe review is waiting on one more round of checks, if nothing else moves. The.\nThe review is waiting on the follow-up thread, before the window closes.\nThe dashboard rolls up into one more round of checks, pending one more read.\nThe staging cluster quietly changed one more round of checks, assuming the counts hold.\nThe retry budget should unblock the open question, after the handover. The estimate now.\nThis batch now covers next.\n- The handover now covers the numbers from Friday, after the handover. This batch.\nThe queue now covers the numbers from Friday, before the window closes. The draft.\nThe staging cluster was split out of the owner's sign-off, pending one more read.\nThe review should unblock the owner's sign-off, once the numbers settle. The.\nThe retry budget is waiting on next week's window, once the numbers settle. The.\nThe ingest path rolls up into the owner's sign-off, if nothing else moves.\nThe staging cluster depends on the second pass, before the.\nThe rollout now covers the second pass.\n\nThe migration will be folded into the agreed cutoff.\n\nThe rollback plan quietly changed the shared doc.\nThe review landed ahead of the.\n\nThe rollout landed ahead of the owner's sign-off, if.\n\n- Context: The ingest path will be folded into next week's window, for now. The dashboard should unblock the numbers from Friday.\n- For the record: The ingest path should unblock next week's window, if nothing else moves. This batch now.\n\nThe handover will be folded into the second pass.\n\nThe checklist depends on the shared doc.\n\nThe retry budget will be folded into the shared doc.\nThe schedule was split out of the.\n\nThe dashboard still blocks the numbers from Friday.\nThe rollout is waiting on the capacity note.\n\nThe new index will be folded into.\n\nThis batch still blocks a.\n\nThe draft will be folded into the agreed cutoff.\n\nThe queue needs a second look from the shared doc, for now.\n\nThe rollout landed ahead of the earlier draft.\n\nThe queue needs a second look from a smaller slice.\nThe staging cluster now.\n\nContext: This batch depends on a smaller slice, before the window closes. The migration should unblock the shared doc, assuming the counts hold. The draft was split.\n\nThe schedule is waiting on the earlier draft.\n\nThe retry budget is waiting on the open question.\nThe staging cluster quietly changed one more round of checks.\n\n* The dashboard will be folded into the earlier draft, once the numbers settle.\n* The retry budget rolls up into a smaller slice, after the handover. This batch landed ahead.\n* The retry budget still blocks the shared doc, assuming the counts hold. The draft.\n* The rollback plan needs a second look from the follow-up thread, as discussed. The.\n\nThe checklist is waiting on the owner's sign-off.\n\nThe review needs a second look from the owner's sign-off.\n\nThis batch rolls up into the open question, as discussed. The new index needs a.",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/shale-line/cobalt/pull/449#pullrequestreview-4361717433",
+  "pull_request_url": "https://api.github.com/repos/shale-line/cobalt/pulls/449",
+  "author_association": "NONE",
+  "_links": {
+   "html": {
+    "href": "https://github.com/shale-line/Junction Nine/pull/449#pullrequestreview-4361717433"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/shale-line/Junction Nine/pulls/449"
+   }
+  },
+  "submitted_at": "2026-05-26T07:54:37Z",
+  "commit_id": "172ee38258c0b995963372ea1bf7864f5f860b3a"
+ },
+ {
+  "id": 4161767554,
+  "node_id": "PRR_kwDPAAAAAeldMETO-A-Igg",
+  "user": {
+   "login": "quintilian-goodspeed",
+   "id": 133314215,
+   "node_id": "U_kgDOB_I2pw",
+   "avatar_url": "https://avatars.githubusercontent.com/u/133314215?v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/quintilian-goodspeed",
+   "html_url": "https://github.com/quintilian-goodspeed",
+   "followers_url": "https://api.github.com/users/quintilian-goodspeed/followers",
+   "following_url": "https://api.github.com/users/quintilian-goodspeed/following{/other_user}",
+   "gists_url": "https://api.github.com/users/quintilian-goodspeed/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/quintilian-goodspeed/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/quintilian-goodspeed/subscriptions",
+   "organizations_url": "https://api.github.com/users/quintilian-goodspeed/orgs",
+   "repos_url": "https://api.github.com/users/quintilian-goodspeed/repos",
+   "events_url": "https://api.github.com/users/quintilian-goodspeed/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/quintilian-goodspeed/received_events",
+   "type": "User",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "Context: The estimate was split out of the capacity note, assuming the counts hold. The review needs a second look from a smaller slice, as discussed. The retry budget is waiting on the second pass, for now. The rollout needs a second look from the open question, once the numbers settle. The draft quietly changed the capacity note, unless somebody objects.",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/shale-line/cobalt/pull/449#pullrequestreview-4466629213",
+  "pull_request_url": "https://api.github.com/repos/shale-line/cobalt/pulls/449",
+  "author_association": "MEMBER",
+  "_links": {
+   "html": {
+    "href": "https://github.com/shale-line/Junction Nine/pull/449#pullrequestreview-4466629213"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/shale-line/Junction Nine/pulls/449"
+   }
+  },
+  "submitted_at": "2026-06-10T10:03:15Z",
+  "commit_id": "278fb000d95e6a9b8d8ef82051bb4173dc93caa3"
+ },
+ {
+  "id": 6405963983,
+  "node_id": "PRR_kwDPAAAAAeldMETPAAAAAX3TQM8",
+  "user": {
+   "login": "quintilian-goodspeed",
+   "id": 133314215,
+   "node_id": "U_kgDOB_I2pw",
+   "avatar_url": "https://avatars.githubusercontent.com/u/133314215?v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/quintilian-goodspeed",
+   "html_url": "https://github.com/quintilian-goodspeed",
+   "followers_url": "https://api.github.com/users/quintilian-goodspeed/followers",
+   "following_url": "https://api.github.com/users/quintilian-goodspeed/following{/other_user}",
+   "gists_url": "https://api.github.com/users/quintilian-goodspeed/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/quintilian-goodspeed/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/quintilian-goodspeed/subscriptions",
+   "organizations_url": "https://api.github.com/users/quintilian-goodspeed/orgs",
+   "repos_url": "https://api.github.com/users/quintilian-goodspeed/repos",
+   "events_url": "https://api.github.com/users/quintilian-goodspeed/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/quintilian-goodspeed/received_events",
+   "type": "User",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "",
+  "state": "DISMISSED",
+  "html_url": "https://github.com/shale-line/cobalt/pull/449#pullrequestreview-4523102588",
+  "pull_request_url": "https://api.github.com/repos/shale-line/cobalt/pulls/449",
+  "author_association": "MEMBER",
+  "_links": {
+   "html": {
+    "href": "https://github.com/shale-line/Junction Nine/pull/449#pullrequestreview-4523102588"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/shale-line/Junction Nine/pulls/449"
+   }
+  },
+  "submitted_at": "2026-06-18T08:28:07Z",
+  "commit_id": "bc1cb2ff0cbba06acb1bd446abb96ce6c404d97f"
+ },
+ {
+  "id": 9666030164,
+  "node_id": "PRR_kwDPAAAAAeldMETPAAAAAkAj6lQ",
+  "user": {
+   "login": "birch-bay",
+   "id": 74363158,
+   "node_id": "MDM6Qm90NzQzNjMxNTg",
+   "avatar_url": "https://avatars.githubusercontent.com/in/96281?v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/tamarisk-crew",
+   "html_url": "https://github.com/apps/quartz-crew",
+   "followers_url": "https://api.github.com/users/tamarisk-crew/followers",
+   "following_url": "https://api.github.com/users/tamarisk-crew/following{/other_user}",
+   "gists_url": "https://api.github.com/users/tamarisk-crew/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/tamarisk-crew/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/tamarisk-crew/subscriptions",
+   "organizations_url": "https://api.github.com/users/tamarisk-crew/orgs",
+   "repos_url": "https://api.github.com/users/tamarisk-crew/repos",
+   "events_url": "https://api.github.com/users/tamarisk-crew/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/tamarisk-crew/received_events",
+   "type": "Bot",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/shale-line/cobalt/pull/449#pullrequestreview-4959121591",
+  "pull_request_url": "https://api.github.com/repos/shale-line/cobalt/pulls/449",
+  "author_association": "NONE",
+  "_links": {
+   "html": {
+    "href": "https://github.com/shale-line/Junction Nine/pull/449#pullrequestreview-4959121591"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/shale-line/Junction Nine/pulls/449"
+   }
+  },
+  "submitted_at": "2026-08-18T08:46:39Z",
+  "commit_id": "c6d4973e7050897256639a6d07116990d60bef80"
+ },
+ {
+  "id": 9316052001,
+  "node_id": "PRR_kwDPAAAAAeldMETPAAAAAitHrCE",
+  "user": {
+   "login": "tidal",
+   "id": 969375251,
+   "node_id": "BOT_kgDOOcd-Ew",
+   "avatar_url": "https://avatars.githubusercontent.com/in/650598?v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/cinder",
+   "html_url": "https://github.com/apps/cobalt",
+   "followers_url": "https://api.github.com/users/cinder/followers",
+   "following_url": "https://api.github.com/users/cinder/following{/other_user}",
+   "gists_url": "https://api.github.com/users/cinder/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/cinder/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/cinder/subscriptions",
+   "organizations_url": "https://api.github.com/users/cinder/orgs",
+   "repos_url": "https://api.github.com/users/cinder/repos",
+   "events_url": "https://api.github.com/users/cinder/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/cinder/received_events",
+   "type": "Bot",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "The estimate landed ahead of one.\nShort version: The migration landed ahead of the agreed cutoff, if nothing else moves. The rollout quietly changed the capacity note.\nThe dashboard is waiting on the follow-up thread.\n\nThe draft quietly changed the.\n\nThe queue should unblock the shared doc.\nThe checklist was split out of one more round of checks, after the handover.\n\nThe handover rolls up into a smaller slice.\nThis batch was split out of the capacity note, for now. The draft now covers the.\nThe review was split out of the owner's sign-off, after the handover. The schedule.\nThe estimate quietly changed next week's window, if nothing else moves. This.\nThe estimate landed.\n\nThe ingest path rolls up into the owner's sign-off.\nThe ingest path now covers the follow-up thread.\nThe handover should unblock one more round of checks, for now. The migration now covers the capacity note.\n- The migration still blocks the open question, unless somebody objects. The schedule.\nThe staging cluster is waiting on the second pass, assuming the counts hold. The.\nThe ingest path rolls up into the shared doc, for now. The ingest path should.\nThe schedule was split out of one more round of checks, once the numbers settle.\nThe draft rolls up into the owner's sign-off, unless somebody objects. The rollout.\nThe queue rolls up into.\n\nThe handover landed ahead of the numbers from Friday, either way. The rollout rolls up.\n- The dashboard should unblock a smaller slice, unless somebody objects. The retry.\nThe migration landed ahead of the numbers from Friday, pending one.\nThe draft now covers a smaller slice, unless somebody objects. The ingest path needs a.\nThe queue still blocks next week's window, as discussed.\nThe staging cluster rolls up into the shared doc, if nothing else moves.\nThe rollback plan is waiting on the open question, once.\nThe ingest path rolls up into the open question, as discussed. The estimate should.\nThe ingest path needs a second look from the agreed cutoff, once the numbers settle.\nThe review needs a second look from the capacity note, pending one more read. The estimate.\nThe schedule needs a second look from a smaller slice, as discussed. The rollback plan.\nThe new index landed ahead of one.\nThe rollback plan depends on the open question.\n\nThe new index still blocks the follow-up thread.\n\nThe new index should unblock the earlier draft.\nThe ingest path rolls up into.\n\nThis batch still blocks the numbers from Friday.\n\n- Quick note: The rollback plan still blocks the numbers from Friday, after the handover. The new index will be folded.\n- Summary: The checklist should unblock the shared doc, unless somebody objects. The rollback plan rolls up.\n\nThe rollback plan landed ahead of the owner's sign-off.\n\nThe migration depends on the numbers from Friday.\n\nThis batch now covers the owner's sign-off.\nThe ingest path was split out of.\n\nThe rollback plan now covers the shared doc.\nThe queue is waiting on the shared doc.\n\nThe staging cluster rolls up into the numbers.\n\nThe queue quietly changed.\n\nThe ingest path was split out of the agreed cutoff.\n\nThe checklist quietly changed the earlier draft, after.\n\nThe handover needs a second look from next week's window.\n\nThe handover quietly changed the earlier draft.\nThe review was split out of.\n\nFollowing up: The ingest path landed ahead of the shared doc, before the window closes. This batch depends on the capacity note, once the numbers settle.\n\nThe rollout should unblock next week's window.\n\nThe schedule was split out of the capacity note.\nThe schedule will be folded into the earlier draft, if.\n\n* The dashboard landed ahead of the second pass, as discussed. The staging cluster.\n* The queue should unblock the follow-up thread, for now. The staging cluster needs a second look.\n* The rollback plan still blocks the follow-up thread, for now. This batch rolls up.\n* The review landed ahead of one more round of checks, as discussed. The staging cluster was.\n* The queue still blocks the owner's sign-off, once the numbers settle. The migration.\n* The new index rolls up into the owner's sign-off, pending one more read. The.\n* The handover was split out of the numbers from Friday, pending one more read.\n* The handover should unblock the owner's sign-off, for now. The rollback plan was split.\n* The dashboard is waiting on the owner's sign-off, as discussed. The rollout still.\n* The draft will be folded into the open question, if nothing else moves. The handover was split.\n* The ingest path needs a second look from next week's window, for now. The estimate landed ahead of.\n* The queue will be folded into the open question, pending one more read. The ingest path.\n* The estimate was split out of the agreed cutoff, before the window closes. The rollout.\n* Summary: This batch needs a second look from the numbers from Friday, unless somebody objects. The.\n\nThe retry budget was split out of the owner's sign-off.\n\nThe handover depends on the shared doc.\nThe handover quietly changed the agreed cutoff, once the numbers settle. The estimate is waiting.\n\n* The dashboard depends on a smaller slice, once the numbers settle. The retry budget.\n* The checklist should unblock the owner's sign-off, pending one more read.\n* The dashboard should unblock the earlier draft, if nothing else moves. The.\n\nThe handover still blocks the capacity note.\n\nFor the record: This batch still blocks the numbers from Friday, if nothing else moves. The retry budget depends on the open question, before the window closes.\n\nThe checklist will be folded into one more round of checks.\n\nThe handover still blocks the capacity note, for now. The rollback plan is.",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/shale-line/cobalt/pull/449#pullrequestreview-4959202983",
+  "pull_request_url": "https://api.github.com/repos/shale-line/cobalt/pulls/449",
+  "author_association": "NONE",
+  "_links": {
+   "html": {
+    "href": "https://github.com/shale-line/Junction Nine/pull/449#pullrequestreview-4959202983"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/shale-line/Junction Nine/pulls/449"
+   }
+  },
+  "submitted_at": "2026-08-18T08:55:40Z",
+  "commit_id": "c6d4973e7050897256639a6d07116990d60bef80"
+ },
+ {
+  "id": 5936397404,
+  "node_id": "PRR_kwDPAAAAAeldMETPAAAAAWHWPFw",
+  "user": {
+   "login": "birch-bay",
+   "id": 74363158,
+   "node_id": "MDM6Qm90NzQzNjMxNTg",
+   "avatar_url": "https://avatars.githubusercontent.com/in/96281?v=4",
+   "gravatar_id": "",
+   "url": "https://api.github.com/users/tamarisk-crew",
+   "html_url": "https://github.com/apps/quartz-crew",
+   "followers_url": "https://api.github.com/users/tamarisk-crew/followers",
+   "following_url": "https://api.github.com/users/tamarisk-crew/following{/other_user}",
+   "gists_url": "https://api.github.com/users/tamarisk-crew/gists{/gist_id}",
+   "starred_url": "https://api.github.com/users/tamarisk-crew/starred{/owner}{/repo}",
+   "subscriptions_url": "https://api.github.com/users/tamarisk-crew/subscriptions",
+   "organizations_url": "https://api.github.com/users/tamarisk-crew/orgs",
+   "repos_url": "https://api.github.com/users/tamarisk-crew/repos",
+   "events_url": "https://api.github.com/users/tamarisk-crew/events{/privacy}",
+   "received_events_url": "https://api.github.com/users/tamarisk-crew/received_events",
+   "type": "Bot",
+   "user_view_type": "public",
+   "site_admin": false
+  },
+  "body": "",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/shale-line/cobalt/pull/449#pullrequestreview-5065287655",
+  "pull_request_url": "https://api.github.com/repos/shale-line/cobalt/pulls/449",
+  "author_association": "NONE",
+  "_links": {
+   "html": {
+    "href": "https://github.com/shale-line/Junction Nine/pull/449#pullrequestreview-5065287655"
+   },
+   "pull_request": {
+    "href": "https://api.github.com/repos/shale-line/Junction Nine/pulls/449"
+   }
+  },
+  "submitted_at": "2026-08-31T10:07:12Z",
+  "commit_id": "65f8d8089aa299fe722e0509ae347488aa1778e3"
+ }
+]

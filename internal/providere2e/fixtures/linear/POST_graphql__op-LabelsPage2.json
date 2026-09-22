@@ -1,0 +1,170 @@
+{
+ "data": {
+  "issueLabels": {
+   "pageInfo": {
+    "hasNextPage": false,
+    "endCursor": "8t0ly3u9-a102-20av-x877-6vd24ty2l976"
+   },
+   "nodes": [
+    {
+     "id": "59nwd23w-b7v0-53zr-w3xs-84ej478jo523",
+     "name": "clover-line",
+     "description": "Quick note: This batch landed ahead of the agreed cutoff, before the window closes. The rollout landed.",
+     "color": "#5e6ad2",
+     "isGroup": false,
+     "groupType": null,
+     "team": {
+      "id": "5924005r-61jb-0q35-yi2s-r8w4dq1k9o4r"
+     },
+     "creator": {
+      "id": "46q4ar68-27rp-6009-r105-6gv6i2q85sq2"
+     },
+     "retiredBy": null,
+     "parent": null,
+     "inheritedFrom": {
+      "id": "99454j7c-9c61-88j0-r624-9t9vn9875v13"
+     },
+     "createdAt": "2026-09-16T02:47:24.034Z",
+     "updatedAt": "2026-09-16T02:47:24.034Z",
+     "archivedAt": null,
+     "lastAppliedAt": null,
+     "retiredAt": null
+    },
+    {
+     "id": "8i9128lw-3h3r-41sc-68o6-p3i2x1170b7u",
+     "name": "clover-line",
+     "description": "For the record: The checklist still blocks the open question, for now. This batch will be folded into the shared doc.",
+     "color": "#5e6ad2",
+     "isGroup": false,
+     "groupType": null,
+     "team": {
+      "id": "18z39105-e179-14sf-9799-so99312110av"
+     },
+     "creator": {
+      "id": "46q4ar68-27rp-6009-r105-6gv6i2q85sq2"
+     },
+     "retiredBy": null,
+     "parent": null,
+     "inheritedFrom": {
+      "id": "99454j7c-9c61-88j0-r624-9t9vn9875v13"
+     },
+     "createdAt": "2026-09-16T02:47:24.034Z",
+     "updatedAt": "2026-09-16T02:47:24.034Z",
+     "archivedAt": null,
+     "lastAppliedAt": null,
+     "retiredAt": null
+    },
+    {
+     "id": "6jx02u64-r378-6909-9914-50b5j4091315",
+     "name": "trellis-crew",
+     "description": "The staging cluster quietly changed the earlier draft, unless somebody objects.",
+     "color": "#eb5757",
+     "isGroup": false,
+     "groupType": null,
+     "team": {
+      "id": "140to9h4-b3d8-48sl-b0y0-4wl21u037cw4"
+     },
+     "creator": {
+      "id": "46q4ar68-27rp-6009-r105-6gv6i2q85sq2"
+     },
+     "retiredBy": null,
+     "parent": null,
+     "inheritedFrom": null,
+     "createdAt": "2026-09-16T02:47:21.716Z",
+     "updatedAt": "2026-09-16T02:47:21.716Z",
+     "archivedAt": null,
+     "lastAppliedAt": "2026-09-16T02:51:54.204Z",
+     "retiredAt": null
+    },
+    {
+     "id": "6th35ac1-1886-69j0-0m36-87o631936x80",
+     "name": "clover-line",
+     "description": "Following up: The handover needs a second look from next week's window, assuming the counts hold. The.",
+     "color": "#5e6ad2",
+     "isGroup": false,
+     "groupType": null,
+     "team": {
+      "id": "50v9r041-l70t-64we-22g0-68uok7yij373"
+     },
+     "creator": {
+      "id": "46q4ar68-27rp-6009-r105-6gv6i2q85sq2"
+     },
+     "retiredBy": null,
+     "parent": null,
+     "inheritedFrom": {
+      "id": "99454j7c-9c61-88j0-r624-9t9vn9875v13"
+     },
+     "createdAt": "2026-09-16T02:47:24.034Z",
+     "updatedAt": "2026-09-16T02:47:24.034Z",
+     "archivedAt": null,
+     "lastAppliedAt": null,
+     "retiredAt": null
+    },
+    {
+     "id": "b81h5677-b3c6-0429-35jk-361l20v0m967",
+     "name": "granite",
+     "description": null,
+     "color": "#EB5757",
+     "isGroup": false,
+     "groupType": null,
+     "team": null,
+     "creator": null,
+     "retiredBy": null,
+     "parent": null,
+     "inheritedFrom": null,
+     "createdAt": "2025-01-23T02:23:29.818Z",
+     "updatedAt": "2026-05-29T19:27:47.540Z",
+     "archivedAt": null,
+     "lastAppliedAt": "2026-09-14T21:25:11.093Z",
+     "retiredAt": null
+    },
+    {
+     "id": "s2z99048-qu36-1058-qu38-551r8js10ik8",
+     "name": "osprey",
+     "description": "Heads up \u2014 The handover landed ahead of next week's window, if nothing else moves. The queue should unblock.",
+     "color": "#2E7D32",
+     "isGroup": false,
+     "groupType": null,
+     "team": {
+      "id": "275y5901-kz13-8umm-i405-21ul86iex577"
+     },
+     "creator": {
+      "id": "bjkg8998-rypp-3m08-510t-908xio8h7li7"
+     },
+     "retiredBy": null,
+     "parent": null,
+     "inheritedFrom": null,
+     "createdAt": "2026-08-05T03:18:05.307Z",
+     "updatedAt": "2026-08-05T03:18:05.307Z",
+     "archivedAt": null,
+     "lastAppliedAt": "2026-09-04T18:31:23.150Z",
+     "retiredAt": null
+    },
+    {
+     "id": "c518724f-9170-0e00-9r84-2dcja5411e2m",
+     "name": "trellis-crew",
+     "description": "The ingest path landed ahead of the numbers from Friday, pending one more read.",
+     "color": "#eb5757",
+     "isGroup": false,
+     "groupType": null,
+     "team": {
+      "id": "18z39105-e179-14sf-9799-so99312110av"
+     },
+     "creator": {
+      "id": "46q4ar68-27rp-6009-r105-6gv6i2q85sq2"
+     },
+     "retiredBy": null,
+     "parent": null,
+     "inheritedFrom": {
+      "id": "6jx02u64-r378-6909-9914-50b5j4091315"
+     },
+     "createdAt": "2026-09-16T02:47:21.716Z",
+     "updatedAt": "2026-09-16T02:47:21.716Z",
+     "archivedAt": null,
+     "lastAppliedAt": null,
+     "retiredAt": null
+    }
+   ]
+  }
+ }
+}

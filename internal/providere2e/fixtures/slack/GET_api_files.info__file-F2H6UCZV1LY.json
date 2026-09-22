@@ -1,0 +1,74 @@
+{
+ "ok": true,
+ "file": {
+  "id": "F2H6UCZV1LY",
+  "created": 1789571698,
+  "timestamp": 1789571698,
+  "mimetype": "application/pdf",
+  "filetype": "pdf",
+  "pretty_type": "PDF",
+  "user": "U48XXRY7R9U",
+  "user_team": "T0ADATEAM01",
+  "editable": false,
+  "size": 119735,
+  "mode": "hosted",
+  "is_external": false,
+  "external_type": "",
+  "is_public": false,
+  "public_url_shared": false,
+  "display_as_bot": false,
+  "username": "",
+  "name": "The Review landed ahead of a smaller slice",
+  "title": "The Queue depends on a smaller slice",
+  "ai_summary": {
+   "id": "AfsR5CSJMMN19",
+   "unfurl_enabled": true,
+   "status": "COMPLETED",
+   "content": "Following up: The retry budget will be folded into the open question, assuming the counts hold. The queue will be folded into the second pass, before the window closes.\nHeads up — The schedule depends on the second pass, for now. The new index quietly changed a smaller slice, as discussed.\nContext: The staging cluster is waiting on next week's window, before the window closes. The rollback plan should unblock the earlier draft.\nShort version: The schedule quietly changed the shared doc, if nothing else moves. This batch is waiting on next week's window, if nothing else moves. The estimate."
+  },
+  "is_modified_by_ai": false,
+  "url_private": "https://files.slack.com/files-pri/hs7Pj3VdtNcEemeMy97bxYX/manoj_ganesan_resume_-_sept_2026__capeng_.pdf.pdf",
+  "url_private_download": "https://files.slack.com/files-pri/hs7Pj3VdtNcEemeMy97bxYX/download/manoj_ganesan_resume_-_sept_2026__capeng_.pdf.pdf",
+  "media_display_type": "unknown",
+  "thumb_pdf": "https://files.slack.com/files-tmb/uE3dnCxxohZIE98t4S9mEQmmaDUE5LjQ14/manoj_ganesan_resume_-_sept_2026__capeng_.pdf_thumb_pdf.png",
+  "thumb_pdf_w": 935,
+  "thumb_pdf_h": 1210,
+  "permalink": "https://zephyr-lane.slack.com/files/adalovelace/F2H6UCZV1LY/manoj_ganesan_resume_-_sept_2026__capeng_.pdf.pdf",
+  "permalink_public": "https://brightsea.example/8WatOt3vJPp6VdwQH6tPbvu720c6LQqCf1",
+  "is_starred": false,
+  "shares": {
+   "private": {
+    "C8HHHV78RVH": [
+     {
+      "ts": "1747754148.988979",
+      "channel_name": "willow-trellis-zinc-team",
+      "team_id": "T0ADATEAM01",
+      "share_user_id": "U48XXRY7R9U",
+      "source": "UNKNOWN",
+      "is_silent_share": false,
+      "reply_users": [
+       "U48XXRY7R9U"
+      ],
+      "reply_users_count": 1,
+      "reply_count": 1,
+      "latest_reply": "1747754148.988979",
+      "thread_ts": "1747754088.595939"
+     }
+    ]
+   }
+  },
+  "channels": [],
+  "groups": [
+   "C8HHHV78RVH"
+  ],
+  "ims": [],
+  "has_more_shares": false,
+  "has_rich_preview": false,
+  "file_access": "visible",
+  "comments_count": 0
+ },
+ "comments": [],
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

@@ -1,63 +1,116 @@
-# The Notion bundle — a SYNC-ONLY workspace mirror.
+# The Notion bundle — a SYNC-ONLY mirror of one Notion workspace, new in
+# Mneme v6 (T-016). It reads; it never creates, updates, archives or comments.
 #
-# Connects a Notion workspace through an INTERNAL-INTEGRATION TOKEN (the
-# pasted `secret_…`/`ntn_…` value) and mirrors the pages and data sources
-# shared with that integration into page / database records. It never creates
-# or edits anything in Notion — reads only. Writeback is deferred by decision,
-# not omission: Notion create-page-then-read-computed-state is the case a
-# future workflow primitive answers; nothing here pre-empts it.
+# Written to `docs/kind-design.md` v4 and `docs/provider-practices.md` v1.
+# What that costs, spelled out, because each of these is a decision somebody
+# will want to re-open:
 #
-# API VERSION: pinned to 2025-09-03 — the data-source model. Under the older
-# 2022-06-28 pin, a database that grows a second data source DISAPPEARS from
-# search results entirely (Notion's documented old-version behavior), so the
-# mirror would silently lose whole databases. Under 2025-09-03 search returns
-# one `data_source` object per source, each naming its parent database — the
-# mirror keys on the data source and records the containing database id.
+#   * A KIND IS THE OBJECT, COMPLETE. Every documented field of every object
+#     is a top-level property under the API's name camelCased. TWO classes are
+#     omitted, as classes, and every kind's description names them: the
+#     RESPONSE ENVELOPE (`request_id` on every object, and a list response's
+#     `object: list` / `results` / `next_cursor` / `has_more` / `type` /
+#     `block` / `user`), and HYPERMEDIA — of which Notion has none, so the
+#     class is named and empty. There is no `raw`.
 #
-# WHY A TOKEN AND NOT oauth2: Notion's OAuth token exchange authenticates the
-# client with HTTP BASIC (Authorization: Basic base64(client_id:client_secret)),
-# and the host's OAuth facility declares its auth style once, for every bundle —
-# `AuthStyle: oauth2.AuthStyleInParams` (internal/oauthflow/oauthflow.go), body
-# params only, with no per-bundle style knob on the bundle's oauth2 manifest
-# block (schema.BundleOAuth2). The host therefore cannot run Notion's exchange
-# TODAY, and this bundle does not pretend it can: the account is authorized by
-# an internal-integration token instead — a first-class Notion auth model, the
-# right one for a personal substrate anyway (one workspace, no consent dance).
-# When the facility grows a declared token-endpoint auth style, an oauth2
-# revision of this bundle is mechanical (the google bundle is the template).
+#   * RICH TEXT IS KEPT AS NOTION SENDS IT. A rich-text array is heterogeneous
+#     by discriminator twice over — `type` selects `text` | `mention` |
+#     `equation`, and `mention.type` selects seven more shapes, one of which
+#     embeds a whole user object — so it is `json`, which is exactly what §2's
+#     table says for Block Kit and a MIME tree. Beside each one rides a
+#     PLAIN-TEXT decode (`titlePlainText`, `plainText`): Notion itself puts
+#     `plain_text` on every span, so concatenating them in order is the
+#     lossless mechanical decode of §1's first exception, declared beside the
+#     encoded source because the decode drops annotations and links. `block`'s
+#     is additionally the ONE labelled `DERIVED` index of §1's third
+#     exception, and it is the only property in this bundle with `embed: true`.
 #
-# WHY THE TOKEN LIVES ON THE CONFIG, NOT THE ACCOUNT: the engine seals every
-# secret-typed property of an accountconfig-trait type at rest (write.go
-# sealsSecretsAtRest) and the runner's config resolution injects account
-# properties AS STORED — a pasted token on the account would reach the sync
-# body as sealed ciphertext it cannot use. An injected input's own secrets
-# are the supported pattern (invocationconfig.go: a connector's OWN input secrets
-# ARE injected; the web bundle's firecrawlKey precedent): injected in
-# plaintext, held to the runner boundary by the invocation scrubber, never
-# read back over the API. The `connector` input resolves ONE config record
-# per install, exactly Notion's internal-integration shape: a token
-# addresses ONE workspace, which is also why the sync enforces ONE account:
-# the lexicographically-first account row is the connection; any other row is
-# stamped ignored.
+#   * A PAGE'S `properties` IS `json`, AND THAT IS THE RULE, NOT AN ESCAPE.
+#     The map is keyed by the workspace's own property NAMES, and its values
+#     are a 25-variant union discriminated by `type` — one of which, `rollup`,
+#     carries an ARRAY OF PROPERTY VALUES and so is recursive. Recursive,
+#     heterogeneous, and keyed by words no dialect can spell: §1 admits `json`
+#     for exactly this and the kind's description says why.
 #
-# Install:  substratectl apply -f bundle.yaml -f triggers.yaml
-# Configure: create a config record with the integration token; the
-#   `connector` input resolves it (sole record, `default`, or a bound one).
-# Connect:  create an account (toggles + cadence) — no OAuth flow runs;
-#   the on-connect trigger fires the first sync directly.
-# ---- the owned package --------------------------------------------------------
+#   * A BLOCK DECLARES THE UNION OF EVERY BLOCK TYPE, one optional property
+#     each, the way `slack/message` declares the union of every subtype's
+#     fields. Each is `json`, because each carries rich text and the loader
+#     refuses `json` as an object FIELD (record 49) — so a typed object could
+#     not hold the one thing every block type has.
+#
+#   * EVERY RELATION IS A REFERENCE. `createdBy` / `lastEditedBy` at `user`;
+#     `parent` an object whose `pageId` / `databaseId` / `dataSourceId` /
+#     `blockId` fields are references; `database.dataSources` a repeated
+#     reference at `datasource`. No parent reference is `mustExist`: Notion's
+#     graph is walked in one descending pass and a parent may land after its
+#     child, exactly as a Slack `thread_ts` may name a message the drain has
+#     not reached (§2). No scalar doubles a reference.
+#
+#   * NO CONSUMER SLOT, NO OWNER-RELATIVE FLAG, NO SYNC BOOKKEEPING ON A
+#     MIRROR. The engine synthesises a mapping's subject slot (#570); "mine"
+#     is a filter on `account.user`; the stream cursors live on the account
+#     and the per-PAGE block cursor lives on `notion/pagesync`, so a page of
+#     blocks never bumps the page's version.
+#
+# WHY A PASTED INTEGRATION TOKEN AND NOT `oauth2:`. A Notion INTERNAL
+# integration has no consent flow at all: the owner creates it in the
+# workspace's settings and it hands back an `ntn_…` token that addresses that
+# one workspace. (Notion's public-integration OAuth exists, exchanges at
+# `/v1/oauth/token` under HTTP BASIC auth rather than a client_secret POST
+# body, and the host facility cannot express that — `docs/provider-practices.md`
+# §7.) So: no `oauth2:` block, a token on the config record, and one account
+# per workspace.
+#
+# WHY THE TOKEN LIVES ON THE CONFIG AND NOT THE ACCOUNT: the engine seals
+# every secret-typed property of an accountconfig-trait kind at rest and the
+# runner injects account properties AS STORED, so a token pasted on the
+# account reaches this body as ciphertext. An injected input's secret arrives
+# usable.
+#
+# API VERSION 2025-09-03, the data-source model, and it is load-bearing.
+# Under the older 2022-06-28 pin a database that grows a SECOND data source
+# disappears from `/v1/search` entirely, so the mirror would silently lose
+# whole databases. Under 2025-09-03 search returns one `data_source` object
+# per source, each naming its database.
+#
+# NOTHING HYDRATES A PAGE, AND THE CLAIM BEHIND THAT IS BOUNDED. 595 of 595
+# addressed `GET /v1/pages/{id}` reads and 2 of 2 `GET /v1/data_sources/{id}`
+# reads in the owner's pull are byte-identical to the object the same search
+# walk returned (`request_id` aside), so the second call buys nothing and this
+# bundle does not make it — 17,000 requests it does not spend. That is an
+# OBSERVATION over one corpus and not an API contract, so no payload here is
+# AUTHORITATIVE in §1's sense: a property a response omits is left ABSENT,
+# never written null. (The first cut of this bundle claimed otherwise; Codex
+# finding 11 was right that corpus equality cannot license a null.)
+#
+# Install:   substratectl apply -f bundle.yaml -f triggers.yaml
+# Configure: create a config record with the pasted integration token.
+# Connect:   create an account with enabledPages true.
+# ---- the owned package ----------------------------------------------------
 kind: substrate.reamde.dev/core/package
 metadata:
   id: providers.substrate.reamde.dev/notion
 data:
   authority: providers.substrate.reamde.dev
   package: notion
-  version: 9
+  # 11 — the account binds substrate's core `sync` trait (decision 0085) and
+  # the sync body writes its twelve properties beside the ad hoc ones, so the
+  # Connections page, `GET /api/v1/sync/status` and `substratectl sync status`
+  # render this bundle without knowing it (T-084). ADDITIVE: every legacy
+  # property stays, at its own name and type.
+  # 3 — the block queue REFILLS inside a round, so a backlog longer than
+  # MAX_PENDING no longer loses its tail to the end of the round (T-054).
+  # 2 keyed the backfill floor on the depth that produced it, so a widened
+  # `backfillDepth` reaches the walk and `all` means NO floor (T-045). 1 was
+  # the first cut, written to the v4 guide rather than migrated from a
+  # pre-guide draft. A changed declaration shipping the same version reaches
+  # no repository, so every edit from here bumps this.
+  version: 11
 ---
 # ---- the bundle document: the install unit --------------------------------
-# `installs:` names EXACTLY the package's schema members. NO `oauth2:` manifest
-# block and no oauth2 trait anywhere: the loader holds those two paired both
-# ways, and this bundle authenticates by token.
+# NO `oauth2:` block: an oauth2 block demands a client input wearing the
+# oauth2 trait, the loader holds the two paired both ways, and this bundle
+# authenticates with a pasted internal-integration token.
 kind: substrate.reamde.dev/core/bundle
 metadata:
   id: providers.substrate.reamde.dev/notion
@@ -65,29 +118,31 @@ data:
   authority: providers.substrate.reamde.dev
   package: notion
   description: >-
-    Keeps a copy of the Notion pages and data sources you have shared with
-    an internal token. It takes a token you paste rather than a sign-in, so
-    the account's connection fields stay empty. Read-only.
-  # The one declared input: the connector record the sync body reads.
-  # `inject: functions` hands the resolved record (token in plaintext inside
-  # the runner boundary) to every invocation under config.inputs.connector.
+    Keeps a copy of one Notion workspace — its people, its pages, its databases
+    and data sources, and the blocks the pages are made of. It takes a pasted
+    integration token, and cannot write.
   inputs:
     connector:
       kind: providers.substrate.reamde.dev/notion/config
       inject: functions
-      description: the Notion integration token and the pinned API origin
+      description: the pasted Notion integration token and the pinned API
+        origin
   installs:
     - providers.substrate.reamde.dev/notion/config
     - providers.substrate.reamde.dev/notion/account
-    - providers.substrate.reamde.dev/notion/page
+    - providers.substrate.reamde.dev/notion/user
     - providers.substrate.reamde.dev/notion/database
-    - providers.substrate.reamde.dev/notion/workspacesync
+    - providers.substrate.reamde.dev/notion/datasource
+    - providers.substrate.reamde.dev/notion/page
+    - providers.substrate.reamde.dev/notion/block
+    - providers.substrate.reamde.dev/notion/pagesync
+    - providers.substrate.reamde.dev/notion/notionsync
 ---
-# ---- the config type: the `connector` input's kind ------------------------
-# NOT oauth2, deliberately: a kind implementing oauth2 is an OAuth client's
-# shape, and this bundle has no OAuth flow to declare. The token is a secret
-# the sync body itself spends against api.notion.com; it injects in plaintext
-# and the invocation scrubber holds it to the runner boundary.
+# ---- the config type: the `connector` input's kind -------------------------
+# NOT oauth2, and it deliberately carries no client id or secret: a kind
+# wearing the oauth2 trait holds the client pair and NOTHING ELSE, so parking
+# client credentials here is the one move that would make an eventual OAuth
+# revision impossible.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/notion/config
@@ -95,46 +150,42 @@ data:
   authority: providers.substrate.reamde.dev
   package: notion
   description: >-
-    The Notion internal token this bundle spends, and the API origin it may
-    be sent to. The bundle's connector input resolves one record of this kind;
-    the token is sealed against read-back and the origin is pinned, so an
-    owner edit cannot become an exfiltration channel.
+    The Notion integration token this bundle spends and the API origin it
+    may be sent to. The bundle's connector input resolves one record of this
+    kind; the token is sealed against read-back and the origin is pinned,
+    so an owner edit cannot become an exfiltration channel.
   names:
     singular: config
-  displayTemplate: "Notion integration"
+  displayTemplate: Notion connection
   properties:
     integrationToken:
       type: secret
       writer: owner
       displayName: Integration token
       description: >-
-        the Notion internal-integration token (secret_… / ntn_…) — pasted
-        once, sealed against read-back, spent only by the sync body
+        the pasted Notion integration token (ntn_…). It addresses exactly
+        one workspace. Redacted on read, injected only into the sync body
     apiBase:
       type: url
       writer: owner
+      # The body PINS the origin the token may travel to: https on
+      # api.notion.com, or a loopback host as the test seam.
       displayName: API base URL
-      # The body PINS the origin the token may travel to: exactly
-      # https://api.notion.com, or a loopback host (127.0.0.1 / localhost /: :1, any scheme) as the test seam. Anything else logs and parks the
-      # sync WITHOUT sending — an owner-editable URL must never become a
-      # token exfiltration channel. (The declared network capability is the
-      # future host-side enforcement of the same rule.)
       description: >-
         test-only override of https://api.notion.com — loopback hosts only;
-        any other origin refuses to sync. Leave empty in production.
+        any other origin refuses to sync. Leave empty in production
 ---
 # ---- the account type: one connected workspace ----------------------------
-# accountconfig, so the console's accounts view and the runner's config
-# resolution see it. tokenRef/tokenStatus/grantedScopes are the TRAIT's
-# required properties — declared (writer: oauth) but DORMANT here: no OAuth
-# flow ever writes them under the token model. Connection health reads off
-# the connector-written lastSyncedAt/syncStatus instead.
+# accountconfig WITHOUT oauth2. The trait contracts tokenRef / tokenStatus /
+# grantedScopes onto every implementing kind, so they are declared below as
+# DORMANT: `writer: oauth` means only the OAuth facility may ever set them,
+# and no flow runs for this bundle.
 #
-# ONE ACCOUNT PER REPOSITORY: the bundle holds one credential (the connector
-# input's token), so a second account row would mirror the same workspace twice under
-# different ids. The sync treats the lexicographically-first account row as
-# THE connection and stamps every other row `syncStatus: "ignored: duplicate
-# account …"` — per-account credentials are issue-011 territory.
+# THIS IS NOT A MIRROR. It is the connection: the owner's toggles, who the
+# token turned out to be, and the connector's own per-STREAM state. What it
+# learned from `users/me` it holds as a REFERENCE — `user` — rather than as a
+# copy of the bot's name or the workspace's, because that row is mirrored and
+# a copy of a referent is a derived property (§1).
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/notion/account
@@ -142,197 +193,401 @@ data:
   authority: providers.substrate.reamde.dev
   package: notion
   description: >-
-    One connected Notion workspace. The account trait's OAuth hands are declared
-    but dormant — this bundle authenticates with a pasted token — so connection
-    health reads off the sync's own status instead.
+    One connected Notion workspace: the owner's sync toggles, the integration
+    user the token turned out to be, and the connector's own per-stream progress.
+    The accountconfig trait's OAuth hands are declared but stay dormant, since
+    no OAuth flow ever runs for this bundle.
   names:
     singular: account
-  traits: [accountconfig]
-  displayTemplate: "{displayName}"
+  # `sync` is the core trait the Connections page, `GET /api/v1/sync/status`
+  # and `substratectl sync status` read (substrate decision 0085): the sync
+  # body writes its twelve properties beside the ad hoc `syncStatus` /
+  # `syncPending` / `syncCursors` below, and the dispatcher stamps a
+  # record-sourced delivery's start, finish and park onto the same record.
+  # The two OWNER hands are `syncRequestedAt` ("sync now") and `syncPaused`
+  # ("pause"); the other ten are the connector's.
+  traits: [accountconfig, sync]
+  displayTemplate: "{displayName|user.name}"
   properties:
-    # The accountconfig trait's required hands — dormant under the token
-    # model (writer: oauth, and the OAuth facility never runs for this
-    # bundle), declared because the trait contract requires them.
+    # ---- the accountconfig trait's contracted properties — DORMANT here ---
     tokenRef:
       type: secret
       writer: oauth
       displayName: Token reference
-      description: "dormant: the OAuth facility's credential ref — no OAuth
-        flow runs for this bundle"
+      description: >-
+        accountconfig trait contract — unused: the pasted token lives on the
+        bundle config, and no OAuth flow runs
     tokenStatus:
       type: string
       writer: oauth
       displayName: Connection status
-      description: "dormant: the OAuth facility's reported state — no OAuth
-        flow runs for this bundle"
+      description: >-
+        accountconfig trait contract — unused: no OAuth flow ever reports
+        a status here. Connection health reads off syncStatus
     grantedScopes:
       type: string
       repeated: true
       writer: oauth
       displayName: Granted scopes
-      description: "dormant: OAuth consent scopes — no OAuth flow runs for
-        this bundle"
-    # The owner's hands.
+      description: >-
+        accountconfig trait contract — unused: no consent, no scopes. What
+        the token can do is the capabilities it was minted with
+    # ---- what the owner asked for ----------------------------------------
     displayName:
       type: string
       writer: owner
-      displayName: Workspace name
-      description: a name for this workspace connection, shown wherever the
-        account is listed
+      displayName: Name
+      description: a name for this connection, shown wherever the account
+        is listed
     enabledPages:
       type: bool
       writer: owner
       displayName: Pages
-      description: mirror the pages shared with the integration
-    enabledDatabases:
+      description: >-
+        sync this workspace's people, pages, data sources and databases —
+        one toggle, because a page is meaningless without the person who wrote
+        it and the data source it is a row of
+    enabledBlocks:
       type: bool
       writer: owner
-      displayName: Databases
-      description: mirror the data sources of the databases shared with the
-        integration
+      displayName: Page content
+      description: >-
+        also walk each page's block tree. Off by default: it is at least one
+        API call per page and a workspace has far more pages than databases
     syncFrequency:
       type: enum
       values:
-        - value: off
+        - value: "off"
           label: Off
         - value: hourly
-          label: "Every hour"
+          label: Every hour
         - value: daily
-          label: "Once a day"
+          label: Once a day
       required: true
-      default: daily
+      default: hourly
       writer: owner
       displayName: Sync frequency
-      description: "the scheduled sync cadence for this workspace (default
-        daily)"
+      description: the scheduled sync cadence for this account (default hourly)
     backfillDepth:
       type: enum
       values:
         - value: none
-          label: "Don't backfill"
+          label: Don't backfill
         - value: last30d
-          label: "Last 30 days"
+          label: Last 30 days
         - value: last90d
-          label: "Last 90 days"
+          label: Last 90 days
         - value: last1y
-          label: "Last year"
+          label: Last year
         - value: all
           label: Everything
       required: true
-      default: all
+      default: last90d
       writer: owner
       displayName: Backfill depth
-      # none = FROM CONNECT TIME FORWARD: the first sync stamps
-      # backfillAnchor and every run measures from that fixed floor — never
-      # a per-run "cutoff = now" that would skip everything forever.
       description: >-
-        how far back the mirror reaches — none mirrors only edits after connect
-        (the stamped backfillAnchor), last30d/90d/1y reach back from each
-        run, all mirrors everything (default)
-    # Connector STATE the sync body owns (writer: connector — only installed
-    # bundle code may set these).
+        how far back the search walk reaches, against each object's last_edited_time
+        (default 90 days). `all` is NO floor; `none` is from the run that
+        set it forward; changing it re-anchors the stored floor
+    syncRequestedAt:
+      type: datetime
+      writer: owner
+      displayName: Sync requested
+      description: >-
+        stamp this with the current time to ask for a sync now, whatever the
+        cadence says. It is also how a bounded drain is continued
+    # ---- who the token turned out to be -----------------------------------
+    user:
+      type: reference
+      kind: user
+      displayName: You
+      description: >-
+        the integration user this token authenticates as, from GET /v1/users/me
+        — "me", and what every owner-relative question filters on. The row
+        lands in the same drain, so no mustExist
+    # ---- the connector's own bookkeeping (writer: connector) --------------
+    syncRequestedAck:
+      type: datetime
+      writer: connector
+      displayName: Sync request acknowledged
+      description: the `syncRequestedAt` the last sync acted on — equal means
+        the request is spent
+    syncCursors:
+      type: json
+      writer: connector
+      displayName: Sync cursors
+      description: >-
+        where each walk stopped — the roster cursor, the search cursor, the
+        floor the cold walk started with and the backfillDepth that floor
+        was computed from. Opaque, rewritten whole by every page
+    syncPending:
+      type: json
+      writer: connector
+      displayName: Pending work
+      description: >-
+        the work still to do, per queue (databases, blocks) — the backlog
+        a bounded drain leaves behind, so it survives the drain that found
+        it
     lastSyncedAt:
       type: datetime
       writer: connector
-      displayName: Last synced
-      description: when this workspace's search walk last completed — the
-        cadence anchor and completion marker
+      displayName: Last attempted
+      description: >-
+        when the sync last ATTEMPTED a walk — the cadence anchor. A bounded
+        drain and a rate-limited one both move it, which is why it is not
+        evidence that anything finished; lastCompletedAt is
+    lastCompletedAt:
+      type: datetime
+      writer: connector
+      displayName: Last completed
+      description: >-
+        when a walk last ran to the end with no work left. The cold test reads
+        this, not lastSyncedAt: a drain that stopped on its own bounds is
+        still a first sync
+    retryNotBefore:
+      type: datetime
+      writer: connector
+      displayName: Retry not before
+      description: >-
+        the instant Notion's Retry-After named on the last 429, honoured by
+        the body for every call. Absent when nothing is holding the account
+        back
     syncStatus:
       type: string
       writer: connector
       displayName: Sync status
-      description: "the last sync outcome (ok | erroring: <reason> | ignored:
-        duplicate account)"
-    backfillAnchor:
+      description: >-
+        the last sync outcome — ok, ok (deferred: blocks xN), ok (rate limited),
+        erroring: <reason>, and the unreachable count when an object answered
+        404 or 403
+    # ---- the core `sync` trait (substrate decision 0085) ------------------
+    # The twelve properties the trait contracts, each redeclared with the
+    # writer main's Google bundle uses. THREE OF THEM ARE ALREADY ABOVE and
+    # are not repeated here: `syncRequestedAt` (owner), `syncRequestedAck`
+    # and `lastSyncedAt` (connector) were this bundle's own bookkeeping
+    # before the trait existed and carry exactly the names and datatypes the
+    # trait contracts — which is why binding it is additive. `syncStatus`,
+    # `syncPending`, `syncCursors`, `lastCompletedAt` and `retryNotBefore`
+    # stay as they are: a reader of the old shape keeps working, and dropping
+    # a property a live row holds is a narrowing the upgrade refuses.
+    syncPaused:
+      type: bool
+      writer: owner
+      displayName: Paused
+      description: >-
+        while true the dispatcher skips this account's deliveries and the
+        scheduled walk passes over it — the owner's stop, honoured without
+        the body having to know a delivery was refused
+    syncState:
+      type: string
+      writer: connector
+      displayName: Sync state
+      description: >-
+        never | running | ok | erroring | throttled. `ok` means the drain
+        ran out of work; a round that left a backlog behind is `running`,
+        a 429 is `throttled` and stands until Notion's own instant passes
+    syncMessage:
+      type: string
+      writer: connector
+      displayName: Sync message
+      description: >-
+        the one human line the last run left — the same sentence syncStatus
+        carries, without its `erroring` prefix
+    lastSyncStartedAt:
       type: datetime
       writer: connector
-      displayName: Backfill anchor
+      displayName: Last sync started
       description: >-
-        run-start of the first sync — the fixed floor `backfillDepth: none`
-        measures from (connect time, forward-only; never recomputed per run)
+        when the last run began. The dispatcher stamps it around a record-sourced
+        delivery; on the SCHEDULE path, which names no record, the body stamps
+        its own
+    lastSyncDurationMs:
+      type: int
+      writer: connector
+      displayName: Last sync duration (ms)
+      description: how long that run took, from the same two hands — one invocation
+        of a bounded drain, not the whole walk
+    syncProgress:
+      type: json
+      writer: connector
+      displayName: Sync progress
+      description: >-
+        {phase, done, total, pending} off the drain's own bookkeeping — the
+        stage the walk is in, and the page trees and databases still queued
+        in syncPending
+    syncError:
+      type: string
+      writer: connector
+      displayName: Sync error
+      description: the last error text, from the body's own failure path or
+        from a parked delivery the dispatcher stamped
+    syncErrorAt:
+      type: datetime
+      writer: connector
+      displayName: Sync error at
+      description: when syncError was written. Neither is cleared by a later
+        success — the state is what says the account is healthy again
+    syncStreams:
+      type: json
+      writer: connector
+      displayName: Sync streams
+      description: >-
+        trait contract — unwritten here: one function walks one workspace
+        as one stream, so the run's state IS the account's and the drain is
+        in syncProgress. Declared because the trait contracts it
 ---
-# ---- the page mirror: what Notion holds about one page --------------------
-# One page per page shared with the integration. Its id is
-# host.ids.external("notion", account, pageId) — deterministic, per-account.
-# `title` is the reserved built-in (the sync writes it); `content` is the
-# block tree normalized to markdown-ish text; `raw` keeps the page object
-# VERBATIM — its last_edited_time is the delta marker the short-circuit
-# compares (the engine normalizes datetime properties, json passes byte-true).
+# ---- mirror: one Notion user ----------------------------------------------
+# GET /v1/users, GET /v1/users/{id}, GET /v1/users/me (Notion API 2025-09-03).
+# The hub of this closure for a HUMAN: every page, data source, database and
+# block points here for its author and its last editor.
+#
+# NOT AN IDENTITY HUB KIND (§3): `user` is Notion's OWN resource with its own
+# endpoint, so it needs neither the hub treatment nor a product prefix — this
+# bundle mirrors ONE product, so no kind here carries one (§5).
+#
+# `person.email` is where a person mapping probes. It stays nested, under
+# Notion's own shape, because §1 renames nothing the dialect can spell and a
+# probe path may be nested.
+#
+# NO TEMPORAL TRAIT: a Notion user object carries no instant at all — not a
+# creation time, not a mutation mark (§4).
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: providers.substrate.reamde.dev/notion/page
+  id: providers.substrate.reamde.dev/notion/user
 data:
   authority: providers.substrate.reamde.dev
   package: notion
   description: >-
-    What Notion holds about one page shared with your token: its URL, its
-    block tree normalized to text, and the last-edited stamp the delta sync
-    compares to decide whether anything changed.
+    One Notion user — a person or a bot — as GET /v1/users returns it (2025-09-03).
+    A bot carries the workspace it belongs to. The response envelope (request_id,
+    and a list's object/results/next_cursor/has_more) is the one omitted class;
+    Notion publishes no hypermedia. No instant of its own, so no temporal
+    trait.
   names:
-    singular: page
+    singular: user
+  displayTemplate: "{name|userId}"
   properties:
-    # NOT a reference, and every `account:` in this closure reads the same way:
-    # the connector writes it as provenance on synced rows, and retyping a live
-    # string property to a reference is a NARROWING the boot upgrade refuses
-    # while rows hold the old shape — it would strand every released store.
+    # ---- identity --------------------------------------------------------
     account:
       type: reference
       kind: account
       required: true
       onDelete: cascade
       displayName: Account
-      description: the account this page was synced from
-    pageId:
+      description: the account this user was synced through
+    object:
+      type: enum
+      values:
+        - value: user
+          label: user
+      displayName: Object
+      description: >-
+        Notion's `object` discriminator, one value on this resource — declared
+        so a second value is a widening rather than a surprise
+    userId:
       type: string
-      displayName: Page ID
-      description: Notion's page id, dash-stripped 32-hex (per workspace)
-    url:
+      required: true
+      displayName: User ID
+      description: >-
+        Notion's `id` — the workspace-stable UUID for this user, and the provider
+        key behind this row's id
+    # ---- the user's own scalars, in the API reference's order -------------
+    type:
+      type: enum
+      values:
+        - value: person
+          label: person
+        - value: bot
+          label: bot
+      displayName: Type
+      description: >-
+        Notion's `type`: person | bot. The schema closes it at two, and the
+        object that follows is named for it
+    name:
+      type: string
+      displayName: Name
+      description: the user's display name, or the integration's name for
+        a bot
+    avatarUrl:
       type: url
-      displayName: URL
-      description: the page's notion.so URL
-    lastEditedAt:
-      type: datetime
-      displayName: Last edited
-      description: Notion's last_edited_time — the change marker the delta
-        sync keys on
-    archived:
-      type: bool
-      displayName: Archived
-      description: whether the page sits in Notion's trash
-    content:
-      type: text
-      displayName: Content
+      displayName: Avatar
+      description: Notion's `avatar_url` — the user's avatar, absent when
+        they have none
+    person:
+      type: object
+      fields:
+        email:
+          type: email
+          description: the person's email address, present only when the integration
+            has the "read user information including email" grant
+        emailVerified:
+          type: bool
+          description: Notion's `email_verified` — whether Notion has verified
+            the address
+      displayName: Person
       description: >-
-        the page's block tree, normalized to markdown-ish text — written by
-        the blocks phase AFTER the page row lands, and re-fetched on a later
-        sync if that phase never completed
-    pendingParent:
-      type: json
-      displayName: Pending parent
+        Notion's `person` object, present when `type` is person. A person
+        mapping probes `person.email` — the address is NOT lifted to the top
+        level, because §1 renames nothing the dialect can spell
+    bot:
+      type: object
+      fields:
+        owner:
+          type: object
+          fields:
+            type:
+              type: enum
+              values:
+                - value: workspace
+                  label: workspace
+                - value: user
+                  label: user
+              description: >-
+                whose bot this is. The reference closes the set at two and
+                never asks a client to tolerate a third, so it is an enum
+            workspace:
+              type: bool
+              description: Notion's `workspace` — true when the bot is owned
+                by the workspace rather than by a user
+            user:
+              type: reference
+              kind: providers.substrate.reamde.dev/notion/user
+              description: the user who owns the bot, when `type` is user.
+                No mustExist — the owner may land later in the same walk
+          description: Notion's `bot.owner` — who installed the integration
+        workspaceName:
+          type: string
+          description: Notion's `workspace_name` — the workspace this integration
+            is installed in
+        workspaceId:
+          type: string
+          description: >-
+            Notion's `workspace_id` — the workspace's UUID. A string rather
+            than a reference, because this bundle mirrors no workspace kind
+        workspaceLimits:
+          type: object
+          fields:
+            maxFileUploadSizeInBytes:
+              type: int
+              description: Notion's `max_file_upload_size_in_bytes` — the
+                workspace's file-upload ceiling
+          description: Notion's `workspace_limits` — the limits this workspace's
+            plan imposes
+      displayName: Bot
       description: >-
-        a parent awaiting its mirror — [type identity, mirror-id], stored
-        when the parent is not mirrored yet and cleared the moment a later
-        sync finds the target (even if the page is unchanged)
-    raw:
-      type: json
-      displayName: Raw
-      description: the raw Notion page object as fetched, for provenance
-    # Optional: a page parented by another page or by a data source names
-    # its parent here once that parent is mirrored too; workspace-parented
-    # pages have none. UNPINNED because the parent is a page OR a database.
-    parent:
-      type: reference
-      displayName: Parent
-      mustExist: true
-      description: the mirrored parent page or data source, when the parent
-        is shared with the integration
+        Notion's `bot` object, present when `type` is bot. It is empty for
+        a bot other than the one the token belongs to; `users/me` is the only
+        call that fills it
 ---
-# ---- the data-source mirror -------------------------------------------------
-# One database per DATA SOURCE shared with the integration (API 2025-09-03:
-# search returns data_source objects, one per source — a multi-source database
-# yields one mirror per source, all naming the same containing databaseId).
-# `title` is the built-in; `raw` keeps the data-source object verbatim (its
-# last_edited_time is the delta marker here too).
+# ---- mirror: one database -------------------------------------------------
+# GET /v1/databases/{id} (2025-09-03). A database is the CONTAINER; the schema
+# and the rows live on its data sources, which is the whole point of the
+# 2025-09-03 model. Search never returns a database, so the only way this row
+# exists is the addressed read a data source's parent asks for — which is what
+# the kind's description has to say (§1).
+#
+# `title` is reserved at every level, so it is `databaseTitle` (§5), and the
+# heading is this kind's displayTemplate over the plain-text decode.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/notion/database
@@ -340,268 +595,1605 @@ data:
   authority: providers.substrate.reamde.dev
   package: notion
   description: >-
-    One Notion data source shared with your token; a multi-source database
-    yields one mirror per source, all naming the same containing database.
-    The raw object is kept, and its last-edited stamp drives the delta here
-    too.
+    One Notion database — the container its data sources hang off — as GET
+    /v1/databases/{id} returns it (2025-09-03); search never returns one,
+    so this row exists only because a data source named it. `at` is `created_time`;
+    `createdBy` and `lastEditedBy` are declared and not yet seen. The response
+    envelope (request_id) is the one omitted class.
   names:
     singular: database
+  traits:
+    - temporal(point)
+  displayTemplate: "{titlePlainText|databaseId}"
   properties:
+    # ---- identity --------------------------------------------------------
     account:
       type: reference
       kind: account
       required: true
       onDelete: cascade
       displayName: Account
-      description: the account this data source was synced from
-    dataSourceId:
-      type: string
-      displayName: Data source ID
-      description: Notion's data-source id, dash-stripped 32-hex — the mirror's
-        key
+      description: the account this database was synced through
+    object:
+      type: enum
+      values:
+        - value: database
+          label: database
+      displayName: Object
+      description: Notion's `object` discriminator, one value on this resource
+        — a second value would be a widening
     databaseId:
       type: string
+      required: true
       displayName: Database ID
+      description: Notion's `id` — the database's UUID, and the provider key
+        behind this row's id
+    # ---- the database's own scalars, in the API reference's order ---------
+    databaseTitle:
+      type: json
+      displayName: Title
       description: >-
-        the CONTAINING database's id — the parent database, modeled explicitly;
-        a multi-source database's mirrors share this value
+        Notion's `title` (renamed: `title` is reserved on every record) —
+        the rich-text array as Notion sends it. Heterogeneous by discriminator,
+        so `json` per §2; `titlePlainText` rides beside it
+    titlePlainText:
+      type: string
+      displayName: Title text
+      description: >-
+        Notion's own `plain_text` spans of `databaseTitle`, concatenated in
+        order — the lossless mechanical decode of the rich-text encoding (§1);
+        the encoded source is on this row and keeps the annotations
+    description:
+      type: json
+      displayName: Description
+      # A `descriptionPlainText` would be admissible — §1's FIRST exception is
+      # not capped, and only the THIRD (the labelled `embed: true` index) is.
+      # It is not declared because no database in the owner's workspace has a
+      # description at all, and §9's open question 4 says a property no
+      # fixture exercises is not shipped. Codex finding 3 corrected the
+      # earlier claim that the title had spent an allowance.
+      description: >-
+        Notion's `description` — the rich-text array as Notion sends it. No
+        plain-text decode: nothing in the corpus carries one
+    isInline:
+      type: bool
+      displayName: Inline
+      description: Notion's `is_inline` — whether the database renders inside
+        its parent page rather than on its own
+    databaseType:
+      type: string
+      displayName: Database type
+      description: >-
+        Notion's `database_type` — null on an ordinary database, `wiki` on
+        a wiki. The reference gives examples rather than an exhaustive set,
+        so a string (§2's closed-set test cuts the other way here)
+    inTrash:
+      type: bool
+      displayName: In trash
+      description: Notion's `in_trash` — whether the database is in the workspace's
+        trash
+    isLocked:
+      type: bool
+      displayName: Locked
+      description: Notion's `is_locked` — whether editing is locked
+    archived:
+      type: bool
+      displayName: Archived
+      description: >-
+        Notion's `archived` — the older spelling of `in_trash`, which the
+        API still sends beside it. Both are the API's and both are declared
+    icon:
+      type: object
+      fields:
+        type:
+          type: enum
+          values:
+            - value: emoji
+              label: emoji
+            - value: external
+              label: external
+            - value: file
+              label: file
+            - value: customemoji
+              label: custom_emoji
+          description: >-
+            which of the fields below carries it. Notion's reference closes
+            the set and never tells a client to tolerate an unknown one, so
+            it is an enum; a value no table holds leaves the field absent
+        emoji:
+          type: string
+          description: the emoji character itself, when `type` is emoji
+        external:
+          type: object
+          fields:
+            url:
+              type: url
+              description: the externally hosted image's address
+          description: an image Notion links to rather than stores
+        file:
+          type: object
+          fields:
+            url:
+              type: url
+              description: the Notion-hosted file's signed address
+            expiryTime:
+              type: datetime
+              description: Notion's `expiry_time` — when the signed URL stops
+                working, about an hour out
+          description: an image Notion stores, behind a signed URL that expires
+        customEmoji:
+          type: object
+          fields:
+            customEmojiId:
+              type: string
+              description: Notion's `id` for the workspace's custom emoji
+            name:
+              type: string
+              description: the custom emoji's shortcode
+            url:
+              type: url
+              description: where the custom emoji image is served from
+          description: Notion's `custom_emoji` — a workspace's own uploaded
+            emoji
+      displayName: Icon
+      description: Notion's `icon` — the emoji or image shown beside the database,
+        absent when it has none
+    cover:
+      type: object
+      fields:
+        type:
+          type: enum
+          values:
+            - value: external
+              label: external
+            - value: file
+              label: file
+          description: which of the fields below carries it — the schema closes
+            the set at two, so an enum
+        external:
+          type: object
+          fields:
+            url:
+              type: url
+              description: the externally hosted image's address
+          description: an image Notion links to rather than stores
+        file:
+          type: object
+          fields:
+            url:
+              type: url
+              description: the Notion-hosted file's signed address
+            expiryTime:
+              type: datetime
+              description: Notion's `expiry_time` — when the signed URL stops
+                working
+          description: an image Notion stores, behind a signed URL that expires
+      displayName: Cover
+      description: Notion's `cover` — the banner image, absent when it has
+        none
     url:
       type: url
       displayName: URL
-      description: the data source's notion.so URL
-    raw:
-      type: json
-      displayName: Raw
-      description: the raw Notion data-source object as fetched, for provenance
+      description: the database's own address in Notion
+    publicUrl:
+      type: url
+      displayName: Public URL
+      description: Notion's `public_url` — the address the database is shared
+        at, absent when it is not shared to the web
+    # ---- relations -------------------------------------------------------
+    parent:
+      type: object
+      fields:
+        type:
+          type: enum
+          values:
+            - value: workspace
+              label: workspace
+            - value: pageid
+              label: page_id
+            - value: databaseid
+              label: database_id
+            - value: datasourceid
+              label: data_source_id
+            - value: blockid
+              label: block_id
+          description: >-
+            which of the fields below carries it. The reference closes the
+            set and never asks a client to tolerate an unknown one, so it
+            is an enum; a value no table holds leaves the field absent (§2)
+        pageId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/page
+          description: the page this database sits on, when `type` is page_id.
+            No mustExist — a parent may land after its child
+        blockId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/block
+          description: the block this database sits in, when `type` is block_id.
+            No mustExist
+        dataSourceId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/datasource
+          description: the data source this sits under, when `type` is data_source_id
+            — Notion sends it on a wiki and a synced parent
+        databaseId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/database
+          description: the database this sits in, when `type` is database_id.
+            No mustExist
+        workspace:
+          type: bool
+          description: Notion's `workspace` — true when the database sits
+            at the top level of the workspace
+      displayName: Parent
+      description: Notion's `parent` — where the database lives, as a discriminated
+        object whose id fields are references
+    dataSources:
+      type: reference
+      kind: providers.substrate.reamde.dev/notion/datasource
+      repeated: true
+      displayName: Data sources
+      description: >-
+        Notion's `data_sources` — one reference per source. The `name` Notion
+        sends beside each id is that source's own title and is not duplicated
+        here (§3); no mustExist, the search walk mints them
+    createdBy:
+      type: reference
+      kind: providers.substrate.reamde.dev/notion/user
+      displayName: Created by
+      description: >-
+        Notion's `created_by` — DECLARED AND NOT YET SEEN: the reference documents
+        it, and no payload in the owner's pull carries it. The sync extracts
+        it the day one does. No mustExist
+    lastEditedBy:
+      type: reference
+      kind: providers.substrate.reamde.dev/notion/user
+      displayName: Last edited by
+      description: >-
+        Notion's `last_edited_by` — DECLARED AND NOT YET SEEN, like `createdBy`.
+        No mustExist
+    # ---- instants (created_time IS the trait's `at`) ----------------------
+    lastEditedTime:
+      type: datetime
+      displayName: Last edited
+      description: Notion's `last_edited_time` — when the database last changed.
+        The search walk's floor is compared against this
 ---
-# ---- the sync function -----------------------------------------------------
-# A PEP 723 python body (stdlib HTTP — the Notion API is plain JSON REST, so
-# the script block declares requires-python only and provisioning needs no
-# package downloads). Three phases, each resumable off the causal chain
-# through the paged-checkpoint more/resume contract:
-#
-#   search — one Notion search page (100 objects) per invocation, DESCENDING
-#     by last_edited_time; the first below-cutoff result ends the whole walk.
-#     Rows land WITHOUT content; pages that need a block walk queue up.
-#   blocks — a bounded batch of block-tree walks per invocation, each
-#     patching its page's `content` (deep pages can no longer eat the budget
-#     before a cursor commits).
-#   links  — deferred parent references; an unresolved target stays stored as
-#     `pendingParent` on the child and is repaired by a LATER sync even when
-#     the child's content is unchanged.
-#
-# The DELTA short-circuit: an object whose raw last_edited_time (and archived
-# flag) matches its mirror is SKIPPED — no block fetch, no effect — so
-# steady-state syncs cost one search walk and nothing else.
-kind: substrate.reamde.dev/core/function
+# ---- mirror: one data source ----------------------------------------------
+# GET /v1/data_sources/{id} and /v1/search (2025-09-03). A data source is the
+# SCHEMA and the rows: one database may have several, which is why the older
+# 2022-06-28 `database` model loses data and this bundle does not use it.
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: providers.substrate.reamde.dev/notion/workspacesync
+  id: providers.substrate.reamde.dev/notion/datasource
 data:
   authority: providers.substrate.reamde.dev
   package: notion
-  # Deliveries sync the account off the causal chain; a direct call with
-  # {account} drains FULLY inside its one invocation (the call path has no
-  # paged checkpoints) — right for steady-state re-syncs, while a large first
-  # backfill should ride the triggers.
   description: >-
-    Sync the Notion workspace: mirror the shared pages and data sources over
-    the token on the config record, skip unchanged last_edited_times, stamp
-    the account when the walk completes.
-  runtime: python
-  timeout: PT1M
-  arguments:
-    - name: account
+    One Notion data source — a database's schema and the set its rows belong
+    to — as /v1/search returns it (2025-09-03); byte-identical to GET /v1/data_sources/{id}
+    in every pair observed, so this bundle never makes that call and an omitted
+    property is left absent rather than nulled. `at` is `created_time`; the
+    response envelope (request_id) is omitted.
+  names:
+    singular: datasource
+  traits:
+    - temporal(point)
+  displayTemplate: "{titlePlainText|dataSourceId}"
+  properties:
+    # ---- identity --------------------------------------------------------
+    account:
+      type: reference
+      kind: account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this data source was synced through
+    object:
+      type: enum
+      values:
+        - value: datasource
+          label: data_source
+      displayName: Object
+      description: >-
+        Notion's `object` discriminator, one value on this resource. Spelled
+        `datasource` by the loader's enum rule, with the API's own `data_source`
+        as the label
+    dataSourceId:
       type: string
-      description: "an account record id to sync immediately, cadence ignored
-        — the whole drain runs inside this one invocation"
+      required: true
+      displayName: Data source ID
+      description: Notion's `id` — the data source's UUID, and the provider
+        key behind this row's id
+    # ---- the data source's own scalars, in the API reference's order ------
+    dataSourceTitle:
+      type: json
+      displayName: Title
+      description: >-
+        Notion's `title` (renamed: `title` is reserved on every record) —
+        the rich-text array as Notion sends it, heterogeneous by discriminator
+        so `json` per §2. `titlePlainText` rides beside it
+    titlePlainText:
+      type: string
+      displayName: Title text
+      description: >-
+        Notion's own `plain_text` spans of `dataSourceTitle`, concatenated
+        in order — the lossless mechanical decode of the rich-text encoding
+        (§1); the encoded source is on this row
+    description:
+      type: json
+      displayName: Description
+      # As on `database`: a decode would be admissible under §1's first
+      # exception, which is not capped, and is not declared because no data
+      # source in the corpus carries a description.
+      description: >-
+        Notion's `description` — the rich-text array as Notion sends it. No
+        plain-text decode: nothing in the corpus carries one
+    isInline:
+      type: bool
+      displayName: Inline
+      description: Notion's `is_inline` — whether the data source renders
+        inside its parent page
+    databaseType:
+      type: string
+      displayName: Database type
+      description: >-
+        Notion's `database_type` — null on an ordinary data source, `wiki`
+        on a wiki. The reference gives examples rather than a closed set,
+        so a string
+    properties:
+      type: json
+      displayName: Property schema
+      # The variants: select/multi_select options, a relation's target data
+      # source, a rollup's function and the property it rolls up, a formula's
+      # expression, and twenty more.
+      description: >-
+        Notion's `properties` — the SCHEMA, keyed by the workspace's own property
+        names, values a 25-variant union discriminated by `type`. `json` per
+        §2
+    inTrash:
+      type: bool
+      displayName: In trash
+      description: Notion's `in_trash` — whether the data source is in the
+        workspace's trash
+    archived:
+      type: bool
+      displayName: Archived
+      description: Notion's `archived` — the older spelling of `in_trash`,
+        which the API still sends beside it
+    icon:
+      type: object
+      fields:
+        type:
+          type: enum
+          values:
+            - value: emoji
+              label: emoji
+            - value: external
+              label: external
+            - value: file
+              label: file
+            - value: customemoji
+              label: custom_emoji
+          description: which of the fields below carries it — the schema closes
+            the set, so an enum (§2's closed-set test)
+        emoji:
+          type: string
+          description: the emoji character itself, when `type` is emoji
+        external:
+          type: object
+          fields:
+            url:
+              type: url
+              description: the externally hosted image's address
+          description: an image Notion links to rather than stores
+        file:
+          type: object
+          fields:
+            url:
+              type: url
+              description: the Notion-hosted file's signed address
+            expiryTime:
+              type: datetime
+              description: Notion's `expiry_time` — when the signed URL stops
+                working
+          description: an image Notion stores, behind a signed URL that expires
+        customEmoji:
+          type: object
+          fields:
+            customEmojiId:
+              type: string
+              description: Notion's `id` for the workspace's custom emoji
+            name:
+              type: string
+              description: the custom emoji's shortcode
+            url:
+              type: url
+              description: where the custom emoji image is served from
+          description: a workspace's own uploaded emoji
+      displayName: Icon
+      description: Notion's `icon` — the emoji or image shown beside the data
+        source, absent when it has none
+    cover:
+      type: object
+      fields:
+        type:
+          type: enum
+          values:
+            - value: external
+              label: external
+            - value: file
+              label: file
+          description: which of the fields below carries it — the schema closes
+            the set at two, so an enum
+        external:
+          type: object
+          fields:
+            url:
+              type: url
+              description: the externally hosted image's address
+          description: an image Notion links to rather than stores
+        file:
+          type: object
+          fields:
+            url:
+              type: url
+              description: the Notion-hosted file's signed address
+            expiryTime:
+              type: datetime
+              description: Notion's `expiry_time` — when the signed URL stops
+                working
+          description: an image Notion stores, behind a signed URL that expires
+      displayName: Cover
+      description: Notion's `cover` — the banner image, absent when it has
+        none
+    url:
+      type: url
+      displayName: URL
+      description: the data source's own address in Notion
+    publicUrl:
+      type: url
+      displayName: Public URL
+      description: Notion's `public_url` — the address it is shared at, absent
+        when it is not shared to the web
+    # ---- relations -------------------------------------------------------
+    parent:
+      type: object
+      fields:
+        type:
+          type: enum
+          values:
+            - value: workspace
+              label: workspace
+            - value: pageid
+              label: page_id
+            - value: databaseid
+              label: database_id
+            - value: datasourceid
+              label: data_source_id
+            - value: blockid
+              label: block_id
+          description: >-
+            which of the fields below carries it. The reference closes the
+            set and never asks a client to tolerate an unknown one, so it
+            is an enum; a value no table holds leaves the field absent (§2)
+        databaseId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/database
+          description: the database this data source belongs to. No mustExist
+            — the database is read after the search walk names it
+        pageId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/page
+          description: the page this sits on, when `type` is page_id. No mustExist
+            — a parent may land after its child
+        blockId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/block
+          description: the block this sits in, when `type` is block_id. No
+            mustExist
+        dataSourceId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/datasource
+          description: the data source this sits under, when `type` is data_source_id
+            — Notion sends it on a wiki and a synced parent
+        workspace:
+          type: bool
+          description: true when it sits at the top level of the workspace
+      displayName: Parent
+      description: Notion's `parent` — the database this data source hangs
+        off, as a discriminated object whose id field is a reference
+    databaseParent:
+      type: object
+      fields:
+        type:
+          type: enum
+          values:
+            - value: workspace
+              label: workspace
+            - value: pageid
+              label: page_id
+            - value: databaseid
+              label: database_id
+            - value: datasourceid
+              label: data_source_id
+            - value: blockid
+              label: block_id
+          description: >-
+            which of the fields below carries it. The reference closes the
+            set and never asks a client to tolerate an unknown one, so it
+            is an enum; a value no table holds leaves the field absent (§2)
+        pageId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/page
+          description: the page the containing database sits on, when `type`
+            is page_id. No mustExist
+        blockId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/block
+          description: the block the containing database sits in, when `type`
+            is block_id. No mustExist
+        databaseId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/database
+          description: the database this sits in, when `type` is database_id.
+            No mustExist
+        dataSourceId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/datasource
+          description: the data source this sits under, when `type` is data_source_id
+            — Notion sends it on a wiki and a synced parent
+        workspace:
+          type: bool
+          description: true when the containing database sits at the top level
+            of the workspace
+      displayName: Database parent
+      description: >-
+        Notion's `database_parent` — where the CONTAINING database lives,
+        which `parent` (the database itself) does not say. 2025-09-03 sends
+        both and both are declared
+    createdBy:
+      type: reference
+      kind: providers.substrate.reamde.dev/notion/user
+      displayName: Created by
+      description: >-
+        Notion's `created_by` — the user who created the data source. The
+        payload carries only `{object, id}`; the roster walk fills the rest
+        in. No mustExist
+    lastEditedBy:
+      type: reference
+      kind: providers.substrate.reamde.dev/notion/user
+      displayName: Last edited by
+      description: Notion's `last_edited_by` — the user who last changed it.
+        No mustExist
+    # ---- instants (created_time IS the trait's `at`) ----------------------
+    lastEditedTime:
+      type: datetime
+      displayName: Last edited
+      description: Notion's `last_edited_time` — the instant the search walk
+        sorts and floors on
+---
+# ---- mirror: one page -----------------------------------------------------
+# /v1/search and GET /v1/pages/{id} (2025-09-03). A page is a page OR a row of
+# a data source: Notion gives both the same object, the same endpoint and the
+# same identity namespace, and §3's "two endpoints returning one resource are
+# one kind" is the same argument a step further — one endpoint, one resource,
+# whatever it is a child of. `parent.type` is the discriminator the payload
+# already carries, so there is no `isRow` scalar (that would be derived, §1).
+#
+# THE SYNC NEVER CALLS GET /v1/pages/{id}. 595 of 595 addressed reads in the
+# owner's pull are byte-identical to the search item (`request_id` aside), so
+# search is AUTHORITATIVE and the hydration would be 17,000 calls for nothing.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/notion/page
+data:
+  authority: providers.substrate.reamde.dev
+  package: notion
+  description: >-
+    One Notion page — which is also how Notion models a row of a data source;
+    `parent.type` says which — as /v1/search returns it (2025-09-03). Search
+    is byte-identical to GET /v1/pages/{id} in every pair observed, so this
+    bundle never makes that call and an omitted property is left absent rather
+    than nulled. `at` is `created_time`; the response envelope (request_id)
+    is omitted.
+  names:
+    singular: page
+  traits:
+    - temporal(point)
+  displayTemplate: "{titlePlainText|pageId}"
+  properties:
+    # ---- identity --------------------------------------------------------
+    account:
+      type: reference
+      kind: account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this page was synced through
+    object:
+      type: enum
+      values:
+        - value: page
+          label: page
+      displayName: Object
+      description: Notion's `object` discriminator, one value on this resource
+        — a second value would be a widening
+    pageId:
+      type: string
+      required: true
+      displayName: Page ID
+      description: Notion's `id` — the page's UUID, and the provider key behind
+        this row's id
+    # ---- the page's own scalars, in the API reference's order -------------
+    properties:
+      type: json
+      displayName: Properties
+      # Recursive as well as heterogeneous: a `rollup` value holds an ARRAY
+      # OF PROPERTY VALUES, so the union contains itself. §1 admits `json` for
+      # exactly this, and the keys are the workspace's own words besides.
+      description: >-
+        Notion's `properties` — the page's property VALUES, keyed by the workspace's
+        own property names. A 25-variant union discriminated by `type`, and
+        recursive, so `json` per §2
+    titlePlainText:
+      type: string
+      displayName: Title text
+      description: >-
+        Notion's own `plain_text` spans of the `title`-typed entry of `properties`,
+        concatenated in order — the lossless mechanical decode of the rich-text
+        encoding (§1); the encoded source is `properties`
+    inTrash:
+      type: bool
+      displayName: In trash
+      description: >-
+        Notion's `in_trash` — /v1/search never returns a trashed page, so
+        this is false on every row the search walk writes
+    isArchived:
+      type: bool
+      displayName: Archived (is_archived)
+      description: Notion's `is_archived`. It rides beside the older `archived`,
+        and both are the API's, so both are declared
+    isLocked:
+      type: bool
+      displayName: Locked
+      description: Notion's `is_locked` — whether editing the page is locked
+    archived:
+      type: bool
+      displayName: Archived
+      description: Notion's `archived` — the older spelling of `is_archived`,
+        which the API still sends beside it
+    icon:
+      type: object
+      fields:
+        type:
+          type: enum
+          values:
+            - value: emoji
+              label: emoji
+            - value: external
+              label: external
+            - value: file
+              label: file
+            - value: customemoji
+              label: custom_emoji
+          description: which of the fields below carries it — the schema closes
+            the set, so an enum (§2's closed-set test)
+        emoji:
+          type: string
+          description: the emoji character itself, when `type` is emoji
+        external:
+          type: object
+          fields:
+            url:
+              type: url
+              description: the externally hosted image's address
+          description: an image Notion links to rather than stores
+        file:
+          type: object
+          fields:
+            url:
+              type: url
+              description: the Notion-hosted file's signed address
+            expiryTime:
+              type: datetime
+              description: Notion's `expiry_time` — when the signed URL stops
+                working
+          description: an image Notion stores, behind a signed URL that expires
+        customEmoji:
+          type: object
+          fields:
+            customEmojiId:
+              type: string
+              description: Notion's `id` for the workspace's custom emoji
+            name:
+              type: string
+              description: the custom emoji's shortcode
+            url:
+              type: url
+              description: where the custom emoji image is served from
+          description: a workspace's own uploaded emoji
+      displayName: Icon
+      description: Notion's `icon` — the emoji or image shown beside the page,
+        absent when it has none
+    cover:
+      type: object
+      fields:
+        type:
+          type: enum
+          values:
+            - value: external
+              label: external
+            - value: file
+              label: file
+          description: which of the fields below carries it — the schema closes
+            the set at two, so an enum
+        external:
+          type: object
+          fields:
+            url:
+              type: url
+              description: the externally hosted image's address
+          description: an image Notion links to rather than stores
+        file:
+          type: object
+          fields:
+            url:
+              type: url
+              description: the Notion-hosted file's signed address
+            expiryTime:
+              type: datetime
+              description: Notion's `expiry_time` — when the signed URL stops
+                working
+          description: an image Notion stores, behind a signed URL that expires
+      displayName: Cover
+      description: Notion's `cover` — the banner image, absent when it has
+        none
+    url:
+      type: url
+      displayName: URL
+      description: the page's own address in Notion
+    publicUrl:
+      type: url
+      displayName: Public URL
+      description: Notion's `public_url` — the address the page is shared
+        at, absent when it is not shared to the web
+    # ---- relations -------------------------------------------------------
+    parent:
+      type: object
+      fields:
+        type:
+          type: enum
+          values:
+            - value: workspace
+              label: workspace
+            - value: pageid
+              label: page_id
+            - value: databaseid
+              label: database_id
+            - value: datasourceid
+              label: data_source_id
+            - value: blockid
+              label: block_id
+          description: >-
+            which of the fields below carries it. The reference closes the
+            set and never asks a client to tolerate an unknown one, so it
+            is an enum; a value no table holds leaves the field absent (§2)
+        pageId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/page
+          description: the page this page sits under, when `type` is page_id.
+            No mustExist — one descending walk may meet a child first
+        dataSourceId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/datasource
+          description: the data source this page is a ROW of, when `type`
+            is data_source_id. No mustExist
+        databaseId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/database
+          description: >-
+            the database behind that data source — 2025-09-03 sends it beside
+            `data_source_id` on a row's parent, and it is the API's, so it
+            is declared. No mustExist
+        blockId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/block
+          description: the block this page sits in, when `type` is block_id.
+            No mustExist
+        workspace:
+          type: bool
+          description: Notion's `workspace` — true when the page sits at the
+            top level of the workspace
+      displayName: Parent
+      description: Notion's `parent` — where the page lives, as a discriminated
+        object whose id fields are references
+    createdBy:
+      type: reference
+      kind: providers.substrate.reamde.dev/notion/user
+      displayName: Created by
+      description: >-
+        Notion's `created_by` — who created the page. The payload carries
+        only `{object, id}`; the roster walk fills the rest in. No mustExist
+    lastEditedBy:
+      type: reference
+      kind: providers.substrate.reamde.dev/notion/user
+      displayName: Last edited by
+      description: Notion's `last_edited_by` — who last changed the page.
+        No mustExist
+    # ---- instants (created_time IS the trait's `at`) ----------------------
+    lastEditedTime:
+      type: datetime
+      displayName: Last edited
+      description: Notion's `last_edited_time` — the instant the search walk
+        sorts and floors on
+---
+# ---- mirror: one block ----------------------------------------------------
+# GET /v1/blocks/{id}/children (2025-09-03). A block is one piece of a page's
+# content, and Notion keys its payload under its OWN `type` value.
+#
+# ONE KIND, THE UNION OF EVERY BLOCK TYPE, exactly as `slack/message` declares
+# the union of every subtype's fields: every block is the same identity (a
+# UUID), the same endpoint and the same parentage, and only the payload key
+# differs. Each payload is `json`, and that is forced rather than chosen — a
+# block payload carries rich text, rich text must be `json` (§2), and the
+# loader refuses `json` as an object FIELD (record 49), so a typed object
+# could not hold it.
+#
+# `type` is a STRING and not an enum: Notion has added block types without
+# notice (`synced_block`, `link_preview`, `audio`) and documents `unsupported`
+# as the value for a block the API cannot represent, which is the API telling
+# a client to tolerate what it does not know (§2's closed-set test). A closed
+# enum would refuse a whole page of blocks the day Notion ships a thirty-fourth.
+#
+# NO `page` REFERENCE. A block names its immediate `parent`, which may be
+# another block; the ROOT page is the SYNC's own knowledge of which walk it
+# was on, not a fact the payload states, and a property computed from the
+# walk is derived (§1). A reader climbs `parent`.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/notion/block
+data:
+  authority: providers.substrate.reamde.dev
+  package: notion
+  description: >-
+    One Notion block — a paragraph, heading, quote, table row or any of the
+    other 30 types — as GET /v1/blocks/{id}/children returns it (2025-09-03).
+    One kind carrying the union of every type's payload: declared objects
+    where the shape allows, `json` where it holds rich text or is empty. `at`
+    is `created_time`; the response envelope (request_id and the list wrapper)
+    is the one omitted class.
+  names:
+    singular: block
+  traits:
+    - temporal(point)
+  displayTemplate: "{plainText|type}"
+  properties:
+    # ---- identity --------------------------------------------------------
+    account:
+      type: reference
+      kind: account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this block was synced through
+    object:
+      type: enum
+      values:
+        - value: block
+          label: block
+      displayName: Object
+      description: Notion's `object` discriminator, one value on this resource
+        — a second value would be a widening
+    blockId:
+      type: string
+      required: true
+      displayName: Block ID
+      description: Notion's `id` — the block's UUID, and the provider key
+        behind this row's id
+    # ---- the block's own scalars, in the API reference's order ------------
+    type:
+      type: string
+      displayName: Type
+      # The 33 values this bundle knows are the property names below.
+      description: >-
+        Notion's `type`, and the name of the property below that carries this
+        block's payload — paragraph, heading_1..3, to_do, table_row, unsupported
+        and 28 more. A growing list, so a string
+    plainText:
+      type: text
+      embed: true
+      displayName: Text
+      # §1's third exception: the ONE labelled index per kind, and the only
+      # `embed: true` property in this bundle.
+      description: >-
+        DERIVED — Notion's own `plain_text` spans of this block's payload
+        property, concatenated in order. The exact source is that payload
+        property, on this same row
+    hasChildren:
+      type: bool
+      displayName: Has children
+      description: Notion's `has_children` — whether the block has children
+        the walk descends into
+    inTrash:
+      type: bool
+      displayName: In trash
+      description: Notion's `in_trash` — whether the block is in the workspace's
+        trash
+    archived:
+      type: bool
+      displayName: Archived
+      description: Notion's `archived` — the older spelling of `in_trash`,
+        which the API still sends beside it
+    # ---- the payload, one property per block type (§1, the Slack union) ---
+    audio:
+      type: json
+      displayName: Audio
+      description: Notion's `audio` payload — a file object, external or Notion-hosted,
+        with a caption
+    bookmark:
+      type: json
+      displayName: Bookmark
+      description: Notion's `bookmark` payload — `{caption, url}`
+    breadcrumb:
+      type: json
+      displayName: Breadcrumb
+      # `json` for the OPPOSITE reason to the rich-text ones: the payload is
+      # `{}` and has no fields to declare, and the loader has no zero-field
+      # object. Keeping the API's own empty object is the only lossless
+      # spelling (Codex 2 asked for this rationale rather than the rich-text
+      # one, and was right that the rich-text argument does not apply).
+      description: Notion's `breadcrumb` payload — an empty object; the block
+        renders the page's ancestry
+    bulletedListItem:
+      type: json
+      displayName: Bulleted list item
+      description: Notion's `bulleted_list_item` payload — `{rich_text, color,
+        children}`
+    callout:
+      type: json
+      displayName: Callout
+      description: Notion's `callout` payload — `{rich_text, icon, color,
+        children}`
+    childDatabase:
+      type: object
+      fields:
+        # `title` is reserved at every level; see `childPage` above.
+        databaseTitle:
+          type: string
+          description: Notion's `title` — the child database's title, as a
+            bare string
+      displayName: Child database
+      description: >-
+        Notion's `child_database` payload. DECLARED, not `json`: no rich text,
+        so nothing forces the blob. The database itself is a row of its own
+    childPage:
+      type: object
+      fields:
+        # `title` is reserved AT EVERY LEVEL, including inside an object: the
+        # loader refuses `fields.title` with "every record carries `title`; a
+        # derived one is a displayTemplate". §5's rename rule applies to an
+        # object field exactly as it does to a property.
+        pageTitle:
+          type: string
+          description: >-
+            Notion's `title` — the child page's title as a bare string, the
+            one place a page title appears outside a rich-text array
+      displayName: Child page
+      description: >-
+        Notion's `child_page` payload. DECLARED, not `json`: it carries no
+        rich text, so nothing forces the blob (Codex 2). The page itself is
+        a row of its own, reached through the search walk
+    code:
+      type: json
+      displayName: Code
+      description: Notion's `code` payload — `{rich_text, caption, language}`
+    column:
+      type: object
+      fields:
+        widthRatio:
+          type: decimal
+          description: Notion's `width_ratio` — the fraction of the row this
+            column takes
+      displayName: Column
+      description: >-
+        Notion's `column` payload. DECLARED: one number; its children are
+        the blocks inside the column
+    columnList:
+      type: json
+      displayName: Column list
+      # `{}` with no fields to declare; see `breadcrumb` above.
+      description: Notion's `column_list` payload — an empty object; its children
+        are the columns
+    divider:
+      type: json
+      displayName: Divider
+      # `{}` with no fields to declare; see `breadcrumb` above.
+      description: Notion's `divider` payload — an empty object
+    embed:
+      type: json
+      displayName: Embed
+      description: Notion's `embed` payload — `{url, caption}`
+    equation:
+      type: object
+      fields:
+        expression:
+          type: string
+          description: the KaTeX expression, as Notion stores it
+      displayName: Equation
+      description: >-
+        Notion's `equation` payload. DECLARED: one string, no rich text
+    file:
+      type: json
+      displayName: File
+      description: Notion's `file` payload — a file object, external or Notion-hosted,
+        with a caption and a name
+    heading1:
+      type: json
+      displayName: Heading 1
+      description: >-
+        Notion's `heading_1` payload — `{rich_text, color, is_toggleable}`.
+        Renamed by §5's rule: a digit after `_` joins the word before it
+    heading2:
+      type: json
+      displayName: Heading 2
+      description: Notion's `heading_2` payload — `{rich_text, color, is_toggleable}`
+    heading3:
+      type: json
+      displayName: Heading 3
+      description: Notion's `heading_3` payload — `{rich_text, color, is_toggleable}`
+    image:
+      type: json
+      displayName: Image
+      description: Notion's `image` payload — a file object, external or Notion-hosted,
+        with a caption
+    linkPreview:
+      type: object
+      fields:
+        url:
+          type: url
+          description: the address the preview renders
+      displayName: Link preview
+      description: >-
+        Notion's `link_preview` payload. DECLARED: one URL. Notion documents
+        that it cannot be created through the API, only read
+    linkToPage:
+      type: object
+      fields:
+        type:
+          type: enum
+          values:
+            - value: pageid
+              label: page_id
+            - value: databaseid
+              label: database_id
+            - value: datasourceid
+              label: data_source_id
+            - value: commentid
+              label: comment_id
+          description: which of the fields below carries it — the reference
+            closes the set
+        pageId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/page
+          description: the page this block links to. No mustExist
+        databaseId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/database
+          description: the database this block links to. No mustExist
+        dataSourceId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/datasource
+          description: the data source this block links to. No mustExist
+        commentId:
+          type: string
+          description: >-
+            Notion's `comment_id`. A STRING and not a reference: this bundle
+            mirrors no comment kind yet (T-038), and §2 says an id we do not
+            mirror stays a string with the scope boundary named
+      displayName: Link to page
+      description: >-
+        Notion's `link_to_page` payload. DECLARED rather than `json` because
+        it holds identities this bundle mirrors (Codex 5)
+    numberedListItem:
+      type: json
+      displayName: Numbered list item
+      description: Notion's `numbered_list_item` payload — `{rich_text, color,
+        children}`
+    paragraph:
+      type: json
+      displayName: Paragraph
+      description: Notion's `paragraph` payload — `{rich_text, color, children}`
+    pdf:
+      type: json
+      displayName: PDF
+      description: Notion's `pdf` payload — a file object, external or Notion-hosted,
+        with a caption
+    quote:
+      type: json
+      displayName: Quote
+      description: Notion's `quote` payload — `{rich_text, color, children}`
+    syncedBlock:
+      type: object
+      fields:
+        syncedFrom:
+          type: object
+          fields:
+            type:
+              type: enum
+              values:
+                - value: blockid
+                  label: block_id
+              description: the one value Notion documents here, declared so
+                a second would be a widening
+            blockId:
+              type: reference
+              kind: providers.substrate.reamde.dev/notion/block
+              description: the ORIGINAL block this one duplicates. No mustExist
+                — the original may live on a page walked later
+          description: >-
+            Notion's `synced_from` — absent on the original and naming the
+            original on a duplicate
+      displayName: Synced block
+      description: >-
+        Notion's `synced_block` payload. DECLARED rather than `json` because
+        it holds an identity this bundle mirrors, and §3 says an id we mirror
+        is a reference (Codex 5)
+    table:
+      type: object
+      fields:
+        tableWidth:
+          type: int
+          description: Notion's `table_width` — how many columns the table
+            has
+        hasColumnHeader:
+          type: bool
+          description: Notion's `has_column_header` — whether the first row
+            is a header
+        hasRowHeader:
+          type: bool
+          description: Notion's `has_row_header` — whether the first column
+            is a header
+      displayName: Table
+      description: >-
+        Notion's `table` payload. DECLARED: three scalars; its children are
+        the `table_row` blocks
+    tableOfContents:
+      type: object
+      fields:
+        color:
+          type: string
+          # `default`, `gray`, `brown`, `orange`, `yellow`, `green`, `blue`,
+          # `purple`, `pink`, `red`, and a `_background` form of each.
+          description: >-
+            the block's colour. Notion extends the set with each background
+            shade it ships, so a string
+      displayName: Table of contents
+      description: >-
+        Notion's `table_of_contents` payload. DECLARED: one string
+    tableRow:
+      type: json
+      displayName: Table row
+      description: Notion's `table_row` payload — `{cells}`, an array of rich-text
+        arrays
+    template:
+      type: json
+      displayName: Template
+      description: Notion's `template` payload — `{rich_text}`. Deprecated
+        by Notion, still returned for blocks that already exist
+    toDo:
+      type: json
+      displayName: To do
+      description: Notion's `to_do` payload — `{rich_text, checked, color,
+        children}`
+    toggle:
+      type: json
+      displayName: Toggle
+      description: Notion's `toggle` payload — `{rich_text, color, children}`
+    transcription:
+      type: json
+      displayName: Transcription
+      # Codex 1 cites Notion's 2026-03-11 upgrade guide: a `transcription`
+      # payload is returned under every pin BEFORE that version, which
+      # includes this one. No payload in the owner's pull carries it, so it is
+      # declared and not exercised — the honest half of §1, and named as such
+      # in fixtures/README.md.
+      description: >-
+        Notion's `transcription` payload — DECLARED AND NOT YET SEEN, from
+        the 2026-03-11 upgrade guide. Returned under pins before that version,
+        which includes 2025-09-03
+    unsupported:
+      type: json
+      displayName: Unsupported
+      description: >-
+        Notion's `unsupported` payload — what the API sends for a block type
+        it cannot represent. Its presence is why `type` is a string and not
+        a closed enum
+    video:
+      type: json
+      displayName: Video
+      description: Notion's `video` payload — a file object, external or Notion-hosted,
+        with a caption
+    # ---- relations -------------------------------------------------------
+    parent:
+      type: object
+      fields:
+        type:
+          type: enum
+          values:
+            - value: workspace
+              label: workspace
+            - value: pageid
+              label: page_id
+            - value: databaseid
+              label: database_id
+            - value: datasourceid
+              label: data_source_id
+            - value: blockid
+              label: block_id
+          description: >-
+            which of the fields below carries it. The reference closes the
+            set and never asks a client to tolerate an unknown one, so it
+            is an enum; a value no table holds leaves the field absent (§2)
+        pageId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/page
+          description: the page this block belongs to, when `type` is page_id.
+            No mustExist — a block may be walked before its page is written
+        blockId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/block
+          description: the block this block is nested in, when `type` is block_id.
+            No mustExist
+        databaseId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/database
+          description: the database this block belongs to, when `type` is
+            database_id. No mustExist
+        dataSourceId:
+          type: reference
+          kind: providers.substrate.reamde.dev/notion/datasource
+          description: the data source this sits under, when `type` is data_source_id
+            — Notion sends it on a wiki and a synced parent
+        workspace:
+          type: bool
+          description: true when the block sits at the top level of the workspace
+      displayName: Parent
+      description: >-
+        Notion's `parent` — the page or block this one hangs off, as a discriminated
+        object whose id fields are references. The ROOT page is not declared:
+        it is the walk's knowledge, not the payload's
+    createdBy:
+      type: reference
+      kind: providers.substrate.reamde.dev/notion/user
+      displayName: Created by
+      description: Notion's `created_by` — who created the block. The payload
+        carries only `{object, id}`. No mustExist
+    lastEditedBy:
+      type: reference
+      kind: providers.substrate.reamde.dev/notion/user
+      displayName: Last edited by
+      description: Notion's `last_edited_by` — who last changed the block.
+        No mustExist
+    # ---- instants (created_time IS the trait's `at`) ----------------------
+    lastEditedTime:
+      type: datetime
+      displayName: Last edited
+      description: Notion's `last_edited_time` — when the block last changed
+---
+# ---- connector state: where the block walk of one page got to --------------
+# NOT A MIRROR, and that is the whole reason it exists (§1): a per-CONTAINER
+# cursor may not live on the container, or a page of blocks bumps the page's
+# version and fires every trigger watching it. `slack/conversationsync` is the
+# same kind for the same reason.
+#
+# `writer: connector` on every property the connector owns; the one property
+# that binds the row to its container takes none, because a reference property
+# admits no `writer:` key (guide §6, "still owed").
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/notion/pagesync
+data:
+  authority: providers.substrate.reamde.dev
+  package: notion
+  description: >-
+    Where this connector's block walk of one page got to: the children cursor,
+    when it last ran, the page edit it ran against and what Notion last said
+    about it. Connector-written state, kept off the page so a page of blocks
+    never bumps the mirrored row.
+  names:
+    singular: pagesync
+  displayTemplate: "{page.titlePlainText}"
+  properties:
+    page:
+      type: reference
+      kind: page
+      required: true
+      mustExist: true
+      onDelete: cascade
+      displayName: Page
+      description: >-
+        the page this state belongs to. Required and cascading — the state
+        dies with the page. A reference takes no `writer:`, so this one alone
+        is unrestricted
+    blocksCursor:
+      type: string
+      writer: connector
+      displayName: Blocks cursor
+      description: >-
+        Notion's `next_cursor` for this page's ROOT children, and the walk
+        RESUMES from it when a bounded drain dropped its checkpoint. Absent
+        when the walk finished
+    blocksSyncedAt:
+      type: datetime
+      writer: connector
+      displayName: Blocks synced
+      description: when this page's block tree was last walked to the end
+    blocksEditedTime:
+      type: datetime
+      writer: connector
+      displayName: Walked against
+      description: >-
+        the page's `last_edited_time` when the walk finished. A page no newer
+        than this is SKIPPED — Notion bumps the instant for any edit anywhere
+        in the page, so nothing has changed to re-read
+    blocksStatus:
+      type: string
+      writer: connector
+      displayName: Blocks status
+      description: >-
+        the last outcome for THIS page — ok, or the Notion error that stopped
+        it (object_not_found, restricted_resource). One bad page never stops
+        the rest
+---
+# ---- the sync function: one workspace, one page of one walk per invocation --
+# A PEP 723 Python body (requests through uv). The integration token arrives
+# injected on the connector input; the API base arrives beside it and defaults
+# to https://api.notion.com. This body refuses to send the token anywhere but
+# that origin or loopback.
+#
+#   me         GET  /v1/users/me                  the integration user, and
+#                                                 account.user
+#   users      GET  /v1/users                     the workspace roster, paged
+#   search     POST /v1/search                    pages AND data sources, one
+#                                                 descending walk by
+#                                                 last_edited_time, paged
+#   databases  GET  /v1/databases/{id}            every database a data source
+#                                                 named — search returns none
+#   blocks     GET  /v1/blocks/{id}/children      each page's block tree,
+#                                                 paged and recursive
+#
+# EVERY ROW IS MINTED THEN PATCHED: `put(if_absent=True)` with the payload's
+# non-null half, then `patch` with the whole of it. A thinner payload can
+# never put over a fuller row, an absent field is never written as null, and a
+# field the payload carries AS null clears — except from search, which Notion
+# documents (and this account's corpus proves) as returning the complete
+# object, so an omitted property there IS a null.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/notion/notionsync
+data:
+  authority: providers.substrate.reamde.dev
+  package: notion
+  description: >-
+    Sync one Notion workspace — its users, pages, data sources, databases
+    and blocks — one page of one walk per invocation, advancing each page's
+    own block cursor on its sync-state row. Read-only.
+  runtime: python
+  timeout: PT60S
   permissions:
     writes:
-      - providers.substrate.reamde.dev/notion/page
+      - providers.substrate.reamde.dev/notion/user
       - providers.substrate.reamde.dev/notion/database
+      - providers.substrate.reamde.dev/notion/datasource
+      - providers.substrate.reamde.dev/notion/page
+      - providers.substrate.reamde.dev/notion/block
+      - providers.substrate.reamde.dev/notion/pagesync
       - providers.substrate.reamde.dev/notion/account
-    # The delta short-circuit reads the mirrors back; the search and links
-    # phases probe parent targets. Budget: one search page reads at most
-    # SEARCH_PAGE mirrors plus a parent probe each.
     reads:
       kinds:
         - providers.substrate.reamde.dev/notion/page
-        - providers.substrate.reamde.dev/notion/database
+        - providers.substrate.reamde.dev/notion/pagesync
       budgets:
-        calls: 300
-        rows: 3000
+        calls: 600
+        rows: 2000
     network:
-      - "api.notion.com"
+      - api.notion.com
+      - 127.0.0.1
+      - localhost
   source: |
     # /// script
     # requires-python = ">=3.11"
-    # dependencies = []
+    # dependencies = [
+    #   "requests==2.32.4",
+    # ]
     # ///
-    """Notion workspace sync — search / blocks / links phases, read-only.
+    """Notion sync — one page of one walk per invocation, mirrors only.
 
-    The integration token arrives injected on the connector input
-    (`config.inputs.connector.properties.integrationToken`, plaintext inside
-    the runner boundary, scrubbed on every surface that leaves it) and is
-    spent ONLY against the pinned https://api.notion.com origin or a loopback
-    test seam. The body never writes to Notion: no page creation, no edits, no
-    archival — the named future case for that (create page, read computed
-    state, write children) is deferred to a workflow primitive (2026-08
-    function-write-model SYNTHESIS).
+    The pasted integration token arrives injected on the connector input
+    (`config.inputs.connector.properties.integrationToken`); the API base arrives
+    beside it and defaults to https://api.notion.com. This body never sees a
+    client secret, and it refuses to send the token anywhere but that exact origin
+    or loopback.
 
-    One account per repository: the connector input holds one workspace
-    token, so the lexicographically-first account row is THE connection;
-    every other row is stamped `syncStatus: "ignored: duplicate account …"`.
+    THE WALKS, in the order the drain runs them:
 
-    Delta optimization (the linkprovider's last_edited_time short-circuit,
-    kept): before staging anything the mirror is read back and its VERBATIM
-    raw.last_edited_time (json round-trips byte-true; the datetime property
-    normalizes) is compared to the fetched object's — an unchanged page
-    fetches no blocks and stages no effect. Two repairs run INDEPENDENTLY of
-    that skip: a stored pendingParent whose target has since mirrored gets
-    its parent reference, and a mirror whose blocks phase never completed
-    re-queues its content walk.
+        me         GET  /v1/users/me                the integration user the token
+                                                    IS, and `account.user`
+        users      GET  /v1/users                   the workspace roster, paged
+        search     POST /v1/search                  pages AND data sources in ONE
+                                                    descending walk by
+                                                    `last_edited_time`, paged, with
+                                                    the backfill floor as its stop
+        databases  GET  /v1/databases/{id}          every database a data source
+                                                    named — search returns none
+        blocks     GET  /v1/blocks/{id}/children    each page's block tree, paged
+                                                    and recursive
+
+    NOTHING HYDRATES A PAGE, and the claim behind that is bounded. 595 of 595
+    addressed `GET /v1/pages/{id}` reads and 2 of 2 `GET /v1/data_sources/{id}`
+    reads in the owner's pull are byte-identical to the object the same search
+    walk returned, so the second call buys nothing and this sync does not make it
+    — 17,000 requests it does not spend. That is an OBSERVATION over one corpus,
+    not an API contract, so no payload here is treated as AUTHORITATIVE in §1's
+    sense: a property a response omits is left ABSENT, never written null. Codex
+    was right that corpus equality cannot license a null (finding 11).
+
+    A BOUNDED DRAIN LEAVES ITS WORK WHERE THE NEXT ONE FINDS IT. The engine gives
+    a drain 512 invocations and two minutes, and a cold walk of a 17,000-page
+    workspace does not fit. The search cursor and the roster cursor live in
+    `account.syncCursors`; the databases and blocks backlogs live in
+    `account.syncPending`; both are written as each batch drains, so nothing that
+    lives only in the paged checkpoint is ever redone from scratch. An account
+    with pending work reports itself DUE whatever its cadence says, so the
+    ordinary hourly tick is also the continuation.
+
+    DELETES ARE NOT RECONCILED. Notion's search never returns a trashed page, so
+    a page the owner deleted simply stops appearing; there is no tombstone to read
+    and this sync removes nothing. See providers/notion/README.md.
     """
     import datetime as _dt
-    import json
-    import urllib.error
-    import urllib.parse
-    import urllib.request
+    import json as _json
+    from urllib.parse import urlparse
+
+    import requests
 
     AUTHORITY = "providers.substrate.reamde.dev/notion"
+    USER_TYPE = AUTHORITY + "/user"
+    DATABASE_TYPE = AUTHORITY + "/database"
+    DATASOURCE_TYPE = AUTHORITY + "/datasource"
     PAGE_TYPE = AUTHORITY + "/page"
-    DB_TYPE = AUTHORITY + "/database"
+    BLOCK_TYPE = AUTHORITY + "/block"
+    PAGESYNC_TYPE = AUTHORITY + "/pagesync"
     ACCOUNT_TYPE = AUTHORITY + "/account"
-    NOTION_VERSION = "2025-09-03"  # data-source aware; 2022-06-28 LOSES multi-source databases
+
     DEFAULT_API = "https://api.notion.com"
-    SEARCH_PAGE = 100   # Notion's search maximum — one provider page per invocation
-    BLOCKS_PAGE = 3     # pages whose block trees are walked per blocks invocation
-    LINKS_PAGE = 15     # parent references resolved per links invocation
-    MAX_BLOCKS = 500    # block-walker budget per page (truncation marker past it)
-    MAX_DEPTH = 2       # nested-children recursion cap
-    MAX_CALL_STEPS = 2000  # the direct-call internal drain's hard stop
+    API_HOST = "api.notion.com"   # the ONLY non-loopback origin the token may reach
+    LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+    # 2025-09-03 is the data-source model. Under 2022-06-28 a database that grows a
+    # second data source disappears from search entirely.
+    NOTION_VERSION = "2025-09-03"
+    SEALED_PREFIX = "enc:"
+
+    PAGE_SIZE = 100      # search and roster page size — and the raw pull's
+    BLOCK_PAGE = 100     # the block walk's page size — and the raw pull's
+    BLOCK_DEPTH = 3      # how deep the block walk recurses under one page
+    # The live queues ride inside the paged cursor; everything past this waits in
+    # `account.syncPending`, which survives the drain that discovered it.
+    MAX_PENDING = 400
+    HYDRATE_BATCH = 400  # a loop ceiling; `_Budget` is the real bound
+    QUEUES = ("databases", "blocks")
     BACKFILL_DAYS = {"last30d": 30, "last90d": 90, "last1y": 365}
-    DUPLICATE_NOTE = ("ignored: duplicate account (this provider is "
-                      "one-account-per-repository until issue 011)")
+    TOGGLES = ("enabledPages", "enabledBlocks")
+
+    # THE search request, spelled once, because a mock names a JSON body by the
+    # sha1 of its BYTES and `tools/rawpull/notion.py` builds the same dict in the
+    # same order. No `filter`: one walk returns pages AND data sources and the
+    # body sorts them out by `object`, so there is one family of search recordings
+    # whatever the account's toggles say.
+    SEARCH_SORT = {"direction": "descending", "timestamp": "last_edited_time"}
+
+    # Notion keys a block's payload under its own `type` value. Every documented
+    # type, mapped to the property that holds it — the rename rule is §5's:
+    # camelCase, and a digit after `_` joins the word before it.
+    BLOCK_PAYLOADS = {
+        "audio": "audio",
+        "bookmark": "bookmark",
+        "breadcrumb": "breadcrumb",
+        "bulleted_list_item": "bulletedListItem",
+        "callout": "callout",
+        "child_database": "childDatabase",
+        "child_page": "childPage",
+        "code": "code",
+        "column": "column",
+        "column_list": "columnList",
+        "divider": "divider",
+        "embed": "embed",
+        "equation": "equation",
+        "file": "file",
+        "heading_1": "heading1",
+        "heading_2": "heading2",
+        "heading_3": "heading3",
+        "image": "image",
+        "link_preview": "linkPreview",
+        "link_to_page": "linkToPage",
+        "numbered_list_item": "numberedListItem",
+        "paragraph": "paragraph",
+        "pdf": "pdf",
+        "quote": "quote",
+        "synced_block": "syncedBlock",
+        "table": "table",
+        "table_of_contents": "tableOfContents",
+        "table_row": "tableRow",
+        "template": "template",
+        "to_do": "toDo",
+        "toggle": "toggle",
+        "transcription": "transcription",
+        "unsupported": "unsupported",
+        "video": "video",
+    }
+    # A block whose children belong to ANOTHER page: the search walk reaches that
+    # page on its own, so the block walk does not descend into it.
+    BLOCK_STOPS = ("child_page", "child_database")
+
+    # Notion's permanent failures: asking again cannot change the answer, so the
+    # unit of work is dropped with its reason on the row rather than retried
+    # forever (`docs/provider-practices.md` §5).
+    PERMANENT = ("object_not_found", "restricted_resource", "unauthorized",
+                 "validation_error", "invalid_request_url", "invalid_request")
 
 
-    def _req(api, token, method, path, payload=None):
-        headers = {
-            "Authorization": "Bearer " + token,
-            "Notion-Version": NOTION_VERSION,
-            "Accept": "application/json",
-        }
-        data = None
-        if payload is not None:
-            data = json.dumps(payload).encode("utf-8")
-            headers["Content-Type"] = "application/json"
-        req = urllib.request.Request(api + path, data=data, headers=headers,
-                                     method=method)
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-
-
-    def _api_allowed(api):
-        # ORIGIN PINNING: the injected token may travel to (a) HTTPS
-        # api.notion.com — the provider's one production host — or (b) a
-        # loopback host, any scheme, as the test seam. An owner-editable
-        # apiBase that points anywhere else must never see the secret.
-        u = urllib.parse.urlsplit(api)
-        host = (u.hostname or "").lower()
-        if host in ("127.0.0.1", "localhost", "::1"):
-            return True
-        return u.scheme == "https" and host == "api.notion.com"
-
-
-    def _norm_id(raw):
-        s = str(raw or "").replace("-", "").lower()
-        return s if len(s) == 32 else ""
-
-
-    def _dashed(pid):
-        # Notion's API prefers the canonical 8-4-4-4-12 form on the wire.
-        return "-".join((pid[0:8], pid[8:12], pid[12:16], pid[16:20], pid[20:32]))
-
-
-    def _rich(rt):
-        return "".join(t.get("plain_text") or "" for t in rt or [])
-
-
-    def _page_title(page):
-        for prop in (page.get("properties") or {}).values():
-            if isinstance(prop, dict) and prop.get("type") == "title":
-                return _rich(prop.get("title"))
-        return ""
-
-
-    def _render(block, depth):
-        t = block.get("type") or ""
-        body = block.get(t) if isinstance(block.get(t), dict) else {}
-        text = _rich(body.get("rich_text"))
-        indent = "  " * depth
-        if t == "heading_1":
-            return "# " + text
-        if t == "heading_2":
-            return "## " + text
-        if t == "heading_3":
-            return "### " + text
-        if t == "bulleted_list_item" or t == "toggle":
-            return indent + "- " + text
-        if t == "numbered_list_item":
-            return indent + "1. " + text
-        if t == "to_do":
-            return indent + "- [" + ("x" if body.get("checked") else " ") + "] " + text
-        if t in ("quote", "callout"):
-            return indent + "> " + text
-        if t == "code":
-            return "```" + (body.get("language") or "") + "\n" + text + "\n```"
-        if t == "divider":
-            return "---"
-        if t == "child_page":
-            return indent + "[child page: " + (body.get("title") or "") + "]"
-        if t == "child_database":
-            return indent + "[child database: " + (body.get("title") or "") + "]"
-        if t in ("bookmark", "link_preview", "embed"):
-            return indent + (body.get("url") or "")
-        if t == "image":
-            src = ((body.get("file") or {}).get("url")
-                   or (body.get("external") or {}).get("url") or "")
-            return indent + "![image](" + src + ")" if src else ""
-        if t == "paragraph" or text:
-            return indent + text if text else ""
-        return "[unsupported: " + t + "]" if t else ""
-
-
-    def _walk(api, token, block_id, depth, budget, lines):
-        # The block-tree walker: paged children, bounded recursion, and a hard
-        # block budget so a pathological page cannot eat the invocation.
-        cursor = ""
-        while True:
-            path = "/v1/blocks/" + block_id + "/children?page_size=100"
-            if cursor:
-                path += "&start_cursor=" + urllib.parse.quote(cursor)
-            resp = _req(api, token, "GET", path)
-            for b in resp.get("results") or []:
-                if budget[0] <= 0:
-                    lines.append("[content truncated]")
-                    return
-                budget[0] -= 1
-                line = _render(b, depth)
-                if line:
-                    lines.append(line)
-                if (b.get("has_children") and depth < MAX_DEPTH
-                        and (b.get("type") or "") not in ("child_page", "child_database")):
-                    _walk(api, token, b.get("id") or "", depth + 1, budget, lines)
-            cursor = resp.get("next_cursor") or ""
-            if not resp.get("has_more") or not cursor:
-                return
+    # --------------------------------------------------------------- plumbing
 
 
     def _wants(acct):
-        p = acct.get("properties") or {}
-        return bool(p.get("enabledPages") or p.get("enabledDatabases"))
+        props = acct.get("properties") or {}
+        # THE OWNER'S PAUSE IS A REASON NOT TO WANT. `syncPaused` is one of the
+        # core `sync` trait's two owner hands (substrate decision 0085): the
+        # dispatcher refuses a paused record's DELIVERIES before this body runs at
+        # all, and this line is the other half — the scheduled sweep, an
+        # `args.account` and `force` all choose their queue through `_wants`, so a
+        # paused account does nothing on any path.
+        if props.get("syncPaused"):
+            return False
+        return any(props.get(t) for t in TOGGLES)
+
+
+    def _pending_of(props):
+        """The backlog the account is carrying, per queue."""
+        held = props.get("syncPending")
+        if not isinstance(held, dict):
+            return {}
+        out = {}
+        for key in QUEUES:
+            rows = held.get(key)
+            if isinstance(rows, list) and rows:
+                out[key] = [r for r in rows if r not in (None, "")]
+        return {k: v for k, v in out.items() if v}
+
+
+    def _held(props):
+        """Notion told us when to come back, and that outranks everything.
+
+        The deadline check used to sit BELOW the pending-work check, so an account
+        that was both rate-limited and mid-drain reported itself due immediately
+        and walked straight back into the 429 (Codex 15). It is now the first
+        question every path asks, including the ones that bypass `_due` — a record
+        delivery, a named account and `force`.
+        """
+        hold = props.get("retryNotBefore")
+        return bool(hold) and str(hold) > _now()
 
 
     def _due(props):
-        freq = (props.get("syncFrequency") or "daily").lower()
+        """Is this account due? An account with PENDING WORK is due whatever its
+        cadence says — the ordinary tick is also the continuation of a bounded
+        drain (`docs/provider-practices.md` §4)."""
+        if _held(props):
+            return False
+        if _pending_of(props):
+            return True
+        freq = (props.get("syncFrequency") or "hourly").lower()
         if freq == "off":
             return False
         last = props.get("lastSyncedAt")
@@ -615,367 +2207,1414 @@ data:
         return _dt.datetime.now(_dt.timezone.utc) - seen >= _dt.timedelta(hours=hours)
 
 
-    def _cutoff(props):
-        # -> (cutoff-iso or "", stamp-anchor?). The fleet mapping: none means
-        # FROM CONNECT TIME FORWARD (the first sync stamps backfillAnchor and
-        # every run measures from it — never a per-run "cutoff = now" that
-        # skips everything), last30d/90d/1y reach back from each run, all
-        # means no cutoff.
-        depth = (props.get("backfillDepth") or "all").lower()
-        if depth == "all":
-            return "", False
-        now = _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0)
-        days = BACKFILL_DAYS.get(depth)
-        if days:
-            return (now - _dt.timedelta(days=days)).isoformat(), False
-        anchor = props.get("backfillAnchor")
-        if anchor:
-            return str(anchor), False
-        return now.isoformat(), True
+    def _now():
+        # SUB-SECOND, deliberately. A whole-second stamp is not greater than a
+        # `syncRequestedAt` landing in the same second, and the on-request guard
+        # closes for good (`docs/provider-practices.md` §4).
+        return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
-    def _parse_ts(s):
-        try:
-            ts = _dt.datetime.fromisoformat(str(s).replace("Z", "+00:00"))
-        except ValueError:
+    def _stages(props):
+        """The account's enabled walks, in order, PINNED into the cursor so a
+        toggle flipped mid-drain cannot crash the walk.
+
+        A RUN WITH A BACKLOG WALKS NO SEARCH. The searches are 170 pages against
+        the owner's workspace and a bounded drain would spend itself re-deriving
+        the same backlog it started with, so while `syncPending` holds work the
+        round is pure hydration and progress is strictly monotonic. The search
+        resumes on the first round that starts clean. (GitHub v15 paid for this.)
+        """
+        if _pending_of(props):
+            out = ["me"]
+            if props.get("enabledPages"):
+                out.append("databases")
+            if props.get("enabledBlocks"):
+                out.append("blocks")
+            return out
+        out = ["me"]
+        if props.get("enabledPages"):
+            out.extend(["users", "search", "databases"])
+        if props.get("enabledBlocks"):
+            out.append("blocks")
+        return out
+
+
+    def _fresh(queue, dispatch="", started=""):
+        # `dispatch` and `startedAt` are the core `sync` trait's bookkeeping
+        # (substrate decision 0085): the dispatcher stamps `lastSyncStartedAt` and
+        # `lastSyncDurationMs` around a RECORD-sourced delivery only, and a
+        # scheduled fire names no record — so on that path the body carries its
+        # own start instant through the drain and stamps the pair itself. They
+        # ride in the checkpoint because one run is many invocations.
+        return {"queue": queue, "stages": [], "stage": "me", "cursor": "",
+                "runStart": "", "floor": "", "ack": "", "cursors": {},
+                "databases": [], "blocks": [], "deferred": {}, "saved": None,
+                "savedCursors": None, "missing": [], "notes": [],
+                "blockStack": [], "blockPage": "", "wantBlocks": False,
+                "dispatch": dispatch, "startedAt": started or _now(), "seen": 0}
+
+
+    class _Budget:
+        """The invocation's WALL-CLOCK budget, not its request count.
+
+        The function's deadline is PT60S and `requests`' timeout is per request, so
+        a batch of sequential reads can be killed mid-flight and replay the same
+        work on every invocation forever. A stage checks the budget between
+        objects and checkpoints early instead.
+        """
+
+        LIMIT = 40.0
+
+        def __init__(self):
+            self.start = _dt.datetime.now(_dt.timezone.utc)
+
+        def spent(self):
+            return (_dt.datetime.now(_dt.timezone.utc)
+                    - self.start).total_seconds() >= self.LIMIT
+
+
+    class _RateLimited(Exception):
+        """Notion asked us to stop. Carries the instant it said to come back."""
+
+        def __init__(self, retry_at, message):
+            super().__init__(message)
+            self.retry_at = retry_at
+
+
+    class _Permanent(Exception):
+        """A 4xx that asking again cannot change. Carries Notion's own code."""
+
+        def __init__(self, code, message):
+            super().__init__(message)
+            self.code = code
+
+
+    def _check_origin(url):
+        # The bundle-side origin pin: a request carrying the injected token may
+        # reach ONLY https://api.notion.com, or loopback (the test seam / the mock
+        # server). The engine's `network` capability is declared-but-unenforced, so
+        # this refusal is the defence until host-side egress enforcement exists.
+        u = urlparse(url)
+        host = (u.hostname or "").lower()
+        if host in LOOPBACK_HOSTS:
+            return
+        if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
+            return
+        raise RuntimeError(
+            "notion: refusing to send the integration token to %s://%s:%s — only "
+            "https://api.notion.com or loopback"
+            % (u.scheme, host or "?", u.port or "-"))
+
+
+    def _retry_at(resp):
+        after = resp.headers.get("Retry-After")
+        if after and str(after).strip().replace(".", "", 1).isdigit():
+            return (_dt.datetime.now(_dt.timezone.utc)
+                    + _dt.timedelta(seconds=float(after))).strftime(
+                        "%Y-%m-%dT%H:%M:%S.%fZ")
+        return (_dt.datetime.now(_dt.timezone.utc)
+                + _dt.timedelta(seconds=30)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+    def _call(base, token, method, path, params=None, payload=None):
+        url = base + path
+        _check_origin(url)
+        headers = {
+            "Authorization": "Bearer " + token,
+            "Notion-Version": NOTION_VERSION,
+            "Accept": "application/json",
+        }
+        data = None
+        if payload is not None:
+            # The body is built HERE rather than handed to `json=`, so its bytes
+            # are exactly what the raw pull recorded and the mock's sha1 of them
+            # names the same file.
+            data = _json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        resp = requests.request(method, url, params=params or {}, data=data,
+                                headers=headers, timeout=20, allow_redirects=False)
+        if resp.status_code == 429:
+            raise _RateLimited(_retry_at(resp), "rate limited")
+        if 400 <= resp.status_code < 500:
+            code = ""
+            try:
+                code = str((resp.json() or {}).get("code") or "")
+            except Exception:                                    # noqa: BLE001
+                code = ""
+            if code in PERMANENT or resp.status_code in (400, 403, 404):
+                raise _Permanent(code or ("http%d" % resp.status_code),
+                                 "%s %s" % (resp.status_code, code or path))
+        resp.raise_for_status()
+        return resp.json()
+
+
+    def _err_msg(e):
+        if isinstance(e, _RateLimited):
+            return "rate limited; retry after %s" % e.retry_at
+        if isinstance(e, _Permanent):
+            return "notion refused: %s" % e.code
+        if isinstance(e, requests.HTTPError) and e.response is not None:
+            return "notion returned HTTP %d" % e.response.status_code
+        return str(e) or type(e).__name__
+
+
+    # ---------------------------------------------------------------- ids
+    # EVERY key is Notion's own UUID, NORMALISED to its 32 hex characters: the API
+    # spells the same id dashed in one payload and undashed in another (a page
+    # `url` carries the undashed form), and keying on the spelling would split one
+    # object into two rows. Nothing here is keyed on a name.
+
+
+    def _ident(raw):
+        s = str(raw or "").replace("-", "").lower()
+        return s if len(s) == 32 and all(c in "0123456789abcdef" for c in s) else ""
+
+
+    def _row_id(host, aid, prefix, ident):
+        return host.ids.external("notion", aid, prefix + "/" + ident)
+
+
+    def _dashed(ident):
+        s = _ident(ident)
+        if not s:
+            return ""
+        return "-".join((s[0:8], s[8:12], s[12:16], s[16:20], s[20:32]))
+
+
+    # ------------------------------------------------------ property shapes
+    # One rule, everywhere: a key the payload does not carry is ABSENT from the
+    # props; a key it carries as null is None, which the PATCH writes as a delete.
+    # `_mint` is the non-null half, which is what a create may carry.
+
+
+    def _take(props, payload, api_key, name, cast=None):
+        """One field, with the guide's presence rule.
+
+        A key the payload does not carry is ABSENT. A key it carries as `null` is
+        None, which the PATCH writes as a delete. AN EXPLICIT EMPTY IS A CLEAR
+        (§1): Notion sends `description: []` for a database nobody described,
+        `properties: {}` for a page with no property values and `bot: {}` for
+        every bot but the token's own, and each of those is the API saying the
+        value is gone — writing the empty container through would store "set to
+        nothing" where the guide asks for "not set". Notion's schema makes the
+        empty string a value NOWHERE, so it clears too.
+        """
+        if not isinstance(payload, dict) or api_key not in payload:
+            return
+        value = payload.get(api_key)
+        if value is None:
+            props[name] = None
+            return
+        if isinstance(value, (str, list, dict)) and len(value) == 0:
+            props[name] = None
+            return
+        if cast is None:
+            props[name] = value
+            return
+        out = cast(value)
+        if out is None:
+            return
+        props[name] = out
+
+
+    def _mint(props):
+        return {k: v for k, v in props.items() if v is not None}
+
+
+    def _url(value):
+        # §2: a value that does not parse is not written. An empty string is not a
+        # legal URL, and writing one would refuse the whole page.
+        v = str(value or "").strip()
+        return v if "://" in v else None
+
+
+    def _email(value):
+        v = str(value or "").strip()
+        if v.count("@") != 1:
             return None
-        if ts.tzinfo is None:
-            # A normalized datetime property may round-trip without a zone;
-            # the wire values are UTC, so pin it rather than raise on compare.
-            ts = ts.replace(tzinfo=_dt.timezone.utc)
-        return ts
+        local, _, domain = v.partition("@")
+        if not local or not domain or "." not in domain or " " in v:
+            return None
+        return v
 
 
-    def _unchanged(existing, obj):
-        # THE DELTA SHORT-CIRCUIT: compare the fetched object's
-        # last_edited_time (Notion's authoritative change marker — the old
-        # linkprovider's ETag) against the mirror's VERBATIM raw copy. json
-        # round-trips byte-true; the lastEditedAt datetime property is
-        # engine-normalized and would false-mismatch.
-        if not existing:
-            return False
-        raw = (existing.get("properties") or {}).get("raw") or {}
-        return (raw.get("last_edited_time") == obj.get("last_edited_time")
-                and bool(raw.get("archived")) == bool(obj.get("archived")))
+    def _enum_of(table):
+        def cast(value):
+            if value is None:
+                return None
+            # A label no table holds leaves the property ABSENT; a new API value is
+            # a widening and a package bump, and one unknown value must never cost
+            # an account its whole run.
+            return table.get(str(value))
+        return cast
 
 
-    def _kind(raw):
-        # pendingParent is PERSISTED, so a stored kind can be older than this
-        # build: rows written before the destutter hold "notionpage", rows
-        # written after it held the bare "page". Everything normalizes to a
-        # FULL identity here, because host.records.get takes nothing else.
-        k = str(raw or "")
-        if k in ("page", "notionpage"):
-            return PAGE_TYPE
-        if k in ("database", "notiondatabase"):
-            return DB_TYPE
-        return k
+    USER_TYPES = {"person": "person", "bot": "bot"}
+    # The closed sets §2's test admits. Every one of them is spelled by the
+    # loader's rule with the API's own word as the label, and `_enum_of` leaves
+    # the property ABSENT for a value no table holds — a new Notion value costs
+    # one property and a package bump, never a refused page.
+    ICON_TYPES = {"emoji": "emoji", "external": "external", "file": "file",
+                  "custom_emoji": "customemoji"}
+    COVER_TYPES = {"external": "external", "file": "file"}
+    PARENT_TYPES = {"workspace": "workspace", "page_id": "pageid",
+                    "database_id": "databaseid",
+                    "data_source_id": "datasourceid", "block_id": "blockid"}
+    OWNER_TYPES = {"workspace": "workspace", "user": "user"}
+    LINK_TARGETS = {"page_id": "pageid", "database_id": "databaseid",
+                    "data_source_id": "datasourceid", "comment_id": "commentid"}
 
 
-    def _ref(kind, mid):
-        # A reference VALUE is the flat "<kind>/<id>" path, not the {kind, id}
-        # pair host.records.* / host.effects.* take as two arguments.
-        return _kind(kind) + "/" + mid
+    # ---------------------------------------------------- the rich-text decode
+    # Notion puts `plain_text` on EVERY span it sends, so concatenating them in
+    # order invents nothing: it is the lossless mechanical decode of §1's first
+    # exception, and the encoded array rides beside it on the same row.
 
 
-    def _stamp_duplicate(host, acct):
-        # F8: one credential, one account — every row that is not the
-        # lexicographically-first is stamped once and never synced.
-        props = acct.get("properties") or {}
-        if props.get("syncStatus") == DUPLICATE_NOTE:
-            return
-        host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), acct.get("id"),
-                           properties={"syncStatus": DUPLICATE_NOTE})
+    def _plain(rich):
+        if not isinstance(rich, list):
+            return ""
+        return "".join(str(s.get("plain_text") or "") for s in rich
+                       if isinstance(s, dict))
 
 
-    def _stage_data_source(host, aid, mid, dsid, obj, seen, state):
-        if _unchanged(host.records.get(DB_TYPE, mid), obj):
-            return
-        out = {"title": _rich(obj.get("title")), "account": aid,
-               "dataSourceId": dsid, "raw": obj}
-        dbid = _norm_id((obj.get("parent") or {}).get("database_id"))
-        if dbid:
-            out["databaseId"] = dbid
-        if obj.get("url"):
-            out["url"] = obj["url"]
-        host.effects.put(DB_TYPE, mid, properties=out)
-        seen.add(mid)
-        state["count"] += 1
+    def _page_title_plain(properties):
+        """The page's title, out of whichever property is the `title` one.
+
+        Notion names the title property whatever the workspace called it, and
+        marks it `type: title` — so the decode reads the TYPE, never a name.
+        """
+        if not isinstance(properties, dict):
+            return ""
+        for value in properties.values():
+            if isinstance(value, dict) and value.get("type") == "title":
+                return _plain(value.get("title"))
+        return ""
 
 
-    def _stage_page(host, aid, mid, oid, obj, seen, state):
-        existing = host.records.get(PAGE_TYPE, mid)
-        if _unchanged(existing, obj):
-            # Unchanged since the mirror: skip — no block fetch, no put. This
-            # is where a steady-state sync earns its keep. Two REPAIRS run
-            # independently of the skip:
-            props = (existing or {}).get("properties") or {}
-            # 1. A stored pendingParent whose target has since been shared
-            #    gets its parent reference now — the child being unchanged
-            #    must not strand the link forever.
-            pend = props.get("pendingParent")
-            if isinstance(pend, list) and len(pend) == 2:
-                pkind, pmid = _kind(pend[0]), str(pend[1])
-                if pmid in seen or host.records.get(pkind, pmid):
-                    host.effects.patch(PAGE_TYPE, mid,
-                                       properties={"parent": _ref(pkind, pmid),
-                                                   "pendingParent": None})
-            # 2. A mirror whose blocks phase never completed (content absent)
-            #    re-queues its walk.
-            if not props.get("archived") and not props.get("content"):
-                state["blocks"].append([mid, oid])
-            return
-        archived = bool(obj.get("archived"))
-        out = {"title": _page_title(obj), "account": aid, "pageId": oid,
-               "archived": archived, "raw": obj}
-        if archived:
-            out["content"] = ""
-        if obj.get("last_edited_time"):
-            out["lastEditedAt"] = obj["last_edited_time"]
-        if obj.get("url"):
-            out["url"] = obj["url"]
-        parent = obj.get("parent") or {}
-        ptype = parent.get("type") or ""
-        pid, pkind = "", ""
-        # The kind is the FULL type identity: host.records.get below takes
-        # nothing less, and a bare "page" is ambiguous the moment a second
-        # bundle declaring a `page` is installed beside this one.
-        if ptype == "page_id":
-            pid, pkind = _norm_id(parent.get("page_id")), PAGE_TYPE
-        elif ptype == "data_source_id":
-            pid, pkind = _norm_id(parent.get("data_source_id")), DB_TYPE
-        elif ptype == "database_id":
-            # 2025-09-03 reports data-source parents for database rows; a
-            # bare database_id parent still resolves against a data-source
-            # mirror only if the ids coincide — otherwise it stays pending.
-            pid, pkind = _norm_id(parent.get("database_id")), DB_TYPE
-        if pid:
-            pmid = host.ids.external("notion", aid, pid)
-            if pmid in seen or host.records.get(pkind, pmid):
-                out["parent"] = _ref(pkind, pmid)
-            else:
-                # Parent not mirrored yet: keep the reference ON the child so
-                # a later sync can repair it, and defer to the links phase.
-                out["pendingParent"] = [pkind, pmid]
-                state["pending"].append([mid, pkind, pmid])
-        host.effects.put(PAGE_TYPE, mid, properties=out)
-        seen.add(mid)
-        state["count"] += 1
-        if not archived:
-            # Content arrives in the BLOCKS phase — its own resumable unit,
-            # so a deep page cannot eat this invocation's budget.
-            state["blocks"].append([mid, oid])
+    def _block_plain(block):
+        """Every `plain_text` span the block's own payload carries, in order."""
+        payload = block.get(block.get("type") or "")
+        if not isinstance(payload, dict):
+            return ""
+        parts = []
+        rich = payload.get("rich_text")
+        if isinstance(rich, list):
+            parts.append(_plain(rich))
+        # a `table_row` is an array of rich-text arrays
+        cells = payload.get("cells")
+        if isinstance(cells, list):
+            parts.extend(_plain(c) for c in cells if isinstance(c, list))
+        # `child_page` / `child_database` carry a bare string title, which is the
+        # one place a page's name appears outside a rich-text array. The decode
+        # reads the PAYLOAD, so it is unaffected by that payload being typed.
+        if isinstance(payload.get("title"), str):
+            parts.append(payload["title"])
+        caption = payload.get("caption")
+        if isinstance(caption, list):
+            parts.append(_plain(caption))
+        return "\n".join(p for p in parts if p)
 
 
-    def _search_step(host, api, token, acct, state, seen):
-        aid = state["account"]
-        props = acct.get("properties") or {}
-        want_pages = bool(props.get("enabledPages"))
-        want_dbs = bool(props.get("enabledDatabases"))
-        cutoff = _parse_ts(state["cutoff"]) if state.get("cutoff") else None
+    # --------------------------------------------------------- the value objects
 
-        payload = {"page_size": SEARCH_PAGE,
-                   "sort": {"direction": "descending", "timestamp": "last_edited_time"}}
-        if want_pages != want_dbs:
-            payload["filter"] = {"property": "object",
-                                 "value": "page" if want_pages else "data_source"}
-        if state.get("cursor"):
-            payload["start_cursor"] = state["cursor"]
-        resp = _req(api, token, "POST", "/v1/search", payload)
 
-        stop = False
-        for obj in resp.get("results") or []:
-            kind = obj.get("object") or ""
-            oid = _norm_id(obj.get("id"))
-            if not oid:
+    def _file_object(value):
+        if not isinstance(value, dict):
+            return None
+        out = {}
+        _take(out, value, "url", "url", _url)
+        _take(out, value, "expiry_time", "expiryTime")
+        return _mint(out) or None
+
+
+    def _icon(value):
+        """Notion's `icon` — emoji | external | file | custom_emoji."""
+        if not isinstance(value, dict):
+            return None
+        out = {}
+        _take(out, value, "type", "type", _enum_of(ICON_TYPES))
+        _take(out, value, "emoji", "emoji")
+        if "external" in value:
+            out["external"] = _file_object(value.get("external"))
+        if "file" in value:
+            out["file"] = _file_object(value.get("file"))
+        custom = value.get("custom_emoji")
+        if isinstance(custom, dict):
+            sub = {}
+            _take(sub, custom, "id", "customEmojiId")
+            _take(sub, custom, "name", "name")
+            _take(sub, custom, "url", "url", _url)
+            out["customEmoji"] = _mint(sub) or None
+        return _mint(out) or None
+
+
+    def _cover(value):
+        if not isinstance(value, dict):
+            return None
+        out = {}
+        _take(out, value, "type", "type", _enum_of(COVER_TYPES))
+        if "external" in value:
+            out["external"] = _file_object(value.get("external"))
+        if "file" in value:
+            out["file"] = _file_object(value.get("file"))
+        return _mint(out) or None
+
+
+    def _parent(host, aid, value):
+        """Notion's `parent`, as a discriminated object whose id fields are
+        REFERENCES. No `mustExist` anywhere in it: one descending walk may meet a
+        child before its parent, exactly as a Slack `thread_ts` may name a message
+        the drain has not reached."""
+        if not isinstance(value, dict):
+            return None
+        out = {}
+        _take(out, value, "type", "type", _enum_of(PARENT_TYPES))
+        for api_key, name, prefix, kind in (
+                ("page_id", "pageId", "page", PAGE_TYPE),
+                ("data_source_id", "dataSourceId", "datasource", DATASOURCE_TYPE),
+                ("database_id", "databaseId", "database", DATABASE_TYPE),
+                ("block_id", "blockId", "block", BLOCK_TYPE)):
+            if api_key not in value:
                 continue
-            edited = _parse_ts(obj.get("last_edited_time"))
-            if cutoff is not None and edited is not None and edited < cutoff:
-                # The walk is DESCENDING by last_edited_time: the first
-                # below-cutoff result proves everything after it is older
-                # still. End the WHOLE walk here — never scan history that
-                # the backfill window excludes.
-                stop = True
-                break
-            mid = host.ids.external("notion", aid, oid)
-            if kind == "data_source" and want_dbs:
-                _stage_data_source(host, aid, mid, oid, obj, seen, state)
-            elif kind == "page" and want_pages:
-                _stage_page(host, aid, mid, oid, obj, seen, state)
-
-        next_cursor = resp.get("next_cursor") or ""
-        if not stop and resp.get("has_more") and next_cursor:
-            state["cursor"] = next_cursor
-            return state
-
-        # The search walk concluded (drained, or cutoff-stopped): stamp the
-        # account — the on-connect trigger's guard drops once lastSyncedAt
-        # exists — then hand off to the blocks phase, then links.
-        now = _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat()
-        host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid,
-                           properties={"lastSyncedAt": now, "syncStatus": "ok"})
-        state["cursor"] = ""
-        if state["blocks"]:
-            state["phase"] = "blocks"
-            return state
-        if state["pending"]:
-            state["phase"] = "links"
-            return state
-        return None
+            ident = _ident(value.get(api_key))
+            out[name] = _row_id(host, aid, prefix, ident) if ident else None
+        _take(out, value, "workspace", "workspace", bool)
+        return _mint(out) or None
 
 
-    def _blocks_step(host, api, token, state):
-        # The block traversal, ITS OWN resumable phase: a bounded batch of
-        # walks per invocation, each patching the page it belongs to.
-        take, keep = state["blocks"][:BLOCKS_PAGE], state["blocks"][BLOCKS_PAGE:]
-        for mid, oid in take:
-            lines = []
-            _walk(api, token, _dashed(oid), 0, [MAX_BLOCKS], lines)
-            host.effects.patch(PAGE_TYPE, mid,
-                               properties={"content": "\n".join(lines)})
-        state["blocks"] = keep
-        if keep:
-            return state
-        if state["pending"]:
-            state["phase"] = "links"
-            return state
-        return None
+    # ------------------------------------------------------------------- the sink
 
 
-    def _links_step(host, state, seen):
-        # Deferred parent references: a child mirrored before its parent could
-        # not name it inline; once the walk drains, this phase probes each
-        # target and writes the ones that exist. An absent target stays
-        # recorded as the child's pendingParent — a later sync repairs it if
-        # the parent is ever shared.
-        take, keep = state["pending"][:LINKS_PAGE], state["pending"][LINKS_PAGE:]
-        for child, pkind, pmid in take:
-            pkind = _kind(pkind)
-            if pmid in seen or host.records.get(pkind, pmid):
-                host.effects.patch(PAGE_TYPE, child,
-                                   properties={"parent": _ref(pkind, pmid),
-                                               "pendingParent": None})
+    class _Sink:
+        """Stages the rows one page produces, COALESCED within the page.
+
+        Every row is minted then patched: `put(if_absent=True)` with the payload's
+        non-null half, then `patch` with the whole of it. The put is a no-op on a
+        row that exists, so a thin embedded `{object, id}` user can never put over
+        a full roster row; the patch never mentions a field the payload did not
+        carry, so nothing is nulled by a thinner read.
+        """
+
+        def __init__(self, host, aid):
+            self.host = host
+            self.aid = aid
+            self.seen = {}
+
+        def write(self, kind, rid, props, thin=False):
+            known = self.seen.get(rid)
+            if known is None:
+                self.seen[rid] = dict(props)
+                self.host.effects.put(kind, rid, properties=_mint(props),
+                                      if_absent=True)
+                if not thin:
+                    self.host.effects.patch(kind, rid, properties=props)
+                return rid
+            delta = {k: v for k, v in props.items()
+                     if k not in known or known[k] != v}
+            delta.pop("account", None)
+            if delta:
+                known.update(props)
+                self.host.effects.patch(kind, rid, properties=delta)
+            return rid
+
+        # -- users ----------------------------------------------------------
+        def user_ref(self, value, thin=True):
+            """Stage a `user` row for a payload that carries one and hand back its
+            record id, which IS the reference value.
+
+            An embedded `created_by` / `last_edited_by` is `{object, id}` and
+            nothing else, so it MINTS the row and the roster walk patches the name
+            and the address onto it. A row that offers nothing mints no person
+            either — the engine parks an empty probe rather than minting a shell
+            (decision record 0087).
+            """
+            if not isinstance(value, dict):
+                return None
+            ident = _ident(value.get("id"))
+            if not ident:
+                return None
+            rid = _row_id(self.host, self.aid, "user", ident)
+            props = {"account": self.aid, "userId": ident}
+            _take(props, value, "object", "object", _enum_of({"user": "user"}))
+            _take(props, value, "type", "type", _enum_of(USER_TYPES))
+            _take(props, value, "name", "name")
+            _take(props, value, "avatar_url", "avatarUrl", _url)
+            if "person" in value:
+                person = value.get("person")
+                if isinstance(person, dict):
+                    sub = {}
+                    _take(sub, person, "email", "email", _email)
+                    _take(sub, person, "email_verified", "emailVerified", bool)
+                    props["person"] = _mint(sub) or None
+                else:
+                    props["person"] = None
+            if "bot" in value:
+                bot = value.get("bot")
+                if isinstance(bot, dict):
+                    sub = {}
+                    owner = bot.get("owner")
+                    if isinstance(owner, dict):
+                        osub = {}
+                        _take(osub, owner, "type", "type", _enum_of(OWNER_TYPES))
+                        _take(osub, owner, "workspace", "workspace", bool)
+                        who = owner.get("user")
+                        if isinstance(who, dict):
+                            # INGEST, don't compose: `bot.owner.user` is a whole
+                            # user object, and composing its id left a reference
+                            # at a row nothing had written whenever the roster did
+                            # not carry that user (Codex 6).
+                            osub["user"] = self.user_ref(who)
+                        sub["owner"] = _mint(osub) or None
+                    _take(sub, bot, "workspace_name", "workspaceName")
+                    _take(sub, bot, "workspace_id", "workspaceId")
+                    limits = bot.get("workspace_limits")
+                    if isinstance(limits, dict):
+                        lsub = {}
+                        _take(lsub, limits, "max_file_upload_size_in_bytes",
+                              "maxFileUploadSizeInBytes")
+                        sub["workspaceLimits"] = _mint(lsub) or None
+                    props["bot"] = _mint(sub) or None
+                else:
+                    props["bot"] = None
+            return self.write(USER_TYPE, rid, props, thin=thin)
+
+        def user_id_ref(self, value):
+            """A `{object, id}` stub. It mints the identity and nothing else; the
+            roster walk fills the row in."""
+            return self.user_ref(value, thin=True)
+
+
+    # ------------------------------------------------------------ the extractors
+
+
+    def _page_props(host, sink, aid, item):
+        ident = _ident(item.get("id"))
+        props = {"account": aid, "pageId": ident}
+        _take(props, item, "object", "object", _enum_of({"page": "page"}))
+        # `properties` is written WHOLE or not at all: a patch replaces a property
+        # value entire at depth one, so a partial map would delete its siblings.
+        _take(props, item, "properties", "properties")
+        if "properties" in item:
+            props["titlePlainText"] = _page_title_plain(item.get("properties")) or None
+        _take(props, item, "in_trash", "inTrash", bool)
+        _take(props, item, "is_archived", "isArchived", bool)
+        _take(props, item, "is_locked", "isLocked", bool)
+        _take(props, item, "archived", "archived", bool)
+        if "icon" in item:
+            props["icon"] = _icon(item.get("icon"))
+        if "cover" in item:
+            props["cover"] = _cover(item.get("cover"))
+        _take(props, item, "url", "url", _url)
+        _take(props, item, "public_url", "publicUrl", _url)
+        if "parent" in item:
+            props["parent"] = _parent(host, aid, item.get("parent"))
+        for api_key, name in (("created_by", "createdBy"),
+                              ("last_edited_by", "lastEditedBy")):
+            if api_key not in item:
+                continue
+            who = item.get(api_key)
+            props[name] = sink.user_id_ref(who) if isinstance(who, dict) else None
+        _take(props, item, "last_edited_time", "lastEditedTime")
+        _take(props, item, "created_time", "at")   # the temporal trait's slot
+        return props
+
+
+    def _datasource_props(host, sink, aid, item):
+        ident = _ident(item.get("id"))
+        props = {"account": aid, "dataSourceId": ident}
+        _take(props, item, "object", "object",
+              _enum_of({"data_source": "datasource"}))
+        _take(props, item, "title", "dataSourceTitle")
+        if "title" in item:
+            props["titlePlainText"] = _plain(item.get("title")) or None
+        _take(props, item, "description", "description")
+        _take(props, item, "is_inline", "isInline", bool)
+        _take(props, item, "database_type", "databaseType")
+        _take(props, item, "properties", "properties")
+        _take(props, item, "in_trash", "inTrash", bool)
+        _take(props, item, "archived", "archived", bool)
+        if "icon" in item:
+            props["icon"] = _icon(item.get("icon"))
+        if "cover" in item:
+            props["cover"] = _cover(item.get("cover"))
+        _take(props, item, "url", "url", _url)
+        _take(props, item, "public_url", "publicUrl", _url)
+        if "parent" in item:
+            props["parent"] = _parent(host, aid, item.get("parent"))
+        if "database_parent" in item:
+            props["databaseParent"] = _parent(host, aid, item.get("database_parent"))
+        for api_key, name in (("created_by", "createdBy"),
+                              ("last_edited_by", "lastEditedBy")):
+            if api_key not in item:
+                continue
+            who = item.get(api_key)
+            props[name] = sink.user_id_ref(who) if isinstance(who, dict) else None
+        _take(props, item, "last_edited_time", "lastEditedTime")
+        _take(props, item, "created_time", "at")
+        return props
+
+
+    def _database_props(host, sink, aid, item):
+        ident = _ident(item.get("id"))
+        props = {"account": aid, "databaseId": ident}
+        _take(props, item, "object", "object", _enum_of({"database": "database"}))
+        _take(props, item, "title", "databaseTitle")
+        if "title" in item:
+            props["titlePlainText"] = _plain(item.get("title")) or None
+        _take(props, item, "description", "description")
+        _take(props, item, "is_inline", "isInline", bool)
+        _take(props, item, "database_type", "databaseType")
+        _take(props, item, "in_trash", "inTrash", bool)
+        _take(props, item, "is_locked", "isLocked", bool)
+        _take(props, item, "archived", "archived", bool)
+        if "icon" in item:
+            props["icon"] = _icon(item.get("icon"))
+        if "cover" in item:
+            props["cover"] = _cover(item.get("cover"))
+        _take(props, item, "url", "url", _url)
+        _take(props, item, "public_url", "publicUrl", _url)
+        if "parent" in item:
+            props["parent"] = _parent(host, aid, item.get("parent"))
+        # DECLARED AND NOT YET SEEN: the reference documents both and no payload
+        # in the owner's pull carries either, so `_take`'s absence rule leaves the
+        # properties alone until one does (Codex 1).
+        for api_key, name in (("created_by", "createdBy"),
+                              ("last_edited_by", "lastEditedBy")):
+            if api_key not in item:
+                continue
+            who = item.get(api_key)
+            props[name] = sink.user_id_ref(who) if isinstance(who, dict) else None
+        if "data_sources" in item:
+            rows = item.get("data_sources")
+            if isinstance(rows, list):
+                # A repeated reference refuses a duplicate target, so the list is
+                # deduplicated here. The `name` Notion sends beside each id is the
+                # data source's own title and is NOT copied (§3).
+                out = []
+                for r in rows:
+                    sid = _ident((r or {}).get("id")) if isinstance(r, dict) else ""
+                    if not sid:
+                        continue
+                    ref = _row_id(host, aid, "datasource", sid)
+                    if ref not in out:
+                        out.append(ref)
+                props["dataSources"] = out or None
             else:
-                host.log("notion: parent of %s is not mirrored; pendingParent "
-                         "stays for a later sync" % child)
-        state["pending"] = keep
-        if keep:
-            return state
-        return None
+                props["dataSources"] = None
+        _take(props, item, "last_edited_time", "lastEditedTime")
+        _take(props, item, "created_time", "at")
+        return props
 
 
-    def _step(host, api, token, accounts, state, seen):
-        # One unit of work -> (next-state or None, output-when-done). The
-        # account is re-validated on EVERY step: if it vanished from config
-        # or dropped its toggles mid-drain, the drain ends HERE — its search
-        # cursor and pending links are minted under THIS account's filter and
-        # must never leak into any later drain.
-        aid = state["account"]
-        acct = accounts.get(aid)
-        if acct is None or not _wants(acct):
-            host.log("notion: account %s is gone or disabled; the drain ends" % aid)
-            return None, {"account": aid, "skipped": True}
+    # The block payloads that are DECLARED OBJECTS rather than `json`: they carry
+    # no rich text, so nothing forces the blob, and two of them hold identities
+    # this bundle mirrors (Codex 2, 5). Each entry is (API key -> property name,
+    # cast); a reference field is handled by `_block_payload` by hand.
+    TYPED_PAYLOADS = {
+        # `title` is reserved at every level, including inside an object, so §5's
+        # rename rule applies to the FIELD too (the loader refuses `fields.title`).
+        "child_page": (("title", "pageTitle", None),),
+        "child_database": (("title", "databaseTitle", None),),
+        "equation": (("expression", "expression", None),),
+        "link_preview": (("url", "url", _url),),
+        "column": (("width_ratio", "widthRatio", None),),
+        "table_of_contents": (("color", "color", None),),
+        "table": (("table_width", "tableWidth", None),
+                  ("has_column_header", "hasColumnHeader", bool),
+                  ("has_row_header", "hasRowHeader", bool)),
+    }
+
+    def _block_payload(host, aid, btype, value):
+        """One block's payload, TYPED where the shape allows.
+
+        A payload that carries rich text stays `json` — rich text must be `json`
+        (§2) and the loader refuses `json` as an object field (record 49), so the
+        enclosing object could not hold it. A payload that carries none is
+        declared, and the two that hold an identity this bundle mirrors
+        (`synced_block`, `link_to_page`) carry references (Codex 2, 5).
+        """
+        if value is None:
+            return None
+        if btype in TYPED_PAYLOADS:
+            if not isinstance(value, dict):
+                return None
+            out = {}
+            for api_key, pname, cast in TYPED_PAYLOADS[btype]:
+                _take(out, value, api_key, pname, cast)
+            return _mint(out) or None
+        if btype == "synced_block":
+            if not isinstance(value, dict):
+                return None
+            out = {}
+            src = value.get("synced_from")
+            if isinstance(src, dict):
+                sub = {}
+                _take(sub, src, "type", "type", _enum_of({"block_id": "blockid"}))
+                ident = _ident(src.get("block_id"))
+                if ident:
+                    sub["blockId"] = _row_id(host, aid, "block", ident)
+                out["syncedFrom"] = _mint(sub) or None
+            return _mint(out) or None
+        if btype == "link_to_page":
+            if not isinstance(value, dict):
+                return None
+            out = {}
+            _take(out, value, "type", "type", _enum_of(LINK_TARGETS))
+            for api_key, pname, prefix in (("page_id", "pageId", "page"),
+                                           ("database_id", "databaseId", "database"),
+                                           ("data_source_id", "dataSourceId",
+                                            "datasource")):
+                ident = _ident(value.get(api_key))
+                if ident:
+                    out[pname] = _row_id(host, aid, prefix, ident)
+            _take(out, value, "comment_id", "commentId")
+            return _mint(out) or None
+        return value
+
+
+    def _block_props(host, sink, aid, item):
+        ident = _ident(item.get("id"))
+        props = {"account": aid, "blockId": ident}
+        _take(props, item, "object", "object", _enum_of({"block": "block"}))
+        _take(props, item, "type", "type")
+        text = _block_plain(item)
+        props["plainText"] = text or None
+        _take(props, item, "has_children", "hasChildren", bool)
+        _take(props, item, "in_trash", "inTrash", bool)
+        _take(props, item, "archived", "archived", bool)
+        # The payload, under the one property named for this block's type. A type
+        # no table holds is a type Notion added after this bundle shipped: the row
+        # still lands, carrying `type` and `plainText`, and the payload waits for
+        # the widening rather than refusing the page.
+        btype = str(item.get("type") or "")
+        name = BLOCK_PAYLOADS.get(btype)
+        if name and btype in item:
+            props[name] = _block_payload(host, aid, btype, item.get(btype))
+        if "parent" in item:
+            props["parent"] = _parent(host, aid, item.get("parent"))
+        for api_key, pname in (("created_by", "createdBy"),
+                               ("last_edited_by", "lastEditedBy")):
+            if api_key not in item:
+                continue
+            who = item.get(api_key)
+            props[pname] = sink.user_id_ref(who) if isinstance(who, dict) else None
+        _take(props, item, "last_edited_time", "lastEditedTime")
+        _take(props, item, "created_time", "at")
+        return props
+
+
+    # ------------------------------------------------------------- the stages
+
+
+    def _more(host, cur, **overrides):
+        nxt = dict(cur)
+        nxt.update(overrides)
+        return {"more": host.page.more(nxt)}
+
+
+    def _enqueue(cur, key, item):
+        """Queue one unit of work; the overflow WAITS, it is not lost."""
+        bucket = cur.setdefault(key, [])
+        held = cur.setdefault("deferred", {}).setdefault(key, [])
+        if item in bucket or item in held:
+            return
+        if len(bucket) >= MAX_PENDING:
+            held.append(item)
+            return
+        bucket.append(item)
+
+
+    def _refill(cur, key):
+        held = (cur.get("deferred") or {}).get(key) or []
+        if not held:
+            return False
+        bucket = cur.setdefault(key, [])
+        room = MAX_PENDING - len(bucket)
+        if room <= 0:
+            return False
+        bucket.extend(held[:room])
+        cur["deferred"][key] = held[room:]
+        if not cur["deferred"][key]:
+            cur["deferred"].pop(key, None)
+        return True
+
+
+    def _pending(cur):
+        out = {}
+        for key in QUEUES:
+            rows = list(cur.get(key) or []) \
+                + list((cur.get("deferred") or {}).get(key) or [])
+            if rows:
+                out[key] = rows
+        return out
+
+
+    def _acct_kind(acct):
+        return (acct or {}).get("kind") or ACCOUNT_TYPE
+
+
+    def _elapsed_ms(started, ended):
+        """How long a run took, in whole milliseconds, or None if either stamp is
+        unreadable. A duration is never negative: a checkpoint that outlived a
+        clock change reports 0 rather than a number that reads as time travel."""
         try:
-            if state["phase"] == "blocks":
-                nxt = _blocks_step(host, api, token, state)
-            elif state["phase"] == "links":
-                nxt = _links_step(host, state, seen)
+            a = _dt.datetime.fromisoformat(str(started).replace("Z", "+00:00"))
+            b = _dt.datetime.fromisoformat(str(ended).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+        return max(int((b - a).total_seconds() * 1000), 0)
+
+
+    def _progress(cur, phase):
+        """`{phase, done, total, pending}` — the core `sync` trait's progress, off
+        THE DRAIN'S OWN BOOKKEEPING and nothing else.
+
+        `pending` is the queue `syncPending` carries: the page trees and the
+        databases this walk has discovered and not yet hydrated. `total` is the
+        high-water mark of that queue within the run, so `done` is what the run
+        has retired out of it — which is the number a progress bar can move on.
+        Both are per RUN, not per workspace: a cold walk of 17,000 pages is many
+        bounded rounds and no round can know the whole.
+        """
+        pending = sum(len(v) for v in _pending(cur).values())
+        total = max(int(cur.get("seen") or 0), pending)
+        cur["seen"] = total
+        return {"phase": phase, "done": total - pending, "total": total,
+                "pending": pending}
+
+
+    def _trait(cur, state, message, phase):
+        """The core `sync` trait's properties (substrate decision 0085), written
+        beside the legacy `syncStatus` on every path this body takes.
+
+        One workspace is ONE stream here, so `syncStreams` stays unwritten and
+        `syncRequestedAck` is answered directly rather than once every enabled
+        stream has agreed — decision 0085's own rule for a single-function
+        provider. `syncError` is written only by the erroring state, exactly as
+        main's Google bundle does it, so a throttled run does not file itself as
+        a failure.
+        """
+        out = {"syncState": state,
+               "syncMessage": str(message or "")[:400],
+               "syncProgress": _progress(cur, phase)}
+        if state == "erroring":
+            out["syncError"] = str(message or "")[:400]
+            out["syncErrorAt"] = _now()
+        return out
+
+
+    def _save_pending(host, acct, aid, cur):
+        """Checkpoint the backlog ON THE ACCOUNT, every batch.
+
+        The engine drops a paged checkpoint when it stops a drain, so whatever the
+        run has left to do has to be somewhere the next run can read it.
+        """
+        pending = _pending(cur)
+        sig = {k: len(v) for k, v in pending.items()}
+        if sig == cur.get("saved"):
+            return
+        cur["saved"] = sig
+        left = ", ".join("%s x%d" % (k, len(v)) for k, v in sorted(pending.items()))
+        status = ("ok (deferred: " + left + ")")[:400] if left else "ok"
+        patch = {"syncPending": pending or None, "syncStatus": status}
+        # The trait's heartbeat. A checkpoint is the only thing a round that the
+        # engine stops on its own bounds ever writes, so the state it leaves has
+        # to say `running` with the queue on it — `ok` is stamped by `_stamp`,
+        # which runs when the stages run out.
+        patch.update(_trait(cur, "running", status, cur.get("stage") or "me"))
+        host.effects.patch(_acct_kind(acct), aid, properties=patch)
+
+
+    def _save_cursors(host, acct, aid, cur):
+        """Checkpoint the stream cursors AS EACH WALK DRAINS.
+
+        An EMPTY map is written too, as `null`: the earlier guard refused to write
+        one, so a walk that finished left yesterday's cursor standing on the
+        account and the next run resumed a walk that was already done (Codex 12).
+        """
+        cursors = dict(cur.get("cursors") or {})
+        if cursors == cur.get("savedCursors"):
+            return
+        cur["savedCursors"] = cursors
+        host.effects.patch(_acct_kind(acct), aid,
+                           properties={"syncCursors": cursors or None})
+
+
+    def _note_missing(cur, what):
+        notes = list(cur.get("missing") or [])
+        if what not in notes:
+            notes.append(what)
+        cur["missing"] = notes[:40]
+
+
+    def _stamp(host, acct, aid, cur, error=None, not_before="", completed=True):
+        patch = {"lastSyncedAt": _now()}
+        if error is not None:
+            patch["syncStatus"] = ("erroring: " + str(error))[:400]
+        else:
+            pending = _pending(cur)
+            notes = list(cur.get("notes") or [])
+            if pending:
+                notes.append("deferred: " + ", ".join(
+                    "%s x%d" % (k, len(v)) for k, v in sorted(pending.items())))
+            if cur.get("missing"):
+                notes.append("unreachable: %d (%s)"
+                             % (len(cur["missing"]), ", ".join(cur["missing"][:4])))
+            patch["syncStatus"] = ("ok" if not notes
+                                   else "ok (" + "; ".join(notes) + ")")[:400]
+            patch["syncPending"] = pending or None
+            patch["syncCursors"] = dict(cur.get("cursors") or {}) or None
+            if completed and not pending:
+                patch["lastCompletedAt"] = patch["lastSyncedAt"]
+        if not_before:
+            patch["retryNotBefore"] = not_before
+        # The request generation this run acted on, echoed back on EVERY path
+        # including the erroring one: an unacknowledged request would re-fire the
+        # trigger against the same failure forever. It is also the trait's
+        # `syncRequestedAck` — one property, one meaning, so the on-request
+        # trigger's guard and the Connections page read the same stamp.
+        if cur.get("ack"):
+            patch["syncRequestedAck"] = cur["ack"]
+        # ---- the core `sync` trait (substrate decision 0085) -----------------
+        # `ok` ONLY WHEN THE DRAIN IS EMPTY. A bounded round that left page trees
+        # or databases queued has not finished the walk — `lastCompletedAt` is
+        # the legacy half of the same statement — so it says `running` and the
+        # next tick (which an account with pending work is always due for) picks
+        # the queue up. A 429 is `throttled`, not a failure: Notion named the
+        # instant to come back and `retryNotBefore` holds every path until then.
+        left = _pending(cur)
+        if error is not None:
+            state, message = "erroring", str(error)
+        elif not_before:
+            state = "throttled"
+            message = "rate limited by Notion; retry after %s" % not_before
+        elif left:
+            state, message = "running", patch["syncStatus"]
+        else:
+            state, message = "ok", patch["syncStatus"]
+        phase = "done" if state == "ok" else (cur.get("stage") or "me")
+        patch.update(_trait(cur, state, message, phase))
+        # THE SCHEDULE PATH STAMPS ITS OWN START AND DURATION. The dispatcher
+        # stamps the pair around a RECORD-sourced delivery under this callable's
+        # actor; a scheduled fire names no record and would otherwise leave the
+        # pair standing at whatever the last "sync now" wrote.
+        if cur.get("dispatch") == "schedule" and cur.get("startedAt"):
+            took = _elapsed_ms(cur["startedAt"], patch["lastSyncedAt"])
+            patch["lastSyncStartedAt"] = cur["startedAt"]
+            if took is not None:
+                patch["lastSyncDurationMs"] = took
+        host.effects.patch(_acct_kind(acct), aid, properties=patch)
+
+
+    def _advance(host, acct, aid, cur, queue):
+        order = list(cur.get("stages") or ["me"])
+        stage = cur.get("stage") or "me"
+        i = order.index(stage) if stage in order else len(order) - 1
+        if i + 1 < len(order):
+            return _more(host, cur, stage=order[i + 1], cursor="")
+        _stamp(host, acct, aid, cur)
+        rest = queue[1:]
+        if rest:
+            # The next account is a fresh walk with a fresh start instant, but the
+            # SAME dispatch: one scheduled fire sweeps every due account and each
+            # one stamps its own `lastSyncStartedAt`.
+            return {"more": host.page.more(_fresh(rest, cur.get("dispatch")))}
+        return {"output": {"account": aid}}
+
+
+    def _depth(props):
+        """The account's backfill depth, spelled. The fallback is the kind's own
+        default, so a property the record does not carry reads as `last90d` and
+        not as "no window"."""
+        return str(props.get("backfillDepth") or "last90d")
+
+
+    def _floor(props, run_start):
+        """The instant the descending search walk stops at, for the account's
+        CURRENT depth.
+
+        `all` is NO FLOOR and returns the empty string. That is a value, not a
+        missing one, which is why the caller keys the stored floor on
+        `floorDepth` rather than on the floor being truthy — the earlier
+        truthiness test could not store "no floor" and so could not clear a
+        narrower one (T-045).
+
+        `none` is the run's own start: "from here forward". §9 open question 3
+        asks whether a window anchored on when the account happened to connect
+        should exist at all; until it is answered this is what it does, and the
+        anchor is now the run in which the depth BECAME `none` rather than the
+        account's first sync ever.
+        """
+        depth = _depth(props)
+        if depth == "all":
+            return ""
+        if depth == "none":
+            return run_start
+        days = BACKFILL_DAYS.get(depth, 90)
+        return (_dt.datetime.now(_dt.timezone.utc)
+                - _dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+    def _api_base(cfg):
+        conn = (((cfg.get("inputs") or {}).get("connector") or {})
+                .get("properties")) or {}
+        return (conn.get("apiBase") or DEFAULT_API).rstrip("/")
+
+
+    def _sync_account(host, base, token, acct, aid, props, cur, queue):
+        stage = cur.get("stage") or "me"
+        budget = _Budget()
+        sink = _Sink(host, aid)
+
+        def get(path, params=None):
+            return _call(base, token, "GET", path, params=params)
+
+        # ---- me ------------------------------------------------------------
+        if stage == "me":
+            me = get("/v1/users/me")
+            uid = sink.user_ref(me, thin=False)
+            if uid:
+                host.effects.patch(_acct_kind(acct), aid, properties={"user": uid})
+            run_start = _now()
+            stored = props.get("syncCursors")
+            stored = stored if isinstance(stored, dict) else {}
+            # A COLD WALK'S FLOOR IS PART OF THE CURSOR, AND IT IS KEYED ON THE
+            # DEPTH THAT PRODUCED IT.
+            #
+            # Part one is `provider-practices.md` §4 (Codex 16): `backfillDepth:
+            # none` means "from connect time forward", and recomputing the floor
+            # from a later clock on every run silently abandons everything edited
+            # between the two — so the floor is ANCHORED, not re-derived.
+            #
+            # Part two is what anchoring cost when it was the whole rule: the
+            # stored floor was reused whatever the account now said, so a
+            # `backfillDepth` the owner WIDENED never reached the walk. `all`
+            # computes an EMPTY floor, an empty floor was never stored, and a
+            # stored one was never dropped — so `all` could not clear a floor an
+            # earlier, narrower depth had left behind. The owner's second Notion
+            # seed ran with `backfillDepth: all` and still walked to a 90-day
+            # floor left by the first (T-045), stopping at item one again.
+            #
+            # So the depth rides in the cursor beside the floor. Same depth, same
+            # floor, for ever; a CHANGED depth recomputes once and re-anchors.
+            # `floorDepth` is what makes "no floor" expressible: `all` stores the
+            # depth and no floor, which is a decision rather than a gap.
+            cursors = {k: v for k, v in stored.items() if isinstance(v, str) and v}
+            depth = _depth(props)
+            if cursors.get("floorDepth") == depth:
+                floor = cursors.get("floor") or ""
             else:
-                nxt = _search_step(host, api, token, acct, state, seen)
-        except (urllib.error.URLError, OSError, ValueError) as e:
-            # Provider trouble degrades THIS account and ends the drain clean
-            # — the stamp is the operator's signal, and lastSyncedAt did not
-            # advance, so the next scheduled fire retries.
-            reason = ("%s" % e)[:200]
-            host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid,
-                               properties={"syncStatus": "erroring: " + reason})
-            host.log("notion: sync of %s failed: %s" % (aid, reason))
-            return None, {"account": aid, "erroring": True}
-        if nxt is not None:
-            return nxt, None
-        return None, {"account": aid, "mirrored": state["count"]}
+                floor = _floor(props, run_start)
+                cursors.pop("floor", None)
+                if cursors.get("floorDepth"):
+                    host.log("notion: %s backfillDepth %s -> %s, floor %s"
+                             % (aid, cursors["floorDepth"], depth,
+                                floor or "(none: all)"))
+            cursors["floorDepth"] = depth
+            if floor:
+                cursors["floor"] = floor
+            cur.update(runStart=run_start,
+                       stages=_stages(props),
+                       ack=props.get("syncRequestedAt") or "",
+                       wantBlocks=bool(props.get("enabledBlocks")),
+                       cursors=cursors,
+                       floor=floor)
+            held = _pending_of(props)
+            if held:
+                cur["deferred"] = {}
+                for key, rows in held.items():
+                    cur[key] = list(rows[:MAX_PENDING])
+                    if rows[MAX_PENDING:]:
+                        cur["deferred"][key] = list(rows[MAX_PENDING:])
+                host.log("notion: %s resuming %d parked entries"
+                         % (aid, sum(len(v) for v in held.values())))
+            return _advance(host, acct, aid, cur, queue)
+
+        # ---- users ---------------------------------------------------------
+        if stage == "users":
+            params = {"page_size": PAGE_SIZE}
+            # RESUME. A drain that stopped mid-roster left its cursor on the
+            # account, and `_advance` clears the in-checkpoint one on every stage
+            # change — so without this the next run silently restarted the walk
+            # from page 1 and the stored cursor was never spent (Codex 12).
+            cursor = cur.get("cursor") or (cur.get("cursors") or {}).get("users") or ""
+            if cursor:
+                params["start_cursor"] = cursor
+            resp = get("/v1/users", params)
+            for u in resp.get("results") or []:
+                sink.user_ref(u, thin=False)
+            nxt = resp.get("next_cursor") or ""
+            cursors = dict(cur.get("cursors") or {})
+            if resp.get("has_more") and nxt:
+                cursors["users"] = nxt
+                cur["cursors"] = cursors
+                _save_cursors(host, acct, aid, cur)
+                return _more(host, cur, cursor=nxt)
+            cursors.pop("users", None)
+            cur["cursors"] = cursors
+            _save_cursors(host, acct, aid, cur)
+            return _advance(host, acct, aid, cur, queue)
+
+        # ---- search --------------------------------------------------------
+        if stage == "search":
+            # ONE walk, descending by last_edited_time, pages AND data sources.
+            # The floor is the backfill depth, carried IN THE CURSOR: a drain that
+            # stopped on its own bounds must come back with the window it was
+            # walking, not recompute one from a later clock.
+            payload = {"page_size": PAGE_SIZE, "sort": dict(SEARCH_SORT)}
+            # RESUME, as above: 170 search pages do not fit in one drain, and a
+            # walk that restarted from page 1 every round would never finish.
+            cursor = cur.get("cursor") or (cur.get("cursors") or {}).get("search") or ""
+            if cursor:
+                payload["start_cursor"] = cursor
+            resp = _call(base, token, "POST", "/v1/search", payload=payload)
+            floor = cur.get("floor") or ""
+            stop = False
+            walked = 0
+            for item in resp.get("results") or []:
+                ident = _ident(item.get("id"))
+                if not ident:
+                    continue
+                edited = str(item.get("last_edited_time") or "")
+                if floor and edited and edited < floor:
+                    # The walk is descending, so everything after this is older.
+                    stop = True
+                    break
+                walked += 1
+                kind = item.get("object")
+                if kind == "page":
+                    sink.write(PAGE_TYPE, _row_id(host, aid, "page", ident),
+                               _page_props(host, sink, aid, item))
+                    # ONLY WORK A STAGE CAN DRAIN. `_stages` drops the blocks
+                    # stage when `enabledBlocks` is off, so queueing every page
+                    # anyway left a backlog nothing could ever shrink — and an
+                    # account with pending work reports itself due forever, which
+                    # is a hot loop on the default pages-only configuration
+                    # (Codex 13).
+                    if cur.get("wantBlocks"):
+                        _enqueue(cur, "blocks", [ident, edited])
+                elif kind == "data_source":
+                    sink.write(DATASOURCE_TYPE,
+                               _row_id(host, aid, "datasource", ident),
+                               _datasource_props(host, sink, aid, item))
+                    for key in ("database_parent", "parent"):
+                        dbid = _ident((item.get(key) or {}).get("database_id"))
+                        if dbid:
+                            _enqueue(cur, "databases", dbid)
+                else:
+                    # Notion has added object kinds before (`data_source` itself
+                    # arrived in 2025-09-03). An unknown one is NAMED rather than
+                    # dropped silently.
+                    _note_missing(cur, "object " + str(kind))
+            _save_pending(host, acct, aid, cur)
+            # SAY IT WHEN THE FLOOR IS WHAT STOPPED THE WALK. "0 rows, ok" was
+            # indistinguishable from an empty workspace, and that is exactly how
+            # the first owner seed reported a `backfillDepth` older than its own
+            # recordings (T-045). A window that admitted nothing is a fact about
+            # the RUN and belongs on the status.
+            if stop and not walked and not cursor and (resp.get("results") or []):
+                # The FIRST page of the walk stopped on its FIRST item: every
+                # object this account can see is older than its window.
+                newest = str((resp["results"][0] or {}).get(
+                    "last_edited_time") or "?")
+                note = ("backfill window admitted nothing: floor %s, newest "
+                        "object %s" % (floor, newest))
+                if note not in (cur.get("notes") or []):
+                    cur["notes"] = list(cur.get("notes") or []) + [note]
+            nxt = resp.get("next_cursor") or ""
+            cursors = dict(cur.get("cursors") or {})
+            if resp.get("has_more") and nxt and not stop:
+                cursors["search"] = nxt
+                # Only a REAL floor is carried: `all` has none, and writing ""
+                # would put a key on the account that reads as a window.
+                if floor:
+                    cursors["floor"] = floor
+                cur["cursors"] = cursors
+                _save_cursors(host, acct, aid, cur)
+                return _more(host, cur, cursor=nxt)
+            cursors.pop("search", None)
+            # the FLOOR stays: it is the window this account walks, not this
+            # walk's position in it (Codex 16).
+            cur["cursors"] = cursors
+            _save_cursors(host, acct, aid, cur)
+            return _advance(host, acct, aid, cur, queue)
+
+        # ---- databases ------------------------------------------------------
+        if stage == "databases":
+            if not cur.get("databases"):
+                _refill(cur, "databases")
+            todo = list(cur.get("databases") or [])
+            if not todo:
+                return _advance(host, acct, aid, cur, queue)
+            done = 0
+            for dbid in todo[:HYDRATE_BATCH]:
+                if done and budget.spent():
+                    break
+                done += 1
+                try:
+                    item = get("/v1/databases/" + _dashed(dbid))
+                except _Permanent as e:
+                    # A database the integration was never shared. Permanent: it
+                    # is named on the status and never asked for again this run.
+                    _note_missing(cur, "database %s (%s)" % (dbid[:8], e.code))
+                    continue
+                sink.write(DATABASE_TYPE, _row_id(host, aid, "database", dbid),
+                           _database_props(host, sink, aid, item))
+            cur["databases"] = todo[done:]
+            _save_pending(host, acct, aid, cur)
+            if cur["databases"] or (cur.get("deferred") or {}).get("databases"):
+                return _more(host, cur)
+            return _advance(host, acct, aid, cur, queue)
+
+        # ---- blocks ---------------------------------------------------------
+        if stage == "blocks":
+            return _blocks_page(host, get, sink, acct, aid, cur, queue, budget)
+
+        return _advance(host, acct, aid, cur, queue)
+
+
+    def _blocks_page(host, get, sink, acct, aid, cur, queue, budget):
+        """One page of one page's block tree.
+
+        The per-PAGE cursor lives on `notion/pagesync`, not on the page and not on
+        the account: a page of blocks must never bump the page's own version
+        (`docs/kind-design.md` §1). `blockStack` is the descent — [block id,
+        depth] pairs discovered under the page being walked — and it rides in the
+        paged cursor because it belongs to THIS walk of THIS page.
+        """
+        if not cur.get("blocks"):
+            _refill(cur, "blocks")
+        todo = list(cur.get("blocks") or [])
+        if not todo and not cur.get("blockStack"):
+            return _advance(host, acct, aid, cur, queue)
+
+        while True:
+            stack = list(cur.get("blockStack") or [])
+            if not stack:
+                if not todo:
+                    # THE LIVE BUCKET IS A WINDOW ON THE QUEUE, NOT THE QUEUE.
+                    # `_refill` used to be consulted only at the TOP of this
+                    # stage, which is reached once per round — so a queue longer
+                    # than MAX_PENDING walked 400 trees, stamped, and ended the
+                    # round with the rest still parked, whatever budget was left.
+                    # The owner's repository sat on 3,211 unwalked trees for that
+                    # reason: not a pull gap (every one of them had a recording),
+                    # not a skip, just a tail no round ever reached (T-054).
+                    if _refill(cur, "blocks"):
+                        todo = list(cur.get("blocks") or [])
+                        if budget.spent():
+                            return _more(host, cur)
+                        continue
+                    cur["blocks"] = []
+                    _save_pending(host, acct, aid, cur)
+                    return _advance(host, acct, aid, cur, queue)
+                page_ident, edited = todo[0][0], (todo[0][1] if len(todo[0]) > 1 else "")
+                # THE INCREMENTAL SKIP, and it is what makes a 17,000-page
+                # workspace affordable. `pagesync.blocksEditedTime` is the page's
+                # `last_edited_time` at the moment its tree last drained; Notion
+                # bumps that instant for any edit anywhere in the page, so a page
+                # no newer than the walk we already did has nothing to re-read.
+                # The declaration promised this and nothing read it (Codex 16).
+                state = (host.records.get(
+                    PAGESYNC_TYPE, _row_id(host, aid, "pagesync", page_ident))
+                    or {}).get("properties") or {}
+                walked = str(state.get("blocksEditedTime") or "")
+                if (edited and walked and walked >= edited
+                        and not state.get("blocksCursor")
+                        and str(state.get("blocksStatus") or "") == "ok"):
+                    todo = todo[1:]
+                    cur["blocks"] = todo
+                    _save_pending(host, acct, aid, cur)
+                    if budget.spent():
+                        return _more(host, cur)
+                    continue
+                cur["pageIdent"] = page_ident
+                cur["pageEdited"] = edited
+                stack = [[page_ident, 0]]
+                # RESUME the root level where a dropped checkpoint left it. The
+                # deeper levels are re-walked from the root, which is idempotent;
+                # the root is the one that can be 152 pages long (Codex 9, 14).
+                cur["blockPage"] = str(state.get("blocksCursor") or "")
+            page_ident = cur.get("pageIdent") or ""
+            parent_ident, depth = stack[0][0], int(stack[0][1] or 0)
+            params = {"page_size": BLOCK_PAGE}
+            page_cursor = cur.get("blockPage") or ""
+            if page_cursor:
+                params["start_cursor"] = page_cursor
+            try:
+                resp = get("/v1/blocks/" + _dashed(parent_ident) + "/children",
+                           params)
+            except _Permanent as e:
+                # ONE BAD PAGE NEVER STOPS THE REST: the error that stopped THIS
+                # page lives on its own state row, not on the account.
+                _note_missing(cur, "blocks %s (%s)" % (parent_ident[:8], e.code))
+                if parent_ident == page_ident:
+                    host.effects.put(
+                        PAGESYNC_TYPE, _row_id(host, aid, "pagesync", page_ident),
+                        properties={"page": _row_id(host, aid, "page", page_ident)},
+                        if_absent=True)
+                    host.effects.patch(
+                        PAGESYNC_TYPE, _row_id(host, aid, "pagesync", page_ident),
+                        properties={"blocksStatus": e.code, "blocksCursor": None})
+                cur["blockStack"] = stack[1:]
+                cur["blockPage"] = ""
+                if not cur["blockStack"]:
+                    todo = todo[1:]
+                    cur["blocks"] = todo
+                    _save_pending(host, acct, aid, cur)
+                if budget.spent():
+                    return _more(host, cur)
+                continue
+
+            for b in resp.get("results") or []:
+                ident = _ident(b.get("id"))
+                if not ident:
+                    continue
+                sink.write(BLOCK_TYPE, _row_id(host, aid, "block", ident),
+                           _block_props(host, sink, aid, b))
+                if (b.get("has_children") and depth + 1 < BLOCK_DEPTH
+                        and (b.get("type") or "") not in BLOCK_STOPS):
+                    stack.append([ident, depth + 1])
+
+            nxt = resp.get("next_cursor") or ""
+            if resp.get("has_more") and nxt:
+                cur["blockStack"] = stack
+                cur["blockPage"] = nxt
+                if parent_ident == page_ident:
+                    rid = _row_id(host, aid, "pagesync", page_ident)
+                    host.effects.put(
+                        PAGESYNC_TYPE, rid,
+                        properties={"page": _row_id(host, aid, "page", page_ident)},
+                        if_absent=True)
+                    host.effects.patch(PAGESYNC_TYPE, rid,
+                                       properties={"blocksCursor": nxt})
+                return _more(host, cur)
+
+            cur["blockPage"] = ""
+            cur["blockStack"] = stack[1:]
+            if not cur["blockStack"]:
+                # This page's whole tree is walked: stamp its state row and take
+                # the next page off the queue.
+                rid = _row_id(host, aid, "pagesync", page_ident)
+                host.effects.put(
+                    PAGESYNC_TYPE, rid,
+                    properties={"page": _row_id(host, aid, "page", page_ident)},
+                    if_absent=True)
+                host.effects.patch(PAGESYNC_TYPE, rid, properties={
+                    "blocksCursor": None,
+                    "blocksSyncedAt": _now(),
+                    "blocksEditedTime": cur.get("pageEdited") or None,
+                    "blocksStatus": "ok"})
+                todo = todo[1:]
+                cur["blocks"] = todo
+                _save_pending(host, acct, aid, cur)
+            if budget.spent():
+                return _more(host, cur)
+            if not todo and not cur.get("blockStack"):
+                # THE SAME WINDOW, AND THIS IS THE EXIT THAT ACTUALLY FIRED. The
+                # loop reaches its foot with an empty queue after the last live
+                # entry's tree drains, so a round ended here — 400 trees walked,
+                # the rest still deferred — before the check at the head of the
+                # loop was ever asked (T-054).
+                if _refill(cur, "blocks"):
+                    todo = list(cur.get("blocks") or [])
+                    continue
+                return _advance(host, acct, aid, cur, queue)
+
+
+    # ------------------------------------------------------------------- main
 
 
     def main(input, host):
         cfg = input.get("config") or {}
-        bcfg = (((cfg.get("inputs") or {}).get("connector") or {}).get("properties")) or {}
-        token = bcfg.get("integrationToken") or ""
-        api = (bcfg.get("apiBase") or DEFAULT_API).rstrip("/")
+        conn = (((cfg.get("inputs") or {}).get("connector") or {})
+                .get("properties")) or {}
+        token = conn.get("integrationToken") or ""
+        base = _api_base(cfg)
         accounts = {a.get("id"): a for a in (cfg.get("accounts") or [])}
 
-        if not _api_allowed(api):
-            host.log("notion: apiBase %r is neither https://api.notion.com nor "
-                     "loopback — refusing to spend the integration token" % api)
-            raise RuntimeError("notion: apiBase failed origin pinning")
         if not token:
             host.log("notion: the connector input carries no integrationToken "
                      "(or did not resolve); nothing to sync")
-            return {"effects": []}
+            return {"output": {"skipped": "unconfigured"}}
+        if token.startswith(SEALED_PREFIX):
+            host.log("notion: integrationToken arrived sealed — paste it on the "
+                     "config, not the account")
+            return {"output": {"skipped": "sealed-token"}}
 
-        # Mirror ids staged under this invocation (or under the whole direct-
-        # call drain): probes check here first, because staged effects are
-        # not readable back until they commit.
-        seen = set()
-
-        resume = host.page.resume() or None
-        if resume:
-            state = resume
-        else:
-            primary = min(accounts) if accounts else None
-            args = input.get("args") or {}
+        args = input.get("args")
+        if not isinstance(args, dict):
+            args = {}
+        cur = host.page.resume() or None
+        if cur is None:
             record = (input.get("envelope") or {}).get("record") or {}
-            target = ""
-            if args.get("account"):
-                # A direct call: sync this account now, cadence ignored.
-                target = str(args["account"])
-            # The envelope SPLITS identity: `type` is the bare local name and
-            # `authority` the authority, so the full identity (ruling A9) has to be
-            # recomposed. Comparing the local name alone would match any
-            # authority's `account`.
-            elif (record.get("kind") or "") == ACCOUNT_TYPE:
-                # Record-triggered: the on-connect backfill for one account.
-                target = record.get("id") or ""
-            if target:
-                if target not in accounts:
-                    host.log("notion: account %s is not in this bundle's config" % target)
-                    return {"effects": []}
-                if target != primary:
-                    _stamp_duplicate(host, accounts[target])
-                    return {"output": {"account": target, "ignored": True}}
-                sync = _wants(accounts[target])
+            named = args.get("accounts") or (
+                [args["account"]] if args.get("account") else [])
+            if (record.get("kind") or "") == ACCOUNT_TYPE:
+                queue = [record.get("id")]
+            elif named:
+                queue = [str(a) for a in named]
+            elif args.get("force"):
+                queue = [aid for aid, a in accounts.items() if _wants(a)]
             else:
-                # Schedule-triggered: stamp every duplicate row, then sync
-                # the primary when its own cadence says so.
-                for aid, acct in accounts.items():
-                    if aid != primary:
-                        _stamp_duplicate(host, acct)
-                sync = (primary is not None and _wants(accounts[primary])
-                        and _due(accounts[primary].get("properties") or {}))
-            if not sync:
-                return {"output": {"synced": False}}
-            props = accounts[primary].get("properties") or {}
-            cutoff, stamp_anchor = _cutoff(props)
-            if stamp_anchor:
-                # First sync under backfillDepth none: pin the floor to THIS
-                # run's start, once — every later run reuses the stamp.
-                host.effects.patch((accounts[primary].get("kind") or ACCOUNT_TYPE), primary,
-                                   properties={"backfillAnchor": cutoff})
-            state = {"phase": "search", "account": primary, "cursor": "",
-                     "cutoff": cutoff, "blocks": [], "pending": [], "count": 0}
+                queue = [aid for aid, a in accounts.items()
+                         if _wants(a) and _due(a.get("properties") or {})]
+            # THE RETRY DEADLINE OUTRANKS EVERY WAY IN. A record delivery, a named
+            # account and `force` all bypassed `_due`, so a 429's instant only
+            # ever held back the scheduled tick — and "sync now" walked straight
+            # into the limit again (Codex 15).
+            queue = [a for a in queue
+                     if not _held((accounts.get(a) or {}).get("properties") or {})]
+            # HOW THIS RUN WAS ASKED FOR, because the trait's start and duration
+            # depend on it: the dispatcher stamps them around a RECORD-sourced
+            # delivery (substrate decision 0085) and around nothing else, so on
+            # every other way in — the hourly schedule, a direct call, an
+            # operator's `args.account` — the body stamps that half itself.
+            cur = _fresh(queue, "record" if record.get("kind") else "schedule")
 
-        if (input.get("mode") or "") == "call":
-            # The single-shot callers discard `more`, so the call path drains
-            # FULLY inside this one invocation — bounded by the manifest
-            # timeout, the read budget and the frame cap, which is why the
-            # manifest points big first backfills at the triggers instead.
-            out = None
-            for _ in range(MAX_CALL_STEPS):
-                state, out = _step(host, api, token, accounts, state, seen)
-                if state is None:
-                    return {"output": out}
-            raise RuntimeError("notion: direct call exceeded %d steps" % MAX_CALL_STEPS)
+        queue = list(cur.get("queue") or [])
+        while queue:
+            acct = accounts.get(queue[0])
+            if acct is None or not _wants(acct):
+                queue = queue[1:]
+                cur = _fresh(queue, cur.get("dispatch"))
+                continue
+            break
+        if not queue:
+            # Say WHY nothing synced: "no account is due", "the envelope named an
+            # account this config does not carry" and "every toggle is off" want
+            # three different fixes and a bare zero tells them apart from nothing.
+            return {"output": {"synced": 0, "accounts": sorted(accounts),
+                               "wanted": sorted(a for a in accounts
+                                                if _wants(accounts[a])),
+                               "asked": list(cur.get("queue") or [])}}
 
-        nxt, out = _step(host, api, token, accounts, state, seen)
-        if nxt is not None:
-            return {"more": host.page.more(nxt)}
-        return {"output": out}
+        aid = queue[0]
+        acct = accounts[aid]
+        props = acct.get("properties") or {}
+        cur["queue"] = queue
+        # THE REQUEST GENERATION IS CAPTURED BEFORE THE FIRST CALL. The `me` stage
+        # used to be the only place it was read, so a run whose very first request
+        # failed stamped `erroring` with the owner's "sync now" UNACKNOWLEDGED —
+        # `syncRequestedAck` left standing at the previous run's value, which is a
+        # console reporting a request nothing ever served (T-084's injected 500
+        # caught it). A resumed checkpoint keeps the generation it started on.
+        if not cur.get("ack"):
+            cur["ack"] = props.get("syncRequestedAt") or ""
+        try:
+            return _sync_account(host, base, token, acct, aid, props, cur, queue)
+        except _RateLimited as rl:
+            # The stage, cursor and window are already in the checkpoint, so the
+            # retry RESUMES. Notion's own instant lands on the account and `_due`
+            # refuses to start before it.
+            _stamp(host, acct, aid, cur, not_before=rl.retry_at, completed=False)
+            return {"output": {"account": aid, "rateLimited": True}}
+        except Exception as e:                                   # noqa: BLE001
+            msg = _err_msg(e)
+            host.log("notion: account %s failed: %s" % (aid, msg))
+            _stamp(host, acct, aid, cur, error=msg)
+            rest = queue[1:]
+            if rest:
+                return {"more": host.page.more(_fresh(rest, cur.get("dispatch")))}
+            return {"output": {"account": aid, "error": msg}}

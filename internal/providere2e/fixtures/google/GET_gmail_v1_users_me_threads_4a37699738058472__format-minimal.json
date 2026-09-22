@@ -1,0 +1,32 @@
+{
+ "id": "4a37699738058472",
+ "historyId": "30546118",
+ "messages": [
+  {
+   "id": "4a37699738058472",
+   "threadId": "4a37699738058472",
+   "labelIds": [
+    "UNREAD",
+    "JOMCLDKQ_KBMDUQI",
+    "INBOX"
+   ],
+   "snippet": "Quick note: The schedule still blocks the agreed cutoff, unless somebody objects. The staging cluster now covers the follow-up thread, once the numbers settle. The migration was split out of the earlier draft.",
+   "historyId": "30545420",
+   "internalDate": "1788875457000",
+   "sizeEstimate": 85933
+  },
+  {
+   "id": "4m252545705b9x95",
+   "threadId": "4a37699738058472",
+   "labelIds": [
+    "UNREAD",
+    "JOMCLDKQ_KBMDUQI",
+    "INBOX"
+   ],
+   "snippet": "Context: The draft quietly changed the earlier draft, once the numbers settle. The staging cluster depends on the follow-up thread, after the handover. This batch still blocks the earlier draft, assuming the counts hold.",
+   "historyId": "30546118",
+   "internalDate": "1788879200000",
+   "sizeEstimate": 86331
+  }
+ ]
+}

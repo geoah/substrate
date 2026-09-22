@@ -259,9 +259,57 @@ jobs:
           restore-keys: ${{ runner.os }}-go-engine-
       - run: mise run ci:engine
 
+  providers:
+    name: providers e2e
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    # Seven provider closures, each installed into its own repository on a
+    # substrated this job builds and starts, connected through the mock
+    # upstream over the recordings under internal/providere2e/fixtures, synced
+    # and asserted by the provider's scenario. About twelve minutes on a
+    # laptop; the runner is slower and the first run also warms uv.
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: substrate
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d substrate" --health-interval
+          5s --health-timeout 5s --health-retries 20 --tmpfs /var/lib/postgresql/data:rw,size=3g
+    env:
+      SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
+      SUBSTRATE_TEST_DATABASE_DISPOSABLE: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          experimental: true
+          version: 2026.9.2
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-providers-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-go-providers-
+      # The same uv cache the `go test` job keeps: the sync bodies' PEP 723
+      # blocks resolve here too, once per bundle.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/uv
+          key: >-
+            ${{ runner.os }}-uv-${{ hashFiles('.mise.toml', 'kinds/providers.substrate.reamde.dev/*/bundle.yaml')
+            }}
+          restore-keys: ${{ runner.os }}-uv-
+      - run: mise run ci:providers
+
   gate:
     name: go gate
-    needs: [changes, go, engine]
+    needs: [changes, go, engine, providers]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -270,23 +318,25 @@ jobs:
       ANSWER: ${{ needs.changes.outputs.go }}
       GO: ${{ needs.go.result }}
       ENGINE: ${{ needs.engine.result }}
+      PROVIDERS: ${{ needs.providers.result }}
     steps:
       # The verdict is tied to the classifier's answer, not to the jobs'
       # results alone: `changes` must have succeeded AND written exactly
       # `true` or `false` (an empty answer means ci:changes wrote no line,
-      # which is a failure whatever its exit status); on `true` both gated
-      # jobs must have run and passed, on `false` both must have been skipped.
+      # which is a failure whatever its exit status); on `true` every gated
+      # job must have run and passed, on `false` every one must have been
+      # skipped.
       # `needs.engine.result` is the matrix as a whole: `failure` if any shard
       # failed (fail-fast is off, so every shard still reports).
       - run: |
-          echo "changes=$CHANGES answer=$ANSWER go=$GO engine=$ENGINE"
+          echo "changes=$CHANGES answer=$ANSWER go=$GO engine=$ENGINE providers=$PROVIDERS"
           [ "$CHANGES" = success ] || { echo "the changes job did not succeed, so nothing was gated"; exit 1; }
           case "$ANSWER" in
             true) want=success ;;
             false) want=skipped ;;
             *) echo "the changes job answered '$ANSWER', not true or false"; exit 1 ;;
           esac
-          for result in "$GO" "$ENGINE"; do
+          for result in "$GO" "$ENGINE" "$PROVIDERS"; do
             [ "$result" = "$want" ] || { echo "a gated job ended $result, expected $want for go=$ANSWER"; exit 1; }
           done
 

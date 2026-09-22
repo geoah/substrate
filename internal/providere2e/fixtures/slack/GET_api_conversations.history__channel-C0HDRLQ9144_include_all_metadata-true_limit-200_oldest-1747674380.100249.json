@@ -1,0 +1,34 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747674381.100249",
+   "client_msg_id": "943A6706-8000-9FDD-F277-7C94E1BDEADE",
+   "text": "The new index still blocks one more round of checks.",
+   "team": "T0ADATEAM01",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "5ZeCA",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The review landed ahead of the follow-up thread."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

@@ -1,0 +1,150 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "U2ZN7F5559F",
+   "type": "message",
+   "ts": "1747762466.332739",
+   "client_msg_id": "3746d127-c5a5-b2d4-98be-b43f1c0defcf",
+   "text": "<https://kelpwood.example/share/ae0dc452-d44c-7f62-3404-5ac6e29c4064?day=today&amp;time=ASAP|The Queue rolls up into the second pass> The dashboard depends on the open question.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747762466.332739",
+   "reply_count": 2,
+   "reply_users_count": 1,
+   "latest_reply": "1747765515.071909",
+   "reply_users": [
+    "U2ZN7F5559F"
+   ],
+   "is_locked": false,
+   "subscribed": false,
+   "attachments": [
+    {
+     "image_url": "https://umbrel.example/images/f8af6acd-d5e9-7668-b431-d70bf4baa4a2/image.jpeg?width=1200&height=630&auto=webp&format=jpg&fit=crop&v=",
+     "image_width": 1200,
+     "image_height": 630,
+     "image_bytes": 183750,
+     "from_url": "https://kelpwood.example/share/ae0dc452-d44c-7f62-3404-5ac6e29c4064?day=today&time=ASAP",
+     "service_icon": "https://elmshire.example/assets/images/favicons/production/apple-touch-icon-13fe69a113116b6bcd64fac9746c7730e90e7940a8947cb69ebdb1355d214bbe.png",
+     "id": 1,
+     "original_url": "https://kelpwood.example/share/ae0dc452-d44c-7f62-3404-5ac6e29c4064?day=today&time=ASAP",
+     "fallback": "The ingest path rolls up into the second pass.",
+     "text": "The rollback plan is waiting on the open question, for now. The draft rolls up.",
+     "title": "The Migration",
+     "title_link": "https://kelpwood.example/share/ae0dc452-d44c-7f62-3404-5ac6e29c4064?day=today&time=ASAP",
+     "service_name": "Kelpwood"
+    }
+   ],
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "RJ0Dl",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "link",
+         "url": "https://kelpwood.example/share/ae0dc452-d44c-7f62-3404-5ac6e29c4064?day=today&time=ASAP",
+         "text": "The schedule landed ahead of next week's window.",
+         "truncated": true
+        },
+        {
+         "type": "text",
+         "text": " The checklist rolls up into the earlier draft."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "white_check_mark",
+     "users": [
+      "UKPKP2THUMN",
+      "UMYCCBY3LFJ",
+      "U0ADA0WNER1"
+     ],
+     "count": 3
+    }
+   ]
+  },
+  {
+   "user": "U2ZN7F5559F",
+   "type": "message",
+   "ts": "1747763321.186949",
+   "client_msg_id": "31018e0e-a038-47ff-f306-38f9d5e8f305",
+   "text": "<https://kelpwood.example/orders/39687608030/status?sharing_token=K3QnekY1QSR2dlWuPU2guHs7|This Batch still blocks the owner's sign-off>",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747762466.332739",
+   "parent_user_id": "U2ZN7F5559F",
+   "attachments": [
+    {
+     "image_url": "https://fernbank.example/_next/static/social_media.d81b3a53.png",
+     "image_width": 1208,
+     "image_height": 630,
+     "image_bytes": 8569,
+     "from_url": "https://kelpwood.example/orders/39687608030/status?sharing_token=K3QnekY1QSR2dlWuPU2guHs7",
+     "service_icon": "https://fernbank.example/_next/static/apple-touch-icon.3abdadf0.png",
+     "id": 1,
+     "original_url": "https://kelpwood.example/orders/39687608030/status?sharing_token=K3QnekY1QSR2dlWuPU2guHs7",
+     "fallback": "The migration landed ahead of the earlier draft.",
+     "text": "The staging cluster should unblock the capacity note, pending one more read. The retry budget.",
+     "title": "The",
+     "title_link": "https://kelpwood.example/orders/39687608030/status?sharing_token=K3QnekY1QSR2dlWuPU2guHs7",
+     "service_name": "Kelpwood"
+    }
+   ],
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "4Xz54",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "link",
+         "url": "https://kelpwood.example/orders/39687608030/status?sharing_token=K3QnekY1QSR2dlWuPU2guHs7",
+         "text": "The review is waiting on the earlier draft, once the numbers settle.",
+         "truncated": true
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "U2ZN7F5559F",
+   "type": "message",
+   "ts": "1747765515.071909",
+   "client_msg_id": "4012b896-acaf-5001-2616-9a005bfb82de",
+   "text": "The ingest path was split out of the second pass.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747762466.332739",
+   "parent_user_id": "U2ZN7F5559F",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "K9IWz",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The new index should unblock the earlier draft."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

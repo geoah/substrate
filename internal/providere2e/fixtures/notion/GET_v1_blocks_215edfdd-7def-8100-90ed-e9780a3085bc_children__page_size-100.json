@@ -1,0 +1,309 @@
+{
+  "object": "list",
+  "results": [
+    {
+      "object": "block",
+      "id": "215edfdd-7def-81dc-a814-f3b7d5c59f9c",
+      "parent": {
+        "type": "page_id",
+        "page_id": "215edfdd-7def-8100-90ed-e9780a3085bc"
+      },
+      "created_time": "2025-06-17T12:00:00.000Z",
+      "last_edited_time": "2025-06-17T12:00:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "75e7b1a5-ec6d-900b-b746-851caee31ca4"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "75e7b1a5-ec6d-900b-b746-851caee31ca4"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "image",
+      "image": {
+        "caption": [],
+        "type": "external",
+        "external": {
+          "url": "https://umbrel.example/ixSr8csx.jpg"
+        }
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "215edfdd-7def-81fb-b522-f6c601077381",
+      "parent": {
+        "type": "page_id",
+        "page_id": "215edfdd-7def-8100-90ed-e9780a3085bc"
+      },
+      "created_time": "2025-06-17T12:00:00.000Z",
+      "last_edited_time": "2025-06-17T12:00:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "75e7b1a5-ec6d-900b-b746-851caee31ca4"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "75e7b1a5-ec6d-900b-b746-851caee31ca4"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "heading_2",
+      "heading_2": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "The rollout rolls up into the agreed cutoff.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "The rollout rolls up into the agreed cutoff.",
+            "href": null
+          }
+        ],
+        "is_toggleable": false,
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "215edfdd-7def-819c-a28b-ceeef271fb7b",
+      "parent": {
+        "type": "page_id",
+        "page_id": "215edfdd-7def-8100-90ed-e9780a3085bc"
+      },
+      "created_time": "2025-06-17T12:00:00.000Z",
+      "last_edited_time": "2025-06-17T12:00:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "75e7b1a5-ec6d-900b-b746-851caee31ca4"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "75e7b1a5-ec6d-900b-b746-851caee31ca4"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Context: The migration should unblock the follow-up thread, as discussed. The estimate landed ahead of the agreed cutoff.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Context: The migration should unblock the follow-up thread, as discussed. The estimate landed ahead of the agreed cutoff.",
+            "href": null
+          }
+        ],
+        "icon": null,
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "215edfdd-7def-818f-a29e-e9173266ef04",
+      "parent": {
+        "type": "page_id",
+        "page_id": "215edfdd-7def-8100-90ed-e9780a3085bc"
+      },
+      "created_time": "2025-06-17T12:00:00.000Z",
+      "last_edited_time": "2025-06-17T12:00:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "75e7b1a5-ec6d-900b-b746-851caee31ca4"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "75e7b1a5-ec6d-900b-b746-851caee31ca4"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "heading_2",
+      "heading_2": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "The draft should unblock a smaller slice.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "The draft should unblock a smaller slice.",
+            "href": null
+          }
+        ],
+        "is_toggleable": false,
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "215edfdd-7def-8136-a8a3-c64d6353204c",
+      "parent": {
+        "type": "page_id",
+        "page_id": "215edfdd-7def-8100-90ed-e9780a3085bc"
+      },
+      "created_time": "2025-06-17T12:00:00.000Z",
+      "last_edited_time": "2025-06-17T12:00:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "75e7b1a5-ec6d-900b-b746-851caee31ca4"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "75e7b1a5-ec6d-900b-b746-851caee31ca4"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "The rollback plan will be folded into the open question.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "The rollback plan will be folded into the open question.",
+            "href": null
+          }
+        ],
+        "icon": null,
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "215edfdd-7def-8170-8d3c-c32ad0ac94da",
+      "parent": {
+        "type": "page_id",
+        "page_id": "215edfdd-7def-8100-90ed-e9780a3085bc"
+      },
+      "created_time": "2025-06-17T12:00:00.000Z",
+      "last_edited_time": "2025-06-17T12:00:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "75e7b1a5-ec6d-900b-b746-851caee31ca4"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "75e7b1a5-ec6d-900b-b746-851caee31ca4"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "heading_2",
+      "heading_2": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "The staging cluster still blocks next week's window.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "The staging cluster still blocks next week's window.",
+            "href": null
+          }
+        ],
+        "is_toggleable": false,
+        "color": "default"
+      },
+      "archived": false
+    },
+    {
+      "object": "block",
+      "id": "215edfdd-7def-8105-af98-e5605345debd",
+      "parent": {
+        "type": "page_id",
+        "page_id": "215edfdd-7def-8100-90ed-e9780a3085bc"
+      },
+      "created_time": "2025-06-17T12:00:00.000Z",
+      "last_edited_time": "2025-06-17T12:00:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "75e7b1a5-ec6d-900b-b746-851caee31ca4"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "75e7b1a5-ec6d-900b-b746-851caee31ca4"
+      },
+      "has_children": false,
+      "in_trash": false,
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "This batch now covers the second pass.",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "This batch now covers the second pass.",
+            "href": null
+          }
+        ],
+        "icon": null,
+        "color": "default"
+      },
+      "archived": false
+    }
+  ],
+  "next_cursor": null,
+  "has_more": false,
+  "type": "block",
+  "block": {},
+  "request_id": "086350cc-5868-47ca-b822-da1d753613ea"
+}

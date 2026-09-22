@@ -1,0 +1,378 @@
+{
+ "items": [
+  {
+   "id": "361375",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-14T11:26:26.000Z",
+   "sortKey": "776829",
+   "type": "TEXT",
+   "text": "The queue depends on the agreed cutoff.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T11:26:38.356Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361374",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-14T11:26:05.035Z",
+   "sortKey": "776825",
+   "type": "TEXT",
+   "text": "The draft still blocks one.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": null,
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T11:26:05.218Z"
+   }
+  },
+  {
+   "id": "359560",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-10T13:00:52.000Z",
+   "sortKey": "773752",
+   "type": "TEXT",
+   "text": "Summary: The queue quietly changed the earlier draft, assuming the counts hold. The dashboard depends on next week's window, after the handover. The rollout should unblock a smaller slice.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T14:15:33.314Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "359559",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-10T12:59:44.000Z",
+   "sortKey": "773751",
+   "type": "TEXT",
+   "text": "Heads up — The dashboard depends on the owner's sign-off, after the handover. The schedule landed ahead of the shared doc.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T14:15:33.314Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "359558",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-10T12:59:19.000Z",
+   "sortKey": "773750",
+   "type": "TEXT",
+   "text": "The new index still blocks the open question.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T14:15:33.314Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "359557",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-10T12:59:12.000Z",
+   "sortKey": "773749",
+   "type": "TEXT",
+   "text": "The draft landed ahead of the second pass.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T14:15:33.314Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "359556",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-10T12:59:11.000Z",
+   "sortKey": "773748",
+   "type": "TEXT",
+   "text": "The staging cluster should unblock the numbers from Friday.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T14:15:33.314Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "359555",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-10T12:59:10.000Z",
+   "sortKey": "773747",
+   "type": "REACTION",
+   "isSender": false,
+   "isHidden": true,
+   "isDeleted": false,
+   "linkedMessageID": "359553",
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T14:15:33.314Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "359554",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-10T12:58:57.000Z",
+   "sortKey": "773746",
+   "type": "REACTION",
+   "isSender": false,
+   "isHidden": true,
+   "isDeleted": false,
+   "linkedMessageID": "359552",
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T14:15:33.314Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "359553",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-10T12:58:18.844Z",
+   "sortKey": "773742",
+   "type": "TEXT",
+   "text": "Quick note: This batch landed ahead of one more round of checks, after the handover. The migration needs a second look from the follow-up thread, for now. The schedule quietly changed the owner's sign-off, unless somebody objects.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": [],
+   "reactions": [
+    {
+     "id": "@whatsapp_fbf-885651003020663:beeper.local",
+     "participantID": "@whatsapp_fbf-885651003020663:beeper.local",
+     "emoji": true,
+     "reactionKey": "😂"
+    }
+   ],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T12:58:18.911Z"
+   }
+  },
+  {
+   "id": "359552",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-10T12:57:05.272Z",
+   "sortKey": "773738",
+   "type": "TEXT",
+   "text": "The checklist will be folded into next week's window, assuming the counts hold.\nShort version: The handover still blocks the numbers from Friday, as discussed. The checklist will be folded into the earlier draft, either way. The draft depends on next week's window, for now. The migration still blocks the agreed cutoff, before the window closes. The handover depends on the agreed cutoff, if nothing else moves. The retry budget should unblock the shared doc, after the handover. This batch rolls up into the owner's sign-off, after the handover. The draft should unblock the earlier draft, either way.\nSummary: The dashboard landed ahead of the open question, after the handover. The ingest path rolls up into the earlier draft.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": [],
+   "reactions": [
+    {
+     "id": "@whatsapp_fbf-885651003020663:beeper.local",
+     "participantID": "@whatsapp_fbf-885651003020663:beeper.local",
+     "emoji": true,
+     "reactionKey": "❤️"
+    }
+   ],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T12:57:05.359Z"
+   }
+  },
+  {
+   "id": "359549",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-10T12:50:56.000Z",
+   "sortKey": "773735",
+   "type": "TEXT",
+   "text": "The schedule was split out of the.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T12:57:05.359Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "359548",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-10T12:50:38.000Z",
+   "sortKey": "773734",
+   "type": "TEXT",
+   "text": "The staging cluster now covers a.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T12:57:05.359Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "359547",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-10T12:50:28.000Z",
+   "sortKey": "773733",
+   "type": "TEXT",
+   "text": "The schedule should unblock the second pass.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T12:57:05.359Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "359546",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-10T12:50:12.054Z",
+   "sortKey": "773729",
+   "type": "TEXT",
+   "text": "The dashboard rolls up into the.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T12:50:12.148Z"
+   }
+  },
+  {
+   "id": "359545",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-10T12:47:42.000Z",
+   "sortKey": "773727",
+   "type": "TEXT",
+   "text": "The estimate needs a.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T12:50:12.148Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "359544",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-10T12:47:39.000Z",
+   "sortKey": "773726",
+   "type": "TEXT",
+   "text": "The handover rolls up into the follow-up thread, unless.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T12:50:12.148Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "359543",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-10T12:47:25.000Z",
+   "sortKey": "773725",
+   "type": "TEXT",
+   "text": "The checklist is waiting on one more round of checks.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T12:50:12.148Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "359397",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-10T09:46:58.000Z",
+   "sortKey": "773262",
+   "type": "TEXT",
+   "text": "The migration should unblock the second pass.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T10:03:35.973Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "359396",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-10T09:45:10.706Z",
+   "sortKey": "773258",
+   "type": "TEXT",
+   "text": "The migration depends on one more round of checks, either way.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": null,
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-10T09:45:10.792Z"
+   }
+  }
+ ],
+ "hasMore": false,
+ "oldestCursor": "773258",
+ "newestCursor": "776829"
+}

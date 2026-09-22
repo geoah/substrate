@@ -1,22 +1,33 @@
 # The Notion bundle's delivery wiring — ordinary DATA records of core's
-# `trigger` kind (console-editable, changelog-visible, substratectl get/apply/
-# delete like anything else). Two triggers drive the one sync function:
+# `trigger` kind. Three triggers drive the one sync function:
 #
-#   account(wants pages or databases, never synced) --workspacesync-->
-#       page / database mirrors (+ the lastSyncedAt stamp)
-#   hourly schedule --workspacesync--> the primary account when due by its
-#       own cadence; any duplicate account row is stamped ignored (the
-#       bundle is one-account-per-repository — one token, one workspace)
+#   account(pages on, never synced)  --notionsync-->
+#       user + page + datasource + database (+ block) mirrors,
+#       each page's own block cursor on notion/pagesync,
+#       and the account's stamp
+#   hourly schedule                  --notionsync-->  the enabled account,
+#                                                     when it is due
+#   syncRequestedAt > lastSyncedAt   --notionsync-->  "sync now", and the
+#                                                     continuation of a
+#                                                     bounded drain
 #
-# The on-connect trigger fires ONCE per account — its `when` drops the moment
-# the sync stamps lastSyncedAt. There is no OAuth "connected" moment under the
-# token model, so the guard keys on the owner's toggles alone; an account
-# created BEFORE the connector input resolves syncs nothing (the body logs and
-# stamps nothing) and the hourly schedule picks it up once the token lands.
-# The first backfill: an account that wants pages or databases and has never
-# synced. Every optional property reads through the `in` idiom — CEL
-# map-indexing an absent key throws, and toggles are absent until set, so an
-# unguarded read would park the delivery instead of skipping it.
+# There is NO tokenStatus gate: nothing OAuth ever writes one for this bundle
+# (the accountconfig trait's tokenRef / tokenStatus / grantedScopes are
+# declared but dormant). The connect signal is the OWNER's own toggle — an
+# account created or edited with enabledPages true that has never synced. The
+# guard drops the moment the sync stamps `lastSyncedAt`, so the account's own
+# completion patch cannot re-fire it. Whether the pasted token EXISTS is the
+# body's check, not the guard's: the token lives on the connector input's
+# config record, not on the account.
+#
+# THE HOURLY TICK IS ALSO THE CONTINUATION. The engine bounds one drain at 512
+# invocations and two minutes, and a cold walk of a 17,000-page workspace does
+# not fit; the body stops cleanly and leaves its queue on the account. An
+# account with pending work reports itself due whatever its `syncFrequency`
+# says (`_due`), so the next tick picks the queue straight back up and a cold
+# sync converges over consecutive ticks rather than parking a delivery that
+# could never have finished.
+# The first backfill: an account that wants pages and has never synced.
 kind: substrate.reamde.dev/core/trigger
 metadata:
   id: notion-on-connect
@@ -27,15 +38,19 @@ data:
       record:
         kinds: [providers.substrate.reamde.dev/notion/account]
         ops: [create, update]
+        # Optional properties read through the `in` idiom: enabledPages is
+        # ABSENT until the owner flips it and lastSyncedAt until the first
+        # drain stamps it, and CEL map-indexing an absent key throws — the
+        # short-circuit && proves each key present before its value is read.
         when: >-
-          record != null && (("enabledPages" in record.properties && record.properties.enabledPages
-          == true) || ("enabledDatabases" in record.properties && record.properties.enabledDatabases
-          == true)) && !("lastSyncedAt" in record.properties)
-    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/notion/workspacesync
+          record != null && "enabledPages" in record.properties && record.properties.enabledPages
+          == true && !("lastSyncedAt" in record.properties)
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/notion/notionsync
 ---
-# The steady-state re-sync: an hourly tick fires the same function with no
-# envelope record, so the body stamps any duplicate account rows and syncs
-# the primary account when its own syncFrequency says it is due.
+# The steady-state re-sync, and the continuation of a bounded cold one: an
+# hourly tick fires the same function with no envelope record, so the body
+# picks the accounts that want work and syncs the ones their own
+# `syncFrequency` — or their unfinished queue — says are due.
 kind: substrate.reamde.dev/core/trigger
 metadata:
   id: notion-scheduled
@@ -44,9 +59,36 @@ data:
     enabled: true
     source:
       schedule:
-        recurrence: "FREQ=HOURLY"
+        recurrence: FREQ=HOURLY
         timezone: Europe/London
-        # A fixed past anchor, so every occurrence since is well-defined
-        # (occurrences compute forward from startsAt).
-        startsAt: "2025-01-06T09:30:00Z"
-    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/notion/workspacesync
+        # A fixed past anchor, so every occurrence since is well-defined.
+        startsAt: "2025-01-06T09:00:00Z"
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/notion/notionsync
+---
+# "Sync now", and the continuation of a bounded drain. The owner (or a console
+# button, or the e2e runner) stamps `syncRequestedAt` with the current time
+# and this fires, bypassing the cadence entirely.
+#
+# It cannot loop. The guard is "the request is newer than the last attempt",
+# and the sync's own last effect is to stamp `lastSyncedAt` at a later
+# instant, so the connector's own patch closes the condition behind it. Both
+# stamps carry SUB-SECOND precision (`_now`): Slack's whole-second stamp made
+# a request landing in the same second not greater than it, and the account
+# could never be driven again.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: notion-on-request
+data:
+  properties:
+    enabled: true
+    source:
+      record:
+        kinds: [providers.substrate.reamde.dev/notion/account]
+        ops: [create, update]
+        # The `in` idiom again: both keys are optional, and CEL map-indexing
+        # an absent one throws, so each is proved present before it is read.
+        when: >-
+          record != null && "enabledPages" in record.properties && record.properties.enabledPages
+          == true && "syncRequestedAt" in record.properties && (!("lastSyncedAt"
+          in record.properties) || record.properties.syncRequestedAt > record.properties.lastSyncedAt)
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/notion/notionsync

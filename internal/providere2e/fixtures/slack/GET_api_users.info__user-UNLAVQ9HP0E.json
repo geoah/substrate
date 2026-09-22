@@ -1,0 +1,61 @@
+{
+ "ok": true,
+ "user": {
+  "id": "UNLAVQ9HP0E",
+  "name": "leonidasah-vasquez-lowe-ashby",
+  "is_bot": false,
+  "updated": 1789086544,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "d58247",
+  "is_email_confirmed": true,
+  "real_name": "Verityia Stonebridge-Ashby",
+  "tz": "Europe/Berlin",
+  "tz_label": "Central European Summer Time",
+  "tz_offset": 7200,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "is_scim_provisioned": true,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Verityia Stonebridge-Ashby",
+   "display_name": "Verityia Stonebridge-Ashby",
+   "avatar_hash": "0e3607bf12d9",
+   "real_name_normalized": "Verityia Stonebridge-Ashby",
+   "display_name_normalized": "Verityia Stonebridge-Ashby",
+   "image_24": "https://avatars.slack-edge.com/2026-05-05/10564109278170_7bb7ad3b76716b1a7a2a_24.jpg",
+   "image_32": "https://avatars.slack-edge.com/2026-05-05/10564109278170_7bb7ad3b76716b1a7a2a_32.jpg",
+   "image_48": "https://avatars.slack-edge.com/2026-05-05/10564109278170_7bb7ad3b76716b1a7a2a_48.jpg",
+   "image_72": "https://avatars.slack-edge.com/2026-05-05/10564109278170_7bb7ad3b76716b1a7a2a_72.jpg",
+   "image_192": "https://avatars.slack-edge.com/2026-05-05/10564109278170_7bb7ad3b76716b1a7a2a_192.jpg",
+   "image_512": "https://avatars.slack-edge.com/2026-05-05/10564109278170_7bb7ad3b76716b1a7a2a_512.jpg",
+   "image_1024": "https://avatars.slack-edge.com/2026-05-05/10564109278170_7bb7ad3b76716b1a7a2a_1024.jpg",
+   "image_original": "https://avatars.slack-edge.com/2026-05-05/10564109278170_7bb7ad3b76716b1a7a2a_original.jpg",
+   "is_custom_image": true,
+   "first_name": "Aldera Hawksley-Hale",
+   "last_name": "Yara Birchall",
+   "team": "T0ADATEAM01",
+   "email": "wilderia@zephyr-lane.example",
+   "title": "This Batch quietly changed the",
+   "phone": "+99 5060726954",
+   "skype": "",
+   "status_text": "The",
+   "status_text_canonical": "",
+   "status_emoji": ":aspen-room:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "aspen-room",
+     "display_url": "https://emoji.slack-edge.com/T0ADATEAM01/aspen-room/24c39d3de2d3fe16.png"
+    }
+   ],
+   "status_expiration": 1790021280,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0
+  }
+ }
+}

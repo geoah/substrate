@@ -1,0 +1,360 @@
+{
+ "data": {
+  "cycles": {
+   "pageInfo": {
+    "hasNextPage": false,
+    "endCursor": "73s4266m-sp17-30v1-0r31-2q2vc4p1z182"
+   },
+   "nodes": [
+    {
+     "id": "89r1660o-lt54-22e0-4z64-3p6dh3u3x373",
+     "number": 3,
+     "name": null,
+     "description": null,
+     "issueCountHistory": [
+      93,
+      101
+     ],
+     "completedIssueCountHistory": [
+      12,
+      18
+     ],
+     "scopeHistory": [
+      93,
+      101
+     ],
+     "completedScopeHistory": [
+      12,
+      18
+     ],
+     "inProgressScopeHistory": [
+      81,
+      83
+     ],
+     "isActive": true,
+     "isFuture": false,
+     "isPast": false,
+     "progress": 0.4276315789473684,
+     "isNext": false,
+     "isPrevious": false,
+     "team": {
+      "id": "93q8u5j0-3qk6-74ye-c6a4-52788wc79120"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-08-17T07:59:31.024Z",
+     "updatedAt": "2026-09-16T07:34:22.636Z",
+     "archivedAt": null,
+     "startsAt": "2026-09-14T07:00:00.000Z",
+     "endsAt": "2026-10-12T07:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    },
+    {
+     "id": "4321o025-ubm4-80e0-m4e6-989p2b292865",
+     "number": 16,
+     "name": "lantern",
+     "description": null,
+     "issueCountHistory": [
+      39,
+      42
+     ],
+     "completedIssueCountHistory": [
+      1,
+      2
+     ],
+     "scopeHistory": [
+      39,
+      42
+     ],
+     "completedScopeHistory": [
+      1,
+      2
+     ],
+     "inProgressScopeHistory": [
+      25,
+      24
+     ],
+     "isActive": true,
+     "isFuture": false,
+     "isPast": false,
+     "progress": 0.20930232558139536,
+     "isNext": false,
+     "isPrevious": false,
+     "team": {
+      "id": "26153x51-89l5-7sy7-840k-9w97b2567lmq"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-08-03T08:07:35.467Z",
+     "updatedAt": "2026-09-16T07:18:01.040Z",
+     "archivedAt": null,
+     "startsAt": "2026-09-14T07:00:00.000Z",
+     "endsAt": "2026-09-21T07:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    },
+    {
+     "id": "9050yz7r-l761-2mq9-4220-48y154299d36",
+     "number": 37,
+     "name": null,
+     "description": null,
+     "issueCountHistory": [],
+     "completedIssueCountHistory": [],
+     "scopeHistory": [],
+     "completedScopeHistory": [],
+     "inProgressScopeHistory": [],
+     "isActive": true,
+     "isFuture": false,
+     "isPast": false,
+     "progress": 0.2222222222222222,
+     "isNext": false,
+     "isPrevious": false,
+     "team": {
+      "id": "98593p38-4153-8942-e8ib-4zr4o454k846"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-09-02T04:56:20.299Z",
+     "updatedAt": "2026-09-02T04:56:20.299Z",
+     "archivedAt": null,
+     "startsAt": "2026-09-16T04:00:00.000Z",
+     "endsAt": "2026-09-23T04:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    },
+    {
+     "id": "3o535ez2-0jb5-5w37-2j28-p430454598m8",
+     "number": 35,
+     "name": null,
+     "description": null,
+     "issueCountHistory": [],
+     "completedIssueCountHistory": [],
+     "scopeHistory": [],
+     "completedScopeHistory": [],
+     "inProgressScopeHistory": [],
+     "isActive": true,
+     "isFuture": false,
+     "isPast": false,
+     "progress": 0.03409090909090909,
+     "isNext": false,
+     "isPrevious": false,
+     "team": {
+      "id": "125w8i47-1976-0607-bs6d-5u22p37p8s0c"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-09-02T07:53:11.720Z",
+     "updatedAt": "2026-09-02T07:53:11.720Z",
+     "archivedAt": null,
+     "startsAt": "2026-09-16T07:00:00.000Z",
+     "endsAt": "2026-09-23T07:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    },
+    {
+     "id": "99858w75-sb1q-1t6i-1x0f-63n7g35231f1",
+     "number": 29,
+     "name": "beacon",
+     "description": null,
+     "issueCountHistory": [
+      9,
+      9
+     ],
+     "completedIssueCountHistory": [
+      0,
+      0
+     ],
+     "scopeHistory": [
+      9,
+      9
+     ],
+     "completedScopeHistory": [
+      0,
+      0
+     ],
+     "inProgressScopeHistory": [
+      8,
+      8
+     ],
+     "isActive": true,
+     "isFuture": false,
+     "isPast": false,
+     "progress": 0.2222222222222222,
+     "isNext": false,
+     "isPrevious": false,
+     "team": {
+      "id": "nms29592-6l05-2716-669b-251t9828q396"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-09-07T07:58:14.759Z",
+     "updatedAt": "2026-09-16T07:37:52.769Z",
+     "archivedAt": null,
+     "startsAt": "2026-09-14T07:00:00.000Z",
+     "endsAt": "2026-09-21T07:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    },
+    {
+     "id": "i4312cq5-v021-98e0-48m3-wv2q62lqar70",
+     "number": 32,
+     "name": "beacon",
+     "description": null,
+     "issueCountHistory": [
+      54,
+      54
+     ],
+     "completedIssueCountHistory": [
+      0,
+      0
+     ],
+     "scopeHistory": [
+      54,
+      54
+     ],
+     "completedScopeHistory": [
+      0,
+      0
+     ],
+     "inProgressScopeHistory": [
+      45,
+      45
+     ],
+     "isActive": true,
+     "isFuture": false,
+     "isPast": false,
+     "progress": 0.20833333333333334,
+     "isNext": false,
+     "isPrevious": false,
+     "team": {
+      "id": "85575j60-g7ns-0t31-tht5-0873572pzx4k"
+     },
+     "inheritedFrom": {
+      "id": "2191n819-649k-8s08-vhk3-5dt1wa76q847"
+     },
+     "createdAt": "2026-09-07T07:58:05.752Z",
+     "updatedAt": "2026-09-16T07:35:04.663Z",
+     "archivedAt": null,
+     "startsAt": "2026-09-14T07:00:00.000Z",
+     "endsAt": "2026-09-21T07:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    },
+    {
+     "id": "aw4l6w4s-70l8-1en1-ho69-9936b60yrb78",
+     "number": 24,
+     "name": "beacon",
+     "description": null,
+     "issueCountHistory": [
+      12,
+      12
+     ],
+     "completedIssueCountHistory": [
+      0,
+      0
+     ],
+     "scopeHistory": [
+      12,
+      12
+     ],
+     "completedScopeHistory": [
+      0,
+      0
+     ],
+     "inProgressScopeHistory": [
+      12,
+      12
+     ],
+     "isActive": true,
+     "isFuture": false,
+     "isPast": false,
+     "progress": 0.25,
+     "isNext": false,
+     "isPrevious": false,
+     "team": {
+      "id": "e0529mf7-6b8w-14ew-x162-6eif1j8h5768"
+     },
+     "inheritedFrom": {
+      "id": "2191n819-649k-8s08-vhk3-5dt1wa76q847"
+     },
+     "createdAt": "2026-09-07T07:58:05.752Z",
+     "updatedAt": "2026-09-16T07:36:55.749Z",
+     "archivedAt": null,
+     "startsAt": "2026-09-14T07:00:00.000Z",
+     "endsAt": "2026-09-21T07:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    },
+    {
+     "id": "m5y40973-wym8-6ne2-ew1d-3249ai86k56s",
+     "number": 35,
+     "name": "beacon",
+     "description": null,
+     "issueCountHistory": [],
+     "completedIssueCountHistory": [],
+     "scopeHistory": [],
+     "completedScopeHistory": [],
+     "inProgressScopeHistory": [],
+     "isActive": true,
+     "isFuture": false,
+     "isPast": false,
+     "progress": 0.21,
+     "isNext": false,
+     "isPrevious": false,
+     "team": {
+      "id": "6r9a0846-9z00-9736-1588-j9e7f067965r"
+     },
+     "inheritedFrom": null,
+     "createdAt": "2026-08-26T04:55:07.726Z",
+     "updatedAt": "2026-08-26T04:55:07.726Z",
+     "archivedAt": null,
+     "startsAt": "2026-09-16T04:00:00.000Z",
+     "endsAt": "2026-09-23T04:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    },
+    {
+     "id": "c8vu5344-2292-6614-103t-ngb4e6978o11",
+     "number": 34,
+     "name": "beacon",
+     "description": null,
+     "issueCountHistory": [
+      66,
+      66
+     ],
+     "completedIssueCountHistory": [
+      0,
+      0
+     ],
+     "scopeHistory": [
+      66,
+      66
+     ],
+     "completedScopeHistory": [
+      0,
+      0
+     ],
+     "inProgressScopeHistory": [
+      54,
+      54
+     ],
+     "isActive": true,
+     "isFuture": false,
+     "isPast": false,
+     "progress": 0.20454545454545456,
+     "isNext": false,
+     "isPrevious": false,
+     "team": {
+      "id": "xamczmlb-zbo1-1fw9-ok7i-j6yp82p67310"
+     },
+     "inheritedFrom": {
+      "id": "2191n819-649k-8s08-vhk3-5dt1wa76q847"
+     },
+     "createdAt": "2026-09-07T07:58:05.752Z",
+     "updatedAt": "2026-09-16T07:35:04.663Z",
+     "archivedAt": null,
+     "startsAt": "2026-09-14T07:00:00.000Z",
+     "endsAt": "2026-09-21T07:00:00.000Z",
+     "completedAt": null,
+     "autoArchivedAt": null
+    }
+   ]
+  }
+ }
+}

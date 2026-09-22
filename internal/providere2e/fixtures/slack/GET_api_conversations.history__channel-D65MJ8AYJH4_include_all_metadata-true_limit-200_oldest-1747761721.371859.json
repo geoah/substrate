@@ -1,0 +1,43 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "U0ADA0WNER1",
+   "type": "message",
+   "ts": "1747761722.371859",
+   "client_msg_id": "07e4355f-a355-d706-3e7d-3699e6fd6138",
+   "text": "The migration rolls up into the agreed cutoff, assuming the counts hold.",
+   "team": "T0ADATEAM01",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "Vq4bx",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The rollback plan rolls up into a smaller slice, after the handover."
+        },
+        {
+         "type": "emoji",
+         "name": "Gus Orrington",
+         "unicode": "1f602"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

@@ -1,0 +1,253 @@
+{
+ "id": "!JSpry6d0eGyvlGnrwGVq:beeper.local",
+ "localChatID": "20589",
+ "accountID": "telegram",
+ "network": "Telegram",
+ "title": "Oriel Zenner",
+ "description": null,
+ "imgURL": null,
+ "type": "single",
+ "isReadOnly": false,
+ "participants": {
+  "items": [
+   {
+    "id": "@telegram_471595742:beeper.local",
+    "username": "calder-abernathy",
+    "phoneNumber": "+99 5956702799",
+    "fullName": "Oriel Zenner",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/beeper.com/9bjr58784kty4255005v18m3hs6895kxcw6cw010",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@adalovelace:beeper.com",
+    "fullName": "Ada Lovelace",
+    "cannotMessage": false,
+    "isSelf": true,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   }
+  ],
+  "hasMore": false,
+  "total": 2
+ },
+ "lastActivity": "2026-09-16T07:40:33.304Z",
+ "unreadCount": 0,
+ "unreadMentionsCount": 0,
+ "lastReadMessageSortKey": "778170",
+ "draft": null,
+ "reminder": null,
+ "snooze": null,
+ "isArchived": false,
+ "isMarkedUnread": false,
+ "isMuted": false,
+ "isPinned": true,
+ "isLowPriority": false,
+ "messageExpirySeconds": null,
+ "capabilities": {
+  "formatting": {
+   "blockquote": 2,
+   "bold": 2,
+   "code_block": 2,
+   "code_block.syntax_highlighting": 2,
+   "custom_emoji": -1,
+   "headers": 1,
+   "inline_code": 2,
+   "inline_link": 2,
+   "italic": 2,
+   "ordered_list": 1,
+   "ordered_list.jump_value": -1,
+   "ordered_list.start": 1,
+   "spoiler": 2,
+   "spoiler.reason": -1,
+   "strikethrough": 2,
+   "underline": 2,
+   "unordered_list": 1,
+   "user_link": 2
+  },
+  "attachments": {
+   "fi.mau.gif": {
+    "mimeTypes": {
+     "image/gif": 1,
+     "video/mp4": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 1024,
+    "maxSize": 2147483648
+   },
+   "m.audio": {
+    "mimeTypes": {
+     "audio/mp4": 2,
+     "audio/mpeg": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 1024,
+    "maxSize": 2147483648
+   },
+   "m.file": {
+    "mimeTypes": {
+     "*/*": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 1024,
+    "maxSize": 2147483648
+   },
+   "m.image": {
+    "mimeTypes": {
+     "image/gif": 1,
+     "image/jpeg": 2,
+     "image/png": 1,
+     "image/webp": 1
+    },
+    "caption": 2,
+    "maxCaptionLength": 1024,
+    "maxSize": 10485760
+   },
+   "m.sticker": {
+    "mimeTypes": {
+     "image/jpeg": 1,
+     "image/png": 1,
+     "image/webp": 2,
+     "video/lottie+json": 2,
+     "video/webm": 2
+    }
+   },
+   "m.video": {
+    "mimeTypes": {
+     "video/mp4": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 1024,
+    "maxSize": 2147483648
+   },
+   "dqt.dagosh.kxp1276.voice": {
+    "mimeTypes": {
+     "audio/mp4": 2,
+     "audio/mpeg": 2,
+     "audio/ogg": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 1024,
+    "maxSize": 2147483648
+   }
+  },
+  "maxTextLength": 4096,
+  "locationMessage": 2,
+  "reply": 2,
+  "edit": 2,
+  "delete": 2,
+  "reaction": 2,
+  "reactionCount": 1,
+  "allowedReactions": [
+   "☃️",
+   "⚡️",
+   "✍️",
+   "❤️",
+   "❤️‍🔥",
+   "🆒",
+   "🌚",
+   "🌭",
+   "🍌",
+   "🍓",
+   "🍾",
+   "🎃",
+   "🎄",
+   "🎅",
+   "🎉",
+   "🏆️",
+   "🐳",
+   "👀",
+   "👌",
+   "👍️",
+   "👎️",
+   "👏",
+   "👨‍💻",
+   "👻",
+   "👾",
+   "💅",
+   "💊",
+   "💋",
+   "💔",
+   "💘",
+   "💩",
+   "💯",
+   "🔥",
+   "🕊️",
+   "🖕",
+   "🗿",
+   "😁",
+   "😇",
+   "😈",
+   "😍",
+   "😎",
+   "😐️",
+   "😘",
+   "😡",
+   "😢",
+   "😨",
+   "😭",
+   "😱",
+   "😴",
+   "🙈",
+   "🙉",
+   "🙊",
+   "🙏",
+   "🤓",
+   "🤔",
+   "🤗",
+   "🤝",
+   "🤡",
+   "🤣",
+   "🤨",
+   "🤩",
+   "🤪",
+   "🤬",
+   "🤮",
+   "🤯",
+   "🤷",
+   "🤷‍♀️",
+   "🤷‍♂️",
+   "🥰",
+   "🥱",
+   "🥴",
+   "🦄",
+   "🫡"
+  ],
+  "disappearingTimer": {
+   "types": [
+    "afterSend"
+   ],
+   "timers": [
+    86400000,
+    172800000,
+    259200000,
+    345600000,
+    432000000,
+    518400000,
+    604800000,
+    1209600000,
+    1814400000,
+    2678400000,
+    5356800000,
+    8035200000,
+    10713600000,
+    13392000000,
+    16070400000,
+    31536000000
+   ]
+  },
+  "readReceipts": true,
+  "typingNotifications": true,
+  "deleteChat": true,
+  "deleteChatForEveryone": true,
+  "state": {
+   "disappearingTimer": {
+    "level": 2
+   }
+  }
+ }
+}

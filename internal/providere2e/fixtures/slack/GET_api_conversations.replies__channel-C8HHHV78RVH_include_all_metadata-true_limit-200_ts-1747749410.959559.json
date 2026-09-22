@@ -1,0 +1,307 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "USF3WB4D5CZ",
+   "type": "message",
+   "ts": "1747749410.959559",
+   "client_msg_id": "18d7c068-153c-986b-dadc-50ff370dcaea",
+   "text": "The handover <https://everline.example/in/valentina-amberly/|The New> was split out of the capacity note.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747749410.959559",
+   "reply_count": 5,
+   "reply_users_count": 2,
+   "latest_reply": "1747755044.399029",
+   "reply_users": [
+    "USF3WB4D5CZ",
+    "U48XXRY7R9U"
+   ],
+   "is_locked": false,
+   "subscribed": true,
+   "last_read": "1747755044.399029",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "wKRuL",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "emoji",
+         "name": "Marek Westbrook",
+         "unicode": "1f9f5"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "link",
+         "url": "https://everline.example/in/valentina-amberly/",
+         "text": "The review now covers the owner's sign-off."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "text": "<@UXQUMNTTWLM> Quick note: The retry budget quietly changed next week's window, if nothing else moves. The new index needs a.\n\nContext: The draft quietly changed the follow-up thread, assuming the counts hold. The draft rolls up into the agreed cutoff.\nQuick note: The ingest path rolls up into a smaller slice, assuming the counts hold. The dashboard will be folded into the agreed cutoff, as discussed. The migration quietly changed the agreed cutoff, after the handover. The new index is waiting on the capacity note.\nSummary: The queue still blocks the agreed cutoff, assuming the counts hold. The checklist is waiting on the owner's sign-off, either way. The dashboard still.\n\nThe schedule still <@U48XXRY7R9U> blocks the open <@U857VE5R9Z6> question, after the handover. The staging.",
+   "files": [
+    {
+     "id": "F2HSRRH3HHJ",
+     "created": 1789567418,
+     "timestamp": 1789567418,
+     "mimetype": "application/pdf",
+     "filetype": "pdf",
+     "pretty_type": "PDF",
+     "user": "USF3WB4D5CZ",
+     "user_team": "T0ADATEAM01",
+     "editable": false,
+     "size": 145317,
+     "mode": "hosted",
+     "is_external": false,
+     "external_type": "",
+     "is_public": false,
+     "public_url_shared": false,
+     "display_as_bot": false,
+     "username": "",
+     "name": "The Retry",
+     "title": "The Staging",
+     "ai_summary": {
+      "id": "Afs4L5829GFB6",
+      "unfurl_enabled": true,
+      "status": "COMPLETED",
+      "content": "Following up: The staging cluster is waiting on a smaller slice, assuming the counts hold. The migration still.\nThe review should unblock the follow-up thread, for now. The rollout.\nFollowing up: The ingest path landed ahead of the earlier draft, after the handover. The ingest path was split out of a smaller slice."
+     },
+     "is_modified_by_ai": false,
+     "url_private": "https://files.slack.com/files-pri/J2sxoxWBbO51IMabj89iUUb/f2hsrrh3hhj.pdf",
+     "url_private_download": "https://files.slack.com/files-pri/J2sxoxWBbO51IMabj89iUUb/download/f2hsrrh3hhj.pdf",
+     "media_display_type": "unknown",
+     "thumb_pdf": "https://files.slack.com/files-tmb/MVfwL5ETqPXWVIhzifekfYDBfVuSUYJb8L/f2hsrrh3hhj.png",
+     "thumb_pdf_w": 935,
+     "thumb_pdf_h": 1210,
+     "permalink": "https://zephyr-lane.slack.com/files/adalovelace/F2HSRRH3HHJ/f2hsrrh3hhj.pdf",
+     "permalink_public": "https://brightsea.example/F2HSRRH3HHJ",
+     "is_starred": false,
+     "skipped_shares": true,
+     "has_rich_preview": false,
+     "file_access": "visible"
+    }
+   ],
+   "upload": false,
+   "user": "USF3WB4D5CZ",
+   "display_as_bot": false,
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "99tCO",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "user",
+         "user_id": "UXQUMNTTWLM"
+        },
+        {
+         "type": "text",
+         "text": "Following up: The retry budget rolls up into the second pass, once the numbers settle. The review rolls up into the earlier draft.\n\nHeads up — The draft was split out of one more round of checks, after the handover. The schedule landed ahead of."
+        }
+       ]
+      },
+      {
+       "type": "rich_text_quote",
+       "elements": [
+        {
+         "type": "text",
+         "text": "For the record: The handover will be folded into the follow-up thread, assuming the counts hold. The handover rolls up into the capacity note, once the numbers settle. The handover is waiting on the open question, for now. The estimate needs a second look from next week's window."
+        }
+       ]
+      },
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "Summary: The schedule now covers a smaller slice, once the numbers settle. The dashboard landed ahead of the open question, once the numbers settle.\n\nThe checklist rolls up into the follow-up thread."
+        },
+        {
+         "type": "user",
+         "user_id": "U48XXRY7R9U"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "user",
+         "user_id": "U857VE5R9Z6"
+        },
+        {
+         "type": "text",
+         "text": " The migration will be."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "type": "message",
+   "ts": "1747749849.933619",
+   "client_msg_id": "a79cffc3-9f66-fc5b-3c70-9a927069c4f0",
+   "thread_ts": "1747749410.959559",
+   "parent_user_id": "USF3WB4D5CZ",
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747754017.330609",
+   "client_msg_id": "889568cd-d8f4-c001-3804-a4bb23507dcc",
+   "text": "Quick note: The ingest path still blocks the agreed cutoff, either way. The handover landed ahead of the shared doc, unless somebody objects. The ingest path was split out of a smaller slice, after the handover.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747749410.959559",
+   "parent_user_id": "USF3WB4D5CZ",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "LpW2S",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "Following up: The staging cluster rolls up into the capacity note, assuming the counts hold. The rollback plan needs a second look from the owner's sign-off, for now. The dashboard is waiting on the shared doc."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "USF3WB4D5CZ",
+   "type": "message",
+   "ts": "1747754403.017509",
+   "client_msg_id": "05e8c316-b022-4588-c8c5-c6922d76f166",
+   "text": "The draft will be folded into the agreed cutoff, either way. The.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747749410.959559",
+   "parent_user_id": "USF3WB4D5CZ",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "qxQfg",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The handover depends on the follow-up thread, either way. The."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747754640.143499",
+   "client_msg_id": "f5697dfb-7564-9730-0abb-1afb52f6acc6",
+   "text": "The schedule quietly changed the capacity <@UXQUMNTTWLM> note, once <@U0ADA0WNER1> the numbers settle. The new index now.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747749410.959559",
+   "parent_user_id": "USF3WB4D5CZ",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "aJgX3",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The migration should unblock the agreed cutoff, before."
+        },
+        {
+         "type": "user",
+         "user_id": "UXQUMNTTWLM"
+        },
+        {
+         "type": "text",
+         "text": " "
+        },
+        {
+         "type": "user",
+         "user_id": "U0ADA0WNER1"
+        },
+        {
+         "type": "text",
+         "text": " The estimate is waiting on the."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "U48XXRY7R9U",
+   "type": "message",
+   "ts": "1747755044.399029",
+   "client_msg_id": "71311680-e8ee-b4ae-22ac-20277fc5a816",
+   "text": "Following up: The retry budget will be folded into the shared doc, once the numbers settle. The handover will be.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747749410.959559",
+   "parent_user_id": "USF3WB4D5CZ",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "C4DP3",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "One thing: The rollback plan rolls up into the owner's sign-off, for now. The estimate still blocks the numbers from Friday."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

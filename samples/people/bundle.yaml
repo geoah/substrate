@@ -33,7 +33,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: people
-  version: 5
+  version: 6
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A SAMPLE bundle: a bare package the substrate publishes, delivered
@@ -63,5 +63,4 @@ data:
     - samples.substrate.reamde.dev/people/githubuserperson
     - samples.substrate.reamde.dev/people/googleaddressperson
     - samples.substrate.reamde.dev/people/googlecontactperson
-    - samples.substrate.reamde.dev/people/linearissueperson
     - samples.substrate.reamde.dev/people/linearuserperson

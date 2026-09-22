@@ -1,0 +1,408 @@
+{
+ "items": [
+  {
+   "id": "361413",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@discordgo_059737644517465191:beeper.local",
+   "senderName": "Ansel Sedgwick",
+   "timestamp": "2026-09-14T14:06:15.022Z",
+   "sortKey": "776903",
+   "type": "TEXT",
+   "text": "The checklist now covers.\nThe rollout was split out of a smaller slice.\nFollowing up: The review should unblock the earlier draft, assuming the counts hold. The staging cluster was split out of the open question, once the numbers settle. The checklist still blocks the agreed cutoff.\nThe dashboard will be folded into the open question.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "reactions": [
+    {
+     "id": "@discordgo_099714256511618008:beeper.local🤣",
+     "participantID": "@discordgo_099714256511618008:beeper.local",
+     "emoji": true,
+     "reactionKey": "🤣"
+    }
+   ],
+   "seen": {
+    "@discordgo_099714256511618008:beeper.local": "2026-09-14T14:28:43.222Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361410",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@discordgo_059737644517465191:beeper.local",
+   "senderName": "Ansel Sedgwick",
+   "timestamp": "2026-09-14T14:03:44.669Z",
+   "sortKey": "776900",
+   "type": "TEXT",
+   "text": "The review still blocks one more round of checks, before the window closes.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "isUnread": false
+  },
+  {
+   "id": "361409",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-14T14:03:27.356Z",
+   "sortKey": "776898",
+   "type": "TEXT",
+   "text": "The review is waiting on the follow-up thread, pending one more read. The.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": []
+  },
+  {
+   "id": "361408",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-14T14:03:04.077Z",
+   "sortKey": "776895",
+   "type": "TEXT",
+   "text": "The retry budget quietly changed the second pass, unless somebody objects.",
+   "editedTimestamp": "2026-09-14T14:03:05.923Z",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": [],
+   "links": [
+    {
+     "url": "https://northwind-labs-works.example/2730/36/62/mdzm-c-ayfy-an-rl-ihktb/",
+     "title": "The Dashboard depends",
+     "summary": "Heads up — This batch is waiting on the second pass, as discussed. The estimate rolls up into the capacity note, once the numbers settle. The migration is waiting on the shared doc, for now. The staging cluster will be folded into the open question.\nHeads up — The dashboard quietly changed the capacity note, either way. The staging cluster is waiting on the shared doc."
+    }
+   ],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T14:03:04.000Z"
+   }
+  },
+  {
+   "id": "361393",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@discordgo_059737644517465191:beeper.local",
+   "senderName": "Ansel Sedgwick",
+   "timestamp": "2026-09-14T11:48:27.268Z",
+   "sortKey": "776862",
+   "type": "IMAGE",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "attachments": [
+    {
+     "id": "mxc://local.beeper.com/yzwyh_ajqxjaoxzwVExAa4DkkvKq7qpT21vMMhv8dL6lIJ9TLHUBMxV7ZEFAnGfzVGbDCa",
+     "type": "img",
+     "mimeType": "image/png",
+     "fileName": "indigo-umber-beacon-loop.png",
+     "fileSize": 36176,
+     "isGif": false,
+     "isSticker": false,
+     "size": {
+      "width": 625,
+      "height": 227
+     },
+     "srcURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/yzwyh_ajqxjaoxzwVExAa4DkkvKq7qpT21vMMhv8dL6lIJ9TLHUBMxV7ZEFAnGfzVGbDCa"
+    }
+   ],
+   "isUnread": false
+  },
+  {
+   "id": "361392",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@discordgo_059737644517465191:beeper.local",
+   "senderName": "Ansel Sedgwick",
+   "timestamp": "2026-09-14T11:48:26.554Z",
+   "sortKey": "776860",
+   "type": "TEXT",
+   "isSender": false,
+   "isHidden": false,
+   "isDeleted": true,
+   "mentions": null,
+   "isUnread": false
+  },
+  {
+   "id": "361391",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@discordgo_059737644517465191:beeper.local",
+   "senderName": "Ansel Sedgwick",
+   "timestamp": "2026-09-14T11:48:11.565Z",
+   "sortKey": "776859",
+   "type": "TEXT",
+   "text": "One thing: The staging cluster should unblock the follow-up thread, once the numbers settle. This batch landed.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "isUnread": false
+  },
+  {
+   "id": "361390",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@discordgo_059737644517465191:beeper.local",
+   "senderName": "Ansel Sedgwick",
+   "timestamp": "2026-09-14T11:47:47.917Z",
+   "sortKey": "776858",
+   "type": "IMAGE",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "attachments": [
+    {
+     "id": "mxc://local.beeper.com/fijoy_1uulKIyDP0lty1JdECQvsl4LZFkrwDRt2XrZaY4HC6tPo0dRPianGIXunBNY8Umu",
+     "type": "img",
+     "mimeType": "image/png",
+     "fileName": "kelp-quill-yarrow-guild.png",
+     "fileSize": 167084,
+     "isGif": false,
+     "isSticker": false,
+     "size": {
+      "width": 752,
+      "height": 752
+     },
+     "srcURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/fijoy_1uulKIyDP0lty1JdECQvsl4LZFkrwDRt2XrZaY4HC6tPo0dRPianGIXunBNY8Umu"
+    }
+   ],
+   "isUnread": false
+  },
+  {
+   "id": "361389",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@discordgo_059737644517465191:beeper.local",
+   "senderName": "Ansel Sedgwick",
+   "timestamp": "2026-09-14T11:47:46.997Z",
+   "sortKey": "776856",
+   "type": "TEXT",
+   "isSender": false,
+   "isHidden": false,
+   "isDeleted": true,
+   "mentions": null,
+   "isUnread": false
+  },
+  {
+   "id": "361388",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@discordgo_059737644517465191:beeper.local",
+   "senderName": "Ansel Sedgwick",
+   "timestamp": "2026-09-14T11:47:45.476Z",
+   "sortKey": "776855",
+   "type": "TEXT",
+   "text": "Summary: The staging cluster still blocks the shared doc, assuming the counts hold. This batch rolls up into one more round of checks, pending one more read. The handover should unblock the capacity note, before the window closes. The migration rolls up into the owner's sign-off.",
+   "isSender": false,
+   "isDeleted": false,
+   "linkedMessageID": "361369",
+   "mentions": [
+    "@adalovelace:beeper.com"
+   ],
+   "isUnread": false
+  },
+  {
+   "id": "361369",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-14T11:19:21.841Z",
+   "sortKey": "776813",
+   "type": "TEXT",
+   "text": "The dashboard will be folded.",
+   "isSender": true,
+   "isDeleted": false,
+   "linkedMessageID": "361361",
+   "mentions": [
+    "@discordgo_059737644517465191:beeper.local"
+   ]
+  },
+  {
+   "id": "361361",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@discordgo_059737644517465191:beeper.local",
+   "senderName": "Ansel Sedgwick",
+   "timestamp": "2026-09-14T11:11:17.940Z",
+   "sortKey": "776799",
+   "type": "TEXT",
+   "text": "Heads up — The dashboard is waiting on one more round of checks, as discussed. The dashboard needs a second look from the open question, after the handover. The retry budget will be folded into the numbers from Friday, for now. The schedule is waiting on one more round of checks, for now.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "isUnread": false
+  },
+  {
+   "id": "361357",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@discordgo_059737644517465191:beeper.local",
+   "senderName": "Ansel Sedgwick",
+   "timestamp": "2026-09-14T11:04:12.901Z",
+   "sortKey": "776787",
+   "type": "TEXT",
+   "text": "Context: This batch needs a second look from the follow-up thread, as discussed. The draft now covers the numbers from Friday, once the numbers settle. The schedule needs a second look from the capacity note, before the window closes. The queue quietly changed the agreed cutoff.\nFollowing up: The review will be folded into the second pass, as discussed. The retry budget still blocks the follow-up thread, for now. The review will be folded into the numbers from Friday, after the handover. The checklist now covers the open question, as discussed. The schedule still blocks the owner's sign-off, as discussed. The new index needs a second look from the open question.\nOne thing: The estimate depends on next week's window, for now. The review needs a second look from the capacity note, before the window closes. The new index still blocks one more round of checks, as discussed. The queue landed ahead of next week's window, pending one more read. The staging cluster should unblock a smaller slice, as discussed. The handover still blocks the follow-up thread, for now. The staging cluster needs a second look from the numbers from Friday.",
+   "editedTimestamp": "2026-09-14T11:04:14.407Z",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "links": [
+    {
+     "url": "https://github.com/pnsdq-logyzpjttjz/nryftud",
+     "title": "The Migration still blocks the second pass",
+     "summary": "Context: The staging cluster should unblock the follow-up thread, either way. The staging cluster was.",
+     "img": "mxc://local.beeper.com/jbmdc_dWXxh4L1Qip82idwzBxSvcoNlHA2yJFdOsKbSjzmy7uYQlaWvQFavZA7mxzJtD1t?qhiueqttlNfdhTlryWSOY=soPkTVGlFUDrTgevm9otIwV8PtuvHE7lTUFMZNdeA2W3BVUyPOWrUqKSIRCbNhI9SmUmGfJzRk87PyRkygpxOYT5KULgthO2UtBRPEXUTBOzD8uFXGKBUPXOGXAGOGReFHDeGZzpCgrhWNkbQltqUML7FzUHFpKaEaR8cOX5qDK8CRpoehW3KteKAxM8JKqol0xgE951KdunK9VZwZ1sZ9ZmaNT4MPWLjvGjoPDsOgGJTXDuENRyDXewq9BrOilxMgXzX9S8vLBjQRLyVIHbyZM3Je3oUhm8yBI3Zn8ihYY8VBL4jmqjTwJnyKT2Ic5fe1NtsH0iOEPvTBHuW97mX7hxa1WyH1aIH2bnMRA7AvW8JwE1iyEwYOaPyC4qW3NICvSkDNmyVXVBIOEfJOxhW9MPLCWhCKWEI7hpGZMczFCwTovCEsUaZML9ZqjvuuJesV",
+     "imgSize": {
+      "height": 600,
+      "width": 1200
+     }
+    }
+   ],
+   "reactions": [
+    {
+     "id": "@discordgo_099714256511618008:beeper.local👍",
+     "participantID": "@discordgo_099714256511618008:beeper.local",
+     "emoji": true,
+     "reactionKey": "👍"
+    }
+   ],
+   "seen": {
+    "@discordgo_059737644517465191:beeper.local": "2026-09-14T11:04:12.918Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361350",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@discordgo_059737644517465191:beeper.local",
+   "senderName": "Ansel Sedgwick",
+   "timestamp": "2026-09-14T11:00:34.851Z",
+   "sortKey": "776775",
+   "type": "TEXT",
+   "text": "Quick note: The migration needs a second look from a smaller slice, unless somebody objects. The review quietly changed the second pass, as discussed. The schedule landed ahead of next week's window.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "isUnread": false
+  },
+  {
+   "id": "361345",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@discordgo_059737644517465191:beeper.local",
+   "senderName": "Ansel Sedgwick",
+   "timestamp": "2026-09-14T10:59:44.161Z",
+   "sortKey": "776765",
+   "type": "TEXT",
+   "text": "One thing: The estimate now covers one more round of checks, after the handover. The ingest path was split out of the owner's sign-off.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "isUnread": false
+  },
+  {
+   "id": "361344",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@discordgo_059737644517465191:beeper.local",
+   "senderName": "Ansel Sedgwick",
+   "timestamp": "2026-09-14T10:59:25.838Z",
+   "sortKey": "776764",
+   "type": "REACTION",
+   "isSender": false,
+   "isHidden": true,
+   "isDeleted": false,
+   "linkedMessageID": "361342",
+   "isUnread": false
+  },
+  {
+   "id": "361342",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-14T10:59:09.816Z",
+   "sortKey": "776755",
+   "type": "TEXT",
+   "text": "This batch rolls up into the agreed cutoff, after the handover. The retry.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": [],
+   "reactions": [
+    {
+     "id": "@discordgo_059737644517465191:beeper.local👍",
+     "participantID": "@discordgo_059737644517465191:beeper.local",
+     "emoji": true,
+     "reactionKey": "👍"
+    }
+   ]
+  },
+  {
+   "id": "361341",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-14T10:58:45.759Z",
+   "sortKey": "776753",
+   "type": "REACTION",
+   "isSender": true,
+   "isHidden": true,
+   "isDeleted": false,
+   "linkedMessageID": "361340"
+  },
+  {
+   "id": "361340",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@discordgo_059737644517465191:beeper.local",
+   "senderName": "Ansel Sedgwick",
+   "timestamp": "2026-09-14T10:58:38.992Z",
+   "sortKey": "776752",
+   "type": "TEXT",
+   "text": "Quick note: The draft should unblock the earlier draft, unless somebody objects. The estimate should unblock the agreed cutoff.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "reactions": [
+    {
+     "id": "@adalovelace:beeper.com👍",
+     "participantID": "@adalovelace:beeper.com",
+     "emoji": true,
+     "reactionKey": "👍"
+    }
+   ],
+   "isUnread": false
+  },
+  {
+   "id": "361337",
+   "chatID": "!om5B936RTlflorUruFvP:beeper.local",
+   "accountID": "discordgo",
+   "senderID": "@discordgo_059737644517465191:beeper.local",
+   "senderName": "Ansel Sedgwick",
+   "timestamp": "2026-09-14T10:58:10.843Z",
+   "sortKey": "776746",
+   "type": "TEXT",
+   "text": "For the record: The retry budget landed ahead of one more round of checks, either way. The rollback plan will be folded into the open question, once the numbers settle. The schedule needs a second look from the second pass, once the numbers settle. The staging cluster depends on the capacity note.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "reactions": [
+    {
+     "id": "@discordgo_099714256511618008:beeper.local👍",
+     "participantID": "@discordgo_099714256511618008:beeper.local",
+     "emoji": true,
+     "reactionKey": "👍"
+    }
+   ],
+   "isUnread": false
+  }
+ ],
+ "hasMore": false,
+ "oldestCursor": "776746",
+ "newestCursor": "776903"
+}

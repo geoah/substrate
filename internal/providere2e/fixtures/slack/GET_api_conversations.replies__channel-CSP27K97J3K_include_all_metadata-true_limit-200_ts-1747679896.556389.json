@@ -1,0 +1,245 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "subtype": "bot_message",
+   "text": "This batch <@ULTBQ7MQB8U> needs a second look from a smaller slice.\n\nThe estimate should unblock the follow-up thread.\nThe queue was split out of the open question.\nThe handover landed.\nThis batch still blocks the earlier draft, after the <!subteam^S4BGCUYE1KZ> handover. The retry budget still blocks.\n\n The staging cluster landed ahead of.",
+   "username": "Orchard Field",
+   "type": "message",
+   "ts": "1747679896.556389",
+   "bot_id": "BLFK8XZ1AEC",
+   "app_id": "AUFLEEC4WZN",
+   "trigger_id": "FtU9QZ3GCUZA",
+   "workflow_id": "WfSRKJ5G1EEP",
+   "thread_ts": "1747679896.556389",
+   "reply_count": 4,
+   "reply_users_count": 2,
+   "latest_reply": "1747680598.297969",
+   "reply_users": [
+    "UM0CRECPWYK",
+    "ULTBQ7MQB8U"
+   ],
+   "is_locked": false,
+   "subscribed": false,
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "2cW5j",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The checklist quietly changed the earlier draft.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "user",
+         "user_id": "ULTBQ7MQB8U"
+        },
+        {
+         "type": "text",
+         "text": "\nThis batch now covers a smaller slice."
+        },
+        {
+         "type": "text",
+         "text": "The new index landed ahead of a smaller slice."
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "The staging cluster will be folded into the shared doc.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "The schedule now covers the owner's sign-off, either way. The rollback plan needs a second."
+        },
+        {
+         "type": "text",
+         "text": "\n\n"
+        },
+        {
+         "type": "usergroup",
+         "usergroup_id": "S4BGCUYE1KZ"
+        },
+        {
+         "type": "text",
+         "text": " The schedule was split out of a."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "white_check_mark",
+     "users": [
+      "UM0CRECPWYK"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UM0CRECPWYK",
+   "type": "message",
+   "ts": "1747679937.369819",
+   "client_msg_id": "3B3C6C71-6D4C-C42C-064D-C5E0AE565C29",
+   "text": "The queue is waiting on the.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747679896.556389",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "fjoPE",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The new index quietly."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "raised_hands",
+     "users": [
+      "ULTBQ7MQB8U"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "ULTBQ7MQB8U",
+   "type": "message",
+   "ts": "1747679945.642989",
+   "client_msg_id": "180d03b0-3780-408f-9e47-0ebb14042d65",
+   "text": "The rollback plan should unblock the follow-up thread.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747679896.556389",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "vzHMG",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The schedule rolls up into the owner's sign-off."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "UM0CRECPWYK",
+   "type": "message",
+   "ts": "1747680547.850009",
+   "client_msg_id": "2ebf6945-954c-a1ae-cd11-3910c8e5fd48",
+   "text": "The review is waiting on a smaller slice, for now. The schedule rolls up.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747679896.556389",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "eCb3F",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The new index quietly changed the capacity note, unless somebody objects."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "eyes",
+     "users": [
+      "ULTBQ7MQB8U"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "ULTBQ7MQB8U",
+   "type": "message",
+   "ts": "1747680598.297969",
+   "client_msg_id": "7dca4109-3105-c57d-cbfc-f615f77e1895",
+   "text": "The dashboard depends.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747679896.556389",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "UMbyT",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The new index should."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "copper_yard",
+     "users": [
+      "UM0CRECPWYK"
+     ],
+     "count": 1
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

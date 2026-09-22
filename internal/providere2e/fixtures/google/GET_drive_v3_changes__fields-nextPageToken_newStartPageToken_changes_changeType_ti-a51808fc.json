@@ -1,0 +1,65 @@
+{
+ "changes": [
+  {
+   "changeType": "file",
+   "time": "2026-09-20T14:31:59.635Z",
+   "removed": true,
+   "fileId": "4V3GfmVh3bA0jXHEeIHwtI8kIISV"
+  },
+  {
+   "changeType": "file",
+   "time": "2026-08-10T14:37:26.233Z",
+   "removed": false,
+   "fileId": "0yx1IpBrYkViUJXvb4zC91bxr3dTfeC14mVuS5a-iK6W",
+   "file": {
+    "viewedByMe": false,
+    "mimeType": "application/vnd.google-apps.document",
+    "exportLinks": {
+     "application/rtf": "https://docs.google.com/feeds/download/documents/export/Export?id=0yx1IpBrYkViUJXvb4zC91bxr3dTfeC14mVuS5a-iK6W&exportFormat=rtf",
+     "application/vnd.oasis.opendocument.text": "https://docs.google.com/feeds/download/documents/export/Export?id=0yx1IpBrYkViUJXvb4zC91bxr3dTfeC14mVuS5a-iK6W&exportFormat=odt",
+     "text/html": "https://docs.google.com/feeds/download/documents/export/Export?id=0yx1IpBrYkViUJXvb4zC91bxr3dTfeC14mVuS5a-iK6W&exportFormat=html",
+     "application/pdf": "https://docs.google.com/feeds/download/documents/export/Export?id=0yx1IpBrYkViUJXvb4zC91bxr3dTfeC14mVuS5a-iK6W&exportFormat=pdf",
+     "text/x-markdown": "https://docs.google.com/feeds/download/documents/export/Export?id=0yx1IpBrYkViUJXvb4zC91bxr3dTfeC14mVuS5a-iK6W&exportFormat=markdown",
+     "text/markdown": "https://docs.google.com/feeds/download/documents/export/Export?id=0yx1IpBrYkViUJXvb4zC91bxr3dTfeC14mVuS5a-iK6W&exportFormat=markdown",
+     "application/epub+zip": "https://docs.google.com/feeds/download/documents/export/Export?id=0yx1IpBrYkViUJXvb4zC91bxr3dTfeC14mVuS5a-iK6W&exportFormat=epub",
+     "application/zip": "https://docs.google.com/feeds/download/documents/export/Export?id=0yx1IpBrYkViUJXvb4zC91bxr3dTfeC14mVuS5a-iK6W&exportFormat=zip",
+     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "https://docs.google.com/feeds/download/documents/export/Export?id=0yx1IpBrYkViUJXvb4zC91bxr3dTfeC14mVuS5a-iK6W&exportFormat=docx",
+     "text/plain": "https://docs.google.com/feeds/download/documents/export/Export?id=0yx1IpBrYkViUJXvb4zC91bxr3dTfeC14mVuS5a-iK6W&exportFormat=txt"
+    },
+    "thumbnailLink": "https://lh3.googleusercontent.com/drive-storage/TPIQuUKyiBR7K6ThQIQPG2uDzf_8sqr7f-XaQZUQlS8p_BmexNqzrF2CedxF-0G2oGSaWXhIs35EXv5GOtQ0eAa_vXQ_vyFUmai_ClP-aV3UzejskiVdvXnZ4j2fPc5OsdgE=s220",
+    "iconLink": "https://drive-thirdparty.googleusercontent.com/16/type/application/vnd.google-apps.document",
+    "shared": true,
+    "lastModifyingUser": {
+     "displayName": "Magdalena Zabriskie",
+     "me": false,
+     "permissionId": "56957818467992994710",
+     "emailAddress": "zenobia@junction-nine.example",
+     "photoLink": "https://lh3.googleusercontent.com/a-/YNE-JfVJZglwv8vXIKJ8L8vvHg_XW9dsMKmP8ulodhWaLNQPIqQPru=s64"
+    },
+    "owners": [
+     {
+      "displayName": "Brenna Stowell",
+      "me": false,
+      "permissionId": "57117763522965707612",
+      "emailAddress": "yusra@junction-nine.example",
+      "photoLink": "https://lh3.googleusercontent.com/a-/KXI-EfKiQecwvsLotMchVo9_w4lnc9ekzcOjD62E8zEvrS-sA81p=s64"
+     }
+    ],
+    "webViewLink": "https://docs.google.com/document/d/0yx1IpBrYkViUJXvb4zC91bxr3dTfeC14mVuS5a-iK6W/edit?usp=drivesdk",
+    "size": "28177",
+    "id": "0yx1IpBrYkViUJXvb4zC91bxr3dTfeC14mVuS5a-iK6W",
+    "name": "The Rollback Plan still",
+    "starred": false,
+    "trashed": false,
+    "explicitlyTrashed": false,
+    "createdTime": "2026-06-27T09:21:59.029Z",
+    "modifiedTime": "2026-08-10T14:37:26.233Z",
+    "sharedWithMeTime": "2026-06-27T16:22:24.656Z",
+    "quotaBytesUsed": "28177",
+    "version": "189",
+    "ownedByMe": false
+   }
+  }
+ ],
+ "newStartPageToken": "fixture-drive-start-2"
+}

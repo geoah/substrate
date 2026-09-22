@@ -1,0 +1,667 @@
+{
+ "__responses": [
+  {
+   "__response": {
+    "status": 429,
+    "headers": {
+     "Retry-After": "1"
+    }
+   },
+   "body": {
+    "ok": false,
+    "error": "ratelimited"
+   }
+  },
+  {
+   "ok": true,
+   "messages": [
+    {
+     "user": "U0ADA0WNER1",
+     "type": "message",
+     "ts": "1747761721.371859",
+     "client_msg_id": "2b9de7a6-5660-680d-cd28-c359c226656e",
+     "text": "The migration rolls up into the agreed cutoff, assuming the counts hold.",
+     "team": "T0ADATEAM01",
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "Vq4bx",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "text",
+           "text": "The rollback plan rolls up into a smaller slice, after the handover."
+          },
+          {
+           "type": "emoji",
+           "name": "Gus Orrington",
+           "unicode": "1f602"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "language": {
+      "locale": "en",
+      "is_reliable": true
+     },
+     "reactions": [
+      {
+       "name": "flint_desk",
+       "users": [
+        "UZYSGS7CBM8"
+       ],
+       "count": 1
+      }
+     ]
+    },
+    {
+     "user": "UZYSGS7CBM8",
+     "type": "message",
+     "ts": "1747761681.142669",
+     "client_msg_id": "0871f3d9-c454-dc2c-4bd3-3d1306f0b970",
+     "text": "The schedule was split out of next week's window.",
+     "team": "T0ADATEAM01",
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "DzaKT",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "text",
+           "text": "The dashboard depends on one more round of checks."
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "user": "U0ADA0WNER1",
+     "type": "message",
+     "ts": "1747761269.688149",
+     "client_msg_id": "0fecbdae-7e58-b148-a8c9-a43a73d497b8",
+     "text": "The estimate will be folded into the shared doc.",
+     "team": "T0ADATEAM01",
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "13LX0",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "text",
+           "text": "The draft needs a second look from the agreed cutoff."
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "user": "U0ADA0WNER1",
+     "type": "message",
+     "ts": "1747761150.926129",
+     "client_msg_id": "b4dd38de-661d-b7fe-5cf7-6f3ea84ccbf2",
+     "text": "The rollout landed ahead of next week's window.",
+     "team": "T0ADATEAM01",
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "C2fy1",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "text",
+           "text": "The estimate should unblock the numbers from Friday."
+          },
+          {
+           "type": "emoji",
+           "name": "Gus Orrington",
+           "unicode": "1f602"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "user": "UZYSGS7CBM8",
+     "type": "message",
+     "ts": "1747759018.801269",
+     "client_msg_id": "fe7c570d-4f85-de43-a80f-e2edee17aec5",
+     "text": "",
+     "team": "T0ADATEAM01",
+     "attachments": [
+      {
+       "fallback": "The estimate is waiting on next week's window, assuming.\n\nThe migration <@U4RWLTWENY5> should unblock a smaller slice.\nThe schedule quietly changed the second pass.\nThe retry budget is.\nThe migration should unblock next week's window, <!subteam^S4BGCUYE1KZ> as discussed. The queue.\n\n The rollback plan will be folded into.",
+       "ts": "1747756400.166109",
+       "msg_subtype": "bot_message",
+       "author_subname": "Bexah Yewtree-Vance",
+       "channel_id": "CSP27K97J3K",
+       "channel_team": "T0ADATEAM01",
+       "is_msg_unfurl": true,
+       "is_thread_root_unfurl": true,
+       "blocks": [
+        {
+         "type": "rich_text",
+         "block_id": "1Zcdk",
+         "elements": [
+          {
+           "type": "rich_text_section",
+           "elements": [
+            {
+             "type": "text",
+             "text": "This batch still blocks one more round of checks.",
+             "style": {
+              "bold": true
+             }
+            },
+            {
+             "type": "text",
+             "text": "\n"
+            },
+            {
+             "type": "user",
+             "user_id": "U4RWLTWENY5"
+            },
+            {
+             "type": "text",
+             "text": "\nThe estimate now covers the open question."
+            },
+            {
+             "type": "text",
+             "text": "The estimate needs a second look from one more round of checks."
+            },
+            {
+             "type": "text",
+             "text": "\n"
+            },
+            {
+             "type": "text",
+             "text": "The handover needs a second look from the second pass.",
+             "style": {
+              "bold": true
+             }
+            },
+            {
+             "type": "text",
+             "text": "\n"
+            },
+            {
+             "type": "text",
+             "text": "The checklist was split out of next week's window, before the window closes."
+            },
+            {
+             "type": "text",
+             "text": "\n\n"
+            },
+            {
+             "type": "usergroup",
+             "usergroup_id": "S4BGCUYE1KZ"
+            },
+            {
+             "type": "text",
+             "text": " The rollout is waiting on the open question."
+            }
+           ]
+          }
+         ]
+        }
+       ],
+       "text": "The checklist <@U4RWLTWENY5> needs a second look from the capacity note.\n\nThe dashboard still blocks the agreed cutoff.\nThe migration now covers one more round of checks.\nThe retry budget will.\nThe retry budget landed ahead of <!subteam^S4BGCUYE1KZ> next week's window, pending one more read.\n\n The queue needs a second look from the.",
+       "author_name": "Bexah Yewtree-Vance",
+       "author_icon": "https://avatars.slack-edge.com/2026-01-09/76778033661992_7990ef6740285821f945_48.png",
+       "author_link": "https://zephyr-lane.slack.com/services/BLFK8XZ1AEC",
+       "mrkdwn_in": [
+        "text"
+       ],
+       "color": "D0D0D0",
+       "is_share": true,
+       "from_url": "https://zephyr-lane.slack.com/archives/CSP27K97J3K/p1747756400166109?thread_ts=1747756400.166109&cid=CSP27K97J3K",
+       "id": 1,
+       "footer": "The Rollout landed ahead of"
+      }
+     ],
+     "language": {
+      "locale": "en",
+      "is_reliable": true
+     }
+    },
+    {
+     "user": "UZYSGS7CBM8",
+     "type": "message",
+     "ts": "1747759007.350589",
+     "client_msg_id": "69d7a91a-5950-1e56-4008-0cf47749b7e3",
+     "text": "The rollback plan rolls up into the shared doc, once the numbers settle.",
+     "team": "T0ADATEAM01",
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "el7bl",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "text",
+           "text": "The retry budget rolls up into the capacity note, once the numbers settle."
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "user": "UZYSGS7CBM8",
+     "type": "message",
+     "ts": "1747757749.363789",
+     "client_msg_id": "e3bf6519-bddb-a606-e965-ad04f9fcd5cf",
+     "text": "The staging cluster quietly changed the open question.",
+     "team": "T0ADATEAM01",
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "lsUN1",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "text",
+           "text": "The rollback plan depends on the follow-up thread."
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "user": "U0ADA0WNER1",
+     "type": "message",
+     "ts": "1747757710.885869",
+     "client_msg_id": "22b30815-1035-c98c-3834-f5f299be1cfa",
+     "text": "Heads up — The schedule is waiting on the capacity note, after the handover. The review now covers one more round of checks.",
+     "team": "T0ADATEAM01",
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "wYREp",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "text",
+           "text": "One thing: The queue still blocks a smaller slice, either way. The dashboard will be folded into the capacity note."
+          },
+          {
+           "type": "emoji",
+           "name": "Orsolya Hartsfield",
+           "unicode": "1f604"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "language": {
+      "locale": "en",
+      "is_reliable": true
+     },
+     "reactions": [
+      {
+       "name": "coral_yard",
+       "users": [
+        "UZYSGS7CBM8"
+       ],
+       "count": 1
+      }
+     ]
+    },
+    {
+     "user": "UZYSGS7CBM8",
+     "type": "message",
+     "ts": "1747757669.839809",
+     "client_msg_id": "55136413-47db-8696-39c7-fdf7f95c497b",
+     "text": "The checklist needs a second look.",
+     "team": "T0ADATEAM01",
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "OWc8j",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "text",
+           "text": "The checklist depends on the."
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "user": "U0ADA0WNER1",
+     "type": "message",
+     "ts": "1747757657.410299",
+     "client_msg_id": "75bb3b11-d1b2-5e41-83a0-72096917197c",
+     "text": "The new index now covers.",
+     "team": "T0ADATEAM01",
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "wRf8F",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "text",
+           "text": "The review was split out."
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "user": "UZYSGS7CBM8",
+     "type": "message",
+     "ts": "1747757642.366759",
+     "client_msg_id": "5c499679-9e44-85cf-ba0d-9ec1f959205c",
+     "text": "The review now covers one more round of checks.",
+     "team": "T0ADATEAM01",
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "IuxwC",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "text",
+           "text": "The ingest path now covers the numbers from Friday."
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "user": "UZYSGS7CBM8",
+     "type": "message",
+     "ts": "1747757635.299649",
+     "client_msg_id": "7938dfa0-5f11-8313-5879-4d3a9069df4a",
+     "text": "For the record: The estimate landed ahead of the follow-up thread, either way. The staging cluster should unblock the shared doc, once the numbers settle. The queue needs a second.",
+     "team": "T0ADATEAM01",
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "TJa6Y",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "text",
+           "text": "Following up: The new index landed ahead of the owner's sign-off, either way. The dashboard will be folded into the earlier draft, before the window closes. The schedule will be."
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "language": {
+      "locale": "en",
+      "is_reliable": true
+     }
+    },
+    {
+     "user": "UZYSGS7CBM8",
+     "type": "message",
+     "ts": "1747757586.825319",
+     "client_msg_id": "279b3f07-3349-9c10-0884-d080679d1072",
+     "text": "The ingest path depends on the numbers from Friday.",
+     "team": "T0ADATEAM01",
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "eIiDV",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "text",
+           "text": "The new index still blocks the shared doc."
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "reactions": [
+      {
+       "name": "wave",
+       "users": [
+        "U0ADA0WNER1"
+       ],
+       "count": 1
+      }
+     ]
+    },
+    {
+     "user": "U0ADA0WNER1",
+     "type": "message",
+     "ts": "1747665228.670569",
+     "client_msg_id": "30bce2b7-d82d-51cd-1860-f4126fd4ad70",
+     "text": "The schedule needs a second look.",
+     "team": "T0ADATEAM01",
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "8dfgc",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "text",
+           "text": "The new index needs a second look from the numbers from Friday."
+          },
+          {
+           "type": "emoji",
+           "name": "Orsolya Hartsfield",
+           "unicode": "1f604"
+          },
+          {
+           "type": "text",
+           "text": " The queue still blocks the shared doc."
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "reactions": [
+      {
+       "name": "harbor_desk",
+       "users": [
+        "UZYSGS7CBM8"
+       ],
+       "count": 1
+      }
+     ]
+    },
+    {
+     "user": "UZYSGS7CBM8",
+     "type": "message",
+     "ts": "1747664962.026729",
+     "client_msg_id": "c22122cd-bb40-6603-8312-43856d16ed21",
+     "text": "The migration is waiting on the owner's sign-off.",
+     "team": "T0ADATEAM01",
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "gHoaq",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "text",
+           "text": "The new index was split out of one more round of checks."
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "user": "UZYSGS7CBM8",
+     "type": "message",
+     "ts": "1747661153.941659",
+     "client_msg_id": "6bc55240-7c1e-6257-9f7c-949954a48b84",
+     "text": "The draft needs a second look from a smaller slice.",
+     "team": "T0ADATEAM01",
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "4Nw7W",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "text",
+           "text": "The rollout will be folded."
+          },
+          {
+           "type": "emoji",
+           "name": "Beatrijs Abernathy",
+           "unicode": "1f642"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "user": "UZYSGS7CBM8",
+     "type": "message",
+     "ts": "1747649171.630849",
+     "client_msg_id": "0fae8f3f-d125-80ab-e4a3-c6842d5d2424",
+     "text": "The schedule rolls up into the owner's sign-off, if nothing else moves.",
+     "team": "T0ADATEAM01",
+     "thread_ts": "1747649171.630849",
+     "reply_count": 1,
+     "reply_users_count": 1,
+     "latest_reply": "1747661076.388379",
+     "reply_users": [
+      "U0ADA0WNER1"
+     ],
+     "is_locked": false,
+     "subscribed": true,
+     "last_read": "1747661076.388379",
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "k6Owi",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "text",
+           "text": "The migration still blocks the shared doc, once the numbers settle."
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "language": {
+      "locale": "en",
+      "is_reliable": true
+     },
+     "reactions": [
+      {
+       "name": "+1",
+       "users": [
+        "U0ADA0WNER1"
+       ],
+       "count": 1
+      }
+     ]
+    },
+    {
+     "user": "UZYSGS7CBM8",
+     "type": "message",
+     "ts": "1747644703.335059",
+     "client_msg_id": "a8a56743-a76f-75f0-0873-d30234e4663c",
+     "text": "The new index needs a.",
+     "team": "T0ADATEAM01",
+     "thread_ts": "1747644703.335059",
+     "reply_count": 7,
+     "reply_users_count": 2,
+     "latest_reply": "1747644820.104909",
+     "reply_users": [
+      "U0ADA0WNER1",
+      "UZYSGS7CBM8"
+     ],
+     "is_locked": false,
+     "subscribed": true,
+     "last_read": "1747644820.104909",
+     "blocks": [
+      {
+       "type": "rich_text",
+       "block_id": "wHloZ",
+       "elements": [
+        {
+         "type": "rich_text_section",
+         "elements": [
+          {
+           "type": "text",
+           "text": "The migration will be."
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "has_more": false,
+   "pin_count": 0,
+   "channel_actions_ts": null,
+   "channel_actions_count": 0,
+   "response_metadata": {
+    "next_cursor": ""
+   }
+  }
+ ]
+}

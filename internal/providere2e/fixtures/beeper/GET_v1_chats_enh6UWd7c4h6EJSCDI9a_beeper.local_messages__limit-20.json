@@ -1,0 +1,364 @@
+{
+ "items": [
+  {
+   "id": "361840",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-15T10:35:04.134Z",
+   "sortKey": "777687",
+   "type": "TEXT",
+   "text": "The schedule is.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": null,
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T10:35:04.330Z"
+   }
+  },
+  {
+   "id": "361752",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-15T08:24:16.183Z",
+   "sortKey": "777488",
+   "type": "REACTION",
+   "isSender": true,
+   "isHidden": true,
+   "isDeleted": false,
+   "linkedMessageID": "361742",
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T08:24:16.485Z"
+   }
+  },
+  {
+   "id": "361742",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-15T08:02:05.000Z",
+   "sortKey": "777474",
+   "type": "TEXT",
+   "text": "The review should unblock the second pass.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "reactions": [
+    {
+     "id": "@adalovelace:beeper.com",
+     "participantID": "@adalovelace:beeper.com",
+     "emoji": true,
+     "reactionKey": "👍"
+    }
+   ],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T08:24:16.485Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361741",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-15T08:01:41.000Z",
+   "sortKey": "777473",
+   "type": "TEXT",
+   "text": "The dashboard was split out of the earlier draft.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T08:24:16.485Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361716",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-15T07:41:39.603Z",
+   "sortKey": "777434",
+   "type": "TEXT",
+   "text": "Summary: The new index still blocks the open question, once the numbers settle. The migration should unblock the capacity note, assuming the counts hold.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T07:41:39.683Z"
+   }
+  },
+  {
+   "id": "361586",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-14T19:21:03.000Z",
+   "sortKey": "777274",
+   "type": "TEXT",
+   "text": "The ingest path was split out of the owner's sign-off.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-15T06:45:37.406Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361434",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-14T15:23:00.933Z",
+   "sortKey": "776931",
+   "type": "TEXT",
+   "text": "The retry budget depends on the shared doc.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": null,
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T15:23:01.041Z"
+   }
+  },
+  {
+   "id": "361424",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-14T14:41:18.000Z",
+   "sortKey": "776917",
+   "type": "VOICE",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T15:23:01.041Z"
+   },
+   "attachments": [
+    {
+     "id": "mxc://local.beeper.com/ovufj_BvVmPLVm8PAvz2XGtHgluzaigOlaryVWfw1qkSZE4d45HgV0BR1bkhwCrXv9175h",
+     "type": "audio",
+     "mimeType": "audio/ogg; codecs=opus",
+     "fileName": "coral.ogg",
+     "fileSize": 27570,
+     "isVoiceNote": true,
+     "transcription": {
+      "transcription": "Quick note: The draft landed ahead of the numbers from Friday, unless somebody objects. The checklist still blocks the numbers from Friday.",
+      "engine": "whisper-1"
+     },
+     "srcURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/ovufj_BvVmPLVm8PAvz2XGtHgluzaigOlaryVWfw1qkSZE4d45HgV0BR1bkhwCrXv9175h"
+    }
+   ],
+   "isUnread": false
+  },
+  {
+   "id": "361423",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-14T14:40:45.000Z",
+   "sortKey": "776916",
+   "type": "TEXT",
+   "text": "The draft still blocks the open question, either way.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T15:23:01.041Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361385",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-14T11:28:43.185Z",
+   "sortKey": "776845",
+   "type": "TEXT",
+   "text": "The estimate rolls up into the owner's sign-off.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": null,
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T11:28:43.273Z"
+   }
+  },
+  {
+   "id": "361384",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-14T11:27:58.000Z",
+   "sortKey": "776844",
+   "type": "TEXT",
+   "text": "The retry budget now covers the earlier draft.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T11:28:43.273Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361383",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-14T11:27:54.000Z",
+   "sortKey": "776843",
+   "type": "TEXT",
+   "text": "The retry budget is waiting on the follow-up thread.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T11:28:43.273Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361382",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-14T11:27:49.000Z",
+   "sortKey": "776842",
+   "type": "TEXT",
+   "text": "The review will be folded into the agreed cutoff.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T11:28:43.273Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361381",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-14T11:27:09.000Z",
+   "sortKey": "776840",
+   "type": "TEXT",
+   "text": "The staging cluster still.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T11:28:43.273Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361380",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-14T11:27:03.000Z",
+   "sortKey": "776839",
+   "type": "TEXT",
+   "text": "The ingest path should unblock the shared doc.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T11:28:43.273Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361379",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-14T11:26:58.587Z",
+   "sortKey": "776836",
+   "type": "TEXT",
+   "text": "The migration will be folded into the follow-up thread.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": null,
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T11:26:58.695Z"
+   }
+  },
+  {
+   "id": "361378",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-14T11:26:39.000Z",
+   "sortKey": "776835",
+   "type": "TEXT",
+   "text": "The ingest path quietly changed next week's window.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T11:26:47.997Z"
+   },
+   "isUnread": false
+  },
+  {
+   "id": "361377",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@adalovelace:beeper.com",
+   "senderName": "Ada Lovelace",
+   "timestamp": "2026-09-14T11:26:38.236Z",
+   "sortKey": "776831",
+   "type": "TEXT",
+   "text": "This batch depends on the earlier draft, after the handover.",
+   "isSender": true,
+   "isDeleted": false,
+   "mentions": null,
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T11:26:38.356Z"
+   }
+  },
+  {
+   "id": "361376",
+   "chatID": "!enh6UWd7c4h6EJSCDI9a:beeper.local",
+   "accountID": "whatsapp",
+   "senderID": "@whatsapp_fbf-885651003020663:beeper.local",
+   "senderName": "Ilaria Calloway",
+   "timestamp": "2026-09-14T11:26:31.000Z",
+   "sortKey": "776830",
+   "type": "TEXT",
+   "text": "The handover rolls up into a smaller slice.",
+   "isSender": false,
+   "isDeleted": false,
+   "mentions": [],
+   "seen": {
+    "@adalovelace:beeper.com": "2026-09-14T11:26:38.356Z"
+   },
+   "isUnread": false
+  }
+ ],
+ "hasMore": true,
+ "oldestCursor": "776830",
+ "newestCursor": "777690"
+}

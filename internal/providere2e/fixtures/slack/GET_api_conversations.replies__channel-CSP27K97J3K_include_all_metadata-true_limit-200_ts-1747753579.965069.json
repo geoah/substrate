@@ -1,0 +1,174 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "subtype": "bot_message",
+   "text": "The checklist <@UR0U8TK35MN> quietly changed the owner's sign-off.\n\nThe draft should unblock the second pass.\nThe estimate should.\nThe schedule should.\nHeads up — The queue quietly changed a smaller slice, as discussed. The rollback <!subteam^S4BGCUYE1KZ> plan still blocks.\n\n The queue is waiting on the earlier draft.",
+   "username": "Orchard Field",
+   "type": "message",
+   "ts": "1747753579.965069",
+   "bot_id": "BLFK8XZ1AEC",
+   "app_id": "AUFLEEC4WZN",
+   "trigger_id": "FtU9QZ3GCUZA",
+   "workflow_id": "WfSRKJ5G1EEP",
+   "thread_ts": "1747753579.965069",
+   "reply_count": 2,
+   "reply_users_count": 1,
+   "latest_reply": "1747755112.661769",
+   "reply_users": [
+    "UZYSGS7CBM8"
+   ],
+   "is_locked": false,
+   "subscribed": false,
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "HRs00",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The checklist quietly changed the earlier draft.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "user",
+         "user_id": "UR0U8TK35MN"
+        },
+        {
+         "type": "text",
+         "text": "\nThis batch now covers a smaller slice."
+        },
+        {
+         "type": "text",
+         "text": "The staging cluster was."
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "The staging cluster will be folded into the shared doc.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "Summary: The new index should unblock the agreed cutoff, assuming the counts hold. The rollback plan."
+        },
+        {
+         "type": "text",
+         "text": "\n\n"
+        },
+        {
+         "type": "usergroup",
+         "usergroup_id": "S4BGCUYE1KZ"
+        },
+        {
+         "type": "text",
+         "text": " The schedule was split out of a."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "white_check_mark",
+     "users": [
+      "UZYSGS7CBM8"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UZYSGS7CBM8",
+   "type": "message",
+   "ts": "1747755092.777399",
+   "client_msg_id": "3aa14adc-57dc-0131-4aed-5ec655efa4e9",
+   "text": "For the record: The rollout is waiting <http://console.harborlight.example|The Ingest Path> on a smaller slice, before the window closes. The schedule depends on the earlier draft.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747753579.965069",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "7VdWS",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The new index is waiting on the capacity note."
+        },
+        {
+         "type": "link",
+         "url": "http://console.harborlight.example",
+         "text": "The migration is waiting on the earlier draft."
+        },
+        {
+         "type": "text",
+         "text": " The retry budget will be folded into the numbers from Friday, once the numbers settle."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "UZYSGS7CBM8",
+   "type": "message",
+   "ts": "1747755112.661769",
+   "client_msg_id": "4dcbd0ad-697b-d50f-4adf-4d65b70d1b29",
+   "text": "The dashboard is waiting on the agreed cutoff.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747753579.965069",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "xWUkP",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The estimate quietly changed the agreed cutoff."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

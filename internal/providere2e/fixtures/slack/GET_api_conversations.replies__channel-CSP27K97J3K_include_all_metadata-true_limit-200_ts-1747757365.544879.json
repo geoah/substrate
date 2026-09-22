@@ -1,0 +1,342 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "subtype": "bot_message",
+   "text": "The queue landed <@U088GA0QSME> ahead of the numbers from Friday.\n\nThe rollback plan should unblock the capacity note.\nThe retry budget will be folded into the capacity note.\nThe handover <!subteam^S4BGCUYE1KZ> was split.\nThe queue will be folded into one more round of checks.\n\n The estimate quietly changed the second pass.",
+   "username": "Orchard Field",
+   "type": "message",
+   "ts": "1747757365.544879",
+   "bot_id": "BLFK8XZ1AEC",
+   "app_id": "AUFLEEC4WZN",
+   "trigger_id": "FtU9QZ3GCUZA",
+   "workflow_id": "WfSRKJ5G1EEP",
+   "thread_ts": "1747757365.544879",
+   "reply_count": 7,
+   "reply_users_count": 2,
+   "latest_reply": "1747763321.923019",
+   "reply_users": [
+    "UZYSGS7CBM8",
+    "U088GA0QSME"
+   ],
+   "is_locked": false,
+   "subscribed": false,
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "aar4t",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The checklist quietly changed the earlier draft.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "user",
+         "user_id": "U088GA0QSME"
+        },
+        {
+         "type": "text",
+         "text": "\nThis batch now covers a smaller slice."
+        },
+        {
+         "type": "text",
+         "text": "The ingest path quietly changed the numbers from Friday."
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "The staging cluster will be folded into the shared doc.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "The review landed ahead of the owner's sign-off."
+        },
+        {
+         "type": "text",
+         "text": "\n\n"
+        },
+        {
+         "type": "usergroup",
+         "usergroup_id": "S4BGCUYE1KZ"
+        },
+        {
+         "type": "text",
+         "text": " The schedule was split out of a."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "white_check_mark",
+     "users": [
+      "UM0CRECPWYK"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UZYSGS7CBM8",
+   "type": "message",
+   "ts": "1747759584.219419",
+   "client_msg_id": "213a8efa-0a20-33c1-6369-d2af229a1fb7",
+   "text": "The queue needs a second look from the follow-up thread, unless somebody objects. The rollback.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747757365.544879",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "wSa12",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The rollout is waiting on the owner's sign-off, unless somebody objects. The rollout quietly."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "U088GA0QSME",
+   "type": "message",
+   "ts": "1747759657.677759",
+   "client_msg_id": "3473bfad-3100-57bf-b001-b428a42975c6",
+   "text": "The queue rolls up into the earlier draft, once the numbers settle. The queue was.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747757365.544879",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "EKECj",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The retry budget rolls up into next week's window, either way. The."
+        },
+        {
+         "type": "emoji",
+         "name": "Leonidas Kingsmill",
+         "unicode": "1f606"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "flint_desk",
+     "users": [
+      "UZYSGS7CBM8"
+     ],
+     "count": 1
+    },
+    {
+     "name": "eyes",
+     "users": [
+      "UZYSGS7CBM8"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "U088GA0QSME",
+   "type": "message",
+   "ts": "1747759677.781149",
+   "edited": {
+    "user": "U088GA0QSME",
+    "ts": "1747759684.000000"
+   },
+   "client_msg_id": "7a2ae870-10e6-767c-0af6-adaf89ddcfde",
+   "text": "The rollback plan was split out of the follow-up thread, as discussed.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747757365.544879",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "tFB7g",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The schedule should unblock the agreed cutoff, once the numbers settle."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "U088GA0QSME",
+   "type": "message",
+   "ts": "1747759716.629979",
+   "client_msg_id": "98bc2efc-ed99-e966-1710-2107faf0a585",
+   "text": "The schedule still blocks one more round.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747757365.544879",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "vjJqb",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The migration was split out of next."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "UZYSGS7CBM8",
+   "type": "message",
+   "ts": "1747759874.975489",
+   "client_msg_id": "97107408-393f-68ab-ca2a-a636262df7be",
+   "text": "The draft is waiting on next week's window.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747757365.544879",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "O7zgw",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "This batch depends on the agreed cutoff."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "U088GA0QSME",
+   "type": "message",
+   "ts": "1747759935.677189",
+   "client_msg_id": "a5ad625a-031d-a08b-16f5-43f045a9708b",
+   "text": "The ingest path will be folded into the.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747757365.544879",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "qEJqm",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The queue was split out of the earlier draft."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "user": "U088GA0QSME",
+   "type": "message",
+   "ts": "1747763321.923019",
+   "client_msg_id": "52237abe-ff5a-cb5f-8760-7ef083511609",
+   "text": "This batch depends on the <@UZYSGS7CBM8> owner's sign-off.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747757365.544879",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "4dl08",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The new index landed ahead of the second pass."
+        },
+        {
+         "type": "user",
+         "user_id": "UZYSGS7CBM8"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "coral_yard",
+     "users": [
+      "UZYSGS7CBM8"
+     ],
+     "count": 1
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

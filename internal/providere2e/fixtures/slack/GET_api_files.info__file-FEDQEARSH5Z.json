@@ -1,0 +1,92 @@
+{
+ "ok": true,
+ "file": {
+  "id": "FEDQEARSH5Z",
+  "created": 1789498537,
+  "timestamp": 1789498537,
+  "mimetype": "image/png",
+  "filetype": "png",
+  "pretty_type": "PNG",
+  "user": "UT0Y90KCSPH",
+  "user_team": "T0ADATEAM01",
+  "editable": false,
+  "size": 218105,
+  "mode": "hosted",
+  "is_external": false,
+  "external_type": "",
+  "is_public": true,
+  "public_url_shared": false,
+  "display_as_bot": false,
+  "username": "",
+  "name": "The Draft now covers the follow-up",
+  "title": "The Schedule now covers the shared doc",
+  "is_modified_by_ai": false,
+  "url_private": "https://files.slack.com/files-pri/ZKsfTUJ35YUDrRhCKUZl6vP/screenshot_2026-09-15_at_2.55.30___pm.png",
+  "url_private_download": "https://files.slack.com/files-pri/ZKsfTUJ35YUDrRhCKUZl6vP/download/screenshot_2026-09-15_at_2.55.30___pm.png",
+  "media_display_type": "unknown",
+  "thumb_64": "https://files.slack.com/files-tmb/SddE8AVMGlU3vSo3wLlraQZKeyu2pcJmfV/screenshot_2026-09-15_at_2.55.30___pm_64.png",
+  "thumb_80": "https://files.slack.com/files-tmb/SddE8AVMGlU3vSo3wLlraQZKeyu2pcJmfV/screenshot_2026-09-15_at_2.55.30___pm_80.png",
+  "thumb_360": "https://files.slack.com/files-tmb/SddE8AVMGlU3vSo3wLlraQZKeyu2pcJmfV/screenshot_2026-09-15_at_2.55.30___pm_360.png",
+  "thumb_360_w": 360,
+  "thumb_360_h": 57,
+  "thumb_480": "https://files.slack.com/files-tmb/SddE8AVMGlU3vSo3wLlraQZKeyu2pcJmfV/screenshot_2026-09-15_at_2.55.30___pm_480.png",
+  "thumb_480_w": 480,
+  "thumb_480_h": 76,
+  "thumb_160": "https://files.slack.com/files-tmb/SddE8AVMGlU3vSo3wLlraQZKeyu2pcJmfV/screenshot_2026-09-15_at_2.55.30___pm_160.png",
+  "thumb_720": "https://files.slack.com/files-tmb/SddE8AVMGlU3vSo3wLlraQZKeyu2pcJmfV/screenshot_2026-09-15_at_2.55.30___pm_720.png",
+  "thumb_720_w": 720,
+  "thumb_720_h": 114,
+  "thumb_800": "https://files.slack.com/files-tmb/SddE8AVMGlU3vSo3wLlraQZKeyu2pcJmfV/screenshot_2026-09-15_at_2.55.30___pm_800.png",
+  "thumb_800_w": 800,
+  "thumb_800_h": 127,
+  "thumb_960": "https://files.slack.com/files-tmb/SddE8AVMGlU3vSo3wLlraQZKeyu2pcJmfV/screenshot_2026-09-15_at_2.55.30___pm_960.png",
+  "thumb_960_w": 960,
+  "thumb_960_h": 152,
+  "thumb_1024": "https://files.slack.com/files-tmb/SddE8AVMGlU3vSo3wLlraQZKeyu2pcJmfV/screenshot_2026-09-15_at_2.55.30___pm_1024.png",
+  "thumb_1024_w": 1024,
+  "thumb_1024_h": 162,
+  "original_w": 3210,
+  "original_h": 508,
+  "thumb_tiny": "Lg84S+Lrt7Bl18CvAuYkqkhLyvKoYNbIfut3sYi4XBkE9vd7AmAbEZ+p",
+  "permalink": "https://zephyr-lane.slack.com/files/adalovelace/FEDQEARSH5Z/screenshot_2026-09-15_at_2.55.30___pm.png",
+  "permalink_public": "https://brightsea.example/UOShDRTuwRdVQsanyT716YDFEjLp7nf99o",
+  "is_starred": false,
+  "shares": {
+   "public": {
+    "CSP27K97J3K": [
+     {
+      "ts": "1747680939.545809",
+      "channel_name": "pewter-room",
+      "team_id": "T0ADATEAM01",
+      "share_user_id": "UT0Y90KCSPH",
+      "source": "UNKNOWN",
+      "is_silent_share": false,
+      "reply_users": [
+       "UT0Y90KCSPH",
+       "UM0CRECPWYK",
+       "UZYSGS7CBM8",
+       "U00"
+      ],
+      "reply_users_count": 4,
+      "reply_count": 35,
+      "latest_reply": "1747771357.537059",
+      "thread_ts": "1747680178.877549"
+     }
+    ]
+   }
+  },
+  "channels": [
+   "CSP27K97J3K"
+  ],
+  "groups": [],
+  "ims": [],
+  "has_more_shares": false,
+  "has_rich_preview": false,
+  "file_access": "visible",
+  "comments_count": 0
+ },
+ "comments": [],
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

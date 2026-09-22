@@ -1,0 +1,61 @@
+{
+ "ok": true,
+ "user": {
+  "id": "UJ1F55QHCRR",
+  "name": "sabraus-yewtree-rhys",
+  "is_bot": false,
+  "updated": 1789150271,
+  "is_app_user": false,
+  "team_id": "T0ADATEAM01",
+  "deleted": false,
+  "color": "8469bc",
+  "is_email_confirmed": true,
+  "real_name": "Emberus Prendergast-Rhys",
+  "tz": "Europe/Berlin",
+  "tz_label": "Central European Summer Time",
+  "tz_offset": 7200,
+  "is_admin": false,
+  "is_owner": false,
+  "is_primary_owner": false,
+  "is_restricted": false,
+  "is_ultra_restricted": false,
+  "has_2fa": false,
+  "who_can_share_contact_card": "EVERYONE",
+  "profile": {
+   "real_name": "Emberus Prendergast-Rhys",
+   "display_name": "Torinus Wexford-Rhys",
+   "avatar_hash": "931d529ae70f",
+   "real_name_normalized": "Emberus Prendergast-Rhys",
+   "display_name_normalized": "Torinus Wexford-Rhys",
+   "image_24": "https://avatars.slack-edge.com/2026-08-10/99598271884119_f6dfc32b40d49832040e_24.png",
+   "image_32": "https://avatars.slack-edge.com/2026-08-10/99598271884119_f6dfc32b40d49832040e_32.png",
+   "image_48": "https://avatars.slack-edge.com/2026-08-10/99598271884119_f6dfc32b40d49832040e_48.png",
+   "image_72": "https://avatars.slack-edge.com/2026-08-10/99598271884119_f6dfc32b40d49832040e_72.png",
+   "image_192": "https://avatars.slack-edge.com/2026-08-10/99598271884119_f6dfc32b40d49832040e_192.png",
+   "image_512": "https://avatars.slack-edge.com/2026-08-10/99598271884119_f6dfc32b40d49832040e_512.png",
+   "image_1024": "https://avatars.slack-edge.com/2026-08-10/99598271884119_f6dfc32b40d49832040e_1024.png",
+   "image_original": "https://avatars.slack-edge.com/2026-08-10/99598271884119_f6dfc32b40d49832040e_original.png",
+   "is_custom_image": true,
+   "first_name": "Torinus Wexford-Rhys",
+   "last_name": "Tov Zenner-Hale",
+   "team": "T0ADATEAM01",
+   "email": "gildaus@zephyr-lane.example",
+   "title": "This Batch depends on",
+   "phone": "+99 5673748268",
+   "skype": "",
+   "status_text": "The Retry",
+   "status_text_canonical": "",
+   "status_emoji": ":dart:",
+   "status_emoji_display_info": [
+    {
+     "emoji_name": "dart",
+     "display_url": "https://a.slack-edge.com/production-standard-emoji-assets/16.0/apple-large/1f3af.png",
+     "unicode": "1f3af"
+    }
+   ],
+   "status_expiration": 0,
+   "huddle_state": "default_unset",
+   "huddle_state_expiration_ts": 0
+  }
+ }
+}

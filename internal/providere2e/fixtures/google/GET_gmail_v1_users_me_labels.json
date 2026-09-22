@@ -1,0 +1,175 @@
+{
+ "labels": [
+  {
+   "id": "CHAT",
+   "name": "CHAT",
+   "messageListVisibility": "hide",
+   "labelListVisibility": "labelShow",
+   "type": "system"
+  },
+  {
+   "id": "SENT",
+   "name": "SENT",
+   "messageListVisibility": "hide",
+   "labelListVisibility": "labelShow",
+   "type": "system"
+  },
+  {
+   "id": "INBOX",
+   "name": "INBOX",
+   "messageListVisibility": "hide",
+   "labelListVisibility": "labelShow",
+   "type": "system"
+  },
+  {
+   "id": "VFQKRDJQD",
+   "name": "VFQKRDJQD",
+   "messageListVisibility": "hide",
+   "labelListVisibility": "labelShow",
+   "type": "system"
+  },
+  {
+   "id": "TRASH",
+   "name": "TRASH",
+   "messageListVisibility": "hide",
+   "labelListVisibility": "labelShow",
+   "type": "system"
+  },
+  {
+   "id": "DRAFT",
+   "name": "DRAFT",
+   "messageListVisibility": "hide",
+   "labelListVisibility": "labelShow",
+   "type": "system"
+  },
+  {
+   "id": "SPAM",
+   "name": "SPAM",
+   "messageListVisibility": "hide",
+   "labelListVisibility": "labelShow",
+   "type": "system"
+  },
+  {
+   "id": "RBHPOGOG_SDXLSH",
+   "name": "RBHPOGOG_SDXLSH",
+   "messageListVisibility": "hide",
+   "labelListVisibility": "labelShow",
+   "type": "system"
+  },
+  {
+   "id": "JOMCLDKQ_KBMDUQI",
+   "name": "JOMCLDKQ_KBMDUQI",
+   "type": "system"
+  },
+  {
+   "id": "OGRPGRXN_HZBUUEYW",
+   "name": "OGRPGRXN_HZBUUEYW",
+   "type": "system"
+  },
+  {
+   "id": "COHLTLBO_DFVGKCXBXV",
+   "name": "COHLTLBO_DFVGKCXBXV",
+   "messageListVisibility": "hide",
+   "labelListVisibility": "labelShow",
+   "type": "system"
+  },
+  {
+   "id": "EJJWMHZM_KHAHZS",
+   "name": "EJJWMHZM_KHAHZS",
+   "messageListVisibility": "hide",
+   "labelListVisibility": "labelShow",
+   "type": "system"
+  },
+  {
+   "id": "CQLTH_KVGWQS",
+   "name": "CQLTH_KVGWQS",
+   "type": "system"
+  },
+  {
+   "id": "CKT_EBVWHW",
+   "name": "CKT_EBVWHW",
+   "type": "system"
+  },
+  {
+   "id": "FQTB_VJOA",
+   "name": "FQTB_VJOA",
+   "type": "system"
+  },
+  {
+   "id": "ZBNVKO_BKLM",
+   "name": "ZBNVKO_BKLM",
+   "type": "system"
+  },
+  {
+   "id": "STARRED",
+   "name": "STARRED",
+   "messageListVisibility": "hide",
+   "labelListVisibility": "labelShow",
+   "type": "system"
+  },
+  {
+   "id": "UNREAD",
+   "name": "UNREAD",
+   "type": "system"
+  },
+  {
+   "id": "Oltpq_13",
+   "name": "The Retry",
+   "messageListVisibility": "show",
+   "labelListVisibility": "labelShow",
+   "type": "user",
+   "color": {
+    "textColor": "#ffffff",
+    "backgroundColor": "#9fc5e8"
+   }
+  },
+  {
+   "id": "Tzmnh_39",
+   "name": "The",
+   "messageListVisibility": "show",
+   "labelListVisibility": "labelShow",
+   "type": "user"
+  },
+  {
+   "id": "Qwrcd_9842206042306890048",
+   "name": "The Ingest",
+   "type": "user"
+  },
+  {
+   "id": "Gbjiz_71",
+   "name": "The Review",
+   "messageListVisibility": "show",
+   "labelListVisibility": "labelShow",
+   "type": "user"
+  },
+  {
+   "id": "Dhmth_69",
+   "name": "The New",
+   "messageListVisibility": "hide",
+   "labelListVisibility": "labelHide",
+   "type": "user"
+  },
+  {
+   "id": "Wqavh_95",
+   "name": "The Review quietly changed",
+   "messageListVisibility": "show",
+   "labelListVisibility": "labelShow",
+   "type": "user",
+   "color": {
+    "textColor": "#434343",
+    "backgroundColor": "#cccccc"
+   }
+  },
+  {
+   "id": "Isuwn_87",
+   "name": "The",
+   "messageListVisibility": "show",
+   "labelListVisibility": "labelShow",
+   "type": "user",
+   "color": {
+    "textColor": "#434343",
+    "backgroundColor": "#ffbc6b"
+   }
+  }
+ ]
+}

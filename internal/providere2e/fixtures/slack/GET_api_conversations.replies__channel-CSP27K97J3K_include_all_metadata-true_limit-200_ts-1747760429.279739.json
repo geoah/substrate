@@ -1,0 +1,336 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "subtype": "bot_message",
+   "text": "The migration <@UEU8LAYYDN3> was split out of next week's window.\n\nThe estimate should unblock the earlier draft.\nThe dashboard needs a.\nThe estimate now.\nThe checklist landed ahead of the shared <!subteam^S4BGCUYE1KZ> doc, for now. The draft.\n\n The checklist quietly changed the open.",
+   "username": "Orchard Field",
+   "type": "message",
+   "ts": "1747760429.279739",
+   "bot_id": "BLFK8XZ1AEC",
+   "app_id": "AUFLEEC4WZN",
+   "trigger_id": "FtU9QZ3GCUZA",
+   "workflow_id": "WfSRKJ5G1EEP",
+   "thread_ts": "1747760429.279739",
+   "reply_count": 6,
+   "reply_users_count": 2,
+   "latest_reply": "1747764306.651989",
+   "reply_users": [
+    "UM0CRECPWYK",
+    "UEU8LAYYDN3"
+   ],
+   "is_locked": false,
+   "subscribed": false,
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "PgCqb",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The checklist quietly changed the earlier draft.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "user",
+         "user_id": "UEU8LAYYDN3"
+        },
+        {
+         "type": "text",
+         "text": "\nThis batch now covers a smaller slice."
+        },
+        {
+         "type": "text",
+         "text": "The migration landed ahead."
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "The staging cluster will be folded into the shared doc.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "This batch should unblock the second pass, for now. The schedule."
+        },
+        {
+         "type": "text",
+         "text": "\n\n"
+        },
+        {
+         "type": "usergroup",
+         "usergroup_id": "S4BGCUYE1KZ"
+        },
+        {
+         "type": "text",
+         "text": " The schedule was split out of a."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "UM0CRECPWYK",
+   "type": "message",
+   "ts": "1747761834.159099",
+   "client_msg_id": "3afa9ce0-b101-87a1-034b-39adedfcaae6",
+   "text": "Quick <@UEU8LAYYDN3> note: The estimate was split out of the follow-up thread, if nothing else moves. The staging cluster is waiting on the follow-up thread, either way. The retry budget will be folded into the follow-up thread.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747760429.279739",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "YPTnm",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The handover quietly changed the open question."
+        },
+        {
+         "type": "user",
+         "user_id": "UEU8LAYYDN3"
+        },
+        {
+         "type": "text",
+         "text": "Summary: The dashboard was split out of the second pass, after the handover. The rollback plan was split out of the earlier draft, after the handover. The checklist should unblock the shared doc."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "tidal_yard",
+     "users": [
+      "UEU8LAYYDN3"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UEU8LAYYDN3",
+   "type": "message",
+   "ts": "1747762099.626679",
+   "client_msg_id": "94D3E884-D47C-6668-F2DB-D447781998FC",
+   "text": "One thing: The retry budget rolls up into the capacity note, before the window closes. The retry budget should.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747760429.279739",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "2Sc5v",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "Quick note: The estimate landed ahead of the numbers from Friday, pending one more read. The migration should."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "user": "UEU8LAYYDN3",
+   "type": "message",
+   "ts": "1747762113.884859",
+   "client_msg_id": "0c3c5aa2-3918-6f54-ef88-9fccbb4041fd",
+   "text": "The dashboard still blocks one more round of checks, once the numbers settle.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747760429.279739",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "wsHOT",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The rollout landed ahead of the shared doc, after the handover. The staging."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   }
+  },
+  {
+   "text": "",
+   "files": [
+    {
+     "id": "FN4UDW0X7SG",
+     "created": 1789579723,
+     "timestamp": 1789579723,
+     "mimetype": "image/jpeg",
+     "filetype": "jpg",
+     "pretty_type": "JPEG",
+     "user": "UEU8LAYYDN3",
+     "user_team": "T0ADATEAM01",
+     "editable": false,
+     "size": 2192378,
+     "mode": "hosted",
+     "is_external": false,
+     "external_type": "",
+     "is_public": true,
+     "public_url_shared": false,
+     "display_as_bot": false,
+     "username": "",
+     "name": "The Retry",
+     "title": "This Batch",
+     "is_modified_by_ai": false,
+     "url_private": "https://files.slack.com/files-pri/z0FV8ii1l4LNPHEXbkeMFsq/fn4udw0x7sg_8155.jpg",
+     "url_private_download": "https://files.slack.com/files-pri/z0FV8ii1l4LNPHEXbkeMFsq/download/fn4udw0x7sg_8155.jpg",
+     "media_display_type": "unknown",
+     "thumb_64": "https://files.slack.com/files-tmb/g4d5YM8mgfBIWp9FUMSAKSSeSO93hnzpGs/fn4udw0x7sg_64.jpg",
+     "thumb_80": "https://files.slack.com/files-tmb/g4d5YM8mgfBIWp9FUMSAKSSeSO93hnzpGs/fn4udw0x7sg_80.jpg",
+     "thumb_360": "https://files.slack.com/files-tmb/g4d5YM8mgfBIWp9FUMSAKSSeSO93hnzpGs/fn4udw0x7sg_360.jpg",
+     "thumb_360_w": 270,
+     "thumb_360_h": 360,
+     "thumb_480": "https://files.slack.com/files-tmb/g4d5YM8mgfBIWp9FUMSAKSSeSO93hnzpGs/fn4udw0x7sg_480.jpg",
+     "thumb_480_w": 360,
+     "thumb_480_h": 480,
+     "thumb_160": "https://files.slack.com/files-tmb/g4d5YM8mgfBIWp9FUMSAKSSeSO93hnzpGs/fn4udw0x7sg_160.jpg",
+     "thumb_720": "https://files.slack.com/files-tmb/g4d5YM8mgfBIWp9FUMSAKSSeSO93hnzpGs/fn4udw0x7sg_720.jpg",
+     "thumb_720_w": 540,
+     "thumb_720_h": 720,
+     "thumb_800": "https://files.slack.com/files-tmb/g4d5YM8mgfBIWp9FUMSAKSSeSO93hnzpGs/fn4udw0x7sg_800.jpg",
+     "thumb_800_w": 800,
+     "thumb_800_h": 1067,
+     "thumb_960": "https://files.slack.com/files-tmb/g4d5YM8mgfBIWp9FUMSAKSSeSO93hnzpGs/fn4udw0x7sg_960.jpg",
+     "thumb_960_w": 720,
+     "thumb_960_h": 960,
+     "thumb_1024": "https://files.slack.com/files-tmb/g4d5YM8mgfBIWp9FUMSAKSSeSO93hnzpGs/fn4udw0x7sg_1024.jpg",
+     "thumb_1024_w": 768,
+     "thumb_1024_h": 1024,
+     "original_w": 4284,
+     "original_h": 5712,
+     "thumb_tiny": "ThT4At1b/Aq6/jJYl3+7KSy9+xXXTjFDWlfGq5RxtM9XlGyxShFdlKEqx0jex81S0l/OXXJZn2BgRckr2V0CGOmBsYXONgBjzs4a/rG0BfHf50GL0PK9JihErrU8zUMV8IDSevvjYTzfOpNvmU6tFBYJq+DG0sBfrsLARlibgcCceoQa2Gj5PO9DOWbwqZi9Fu87vq6ktCveoDfWCzCqbmNZGrxJtx057yCjtrRjtH1imegSZzDZrtAjvq3uSFCwLNC5gJRumQ7nFL6TO6+eJXXOPGPCiw1P6DK9wd32oA37n/V8PJrQulORsvrDKoGDvI/3mk0j0jlKYH==",
+     "permalink": "https://zephyr-lane.slack.com/files/adalovelace/FN4UDW0X7SG/fn4udw0x7sg_8155.jpg",
+     "permalink_public": "https://brightsea.example/FN4UDW0X7SG",
+     "is_starred": false,
+     "skipped_shares": true,
+     "has_rich_preview": false,
+     "file_access": "visible"
+    }
+   ],
+   "upload": false,
+   "user": "UEU8LAYYDN3",
+   "display_as_bot": false,
+   "type": "message",
+   "ts": "1747762130.498829",
+   "client_msg_id": "3951477E-B62C-36D6-2A6C-4CEF3A542590",
+   "thread_ts": "1747760429.279739"
+  },
+  {
+   "user": "UM0CRECPWYK",
+   "type": "message",
+   "ts": "1747763774.095119",
+   "client_msg_id": "6afaf5c7-cb15-2d84-46a8-4d68950a34b9",
+   "text": "The draft quietly.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747760429.279739",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "vSTOD",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The migration now."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "reactions": [
+    {
+     "name": "tidal_yard",
+     "users": [
+      "UEU8LAYYDN3"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UEU8LAYYDN3",
+   "type": "message",
+   "ts": "1747764306.651989",
+   "client_msg_id": "C9ED54D6-98E7-E9A4-FA2E-12F2AD591A5B",
+   "text": "The estimate depends on the capacity note.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747760429.279739",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "F4lOD",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The staging cluster still blocks the earlier draft."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

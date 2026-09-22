@@ -1,0 +1,179 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "subtype": "bot_message",
+   "text": "The retry <@U3AY5MCM4RU> budget will be folded into the open question.\n\nThe estimate now covers next week's window.\nThe migration should unblock the open question, if nothing else moves.\nThe handover depends.\nThe review should unblock the capacity note, either way. The queue <!subteam^S4BGCUYE1KZ> is waiting on a smaller slice.\n\n The rollback plan quietly changed the.",
+   "username": "Orchard Field",
+   "type": "message",
+   "ts": "1747753469.141819",
+   "bot_id": "BLFK8XZ1AEC",
+   "app_id": "AUFLEEC4WZN",
+   "trigger_id": "FtU9QZ3GCUZA",
+   "workflow_id": "WfSRKJ5G1EEP",
+   "thread_ts": "1747753469.141819",
+   "reply_count": 2,
+   "reply_users_count": 1,
+   "latest_reply": "1747754036.303849",
+   "reply_users": [
+    "UZYSGS7CBM8"
+   ],
+   "is_locked": false,
+   "subscribed": false,
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "lZw24",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The checklist quietly changed the earlier draft.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "user",
+         "user_id": "U3AY5MCM4RU"
+        },
+        {
+         "type": "text",
+         "text": "\nThis batch now covers a smaller slice."
+        },
+        {
+         "type": "text",
+         "text": "The migration depends on the agreed cutoff, assuming the counts hold."
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "The staging cluster will be folded into the shared doc.",
+         "style": {
+          "bold": true
+         }
+        },
+        {
+         "type": "text",
+         "text": "\n"
+        },
+        {
+         "type": "text",
+         "text": "The estimate now covers the follow-up thread, after the handover. The estimate was split out."
+        },
+        {
+         "type": "text",
+         "text": "\n\n"
+        },
+        {
+         "type": "usergroup",
+         "usergroup_id": "S4BGCUYE1KZ"
+        },
+        {
+         "type": "text",
+         "text": " The schedule was split out of a."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "white_check_mark",
+     "users": [
+      "UZYSGS7CBM8"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UZYSGS7CBM8",
+   "type": "message",
+   "ts": "1747754018.814339",
+   "client_msg_id": "73a6d4cf-79ee-fad2-0548-81cd65b8bd50",
+   "text": "One thing: The queue still blocks the agreed cutoff, if nothing else moves. The rollout landed ahead of the owner's sign-off, as discussed. The handover now covers a smaller slice, for now. The new index needs a second look from the owner's sign-off.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747753469.141819",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "NjPGl",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "One thing: The staging cluster quietly changed one more round of checks, as discussed. The new index still blocks the open question, unless somebody objects. The handover landed ahead of the capacity note, unless somebody objects. The checklist still blocks the numbers from Friday."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "language": {
+    "locale": "en",
+    "is_reliable": true
+   },
+   "reactions": [
+    {
+     "name": "tidal_yard",
+     "users": [
+      "U3AY5MCM4RU"
+     ],
+     "count": 1
+    }
+   ]
+  },
+  {
+   "user": "UZYSGS7CBM8",
+   "type": "message",
+   "ts": "1747754036.303849",
+   "client_msg_id": "bdbac64a-bac0-3541-c587-2077e5a8d0c5",
+   "text": "The retry budget quietly changed the open question, pending one more read.",
+   "team": "T0ADATEAM01",
+   "thread_ts": "1747753469.141819",
+   "blocks": [
+    {
+     "type": "rich_text",
+     "block_id": "4vyh2",
+     "elements": [
+      {
+       "type": "rich_text_section",
+       "elements": [
+        {
+         "type": "text",
+         "text": "The draft is waiting on the numbers from Friday."
+        },
+        {
+         "type": "emoji",
+         "name": "Beatrijs Abernathy",
+         "unicode": "1f642"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "has_more": false,
+ "response_metadata": {
+  "next_cursor": ""
+ }
+}

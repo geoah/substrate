@@ -1,0 +1,203 @@
+{
+ "id": "!rU1RmkbGOHn3Ub7GFSRX:beeper.local",
+ "localChatID": "20423",
+ "accountID": "signal",
+ "network": "Signal",
+ "title": "spruce",
+ "description": "",
+ "imgURL": "/Users/sdtqu/Library/Application Support/BeeperTexts/media/local.beeper.com/iuyfj_f7gIfju1zteaAJXBBe0CANBGsR1ajohoNrfhozw6GjJnYkxvEqqKNWJvaKQjxQlO",
+ "type": "group",
+ "isReadOnly": false,
+ "participants": {
+  "items": [
+   {
+    "id": "@signal_4411992a-sr04-5r87-484j-pnpf368mz226:beeper.local",
+    "phoneNumber": "+99 5833342041",
+    "fullName": "Hollis Innsbrook",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/ewdwr_TPbmGO37qKKV4KhSAGwogVuLk0wycrvuqJj54H2cXIL6WIxgcI4lCni3cqc9kOPp",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@signal_s327as3u-4v66-5m99-f754-92n5zp448735:beeper.local",
+    "phoneNumber": "+99 5535274568",
+    "fullName": "Anastasia Upshaw",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/hpamb_B3nloIwKBWamlgFPLXm4IbDfOQYMLFjVxQ9lOWqT4ISXrzHINXMSYvRzmAEoBrye",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@signal_9ewqm197-k7x3-2780-ew51-fw61b72c78i2:beeper.local",
+    "fullName": "Casimira Danforth",
+    "imgURL": "file:///Users/sdtqu/Library/Application%20Support/BeeperTexts/media/local.beeper.com/usldi_cbEN1LzPYOD60Y6mG0eK5bMbPtl1ahQwz9EF3TqocwSRijOPLu5IKeKaWIYTigl2",
+    "cannotMessage": false,
+    "isSelf": false,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   },
+   {
+    "id": "@adalovelace:beeper.com",
+    "fullName": "Ada Lovelace",
+    "cannotMessage": false,
+    "isSelf": true,
+    "isAdmin": false,
+    "isPending": false,
+    "isNetworkBot": false
+   }
+  ],
+  "hasMore": false,
+  "total": 4
+ },
+ "lastActivity": "2026-09-16T07:40:16.121Z",
+ "unreadCount": 0,
+ "unreadMentionsCount": 0,
+ "lastReadMessageSortKey": "778168",
+ "draft": null,
+ "reminder": null,
+ "snooze": null,
+ "isArchived": false,
+ "isMarkedUnread": false,
+ "isMuted": false,
+ "isPinned": true,
+ "isLowPriority": false,
+ "messageExpirySeconds": null,
+ "capabilities": {
+  "formatting": {
+   "blockquote": 1,
+   "bold": 2,
+   "code_block": 2,
+   "headers": 1,
+   "inline_code": 2,
+   "inline_link": 1,
+   "italic": 2,
+   "ordered_list": 1,
+   "ordered_list.start": 1,
+   "spoiler": 2,
+   "strikethrough": 2,
+   "unordered_list": 1,
+   "user_link": 2
+  },
+  "attachments": {
+   "fi.mau.gif": {
+    "mimeTypes": {
+     "image/gif": 2,
+     "video/mp4": 2
+    },
+    "caption": 2,
+    "maxSize": 104857600
+   },
+   "m.audio": {
+    "mimeTypes": {
+     "audio/aac": 2,
+     "audio/flac": 2,
+     "audio/mp3": 2,
+     "audio/mpeg": 2
+    },
+    "maxSize": 104857600
+   },
+   "m.file": {
+    "mimeTypes": {
+     "*/*": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 2000,
+    "maxSize": 104857600
+   },
+   "m.image": {
+    "mimeTypes": {
+     "image/avif": 2,
+     "image/bmp": 2,
+     "image/gif": 2,
+     "image/jpeg": 2,
+     "image/png": 2,
+     "image/webp": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 2000,
+    "maxSize": 104857600,
+    "maxWidth": 4096,
+    "maxHeight": 4096
+   },
+   "m.sticker": {
+    "mimeTypes": {
+     "image/apng": 2,
+     "image/gif": 1,
+     "image/png": 2,
+     "image/webp": 1
+    },
+    "caption": -1,
+    "maxSize": 104857600
+   },
+   "m.video": {
+    "mimeTypes": {
+     "video/mp4": 2,
+     "video/ogg": 2,
+     "video/webm": 2
+    },
+    "caption": 2,
+    "maxCaptionLength": 2000,
+    "maxSize": 104857600
+   },
+   "dqt.dagosh.kxp1276.voice": {
+    "mimeTypes": {
+     "audio/aac": 2,
+     "audio/ogg": 1
+    },
+    "caption": -1,
+    "maxSize": 104857600,
+    "maxDuration": 3600
+   }
+  },
+  "maxTextLength": 2000,
+  "locationMessage": 1,
+  "poll": 2,
+  "reply": 2,
+  "edit": 2,
+  "editMaxCount": 10,
+  "editMaxAge": 86400,
+  "delete": 2,
+  "deleteMaxAge": 86400,
+  "messageRequest": {
+   "acceptWithMessage": 1,
+   "acceptWithButton": 2
+  },
+  "reaction": 2,
+  "reactionCount": 1,
+  "disappearingTimer": {
+   "types": [
+    "afterRead"
+   ]
+  },
+  "readReceipts": true,
+  "typingNotifications": true,
+  "deleteChat": true,
+  "participantActions": {
+   "ban": 2,
+   "invite": 2,
+   "kick": 2,
+   "leave": 2,
+   "revokeInvite": 2
+  },
+  "state": {
+   "disappearingTimer": {
+    "level": 2
+   },
+   "avatar": {
+    "level": 2
+   },
+   "title": {
+    "level": 2
+   },
+   "description": {
+    "level": 2
+   }
+  }
+ }
+}

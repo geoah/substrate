@@ -1,0 +1,760 @@
+{
+ "people": [
+  {
+   "resourceName": "people/652286493603673878654",
+   "etag": "%EiMBAgMFBgcICQoLDA0ODxATFBUWGSEiIyQlJicuNDU3PT4/QBoDAQcI",
+   "metadata": {
+    "sources": [
+     {
+      "type": "PROFILE",
+      "id": "652286493603673878654",
+      "etag": "#alkaj5dFsdA=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER",
+        "GOOGLE_APPS_USER"
+       ]
+      },
+      "updateTime": "2026-09-17T17:31:17.990703Z"
+     },
+     {
+      "type": "DOMAIN_PROFILE",
+      "id": "652286493603673878654",
+      "etag": "#alkaj5dFsdA=",
+      "updateTime": "2026-09-17T17:31:17.990703Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "locales": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "652286493603673878654"
+      }
+     },
+     "value": "en"
+    }
+   ],
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "652286493603673878654"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Zeb Norbury",
+     "familyName": "Nadiaine Ufford-Vance",
+     "givenName": "Rui Underhill-Frost",
+     "displayNameLastFirst": "Oriel Pinewood",
+     "unstructuredName": "Zeb Norbury"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "PROFILE",
+       "id": "652286493603673878654"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/LIF-DzRcd95W0M0YAd7K2o6seab6f9B2vD6EaiXEM6MoCBEOzyI--Sh92mKQusYeleUhwg-WMCF7b5845EarwmN25YpSBJLv1Ecl0VG-oWN_554pNi1_HZvEH993fyW86bto3jkIce2htyDRAVgJbWKcRX2FM10dv8g-0ln0NBYWoJSq0QpYisx2Bcti13XdrjWUZq8vrMSunkiA9OHjMey-liyVGgQl5q7ZA_FAXMWJ3h-n0Kx-UH15NXRLxWi80yOUw3Eng82f1M8Nc5Oc4O1Zxlb3xddoC_RCWRCvlx-Rm2ObuztqObK0vJPhdaP0emZzimyo660BeYVXn-0neWtQEK41Ky9De3f52M8ym4yguMi_AbjOC-rZ0kbshfj7nC8H4WDM0vImNGmKbG0OOcWx0ng0igKowyf7xNJnsnlkEB-Zv27J66qLNrQvL-Nw0MBrNJK1w8DfwiPbOD8JngsNCru7ofVUmP_xippcPNnz2fCxT_QLGGbRWFA7-M6nqxv1q9LxQKg1Cz6qUo7zAOPH5NOl8KIhAXYvVxw8OFXQdJ4kxQwrfvYZmx9emkMKTwDfDzxjKfsfLuu6jK1yOSOxgxrY5jtL56_8UuCNNOqiQHrAmXGlyonNqwBJzICFcCR4c9dzWRMFDeaExWG5n1GWIBCafi9Uzed2qkYI0gOmaqC9ktDjshECae44U_1iNA1UugSbA20RCElvdNfnCHC3Hoe1PgcfbnscqPKOfZiKQShBNWid_uWZTp4V1XgHf15v1C2XgGGWoyNlK152ojQi2zmLkWD_RgW7ebdLFmSi4Brc1qKbPKqMyBMls7vRYtJ-PX4sFfnpX_2iKcjqif0_SAeppzjHJGBDRaSAnc3M2940ZOTcm6iclX2e1GpUkmcRf83C4GuuqjR_aKblGkjLFjTlTqhJl9G0tCsNWnZhO_lIFB6A7kr9dJOWqHB-C7FwZqPxDabkBkZ-fBbYHpF0S6KZlBQbgmPhbVTTNxdYXVKBi7aE71hWvjwg5fneaFMsRyW8kO3fnKtf-l1yyMg6osDHeT8TcNa3Yk-GWge8y1Jde6eFCyCvhE6HSGsQ9Wm95EBCjZMeM0EXDimFBIFVrF4=s100"
+    }
+   ],
+   "genders": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "652286493603673878654"
+      }
+     },
+     "value": "male",
+     "formattedValue": "Male"
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "verified": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "652286493603673878654"
+      },
+      "sourcePrimary": true
+     },
+     "value": "zeb@zephyr-lane.example"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "652286493603673878654"
+      }
+     },
+     "value": "+99 5944516018",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    }
+   ],
+   "organizations": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "652286493603673878654"
+      },
+      "sourcePrimary": true
+     },
+     "type": "work",
+     "formattedType": "Work",
+     "name": "Fernbank",
+     "department": "The",
+     "title": "This Batch depends on",
+     "location": "60 lumen hazel # 3, nimbus yarrow, NY 76869"
+    }
+   ],
+   "memberships": [
+    {
+     "metadata": {
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "652286493603673878654"
+      }
+     },
+     "domainMembership": {
+      "inViewerDomain": true
+     }
+    }
+   ],
+   "locations": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "652286493603673878654"
+      }
+     },
+     "value": "ember",
+     "type": "desk",
+     "buildingId": "37-9fu-Agc",
+     "floor": "3"
+    }
+   ]
+  },
+  {
+   "resourceName": "people/821850028311537986140",
+   "etag": "%EiMBAgMFBgcICQoLDA0ODxATFBUWGSEiIyQlJicuNDU3PT4/QBoDAQcI",
+   "metadata": {
+    "sources": [
+     {
+      "type": "PROFILE",
+      "id": "821850028311537986140",
+      "etag": "#W14l5z0KkJw=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER",
+        "GOOGLE_APPS_USER"
+       ]
+      },
+      "updateTime": "2026-09-16T23:07:45.732575Z"
+     },
+     {
+      "type": "DOMAIN_PROFILE",
+      "id": "821850028311537986140",
+      "etag": "#W14l5z0KkJw=",
+      "updateTime": "2026-09-16T23:07:45.732575Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "locales": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "821850028311537986140"
+      }
+     },
+     "value": "en"
+    }
+   ],
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "821850028311537986140"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Kipah Whitfield-Quill",
+     "familyName": "Xeniaa Kirkbride-Hale",
+     "givenName": "Cyus Netherwood6",
+     "displayNameLastFirst": "Mirren Drummond",
+     "unstructuredName": "Kipah Whitfield-Quill"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "PROFILE",
+       "id": "821850028311537986140"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/AEZ-SdMjkbTk1_xXbbIO0IYkJlv-EQZFn-OGd4SU8zkIicdF1kCcIPC7zNuvQtOEtUuB9OaEYnJfadxtTrUKv8dzV-AdezusG1rWx-fSG3mHm609nrGSkLDoewdxJgJBq4rcXzkY0VlKKxfav_dRU-Yk1TmMdENHfrGGp3oy21ppG9zFslJnP9AEg5VUtu1sUCsq8_srpMFG9xxUUo5Hhp6_Ev2s0_SEQVh93ESCU2sUYRZCtSfxNcRe7BqrFmc_02MZ807XurcuikKESL8NlumgvhBJ_0727m1O8jIBsqWtjBFbtwXAo_0qqQt2LbE6lEUGjX0V3qyCaLVmVhcQfLGoPwikUd8W2LthXVd_hqdwkAUhFwgoeMiCHwQP_DQYowOzc3Es92b6fdY-flO-SAE9XNHL7_Ea71vrlxHvc7TWh6ro6t7rYEyiy-2omGUQEoGdOcdHoqHf3goYxMPsOce6_yVx67N0kH1yRCv2SITsltAJlhhb-zWiZm-19Y7Js-Yr-9Q_LOJiHjgly9LlQz61fN5RdMexR0J8v3ASkEzbJ6EsQwr3YV9RKwqrmV_ddDnf8gfnfuT-wVhGXDUh_IflaRxaaQgzR0jOOXm9I0VDXLS_j57_X6yW_rKQVpgsZTxd8ebNk2N0OgMSXnxismMPg3n8G-WVDJfG-RHSYG7jmTON9nndkVncURFz39yu3XQyewdxEguZv7C8K_BI3poqI7KARRGbIkTVdTlNyZEvFzxzv6ijhP_v3R4reZSibRqewn3C-PvC2nPyhw21D8OVZvkArMi_g3UWOI9sLxwJanjkdpccjezAS5rtRo61lDWIFn3kBmzpBDWdBq94bcYO9da4_pTbTPiwj4Pu331O84-Hgwesh1_5EUEFift-NOnm3wW9kKs8vOFr_1An8IK54EJ7VRc46P499GoeeoQNkD18abouYd4pvZUbDNcJEodD1pIMV_tRoCiEW0p1aLOuzDeYDg6nEXiQ94Y32v3Ec34pFwC_pniU6UH_RnGH9Wdrd5eNhVzeAysemPihIuQHfnACRA7nFzkg69Rr708K23yfG_JfdAjvhrxPs3YzEvThX6-Ek6OeVdE4hsq5FEKZMRnu=s100"
+    }
+   ],
+   "genders": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "821850028311537986140"
+      }
+     },
+     "value": "male",
+     "formattedValue": "Male"
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "verified": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "821850028311537986140"
+      },
+      "sourcePrimary": true
+     },
+     "value": "selaah@zephyr-lane.example"
+    },
+    {
+     "metadata": {
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "821850028311537986140"
+      }
+     },
+     "value": "bo.quillfeather@inbox.example",
+     "type": "work",
+     "formattedType": "Work"
+    },
+    {
+     "metadata": {
+      "verified": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "821850028311537986140"
+      }
+     },
+     "value": "ariah.quillfeather-quill@zephyr-lane.example"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "821850028311537986140"
+      }
+     },
+     "value": "+99 5578619241",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    }
+   ],
+   "organizations": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "821850028311537986140"
+      },
+      "sourcePrimary": true
+     },
+     "type": "work",
+     "formattedType": "Work",
+     "name": "Fernbank",
+     "department": "The",
+     "title": "The Rollback Plan was"
+    }
+   ],
+   "memberships": [
+    {
+     "metadata": {
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "821850028311537986140"
+      }
+     },
+     "domainMembership": {
+      "inViewerDomain": true
+     }
+    }
+   ]
+  },
+  {
+   "resourceName": "people/973268535736932751744",
+   "etag": "%EiMBAgMFBgcICQoLDA0ODxATFBUWGSEiIyQlJicuNDU3PT4/QBoDAQcI",
+   "metadata": {
+    "sources": [
+     {
+      "type": "PROFILE",
+      "id": "973268535736932751744",
+      "etag": "#0mffnEkKzhk=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER",
+        "GOOGLE_APPS_USER"
+       ]
+      },
+      "updateTime": "2026-09-17T21:03:39.717567Z"
+     },
+     {
+      "type": "DOMAIN_PROFILE",
+      "id": "973268535736932751744",
+      "etag": "#0mffnEkKzhk=",
+      "updateTime": "2026-09-17T21:03:39.717567Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "locales": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "973268535736932751744"
+      }
+     },
+     "value": "en"
+    }
+   ],
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "973268535736932751744"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Xenia Verrinder",
+     "familyName": "Leonidas Westbrook",
+     "givenName": "Yusra4 Calloway6",
+     "displayNameLastFirst": "Casimira Jessop",
+     "unstructuredName": "Xenia Verrinder"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "PROFILE",
+       "id": "973268535736932751744"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/XFA-JwTr492WHRUI3SDazZQWxem4rPGOJywcR9zNRTL05INkkLeej1IsXyIoHVTXZ6zKtMN9l4jbNcy1AfdrNyqgwDj6nD9NV35sdS8Qs9lLCAC0ehBXZUBNMAGbSyRdjCxi5aZMvW6dU3cgeaxVxhKGb53VFMPEFW6yAFZmcPn12gSLTcn4KzOLd-JIUS9x9Vgh431ZQH6pTO6-pBIOwvoyYB9EAAOeqt4aM1FFA73I_e7RPDSQA25Hv4k3BdOYYEG0kNgiE6Qa8vLNVPdEQ9_SUXtHb4KKydhCqL0i0V1HgiqMjb5FgaikKJIwQTk_g-q8X6mU8nXL386hWKgChspQpHj6V-9o0-S5Lcbq6T3Im7OGiOVXQpmpMad3SSlEedJsYM7Zr0PATgal_cDmywn4oeCKkWO3sU9mO1PXMzyK5_1Q61dE7yces1--PbpysqPfd1uh7uXifNVZEUSzu-vik04k5Y9URo1wSNDRcWMGtLH0b-kKIuEOTE7BHM8FEsBhMCpPh3nHPzQ8EnpH3vc193Arn91XxeZwSGOc4LB37UwrQiwmtKwf63m4AgFWhXzmZ9zzL6wI0Tq9XyhqVNcJXUvaae464-NplV9pjc9zYCosCTU530NDEkKSQ0pJ_K3AkBy4oLoZFnpLc4SqPZMTYtgRJ0aeKLGn1ZFwGFiZLtnHEJ7rLEF94dCEahPTK_V-nkCws_IgEchm6O65AcwLdMCmiHMVFSmjy5cWdwGBr0eR8h2JCDFH2z0Sl75Nu0T5CMJcdmmiAyqX-mxv-9w7B41dPz909FymfXFjHCQx6ciDjJJb4vD0QaJv4_zBG5_d8g5TvFSVFsG59Y5z8jA7fwpNkARhzZ3oP014jtn9dW5r8Zavqr7SxrpPZMHivjEwZwS--RIEzE6UIrZuG-WHYa6IL86jEWXkfvJOuuvbTuACe2TmSPzJj3j3fZn_nntEI2Am1QU4GMTjSFWFxmmg7M3d2aHKMe7RuUhA8x4_ov5pF2kIYMpaAb42Dt8o_vvSQ3SBemVncwAcV2gL7nf1K2QhS6LGkRBqdD4Mrv9O52AGfc3c0cX1ykGo45rlCjO3aG_4yKRuZZrEzzs78iolLGw=s100"
+    }
+   ],
+   "genders": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "973268535736932751744"
+      }
+     },
+     "value": "male",
+     "formattedValue": "Male"
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "verified": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "973268535736932751744"
+      },
+      "sourcePrimary": true
+     },
+     "value": "elowen.zenner@zephyr-lane.example"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "973268535736932751744"
+      }
+     },
+     "value": "+99 5601860177",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    }
+   ],
+   "organizations": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "973268535736932751744"
+      },
+      "sourcePrimary": true
+     },
+     "type": "work",
+     "formattedType": "Work",
+     "name": "Fernbank",
+     "department": "The",
+     "title": "The Draft",
+     "location": "681 nimbus coral, onyx 5, indigo clover, CA 70683"
+    }
+   ],
+   "memberships": [
+    {
+     "metadata": {
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "973268535736932751744"
+      }
+     },
+     "domainMembership": {
+      "inViewerDomain": true
+     }
+    }
+   ],
+   "locations": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "973268535736932751744"
+      }
+     },
+     "value": "ember",
+     "type": "desk",
+     "buildingId": "IK Blvqbu",
+     "floor": "5"
+    }
+   ]
+  },
+  {
+   "resourceName": "people/593116141786341668464",
+   "etag": "%EiMBAgMFBgcICQoLDA0ODxATFBUWGSEiIyQlJicuNDU3PT4/QBoDAQcI",
+   "metadata": {
+    "sources": [
+     {
+      "type": "PROFILE",
+      "id": "593116141786341668464",
+      "etag": "#qZYK1tr6mIk=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER",
+        "GOOGLE_APPS_USER"
+       ]
+      },
+      "updateTime": "2026-09-17T20:15:54.577679Z"
+     },
+     {
+      "type": "DOMAIN_PROFILE",
+      "id": "593116141786341668464",
+      "etag": "#qZYK1tr6mIk=",
+      "updateTime": "2026-09-17T20:15:54.577679Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "locales": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "593116141786341668464"
+      }
+     },
+     "value": "en"
+    }
+   ],
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "593116141786341668464"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Joka Oakhurst-Crane",
+     "familyName": "Pima Ravensworth-Frost",
+     "givenName": "Jaeka Amberly-Crane",
+     "displayNameLastFirst": "Lior Yelverton",
+     "unstructuredName": "Joka Oakhurst-Crane"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "PROFILE",
+       "id": "593116141786341668464"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/BLD-HwKq_w_9xMthtMxvTpCmaYIrUa39e1KFQLwo2oGvCbIFws1WpgF=s100"
+    }
+   ],
+   "genders": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "593116141786341668464"
+      }
+     },
+     "value": "male",
+     "formattedValue": "Male"
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "verified": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "593116141786341668464"
+      },
+      "sourcePrimary": true
+     },
+     "value": "nilska@zephyr-lane.example"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "593116141786341668464"
+      }
+     },
+     "value": "+99 5267913431",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    }
+   ],
+   "organizations": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "593116141786341668464"
+      },
+      "sourcePrimary": true
+     },
+     "type": "work",
+     "formattedType": "Work",
+     "name": "Fernbank",
+     "department": "The",
+     "title": "The Staging Cluster",
+     "location": "526 fennel harbor, 377, granite, NY 08413"
+    }
+   ],
+   "memberships": [
+    {
+     "metadata": {
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "593116141786341668464"
+      }
+     },
+     "domainMembership": {
+      "inViewerDomain": true
+     }
+    }
+   ]
+  },
+  {
+   "resourceName": "people/277266237859805887384",
+   "etag": "%EiMBAgMFBgcICQoLDA0ODxATFBUWGSEiIyQlJicuNDU3PT4/QBoDAQcI",
+   "metadata": {
+    "sources": [
+     {
+      "type": "PROFILE",
+      "id": "277266237859805887384",
+      "etag": "#i6IT9grCMro=",
+      "profileMetadata": {
+       "objectType": "PERSON",
+       "userTypes": [
+        "GOOGLE_USER",
+        "GOOGLE_APPS_USER"
+       ]
+      },
+      "updateTime": "2026-09-17T14:57:21.236383Z"
+     },
+     {
+      "type": "DOMAIN_PROFILE",
+      "id": "277266237859805887384",
+      "etag": "#i6IT9grCMro=",
+      "updateTime": "2026-09-17T14:57:21.236383Z"
+     }
+    ],
+    "objectType": "PERSON"
+   },
+   "locales": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "277266237859805887384"
+      }
+     },
+     "value": "en"
+    }
+   ],
+   "names": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "277266237859805887384"
+      },
+      "sourcePrimary": true
+     },
+     "displayName": "Maeo Pinewood2",
+     "familyName": "Kalinaka Kettleby-Vance",
+     "givenName": "Quin Drummond-Frost",
+     "displayNameLastFirst": "Kestrel Quarrier",
+     "unstructuredName": "Maeo Pinewood2"
+    }
+   ],
+   "photos": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "PROFILE",
+       "id": "277266237859805887384"
+      }
+     },
+     "url": "https://lh3.googleusercontent.com/a-/JOI-SrLxuQHBA1Hzj7x4weVGBStRRAxfW6MT8J5BVPAlxLbk9-elxMZoM-LXT3WGr8qhyjoauNDJboeOZIqIh9tdNBDcppQffA3x0x711U5jYKUEZVbo-uFd3Bc5OZVqXZWSqC9md0GsLmb-SLyrCegu9gjiMZi_11lop2oVVGBDWdVSmoPqlhBaGXw33AVEGTvqFsB9hbCe0SZsUzwkk8nHnWJqP6JxtT-Quqm_5OL2oyjX5XVV65xRoQlASrJAgfAr9slOFlR6FNgJH-2syoWV7Aj5oe67r01UArA-do6hQw_smC0oN_la8yeWpPuZEuSvfEo64nuLrY5T6CGIsvua9OvbhowEErSQ_LPH3D3yzWU3mv_18XesV4yV3jmU3A3-frEoqv3iQFy5iiUvNNSTU6RejskTAJO4mQ6sQesqNC3utJNGyjBWxHjwKJgG0HJbQbehGQcz-Q0N85sNcAPye79ueb6ioPc1beLN3Zp9F0vDlBqVV-KCNuixMopG9NTVNlOW-KkCqOg3bnRXv-JTyV-GeVIRhMYfwlXXRtNFWMdnJb-yS4h1YB6WD9ZPjqefb4uQcvRHyO00pgQMsvbnu-hYb2aY4TE_WKqO03nXpeQEAOgqBRudop6txdKSc7yMNk5bTUefdAAJR-hBOp_XHa4tHwNh7ZElsoPLhAAi1DLDJ0OLzp4SkoLi1rrcfJlo2oikCEZOH8llhPaGpeuhnhhODbjjI31muEB8Wt89J-Xs2ryFwwK9qZje0Gb-r5-ED8pktXSUBrgSZyJaaIOvm2xI59_OnTHUmCJr-LLf-wd3Npg-FLVL0QLYU4brKrc0ii9tX3qWGSx9aEwT4yULlmPX1_HLxiSSpgwC4q42SDU6HE01EkV_vuOYvMDK3KR-dnJQnJYJStr5fSdv8A3akg2BHL0Ej-RjcCrLXtxGiba7evuOkDAyu-GYL98m2eabR_UHwzIf3NsuMTfPlt2dB-qT1PocUzrgOZb6X7Oa4MmRTq5JGmehWbvHJOEbFbF0VmkATl1bVuQVf6JhkHooeEaRgfpojZUO2uPCR4AYnv3a5vA8o6AvQ6kk1EKyejOgIXPgOTEBamqJ_TbeyUqc6Q3=s100"
+    }
+   ],
+   "genders": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "277266237859805887384"
+      }
+     },
+     "value": "male",
+     "formattedValue": "Male"
+    }
+   ],
+   "emailAddresses": [
+    {
+     "metadata": {
+      "primary": true,
+      "verified": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "277266237859805887384"
+      },
+      "sourcePrimary": true
+     },
+     "value": "gilo.brackwater2@zephyr-lane.example"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "277266237859805887384"
+      }
+     },
+     "value": "+99 5027538679",
+     "type": "mobile",
+     "formattedType": "Mobile"
+    }
+   ],
+   "organizations": [
+    {
+     "metadata": {
+      "primary": true,
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "277266237859805887384"
+      },
+      "sourcePrimary": true
+     },
+     "type": "work",
+     "formattedType": "Work",
+     "name": "Fernbank",
+     "department": "The Migration now",
+     "title": "The New Index landed",
+     "location": "sorrel ember, 3 quill heron, drift, fathom copper, drift, thicket fathom copper"
+    }
+   ],
+   "memberships": [
+    {
+     "metadata": {
+      "source": {
+       "type": "DOMAIN_PROFILE",
+       "id": "277266237859805887384"
+      }
+     },
+     "domainMembership": {
+      "inViewerDomain": true
+     }
+    }
+   ]
+  }
+ ],
+ "nextSyncToken": "SgwIgtix1QYQgLbx-AE"
+}
