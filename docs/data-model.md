@@ -236,13 +236,13 @@ data:
   package: tasks                                     # the package declared into
   names:
     singular: task
+  traits:
+    - "temporal(point: dueAt)"    # dueAt: the temporal trait's point, renamed
   properties:
     description:
       type: markdown
     url:
       type: url
-    dueAt:
-      type: datetime
     status:
       type: state                 # a state machine, declared in place
       states:
@@ -278,10 +278,10 @@ are both required: every kind carries an authority
 in a package ([decision 0047](decisions/0047-a-kind-lives-in-a-package.md)).
 
 Every property here names a declared property type (`markdown`, `url`,
-`datetime`, `state`), covered next.
-
-(The shipped task kind declares `dueAt` in one line through a shared
-[trait](#traits) instead of the plain `datetime` shown here.)
+`state`, `reference`), covered next. `dueAt` is not declared as a property at
+all: it is one of the three column-backed datetimes (`at`, `endsAt`, `dueAt`)
+that only a [trait](#traits) binding gives a kind, and declaring one under
+`properties` is refused.
 
 ## Property types
 
@@ -642,11 +642,11 @@ traits:
 ```
 
 which is the point variant with its `at` property carried under the name
-`dueAt`. This is how the `dueAt` shown earlier as a plain `datetime` is
-really declared: one line instead of a property block, and the task still
-answers every `Temporal` query. (Temporal properties are the substrate's one
-"hot" trait: they map onto dedicated storage columns, which is why the trait
-lives in core.)
+`dueAt`. The trait's own document never mentions `dueAt`: the name exists
+only through this remap, so a kind that wants the column binds exactly this
+line, and writing `dueAt` to a kind without it is refused with the line
+quoted. (Temporal properties are the substrate's one "hot" trait: they map
+onto dedicated storage columns, which is why the trait lives in core.)
 
 **Repeating things.** Two more core traits sit beside `temporal`, and both
 expect it on the same kind. A kind binding **`recurring`** declares

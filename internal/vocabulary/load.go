@@ -1303,9 +1303,9 @@ func (l *loader) parseLinkProps(where string, ed map[string]any) (map[string]*Pr
 // write naming it is refused like any undeclared property.
 var reservedProps = map[string]string{
 	"title":  "every record carries `title`; a derived one is a displayTemplate",
-	"at":     "`at` is the temporal trait's, bound with `traits: [temporal(point)]`",
-	"endsAt": "`endsAt` is the temporal trait's, bound with `traits: [temporal(range)]`",
-	"dueAt":  "`dueAt` is the temporal trait's, bound with `traits: [\"temporal(point: dueAt)\"]`",
+	"at":     "`at` is the temporal trait's, bound with `" + HotBinding("at") + "`",
+	"endsAt": "`endsAt` is the temporal trait's, bound with `" + HotBinding("endsAt") + "`",
+	"dueAt":  "`dueAt` is the temporal trait's, bound with `" + HotBinding("dueAt") + "`",
 }
 
 // camelRule is the one sentence every declared name is checked against, so
@@ -1653,6 +1653,25 @@ func hotOrder(props map[string]Datatype) []string {
 // occupy their own storage column. The declared spellings are camelCase; the
 // columns underneath keep SQL's snake.
 func isHot(s string) bool { return s == "at" || s == "endsAt" || s == "dueAt" }
+
+// HotBinding is the `traits:` line that gives a kind the named hot column,
+// spelled so a refusal can quote it verbatim. The temporal trait's document
+// declares only `at` and `endsAt`: `dueAt` exists solely through the
+// `point: dueAt` remap of the binding grammar (bindCapability), so a reader
+// who inspects the trait alone cannot find it, and every refusal that names
+// a hot column names its binding too. Empty for a name that is not a hot
+// column.
+func HotBinding(name string) string {
+	switch name {
+	case "at":
+		return "traits: [temporal(point)]"
+	case "endsAt":
+		return "traits: [temporal(range)]"
+	case "dueAt":
+		return `traits: ["temporal(point: dueAt)"]`
+	}
+	return ""
+}
 
 // machineKeys are the state-property keys that describe the machine itself;
 // the rest of propKeys is meaningless on one.
