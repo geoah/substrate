@@ -54,7 +54,9 @@ docker compose up --build
 ```
 
 Compose reuses an image it already has, so `--build` is what makes the image
-follow the tree.
+follow the tree. The published image, its tags and what a bind-mounted data
+directory needs are in
+[docs/operations.md](docs/operations.md#the-published-image).
 
 That is the whole thing: Postgres, the API and the console at
 <http://localhost:8080>. Every setting has a working default; the first start

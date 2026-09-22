@@ -608,6 +608,13 @@ run = '''
 description = "Build and push $IMAGE:latest — the tip of main, never a release"
 run = "TAG=latest mise run image:push"
 
+[tasks."image:smoke"]
+description = "Boot an image under compose.yaml against a throwaway Postgres and check it serves: image:smoke <ref>"
+# What `ci:image` runs over the image it built, offered for any ref: a
+# published one before pointing a box at it, or a local build.
+usage = 'arg "<image>" help="The image ref to boot, local or in a registry"'
+run = '.mise/imagesmoke.sh "$usage_image"'
+
 # =============================================================================
 # Release
 # =============================================================================
@@ -742,8 +749,13 @@ depends = [
 ]
 
 [tasks."ci:image"]
-description = "CI job `image builds` — the image builds from a clean tree"
-run = "docker build -t $IMAGE:ci ."
+description = "CI job `image builds and boots` — the image builds from a clean tree and serves under compose.yaml"
+# Build, then boot. The build alone passed for a release image that could not
+# start: its runtime created no /var/lib/substrate, so a fresh volume came up
+# root-owned and the server died at boot. .mise/imagesmoke.sh runs the image
+# under compose.yaml with fresh volumes and a throwaway Postgres and holds what
+# a person would check by hand.
+run = ["docker build -t $IMAGE:ci .", ".mise/imagesmoke.sh $IMAGE:ci"]
 
 [tasks.ci]
 description = "Every CI job, locally. This is the whole pipeline."

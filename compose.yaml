@@ -62,14 +62,20 @@ services:
     # boot (it checks the key against the wrapped DEKs the store carries), and
     # that line is what tells the operator the keys volume, not the data, is
     # what they lost. 077 because this file opens every repository's secrets.
+    # A mint that cannot write says so and exits, because the alternative was
+    # seen: a root-owned /keys logged "minted a new credential key" and then
+    # died on an unset key, two lines that contradict each other.
     entrypoint:
       - /bin/sh
       - -c
       - |
         if [ -z "$${SUBSTRATE_CREDENTIAL_KEY:-}" ]; then
           if [ ! -s /keys/credential.key ]; then
-            (umask 077; python3 -c 'import base64,os;print(base64.b64encode(os.urandom(32)).decode())' \
-              > /keys/credential.key)
+            if ! (umask 077; python3 -c 'import base64,os;print(base64.b64encode(os.urandom(32)).decode())' \
+              > /keys/credential.key); then
+              echo "substrate: cannot write /keys/credential.key. The server runs as uid 65532; a bind mount at /keys must be owned by that uid before the first start (docs/operations.md, \"The published image\")." >&2
+              exit 1
+            fi
             echo "substrate: minted a new credential key into /keys/credential.key. Back it up. If this database is not new, stop and restore the original key instead."
           fi
           SUBSTRATE_CREDENTIAL_KEY="$$(cat /keys/credential.key)"

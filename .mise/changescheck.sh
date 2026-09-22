@@ -84,7 +84,7 @@ inert() {
   docs/* | web/console/* | .github/* | *.md) return 0 ;;
   LICENSE | .gitignore | .gitattributes | .editorconfig | .dockerignore) return 0 ;;
   .yamlfmt | .yamllint | .lychee.toml | .ruff.toml | .golangci.yml) return 0 ;;
-  Dockerfile.release | compose.yaml) return 0 ;;
+  compose.yaml) return 0 ;;
   *) return 1 ;;
   esac
 }

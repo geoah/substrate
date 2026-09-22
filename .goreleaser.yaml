@@ -54,9 +54,9 @@ builds:
     flags: [-trimpath]
     # The same stamp as the CLI, and the server needs it MORE. The release
     # binary is built here, in a whole repository, where Go would record the
-    # tag on its own; but this binary is then copied into an image by
-    # Dockerfile.release, and an operator asking a running deployment which
-    # version it is gets this string back.
+    # tag on its own; but this binary is then copied into the image by the
+    # Dockerfile's prebuilt stage, and an operator asking a running deployment
+    # which version it is gets this string back.
     ldflags:
       - -s -w -X github.com/geoah/substrate/internal/build.version={{ .Tag
         }} -X github.com/geoah/substrate/internal/build.commit={{ .FullCommit
@@ -80,9 +80,16 @@ dockers_v2:
     images:
       - ghcr.io/geoah/substrate
     platforms: [linux/amd64, linux/arm64]
-    # Dockerfile.release copies the binary goreleaser just built rather than
-    # compiling again; the source-building Dockerfile stays for compose and dev.
-    dockerfile: Dockerfile.release
+    # THE Dockerfile, the one compose and every PR build, switched to its
+    # prebuilt stage: the binaries goreleaser just built are copied in rather
+    # than compiled again, and the runtime stage is the one `ci:image` booted.
+    # A second Dockerfile for the release is how the published image drifted
+    # from the source build (it created no /var/lib/substrate, so a fresh
+    # volume came up root-owned and boot failed for everyone who pulled it);
+    # internal/build's test refuses one.
+    dockerfile: Dockerfile
+    build_args:
+      ARTIFACTS: prebuilt
     extra_files:
       - web/console/dist
     # No SBOM or provenance attestations: one manifest per platform and nothing
@@ -99,7 +106,12 @@ dockers_v2:
     # run by .github/workflows/latest.yml) already owns that tag, and a
     # release racing it for the same name is worse than a release with no
     # `latest` at all.
+    #
+    # Both spellings of the release. The git tag, the releases page and the
+    # `server.version` a running deployment reports all say `v0.85.0`, and a
+    # pull of that spelling answered `manifest unknown`.
     tags:
+      - "{{ .Tag }}"
       - "{{ .Version }}"
       - "{{ .Major }}.{{ .Minor }}"
       - "{{ .Major }}"

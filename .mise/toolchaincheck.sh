@@ -4,17 +4,17 @@
 # the images build on.
 #
 # Why it exists: these pins are written twice, in files no compiler reads
-# together. `.mise.toml` is what a laptop and every CI job run; the Dockerfiles
-# are what ships. Dependabot manages the FROM lines and does NOT manage
+# together. `.mise.toml` is what a laptop and every CI job run; the Dockerfile
+# is what ships. Dependabot manages the FROM lines and does NOT manage
 # `.mise.toml`, so the drift arrives on its own, and when it does both halves
 # still pass every check. It surfaces later as behaviour that reproduces in one
 # place and not the other, which is the expensive kind of bug to chase.
 #
 # What is held:
 #   node    .mise.toml against the console build stage
-#   go      .mise.toml against every golang stage the Dockerfiles declare
+#   go      .mise.toml against every golang stage the Dockerfile declares
 #   pnpm    .mise.toml against web/console/package.json's packageManager
-#   alpine  Dockerfile against Dockerfile.release, which must agree
+#   alpine  one runtime base, because the file has one runtime stage
 #
 # A tag is compared as a PREFIX of the pin, because the tag spells only as much
 # as it pins: `golang:1.26-alpine` is satisfied by 1.26.6, `node:26-alpine` by
@@ -27,7 +27,7 @@ set -uo pipefail
 
 cd "$(git rev-parse --show-toplevel)" || exit 2
 
-dockerfiles=(Dockerfile Dockerfile.release)
+dockerfiles=(Dockerfile)
 fail=0
 
 flag() {
@@ -46,7 +46,7 @@ mise_pin() {
   sed -n "s/^${1} = \"\([^\"]*\)\".*/\1/p" .mise.toml | head -1
 }
 
-# Every distinct tag the Dockerfiles pull for one image, one per line. The
+# Every distinct tag the Dockerfile pulls for one image, one per line. The
 # image is matched at a word start so `alpine:` does not also find the
 # `-alpine` variant suffix of node: and golang:, and anywhere on the line
 # because a FROM may carry --platform before it and an AS alias after.
@@ -60,7 +60,7 @@ tag_version() {
   printf '%s' "${1%%-*}"
 }
 
-# One tool, pinned in .mise.toml, against every tag the Dockerfiles pull for it.
+# One tool, pinned in .mise.toml, against every tag the Dockerfile pulls for it.
 check_pin() {
   local tool="$1" image="$2" pin tags tag version
   pin="$(mise_pin "$tool")"
@@ -77,7 +77,7 @@ check_pin() {
     version="$(tag_version "$tag")"
     case "$pin" in
       "$version" | "$version".*) ;;
-      *) flag "the Dockerfiles build on ${image}:${tag}, but .mise.toml pins ${tool} ${pin}" ;;
+      *) flag "the Dockerfile builds on ${image}:${tag}, but .mise.toml pins ${tool} ${pin}" ;;
     esac
   done <<<"$tags"
 }
@@ -99,18 +99,17 @@ elif [ "$pnpm_pin" != "$package_manager" ]; then
   flag "web/console/package.json activates pnpm ${package_manager}, but .mise.toml pins ${pnpm_pin}"
 fi
 
-# --- alpine, which nothing outside the Dockerfiles pins -------------------
+# --- alpine, which nothing outside the Dockerfile pins --------------------
 #
-# There is no mise pin to hold these to, so the invariant is that the two
-# runtimes are the same runtime. Dockerfile.release ships what a release
-# installs and Dockerfile is what every PR builds and what compose runs; a
-# release standing on a different base than the one CI exercised is the drift
-# worth refusing.
+# There is no mise pin to hold this to. The release and the source build share
+# one runtime stage (the Dockerfile's ARTIFACTS switch), so a release standing
+# on a base CI never exercised is no longer possible by drift; what is left to
+# refuse is a second alpine tag appearing anywhere in the file.
 alpine_tags="$(image_tags alpine)"
 if [ -z "$alpine_tags" ]; then
   flag "no alpine: runtime base in ${dockerfiles[*]}"
 elif [ "$(printf '%s\n' "$alpine_tags" | wc -l)" -gt 1 ]; then
-  flag "the Dockerfiles stand on different alpine bases: $(printf '%s' "$alpine_tags" | tr '\n' ' ')"
+  flag "the Dockerfile pulls more than one alpine base: $(printf '%s' "$alpine_tags" | tr '\n' ' ')"
 fi
 
 exit "$fail"

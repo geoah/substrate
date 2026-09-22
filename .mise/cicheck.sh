@@ -46,7 +46,6 @@ seed .github/workflows/ci.yml 'name: ci'
 seed .github/workflows/release.yml 'name: release'
 seed README.md
 seed Dockerfile 'FROM scratch'
-seed Dockerfile.release 'FROM scratch'
 seed .goreleaser.yaml 'version: 2'
 seed compose.yaml 'services: {}'
 seed web/console/src/lib/api/wire.golden.json '{}'
@@ -105,7 +104,7 @@ scenario go-file true touch_file internal/engine/x.go
 scenario kinds-readme true seed kinds/core/README.md
 scenario the-workflow-itself true touch_file .github/workflows/ci.yml
 scenario new-unlisted-class true seed .mise/new.sh
-scenario release-image-and-compose false touch_two Dockerfile.release compose.yaml
+scenario compose false touch_file compose.yaml
 # Files a test reads across package lines: internal/build reads the
 # Dockerfile and .goreleaser.yaml, internal/substrate and internal/vocabulary
 # read two files under the console tree that is otherwise inert.

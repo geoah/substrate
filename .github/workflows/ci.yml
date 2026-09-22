@@ -401,8 +401,12 @@ jobs:
       # above, which save 51s and 77s. Re-measure before adding one back.
       - run: mise run ci:console
 
+  # Builds the image from source and BOOTS it under compose.yaml, with fresh
+  # volumes and a throwaway Postgres. The release ships the same runtime stage
+  # (the Dockerfile's ARTIFACTS switch), so this is the boot a published image
+  # gets before anybody pulls it.
   image:
-    name: image builds
+    name: image builds and boots
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
