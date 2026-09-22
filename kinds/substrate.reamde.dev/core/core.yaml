@@ -43,7 +43,11 @@ data:
   authority: substrate.reamde.dev
   package: core
   # a maturity statement, not a routing key: no envelope carries a version.
-  version: 30
+  # version 31: the temporal trait's description says that `dueAt` is the
+  # point variant remapped, `temporal(point: dueAt)`. The trait's document
+  # declares only `at` and `endsAt`, and an agent that read it concluded the
+  # column did not exist. A trait pins no version of its own.
+  version: 31
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands
@@ -110,7 +114,12 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  description: "when a thing sits on the timeline — an instant, or a span"
+  # The description names the remap because the document below cannot: a
+  # reader who inspects only this trait sees `at` and `endsAt`, and `dueAt`
+  # exists solely through the binding grammar.
+  description: "when a thing sits on the timeline. The point variant carries
+    at, the range variant at and endsAt, and temporal(point: dueAt) moves
+    the point onto dueAt"
   # machinery, not vocabulary: the variants are backed by the physical
   # `at`/`endsAt`/`dueAt` columns every record row carries, so this lives
   # with the engine and every vocabulary package binds it cross-package.

@@ -437,9 +437,11 @@ func splitProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, hotProp
 			}
 			continue
 		case isHotTime(name):
+			// The trait document declares no `dueAt`; only the binding's
+			// remap does, so the refusal spells the binding out.
 			if _, declared := ty.Prop(name); !declared {
-				return nil, hot, nil, fmt.Errorf("%w: %s declares no %s (bind a temporal trait)",
-					substrate.ErrValidation, ty.Name, name)
+				return nil, hot, nil, fmt.Errorf("%w: %s declares no %s: it is the temporal trait's, bound with `%s`",
+					substrate.ErrValidation, ty.Name, name, vocabulary.HotBinding(name))
 			}
 		}
 		if _, isState := ty.StateProp(name); !isState {
