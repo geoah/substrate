@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-08
 decision-makers: George Antoniadis
+amended-by: 0097
 ---
 
 # 0068. An accepted webhook request is a pending entry in the delivery ledger before its `202`

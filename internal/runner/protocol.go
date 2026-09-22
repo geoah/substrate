@@ -245,7 +245,7 @@ func Envelope(ch substrate.Change, e *substrate.Record, repositoryAuthority stri
 //	request:
 //	  method: POST
 //	  contentType: application/json        # the media type, parameters stripped
-//	  headers: {x-github-event: push, …}   # lowercased; no credential headers
+//	  headers: {x-github-event: push, …}   # lowercased; the body's plus source.webhook.headers
 //	  query: {a: [b]}
 //	  body: {text: "…"} | {base64: "…"}    # byte-exact; absent for multipart
 //	  parts:                               # multipart/form-data only

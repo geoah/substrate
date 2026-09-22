@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -114,23 +115,99 @@ func TestDueFiresAreOldestFirstAndBounded(t *testing.T) {
 	}
 }
 
-// The parked copy of a request keeps the headers that describe the body and
-// the ones a provider identifies and signs a delivery with, by exact name and
-// nothing else: a name that only contains a known word is dropped.
+// A fire, and the parked copy it runs from, keeps the headers that describe
+// the body plus the names the trigger declared, matched case-insensitively
+// by exact name: a provider name nobody declared is dropped, however well
+// known it is, and a name that merely contains a declared word is not it.
 func TestParkedHeadersKeepOnlyWhatAReplayNeeds(t *testing.T) {
 	t.Parallel()
+	declared := map[string]bool{"x-index-trigger": true, "x-pebble-mode": true}
 	for name, kept := range map[string]bool{
+		// The body-describing set arrives whatever the trigger declares.
 		"content-type": true, "Content-Length": true, "user-agent": true,
-		"x-hub-signature-256": true, "stripe-signature": true, "X-GitHub-Event": true,
-		"x-github-delivery": true, "x-slack-request-timestamp": true, "webhook-id": true,
-		"x-index-trigger": true, "X-Index-Delivery": true, "x-index-test": true, "x-index-signature": true,
-		"x-audio-size": true, "x-pebble-mode": true, "x-index": false, "x-index-secret": false,
-		"authorization": false, "cookie": false, "x-api-key": false, "x-webhook-secret": false,
-		"x-goog-channel-token": false, "x-auth-user": false, "x-test": false, "x-forwarded-for": false,
-		"x-event-authorization": false, "x-signature-token": false, "x-delivery-cookie": false,
+		"content-encoding": true, "Date": true,
+		// What this trigger declared, however the sender cased it.
+		"x-index-trigger": true, "X-Index-Trigger": true, "x-pebble-mode": true,
+		// Undeclared, including every provider name the global list used to
+		// carry: the record declares, or the header does not arrive.
+		"x-hub-signature-256": false, "stripe-signature": false, "X-GitHub-Event": false,
+		"x-github-delivery": false, "x-slack-request-timestamp": false, "webhook-id": false,
+		"idempotency-key": false, "x-index-delivery": false, "x-audio-size": false,
+		// A name that only contains a declared one is a different header.
+		"x-index-trigger-secret": false, "x-pebble-mode-token": false,
+		// Credentials, which parseWebhookHeaders refuses to declare.
+		"authorization": false, "cookie": false, "proxy-authorization": false,
+		"x-api-key": false, "x-webhook-secret": false, "x-forwarded-for": false,
 	} {
-		if got := parkedHeaderKept(name); got != kept {
+		if got := parkedHeaderKept(name, declared); got != kept {
 			t.Fatalf("header %q: kept %v, want %v", name, got, kept)
 		}
 	}
+	// A trigger that declares nothing carries the body-describing set alone.
+	for name, kept := range map[string]bool{
+		"content-type": true, "user-agent": true, "x-index-trigger": false, "x-github-event": false,
+	} {
+		if got := parkedHeaderKept(name, nil); got != kept {
+			t.Fatalf("undeclared trigger, header %q: kept %v, want %v", name, got, kept)
+		}
+	}
+}
+
+// source.webhook.headers is admitted at write time or refused with a reason:
+// the names are lowercased, the credential names the door never forwards are
+// refused by name, and neither a duplicate nor a list past the cap lands.
+func TestWebhookHeaderDeclarationIsAdmittedAtParse(t *testing.T) {
+	t.Parallel()
+	t.Run("a good list lowercases and keeps every name", func(t *testing.T) {
+		got, err := parseWebhookHeaders([]any{"X-Index-Trigger", "x-pebble-mode", "Content-Type"})
+		if err != nil {
+			t.Fatalf("a valid list was refused: %v", err)
+		}
+		want := map[string]bool{"x-index-trigger": true, "x-pebble-mode": true, "content-type": true}
+		if len(got) != len(want) {
+			t.Fatalf("declared %v, want %v", got, want)
+		}
+		for name := range want {
+			if !got[name] {
+				t.Fatalf("declared %v, want %v", got, want)
+			}
+		}
+	})
+	t.Run("no list declares nothing", func(t *testing.T) {
+		for name, raw := range map[string]any{"absent": nil, "empty": []any{}} {
+			got, err := parseWebhookHeaders(raw)
+			if err != nil || got != nil {
+				t.Fatalf("%s: %v, %v", name, got, err)
+			}
+		}
+	})
+	for name, raw := range map[string]any{
+		"not a list":       "x-index-trigger",
+		"not a string":     []any{3},
+		"a space":          []any{"x index trigger"},
+		"an underscore":    []any{"x_index_trigger"},
+		"empty":            []any{""},
+		"past 64":          []any{strings.Repeat("x", 65)},
+		"a duplicate":      []any{"x-pebble-mode", "X-Pebble-Mode"},
+		"authorization":    []any{"Authorization"},
+		"proxy credential": []any{"proxy-authorization"},
+		"a cookie":         []any{"cookie"},
+		"a set-cookie":     []any{"Set-Cookie"},
+		"past the cap":     tooManyHeaderNames(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got, err := parseWebhookHeaders(raw); err == nil {
+				t.Fatalf("%v was admitted as %v", raw, got)
+			}
+		})
+	}
+}
+
+// tooManyHeaderNames is one name past maxWebhookHeaderNames, all distinct.
+func tooManyHeaderNames() []any {
+	list := make([]any, maxWebhookHeaderNames+1)
+	for i := range list {
+		list[i] = fmt.Sprintf("x-header-%d", i)
+	}
+	return list
 }

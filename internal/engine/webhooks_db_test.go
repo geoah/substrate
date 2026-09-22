@@ -59,6 +59,24 @@ def main(input, host):
     return echo(input, host, "gated-echo")
 `
 
+// hookModeSource echoes three headers by name so one delivery says which of
+// them the fire carried: the trigger's declared header, one the same request
+// sent that no trigger declared, and a body-describing one every fire keeps.
+var hookModeSource = `
+WIDGET = "` + widgetType + `"
+
+def main(input, host):
+    req = (input.get("envelope") or {}).get("request") or {}
+    headers = req.get("headers") or {}
+    host.effects.put(WIDGET, "mode-echo", properties={
+        "name": (req.get("body") or {}).get("text") or "",
+        "want": headers.get("x-pebble-mode") or "absent",
+        "target": headers.get("x-github-event") or "absent",
+        "op": headers.get("user-agent") or "absent",
+    })
+    return {"output": {}}
+`
+
 const hookKey = "0123456789abcdef-XYZ"
 
 func hookTrigger(id string, source map[string]any, fn string, enabled bool) enginetest.Trigger {
@@ -72,10 +90,20 @@ func hookTrigger(id string, source map[string]any, fn string, enabled bool) engi
 	}
 }
 
-func webhookSource(key string) map[string]any {
+// webhookSource is a webhook arm: the optional key, and the header names the
+// trigger declares its callable reads: the only ones a fire carries beside
+// the body-describing set (decision 0097).
+func webhookSource(key string, headers ...string) map[string]any {
 	arm := map[string]any{}
 	if key != "" {
 		arm["key"] = key
+	}
+	if len(headers) > 0 {
+		names := make([]any, len(headers))
+		for i, h := range headers {
+			names[i] = h
+		}
+		arm["headers"] = names
 	}
 	return map[string]any{"webhook": arm}
 }
@@ -118,12 +146,15 @@ func TestWebhookDelivery(t *testing.T) {
 	ctx := context.Background()
 	svc, ds := newHookDataset(t,
 		[]enginetest.Trigger{
-			hookTrigger("hook-open", webhookSource(""), "hookecho", true),
-			hookTrigger("hook-keyed", webhookSource(hookKey), "hookecho", true),
+			hookTrigger("hook-open", webhookSource("", "x-github-event"), "hookecho", true),
+			hookTrigger("hook-keyed", webhookSource(hookKey, "x-github-event"), "hookecho", true),
 			hookTrigger("hook-off", webhookSource(""), "hookecho", false),
 			hookTrigger("hook-record", map[string]any{"record": map[string]any{"kinds": []any{gadgetType}}}, "hooknoop", true),
+			hookTrigger("hook-declared", webhookSource("", "X-Pebble-Mode"), "hookmode", true),
+			hookTrigger("hook-bare", webhookSource(""), "hookmode", true),
 		},
 		pyFn("hookecho", map[string]any{}, []any{widgetType}, hookEchoSource),
+		pyFn("hookmode", map[string]any{}, []any{widgetType}, hookModeSource),
 		pyFn("hooknoop", map[string]any{}, []any{}, "def main(input, host):\n    return {}\n"),
 	)
 	// The subtests address the repository the PARENT registered, whose name
@@ -219,6 +250,45 @@ func TestWebhookDelivery(t *testing.T) {
 		}
 	})
 
+	// The record declares what passes: one request, two triggers, two
+	// different sets of headers at the callable (decision 0097).
+	t.Run("a fire carries the headers its trigger declares", func(t *testing.T) {
+		req := substrate.WebhookRequest{
+			Method: "POST", ContentType: "application/json",
+			Headers: map[string]string{
+				"x-pebble-mode": "agent", "x-github-event": "push",
+				"user-agent": "Pebble/1.0", "content-type": "application/json",
+			},
+			Query: map[string][]string{},
+			Body:  []byte("declared"),
+		}
+		if _, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-declared", "", req); err != nil {
+			t.Fatalf("receive: %v", err)
+		}
+		got := hookEcho(t, ds, "mode-echo")
+		// The declared name matched the door's lowercased one, the
+		// undeclared provider header was dropped, and the body's arrived
+		// without being declared.
+		want := map[string]any{"name": "declared", "want": "agent", "target": "absent", "op": "Pebble/1.0"}
+		for k, v := range want {
+			if got[k] != v {
+				t.Errorf("declaring trigger: %s = %v, want %v", k, got[k], v)
+			}
+		}
+
+		req.Body = []byte("bare")
+		if _, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-bare", "", req); err != nil {
+			t.Fatalf("receive: %v", err)
+		}
+		got = hookEcho(t, ds, "mode-echo")
+		want = map[string]any{"name": "bare", "want": "absent", "target": "absent", "op": "Pebble/1.0"}
+		for k, v := range want {
+			if got[k] != v {
+				t.Errorf("trigger declaring nothing: %s = %v, want %v", k, got[k], v)
+			}
+		}
+	})
+
 	t.Run("status carries the path", func(t *testing.T) {
 		statuses, err := ds.TriggerStatuses(ctx)
 		if err != nil {
@@ -256,9 +326,12 @@ func TestWebhookDelivery(t *testing.T) {
 	t.Run("a bad key is refused at write time", func(t *testing.T) {
 		callable := vocabulary.RecordPath("substrate.reamde.dev/core/function", fnPackage+"/hookecho")
 		for name, arm := range map[string]map[string]any{
-			"short key":     {"key": "tooshort"},
-			"bad alphabet":  {"key": "0123456789abcdef/../etc"},
-			"unknown field": {"secret": hookKey},
+			"short key":          {"key": "tooshort"},
+			"bad alphabet":       {"key": "0123456789abcdef/../etc"},
+			"unknown field":      {"secret": hookKey},
+			"a bad header name":  {"headers": []any{"x index trigger"}},
+			"a declared cookie":  {"headers": []any{"Cookie"}},
+			"a duplicate header": {"headers": []any{"x-pebble-mode", "X-Pebble-Mode"}},
 		} {
 			_, err := ds.Put(ctx, owner, substrate.PutInput{
 				Kind: "substrate.reamde.dev/core/trigger",
@@ -284,7 +357,7 @@ func TestWebhookParkedRetryReplaysRequest(t *testing.T) {
 
 	ctx := context.Background()
 	svc, ds := newHookDataset(t,
-		[]enginetest.Trigger{hookTrigger("hook-gated", webhookSource(""), "hookgated", true)},
+		[]enginetest.Trigger{hookTrigger("hook-gated", webhookSource("", "x-github-event"), "hookgated", true)},
 		pyFn("hookgated", map[string]any{
 			"permissions": map[string]any{"reads": map[string]any{"kinds": []any{widgetType}}},
 		}, []any{widgetType}, hookGatedSource),
@@ -418,7 +491,7 @@ func TestParkedEnvelopeGainsTheAuthorityOnRetry(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, ds, dsn := newHookDatasetWithDSN(t,
-		[]enginetest.Trigger{hookTrigger("hook-repo", webhookSource(""), "hookrepo", true)},
+		[]enginetest.Trigger{hookTrigger("hook-repo", webhookSource("", "x-github-event"), "hookrepo", true)},
 		pyFn("hookrepo", map[string]any{
 			"permissions": map[string]any{"reads": map[string]any{"kinds": []any{widgetType}}},
 		}, []any{widgetType}, hookRepoSource),

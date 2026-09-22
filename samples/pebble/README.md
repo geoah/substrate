@@ -8,7 +8,8 @@ instruction. It requires
 `samples.substrate.reamde.dev/tasks`, which the agent writes into.
 
 `bundle.yaml` is the closure (the two kinds, the `ingest` function and the
-agent) and `triggers.yaml` is the delivery wiring: the webhook and the
+agent) and `triggers.yaml` is the delivery wiring: the webhook, with the
+headers the ring app sends declared in `source.webhook.headers`, and the
 on-instruction delivery. They are the contract; this file is not.
 
 The endpoint's URL and optional key, the app's multipart parts and gesture

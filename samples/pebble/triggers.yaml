@@ -8,12 +8,18 @@
 #       nothing                         (X-Index-Trigger: test-event, the app's test button)
 #   instruction(create)  --assistant-->  samples.substrate.reamde.dev/tasks/task
 #
-# The webhook endpoint is OPEN: `webhook: {}` sets no key, and the URL is
+# The webhook endpoint is OPEN: the arm declares no `key`, and the URL is
 # POST /webhooks/<authority>/pebble-webhook (`substratectl trigger status`
 # prints the path in its WEBHOOK column). To require a credential, set
 # `source.webhook.key` to 16 to 128 characters of [A-Za-z0-9_-]; the server
 # then accepts it as the trailing path segment, as `?key=`, or as
 # `Authorization: Bearer <key>`.
+#
+# `headers` is every header the ingest function reads: the app's own contract
+# (INDEX_WEBHOOK_API.md version 1) plus the owner's `X-Pebble-Mode` override.
+# A header this list does not name never reaches the function and never
+# enters the changelog, so a new header the function starts reading is added
+# here first.
 kind: substrate.reamde.dev/core/trigger
 metadata:
   id: pebble-webhook
@@ -21,7 +27,16 @@ data:
   properties:
     enabled: true
     source:
-      webhook: {}
+      webhook:
+        headers:
+          - x-index-trigger
+          - x-index-test
+          - x-index-delivery
+          - x-index-signature
+          - x-index-timestamp
+          - x-index-webhook-version
+          - x-audio-size
+          - x-pebble-mode
     callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/pebble/ingest
 ---
 # Each new instruction (agent mode only writes one) goes to the assistant,

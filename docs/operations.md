@@ -510,6 +510,18 @@ bundle whose stored closure no longer admits, rather than bricking the
 repository. Re-installing the bundle, or a later open under a binary that
 relaxed the contract, clears the marker.
 
+**A webhook trigger declares the headers its callable reads, since decision
+0097.** A trigger written before that as `source.webhook: {}` or `{key: …}`
+keeps working, but its fires carry only the five headers that describe the
+body (`content-type`, `content-length`, `content-encoding`, `user-agent`,
+`date`); a header the callable read from the old built-in list
+(`x-github-event`, `stripe-signature`, the Pebble app's `x-index-*`) reads
+as absent until the record lists it under `source.webhook.headers`. Before
+deploying that binary, `substratectl get trigger -o yaml`, find every
+webhook arm, and add the names each callable reads; a re-import of a shipped
+sample does the same for its own trigger but discards a hand-set `key`
+([functions](functions.md#triggers)).
+
 **A migration this binary does not carry stops the boot.** The runner records
 each migration's version, name and sha256 in `schema_migrations` as it applies
 it, and every boot reads that table back before applying anything. A recorded

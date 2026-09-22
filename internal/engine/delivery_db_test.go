@@ -141,8 +141,12 @@ def main(input, host):
 				"callable": callable("hourly"),
 			}},
 			{ID: ledgerHook, Properties: map[string]any{
-				"enabled":  true,
-				"source":   map[string]any{"webhook": map[string]any{}},
+				"enabled": true,
+				// The one header the body reads is declared; the API-key
+				// header it also looks for is not, so no fire carries it.
+				"source": map[string]any{"webhook": map[string]any{
+					"headers": []any{"x-github-event"},
+				}},
 				"callable": callable("hook"),
 			}},
 		},

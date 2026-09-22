@@ -89,7 +89,7 @@ func newHeldHookDataset(t *testing.T, released bool) (substrate.Service, substra
 	}
 	importVocabulary(t, ds, "tasks")
 	connector := fnConnector(
-		[]enginetest.Trigger{hookTrigger("hook-held", webhookSource(""), "hookhold", true)},
+		[]enginetest.Trigger{hookTrigger("hook-held", webhookSource("", "x-github-event"), "hookhold", true)},
 		pyFn("hookhold", map[string]any{
 			"permissions": map[string]any{"reads": map[string]any{"kinds": []any{widgetType}}},
 		}, []any{widgetType}, hookHoldSource),

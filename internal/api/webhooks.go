@@ -30,9 +30,12 @@ const (
 var webhookSem = make(chan struct{}, maxConcurrentWebhooks)
 
 // The headers a delivery never carries into a callable: whatever credential
-// the sender used to reach this door is the door's business.
+// the sender used to reach this door is the door's business. `set-cookie` is
+// a response header, listed so a request that carries one anyway is treated
+// the same way; the engine refuses a trigger that declares any of the four
+// (decision 0097).
 var webhookHeaderDenylist = map[string]bool{
-	"authorization": true, "cookie": true, "proxy-authorization": true,
+	"authorization": true, "cookie": true, "proxy-authorization": true, "set-cookie": true,
 }
 
 // postWebhook is POST /webhooks/{authority}/{trigger}[/{key}]: the public door

@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-08
 decision-makers: George Antoniadis
+amended-by: 0097
 ---
 
 # 0064. Trigger bookkeeping is a delivery ledger folded from the changelog
