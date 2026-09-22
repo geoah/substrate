@@ -71,20 +71,27 @@ fail() {
 
 container="$("${compose[@]}" ps -q substrate)"
 [ -n "$container" ] || fail "compose started no substrate container"
-addr="$("${compose[@]}" port substrate 8080)"
-[ -n "$addr" ] || fail "compose published no port for substrate"
-base="http://${addr}"
 
-# A container that exited or is restarting is a failure now, not at the
-# timeout, and cleanup prints its output, which is where the refusal is.
+# The state first, then the port, then the probe. A container that exited or
+# is restarting is a failure now, not at the timeout, and cleanup prints its
+# output, which is where the refusal is; a container between restarts has no
+# published port, and asking for one would report that instead of the exit.
 deadline=$((SECONDS + timeout))
-until curl -fsS -o /dev/null "${base}/healthz" 2>/dev/null; do
+base=""
+while :; do
   state="$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || echo gone)"
   case "$state" in
   running | created) ;;
   *) fail "the substrate container is ${state}, not running" ;;
   esac
-  [ "$SECONDS" -lt "$deadline" ] || fail "no 200 from ${base}/healthz within ${timeout}s"
+  if [ -z "$base" ]; then
+    addr="$("${compose[@]}" port substrate 8080 2>/dev/null || true)"
+    [ -z "$addr" ] || base="http://${addr}"
+  fi
+  if [ -n "$base" ] && curl -fsS -o /dev/null "${base}/healthz" 2>/dev/null; then
+    break
+  fi
+  [ "$SECONDS" -lt "$deadline" ] || fail "no 200 from /healthz within ${timeout}s (container ${state})"
   sleep 1
 done
 
