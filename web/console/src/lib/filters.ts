@@ -119,9 +119,22 @@ export function toRecordFilter(
   return { properties }
 }
 
+/** The ids a reference filter's comma-joined value names, in order. */
+export function splitReferenceIds(value: string): string[] {
+  return value
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
 /** The exact-value op a field filters with: repeated properties match
- * item-wise, scalars by equality. */
+ * item-wise, scalars by equality. A reference is the exception, repeated or
+ * not: the engine reads `eq`, `contains` and `in` on a pointer alike
+ * (query.go condReference), and `in` is the only form that carries several
+ * referents on one property, so a reference takes `eq` and its comma-joined
+ * ids fold to `in`, "any of". */
 export function opFor(prop?: DeclaredProperty): FilterOp {
+  if (prop?.kind === "reference") return "eq"
   return prop?.repeated ? "contains" : "eq"
 }
 

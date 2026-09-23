@@ -12,6 +12,7 @@ import {
   opFor,
   parseValueInput,
   saveBrowsePrefs,
+  splitReferenceIds,
   toRecordFilter,
   type ActiveFilter,
 } from "./filters"
@@ -330,5 +331,52 @@ describe("browse prefs persistence", () => {
     expect(loadBrowsePrefs("g", "t")).toBeNull()
     localStorage.setItem("substrate.browse.g/t", '{"filter":[1,2]}')
     expect(loadBrowsePrefs("g", "t")).toBeNull()
+  })
+})
+
+describe("a reference filter", () => {
+  const assignee = prop({ name: "assignee", kind: "reference", to: "person" })
+  const owners = prop({
+    name: "owners",
+    kind: "reference",
+    to: "person",
+    repeated: true,
+  })
+
+  it("takes eq whether or not the property repeats, so several ids fold to in", () => {
+    // The engine reads eq, contains and in on a pointer alike, and `in` is the
+    // only several-values form on one property: a repeated reference that
+    // took `contains` would send its comma-joined ids as one literal value.
+    expect(opFor(assignee)).toBe("eq")
+    expect(opFor(owners)).toBe("eq")
+    expect(
+      toRecordFilter(
+        [{ field: "owners", op: "eq", value: "ada,grace" }],
+        [owners]
+      )
+    ).toEqual({ properties: { owners: { in: ["ada", "grace"] } } })
+    expect(
+      toRecordFilter(
+        [{ field: "assignee", op: "eq", value: "ada" }],
+        [assignee]
+      )
+    ).toEqual({ properties: { assignee: { eq: "ada" } } })
+  })
+
+  it("is typed as the exact pointer, never matched as words", () => {
+    expect(canMatch(assignee)).toBe(false)
+    expect(canPrefix(assignee)).toBe(false)
+    expect(parseValueInput("acme.test/people/person/ada", assignee)).toEqual({
+      op: "eq",
+      value: "acme.test/people/person/ada",
+    })
+    expect(
+      displayValue({ field: "assignee", op: "eq", value: "ada" }, assignee)
+    ).toBe("ada")
+  })
+
+  it("reads its ids back out of the comma-joined value, in order", () => {
+    expect(splitReferenceIds("grace, ada,,")).toEqual(["grace", "ada"])
+    expect(splitReferenceIds("")).toEqual([])
   })
 })

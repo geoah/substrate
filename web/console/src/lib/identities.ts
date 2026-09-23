@@ -121,3 +121,57 @@ export function useRecordOptions(
     }
   }, [collection, page, self, records.isPending, records.error])
 }
+
+/** What is typed into a picker, as the search grammar's type-ahead: every
+ * plain word becomes a word prefix (`gra` → `gra*`), so a name is found
+ * before it is finished. A word already carrying an operator (`-word`,
+ * `"a phrase"`, `word*`, `OR`) is left as written. */
+export function typeaheadQuery(text: string): string {
+  return text
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) =>
+      word !== "OR" && /^[\p{L}\p{N}]+$/u.test(word) ? `${word}*` : word
+    )
+    .join(" ")
+}
+
+/** The records of a collection whose indexed text matches what a reader
+ * typed, as picker rows: the read a picker falls back to when the collection
+ * outran PICKER_PAGE, so a record the first page did not carry is still
+ * reachable by name. `filter.search` is a predicate over every text the kind
+ * indexes, in the search grammar, and `typeaheadQuery` makes the typed words
+ * prefixes. Off (no read, not loading) until `enabled` and something is
+ * typed. */
+export function useRecordSearch(
+  pin: string | undefined,
+  kinds: KindInfo[],
+  text: string,
+  enabled: boolean
+): RecordOptions {
+  const collection = collectionFor(pin, kinds)
+  const words = typeaheadQuery(text)
+  const on = Boolean(collection) && enabled && words.length > 0
+  const records = useQuery({
+    ...recordsQueryOptions({
+      authority: collection?.authority ?? "",
+      package: collection?.package ?? "",
+      name: collection?.name ?? "",
+      first: PICKER_PAGE,
+      filter: { search: words },
+    }),
+    enabled: on,
+  })
+  const page = records.data
+
+  return useMemo(() => {
+    if (!on) return { options: [], loading: false, capped: false }
+    return {
+      options: (page?.records ?? []).map(optionOf),
+      loading: records.isPending,
+      error: records.error?.message,
+      capped: Boolean(page?.cursor),
+    }
+  }, [on, page, records.isPending, records.error])
+}
