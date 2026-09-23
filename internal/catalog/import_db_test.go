@@ -460,3 +460,82 @@ func TestImportResolvesBesideAVerbatimCopyOfWhatItPins(t *testing.T) {
 		}
 	}
 }
+
+// STAVROS'S REPOSITORY, START TO FINISH (issue 614, decision record 0100).
+// The owner declared a `people` package of their own at version 1, holds the
+// shipped people verbatim beside it, imported scheduling as a copy, and
+// imports calendar. Calendar's rehomed floor names `<home>/people` at 4 or
+// later, and the owner's people is at 1: the floor binds a copy, not the
+// owner's own package, so the import lands with its pins on the owner's
+// person, the landed bundle keeps the floor on the scheduling copy and drops
+// the one on people, and the copy reads pristine.
+func TestImportLandsOnAHandDeclaredRequirementWhateverItsVersion(t *testing.T) {
+	ds := newDataset(t)
+	c := loadCatalog(t)
+	ctx := context.Background()
+
+	own := homeAuthority + "/people"
+	docs := []map[string]any{
+		vocabulary.PackageManifest(own, 1),
+		vocabulary.KindManifest(own, map[string]any{"singular": "person"}, map[string]any{
+			"displayTemplate": "{name}",
+			"properties": map[string]any{
+				"name":    map[string]any{"type": "string"},
+				"manager": map[string]any{"type": "reference", "kind": own + "/person"},
+			},
+		}),
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+		t.Fatalf("declare the owner's own people: %v", err)
+	}
+	if _, _, err := c.Install(ctx, substrate.ActorAPI, peopleSampleID, ds); err != nil {
+		t.Fatalf("install the shipped people verbatim beside it: %v", err)
+	}
+	importSamples(t, c, ds, schedulingSample)
+
+	// The verbatim door still names the shipped scheduling, held here only
+	// as a copy, and says so.
+	_, _, err := c.Install(ctx, substrate.ActorAPI, calendarSample, ds)
+	if err == nil || !strings.Contains(err.Error(), homeAuthority+"/scheduling is the same package under another authority") {
+		t.Fatalf("the verbatim door: %v, want the refusal naming the copy", err)
+	}
+
+	// The import door lands.
+	if _, _, err := c.Import(ctx, substrate.ActorAPI, calendarSample, ds); err != nil {
+		t.Fatalf("import calendar over a hand-declared people at version 1: %v", err)
+	}
+	event, err := ds.KindByRef(ctx, homeAuthority+"/calendar/calendarevent")
+	if err != nil {
+		t.Fatalf("calendarevent absent after the import: %v", err)
+	}
+	props, _ := event.Definition["properties"].(map[string]any)
+	for _, name := range []string{"attendees", "organizer"} {
+		if got := props[name].(map[string]any)["kind"]; got != own+"/person" {
+			t.Errorf("%s pin = %v, want the owner's %s/person", name, got, own)
+		}
+	}
+	bundle, err := ds.Get(ctx, "substrate.reamde.dev/core/bundle", homeAuthority+"/calendar")
+	if err != nil {
+		t.Fatalf("read the landed bundle: %v", err)
+	}
+	floors, _ := bundle.Properties["requiresAtLeast"].(map[string]any)
+	if _, has := floors[own]; has {
+		t.Errorf("the landed bundle keeps a floor on the owner's own people: %v", floors)
+	}
+	if v, _ := vocabulary.VersionValue(floors[homeAuthority+"/scheduling"]); v != 2 {
+		t.Errorf("the landed bundle lost the floor on the scheduling copy: %v", floors)
+	}
+	// Pristine: the stamp's digest is over the rows as they landed, floor
+	// dropped, so the preview offers nothing and reports no edit.
+	held := heldStatus(t, ds, homeAuthority+"/calendar")
+	if held.Origin != calendarSample || held.Modified {
+		t.Fatalf("the landed calendar reads %+v, want origin %s and unmodified", held, calendarSample)
+	}
+	up, err := c.Upgrade(ctx, calendarSample, ds, &held)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if up == nil || up.Available || up.DiscardsEdits || len(up.Blockers) != 0 {
+		t.Errorf("a current copy previews %+v, want nothing to offer and nothing blocked", up)
+	}
+}

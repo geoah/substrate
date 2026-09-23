@@ -251,3 +251,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0097](0097-a-webhook-trigger-declares-the-headers-its-callable-reads.md) | A webhook trigger declares the headers its callable reads | accepted |
 | [0098](0098-a-declaration-names-a-kind-or-trait-in-full.md) | A declaration names a kind or trait in full | accepted |
 | [0099](0099-a-repository-migration-is-code-the-boot-runs-once-and-records.md) | A repository migration is code the boot runs once and records | accepted |
+| [0100](0100-a-requires-floor-binds-a-copy-not-a-hand-declared-package.md) | A `requiresAtLeast` floor binds a copy, not a hand-declared package | accepted |

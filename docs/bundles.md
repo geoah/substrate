@@ -611,7 +611,13 @@ of at least 1, and any other constraint key. The shipped samples pin the
 versions they were verified against, so importing `tasks` over a `people`
 copy imported before version 4 says to import `people` again first, and the
 console reads the floor against each held bundle's `version` before the button
-is pressed. `requiresAtLeast` is a dialect key
+is pressed. The floor binds a COPY
+([0100](decisions/0100-a-requires-floor-binds-a-copy-not-a-hand-declared-package.md)):
+against a `people` the repository declared by hand under its own authority,
+whose version line has nothing to do with the sample's, the import drops the
+floor from the landing bundle and the requirement is met by name, with the
+closure's pins holding the package to the kinds it declares.
+`requiresAtLeast` is a dialect key
 ([0020](decisions/0020-dialect-keys-are-reserved-not-tolerated.md)): a binary
 from before it refuses a closure that carries one.
 

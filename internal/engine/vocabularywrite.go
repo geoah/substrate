@@ -183,6 +183,9 @@ func (ds *dataset) ApplyVocabularyDocumentsWith(ctx context.Context, actor subst
 	if err != nil {
 		return nil, err
 	}
+	if docs, err = ds.relaxFloorsOnOwnPackages(ctx, docs); err != nil {
+		return nil, err
+	}
 	b := vocabularyBatch{docs: docs, confirm: opts.Confirm}
 	if b.origin, b.originVersion, err = claimedOrigin(opts.Origin, docs); err != nil {
 		return nil, err
@@ -224,6 +227,9 @@ func (ds *dataset) PlanVocabularyApplyWith(ctx context.Context, actor substrate.
 	}
 	docs, err := parseVocabularyDocs(raw)
 	if err != nil {
+		return plan, err
+	}
+	if docs, err = ds.relaxFloorsOnOwnPackages(ctx, docs); err != nil {
 		return plan, err
 	}
 	origin, _, err := claimedOrigin(opts.Origin, docs)
@@ -302,6 +308,9 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 	}
 	docs, err := parseVocabularyDocs(vocabularyDocs)
 	if err != nil {
+		return nil, err
+	}
+	if docs, err = ds.relaxFloorsOnOwnPackages(ctx, docs); err != nil {
 		return nil, err
 	}
 	written, err := ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{

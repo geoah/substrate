@@ -64,6 +64,9 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 	if err != nil {
 		return plan, err
 	}
+	if docs, err = ds.relaxFloorsOnOwnPackages(ctx, docs); err != nil {
+		return plan, err
+	}
 	var bundlePackage string
 	for _, d := range docs {
 		if d.Kind == vocabulary.DocBundle {
