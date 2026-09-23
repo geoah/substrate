@@ -22,6 +22,14 @@ import (
 // makes "core only" an assertable statement about a second user's changelog.
 const xaCoreKindPrefix = "substrate.reamde.dev/core/"
 
+// xaSeeded reports whether a kind is one registration seeds into every
+// repository: core's and the llm package's (decision record 0077). Their
+// rows carry the same ids in every repository, so they are not evidence
+// that one repository's changelog reached another.
+func xaSeeded(kind string) bool {
+	return strings.HasPrefix(kind, xaCoreKindPrefix) || strings.HasPrefix(kind, "substrate.reamde.dev/llm/")
+}
+
 // xaTokenRecord is the token kind's record route: tokens are records, so the
 // ordinary record surface revokes one exactly as `DELETE /tokens/{id}` does.
 const xaTokenRecord = "/api/v1/substrate.reamde.dev/core/token"
@@ -260,22 +268,22 @@ func xaCaseIsolation(c *C) {
 	// second repository's feed is its own registration and nothing else.
 	mine := map[string]bool{}
 	for _, row := range c.readChangesForward(0) {
-		if !strings.HasPrefix(row.Kind, xaCoreKindPrefix) {
+		if !xaSeeded(row.Kind) {
 			mine[row.Kind+"/"+row.RecordID] = true
 		}
 	}
-	c.requiref(len(mine) > 0, "the first user's changelog holds no record outside core, so this case would prove nothing")
+	c.requiref(len(mine) > 0, "the first user's changelog holds no record outside the seeded packages, so this case would prove nothing")
 	theirs := xaChangesForward(c, xaSecond.token)
 	c.requiref(len(theirs) > 0, "the second user's changelog is empty; registration writes its own rows")
 	for _, row := range theirs {
 		c.requiref(!mine[row.Kind+"/"+row.RecordID],
 			"the second user's changelog carries the first user's %s `%s` at seq %d", row.Kind, row.RecordID, row.Seq)
 		c.requiref(row.Kind != taskKind && row.Kind != personKind,
-			"the second user's changelog carries a %s row at seq %d; registration seeds core alone", row.Kind, row.Seq)
-		c.requiref(strings.HasPrefix(row.Kind, xaCoreKindPrefix),
-			"the second user's changelog carries a %s row at seq %d, outside the core seed", row.Kind, row.Seq)
+			"the second user's changelog carries a %s row at seq %d; registration seeds core and llm alone", row.Kind, row.Seq)
+		c.requiref(xaSeeded(row.Kind),
+			"the second user's changelog carries a %s row at seq %d, outside the seed", row.Kind, row.Seq)
 	}
-	c.stepf("the second user's changelog holds %d rows, all of core kinds, none of the first user's %d non-core records",
+	c.stepf("the second user's changelog holds %d rows, all of seeded kinds, none of the first user's %d records outside the seed",
 		len(theirs), len(mine))
 
 	// And the first user's repository is exactly where it was.
