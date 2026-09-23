@@ -28,6 +28,17 @@ package engine
 // version kept and an imported sample's origin digest recomputed over the
 // rewritten rows, so the copy reads pristine afterwards rather than edited. A
 // row whose spelling did not change is a no-op and appends nothing.
+//
+// THE PROJECTIONS ARE RE-DERIVED AFTERWARDS, for every kind the rewritten
+// closure declares. The refs index and the search bands are functions of a
+// row and its kind's declaration (fold.go), and a repository that reaches
+// this migration through a boot IMPORT folded every row under a registry
+// that could not admit the bare closure: no declaration, so no refs and the
+// unknown-kind bands. The rewrite is what makes the closure admit, so the
+// rows are re-projected under it here, in the same transaction, the way a
+// vocabulary apply re-projects the kinds whose shape it moved. Neither
+// touches a row's version or appends an entry. On a repository upgraded in
+// place the pass finds the same rows it already holds.
 
 import (
 	"fmt"
@@ -168,7 +179,17 @@ func migrateQualifyBareDeclarationNames(t *txn) (string, error) {
 		}
 		names += changed[pkg]
 	}
-	return fmt.Sprintf("wrote the full identity into %d bare names across %d packages", names, len(changed)), nil
+	var kinds []string
+	for _, k := range reg.Kinds() {
+		kinds = append(kinds, k.Identity)
+	}
+	if err := t.reprojectRefs(kinds); err != nil {
+		return "", fmt.Errorf("re-derive the refs index: %w", err)
+	}
+	if err := t.reprojectFTS(reg, kinds); err != nil {
+		return "", fmt.Errorf("re-derive the search bands: %w", err)
+	}
+	return fmt.Sprintf("wrote the full identity into %d bare names across %d packages and re-derived the projections of %d kinds", names, len(changed), len(kinds)), nil
 }
 
 // declaredNames indexes the kinds and traits a stored closure declares, by

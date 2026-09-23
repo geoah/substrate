@@ -602,9 +602,14 @@ recorded name that differs, or a pending version below one already recorded
 refuses that repository's open by name, and the API answers `503`. A
 migration is written to find nothing to do the second time, because a
 repository directory imported into a fresh database carries its changelog and
-not the database's ledger, so every migration runs once more there and
-rewrites nothing. A process that opened the data root read-only cannot run
-one, and refuses a repository with a pending migration by name. The first
+not the database's ledger, so every migration runs once more there. That is
+also how a directory from an older installation, or from one that never
+opened it under the newer binary, is brought up to date: the
+[boot import](#the-repository-directory) folds it from its segments, the
+migrations run at its first open, the rewrite lands in this installation's
+changelog for the repository, and the ledger row in this database. A process
+that opened the data root read-only cannot run one, and refuses a repository
+with a pending migration by name. The first
 migration, `0001_qualify_bare_declaration_names`, writes the full identity
 into every stored `kind:` pin, `trait:` pin, `traits:` binding and function
 allowlist entry a binary before

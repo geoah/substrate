@@ -7,6 +7,7 @@ package engine_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -304,4 +305,141 @@ func TestRepositoryMigrationsRefuseADivergentLedger(t *testing.T) {
 			}
 		})
 	}
+}
+
+// THE IMPORT PATH. A repository directory from another installation is folded
+// at boot under whatever of its closure this binary admits, and its ledger
+// stays behind in the source database, so the migration runs at the imported
+// repository's first open, over rows the source never migrated. The refs
+// index and the search bands were derived during the import under a registry
+// that could not admit the bare closure, so the migration re-derives them: the
+// imported repository's projections equal the source's, and a search finds
+// the record.
+func TestRepositoryMigrationRunsOnAnImportedDirectory(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, _ := newDatasetWithDSN(t)
+	repo := testdb.Repository(t)
+	docs := []map[string]any{
+		vocabulary.PackageManifest(rmPackage, 1),
+		vocabulary.KindManifest(rmPackage, map[string]any{"singular": "alpha"}, map[string]any{
+			"properties": map[string]any{"label": map[string]any{"type": "string"}},
+		}),
+		vocabulary.KindManifest(rmPackage, map[string]any{"singular": "beta"}, map[string]any{
+			"properties": map[string]any{
+				"target": map[string]any{"type": "reference", "kind": rmAlpha, "mustExist": true},
+				"notes":  map[string]any{"type": "string", "fts": true},
+			},
+		}),
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	a1 := mustPut(t, ds, owner, substrate.PutInput{Kind: rmAlpha, Properties: map[string]any{"label": "the one pointed at"}})
+	b1 := mustPut(t, ds, owner, substrate.PutInput{Kind: rmBeta, Properties: map[string]any{
+		"target": vocabulary.RecordPath(rmAlpha, a1.ID), "notes": "orchard ledger reconciled",
+	}})
+	// The source installation stored its declarations bare, as the binary
+	// before decision 0098 did, and never opened them again under this one.
+	bare := func(id string, edit func(props map[string]any)) {
+		t.Helper()
+		props := rmDeclaration(t, ds, id).Properties
+		edit(props)
+		if err := planter(t, ds).PlantDeclarationRow(ctx, rmKind, id, props); err != nil {
+			t.Fatalf("plant %s: %v", id, err)
+		}
+	}
+	bare(rmBeta, func(p map[string]any) {
+		p["properties"].(map[string]any)["target"].(map[string]any)["kind"] = "alpha"
+	})
+	bare(rmSplit, func(p map[string]any) {
+		p["properties"].(map[string]any)["merge"].(map[string]any)["kind"] = "recordmerge"
+	})
+	sourceRefs, sourceFTS := rmProjections(t, foldOf(t, ds))
+	if len(sourceRefs) == 0 || sourceFTS[rmBeta+"/"+b1.ID] == "" {
+		t.Fatalf("the source holds no refs or no bands for beta: refs %d, fts %q", len(sourceRefs), sourceFTS[rmBeta+"/"+b1.ID])
+	}
+	id := repositoryIDOf(t, ds)
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+
+	// The copy, under a database that has never seen it.
+	root2 := copyRepositoryDir(t, root, id)
+	dsn2 := engine.MigratedDSN(t)
+	svc2 := mustReopen(t, dsn2, root2)
+	raw2, err := engine.OpenScopedDB(dsn2, repo, engine.RoleApp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw2.Close() })
+	if got := rmLedger(t, raw2); len(got) != 0 {
+		t.Fatalf("the boot import wrote a ledger before the repository opened: %v", got)
+	}
+	ds2, err := svc2.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatalf("the imported repository did not open: %v", err)
+	}
+	if got := rmLedger(t, raw2); !reflect.DeepEqual(got, map[int]string{1: "qualify_bare_declaration_names"}) {
+		t.Fatalf("ledger after the first open = %v", got)
+	}
+	beta, err := ds2.KindByRef(ctx, rmBeta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := beta.Definition["properties"].(map[string]any)["target"].(map[string]any)["kind"]; got != rmAlpha {
+		t.Errorf("target.kind = %v, want %s", got, rmAlpha)
+	}
+	split, err := ds2.KindByRef(ctx, rmSplit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := split.Definition["properties"].(map[string]any)["merge"].(map[string]any)["kind"]; got != rmMerge {
+		t.Errorf("recordsplit.merge.kind = %v, want %s", got, rmMerge)
+	}
+	// The projections the import could not derive are the source's again.
+	refs, fts := rmProjections(t, foldOf(t, ds2))
+	if !reflect.DeepEqual(refs, sourceRefs) {
+		t.Errorf("refs after the import and the migration differ from the source:\n%v\nwant\n%v", refs, sourceRefs)
+	}
+	if !reflect.DeepEqual(fts, sourceFTS) {
+		t.Errorf("search bands after the import and the migration differ from the source:\n%v\nwant\n%v", fts, sourceFTS)
+	}
+	hits, err := searchHits(ds2.Search(ctx, substrate.SearchInput{Q: "orchard ledger", Mode: substrate.SearchLexical}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 || hits[0].Record.ID != b1.ID {
+		t.Fatalf("search hits = %v, want %s", hitIDs(hits), b1.ID)
+	}
+	_ = svc2.Close()
+}
+
+// rmProjections reads the refs section of a fold snapshot whole, and the
+// search bands of this test's two kinds keyed by record path: the two
+// projections a declaration decides for a row.
+func rmProjections(t *testing.T, snapshot []byte) ([]map[string]any, map[string]string) {
+	t.Helper()
+	var sections map[string]json.RawMessage
+	if err := json.Unmarshal(snapshot, &sections); err != nil {
+		t.Fatalf("decode the fold snapshot: %v", err)
+	}
+	var refs []map[string]any
+	if err := json.Unmarshal(sections["refs"], &refs); err != nil {
+		t.Fatalf("decode refs: %v", err)
+	}
+	var rows []struct {
+		Kind string `json:"kind"`
+		ID   string `json:"id"`
+		FTS  string `json:"fts"`
+	}
+	if err := json.Unmarshal(sections["fts"], &rows); err != nil {
+		t.Fatalf("decode fts: %v", err)
+	}
+	fts := map[string]string{}
+	for _, r := range rows {
+		if r.Kind == rmAlpha || r.Kind == rmBeta {
+			fts[r.Kind+"/"+r.ID] = r.FTS
+		}
+	}
+	return refs, fts
 }

@@ -23,7 +23,9 @@ package engine
 //
 //   - It writes through the changelog, as ordinary record writes, never into
 //     the fold directly: the changelog is the truth, and a rebuild replays what
-//     the migration wrote.
+//     the migration wrote. What it changes about a declaration it also
+//     re-derives for the rows the declaration describes (the refs index, the
+//     search bands), because an import folded those rows before it ran.
 //   - It runs BEFORE the stored vocabulary loads (engine.go), so it sees the
 //     rows as they are and the binary's own registry, and nothing else. What
 //     it rewrites may be the very rows the load would refuse.
@@ -31,6 +33,15 @@ package engine
 //     directory imported into a fresh database carries its changelog and not
 //     the ledger, so every migration runs once more there and must find
 //     nothing to do.
+//
+// THE IMPORT PATH IS THE ONE THAT NEEDS THIS MOST. A repository directory
+// restored under a fresh database (repodir.go importRepositoryDir) is folded
+// from its segment files at boot, under whatever of its stored closure this
+// binary admits, and the migrations then run at its first open, over rows the
+// source installation may never have migrated: a directory carried over from
+// an older substrate, or from one that never opened it again. The rewrite
+// lands in THIS installation's changelog for the repository, and the ledger
+// row in this database.
 
 import (
 	"context"

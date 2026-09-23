@@ -41,11 +41,21 @@ and the API answers `503`. A landed migration is never edited; `frozen:check`
 and `lint:migrations` hold the files as they hold the SQL ones.
 
 Three rules bind a migration. It writes through the changelog as ordinary
-record writes, never into the fold. It runs before the stored vocabulary
-loads, so it works from the rows and the binary's own registry alone. It is
-idempotent, because the ledger is the database's: a repository directory
-imported into a fresh database carries its changelog and not the ledger, so
-every migration runs once more there and must find nothing to do.
+record writes, never into the fold, and what it changes about a declaration
+it re-derives for the rows the declaration describes (the refs index, the
+search bands), because a boot import folds those rows before it runs. It
+runs before the stored vocabulary loads, so it works from the rows and the
+binary's own registry alone. It is idempotent, because the ledger is the
+database's: a repository directory imported into a fresh database carries
+its changelog and not the ledger, so every migration runs once more there
+and must find nothing to do.
+
+The import path is the one this is for as much as the upgrade in place. A
+directory restored under a fresh database is folded from its segments at
+boot under whatever of its closure this binary admits, and the migrations
+run at its first open, over rows the source installation may never have
+migrated. The rewrite lands in this installation's changelog for the
+repository, and the ledger row in this database.
 
 The special case lost because the next rewrite would add a second one, and
 the load would become the place every repair hides. The dialect gate lost
@@ -81,10 +91,14 @@ the rewritten rows so the copy reads pristine.
 
 `internal/engine`'s `TestRepositoryMigrationQualifiesStoredBareNames` plants
 bare names into stored declarations, reopens, and holds the rewrite, the
-ledger row, the preserved versions and the second open's silence;
-`TestRepositoryMigrationsRefuseADivergentLedger` holds the three refusals;
-`TestRepositoryMigrationsMatchTheirFiles` holds the runner's list to the
-files; `mise run lint:migrations` and `mise run frozen:check` hold the files.
+ledger row, the preserved versions, the second open's silence and a rebuild;
+`TestRepositoryMigrationRunsOnAnImportedDirectory` copies a directory with
+bare declarations under a fresh database and holds the import, the
+migration, the refs index, the search bands and a lexical search against the
+source; `TestRepositoryMigrationsRefuseADivergentLedger` holds the three
+refusals; `TestRepositoryMigrationsMatchTheirFiles` holds the runner's list
+to the files; `mise run lint:migrations` and `mise run frozen:check` hold
+the files.
 
 ## More Information
 
