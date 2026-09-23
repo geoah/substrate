@@ -109,7 +109,7 @@ data:
   # their writers, and the sync body writes them beside the legacy
   # `syncStatus`/`lastSyncedAt`/`streamCursors` fields on every run. Nothing
   # is renamed, narrowed or dropped.
-  version: 6
+  version: 7
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -208,7 +208,7 @@ data:
   # beside the legacy `syncStatus`/`lastSyncedAt` pair, and the dispatcher
   # stamps a record-sourced delivery's start, finish and park onto them. The
   # two OWNER hands are `syncRequestedAt` (Sync now) and `syncPaused` (Pause).
-  traits: [accountconfig, sync]
+  traits: [substrate.reamde.dev/core/accountconfig, substrate.reamde.dev/core/sync]
   displayTemplate: "{displayName|team.name}"
   properties:
     # The accountconfig trait's contracted properties — DORMANT here.
@@ -319,7 +319,7 @@ data:
     # the owner are both mirrored rows, and their names and ids are theirs.
     team:
       type: reference
-      kind: team
+      kind: providers.substrate.reamde.dev/slack/team
       writer: connector
       displayName: Workspace
       description: >-
@@ -327,7 +327,7 @@ data:
         row lands in the same drain, so no mustExist
     user:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/slack/user
       writer: connector
       displayName: You
       description: >-
@@ -472,7 +472,7 @@ data:
     # identity
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/slack/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -616,7 +616,7 @@ data:
     # identity
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/slack/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -929,13 +929,13 @@ data:
             a bot user"
         bot:
           type: reference
-          kind: bot
+          kind: providers.substrate.reamde.dev/slack/bot
           description: >-
             `bot_id` — the bot identity behind this app user. A reference:
             a bot kind exists, and an id we mirror is never a string (T-021)
         guestInvitedBy:
           type: reference
-          kind: user
+          kind: providers.substrate.reamde.dev/slack/user
           description: "`guest_invited_by` — the member who invited this guest"
         guestExpirationTs:
           type: datetime
@@ -943,7 +943,7 @@ data:
             epoch seconds"
         team:
           type: reference
-          kind: team
+          kind: providers.substrate.reamde.dev/slack/team
           description: >-
             `team` — the workspace this profile belongs to, which on a Slack
             Connect sender is not the workspace they were read in
@@ -990,7 +990,7 @@ data:
     # relations
     team:
       type: reference
-      kind: team
+      kind: providers.substrate.reamde.dev/slack/team
       displayName: Workspace
       description: >-
         `team_id` — the workspace this row was read in. A reference, because
@@ -1024,7 +1024,7 @@ data:
             owner"
         teams:
           type: reference
-          kind: team
+          kind: providers.substrate.reamde.dev/slack/team
           repeated: true
           description: "`teams` — the workspaces on the grid this person belongs
             to"
@@ -1066,13 +1066,13 @@ data:
   names:
     singular: conversation
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{name|conversationId}"
   properties:
     # identity
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/slack/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1305,7 +1305,7 @@ data:
     # relations
     contextTeam:
       type: reference
-      kind: team
+      kind: providers.substrate.reamde.dev/slack/team
       displayName: Context workspace
       description: >-
         `context_team_id` — the workspace this conversation is being read
@@ -1313,67 +1313,67 @@ data:
         and differs on a Connect channel
     creator:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/slack/user
       displayName: Creator
       description: "`creator` — whoever created the channel. Absent on a DM,
         which nobody creates"
     user:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/slack/user
       displayName: Partner
       description: "`user` — on a 1:1 DM, the person on the other side. Absent
         on every other kind of conversation"
     parentConversation:
       type: reference
-      kind: conversation
+      kind: providers.substrate.reamde.dev/slack/conversation
       displayName: Parent conversation
       description: "`parent_conversation` — the conversation a thread-turned-
         channel was split out of. Null on nearly everything"
     latest:
       type: reference
-      kind: message
+      kind: providers.substrate.reamde.dev/slack/message
       displayName: Latest message
       description: >-
         `latest` — the newest message, which conversations.info embeds whole.
         Mirrored as its own message row and pointed at, never inlined
     sharedTeams:
       type: reference
-      kind: team
+      kind: providers.substrate.reamde.dev/slack/team
       repeated: true
       displayName: Shared with
       description: "`shared_team_ids` — every workspace this conversation
         is shared with. References, because a workspace is mirrored"
     pendingConnectedTeams:
       type: reference
-      kind: team
+      kind: providers.substrate.reamde.dev/slack/team
       repeated: true
       displayName: Pending connections
       description: "`pending_connected_team_ids` — workspaces invited to this
         conversation that have not accepted"
     pendingShared:
       type: reference
-      kind: team
+      kind: providers.substrate.reamde.dev/slack/team
       repeated: true
       displayName: Pending shares
       description: "`pending_shared` — workspaces an external share has been
         offered to and not yet accepted"
     connectedTeams:
       type: reference
-      kind: team
+      kind: providers.substrate.reamde.dev/slack/team
       repeated: true
       displayName: Connected workspaces
       description: "`connected_team_ids` — every workspace connected to this
         conversation through Slack Connect"
     connectedLimitedTeams:
       type: reference
-      kind: team
+      kind: providers.substrate.reamde.dev/slack/team
       repeated: true
       displayName: Limited connections
       description: "`connected_limited_team_ids` — connected workspaces whose
         members see a limited view of the conversation"
     internalTeams:
       type: reference
-      kind: team
+      kind: providers.substrate.reamde.dev/slack/team
       repeated: true
       displayName: Internal workspaces
       description: "`internal_team_ids` — the workspaces of this organisation
@@ -1389,7 +1389,7 @@ data:
           description: the topic text, in Slack mrkdwn
         creator:
           type: reference
-          kind: user
+          kind: providers.substrate.reamde.dev/slack/user
           description: "`creator` — who set the topic. A reference: the setter
             is a mirrored user"
         lastSet:
@@ -1407,7 +1407,7 @@ data:
           description: the purpose text, in Slack mrkdwn
         creator:
           type: reference
-          kind: user
+          kind: providers.substrate.reamde.dev/slack/user
           description: "`creator` — who set the purpose"
         lastSet:
           type: datetime
@@ -1436,7 +1436,7 @@ data:
     # from a sibling call
     members:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/slack/user
       repeated: true
       displayName: Members
       description: >-
@@ -1479,13 +1479,13 @@ data:
   names:
     singular: message
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{text|ts}"
   properties:
     # identity
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/slack/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1675,7 +1675,7 @@ data:
     # relations
     channel:
       type: reference
-      kind: conversation
+      kind: providers.substrate.reamde.dev/slack/conversation
       required: true
       mustExist: true
       onDelete: cascade
@@ -1685,31 +1685,31 @@ data:
         cascading: a message cannot exist without it
     team:
       type: reference
-      kind: team
+      kind: providers.substrate.reamde.dev/slack/team
       displayName: Workspace
       description: "`team` — the workspace the message was posted in"
     userTeam:
       type: reference
-      kind: team
+      kind: providers.substrate.reamde.dev/slack/team
       displayName: Author's workspace
       description: "`user_team` — the author's own workspace, which on a Slack
         Connect message is not the channel's"
     sourceTeam:
       type: reference
-      kind: team
+      kind: providers.substrate.reamde.dev/slack/team
       displayName: Source workspace
       description: "`source_team` — the workspace the message was sent from,
         on a shared channel"
     user:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/slack/user
       displayName: Author
       description: >-
         `user` — who wrote it. A reference at the mirrored person, never their
         id. Absent on a webhook post, which has only a username
     bot:
       type: reference
-      kind: bot
+      kind: providers.substrate.reamde.dev/slack/bot
       displayName: Bot
       description: >-
         `bot_id` — the bot identity that posted it, as a reference: a bot
@@ -1717,7 +1717,7 @@ data:
         is a different identity
     parent:
       type: reference
-      kind: message
+      kind: providers.substrate.reamde.dev/slack/message
       displayName: Thread parent
       description: >-
         `thread_ts` — the thread parent this is a reply to, as a reference.
@@ -1725,26 +1725,26 @@ data:
         a thread
     root:
       type: reference
-      kind: message
+      kind: providers.substrate.reamde.dev/slack/message
       displayName: Thread root
       description: >-
         `root` — the thread parent Slack inlines on a thread_broadcast. The
         same message as parent, mirrored as its own row and pointed at
     latestReply:
       type: reference
-      kind: message
+      kind: providers.substrate.reamde.dev/slack/message
       displayName: Latest reply
       description: >-
         `latest_reply` — the newest reply in this thread. On a thread parent.
         The thread walk descends only where this is newer than the cursor
     parentUser:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/slack/user
       displayName: Replying to
       description: "`parent_user_id` — who wrote the thread parent. On a reply"
     replyUsers:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/slack/user
       repeated: true
       displayName: Reply participants
       description: >-
@@ -1753,7 +1753,7 @@ data:
         pins one kind, so the B… half is replyBots
     replyBots:
       type: reference
-      kind: bot
+      kind: providers.substrate.reamde.dev/slack/bot
       repeated: true
       displayName: Reply bots
       description: >-
@@ -1761,7 +1761,7 @@ data:
         half of one API array; see replyUsers
     xFiles:
       type: reference
-      kind: file
+      kind: providers.substrate.reamde.dev/slack/file
       repeated: true
       displayName: Referenced files
       description: >-
@@ -1770,13 +1770,13 @@ data:
         reference resolves
     inviter:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/slack/user
       displayName: Inviter
       description: "`inviter` — who invited the joining member. On channel_join
         and group_join"
     mentions:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/slack/user
       repeated: true
       displayName: Mentions
       description: >-
@@ -1784,7 +1784,7 @@ data:
         tokens. A lossless mechanical decode; the encoded text stays in `text`
     channelMentions:
       type: reference
-      kind: conversation
+      kind: providers.substrate.reamde.dev/slack/conversation
       repeated: true
       displayName: Channel mentions
       description: >-
@@ -1792,7 +1792,7 @@ data:
         tokens. The same decode as mentions, for channels
     files:
       type: reference
-      kind: file
+      kind: providers.substrate.reamde.dev/slack/file
       repeated: true
       displayName: Files
       description: >-
@@ -1815,7 +1815,7 @@ data:
             it"
         users:
           type: reference
-          kind: user
+          kind: providers.substrate.reamde.dev/slack/user
           repeated: true
           description: >-
             `users` — who left it. References, and Slack truncates the list
@@ -1832,7 +1832,7 @@ data:
       fields:
         user:
           type: reference
-          kind: user
+          kind: providers.substrate.reamde.dev/slack/user
           description: "`user` — who edited it"
         ts:
           type: datetime
@@ -1841,7 +1841,7 @@ data:
             ts names an instant, not another message
     pinnedTo:
       type: reference
-      kind: conversation
+      kind: providers.substrate.reamde.dev/slack/conversation
       repeated: true
       displayName: Pinned to
       description: "`pinned_to` — the conversations this message is pinned
@@ -1853,7 +1853,7 @@ data:
       fields:
         pinnedBy:
           type: reference
-          kind: user
+          kind: providers.substrate.reamde.dev/slack/user
           description: "`pinned_by` — who pinned it"
         pinnedTs:
           type: datetime
@@ -1894,7 +1894,7 @@ data:
     # identity
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/slack/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1938,12 +1938,12 @@ data:
     # relations
     team:
       type: reference
-      kind: team
+      kind: providers.substrate.reamde.dev/slack/team
       displayName: Workspace
       description: "`team_id` — the workspace the app is installed in"
     user:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/slack/user
       displayName: Bot user
       description: >-
         `user_id` — the user row this bot posts as, when bots.info supplies
@@ -1977,13 +1977,13 @@ data:
   names:
     singular: file
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{name|fileId}"
   properties:
     # identity
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/slack/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -2576,7 +2576,7 @@ data:
           description: "`url` — where the icon is served from"
         slackFile:
           type: reference
-          kind: file
+          kind: providers.substrate.reamde.dev/slack/file
           description: "`slack_file.id` — the icon as a Slack-hosted file,
             when it is one"
     dmMpdmUsersWithFileAccess:
@@ -2589,7 +2589,7 @@ data:
       fields:
         user:
           type: reference
-          kind: user
+          kind: providers.substrate.reamde.dev/slack/user
           description: "`user_id` — the person the grant is for. A reference:
             it is a user this bundle mirrors"
         access:
@@ -2598,30 +2598,30 @@ data:
     # relations
     user:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/slack/user
       displayName: Uploader
       description: "`user` — who uploaded it. Absent on a file an app posted
         under a username"
     userTeam:
       type: reference
-      kind: team
+      kind: providers.substrate.reamde.dev/slack/team
       displayName: Uploader's workspace
       description: "`user_team` — the uploader's own workspace"
     channels:
       type: reference
-      kind: conversation
+      kind: providers.substrate.reamde.dev/slack/conversation
       repeated: true
       displayName: Channels
       description: "`channels` — the public channels the file is shared in"
     groups:
       type: reference
-      kind: conversation
+      kind: providers.substrate.reamde.dev/slack/conversation
       repeated: true
       displayName: Private channels
       description: "`groups` — the private channels the file is shared in"
     ims:
       type: reference
-      kind: conversation
+      kind: providers.substrate.reamde.dev/slack/conversation
       repeated: true
       displayName: DMs
       description: "`ims` — the direct messages the file is shared in"
@@ -2634,31 +2634,31 @@ data:
         dialect states at one keyed level only
     canvasCreator:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/slack/user
       displayName: Canvas creator
       description: "`canvas_creator_id` — who created the canvas. A reference:
         never a user id when we mirror users"
     sourceCanvas:
       type: reference
-      kind: file
+      kind: providers.substrate.reamde.dev/slack/file
       displayName: Source canvas
       description: "`source_canvas_id` — the canvas this file was made from.
         A canvas IS a file, so it is a file reference"
     sourceTeam:
       type: reference
-      kind: team
+      kind: providers.substrate.reamde.dev/slack/team
       displayName: Source workspace
       description: "`source_team` — the workspace the file came from, which
         differs from the uploader's on a Connect share"
     editors:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/slack/user
       repeated: true
       displayName: Editors
       description: "`editors` — everyone who has edited a canvas or a post"
     teamsSharedWith:
       type: reference
-      kind: team
+      kind: providers.substrate.reamde.dev/slack/team
       repeated: true
       displayName: Workspaces shared with
       description: >-
@@ -2721,7 +2721,7 @@ data:
   properties:
     conversation:
       type: reference
-      kind: conversation
+      kind: providers.substrate.reamde.dev/slack/conversation
       required: true
       mustExist: true
       onDelete: cascade

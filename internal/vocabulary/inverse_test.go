@@ -63,12 +63,12 @@ func TestInverseIsCarriedByAReference(t *testing.T) {
 	r := loadFixture(t, map[string]string{"a.yaml": inverseFixture("a.example.com", `  properties:
     owner:
       type: reference
-      kind: thing
+      kind: a.example.com/a/thing
       inverse: owned
       inverseDescription: what this thing owns
     seen:
       type: reference
-      kind: thing
+      kind: a.example.com/a/thing
       inverse: seenBy
 `)})
 	p, _ := r.ByIdentity("a.example.com/a/pointer")
@@ -85,7 +85,7 @@ func TestInverseIsCarriedByAReference(t *testing.T) {
 
 func TestInverseMustBeSpelledLikeADeclaredName(t *testing.T) {
 	_, err := loadInverse(t, map[string]string{"a.yaml": inverseFixture("a.example.com", `  properties:
-    owner: {type: reference, kind: thing, inverse: not_camel}
+    owner: {type: reference, kind: a.example.com/a/thing, inverse: not_camel}
 `)})
 	if err == nil || !strings.Contains(err.Error(), "inverse") {
 		t.Fatalf("a snake-cased inverse must be refused, got %v", err)
@@ -94,7 +94,7 @@ func TestInverseMustBeSpelledLikeADeclaredName(t *testing.T) {
 
 func TestInverseDescriptionWithoutAnInverseIsRefused(t *testing.T) {
 	_, err := loadInverse(t, map[string]string{"a.yaml": inverseFixture("a.example.com", `  properties:
-    owner: {type: reference, kind: thing, inverseDescription: describes nothing}
+    owner: {type: reference, kind: a.example.com/a/thing, inverseDescription: describes nothing}
 `)})
 	if err == nil || !strings.Contains(err.Error(), "inverseDescription") {
 		t.Fatalf("a description of an undeclared inverse must be refused, got %v", err)
@@ -103,10 +103,10 @@ func TestInverseDescriptionWithoutAnInverseIsRefused(t *testing.T) {
 
 func TestInverseCollisionInsideOneAuthorityIsRefused(t *testing.T) {
 	_, err := loadInverse(t, map[string]string{"a.yaml": inverseFixture("a.example.com", `  properties:
-    owner: {type: reference, kind: thing, inverse: related}
+    owner: {type: reference, kind: a.example.com/a/thing, inverse: related}
     seen:
       type: reference
-      kind: thing
+      kind: a.example.com/a/thing
       inverse: related
 `)})
 	if err == nil {
@@ -197,7 +197,7 @@ func TestOneNameIsOnePointer(t *testing.T) {
 	r := loadFixture(t, map[string]string{"a.yaml": inverseFixture("a.example.com", `  properties:
     owner:
       type: reference
-      kind: thing
+      kind: a.example.com/a/thing
       inverse: owned
 `)})
 	p, _ := r.ByIdentity("a.example.com/a/pointer")

@@ -74,7 +74,7 @@ data:
     label: {type: string}
     widget:
       type: reference
-      kind: widget
+      kind: a.example.com/a/widget
       required: true
       mustExist: true
       subject: true

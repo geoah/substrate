@@ -588,6 +588,34 @@ that was still revising its migration. Throw such a database away:
 binary wrote for anything else. There is no repair, because two branch
 revisions of one migration can differ in any way at all.
 
+**A repository migration is code the boot runs once per repository.** Where a
+schema migration changes the tables, a repository migration rewrites what a
+repository holds, through the changelog as ordinary record writes, so a
+rebuild reproduces the result
+([0099](decisions/0099-a-repository-migration-is-code-the-boot-runs-once-and-records.md)).
+Each one runs at the repository's first open under a binary that carries it,
+before the stored vocabulary loads, in one transaction with the row it leaves
+in `repository_migrations` (`version`, `name`, `applied_at`, one row per
+repository), and never runs again on that database. The ledger is checked the
+way `schema_migrations` is: a recorded version this binary does not carry, a
+recorded name that differs, or a pending version below one already recorded
+refuses that repository's open by name, and the API answers `503`. A
+migration is written to find nothing to do the second time, because a
+repository directory imported into a fresh database carries its changelog and
+not the database's ledger, so every migration runs once more there. That is
+also how a directory from an older installation, or from one that never
+opened it under the newer binary, is brought up to date: the
+[boot import](#the-repository-directory) folds it from its segments, the
+migrations run at its first open, the rewrite lands in this installation's
+changelog for the repository, and the ledger row in this database. A process
+that opened the data root read-only cannot run one, and refuses a repository
+with a pending migration by name. The first
+migration, `0001_qualify_bare_declaration_names`, writes the full identity
+into every stored `kind:` pin, `trait:` pin, `traits:` binding and function
+allowlist entry a binary before
+[decision 0098](decisions/0098-a-declaration-names-a-kind-or-trait-in-full.md)
+stored bare, resolving each word the way that binary did.
+
 ## Backups
 
 **A backup is the data root plus the credential key, kept apart.** Every

@@ -27,18 +27,18 @@ data:
       description: what the team owns and how it works, as prose
     parent:
       type: reference
-      kind: team
+      kind: samples.substrate.reamde.dev/people/team
       mustExist: true
       description: the team this one nests under
     members:
       type: reference
-      kind: person
+      kind: samples.substrate.reamde.dev/people/person
       repeated: true
       mustExist: true
       description: the people on the team
     leads:
       type: reference
-      kind: person
+      kind: samples.substrate.reamde.dev/people/person
       repeated: true
       mustExist: true
       description: the people who lead it; leading is not membership

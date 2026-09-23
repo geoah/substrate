@@ -105,7 +105,7 @@ data:
   # the first cut, written to the v4 guide rather than migrated from a
   # pre-guide draft. A changed declaration shipping the same version reaches
   # no repository, so every edit from here bumps this.
-  version: 12
+  version: 13
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -206,7 +206,7 @@ data:
   # record-sourced delivery's start, finish and park onto the same record.
   # The two OWNER hands are `syncRequestedAt` ("sync now") and `syncPaused`
   # ("pause"); the other ten are the connector's.
-  traits: [accountconfig, sync]
+  traits: [substrate.reamde.dev/core/accountconfig, substrate.reamde.dev/core/sync]
   displayTemplate: "{displayName|user.name}"
   properties:
     # ---- the accountconfig trait's contracted properties — DORMANT here ---
@@ -299,7 +299,7 @@ data:
     # ---- who the token turned out to be -----------------------------------
     user:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/notion/user
       writer: connector
       displayName: You
       description: >-
@@ -471,7 +471,7 @@ data:
     # ---- identity --------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/notion/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -604,13 +604,13 @@ data:
   names:
     singular: database
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{titlePlainText|databaseId}"
   properties:
     # ---- identity --------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/notion/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -879,13 +879,13 @@ data:
   names:
     singular: datasource
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{titlePlainText|dataSourceId}"
   properties:
     # ---- identity --------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/notion/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1201,13 +1201,13 @@ data:
   names:
     singular: page
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{titlePlainText|pageId}"
   properties:
     # ---- identity --------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/notion/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1467,13 +1467,13 @@ data:
   names:
     singular: block
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{plainText|type}"
   properties:
     # ---- identity --------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/notion/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1908,7 +1908,7 @@ data:
   properties:
     page:
       type: reference
-      kind: page
+      kind: providers.substrate.reamde.dev/notion/page
       required: true
       mustExist: true
       onDelete: cascade

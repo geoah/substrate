@@ -43,7 +43,7 @@ func pathDocs() []map[string]any {
 			map[string]any{"singular": "holder"},
 			map[string]any{"properties": map[string]any{
 				"pinned":   map[string]any{"type": "reference", "kind": pathPackage + "/target"},
-				"local":    map[string]any{"type": "reference", "kind": "target"},
+				"local":    map[string]any{"type": "reference", "kind": pathPackage + "/target"},
 				"free":     map[string]any{"type": "reference", "kind": "any"},
 				"declared": map[string]any{"type": "reference", "kind": "substrate.reamde.dev/core/kind"},
 				"many": map[string]any{

@@ -418,7 +418,7 @@ func AccountManifest() Manifest {
 					"package":         "testacct",
 					"names":           map[string]any{"singular": "account"},
 					"displayTemplate": "{label}",
-					"traits":          []any{"accountconfig"},
+					"traits":          []any{"substrate.reamde.dev/core/accountconfig"},
 					"properties": map[string]any{
 						"provider":      map[string]any{"type": "string"},
 						"label":         map[string]any{"type": "string"},

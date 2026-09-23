@@ -10,7 +10,7 @@ data:
     issue, or proposed by an agent. Status carries the whole lifecycle — a
     proposal waits for the owner, an open task is due, and completing it stamps
     the time by itself.
-  version: 9
+  version: 11
   names:
     singular: task
   # `recurring` (core's) is the repeat rule seeded off dueAt; `override`
@@ -18,9 +18,9 @@ data:
   # task pointing at the series through `recurrenceOf` and naming the slot
   # it replaces in `originalAt`. The window read computes the rest.
   traits:
-    - "temporal(point: dueAt)"
-    - recurring
-    - override
+    - "substrate.reamde.dev/core/temporal(point: dueAt)"
+    - substrate.reamde.dev/core/recurring
+    - substrate.reamde.dev/core/override
   # `title` is the LEGACY alternative, not a second spelling to write: tasks
   # written before `name` existed hold their heading in the built-in title
   # column, and reading it keeps them titled instead of blanking them on their
@@ -83,7 +83,7 @@ data:
     # occurrence along.
     recurrenceOf:
       type: reference
-      kind: task
+      kind: samples.substrate.reamde.dev/tasks/task
       description: the repeating task this one replaces one occurrence of
     originalAt:
       type: datetime
@@ -121,12 +121,12 @@ data:
       description: when the task was done, stamped by the transition
     project:
       type: reference
-      kind: project
+      kind: samples.substrate.reamde.dev/tasks/project
       mustExist: true
       description: the project this task groups under
     assignee:
       type: reference
-      kind: person
+      kind: samples.substrate.reamde.dev/people/person
       mustExist: true
       description: the person the task is on; absent means the owner
     source:

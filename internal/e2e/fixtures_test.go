@@ -172,7 +172,7 @@ func storyDocuments(providerID string) []map[string]any {
 		kindDoc("eventimport", map[string]any{
 			"description":     "A calendar event as an importer delivers it: raw emails, nothing resolved yet.",
 			"displayTemplate": "{summary}",
-			"traits":          []string{"temporal(range)"},
+			"traits":          []string{"substrate.reamde.dev/core/temporal(range)"},
 			"properties": map[string]any{
 				"summary":        map[string]any{"type": "string", "description": "the event's heading"},
 				"organizerEmail": map[string]any{"type": "string", "description": "the organizer's raw email"},

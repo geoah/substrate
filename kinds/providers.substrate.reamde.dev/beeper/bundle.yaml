@@ -143,7 +143,7 @@ data:
   # with no raw, no derived property, every relation a reference and every
   # closed set an enum. A changed declaration shipping the same version
   # reaches no repository, which is why this moves.
-  version: 14
+  version: 15
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -243,7 +243,7 @@ data:
   # beside the legacy `syncStatus`/`lastSyncedAt` pair, and the dispatcher
   # stamps a record-sourced delivery's start, finish and park onto them. The
   # two OWNER hands are `syncRequestedAt` (Sync now) and `syncPaused` (Pause).
-  traits: [accountconfig, sync]
+  traits: [substrate.reamde.dev/core/accountconfig, substrate.reamde.dev/core/sync]
   displayTemplate: "{displayName|user.fullName}"
   properties:
     # The accountconfig trait's contracted properties — DORMANT here.
@@ -351,7 +351,7 @@ data:
     # What the TOKEN turned out to be — a reference, not a copy.
     user:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/beeper/user
       writer: connector
       displayName: You
       description: >-
@@ -506,7 +506,7 @@ data:
     # identity
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/beeper/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -589,7 +589,7 @@ data:
     # relations
     accounts:
       type: reference
-      kind: chataccount
+      kind: providers.substrate.reamde.dev/beeper/chataccount
       repeated: true
       displayName: Accounts
       description: >-
@@ -624,7 +624,7 @@ data:
     # identity
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/beeper/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -689,14 +689,14 @@ data:
     # relations
     bridge:
       type: reference
-      kind: bridge
+      kind: providers.substrate.reamde.dev/beeper/bridge
       displayName: Bridge
       description: >-
         `bridge` — the bridge running this account, from its {id, type, provider}
         stub. The type and the provider are the bridge row's
     user:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/beeper/user
       displayName: You here
       description: >-
         `user` — this network's own identity for the owner: the handle, phone
@@ -736,7 +736,7 @@ data:
     # identity
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/beeper/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -828,7 +828,7 @@ data:
     # identity
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/beeper/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -881,7 +881,7 @@ data:
     # identity
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/beeper/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1006,14 +1006,14 @@ data:
     # relations
     chatAccount:
       type: reference
-      kind: chataccount
+      kind: providers.substrate.reamde.dev/beeper/chataccount
       displayName: Chat account
       description: >-
         `accountID` — the chat account this conversation belongs to. A reference,
         because the chat account is mirrored
     participants:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/beeper/user
       repeated: true
       displayName: Members
       # `participants.items`, with the three Participant-only flags as LINK
@@ -1035,7 +1035,7 @@ data:
             a person
     preview:
       type: reference
-      kind: message
+      kind: providers.substrate.reamde.dev/beeper/message
       displayName: Latest message
       # ChatWithPreview = Chat + `preview`, a whole Message. §3: an embedded
       # object with its own identity and its own endpoint is a kind and a
@@ -1049,7 +1049,7 @@ data:
         not carry it
     labels:
       type: reference
-      kind: label
+      kind: providers.substrate.reamde.dev/beeper/label
       repeated: true
       displayName: Labels
       description: >-
@@ -1057,7 +1057,7 @@ data:
         labels are not enabled for the owner at all
     mergedIntoChat:
       type: reference
-      kind: chat
+      kind: providers.substrate.reamde.dev/beeper/chat
       displayName: Merged into
       description: >-
         `mergedIntoChatID` — the merged chat this one is a member of, when
@@ -1071,13 +1071,13 @@ data:
       fields:
         chats:
           type: reference
-          kind: chat
+          kind: providers.substrate.reamde.dev/beeper/chat
           repeated: true
           description: >-
             `merge.chatIDs` — the member chats grouped by this merged chat
         defaultChat:
           type: reference
-          kind: chat
+          kind: providers.substrate.reamde.dev/beeper/chat
           description: >-
             `merge.defaultChatID` — the member a send routes to when the owner
             picked one. Per-device; absent means most recently active
@@ -1232,13 +1232,13 @@ data:
   names:
     singular: message
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{senderName|sender.fullName}: {text}"
   properties:
     # identity
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/beeper/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1334,7 +1334,7 @@ data:
     # relations
     chat:
       type: reference
-      kind: chat
+      kind: providers.substrate.reamde.dev/beeper/chat
       required: true
       onDelete: cascade
       displayName: Chat
@@ -1343,26 +1343,26 @@ data:
         requires it on every message
     chatAccount:
       type: reference
-      kind: chataccount
+      kind: providers.substrate.reamde.dev/beeper/chataccount
       displayName: Chat account
       description: "`accountID` — the chat account this message came through"
     sender:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/beeper/user
       displayName: Sender
       description: >-
         `senderID` — who sent it, as the fully qualified MXID, which carries
         the bridge and the homeserver on a network identity
     linkedMessage:
       type: reference
-      kind: message
+      kind: providers.substrate.reamde.dev/beeper/message
       displayName: In reply to
       description: >-
         `linkedMessageID` — the message this replies to, or the one a REACTION
         row reacts to. No mustExist: it may be older than the window
     mentions:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/beeper/user
       repeated: true
       displayName: Mentions
       description: >-
@@ -1527,7 +1527,7 @@ data:
             so a string
         participant:
           type: reference
-          kind: user
+          kind: providers.substrate.reamde.dev/beeper/user
           description: >-
             `participantID` — who reacted. A reference, because the person
             is mirrored
@@ -1572,7 +1572,7 @@ data:
             `sendStatus.timestamp` — when this send-status event happened
         deliveredToUsers:
           type: reference
-          kind: user
+          kind: providers.substrate.reamde.dev/beeper/user
           repeated: true
           description: >-
             `sendStatus.deliveredToUsers` — who the network reported delivery
@@ -1621,7 +1621,7 @@ data:
     # identity
     chat:
       type: reference
-      kind: chat
+      kind: providers.substrate.reamde.dev/beeper/chat
       required: true
       mustExist: true
       onDelete: cascade

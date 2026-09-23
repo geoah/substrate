@@ -13,9 +13,9 @@ import (
 // from nowhere else than this message and the loader's reserved-name one.
 func TestSplitPropsNamesTheTemporalBinding(t *testing.T) {
 	for name, want := range map[string]string{
-		"at":     "traits: [temporal(point)]",
-		"endsAt": "traits: [temporal(range)]",
-		"dueAt":  `traits: ["temporal(point: dueAt)"]`,
+		"at":     "traits: [substrate.reamde.dev/core/temporal(point)]",
+		"endsAt": "traits: [substrate.reamde.dev/core/temporal(range)]",
+		"dueAt":  `traits: ["substrate.reamde.dev/core/temporal(point: dueAt)"]`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			todo := &vocabulary.Kind{Name: "todo", HotColumns: map[string]bool{}}

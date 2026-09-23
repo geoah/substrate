@@ -555,8 +555,8 @@ func (m *Machine) HasState(s string) bool {
 
 // Trait is a trait: a reusable set of typed properties with shared
 // semantics (the wire kind is `trait` — record 63; the Go name predates it).
-// Traits resolve in-authority first and then uniquely across authorities, so an
-// app's authority can bind one the vocabulary declares.
+// A kind binds one by its full identity, whichever package declares it, so
+// an app's authority can bind one the vocabulary declares.
 type Trait struct {
 	Name string
 	// Package is the identity of the package that declares the trait.
@@ -592,12 +592,14 @@ func (d *PropertyType) Identity() string { return d.Package + "/" + d.Name }
 // TraitBinding is one type's use of a trait, with the optional
 // hot-column remapping (`temporal(point: dueAt)`).
 type TraitBinding struct {
+	// Trait is the trait's bare name, the last segment of the binding's full
+	// spelling: what Implements matches when asked by a bare word.
 	Trait string
-	// Identity is the RESOLVED trait's full identity
-	// ("substrate.reamde.dev/core/accountconfig"): the declaration names a bare trait,
-	// resolution pins which one, and the binding keeps that answer. Host
-	// behavior keys on it EXACTLY, so a bundle-local trait wearing a core
-	// trait's bare name can never counterfeit the host-recognized interfaces.
+	// Identity is the trait's full identity
+	// ("substrate.reamde.dev/core/accountconfig"), exactly as the binding
+	// spells it. Host behavior keys on it EXACTLY, so a bundle-local trait
+	// wearing a core trait's bare name can never counterfeit the
+	// host-recognized interfaces.
 	Identity string
 	Variant  string
 	// Columns maps the trait's property name to the declared hot
@@ -973,46 +975,63 @@ func (r *Registry) PropertyTypes() []*PropertyType {
 	return out
 }
 
-// ResolveTrait finds a trait by bare name: in the declaring package first,
-// then core's, then uniquely across packages — the same rule a short `kind:`
-// pin follows, with one addition. CORE WINS over a same-named trait another
-// package declares, because a trait moving into core (the way `recurring`
-// did, out of the `scheduling` sample) would otherwise turn every existing
-// bare binding in a repository that still holds the old copy ambiguous, and
-// park every package binding it at the next boot. The shadowed copy stays
-// declared and inert until its package drops it.
-func (r *Registry) ResolveTrait(pkg, name string) (*Trait, error) {
+// TraitByIdentity looks a trait up by "<authority>/<package>/<name>". It is
+// the only way a declaration names a trait: a `traits:` binding and a
+// `trait:` pin are spelled in full, and a bare name is refused at admission
+// (bareNameProblem) rather than resolved against anything.
+func (r *Registry) TraitByIdentity(identity string) (*Trait, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if g, ok := r.packages[pkg]; ok {
-		if c, ok := g.Traits[name]; ok {
-			return c, nil
+	if g, ok := r.packages[KindPackage(identity)]; ok {
+		if c, ok := g.Traits[KindName(identity)]; ok {
+			return c, true
 		}
 	}
-	if g, ok := r.packages[PackageCore]; ok {
-		if c, ok := g.Traits[name]; ok {
-			return c, nil
-		}
-	}
-	var found []*Trait
+	return nil, false
+}
+
+// traitsNamed lists the identities of every loaded trait with the given bare
+// name, sorted: what the refusal of a bare binding offers as the spelling to
+// use.
+func (r *Registry) traitsNamed(name string) []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []string
 	for _, n := range r.order {
 		if c, ok := r.packages[n].Traits[name]; ok {
-			found = append(found, c)
+			out = append(out, c.Identity())
 		}
 	}
-	switch len(found) {
-	case 0:
-		return nil, fmt.Errorf("unknown trait %q", name)
-	case 1:
-		return found[0], nil
-	default:
-		names := make([]string, 0, len(found))
-		for _, c := range found {
-			names = append(names, c.Identity())
-		}
-		sort.Strings(names)
-		return nil, fmt.Errorf("ambiguous trait %q: %s", name, strings.Join(names, ", "))
+	sort.Strings(out)
+	return out
+}
+
+// kindsNamed is traitsNamed for kinds.
+func (r *Registry) kindsNamed(name string) []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []string
+	for _, c := range r.byName[name] {
+		out = append(out, c.Identity)
 	}
+	sort.Strings(out)
+	return out
+}
+
+// bareNameProblem is the refusal every declaration site gives a bare name.
+// A kind's or a trait's name IS its authority, package and name, and a
+// declaration that names one writes all three: the same word under two
+// authorities is two different things, and a shorthand that picked one by
+// searching was how an imported sample's `kind: person` came to be refused
+// as ambiguous beside a verbatim copy of the package it meant. The refusal
+// offers the full spellings the repository holds under that word, so the
+// author copies one rather than guessing.
+func bareNameProblem(where, what, name string, declared []string) string {
+	msg := fmt.Sprintf("%s: %q is a bare name, and a %s is named in full as <authority>/<package>/<name>", where, name, what)
+	if len(declared) > 0 {
+		return msg + "; this repository declares " + strings.Join(declared, ", ")
+	}
+	return msg
 }
 
 // Kinds lists every declared type, ordered by identity.
@@ -1035,7 +1054,12 @@ func (r *Registry) ByIdentity(identity string) (*Kind, bool) {
 	return t, ok
 }
 
-// Resolve accepts a full identity or a bare type name unique across authorities.
+// Resolve accepts a full identity or a bare type name unique across
+// authorities. It is the READ's lookup, where nothing declares the name (a
+// records filter, `substratectl get task`, a trigger's selector) and a bare
+// spelling is a convenience the caller qualifies when it is ambiguous. No
+// DECLARATION resolves through it: a pin, a binding and an allowlist entry
+// are spelled in full, and a bare one is refused (bareNameProblem).
 func (r *Registry) Resolve(nameOrIdentity string) (*Kind, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -1056,6 +1080,24 @@ func (r *Registry) Resolve(nameOrIdentity string) (*Kind, error) {
 		sort.Strings(names)
 		return nil, fmt.Errorf("ambiguous type %q: %s", nameOrIdentity, strings.Join(names, ", "))
 	}
+}
+
+// packagesNamed lists the loaded packages that carry identity's package word
+// under a different authority, sorted: the copies of a sample a repository
+// holds under its own authority, as seen from a closure that names the shipped
+// spelling.
+func (r *Registry) packagesNamed(identity string) []string {
+	_, name := SplitPackageRef(identity)
+	if name == "" {
+		return nil
+	}
+	var out []string
+	for _, g := range r.PackageList() {
+		if g.Name == name && g.Identity != identity {
+			out = append(out, g.Identity)
+		}
+	}
+	return out
 }
 
 // Implementing lists every type satisfying an interface selector, across

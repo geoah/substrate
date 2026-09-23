@@ -19,8 +19,8 @@ data:
   # quartet and requires `temporal`: the bound `at` is the rule's DTSTART, the
   # first occurrence, which is what anchors every other one.
   traits:
-    - temporal(point)
-    - recurring
+    - substrate.reamde.dev/core/temporal(point)
+    - substrate.reamde.dev/core/recurring
   properties:
     summary:
       type: string
@@ -62,7 +62,7 @@ data:
       description: "deprecated: no read consults the materialized span"
     calendar:
       type: reference
-      kind: calendar
+      kind: samples.substrate.reamde.dev/calendar/calendar
       required: true
       mustExist: true
       onDelete: cascade

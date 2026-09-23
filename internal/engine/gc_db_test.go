@@ -228,7 +228,7 @@ func traitMirrorManifest() enginetest.Manifest {
 				"package":         "traitmirror",
 				"names":           map[string]any{"singular": last(id)},
 				"displayTemplate": "{label}",
-				"traits":          []any{"connected"},
+				"traits":          []any{traitMirrorPackage + "/connected"},
 				"properties":      accountProps,
 			},
 		}
@@ -254,7 +254,7 @@ func traitMirrorManifest() enginetest.Manifest {
 				"properties": map[string]any{
 					"label": map[string]any{"type": "string"},
 					"account": map[string]any{
-						"type": "reference", "trait": "connected", "onDelete": "cascade",
+						"type": "reference", "trait": traitMirrorPackage + "/connected", "onDelete": "cascade",
 					},
 				},
 			}),
@@ -263,7 +263,7 @@ func traitMirrorManifest() enginetest.Manifest {
 				"properties": map[string]any{
 					"label": map[string]any{"type": "string"},
 					"account": map[string]any{
-						"type": "reference", "trait": "connected",
+						"type": "reference", "trait": traitMirrorPackage + "/connected",
 					},
 				},
 			}),

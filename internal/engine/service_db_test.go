@@ -279,7 +279,7 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	}
 	// A sample package INSTALLS: only the seeded core package is builtin. The
 	// version is the people sample's shipped one.
-	if v, _ := vocabulary.VersionValue(pkg.Properties["version"]); v != 6 || pkg.Properties["source"] != "installed" {
+	if v, _ := vocabulary.VersionValue(pkg.Properties["version"]); v != 7 || pkg.Properties["source"] != "installed" {
 		t.Fatalf("package projection = %v", pkg.Properties)
 	}
 	// A vocabulary package declares no actors of its own; core's four are the

@@ -120,11 +120,16 @@ is one of them: a property of `type: reference` holding the target's path,
 accepted as shorthand and stored as the object. Against a declaration pinned
 to a kind, a bare id is accepted as the authored short form, because ids are
 unique per kind; under a `trait:` pin or no pin, the value carries the kind or
-it is refused. Declarations may name
-their pin by bare kind
-name (`kind: project`): a bare name resolves in the declaring package first,
-then uniquely across every package, and a name that stays ambiguous refuses
-to load. [References](#property-types) below has the rest.
+it is refused. A declaration names its pin in full
+(`kind: ada.example.com/tasks/project`), the kind of the declaring package
+included: there is no bare-name shorthand, and `kind: project` is refused
+naming every full spelling the repository declares under that word
+([0098](decisions/0098-a-declaration-names-a-kind-or-trait-in-full.md)). The
+shipped samples spell their pins at `people` as
+`kind: samples.substrate.reamde.dev/people/person`, which the import rehomes
+with the rest, so an imported sample points at the copy imported beside it
+even when the repository also holds the shipped copy verbatim.
+[References](#property-types) below has the rest.
 
 The envelope is the one canonical representation. The flat JSON that the
 [API](api.md#the-canonical-envelope) returns is a lossless view of it: the
@@ -273,7 +278,7 @@ data:
           to: open
     project:
       type: reference
-      kind: project               # a bare name resolves in this package
+      kind: samples.substrate.reamde.dev/tasks/project   # a pin is the full identity
       mustExist: true             # refuse a task filed under no project
     source:
       type: reference             # unpinned: the message, mail, or issue it came from
@@ -514,7 +519,7 @@ neither the person nor the organization.
 ```yaml
 memberOf:
   type: reference
-  kind: organization
+  kind: samples.substrate.reamde.dev/people/organization
   repeated: true
   properties:
     role:
@@ -647,7 +652,7 @@ A calendar event spans time, so its kind binds the range variant under
 
 ```yaml
 traits:
-  - temporal(range)
+  - substrate.reamde.dev/core/temporal(range)
 ```
 
 and with that one line the kind carries `at` and `endsAt`, indexed, and
@@ -659,7 +664,7 @@ on the timeline is its due date, so the shipped task kind binds:
 
 ```yaml
 traits:
-  - "temporal(point: dueAt)"
+  - "substrate.reamde.dev/core/temporal(point: dueAt)"
 ```
 
 which is the point variant with its `at` property carried under the name
@@ -717,7 +722,7 @@ provider account kind declares:
 
 ```yaml
 traits:
-  - accountconfig
+  - substrate.reamde.dev/core/accountconfig
 ```
 
 Because implementing a trait is queryable, a client can page every record of

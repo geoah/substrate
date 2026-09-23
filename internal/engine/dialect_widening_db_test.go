@@ -61,23 +61,23 @@ func dwProps() map[string]any {
 			"mode": dwEnum(),
 			"limits": map[string]any{"type": "object", "fields": map[string]any{
 				"depth": map[string]any{"type": "int"},
-				"ref":   map[string]any{"type": "reference", "kind": "target"},
+				"ref":   map[string]any{"type": "reference", "kind": dwPackage + "/target"},
 				"grade": dwEnum(),
 			}},
 		}},
 		"effects": map[string]any{"type": "int", "keyed": true, "keyPattern": "camel"},
 		"notes":   map[string]any{"type": "string", "keyed": true},
-		"pinned":  map[string]any{"type": "reference", "kind": "target"},
+		"pinned":  map[string]any{"type": "reference", "kind": dwPackage + "/target"},
 		"installs": map[string]any{
 			"type": "object", "keyed": true, "keyPattern": "kindRef",
 			"fields": map[string]any{
 				"version": map[string]any{"type": "string"},
-				"source":  map[string]any{"type": "reference", "kind": "target"},
+				"source":  map[string]any{"type": "reference", "kind": dwPackage + "/target"},
 				"channel": dwEnum(),
 			},
 		},
 		"tools": map[string]any{"type": "object", "repeated": true, "fields": map[string]any{
-			"callable": map[string]any{"type": "reference", "kind": "target"},
+			"callable": map[string]any{"type": "reference", "kind": dwPackage + "/target"},
 			"label":    map[string]any{"type": "string"},
 			"role":     dwEnum(),
 		}},
@@ -363,7 +363,7 @@ func TestDerivedTitleTokens(t *testing.T) {
 			map[string]any{
 				"displayTemplate": "{localName}",
 				"properties": map[string]any{
-					"localName": map[string]any{"type": "reference", "kind": "named"},
+					"localName": map[string]any{"type": "reference", "kind": dtPackage + "/named"},
 				},
 			}),
 	}
@@ -514,13 +514,13 @@ func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
 		vocabulary.KindManifest(pkg,
 			map[string]any{"singular": "holder"},
 			map[string]any{"properties": map[string]any{
-				"pinned": map[string]any{"type": "reference", "kind": "target", "inverse": "holders"},
+				"pinned": map[string]any{"type": "reference", "kind": pkg + "/target", "inverse": "holders"},
 				// The same inverse word, nested — a stored shape no earlier
 				// binary refused and this one must not either.
 				"tools": map[string]any{
 					"type": "object", "repeated": true,
 					"fields": map[string]any{
-						"callable": map[string]any{"type": "reference", "kind": "target", "inverse": "holders"},
+						"callable": map[string]any{"type": "reference", "kind": pkg + "/target", "inverse": "holders"},
 					},
 				},
 			}}),

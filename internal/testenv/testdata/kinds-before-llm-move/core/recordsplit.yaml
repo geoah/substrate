@@ -22,7 +22,7 @@ data:
     # that merge's `moved` set is what tells it where each value goes back to.
     merge:
       type: reference
-      kind: recordmerge
+      kind: substrate.reamde.dev/core/recordmerge
       required: true
       mustExist: true
       description: the recorded merge this split undoes

@@ -49,7 +49,7 @@ func newSyncDataset(t *testing.T, fn, source string) substrate.Dataset {
 		pyFn(fn, map[string]any{}, []any{jobType}, source),
 	)
 	m.Manifests = append(m.Manifests, vocabulary.KindManifest(fnPackage, map[string]any{"singular": "job"}, map[string]any{
-		"traits":          []any{"sync"},
+		"traits":          []any{"substrate.reamde.dev/core/sync"},
 		"displayTemplate": "{name}",
 		"properties":      syncProps(),
 	}))

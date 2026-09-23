@@ -17,8 +17,8 @@ data:
   # it replaces in `originalAt`, and the window read subtracts that slot from
   # the series' expansion. A calendarevent with neither is a plain event.
   traits:
-    - temporal(range)
-    - override
+    - substrate.reamde.dev/core/temporal(range)
+    - substrate.reamde.dev/core/override
   displayTemplate: "{summary}"
   properties:
     # iCalendar's SUMMARY/LOCATION/DESCRIPTION, kept under their own names.
@@ -54,7 +54,7 @@ data:
     # a series must not take the hand-written override along.
     recurrenceOf:
       type: reference
-      kind: calendareventseries
+      kind: samples.substrate.reamde.dev/calendar/calendareventseries
       mustExist: true
       description: the series this occurrence replaces one slot of
     originalAt:
@@ -66,7 +66,7 @@ data:
         workingLocation
     calendar:
       type: reference
-      kind: calendar
+      kind: samples.substrate.reamde.dev/calendar/calendar
       required: true
       mustExist: true
       onDelete: cascade
@@ -77,17 +77,17 @@ data:
     series:
       deprecated: true
       type: reference
-      kind: calendareventseries
+      kind: samples.substrate.reamde.dev/calendar/calendareventseries
       mustExist: true
       description: "deprecated: an override names its series in `recurrenceOf`"
     attendees:
       type: reference
-      kind: person
+      kind: samples.substrate.reamde.dev/people/person
       repeated: true
       mustExist: true
       description: the people attending
     organizer:
       type: reference
-      kind: person
+      kind: samples.substrate.reamde.dev/people/person
       mustExist: true
       description: the person who organized it

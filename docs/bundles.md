@@ -474,7 +474,7 @@ binds it beside `accountconfig` and redeclares its twelve properties, each
 with a `writer:` — the OWNER's two hands, and the CONNECTOR's ten:
 
 ```yaml
-traits: [accountconfig, sync]
+traits: [substrate.reamde.dev/core/accountconfig, substrate.reamde.dev/core/sync]
 properties:
   syncRequestedAt:    {type: datetime, writer: owner}      # Sync now
   syncPaused:         {type: bool, writer: owner}          # Pause / Resume
@@ -611,7 +611,13 @@ of at least 1, and any other constraint key. The shipped samples pin the
 versions they were verified against, so importing `tasks` over a `people`
 copy imported before version 4 says to import `people` again first, and the
 console reads the floor against each held bundle's `version` before the button
-is pressed. `requiresAtLeast` is a dialect key
+is pressed. The floor binds a COPY
+([0100](decisions/0100-a-requires-floor-binds-a-copy-not-a-hand-declared-package.md)):
+against a `people` the repository declared by hand under its own authority,
+whose version line has nothing to do with the sample's, the import drops the
+floor from the landing bundle and the requirement is met by name, with the
+closure's pins holding the package to the kinds it declares.
+`requiresAtLeast` is a dialect key
 ([0020](decisions/0020-dialect-keys-are-reserved-not-tolerated.md)): a binary
 from before it refuses a closure that carries one.
 
@@ -698,7 +704,11 @@ and confirms.
 `import` on a provider id is refused naming `install`. `install` on a sample id
 admits the closure verbatim, under the placeholder authority, for a repository
 that wants the shipped vocabulary under the shipped authority; no provider
-names a sample package, so nothing else needs it.
+names a sample package, so nothing else needs it. Its `requires:` keep the
+shipped spelling too, so a repository that holds what the sample requires only
+as an imported copy (`ada.example.com/scheduling`) is refused, and the refusal
+names the copy: a package under another authority is another package, and
+importing the bundle instead rehomes its requirements with it.
 
 **No provider requires a sample package, and every provider installs on a bare
 repository.** A provider ships mirror kinds in its own shape and writes nothing

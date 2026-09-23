@@ -15,7 +15,7 @@ data:
   # `at` is the last message's time, so an inbox orders threads without
   # opening their messages.
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   properties:
     subject:
       type: string
@@ -26,13 +26,13 @@ data:
     # disconnects (0034, 0032). Optional: a person may hand-author one.
     account:
       type: reference
-      trait: accountconfig
+      trait: substrate.reamde.dev/core/accountconfig
       onDelete: cascade
       displayName: Account
       description: the accountconfig record this thread synced through
     participants:
       type: reference
-      kind: person
+      kind: samples.substrate.reamde.dev/people/person
       repeated: true
       mustExist: true
       description: everyone on the thread

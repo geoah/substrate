@@ -325,12 +325,9 @@ func subjectProblems(sm vocabulary.SuggestedMapping, from substrate.KindInfo, pr
 	errf := func(format string, args ...any) {
 		problems = append(problems, fmt.Sprintf(format, args...))
 	}
-	// A bare pin resolves against the kind that declares it, which is how the
-	// loader reads one.
+	// A pin is a full identity (a bare one is refused at admission), so it
+	// compares against the targets as written.
 	if pin := mstr(decl, "kind"); pin != "" && pin != vocabulary.ToAny {
-		if !strings.Contains(pin, "/") {
-			pin = from.Authority + "/" + from.Package + "/" + pin
-		}
 		if !slices.Contains(targets, pin) {
 			errf("%s.%s points at %q, not %s, the kind this mapping fills", sm.From, sm.Property, pin, targets[0])
 		}

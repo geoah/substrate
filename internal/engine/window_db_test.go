@@ -46,25 +46,25 @@ func winManifest() []map[string]any {
 	}
 	return []map[string]any{
 		vocabulary.PackageManifest(winPackage, 1),
-		kind(winDose, "dose", []any{"temporal(point: dueAt)", "recurring", "override"}, map[string]any{
+		kind(winDose, "dose", []any{"substrate.reamde.dev/core/temporal(point: dueAt)", "substrate.reamde.dev/core/recurring", "substrate.reamde.dev/core/override"}, map[string]any{
 			"name":         map[string]any{"type": "string"},
 			"recurrence":   map[string]any{"type": "recurrence"},
 			"rdates":       map[string]any{"type": "datetime", "repeated": true},
 			"exdates":      map[string]any{"type": "datetime", "repeated": true},
 			"timezone":     map[string]any{"type": "timezone"},
-			"recurrenceOf": map[string]any{"type": "reference", "kind": "dose"},
+			"recurrenceOf": map[string]any{"type": "reference", "kind": winDose},
 			"originalAt":   map[string]any{"type": "datetime"},
 		}),
-		kind(winMeeting, "meeting", []any{"temporal(range)"}, map[string]any{
+		kind(winMeeting, "meeting", []any{"substrate.reamde.dev/core/temporal(range)"}, map[string]any{
 			"name": map[string]any{"type": "string"},
 			// A property merely CALLED recurrence, on a kind that does not
 			// bind the trait: its rows are rows, never series.
 			"recurrence": map[string]any{"type": "string"},
 		}),
-		kind(winSeries, "series", []any{"temporal(range)", "recurring"}, rule),
-		kind(winException, "exception", []any{"temporal(range)", "override"}, map[string]any{
+		kind(winSeries, "series", []any{"substrate.reamde.dev/core/temporal(range)", "substrate.reamde.dev/core/recurring"}, rule),
+		kind(winException, "exception", []any{"substrate.reamde.dev/core/temporal(range)", "substrate.reamde.dev/core/override"}, map[string]any{
 			"name":         map[string]any{"type": "string"},
-			"recurrenceOf": map[string]any{"type": "reference", "kind": "series", "onDelete": "cascade"},
+			"recurrenceOf": map[string]any{"type": "reference", "kind": winSeries, "onDelete": "cascade"},
 			"originalAt":   map[string]any{"type": "datetime"},
 		}),
 	}

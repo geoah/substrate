@@ -431,7 +431,15 @@ first label.
   idempotent where it may meet a schema that already has the change.
   `mise run frozen:check` refuses the edit, the delete and the rename;
   `mise run lint:migrations` holds the naming and numbering, because a file the
-  runner cannot parse is a step that silently never runs.
+  runner cannot parse is a step that silently never runs. A **repository
+  migration** (`internal/engine/repomigration_NNNN_name.go`) is the same
+  contract for code: it runs once per repository at the repository's first
+  open under a binary that carries it, before the stored vocabulary loads,
+  writes through the changelog as ordinary record writes, is idempotent, and
+  leaves its row in `repository_migrations`
+  ([0099](docs/decisions/0099-a-repository-migration-is-code-the-boot-runs-once-and-records.md)).
+  Reach for one only where a SQL migration cannot decide the answer from the
+  rows alone.
 - **`lint:docs` is the one docs linter**, and it holds two halves. What the
   pages point at: every Markdown link and `#anchor` resolves against the tree,
   offline, so renaming a doc or a heading means fixing what points at it, and

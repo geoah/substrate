@@ -373,7 +373,7 @@ func testTypes() []substrate.KindInfo {
 			Identity: "samples.substrate.reamde.dev/tasks/task", Name: "task", Authority: "samples.substrate.reamde.dev", Package: "tasks",
 			Version: 1, Source: "builtin",
 			Definition: map[string]any{
-				"traits": []any{"temporal(point: due_at)"},
+				"traits": []any{"substrate.reamde.dev/core/temporal(point: due_at)"},
 				"properties": map[string]any{
 					"note": map[string]any{"type": "markdown"},
 					"status": map[string]any{
@@ -391,7 +391,7 @@ func testTypes() []substrate.KindInfo {
 			Authority: "samples.substrate.reamde.dev", Package: "messaging",
 			Version: 1, Source: "builtin",
 			Definition: map[string]any{
-				"traits": []any{"temporal(point)"},
+				"traits": []any{"substrate.reamde.dev/core/temporal(point)"},
 				"properties": map[string]any{
 					"text": map[string]any{"type": "markdown"},
 					// A reference CARRYING LINK DATA: the declaration's

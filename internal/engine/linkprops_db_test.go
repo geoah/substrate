@@ -25,7 +25,7 @@ func lpBaseProps() map[string]any {
 	return map[string]any{
 		"label": map[string]any{"type": "string"},
 		"peer": map[string]any{
-			"type": "reference", "kind": "node", "repeated": true,
+			"type": "reference", "kind": lpNode, "repeated": true,
 			"properties": map[string]any{
 				"role":  map[string]any{"type": "enum", "values": []any{map[string]any{"value": "lead"}, map[string]any{"value": "member"}}},
 				"order": map[string]any{"type": "int"},
@@ -33,7 +33,7 @@ func lpBaseProps() map[string]any {
 				"note":  map[string]any{"type": "string"},
 			},
 		},
-		"plain": map[string]any{"type": "reference", "kind": "node", "repeated": true},
+		"plain": map[string]any{"type": "reference", "kind": lpNode, "repeated": true},
 	}
 }
 
@@ -389,7 +389,7 @@ func TestReferenceNarrowingRefused(t *testing.T) {
 	t.Run("onDelete is not a narrowing", func(t *testing.T) {
 		props := lpBaseProps()
 		props["owner"] = map[string]any{
-			"type": "reference", "kind": "node", "onDelete": "cascade",
+			"type": "reference", "kind": lpNode, "onDelete": "cascade",
 		}
 		if err := lpApply(t, ds, props); err != nil {
 			t.Fatalf("declaring onDelete must be additive: %v", err)
@@ -407,7 +407,7 @@ func TestMustExistAddedIsANarrowing(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
 	props := lpBaseProps()
-	props["ghost"] = map[string]any{"type": "reference", "kind": "node"}
+	props["ghost"] = map[string]any{"type": "reference", "kind": lpNode}
 	if err := lpApply(t, ds, props); err != nil {
 		t.Fatalf("install base type: %v", err)
 	}
@@ -428,7 +428,7 @@ func TestMustExistRefusesAMissingTarget(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	props := lpBaseProps()
-	props["owner"] = map[string]any{"type": "reference", "kind": "node", "mustExist": true}
+	props["owner"] = map[string]any{"type": "reference", "kind": lpNode, "mustExist": true}
 	if err := lpApply(t, ds, props); err != nil {
 		t.Fatalf("install base type: %v", err)
 	}
@@ -469,8 +469,8 @@ func TestMustExistNamesEveryDanglingReference(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
 	props := lpBaseProps()
-	props["owner"] = map[string]any{"type": "reference", "kind": "node", "mustExist": true}
-	props["plain"] = map[string]any{"type": "reference", "kind": "node", "repeated": true, "mustExist": true}
+	props["owner"] = map[string]any{"type": "reference", "kind": lpNode, "mustExist": true}
+	props["plain"] = map[string]any{"type": "reference", "kind": lpNode, "repeated": true, "mustExist": true}
 	if err := lpApply(t, ds, props); err != nil {
 		t.Fatalf("install base type: %v", err)
 	}

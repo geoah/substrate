@@ -345,8 +345,11 @@ func xcCaseWeekdayStandup(c *C) {
 
 	// Past the rows anybody wrote, the timeline keeps going: week 4 over both
 	// kinds is five COMPUTED occurrences of the series, one per weekday at
-	// 09:30, each carrying the series' rule-less properties, its slot, and the
-	// override pair a put would need, at the id `x-ser-standup_<slot>`. The
+	// 09:30, each carrying the series' rule-less properties and its slot at
+	// the id `x-ser-standup_<slot>`. The override pair rides a computed
+	// occurrence only when the series' kind binds `override` (docs/api.md,
+	// the window read): a calendar's override is a `calendarevent`, another
+	// kind, so a `calendareventseries` occurrence carries the slot alone. The
 	// series row itself is never on the page.
 	week4 := xcTimeline(c, monday.AddDate(0, 0, 21), monday.AddDate(0, 0, 26))
 	var computed []record
@@ -359,12 +362,12 @@ func xcCaseWeekdayStandup(c *C) {
 	c.requiref(len(computed) == 5, "week 4 computes %d standups, want 5: %v", len(computed), week4)
 	for i, rec := range computed {
 		wantAt := monday.AddDate(0, 0, 21+i)
-		c.requiref(rec.prop("at") == wantAt.Format(time.RFC3339) && rec.prop("originalAt") == wantAt.Format(time.RFC3339),
-			"computed standup %d sits at %q (originalAt %q), want %s", i, rec.prop("at"), rec.prop("originalAt"), wantAt.Format(time.RFC3339))
+		c.requiref(rec.prop("at") == wantAt.Format(time.RFC3339),
+			"computed standup %d sits at %q, want %s", i, rec.prop("at"), wantAt.Format(time.RFC3339))
 		c.requiref(rec.ID == "x-ser-standup_"+wantAt.UTC().Format("20060102T150405Z"),
 			"computed standup %d is %q, want the series id and the slot", i, rec.ID)
-		c.requiref(sameSet(refPaths(rec, "recurrenceOf"), recPath(seriesKind, "x-ser-standup")) && rec.Version == 0,
-			"computed standup %d does not read as an override of its series: %v", i, rec.Properties)
+		c.requiref(rec.prop("originalAt") == "" && len(refPaths(rec, "recurrenceOf")) == 0 && rec.Version == 0,
+			"computed standup %d carries the override pair its kind declares no home for, or a version: %v", i, rec.Properties)
 		c.requiref(rec.Properties["recurrence"] == nil, "a computed occurrence carries the rule: %v", rec.Properties)
 	}
 	// And GET at a computed id answers the same envelope, the path a
@@ -373,7 +376,7 @@ func xcCaseWeekdayStandup(c *C) {
 	status, raw = c.do(http.MethodGet, seriesCollection+"/"+computed[0].ID, nil, &one)
 	c.requiref(status == http.StatusOK && one.Computed && one.ID == computed[0].ID,
 		"GET at the computed id answered %d: %s", status, raw)
-	c.stepf("week 4, past every written row, is 5 computed occurrences at `x-ser-standup_<slot>`, version 0, each already shaped as the override a put would make, and GET at one such id answers it")
+	c.stepf("week 4, past every written row, is 5 computed occurrences at `x-ser-standup_<slot>`, version 0, the slot alone and no override pair (the series kind does not bind `override`), and GET at one such id answers it")
 
 	_ = ids
 }
@@ -575,7 +578,7 @@ func xoClosure() []map[string]any {
 				"names":           map[string]any{"singular": "schedule"},
 				"description":     "When and how much: a dose, an RRULE, and the span the schedule runs.",
 				"displayTemplate": "{name}",
-				"traits":          []any{"temporal(range)", "recurring"},
+				"traits":          []any{"substrate.reamde.dev/core/temporal(range)", "substrate.reamde.dev/core/recurring"},
 				"properties": map[string]any{
 					"name": map[string]any{"type": "string", "description": "an optional label"},
 					"recurrence": map[string]any{
@@ -604,7 +607,7 @@ func xoClosure() []map[string]any {
 				"names":           map[string]any{"singular": "doselog"},
 				"description":     "One dose, done or skipped; absence in the logs is what missed means.",
 				"displayTemplate": "{status}",
-				"traits":          []any{"temporal(point)", "occurrencelog"},
+				"traits":          []any{"substrate.reamde.dev/core/temporal(point)", "samples.substrate.reamde.dev/scheduling/occurrencelog"},
 				"properties": map[string]any{
 					"status": map[string]any{
 						"type": "state", "description": "done or skipped",
@@ -622,7 +625,7 @@ func xoClosure() []map[string]any {
 						"type": "markdown", "description": "anything worth saying about this dose",
 					},
 					"schedule": map[string]any{
-						"type": "reference", "kind": "schedule",
+						"type": "reference", "kind": xoScheduleKind,
 						"required": true, "mustExist": true, "onDelete": "cascade",
 						"description": "the schedule this dose belongs to",
 					},

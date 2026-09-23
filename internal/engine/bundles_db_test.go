@@ -39,7 +39,7 @@ func mbConfigTypeDoc() map[string]any {
 	return vocabulary.KindManifest(mbPackage,
 		map[string]any{"singular": "mailconfig"},
 		map[string]any{
-			"traits": []any{"oauth2"},
+			"traits": []any{"substrate.reamde.dev/core/oauth2"},
 			"properties": map[string]any{
 				"authorizationEndpoint": map[string]any{"type": "url"},
 				"tokenEndpoint":         map[string]any{"type": "url"},
@@ -51,11 +51,20 @@ func mbConfigTypeDoc() map[string]any {
 		})
 }
 
+// shadowAccountTypeDoc is mbAccountTypeDoc bound to the bundle-local
+// "accountconfig" trait by its full identity: a same-named trait is another
+// trait, and the binding says which.
+func shadowAccountTypeDoc() map[string]any {
+	doc := mbAccountTypeDoc()
+	doc["data"].(map[string]any)["traits"] = []any{mbPackage + "/accountconfig"}
+	return doc
+}
+
 func mbAccountTypeDoc() map[string]any {
 	return vocabulary.KindManifest(mbPackage,
 		map[string]any{"singular": "mailaccount"},
 		map[string]any{
-			"traits": []any{"accountconfig"},
+			"traits": []any{"substrate.reamde.dev/core/accountconfig"},
 			"properties": map[string]any{
 				"tokenRef":      map[string]any{"type": "secret", "writer": "oauth"},
 				"tokenStatus":   map[string]any{"type": "string", "writer": "oauth"},
@@ -787,8 +796,8 @@ func TestShadowOAuth2TraitFailsBundleAdmission(t *testing.T) {
 		vocabulary.KindManifest(mbPackage,
 			map[string]any{"singular": "mailconfig"},
 			map[string]any{
-				// Resolves in-authority FIRST: this binds the local shadow, never core.
-				"traits":     []any{"oauth2"},
+				// Spelled in full at the local shadow, never core.
+				"traits":     []any{mbPackage + "/oauth2"},
 				"properties": map[string]any{"note": map[string]any{"type": "string"}},
 			}),
 		mbMessageTypeDoc())
@@ -798,8 +807,8 @@ func TestShadowOAuth2TraitFailsBundleAdmission(t *testing.T) {
 	}
 }
 
-// A bundle-local trait named "accountconfig" shadows the core one for the
-// authority's own bindings — and the host then treats NONE of its records as
+// A bundle-local trait named "accountconfig", bound by its full identity, is
+// not the core one — and the host then treats NONE of its records as
 // connected accounts: no OAuth, no status counts, no runner injection, no
 // core-trait query hits.
 func TestShadowAccountConfigTraitIsNotAnAccount(t *testing.T) {
@@ -810,8 +819,8 @@ func TestShadowAccountConfigTraitIsNotAnAccount(t *testing.T) {
 	docs := mbDocs(nil,
 		mbConfigTypeDoc(),
 		bundleLocalTraitDoc("accountconfig", nil),
-		// Binds bare "accountconfig" — in-authority resolution finds the SHADOW.
-		mbAccountTypeDoc(),
+		// Binds the SHADOW by its full identity, never core's.
+		shadowAccountTypeDoc(),
 		mbMessageTypeDoc(),
 		mbFnDoc("echo", mbEchoSource))
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {

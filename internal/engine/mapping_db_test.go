@@ -1289,7 +1289,7 @@ func TestHotMapTargets(t *testing.T) {
 			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "libraryrow"},
 				map[string]any{
-					"traits": []any{"temporal(point)"},
+					"traits": []any{"substrate.reamde.dev/core/temporal(point)"},
 					"properties": map[string]any{
 						"subtitle": map[string]any{"type": "string"},
 						"body":     map[string]any{"type": "text"},
@@ -1383,7 +1383,7 @@ func TestAReferenceMayPinAMappingSource(t *testing.T) {
 	withFriend := googleManifest()
 	data, _ := withFriend.Manifests[2]["data"].(map[string]any)
 	props, _ := data["properties"].(map[string]any)
-	props["friend"] = map[string]any{"type": "reference", "kind": "contact"}
+	props["friend"] = map[string]any{"type": "reference", "kind": googlePackage + "/contact"}
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, withFriend); err != nil {
 		t.Fatalf("a reference at a mapped source kind must register: %v", err)
 	}

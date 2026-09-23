@@ -909,7 +909,7 @@ func chatBundleDocs() []map[string]any {
 		vocabulary.KindManifest(chatPackage,
 			map[string]any{"singular": "chataccount"},
 			map[string]any{
-				"traits": []any{"accountconfig"},
+				"traits": []any{"substrate.reamde.dev/core/accountconfig"},
 				"properties": map[string]any{
 					"tokenRef":      map[string]any{"type": "secret", "writer": "oauth"},
 					"tokenStatus":   map[string]any{"type": "string", "writer": "oauth"},

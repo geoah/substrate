@@ -21,11 +21,13 @@ trait is a record in your repository: it lists, it GETs, it carries a
 `version` the engine maintains and a `source` that says whether it was seeded
 (`builtin`), arrived with a provider (`published`) or with anything else a
 repository installed (`installed`). Its identity is
-`{authority}/{package}/{name}`, and traits resolve **across packages**: a
-`traits:` entry is the bare name, which the loader looks up in the declaring
-package first, then in core, then in whichever one other package declares it,
-and refuses as ambiguous when two other packages do. That is how a kind binds
-core's `temporal` without redeclaring it.
+`{authority}/{package}/{name}`, and a `traits:` entry is that identity, with
+the variant after it where the trait has one
+(`substrate.reamde.dev/core/temporal(range)`). That is how a kind binds core's
+`temporal` without redeclaring it, and how it binds any other package's trait.
+There is no bare-name shorthand: `temporal(range)` is refused, naming every
+full spelling the repository declares under the word
+([0098](decisions/0098-a-declaration-names-a-kind-or-trait-in-full.md)).
 
 A trait contracts **presence and datatype only**. It carries no cardinality
 (a binding kind adds its own `repeated: true`) and no state values (each
@@ -58,7 +60,7 @@ data:
 
 ```yaml
 traits:
-  - recurring
+  - substrate.reamde.dev/core/recurring
 ```
 
 and must then declare those four properties with those datatypes (the

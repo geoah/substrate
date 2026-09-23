@@ -141,3 +141,31 @@ func TestRequiresAtLeastStaysOnTheDefinition(t *testing.T) {
 		t.Errorf("definition.requiresAtLeast = %v, want %s: 3", g.Bundle.Definition["requiresAtLeast"], rqPeople)
 	}
 }
+
+// A copy of the required package under ANOTHER authority is another package,
+// and the refusal says so. A repository that imported `people` under its own
+// authority and then takes a closure naming the shipped spelling (installed
+// or applied verbatim) would otherwise be told to import what it already
+// imported.
+func TestRequiresNamesTheCopyHeldUnderAnotherAuthority(t *testing.T) {
+	const shipped = "samples.example.com/people"
+	requires := "  requires:\n    - " + shipped + "\n"
+	_, err := loadBnPackages(rqPackage(rqPeople, 1), rqRequiring(requires, ""))
+	if err == nil {
+		t.Fatal("a copy under another authority satisfied a requirement naming the shipped spelling")
+	}
+	for _, want := range []string{
+		shipped + ", which this repository does not have",
+		rqPeople + " is the same package under another authority",
+		"import this bundle, which rehomes the requirement with it",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q: %v", want, err)
+		}
+	}
+	// With no copy anywhere the refusal is the plain one: nothing to name.
+	_, err = loadBnPackages(rqRequiring(requires, ""))
+	if err == nil || strings.Contains(err.Error(), "another authority") {
+		t.Fatalf("with no copy held the refusal names one: %v", err)
+	}
+}

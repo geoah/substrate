@@ -662,6 +662,19 @@ func (r *Registry) resolveBundle(g *Package) []string {
 	for _, req := range b.Requires {
 		held, ok := r.PackageByName(req)
 		if !ok {
+			// A copy of the package under ANOTHER authority is another
+			// package: a sample imported under the repository's own authority
+			// is the repository's, and a closure naming the shipped spelling
+			// (installed or applied verbatim) declares against the shipped
+			// one. The refusal names the copy and says it does not count,
+			// because "import that package first" alone sends a reader who
+			// already imported it round in a circle.
+			if copies := r.packagesNamed(req); len(copies) > 0 {
+				problems = append(problems, fmt.Sprintf(
+					"%s: data.requires names %s, which this repository does not have (%s is the same package under another authority, and a requirement is met only by the package it names): import this bundle, which rehomes the requirement with it, or import that package's bundle first",
+					where, req, strings.Join(copies, " and ")))
+				continue
+			}
 			problems = append(problems, fmt.Sprintf(
 				"%s: data.requires names %s, which this repository does not have — import that package's bundle first",
 				where, req))

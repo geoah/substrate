@@ -336,11 +336,13 @@ func caseStory06(c *C) {
 	rows := c.readChangesForward(0)
 	storyActors := map[string]int{}
 	for _, row := range rows {
-		// `substrate` may write only its own core records (registration,
-		// tokens, runs, threads): a task or a story record written as the
-		// system actor would be laundered attribution.
+		// `substrate` may write only the seeded packages' own records
+		// (registration, tokens, runs, threads, the keyless provider rows):
+		// a task or a story record written as the system actor would be
+		// laundered attribution. The llm kinds are seeded beside core
+		// (decision record 0077).
 		ok := row.Actor == "api" || strings.HasPrefix(row.Actor, "bundle:") ||
-			(row.Actor == "substrate" && strings.HasPrefix(row.Kind, "substrate.reamde.dev/core/"))
+			(row.Actor == "substrate" && (strings.HasPrefix(row.Kind, "substrate.reamde.dev/core/") || strings.HasPrefix(row.Kind, "substrate.reamde.dev/llm/")))
 		switch row.Actor {
 		case actorResolver, actorMatcher, actorReflection, actorArbiter:
 			ok = true
@@ -365,17 +367,21 @@ func caseStory06(c *C) {
 	c.requiref(err == nil, "repository verify: %v: %s", err, out)
 	c.stepf("operator verify: %s", verifySummary(out))
 
-	// A rebuild refolds the changelog into records, so it takes the changelog
-	// writer lock the running server holds: against a live substrate the
-	// operator hat must refuse, not race the writer. The refold itself runs
+	// A rebuild refolds the changelog into records, so against a live
+	// substrate the operator hat must refuse, not race the writer. Two
+	// refusals say so, and either is the right answer: the writer LEASE at
+	// the boot check (decision record 0083, "another process is this
+	// repository's writer", which fires for whichever leased repository the
+	// check meets first, this one or another the same server holds), and the
+	// per-directory changelog writer lock behind it. The refold itself runs
 	// against a stopped server in internal/testenv's acceptance drill.
 	out, err = ctlRun(ctl, dsn, "repository", "rebuild", r.authority)
-	c.requiref(err != nil && strings.Contains(out, "writer lock"),
-		"repository rebuild against the live server: err=%v, want the writer-lock refusal: %s", err, out)
+	c.requiref(err != nil && (strings.Contains(out, "writer lock") || strings.Contains(out, "is this repository's writer")),
+		"repository rebuild against the live server: err=%v, want the writer refusal: %s", err, out)
 	rebuilt := c.graphJoin()
 	c.requiref(string(join) == string(rebuilt),
 		"the refused rebuild changed the graph:\nbefore: %s\nafter:  %s", join, rebuilt)
-	c.stepf("repository rebuild against the live server was refused by the changelog writer lock, and the fold is untouched")
+	c.stepf("repository rebuild against the live server was refused by the writer lease, and the fold is untouched")
 }
 
 // graphJoin is the one fixed read STORY-06 compares around the refused
