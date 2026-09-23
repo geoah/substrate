@@ -754,7 +754,7 @@ export function declaresProviderInterfaces(
 /** The OAuth client input: the declared input whose kind implements the core
  * `oauth2` trait (clientId + clientSecret). The status does not name it, so it
  * is read the way the loader validated it, off the input kinds' traits. */
-function oauthClientInput(
+export function oauthClientInput(
   bundle: Pick<BundleStatus, "inputs">,
   kinds: KindInfo[]
 ): InputStatus | undefined {

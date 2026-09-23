@@ -109,7 +109,7 @@ data:
   # Connections page, `GET /api/v1/sync/status` and `substratectl sync status`
   # render this bundle without knowing it (T-084). ADDITIVE, unlike 10: every
   # property version 10 declared stays, at its own name and type.
-  version: 11
+  version: 12
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -319,6 +319,7 @@ data:
     user:
       type: reference
       kind: providers.substrate.reamde.dev/whoop/user
+      writer: connector
       displayName: Member
       # Minted from the `user_id` that rides on every record WHOOP returns, so
       # it lands even with the profile toggle off. NOT `mustExist`: the first

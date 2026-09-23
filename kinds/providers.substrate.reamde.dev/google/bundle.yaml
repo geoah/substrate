@@ -200,7 +200,7 @@ data:
   # moved. ADDITIVE, so an installed 29 upgrades in one apply — but every
   # account connected under 29 or earlier must RECONNECT for the new scope,
   # and until it does the drive stream records `needsreconsent`.
-  version: 30
+  version: 31
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -456,10 +456,14 @@ data:
     # facility's own contract property (it writes the string and nothing
     # else); this is the same identity as the hub row every mirror points at,
     # so "mail I sent" is `from.address eq <this ref>` rather than a string
-    # compare, and no mirror needs an owner flag to answer it.
+    # compare, and no mirror needs an owner flag to answer it. The contacts
+    # drain writes it once the grant has said whose mailbox this is, so it is
+    # the connector's hand: an owner is never asked to pick their own identity
+    # out of a list, and the Add account form does not offer it.
     address:
       type: reference
       kind: emailaddress
+      writer: connector
       displayName: Address
       description: the hub row for this account's own address — the identity
         every attendee list, mail header and address book converges on
@@ -582,7 +586,8 @@ data:
       default: daily
       writer: owner
       displayName: Sync frequency
-      description: "the scheduled sync cadence for this account (default daily)"
+      description: "how often this account syncs on a schedule (default once
+        a day); Sync now runs one at any time"
     # How far back a backfill reaches. Contacts syncs full+incremental via the
     # People sync token and ignores it; gmail and calendar honor it
     # identically — `none` means FROM CONNECT FORWARD (the first run's start
@@ -606,8 +611,8 @@ data:
       default: last30d
       writer: owner
       displayName: Backfill depth
-      description: "how far back gmail and calendar backfill on their first
-        run; contacts ignores it"
+      description: "how far back the first sync of Gmail, Calendar and Drive
+        reaches; Contacts always syncs the whole address book"
     # Connector STATE the sync bodies own (writer: connector — only installed
     # bundle code may set these). Two tiers:
     #
@@ -799,6 +804,7 @@ data:
     # the same engine ask `gmailBackfillResume` carries.
     contactsResume:
       type: object
+      writer: connector
       displayName: Contacts resume
       description: "the unfinished contacts walk this account resumes from:
         which stream, both page tokens, both sync tokens and the sweep evidence"
@@ -893,14 +899,12 @@ data:
     # resumes from can be read, filtered and — when a walk wedges — reasoned
     # about without decoding a blob by hand.
     gmailBackfillResume:
-      # NO `writer: connector`. An OBJECT property's key set has no `writer`
-      # (`objectPropKeys`, internal/vocabulary/load.go) — the apply refuses
-      # the whole closure with `unknown key "writer"`. So retyping this from
-      # `json` to the declared shape costs the connector-only guard the
-      # `json` had, which is a real trade and belongs in the engine ask:
-      # writer roles should apply to every property type, not to scalars and
-      # containers only.
+      # `writer: connector` on an OBJECT: the loader admits the role on every
+      # property shape (`objectPropKeys`, internal/vocabulary/load.go), so the
+      # declared shape keeps the connector-only guard the `json` it replaced
+      # had, and no editing surface offers a page token to the owner.
       type: object
+      writer: connector
       displayName: Gmail backfill resume
       description: "the unfinished walk this account resumes from: the page
         token, its window and the evidence a sweep it still owes needs"
@@ -1043,6 +1047,7 @@ data:
     # engine ask, unchanged.
     driveResume:
       type: object
+      writer: connector
       displayName: Drive resume
       description: "the unfinished drive walk this account resumes from: the
         page token or changes token, its window, the exports still owed and

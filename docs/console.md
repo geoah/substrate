@@ -219,12 +219,36 @@ and every read an existing route. It has two halves.
 
 **Providers** lists every installed bundle whose closure declares an account
 kind, plus every bundle the catalog calls a provider, with its lifecycle
-badge, whether its client credentials are set (the `oauth2`-trait client, or
-a token provider's config; "credentials missing" is what the Registry row's
-setup step means), its accounts counted by token status, and the two doors:
-*Set up* or *Edit* opens the config record's form, whose secret fields are
-write-only and say `set` or `not set` beside their names, never a value;
-*Add account* creates one. **Accounts** is one row per account across all
+badge and the two numbered steps a person takes on it. Step 1,
+*Credentials*: whether the provider's client credentials are set (the
+`oauth2`-trait client, or a token provider's config; "credentials missing" is
+what the Registry row's setup step means), and the *Set up* or *Edit* door to
+the credentials dialog, which says what to create with the provider, shows
+the OAuth callback URL to register as that client's redirect URI, puts the
+client id and secret ahead of the bundle's own extras, and whose secret
+fields are write-only and say `set` or `not set` beside their names, never a
+value. Step 2, *Accounts*: the accounts counted by token status, and *Add
+account*. Under the steps one sentence says what to do next, with the button
+that does it: enable the bundle in the Registry, set up the credentials, add
+an account, connect the account that is waiting, or nothing more.
+
+*Add account* opens one dialog that asks only what the owner decides, read
+off the account kind's declaration. **What to sync** is one toggle per
+stream, and on an OAuth provider each is a permission the consent asks for;
+**Settings** is the sync frequency, the backfill depth and whatever else the
+kind leaves to the owner. The dialog never shows a property another hand
+writes, because the declaration marks them: the OAuth facility's
+`writer: oauth` properties, the connector's `writer: connector` cursors,
+resume state and identity references, and the `sync` trait's two owner hands,
+whose controls are the Sync now and Pause buttons. An account with nothing
+turned on is refused. On an OAuth provider whose credentials are set the one
+button is *Create and connect*: it creates the record and opens the
+provider's consent in a new tab in the same press, and the row reads
+`connected` when the approval returns. While the credentials are missing the
+dialog says so and offers the credentials form instead; on a token provider
+the button is *Create*, and the first sync starts on its own.
+
+**Accounts** is one row per account across all
 providers: a health dot (broken when the grant or the sync is erroring,
 attention when pending, paused or throttled, idle when connected and never
 synced), the provider, the account by its `email` or `displayName`, the
@@ -232,13 +256,13 @@ token status with the granted scopes on hover, the sync state chip with the
 sync's own message in full, the last run as relative time, the cadence, the
 backfill depth, and the parked and lagging deliveries of the triggers on its
 kind. The row's verbs are the four a Connection takes: **Connect** or
-**Reconnect** starts the [OAuth consent](bundles.md#the-oauth-facility) and
-opens the URL it mints at click time; **Sync now** stamps `syncRequestedAt`
-and wakes the on-request triggers; **Pause** and **Resume** flip
-`syncPaused`; **Edit** changes the toggles, frequency and depth through the
-ordinary record dialog; **Disconnect** deletes the record. The page follows
-the [change feed](changelog.md) for the account kinds and the run ledger, so
-a sync's state moves without a reload.
+**Reconnect**, on an OAuth provider only, starts the
+[OAuth consent](bundles.md#the-oauth-facility) and opens the URL it mints at
+click time; **Sync now** stamps `syncRequestedAt` and wakes the on-request
+triggers; **Pause** and **Resume** flip `syncPaused`; **Edit** changes what
+the account syncs through the same dialog *Add account* opens; **Disconnect**
+deletes the record. The page follows the [change feed](changelog.md) for the
+account kinds and the run ledger, so a sync's state moves without a reload.
 
 Opening a row is the **account detail**: the trait rendered whole (state,
 message, last run and its duration, the request and whether it was served, a

@@ -1,8 +1,14 @@
-/** The connect half of a provider account, as a hook the Connections page and
- * its detail share: open the consent tab synchronously from the click (a
- * tab opened after the round-trip is what popup blockers kill), mint the
- * URL through `oauth/start`, navigate the tab, then listen for the callback
- * page's postMessage and re-read the account when it lands. */
+/** The connect half of a provider account, as a hook the Connections page,
+ * its detail and the Add account dialog share: open the consent tab
+ * synchronously from the click (a tab opened after the round-trip is what
+ * popup blockers kill), mint the URL through `oauth/start`, navigate the tab,
+ * then listen for the callback page's postMessage and re-read the account
+ * when it lands.
+ *
+ * The account is named at hook time (a row that already exists) OR at mutate
+ * time (a record the dialog has just created), and a caller whose connect
+ * follows an async step hands in the tab it opened from its own click, so
+ * the create-then-connect press is still one synchronous open. */
 
 import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
@@ -10,9 +16,20 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "@/components/ui/toast"
 import { parseSubstrateOAuthMessage, startOAuth } from "@/lib/api/bundles"
 
-export function useOAuthConnect(accountId: string, label: string) {
+export interface ConnectTarget {
+  /** The account record's id. */
+  accountId: string
+  /** What the toasts call it. */
+  label: string
+  /** A tab the caller opened synchronously from its click. `null` is a tab
+   * the browser refused (window.open's own answer), and reads as blocked. */
+  tab?: Window | null
+}
+
+export function useOAuthConnect(accountId?: string, label?: string) {
   const queryClient = useQueryClient()
-  const [awaitingReturn, setAwaitingReturn] = useState(false)
+  // The flow whose return the listener below awaits; unset while none is.
+  const [awaiting, setAwaiting] = useState<ConnectTarget | undefined>()
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["trait", "records"] })
@@ -21,10 +38,17 @@ export function useOAuthConnect(accountId: string, label: string) {
   }
 
   const connect = useMutation({
-    mutationFn: async () => {
-      const tab = window.open("about:blank", "_blank")
+    mutationFn: async (target: ConnectTarget | void) => {
+      const chosen = (target ?? undefined) as ConnectTarget | undefined
+      const id = chosen?.accountId ?? accountId
+      if (!id) throw new Error("There is no account to connect.")
+      const name = chosen?.label ?? label ?? id
+      const tab =
+        chosen?.tab === undefined
+          ? window.open("about:blank", "_blank")
+          : chosen.tab
       try {
-        const { url } = await startOAuth(accountId)
+        const { url } = await startOAuth(id)
         let target: URL
         try {
           target = new URL(url)
@@ -39,15 +63,15 @@ export function useOAuthConnect(accountId: string, label: string) {
           )
         }
         if (tab) tab.location.href = url
-        return { opened: Boolean(tab) }
+        return { opened: Boolean(tab), accountId: id, label: name }
       } catch (error) {
         tab?.close()
         throw error
       }
     },
-    onSuccess: ({ opened }) => {
+    onSuccess: ({ opened, accountId, label }) => {
       if (opened) {
-        setAwaitingReturn(true)
+        setAwaiting({ accountId, label })
         toast.add({
           type: "success",
           title: "The provider opened in a new tab",
@@ -71,7 +95,8 @@ export function useOAuthConnect(accountId: string, label: string) {
   })
 
   useEffect(() => {
-    if (!awaitingReturn) return
+    if (!awaiting) return
+    const { accountId, label } = awaiting
     function onMessage(event: MessageEvent) {
       // Origin first: the callback page is served by the substrate that
       // serves this console, so anything else is a stranger's window.
@@ -80,15 +105,15 @@ export function useOAuthConnect(accountId: string, label: string) {
       if (!msg) return
       if (msg.ok) {
         if (msg.record && msg.record !== accountId) return
-        setAwaitingReturn(false)
+        setAwaiting(undefined)
         toast.add({
           type: "success",
           title: "Account connected",
-          description: label,
+          description: `${label} is approved and its first sync is starting.`,
         })
         refresh()
       } else {
-        setAwaitingReturn(false)
+        setAwaiting(undefined)
         toast.add({
           type: "error",
           title: "Connecting failed",
@@ -101,7 +126,9 @@ export function useOAuthConnect(accountId: string, label: string) {
     window.addEventListener("message", onMessage)
     return () => window.removeEventListener("message", onMessage)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [awaitingReturn, accountId, label])
+  }, [awaiting])
 
   return connect
 }
+
+export type OAuthConnect = ReturnType<typeof useOAuthConnect>

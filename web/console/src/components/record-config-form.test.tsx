@@ -7,7 +7,13 @@
  * column beside it. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, render, screen, within } from "@testing-library/react"
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { KindInfo } from "@/lib/api/types"
@@ -138,5 +144,54 @@ describe("RecordConfigForm", () => {
     // wrap this replaces).
     const description = screen.getByText("sync this account's Google Contacts")
     expect(description.closest("label")).toBeNull()
+  })
+
+  it("with a `first` order, the trait's fields lead and the bundle's extras fold away", () => {
+    const configKind: KindInfo = {
+      identity: "providers.substrate.reamde.dev/google/config",
+      name: "config",
+      authority: "providers.substrate.reamde.dev",
+      package: "google",
+      version: 0,
+      source: "published",
+      description: "",
+      definition: {
+        traits: ["oauth2"],
+        properties: {
+          apiBase: { type: "url", displayName: "API base" },
+          clientId: { type: "string", displayName: "Client ID" },
+          clientSecret: { type: "secret", displayName: "Client secret" },
+          drainBudgetMs: { type: "int", displayName: "Drain budget (ms)" },
+        },
+      },
+    }
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <RecordConfigForm
+          type={configKind}
+          first={["clientId", "clientSecret"]}
+          title="Set up google credentials"
+          description="."
+          open
+          onOpenChange={vi.fn()}
+        />
+      </QueryClientProvider>
+    )
+    const labels = screen
+      .getAllByText(/Client ID|Client secret/)
+      .map((el) => el.textContent)
+    expect(labels[0]).toContain("Client ID")
+    expect(labels[1]).toContain("Client secret")
+    // The two extras are behind the fold until asked for.
+    expect(screen.queryByLabelText(/API base/)).toBeNull()
+    expect(screen.queryByLabelText(/Drain budget/)).toBeNull()
+    fireEvent.click(
+      screen.getByRole("button", { name: /2 more settings, rarely needed/ })
+    )
+    expect(screen.getByLabelText(/API base/)).toBeTruthy()
+    expect(screen.getByLabelText(/Drain budget/)).toBeTruthy()
   })
 })

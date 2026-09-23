@@ -143,7 +143,7 @@ data:
   # with no raw, no derived property, every relation a reference and every
   # closed set an enum. A changed declaration shipping the same version
   # reaches no repository, which is why this moves.
-  version: 13
+  version: 14
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -352,6 +352,7 @@ data:
     user:
       type: reference
       kind: user
+      writer: connector
       displayName: You
       description: >-
         the Beeper identity this token belongs to, from the connected account

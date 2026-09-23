@@ -359,6 +359,13 @@ calendar, messaging and more): [docs/bundles.md](docs/bundles.md) is the
 model, [docs/bundles-catalog.md](docs/bundles-catalog.md) what ships
 today.
 
+To connect one, your Google mail and calendar say, install it from the
+console's Registry and open **Connections**. The provider's card walks you
+through it: set up its credentials (an OAuth client you create with the
+provider; the card shows the callback URL to give it), press *Add account*
+and choose what to sync, and *Create and connect* opens the provider for
+you to approve. The first sync starts when you come back.
+
 ## Configuration
 
 Everything is an environment variable, and every one has a working default
