@@ -42,7 +42,11 @@ the [search grammar](api.md#the-search-grammar): every word must appear,
 `lay*` is a word prefix, `"a phrase"` keeps words together, `-word` excludes,
 `a OR b` takes either, and a leading `=` asks for the exact value instead. An
 email, URL or phone takes the exact value, or a trailing `*` for starts-with;
-a state or an enum offers its values; a comma means any of. The **search box**
+a state or an enum offers its values; a comma means any of. A reference
+pinned to a kind (`assignee`, at `person`) offers that collection to pick
+from, by title, with a search on top; several picked records mean any of
+them, which is the wire's `in`. A reference pinned to no kind takes the
+record's whole `<kind>/<id>` path as text. The **search box**
 beside the filters is the same grammar against every text the kind indexes at
 once (the filter's `search` arm), composed with the filters and the sort, so
 the table stays a table: the rows that match, in the order you chose, paged

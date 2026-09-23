@@ -457,6 +457,8 @@ export function KindBrowsePage() {
                 <DataTableFilters
                   fields={filterFields}
                   filters={filters}
+                  kind={kindInfo}
+                  kinds={registry.data ?? []}
                   onChange={(next) => {
                     const tokens = next.map(encodeFilter)
                     void setFilterTokens(tokens.length ? tokens : null)

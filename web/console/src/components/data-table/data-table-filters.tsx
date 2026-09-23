@@ -2,7 +2,12 @@
  * filter is an h-8 outline control with the `field | value | ×` anatomy;
  * clicking it reopens its value editor. The dashed "Add filter" opens a
  * Popover+Command faceted picker built ONLY from the declared/filterable
- * properties the server will actually filter. */
+ * properties the server will actually filter.
+ *
+ * A reference is filtered by PICKING its referents: the bar is handed the
+ * browsed kind and the registry so a pin (`kind: person`) resolves to the
+ * collection to offer, and the control reads the chosen records' titles. A
+ * bar handed neither (the changelog's) keeps the text box. */
 
 import { useState } from "react"
 import { CheckIcon, ListFilterIcon, XIcon } from "lucide-react"
@@ -22,39 +27,84 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import type { KindInfo } from "@/lib/api/types"
 import {
   canMatch,
   canPrefix,
   displayValue,
   opFor,
   parseValueInput,
+  splitReferenceIds,
   type ActiveFilter,
 } from "@/lib/filters"
-import type { DeclaredProperty } from "@/lib/definition"
+import {
+  propertyTypeLabel,
+  resolveReferenceTarget,
+  type DeclaredProperty,
+} from "@/lib/definition"
 import { cn } from "@/lib/utils"
+import { ReferenceFilterLabel, ReferencePicker } from "./reference-picker"
 
 interface DataTableFiltersProps {
   fields: DeclaredProperty[]
   filters: ActiveFilter[]
   onChange: (filters: ActiveFilter[]) => void
+  /** The kind whose records are being filtered, and the registry: together
+   * they resolve a reference field's pin to the collection its picker offers.
+   * Absent, a reference field takes text. */
+  kind?: KindInfo
+  kinds?: KindInfo[]
+}
+
+/** The kind a reference field's picker offers: its pin, resolved the way
+ * the record page resolves it (a bare `person` is the declaring package's
+ * first, then the one kind so named anywhere). Undefined for a field that is
+ * no reference, an unpinned one (`kind: any`), an ambiguous bare name, and a
+ * bar handed no registry, all of which keep the text box. */
+function referenceTarget(
+  field: DeclaredProperty | undefined,
+  kind?: KindInfo,
+  kinds?: KindInfo[]
+): KindInfo | undefined {
+  if (field?.kind !== "reference" || !field.to || !kind || !kinds) {
+    return undefined
+  }
+  return resolveReferenceTarget(kinds, kind, field.to)
 }
 
 /** The value step, shaped by the declared kind: states and booleans facet
- * (toggle membership, applied live); everything else takes text on Enter. */
+ * (toggle membership, applied live), a pinned reference offers its referents
+ * the same way; everything else takes text on Enter. */
 function ValueEditor({
   field,
   value,
+  target,
+  kinds,
   onApply,
   onCommit,
 }: {
   field: DeclaredProperty
   value: string
+  /** A reference field's resolved referent kind; the picker wants it. */
+  target?: KindInfo
+  kinds?: KindInfo[]
   /** Live update (facets) — keeps the popover open. */
   onApply: (value: string) => void
   /** Final value (text entry) — closes the popover. */
   onCommit: (value: string) => void
 }) {
   const [draft, setDraft] = useState(value)
+
+  if (target && kinds) {
+    return (
+      <ReferencePicker
+        target={target}
+        kinds={kinds}
+        selected={splitReferenceIds(value)}
+        onChange={(ids) => onApply(ids.join(","))}
+      />
+    )
+  }
 
   if (field.kind === "state" && field.states?.length) {
     const selected = new Set(
@@ -124,18 +174,23 @@ function ValueEditor({
 
   // Free text is a full-text MATCH on the property's own words (the wire's
   // `match`, in the search grammar); `=` asks for the exact value. Everything
-  // else is the exact value it always was, with a comma for membership.
+  // else is the exact value it always was, with a comma for membership. A
+  // reference whose pin did not resolve (unpinned, or ambiguous) is the one
+  // pointer still typed, and the server admits only the whole record path.
   const matches = canMatch(field)
+  const pointer = field.kind === "reference"
   return (
     <div className="flex flex-col gap-1.5 p-1">
       <Input
         autoFocus
         placeholder={
-          matches
-            ? `${field.name} mentions…`
-            : field.repeated
-              ? `${field.name} contains…`
-              : `${field.name} is…`
+          pointer
+            ? `${field.name} points at…`
+            : matches
+              ? `${field.name} mentions…`
+              : field.repeated
+                ? `${field.name} contains…`
+                : `${field.name} is…`
         }
         className="h-8 data"
         value={draft}
@@ -153,6 +208,11 @@ function ValueEditor({
             <span className="data">-word</span> excludes,{" "}
             <span className="data">a OR b</span> takes either.{" "}
             <span className="data">=value</span> means exactly that value
+          </>
+        ) : pointer ? (
+          <>
+            Press Enter to apply. The record's whole path,{" "}
+            <span className="data">{"<kind>/<id>"}</span>. A comma means any of
           </>
         ) : (
           <>
@@ -172,11 +232,15 @@ function ValueEditor({
 function ActiveFilterControl({
   filter,
   field,
+  target,
+  kinds,
   onChange,
   onRemove,
 }: {
   filter: ActiveFilter
   field: DeclaredProperty | undefined
+  target?: KindInfo
+  kinds?: KindInfo[]
   onChange: (next: ActiveFilter) => void
   onRemove: () => void
 }) {
@@ -204,12 +268,20 @@ function ActiveFilterControl({
           {/* max-w-72 fits a full group identity (the longest common value,
               e.g. providers.substrate.reamde.dev/github) before truncating; the title
               carries the whole value regardless (sweep finding, 2026-08-06) */}
-          <span
-            className="max-w-72 truncate data"
-            title={displayValue(filter, field).replaceAll(",", ", ")}
-          >
-            {displayValue(filter, field).replaceAll(",", ", ")}
-          </span>
+          {target && kinds ? (
+            <ReferenceFilterLabel
+              target={target}
+              kinds={kinds}
+              ids={splitReferenceIds(filter.value)}
+            />
+          ) : (
+            <span
+              className="max-w-72 truncate data"
+              title={displayValue(filter, field).replaceAll(",", ", ")}
+            >
+              {displayValue(filter, field).replaceAll(",", ", ")}
+            </span>
+          )}
         </PopoverTrigger>
         <Button
           variant="ghost"
@@ -221,14 +293,27 @@ function ActiveFilterControl({
           <XIcon className="size-3.5" />
         </Button>
       </div>
-      <PopoverContent align="start" className="w-56 p-1">
+      <PopoverContent
+        align="start"
+        className={cn("p-1", target ? "w-80" : "w-56")}
+      >
         {field ? (
           <ValueEditor
             field={field}
             value={displayValue(filter, field)}
+            target={target}
+            kinds={kinds}
             onApply={(value) => {
               if (!value) onRemove()
-              else onChange({ ...filter, value })
+              // A picked reference re-asserts its op: a filter stored before
+              // pointers took `eq` may still say `contains`, which does not
+              // split a comma.
+              else
+                onChange({
+                  ...filter,
+                  op: target ? opFor(field) : filter.op,
+                  value,
+                })
             }}
             onCommit={(value) => {
               onChange({
@@ -248,9 +333,12 @@ export function DataTableFilters({
   fields,
   filters,
   onChange,
+  kind,
+  kinds,
 }: DataTableFiltersProps) {
   const [addOpen, setAddOpen] = useState(false)
   const [pending, setPending] = useState<DeclaredProperty | null>(null)
+  const pendingTarget = referenceTarget(pending ?? undefined, kind, kinds)
 
   function closeAdd() {
     setAddOpen(false)
@@ -272,15 +360,20 @@ export function DataTableFilters({
 
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2 px-6 py-2.5">
-      {filters.map((filter, i) => (
-        <ActiveFilterControl
-          key={`${filter.field}-${i}`}
-          filter={filter}
-          field={fields.find((f) => f.name === filter.field)}
-          onChange={(next) => upsert(next, i)}
-          onRemove={() => onChange(filters.filter((_, j) => j !== i))}
-        />
-      ))}
+      {filters.map((filter, i) => {
+        const field = fields.find((f) => f.name === filter.field)
+        return (
+          <ActiveFilterControl
+            key={`${filter.field}-${i}`}
+            filter={filter}
+            field={field}
+            target={referenceTarget(field, kind, kinds)}
+            kinds={kinds}
+            onChange={(next) => upsert(next, i)}
+            onRemove={() => onChange(filters.filter((_, j) => j !== i))}
+          />
+        )
+      })}
       <Popover
         open={addOpen}
         onOpenChange={(open) => {
@@ -299,11 +392,16 @@ export function DataTableFilters({
         >
           <ListFilterIcon className="size-3.5" /> Add filter
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-64 p-1">
+        <PopoverContent
+          align="start"
+          className={cn("p-1", pendingTarget ? "w-80" : "w-64")}
+        >
           {pending ? (
             <ValueEditor
               field={pending}
               value={filters.find((f) => f.field === pending.name)?.value ?? ""}
+              target={pendingTarget}
+              kinds={kinds}
               onApply={(value) => {
                 if (!value) {
                   onChange(filters.filter((f) => f.field !== pending.name))
@@ -337,8 +435,7 @@ export function DataTableFilters({
                     >
                       <span>{field.name}</span>
                       <span className="ml-auto text-right text-xs text-muted-foreground">
-                        {field.kind}
-                        {field.repeated ? "[]" : ""}
+                        {propertyTypeLabel(field)}
                       </span>
                     </CommandItem>
                   ))}
