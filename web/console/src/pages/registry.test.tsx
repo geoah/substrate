@@ -942,6 +942,30 @@ describe("RegistryPage", () => {
     expect(await screen.findByText(problem)).toBeTruthy()
   })
 
+  // Admission names every problem at once, and the reader acts on the whole
+  // list: a refusal of several problems is a list with one line each, never
+  // one paragraph whose first clause stands for the rest (issue 616).
+  it("lists every problem of a refusal on its own line", async () => {
+    const problems = [
+      "bundle samples.substrate.reamde.dev/calendar: data.requires names samples.substrate.reamde.dev/scheduling, which this repository does not have",
+      'kind samples.substrate.reamde.dev/calendar/calendarevent: data.properties.attendees.kind: "person" is a bare name, and a kind pin is named in full as <authority>/<package>/<name>',
+    ]
+    serve({
+      take: () =>
+        jsonResponse(422, {
+          error: { code: "validation", message: "validation error", problems },
+        }),
+    })
+    renderPage(<RegistryPage />)
+    const people = await rowOf("people")
+    fireEvent.click(within(people).getByRole("button", { name: "Import" }))
+    const first = await screen.findByText(problems[0])
+    const second = await screen.findByText(problems[1])
+    expect(first.tagName).toBe("LI")
+    expect(second.tagName).toBe("LI")
+    expect(first.parentElement).toBe(second.parentElement)
+  })
+
   describe("once a sample is imported", () => {
     beforeEach(() =>
       serve({

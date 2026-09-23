@@ -543,22 +543,30 @@ export function readyMappings(row: {
   )
 }
 
-/** The server's OWN words for a refused import. Admission answers with a
- * validation envelope whose `problems` name exactly what to import first; the
- * envelope's `message` is only the sentinel wrapping them. Show the problems
- * verbatim when there are any, and fall back to the message otherwise, so a
- * race (a requirement torn down between the read and the click) reads as the
- * refusal it is rather than a generic failure. */
-export function importFailureText(error: unknown): string {
+/** The server's OWN words for a refused import, one problem per entry.
+ * Admission answers with a validation envelope whose `problems` name exactly
+ * what to import first, every problem at once; the envelope's `message` is
+ * only the sentinel wrapping them. The problems come back verbatim and in
+ * the server's order when there are any (a repeated line once), and the
+ * message otherwise, so a race (a requirement torn down between the read and
+ * the click) reads as the refusal it is rather than a generic failure. The
+ * caller renders each entry on its own line (components/import-refusal):
+ * joined into one paragraph, a refusal of four problems read as its first
+ * clause alone (issue 616). */
+export function importFailureLines(error: unknown): string[] {
   const problems = (error as { problems?: unknown } | undefined)?.problems
   if (Array.isArray(problems)) {
-    const lines = problems.filter((p): p is string => typeof p === "string")
-    if (lines.length) return lines.join(" ")
+    const lines = [
+      ...new Set(problems.filter((p): p is string => typeof p === "string")),
+    ]
+    if (lines.length) return lines
   }
   const message = (error as { message?: unknown } | undefined)?.message
-  return typeof message === "string" && message
-    ? message
-    : "The import was refused."
+  return [
+    typeof message === "string" && message
+      ? message
+      : "The import was refused.",
+  ]
 }
 
 /** A kind carries a trait when its reconciled declaration lists it. */

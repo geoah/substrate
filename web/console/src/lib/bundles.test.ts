@@ -17,7 +17,7 @@ import {
   bundleRecordRows,
   bundleSections,
   declaresProviderInterfaces,
-  importFailureText,
+  importFailureLines,
   installedKindRows,
   lossyStepLines,
   mergeBundles,
@@ -769,7 +769,7 @@ describe("needsConfirmation: what a click has to consent to", () => {
   })
 })
 
-describe("importFailureText — the server's refusal, verbatim", () => {
+describe("importFailureLines — the server's refusal, verbatim", () => {
   it("shows the admission problems, which name what to import first", () => {
     const error = new ApiError(
       "validation",
@@ -779,25 +779,31 @@ describe("importFailureText — the server's refusal, verbatim", () => {
         "bundle providers.substrate.reamde.dev/google: data.requires names samples.substrate.reamde.dev/people, which this repository does not have — import that authority's bundle first",
       ]
     )
-    expect(importFailureText(error)).toBe(
-      "bundle providers.substrate.reamde.dev/google: data.requires names samples.substrate.reamde.dev/people, which this repository does not have — import that authority's bundle first"
-    )
+    expect(importFailureLines(error)).toEqual([
+      "bundle providers.substrate.reamde.dev/google: data.requires names samples.substrate.reamde.dev/people, which this repository does not have — import that authority's bundle first",
+    ])
   })
 
-  it("joins several problems and never drops one", () => {
+  it("keeps every problem as its own line, in the server's order, and never drops one", () => {
     const error = new ApiError("validation", "validation error", 422, [
       "first problem",
       "second problem",
+      "first problem",
     ])
-    expect(importFailureText(error)).toBe("first problem second problem")
+    expect(importFailureLines(error)).toEqual([
+      "first problem",
+      "second problem",
+    ])
   })
 
   it("falls back to the envelope message when there are no problems", () => {
     expect(
-      importFailureText(new ApiError("forbidden", "owner only", 403))
-    ).toBe("owner only")
-    expect(importFailureText(new Error("network error"))).toBe("network error")
-    expect(importFailureText(undefined)).toBe("The import was refused.")
+      importFailureLines(new ApiError("forbidden", "owner only", 403))
+    ).toEqual(["owner only"])
+    expect(importFailureLines(new Error("network error"))).toEqual([
+      "network error",
+    ])
+    expect(importFailureLines(undefined)).toEqual(["The import was refused."])
   })
 })
 

@@ -37,6 +37,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import type { DataTableColumn } from "@/components/data-table/data-table"
+import { ImportRefusal } from "@/components/import-refusal"
 import {
   BoxesIcon,
   CheckIcon,
@@ -108,7 +109,6 @@ import {
   closureRows,
   confirmationOf,
   heldVersions,
-  importFailureText,
   installedKindRows,
   lossyStepLines,
   mappingLinksSentence,
@@ -295,7 +295,7 @@ function TakeButton({
       toast.add({
         type: "error",
         title: `${sample ? "Importing" : "Installing"} ${failed?.bundle ?? row.name} failed`,
-        description: importFailureText(failed?.cause ?? error),
+        description: <ImportRefusal error={failed?.cause ?? error} />,
       })
     },
   })
@@ -457,7 +457,7 @@ function UpgradeButton({
       toast.add({
         type: "error",
         title: `Upgrading ${row.name} failed`,
-        description: importFailureText(error),
+        description: <ImportRefusal error={error} />,
       })
     },
   })
@@ -572,7 +572,7 @@ function LossyUpgradeDialog({
       toast.add({
         type: "error",
         title: `Upgrading ${row?.name} failed`,
-        description: importFailureText(error),
+        description: <ImportRefusal error={error} />,
       })
     },
   })
