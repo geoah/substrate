@@ -1101,6 +1101,12 @@ type projectOpts struct {
 	// declarations this pass projects for it (vocabularyBatch.origin).
 	origin        string
 	originVersion int64
+	// versions, when set, is the version each projected row is stamped with,
+	// keyed as skip keys it, overriding the declaration's own. A repository
+	// migration (repomigrate.go) rewrites rows whose versions the store
+	// already decided, and a re-projection that let the package's version win
+	// would move a row the API had moved ahead of it.
+	versions map[string]int64
 }
 
 // projectPackages writes the touched packages' declarations as record rows
@@ -1205,6 +1211,9 @@ func (t *txn) projectPackage(reg *vocabulary.Registry, projecting map[string]boo
 		props, err := t.declarationReplacement(d)
 		if err != nil {
 			return err
+		}
+		if v, ok := opts.versions[d.key()]; ok && v > 0 {
+			props[propDeclarationVersion] = v
 		}
 		in := substrate.PutInput{Kind: d.typ, ID: d.id, Properties: props}
 		if m, ok := opts.meta[d.short+"\x00"+d.id]; ok {
@@ -2051,12 +2060,18 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 // over single packages would quarantine both — the whole repository — over a
 // cycle that is by construction always satisfied.
 func (ds *dataset) admissibleSubset(built []*vocabulary.Package) (good []*vocabulary.Package, quarantined []quarantinedPackage) {
+	return admissibleInto(ds.reg, built)
+}
+
+// admissibleInto is admissibleSubset over any registry: the live one at open,
+// or the scratch registry a repository migration builds to project from.
+func admissibleInto(reg *vocabulary.Registry, built []*vocabulary.Package) (good []*vocabulary.Package, quarantined []quarantinedPackage) {
 	remaining := admissionUnits(built)
 	for {
 		progressed := false
 		var next [][]*vocabulary.Package
 		for _, unit := range remaining {
-			if err := ds.reg.InstallAll(unit); err == nil {
+			if err := reg.InstallAll(unit); err == nil {
 				good = append(good, unit...)
 				progressed = true
 			} else {
@@ -2070,10 +2085,10 @@ func (ds *dataset) admissibleSubset(built []*vocabulary.Package) (good []*vocabu
 	}
 	// Whatever remains cannot admit even with every good package present. Re-run
 	// InstallAll once per remaining unit to capture its reason — it fails and
-	// self-removes, so ds.reg is untouched.
+	// self-removes, so reg is untouched.
 	for _, unit := range remaining {
 		reason := "stored closure failed admission under the current binary"
-		if err := ds.reg.InstallAll(unit); err != nil {
+		if err := reg.InstallAll(unit); err != nil {
 			reason = err.Error()
 		}
 		for _, g := range unit {
@@ -2174,7 +2189,12 @@ func (ds *dataset) clearGroupQuarantine(ctx context.Context, authorities []*voca
 // declared, so ownership reads the same answer at open as it did at the write. It parses and returns the packages without installing them
 // anywhere, alongside the ones that no longer parse under this binary, which
 // are the quarantine candidates for the caller to mark.
-func (ds *dataset) storedPackages(ctx context.Context, skip func(string) bool) ([]*vocabulary.Package, []quarantinedPackage, error) {
+// storedDocumentsBySource reads every stored declaration document, grouped by
+// the source its package row claims: the read half of storedPackages, on its
+// own so a repository migration (repomigrate.go) can rewrite the documents
+// before they are built. The package names under each source, and the
+// documents by docKey.
+func (ds *dataset) storedDocumentsBySource(ctx context.Context, skip func(string) bool) (map[string]vocabulary.Document, map[string]map[string]bool, error) {
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT id, COALESCE(props->>'source', $3) FROM records
 		WHERE kind IN ($1, $2) AND deleted_at IS NULL
@@ -2216,6 +2236,19 @@ func (ds *dataset) storedPackages(ctx context.Context, skip func(string) bool) (
 	docs, err := ds.vocabularyDocumentRows(ctx, authorities)
 	if err != nil {
 		return nil, nil, err
+	}
+	return docs, bySource, nil
+}
+
+// storedPackages rebuilds the stored vocabulary as packages, one BuildPackages
+// pass per source, and names the packages that no longer parse.
+func (ds *dataset) storedPackages(ctx context.Context, skip func(string) bool) ([]*vocabulary.Package, []quarantinedPackage, error) {
+	docs, bySource, err := ds.storedDocumentsBySource(ctx, skip)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(docs) == 0 && len(bySource) == 0 {
+		return nil, nil, nil
 	}
 	// One BuildAuthorities pass per source: an authority is built with the origin its
 	// own row claims, and the rebuilt types carry it (`Type.Source`).

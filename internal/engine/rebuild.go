@@ -62,6 +62,9 @@ import (
 //     interrupted flow is started again.
 //   - vocabulary_dialect, the STORE SHAPE's stamp, about the tables rather
 //     than about their contents.
+//   - repository_migrations, the ledger of the code migrations this
+//     repository has run (repomigrate.go). What a migration wrote is in the
+//     changelog and replays; the ledger says it need not run again.
 //   - changelog_dialect — what dialect the entries being replayed are written
 //     in (changelogdialect.go). A replay does not rewrite an entry, so it
 //     cannot change the answer.

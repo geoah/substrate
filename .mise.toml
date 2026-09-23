@@ -314,7 +314,7 @@ description = "ruff over the runner's Python host"
 run = "ruff check internal/runner/host.py .mise/testtiming.py"
 
 [tasks."lint:migrations"]
-description = "The shape of internal/engine/migrations: naming, numbering, no gaps"
+description = "The shape of internal/engine/migrations and the repository migrations: naming, numbering, no gaps"
 # IN `lint`, unlike `frozen:check`, because it reads the FILES and not the
 # diff: the answer is the same on a laptop with no base branch as it is on a
 # merge.

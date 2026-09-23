@@ -818,9 +818,14 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		}
 		ds.manifest = m
 	}
-	// Then the whole vocabulary rebuilds FROM the rows, and only then does the
-	// shipped-vocabulary upgrade append what a newer binary added (seed.go).
+	// The repository migrations first (repomigrate.go): code this binary runs
+	// once per repository over the stored rows, before anything reads them
+	// back as vocabulary, because what one rewrites may be the very rows the
+	// next step cannot load as stored. Then the whole vocabulary rebuilds FROM
+	// the rows, and only then does the shipped-vocabulary upgrade append what
+	// a newer binary added (seed.go).
 	for _, step := range []func(context.Context) error{
+		ds.runRepositoryMigrations,
 		ds.loadStoredVocabulary,
 		ds.upgradeShippedVocabulary,
 		ds.ensureDefaultProviders,

@@ -267,7 +267,13 @@ on an operator. A repository's stored dialect is internal to its own store and
 never appears on the wire, and [API discovery](api.md#discovery) does not
 report the binary's maximum either. The next number is spent when a release
 changes what a stored declaration row holds, together with the step that
-rewrites the rows and stamps the new number in the same transaction.
+rewrites the rows and stamps the new number in the same transaction. A change
+to what a row's values may SAY, with the row's shape as it was, is not a
+dialect: it is a
+[repository migration](operations.md#upgrading-the-binary), code that runs
+once per repository at its first open and rewrites the rows through the
+changelog. The first one wrote the full identity into every stored bare name
+after [decision 0098](decisions/0098-a-declaration-names-a-kind-or-trait-in-full.md).
 
 **Admission refuses narrowing.** A declaration change that would strand
 existing data is refused at admission, as a `guard` error naming every

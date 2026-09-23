@@ -22,12 +22,19 @@
 #   - No empty file. An empty migration records itself as applied and changes
 #     nothing, which is the hardest kind of missing step to find later.
 #
+# THE REPOSITORY MIGRATIONS (engine/repomigrate.go) are held to the same shape
+# one level down: `internal/engine/repomigration_NNNN_name.go`, four digits and
+# lower_snake, one file per version, one per name, versions 1..N with no gaps.
+# The runner's list is Go and TestRepositoryMigrationsMatchTheirFiles holds it
+# to these files; this holds the files to the shape before any test runs.
+#
 # No `-e`: every rule runs and reports, so one pass names everything wrong.
 set -uo pipefail
 
 cd "$(git rev-parse --show-toplevel)" || exit 2
 
 dir=internal/engine/migrations
+repodir=internal/engine
 fail=0
 
 flag() {
@@ -92,6 +99,44 @@ while [ "$i" -le "$count" ]; do
   case "$versions" in
   *"|${padded}|"*) ;;
   *) flag "${dir}: no migration is numbered ${padded}; the sequence has a gap" ;;
+  esac
+  i=$((i + 1))
+done
+
+# --- the repository migrations ---------------------------------------------
+
+rversions=""
+rnames=""
+rcount=0
+for path in "$repodir"/repomigration_*.go; do
+  [ -e "$path" ] || continue
+  file="$(basename "$path")"
+  if [[ ! "$file" =~ ^repomigration_[0-9]{4}_[a-z0-9]+(_[a-z0-9]+)*\.go$ ]]; then
+    flag "${repodir}/${file} is not repomigration_NNNN_name.go"
+    continue
+  fi
+  version="${file#repomigration_}"
+  version="${version%%_*}"
+  name="${file#repomigration_????_}"
+  name="${name%.go}"
+  case "$rversions" in
+  *"|${version}|"*) flag "${repodir}: repository migration version ${version} numbers two files" ;;
+  *)
+    rversions="${rversions}|${version}|"
+    rcount=$((rcount + 1))
+    ;;
+  esac
+  case "$rnames" in
+  *"|${name}|"*) flag "${repodir}: '${name}' names two repository migrations" ;;
+  *) rnames="${rnames}|${name}|" ;;
+  esac
+done
+i=1
+while [ "$i" -le "$rcount" ]; do
+  padded="$(printf '%04d' "$i")"
+  case "$rversions" in
+  *"|${padded}|"*) ;;
+  *) flag "${repodir}: no repository migration is numbered ${padded}; the sequence has a gap" ;;
   esac
   i=$((i + 1))
 done

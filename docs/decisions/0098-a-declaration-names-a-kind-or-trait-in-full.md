@@ -68,15 +68,13 @@ name resolving no longer hold, and the rest of each record stands.
   every changed package's version bumped, so every repository takes a boot
   upgrade of core and is offered one for each provider and sample it holds.
 - Bad, because a stored declaration written bare before this change no
-  longer admits. A repository created before this change holds core's own
-  declarations bare (`kind: recordmerge`, `traits: [temporal(point)]`), and
-  the open reads the stored closure before the shipped upgrade runs
-  (`loadStoredVocabulary`, then `upgradeShippedVocabulary`), so the seeded
-  bucket fails to build and the repository refuses to open under this
-  binary. A provider's or sample's stored copy would park instead. Nothing
-  rewrites a stored declaration in place yet: a repository from before this
-  change is recreated, or a boot-time rewrite of stored bare names as
-  ordinary record writes is built first.
+  longer admits, core's own `recordsplit.merge` included, and the open reads
+  the stored closure before the shipped upgrade runs. Repository migration
+  `0001_qualify_bare_declaration_names`
+  ([0099](0099-a-repository-migration-is-code-the-boot-runs-once-and-records.md))
+  rewrites every stored bare name to the identity the previous binary
+  resolved it to, at the repository's first open under this binary and
+  before the stored vocabulary loads.
 - Bad, because a declaration is longer to write, and a repository's own
   kinds pointing at each other spell their authority every time.
 

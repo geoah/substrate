@@ -40,6 +40,7 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel)" || exit 2
 
 migrations=internal/engine/migrations
+repomigrations='internal/engine/repomigration_*.go'
 decisions=docs/decisions
 fail=0
 
@@ -86,6 +87,19 @@ while read -r status path; do
   *) flag "${path} is a landed migration and this branch changes it (${status})" ;;
   esac
 done < <(git diff --name-status --diff-filter=AMDRT "$base_commit" -- "$migrations" |
+  awk '{ print $1, $NF }' | sed -E 's/^R[0-9]+/D/; s/^T/M/')
+
+# A landed REPOSITORY migration (engine/repomigrate.go) is never edited either:
+# its ledger row says it ran, and code that changed after cannot be what ran.
+while read -r status path; do
+  [ -n "$path" ] || continue
+  case "$status" in
+  A) ;;
+  M) flag "${path} is a landed repository migration and this branch edits it; add a new one instead" ;;
+  D) flag "${path} is a landed repository migration and this branch deletes it; a repository that ran it could never be reproduced" ;;
+  *) flag "${path} is a landed repository migration and this branch changes it (${status})" ;;
+  esac
+done < <(git diff --name-status --diff-filter=AMDRT "$base_commit" -- "$repomigrations" |
   awk '{ print $1, $NF }' | sed -E 's/^R[0-9]+/D/; s/^T/M/')
 
 # --- an accepted record's body is never edited --------------------------
