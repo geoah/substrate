@@ -27,6 +27,7 @@ import { Fragment, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import type { DataTableColumn } from "@/components/data-table/data-table"
+import { ImportRefusal } from "@/components/import-refusal"
 import {
   ArrowUpRightIcon,
   BotIcon,
@@ -116,7 +117,6 @@ import {
   bundleRecordRows,
   confirmationOf,
   declaresProviderInterfaces,
-  importFailureText,
   missingRequirements,
   readyMappings,
   REIMPORT_WARNING,
@@ -256,7 +256,7 @@ function ImportAgainNote({ item }: { item: CatalogItem }) {
       toast.add({
         type: "error",
         title: `Could not re-import ${item.name}`,
-        description: importFailureText(error),
+        description: <ImportRefusal error={error} />,
       })
     },
   })
