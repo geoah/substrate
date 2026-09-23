@@ -13,6 +13,7 @@ import {
   healthOf,
   kindGlobMatches,
   kindHasTrait,
+  providerConfigured,
   providerNextStep,
   providerViews,
   requestServed,
@@ -381,6 +382,67 @@ describe("providerNextStep", () => {
   it("never asks a token provider to connect", () => {
     const account = accountViewOf(record("a", {}), tokenKinds)
     expect(step({ inputs: [client] }, [account], tokenKinds).step).toBe("ready")
+  })
+
+  it("has nothing to add on a catalog provider that declares no account kind", () => {
+    const [p] = providerViews(
+      [status({ inputs: [client] })],
+      new Set([GOOGLE]),
+      [kind(`${GOOGLE}/config`, ["oauth2"], { clientId: { type: "string" } })],
+      []
+    )
+    expect(p.accountKind).toBeUndefined()
+    expect(providerNextStep(p).step).toBe("none")
+  })
+})
+
+describe("providerConfigured", () => {
+  const oauthKinds = [
+    kind(`${GOOGLE}/config`, ["oauth2"], { clientId: { type: "string" } }),
+  ]
+  const tokenKinds = [
+    kind(`${GOOGLE}/config`, [], { apiKey: { type: "secret" } }),
+  ]
+  const client = { name: "client", kind: `${GOOGLE}/config`, record: "x" }
+
+  it("is false while the oauth client is incomplete or its input unresolved", () => {
+    expect(
+      providerConfigured(
+        {
+          inputs: [client],
+          setup: [{ code: "oauth-client", input: "client", message: "" }],
+        },
+        oauthKinds
+      )
+    ).toBe(false)
+    expect(
+      providerConfigured(
+        {
+          inputs: [{ name: "client", kind: `${GOOGLE}/config` }],
+          setup: [{ code: "missing", input: "client", message: "" }],
+        },
+        oauthKinds
+      )
+    ).toBe(false)
+    expect(providerConfigured({ inputs: [client] }, oauthKinds)).toBe(true)
+  })
+
+  it("reads a token provider's missing config off its first input", () => {
+    expect(
+      providerConfigured(
+        {
+          inputs: [{ name: "token", kind: `${GOOGLE}/config` }],
+          setup: [{ code: "missing", input: "token", message: "" }],
+        },
+        tokenKinds
+      )
+    ).toBe(false)
+    expect(
+      providerConfigured(
+        { inputs: [{ name: "token", kind: `${GOOGLE}/config`, record: "x" }] },
+        tokenKinds
+      )
+    ).toBe(true)
   })
 })
 

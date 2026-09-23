@@ -6,6 +6,7 @@
 
 import type {
   BundleStatus,
+  InputStatus,
   KindInfo,
   SubstrateRecord,
   SyncProgress,
@@ -296,6 +297,41 @@ export interface ProviderView {
   byTokenStatus: Record<string, number>
 }
 
+/** The input a provider's credentials live on: the client wearing `oauth2`
+ * when there is one, else the bundle's first input (a token provider's
+ * config). */
+export function providerConfigInput(
+  status: Pick<BundleStatus, "inputs">,
+  kinds: KindInfo[]
+): InputStatus | undefined {
+  const client = status.inputs?.find((i) => {
+    const k = kinds.find((x) => x.identity === i.kind)
+    return Boolean(k && kindHasTrait(k, "oauth2"))
+  })
+  return client ?? status.inputs?.[0]
+}
+
+/** Credentials present: no `oauth-client` setup item stands, and the config
+ * input resolves. One rule for an OAuth client and a pasted token alike, so
+ * the Connections card and the Registry's accounts section agree on whether
+ * an account can be created ready to go. */
+export function providerConfigured(
+  status: Pick<BundleStatus, "inputs" | "setup">,
+  kinds: KindInfo[]
+): boolean {
+  const configInput = providerConfigInput(status, kinds)
+  const setup = status.setup ?? []
+  return (
+    !setup.some((s) => s.code === "oauth-client") &&
+    !setup.some(
+      (s) =>
+        configInput &&
+        s.input === configInput.name &&
+        ["missing", "ambiguous", "dangling"].includes(s.code)
+    )
+  )
+}
+
 /** Fold the installed bundles and the account records into one row per
  * provider: every bundle whose closure declares an `accountconfig` kind, plus
  * every bundle the catalog calls a provider, whether or not it has accounts
@@ -325,14 +361,7 @@ export function providerViews(
       ? kinds.find((k) => k.identity === configInput.kind)
       : undefined
     const setup = status.setup ?? []
-    const configured =
-      !setup.some((s) => s.code === "oauth-client") &&
-      !setup.some(
-        (s) =>
-          configInput &&
-          s.input === configInput.name &&
-          ["missing", "ambiguous", "dangling"].includes(s.code)
-      )
+    const configured = providerConfigured(status, kinds)
     const mine = accounts.filter((a) => a.provider === id)
     const byTokenStatus: Record<string, number> = {}
     for (const a of mine) {
@@ -360,9 +389,11 @@ export function providerViews(
 
 /** Where a provider stands on the way to a syncing account, so the card can
  * say what to do next in one sentence: enable the bundle, set the
- * credentials, add an account, connect the one that is not, or nothing. */
+ * credentials, add an account, connect the one that is not, or nothing.
+ * `none` is a catalog provider whose closure declares no account kind: there
+ * is nothing to add, and the card must not offer it. */
 export type ProviderStep =
-  "install" | "credentials" | "account" | "connect" | "ready"
+  "install" | "credentials" | "account" | "connect" | "ready" | "none"
 
 export interface ProviderNextStep {
   step: ProviderStep
@@ -373,7 +404,9 @@ export interface ProviderNextStep {
 export function providerNextStep(p: ProviderView): ProviderNextStep {
   if (!p.status?.installed || !p.status.enabled) return { step: "install" }
   if (p.configKind && !p.configured) return { step: "credentials" }
-  if (p.accounts.length === 0) return { step: "account" }
+  if (p.accounts.length === 0) {
+    return { step: p.accountKind ? "account" : "none" }
+  }
   if (p.oauth) {
     const pending = p.accounts.find((a) => a.tokenStatus !== "connected")
     if (pending) return { step: "connect", account: pending }

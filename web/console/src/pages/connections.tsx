@@ -287,6 +287,12 @@ function NextStep({
         <ConnectButton view={next.account} disabled={false} />
       )
       break
+    case "none":
+      return (
+        <p className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          This provider has no accounts to connect.
+        </p>
+      )
     default:
       return (
         <p className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">

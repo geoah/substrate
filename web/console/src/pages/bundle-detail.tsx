@@ -135,7 +135,11 @@ import {
 } from "@/lib/bundles"
 import { settingRecordsQueryOptions } from "@/lib/api/settings"
 import { groupSettings, type SettingField } from "@/lib/settings"
-import { kindHasTrait, OAUTH2_CLIENT_PROPERTIES } from "@/lib/sync"
+import {
+  kindHasTrait,
+  OAUTH2_CLIENT_PROPERTIES,
+  providerConfigured,
+} from "@/lib/sync"
 import { cellValue, recordTitle } from "@/lib/format"
 import { splitKind, kindByIdentity } from "@/lib/definition"
 import { cn } from "@/lib/utils"
@@ -1144,7 +1148,10 @@ function AccountsSection({
   const blocked =
     !bundle.installed || !bundle.enabled || oauthConnectBlocked(bundle, types)
   const oauth = Boolean(oauthClientInput(bundle, types))
-  const configured = !oauthConnectBlocked(bundle, types)
+  // The same rule the Connections card applies, so a token provider whose
+  // config is missing is told so here as well; `blocked` above is the
+  // narrower OAuth-only gate on Connect.
+  const configured = providerConfigured(bundle, types)
   // Owned here rather than by the dialog, so the consent's return is heard
   // after the dialog that started it has closed.
   const connect = useOAuthConnect()
