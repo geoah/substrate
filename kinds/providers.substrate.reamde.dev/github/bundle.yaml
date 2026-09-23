@@ -75,7 +75,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: github
-  version: 21
+  version: 22
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -259,6 +259,7 @@ data:
       type: reference
       kind: providers.substrate.reamde.dev/github/user
       mustExist: true
+      writer: connector
       displayName: User
       description: the GitHub user this account authenticates as, from GET
         /user — "me", and what every owner-relative question filters on

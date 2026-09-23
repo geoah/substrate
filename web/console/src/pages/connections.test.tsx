@@ -85,15 +85,33 @@ function kind(
 const KINDS: KindInfo[] = [
   kind(ACCOUNT, ["accountconfig", "sync"], {
     email: { type: "email", writer: "oauth" },
-    enabledGmail: { type: "bool", writer: "owner" },
+    address: {
+      type: "reference",
+      kind: `${GOOGLE}/emailaddress`,
+      writer: "connector",
+      displayName: "Address",
+    },
+    enabledGmail: { type: "bool", writer: "owner", displayName: "Gmail" },
     syncFrequency: {
       type: "enum",
       values: ["off", "hourly", "daily"],
+      required: true,
+      default: "daily",
       writer: "owner",
     },
     syncState: { type: "string", writer: "connector" },
-    syncPaused: { type: "bool", writer: "owner" },
-    syncRequestedAt: { type: "datetime", writer: "owner" },
+    syncPaused: { type: "bool", writer: "owner", displayName: "Paused" },
+    syncRequestedAt: {
+      type: "datetime",
+      writer: "owner",
+      displayName: "Sync requested",
+    },
+    gmailBackfillResume: {
+      type: "object",
+      writer: "connector",
+      displayName: "Gmail backfill resume",
+      fields: { pageToken: { type: "string" } },
+    },
   }),
   kind(CONFIG, ["oauth2"], {
     clientId: { type: "string" },
@@ -135,6 +153,7 @@ const CATALOG: CatalogItem = {
   },
 }
 
+const CONSENT_URL = "https://accounts.google.com/o/oauth2/v2/auth?x=1"
 const HOUR_AGO = new Date(Date.now() - 2 * 3600_000).toISOString()
 const REQUESTED = new Date(Date.now() - 60_000).toISOString()
 
@@ -254,11 +273,11 @@ function filterOf(path: string): { kinds?: string[]; implements?: string } {
 describe("ConnectionsPage", () => {
   const fetchMock = vi.fn<typeof fetch>()
 
-  function serve() {
+  function serve(status: BundleStatus = STATUS) {
     fetchMock.mockImplementation(async (url, init) => {
       const method = (init as RequestInit | undefined)?.method ?? "GET"
       const path = String(url)
-      if (path === STATUS_PATH) return jsonResponse(200, { items: [STATUS] })
+      if (path === STATUS_PATH) return jsonResponse(200, { items: [status] })
       if (path === CATALOG_PATH) return jsonResponse(200, { items: [CATALOG] })
       if (path === TRIGGER_STATUS_PATH)
         return jsonResponse(200, { items: TRIGGER_STATUSES })
@@ -306,6 +325,14 @@ describe("ConnectionsPage", () => {
       }
       if (method === "POST" && path.endsWith("/wake"))
         return jsonResponse(200, { ran: 1 })
+      if (method === "POST" && path === "/api/v1/records") {
+        const body = JSON.parse(String((init as RequestInit).body)) as {
+          properties: Record<string, unknown>
+        }
+        return jsonResponse(201, account("new-acct", body.properties))
+      }
+      if (method === "POST" && path.endsWith("/oauth/start"))
+        return jsonResponse(200, { url: CONSENT_URL })
       if (method === "DELETE") return new Response(null, { status: 204 })
       return jsonResponse(200, {})
     })
@@ -345,6 +372,116 @@ describe("ConnectionsPage", () => {
     const link = await screen.findByText(label)
     return link.closest("tr")!
   }
+
+  async function openAddAccount() {
+    const link = (await screen.findAllByText("google")).find(
+      (el) => el.tagName === "A"
+    )!
+    const card = link.closest<HTMLElement>("div.rounded-md")!
+    fireEvent.click(
+      within(card).getAllByRole("button", { name: /Add account/ })[0]
+    )
+    return screen.findByRole("dialog")
+  }
+
+  it("says what to do next on the card: connect the account that is waiting", async () => {
+    renderPage(<ConnectionsPage />)
+    const link = (await screen.findAllByText("google")).find(
+      (el) => el.tagName === "A"
+    )!
+    const card = link.closest<HTMLElement>("div.rounded-md")!
+    expect(
+      within(card).getByText(/home@example.com is not connected yet/)
+    ).toBeTruthy()
+  })
+
+  it("Add account asks only what the owner decides, in plain words", async () => {
+    renderPage(<ConnectionsPage />)
+    const dialog = await openAddAccount()
+    expect(within(dialog).getByText("Add a google account")).toBeTruthy()
+    expect(
+      within(dialog).getByText(/approve access to each item you turned on/)
+    ).toBeTruthy()
+    // The owner's toggle and cadence, under their headings.
+    expect(within(dialog).getByText("What to sync")).toBeTruthy()
+    expect(within(dialog).getByLabelText("Gmail")).toBeTruthy()
+    expect(within(dialog).getByLabelText(/Sync frequency/)).toBeTruthy()
+    // Not the facility's, the connector's, or the trait's two owner hands.
+    expect(within(dialog).queryByText("Address")).toBeNull()
+    expect(within(dialog).queryByText("Gmail backfill resume")).toBeNull()
+    expect(within(dialog).queryByText("Paused")).toBeNull()
+    expect(within(dialog).queryByText("Sync requested")).toBeNull()
+    expect(
+      within(dialog).getByRole("button", { name: "Create and connect" })
+    ).toBeTruthy()
+  })
+
+  it("Create and connect creates the account, then opens the consent in the tab opened at the press", async () => {
+    const tab = { location: { href: "" }, close: vi.fn() }
+    const open = vi.fn().mockReturnValue(tab)
+    vi.stubGlobal("open", open)
+    renderPage(<ConnectionsPage />)
+    const dialog = await openAddAccount()
+    // Nothing turned on is refused before any request goes out.
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Create and connect" })
+    )
+    expect(
+      await within(dialog).findByText("Turn on at least one thing to sync.")
+    ).toBeTruthy()
+    expect(calls("POST")).toHaveLength(0)
+
+    fireEvent.click(within(dialog).getByLabelText("Gmail"))
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Create and connect" })
+    )
+    await waitFor(() =>
+      expect(calls("POST").some((c) => c.url.endsWith("/oauth/start"))).toBe(
+        true
+      )
+    )
+    const posts = calls("POST")
+    expect(posts[0].url).toBe("/api/v1/records")
+    expect(posts[0].body).toMatchObject({
+      kind: ACCOUNT,
+      properties: { enabledGmail: true, syncFrequency: "daily" },
+    })
+    expect(posts[1].body).toEqual({ record: "new-acct" })
+    expect(open).toHaveBeenCalledWith("about:blank", "_blank")
+    await waitFor(() => expect(tab.location.href).toBe(CONSENT_URL))
+  })
+
+  it("with the credentials missing, Add account says so and offers the credentials form", async () => {
+    serve({
+      ...STATUS,
+      setup: [
+        {
+          code: "oauth-client",
+          input: "client",
+          kind: CONFIG,
+          record: "default",
+          message: "set clientId and clientSecret",
+        },
+      ],
+    })
+    renderPage(<ConnectionsPage />)
+    const dialog = await openAddAccount()
+    expect(
+      within(dialog).getByText(/credentials are not set up yet/)
+    ).toBeTruthy()
+    expect(within(dialog).getByRole("button", { name: "Create" })).toBeTruthy()
+    expect(
+      within(dialog).queryByRole("button", { name: "Create and connect" })
+    ).toBeNull()
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: /Set up credentials/ })
+    )
+    const credentials = await screen.findByRole("dialog")
+    expect(
+      await within(credentials).findByText(/google credentials/)
+    ).toBeTruthy()
+    expect(within(credentials).getByText("OAuth callback URL")).toBeTruthy()
+  })
 
   it("lists the provider with its credentials and account counts", async () => {
     renderPage(<ConnectionsPage />)

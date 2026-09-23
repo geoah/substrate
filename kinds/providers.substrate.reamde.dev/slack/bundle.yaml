@@ -109,7 +109,7 @@ data:
   # their writers, and the sync body writes them beside the legacy
   # `syncStatus`/`lastSyncedAt`/`streamCursors` fields on every run. Nothing
   # is renamed, narrowed or dropped.
-  version: 5
+  version: 6
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -320,14 +320,15 @@ data:
     team:
       type: reference
       kind: team
+      writer: connector
       displayName: Workspace
       description: >-
         the workspace this token belongs to, from auth.test's team_id. The
-        row lands in the same drain, so no mustExist. No `writer:` — a reference
-        property takes none (Platform asks)
+        row lands in the same drain, so no mustExist
     user:
       type: reference
       kind: user
+      writer: connector
       displayName: You
       description: >-
         the Slack user this token belongs to, from auth.test's user_id — who

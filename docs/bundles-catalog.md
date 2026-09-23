@@ -68,8 +68,17 @@ thing, and the Records column counts them.
 
 ## Connecting an OAuth provider
 
-Google, GitHub and WHOOP take the same four steps, because the host
-runs the flow and the bundle only declares it
+In the console it is three presses on the **Connections** page
+([console](console.md#connections)). Install the provider from the Registry
+if it is not there yet, then, on its card: *Set up credentials* asks for the
+client id and secret of an OAuth client you create with the provider, and
+shows the callback URL to register as that client's redirect URI; *Add
+account* asks what to sync and how often; *Create and connect* opens the
+provider in a new tab, and once you approve there the account's first sync
+starts on its own. The card says which of the three comes next.
+
+Over the API and the CLI, Google, GitHub and WHOOP take the same four steps,
+because the host runs the flow and the bundle only declares it
 ([bundles](bundles.md#the-oauth-facility)):
 
 1. **Register an app** with the provider and note its client id and secret.

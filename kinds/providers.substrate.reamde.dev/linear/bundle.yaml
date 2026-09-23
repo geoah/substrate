@@ -97,7 +97,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: linear
-  version: 15
+  version: 16
 ---
 # ---- the bundle document: the install unit -----------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -340,6 +340,7 @@ data:
     organization:
       type: reference
       kind: organization
+      writer: connector
       displayName: Workspace
       description: >-
         the workspace this key belongs to, from the `organization` query.
@@ -347,6 +348,7 @@ data:
     user:
       type: reference
       kind: user
+      writer: connector
       displayName: You
       description: >-
         the Linear member this key authenticates as, from the `viewer` query

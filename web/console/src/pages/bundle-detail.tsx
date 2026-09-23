@@ -33,7 +33,6 @@ import {
   BoxesIcon,
   BoxIcon,
   CheckIcon,
-  CopyIcon,
   FunctionSquareIcon,
   PencilIcon,
   PlugZapIcon,
@@ -68,7 +67,10 @@ import { Spinner } from "@/components/ui/spinner"
 import { toast } from "@/components/ui/toast"
 import { BundleStateBadge, SetupBadge } from "@/components/bundle-state-badge"
 import { BundleSettingsForm } from "@/components/bundle-settings"
+import { OAuthCallbackNote } from "@/components/oauth-callback-note"
 import { RecordConfigForm } from "@/components/record-config-form"
+import { AccountDialog } from "@/components/sync/account-dialog"
+import { useOAuthConnect } from "@/hooks/use-oauth-connect"
 import {
   ACCOUNT_CONFIG_TRAIT,
   bindBundleInput,
@@ -92,7 +94,6 @@ import {
 import {
   catalogItemQueryOptions,
   importBundle,
-  oauthCallbackURL,
   type CatalogItem,
 } from "@/lib/api/catalog"
 import {
@@ -122,6 +123,7 @@ import {
   installedKindRows,
   isInputSetupCode,
   isSettingSetupCode,
+  oauthClientInput,
   oauthConnectBlocked,
   heldVersions,
   mergeBundles,
@@ -133,59 +135,11 @@ import {
 } from "@/lib/bundles"
 import { settingRecordsQueryOptions } from "@/lib/api/settings"
 import { groupSettings, type SettingField } from "@/lib/settings"
+import { kindHasTrait, OAUTH2_CLIENT_PROPERTIES } from "@/lib/sync"
 import { cellValue, recordTitle } from "@/lib/format"
 import { splitKind, kindByIdentity } from "@/lib/definition"
 import { cn } from "@/lib/utils"
 import { bundleDetailRoute } from "@/router"
-
-/** Google's own "create an OAuth client" documentation — where the owner sets
- * up the client and registers the redirect URI below. */
-const GOOGLE_OAUTH_DOCS = "https://support.google.com/cloud/answer/6158849"
-
-/** The provider callback URL, read-only with a copy affordance — the value the
- * owner must register in their OAuth client. Provider-specific: it renders only
- * on a provider bundle (declaresProviderInterfaces). */
-function CallbackUrlNote() {
-  const url = oauthCallbackURL()
-  const [copied, setCopied] = useState(false)
-  return (
-    <div className="rounded-md border bg-muted/30 px-4 py-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium">OAuth callback URL</span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 gap-1 px-2 text-xs"
-          onClick={() => {
-            void navigator.clipboard?.writeText(url)
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1500)
-          }}
-        >
-          {copied ? (
-            <CheckIcon className="size-3" />
-          ) : (
-            <CopyIcon className="size-3" />
-          )}
-          {copied ? "Copied" : "Copy"}
-        </Button>
-      </div>
-      <p className="mt-1 data text-xs break-all text-muted-foreground">{url}</p>
-      <p className="mt-1.5 text-xs text-muted-foreground">
-        Add this redirect URI to your OAuth client.{" "}
-        <a
-          href={GOOGLE_OAUTH_DOCS}
-          target="_blank"
-          rel="noreferrer"
-          className="underline-offset-4 hover:underline"
-        >
-          Google's guide
-          <ArrowUpRightIcon className="inline size-3 align-text-top" />
-        </a>
-      </p>
-    </div>
-  )
-}
 
 /** The packages the closure declares against, each marked against the LIVE
  * kind registry — the same check admission makes (`schema.resolveBundle`), so a
@@ -813,6 +767,9 @@ function InputCard({
       {kind && editing && (
         <RecordConfigForm
           type={kind}
+          first={
+            kindHasTrait(kind, "oauth2") ? OAUTH2_CLIENT_PROPERTIES : undefined
+          }
           record={editing === "new" ? undefined : editing}
           open={Boolean(editing)}
           onOpenChange={(open) => !open && setEditing(null)}
@@ -856,7 +813,7 @@ function SetupSection({
   )
   return (
     <div className="flex flex-col gap-3">
-      {provider && <CallbackUrlNote />}
+      {provider && <OAuthCallbackNote providerId={bundle.id} />}
       {settings.length > 0 && (
         <div className="rounded-md border px-4 py-3">
           <BundleSettingsForm fields={settings} />
@@ -915,10 +872,18 @@ function AccountRow({
   account,
   types,
   disabled,
+  providerName,
+  oauth,
+  configured,
 }: {
   account: SubstrateRecord
   types: KindInfo[]
   disabled: boolean
+  providerName: string
+  /** The provider connects through consent; a token provider has no
+   * Connect. */
+  oauth: boolean
+  configured: boolean
 }) {
   const queryClient = useQueryClient()
   const type = kindByIdentity(types, account.kind)
@@ -1083,15 +1048,17 @@ function AccountRow({
             Edit
           </Button>
         )}
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={disabled || connect.isPending}
-          onClick={() => setConfirming(true)}
-        >
-          {connect.isPending && <Spinner className="size-3.5" />}
-          {connected ? "Reconnect" : "Connect"}
-        </Button>
+        {oauth && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={disabled || connect.isPending}
+            onClick={() => setConfirming(true)}
+          >
+            {connect.isPending && <Spinner className="size-3.5" />}
+            {connected ? "Reconnect" : "Connect"}
+          </Button>
+        )}
       </div>
       {confirming && (
         <Dialog
@@ -1132,13 +1099,15 @@ function AccountRow({
         </Dialog>
       )}
       {type && editing && (
-        <RecordConfigForm
-          type={type}
+        <AccountDialog
+          kind={type}
+          providerName={providerName}
+          oauth={oauth}
+          configured={configured}
           record={account}
+          label={recordTitle(account.properties) || account.id}
           open={editing}
           onOpenChange={setEditing}
-          title={`Edit ${recordTitle(account.properties) || type.name}`}
-          description="Change what this account syncs, how often, and how far back. The connection itself is not edited here."
         />
       )}
     </div>
@@ -1174,6 +1143,11 @@ function AccountsSection({
   // the CLIENT input's setup steps block connecting.
   const blocked =
     !bundle.installed || !bundle.enabled || oauthConnectBlocked(bundle, types)
+  const oauth = Boolean(oauthClientInput(bundle, types))
+  const configured = !oauthConnectBlocked(bundle, types)
+  // Owned here rather than by the dialog, so the consent's return is heard
+  // after the dialog that started it has closed.
+  const connect = useOAuthConnect()
 
   const addButton = accountType ? (
     <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
@@ -1184,12 +1158,14 @@ function AccountsSection({
 
   const addDialog =
     accountType && adding ? (
-      <RecordConfigForm
-        type={accountType}
+      <AccountDialog
+        kind={accountType}
+        providerName={bundle.name}
+        oauth={oauth}
+        configured={configured && bundle.installed && bundle.enabled}
+        connect={oauth ? connect : undefined}
         open={adding}
         onOpenChange={setAdding}
-        title={`Add ${accountType.name}`}
-        description="Create the account, then press Connect to approve it with the provider. What it syncs takes effect once it is connected."
       />
     ) : null
 
@@ -1260,6 +1236,9 @@ function AccountsSection({
               account={account}
               types={types}
               disabled={blocked}
+              providerName={bundle.name}
+              oauth={oauth}
+              configured={configured}
             />
           ))}
         </div>

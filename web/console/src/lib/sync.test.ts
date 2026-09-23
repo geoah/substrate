@@ -13,11 +13,13 @@ import {
   healthOf,
   kindGlobMatches,
   kindHasTrait,
+  providerNextStep,
   providerViews,
   requestServed,
   requestTriggers,
   syncFieldsOf,
   triggersOnKind,
+  type AccountView,
 } from "./sync"
 
 const GOOGLE = "providers.substrate.reamde.dev/google"
@@ -291,6 +293,94 @@ describe("providerViews", () => {
       []
     )
     expect(rows.map((r) => r.id)).toEqual([GOOGLE])
+  })
+
+  it("reads whether connecting is a consent flow off the client input's trait", () => {
+    const client = { name: "client", kind: `${GOOGLE}/config`, record: "x" }
+    const [oauth] = providerViews(
+      [status({ inputs: [client] })],
+      new Set(),
+      kinds,
+      []
+    )
+    expect(oauth.oauth).toBe(true)
+    const [token] = providerViews(
+      [status({ inputs: [client] })],
+      new Set(),
+      [
+        kind(ACCOUNT, ["accountconfig", "sync"]),
+        kind(`${GOOGLE}/config`, [], { apiKey: { type: "secret" } }),
+      ],
+      []
+    )
+    expect(token.oauth).toBe(false)
+  })
+})
+
+describe("providerNextStep", () => {
+  const status = (over: Partial<BundleStatus>): BundleStatus => ({
+    id: GOOGLE,
+    name: "google",
+    authority: "providers.substrate.reamde.dev",
+    package: "google",
+    installed: true,
+    enabled: true,
+    accounts: 0,
+    functions: 0,
+    kinds: 0,
+    liveRecords: 0,
+    ...over,
+  })
+  const client = { name: "client", kind: `${GOOGLE}/config`, record: "x" }
+  const oauthKinds = [
+    kind(ACCOUNT, ["accountconfig", "sync"]),
+    kind(`${GOOGLE}/config`, ["oauth2"], {
+      clientId: { type: "string" },
+      clientSecret: { type: "secret" },
+    }),
+  ]
+  const tokenKinds = [
+    kind(ACCOUNT, ["accountconfig", "sync"]),
+    kind(`${GOOGLE}/config`, [], { apiKey: { type: "secret" } }),
+  ]
+  const step = (
+    over: Partial<BundleStatus>,
+    accounts: AccountView[],
+    kinds = oauthKinds
+  ) =>
+    providerNextStep(
+      providerViews([status(over)], new Set(), kinds, accounts)[0]
+    )
+
+  it("walks install, credentials, account, connect, ready in that order", () => {
+    expect(step({ enabled: false, inputs: [client] }, []).step).toBe("install")
+    expect(
+      step(
+        {
+          inputs: [client],
+          setup: [{ code: "oauth-client", input: "client", message: "" }],
+        },
+        []
+      ).step
+    ).toBe("credentials")
+    expect(step({ inputs: [client] }, []).step).toBe("account")
+    const connected = accountViewOf(
+      record("a", { tokenStatus: "connected", email: "a@example.com" }),
+      oauthKinds
+    )
+    const pending = accountViewOf(
+      record("b", { tokenStatus: "pending", email: "b@example.com" }),
+      oauthKinds
+    )
+    const next = step({ inputs: [client] }, [connected, pending])
+    expect(next.step).toBe("connect")
+    expect(next.account?.label).toBe("b@example.com")
+    expect(step({ inputs: [client] }, [connected]).step).toBe("ready")
+  })
+
+  it("never asks a token provider to connect", () => {
+    const account = accountViewOf(record("a", {}), tokenKinds)
+    expect(step({ inputs: [client] }, [account], tokenKinds).step).toBe("ready")
   })
 })
 

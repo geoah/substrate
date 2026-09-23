@@ -251,6 +251,24 @@ export function accountViewOf(
  * layer's constants. Must equal `lib/api/sync.ts` `SYNC_TRAIT`. */
 export const SYNC_TRAIT_IDENTITY = "substrate.reamde.dev/core/sync"
 
+/** The trait's two OWNER hands, by name: `syncRequestedAt` is Sync now and
+ * `syncPaused` is Pause, and the sync panel's buttons are their controls. An
+ * account form on a kind binding the trait leaves them out for that reason.
+ * This is the trait's contract spelled beside its identity (the panel patches
+ * the same two names), not a list of a provider's property names. */
+export const SYNC_OWNER_HANDS: readonly string[] = [
+  "syncRequestedAt",
+  "syncPaused",
+]
+
+/** The `oauth2` trait's two contracted properties, in the order a person
+ * copies them off the provider's client page: what a credentials form puts
+ * first, ahead of whatever else the bundle's client kind declares. */
+export const OAUTH2_CLIENT_PROPERTIES: readonly string[] = [
+  "clientId",
+  "clientSecret",
+]
+
 // ── the providers list ───────────────────────────────────────────────────────
 
 export interface ProviderView {
@@ -267,6 +285,10 @@ export interface ProviderView {
   configRecord?: string
   /** Credentials present: no `oauth-client` or input setup item stands. */
   configured: boolean
+  /** The client input wears `oauth2`: connecting is the host's consent flow,
+   * and an account is not connected until the owner approves it there. A
+   * token provider (a pasted key on its config) has no such step. */
+  oauth: boolean
   setupSteps: number
   accounts: AccountView[]
   /** Accounts by `tokenStatus`; an account carrying none counts under
@@ -325,12 +347,38 @@ export function providerViews(
       configKind,
       configRecord: configInput?.record || undefined,
       configured,
+      oauth: Boolean(clientInput),
       setupSteps: setup.length,
       accounts: mine,
       byTokenStatus,
     })
   }
   return out.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+// ── the next step ────────────────────────────────────────────────────────────
+
+/** Where a provider stands on the way to a syncing account, so the card can
+ * say what to do next in one sentence: enable the bundle, set the
+ * credentials, add an account, connect the one that is not, or nothing. */
+export type ProviderStep =
+  "install" | "credentials" | "account" | "connect" | "ready"
+
+export interface ProviderNextStep {
+  step: ProviderStep
+  /** The account the `connect` step is about. */
+  account?: AccountView
+}
+
+export function providerNextStep(p: ProviderView): ProviderNextStep {
+  if (!p.status?.installed || !p.status.enabled) return { step: "install" }
+  if (p.configKind && !p.configured) return { step: "credentials" }
+  if (p.accounts.length === 0) return { step: "account" }
+  if (p.oauth) {
+    const pending = p.accounts.find((a) => a.tokenStatus !== "connected")
+    if (pending) return { step: "connect", account: pending }
+  }
+  return { step: "ready" }
 }
 
 // ── triggers on a kind ───────────────────────────────────────────────────────

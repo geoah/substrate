@@ -344,10 +344,13 @@ Per-property `writer:` ownership backs this on the row, in three declared
 roles: `oauth`, only the facility's own actor, holding `tokenRef`,
 `tokenStatus`, `grantedScopes` and the `email` it read from the grant;
 `connector`, only installed bundle code, holding a sync's own state
-(`syncToken`, `lastSyncedAt`, `syncStatus`); and `owner`, only an owner-tier
-actor, holding the feature toggles, `syncFrequency` and `backfillDepth`. The
-rule is enforced in the write path for REST and the CLI alike, not just in
-the console.
+(`syncToken`, `lastSyncedAt`, `syncStatus`), its resume cursors and the
+identity references it mints once it knows whose token it holds
+(`account.user`, `account.address`); and `owner`, only an owner-tier actor,
+holding the feature toggles, `syncFrequency` and `backfillDepth`. The role is
+declared on a property of any shape, a scalar, an object or a reference, and
+enforced in the write path for REST and the CLI alike, not just in the
+console, which offers only the owner's properties for editing.
 
 The flow itself is two endpoints. `POST …/oauth/start` takes the
 account record as `record` — its full identity, `<kind>/<id>`, or a bare id

@@ -1829,6 +1829,11 @@ var objectPropKeys = map[string]bool{
 	"type": true, "fields": true, "repeated": true, "description": true,
 	"displayName": true, "keyed": true, "keyPattern": true, "managed": true,
 	"deprecated": true,
+	// A connector's resume cursor is an object, and it is the connector's hand
+	// exactly as a scalar cursor is: without the role every editing surface
+	// offered it to the owner as a form (the Connections page asked a person
+	// to type a page token).
+	"writer": true,
 }
 
 // referencePropKeys is a reference property's own key set: `kind:` pins WHICH
@@ -1850,6 +1855,11 @@ var referencePropKeys = map[string]bool{
 	"inverse": true, "inverseDescription": true,
 	"mustExist": true, "onDelete": true, "properties": true, "subject": true,
 	"keyed": true, "keyPattern": true, "managed": true,
+	// A connection's identity (`account.user`, `account.address`) is a
+	// reference the drain writes once it knows who the token belongs to; the
+	// role keeps it off the owner's form, where it was a picker over an empty
+	// collection.
+	"writer": true,
 	// `unique` on a pointer is the one-to-one link: at most one live record may
 	// name any given referent. Reserved like everywhere else: nothing enforces
 	// it yet.
@@ -1914,6 +1924,20 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 	// because a client stops offering a deprecated declaration whatever shape it
 	// holds. It is RESERVED: stored, read by no server-side path.
 	p.Deprecated = mbool(d, "deprecated")
+	// `writer:` is read before the branch as well: the scalar, object and
+	// reference key sets all admit it, because a connector's cursor and a
+	// connection's identity take the shape they need and the role must hold
+	// whatever that shape is. The write path enforces the role by property
+	// NAME (engine checkPropertyOwnership), so nothing below depends on the
+	// datatype. A state machine takes none; its key set refuses the key.
+	if w := mstr(d, "writer"); w != "" {
+		if !writerRoles[w] {
+			l.errf("%s: writer %q is not a role — one of %s, %s, %s", where, w,
+				WriterOAuth, WriterConnector, WriterOwner)
+		} else {
+			p.Writer = w
+		}
+	}
 	if p.Keyed && p.Repeated {
 		l.errf("%s: keyed and repeated are the two containers — a declaration is one or the other", where)
 		return nil
@@ -2121,14 +2145,6 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 			l.errf("%s: a keyed map stays out of fts and embed, exactly as an object does", where)
 		}
 		p.FTS, p.Embed = false, false
-	}
-	if w := mstr(d, "writer"); w != "" {
-		if !writerRoles[w] {
-			l.errf("%s: writer %q is not a role — one of %s, %s, %s", where, w,
-				WriterOAuth, WriterConnector, WriterOwner)
-		} else {
-			p.Writer = w
-		}
 	}
 	p.Required = mbool(d, "required")
 	if raw, declared := d["default"]; declared {

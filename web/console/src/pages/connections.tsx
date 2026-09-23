@@ -2,11 +2,14 @@
  * account, read from the native `accountconfig` records the provider bundles
  * ship and the core `sync` trait they bind (decision 0085). Two halves: the
  * PROVIDERS — every installed bundle whose closure declares an account kind,
- * plus every bundle the catalog calls a provider — with whether its client
- * credentials are set and its accounts by token status; and the ACCOUNTS, one
- * row per record across all providers, with the token, the sync, the last
- * run, the cadence and one health dot, and the four verbs a Connection takes
- * (Connect or Reconnect, Sync now, Edit, Disconnect). Every read is an
+ * plus every bundle the catalog calls a provider — each card numbering the
+ * two things a person does (set the credentials, add an account) and saying
+ * which comes next; and the ACCOUNTS, one row per record across all
+ * providers, with the token, the sync, the last run, the cadence and one
+ * health dot, and the four verbs a Connection takes (Connect or Reconnect,
+ * Sync now, Edit, Disconnect). Adding an account is one dialog that asks
+ * only what the owner decides and, on an OAuth provider, creates the record
+ * and opens the consent in one press (`AccountDialog`). Every read is an
  * existing route, and the change feed keeps the page live. */
 
 import { useMemo, useState } from "react"
@@ -29,7 +32,8 @@ import { DataTable, useDataTable } from "@/components/data-table/data-table"
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
 import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 import { BundleStateBadge, SetupBadge } from "@/components/bundle-state-badge"
-import { RecordConfigForm } from "@/components/record-config-form"
+import { AccountDialog } from "@/components/sync/account-dialog"
+import { CredentialsDialog } from "@/components/sync/credentials-dialog"
 import {
   HealthDot,
   SyncNowButton,
@@ -79,7 +83,6 @@ import {
 import { catalogQueryOptions } from "@/lib/api/catalog"
 import { splitKind } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
-import { recordQueryOptions } from "@/lib/api/records"
 import {
   deleteRecord,
   setSyncPaused,
@@ -91,12 +94,14 @@ import { relativeTime } from "@/lib/format"
 import {
   accountViewOf,
   countPhrase,
+  providerNextStep,
   providerViews,
   requestTriggers,
   statusesOnKind,
   triggersOnKind,
   triggerTotals,
   type AccountView,
+  type ProviderNextStep,
   type ProviderView,
 } from "@/lib/sync"
 
@@ -191,89 +196,125 @@ function CredentialsBadge({ provider }: { provider: ProviderView }) {
   )
 }
 
-/** The config record's form: the `oauth2`-trait client (or a token
- * provider's config), edited through the ordinary record dialog, whose
- * secret inputs are write-only. The header says which secrets are SET,
- * read off the record (a stored secret reads back as its redaction
- * marker, never its value). */
-function ConfigDialog({
+/** One step of the card: its number, what it is, and the facts and the door
+ * beside it. Done steps wear a filled number so the eye finds the open one. */
+function StepRow({
+  n,
+  done,
+  label,
+  children,
+}: {
+  n: number
+  done: boolean
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <li className="grid grid-cols-[1.25rem_6rem_minmax(0,1fr)] items-start gap-x-2 gap-y-1">
+      <span
+        aria-hidden
+        className={
+          done
+            ? "mt-px inline-flex size-4 items-center justify-center rounded-full bg-primary text-[0.65rem] font-medium text-primary-foreground"
+            : "mt-px inline-flex size-4 items-center justify-center rounded-full border text-[0.65rem] font-medium"
+        }
+      >
+        {n}
+      </span>
+      <span className="pt-px text-muted-foreground">{label}</span>
+      <span className="flex flex-wrap items-center gap-2">{children}</span>
+    </li>
+  )
+}
+
+/** The one sentence a person reads to know what to do on this provider, and
+ * the button that does it: enable the bundle, set the credentials, add an
+ * account, connect the one that is waiting, or nothing. */
+function NextStep({
   provider,
-  open,
-  onOpenChange,
+  next,
+  onSetUp,
+  onAdd,
 }: {
   provider: ProviderView
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  next: ProviderNextStep
+  onSetUp: () => void
+  onAdd: () => void
 }) {
-  const kind = provider.configKind
-  const parts = kind ? splitKind(kind.identity) : undefined
-  const existing = useQuery({
-    ...recordQueryOptions(
-      parts?.authority ?? "",
-      parts?.pkg ?? "",
-      kind?.name ?? "",
-      provider.configRecord ?? ""
-    ),
-    enabled: Boolean(kind && provider.configRecord && open),
-  })
-  if (!kind) return null
-  const record = provider.configRecord ? existing.data : undefined
-  const secrets = Object.entries(
-    (kind.definition.properties ?? {}) as Record<string, { type?: string }>
-  )
-    .filter(([, p]) => p?.type === "secret")
-    .map(([name]) => name)
-  const setState = secrets.map((name) => {
-    const v = record?.properties?.[name]
-    return { name, set: v !== undefined && v !== null && v !== "" }
-  })
-  if (provider.configRecord && existing.isPending) {
-    return null
+  const name = provider.name
+  let text: React.ReactNode
+  let action: React.ReactNode
+  switch (next.step) {
+    case "install":
+      text = `${name} is ${provider.status?.installed ? "disabled" : "not installed"}. Enable it in the Registry before adding accounts.`
+      action = (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 gap-1 px-2 text-xs"
+          render={<Link to="/registry/$id" params={{ id: provider.id }} />}
+        >
+          Open in the Registry
+          <ArrowUpRightIcon className="size-3" />
+        </Button>
+      )
+      break
+    case "credentials":
+      text = provider.oauth
+        ? `Create an OAuth client with ${name} and paste its client ID and secret here. Every account you add connects through it.`
+        : `Paste the token or key you created with ${name}. Every account you add uses it.`
+      action = (
+        <Button size="sm" className="h-7 gap-1 px-2 text-xs" onClick={onSetUp}>
+          <KeyRoundIcon className="size-3" />
+          Set up credentials
+        </Button>
+      )
+      break
+    case "account":
+      text = provider.oauth
+        ? `Add an account: choose what to sync, then approve access with ${name} in a new tab.`
+        : "Add an account and choose what to sync. It starts syncing on its own."
+      action = (
+        <Button size="sm" className="h-7 gap-1 px-2 text-xs" onClick={onAdd}>
+          <PlusIcon className="size-3" />
+          Add account
+        </Button>
+      )
+      break
+    case "connect":
+      text = `${next.account?.label} is not connected yet. Approve access with ${name} to start syncing.`
+      action = next.account && (
+        <ConnectButton view={next.account} disabled={false} />
+      )
+      break
+    default:
+      return (
+        <p className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          {provider.accounts.length === 1
+            ? "Connected and syncing."
+            : "All accounts are connected and syncing."}
+        </p>
+      )
   }
   return (
-    <RecordConfigForm
-      type={kind}
-      record={record}
-      open={open}
-      onOpenChange={onOpenChange}
-      title={
-        record ? `Edit ${provider.name} credentials` : `Set up ${provider.name}`
-      }
-      description={
-        <span className="flex flex-col gap-1">
-          <span>
-            The client this provider authenticates through. A secret is
-            write-only: it never reads back, and a blank one keeps what is
-            stored.
-          </span>
-          {setState.length > 0 && (
-            <span className="flex flex-wrap gap-1.5 pt-1">
-              {setState.map((s) => (
-                <Badge
-                  key={s.name}
-                  variant="outline"
-                  className={
-                    s.set
-                      ? "gap-1 font-normal"
-                      : "gap-1 font-normal text-warning"
-                  }
-                >
-                  <span className="data">{s.name}</span>
-                  <span>{s.set ? "· set" : "· not set"}</span>
-                </Badge>
-              ))}
-            </span>
-          )}
-        </span>
-      }
-    />
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2 text-xs">
+      <p className="min-w-0 flex-1">
+        <span className="font-medium">Next: </span>
+        {text}
+      </p>
+      {action}
+    </div>
   )
 }
 
 function ProviderCard({ provider }: { provider: ProviderView }) {
   const [editing, setEditing] = useState(false)
   const [adding, setAdding] = useState(false)
+  // The card owns the connect so the consent's return is still heard after
+  // the Add account dialog that started it has closed.
+  const connect = useOAuthConnect()
   const status = provider.status
+  const next = providerNextStep(provider)
   return (
     <div className="flex flex-col gap-3 rounded-md border p-4">
       <div className="flex items-start justify-between gap-3">
@@ -295,11 +336,14 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
         </div>
         <PlugZapIcon className="size-4 shrink-0 text-muted-foreground" />
       </div>
-      <dl className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs">
-        <dt className="text-muted-foreground">Credentials</dt>
-        <dd className="flex flex-wrap items-center gap-2">
+      <ol className="flex flex-col gap-2 text-xs">
+        <StepRow
+          n={1}
+          label="Credentials"
+          done={!provider.configKind || provider.configured}
+        >
           <CredentialsBadge provider={provider} />
-          {provider.configKind && (
+          {provider.configKind ? (
             <Button
               variant="ghost"
               size="sm"
@@ -309,13 +353,11 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
               <PencilIcon className="size-3" />
               {provider.configured ? "Edit" : "Set up"}
             </Button>
+          ) : (
+            <span className="text-muted-foreground">none needed</span>
           )}
-          {!provider.configKind && (
-            <span className="text-muted-foreground">none declared</span>
-          )}
-        </dd>
-        <dt className="text-muted-foreground">Accounts</dt>
-        <dd className="flex flex-wrap items-center gap-2">
+        </StepRow>
+        <StepRow n={2} label="Accounts" done={provider.accounts.length > 0}>
           <span className="data">
             {provider.accounts.length === 0
               ? "none"
@@ -332,22 +374,38 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
               Add account
             </Button>
           )}
-        </dd>
-      </dl>
+        </StepRow>
+      </ol>
+      <NextStep
+        provider={provider}
+        next={next}
+        onSetUp={() => setEditing(true)}
+        onAdd={() => setAdding(true)}
+      />
       {editing && (
-        <ConfigDialog
+        <CredentialsDialog
           provider={provider}
           open={editing}
           onOpenChange={setEditing}
         />
       )}
       {adding && provider.accountKind && (
-        <RecordConfigForm
-          type={provider.accountKind}
+        <AccountDialog
+          kind={provider.accountKind}
+          providerName={provider.name}
+          oauth={provider.oauth}
+          configured={provider.configured}
+          connect={provider.oauth ? connect : undefined}
+          onSetUpCredentials={
+            provider.configKind
+              ? () => {
+                  setAdding(false)
+                  setEditing(true)
+                }
+              : undefined
+          }
           open={adding}
           onOpenChange={setAdding}
-          title={`Add ${provider.name} account`}
-          description="Create the account, then press Connect to approve it with the provider. What it syncs takes effect once it is connected."
         />
       )}
     </div>
@@ -428,7 +486,13 @@ function ConnectButton({
 }
 
 /** Pause or Resume, Edit and Disconnect, behind the row's menu. */
-function RowMenu({ view }: { view: AccountView }) {
+function RowMenu({
+  view,
+  provider,
+}: {
+  view: AccountView
+  provider?: ProviderView
+}) {
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [removing, setRemoving] = useState(false)
@@ -495,7 +559,7 @@ function RowMenu({ view }: { view: AccountView }) {
             disabled={!view.kind}
             onClick={() => setEditing(true)}
           >
-            <PencilIcon /> Edit toggles, frequency and depth
+            <PencilIcon /> Edit what it syncs
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -507,13 +571,15 @@ function RowMenu({ view }: { view: AccountView }) {
         </DropdownMenuContent>
       </DropdownMenu>
       {view.kind && editing && (
-        <RecordConfigForm
-          type={view.kind}
+        <AccountDialog
+          kind={view.kind}
+          providerName={provider?.name ?? view.provider}
+          oauth={provider?.oauth ?? false}
+          configured={provider?.configured ?? true}
           record={view.record}
+          label={view.label}
           open={editing}
           onOpenChange={setEditing}
-          title={`Edit ${view.label}`}
-          description="Change what this account syncs, how often, and how far back. The connection itself is not edited here."
         />
       )}
       {removing && (
@@ -593,7 +659,11 @@ function TokenCell({ view }: { view: AccountView }) {
 
 interface AccountRow {
   view: AccountView
+  provider?: ProviderView
   providerName: string
+  /** The provider connects through consent; a token provider has no
+   * Connect. */
+  oauth: boolean
   /** The on-request triggers on the kind, for Sync now. */
   requestTriggerIds: string[]
   parked: number
@@ -769,7 +839,9 @@ function accountColumns(): DataTableColumn<AccountRow>[] {
             className="flex items-center justify-end gap-1"
             onClick={(e) => e.stopPropagation()}
           >
-            <ConnectButton view={r.view} disabled={r.connectBlocked} />
+            {r.oauth && (
+              <ConnectButton view={r.view} disabled={r.connectBlocked} />
+            )}
             {r.view.syncable && (
               <SyncNowButton
                 record={r.view.record}
@@ -777,7 +849,7 @@ function accountColumns(): DataTableColumn<AccountRow>[] {
                 requestTriggerIds={r.requestTriggerIds}
               />
             )}
-            <RowMenu view={r.view} />
+            <RowMenu view={r.view} provider={r.provider} />
           </div>
         )
       },
@@ -830,7 +902,9 @@ export function ConnectionsPage() {
       const provider = c.providers.find((p) => p.id === view.provider)
       return {
         view,
+        provider,
         providerName: names.get(view.provider) ?? view.provider,
+        oauth: provider?.oauth ?? true,
         requestTriggerIds: requestTriggers(sources).map((s) => s.id),
         parked:
           parkedOf.get(`${view.record.kind}|${view.record.id}`) ??
@@ -869,7 +943,7 @@ export function ConnectionsPage() {
         <p className="text-xs text-muted-foreground">
           {c.pending
             ? "Reading the providers and their accounts…"
-            : `${c.providers.length} ${c.providers.length === 1 ? "provider" : "providers"}, ${rows.length} ${rows.length === 1 ? "account" : "accounts"}${broken > 0 ? `, ${broken} needing a hand` : ""}. The page follows the change feed.`}
+            : `${c.providers.length} ${c.providers.length === 1 ? "provider" : "providers"}, ${rows.length} ${rows.length === 1 ? "account" : "accounts"}${broken > 0 ? `, ${broken} needing a hand` : ""}. This page updates on its own as accounts connect and sync.`}
         </p>
       </div>
 
@@ -947,7 +1021,8 @@ export function ConnectionsPage() {
                     </EmptyMedia>
                     <EmptyTitle>No accounts yet</EmptyTitle>
                     <EmptyDescription>
-                      Add an account on a provider above, then connect it.
+                      Press Add account on a provider above. You choose what to
+                      sync, then approve access with the provider in a new tab.
                     </EmptyDescription>
                   </EmptyHeader>
                 </Empty>
