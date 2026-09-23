@@ -97,7 +97,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: linear
-  version: 16
+  version: 17
 ---
 # ---- the bundle document: the install unit -----------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -215,7 +215,7 @@ data:
   # legacy `syncStatus` / `lastSyncedAt` / `lastCompletedAt` / `syncCursors`
   # / `syncPending` / `retryNotBefore` stay beside the trait, unchanged: a
   # narrowing is refused once rows hold the old shape.
-  traits: [accountconfig, sync]
+  traits: [substrate.reamde.dev/core/accountconfig, substrate.reamde.dev/core/sync]
   displayTemplate: "{displayName|organization.name}"
   properties:
     # ---- the accountconfig trait's contracted properties — DORMANT here ----
@@ -339,7 +339,7 @@ data:
     # rows, and their names and ids are theirs (§1).
     organization:
       type: reference
-      kind: organization
+      kind: providers.substrate.reamde.dev/linear/organization
       writer: connector
       displayName: Workspace
       description: >-
@@ -347,7 +347,7 @@ data:
         The row lands in the same drain, so no mustExist
     user:
       type: reference
-      kind: user
+      kind: providers.substrate.reamde.dev/linear/user
       writer: connector
       displayName: You
       description: >-
@@ -502,13 +502,13 @@ data:
   names:
     singular: organization
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{name}"
   properties:
     # ---- identity ----------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/linear/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1020,13 +1020,13 @@ data:
   names:
     singular: team
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{name}"
   properties:
     # ---- identity ----------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/linear/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1513,13 +1513,13 @@ data:
   names:
     singular: user
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{name|displayName|email}"
   properties:
     # ---- identity ----------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/linear/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1715,13 +1715,13 @@ data:
   names:
     singular: workflowstate
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{name}"
   properties:
     # ---- identity ----------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/linear/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1813,13 +1813,13 @@ data:
   names:
     singular: issuelabel
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{name}"
   properties:
     # ---- identity ----------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/linear/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1933,13 +1933,13 @@ data:
   names:
     singular: projectstatus
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{name}"
   properties:
     # ---- identity ----------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/linear/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -2037,13 +2037,13 @@ data:
   names:
     singular: project
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{name}"
   properties:
     # ---- identity ----------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/linear/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -2468,13 +2468,13 @@ data:
   names:
     singular: cycle
   traits:
-    - temporal(range)
+    - substrate.reamde.dev/core/temporal(range)
   displayTemplate: "{name|number}"
   properties:
     # ---- identity ----------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/linear/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -2638,13 +2638,13 @@ data:
   names:
     singular: issue
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{identifier} {issueTitle}"
   properties:
     # ---- identity ----------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/linear/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -3174,13 +3174,13 @@ data:
   names:
     singular: comment
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{user.name}"
   properties:
     # ---- identity ----------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/linear/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -3407,13 +3407,13 @@ data:
   names:
     singular: reaction
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{emoji}"
   properties:
     # ---- identity ----------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/linear/account
       required: true
       onDelete: cascade
       displayName: Account

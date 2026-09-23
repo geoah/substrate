@@ -142,7 +142,7 @@ data:
       fields: {value: email, primary: bool}
     contact:
       type: reference
-      kind: contact
+      kind: vocab.example.com/vocab/contact
       required: true
       mustExist: true
       subject: true
@@ -177,10 +177,10 @@ data:
     format: {type: enum, values: [print, ebook, audio]}
     blurb: {type: markdown, embed: true}
     secretKey: {type: secret}
-    author: {type: reference, kind: contact, repeated: true, mustExist: true}
+    author: {type: reference, kind: vocab.example.com/vocab/contact, repeated: true, mustExist: true}
     account:
       type: reference
-      kind: account
+      kind: core.example.com/core/account
       required: true
       mustExist: true
       onDelete: cascade
@@ -193,7 +193,7 @@ data:
   authority: vocab.example.com
   package: vocab
   names: {singular: task}
-  traits: ["temporal(point: dueAt)"]
+  traits: ["core.example.com/core/temporal(point: dueAt)"]
   indices: [{properties: [status, dueAt]}]
   properties:
     # a machine IS a property: one namespace, one wire map
@@ -242,7 +242,7 @@ data:
   authority: vocab.example.com
   package: vocab
   names: {singular: note}
-  traits: [temporal(range)]
+  traits: [core.example.com/core/temporal(range)]
   properties:
     notes: {type: text}
 ---
@@ -279,7 +279,8 @@ func TestLoadManifestStream(t *testing.T) {
 	if book.Version != 1 {
 		t.Fatalf("version = %d (the authority's, unless the type overrides it)", book.Version)
 	}
-	// Reference pins: an in-authority short name, and a cross-authority one.
+	// Reference pins: an in-authority short name, and a cross-authority one,
+	// which is spelled in full because a bare name never leaves its authority.
 	author, _ := book.Prop("author")
 	if author.To != "vocab.example.com/vocab/contact" || !author.Repeated || !author.MustExist {
 		t.Fatalf("book.author = %+v", author)
@@ -501,7 +502,7 @@ data:
       fields:
         width: {type: int, description: "millimeters across"}
         height: int
-    parent: {type: reference, kind: widget, description: "the widget this one hangs off"}
+    parent: {type: reference, kind: d.example.com/d/widget, description: "the widget this one hangs off"}
 `))
 	w, _ := r.ByIdentity("d.example.com/d/widget")
 	if p, _ := w.Prop("name"); p.Description != "what the widget is called" {
@@ -543,7 +544,7 @@ data:
 		"newline": "    name: {type: string, description: \"two\\nlines\"}\n",
 		"long":    "    name: {type: string, description: \"" + long + "\"}\n",
 		"reference": "    name: {type: string}\n" +
-			"    parent: {type: reference, kind: widget, description: \"" + long + "\"}\n",
+			"    parent: {type: reference, kind: d.example.com/d/widget, description: \"" + long + "\"}\n",
 	} {
 		fsys := fstest.MapFS{}
 		for fname, fbody := range mk(body) {
@@ -694,9 +695,10 @@ data: {authority: ` + authority + `, package: ` + pkg + `, version: 1}
 
 // --- resolution rules ----------------------------------------------------
 
-// A reference's `kind:` pin resolves in-authority first, then uniquely across
-// authorities, and an ambiguous short name is a load error rather than an
-// arbitrary pick.
+// A reference's `kind:` pin is the kind's full identity (decision record
+// 0098). A bare word is refused wherever the kind it might mean is declared:
+// in the declaring package, under the declaring authority, or elsewhere. The
+// refusal names every full spelling the repository holds under the word.
 func TestReferencePinResolutionRules(t *testing.T) {
 	authority := func(name string) string {
 		return packageHeader(name)
@@ -714,24 +716,50 @@ data:
 	}
 	alpha := authority("a.example.com") + typ("a.example.com", "alpha", "")
 
+	// A bare word is refused even when exactly one kind anywhere carries it:
+	// the kind IS its authority, package and name, and the refusal names the
+	// spelling that would address it.
 	t.Run("across authorities", func(t *testing.T) {
+		_, err := vocabulary.LoadFS(fstest.MapFS{
+			"a.yaml": {Data: []byte(alpha)},
+			"b.yaml": {Data: []byte(authority("b.example.com") +
+				typ("b.example.com", "beta", "  properties:\n    target: {type: reference, kind: alpha}\n"))},
+		})
+		if err == nil {
+			t.Fatal("a bare pin loaded")
+		}
+		for _, want := range []string{
+			`kind b.example.com/b/beta: data.properties.target.kind: "alpha" is a bare name`,
+			"a kind pin is named in full as <authority>/<package>/<name>",
+			"this repository declares a.example.com/a/alpha",
+		} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("error = %v, want it to say %q", err, want)
+			}
+		}
+		if !errors.Is(err, substrate.ErrValidation) {
+			t.Fatalf("expected ErrValidation, got %v", err)
+		}
+		// Spelled in full, the same pin lands.
 		r := loadFixture(t, map[string]string{
 			"a.yaml": alpha,
 			"b.yaml": authority("b.example.com") +
-				typ("b.example.com", "beta", "  properties:\n    target: {type: reference, kind: alpha}\n"),
+				typ("b.example.com", "beta", "  properties:\n    target: {type: reference, kind: a.example.com/a/alpha}\n"),
 		})
 		beta, _ := r.ByIdentity("b.example.com/b/beta")
 		target, _ := beta.Prop("target")
 		if target.To != "a.example.com/a/alpha" {
-			t.Fatalf("reference pin = %q", target.To)
+			t.Fatalf("qualified reference pin = %q", target.To)
 		}
 	})
 
 	// Two authorities may hold the same LOCAL name: each kind's identity
-	// carries its authority, so the pair is legal — and that is exactly the
-	// case the in-authority-first rule exists for.
-	t.Run("in authority first", func(t *testing.T) {
-		install := func(t *testing.T, body string) *vocabulary.Registry {
+	// carries its authority, so the pair is legal, and a pin at either is
+	// spelled in full. A bare word from the package that declares one of
+	// them is refused all the same, naming both: the declaring package is not
+	// a default.
+	t.Run("in package is still bare", func(t *testing.T) {
+		install := func(t *testing.T, body string) (*vocabulary.Registry, error) {
 			t.Helper()
 			r := loadFixture(t, map[string]string{"a.yaml": alpha})
 			gs, err := vocabulary.ParseYAML([]byte(body), vocabulary.SourceInstalled)
@@ -740,44 +768,57 @@ data:
 			}
 			for _, g := range gs {
 				if err := r.Install(g); err != nil {
-					t.Fatalf("install: %v", err)
+					return nil, err
 				}
 			}
-			return r
+			return r, nil
 		}
-		r := install(t, authority("b.example.com")+typ("b.example.com", "alpha", "")+
+		_, err := install(t, authority("b.example.com")+typ("b.example.com", "alpha", "")+
 			typ("b.example.com", "beta", "  properties:\n    target: {type: reference, kind: alpha}\n"))
-		beta, _ := r.ByIdentity("b.example.com/b/beta")
-		target, _ := beta.Prop("target")
-		if target.To != "b.example.com/b/alpha" {
-			t.Fatalf("reference pin = %q, want the in-authority alpha", target.To)
+		if err == nil || !strings.Contains(err.Error(), `"alpha" is a bare name`) ||
+			!strings.Contains(err.Error(), "this repository declares a.example.com/a/alpha, b.example.com/b/alpha") {
+			t.Fatalf("a bare pin at the declaring package's own kind: %v, want a refusal naming both spellings", err)
 		}
-		// The full reference always addresses the other authority's kind.
-		r2 := install(t, authority("b.example.com")+typ("b.example.com", "alpha", "")+
-			typ("b.example.com", "beta", "  properties:\n    target: {type: reference, kind: a.example.com/a/alpha}\n"))
-		beta2, _ := r2.ByIdentity("b.example.com/b/beta")
-		target2, _ := beta2.Prop("target")
-		if target2.To != "a.example.com/a/alpha" {
-			t.Fatalf("qualified reference pin = %q", target2.To)
+		// Spelled in full, either kind is addressable from here.
+		for _, want := range []string{"b.example.com/b/alpha", "a.example.com/a/alpha"} {
+			r, err := install(t, authority("b.example.com")+typ("b.example.com", "alpha", "")+
+				typ("b.example.com", "beta", "  properties:\n    target: {type: reference, kind: "+want+"}\n"))
+			if err != nil {
+				t.Fatalf("install: %v", err)
+			}
+			beta, _ := r.ByIdentity("b.example.com/b/beta")
+			target, _ := beta.Prop("target")
+			if target.To != want {
+				t.Fatalf("qualified reference pin = %q, want %s", target.To, want)
+			}
 		}
 	})
 
-	t.Run("ambiguous is an error", func(t *testing.T) {
+	// However many kinds carry the word, and wherever they are, the refusal
+	// lists every full spelling and picks none.
+	t.Run("every spelling is offered", func(t *testing.T) {
+		alphaIn := func(authority, pkg string) string {
+			return `---
+kind: substrate.reamde.dev/core/package
+metadata: {id: ` + authority + `/` + pkg + `}
+data: {authority: ` + authority + `, package: ` + pkg + `, version: 1}
+---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: ` + authority + `/` + pkg + `/alpha}
+data:
+  authority: ` + authority + `
+  package: ` + pkg + `
+  names: {singular: alpha}
+`
+		}
 		_, err := vocabulary.LoadFS(fstest.MapFS{
 			"a.yaml": {Data: []byte(alpha)},
-			"b.yaml": {Data: []byte(authority("b.example.com") + typ("b.example.com", "alpha", ""))},
-			"c.yaml": {Data: []byte(authority("c.example.com") +
-				typ("c.example.com", "gamma", "  properties:\n    target: {type: reference, kind: alpha}\n"))},
+			"x.yaml": {Data: []byte(alphaIn("b.example.com", "x"))},
+			"b.yaml": {Data: []byte(authority("b.example.com") +
+				typ("b.example.com", "beta", "  properties:\n    target: {type: reference, kind: alpha}\n"))},
 		})
-		if err == nil {
-			t.Fatal("expected an ambiguity error")
-		}
-		if !strings.Contains(err.Error(), "ambiguous type") ||
-			!strings.Contains(err.Error(), "a.example.com/a/alpha") {
-			t.Fatalf("error = %v", err)
-		}
-		if !errors.Is(err, substrate.ErrValidation) {
-			t.Fatalf("expected ErrValidation, got %v", err)
+		if err == nil || !strings.Contains(err.Error(), "this repository declares a.example.com/a/alpha, b.example.com/x/alpha") {
+			t.Fatalf("error = %v, want the refusal to list both spellings", err)
 		}
 	})
 
@@ -835,7 +876,7 @@ data:
 		r := loadFixture(t, map[string]string{
 			"a.yaml": alpha,
 			"b.yaml": authority("b.example.com") +
-				typ("b.example.com", "beta", "  properties:\n    ptr: {type: reference, kind: alpha}\n"),
+				typ("b.example.com", "beta", "  properties:\n    ptr: {type: reference, kind: a.example.com/a/alpha}\n"),
 		})
 		beta, _ := r.ByIdentity("b.example.com/b/beta")
 		p := beta.Props["ptr"]
@@ -873,7 +914,7 @@ data:
 		r := loadFixture(t, map[string]string{
 			"a.yaml": alpha,
 			"b.yaml": authority("b.example.com") +
-				typ("b.example.com", "beta", "  properties:\n    ptrs: {type: reference, kind: alpha, repeated: true}\n"),
+				typ("b.example.com", "beta", "  properties:\n    ptrs: {type: reference, kind: a.example.com/a/alpha, repeated: true}\n"),
 		})
 		beta, _ := r.ByIdentity("b.example.com/b/beta")
 		if !beta.Props["ptrs"].Repeated {
@@ -881,12 +922,21 @@ data:
 		}
 	})
 
+	// A bare word nothing declares is refused for its spelling, with nothing
+	// to offer; a full identity nothing declares is unknown.
 	t.Run("unknown to is an error", func(t *testing.T) {
 		_, err := vocabulary.LoadFS(fstest.MapFS{
 			"b.yaml": {Data: []byte(authority("b.example.com") +
 				typ("b.example.com", "beta", "  properties:\n    ptr: {type: reference, kind: nosuch}\n"))},
 		})
-		if err == nil || !strings.Contains(err.Error(), "unknown type") {
+		if err == nil || !strings.Contains(err.Error(), `"nosuch" is a bare name`) || strings.Contains(err.Error(), "this repository declares") {
+			t.Fatalf("error = %v", err)
+		}
+		_, err = vocabulary.LoadFS(fstest.MapFS{
+			"b.yaml": {Data: []byte(authority("b.example.com") +
+				typ("b.example.com", "beta", "  properties:\n    ptr: {type: reference, kind: b.example.com/b/nosuch}\n"))},
+		})
+		if err == nil || !strings.Contains(err.Error(), `unknown referent kind "b.example.com/b/nosuch"`) {
 			t.Fatalf("error = %v", err)
 		}
 	})
@@ -907,7 +957,7 @@ data:
   properties: {score: int, label: string}
 `
 	}
-	binder := func(props string) string {
+	binder := func(binding, props string) string {
 		return `kind: substrate.reamde.dev/core/package
 metadata: {id: a.example.com/a}
 data: {authority: a.example.com, package: a, version: 1}
@@ -918,16 +968,20 @@ data:
   authority: a.example.com
   package: a
   names: {singular: thing}
-  traits: [ranked]
+  traits: [` + binding + `]
   properties:
 ` + props
 	}
+	const contract = "    score: {type: int}\n    label: {type: string}\n"
 
+	// Another authority's trait is bound by its full identity, and the
+	// contract holds through the qualified spelling exactly as through a
+	// bare one.
 	t.Run("across authorities with a contract", func(t *testing.T) {
 		mk := func(props string) fstest.MapFS {
 			return fstest.MapFS{
 				// Sorts before z.yaml, so the binding authority is parsed first.
-				"a.yaml": {Data: []byte(binder(props))},
+				"a.yaml": {Data: []byte(binder("caps.example.com/caps/ranked", props))},
 				"z.yaml": {Data: []byte(capAuthority("caps.example.com"))},
 			}
 		}
@@ -936,23 +990,48 @@ data:
 		} else if !strings.Contains(err.Error(), "label") {
 			t.Fatalf("error = %v", err)
 		}
-		r, err := vocabulary.LoadFS(mk("    score: {type: int}\n    label: {type: string}\n"))
+		r, err := vocabulary.LoadFS(mk(contract))
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
 		thing, _ := r.ByIdentity("a.example.com/a/thing")
-		if !thing.Implements("Ranked") {
+		if !thing.Implements("caps.example.com/caps/ranked") || !thing.Implements("Ranked") {
 			t.Fatalf("capabilities = %+v", thing.Traits)
 		}
 	})
 
-	t.Run("ambiguous is an error", func(t *testing.T) {
+	// A bare word is refused, and the refusal names the full spelling, one or
+	// several.
+	t.Run("bare is refused", func(t *testing.T) {
 		_, err := vocabulary.LoadFS(fstest.MapFS{
-			"a.yaml": {Data: []byte(binder("    score: {type: int}\n    label: {type: string}\n"))},
+			"a.yaml": {Data: []byte(binder("ranked", contract))},
+			"z.yaml": {Data: []byte(capAuthority("caps.example.com"))},
+		})
+		if err == nil || !strings.Contains(err.Error(), `kind a.example.com/a/thing: data.traits: "ranked" is a bare name`) ||
+			!strings.Contains(err.Error(), "this repository declares caps.example.com/caps/ranked") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+
+	t.Run("every spelling is offered", func(t *testing.T) {
+		_, err := vocabulary.LoadFS(fstest.MapFS{
+			"a.yaml": {Data: []byte(binder("ranked", contract))},
 			"y.yaml": {Data: []byte(capAuthority("caps.example.com"))},
 			"z.yaml": {Data: []byte(capAuthority("caps2.example.com"))},
 		})
-		if err == nil || !strings.Contains(err.Error(), "ambiguous trait") {
+		if err == nil || !strings.Contains(err.Error(), "this repository declares caps.example.com/caps/ranked, caps2.example.com/caps2/ranked") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+
+	// A qualified binding that names nothing is unknown by that spelling, and
+	// no tier goes looking for a same-named trait elsewhere.
+	t.Run("qualified and absent", func(t *testing.T) {
+		_, err := vocabulary.LoadFS(fstest.MapFS{
+			"a.yaml": {Data: []byte(binder("caps2.example.com/caps2/ranked", contract))},
+			"z.yaml": {Data: []byte(capAuthority("caps.example.com"))},
+		})
+		if err == nil || !strings.Contains(err.Error(), `unknown trait "caps2.example.com/caps2/ranked"`) {
 			t.Fatalf("error = %v", err)
 		}
 	})
@@ -968,7 +1047,7 @@ func TestUnknownCapabilityRejected(t *testing.T) {
 		vocabulary.PackageManifest(authority, 1),
 		vocabulary.KindManifest(authority,
 			map[string]any{"singular": "thing"},
-			map[string]any{"traits": []any{"nosuchcapability"}}),
+			map[string]any{"traits": []any{authority + "/nosuchcapability"}}),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1004,15 +1083,15 @@ func TestInstalledGroupBindsLoadedCapability(t *testing.T) {
 		}
 		return g
 	}
-	if err := r.Install(mk("temporal")); err == nil {
+	if err := r.Install(mk("core.example.com/core/temporal")); err == nil {
 		t.Fatal("a variant capability must be bound with a variant")
 	} else if !strings.Contains(err.Error(), "requires a variant") {
 		t.Fatalf("error = %v", err)
 	}
-	if err := r.Install(mk("temporal(nosuchvariant)")); err == nil {
+	if err := r.Install(mk("core.example.com/core/temporal(nosuchvariant)")); err == nil {
 		t.Fatal("an undeclared variant must fail")
 	}
-	if err := r.Install(mk("temporal(range)")); err != nil {
+	if err := r.Install(mk("core.example.com/core/temporal(range)")); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	clip, _ := r.ByIdentity(authority + "/clip")
@@ -1033,7 +1112,7 @@ func TestInstallBumpsVersion(t *testing.T) {
 		map[string]any{"singular": "label"},
 		map[string]any{"properties": map[string]any{
 			"account": map[string]any{
-				"type": "reference", "kind": "account",
+				"type": "reference", "kind": "core.example.com/core/account",
 				"required": true, "mustExist": true, "onDelete": "cascade",
 			},
 		}}))
@@ -1461,12 +1540,12 @@ data:
     count: {type: int}
     person:
       type: reference
-      kind: person
+      kind: x.example.com/x/person
       required: true
       mustExist: true
       subject: true
-    other: {type: reference, kind: person}
-    unmarked: {type: reference, kind: person, required: true, mustExist: true}
+    other: {type: reference, kind: x.example.com/x/person}
+    unmarked: {type: reference, kind: x.example.com/x/person, required: true, mustExist: true}
 `
 	mapping := func(name, body string) string {
 		return head + `---
@@ -1628,11 +1707,11 @@ data:
   package: x
   names: {singular: note}
   properties:
-    about: {type: reference, kind: rec}
-    mentions: {type: reference, kind: rec, repeated: true}
+    about: {type: reference, kind: x.example.com/x/rec}
+    mentions: {type: reference, kind: x.example.com/x/rec, repeated: true}
     attribution:
       type: object
-      fields: {by: {type: reference, kind: rec}}
+      fields: {by: {type: reference, kind: x.example.com/x/rec}}
 `
 		fsys := fstest.MapFS{"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(src)}}
 		reg, err := vocabulary.LoadFS(fsys)
@@ -1666,7 +1745,7 @@ data:
   authority: x.example.com
   package: x
   names: {singular: note}
-  properties: {about: {type: reference, kind: rec}}
+  properties: {about: {type: reference, kind: x.example.com/x/rec}}
 ---
 kind: substrate.reamde.dev/core/kind
 metadata: {id: x.example.com/x/org}
@@ -1728,7 +1807,7 @@ data:
   authority: x.example.com
   package: x
   names: {singular: two}
-  properties: {person: {type: reference, kind: person, projects: true}}
+  properties: {person: {type: reference, kind: x.example.com/x/person, projects: true}}
 `
 		fsys := fstest.MapFS{"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(src)}}
 		_, err := vocabulary.LoadFS(fsys)
@@ -2017,7 +2096,7 @@ data:
   names: {singular: issue}
   properties:
     headline: {type: string}
-    task: {type: reference, trait: ranked, mustExist: true, subject: true}
+    task: {type: reference, trait: p.example.com/p/ranked, mustExist: true, subject: true}
 `
 
 // traitPinnedMapping fills that trait-pinned slot with a kind that implements
@@ -2194,8 +2273,8 @@ data:
       repeated: true
       fields: {displayName: {type: string}}
     tags: {type: string, repeated: true}
-    owner: {type: reference, kind: card}
-    owners: {type: reference, kind: card, repeated: true}
+    owner: {type: reference, kind: x.example.com/x/card}
+    owners: {type: reference, kind: x.example.com/x/card, repeated: true}
 `
 	}
 	load := func(src string) error {
@@ -2442,7 +2521,7 @@ data: {authority: x.example.com}
   properties: {first_name: {type: string}}
 `),
 		"snake reference": typ(`  names: {singular: contact}
-  properties: {work_place: {type: reference, kind: contact}}
+  properties: {work_place: {type: reference, kind: x.example.com/x/contact}}
 `),
 		"snake stamp": typ(`  names: {singular: contact}
   properties: {m: {type: state, states: [a, b], transitions: [{from: a, to: b, stamps: {done_at: now}}]}}
@@ -2513,7 +2592,7 @@ data:
   properties: {m: {type: state, states: [a, b], transitions: [{from: a, to: b, onEnter: apply_diff}]}}
 `),
 		"snake onDelete": typ(`  names: {singular: contact}
-  properties: {org: {type: reference, kind: contact, on_delete: cascade}}
+  properties: {org: {type: reference, kind: x.example.com/x/contact, on_delete: cascade}}
 `),
 		// A list is `repeated: true`; the bracketed spelling is deleted.
 		"bracketed list type": typ(`  names: {singular: contact}
@@ -2888,8 +2967,8 @@ func TestShippedSchemaLoads(t *testing.T) {
 	if _, ok := r.ByIdentity("substrate.reamde.dev/core/projectionpolicy"); ok {
 		t.Error("substrate.reamde.dev/core/projectionpolicy is not part of this build")
 	}
-	if _, err := r.ResolveTrait("substrate.reamde.dev/core", "temporal"); err != nil {
-		t.Errorf("temporal capability: %v", err)
+	if _, ok := r.TraitByIdentity("substrate.reamde.dev/core/temporal"); !ok {
+		t.Error("temporal trait missing")
 	}
 	// The runtime the substrate maintains is seeded too: the delivery plumbing
 	// in core, and the agent loop's data in the second seeded package

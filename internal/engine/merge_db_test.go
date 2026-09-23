@@ -238,7 +238,7 @@ func TestMergeSplitKeepsThePairInternalReference(t *testing.T) {
 						"label": map[string]any{"type": "string"},
 						"peer": map[string]any{
 							"type": "reference",
-							"kind": "node",
+							"kind": pkg + "/node",
 							// Declared, because an undeclared link property is
 							// refused: the link data this test carries through
 							// merge and split has to be data a write would accept.

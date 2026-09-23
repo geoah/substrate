@@ -474,7 +474,7 @@ binds it beside `accountconfig` and redeclares its twelve properties, each
 with a `writer:` — the OWNER's two hands, and the CONNECTOR's ten:
 
 ```yaml
-traits: [accountconfig, sync]
+traits: [substrate.reamde.dev/core/accountconfig, substrate.reamde.dev/core/sync]
 properties:
   syncRequestedAt:    {type: datetime, writer: owner}      # Sync now
   syncPaused:         {type: bool, writer: owner}          # Pause / Resume
@@ -698,7 +698,11 @@ and confirms.
 `import` on a provider id is refused naming `install`. `install` on a sample id
 admits the closure verbatim, under the placeholder authority, for a repository
 that wants the shipped vocabulary under the shipped authority; no provider
-names a sample package, so nothing else needs it.
+names a sample package, so nothing else needs it. Its `requires:` keep the
+shipped spelling too, so a repository that holds what the sample requires only
+as an imported copy (`ada.example.com/scheduling`) is refused, and the refusal
+names the copy: a package under another authority is another package, and
+importing the bundle instead rehomes its requirements with it.
 
 **No provider requires a sample package, and every provider installs on a bare
 repository.** A provider ships mirror kinds in its own shape and writes nothing

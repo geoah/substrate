@@ -306,13 +306,13 @@ func TestSubjectHopRefusesTwoAdmittedMappings(t *testing.T) {
 		vocabulary.KindManifest(tmHomePackage,
 			map[string]any{"singular": "task"},
 			map[string]any{
-				"traits":     []any{"titled"},
+				"traits":     []any{tmHomePackage + "/titled"},
 				"properties": map[string]any{"name": map[string]any{"type": "string"}},
 			}),
 		vocabulary.KindManifest(tmHomePackage,
 			map[string]any{"singular": "note"},
 			map[string]any{
-				"traits":     []any{"titled"},
+				"traits":     []any{tmHomePackage + "/titled"},
 				"properties": map[string]any{"name": map[string]any{"type": "string"}},
 			}),
 		// The bookmark points at "something titled", which both mapping
@@ -320,7 +320,7 @@ func TestSubjectHopRefusesTwoAdmittedMappings(t *testing.T) {
 		vocabulary.KindManifest(tmHomePackage,
 			map[string]any{"singular": "bookmark"},
 			map[string]any{"properties": map[string]any{
-				"about": map[string]any{"type": "reference", "trait": "titled", "mustExist": true},
+				"about": map[string]any{"type": "reference", "trait": tmHomePackage + "/titled", "mustExist": true},
 			}}),
 		vocabulary.MappingManifest(tmHomePackage, "issuetask", map[string]any{
 			"from": tmIssueType, "to": tmTaskType, "property": "task",

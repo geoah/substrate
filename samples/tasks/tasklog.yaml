@@ -17,8 +17,8 @@ data:
   # absence-means-missed semantics; the flip states stay here (a trait carries
   # no values).
   traits:
-    - temporal(point)
-    - occurrencelog
+    - substrate.reamde.dev/core/temporal(point)
+    - samples.substrate.reamde.dev/scheduling/occurrencelog
   properties:
     status:
       type: state
@@ -40,7 +40,7 @@ data:
       description: anything worth saying about this occurrence, as prose
     task:
       type: reference
-      kind: task
+      kind: samples.substrate.reamde.dev/tasks/task
       required: true
       mustExist: true
       onDelete: cascade

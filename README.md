@@ -157,7 +157,7 @@ data:
       description: when it was done, stamped by the transition
     project:
       type: reference
-      kind: project
+      kind: geoah.me/chores/project
       mustExist: true
       description: the project this task groups under
 ```

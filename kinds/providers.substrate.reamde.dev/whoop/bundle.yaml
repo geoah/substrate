@@ -109,7 +109,7 @@ data:
   # Connections page, `GET /api/v1/sync/status` and `substratectl sync status`
   # render this bundle without knowing it (T-084). ADDITIVE, unlike 10: every
   # property version 10 declared stays, at its own name and type.
-  version: 12
+  version: 13
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -223,7 +223,7 @@ data:
     than editable rows.
   names:
     singular: config
-  traits: [oauth2]
+  traits: [substrate.reamde.dev/core/oauth2]
   displayTemplate: "WHOOP app {clientId}"
   properties:
     # ---- identity --------------------------------------------------------
@@ -283,7 +283,7 @@ data:
   # record-sourced delivery's start, finish and park onto the same record.
   # The two OWNER hands are `syncRequestedAt` ("sync now") and `syncPaused`
   # ("pause"); the other ten are the connector's.
-  traits: [accountconfig, sync]
+  traits: [substrate.reamde.dev/core/accountconfig, substrate.reamde.dev/core/sync]
   displayTemplate: "{email}"
   properties:
     # ---- identity and the grant (the OAuth facility's) --------------------
@@ -598,7 +598,7 @@ data:
     # ---- identity ---------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/whoop/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -672,13 +672,13 @@ data:
   names:
     singular: cycle
   traits:
-    - temporal(range)
+    - substrate.reamde.dev/core/temporal(range)
   displayTemplate: "Cycle {cycleId}"
   properties:
     # ---- identity ---------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/whoop/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -792,13 +792,13 @@ data:
   names:
     singular: recovery
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "Recovery {score.recoveryScore}"
   properties:
     # ---- identity ---------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/whoop/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -924,13 +924,13 @@ data:
   names:
     singular: sleep
   traits:
-    - temporal(range)
+    - substrate.reamde.dev/core/temporal(range)
   displayTemplate: "Sleep {at}"
   properties:
     # ---- identity ---------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/whoop/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1124,13 +1124,13 @@ data:
   names:
     singular: workout
   traits:
-    - temporal(range)
+    - substrate.reamde.dev/core/temporal(range)
   displayTemplate: "{sportName}"
   properties:
     # ---- identity ---------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/whoop/account
       required: true
       onDelete: cascade
       displayName: Account

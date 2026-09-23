@@ -26,7 +26,7 @@ data:
     # Optional: a person may hand-author a calendar that synced through nothing.
     account:
       type: reference
-      trait: accountconfig
+      trait: substrate.reamde.dev/core/accountconfig
       onDelete: cascade
       displayName: Account
       description: the accountconfig record this calendar synced through

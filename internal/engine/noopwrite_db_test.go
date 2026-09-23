@@ -34,7 +34,7 @@ func noopConversation() map[string]any {
 	return vocabulary.KindManifest(noopPackage,
 		map[string]any{"singular": "conversation"},
 		map[string]any{
-			"traits":          []any{"temporal(point)"},
+			"traits":          []any{"substrate.reamde.dev/core/temporal(point)"},
 			"displayTemplate": "{name|conversationId}",
 			"properties": map[string]any{
 				"conversationId": map[string]any{"type": "string", "required": true},

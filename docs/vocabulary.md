@@ -665,7 +665,7 @@ names, when it started. They are declared under the reference's own
 properties:
   author:
     type: reference
-    kind: person
+    kind: samples.substrate.reamde.dev/people/person
     repeated: true
     properties:
       order:

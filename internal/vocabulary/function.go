@@ -1044,9 +1044,14 @@ func (r *Registry) resolveFunction(f *Function) []string {
 		if IsTypeGlob(t) {
 			continue
 		}
-		ty, err := r.Resolve(t)
-		if err != nil || ty == nil {
-			problems = append(problems, fmt.Sprintf("%s: data.permissions.writes: unknown type %q", where, t))
+		w := where + ": data.permissions.writes"
+		if !Qualified(t) {
+			problems = append(problems, bareNameProblem(w, "kind allowlist entry", t, r.kindsNamed(t)))
+			continue
+		}
+		ty, ok := r.ByIdentity(t)
+		if !ok {
+			problems = append(problems, fmt.Sprintf("%s: unknown type %q", w, t))
 			continue
 		}
 		f.Caps.Emit[i] = ty.Identity
@@ -1056,9 +1061,14 @@ func (r *Registry) resolveFunction(f *Function) []string {
 			if IsTypeGlob(t) {
 				continue
 			}
-			ty, err := r.Resolve(t)
-			if err != nil || ty == nil {
-				problems = append(problems, fmt.Sprintf("%s: data.permissions.reads.kinds: unknown type %q", where, t))
+			w := where + ": data.permissions.reads.kinds"
+			if !Qualified(t) {
+				problems = append(problems, bareNameProblem(w, "kind allowlist entry", t, r.kindsNamed(t)))
+				continue
+			}
+			ty, ok := r.ByIdentity(t)
+			if !ok {
+				problems = append(problems, fmt.Sprintf("%s: unknown type %q", w, t))
 				continue
 			}
 			f.Caps.Reads.Kinds[i] = ty.Identity

@@ -469,7 +469,7 @@ func TestSchemaEvolutionRefusesReferenceAndObjectNarrowing(t *testing.T) {
 
 	t.Run("reference target narrowed", func(t *testing.T) {
 		props := evoRefBaseProps()
-		props["ref"] = map[string]any{"type": "reference", "kind": "gadget"}
+		props["ref"] = map[string]any{"type": "reference", "kind": evoRefPackage + "/gadget"}
 		wantNarrowingGuard(t, evoRefApply(t, ds, props),
 			`reference "ref" narrows its target to `+evoRefPackage+`/gadget`, "1 live records")
 	})

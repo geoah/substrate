@@ -249,3 +249,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0095](0095-a-reference-may-pin-a-mapping-source-kind.md) | A reference may pin a mapping's source kind | accepted |
 | [0096](0096-a-mapping-synthesises-its-subject-slot.md) | A mapping synthesises its subject slot on the source kind | accepted |
 | [0097](0097-a-webhook-trigger-declares-the-headers-its-callable-reads.md) | A webhook trigger declares the headers its callable reads | accepted |
+| [0098](0098-a-declaration-names-a-kind-or-trait-in-full.md) | A declaration names a kind or trait in full | accepted |

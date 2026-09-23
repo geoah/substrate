@@ -75,7 +75,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: github
-  version: 22
+  version: 23
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -167,7 +167,7 @@ data:
     than editable rows.
   names:
     singular: config
-  traits: [oauth2]
+  traits: [substrate.reamde.dev/core/oauth2]
   displayTemplate: "GitHub app {clientId}"
   properties:
     clientId:
@@ -223,7 +223,7 @@ data:
   # says a single-function provider does it. The legacy `syncStatus` /
   # `lastSyncedAt` / `syncCursors` / `syncPending` stay beside the trait,
   # unchanged, because a narrowing is refused once rows hold the old shape.
-  traits: [accountconfig, sync]
+  traits: [substrate.reamde.dev/core/accountconfig, substrate.reamde.dev/core/sync]
   displayTemplate: "{email}"
   properties:
     # ---- identity and the grant (the OAuth facility's) --------------------
@@ -498,13 +498,13 @@ data:
   names:
     singular: user
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{name|login}"
   properties:
     # ---- identity --------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/github/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -697,13 +697,13 @@ data:
   names:
     singular: repository
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{fullName}"
   properties:
     # ---- identity --------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/github/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1268,7 +1268,7 @@ data:
     # ---- identity --------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/github/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1411,13 +1411,13 @@ data:
   names:
     singular: milestone
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{milestoneTitle}"
   properties:
     # ---- identity --------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/github/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1525,7 +1525,7 @@ data:
     # ---- identity --------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/github/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1617,13 +1617,13 @@ data:
   names:
     singular: issue
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "#{number} {issueTitle}"
   properties:
     # ---- identity --------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/github/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1994,13 +1994,13 @@ data:
   names:
     singular: pullrequest
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "#{number} {pullRequestTitle}"
   properties:
     # ---- identity --------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/github/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -2513,13 +2513,13 @@ data:
   names:
     singular: review
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{user.login}: {state}"
   properties:
     # ---- identity --------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/github/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -5412,7 +5412,7 @@ data:
     # ---- identity --------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/github/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -5499,7 +5499,7 @@ data:
   properties:
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/github/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -5547,12 +5547,12 @@ data:
   names:
     singular: issuetype
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{name}"
   properties:
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/github/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -5624,12 +5624,12 @@ data:
   names:
     singular: app
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{name}"
   properties:
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/github/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -5715,12 +5715,12 @@ data:
   names:
     singular: comment
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{user.login}"
   properties:
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/github/account
       required: true
       onDelete: cascade
       displayName: Account

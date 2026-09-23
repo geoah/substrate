@@ -9,11 +9,11 @@ data:
     A meeting's transcript, pointed at the occurrence that actually happened
     and the people who spoke. The text is embedded, so what was said in a
     meeting is searchable alongside everything else rather than only scrollable.
-  version: 4
+  version: 6
   names:
     singular: transcript
   traits:
-    - temporal(range)
+    - substrate.reamde.dev/core/temporal(range)
   # `title` is the LEGACY alternative, not a second spelling to write:
   # transcripts written before `name` existed hold their heading in the
   # built-in title column, and reading it keeps them titled instead of
@@ -40,12 +40,12 @@ data:
       description: the transcript's full text
     meeting:
       type: reference
-      kind: calendarevent
+      kind: samples.substrate.reamde.dev/calendar/calendarevent
       mustExist: true
       description: the occurrence that actually happened
     speakers:
       type: reference
-      kind: person
+      kind: samples.substrate.reamde.dev/people/person
       repeated: true
       mustExist: true
       description: the people who spoke

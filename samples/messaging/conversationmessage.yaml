@@ -10,11 +10,11 @@ data:
     created `received` and never moves; anything you mean to send starts as
     a `draft` and walks the send path, so composing and delivery are one record
     rather than two systems.
-  version: 4
+  version: 6
   names:
     singular: conversationmessage
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   # `{snippet}` is the engine's computed excerpt, not a property.
   displayTemplate: "{author.name}: {snippet}"
   properties:
@@ -71,30 +71,30 @@ data:
       description: when the send completed, stamped by the transition
     conversation:
       type: reference
-      kind: conversation
+      kind: samples.substrate.reamde.dev/messaging/conversation
       required: true
       mustExist: true
       onDelete: cascade
       description: the conversation this message belongs to
     author:
       type: reference
-      kind: person
+      kind: samples.substrate.reamde.dev/people/person
       required: true
       mustExist: true
       description: the person who sent it
     mentions:
       type: reference
-      kind: person
+      kind: samples.substrate.reamde.dev/people/person
       repeated: true
       mustExist: true
       description: the people the message mentions
     replyTo:
       type: reference
-      kind: conversationmessage
+      kind: samples.substrate.reamde.dev/messaging/conversationmessage
       mustExist: true
       description: the message this one replies to
     threadRoot:
       type: reference
-      kind: conversationmessage
+      kind: samples.substrate.reamde.dev/messaging/conversationmessage
       mustExist: true
       description: the thread's first message, for cheap whole-thread queries

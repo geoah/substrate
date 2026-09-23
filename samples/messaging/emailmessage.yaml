@@ -12,7 +12,7 @@ data:
   names:
     singular: emailmessage
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   # subject alone: the sender lands on an address-born person whose name may
   # never arrive, and a template's literal separator renders even when its
   # token is empty — "{sender.name}: …" showed ": hi" for every mail.
@@ -44,21 +44,21 @@ data:
       description: the owner has read it, as the provider reports
     thread:
       type: reference
-      kind: emailthread
+      kind: samples.substrate.reamde.dev/messaging/emailthread
       required: true
       mustExist: true
       onDelete: cascade
       description: the thread this message belongs to
     sender:
       type: reference
-      kind: person
+      kind: samples.substrate.reamde.dev/people/person
       mustExist: true
       description: the person the from header resolves to
     # one reference for every addressee: to/cc/bcc is a distinction the
     # substrate does not carry, because `recipients` declares no link data.
     recipients:
       type: reference
-      kind: person
+      kind: samples.substrate.reamde.dev/people/person
       repeated: true
       mustExist: true
       description: every addressee; to/cc/bcc is not carried

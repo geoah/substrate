@@ -54,7 +54,7 @@ func loadCascade(t *testing.T, account string) (*vocabulary.Registry, error) {
 }
 
 func TestCascadeOnAReference(t *testing.T) {
-	r, err := loadCascade(t, "      type: reference\n      kind: account\n      onDelete: cascade\n")
+	r, err := loadCascade(t, "      type: reference\n      kind: own.example.com/own/account\n      onDelete: cascade\n")
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -99,19 +99,19 @@ func TestCascadeNeedsNoPin(t *testing.T) {
 func TestCascadeRefusesTheShapesItCannotFollow(t *testing.T) {
 	for name, tc := range map[string]struct{ account, want string }{
 		"repeated": {
-			account: "      type: reference\n      kind: account\n      repeated: true\n      onDelete: cascade\n",
+			account: "      type: reference\n      kind: own.example.com/own/account\n      repeated: true\n      onDelete: cascade\n",
 			want:    "cascade names ONE owner",
 		},
 		"keyed": {
-			account: "      type: reference\n      kind: account\n      keyed: true\n      onDelete: cascade\n",
+			account: "      type: reference\n      kind: own.example.com/own/account\n      keyed: true\n      onDelete: cascade\n",
 			want:    "cascade names ONE owner",
 		},
 		"an object field": {
-			account: "      type: object\n      fields:\n        held: {type: reference, kind: account, onDelete: cascade}\n",
+			account: "      type: object\n      fields:\n        held: {type: reference, kind: own.example.com/own/account, onDelete: cascade}\n",
 			want:    "never an object field",
 		},
 		"an unknown behavior": {
-			account: "      type: reference\n      kind: account\n      onDelete: detach\n",
+			account: "      type: reference\n      kind: own.example.com/own/account\n      onDelete: detach\n",
 			want:    `"detach" is not a behavior`,
 		},
 	} {
@@ -130,7 +130,7 @@ func TestCascadeRefusesTheShapesItCannotFollow(t *testing.T) {
 // `ownerRef` was the key cascade replaced, so the refusal names the replacement
 // rather than reporting an unknown key.
 func TestOwnerRefNamesOnDelete(t *testing.T) {
-	_, err := loadCascade(t, "      type: reference\n      kind: account\n      ownerRef: true\n")
+	_, err := loadCascade(t, "      type: reference\n      kind: own.example.com/own/account\n      ownerRef: true\n")
 	if err == nil {
 		t.Fatal("expected `ownerRef` to be refused")
 	}
@@ -168,7 +168,7 @@ data:
   authority: own.example.com
   package: own
   names: {singular: account}
-  traits: [connected]
+  traits: [own.example.com/own/connected]
   properties:
     tokenRef: {type: secret}
 ---
@@ -188,7 +188,7 @@ data:
 // owns any record whose kind implements the trait.
 func TestCascadeOnATraitReference(t *testing.T) {
 	r, err := vocabulary.LoadFS(fstest.MapFS{
-		"own.yaml": {Data: []byte(traitPinDocs("      type: reference\n      trait: connected\n      onDelete: cascade\n"))},
+		"own.yaml": {Data: []byte(traitPinDocs("      type: reference\n      trait: own.example.com/own/connected\n      onDelete: cascade\n"))},
 	})
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -217,7 +217,7 @@ func TestCascadeOnATraitReference(t *testing.T) {
 // refused rather than resolved to one of them.
 func TestReferenceRefusesBothPins(t *testing.T) {
 	_, err := vocabulary.LoadFS(fstest.MapFS{
-		"own.yaml": {Data: []byte(traitPinDocs("      type: reference\n      kind: account\n      trait: connected\n      onDelete: cascade\n"))},
+		"own.yaml": {Data: []byte(traitPinDocs("      type: reference\n      kind: own.example.com/own/account\n      trait: own.example.com/own/connected\n      onDelete: cascade\n"))},
 	})
 	if err == nil || !strings.Contains(err.Error(), "pins `kind:` OR `trait:`") {
 		t.Fatalf("error = %v, want it to refuse both pins", err)

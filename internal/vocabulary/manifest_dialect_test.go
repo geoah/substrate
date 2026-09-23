@@ -494,7 +494,7 @@ data:
       fields: {value: email}
     person:
       type: reference
-      kind: person
+      kind: m.example.com/m/person
       required: true
       mustExist: true
       subject: true
@@ -609,7 +609,7 @@ data:
   authority: c.example.com
   package: c
   names: {singular: meeting}
-  traits: [temporal(range)]
+  traits: [c.example.com/c/temporal(range)]
 `
 }
 
@@ -754,7 +754,7 @@ data:
   authority: s.bundles.example.com
   package: s
   names: {singular: config}
-  traits: [oauth2]
+  traits: [s.bundles.example.com/s/oauth2]
   properties:
     enabledThing: {type: bool}
 ---

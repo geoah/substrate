@@ -26,6 +26,7 @@ const (
 	tasksSampleID    = samplesPlacehldr + "/tasks"
 	peopleSampleID   = samplesPlacehldr + "/people"
 	schedulingSample = samplesPlacehldr + "/scheduling"
+	calendarSample   = samplesPlacehldr + "/calendar"
 )
 
 // importSamples takes each sample the user's way, in the order `requires:`
@@ -406,4 +407,56 @@ func TestImportRefusesAProviderAndInstallStillWorks(t *testing.T) {
 	// A provider is published, not copied: it lands the id it was asked for
 	// and records no origin.
 	wantOrigin(t, st, "", 0, false)
+}
+
+// A REPOSITORY HOLDING BOTH SPELLINGS OF A SAMPLE. A user imports `people`
+// and also holds the shipped copy verbatim (the install door on a sample, or
+// the shipped files applied by hand), then imports `calendar`. The import used
+// to be refused because the closure's `kind: person` was ambiguous between
+// the two copies, and the verbatim install of `calendar` was refused for a
+// `scheduling` the repository held only as its own copy, told to "import that
+// package first" when it already had. Now the import lands on the copy beside
+// it, and the verbatim refusal names the copy and says why it does not count.
+func TestImportResolvesBesideAVerbatimCopyOfWhatItPins(t *testing.T) {
+	ds := newDataset(t)
+	c := loadCatalog(t)
+	ctx := context.Background()
+
+	importSamples(t, c, ds, peopleSampleID, schedulingSample)
+	if _, _, err := c.Install(ctx, substrate.ActorAPI, peopleSampleID, ds); err != nil {
+		t.Fatalf("install %s verbatim beside the imported copy: %v", peopleSampleID, err)
+	}
+	for _, ref := range []string{homeAuthority + "/people/person", peopleSampleID + "/person"} {
+		if _, err := ds.KindByRef(ctx, ref); err != nil {
+			t.Fatalf("%s is not here, so the fixture holds one spelling and proves nothing: %v", ref, err)
+		}
+	}
+
+	if _, _, err := c.Import(ctx, substrate.ActorAPI, calendarSample, ds); err != nil {
+		t.Fatalf("import %s beside both spellings of person: %v", calendarSample, err)
+	}
+	event, err := ds.KindByRef(ctx, homeAuthority+"/calendar/calendarevent")
+	if err != nil {
+		t.Fatalf("calendarevent absent after the import: %v", err)
+	}
+	props, _ := event.Definition["properties"].(map[string]any)
+	attendees, _ := props["attendees"].(map[string]any)
+	if got := attendees["kind"]; got != homeAuthority+"/people/person" {
+		t.Errorf("attendees pin = %v, want the copy under this repository's authority", got)
+	}
+
+	// The verbatim door on calendar names the shipped `scheduling`, which
+	// this repository holds only as its own copy.
+	_, _, err = c.Install(ctx, substrate.ActorAPI, calendarSample, ds)
+	if err == nil {
+		t.Fatal("installed calendar verbatim over a scheduling held only as a copy")
+	}
+	for _, want := range []string{
+		schedulingSample + ", which this repository does not have",
+		homeAuthority + "/scheduling is the same package under another authority",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q: %v", want, err)
+		}
+	}
 }

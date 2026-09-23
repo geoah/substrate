@@ -55,8 +55,8 @@ func loadRef(t *testing.T, person string) (*vocabulary.Registry, error) {
 // can look the referent up with or without a pin.
 func TestMustExistOnEveryShape(t *testing.T) {
 	for name, person := range map[string]string{
-		"single":   "      type: reference\n      kind: person\n      mustExist: true\n",
-		"repeated": "      type: reference\n      kind: person\n      repeated: true\n      mustExist: true\n",
+		"single":   "      type: reference\n      kind: ref.example.com/ref/person\n      mustExist: true\n",
+		"repeated": "      type: reference\n      kind: ref.example.com/ref/person\n      repeated: true\n      mustExist: true\n",
 		"unpinned": "      type: reference\n      mustExist: true\n",
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -77,7 +77,7 @@ func TestMustExistOnEveryShape(t *testing.T) {
 // property and held to the flat-value rule.
 func TestReferenceLinkProperties(t *testing.T) {
 	r, err := loadRef(t, `      type: reference
-      kind: person
+      kind: ref.example.com/ref/person
       repeated: true
       properties:
         role: {type: enum, values: [{value: owner}, {value: member}], required: true}
@@ -106,62 +106,62 @@ func TestReferenceLinkProperties(t *testing.T) {
 func TestReferenceLinkPropertiesRefused(t *testing.T) {
 	for name, tc := range map[string]struct{ person, want string }{
 		"an object": {
-			person: "      type: reference\n      kind: person\n      properties:\n        held: {type: object, fields: {a: string}}\n",
+			person: "      type: reference\n      kind: ref.example.com/ref/person\n      properties:\n        held: {type: object, fields: {a: string}}\n",
 			want:   "a link property is a flat value",
 		},
 		"json": {
-			person: "      type: reference\n      kind: person\n      properties:\n        held: {type: json}\n",
+			person: "      type: reference\n      kind: ref.example.com/ref/person\n      properties:\n        held: {type: json}\n",
 			want:   "`json` is a shape we do not own",
 		},
 		"a state": {
-			person: "      type: reference\n      kind: person\n      properties:\n        held: {type: state, states: [a], initial: a}\n",
+			person: "      type: reference\n      kind: ref.example.com/ref/person\n      properties:\n        held: {type: state, states: [a], initial: a}\n",
 			want:   "a machine belongs to a record",
 		},
 		"a secret": {
-			person: "      type: reference\n      kind: person\n      properties:\n        held: {type: secret}\n",
+			person: "      type: reference\n      kind: ref.example.com/ref/person\n      properties:\n        held: {type: secret}\n",
 			want:   "a secret is a property of a record",
 		},
 		"a digest": {
-			person: "      type: reference\n      kind: person\n      properties:\n        held: {type: digest}\n",
+			person: "      type: reference\n      kind: ref.example.com/ref/person\n      properties:\n        held: {type: digest}\n",
 			want:   "a digest is minted onto a record",
 		},
 		"a blobref": {
-			person: "      type: reference\n      kind: person\n      properties:\n        held: {type: blobref}\n",
+			person: "      type: reference\n      kind: ref.example.com/ref/person\n      properties:\n        held: {type: blobref}\n",
 			want:   "a blob-ref resolves on a record's read path",
 		},
 		"a second reference": {
-			person: "      type: reference\n      kind: person\n      properties:\n        held: {type: reference, kind: person}\n",
+			person: "      type: reference\n      kind: ref.example.com/ref/person\n      properties:\n        held: {type: reference, kind: ref.example.com/ref/person}\n",
 			want:   "the reference IS the pointer",
 		},
 		"a container": {
-			person: "      type: reference\n      kind: person\n      properties:\n        held: {type: string, repeated: true}\n",
+			person: "      type: reference\n      kind: ref.example.com/ref/person\n      properties:\n        held: {type: string, repeated: true}\n",
 			want:   `unknown key "repeated"`,
 		},
 		"the reserved ref key": {
-			person: "      type: reference\n      kind: person\n      properties:\n        ref: {type: string}\n",
+			person: "      type: reference\n      kind: ref.example.com/ref/person\n      properties:\n        ref: {type: string}\n",
 			want:   "the reserved key holding the referent's path",
 		},
 		// `target` is not a key of the stored value: it is the field the
 		// referent record is read under, beside the link properties, so a
 		// declared one would take its place.
 		"the reserved target key": {
-			person: "      type: reference\n      kind: person\n      properties:\n        target: {type: string}\n",
+			person: "      type: reference\n      kind: ref.example.com/ref/person\n      properties:\n        target: {type: string}\n",
 			want:   "the reserved key holding the referent record",
 		},
 		"a bare datatype": {
-			person: "      type: reference\n      kind: person\n      properties:\n        held: string\n",
+			person: "      type: reference\n      kind: ref.example.com/ref/person\n      properties:\n        held: string\n",
 			want:   "a link property is a mapping",
 		},
 		"an empty block": {
-			person: "      type: reference\n      kind: person\n      properties: {}\n",
+			person: "      type: reference\n      kind: ref.example.com/ref/person\n      properties: {}\n",
 			want:   "drop the key rather than declaring none",
 		},
 		"a keyed reference": {
-			person: "      type: reference\n      kind: person\n      keyed: true\n      properties:\n        role: {type: string}\n",
+			person: "      type: reference\n      kind: ref.example.com/ref/person\n      keyed: true\n      properties:\n        role: {type: string}\n",
 			want:   "link data is declarable on a single or repeated reference",
 		},
 		"an object field": {
-			person: "      type: object\n      fields:\n        held: {type: reference, kind: person, properties: {role: {type: string}}}\n",
+			person: "      type: object\n      fields:\n        held: {type: reference, kind: ref.example.com/ref/person, properties: {role: {type: string}}}\n",
 			want:   "link data is a kind's own reference",
 		},
 	} {
@@ -180,7 +180,7 @@ func TestReferenceLinkPropertiesRefused(t *testing.T) {
 // `subject: true` marks the one reference a source record's mapping points
 // through, and it is refused wherever a subject could not be one record.
 func TestSubjectReferenceShape(t *testing.T) {
-	r, err := loadRef(t, "      type: reference\n      kind: person\n      required: true\n      mustExist: true\n      subject: true\n")
+	r, err := loadRef(t, "      type: reference\n      kind: ref.example.com/ref/person\n      required: true\n      mustExist: true\n      subject: true\n")
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -192,19 +192,19 @@ func TestSubjectReferenceShape(t *testing.T) {
 
 	for name, tc := range map[string]struct{ person, want string }{
 		"repeated": {
-			person: "      type: reference\n      kind: person\n      repeated: true\n      subject: true\n",
+			person: "      type: reference\n      kind: ref.example.com/ref/person\n      repeated: true\n      subject: true\n",
 			want:   "a source record describes ONE subject",
 		},
 		"keyed": {
-			person: "      type: reference\n      kind: person\n      keyed: true\n      subject: true\n",
+			person: "      type: reference\n      kind: ref.example.com/ref/person\n      keyed: true\n      subject: true\n",
 			want:   "a source record describes ONE subject",
 		},
 		"cascading": {
-			person: "      type: reference\n      kind: person\n      onDelete: cascade\n      subject: true\n",
+			person: "      type: reference\n      kind: ref.example.com/ref/person\n      onDelete: cascade\n      subject: true\n",
 			want:   "a subject is never `onDelete: cascade`",
 		},
 		"an object field": {
-			person: "      type: object\n      fields:\n        held: {type: reference, kind: person, subject: true}\n",
+			person: "      type: object\n      fields:\n        held: {type: reference, kind: ref.example.com/ref/person, subject: true}\n",
 			want:   "a subject is a kind's own property",
 		},
 	} {

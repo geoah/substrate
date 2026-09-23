@@ -200,7 +200,7 @@ data:
   # moved. ADDITIVE, so an installed 29 upgrades in one apply — but every
   # account connected under 29 or earlier must RECONNECT for the new scope,
   # and until it does the drive stream records `needsreconsent`.
-  version: 31
+  version: 32
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -338,7 +338,7 @@ data:
     properties on this row.
   names:
     singular: config
-  traits: [oauth2]
+  traits: [substrate.reamde.dev/core/oauth2]
   displayTemplate: "Google client {clientId}"
   properties:
     clientId:
@@ -418,7 +418,7 @@ data:
   # `syncRequestedAt` ("sync now") and `syncPaused` (pause); the other ten
   # belong to the connector. A schedule-sourced delivery names no record, so
   # there the three bodies' own writes are the whole truth.
-  traits: [accountconfig, sync]
+  traits: [substrate.reamde.dev/core/accountconfig, substrate.reamde.dev/core/sync]
   displayTemplate: "{email}"
   properties:
     # The OAuth facility's hands on the account (writer: oauth — only the
@@ -462,7 +462,7 @@ data:
     # out of a list, and the Add account form does not offer it.
     address:
       type: reference
-      kind: emailaddress
+      kind: providers.substrate.reamde.dev/google/emailaddress
       writer: connector
       displayName: Address
       description: the hub row for this account's own address — the identity
@@ -1189,7 +1189,7 @@ data:
     # --- identity -----------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/google/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -1327,7 +1327,7 @@ data:
     # disconnecting the account collect the contacts it synced.
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/google/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -2787,7 +2787,7 @@ data:
           fields:
             contactGroup:
               type: reference
-              kind: contactgroup
+              kind: providers.substrate.reamde.dev/google/contactgroup
               description: >-
                 the group row `contactGroupResourceName` names. No `mustExist`:
                 the groups walk runs before the connections walk, but a membership
@@ -4120,7 +4120,7 @@ data:
             and what a person mapping probes on this kind.
         address:
           type: reference
-          kind: emailaddress
+          kind: providers.substrate.reamde.dev/google/emailaddress
           description: >-
             the hub row for this address — the row a mail header and a meeting
             attendee reach too, composed from the normal form (domain lowercased).
@@ -4251,7 +4251,7 @@ data:
             ALIASES naming rows this sync RETRACTS, so strings.
         linkedPeopleResourceNames:
           type: reference
-          kind: contact
+          kind: providers.substrate.reamde.dev/google/contact
           repeated: true
           description: >-
             `linkedPeopleResourceNames` — Output only. The other Person resources
@@ -6648,7 +6648,7 @@ data:
     # --- identity -----------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/google/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -6709,7 +6709,7 @@ data:
     # the contacts walk has not reached yet is a target that lands later.
     memberResourceNames:
       type: reference
-      kind: contact
+      kind: providers.substrate.reamde.dev/google/contact
       repeated: true
       displayName: Members
       description: "`memberResourceNames` — the contacts in this group, as
@@ -6781,7 +6781,7 @@ data:
     # --- identity -----------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/google/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -6915,7 +6915,7 @@ data:
     # --- identity -----------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/google/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -6951,7 +6951,7 @@ data:
     # it is absent; it is never a union of what a window happened to see.
     messages:
       type: reference
-      kind: gmailmessage
+      kind: providers.substrate.reamde.dev/google/gmailmessage
       repeated: true
       displayName: Messages
       description: "`Thread.messages` — the resource's own membership, in
@@ -7037,13 +7037,13 @@ data:
   names:
     singular: gmailmessage
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{subject}"
   properties:
     # --- identity -----------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/google/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -7067,7 +7067,7 @@ data:
     # walk did not see is real data rather than a failed page.
     labels:
       type: reference
-      kind: gmaillabel
+      kind: providers.substrate.reamde.dev/google/gmaillabel
       repeated: true
       displayName: Labels
       description: "`labelIds` — every label on this message, as rows: the
@@ -7199,7 +7199,7 @@ data:
     # without a thread and retracting a thread retracts its messages.
     thread:
       type: reference
-      kind: gmailthread
+      kind: providers.substrate.reamde.dev/google/gmailthread
       required: true
       onDelete: cascade
       displayName: Thread
@@ -7238,7 +7238,7 @@ data:
             otherwise verbatim (the local part keeps its case)"
         address:
           type: reference
-          kind: emailaddress
+          kind: providers.substrate.reamde.dev/google/emailaddress
           description: "the hub row for this mailbox — composed from the normal
             form (domain lowercased), and the row an attendee list and an
             address-book entry reach too"
@@ -7259,7 +7259,7 @@ data:
             otherwise verbatim (the local part keeps its case)"
         address:
           type: reference
-          kind: emailaddress
+          kind: providers.substrate.reamde.dev/google/emailaddress
           description: "the hub row for this mailbox — composed from the normal
             form (domain lowercased), and the row an attendee list and an
             address-book entry reach too"
@@ -7280,7 +7280,7 @@ data:
             otherwise verbatim (the local part keeps its case)"
         address:
           type: reference
-          kind: emailaddress
+          kind: providers.substrate.reamde.dev/google/emailaddress
           description: "the hub row for this mailbox — composed from the normal
             form (domain lowercased), and the row an attendee list and an
             address-book entry reach too"
@@ -7301,7 +7301,7 @@ data:
             otherwise verbatim (the local part keeps its case)"
         address:
           type: reference
-          kind: emailaddress
+          kind: providers.substrate.reamde.dev/google/emailaddress
           description: "the hub row for this mailbox — composed from the normal
             form (domain lowercased), and the row an attendee list and an
             address-book entry reach too"
@@ -7322,7 +7322,7 @@ data:
             otherwise verbatim (the local part keeps its case)"
         address:
           type: reference
-          kind: emailaddress
+          kind: providers.substrate.reamde.dev/google/emailaddress
           description: "the hub row for this mailbox — composed from the normal
             form (domain lowercased), and the row an attendee list and an
             address-book entry reach too"
@@ -7391,7 +7391,7 @@ data:
     # --- identity -----------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/google/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -7446,7 +7446,7 @@ data:
     # --- relations ----------------------------------------------------------
     message:
       type: reference
-      kind: gmailmessage
+      kind: providers.substrate.reamde.dev/google/gmailmessage
       required: true
       onDelete: cascade
       displayName: Message
@@ -10446,7 +10446,7 @@ data:
     # --- identity -----------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/google/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -10632,7 +10632,7 @@ data:
     # mailbox that does not parse leaves the property absent instead.
     dataOwner:
       type: reference
-      kind: emailaddress
+      kind: providers.substrate.reamde.dev/google/emailaddress
       displayName: Data owner
       description: "the entry's `dataOwner` as a hub row — who owns the calendar's
         data, set only on a secondary calendar"
@@ -10679,7 +10679,7 @@ data:
     # --- identity -----------------------------------------------------------
     calendar:
       type: reference
-      kind: calendar
+      kind: providers.substrate.reamde.dev/google/calendar
       required: true
       onDelete: cascade
       displayName: Calendar
@@ -10745,14 +10745,14 @@ data:
   names:
     singular: calendarseries
   traits:
-    - temporal(range)
-    - recurring
+    - substrate.reamde.dev/core/temporal(range)
+    - substrate.reamde.dev/core/recurring
   displayTemplate: "{summary}"
   properties:
     # --- identity -----------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/google/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -11381,7 +11381,7 @@ data:
     # because version 17's purge-and-resync cleared the package's records.
     calendar:
       type: reference
-      kind: calendar
+      kind: providers.substrate.reamde.dev/google/calendar
       required: true
       onDelete: cascade
       displayName: Calendar
@@ -11414,7 +11414,7 @@ data:
             walking the reference"
         address:
           type: reference
-          kind: emailaddress
+          kind: providers.substrate.reamde.dev/google/emailaddress
           description: the hub row for this address, which a mail header and
             an address-book entry reach too
         displayName:
@@ -11442,7 +11442,7 @@ data:
             walking the reference"
         address:
           type: reference
-          kind: emailaddress
+          kind: providers.substrate.reamde.dev/google/emailaddress
           description: the hub row for this address, which a mail header and
             an address-book entry reach too
         displayName:
@@ -11471,7 +11471,7 @@ data:
             walking the reference"
         address:
           type: reference
-          kind: emailaddress
+          kind: providers.substrate.reamde.dev/google/emailaddress
           description: the hub row for this address, which a mail header and
             an address-book entry reach too
         displayName:
@@ -11560,7 +11560,7 @@ data:
           description: the owner's own label for the date, on a type of `custom`
         contact:
           type: reference
-          kind: contact
+          kind: providers.substrate.reamde.dev/google/contact
           description: "the People person whose date this is, from the resource
             name Google sends; dangles when contacts are not synced"
     # --- the recurring trait's four, every one a decode of this payload ------
@@ -11665,14 +11665,14 @@ data:
   names:
     singular: calendarevent
   traits:
-    - temporal(range)
-    - override
+    - substrate.reamde.dev/core/temporal(range)
+    - substrate.reamde.dev/core/override
   displayTemplate: "{summary}"
   properties:
     # --- identity -----------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/google/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -12304,7 +12304,7 @@ data:
     # because version 17's purge-and-resync cleared the package's records.
     calendar:
       type: reference
-      kind: calendar
+      kind: providers.substrate.reamde.dev/google/calendar
       required: true
       onDelete: cascade
       displayName: Calendar
@@ -12337,7 +12337,7 @@ data:
             walking the reference"
         address:
           type: reference
-          kind: emailaddress
+          kind: providers.substrate.reamde.dev/google/emailaddress
           description: the hub row for this address, which a mail header and
             an address-book entry reach too
         displayName:
@@ -12365,7 +12365,7 @@ data:
             walking the reference"
         address:
           type: reference
-          kind: emailaddress
+          kind: providers.substrate.reamde.dev/google/emailaddress
           description: the hub row for this address, which a mail header and
             an address-book entry reach too
         displayName:
@@ -12394,7 +12394,7 @@ data:
             walking the reference"
         address:
           type: reference
-          kind: emailaddress
+          kind: providers.substrate.reamde.dev/google/emailaddress
           description: the hub row for this address, which a mail header and
             an address-book entry reach too
         displayName:
@@ -12483,7 +12483,7 @@ data:
           description: the owner's own label for the date, on a type of `custom`
         contact:
           type: reference
-          kind: contact
+          kind: providers.substrate.reamde.dev/google/contact
           description: "the People person whose date this is, from the resource
             name Google sends; dangles when contacts are not synced"
     # --- the override trait's two --------------------------------------------
@@ -12492,7 +12492,7 @@ data:
     # with the object it was decoded from declared above.
     recurrenceOf:
       type: reference
-      kind: calendarseries
+      kind: providers.substrate.reamde.dev/google/calendarseries
       onDelete: cascade
       displayName: Series
       description: "the series this event overrides one occurrence of, from
@@ -15411,13 +15411,13 @@ data:
   names:
     singular: drivefile
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{name}"
   properties:
     # --- identity -----------------------------------------------------------
     account:
       type: reference
-      kind: account
+      kind: providers.substrate.reamde.dev/google/account
       required: true
       onDelete: cascade
       displayName: Account
@@ -15549,7 +15549,7 @@ data:
     # --- relations ----------------------------------------------------------
     parents:
       type: reference
-      kind: drivefile
+      kind: providers.substrate.reamde.dev/google/drivefile
       repeated: true
       displayName: Parents
       description: "`parents` — the folder(s) this file sits in, as rows of
@@ -15572,7 +15572,7 @@ data:
             it; the probe a person mapping reads"
         address:
           type: reference
-          kind: emailaddress
+          kind: providers.substrate.reamde.dev/google/emailaddress
           description: the emailaddress hub row for that address, the same
             row a mail header or a calendar attendee converges on
         displayName:
@@ -15602,7 +15602,7 @@ data:
             it"
         address:
           type: reference
-          kind: emailaddress
+          kind: providers.substrate.reamde.dev/google/emailaddress
           description: the emailaddress hub row for that address
         displayName:
           type: string

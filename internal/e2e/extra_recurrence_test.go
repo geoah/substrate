@@ -575,7 +575,7 @@ func xoClosure() []map[string]any {
 				"names":           map[string]any{"singular": "schedule"},
 				"description":     "When and how much: a dose, an RRULE, and the span the schedule runs.",
 				"displayTemplate": "{name}",
-				"traits":          []any{"temporal(range)", "recurring"},
+				"traits":          []any{"substrate.reamde.dev/core/temporal(range)", "substrate.reamde.dev/core/recurring"},
 				"properties": map[string]any{
 					"name": map[string]any{"type": "string", "description": "an optional label"},
 					"recurrence": map[string]any{
@@ -604,7 +604,7 @@ func xoClosure() []map[string]any {
 				"names":           map[string]any{"singular": "doselog"},
 				"description":     "One dose, done or skipped; absence in the logs is what missed means.",
 				"displayTemplate": "{status}",
-				"traits":          []any{"temporal(point)", "occurrencelog"},
+				"traits":          []any{"substrate.reamde.dev/core/temporal(point)", "samples.substrate.reamde.dev/scheduling/occurrencelog"},
 				"properties": map[string]any{
 					"status": map[string]any{
 						"type": "state", "description": "done or skipped",
@@ -622,7 +622,7 @@ func xoClosure() []map[string]any {
 						"type": "markdown", "description": "anything worth saying about this dose",
 					},
 					"schedule": map[string]any{
-						"type": "reference", "kind": "schedule",
+						"type": "reference", "kind": xoScheduleKind,
 						"required": true, "mustExist": true, "onDelete": "cascade",
 						"description": "the schedule this dose belongs to",
 					},

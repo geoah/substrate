@@ -556,9 +556,9 @@ func refDocs() []map[string]any {
 		vocabulary.KindManifest(refPackage,
 			map[string]any{"singular": "holder"},
 			map[string]any{"properties": map[string]any{
-				"pin":    map[string]any{"type": "reference", "kind": "widget"},
+				"pin":    map[string]any{"type": "reference", "kind": refPackage + "/widget"},
 				"anyref": map[string]any{"type": "reference", "kind": "any"},
-				"pins":   map[string]any{"type": "reference", "kind": "widget", "repeated": true},
+				"pins":   map[string]any{"type": "reference", "kind": refPackage + "/widget", "repeated": true},
 			}}),
 	}
 }

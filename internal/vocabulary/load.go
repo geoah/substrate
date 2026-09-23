@@ -31,7 +31,12 @@ const (
 	SourceInstalled = "installed"
 )
 
-var reCapBinding = regexp.MustCompile(`^([a-z][a-zA-Z0-9]*)(?:\(\s*([a-z][a-zA-Z0-9]*)\s*(?::\s*([a-zA-Z0-9,\s]*))?\s*\))?$`)
+// reCapBinding is one `traits:` entry: the trait's full identity
+// (`substrate.reamde.dev/core/temporal`), then the optional variant and
+// column remap (`substrate.reamde.dev/core/temporal(point: dueAt)`). The
+// first group still admits a bare word so the refusal can name it
+// (bareNameProblem) rather than call the whole entry unparseable.
+var reCapBinding = regexp.MustCompile(`^((?:[a-z0-9][a-z0-9.-]*/[a-z][a-z0-9]*/)?[a-z][a-zA-Z0-9]*)(?:\(\s*([a-z][a-zA-Z0-9]*)\s*(?::\s*([a-zA-Z0-9,\s]*))?\s*\))?$`)
 
 // LoadFS parses every .yaml document under fsys into one registry. The unit is
 // the document, not the file: manifests are grouped by the PACKAGE they
@@ -567,7 +572,7 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 var traitVariantKeys = map[string]bool{"name": true, "properties": true}
 
 // parseTraitVariants reads a trait's `oneOf:` — the variant set a kind picks one
-// of with `traits: [temporal(point)]`. A variant is an entry carrying its own
+// of with `traits: [substrate.reamde.dev/core/temporal(point)]`. A variant is an entry carrying its own
 // name ({name, properties}), and the LIST of them is the one spelling: a mapping
 // of name to properties is refused, because a keyed map of keyed maps leaves
 // every reader guessing which level a path addresses. Nothing translates a
@@ -952,10 +957,12 @@ func (l *loader) parseType(doc Document) *Kind {
 			l.errf("%s: data.traits: cannot parse %q", where, s)
 			continue
 		}
-		c, ok := g.Traits[m[1]]
-		if !ok {
-			// Not declared here: resolved against the registry in Finalize,
-			// which is the only point where sibling authorities are all loaded.
+		c, ok := g.Traits[KindName(m[1])]
+		if !ok || KindPackage(m[1]) != g.Identity {
+			// Not declared here, or not spelled in full: resolved against the
+			// registry in Finalize, which is the only point where sibling
+			// packages are all loaded and a bare word's refusal can name what
+			// the repository declares under it.
 			g.pendingTraits = append(g.pendingTraits, pendingCapBinding{
 				Kind: name, Cap: m[1], Variant: m[2], Cols: m[3],
 			})
@@ -1551,9 +1558,10 @@ func bindCapability(typeIdent, capName, variant, cols string, c *Trait) (*TraitB
 	errf := func(format string, args ...any) {
 		problems = append(problems, fmt.Sprintf(format, args...))
 	}
-	// The binding keeps the RESOLVED trait's identity beside the declared
-	// bare name: host behavior compares identities, never spellings.
-	b := &TraitBinding{Trait: capName, Identity: c.Identity(), Variant: variant, Columns: map[string]string{}}
+	// The binding keeps the trait's identity beside its bare word (the last
+	// segment): host behavior compares identities, never spellings, and
+	// Implements by bare name reads the word.
+	b := &TraitBinding{Trait: KindName(capName), Identity: c.Identity(), Variant: variant, Columns: map[string]string{}}
 	var props map[string]Datatype
 	switch {
 	case len(c.Variants) > 0:
@@ -1664,11 +1672,11 @@ func isHot(s string) bool { return s == "at" || s == "endsAt" || s == "dueAt" }
 func HotBinding(name string) string {
 	switch name {
 	case "at":
-		return "traits: [temporal(point)]"
+		return "traits: [substrate.reamde.dev/core/temporal(point)]"
 	case "endsAt":
-		return "traits: [temporal(range)]"
+		return "traits: [substrate.reamde.dev/core/temporal(range)]"
 	case "dueAt":
-		return `traits: ["temporal(point: dueAt)"]`
+		return `traits: ["substrate.reamde.dev/core/temporal(point: dueAt)"]`
 	}
 	return ""
 }
@@ -2628,53 +2636,39 @@ func (r *Registry) resolvePackage(g *Package) []string {
 	for _, tn := range g.KindOrder {
 		t := g.Kinds[tn]
 		where := DocKind + " " + t.Identity
-		// A reference property resolves its `kind:` pin from a bare name to a
-		// full identity, in-authority first then uniquely across authorities;
-		// `any` (and absent) stay unconstrained. Every admitted
-		// depth, not just the kind's own properties: an unresolved pin on a
-		// nested reference would compare a bare name against a full identity on
-		// every write and refuse the value the declaration asked for.
+		// A reference property's `kind:` pin and `trait:` pin are full
+		// identities, checked here against the registry because this is the
+		// one point where every sibling package is loaded; `any` (and absent)
+		// stay unconstrained. A bare word is refused naming the full spellings
+		// the repository holds (bareNameProblem): nothing resolves it, in this
+		// package or anywhere. Every admitted depth, not just the kind's own
+		// properties: an unchecked pin on a nested reference would compare
+		// against a full identity on every write and refuse the value the
+		// declaration asked for.
 		for _, site := range referenceSites(t) {
 			p := site.Prop
-			// A `trait:` pin resolves against the registry's traits the way a
-			// binding does: a bare name in the declaring package first then
-			// uniquely across packages, and a full identity
-			// (`authority/package/name`) against that package directly, exactly
-			// as a `kind:` pin accepts both. The resolved full identity is what
-			// the write path and the GC cascade key on, so a package-local
-			// trait cannot counterfeit a host-recognized one.
 			if p.ToTrait != "" {
-				pkg, name := g.Identity, p.ToTrait
-				if Qualified(p.ToTrait) {
-					pkg, name = KindPackage(p.ToTrait), KindName(p.ToTrait)
+				w := fmt.Sprintf("%s: data.properties.%s.trait", where, site.Path)
+				switch c, ok := r.TraitByIdentity(p.ToTrait); {
+				case !Qualified(p.ToTrait):
+					problems = append(problems, bareNameProblem(w, "trait pin", p.ToTrait, r.traitsNamed(p.ToTrait)))
+				case !ok:
+					problems = append(problems, fmt.Sprintf("%s: unknown trait %q", w, p.ToTrait))
+				default:
+					p.ToTrait = c.Identity()
 				}
-				c, err := r.ResolveTrait(pkg, name)
-				if err != nil {
-					problems = append(problems, fmt.Sprintf("%s: data.properties.%s.trait: %v", where, site.Path, err))
-					continue
-				}
-				p.ToTrait = c.Identity()
 				continue
 			}
 			if p.To == "" || p.To == ToAny {
 				continue
 			}
-			if Qualified(p.To) {
-				if _, ok := r.ByIdentity(p.To); !ok {
-					problems = append(problems, fmt.Sprintf("%s: data.properties.%s.kind: unknown referent kind %q", where, site.Path, p.To))
-				}
-				continue
+			w := fmt.Sprintf("%s: data.properties.%s.kind", where, site.Path)
+			switch _, ok := r.ByIdentity(p.To); {
+			case !Qualified(p.To):
+				problems = append(problems, bareNameProblem(w, "kind pin", p.To, r.kindsNamed(p.To)))
+			case !ok:
+				problems = append(problems, fmt.Sprintf("%s: unknown referent kind %q", w, p.To))
 			}
-			if local, ok := g.Kinds[p.To]; ok {
-				p.To = local.Identity
-				continue
-			}
-			resolved, err := r.Resolve(p.To)
-			if err != nil {
-				problems = append(problems, fmt.Sprintf("%s: data.properties.%s.kind: %v", where, site.Path, err))
-				continue
-			}
-			p.To = resolved.Identity
 		}
 		// A `notifies:` transition reports into a thread, so the marker must
 		// name a reference property PINNED to the llm package's thread — and,
@@ -2735,9 +2729,14 @@ func (r *Registry) resolvePackage(g *Package) []string {
 		if !ok {
 			continue
 		}
-		c, err := r.ResolveTrait(g.Identity, pc.Cap)
-		if err != nil {
-			problems = append(problems, fmt.Sprintf("%s %s: data.traits: %v", DocKind, t.Identity, err))
+		w := DocKind + " " + t.Identity + ": data.traits"
+		if !Qualified(pc.Cap) {
+			problems = append(problems, bareNameProblem(w, "trait binding", pc.Cap, r.traitsNamed(pc.Cap)))
+			continue
+		}
+		c, ok := r.TraitByIdentity(pc.Cap)
+		if !ok {
+			problems = append(problems, fmt.Sprintf("%s: unknown trait %q", w, pc.Cap))
 			continue
 		}
 		b, more, probs := bindCapability(t.Identity, pc.Cap, pc.Variant, pc.Cols, c)

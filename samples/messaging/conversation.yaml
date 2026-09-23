@@ -16,7 +16,7 @@ data:
   # opening their messages. Optional: a conversation nothing wrote it for
   # simply has no place on the timeline.
   traits:
-    - temporal(point)
+    - substrate.reamde.dev/core/temporal(point)
   properties:
     # one category over the three real shapes: platforms disagree about the
     # boundaries but messages don't. `type` is the envelope's own word and
@@ -49,13 +49,13 @@ data:
     # disconnects (0034, 0032). Optional: a person may hand-author one.
     account:
       type: reference
-      trait: accountconfig
+      trait: substrate.reamde.dev/core/accountconfig
       onDelete: cascade
       displayName: Account
       description: the accountconfig record this conversation synced through
     participants:
       type: reference
-      kind: person
+      kind: samples.substrate.reamde.dev/people/person
       repeated: true
       mustExist: true
       description: the people in the conversation

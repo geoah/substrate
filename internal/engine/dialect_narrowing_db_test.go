@@ -51,7 +51,7 @@ func dnBaseProps() map[string]any {
 	// store, so only the first can be matched.
 	props["fingerprint"] = map[string]any{"type": "digest", "pattern": "^ab"}
 	props["token"] = map[string]any{"type": "secret", "pattern": "^old-"}
-	props["pinned"] = map[string]any{"type": "reference", "kind": "target", "properties": map[string]any{
+	props["pinned"] = map[string]any{"type": "reference", "kind": dwPackage + "/target", "properties": map[string]any{
 		"note":   map[string]any{"type": "string", "pattern": "^[a-z]+$"},
 		"weight": map[string]any{"type": "int", "min": 1},
 	}}
@@ -188,19 +188,19 @@ func dnCases() map[string]struct {
 		},
 		"reference inside a repeated object narrows": {
 			alter: func(props map[string]any) {
-				props["tools"].(map[string]any)["fields"].(map[string]any)["callable"] = map[string]any{"type": "reference", "kind": "other"}
+				props["tools"].(map[string]any)["fields"].(map[string]any)["callable"] = map[string]any{"type": "reference", "kind": dwPackage + "/other"}
 			},
 			says: `object "tools" reference "callable" narrows its target to ` + dwPackage + `/other`,
 		},
 		"reference inside a keyed map narrows": {
 			alter: func(props map[string]any) {
-				props["installs"].(map[string]any)["fields"].(map[string]any)["source"] = map[string]any{"type": "reference", "kind": "other"}
+				props["installs"].(map[string]any)["fields"].(map[string]any)["source"] = map[string]any{"type": "reference", "kind": dwPackage + "/other"}
 			},
 			says: `object "installs" reference "source" narrows its target to ` + dwPackage + `/other`,
 		},
 		"reference at level 3 narrows": {
 			alter: func(props map[string]any) {
-				limitFields(props)["ref"] = map[string]any{"type": "reference", "kind": "other"}
+				limitFields(props)["ref"] = map[string]any{"type": "reference", "kind": dwPackage + "/other"}
 			},
 			says: `object "spec.limits" reference "ref" narrows its target to ` + dwPackage + `/other`,
 		},
@@ -493,7 +493,7 @@ func TestNarrowingAdmitsWhatTheDataAlreadySatisfies(t *testing.T) {
 			t.Fatalf("restore the base declaration: %v", err)
 		}
 	}
-	toTarget := map[string]any{"type": "reference", "kind": "target"}
+	toTarget := map[string]any{"type": "reference", "kind": dwPackage + "/target"}
 
 	t.Run("absent optional nested reference does not block", func(t *testing.T) {
 		if err := narrow(t, func(props map[string]any) {
@@ -522,7 +522,7 @@ func TestNarrowingAdmitsWhatTheDataAlreadySatisfies(t *testing.T) {
 	})
 
 	t.Run("conforming keyed references do not block", func(t *testing.T) {
-		if err := narrow(t, func(props map[string]any) { props["keyedRefs"] = keyedRefTo("target") }); err != nil {
+		if err := narrow(t, func(props map[string]any) { props["keyedRefs"] = keyedRefTo(dwPackage + "/target") }); err != nil {
 			t.Fatalf("every stored keyed reference points at the new target: %v", err)
 		}
 		restore(t)
@@ -556,7 +556,7 @@ func TestNarrowingAdmitsWhatTheDataAlreadySatisfies(t *testing.T) {
 
 	t.Run("a keyed reference elsewhere blocks", func(t *testing.T) {
 		wantNarrowingGuard(t, narrow(t, func(props map[string]any) {
-			props["keyedRefs"] = keyedRefTo("target")
+			props["keyedRefs"] = keyedRefTo(dwPackage + "/target")
 		}), `reference "keyedRefs" narrows its target`, "1 live records")
 	})
 

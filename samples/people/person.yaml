@@ -15,7 +15,7 @@ data:
     person" lands here. What one source holds about them — a Google contact,
     a GitHub user — is that bundle's own record pointing here, so a person
     carries many provider identities and stays one row.
-  version: 4
+  version: 5
   names:
     singular: person
   # what a human recognizes first is the friendly name; the full name is the
@@ -94,7 +94,7 @@ data:
     # flat string a provider holds stays on that provider's own type.
     memberOf:
       type: reference
-      kind: organization
+      kind: samples.substrate.reamde.dev/people/organization
       repeated: true
       mustExist: true
       description: the employer or workspace; there is no company property
