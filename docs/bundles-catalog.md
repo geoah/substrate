@@ -308,7 +308,12 @@ current walk reads as absent, which costs the same full re-read. The walk asks
 for `singleEvents=false`: a recurring master is one `calendarseries` row
 carrying its rule, a modified or cancelled exception is a `calendarevent` row
 pointing at the series through `recurrenceOf` and naming its slot in
-`originalAt`, and a plain event is a `calendarevent` row. Nothing is expanded
+`originalAt`, and a plain event is a `calendarevent` row. One Google event on
+one calendar is one `calendarevent` row: an exception's row id is keyed by its
+series, so when a "this and following" edit splits a series and Google
+re-parents the later exceptions onto the new master, writing the re-parented
+exception retracts the row it left under the old series, found by the
+`eventId` the two share. Nothing is expanded
 into rows: a records read that bounds `at` computes each series' occurrences
 beside the stored rows. `calendarPending` holds the calendar ids an
 interrupted walk has not reached, and the next run resumes from exactly those.

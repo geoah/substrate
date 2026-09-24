@@ -1902,6 +1902,171 @@ def assert_ordinal_rule(expect):
          % (len(slots), rule))
 
 
+# --------------------------------------------------------------------------
+# a split series ("this and following")
+# --------------------------------------------------------------------------
+
+# The master the case invents, and the one occurrence it follows through two
+# splits. Google names a split-off master `<master>_R<start>` and keeps every
+# instance id `<original master>_<slot>` across all of them.
+_SPLIT_MASTER = "e2esplitstandup"
+_SPLIT_SLOT = "2026-09-24T16:00:00Z"
+_SPLIT_INSTANCE = _SPLIT_MASTER + "_20260924T160000Z"
+
+
+def _split_event(eid, start, **extra):
+    """One Event resource, in the shape `events.list` hands back."""
+    end = (dt.datetime.fromisoformat(start.replace("Z", "+00:00"))
+           + dt.timedelta(minutes=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    item = {"kind": "calendar#event", "etag": '"%s"' % _id_hash(eid, extra)[:16],
+            "id": eid, "status": "confirmed", "summary": "Split Standup",
+            "created": "2026-09-01T09:00:00.000Z",
+            "updated": "2026-09-24T09:00:00.000Z",
+            "start": {"dateTime": start, "timeZone": "Europe/London"},
+            "end": {"dateTime": end, "timeZone": "Europe/London"},
+            "sequence": 0, "eventType": "default"}
+    item.update(extra)
+    return item
+
+
+def _split_master(mid, start, until=None):
+    rule = "RRULE:FREQ=DAILY" + (";UNTIL=" + until if until else "")
+    return _split_event(mid, start, recurrence=[rule],
+                        iCalUID=mid + "@google.com")
+
+
+def _split_exception(master):
+    # Moved half an hour later, so it is an exception worth sending.
+    return _split_event(_SPLIT_INSTANCE, "2026-09-24T16:30:00Z",
+                        recurringEventId=master,
+                        originalStartTime={"dateTime": _SPLIT_SLOT,
+                                           "timeZone": "Europe/London"},
+                        iCalUID=master + "@google.com")
+
+
+def _split_delta(cid, token, items, landed):
+    """Answer the NEXT delta read of one calendar with `items`, and wait for
+    the page to commit: `landed` is the series row the page writes.
+
+    Injected as a 200 fault over the recorded delta, carrying the SAME
+    `nextSyncToken` the calendar already holds, so every later read of it
+    lands on the recording again. A page's effects commit together, so the
+    series row appearing is the exception's write, and any retraction, too."""
+    path = "/calendar/v3/calendars/%s/events" % urllib.parse.quote(cid, safe="")
+    mock("/__mock/faults", "POST", {"rules": [{
+        "match": "GET " + path, "contains": "syncToken=" + token,
+        "status": [200],
+        "body": {"kind": "calendar#events", "timeZone": "Europe/London",
+                 "items": items, "nextSyncToken": token}}]})
+    try:
+        answer = api("/api/v1/substrate.reamde.dev/core/trigger/%s/run"
+                     % urllib.parse.quote("google-calendar-scheduled", safe=""),
+                     method="POST", body={"kind": KIND["account"], "id": ACCOUNT})
+        check(int(answer.get("ran") or 0) > 0,
+              "google-calendar-scheduled ran nothing for the split-series case")
+        for _ in range(60):
+            if one(KIND["calendarseries"], landed) is not None:
+                break
+            time.sleep(2)
+        else:
+            rules = (mock("/__mock/faults") or {}).get("rules") or []
+            raise Failed("series %s never landed from the injected delta for "
+                         "%s (token %s; the injected read fired %d time(s))"
+                         % (landed, cid, token,
+                            sum(int(r.get("fired") or 0) for r in rules)))
+    finally:
+        mock("/__mock/faults", "DELETE")
+
+
+def _split_rows(cref):
+    return [r for r in rows(KIND["calendarevent"],
+                            where={"eventId": {"eq": _SPLIT_INSTANCE}})
+            if ref_id(props(r).get("calendar")) == cref]
+
+
+def assert_split_series():
+    """A SPLIT SERIES LEAVES ONE ROW PER OCCURRENCE, not one per split.
+
+    Google's "this and following" edit writes an UNTIL into the master's rule
+    and starts a new master, `<master>_R<start>`. Every exception after the
+    split is re-parented onto the new master and KEEPS its instance id, and
+    the next delta sends it under its new `recurringEventId` and says nothing
+    about the old parent. An exception's row is `<series row>_<slot>`, keyed
+    by the series, so the re-parented copy lands at a new row; the row it
+    replaced has to be retracted by the event id they share, because nothing
+    else will ever name it again. The owner's calendar held one standup three
+    times on one afternoon, two of them after their own series' UNTIL.
+
+    Two splits, three deltas, one calendar. The rows the case writes are
+    deleted at the end so nothing downstream counts them.
+    """
+    step("a split series (\"this and following\") keeps one row per occurrence")
+    if MODE != "e2e" or not MOCK_URL:
+        note("SKIPPED: MODE is %r — nothing is injected into a seed" % MODE)
+        return
+    held = {r["id"]: props(r) for r in rows(KIND["calendar"])}
+    state = [r for r in rows(KIND["calendarsync"], scoped=False)
+             if r["id"] in held and props(r).get("syncToken")]
+    check(state, "no calendar holds a sync token, so no delta can be read")
+    cref = state[0]["id"]
+    cid = str(held[cref].get("calendarId") or "")
+    token = str(props(state[0]).get("syncToken"))
+    check(cid, "calendar %s names no calendarId" % cref)
+
+    second = _SPLIT_MASTER + "_R20260922T160000"
+    third = _SPLIT_MASTER + "_R20260924T160000"
+    first_ref, second_ref, third_ref = (series_id(cref, m)
+                                        for m in (_SPLIT_MASTER, second, third))
+    written = set()
+    try:
+        _split_delta(cid, token, [
+            _split_master(_SPLIT_MASTER, "2026-09-15T16:00:00Z"),
+            _split_exception(_SPLIT_MASTER)], first_ref)
+        got = _split_rows(cref)
+        written |= {r["id"] for r in got}
+        check(len(got) == 1,
+              "%d rows carry eventId %s before any split; the delta wrote one "
+              "exception" % (len(got), _SPLIT_INSTANCE))
+
+        _split_delta(cid, token, [
+            _split_master(_SPLIT_MASTER, "2026-09-15T16:00:00Z",
+                          until="20260921T235959Z"),
+            _split_master(second, "2026-09-22T16:00:00Z"),
+            _split_exception(second)], second_ref)
+        _split_delta(cid, token, [
+            _split_master(second, "2026-09-22T16:00:00Z",
+                          until="20260923T235959Z"),
+            _split_master(third, "2026-09-24T16:00:00Z"),
+            _split_exception(third)], third_ref)
+
+        got = _split_rows(cref)
+        written |= {r["id"] for r in got}
+        want = exception_id(third_ref, _SPLIT_SLOT)
+        check(len(got) == 1,
+              "%d calendarevent rows carry eventId %s on one calendar after "
+              "two splits: %s. One Google event on one calendar is one row; "
+              "each split re-parents the exception and the row under the old "
+              "series has to go"
+              % (len(got), _SPLIT_INSTANCE,
+                 ", ".join("%s (recurrenceOf %s)"
+                           % (r["id"], ref_id(props(r).get("recurrenceOf")))
+                           for r in got)))
+        check(got[0]["id"] == want,
+              "the surviving row is %s; the exception now hangs off the last "
+              "series and lives at %s" % (got[0]["id"], want))
+        check(ref_id(props(got[0]).get("recurrenceOf")) == third_ref,
+              "the surviving row points at %r, not at the series it was "
+              "re-parented onto (%s)"
+              % (props(got[0]).get("recurrenceOf"), third_ref))
+        note("two splits, one row: %s under %s" % (want, third))
+    finally:
+        for rid in sorted(written | {r["id"] for r in _split_rows(cref)}):
+            api("/api/v1/%s/%s" % (KIND["calendarevent"], rid), "DELETE")
+        for sref in (first_ref, second_ref, third_ref):
+            if one(KIND["calendarseries"], sref) is not None:
+                api("/api/v1/%s/%s" % (KIND["calendarseries"], sref), "DELETE")
+
+
 def assert_owner_identity(account_props, got):
     """The account's own identity is a RELATION, not a flag on a mirror.
 
@@ -3310,6 +3475,11 @@ def main():
         assert_declared(expectations_file(), got)
         assert_moved_instance(expectations_file())
         assert_ordinal_rule(expectations_file())
+        # Before the restart case: it spends `syncRequestedAt`, and an unspent
+        # request turns the calendar's next read into a full one, which never
+        # asks for the delta this case answers.
+        if not SKIP_SECOND:
+            assert_split_series()
         # LAST, and deliberately: it spends the account's `syncRequestedAt`
         # and restarts a stream's window, so anything asserting on the state
         # the SECOND sync left has to have run already.

@@ -200,7 +200,18 @@ data:
   # moved. ADDITIVE, so an installed 29 upgrades in one apply — but every
   # account connected under 29 or earlier must RECONNECT for the new scope,
   # and until it does the drive stream records `needsreconsent`.
-  version: 32
+  #
+  # 33: a SPLIT SERIES NO LONGER LEAVES ITS EXCEPTIONS BEHIND. Google's "this
+  # and following" ends one master and starts `<master>_R<date>`, re-parenting
+  # every later exception onto it while each keeps its instance id. An
+  # exception row is keyed `<series row>_<slot>`, so the re-parented copy
+  # landed at a NEW row and the old one, which no delta names again, stayed
+  # beside it: one copy of the same occurrence per split. Writing an event now
+  # retracts every other `calendarevent` on the same calendar carrying the
+  # same `eventId` (`_retract_strays`). A full re-read runs the same path, so
+  # one requested sync per account clears what a repository already holds.
+  # Behaviour only; no declaration moved.
+  version: 33
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -13943,6 +13954,52 @@ data:
         return found
 
 
+    def _retract_strays(host, cref, written):
+        """Delete every OTHER `calendarevent` row on this calendar carrying a
+        Google event id this page writes. `written` maps the event id to the
+        row id it lands at.
+
+        ONE GOOGLE EVENT ON ONE CALENDAR IS ONE ROW, and the row id of an
+        exception does not hold that on its own: it is `<series row>_<slot>`,
+        keyed by the SERIES it hangs off. Google's "this and following" edit
+        ends one master (an UNTIL is written into its rule) and starts
+        another, `<master>_R<date>`, re-parenting every later exception onto
+        it while each keeps its own instance id. The next delta sends each
+        re-parented exception under its new `recurringEventId` and nothing for
+        the old row, so without this the old row outlived the split beside the
+        new one, after its own series' UNTIL, one more copy per split.
+
+        Scoped to the calendar (an event id is unique per calendar only), one
+        list call per 200 ids, and only rows the list returned are deleted, so
+        a delete never meets ErrNotFound. A full re-read runs through here
+        too, which is what clears the copies a repository already holds."""
+        ids = sorted(e for e in written if e)
+        stale = 0
+        for start in range(0, len(ids), 200):
+            chunk = ids[start:start + 200]
+            after = None
+            while True:
+                page = host.records.list(
+                    EVENT_TYPE, where={"calendar": {"eq": cref},
+                                       "eventId": {"in": chunk}},
+                    first=200, after=after)
+                got = page.get("records") or []
+                for ent in got:
+                    rid = str(ent.get("id") or "")
+                    eid = str((ent.get("properties") or {}).get("eventId") or "")
+                    if rid and eid in written and rid != written[eid]:
+                        host.effects.delete(EVENT_TYPE, rid)
+                        stale += 1
+                after = page.get("cursor") or None
+                if not after or not got:
+                    break
+        if stale:
+            host.log("google-calendar: %d row(s) superseded by the same event "
+                     "under another id (a split series re-parents its "
+                     "exceptions) — retracted" % stale)
+        return stale
+
+
     def _stage_events(host, aid, cref, items, cal_tz, cur, notes):
         """Stage one events page IN ORDER: the addresses first (a reference
         target must exist when the row referencing it applies), then the master
@@ -14138,6 +14195,7 @@ data:
         # The events: an exception at `<series>_<slot>`, pointing at its series
         # and naming the slot it replaces; a plain event at its derived id.
         skipped = 0
+        written = {}                 # Google event id -> the row it lands at
         for item in exceptions:
             mid = str(item["recurringEventId"])
             if mid in condemned:
@@ -14166,6 +14224,7 @@ data:
             rid = _exception_id(sref, slot)
             seen_ids.add(rid)
             host.effects.put(EVENT_TYPE, rid, properties=props)
+            written[str(item["id"])] = rid
         for item in singles:
             own = _own_zone(item, notes)
             props = _item_props(host, aid, cref, item,
@@ -14174,6 +14233,8 @@ data:
             rid = _event_id(host, cref, str(item["id"]))
             seen_ids.add(rid)
             host.effects.put(EVENT_TYPE, rid, properties=props)
+            written[str(item["id"])] = rid
+        _retract_strays(host, cref, written)
         # The ids this walk has written so far, back onto the cursor. Capped:
         # past the cap the sweep cannot be trusted, so it is skipped and said so
         # rather than deleting a mailbox's worth of live rows.
