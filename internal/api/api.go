@@ -133,7 +133,7 @@ func New(cfg Config) http.Handler {
 	})
 	if cfg.Metrics {
 		// Beside /healthz and outside every prefix: the scraper reads it with
-		// no token, so it must never sit under the bearer check — and the
+		// no token, so it must never sit under the bearer check — and a
 		// deployment must never route it from outside (operations.md).
 		r.Get("/metrics", metrics.Handler().ServeHTTP)
 	}
