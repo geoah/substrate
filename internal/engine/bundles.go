@@ -1019,9 +1019,9 @@ func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle) (subs
 
 // TypesImplementing lists every declared type implementing a trait —
 // the trait-as-interface read the console's "account configs" view is built
-// on. A full identity matches resolved bindings exactly; a bare name resolves
-// only when it names a single declared trait — never widened to a local name,
-// which would let a bundle-local look-alike answer for a core trait.
+// on. A full identity matches resolved bindings exactly; a bare name is
+// refused, naming the traits carrying the word (decision record 0101), never
+// widened to a local look-alike answering for a core trait.
 func (ds *dataset) TypesImplementing(ctx context.Context, trait string) ([]substrate.KindInfo, error) {
 	types, err := ds.registry().ImplementingStrict(trait)
 	if err != nil {
