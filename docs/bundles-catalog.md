@@ -92,9 +92,9 @@ because the host runs the flow and the bundle only declares it
    and the flow refuses while it does not.
 3. **Create an `account`**, switch on the streams you want, and pick a
    `syncFrequency` and a `backfillDepth`. It starts `tokenStatus: pending`.
-4. **Connect** (`substratectl bundle connect`, or `POST …/oauth/start` with
-   the account as `record`: `<kind>/<id>`, or a bare id where only one account
-   kind holds it). Consent at the provider, and the callback
+4. **Connect** (`substratectl bundle connect <authority>/<package>/<kind>/<id>`,
+   or `POST …/oauth/start` with the account's record path as `record`; a bare
+   id is refused). Consent at the provider, and the callback
    stores the grant, sets `tokenStatus: connected`, and fires each enabled
    stream's on-connect trigger.
 

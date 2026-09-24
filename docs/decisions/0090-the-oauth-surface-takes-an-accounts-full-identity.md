@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-16
 decision-makers: George Antoniadis
+amended-by: 0102
 ---
 
 # 0090. The OAuth surface takes an account's full identity

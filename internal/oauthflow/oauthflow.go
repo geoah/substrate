@@ -44,7 +44,7 @@ type Endpoints struct {
 }
 
 // State identifies the account record a flow is connecting: the repository
-// and the record id ride the signed state through the provider redirect. Nonce is the flow's one-time handle: the engine persists its hash
+// and the record path ride the signed state through the provider redirect. Nonce is the flow's one-time handle: the engine persists its hash
 // when the flow starts and consumes it atomically at the callback, so a signed
 // state — the callback's sole authentication — authorizes exactly one
 // completion inside its TTL, never a replay.
@@ -53,9 +53,11 @@ type State struct {
 	// unauthenticated and resolves the repository with the ordinary by-id
 	// lookup, the only one a maintenance-pool read offers.
 	Repository string `json:"repository"`
-	Record     string `json:"record"`
-	Nonce      string `json:"nonce,omitempty"`
-	Exp        int64  `json:"exp"`
+	// Record is the record path, `<authority>/<package>/<kind>/<id>`: the
+	// callback holds the flow row's (kind, id) to it before any exchange.
+	Record string `json:"record"`
+	Nonce  string `json:"nonce,omitempty"`
+	Exp    int64  `json:"exp"`
 }
 
 // Client runs flows. CallbackURL is the one redirect URI every bundle's

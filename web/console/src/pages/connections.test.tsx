@@ -446,7 +446,7 @@ describe("ConnectionsPage", () => {
       kind: ACCOUNT,
       properties: { enabledGmail: true, syncFrequency: "daily" },
     })
-    expect(posts[1].body).toEqual({ record: "new-acct" })
+    expect(posts[1].body).toEqual({ record: `${ACCOUNT}/new-acct` })
     expect(open).toHaveBeenCalledWith("about:blank", "_blank")
     await waitFor(() => expect(tab.location.href).toBe(CONSENT_URL))
   })

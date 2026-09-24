@@ -5,10 +5,13 @@
  * then listen for the callback page's postMessage and re-read the account
  * when it lands.
  *
- * The account is named at hook time (a row that already exists) OR at mutate
- * time (a record the dialog has just created), and a caller whose connect
- * follows an async step hands in the tab it opened from its own click, so
- * the create-then-connect press is still one synchronous open. */
+ * The account is named by its RECORD PATH, `<authority>/<package>/<kind>/<id>`:
+ * `oauth/start` refuses a bare id (decision record 0102), and the callback's
+ * message names the connected account the same way. It is named at hook time
+ * (a row that already exists) OR at mutate time (a record the dialog has just
+ * created), and a caller whose connect follows an async step hands in the tab
+ * it opened from its own click, so the create-then-connect press is still one
+ * synchronous open. */
 
 import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
@@ -17,8 +20,8 @@ import { toast } from "@/components/ui/toast"
 import { parseSubstrateOAuthMessage, startOAuth } from "@/lib/api/bundles"
 
 export interface ConnectTarget {
-  /** The account record's id. */
-  accountId: string
+  /** The account's record path, `recordPath(kind, id)`. */
+  record: string
   /** What the toasts call it. */
   label: string
   /** A tab the caller opened synchronously from its click. `null` is a tab
@@ -26,7 +29,7 @@ export interface ConnectTarget {
   tab?: Window | null
 }
 
-export function useOAuthConnect(accountId?: string, label?: string) {
+export function useOAuthConnect(record?: string, label?: string) {
   const queryClient = useQueryClient()
   // The flow whose return the listener below awaits; unset while none is.
   const [awaiting, setAwaiting] = useState<ConnectTarget | undefined>()
@@ -40,15 +43,15 @@ export function useOAuthConnect(accountId?: string, label?: string) {
   const connect = useMutation({
     mutationFn: async (target: ConnectTarget | void) => {
       const chosen = (target ?? undefined) as ConnectTarget | undefined
-      const id = chosen?.accountId ?? accountId
-      if (!id) throw new Error("There is no account to connect.")
-      const name = chosen?.label ?? label ?? id
+      const path = chosen?.record ?? record
+      if (!path) throw new Error("There is no account to connect.")
+      const name = chosen?.label ?? label ?? path
       const tab =
         chosen?.tab === undefined
           ? window.open("about:blank", "_blank")
           : chosen.tab
       try {
-        const { url } = await startOAuth(id)
+        const { url } = await startOAuth(path)
         let target: URL
         try {
           target = new URL(url)
@@ -63,15 +66,15 @@ export function useOAuthConnect(accountId?: string, label?: string) {
           )
         }
         if (tab) tab.location.href = url
-        return { opened: Boolean(tab), accountId: id, label: name }
+        return { opened: Boolean(tab), record: path, label: name }
       } catch (error) {
         tab?.close()
         throw error
       }
     },
-    onSuccess: ({ opened, accountId, label }) => {
+    onSuccess: ({ opened, record, label }) => {
       if (opened) {
-        setAwaiting({ accountId, label })
+        setAwaiting({ record, label })
         toast.add({
           type: "success",
           title: "The provider opened in a new tab",
@@ -96,7 +99,7 @@ export function useOAuthConnect(accountId?: string, label?: string) {
 
   useEffect(() => {
     if (!awaiting) return
-    const { accountId, label } = awaiting
+    const { record, label } = awaiting
     function onMessage(event: MessageEvent) {
       // Origin first: the callback page is served by the substrate that
       // serves this console, so anything else is a stranger's window.
@@ -104,7 +107,9 @@ export function useOAuthConnect(accountId?: string, label?: string) {
       const msg = parseSubstrateOAuthMessage(event.data)
       if (!msg) return
       if (msg.ok) {
-        if (msg.record && msg.record !== accountId) return
+        // A success names its record path; a return meant for another row is
+        // not this flow's.
+        if (msg.record !== record) return
         setAwaiting(undefined)
         toast.add({
           type: "success",

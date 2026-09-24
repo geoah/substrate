@@ -37,6 +37,7 @@ import { createRecord, patchRecord } from "@/lib/api/records"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { accountFormGroups } from "@/lib/account-form"
 import { splitKind } from "@/lib/definition"
+import { recordPath } from "@/lib/record-path"
 import {
   initialValues,
   toProperties,
@@ -135,7 +136,11 @@ export function AccountDialog({
         return
       }
       if (connecting && connect) {
-        connect.mutate({ accountId: saved.id, label: accountName, tab })
+        connect.mutate({
+          record: recordPath(saved.kind, saved.id),
+          label: accountName,
+          tab,
+        })
         return
       }
       toast.add({

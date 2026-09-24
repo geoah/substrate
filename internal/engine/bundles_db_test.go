@@ -832,9 +832,8 @@ func TestShadowAccountConfigTraitIsNotAnAccount(t *testing.T) {
 	})
 
 	// OAuth refuses: the shadow trait is not the core accountconfig, so the
-	// id resolves within NO accountconfig implementor type — a not-found,
-	// never an account.
-	if _, err := ds.StartOAuth(ctx, owner, shadow.ID); !errors.Is(err, substrate.ErrNotFound) {
+	// row the path names is not an account record, whatever it calls itself.
+	if _, err := ds.StartOAuth(ctx, owner, vocabulary.RecordPath(shadow.Kind, shadow.ID)); !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("StartOAuth on a shadow-trait record: %v", err)
 	}
 	// Status counts no accounts.

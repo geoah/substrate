@@ -209,9 +209,11 @@ is refused, because one request names one origin.
 
 `substratectl bundle list` / `status` report a [bundle](bundles.md)'s computed
 state, and `disable` / `enable` / `uninstall` / `purge` move it through its
-lifecycle; install and upgrade are `substratectl apply` of the closure, and `connect`
-starts the host [OAuth flow](bundles.md#the-oauth-facility) for an account
-record, printing the consent URL.
+lifecycle; install and upgrade are `substratectl apply` of the closure, and
+`connect <authority>/<package>/<kind>/<id>` starts the host
+[OAuth flow](bundles.md#the-oauth-facility) for the account record the path
+names, printing the consent URL. A bare id is refused, and the refusal lists
+every account the repository holds under it.
 
 `substratectl catalog` lists every package the binary ships, seeded `core`
 first, then the catalog's providers and samples: whether this repository

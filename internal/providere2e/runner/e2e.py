@@ -1043,8 +1043,10 @@ def pending_work(props: dict) -> int:
 
 
 def connect_oauth(api: API, akind: str, account_id: str) -> None:
-    """The host facility's round trip against the mock's stub."""
-    st, body, _ = api.call("POST", "/api/v1/oauth/start", {"record": account_id})
+    """The host facility's round trip against the mock's stub. The account is
+    named by its record path: oauth/start refuses a bare id (record 0102)."""
+    st, body, _ = api.call("POST", "/api/v1/oauth/start",
+                           {"record": "%s/%s" % (akind, account_id)})
     if st >= 400:
         die("oauth/start refused: %s\n"
             "    (the server needs SUBSTRATE_OAUTH_CALLBACK_URL and a state "

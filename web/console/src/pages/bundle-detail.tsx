@@ -141,6 +141,7 @@ import {
   providerConfigured,
 } from "@/lib/sync"
 import { cellValue, recordTitle } from "@/lib/format"
+import { recordPath } from "@/lib/record-path"
 import { splitKind, kindByIdentity } from "@/lib/definition"
 import { cn } from "@/lib/utils"
 import { bundleDetailRoute } from "@/router"
@@ -915,7 +916,7 @@ function AccountRow({
       // that return and force the whole-page redirect fallback every time.
       const tab = window.open("about:blank", "_blank")
       try {
-        const { url } = await startOAuth(account.id)
+        const { url } = await startOAuth(recordPath(account.kind, account.id))
         let target: URL
         try {
           target = new URL(url)
@@ -984,8 +985,9 @@ function AccountRow({
       const msg = parseSubstrateOAuthMessage(event.data)
       if (!msg) return
       if (msg.ok) {
-        // A success names its record; ignore a return meant for another row.
-        if (msg.record && msg.record !== account.id) return
+        // A success names its record path; ignore a return meant for another
+        // row.
+        if (msg.record !== recordPath(account.kind, account.id)) return
         setAwaitingReturn(false)
         setConfirming(false)
         toast.add({
@@ -1007,7 +1009,13 @@ function AccountRow({
     }
     window.addEventListener("message", onMessage)
     return () => window.removeEventListener("message", onMessage)
-  }, [awaitingReturn, account.id, account.properties, queryClient])
+  }, [
+    awaitingReturn,
+    account.id,
+    account.kind,
+    account.properties,
+    queryClient,
+  ])
 
   return (
     <div className="flex items-center justify-between gap-3 border-b px-4 py-2.5 last:border-0">

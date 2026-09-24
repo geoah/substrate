@@ -35,10 +35,15 @@ func getCallback(h http.Handler) *httptest.ResponseRecorder {
 	return rec
 }
 
+// The connected account, as the engine answers it: the record path, so the
+// console can tell which row's consent came back.
+const callbackRecord = "providers.substrate.reamde.dev/google/account/owner"
+
 // The success return-page posts the exact console contract and offers the
-// fallback redirect into the configured console.
+// fallback redirect into the configured console, the record path
+// percent-encoded in the query.
 func TestOAuthCallbackSuccessReturnPage(t *testing.T) {
-	rec := getCallback(callbackHandler("account.geoah:1", nil, "https://console.example.com"))
+	rec := getCallback(callbackHandler(callbackRecord, nil, "https://console.example.com"))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
@@ -51,10 +56,10 @@ func TestOAuthCallbackSuccessReturnPage(t *testing.T) {
 	for _, want := range []string{
 		`"source":"substrate-oauth"`,
 		`"ok":true`,
-		`"record":"account.geoah:1"`,
+		`"record":"` + callbackRecord + `"`,
 		`postMessage(msg, "https://console.example.com")`,
 		`window.close()`,
-		`window.location.replace("https://console.example.com/registry?connected=account.geoah%3A1")`,
+		`window.location.replace("https://console.example.com/registry?connected=providers.substrate.reamde.dev%2Fgoogle%2Faccount%2Fowner")`,
 		"you can close this tab",
 	} {
 		if !strings.Contains(body, want) {
@@ -95,7 +100,7 @@ func TestOAuthCallbackFailureReturnPage(t *testing.T) {
 // With no configured console (local dev) the target origin is "*" and the page
 // renders no redirect — it just says the tab can be closed.
 func TestOAuthCallbackNoConsoleURL(t *testing.T) {
-	rec := getCallback(callbackHandler("account.geoah:1", nil, ""))
+	rec := getCallback(callbackHandler(callbackRecord, nil, ""))
 	body := rec.Body.String()
 	if !strings.Contains(body, `postMessage(msg, "*")`) {
 		t.Fatalf("local dev must post to targetOrigin *\n%s", body)

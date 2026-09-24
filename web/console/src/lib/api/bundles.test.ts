@@ -161,14 +161,15 @@ describe("lifecycle verbs", () => {
     })
   })
 
-  it("oauth/start sends the account record id and returns the consent url", async () => {
+  it("oauth/start sends the account's record path and returns the consent url", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ url: "https://consent" }), { status: 200 })
     )
-    const res = await startOAuth("acct-1")
+    const record = "providers.substrate.reamde.dev/google/account/owner"
+    const res = await startOAuth(record)
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe("/api/v1/oauth/start")
-    expect(JSON.parse(String(init?.body))).toEqual({ record: "acct-1" })
+    expect(JSON.parse(String(init?.body))).toEqual({ record })
     expect(res.url).toBe("https://consent")
   })
 })
@@ -204,14 +205,15 @@ describe("the account-config trait read", () => {
 })
 
 describe("parseSubstrateOAuthMessage — the callback return contract", () => {
-  it("parses a success into the connected record id", () => {
+  it("parses a success into the connected record's path", () => {
+    const record = "providers.substrate.reamde.dev/google/account/owner"
     expect(
       parseSubstrateOAuthMessage({
         source: SUBSTRATE_OAUTH_SOURCE,
         ok: true,
-        record: "acct-1",
+        record,
       })
-    ).toEqual({ ok: true, record: "acct-1" })
+    ).toEqual({ ok: true, record })
   })
 
   it("parses a failure into its correlation id", () => {
@@ -243,7 +245,7 @@ describe("parseSubstrateOAuthMessage — the callback return contract", () => {
     ).toBeNull()
   })
 
-  it("ignores a success with no record id (a connected row must be named)", () => {
+  it("ignores a success with no record path (a connected row must be named)", () => {
     expect(
       parseSubstrateOAuthMessage({ source: SUBSTRATE_OAUTH_SOURCE, ok: true })
     ).toBeNull()

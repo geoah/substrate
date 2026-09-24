@@ -353,13 +353,16 @@ enforced in the write path for REST and the CLI alike, not just in the
 console, which offers only the owner's properties for editing.
 
 The flow itself is two endpoints. `POST …/oauth/start` takes the
-account record as `record` — its full identity, `<kind>/<id>`, or a bare id
-where only one account kind holds it — and answers the consent URL as `url`;
-two providers whose accounts share a name (`owner` under each) are why the
-identity form exists, and the ambiguity refusal names both spellings. It is
-owner-tier only (the three interactive clients, never installed code) and refuses
-while the client input does not resolve. The state is HMAC-signed over
-the repository, the record, and a random nonce, expires in fifteen minutes, and
+account record as `record`, its record path
+`<authority>/<package>/<kind>/<id>` and nothing shorter, and answers the
+consent URL as `url`. A bare id is refused, and the refusal lists every
+account the repository holds under it, so two providers whose accounts share
+a name (`owner` under each) are two records, named apart
+([0102](decisions/0102-the-oauth-surface-takes-the-full-identity-only.md)).
+It is owner-tier only (the three interactive clients, never installed code)
+and refuses while the client input does not resolve. The state is HMAC-signed
+over the repository, the record path, and a random nonce, expires in fifteen
+minutes, and
 is persisted beside a sealed PKCE verifier, so a captured state cannot replay:
 the callback consumes it exactly once. The provider redirects the browser to
 `GET …/oauth/callback`, which is unauthenticated because that
@@ -370,12 +373,15 @@ read surface.
 
 The callback answers HTML rather than JSON: a small self-contained page that
 posts the outcome back to the console that opened it and closes. Success posts
-`{source: "substrate-oauth", ok: true, record}`; failure posts the same shape with
+`{source: "substrate-oauth", ok: true, record}`, `record` the connected
+account's path; failure posts the same shape with
 `ok: false` and a `correlation` id, the only thing a failure ever reflects,
 joined against the server log — no provider detail reaches the browser. With no
 opener, the page falls back to a redirect to the console's registry
-(`/registry?connected=<id>`, or `?error=<correlation>` on failure).
-`substratectl bundle connect` is the same start endpoint from the command line.
+(`/registry?connected=<kind>/<id>`, the path percent-encoded, or
+`?error=<correlation>` on failure). `substratectl bundle connect
+<authority>/<package>/<kind>/<id>` is the same start endpoint from the command
+line.
 
 The facility then keeps the grant alive without the bundle: a service loop
 trades the refresh token for every credential expiring within ten minutes,

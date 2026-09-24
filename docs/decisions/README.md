@@ -253,3 +253,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0099](0099-a-repository-migration-is-code-the-boot-runs-once-and-records.md) | A repository migration is code the boot runs once and records | accepted |
 | [0100](0100-a-requires-floor-binds-a-copy-not-a-hand-declared-package.md) | A `requiresAtLeast` floor binds a copy, not a hand-declared package | accepted |
 | [0101](0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md) | A kind, trait or callable is named in full on every surface | accepted |
+| [0102](0102-the-oauth-surface-takes-the-full-identity-only.md) | The OAuth surface takes the full identity only | accepted |

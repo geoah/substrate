@@ -173,7 +173,8 @@ type Dataset interface {
 	// The bundle lifecycle: status is computed; disable/enable and uninstall
 	// are reversible runtime state; purge tombstones the owned package's data
 	// through the finalizer flow; StartOAuth begins the host connect flow for
-	// one account record.
+	// one account record, named by its record path
+	// `<authority>/<package>/<kind>/<id>` and by nothing shorter (record 0102).
 	BundleStatuses(ctx context.Context) ([]BundleStatus, error)
 	BundleStatus(ctx context.Context, id string) (BundleStatus, error)
 	// BundlePackage resolves the package a bundle owns (from the live registry
@@ -186,7 +187,7 @@ type Dataset interface {
 	BindBundleInput(ctx context.Context, id, input, record string) error
 	UninstallBundle(ctx context.Context, id string) error
 	PurgeBundle(ctx context.Context, id string) (int, error)
-	StartOAuth(ctx context.Context, actor Actor, recordID string) (string, error)
+	StartOAuth(ctx context.Context, actor Actor, record string) (string, error)
 	TypesImplementing(ctx context.Context, trait string) ([]KindInfo, error)
 	// InstallBundleClosure admits the vocabulary closure AND the shipped
 	// delivery wiring as ONE repository transaction, so a data-document failure

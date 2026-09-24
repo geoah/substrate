@@ -238,7 +238,7 @@ func (h *handler) postOAuthStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Record == "" {
-		writeError(w, http.StatusBadRequest, codeBadRequest, "an account record id is required")
+		writeError(w, http.StatusBadRequest, codeBadRequest, "an account record is required, named in full as <authority>/<package>/<kind>/<id>")
 		return
 	}
 	url, err := ds.StartOAuth(r.Context(), ActorFrom(r.Context()), req.Record)
@@ -272,7 +272,7 @@ func (h *handler) getOAuthCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 // oauthOutcome is what the return-page reports: success carries the connected
-// record id; failure carries only the correlation id.
+// record's path; failure carries only the correlation id.
 type oauthOutcome struct {
 	ok          bool
 	record      string
@@ -283,8 +283,9 @@ type oauthOutcome struct {
 // contract the (deployed) console listens for:
 //
 //	success: window.opener.postMessage({source:"substrate-oauth", ok:true,
-//	         record:"<id>"}, origin); window.close(); fallback
-//	         window.location.replace(base+"/registry?connected=<id>")
+//	         record:"<kind>/<id>"}, origin); window.close(); fallback
+//	         window.location.replace(base+"/registry?connected=<kind>/<id>"),
+//	         the path percent-encoded
 //	failure: postMessage({source:"substrate-oauth", ok:false,
 //	         correlation:"<id>"}, origin); fallback
 //	         window.location.replace(base+"/registry?error=<id>")
@@ -318,8 +319,8 @@ func (h *handler) writeOAuthReturnPage(w http.ResponseWriter, o oauthOutcome) {
 		}
 	}
 
-	// json.Marshal produces safe JS string/object literals — the record and
-	// correlation id are interpolated ONLY through it, never raw.
+	// json.Marshal produces safe JS string/object literals — the record path
+	// and correlation id are interpolated ONLY through it, never raw.
 	msgJSON, _ := json.Marshal(msg)
 	originJSON, _ := json.Marshal(origin)
 	redirectJS := ""
