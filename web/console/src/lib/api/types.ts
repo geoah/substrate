@@ -3,9 +3,9 @@
  *
  * A record's identity is the pair **(kind, id)**: an id is unique only within
  * its kind, so nothing here addresses a record by bare id. A KIND is a
- * reference — `<authority>/<package>/<name>` when published, a bare `<name>`
- * when the kind is this repository's own. There is NO tenant and NO group: one
- * user owns one repository, and authorities replace the old group concept. */
+ * reference, `<authority>/<package>/<name>` in full: the wire carries no bare
+ * `<name>` (records 0098, 0101). There is NO tenant and NO group: one user
+ * owns one repository, and authorities replace the old group concept. */
 
 /** The closed wire error set, plus `network` for a
  * transport failure that never reached the substrate. Clients switch on it. */
@@ -444,12 +444,12 @@ export function parseEnumValues(raw: unknown): EnumValue[] | undefined {
 /** KindInfo — the projection of one declared kind (iface.go). Replaces v0
  * `TypeInfo`: `authority` is what published the kind (empty for a
  * repository-local one), `package` is the package's own word beside it, and
- * `identity` is the kind REFERENCE `<authority>/<package>/<name>` (or a bare
- * `<name>`). There is no `sourceYAML` on the wire (record 61) — the parsed
- * `definition` IS the document. */
+ * `identity` is the kind REFERENCE `<authority>/<package>/<name>`, always in
+ * full (records 0098, 0101). There is no `sourceYAML` on the wire (record
+ * 61) — the parsed `definition` IS the document. */
 export interface KindInfo {
-  /** The kind REFERENCE: `<authority>/<package>/<name>`, or a bare `<name>`
-   * for a repository-local kind. */
+  /** The kind REFERENCE, `<authority>/<package>/<name>` in full; the wire
+   * carries no bare `<name>` (records 0098, 0101). */
   identity: string
   name: string
   /** Who publishes the kind; empty for a repository-local one. */

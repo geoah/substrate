@@ -34,7 +34,7 @@ import {
 
 /** The wire's own facet vocabulary — every field here is server-side. */
 export interface ChangeFeedFilter {
-  /** Kind references (`<authority>/<name>`, or bare `<name>`). */
+  /** Kind references, each `<authority>/<package>/<name>` in full. */
   kinds?: string[]
   actors?: string[]
   ops?: string[]
