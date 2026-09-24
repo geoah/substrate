@@ -57,7 +57,8 @@ type Service interface {
 	//
 	// CompleteOAuth is the Service half of the connect flow: the callback
 	// carries no bearer, the signed state IS the authentication, so it
-	// resolves the repository itself. Its Dataset half is StartOAuth.
+	// resolves the repository itself and answers the connected record's path.
+	// Its Dataset half is StartOAuth.
 	CompleteOAuth(ctx context.Context, state, code string) (string, error)
 	// ReceiveWebhook is public webhook ingress. The request carries no
 	// bearer: the path names the repository's AUTHORITY and the trigger, and

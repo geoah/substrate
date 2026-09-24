@@ -12,6 +12,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -154,7 +155,22 @@ func TestOAuthRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	svc, ds, p, account := installOAuthBundle(t)
 
-	consent, err := ds.StartOAuth(ctx, owner, account.ID)
+	// A bare id is refused even where one account alone holds it: the FORM is
+	// what is refused, not an ambiguity (record 0102), and the refusal names
+	// the one spelling that works.
+	_, err := ds.StartOAuth(ctx, owner, account.ID)
+	wantErr(t, err, substrate.ErrValidation, "a bare id with one live account")
+	for _, want := range []string{
+		fmt.Sprintf("%q is a bare record id", account.ID),
+		"named in full as <authority>/<package>/<kind>/<id>",
+		"this repository holds " + vocabulary.RecordPath(account.Kind, account.ID),
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q: %v", want, err)
+		}
+	}
+
+	consent, err := ds.StartOAuth(ctx, owner, vocabulary.RecordPath(account.Kind, account.ID))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -171,7 +187,7 @@ func TestOAuthRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("callback: %v", err)
 	}
-	if record != account.ID {
+	if record != vocabulary.RecordPath(account.Kind, account.ID) {
 		t.Fatalf("callback record: %s", record)
 	}
 	if p.exchanges != 1 {
@@ -212,7 +228,7 @@ func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 	svc, ds, p, account := installOAuthBundle(t)
 	p.expiresIn = 120 // inside the 10m refresh window, outside the 1m inline one
 
-	consent, err := ds.StartOAuth(ctx, owner, account.ID)
+	consent, err := ds.StartOAuth(ctx, owner, vocabulary.RecordPath(account.Kind, account.ID))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -290,7 +306,7 @@ func TestOAuthAccountDeletionRevokes(t *testing.T) {
 	ctx := context.Background()
 	svc, ds, p, account := installOAuthBundle(t)
 
-	consent, err := ds.StartOAuth(ctx, owner, account.ID)
+	consent, err := ds.StartOAuth(ctx, owner, vocabulary.RecordPath(account.Kind, account.ID))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -489,9 +505,9 @@ func installBarrierOAuthBundle(t *testing.T) (substrate.Service, substrate.Datas
 	return svc, ds, db, p, account
 }
 
-func connectOAuthAccount(t *testing.T, svc substrate.Service, ds substrate.Dataset, accountID string) {
+func connectOAuthAccount(t *testing.T, svc substrate.Service, ds substrate.Dataset, account *substrate.Record) {
 	t.Helper()
-	consent, err := ds.StartOAuth(context.Background(), owner, accountID)
+	consent, err := ds.StartOAuth(context.Background(), owner, vocabulary.RecordPath(account.Kind, account.ID))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -508,7 +524,7 @@ func TestOAuthStateCompletesOnceAndCarriesPKCE(t *testing.T) {
 	ctx := context.Background()
 	svc, ds, _, p, account := installBarrierOAuthBundle(t)
 
-	consent, err := ds.StartOAuth(ctx, owner, account.ID)
+	consent, err := ds.StartOAuth(ctx, owner, vocabulary.RecordPath(account.Kind, account.ID))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -561,7 +577,7 @@ func TestOAuthExchangeErrorHidesProviderDetail(t *testing.T) {
 	ctx := context.Background()
 	svc, ds, _, _, account := installBarrierOAuthBundle(t)
 
-	consent, err := ds.StartOAuth(ctx, owner, account.ID)
+	consent, err := ds.StartOAuth(ctx, owner, vocabulary.RecordPath(account.Kind, account.ID))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -582,7 +598,7 @@ func TestOAuthCallbackRefusesAnAccountDeletedMidExchange(t *testing.T) {
 	ctx := context.Background()
 	svc, ds, db, p, account := installBarrierOAuthBundle(t)
 
-	consent, err := ds.StartOAuth(ctx, owner, account.ID)
+	consent, err := ds.StartOAuth(ctx, owner, vocabulary.RecordPath(account.Kind, account.ID))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -627,7 +643,7 @@ func TestOAuthRefreshDoesNotRecreateATornDownCredential(t *testing.T) {
 	p.mu.Lock()
 	p.expiresIn = 120 // inside the 10m refresh window
 	p.mu.Unlock()
-	connectOAuthAccount(t, svc, ds, account.ID)
+	connectOAuthAccount(t, svc, ds, account)
 	if n := oauthCredentialCount(t, db); n != 1 {
 		t.Fatalf("connected credential rows: %d", n)
 	}
@@ -681,7 +697,7 @@ func TestBundlePurgeRevokesItsConnectedAccounts(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, ds, db, p, account := installBarrierOAuthBundle(t)
-	connectOAuthAccount(t, svc, ds, account.ID)
+	connectOAuthAccount(t, svc, ds, account)
 
 	if err := ds.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
@@ -708,7 +724,7 @@ func TestOAuthRevokeFailureStillReleasesTheAccount(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, ds, db, p, account := installBarrierOAuthBundle(t)
-	connectOAuthAccount(t, svc, ds, account.ID)
+	connectOAuthAccount(t, svc, ds, account)
 	p.mu.Lock()
 	p.revokeStatus = http.StatusInternalServerError
 	p.mu.Unlock()
@@ -777,7 +793,7 @@ func TestOAuthEndpointsComeFromTheManifestNotTheConfigRecord(t *testing.T) {
 		},
 	})
 
-	consent, err := ds.StartOAuth(ctx, owner, account.ID)
+	consent, err := ds.StartOAuth(ctx, owner, vocabulary.RecordPath(account.Kind, account.ID))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -809,7 +825,7 @@ func TestOAuthScopesComeFromTheAccountToggles(t *testing.T) {
 	mustPatch(t, ds, owner, account.Kind, account.ID, substrate.PatchInput{
 		Properties: map[string]any{"enabledMail": false},
 	})
-	consent, err := ds.StartOAuth(ctx, owner, account.ID)
+	consent, err := ds.StartOAuth(ctx, owner, vocabulary.RecordPath(account.Kind, account.ID))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -824,7 +840,7 @@ func TestOAuthStartRefusesANonOwnerActor(t *testing.T) {
 	ctx := context.Background()
 	_, ds, _, account := installOAuthBundle(t)
 	connector := substrate.FunctionActor(vocabulary.SplitKindRef(mbEchoFn))
-	_, err := ds.StartOAuth(ctx, connector, account.ID)
+	_, err := ds.StartOAuth(ctx, connector, vocabulary.RecordPath(account.Kind, account.ID))
 	wantErr(t, err, substrate.ErrForbidden, "non-owner oauth/start")
 }
 
@@ -892,7 +908,7 @@ func TestAccountPropertiesAreWriterOwned(t *testing.T) {
 // A SECOND PROVIDER'S ACCOUNT KIND, so two accountconfig kinds can hold a row
 // under the same id — which is what a repository that named both accounts
 // `owner` has (issue #574). It ships no oauth2 metadata: nothing here connects
-// it, it exists to be the other candidate a bare id finds.
+// it, it exists to be the other row a bare-id refusal lists.
 const (
 	chatPackage     = "chat.bundles.substrate.reamde.dev/chat"
 	chatAccountType = chatPackage + "/chataccount"
@@ -921,10 +937,10 @@ func chatBundleDocs() []map[string]any {
 }
 
 // TWO PROVIDERS, ONE ACCOUNT NAME. A bare id names nothing on its own —
-// identity is the (kind, id) pair — so the surface takes the full identity,
-// and the ambiguity error names the very form that resolves it. The callback
-// follows the flow row rather than re-searching the id, so the consent lands
-// on the account it was started for.
+// identity is the (kind, id) pair — so the surface takes the full identity
+// and nothing shorter (record 0102), and the refusal lists both spellings the
+// repository holds. The callback holds the flow row to the state's path, so
+// the consent lands on the account it was started for.
 func TestOAuthStartTakesTheAccountsFullIdentity(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -940,13 +956,18 @@ func TestOAuthStartTakesTheAccountsFullIdentity(t *testing.T) {
 		Kind: chatAccountType, ID: "owner", Properties: map[string]any{"handle": "geo"},
 	})
 
-	// The bare id is ambiguous, and the refusal hands back both identities in
-	// the spelling that works.
+	// The bare id is refused as a bare id, not as an ambiguity, and the
+	// refusal hands back both identities, in kind order, in the spelling that
+	// works.
 	_, err := ds.StartOAuth(ctx, owner, "owner")
-	wantErr(t, err, substrate.ErrConflict, "a bare id held by two account kinds")
-	for _, want := range []string{mbAccountType + "/owner", chatAccountType + "/owner"} {
+	wantErr(t, err, substrate.ErrValidation, "a bare id held by two account kinds")
+	for _, want := range []string{
+		`"owner" is a bare record id`,
+		"named in full as <authority>/<package>/<kind>/<id>",
+		"this repository holds " + chatAccountType + "/owner, " + mbAccountType + "/owner",
+	} {
 		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the refusal does not name %s: %v", want, err)
+			t.Errorf("the refusal does not say %q: %v", want, err)
 		}
 	}
 
@@ -960,7 +981,7 @@ func TestOAuthStartTakesTheAccountsFullIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("callback: %v", err)
 	}
-	if record != mail.ID {
+	if record != vocabulary.RecordPath(mail.Kind, mail.ID) {
 		t.Fatalf("callback record: %s", record)
 	}
 	if got := mustGet(t, ds, mail.Kind, mail.ID); got.Properties["tokenStatus"] != "connected" {

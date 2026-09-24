@@ -1234,7 +1234,13 @@ func (d *fakeDataset) PurgeBundle(_ context.Context, id string) (int, error) {
 	return 0, noSuch("bundle", id)
 }
 
+// StartOAuth mirrors the engine's door: the record is a path or it is refused
+// as a bare id, before any row is looked for.
 func (d *fakeDataset) StartOAuth(_ context.Context, _ substrate.Actor, record string) (string, error) {
+	if _, _, ok := vocabulary.SplitRecordPath(record); !ok {
+		return "", fmt.Errorf("%w: %q is a bare record id, and an account is named in full as <authority>/<package>/<kind>/<id>",
+			substrate.ErrValidation, record)
+	}
 	return "", noSuch("account record", record)
 }
 

@@ -193,8 +193,10 @@ export function traitRecordsQueryOptions(trait: string) {
   })
 }
 
-/** Begin the host connect flow for one account record: the response carries
- * the provider consent URL the browser should visit. */
+/** Begin the host connect flow for one account record, named by its record
+ * path `<authority>/<package>/<kind>/<id>` (a bare id is refused, decision
+ * record 0102): the response carries the provider consent URL the browser
+ * should visit. */
 export function startOAuth(record: string): Promise<OAuthStarted> {
   return request<OAuthStarted>("POST", rootPath("oauth", "start"), {
     record,
@@ -207,9 +209,9 @@ export function startOAuth(record: string): Promise<OAuthStarted> {
  * the backend callback's `postMessage` payload exactly. */
 export const SUBSTRATE_OAUTH_SOURCE = "substrate-oauth"
 
-/** The parsed OAuth-return message: a success names the account record that got
- * connected (so the right row invalidates), a failure names a correlation id
- * for the owner to quote when the host logs the reason. */
+/** The parsed OAuth-return message: a success names the connected account by
+ * its record path (so the right row invalidates), a failure names a
+ * correlation id for the owner to quote when the host logs the reason. */
 export type SubstrateOAuthMessage =
   { ok: true; record: string } | { ok: false; correlation: string }
 

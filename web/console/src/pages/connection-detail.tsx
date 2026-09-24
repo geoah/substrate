@@ -47,6 +47,7 @@ import {
 import type { SubstrateRecord, TriggerStatus } from "@/lib/api/types"
 import { cellValue, relativeTime, tableDateTime } from "@/lib/format"
 import { kindPackage } from "@/lib/definition"
+import { recordPath } from "@/lib/record-path"
 import {
   accountViewOf,
   cursorText,
@@ -570,7 +571,7 @@ export function ConnectionDetailPage() {
     [statuses.data, sources]
   )
   const byID = useMemo(() => new Map(onKind.map((s) => [s.id, s])), [onKind])
-  const connect = useOAuthConnect(id, view?.label ?? id)
+  const connect = useOAuthConnect(recordPath(kind, id), view?.label ?? id)
 
   if (record.isPending) {
     return (

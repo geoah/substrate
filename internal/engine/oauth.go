@@ -51,31 +51,32 @@ const (
 // oauthRefreshWindow is how far ahead of expiry the refresh loop acts.
 const oauthRefreshWindow = 10 * time.Minute
 
-// findAccountRef resolves what a consent NAMES as its account record, in
-// either of the two spellings the surface takes.
-//
-// THE FULL IDENTITY IS THE EXACT ONE: `<authority>/<package>/<kind>/<id>`
-// names one row and asks nothing of the rest of the repository, which is what
-// two providers whose accounts share an id need — identity is the (kind, id)
-// pair everywhere else in the engine, and `owner` under google and `owner`
-// under slack are two records (record 90, issue #574).
-//
-// A BARE ID still resolves, because it is what a single-provider repository
-// types: it is searched within the accountconfig trait's implementor kinds,
-// the scope the OAuth surface pins, and exactly one live row must answer. Two
-// kinds holding the id is the ambiguity, and the error hands back the full
-// identities — the form this function now takes — rather than telling the
-// caller to rename a record.
+// findAccountRef resolves what a consent names as its account record: the
+// record path, `<authority>/<package>/<kind>/<id>`, and nothing shorter.
+// Identity is the (kind, id) pair everywhere else in the engine, and `owner`
+// under google and `owner` under slack are two records (issue #574), so a
+// bare id is refused rather than searched (record 0102), with the refusal a
+// bare kind gets: the word, the form, and every live account row the
+// repository holds under it, so the caller copies one instead of guessing.
 func (ds *dataset) findAccountRef(ctx context.Context, record string) (eref, error) {
-	if kind, id, ok := vocabulary.SplitRecordPath(record); ok {
-		return ds.accountRefAt(ctx, eref{Kind: kind, ID: id})
+	kind, id, ok := vocabulary.SplitRecordPath(record)
+	if !ok {
+		held, err := ds.accountPathsHolding(ctx, record)
+		if err != nil {
+			return eref{}, err
+		}
+		msg := fmt.Sprintf("%q is a bare record id, and an account is named in full as <authority>/<package>/<kind>/<id>", record)
+		if len(held) > 0 {
+			msg += "; this repository holds " + strings.Join(held, ", ")
+		}
+		return eref{}, fmt.Errorf("%w: %s", substrate.ErrValidation, msg)
 	}
-	return ds.searchAccountRef(ctx, record)
+	return ds.accountRefAt(ctx, eref{Kind: kind, ID: id})
 }
 
-// accountRefAt confirms the full identity names a live row. The trait and the
-// bundle's own gates are oauthAccountOf's, so a kind that is not an account
-// config fails there, with that function's message.
+// accountRefAt confirms the path names a live row. The trait and the bundle's
+// own gates are oauthAccountOf's, so a kind that is not an account config
+// fails there, with that function's message.
 func (ds *dataset) accountRefAt(ctx context.Context, ref eref) (eref, error) {
 	row, err := ds.loadRowDB(ctx, ref)
 	if err != nil {
@@ -87,8 +88,10 @@ func (ds *dataset) accountRefAt(ctx context.Context, ref eref) (eref, error) {
 	return ref, nil
 }
 
-// searchAccountRef is the bare-id half.
-func (ds *dataset) searchAccountRef(ctx context.Context, recordID string) (eref, error) {
+// accountPathsHolding lists, in kind order, the record path of every live row
+// carrying the id under a kind that implements the accountconfig trait: the
+// spellings a bare-id refusal hands back.
+func (ds *dataset) accountPathsHolding(ctx context.Context, id string) ([]string, error) {
 	var idents []string
 	for _, ty := range ds.registry().Kinds() {
 		if ty.Implements(vocabulary.TraitAccountConfigCore) {
@@ -96,59 +99,42 @@ func (ds *dataset) searchAccountRef(ctx context.Context, recordID string) (eref,
 		}
 	}
 	if len(idents) == 0 {
-		return eref{}, fmt.Errorf("%w: record %s", substrate.ErrNotFound, recordID)
+		return nil, nil
 	}
 	raw, err := json.Marshal(idents)
 	if err != nil {
-		return eref{}, err
+		return nil, err
 	}
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT kind FROM records
 		WHERE id = $1 AND deleted_at IS NULL
 		  AND kind IN (SELECT jsonb_array_elements_text($2::jsonb))
-		ORDER BY kind`, recordID, raw)
+		ORDER BY kind`, id, raw)
 	if err != nil {
-		return eref{}, err
+		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	var types []string
+	var paths []string
 	for rows.Next() {
-		var typ string
-		if err := rows.Scan(&typ); err != nil {
-			return eref{}, err
+		var kind string
+		if err := rows.Scan(&kind); err != nil {
+			return nil, err
 		}
-		types = append(types, typ)
+		paths = append(paths, vocabulary.RecordPath(kind, id))
 	}
-	if err := rows.Err(); err != nil {
-		return eref{}, err
-	}
-	switch len(types) {
-	case 0:
-		return eref{}, fmt.Errorf("%w: record %s", substrate.ErrNotFound, recordID)
-	case 1:
-		return eref{Kind: types[0], ID: recordID}, nil
-	default:
-		// The remedy the message names is one the surface performs: every
-		// candidate is spelled the way this function takes it back.
-		full := make([]string, 0, len(types))
-		for _, ty := range types {
-			full = append(full, vocabulary.RecordPath(ty, recordID))
-		}
-		return eref{}, fmt.Errorf("%w: id %s names an account record of more than one kind — name the one you mean: %s",
-			substrate.ErrConflict, recordID, strings.Join(full, ", "))
-	}
+	return paths, rows.Err()
 }
 
 // oauthAccountOf loads and gates the account record a flow addresses: it
 // must be a live accountconfig-trait record of an installed, enabled bundle.
 func (ds *dataset) oauthAccountOf(ctx context.Context, account eref) (*erow, *vocabulary.Bundle, error) {
-	recordID := account.ID
+	record := vocabulary.RecordPath(account.Kind, account.ID)
 	row, err := ds.loadRowDB(ctx, account)
 	if err != nil {
 		return nil, nil, err
 	}
 	if row == nil || row.DeletedAt != nil {
-		return nil, nil, fmt.Errorf("%w: record %s", substrate.ErrNotFound, recordID)
+		return nil, nil, fmt.Errorf("%w: record %s", substrate.ErrNotFound, record)
 	}
 	ty, err := ds.resolveType(row.Kind)
 	if err != nil {
@@ -156,11 +142,11 @@ func (ds *dataset) oauthAccountOf(ctx context.Context, account eref) (*erow, *vo
 	}
 	if !ty.Implements(vocabulary.TraitAccountConfigCore) {
 		return nil, nil, fmt.Errorf("%w: %s is not an %s-trait account record",
-			substrate.ErrValidation, recordID, vocabulary.TraitAccountConfigCore)
+			substrate.ErrValidation, record, vocabulary.TraitAccountConfigCore)
 	}
 	b, ok := ds.registry().BundleOf(ty.Package)
 	if !ok {
-		return nil, nil, fmt.Errorf("%w: %s belongs to no bundle", substrate.ErrValidation, recordID)
+		return nil, nil, fmt.Errorf("%w: %s belongs to no bundle", substrate.ErrValidation, record)
 	}
 	st, err := ds.bundleStateOf(ctx, b.Package)
 	if err != nil {
@@ -238,10 +224,11 @@ func oauthScopesForAccount(meta *vocabulary.BundleOAuth2, row *erow) []string {
 	return out
 }
 
-// StartOAuth begins the connect flow for one account record being created:
-// it returns the provider consent URL, state signed over (repository, record,
-// nonce). The requested scope union is DERIVED from the account's enabled
-// feature toggles; the flow is gated on the OWNER TIER —
+// StartOAuth begins the connect flow for one account record, named by its
+// record path `<authority>/<package>/<kind>/<id>`: it returns the provider
+// consent URL, state signed over (repository, record path, nonce). The
+// requested scope union is DERIVED from the account's enabled feature
+// toggles; the flow is gated on the OWNER TIER —
 // an actor DECLARED below owner (an authority's or a bundle's own hand) may
 // not start or restart a consent. An undeclared actor reads
 // as owner (actorTier's default), so the gate binds declared machine actors,
@@ -249,7 +236,7 @@ func oauthScopesForAccount(meta *vocabulary.BundleOAuth2, row *erow) []string {
 // The nonce's hash lands in oauth_flows beside the flow's PKCE verifier, with
 // the state's own expiry: the callback consumes it exactly once, so a captured
 // state cannot replay.
-func (ds *dataset) StartOAuth(ctx context.Context, actor substrate.Actor, recordID string) (string, error) {
+func (ds *dataset) StartOAuth(ctx context.Context, actor substrate.Actor, record string) (string, error) {
 	fl := ds.svc.oauth
 	if fl == nil {
 		return "", fmt.Errorf("%w: oauth is not configured on this substrate", substrate.ErrValidation)
@@ -257,7 +244,7 @@ func (ds *dataset) StartOAuth(ctx context.Context, actor substrate.Actor, record
 	if ds.actorTier(actor) != substrate.TierOwner {
 		return "", fmt.Errorf("%w: only the owner may start an oauth flow, not %s", substrate.ErrForbidden, actor)
 	}
-	account, err := ds.findAccountRef(ctx, recordID)
+	account, err := ds.findAccountRef(ctx, record)
 	if err != nil {
 		return "", err
 	}
@@ -282,7 +269,7 @@ func (ds *dataset) StartOAuth(ctx context.Context, actor substrate.Actor, record
 	if err := ds.putOAuthFlow(ctx, nonce, row.ref(), verifier, nowUTC().Add(oauthflow.StateTTL)); err != nil {
 		return "", err
 	}
-	return fl.AuthCodeURL(ep, oauthflow.State{Repository: ds.Repository().ID, Record: row.ID, Nonce: nonce}, verifier)
+	return fl.AuthCodeURL(ep, oauthflow.State{Repository: ds.Repository().ID, Record: vocabulary.RecordPath(row.Kind, row.ID), Nonce: nonce}, verifier)
 }
 
 // putOAuthFlow persists one started flow: the nonce hashed (a database read
@@ -353,7 +340,7 @@ func (ds *dataset) consumeOAuthFlow(ctx context.Context, nonce string, account e
 // CompleteOAuth finishes a consent: the provider redirected the browser back
 // with the signed state and a code. Unauthenticated by nature — the state IS
 // the authentication — so it lives on the service and resolves the repository
-// itself. Returns the connected record's id.
+// itself. Returns the connected record's path.
 func (s *service) CompleteOAuth(ctx context.Context, state, code string) (string, error) {
 	if s.oauth == nil {
 		return "", fmt.Errorf("%w: oauth is not configured on this substrate", substrate.ErrValidation)
@@ -374,17 +361,18 @@ func (s *service) CompleteOAuth(ctx context.Context, state, code string) (string
 }
 
 func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code string) error {
-	recordID := st.Record
-	// THE FLOW ROW IS THE BINDING, not the state's bare id: `start` wrote the
-	// account's full identity into oauth_flows beside the verifier, so the
-	// callback resolves the record the consent was begun for even where a
-	// second provider's account carries the same id (issue #574). Re-searching
-	// the bare id here would have made the ambiguity fatal one step later.
+	record := st.Record
+	// THE FLOW ROW IS THE BINDING: `start` wrote the account's (kind, id) into
+	// oauth_flows beside the verifier, and the state carries the same identity
+	// as a record path, so the two must agree before anything is exchanged
+	// (issue #574). A state signed under the binary that carried a bare id
+	// disagrees here and its consent is restarted; a state lives
+	// oauthflow.StateTTL, so no stored state is migrated.
 	account, err := ds.accountOfFlow(ctx, st.Nonce)
 	if err != nil {
 		return err
 	}
-	if account.ID != recordID {
+	if vocabulary.RecordPath(account.Kind, account.ID) != record {
 		return fmt.Errorf("%w: unknown or already-used oauth state", substrate.ErrAuth)
 	}
 	row0, b, err := ds.oauthAccountOf(ctx, account)
@@ -418,7 +406,7 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 		// RFC 6749 code, never the provider's description or body); the
 		// unauthenticated callback answers with a fixed message and a
 		// correlation id, never this text.
-		ds.svc.log.Warn("substrate: oauth code exchange failed", "record", recordID, "error", err)
+		ds.svc.log.Warn("substrate: oauth code exchange failed", "record", record, "error", err)
 		return fmt.Errorf("%w: the provider code exchange failed", substrate.ErrValidation)
 	}
 	// Derive the connected account's email from the grant:
@@ -431,7 +419,7 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 	var derivedEmail string
 	if meta.EmailEndpoint != "" && meta.EmailProperty != "" {
 		if email, err := ds.svc.oauth.AccountEmail(ctx, meta.EmailEndpoint, tok.AccessToken); err != nil {
-			ds.svc.log.Warn("substrate: oauth could not derive account email", "record", recordID, "error", err)
+			ds.svc.log.Warn("substrate: oauth could not derive account email", "record", record, "error", err)
 		} else {
 			derivedEmail = email
 		}
@@ -465,7 +453,7 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 			return err
 		}
 		if row == nil || row.DeletedAt != nil {
-			return fmt.Errorf("%w: account %s was deleted while its consent was in flight", substrate.ErrConflict, recordID)
+			return fmt.Errorf("%w: account %s was deleted while its consent was in flight", substrate.ErrConflict, record)
 		}
 		// The stored ref names the credential row; reusing it keeps the same
 		// credential-store key across a reconnect.

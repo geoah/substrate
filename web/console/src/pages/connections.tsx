@@ -91,6 +91,7 @@ import {
   triggerStatusesQueryOptions,
 } from "@/lib/api/sync"
 import { relativeTime } from "@/lib/format"
+import { recordPath } from "@/lib/record-path"
 import {
   accountViewOf,
   countPhrase,
@@ -429,7 +430,10 @@ function ConnectButton({
   disabled: boolean
 }) {
   const [confirming, setConfirming] = useState(false)
-  const connect = useOAuthConnect(view.record.id, view.label)
+  const connect = useOAuthConnect(
+    recordPath(view.record.kind, view.record.id),
+    view.label
+  )
   const connected = view.tokenStatus === "connected"
   return (
     <>

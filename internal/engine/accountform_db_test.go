@@ -109,7 +109,7 @@ func TestOAuthPopulatesAccountEmailFromGrant(t *testing.T) {
 		t.Fatalf("account minted with an email before any grant: %v", account.Properties["email"])
 	}
 
-	consent, err := ds.StartOAuth(ctx, owner, account.ID)
+	consent, err := ds.StartOAuth(ctx, owner, vocabulary.RecordPath(account.Kind, account.ID))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
