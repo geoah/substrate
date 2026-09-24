@@ -63,7 +63,7 @@ func twoRepositories(t *testing.T) pair {
 		}
 		importVocabulary(t, ds, "tasks")
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: "task", ID: "shared-id",
+			Kind: "samples.substrate.reamde.dev/tasks/task", ID: "shared-id",
 			Properties: map[string]any{"name": name + " only"},
 		})
 	}
@@ -555,7 +555,7 @@ func TestRepositoryIsolation(t *testing.T) {
 		done := make(chan error, 1)
 		go func() {
 			_, err := beta.Put(ctx, owner, substrate.PutInput{
-				Kind: "task", Properties: map[string]any{"name": "while alpha's changelog is locked"},
+				Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "while alpha's changelog is locked"},
 			})
 			done <- err
 		}()

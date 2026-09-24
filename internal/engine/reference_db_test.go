@@ -445,13 +445,13 @@ func TestReferencesResolveAcrossTheCalendarSample(t *testing.T) {
 		Properties: map[string]any{"provider": "gcal", "label": "Work"},
 	})
 	cal := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "calendar", ID: "gcal-cal:primary",
+		Kind: "samples.substrate.reamde.dev/calendar/calendar", ID: "gcal-cal:primary",
 		Properties: map[string]any{"name": "Primary", "timezone": "Europe/Athens", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	// The connector writes the recurring definition; the substrate never
 	// expands RRULEs.
 	series := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "calendareventseries", ID: "gcal-series:abc-at-work",
+		Kind: "samples.substrate.reamde.dev/calendar/calendareventseries", ID: "gcal-series:abc-at-work",
 		Properties: map[string]any{
 			"summary": "Standup", "recurrence": "FREQ=WEEKLY;BYDAY=WE",
 			"calendar": cal.ID,
@@ -461,16 +461,16 @@ func TestReferencesResolveAcrossTheCalendarSample(t *testing.T) {
 	// A reference value is a full "<kind>/<id>" path — or a bare id where the
 	// declaration already pins the kind.
 	alex := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Alex", "emails": []any{"alex@acme.com"}},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alex", "emails": []any{"alex@acme.com"}},
 	})
 	nina := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Nina", "emails": []any{"nina@acme.com"}},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Nina", "emails": []any{"nina@acme.com"}},
 	})
 	george := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "George", "emails": []any{"george@acme.com"}},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "George", "emails": []any{"george@acme.com"}},
 	})
 	event := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "calendarevent",
+		Kind: "samples.substrate.reamde.dev/calendar/calendarevent",
 		ID:   "gcal-event:abc-at-work_20260805",
 		Properties: map[string]any{
 			"at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T13:30:00Z", "summary": "Standup", "location": "Meet",
@@ -492,7 +492,7 @@ func TestReferencesResolveAcrossTheCalendarSample(t *testing.T) {
 
 	// After the meeting, the transcript points at the concrete instance.
 	transcript := mustPut(t, ds, substrate.Actor("connector:fireflies"), substrate.PutInput{
-		Kind: "transcript", ID: "fireflies-transcript:f81k",
+		Kind: "samples.substrate.reamde.dev/calendar/transcript", ID: "fireflies-transcript:f81k",
 		Properties: map[string]any{
 			"title": "Standup notes", "at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T13:28:00Z",
 			"text":     "Alex asked for the rack layout.",
@@ -509,7 +509,7 @@ func TestReferencesResolveAcrossTheCalendarSample(t *testing.T) {
 	// NAME any declared state, and `source` is `to: any`, so the
 	// reference carries the kind.
 	task := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "task",
+		Kind: "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{
 			"title": "Send rack layout to Alex", "dueAt": "2026-08-08T00:00:00Z",
 			"status": "proposed",
@@ -524,7 +524,7 @@ func TestReferencesResolveAcrossTheCalendarSample(t *testing.T) {
 	}
 	// The owner's proposed-list is one filter query.
 	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-		Kinds:      []string{"task"},
+		Kinds:      []string{"samples.substrate.reamde.dev/tasks/task"},
 		Properties: map[string]substrate.Cond{"status": {Eq: "proposed"}},
 	}})
 	if err != nil {

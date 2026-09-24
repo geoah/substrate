@@ -36,20 +36,20 @@ func TestQueryGrammarFiltersOrdersAndPages(t *testing.T) {
 		Properties: map[string]any{"provider": "beeper", "label": "Personal"},
 	})
 	conv := mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "conversation", ID: "slack-channel:x1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "slack-channel:x1",
 		Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	other := mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "conversation", ID: "slack-channel:x2",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "slack-channel:x2",
 		Properties: map[string]any{"category": "group", "name": "Family", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	alex := mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Alex"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alex"},
 	})
 	var msgs []*substrate.Record
 	for i, at := range []string{"2026-08-01T10:00:00Z", "2026-08-02T10:00:00Z", "2026-08-03T10:00:00Z"} {
 		m := mustPut(t, ds, beeper, substrate.PutInput{
-			Kind: "conversationmessage",
+			Kind: "samples.substrate.reamde.dev/messaging/conversationmessage",
 			ID:   extID("slack.msg", string(rune('a'+i))+"1"),
 			Properties: map[string]any{
 				"at": at, "text": "message " + string(rune('a'+i)),
@@ -60,7 +60,7 @@ func TestQueryGrammarFiltersOrdersAndPages(t *testing.T) {
 		msgs = append(msgs, m)
 	}
 	mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "conversationmessage", ID: "slack-msg:z1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "slack-msg:z1",
 		Properties: map[string]any{
 			"at": "2026-08-04T10:00:00Z", "text": "elsewhere",
 			"conversation": other.ID,
@@ -72,7 +72,7 @@ func TestQueryGrammarFiltersOrdersAndPages(t *testing.T) {
 	// Kind + reference predicate, newest first.
 	page, err := ds.List(ctx, substrate.Query{
 		Filter: substrate.Filter{
-			Kinds:      []string{"conversationmessage"},
+			Kinds:      []string{"samples.substrate.reamde.dev/messaging/conversationmessage"},
 			Properties: map[string]substrate.Cond{"conversation": {Eq: conv.ID}},
 		},
 		OrderBy: []substrate.Order{{Property: "at", Desc: true}},
@@ -89,7 +89,7 @@ func TestQueryGrammarFiltersOrdersAndPages(t *testing.T) {
 
 	// Temporal range, cross-authority via the capability interface.
 	page, err = ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-		Implements: "Temporal",
+		Implements: "substrate.reamde.dev/core/temporal",
 		Properties: map[string]substrate.Cond{
 			"at": {Gte: "2026-08-02T00:00:00Z", Lt: "2026-08-04T00:00:00Z"},
 		},
@@ -103,7 +103,7 @@ func TestQueryGrammarFiltersOrdersAndPages(t *testing.T) {
 
 	// Labels are first-class filters; annotations are not.
 	page, err = ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-		Kinds: []string{"conversationmessage"}, Labels: map[string]substrate.Cond{"owner/seen": {Eq: true}},
+		Kinds: []string{"samples.substrate.reamde.dev/messaging/conversationmessage"}, Labels: map[string]substrate.Cond{"owner/seen": {Eq: true}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +115,7 @@ func TestQueryGrammarFiltersOrdersAndPages(t *testing.T) {
 	// Pagination.
 	first, err := ds.List(ctx, substrate.Query{
 		Filter: substrate.Filter{
-			Kinds:      []string{"conversationmessage"},
+			Kinds:      []string{"samples.substrate.reamde.dev/messaging/conversationmessage"},
 			Properties: map[string]substrate.Cond{"conversation": {Eq: conv.ID}},
 		},
 		OrderBy: []substrate.Order{{Property: "at", Desc: true}},
@@ -129,7 +129,7 @@ func TestQueryGrammarFiltersOrdersAndPages(t *testing.T) {
 	}
 	second, err := ds.List(ctx, substrate.Query{
 		Filter: substrate.Filter{
-			Kinds:      []string{"conversationmessage"},
+			Kinds:      []string{"samples.substrate.reamde.dev/messaging/conversationmessage"},
 			Properties: map[string]substrate.Cond{"conversation": {Eq: conv.ID}},
 		},
 		OrderBy: []substrate.Order{{Property: "at", Desc: true}},
@@ -144,7 +144,7 @@ func TestQueryGrammarFiltersOrdersAndPages(t *testing.T) {
 
 	// Props filters and states filters.
 	page, err = ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-		Kinds:      []string{"conversation"},
+		Kinds:      []string{"samples.substrate.reamde.dev/messaging/conversation"},
 		Properties: map[string]substrate.Cond{"category": {In: []any{"group", "channel"}}},
 	}})
 	if err != nil {
@@ -154,7 +154,7 @@ func TestQueryGrammarFiltersOrdersAndPages(t *testing.T) {
 		t.Fatalf("enum in filter = %v", got)
 	}
 	page, err = ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-		Kinds: []string{"conversationmessage"}, Properties: map[string]substrate.Cond{"delivery": {Eq: "received"}},
+		Kinds: []string{"samples.substrate.reamde.dev/messaging/conversationmessage"}, Properties: map[string]substrate.Cond{"delivery": {Eq: "received"}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -187,7 +187,7 @@ func TestListKeysetWalkSeesEachRowOnce(t *testing.T) {
 	stable := map[string]bool{}
 	for i := range 17 {
 		p := mustPut(t, ds, owner, substrate.PutInput{
-			Kind: "person", Properties: map[string]any{"name": fmt.Sprintf("p%02d", i)},
+			Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": fmt.Sprintf("p%02d", i)},
 		})
 		stable[p.ID] = true
 	}
@@ -200,7 +200,7 @@ func TestListKeysetWalkSeesEachRowOnce(t *testing.T) {
 			t.Fatal("walk did not terminate")
 		}
 		page, err := ds.List(ctx, substrate.Query{
-			Filter: substrate.Filter{Kinds: []string{"person"}},
+			Filter: substrate.Filter{Kinds: []string{"samples.substrate.reamde.dev/people/person"}},
 			First:  4,
 			After:  after,
 		})
@@ -219,7 +219,7 @@ func TestListKeysetWalkSeesEachRowOnce(t *testing.T) {
 				if del >= 3 {
 					break
 				}
-				if _, err := ds.Delete(ctx, owner, "person", id, substrate.DeleteInput{}); err != nil {
+				if _, err := ds.Delete(ctx, owner, "samples.substrate.reamde.dev/people/person", id, substrate.DeleteInput{}); err != nil {
 					t.Fatalf("delete: %v", err)
 				}
 				delete(stable, id) // no longer exists for the whole walk
@@ -227,7 +227,7 @@ func TestListKeysetWalkSeesEachRowOnce(t *testing.T) {
 			}
 			for i := range 4 {
 				mustPut(t, ds, owner, substrate.PutInput{
-					Kind: "person", Properties: map[string]any{"name": fmt.Sprintf("n%02d", i)},
+					Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": fmt.Sprintf("n%02d", i)},
 				})
 			}
 		}
@@ -260,11 +260,11 @@ func TestListCarriesHeadForGaplessWatch(t *testing.T) {
 
 	for i := range 3 {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: "person", Properties: map[string]any{"name": fmt.Sprintf("p%d", i)},
+			Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": fmt.Sprintf("p%d", i)},
 		})
 	}
 
-	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{"person"}}})
+	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{"samples.substrate.reamde.dev/people/person"}}})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestListCarriesHeadForGaplessWatch(t *testing.T) {
 
 	// A write after the list resumes strictly past head.
 	late := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "late"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "late"},
 	})
 	resumed, err := ds.Changes(ctx, page.Head, substrate.ChangeFilter{}, 1000)
 	if err != nil {
@@ -321,11 +321,11 @@ func TestListKeysetOrderIsTotalAcrossKinds(t *testing.T) {
 	_, ds := newDataset(t)
 
 	// Two DIFFERENT kinds, the SAME id, the SAME title (the sort key).
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "person", ID: "dup", Properties: map[string]any{"title": "same"}})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "organization", ID: "dup", Properties: map[string]any{"title": "same"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", ID: "dup", Properties: map[string]any{"title": "same"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/organization", ID: "dup", Properties: map[string]any{"title": "same"}})
 
 	q := substrate.Query{
-		Filter:  substrate.Filter{Kinds: []string{"person", "organization"}},
+		Filter:  substrate.Filter{Kinds: []string{"samples.substrate.reamde.dev/people/person", "samples.substrate.reamde.dev/people/organization"}},
 		OrderBy: []substrate.Order{{Property: "title"}},
 		First:   1,
 	}
@@ -362,9 +362,9 @@ func TestListReportsTheFirstPagesHeadOnEveryPage(t *testing.T) {
 	_, ds := newDataset(t)
 
 	for range 5 {
-		mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "p"}})
+		mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "p"}})
 	}
-	q := substrate.Query{Filter: substrate.Filter{Kinds: []string{"person"}}, First: 2}
+	q := substrate.Query{Filter: substrate.Filter{Kinds: []string{"samples.substrate.reamde.dev/people/person"}}, First: 2}
 	page1, err := ds.List(ctx, q)
 	if err != nil {
 		t.Fatalf("list page 1: %v", err)
@@ -374,7 +374,7 @@ func TestListReportsTheFirstPagesHeadOnEveryPage(t *testing.T) {
 	}
 
 	// A write lands BETWEEN the pages, bumping the changelog head.
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "mid-walk"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "mid-walk"}})
 
 	q.After = page1.Cursor
 	page2, err := ds.List(ctx, q)
@@ -647,7 +647,7 @@ func TestListIntersectsKindsAndImplements(t *testing.T) {
 	t.Run("a collection read answers nothing outside itself", func(t *testing.T) {
 		t.Parallel()
 		page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-			Kinds: []string{taskKind}, Implements: "temporal",
+			Kinds: []string{taskKind}, Implements: "substrate.reamde.dev/core/temporal",
 		}})
 		if err != nil {
 			t.Fatalf("collection read with implements: %v", err)
@@ -664,7 +664,7 @@ func TestListIntersectsKindsAndImplements(t *testing.T) {
 
 	t.Run("a repository-wide read answers every implementor", func(t *testing.T) {
 		t.Parallel()
-		page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Implements: "temporal"}})
+		page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Implements: "substrate.reamde.dev/core/temporal"}})
 		if err != nil {
 			t.Fatalf("repository-wide implements read: %v", err)
 		}
@@ -683,7 +683,7 @@ func TestListIntersectsKindsAndImplements(t *testing.T) {
 	t.Run("a kind that does not implement the trait is refused", func(t *testing.T) {
 		t.Parallel()
 		_, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-			Kinds: []string{personKind}, Implements: "temporal",
+			Kinds: []string{personKind}, Implements: "substrate.reamde.dev/core/temporal",
 		}})
 		if !errors.Is(err, substrate.ErrValidation) {
 			t.Fatalf("error = %v, want a validation error naming the mismatch", err)
@@ -702,10 +702,10 @@ func TestListOffset(t *testing.T) {
 
 	// Six people, named so the title order is the insertion order.
 	for _, name := range []string{"a", "b", "c", "d", "e", "f"} {
-		mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": name}})
+		mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": name}})
 	}
 	base := substrate.Query{
-		Filter:  substrate.Filter{Kinds: []string{"person"}},
+		Filter:  substrate.Filter{Kinds: []string{"samples.substrate.reamde.dev/people/person"}},
 		OrderBy: []substrate.Order{{Property: "name"}},
 		First:   2,
 	}

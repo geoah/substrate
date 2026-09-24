@@ -21,7 +21,7 @@ import (
 func seedEvents(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
 	cal := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "calendar", ID: "gcal-cal:primary",
+		Kind: "samples.substrate.reamde.dev/calendar/calendar", ID: "gcal-cal:primary",
 		Properties: map[string]any{"name": "Primary"},
 	})
 	for _, ev := range []struct{ id, summary, description, location string }{
@@ -30,7 +30,7 @@ func seedEvents(t *testing.T, ds substrate.Dataset) {
 		{"gcal-event:e3", "Lunch", "food and drinks", "Rooftop garden"},
 	} {
 		mustPut(t, ds, gcal, substrate.PutInput{
-			Kind: "calendarevent", ID: ev.id,
+			Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: ev.id,
 			Properties: map[string]any{
 				"at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T14:00:00Z",
 				"summary": ev.summary, "description": ev.description, "location": ev.location,
@@ -55,7 +55,7 @@ func listIDs(t *testing.T, ds substrate.Dataset, q substrate.Query) []string {
 }
 
 func eventQuery(f substrate.Filter) substrate.Query {
-	f.Kinds = []string{"calendarevent"}
+	f.Kinds = []string{"samples.substrate.reamde.dev/calendar/calendarevent"}
 	return substrate.Query{Filter: f}
 }
 
@@ -103,7 +103,7 @@ func TestFilterSearchMatchesTheRecordIndex(t *testing.T) {
 	}
 	// The list keeps the caller's order and pages by keyset like any list.
 	page, err := ds.List(context.Background(), substrate.Query{
-		Filter:  substrate.Filter{Kinds: []string{"calendarevent"}, Search: "rack"},
+		Filter:  substrate.Filter{Kinds: []string{"samples.substrate.reamde.dev/calendar/calendarevent"}, Search: "rack"},
 		OrderBy: []substrate.Order{{Property: "summary"}},
 		First:   1,
 	})
@@ -114,7 +114,7 @@ func TestFilterSearchMatchesTheRecordIndex(t *testing.T) {
 		t.Fatalf("first page = %v cursor %q, want e1 (Rack… before Standup) and a cursor", pageIDs(page), page.Cursor)
 	}
 	page, err = ds.List(context.Background(), substrate.Query{
-		Filter:  substrate.Filter{Kinds: []string{"calendarevent"}, Search: "rack"},
+		Filter:  substrate.Filter{Kinds: []string{"samples.substrate.reamde.dev/calendar/calendarevent"}, Search: "rack"},
 		OrderBy: []substrate.Order{{Property: "summary"}},
 		First:   1, After: page.Cursor,
 	})
@@ -166,15 +166,15 @@ func TestCondMatchIsOnePropertysWords(t *testing.T) {
 
 	// A repeated string property matches over its items.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", ID: "p-ada",
+		Kind: "samples.substrate.reamde.dev/people/person", ID: "p-ada",
 		Properties: map[string]any{"name": "Ada", "phones": []any{"+44 20 7946 0958", "office landline"}},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", ID: "p-sam",
+		Kind: "samples.substrate.reamde.dev/people/person", ID: "p-sam",
 		Properties: map[string]any{"name": "Sam", "phones": []any{"mobile"}},
 	})
 	got := listIDs(t, ds, substrate.Query{Filter: substrate.Filter{
-		Kinds: []string{"person"}, Properties: map[string]substrate.Cond{"phones": {Match: "landline"}},
+		Kinds: []string{"samples.substrate.reamde.dev/people/person"}, Properties: map[string]substrate.Cond{"phones": {Match: "landline"}},
 	}})
 	if !equalStrings(got, []string{"p-ada"}) {
 		t.Fatalf("match over a repeated string = %v", got)
@@ -184,11 +184,11 @@ func TestCondMatchIsOnePropertysWords(t *testing.T) {
 	for name, tc := range map[string]struct {
 		kind, prop, want string
 	}{
-		"an instant in a hot column": {"calendarevent", "at", "at is not a text property"},
-		"an instant in props":        {"calendarevent", "originalAt", "originalAt is datetime"},
-		"a reference":                {"calendarevent", "calendar", "calendar is a reference"},
-		"a state":                    {"person", "prominence", "prominence is a state"},
-		"the id column":              {"person", "id", "id is not a text property"},
+		"an instant in a hot column": {"samples.substrate.reamde.dev/calendar/calendarevent", "at", "at is not a text property"},
+		"an instant in props":        {"samples.substrate.reamde.dev/calendar/calendarevent", "originalAt", "originalAt is datetime"},
+		"a reference":                {"samples.substrate.reamde.dev/calendar/calendarevent", "calendar", "calendar is a reference"},
+		"a state":                    {"samples.substrate.reamde.dev/people/person", "prominence", "prominence is a state"},
+		"the id column":              {"samples.substrate.reamde.dev/people/person", "id", "id is not a text property"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := ds.List(context.Background(), substrate.Query{Filter: substrate.Filter{

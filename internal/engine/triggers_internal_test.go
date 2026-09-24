@@ -22,17 +22,25 @@ func TestTriggerSourceResolvesBareKinds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build the repository registry: %v", err)
 	}
-	tr, err := parseTrigger("t1", map[string]any{
+	// A bare word is refused at parse (decision record 0101): admitted, it
+	// would compare against identities and never fire.
+	_, err = parseTrigger("t1", map[string]any{
 		"callable": vocabulary.RecordPath(kindFunction, "x.substrate.reamde.dev/x/f"),
 		"source": map[string]any{
 			"record": map[string]any{"kinds": []any{"task"}, "ops": []any{"create"}},
 		},
 	})
+	if err == nil || !strings.Contains(err.Error(), `source.record.kinds[0]: "task" is a bare name`) {
+		t.Fatalf("a bare source kind: %v, want the refusal", err)
+	}
+	tr, err := parseTrigger("t1", map[string]any{
+		"callable": vocabulary.RecordPath(kindFunction, "x.substrate.reamde.dev/x/f"),
+		"source": map[string]any{
+			"record": map[string]any{"kinds": []any{"samples.substrate.reamde.dev/tasks/task"}, "ops": []any{"create"}},
+		},
+	})
 	if err != nil {
 		t.Fatalf("parse: %v", err)
-	}
-	if tr.Record.matches("samples.substrate.reamde.dev/tasks/task", "create") {
-		t.Fatal("the bare pattern matched an identity before resolution — the test proves nothing")
 	}
 	tr.resolveKinds(reg)
 	if !tr.Record.matches("samples.substrate.reamde.dev/tasks/task", "create") {
@@ -42,7 +50,7 @@ func TestTriggerSourceResolvesBareKinds(t *testing.T) {
 	tr2, err := parseTrigger("t2", map[string]any{
 		"callable": vocabulary.RecordPath(kindFunction, "x.substrate.reamde.dev/x/f"),
 		"source": map[string]any{
-			"record": map[string]any{"kinds": []any{"nosuchkind"}, "ops": []any{"create"}},
+			"record": map[string]any{"kinds": []any{"x.substrate.reamde.dev/x/nosuchkind"}, "ops": []any{"create"}},
 		},
 	})
 	if err != nil {
@@ -62,7 +70,7 @@ func TestTriggerSourceResolvesBareKinds(t *testing.T) {
 func TestTriggerCallableReadsTheReleasedPairAndTheFlatPath(t *testing.T) {
 	const id = "x.substrate.reamde.dev/x/f"
 	source := map[string]any{
-		"record": map[string]any{"kinds": []any{"task"}, "ops": []any{"create"}},
+		"record": map[string]any{"kinds": []any{"samples.substrate.reamde.dev/tasks/task"}, "ops": []any{"create"}},
 	}
 	for name, callable := range map[string]any{
 		"the flat path":           vocabulary.RecordPath(kindFunction, id),

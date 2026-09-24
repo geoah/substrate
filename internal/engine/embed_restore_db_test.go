@@ -196,21 +196,21 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 	installShelf(t, ds)
 	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
 	rewritten := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{"title": "Rewritten", "description": "alpha unique marmalade prose"},
+		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": "Rewritten", "description": "alpha unique marmalade prose"},
 	})
 	cleared := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{"title": "Cleared", "description": "gamma tangerine dictionary volume"},
+		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": "Cleared", "description": "gamma tangerine dictionary volume"},
 	})
 	kept := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{"title": "Kept", "description": "delta saxophone almanac chapter"},
+		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": "Kept", "description": "delta saxophone almanac chapter"},
 	})
 	tombstoned := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{"title": "Tombstoned", "description": "epsilon lighthouse ledger entry"},
+		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": "Tombstoned", "description": "epsilon lighthouse ledger entry"},
 	})
 	// Whitespace alone: chunkText gives it no chunks, so the drain drops the
 	// row without a vector.
 	blank := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{"title": "Blank", "description": "   "},
+		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": "Blank", "description": "   "},
 	})
 	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 5 {
 		t.Fatalf("drain = %d, %v, want 5, nil", n, err)
@@ -221,7 +221,7 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 	// Queued after the drain and cleared in the directory: a queue row with
 	// nothing behind it and nothing ahead of it.
 	queuedThenCleared := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{"title": "Queued", "description": "zeta harpsichord gazette column"},
+		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": "Queued", "description": "zeta harpsichord gazette column"},
 	})
 	if got := semanticIDs(t, ds, "tangerine dictionary"); len(got) == 0 || got[0] != cleared.ID {
 		t.Fatalf("before the copy: %v", got)
@@ -239,11 +239,11 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustPut(t, ds2, owner, substrate.PutInput{
-		Kind: "book", ID: rewritten.ID, Properties: map[string]any{"description": "beta zeppelin narrative here"},
+		Kind: "shelf.test.dev/shelf/book", ID: rewritten.ID, Properties: map[string]any{"description": "beta zeppelin narrative here"},
 	})
-	mustPatch(t, ds2, owner, "book", cleared.ID, substrate.PatchInput{Properties: map[string]any{"description": nil}})
-	mustPatch(t, ds2, owner, "book", queuedThenCleared.ID, substrate.PatchInput{Properties: map[string]any{"description": nil}})
-	if _, err := ds2.Delete(ctx, owner, "book", tombstoned.ID, substrate.DeleteInput{}); err != nil {
+	mustPatch(t, ds2, owner, "shelf.test.dev/shelf/book", cleared.ID, substrate.PatchInput{Properties: map[string]any{"description": nil}})
+	mustPatch(t, ds2, owner, "shelf.test.dev/shelf/book", queuedThenCleared.ID, substrate.PatchInput{Properties: map[string]any{"description": nil}})
+	if _, err := ds2.Delete(ctx, owner, "shelf.test.dev/shelf/book", tombstoned.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("tombstone: %v", err)
 	}
 	_ = svc2.Close()
@@ -318,7 +318,7 @@ func TestImportRequeuesWhenTheDirectoryRepointsTheModel(t *testing.T) {
 	installShelf(t, ds)
 	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
 	book := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{"title": "Same", "description": "alpha unique marmalade prose"},
+		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": "Same", "description": "alpha unique marmalade prose"},
 	})
 	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 1 {
 		t.Fatalf("drain = %d, %v, want 1, nil", n, err)
@@ -391,14 +391,14 @@ func TestImportDropsTheVectorsOfAPropertyNoLongerEmbedded(t *testing.T) {
 	installShelf(t, ds)
 	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
 	bought := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{"title": "Bought", "description": "alpha unique marmalade prose"},
+		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": "Bought", "description": "alpha unique marmalade prose"},
 	})
 	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 1 {
 		t.Fatalf("drain = %d, %v, want 1, nil", n, err)
 	}
 	// Queued after the drain: a row with no vector behind it.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{"title": "Queued", "description": "beta zeppelin narrative here"},
+		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": "Queued", "description": "beta zeppelin narrative here"},
 	})
 	if n := countRows(t, raw0(t, dsn), "embed_queue"); n != 1 {
 		t.Fatalf("%d queue rows before the copy, want the undrained one", n)
@@ -484,7 +484,7 @@ func putBooks(t *testing.T, ds substrate.Dataset) []string {
 	ids := make([]string, 0, len(blurbs))
 	for i, blurb := range blurbs {
 		row := mustPut(t, ds, owner, substrate.PutInput{
-			Kind: "book", Properties: map[string]any{
+			Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{
 				"title": "Book " + string(rune('A'+i)), "description": blurb,
 			},
 		})

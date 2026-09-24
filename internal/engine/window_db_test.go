@@ -114,7 +114,7 @@ func TestWindowReadsRowsSeriesAndOverridesOnOneSnapshot(t *testing.T) {
 
 	from, to := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)
 	page, err := ds.Window(ctx, substrate.WindowQuery{
-		Filter: substrate.Filter{Implements: "temporal", Properties: map[string]substrate.Cond{
+		Filter: substrate.Filter{Implements: "substrate.reamde.dev/core/temporal", Properties: map[string]substrate.Cond{
 			"at": {Gte: from.Format(time.RFC3339), Lt: to.Format(time.RFC3339)},
 		}},
 		From: from, To: to, First: 10,
@@ -156,7 +156,7 @@ func TestWindowReadsRowsSeriesAndOverridesOnOneSnapshot(t *testing.T) {
 	// The key seeks strictly past a row, in both directions, and More says
 	// when a bound applies.
 	page, err = ds.Window(ctx, substrate.WindowQuery{
-		Filter: substrate.Filter{Implements: "temporal", Properties: map[string]substrate.Cond{
+		Filter: substrate.Filter{Implements: "substrate.reamde.dev/core/temporal", Properties: map[string]substrate.Cond{
 			"at": {Gte: from.Format(time.RFC3339), Lt: to.Format(time.RFC3339)},
 		}},
 		From: from, To: to, First: 1,

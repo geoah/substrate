@@ -240,10 +240,10 @@ func TestAnAmbiguousProbeParksInsteadOfMinting(t *testing.T) {
 	installVerbatimContacts(t, ds)
 
 	a := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Alex", "emails": []any{"family@example.com"}},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alex", "emails": []any{"family@example.com"}},
 	})
 	b := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Alexa", "emails": []any{"family@example.com"}},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alexa", "emails": []any{"family@example.com"}},
 	})
 	shared := mustPut(t, ds, book, substrate.PutInput{
 		Kind: typeVerbatimContact, ID: "c1",

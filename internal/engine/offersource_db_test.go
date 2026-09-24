@@ -34,7 +34,7 @@ func TestPropertyMetaNamesTheSourceRecordBehindEachOfferAndTheManager(t *testing
 	// The owner writes the person first, so `name` and `emails` are held at
 	// the owner tier when the two mirrors arrive.
 	sam := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
 	})
 	g := syncSource(t, ds, people, typeGoogleContact, "g-sam", map[string]any{
 		"name":   map[string]any{"displayName": "Samuel Jones"},

@@ -151,6 +151,11 @@ type xfCallOut struct {
 // segment the route declares.
 func xfCall(c *C, name string, input, out any) (int, []byte) {
 	c.t.Helper()
+	// A bare word is one of this package's own functions; a host built-in
+	// arrives spelled in full.
+	if !strings.Contains(name, "/") {
+		name = xfPkg + "/" + name
+	}
 	return c.do(http.MethodPost, xfFunctionPath+url.PathEscape(name)+"/call",
 		map[string]any{"input": input}, out)
 }
@@ -285,15 +290,16 @@ func xfCaseHostFunctions(c *C) {
 		"%s answered the wrong record: %s", xfHostQuery, raw)
 	c.stepf("`%s` read `task-welcome-flow` back through the call API, under the token's own reach", xfHostQuery)
 
-	// The bare name is refused: a built-in is kept out of the bare-name
-	// candidates, so a repository function may take the name `query` without
-	// the host one shadowing it.
-	status, raw = xfCall(c, "query", map[string]any{"kind": taskKind, "id": "task-welcome-flow"}, nil)
-	c.requiref(status == http.StatusNotFound, "the bare name `query` answered %d, want 404: %s", status, raw)
+	// The bare name is refused as malformed (decision record 0101), and the
+	// refusal names every function declared under the word, the built-in
+	// included, so the caller copies the identity it meant.
+	status, raw = c.do(http.MethodPost, xfFunctionPath+"query/call",
+		map[string]any{"input": map[string]any{"kind": taskKind, "id": "task-welcome-flow"}}, nil)
+	c.requiref(status == http.StatusUnprocessableEntity, "the bare name `query` answered %d, want 422: %s", status, raw)
 	refusal := xfDecodeError(c, raw)
-	c.requiref(strings.Contains(refusal.Error.Message, xfHostQuery),
-		"the 404 does not name the full identity to use instead: %s", refusal.Error.Message)
-	c.stepf("the bare name `query` is a 404 naming `%s`: a host function answers its full identity alone", xfHostQuery)
+	c.requiref(strings.Contains(refusal.Error.Message, "is a bare name") && strings.Contains(refusal.Error.Message, xfHostQuery),
+		"the 422 does not name the full identity to use instead: %s", refusal.Error.Message)
+	c.stepf("the bare name `query` is a 422 naming `%s`: a callable is named in full", xfHostQuery)
 
 	// `propose` and `write` write, and their ceiling is the CALLING AGENT's
 	// effective emit. A direct call has no calling agent, so there is no
@@ -333,7 +339,7 @@ func xfCaseAgentChat(c *C) {
 		"Greets whoever opens a thread, in one streamed turn.",
 		"You greet the person who opened this thread in one short sentence."))
 
-	status, raw := c.do(http.MethodPost, xfAgentPath+"chatgreeter/chat",
+	status, raw := c.do(http.MethodPost, xfAgentPath+url.PathEscape(xfPkg+"/chatgreeter")+"/chat",
 		map[string]any{"thread": "", "message": "hello"}, nil)
 	c.requiref(status == http.StatusOK, "the chat answered %d: %s", status, raw)
 
@@ -393,7 +399,7 @@ func xfCaseAgentNoProvider(c *C) {
 		"You answer in one short sentence."))
 	c.stepf("the declaration was ADMITTED: an agent names its provider by id, and nothing resolves that id until a call does")
 
-	status, raw := c.do(http.MethodPost, xfAgentPath+"orphanagent/call", map[string]any{"input": "hi"}, nil)
+	status, raw := c.do(http.MethodPost, xfAgentPath+url.PathEscape(xfPkg+"/orphanagent")+"/call", map[string]any{"input": "hi"}, nil)
 	c.requiref(status == http.StatusUnprocessableEntity, "the call answered %d, want 422: %s", status, raw)
 	refusal := xfDecodeError(c, raw)
 	c.requiref(refusal.Error.Code == "validation", "the refusal's code is %q, want validation: %s", refusal.Error.Code, raw)
@@ -430,7 +436,7 @@ func xfCaseAgentCost(c *C) {
 		"You answer in one short sentence."))
 
 	var res xfAgentResult
-	status, raw := c.do(http.MethodPost, xfAgentPath+"pricedagent/call",
+	status, raw := c.do(http.MethodPost, xfAgentPath+url.PathEscape(xfPkg+"/pricedagent")+"/call",
 		map[string]any{"input": "what did that cost"}, &res)
 	c.requiref(status == http.StatusOK, "the agent call answered %d: %s", status, raw)
 	c.requiref(res.Status == "ok" && res.Turns == 1, "the run settled %q after %d turns", res.Status, res.Turns)

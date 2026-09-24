@@ -443,7 +443,7 @@ func TestResetUser(t *testing.T) {
 	}
 	importVocabulary(t, ds, "tasks")
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "task", Properties: map[string]any{"name": "survives a reset"},
+		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "survives a reset"},
 	})
 
 	resetter, ok := svc.(interface {
@@ -534,7 +534,7 @@ func TestTokenLookupScopesTheRequest(t *testing.T) {
 	}
 	importVocabulary(t, alphaDS, "tasks")
 	task := mustPut(t, alphaDS, owner, substrate.PutInput{
-		Kind: "task", Properties: map[string]any{"name": "alpha only"},
+		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "alpha only"},
 	})
 	if _, err := betaDS.Get(ctx, task.Kind, task.ID); err == nil {
 		t.Fatal("beta's token reached alpha's data")

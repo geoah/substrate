@@ -196,11 +196,11 @@ data:
     project: geoah.me/chores/project/home
 EOF
 
-bin/substratectl get task
-bin/substratectl get task milk -o yaml   # the full envelope, apply-able
-bin/substratectl get task --filter '{"properties":{"status":{"eq":"open"}}}'
+bin/substratectl get geoah.me/chores/task
+bin/substratectl get geoah.me/chores/task milk -o yaml   # the full envelope, apply-able
+bin/substratectl get geoah.me/chores/task --filter '{"properties":{"status":{"eq":"open"}}}'
 
-bin/substratectl patch task milk --state status=done  # stamps completedAt
+bin/substratectl patch geoah.me/chores/task milk --state status=done  # stamps completedAt
 
 # Tail the changelog: from here on every write streams as one line, and the
 # opening line prints the sequence and generation a later run resumes from
@@ -288,7 +288,7 @@ open and past due, so it comes back urgent:
 ```bash
 bin/substratectl apply -f chores.yaml
 bin/substratectl function call geoah.me/chores/triage
-bin/substratectl get task plants -o yaml
+bin/substratectl get geoah.me/chores/task plants -o yaml
 ```
 
 What usually runs it is a **trigger**, an ordinary record binding a source

@@ -64,7 +64,7 @@ func seedWindow(ds *fakeDataset) {
 
 func windowPath(from, to string, extra ...string) string {
 	filter := map[string]any{
-		"implements": "temporal",
+		"implements": "substrate.reamde.dev/core/temporal",
 		"properties": map[string]any{"at": map[string]any{"gte": from, "lt": to}},
 	}
 	raw, _ := json.Marshal(filter)
@@ -259,7 +259,7 @@ func TestOneSidedAtBoundIsAPlainList(t *testing.T) {
 	tok := env.svc.token(fakeRepository)
 	ds := env.svc.datasets[fakeRepository]
 	seedWindow(ds)
-	filter := map[string]any{"implements": "temporal", "properties": map[string]any{"at": map[string]any{"gte": "2026-07-01T00:00:00Z"}}}
+	filter := map[string]any{"implements": "substrate.reamde.dev/core/temporal", "properties": map[string]any{"at": map[string]any{"gte": "2026-07-01T00:00:00Z"}}}
 	raw, _ := json.Marshal(filter)
 	rec := env.do(t, http.MethodGet, "/api/v1/records?filter="+url.QueryEscape(string(raw)), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
@@ -269,7 +269,7 @@ func TestOneSidedAtBoundIsAPlainList(t *testing.T) {
 			t.Fatalf("a one-sided bound computed an occurrence: %+v", r)
 		}
 	}
-	if q := ds.lastQuery; q.Filter.Implements != "temporal" {
+	if q := ds.lastQuery; q.Filter.Implements != "substrate.reamde.dev/core/temporal" {
 		t.Fatalf("the plain list did not reach List: %+v", q)
 	}
 }

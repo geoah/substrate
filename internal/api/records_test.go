@@ -176,6 +176,24 @@ func TestRecordsUnknownKindInFilterIs404(t *testing.T) {
 	}
 }
 
+// A bare word in filter.kinds, or as a create's kind, is not a missing kind
+// but a malformed reference: 422, naming the identity the repository declares
+// under it, on every read mode and on the create (decision record 0101).
+func TestRecordsBareKindIs422NamingTheSpelling(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	for _, extra := range [][]string{nil, {"q=ada"}, {"watch=1"}} {
+		rec := env.do(t, http.MethodGet, recordsOf(t, "person", extra...), tok, nil)
+		wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
+		wantMessage(t, rec, `"person" is a bare name`, "samples.substrate.reamde.dev/people/person")
+	}
+	rec := env.do(t, http.MethodPost, "/api/v1/records", tok, map[string]any{
+		"kind": "person", "properties": map[string]any{"name": "Ada"},
+	})
+	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
+	wantMessage(t, rec, `"person" is a bare name`, "samples.substrate.reamde.dev/people/person")
+}
+
 // The reverse read is a filter arm: `filter.referencing` narrows to the
 // records pointing at one target, and the page's `matches` says from which
 // property each one points. `property` narrows to one site.

@@ -173,8 +173,8 @@ Both agents name `provider: openai`, so running them wants that
 `llm/provider` row keyed — [creation seeds it](agents.md#providers), keyless.
 Calling an agent is an API call, not a CLI verb. The path segment is the
 agent's id, `<authority>/notes/notekeeper` once the import has rehomed it, with
-each slash written `%2F`; the bare name `notekeeper` also resolves while only
-one agent carries it ([calling an agent](agents.md#calling-an-agent)):
+each slash written `%2F`; a bare `notekeeper` is refused
+([calling an agent](agents.md#calling-an-agent)):
 
 ```bash
 curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/<authority>%2Fnotes%2Fnotekeeper/call" \

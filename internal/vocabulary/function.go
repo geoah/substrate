@@ -1,6 +1,7 @@
 package vocabulary
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -1107,43 +1108,24 @@ func (r *Registry) Functions() []*Function {
 	return out
 }
 
-// ResolveFunction accepts a full identity or a bare name unique across
-// authorities — except for a HOST function, which answers its identity alone.
-// The four of them are named for what they do (`query`, `write`, `propose`,
-// `ask`), which is exactly what a repository's own function is likeliest to
-// be called, so a bare name that resolved to the user's function before they
-// shipped has to keep resolving to it.
+// ResolveFunction looks a function up by its full identity. A bare name is
+// refused naming every function the repository declares under the word, the
+// host built-ins included (decision record 0101): a callable IS its
+// authority, package and name, on a trigger, in an agent's tools, in a
+// `permissions.call` grant and on the call route alike.
 func (r *Registry) ResolveFunction(nameOrIdentity string) (*Function, error) {
-	var cands []*Function
-	var host *Function
+	var names []string
 	for _, f := range r.Functions() {
 		if f.Identity() == nameOrIdentity {
 			return f, nil
 		}
-		if f.Name != nameOrIdentity {
-			continue
-		}
-		if f.IsHost() {
-			host = f
-			continue
-		}
-		cands = append(cands, f)
-	}
-	switch len(cands) {
-	case 0:
-		if host != nil {
-			return nil, fmt.Errorf("unknown function %q — the built-in of that name is %s, and a host function answers its full identity",
-				nameOrIdentity, host.Identity())
-		}
-		return nil, fmt.Errorf("unknown function %q", nameOrIdentity)
-	case 1:
-		return cands[0], nil
-	default:
-		names := make([]string, 0, len(cands))
-		for _, f := range cands {
+		if f.Name == nameOrIdentity {
 			names = append(names, f.Identity())
 		}
-		sort.Strings(names)
-		return nil, fmt.Errorf("ambiguous function %q: %s", nameOrIdentity, strings.Join(names, ", "))
 	}
+	if !Qualified(nameOrIdentity) {
+		sort.Strings(names)
+		return nil, errors.New(bareNameProblem("", "function", nameOrIdentity, names))
+	}
+	return nil, fmt.Errorf("unknown function %q", nameOrIdentity)
 }

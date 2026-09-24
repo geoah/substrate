@@ -240,11 +240,18 @@ func (ds *dataset) Kinds(ctx context.Context) ([]substrate.KindInfo, error) {
 }
 
 func (ds *dataset) KindByRef(ctx context.Context, ref string) (substrate.KindInfo, error) {
-	t, ok := ds.registry().ByIdentity(ref)
-	if !ok {
-		return substrate.KindInfo{}, fmt.Errorf("%w: kind %q", substrate.ErrNotFound, ref)
+	reg := ds.registry()
+	if t, ok := reg.ByIdentity(ref); ok {
+		return typeInfo(t), nil
 	}
-	return typeInfo(t), nil
+	if !vocabulary.Qualified(ref) {
+		// A bare name is a malformed reference, not a missing kind: the
+		// refusal is the registry's, naming every identity carrying the word,
+		// so the caller learns the spelling instead of a 404 (record 0101).
+		_, err := reg.Resolve(ref)
+		return substrate.KindInfo{}, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+	}
+	return substrate.KindInfo{}, fmt.Errorf("%w: kind %q", substrate.ErrNotFound, ref)
 }
 
 // typeInfo is one declared kind as the read surfaces see it.

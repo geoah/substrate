@@ -191,7 +191,7 @@ func TestSearchRanksThroughTheRecordsRoute(t *testing.T) {
 	seedTask(h)
 	seedProject(h)
 
-	out, _ := h.mustRun("search", "rack", "--kinds", "task", "--limit", "10")
+	out, _ := h.mustRun("search", "rack", "--kinds", "samples.substrate.reamde.dev/tasks/task", "--limit", "10")
 	q := h.fake.lastQuery
 	if q.Get("q") != "rack" || q.Get("first") != "10" || q.Has("mode") {
 		t.Fatalf("search query = %v", q)

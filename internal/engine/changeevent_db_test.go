@@ -48,10 +48,10 @@ func TestChangesNameEachAffectedRecordWithItsVersion(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Ada"}})
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Ada"}})
 	a = mustPatch(t, ds, owner, a.Kind, a.ID, substrate.PatchInput{Properties: map[string]any{"name": "Ada L."}})
-	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Nina Ray"}})
-	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "N. Ray"}})
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Nina Ray"}})
+	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "N. Ray"}})
 	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestAnEntryWithoutEffectsStillNamesItsRecord(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, ds, dsn := newDatasetWithDSN(t)
-	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Ada"}})
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Ada"}})
 	if _, err := ds.Delete(ctx, owner, a.Kind, a.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
@@ -182,24 +182,24 @@ func TestAClientKeepsACurrentCopyFromTheStreamAlone(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	ada := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Ada"}})
+	ada := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Ada"}})
 	mustPatch(t, ds, owner, ada.Kind, ada.ID, substrate.PatchInput{Properties: map[string]any{"name": "Ada Lovelace"}})
-	bob := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Bob"}})
-	dup := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Robert"}})
+	bob := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Bob"}})
+	dup := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Robert"}})
 	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: bob.Kind, Winner: bob.ID, Loser: dup.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	gone := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Gone"}})
+	gone := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Gone"}})
 	if _, err := ds.Delete(ctx, owner, gone.Kind, gone.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	// Deleted and then put back: `deleted` flips true and then false again,
 	// and the copy has to follow both.
-	back := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Back"}})
+	back := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Back"}})
 	if _, err := ds.Delete(ctx, owner, back.Kind, back.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	back = mustPut(t, ds, owner, substrate.PutInput{Kind: "person", ID: back.ID, Properties: map[string]any{"name": "Back again"}})
+	back = mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", ID: back.ID, Properties: map[string]any{"name": "Back again"}})
 	if back.DeletedAt != nil {
 		t.Fatalf("the put did not restore the record: %+v", back)
 	}

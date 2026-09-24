@@ -175,9 +175,9 @@ func TestRecordFilterMatchesMergeAndSplitForBothRecords(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Nina Ray"}})
-	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "N. Ray"}})
-	other := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Someone Else"}})
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Nina Ray"}})
+	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "N. Ray"}})
+	other := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Someone Else"}})
 	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
@@ -365,16 +365,16 @@ func TestChangesCursorWalkSeesEveryPatchDuringASyncBurst(t *testing.T) {
 		Properties: map[string]any{"provider": "slack", "label": "Acme"},
 	})
 	conv := mustPut(t, ds, slack, substrate.PutInput{
-		Kind: "conversation", ID: "slack-channel:T1:C1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "slack-channel:T1:C1",
 		Properties: map[string]any{"category": "channel", "name": "general", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	author := mustPut(t, ds, slack, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "alex"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "alex"},
 	})
 
 	newMsg := func(actor substrate.Actor, ext, text, delivery string) *substrate.Record {
 		return mustPut(t, ds, actor, substrate.PutInput{
-			Kind: "conversationmessage", ID: extID("slack.msg", ext),
+			Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: extID("slack.msg", ext),
 			Properties: map[string]any{
 				"at": "2026-08-03T10:00:00Z", "text": text, "delivery": delivery,
 				"conversation": conv.ID,
@@ -399,7 +399,7 @@ func TestChangesCursorWalkSeesEveryPatchDuringASyncBurst(t *testing.T) {
 	// The connectors' delivery poller, verbatim in shape.
 	poll := func() {
 		chs, err := ds.Changes(ctx, cursor, substrate.ChangeFilter{
-			Kinds: []string{"conversationmessage"},
+			Kinds: []string{"samples.substrate.reamde.dev/messaging/conversationmessage"},
 			Ops:   []substrate.Op{substrate.OpPut, substrate.OpPatch},
 		}, 200)
 		if err != nil {
@@ -452,7 +452,7 @@ func TestChangesCursorWalkSeesEveryPatchDuringASyncBurst(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for _, id := range draftIDs {
-			if _, err := ds.Patch(ctx, owner, "conversationmessage", id, substrate.PatchInput{
+			if _, err := ds.Patch(ctx, owner, "samples.substrate.reamde.dev/messaging/conversationmessage", id, substrate.PatchInput{
 				Properties: map[string]any{"delivery": "queued"},
 			}); err != nil {
 				t.Errorf("patch: %v", err)
@@ -470,7 +470,7 @@ func TestChangesCursorWalkSeesEveryPatchDuringASyncBurst(t *testing.T) {
 	var last int64
 	for {
 		chs, err := ds.Changes(ctx, last, substrate.ChangeFilter{
-			Kinds:  []string{"conversationmessage"},
+			Kinds:  []string{"samples.substrate.reamde.dev/messaging/conversationmessage"},
 			Ops:    []substrate.Op{substrate.OpPatch},
 			Actors: []substrate.Actor{owner},
 		}, 500)

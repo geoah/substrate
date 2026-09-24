@@ -102,7 +102,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/api/v1/catalog/samples.substrate.reamde.dev%2Ftasks/import
 
-substratectl get task                     # empty, but the kind is there
+substratectl get $AUTHORITY/tasks/task    # empty, but the kind is there
 ```
 
 The import rewrites the closure onto the authority THIS repository owns, so
@@ -146,7 +146,7 @@ Read it back, then complete it. A state change is a `patch`, and the
 declaration stamps `completedAt` for you:
 
 ```bash
-substratectl get task kq3v9x2m41pf -o yaml
+substratectl get $AUTHORITY/tasks/task kq3v9x2m41pf -o yaml
 substratectl patch task kq3v9x2m41pf --state status=done
 ```
 

@@ -548,7 +548,7 @@ func TestReferencingIsSeparateAndPaged(t *testing.T) {
 	installPeopleSources(t, ds)
 
 	sam := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
 	})
 	g := syncSource(t, ds, people, typeGoogleContact, "g-sam", map[string]any{
 		"name": aname("Samuel Jones"), "emails": gemails("sam@acme.com"),

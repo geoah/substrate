@@ -241,7 +241,8 @@ func (c collection) ref(id string) string {
 // "<authority>/<package>/<name>" wins outright; a bare name with --package is
 // taken literally; a bare name otherwise resolves against the kind registry,
 // and the reference always uses the resolved kind NAME.
-func (a *app) resolveCollection(ctx context.Context, arg, pkg string) (collection, error) {
+func (a *app) resolveCollection(ctx context.Context, arg string) (collection, error) {
+	// A full reference needs no round trip: the wire takes it as written.
 	if authority, pkgName, name := vocabulary.SplitKindRef(arg); authority != "" {
 		col := collection{Authority: authority, Package: pkgName, Name: name}
 		if ti, found := a.lookupCached(name, vocabulary.PackageRef(authority, pkgName)); found {
@@ -249,36 +250,26 @@ func (a *app) resolveCollection(ctx context.Context, arg, pkg string) (collectio
 		}
 		return col, nil
 	}
-	if pkg != "" {
-		authority, pkgName := vocabulary.SplitPackageRef(pkg)
-		if authority == "" {
-			return collection{}, fmt.Errorf("--package takes a package identity (<authority>/<package>), got %q", pkg)
-		}
-		return collection{Authority: authority, Package: pkgName, Name: arg}, nil
-	}
+	// A bare word names no kind (decision record 0101). The refusal offers the
+	// full spellings the repository declares under it, read from the registry
+	// the way `substratectl kinds` lists them, so the fix is a copy and not a
+	// guess; nothing here picks one.
 	types, err := a.types(ctx)
 	if err != nil {
 		return collection{}, err
 	}
-	var matches []substrate.KindInfo
+	var names []string
 	for _, ti := range types {
 		if ti.Name == arg {
-			matches = append(matches, ti)
+			names = append(names, ti.Identity)
 		}
 	}
-	switch len(matches) {
-	case 0:
-		return collection{}, fmt.Errorf("no kind named %q; run `substratectl kinds` to list them", arg)
-	case 1:
-		ti := matches[0]
-		return collection{Authority: ti.Authority, Package: ti.Package, Name: ti.Name, Identity: ti.Identity}, nil
+	sort.Strings(names)
+	msg := fmt.Sprintf("%q is a bare name, and a kind is named in full as <authority>/<package>/<name>", arg)
+	if len(names) > 0 {
+		return collection{}, fmt.Errorf("%s; this repository declares %s", msg, strings.Join(names, ", "))
 	}
-	names := make([]string, 0, len(matches))
-	for _, ti := range matches {
-		names = append(names, ti.Identity)
-	}
-	return collection{}, fmt.Errorf("%q is ambiguous across packages: %s (qualify it as authority/package/name or pass --package)",
-		arg, strings.Join(names, ", "))
+	return collection{}, fmt.Errorf("%s; run `substratectl kinds` to list them", msg)
 }
 
 // types fetches and caches the registry for the life of one command.
@@ -308,12 +299,12 @@ func (a *app) lookupCached(name, pkg string) (substrate.KindInfo, bool) {
 }
 
 // collectionForKind resolves a manifest's `kind` — a kind reference — to the
-// declared kind it names. A bare reference resolves the way a bare kind name does,
-// and errors the same way when ambiguous.
+// declared kind it names. A bare reference is refused the way a bare
+// collection argument is, naming the full spellings.
 func (a *app) collectionForKind(ctx context.Context, ref string) (collection, error) {
 	authority, pkgName, name := vocabulary.SplitKindRef(ref)
 	if authority == "" {
-		return a.resolveCollection(ctx, name, "")
+		return a.resolveCollection(ctx, name)
 	}
 	pkg := vocabulary.PackageRef(authority, pkgName)
 	types, err := a.types(ctx)

@@ -61,7 +61,7 @@ is still embedding: non-zero means the ranking covers a partial index.`,
 			if len(kinds) > 0 {
 				refs := make([]string, 0, len(kinds))
 				for _, k := range kinds {
-					col, err := a.resolveCollection(ctx, k, "")
+					col, err := a.resolveCollection(ctx, k)
 					if err != nil {
 						return err
 					}

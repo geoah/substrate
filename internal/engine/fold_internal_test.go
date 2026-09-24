@@ -46,7 +46,7 @@ func TestDeltaRoundTripsThroughTheLog(t *testing.T) {
 		{
 			name: "creation",
 			after: &erow{
-				ID: "t1", Kind: "task", Title: "Ship it", Body: "prose",
+				ID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task", Title: "Ship it", Body: "prose",
 				States: map[string]string{"status": "open"},
 				Props:  map[string]any{"description": "a delta", "count": 2.0, "flag": false, "empty": ""},
 				Labels: map[string]any{"owner/pinned": true},
@@ -58,14 +58,14 @@ func TestDeltaRoundTripsThroughTheLog(t *testing.T) {
 		{
 			name: "values move, one property goes, a time clears, the kind version moves",
 			before: &erow{
-				ID: "t1", Kind: "task", Title: "Ship it",
+				ID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task", Title: "Ship it",
 				States: map[string]string{"status": "open"},
 				Props:  map[string]any{"description": "a delta", "url": "https://example.com"},
 				Labels: map[string]any{"owner/pinned": true},
 				DueAt:  &due, KindVersion: 3,
 			},
 			after: &erow{
-				ID: "t1", Kind: "task", Title: "Shipped",
+				ID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task", Title: "Shipped",
 				States:      map[string]string{"status": "done"},
 				Props:       map[string]any{"description": "moved"},
 				Labels:      map[string]any{"owner/urgent": "yes"},
@@ -78,13 +78,13 @@ func TestDeltaRoundTripsThroughTheLog(t *testing.T) {
 			// read nothing as "unchanged", so a rebuild restored the label.
 			name: "the last label and the last state clear",
 			before: &erow{
-				ID: "t1", Kind: "task", Title: "Ship it",
+				ID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task", Title: "Ship it",
 				States: map[string]string{"status": "open"},
 				Props:  map[string]any{"description": "a delta"},
 				Labels: map[string]any{"owner/pinned": true},
 			},
 			after: &erow{
-				ID: "t1", Kind: "task", Title: "Ship it",
+				ID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task", Title: "Ship it",
 				States: map[string]string{},
 				Props:  map[string]any{"description": "a delta"},
 				Labels: map[string]any{},
@@ -93,13 +93,13 @@ func TestDeltaRoundTripsThroughTheLog(t *testing.T) {
 		{
 			name: "a write that changes nothing describes nothing",
 			before: &erow{
-				ID: "t1", Kind: "task", Title: "Ship it",
+				ID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task", Title: "Ship it",
 				States: map[string]string{"status": "open"},
 				Props:  map[string]any{"description": "a delta"},
 				Labels: map[string]any{},
 			},
 			after: &erow{
-				ID: "t1", Kind: "task", Title: "Ship it",
+				ID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task", Title: "Ship it",
 				States: map[string]string{"status": "open"},
 				Props:  map[string]any{"description": "a delta"},
 				Labels: map[string]any{},
@@ -108,12 +108,12 @@ func TestDeltaRoundTripsThroughTheLog(t *testing.T) {
 		{
 			name: "falsey values survive: false, zero and the empty string",
 			before: &erow{
-				ID: "t1", Kind: "task",
+				ID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task",
 				Props:  map[string]any{"flag": true, "count": 3.0, "note": "x"},
 				States: map[string]string{}, Labels: map[string]any{},
 			},
 			after: &erow{
-				ID: "t1", Kind: "task", Title: "",
+				ID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task", Title: "",
 				Props:  map[string]any{"flag": false, "count": 0.0, "note": ""},
 				States: map[string]string{}, Labels: map[string]any{},
 			},
@@ -160,11 +160,11 @@ func TestDeltaRoundTripsThroughTheLog(t *testing.T) {
 // behind keeps replaying as it did.
 func TestAClearedMapIsSpelledOnTheWire(t *testing.T) {
 	before := &erow{
-		ID: "t1", Kind: "task",
+		ID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task",
 		States: map[string]string{"status": "open"},
 		Labels: map[string]any{"owner/pinned": true},
 	}
-	after := &erow{ID: "t1", Kind: "task", States: map[string]string{}, Labels: map[string]any{}}
+	after := &erow{ID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task", States: map[string]string{}, Labels: map[string]any{}}
 	raw, err := json.Marshal(diffRow(before, after))
 	if err != nil {
 		t.Fatal(err)
@@ -189,7 +189,7 @@ func TestAClearedMapIsSpelledOnTheWire(t *testing.T) {
 // match rows that never moved.
 func TestUnchangedRowDescribesNothing(t *testing.T) {
 	row := &erow{
-		ID: "t1", Kind: "task", Title: "Ship it",
+		ID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task", Title: "Ship it",
 		Props: map[string]any{"description": "a delta"}, States: map[string]string{"status": "open"},
 		Labels: map[string]any{},
 	}
@@ -210,7 +210,7 @@ func TestUnchangedRowDescribesNothing(t *testing.T) {
 // delta ever carries a stamp of 0.
 func TestKindVersionIsAValueTheDeltaCarries(t *testing.T) {
 	before := &erow{
-		ID: "t1", Kind: "task",
+		ID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task",
 		Props: map[string]any{"description": "a delta"}, States: map[string]string{}, Labels: map[string]any{},
 		KindVersion: 3,
 	}
@@ -240,7 +240,7 @@ func TestKindVersionIsAValueTheDeltaCarries(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"created":true,"set":{"description":"a delta"}}`), &old); err != nil {
 		t.Fatal(err)
 	}
-	fresh := &erow{ID: "t1", Kind: "task"}
+	fresh := &erow{ID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task"}
 	old.applyTo(fresh)
 	if fresh.KindVersion != 0 {
 		t.Fatalf("an entry without the key folded to kind version %d, want 0", fresh.KindVersion)

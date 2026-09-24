@@ -93,7 +93,7 @@ func TestNoopSuppressionAcrossRecords(t *testing.T) {
 		Properties: map[string]any{"provider": "gmail"},
 	})
 	conv := mustPut(t, ds, gmail, substrate.PutInput{
-		Kind: "conversation", ID: "slack:t1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "slack:t1",
 		Properties: map[string]any{"category": "direct", "name": "Alex", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 
@@ -110,7 +110,7 @@ func TestNoopSuppressionAcrossRecords(t *testing.T) {
 		Annotations: map[string]any{"owner/note": map[string]any{"a": 1}},
 	})
 	mustPut(t, ds, gmail, substrate.PutInput{
-		Kind: "conversation", ID: "slack:t1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "slack:t1",
 		Properties: map[string]any{"category": "direct", "name": "Alex", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	if got := mustGet(t, ds, conv.Kind, conv.ID).Version; got != v {
@@ -135,7 +135,7 @@ func TestVersionCAS(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "Ship it"}})
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "Ship it"}})
 
 	if _, err := ds.Patch(ctx, owner, task.Kind, task.ID, substrate.PatchInput{
 		Properties: map[string]any{"name": "Ship it now"}, IfVersion: ptr(int64(99)),
@@ -160,7 +160,7 @@ func TestNoWriterOutranksAnother(t *testing.T) {
 	_, ds := newDataset(t)
 
 	c := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Alexandros Papas"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alexandros Papas"},
 	})
 	before := maxSeq(t, ds)
 
@@ -202,7 +202,7 @@ func TestMetadataNamespaces(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "t"}})
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "t"}})
 
 	if _, err := ds.Patch(ctx, engram, task.Kind, task.ID, substrate.PatchInput{
 		Labels: map[string]any{"owner/pinned": true},
@@ -259,7 +259,7 @@ func TestMetadataKeyRefusalNamesTheRule(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "t"}})
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "t"}})
 
 	_, err := ds.Patch(ctx, owner, task.Kind, task.ID, substrate.PatchInput{
 		Annotations: map[string]any{"mneme/feedbackNote": "x"},
@@ -293,18 +293,18 @@ func TestMachineInitialAndTransitions(t *testing.T) {
 	// ONE initial state, whoever writes; a creation may NAME any declared
 	// state.
 	proposed := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "task", Properties: map[string]any{"name": "Send rack layout", "status": "proposed"},
+		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "Send rack layout", "status": "proposed"},
 	})
 	if proposed.Properties["status"] != "proposed" {
 		t.Fatalf("named state at birth = %v", proposed.Properties)
 	}
-	ownerTask := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "Mine"}})
+	ownerTask := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "Mine"}})
 	if ownerTask.Properties["status"] != "open" {
 		t.Fatalf("declared initial = %v", ownerTask.Properties)
 	}
 	// Only a DECLARED state, though.
 	if _, err := ds.Put(ctx, engram, substrate.PutInput{
-		Kind: "task", Properties: map[string]any{"name": "x", "status": "nosuch"},
+		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "x", "status": "nosuch"},
 	}); err == nil {
 		t.Fatal("expected a validation error")
 	} else {
@@ -341,9 +341,9 @@ func TestMutationRequestApplyDiff(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "Draft the memo"}})
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "Draft the memo"}})
 	req := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"rationale": "the transcript says Friday",
 			"diff": map[string]any{
@@ -370,7 +370,7 @@ func TestMutationRequestApplyDiff(t *testing.T) {
 	// Deciding without the request version is refused: the reviewer must accept
 	// the envelope it read.
 	needsVersion := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"diff":   map[string]any{"properties": map[string]any{"description": "later"}, "ifVersion": task.Version + 1},
 			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", task.ID),
@@ -395,7 +395,7 @@ func TestMutationRequestApplyDiff(t *testing.T) {
 	// A stale diff loses the CAS: the transition fails, the request stays
 	// proposed, and the conflict is annotated.
 	stale := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"diff": map[string]any{
 				"properties": map[string]any{"description": "due Monday"},
@@ -435,14 +435,14 @@ func TestAcceptedNoOpDiffFailsTransition(t *testing.T) {
 	_, ds := newDataset(t)
 
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "task", Properties: map[string]any{"name": "Draft", "description": "already here"},
+		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "Draft", "description": "already here"},
 	})
 
 	// A wrapper-less diff names `description` at the top level. Admission wraps
 	// it under `properties` against the target's kind, so the accept has the
 	// shape it decodes and the change applies.
 	bare := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"diff":   map[string]any{"description": "wrapper-less"},
 			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", task.ID),
@@ -460,10 +460,10 @@ func TestAcceptedNoOpDiffFailsTransition(t *testing.T) {
 	// A well-formed diff that re-asserts the stored value applies no change. Its
 	// own target, because the accept above moved the first one.
 	settled := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "task", Properties: map[string]any{"name": "Settled", "description": "already here"},
+		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "Settled", "description": "already here"},
 	})
 	noop := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"diff":   map[string]any{"properties": map[string]any{"description": "already here"}},
 			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", settled.ID),
@@ -521,7 +521,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 
 	const targetID = "created-task-1"
 	req := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"op":         "create",
 			"targetKind": "samples.substrate.reamde.dev/tasks/task",
@@ -553,7 +553,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 	// SAME properties is a verified no-op on accept — the live record already
 	// IS what the request would mint.
 	replay := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"op":         "create",
 			"targetKind": "samples.substrate.reamde.dev/tasks/task",
@@ -575,7 +575,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 	// stays proposed and annotated, and the live record is untouched
 	//.
 	diverge := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"op":         "create",
 			"targetKind": "samples.substrate.reamde.dev/tasks/task",
@@ -610,9 +610,9 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 
 	// An id held by ANOTHER type names nothing under (type, id) identity: the
 	// task create lands beside the project, and neither touches the other.
-	proj := mustPut(t, ds, owner, substrate.PutInput{Kind: "project", ID: "occupied-1", Properties: map[string]any{"name": "a project"}})
+	proj := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/project", ID: "occupied-1", Properties: map[string]any{"name": "a project"}})
 	otherType := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"op": "create", "targetKind": "samples.substrate.reamde.dev/tasks/task", "targetId": "occupied-1",
 			"diff": map[string]any{"properties": map[string]any{"name": "a task"}},
@@ -631,12 +631,12 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 	}
 
 	// A tombstoned row at the id: a create neither resurrects nor overwrites.
-	live := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", ID: "gone-1", Properties: map[string]any{"name": "was here"}})
+	live := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", ID: "gone-1", Properties: map[string]any{"name": "was here"}})
 	if _, err := ds.Delete(ctx, owner, live.Kind, live.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	tomb := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"op": "create", "targetKind": "samples.substrate.reamde.dev/tasks/task", "targetId": "gone-1",
 			"diff": map[string]any{"properties": map[string]any{"name": "was here"}},
@@ -661,9 +661,9 @@ func TestChangeRequestDeleteTombstones(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "throwaway"}})
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "throwaway"}})
 	req := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"op": "delete", "rationale": "duplicate",
 			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", task.ID),
@@ -679,7 +679,7 @@ func TestChangeRequestDeleteTombstones(t *testing.T) {
 	}
 	// Replay: a second delete request on the already-gone target is a no-op.
 	replay := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"op":     "delete",
 			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", task.ID),
@@ -791,11 +791,11 @@ func TestPutResurrectsATombstone(t *testing.T) {
 		Properties: map[string]any{"provider": "gcal", "label": "Work"},
 	})
 	cal := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "calendar", ID: "gcal:primary",
+		Kind: "samples.substrate.reamde.dev/calendar/calendar", ID: "gcal:primary",
 		Properties: map[string]any{"name": "Primary", "timezone": "Europe/Athens", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	event := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "calendarevent", ID: "gcal:evt-1",
+		Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: "gcal:evt-1",
 		Properties: map[string]any{
 			"summary": "Standup", "at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T13:30:00Z",
 			"calendar": cal.ID,
@@ -813,7 +813,7 @@ func TestPutResurrectsATombstone(t *testing.T) {
 	// The user restores it and the next sync re-puts the same record.
 	before := maxSeq(t, ds)
 	back := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "calendarevent", ID: "gcal:evt-1",
+		Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: "gcal:evt-1",
 		Properties: map[string]any{
 			"summary": "Standup", "at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T13:30:00Z",
 			"calendar": cal.ID,
@@ -840,7 +840,7 @@ func TestPutResurrectsATombstone(t *testing.T) {
 	}
 	// And the restored record is an ordinary live record again.
 	page, err := ds.List(ctx, substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{"calendarevent"}},
+		Filter: substrate.Filter{Kinds: []string{"samples.substrate.reamde.dev/calendar/calendarevent"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -865,13 +865,13 @@ func TestResurrectDoesNotCascade(t *testing.T) {
 		Properties: map[string]any{"provider": "beeper", "label": "Personal"},
 	})
 	conv := mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "conversation", ID: "beeper:c1", Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + acc.ID},
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "beeper:c1", Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	author := mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Alex"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alex"},
 	})
 	msg := mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "conversationmessage", ID: "beeper:m1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "beeper:m1",
 		Properties: map[string]any{
 			"text": "hi", "at": "2026-08-05T09:00:00Z",
 			"conversation": conv.ID,
@@ -884,7 +884,7 @@ func TestResurrectDoesNotCascade(t *testing.T) {
 		}
 	}
 	mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "conversation", ID: conv.ID, Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + acc.ID},
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: conv.ID, Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	if got := mustGet(t, ds, conv.Kind, conv.ID); got.DeletedAt != nil {
 		t.Fatal("the conversation should be live again")
@@ -904,7 +904,7 @@ func TestClientIDIsACreateRule(t *testing.T) {
 	installShelf(t, ds) // `book` is a mapping target: its id is server-assigned
 
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "book", ID: "book-i-named", Properties: map[string]any{"title": "Piranesi"},
+		Kind: "shelf.test.dev/shelf/book", ID: "book-i-named", Properties: map[string]any{"title": "Piranesi"},
 	}); err == nil {
 		t.Fatal("a writer must not name a new book")
 	} else {
@@ -914,7 +914,7 @@ func TestClientIDIsACreateRule(t *testing.T) {
 	for _, tc := range []struct{ ty, prop string }{
 		// `person` derives its title from a displayTemplate, so the round trip
 		// goes through a declared property; `book` has none.
-		{"person", "name"}, {"book", "title"},
+		{"samples.substrate.reamde.dev/people/person", "name"}, {"shelf.test.dev/shelf/book", "title"},
 	} {
 		created := mustPut(t, ds, owner, substrate.PutInput{
 			Kind: tc.ty, Properties: map[string]any{tc.prop: "x"},
@@ -937,8 +937,8 @@ func TestWritesRefuseSystemTypes(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "A"}})
-	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "B"}})
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "A"}})
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "B"}})
 	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: a.Kind, Winner: a.ID, Loser: b.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
@@ -978,7 +978,7 @@ func TestNullClearsEveryProperty(t *testing.T) {
 	_, ds := newDataset(t)
 
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "task",
+		Kind: "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{
 			"name":  "Ship it",
 			"dueAt": "2026-08-08T00:00:00Z", "description": "notes",
@@ -1075,7 +1075,7 @@ func TestAcceptFailuresAnnotateConflict(t *testing.T) {
 	// A targetless patch request is valid storage (target is not required), but
 	// accepting it has nothing to patch — it annotates, never fails bare.
 	targetless := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"op":   "patch",
 			"diff": map[string]any{"properties": map[string]any{"description": "orphaned"}},
@@ -1097,7 +1097,7 @@ func TestAcceptFailuresAnnotateConflict(t *testing.T) {
 	// `mustExist` refuses it as a value problem, and that refusal at accept
 	// must annotate too, not roll back silently.
 	missingRef := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"op": "create", "targetKind": "samples.substrate.reamde.dev/tasks/task", "targetId": "orphan-task",
 			"diff": map[string]any{
@@ -1157,6 +1157,28 @@ func TestAgentLoopKindsResolveInTheLLMPackage(t *testing.T) {
 	})
 	if row.Kind != "substrate.reamde.dev/llm/provider" {
 		t.Fatalf("llm/provider row kind = %q", row.Kind)
+	}
+}
+
+// A bare word handed to KindByRef is a malformed reference, not a missing
+// kind: ErrValidation naming every identity the repository declares under it,
+// so the routes above it answer 422 with the spelling rather than a 404
+// (decision record 0101). An unknown full reference stays ErrNotFound.
+func TestKindByRefRefusesABareNameNamingTheSpelling(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	_, err := ds.KindByRef(ctx, "kind")
+	if !errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("bare kind: err = %v, want ErrValidation", err)
+	}
+	for _, want := range []string{`"kind" is a bare name`, "substrate.reamde.dev/core/kind"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("bare kind: %q does not name %q", err, want)
+		}
+	}
+	if _, err := ds.KindByRef(ctx, "x.example.com/none/nosuch"); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("unknown full reference: err = %v, want ErrNotFound", err)
 	}
 }
 
@@ -1243,17 +1265,17 @@ func TestDeliveryStatesStampAndAProviderEchoIsANoOp(t *testing.T) {
 		Properties: map[string]any{"provider": "beeper", "label": "Personal"},
 	})
 	conv := mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "conversation", ID: "slack-channel:x1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "slack-channel:x1",
 		Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	me := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "George"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "George"},
 	})
 
 	// A creating write may NAME any declared state: an outbound
 	// message is born a draft.
 	msg := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "conversationmessage",
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage",
 		Properties: map[string]any{
 			"at": "2026-08-05T09:00:00Z", "text": "on my way", "delivery": "draft",
 			"conversation": conv.ID,
@@ -1282,7 +1304,7 @@ func TestDeliveryStatesStampAndAProviderEchoIsANoOp(t *testing.T) {
 	// puts at the id it already holds and nothing changes.
 	before := maxSeq(t, ds)
 	echo := mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "conversationmessage", ID: msg.ID,
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: msg.ID,
 		Properties: map[string]any{
 			"at": "2026-08-05T09:00:00Z", "text": "on my way",
 			"conversation": conv.ID,

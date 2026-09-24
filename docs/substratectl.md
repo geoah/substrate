@@ -93,11 +93,11 @@ defaults to `substratectl`.
 
 ## Reading
 
-`substratectl get <kind> [id]` lists the records of one kind or reads one record. The kind may be
-qualified (`samples.substrate.reamde.dev/tasks/task`) or bare (`task`), which
-resolves against the kind registry; when two installed packages declare the same
-name, it needs qualifying, or `--package` to name the package it resolves in
-(every provider bundle installs a `config`, so `config` always needs one). Lists take `--filter` (the
+`substratectl get <kind> [id]` lists the records of one kind or reads one record. The kind is
+its full reference (`samples.substrate.reamde.dev/tasks/task`). A bare `task`
+is refused, naming every kind the repository declares under that word
+([0101](decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md));
+`substratectl kinds` lists them all. Lists take `--filter` (the
 JSON [filter grammar](api.md#the-filter-grammar)), `-l` label selectors,
 `--search` (words against every text the kind indexes, in the
 [search grammar](api.md#the-search-grammar): `--search 'rack lay*'` is the
@@ -117,7 +117,7 @@ listing it, resumable with `--from` and `--generation` like `watch`.
 `substratectl search <query>` ranks records against a query in the same
 [search grammar](api.md#the-search-grammar): `--mode`
 picks `hybrid` (the default), `lexical` or `semantic`, `--kinds` narrows to
-the kinds named (qualified or bare, resolved like `get`), and `--limit` caps
+the kinds named (full references, as `get` takes them), and `--limit` caps
 the hits. The table prints each hit's raw per-arm scores; `-o yaml` and
 `-o json` print the ranking as the server answers it: the records as
 envelopes, their scores keyed by `<kind>/<id>`, and `pending`, how much of

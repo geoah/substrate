@@ -173,8 +173,8 @@ bin/substratectl register                    # invite code, repository, password
 bin/substratectl login --repository <yours>  # password + TOTP; mints a token record
 bin/substratectl kinds                       # every installed kind
 bin/substratectl get kind <ref> -o yaml      # one kind's definition
-bin/substratectl get task                    # list one kind: GET /api/v1/records with the kind in filter.kinds
-bin/substratectl get task <id> -o yaml       # one record, apply-able envelope
+bin/substratectl get <authority>/tasks/task           # list one kind: GET /api/v1/records with the kind in filter.kinds
+bin/substratectl get <authority>/tasks/task <id> -o yaml  # one record, apply-able envelope; a bare `task` is refused
 bin/substratectl apply -f record.yaml        # put (merge, never prune)
 bin/substratectl watch                       # resumable change stream
 bin/substratectl sync status                 # every connected account's sync state, joined with its triggers (the core `sync` trait)
@@ -209,7 +209,9 @@ to the same admission. The import REHOMES the closure onto the repository's own
 authority, so what lands is `<authority>/tasks/task`, not the shipped spelling
 (record 0048). A PROVIDER (`providers.substrate.reamde.dev/google`) takes the
 other door, `…/install`, and lands under the authority that publishes it. A
-snippet that opens with `get person` on a fresh substrate is wrong.
+snippet that opens with `get <authority>/people/person` on a fresh substrate
+is wrong, and one that names a kind by a bare word is refused everywhere
+([0101](docs/decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md)).
 
 Config is `~/.config/substratectl/config.yaml` (override with
 `SUBSTRATECTL_CONFIG`): named contexts of `{name, server, repository, token,

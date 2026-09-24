@@ -18,7 +18,7 @@ func TestDeleteRefusesAStaleVersion(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	rec := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Ada"}})
+	rec := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Ada"}})
 	read := rec.Version
 	// The concurrent edit the caller never saw.
 	mustPatch(t, ds, owner, rec.Kind, rec.ID, substrate.PatchInput{Properties: map[string]any{"name": "Ada Lovelace"}})
@@ -46,7 +46,7 @@ func TestDeleteRefusesAStaleVersion(t *testing.T) {
 	wantErr(t, err, substrate.ErrConflict, "replaying the conditioned delete")
 
 	// Unconditioned, a delete of a tombstone is still the idempotent no-op.
-	other := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Grace"}})
+	other := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Grace"}})
 	mustPatch(t, ds, owner, other.Kind, other.ID, substrate.PatchInput{Properties: map[string]any{"name": "Grace Hopper"}})
 	if _, err := ds.Delete(ctx, owner, other.Kind, other.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("unconditioned delete: %v", err)
@@ -64,8 +64,8 @@ func TestDeleteThroughAFormerIDComparesTheCanonicalRow(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "A"}})
-	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "B"}})
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "A"}})
+	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "B"}})
 	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestMergeRefusesAStaleParticipantVersion(t *testing.T) {
 	_, ds := newDataset(t)
 
 	mk := func(name string) *substrate.Record {
-		return mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": name}})
+		return mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": name}})
 	}
 	countMerges := func() int {
 		page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/recordmerge"}}})
@@ -197,8 +197,8 @@ func TestSplitRefusesAStaleMergeRecordVersion(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	w := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "W"}})
-	l := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "L"}})
+	w := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "W"}})
+	l := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "L"}})
 	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: w.Kind, Winner: w.ID, Loser: l.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
@@ -285,9 +285,9 @@ func TestDeleteRequestHonorsIfVersion(t *testing.T) {
 	_, ds := newDataset(t)
 	const taskKind = "samples.substrate.reamde.dev/tasks/task"
 
-	stale := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "moves"}})
+	stale := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "moves"}})
 	req := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"op": "delete", "ifVersion": stale.Version,
 			"target": vocabulary.RecordPath(taskKind, stale.ID),
@@ -305,9 +305,9 @@ func TestDeleteRequestHonorsIfVersion(t *testing.T) {
 		t.Fatalf("a refused accept moved the request: %v", got.Properties["decision"])
 	}
 
-	fresh := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "stays put"}})
+	fresh := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "stays put"}})
 	ok := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"op": "delete", "ifVersion": fresh.Version,
 			"target": vocabulary.RecordPath(taskKind, fresh.ID),

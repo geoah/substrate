@@ -958,8 +958,8 @@ func (d *drill) writeSecretsAndAttachment(t *testing.T, e *testenv.Env) {
 // one subject with two names, then the owner's hand takes the property, so
 // both offers stand as alternatives beside a held value.
 func (d *drill) writeMirrors(t *testing.T, e *testenv.Env) {
-	e.MustCallFunction("synca", map[string]any{"id": "a-1", "name": "Alexandra Papas", "email": "alex@example.com"})
-	e.MustCallFunction("syncb", map[string]any{"id": "b-1", "name": "Alex P", "email": "alex@example.com"})
+	e.MustCallFunction("drill.example.com/dira/synca", map[string]any{"id": "a-1", "name": "Alexandra Papas", "email": "alex@example.com"})
+	e.MustCallFunction("drill.example.com/dirb/syncb", map[string]any{"id": "b-1", "name": "Alex P", "email": "alex@example.com"})
 	contact := getRecord(t, e, contactKind, "a-1")
 	d.subjectID = refID(propOf(t, contact, "a-1", "subject"))
 	if d.subjectID == "" {

@@ -114,7 +114,9 @@ func indent(items []string, prefix string) string {
 // ref is how the HTTP surface addresses a function: the route is
 // `/function/{name}/call`, one path segment, so a call names the function by
 // its bare name and the registry resolves it.
-func ref(name string) string { return name }
+// ref is a probe function's full identity: the call route takes nothing
+// less (decision record 0101).
+func ref(name string) string { return probeRef + "/" + name }
 
 // The headline: a function installed and invoked through the real substrate
 // cannot read the server's own environment, where the credential key that

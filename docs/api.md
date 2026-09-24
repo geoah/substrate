@@ -450,8 +450,11 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
  "labels": {"owner/starred": {"eq": true}}}
 ```
 
-- `kinds` names kinds by reference. Absent, the list spans every kind in the
-  repository; a kind the repository never declared is `404`.
+- `kinds` names kinds by reference, in full (`<authority>/<package>/<name>`);
+  a bare word is `422 validation` naming every kind the repository declares
+  under it ([0101](decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md)).
+  Absent, the list spans every kind in the repository; a kind the repository
+  never declared is `404`.
 - `properties` carries one condition per property. The operator set is one
   rule, not a per-type table: `secret` and `digest` properties refuse
   filtering entirely, `reference` takes `eq`, `in`, `contains` and `exists`

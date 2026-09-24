@@ -108,7 +108,10 @@ print(json.dumps(out))
 			t.Errorf("the probe answered nothing for %q", kind)
 			continue
 		}
-		if want := vocabulary.ValidKindReference(kind); answer != want {
+		// The host takes a kind in full (decision record 0101): a reference
+		// the grammar admits AND that carries its authority and package. A
+		// bare word the grammar would parse is refused on both sides.
+		if want := vocabulary.ValidKindReference(kind) && vocabulary.Qualified(kind); answer != want {
 			t.Errorf("host.py %s %q, the engine %s it", verb[answer], kind, verb[want])
 		}
 	}

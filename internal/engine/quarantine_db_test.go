@@ -93,7 +93,7 @@ func TestIncompatibleClosureQuarantinesInsteadOfBricking(t *testing.T) {
 	}
 
 	// The REST of the repository works: a core write succeeds.
-	mustPut(t, ds2, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "still alive"}})
+	mustPut(t, ds2, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "still alive"}})
 
 	// (b) Re-installing the valid closure clears the quarantine.
 	if _, err := ds2.ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
@@ -265,7 +265,7 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 	}
 	mustPut(t, ds2, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
 	// …and so is the shipped vocabulary.
-	mustPut(t, ds2, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "still alive"}})
+	mustPut(t, ds2, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "still alive"}})
 
 	// (b) Re-applying the corrected manifest clears the quarantine — the same
 	// path an admission-quarantined closure clears through.

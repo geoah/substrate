@@ -33,7 +33,7 @@ func TestEmbedQueueIdlesWithNoProvider(t *testing.T) {
 	installShelf(t, ds)
 
 	book := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{
+		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{
 			"title": "The Work", "description": "alpha unique marmalade prose",
 		},
 	})
@@ -199,7 +199,7 @@ func TestEmbedQueueRefusesWrongWidth(t *testing.T) {
 	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
 
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{
+		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{
 			"title": "The Work", "description": "alpha unique marmalade prose",
 		},
 	})
@@ -331,7 +331,7 @@ func TestEmbedQueueDoesNotPublishStaleVectors(t *testing.T) {
 
 	// v1: a book whose blurb is embeddable. Putting it enqueues the embed.
 	book := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{
+		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{
 			"title": "The Work", "description": "alpha unique marmalade prose",
 		},
 	})
@@ -340,7 +340,7 @@ func TestEmbedQueueDoesNotPublishStaleVectors(t *testing.T) {
 	// rewritten to v2, which re-enqueues and bumps the generation.
 	emb.setHook(func() {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: "book", ID: book.ID, Properties: map[string]any{
+			Kind: "shelf.test.dev/shelf/book", ID: book.ID, Properties: map[string]any{
 				"description": "beta different zeppelin narrative",
 			},
 		})

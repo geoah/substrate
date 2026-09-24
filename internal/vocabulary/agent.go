@@ -1,6 +1,7 @@
 package vocabulary
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -693,30 +694,25 @@ func (r *Registry) Agents() []*Agent {
 	return out
 }
 
-// ResolveAgent accepts a full identity or a bare name unique across authorities.
+// ResolveAgent looks an agent up by its full identity. A bare name is refused
+// naming every agent the repository declares under the word (decision record
+// 0101), on the call and chat routes, on a trigger and in a `subagents` list
+// alike.
 func (r *Registry) ResolveAgent(nameOrIdentity string) (*Agent, error) {
-	var cands []*Agent
+	var names []string
 	for _, a := range r.Agents() {
 		if a.Identity() == nameOrIdentity {
 			return a, nil
 		}
 		if a.Name == nameOrIdentity {
-			cands = append(cands, a)
-		}
-	}
-	switch len(cands) {
-	case 0:
-		return nil, fmt.Errorf("unknown agent %q", nameOrIdentity)
-	case 1:
-		return cands[0], nil
-	default:
-		names := make([]string, 0, len(cands))
-		for _, a := range cands {
 			names = append(names, a.Identity())
 		}
-		sort.Strings(names)
-		return nil, fmt.Errorf("ambiguous agent %q: %s", nameOrIdentity, strings.Join(names, ", "))
 	}
+	if !Qualified(nameOrIdentity) {
+		sort.Strings(names)
+		return nil, errors.New(bareNameProblem("", "agent", nameOrIdentity, names))
+	}
+	return nil, fmt.Errorf("unknown agent %q", nameOrIdentity)
 }
 
 // AgentManifest renders an agent document: the identity derives from the name

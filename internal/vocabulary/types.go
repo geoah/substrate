@@ -5,6 +5,7 @@
 package vocabulary
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -1018,16 +1019,24 @@ func (r *Registry) kindsNamed(name string) []string {
 	return out
 }
 
-// bareNameProblem is the refusal every declaration site gives a bare name.
-// A kind's or a trait's name IS its authority, package and name, and a
-// declaration that names one writes all three: the same word under two
-// authorities is two different things, and a shorthand that picked one by
-// searching was how an imported sample's `kind: person` came to be refused
-// as ambiguous beside a verbatim copy of the package it meant. The refusal
-// offers the full spellings the repository holds under that word, so the
-// author copies one rather than guessing.
+// bareNameProblem is the refusal every site gives a bare name, in a
+// declaration and on a read alike. A kind's or a trait's name IS its
+// authority, package and name, and whoever names one writes all three: the
+// same word under two authorities is two different things, and a shorthand
+// that picked one by searching was how an imported sample's `kind: person`
+// came to be refused as ambiguous beside a verbatim copy of the package it
+// meant. The refusal offers the full spellings the repository holds under
+// that word, so the author copies one rather than guessing. `where` prefixes
+// the message when set; a read's refusal has no document to name.
 func bareNameProblem(where, what, name string, declared []string) string {
-	msg := fmt.Sprintf("%s: %q is a bare name, and a %s is named in full as <authority>/<package>/<name>", where, name, what)
+	article := "a"
+	if strings.ContainsRune("aeiou", rune(what[0])) {
+		article = "an"
+	}
+	msg := fmt.Sprintf("%q is a bare name, and %s %s is named in full as <authority>/<package>/<name>", name, article, what)
+	if where != "" {
+		msg = where + ": " + msg
+	}
 	if len(declared) > 0 {
 		return msg + "; this repository declares " + strings.Join(declared, ", ")
 	}
@@ -1054,32 +1063,28 @@ func (r *Registry) ByIdentity(identity string) (*Kind, bool) {
 	return t, ok
 }
 
-// Resolve accepts a full identity or a bare type name unique across
-// authorities. It is the READ's lookup, where nothing declares the name (a
-// records filter, `substratectl get task`, a trigger's selector) and a bare
-// spelling is a convenience the caller qualifies when it is ambiguous. No
-// DECLARATION resolves through it: a pin, a binding and an allowlist entry
-// are spelled in full, and a bare one is refused (bareNameProblem).
+// Resolve looks a kind up by its full identity, on every surface that names
+// one at read or write time: a records filter, a put's `kind`, a change
+// feed's kinds, a trigger's or a policy's selector, `substratectl get`. A
+// bare word is refused naming the full spellings the repository declares
+// under it (decision record 0101), exactly as a declaration's pin is
+// (bareNameProblem): a kind IS its authority, package and name, and the same
+// word under two authorities is two kinds, so nothing picks one by searching.
 func (r *Registry) Resolve(nameOrIdentity string) (*Kind, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if t, ok := r.byIdent[nameOrIdentity]; ok {
 		return t, nil
 	}
-	cands := r.byName[nameOrIdentity]
-	switch len(cands) {
-	case 0:
-		return nil, fmt.Errorf("unknown type %q", nameOrIdentity)
-	case 1:
-		return cands[0], nil
-	default:
-		names := make([]string, 0, len(cands))
-		for _, c := range cands {
+	if !Qualified(nameOrIdentity) {
+		var names []string
+		for _, c := range r.byName[nameOrIdentity] {
 			names = append(names, c.Identity)
 		}
 		sort.Strings(names)
-		return nil, fmt.Errorf("ambiguous type %q: %s", nameOrIdentity, strings.Join(names, ", "))
+		return nil, errors.New(bareNameProblem("", "kind", nameOrIdentity, names))
 	}
+	return nil, fmt.Errorf("unknown type %q", nameOrIdentity)
 }
 
 // packagesNamed lists the loaded packages that carry identity's package word
@@ -1124,32 +1129,18 @@ func (r *Registry) ImplementingStrict(iface string) ([]*Kind, error) {
 		}
 		return out, nil
 	}
+	// A bare trait name is refused the way a bare kind is (decision record
+	// 0101): the filter names the trait's full identity, and the refusal
+	// offers every one the repository declares under the word.
 	want := strings.ToLower(iface)
-	idents := map[string]bool{}
+	var names []string
 	for _, c := range r.Traits() {
 		if strings.ToLower(c.Name) == want || strings.ToLower(traitInterface(c.Name)) == want {
-			idents[c.Identity()] = true
+			names = append(names, c.Identity())
 		}
 	}
-	if len(idents) > 1 {
-		names := make([]string, 0, len(idents))
-		for id := range idents {
-			names = append(names, id)
-		}
-		sort.Strings(names)
-		return nil, fmt.Errorf("ambiguous trait %q: %s — filter by a full identity", iface, strings.Join(names, ", "))
-	}
-	var traitIdent string
-	for id := range idents {
-		traitIdent = id
-	}
-	var out []*Kind
-	for _, t := range r.Kinds() {
-		if (traitIdent != "" && t.implementsIdentity(traitIdent)) || t.implementsMachine(want) {
-			out = append(out, t)
-		}
-	}
-	return out, nil
+	sort.Strings(names)
+	return nil, errors.New(bareNameProblem("", "trait", iface, names))
 }
 
 // Actors lists every declared actor across authorities.

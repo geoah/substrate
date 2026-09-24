@@ -67,7 +67,7 @@ func installNotes(t *testing.T, ds substrate.Dataset, version int, linkProps boo
 func newPerson(t *testing.T, ds substrate.Dataset, name string) *substrate.Record {
 	t.Helper()
 	return mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": name},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": name},
 	})
 }
 

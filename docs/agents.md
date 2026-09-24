@@ -652,8 +652,10 @@ where they happen:
 
 `POST /api/v1/substrate.reamde.dev/core/agent/{name}/call` with `{"input": …}` runs the
 loop once. `{name}` is the agent's full id with each slash written `%2F`
-(`smoke.example.com%2Fsmoke%2Fecho`), or its bare name (`echo`) while exactly
-one agent carries it; the chat route reads it the same way. The input becomes
+(`smoke.example.com%2Fsmoke%2Fecho`); a bare `echo` is `422 validation`
+naming every agent declared under the word
+([0101](decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md)),
+and the chat route reads it the same way. The input becomes
 the first user message, and the answer carries
 `reply`, `thread`, `status`, `effects` with its `effectsByAction` breakdown,
 `turns`, `toolCalls`, and the token and `costUSD` tallies. Unlike a function

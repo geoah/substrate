@@ -216,7 +216,7 @@ def window(lo, hi):
     out, after = [], ""
     while True:
         params = {"filter": json.dumps(
-            {"implements": "temporal",
+            {"implements": "substrate.reamde.dev/core/temporal",
              "properties": {"at": {"gte": lo, "lt": hi}}}),
             "orderBy": "at", "first": "200"}
         if after:
