@@ -26,6 +26,17 @@ flag() {
   printf 'lint:docs: %s\n' "$*" >&2
 }
 
+# in_lines says whether $2 is one of the newline-separated lines of $1. Not
+# `printf | grep -q`: under pipefail that pipeline reports 141 whenever grep
+# exits on an early match before printf has written its later lines, and the
+# name is then flagged as missing although it is there. CI did exactly that
+# for `build:cli` and `test:e2e`, both early in .mise.toml, and passed on
+# rerun.
+in_lines() {
+  case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) return 0 ;; esac
+  return 1
+}
+
 # grep says 0 for a match, 1 for none, and anything above that for a real
 # error (an unreadable file, a bad pattern). Without `-e`, that error would
 # read exactly like "nothing found" and the rule would pass having checked
@@ -99,13 +110,12 @@ fi
 # that no link checker can see.
 #
 # The names are read off the tree's own .mise.toml, not off `mise tasks ls`.
-# The listing is a subprocess, and a subprocess inside `$(...)` fails without
-# a trace: CI once got a partial list back, flagged `build:cli` on a tree that
-# defines it, and passed on rerun. It is also not this tree's list: mise merges
-# every config up the directory tree, so a worktree nested under a checkout
-# sees the checkout's tasks too, and a page naming one of those passes on the
-# laptop and fails in CI. A file read has neither problem. `.mise.local.toml`
-# is left out because CI never has it.
+# The listing is a subprocess whose failure inside `$(...)` leaves no trace,
+# and it is not this tree's list: mise merges every config up the directory
+# tree, so a worktree nested under a checkout sees the checkout's tasks too,
+# and a page naming one of those passes on the laptop and fails in CI. A file
+# read has neither problem. `.mise.local.toml` is left out because CI never
+# has it.
 #
 # Every task here is a `[tasks.name]` or `[tasks."name"]` table, and those
 # headers are the set. A task written another way (a key under a bare
@@ -130,7 +140,7 @@ else
     # every name ending in a colon, which would wave through a real `mise run
     # lint:` typo as well.
     case "$name" in *'<'*) continue ;; esac
-    printf '%s\n' "$tasks" | grep -qx -- "$name" ||
+    in_lines "$tasks" "$name" ||
       flag "'mise run ${name}' names a task that does not exist"
   done < <(grep -rhoE 'mise run [A-Za-z0-9:_.-]+(<[A-Za-z-]+>)?' "${files[@]}" |
     sed 's/^mise run //' | sort -u)
@@ -149,7 +159,7 @@ linked="$(grep -oE '\]\([^)]+\)' docs/README.md |
 for path in docs/*.md; do
   page="$(basename "$path")"
   [ "$page" = "README.md" ] && continue
-  printf '%s\n' "$linked" | grep -qx -- "$page" ||
+  in_lines "$linked" "$page" ||
     flag "docs/README.md does not link ${page}"
 done
 
