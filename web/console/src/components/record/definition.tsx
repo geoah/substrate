@@ -36,8 +36,8 @@ import { kindLinkTargets, kindManifestYAML } from "@/lib/manifest"
 import {
   declaredProperties,
   declaredReferences,
+  kindByIdentity,
   propertyTypeLabel,
-  resolveReferenceTarget,
   type DeclaredProperty,
 } from "@/lib/definition"
 import { keyDocsOf } from "@/lib/yaml-annotations"
@@ -167,20 +167,18 @@ function propertyColumns(): DataTableColumn<DeclaredProperty>[] {
 }
 
 /** The reference's declared target, linked to that collection when the
- * registry can resolve it (a bare singular resolves inside the declaring
- * authority first). An UNPINNED reference names no kind: its value carries
- * one, so there is nothing here to link. */
+ * registry holds it. A pin is a full identity (record 0098), so the lookup is
+ * the whole resolution. An UNPINNED reference names no kind: its value
+ * carries one, so there is nothing here to link. */
 function TargetCell({
   reference,
-  kind,
   kinds,
 }: {
   reference: DeclaredProperty
-  kind: KindInfo
   kinds: KindInfo[]
 }) {
   const pin = reference.to ?? ""
-  const target = pin ? resolveReferenceTarget(kinds, kind, pin) : undefined
+  const target = pin ? kindByIdentity(kinds, pin) : undefined
   const label = pin ? `→ ${pin}${reference.repeated ? "[]" : ""}` : "any kind"
   if (!target) {
     return (
@@ -239,7 +237,6 @@ function HoldsCell({ reference }: { reference: DeclaredProperty }) {
 }
 
 function referenceColumns(
-  kind: KindInfo,
   kinds: KindInfo[]
 ): DataTableColumn<DeclaredProperty>[] {
   return [
@@ -265,9 +262,7 @@ function referenceColumns(
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="kind" />
       ),
-      cell: ({ row }) => (
-        <TargetCell reference={row.original} kind={kind} kinds={kinds} />
-      ),
+      cell: ({ row }) => <TargetCell reference={row.original} kinds={kinds} />,
       meta: { label: "kind", size: { min: 120, max: 220, weight: 0.75 } },
     },
     {
@@ -336,7 +331,7 @@ function ReferenceTable({
   kinds: KindInfo[]
 }) {
   const rows = useMemo(() => declaredReferences(kind), [kind])
-  const columns = useMemo(() => referenceColumns(kind, kinds), [kind, kinds])
+  const columns = useMemo(() => referenceColumns(kinds), [kinds])
   const table = useDataTable({
     columns,
     data: rows,

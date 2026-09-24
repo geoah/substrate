@@ -202,27 +202,6 @@ export function kindByCollection(
   )
 }
 
-/** Resolve a reference declaration's `kind:` pin. A bare singular (`person`)
- * resolves inside the declaring kind's PACKAGE first, then anywhere it is
- * unambiguous; a full kind reference (with a `/`) resolves directly. */
-export function resolveReferenceTarget(
-  kinds: KindInfo[],
-  from: KindInfo,
-  to: string
-): KindInfo | undefined {
-  if (!to) return undefined
-  if (to.includes("/")) return kindByIdentity(kinds, to)
-  const samePackage = kinds.find(
-    (k) =>
-      k.authority === from.authority &&
-      k.package === from.package &&
-      k.name === to
-  )
-  if (samePackage) return samePackage
-  const named = kinds.filter((k) => k.name === to)
-  return named.length === 1 ? named[0] : undefined
-}
-
 /** The kind's `reference`-typed properties: every named, directed link it
  * declares, and the ONE thing that points at another record. */
 export function declaredReferences(k: KindInfo): DeclaredProperty[] {

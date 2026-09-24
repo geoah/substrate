@@ -182,11 +182,8 @@ export function KindBrowsePage() {
 
   // The reference this kind nests by, where it declares one at itself.
   const nestProperty = useMemo(
-    () =>
-      kindInfo && registry.data
-        ? nestingProperty(registry.data, kindInfo)
-        : undefined,
-    [kindInfo, registry.data]
+    () => (kindInfo ? nestingProperty(kindInfo) : undefined),
+    [kindInfo]
   )
   const hasFilters = filters.length > 0 || search.trim().length > 0
   // A filter or a search draws the table flat: a match nested under a parent
@@ -457,7 +454,6 @@ export function KindBrowsePage() {
                 <DataTableFilters
                   fields={filterFields}
                   filters={filters}
-                  kind={kindInfo}
                   kinds={registry.data ?? []}
                   onChange={(next) => {
                     const tokens = next.map(encodeFilter)

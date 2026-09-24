@@ -63,7 +63,7 @@ const providerKind: KindInfo = {
       },
       billedTo: {
         type: "reference",
-        kind: "account",
+        kind: "substrate.reamde.dev/core/account",
         mustExist: true,
         onDelete: "cascade",
         description: "who pays for the calls",
@@ -146,7 +146,7 @@ describe("KindDefinition", () => {
     expect(text).toContain("billedTo")
     expect(text).toContain("who pays for the calls")
     const link = [...container.querySelectorAll("a")].find(
-      (a) => a.textContent === "→ account"
+      (a) => a.textContent === "→ substrate.reamde.dev/core/account"
     )
     expect(link?.getAttribute("href")).toBe(
       "/data/substrate.reamde.dev/core/account"

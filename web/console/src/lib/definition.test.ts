@@ -10,7 +10,7 @@ import {
   filterableProperties,
   propertyTypeLabel,
   kindByCollection,
-  resolveReferenceTarget,
+  kindByIdentity,
   splitKind,
   stateProperties,
   temporalProperties,
@@ -46,7 +46,7 @@ const person: KindInfo = {
       },
       memberOf: {
         type: "reference",
-        kind: "organization",
+        kind: "samples.substrate.reamde.dev/people/organization",
         repeated: true,
         mustExist: true,
         description: "the employer or workspace",
@@ -189,23 +189,20 @@ describe("kind resolution", () => {
     ).toBeUndefined()
   })
 
-  it("resolves a bare reference pin inside the declaring package first", () => {
-    expect(resolveReferenceTarget(kinds, person, "organization")).toBe(org)
+  it("resolves a reference pin by its full identity, and a bare word to nothing", () => {
     expect(
-      resolveReferenceTarget(
-        kinds,
-        person,
-        "samples.substrate.reamde.dev/people/organization"
-      )
+      kindByIdentity(kinds, "samples.substrate.reamde.dev/people/organization")
     ).toBe(org)
-    expect(resolveReferenceTarget(kinds, person, "missing")).toBeUndefined()
+    // The server refuses a bare pin (records 0098, 0101), so nothing here
+    // completes one: not inside the declaring package, not anywhere.
+    expect(kindByIdentity(kinds, "organization")).toBeUndefined()
   })
 
   it("declaredReferences reads the pin, the container and what it holds", () => {
     const refs = declaredReferences(person)
     expect(refs.map((r) => r.name)).toEqual(["memberOf"])
     expect(refs[0]).toMatchObject({
-      to: "organization",
+      to: "samples.substrate.reamde.dev/people/organization",
       repeated: true,
       mustExist: true,
       description: "the employer or workspace",
@@ -249,7 +246,7 @@ describe("declaration detail", () => {
         plain: { type: "string" },
         subject: {
           type: "reference",
-          kind: "issue",
+          kind: "providers.substrate.reamde.dev/github/issue",
           required: true,
           mustExist: true,
           subject: true,
@@ -296,7 +293,9 @@ describe("type labels", () => {
       })
     ).toBe("reference → person")
     // A repeated reference wears the container marker like any other property.
-    expect(propertyTypeLabel(by("memberOf"))).toBe("reference → organization[]")
+    expect(propertyTypeLabel(by("memberOf"))).toBe(
+      "reference → samples.substrate.reamde.dev/people/organization[]"
+    )
   })
 })
 
