@@ -1160,6 +1160,28 @@ func TestAgentLoopKindsResolveInTheLLMPackage(t *testing.T) {
 	}
 }
 
+// A bare word handed to KindByRef is a malformed reference, not a missing
+// kind: ErrValidation naming every identity the repository declares under it,
+// so the routes above it answer 422 with the spelling rather than a 404
+// (decision record 0101). An unknown full reference stays ErrNotFound.
+func TestKindByRefRefusesABareNameNamingTheSpelling(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	_, err := ds.KindByRef(ctx, "kind")
+	if !errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("bare kind: err = %v, want ErrValidation", err)
+	}
+	for _, want := range []string{`"kind" is a bare name`, "substrate.reamde.dev/core/kind"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("bare kind: %q does not name %q", err, want)
+		}
+	}
+	if _, err := ds.KindByRef(ctx, "x.example.com/none/nosuch"); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("unknown full reference: err = %v, want ErrNotFound", err)
+	}
+}
+
 // The connector kinds are no longer writable through the ordinary API: a put
 // naming connector/connectoraccount fails to resolve the kind.
 func TestConnectorKindsRemoved(t *testing.T) {

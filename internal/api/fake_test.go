@@ -466,6 +466,20 @@ func (d *fakeDataset) KindByRef(_ context.Context, identity string) (substrate.K
 			return t, nil
 		}
 	}
+	// The engine's contract (record 0101): a bare word is a malformed
+	// reference refused as validation, naming every identity carrying it, so
+	// a handler that mapped every lookup failure to 404 fails here too.
+	if !vocabulary.Qualified(identity) {
+		var names []string
+		for _, t := range d.types {
+			if t.Name == identity {
+				names = append(names, t.Identity)
+			}
+		}
+		sort.Strings(names)
+		return substrate.KindInfo{}, fmt.Errorf("%w: %q is a bare name, and a kind is named in full as <authority>/<package>/<name>; this repository declares %s",
+			substrate.ErrValidation, identity, strings.Join(names, ", "))
+	}
 	return substrate.KindInfo{}, fmt.Errorf("%w: type %q", substrate.ErrNotFound, identity)
 }
 

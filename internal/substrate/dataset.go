@@ -28,8 +28,9 @@ type Dataset interface {
 	// --- kind registry (builtin + installed) ---
 	Kinds(ctx context.Context) ([]KindInfo, error)
 	// KindByRef resolves a kind REFERENCE, in full
-	// ("samples.substrate.reamde.dev/tasks/task"); a bare "task" names nothing
-	// (decision record 0101). A REST collection segment IS the kind name, so
+	// ("samples.substrate.reamde.dev/tasks/task"). A bare "task" is refused
+	// as ErrValidation naming every identity carrying the word, and an
+	// unknown full reference is ErrNotFound (decision record 0101). A REST collection segment IS the kind name, so
 	// the segments a request addresses spell the reference this resolves, with
 	// nothing to look up in between (decision 0033).
 	KindByRef(ctx context.Context, ref string) (KindInfo, error)
