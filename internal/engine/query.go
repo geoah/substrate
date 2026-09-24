@@ -300,9 +300,10 @@ func (b *builder) add(clause string) { b.where = append(b.where, clause) }
 // `<> ALL(...)`. It replaced a `IN (SELECT jsonb_array_elements_text($n))`
 // semi-join: the planner could neither estimate that function scan nor push
 // the kind list into the (repository, kind, id) index, so a kind-scoped list
-// over a 100k-row table was a seq scan, and with two dozen OR'd containment
-// probes beside it a 77 s one (geoah.me, 2026-09-20). `= ANY` over a bound
-// array is estimated from the column's statistics and served by the index.
+// was a seq scan over the whole records table, and with a few dozen OR'd
+// containment probes beside it one that detoasted every row's props per probe.
+// `= ANY` over a bound array is estimated from the column's statistics and
+// served by the index.
 func (b *builder) textArray(vals []string) string {
 	if vals == nil {
 		vals = []string{}
