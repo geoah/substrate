@@ -35,10 +35,9 @@ function kind(identity: string, properties: Record<string, unknown>): KindInfo {
 
 const team = kind(TEAM, {
   name: { type: "string" },
-  parent: { type: "reference", kind: "team" },
-  members: { type: "reference", kind: "person", repeated: true },
+  parent: { type: "reference", kind: TEAM },
+  members: { type: "reference", kind: PERSON, repeated: true },
 })
-const person = kind(PERSON, { name: { type: "string" } })
 
 function record(id: string, parent?: string): SubstrateRecord {
   return {
@@ -55,39 +54,37 @@ function record(id: string, parent?: string): SubstrateRecord {
 }
 
 describe("nestingProperty", () => {
-  it("finds a bare pin that resolves to the kind itself", () => {
-    expect(nestingProperty([team, person], team)?.name).toBe("parent")
+  it("finds the pin at the kind itself", () => {
+    expect(nestingProperty(team)?.name).toBe("parent")
   })
 
-  it("finds a fully qualified pin", () => {
-    const thread = kind("substrate.reamde.dev/llm/thread", {
-      parent: { type: "reference", kind: "substrate.reamde.dev/llm/thread" },
-      agent: { type: "reference", kind: "substrate.reamde.dev/core/agent" },
-    })
-    expect(nestingProperty([thread], thread)?.name).toBe("parent")
+  it("nests by nothing for a bare pin: a pin is a full identity", () => {
+    const bare = kind(TEAM, { parent: { type: "reference", kind: "team" } })
+    expect(selfReferences(bare)).toEqual([])
+    expect(nestingProperty(bare)).toBeUndefined()
   })
 
   it("ignores repeated and keyed pointers, and pointers at other kinds", () => {
     const k = kind(TEAM, {
-      members: { type: "reference", kind: "team", repeated: true },
-      byRole: { type: "reference", kind: "team", keyed: true },
-      owner: { type: "reference", kind: "person" },
+      members: { type: "reference", kind: TEAM, repeated: true },
+      byRole: { type: "reference", kind: TEAM, keyed: true },
+      owner: { type: "reference", kind: PERSON },
     })
-    expect(selfReferences([k, person], k)).toEqual([])
-    expect(nestingProperty([k, person], k)).toBeUndefined()
+    expect(selfReferences(k)).toEqual([])
+    expect(nestingProperty(k)).toBeUndefined()
   })
 
   it("prefers `parent`, else the first self-reference by name", () => {
     const withParent = kind(TEAM, {
-      above: { type: "reference", kind: "team" },
-      parent: { type: "reference", kind: "team" },
+      above: { type: "reference", kind: TEAM },
+      parent: { type: "reference", kind: TEAM },
     })
-    expect(nestingProperty([withParent], withParent)?.name).toBe("parent")
+    expect(nestingProperty(withParent)?.name).toBe("parent")
     const without = kind(TEAM, {
-      under: { type: "reference", kind: "team" },
-      above: { type: "reference", kind: "team" },
+      under: { type: "reference", kind: TEAM },
+      above: { type: "reference", kind: TEAM },
     })
-    expect(nestingProperty([without], without)?.name).toBe("above")
+    expect(nestingProperty(without)?.name).toBe("above")
   })
 })
 

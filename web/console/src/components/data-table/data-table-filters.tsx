@@ -5,9 +5,9 @@
  * properties the server will actually filter.
  *
  * A reference is filtered by PICKING its referents: the bar is handed the
- * browsed kind and the registry so a pin (`kind: person`) resolves to the
- * collection to offer, and the control reads the chosen records' titles. A
- * bar handed neither (the changelog's) keeps the text box. */
+ * registry so a pin resolves to the collection to offer, and the control
+ * reads the chosen records' titles. A bar handed none (the changelog's) keeps
+ * the text box. */
 
 import { useState } from "react"
 import { CheckIcon, ListFilterIcon, XIcon } from "lucide-react"
@@ -38,8 +38,8 @@ import {
   type ActiveFilter,
 } from "@/lib/filters"
 import {
+  kindByIdentity,
   propertyTypeLabel,
-  resolveReferenceTarget,
   type DeclaredProperty,
 } from "@/lib/definition"
 import { cn } from "@/lib/utils"
@@ -49,27 +49,22 @@ interface DataTableFiltersProps {
   fields: DeclaredProperty[]
   filters: ActiveFilter[]
   onChange: (filters: ActiveFilter[]) => void
-  /** The kind whose records are being filtered, and the registry: together
-   * they resolve a reference field's pin to the collection its picker offers.
-   * Absent, a reference field takes text. */
-  kind?: KindInfo
+  /** The registry, which resolves a reference field's pin to the collection
+   * its picker offers. Absent, a reference field takes text. */
   kinds?: KindInfo[]
 }
 
-/** The kind a reference field's picker offers: its pin, resolved the way
- * the record page resolves it (a bare `person` is the declaring package's
- * first, then the one kind so named anywhere). Undefined for a field that is
- * no reference, an unpinned one (`kind: any`), an ambiguous bare name, and a
- * bar handed no registry, all of which keep the text box. */
+/** The kind a reference field's picker offers: the one its pin names. A pin
+ * is a full identity (record 0098), so the lookup is the whole resolution.
+ * Undefined for a field that is no reference, an unpinned one (`kind: any`),
+ * a pin the registry does not hold, and a bar handed no registry, all of
+ * which keep the text box. */
 function referenceTarget(
   field: DeclaredProperty | undefined,
-  kind?: KindInfo,
   kinds?: KindInfo[]
 ): KindInfo | undefined {
-  if (field?.kind !== "reference" || !field.to || !kind || !kinds) {
-    return undefined
-  }
-  return resolveReferenceTarget(kinds, kind, field.to)
+  if (field?.kind !== "reference" || !field.to || !kinds) return undefined
+  return kindByIdentity(kinds, field.to)
 }
 
 /** The value step, shaped by the declared kind: states and booleans facet
@@ -333,12 +328,11 @@ export function DataTableFilters({
   fields,
   filters,
   onChange,
-  kind,
   kinds,
 }: DataTableFiltersProps) {
   const [addOpen, setAddOpen] = useState(false)
   const [pending, setPending] = useState<DeclaredProperty | null>(null)
-  const pendingTarget = referenceTarget(pending ?? undefined, kind, kinds)
+  const pendingTarget = referenceTarget(pending ?? undefined, kinds)
 
   function closeAdd() {
     setAddOpen(false)
@@ -367,7 +361,7 @@ export function DataTableFilters({
             key={`${filter.field}-${i}`}
             filter={filter}
             field={field}
-            target={referenceTarget(field, kind, kinds)}
+            target={referenceTarget(field, kinds)}
             kinds={kinds}
             onChange={(next) => upsert(next, i)}
             onRemove={() => onChange(filters.filter((_, j) => j !== i))}

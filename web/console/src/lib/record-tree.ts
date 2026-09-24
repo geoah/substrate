@@ -19,37 +19,24 @@ import {
   type RecordFilter,
   type SubstrateRecord,
 } from "@/lib/api/types"
-import {
-  declaredReferences,
-  resolveReferenceTarget,
-  type DeclaredProperty,
-} from "@/lib/definition"
+import { declaredReferences, type DeclaredProperty } from "@/lib/definition"
 import { splitRecordPath } from "@/lib/record-path"
 
-/** The single-valued references a kind declares AT ITSELF, by name. A repeated
- * one is a set, not a place in a tree, and a keyed map of pointers is not a
- * parent either. */
-export function selfReferences(
-  kinds: KindInfo[],
-  kind: KindInfo
-): DeclaredProperty[] {
+/** The single-valued references a kind declares AT ITSELF, by name. A pin is
+ * a full identity (record 0098), so "at itself" is the pin equal to the kind's
+ * own identity. A repeated one is a set, not a place in a tree, and a keyed
+ * map of pointers is not a parent either. */
+export function selfReferences(kind: KindInfo): DeclaredProperty[] {
   return declaredReferences(kind).filter(
-    (p) =>
-      !p.repeated &&
-      !p.keyed &&
-      p.to !== undefined &&
-      resolveReferenceTarget(kinds, kind, p.to)?.identity === kind.identity
+    (p) => !p.repeated && !p.keyed && p.to === kind.identity
   )
 }
 
 /** The property a collection nests by: `parent` where the kind declares one at
  * itself, else the first self-reference by name. `undefined` for a kind that
  * declares none, which is a flat table. */
-export function nestingProperty(
-  kinds: KindInfo[],
-  kind: KindInfo
-): DeclaredProperty | undefined {
-  const own = selfReferences(kinds, kind)
+export function nestingProperty(kind: KindInfo): DeclaredProperty | undefined {
+  const own = selfReferences(kind)
   return own.find((p) => p.name === "parent") ?? own[0]
 }
 

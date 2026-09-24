@@ -88,8 +88,8 @@ describe("Clear all", () => {
 })
 
 /** A reference is filtered by PICKING its referents. The bar resolves the
- * field's bare pin (`person`) against the registry the way the record page
- * does, offers that collection with the title a reader recognises, folds
+ * field's pin (`acme.test/people/person`) against the registry, offers that
+ * collection with the title a reader recognises, folds
  * several picks into one comma-joined value (the wire's `in`), and the
  * control reads the chosen records' titles rather than the ids it carries.
  * A pin that resolves to nothing keeps the text box. */
@@ -104,7 +104,7 @@ describe("a reference field", () => {
     description: "",
     definition: {
       properties: {
-        assignee: { type: "reference", kind: "person" },
+        assignee: { type: "reference", kind: "acme.test/people/person" },
         source: { type: "reference" },
       },
     },
@@ -120,7 +120,12 @@ describe("a reference field", () => {
     definition: { properties: { name: { type: "string" } } },
   }
   const referenceFields: DeclaredProperty[] = [
-    { name: "assignee", kind: "reference", repeated: false, to: "person" },
+    {
+      name: "assignee",
+      kind: "reference",
+      repeated: false,
+      to: "acme.test/people/person",
+    },
     { name: "source", kind: "reference", repeated: false },
   ]
   const person = (id: string, title: string): SubstrateRecord => ({
@@ -169,7 +174,6 @@ describe("a reference field", () => {
           fields={referenceFields}
           filters={filters}
           onChange={onChange}
-          kind={taskKind}
           kinds={[taskKind, personKind]}
         />
       </QueryClientProvider>
@@ -186,8 +190,7 @@ describe("a reference field", () => {
     const onChange = mount([])
     fireEvent.click(screen.getByRole("button", { name: /Add filter/ }))
     fireEvent.click(await screen.findByText("assignee"))
-    // The pin is a bare `person`; the bar resolved it to the people
-    // collection and read it.
+    // The pin names the people collection; the bar looked it up and read it.
     expect(await screen.findByPlaceholderText("Search person…")).toBeTruthy()
     fireEvent.click(await screen.findByText("Grace Hopper"))
     expect(onChange).toHaveBeenCalledExactlyOnceWith([
