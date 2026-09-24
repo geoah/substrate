@@ -775,7 +775,7 @@ func TestGetListTable(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("get", "task")
+	out, _ := h.mustRun("get", "samples.substrate.reamde.dev/tasks/task")
 	want := "ID   TITLE                      STATE            UPDATED\n" +
 		"t9   Send rack layout to Alex   lifecycle=open   2h\n"
 	if out != want {
@@ -796,8 +796,8 @@ func TestGetByFormerIDNotesTheCanonicalIDOnStderr(t *testing.T) {
 			seedTask(h)
 			h.fake.mergeInto("t8", "t9")
 
-			byFormer, stderr := h.mustRun("get", "task", "t8", "-o", output)
-			byCanonical, quiet := h.mustRun("get", "task", "t9", "-o", output)
+			byFormer, stderr := h.mustRun("get", "samples.substrate.reamde.dev/tasks/task", "t8", "-o", output)
+			byCanonical, quiet := h.mustRun("get", "samples.substrate.reamde.dev/tasks/task", "t9", "-o", output)
 
 			if want := "resolved via former id; canonical: t9\n"; stderr != want {
 				t.Fatalf("stderr = %q, want %q", stderr, want)
@@ -818,7 +818,7 @@ func TestGetWideTable(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("get", "task", "-o", "wide")
+	out, _ := h.mustRun("get", "samples.substrate.reamde.dev/tasks/task", "-o", "wide")
 	if !strings.Contains(out, "ID") || !strings.Contains(out, "TYPE") || !strings.Contains(out, "VERSION") {
 		t.Fatalf("wide table missing columns:\n%s", out)
 	}
@@ -882,12 +882,10 @@ func TestStateColumnComesFromTheDeclaration(t *testing.T) {
 	}
 }
 
-// A bare kind name that exactly one package declares still resolves without a
-// package: splitting the vocabulary namespaced the names, it did not make
-// every command spell a package out. The fake serves records of the tasks
-// kind only, so most of these reads 404; what is under test is the kind the
-// CLI named in filter.kinds, not what came back.
-func TestGetBareNameResolvesWhenUniqueAcrossPackages(t *testing.T) {
+// A bare kind name is refused whether one package declares it or several
+// (decision record 0101): the refusal names every full spelling the registry
+// lists under the word, so the fix is a copy, and no records request is made.
+func TestGetRefusesABareNameNamingTheSpellings(t *testing.T) {
 	cases := []struct{ arg, kind string }{
 		{"person", "samples.substrate.reamde.dev/people/person"},
 		{"calendarevent", "samples.substrate.reamde.dev/calendar/calendarevent"},
@@ -902,45 +900,48 @@ func TestGetBareNameResolvesWhenUniqueAcrossPackages(t *testing.T) {
 		t.Run(tc.arg, func(t *testing.T) {
 			h := newHarness(t)
 			h.writeConfig()
-			_, _, _ = h.run("get", tc.arg)
-			want := listOf(tc.kind)
+			_, _, err := h.run("get", tc.arg)
+			if err == nil || !strings.Contains(err.Error(), `"`+tc.arg+`" is a bare name`) || !strings.Contains(err.Error(), tc.kind) {
+				t.Fatalf("get %s: %v, want the refusal naming %s", tc.arg, err, tc.kind)
+			}
 			for _, req := range h.fake.requests {
-				if req == want {
-					return
+				if req == listOf(tc.kind) {
+					t.Fatalf("get %s listed %s anyway", tc.arg, tc.kind)
 				}
 			}
-			t.Errorf("get %s made %v, want one of them to be %q", tc.arg, h.fake.requests, want)
 		})
 	}
 }
 
 // Every connector installs a type named exactly `syncrun` in its own package,
-// so `syncrun` is ambiguous the moment a second connector is registered: the
-// one name in a real repository that can never resolve bare.
+// so the refusal of a bare `syncrun` names every one of them, and the full
+// reference is the one way to address one.
 func TestGetAmbiguousNameErrors(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	_, _, err := h.run("get", "syncrun")
 	if err == nil {
-		t.Fatal("expected an ambiguity error")
+		t.Fatal("expected the bare-name refusal")
 	}
 	for _, want := range []string{
-		"ambiguous",
+		`"syncrun" is a bare name`,
 		"google.connectors.substrate.reamde.dev/google/syncrun",
 		"slack.connectors.substrate.reamde.dev/slack/syncrun",
-		"qualify it as authority/package/name",
 	} {
 		if !strings.Contains(err.Error(), want) {
-			t.Errorf("ambiguity error missing %q: %v", want, err)
+			t.Errorf("refusal missing %q: %v", want, err)
 		}
 	}
-	// The error names the two ways out, and both of them work.
+	// `--package` was the shorthand's escape hatch and went with it.
+	if _, _, err := h.run("get", "syncrun", "--package", "google.connectors.substrate.reamde.dev/google"); err == nil || !strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("--package still accepted: %v", err)
+	}
+	// The full references address the right kinds; only the recorded
+	// requests matter here.
 	h2 := newHarness(t)
 	h2.writeConfig()
-	// Both escape hatches the error names must actually address the right
-	// kind; only the recorded requests matter here.
-	h2.run("get", "slack.connectors.substrate.reamde.dev/slack/syncrun")                   //nolint:dogsled // requests are the assertion
-	h2.run("get", "syncrun", "--package", "google.connectors.substrate.reamde.dev/google") //nolint:dogsled // requests are the assertion
+	h2.run("get", "slack.connectors.substrate.reamde.dev/slack/syncrun")   //nolint:dogsled // requests are the assertion
+	h2.run("get", "google.connectors.substrate.reamde.dev/google/syncrun") //nolint:dogsled // requests are the assertion
 	for _, want := range []string{
 		listOf("slack.connectors.substrate.reamde.dev/slack/syncrun"),
 		listOf("google.connectors.substrate.reamde.dev/google/syncrun"),
@@ -973,35 +974,32 @@ func TestTypeRegistryIsReadWhole(t *testing.T) {
 	}
 	h.fake.extraTypes = extra
 
-	// `book` sits at the oldest end of the registry. The fake serves no
-	// library records, so the read itself 404s — the assertion is that it
-	// RESOLVED and named that kind at all.
-	if _, _, err := h.run("get", "book"); err != nil && strings.Contains(err.Error(), "no kind named") {
+	// `book` sits at the oldest end of the registry. A bare `book` is
+	// refused, and the refusal has to name the library kind, which is past
+	// the first page: the assertion is that the hint read the registry
+	// whole.
+	_, _, err := h.run("get", "book")
+	if err == nil || !strings.Contains(err.Error(), "library.substrate.reamde.dev/library/book") {
 		t.Fatalf("`get book` lost shipped vocabulary past the first page: %v", err)
 	}
-	var sawBooks bool
 	pages := 0
 	for _, req := range h.fake.requests {
-		sawBooks = sawBooks || req == listOf("library.substrate.reamde.dev/library/book")
 		if req == "GET "+typesPath {
 			pages++
 		}
-	}
-	if !sawBooks {
-		t.Fatalf("`get book` did not list the library kind: %v", h.fake.requests)
 	}
 	if pages < 2 {
 		t.Fatalf("the registry was read in %d request(s); a %d-row registry pages", pages, len(extra)+len(fakeRegistry))
 	}
 
-	// An ambiguous name must still REPORT its ambiguity rather than lose one
-	// of its candidates past the page boundary and silently pick the other.
+	// A word several packages declare must name EVERY one of them rather than
+	// lose a candidate past the page boundary.
 	h2 := newHarness(t)
 	h2.writeConfig()
 	h2.fake.extraTypes = extra
-	_, _, err := h2.run("get", "syncrun")
-	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
-		t.Fatalf("`get syncrun` past the first page: err = %v, want an ambiguity", err)
+	_, _, err = h2.run("get", "syncrun")
+	if err == nil || !strings.Contains(err.Error(), "google.connectors.substrate.reamde.dev/google/syncrun") || !strings.Contains(err.Error(), "slack.connectors.substrate.reamde.dev/slack/syncrun") {
+		t.Fatalf("`get syncrun` past the first page: err = %v, want the refusal naming both", err)
 	}
 
 	// And `types` lists every row, not a silently truncated 50.
@@ -1018,8 +1016,14 @@ func TestGetUnknownKindErrors(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	_, _, err := h.run("get", "widgets")
-	if err == nil || !strings.Contains(err.Error(), `no kind named "widgets"`) {
+	if err == nil || !strings.Contains(err.Error(), `"widgets" is a bare name`) || !strings.Contains(err.Error(), "substratectl kinds") {
 		t.Fatalf("err = %v", err)
+	}
+	// A full reference nothing declares is passed to the wire, whose 404 is
+	// the answer; the CLI does not second-guess a spelled-out kind.
+	_, _, err = h.run("get", "widgets.example.com/widgets/widget")
+	if err == nil || strings.Contains(err.Error(), "bare name") {
+		t.Fatalf("a full reference was treated as bare: %v", err)
 	}
 }
 
@@ -1027,7 +1031,7 @@ func TestGetSingleYAMLRoundTripsThroughApply(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("get", "task", "t9")
+	out, _ := h.mustRun("get", "samples.substrate.reamde.dev/tasks/task", "t9")
 
 	var d document
 	if err := yaml.Unmarshal([]byte(out), &d); err != nil {
@@ -1088,7 +1092,7 @@ func TestGetJSON(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("get", "task", "t9", "-o", "json")
+	out, _ := h.mustRun("get", "samples.substrate.reamde.dev/tasks/task", "t9", "-o", "json")
 	var d document
 	if err := json.Unmarshal([]byte(out), &d); err != nil {
 		t.Fatalf("get -o json is not parseable: %v\n%s", err, out)
@@ -1107,7 +1111,7 @@ func TestGetListJSONIsAnArrayOfManifests(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("get", "task", "-o", "json")
+	out, _ := h.mustRun("get", "samples.substrate.reamde.dev/tasks/task", "-o", "json")
 	var docs []document
 	if err := json.Unmarshal([]byte(out), &docs); err != nil {
 		t.Fatalf("get list -o json is not an array: %v\n%s", err, out)
@@ -1123,7 +1127,7 @@ func TestGetListJSONIsAnArrayOfManifests(t *testing.T) {
 func TestGetKindsYAML(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	out, _ := h.mustRun("get", "kind", "-o", "yaml")
+	out, _ := h.mustRun("get", "substrate.reamde.dev/core/kind", "-o", "yaml")
 	first, _, _ := strings.Cut(out, "\n---\n")
 	var d document
 	if err := yaml.Unmarshal([]byte(first), &d); err != nil {
@@ -1148,7 +1152,7 @@ func TestGetRendersFormerIDsInStatus(t *testing.T) {
 	h.writeConfig()
 	seedTask(h)
 	h.fake.mergeInto("t8", "t9")
-	out, _ := h.mustRun("get", "task", "t9")
+	out, _ := h.mustRun("get", "samples.substrate.reamde.dev/tasks/task", "t9")
 
 	var d document
 	if err := yaml.Unmarshal([]byte(out), &d); err != nil {
@@ -1180,7 +1184,7 @@ func TestGetRendersManagedPropertiesInStatus(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("get", "task", "t9")
+	out, _ := h.mustRun("get", "samples.substrate.reamde.dev/tasks/task", "t9")
 
 	var d document
 	if err := yaml.Unmarshal([]byte(out), &d); err != nil {
@@ -1232,7 +1236,7 @@ func TestGetRendersManagedPropertiesInStatus(t *testing.T) {
 		t.Fatalf("put input properties = %+v", in.Properties)
 	}
 
-	list, _ := h.mustRun("get", "task", "-o", "yaml")
+	list, _ := h.mustRun("get", "samples.substrate.reamde.dev/tasks/task", "-o", "yaml")
 	if strings.Contains(list, "manager:") || strings.Contains(list, "alternatives:") {
 		t.Fatalf("a list document must not carry status.properties:\n%s", list)
 	}
@@ -1274,14 +1278,13 @@ func TestPatchStateWritesTheProperty(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("patch", "task", "t9", "--state", "lifecycle=done")
+	out, _ := h.mustRun("patch", "samples.substrate.reamde.dev/tasks/task", "t9", "--state", "lifecycle=done")
 
-	var in substrate.PatchInput
-	if err := json.Unmarshal(mustRaw(h.fake.lastBody), &in); err != nil {
-		t.Fatalf("patch body: %v", err)
-	}
-	if in.Properties["lifecycle"] != "done" {
-		t.Fatalf("patch body = %+v, want the state in properties", in.Properties)
+	// The fake merges a patch into its record, so the stored row says what the
+	// body carried; the last body the fake saw is the registry read the
+	// printed state column made after the write, not the patch.
+	if got := h.fake.record("t9").Properties["lifecycle"]; got != "done" {
+		t.Fatalf("patched record lifecycle = %v, want the state written as a property", got)
 	}
 	if !strings.Contains(out, "samples.substrate.reamde.dev/tasks/task/t9 patched") {
 		t.Fatalf("patch output:\n%s", out)
@@ -1290,7 +1293,7 @@ func TestPatchStateWritesTheProperty(t *testing.T) {
 		t.Fatalf("patch output missing the resulting state:\n%s", out)
 	}
 	// …and an ordinary property written the same way is not reported as a state.
-	out, _ = h.mustRun("patch", "task", "t9", "--prop", "detail=cold aisle")
+	out, _ = h.mustRun("patch", "samples.substrate.reamde.dev/tasks/task", "t9", "--prop", "detail=cold aisle")
 	if strings.Contains(out, "detail") {
 		t.Fatalf("the states line names declared states only:\n%s", out)
 	}
@@ -1545,7 +1548,7 @@ func TestDelete(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("delete", "task", "t9")
+	out, _ := h.mustRun("delete", "samples.substrate.reamde.dev/tasks/task", "t9")
 	if !strings.Contains(out, "samples.substrate.reamde.dev/tasks/task/t9 deleted") {
 		t.Fatalf("delete output:\n%s", out)
 	}

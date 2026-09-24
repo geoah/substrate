@@ -184,7 +184,7 @@ func TestTheSweepCollectsAnOldUnreferencedOrphan(t *testing.T) {
 	// spares it: the collection asks the refs index, over every id the record
 	// has ever had, whether anything live still has hold of it.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "task", ID: "t1",
+		Kind: "samples.substrate.reamde.dev/tasks/task", ID: "t1",
 		Properties: map[string]any{"name": "call them", "assignee": typePerson + "/" + held},
 	})
 
@@ -215,7 +215,7 @@ func TestTheSweepCollectsAnOldUnreferencedOrphan(t *testing.T) {
 	}
 	// The task still points at a record that is there, which is the whole
 	// point of asking.
-	task := mustGet(t, ds, "task", "t1")
+	task := mustGet(t, ds, "samples.substrate.reamde.dev/tasks/task", "t1")
 	if refPathValue(task, "assignee") != typePerson+"/"+held {
 		t.Fatalf("the task's assignee moved: %v", task.Properties["assignee"])
 	}

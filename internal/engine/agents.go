@@ -189,7 +189,7 @@ func (ds *dataset) CallAgent(ctx context.Context, name string, input any) (*subs
 func (ds *dataset) callAgentOnce(ctx context.Context, name string, input any, call *idempotentCall) (*substrate.AgentResult, error) {
 	ag, err := ds.registry().ResolveAgent(name)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", substrate.ErrNotFound, err)
+		return nil, fmt.Errorf("%w: %w", callableRefusal(name), err)
 	}
 	// Admission under the lifecycle fence, held through the whole loop's writes
 	// (thread, every message, settlement) — a disable draining this call waits
@@ -253,7 +253,7 @@ func agentEntryError(err error) error {
 func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name, threadID, message string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	ag, err := ds.registry().ResolveAgent(name)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", substrate.ErrNotFound, err)
+		return nil, fmt.Errorf("%w: %w", callableRefusal(name), err)
 	}
 	if ag.HiddenFromChat {
 		// The declaration's own word: an agent hidden from chat (an llm-as-judge)

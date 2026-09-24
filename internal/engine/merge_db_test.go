@@ -24,7 +24,7 @@ func TestMergeRejectsTombstonedAndAlreadyMerged(t *testing.T) {
 
 	mk := func(name string) *substrate.Record {
 		return mustPut(t, ds, owner, substrate.PutInput{
-			Kind: "person", Properties: map[string]any{"name": name},
+			Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": name},
 		})
 	}
 	a, b, c, d := mk("A"), mk("B"), mk("C"), mk("D")
@@ -77,11 +77,11 @@ func TestSplitKeepsPostMergeOwnerWrites(t *testing.T) {
 	_, ds := newDataset(t)
 
 	winner := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Nina Ray"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Nina Ray"},
 		Annotations: map[string]any{"owner/note": "winner original"},
 	})
 	loser := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "N. Ray"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "N. Ray"},
 		Labels:      map[string]any{"owner/shelf": "audio", "owner/format": "mp3"},
 		Annotations: map[string]any{"owner/note": "loser newer", "owner/extra": 7},
 	})
@@ -145,15 +145,15 @@ func TestMergeRejectsSystemTypes(t *testing.T) {
 	if ty := mustGet(t, ds, "substrate.reamde.dev/core/kind", "samples.substrate.reamde.dev/people/organization"); ty.DeletedAt != nil {
 		t.Fatal("a type projection was tombstoned by merge")
 	}
-	if _, err := ds.Put(ctx, owner, substrate.PutInput{Kind: "organization", Properties: map[string]any{"name": "still works"}}); err != nil {
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/organization", Properties: map[string]any{"name": "still works"}}); err != nil {
 		t.Fatalf("the organization type stopped working: %v", err)
 	}
 
 	// A merge across two TYPES is inexpressible under (type, id) identity:
 	// the verb addresses ONE type, so the organization's id simply does not
 	// exist among people — the refusal is a not-found, and nothing merges.
-	x := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "X"}})
-	org := mustPut(t, ds, owner, substrate.PutInput{Kind: "organization", Properties: map[string]any{"name": "O"}})
+	x := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "X"}})
+	org := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/organization", Properties: map[string]any{"name": "O"}})
 	_, err = ds.Merge(ctx, owner, substrate.MergeInput{Kind: x.Kind, Winner: x.ID, Loser: org.ID})
 	wantErr(t, err, substrate.ErrNotFound, "merging across types")
 	if o := mustGet(t, ds, org.Kind, org.ID); o.DeletedAt != nil {
@@ -161,7 +161,7 @@ func TestMergeRejectsSystemTypes(t *testing.T) {
 	}
 
 	// Control: two records of one type still merge manually.
-	y := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Y"}})
+	y := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Y"}})
 	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: x.Kind, Winner: x.ID, Loser: y.ID}); err != nil {
 		t.Fatalf("manual merge of one type: %v", err)
 	}
@@ -175,11 +175,11 @@ func TestMergeSplitLeavesLinkDataWhereItIs(t *testing.T) {
 	_, ds := newDataset(t)
 
 	team := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "organization", Properties: map[string]any{"name": "Platform"},
+		Kind: "samples.substrate.reamde.dev/people/organization", Properties: map[string]any{"name": "Platform"},
 	})
 	teamRef := vocabulary.RecordPath(team.Kind, team.ID)
 	winner := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{
 			"name": "Nina Ray",
 			"memberOf": []any{map[string]any{
 				vocabulary.ReferenceValueKey: teamRef, "role": "guest",
@@ -187,7 +187,7 @@ func TestMergeSplitLeavesLinkDataWhereItIs(t *testing.T) {
 		},
 	})
 	loser := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{
 			"name": "N. Ray",
 			"memberOf": []any{map[string]any{
 				vocabulary.ReferenceValueKey: teamRef, "role": "admin", "since": "2019-04-01",
@@ -510,12 +510,12 @@ func TestManualMergeMovesLabelsAndAnnotations(t *testing.T) {
 	_, ds := newDataset(t)
 
 	winner := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Nina Ray"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Nina Ray"},
 		Labels:      map[string]any{"owner/pinned": true},
 		Annotations: map[string]any{"owner/note": "first"},
 	})
 	loser := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "N. Ray"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "N. Ray"},
 		Labels:      map[string]any{"owner/shelf": "audio"},
 		Annotations: map[string]any{"owner/note": "second", "owner/extra": 7},
 	})
@@ -567,8 +567,8 @@ func TestMergeLoserSurvivesGC(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "organization", Properties: map[string]any{"name": "A"}})
-	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "organization", Properties: map[string]any{"name": "B"}})
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/organization", Properties: map[string]any{"name": "A"}})
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/organization", Properties: map[string]any{"name": "B"}})
 	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: a.Kind, Winner: a.ID, Loser: b.ID}); err != nil {
 		t.Fatal(err)
 	}

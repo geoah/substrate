@@ -18,7 +18,7 @@ func TestTriggerRunSendsKindAndID(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 
-	out, _ := h.mustRun("trigger", "run", "classify-page", "task", "t9")
+	out, _ := h.mustRun("trigger", "run", "classify-page", "samples.substrate.reamde.dev/tasks/task", "t9")
 	if !strings.Contains(out, "effects applied") {
 		t.Fatalf("trigger run output = %q, want the applied-effects line", out)
 	}
@@ -30,10 +30,9 @@ func TestTriggerRunSendsKindAndID(t *testing.T) {
 	if raw, ok := body["id"]; ok {
 		_ = json.Unmarshal(raw, &gotID)
 	}
-	// The bare `task` resolves against the registry to the full reference,
-	// which is what the wire names.
+	// The kind travels as given, in full: the wire takes nothing else.
 	if gotKind != "samples.substrate.reamde.dev/tasks/task" {
-		t.Errorf("body kind = %q, want the resolved reference", gotKind)
+		t.Errorf("body kind = %q, want the full reference", gotKind)
 	}
 	if gotID != "t9" {
 		t.Errorf("body id = %q, want t9", gotID)

@@ -1320,15 +1320,41 @@ func TestCloneIsolatesInstalls(t *testing.T) {
 	}
 }
 
+// A read-time lookup takes the full identity and nothing else (decision
+// record 0101): a bare word is refused naming every kind declared under it,
+// one or several, and a full identity nothing declares is unknown.
+func TestResolveRefusesABareName(t *testing.T) {
+	r := loadVocab(t)
+	ty, err := r.Resolve("vocab.example.com/vocab/contact")
+	if err != nil || ty.Identity != "vocab.example.com/vocab/contact" {
+		t.Fatalf("resolve by identity: %v %v", ty, err)
+	}
+	_, err = r.Resolve("contact")
+	if err == nil || !strings.Contains(err.Error(), `"contact" is a bare name`) ||
+		!strings.Contains(err.Error(), "this repository declares vocab.example.com/vocab/contact") {
+		t.Fatalf("a bare kind: %v, want the refusal naming the one spelling", err)
+	}
+	if _, err := r.Resolve("nosuch"); err == nil || !strings.Contains(err.Error(), `"nosuch" is a bare name`) || strings.Contains(err.Error(), "declares") {
+		t.Fatalf("a bare word nothing declares: %v", err)
+	}
+	if _, err := r.Resolve("vocab.example.com/vocab/nosuch"); err == nil || !strings.Contains(err.Error(), "unknown type") {
+		t.Fatalf("an unknown identity: %v", err)
+	}
+	// The other three lookups refuse the same way.
+	if _, err := r.ImplementingStrict("temporal"); err == nil || !strings.Contains(err.Error(), `"temporal" is a bare name`) ||
+		!strings.Contains(err.Error(), "core.example.com/core/temporal") {
+		t.Fatalf("a bare trait filter: %v", err)
+	}
+	if _, err := r.ResolveAgent("nosuch"); err == nil || !strings.Contains(err.Error(), `"nosuch" is a bare name`) {
+		t.Fatalf("a bare agent: %v", err)
+	}
+	if _, err := r.ResolveFunction("nosuch"); err == nil || !strings.Contains(err.Error(), `"nosuch" is a bare name`) {
+		t.Fatalf("a bare function: %v", err)
+	}
+}
+
 func TestResolveAmbiguity(t *testing.T) {
 	r := loadVocab(t)
-	ty, err := r.Resolve("contact")
-	if err != nil || ty.Identity != "vocab.example.com/vocab/contact" {
-		t.Fatalf("resolve short name: %v %v", ty, err)
-	}
-	if _, err := r.Resolve("nosuch"); err == nil {
-		t.Fatal("expected unknown type error")
-	}
 	const authority = "dup.connectors.example.com/dup"
 	g, err := parseInstalled(
 		vocabulary.PackageManifest(authority, 1),
@@ -1340,8 +1366,9 @@ func TestResolveAmbiguity(t *testing.T) {
 	if err := r.Install(g); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.Resolve("contact"); err == nil || !strings.Contains(err.Error(), "ambiguous") {
-		t.Fatalf("expected ambiguity error, got %v", err)
+	// Two kinds under the word: the refusal names both, and picks neither.
+	if _, err := r.Resolve("contact"); err == nil || !strings.Contains(err.Error(), "dup.connectors.example.com/dup/contact, vocab.example.com/vocab/contact") {
+		t.Fatalf("expected the refusal to name both contacts, got %v", err)
 	}
 }
 
@@ -1350,7 +1377,7 @@ func TestResolveAmbiguity(t *testing.T) {
 func TestInterfacesAndMachines(t *testing.T) {
 	r := loadVocab(t)
 	temporal := map[string]bool{}
-	for _, ty := range r.Implementing("Temporal") {
+	for _, ty := range r.Implementing("core.example.com/core/temporal") {
 		temporal[ty.Identity] = true
 	}
 	if !temporal["vocab.example.com/vocab/task"] || !temporal["vocab.example.com/vocab/note"] {
@@ -1359,12 +1386,16 @@ func TestInterfacesAndMachines(t *testing.T) {
 	if temporal["vocab.example.com/vocab/contact"] {
 		t.Fatal("contact should not implement Temporal")
 	}
-	status := r.Implementing("HasStatus")
-	if len(status) != 1 || status[0].Identity != "vocab.example.com/vocab/task" {
-		t.Fatalf("HasStatus = %v", status)
-	}
-
+	// A state machine's derived interface (`HasStatus`) is the kind's own
+	// helper's business; the registry-wide lookup takes identities alone
+	// (decision record 0101).
 	task, _ := r.ByIdentity("vocab.example.com/vocab/task")
+	if !task.Implements("HasStatus") {
+		t.Fatal("task should implement HasStatus through its status machine")
+	}
+	if contact, _ := r.ByIdentity("vocab.example.com/vocab/contact"); contact.Implements("HasStatus") {
+		t.Fatal("contact should not implement HasStatus")
+	}
 	m := task.Machines["status"]
 	// `initial` is ONE declared state: the per-actor map died with the guards.
 	if m.Initial != "open" {

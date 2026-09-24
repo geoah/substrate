@@ -430,6 +430,16 @@ type functionCallInput struct {
 	Args any    `json:"args"`
 }
 
+// callableRefusal is the error a call door wraps an unresolved callable in: a
+// bare word is a malformed reference and a validation refusal (decision
+// record 0101), a full identity nothing declares is not found.
+func callableRefusal(name string) error {
+	if !vocabulary.Qualified(name) {
+		return substrate.ErrValidation
+	}
+	return substrate.ErrNotFound
+}
+
 // callFunctionOnce is CallFunction's one attempt: admission, the body, the
 // output check and the effects, with the idempotency reservation settled in
 // the transaction that applies the effects (or in one of its own when there
@@ -438,7 +448,7 @@ type functionCallInput struct {
 func (ds *dataset) callFunctionOnce(ctx context.Context, name string, args any, call *idempotentCall) (any, int, error) {
 	fn, err := ds.registry().ResolveFunction(name)
 	if err != nil {
-		return nil, 0, fmt.Errorf("%w: %w", substrate.ErrNotFound, err)
+		return nil, 0, fmt.Errorf("%w: %w", callableRefusal(name), err)
 	}
 	// Admission under the bundle lifecycle fence, held until the effects
 	// commit: a concurrent disable/uninstall/purge waits this invocation out

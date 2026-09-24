@@ -244,17 +244,15 @@ func TestPolicySelectorRefusesAKindTheRepositoryDoesNotHave(t *testing.T) {
 // GOVERNANCE DOES NOT MOVE TO THE LAXER RULE. Among matches of equal severity
 // the governing rule carries the judge, so a rule that can accept on a model's
 // word must not outrank one that always reaches the owner — otherwise the id
-// alphabet decides who reviews, and a selector that starts matching (a bare
-// name now resolved, a stored `*` now honored) silently hands review to a
-// judge.
+// alphabet decides who reviews, and a selector that starts matching (a stored
+// `*` now honored) silently hands review to a judge.
 func TestPolicyGovernanceStaysWithTheRuleThatReachesTheOwner(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, _ := openAgentDataset(t)
-	// Written before the wildcards landed, in the bare spelling that matched
-	// nothing then and matches now. It sorts first by id.
+	// It sorts first by id.
 	putPolicy(t, ds, "a-widgets", map[string]any{
-		"selector":   map[string]any{"kinds": []any{"widget"}},
+		"selector":   map[string]any{"kinds": []any{crewPackage + "/widget"}},
 		"action":     "gate",
 		"judge":      crewPackage + "/verdictor",
 		"criteria":   "small honest changes yes",
@@ -325,20 +323,28 @@ func TestActionlessPolicyIsSkippedAndWarnedOnce(t *testing.T) {
 	}
 }
 
-// A BARE KIND NAME IN A SELECTOR RESOLVES, like a trigger source's does. The
-// door compares against kind identities, so `widget` would otherwise admit and
-// then match nothing — the same silent no-op the glob exists to remove.
-func TestPolicySelectorResolvesABareKindName(t *testing.T) {
+// A BARE KIND NAME IN A SELECTOR IS REFUSED AT THE DOOR (decision record
+// 0101), like a trigger source's. The door compares against kind identities,
+// so `widget` would otherwise admit and then match nothing — the same silent
+// no-op the glob exists to remove — and the refusal names the full spelling.
+func TestPolicySelectorRefusesABareKindName(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, _ := openAgentDataset(t)
-	putPolicy(t, ds, "gate-bare-widget", map[string]any{
-		"selector": map[string]any{"kinds": []any{"widget"}},
+	_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-bare-widget",
+		Properties: map[string]any{"selector": map[string]any{"kinds": []any{"widget"}}, "action": "gate"},
+	})
+	if err == nil || !strings.Contains(err.Error(), `"widget" is a bare name`) || !strings.Contains(err.Error(), crewPackage+"/widget") {
+		t.Fatalf("a bare selector: %v, want the refusal naming the full spelling", err)
+	}
+	putPolicy(t, ds, "gate-widget", map[string]any{
+		"selector": map[string]any{"kinds": []any{crewPackage + "/widget"}},
 		"action":   "gate",
 	})
 	verdict, _, err := ds.policyVerdict(ctx, crewPackage+"/widget", policyOpPut, crewPackage+"/editor")
 	if err != nil || verdict != policyGate {
-		t.Fatalf("verdict for a bare-named kind = %s %v", verdict, err)
+		t.Fatalf("verdict for the full spelling = %s %v", verdict, err)
 	}
 }
 

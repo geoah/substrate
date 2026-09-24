@@ -225,7 +225,8 @@ kind ([vocabulary as records](vocabulary.md)):
 - Never write a key or a password anywhere but a secret-typed property, and
   never pass one as a command line argument.
 - Never invent an id, address a record without its kind, or address a
-  collection by a plural (`get task`, not `get tasks`).
+  collection by a plural, and never by a bare name
+  (`get <authority>/tasks/task`, not `get task` or `get tasks`).
 - Never retry a `422` unchanged, force a `403`, or loop on a `500`.
 - Never write `title` on a kind that declares its own heading property, and
   never declare a reserved property to make a write pass.

@@ -138,7 +138,7 @@ func TestFunctionLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	fn, err := r.ResolveFunction("mirror")
+	fn, err := r.ResolveFunction("fn.example.com/fn/mirror")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}

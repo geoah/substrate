@@ -116,14 +116,10 @@ registry knows ("task") or the full reference
 			var res struct {
 				Ran int `json:"ran"`
 			}
-			// The wire wants the kind reference. A name the registry knows is
-			// resolved here; anything else travels verbatim, because the server
-			// resolves references and bare names too and its error names the kind
-			// better than a guess would.
+			// The wire wants the kind reference, in full; the server refuses a
+			// bare name with the spellings it declares, so the argument travels
+			// as given.
 			recordKind := args[1]
-			if col, err := a.resolveCollection(ctx, args[1], ""); err == nil && col.Identity != "" {
-				recordKind = col.Identity
-			}
 			// {"type", "id"}, both: the server refuses a body missing either
 			//, so an id-only call was a 400 every single time.
 			body := map[string]any{"kind": recordKind, "id": args[2]}

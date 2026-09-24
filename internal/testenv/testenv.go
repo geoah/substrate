@@ -26,6 +26,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -496,8 +497,10 @@ func (e *Env) ApplyVocabularyYAML(docs ...string) {
 // was refused" is a thing tests assert.
 func (e *Env) CallFunction(ref string, input any) (any, error) {
 	e.t.Helper()
+	// The reference is the function's full identity (decision record 0101),
+	// one path segment with its slashes percent-encoded.
 	status, raw := e.Do(http.MethodPost,
-		"/api/v1/substrate.reamde.dev/core/function/"+ref+"/call",
+		"/api/v1/substrate.reamde.dev/core/function/"+url.PathEscape(ref)+"/call",
 		map[string]any{"input": input})
 	if status < 200 || status >= 300 {
 		return nil, fmt.Errorf("call %s: %d %s", ref, status, strings.TrimSpace(string(raw)))

@@ -334,11 +334,11 @@ The manifest's allowlists take full references, as every declaration does
 ([0098](decisions/0098-a-declaration-names-a-kind-or-trait-in-full.md)):
 `writes`, `reads.kinds` and `call` each name an authority and a package, and a
 bare word is refused naming the full spellings the repository declares. A body
-may ask for either spelling — every gate runs
-on what the reference resolves to, so `host.records.list(["task"])` against a
-capability declaring `samples.substrate.reamde.dev/tasks/task` is the same read,
-and a name the registry cannot place is refused exactly as an undeclared kind
-is.
+names its kinds the same way: `host.records.list(["samples.substrate.reamde.dev/tasks/task"])`,
+and the SDK refuses a bare `"task"` before the call leaves the body, exactly as
+the engine refuses one at the door
+([0101](decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md));
+a full reference the registry cannot place is refused as an undeclared kind.
 
 ## How the body runs
 

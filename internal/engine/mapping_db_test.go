@@ -315,7 +315,7 @@ func newConversation(t *testing.T, ds substrate.Dataset) *substrate.Record {
 		Properties: map[string]any{"provider": "slack", "label": "Work", "status": "ok"},
 	})
 	return mustPut(t, ds, slack, substrate.PutInput{
-		Kind: "conversation", ID: "slack-C1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "slack-C1",
 		Properties: map[string]any{"category": "channel", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 }
@@ -333,7 +333,7 @@ func personOf(t *testing.T, ds substrate.Dataset, src *substrate.Record) string 
 func livePersons(t *testing.T, ds substrate.Dataset) []*substrate.Record {
 	t.Helper()
 	page, err := ds.List(context.Background(), substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{"person"}}, First: 100,
+		Filter: substrate.Filter{Kinds: []string{"samples.substrate.reamde.dev/people/person"}}, First: 100,
 	})
 	if err != nil {
 		t.Fatalf("list people: %v", err)
@@ -384,7 +384,7 @@ func TestSubjectTypeRejectsAClientID(t *testing.T) {
 	installPeopleSources(t, ds)
 
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "person", ID: "person-i-named", Properties: map[string]any{"name": "Ada"},
+		Kind: "samples.substrate.reamde.dev/people/person", ID: "person-i-named", Properties: map[string]any{"name": "Ada"},
 	})
 	if err == nil {
 		t.Fatal("a writer must not name a person")
@@ -392,7 +392,7 @@ func TestSubjectTypeRejectsAClientID(t *testing.T) {
 	wantErr(t, err, substrate.ErrValidation, "client id on a subject type")
 
 	// Server-assigned is the only way, and it works.
-	p := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Ada"}})
+	p := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Ada"}})
 	if p.ID == "" || p.ID == "person-i-named" {
 		t.Fatalf("person id = %q", p.ID)
 	}
@@ -415,7 +415,7 @@ func TestMatchLinksSingleCandidate(t *testing.T) {
 	installPeopleSources(t, ds)
 
 	sam := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
 	})
 	g := syncSource(t, ds, people, typeGoogleContact, "g-sam", map[string]any{
 		"name":   map[string]any{"displayName": "Samuel Jones", "firstName": "Samuel", "lastName": "Jones"},
@@ -446,7 +446,7 @@ func TestMatchFallsThroughToTheNextProbe(t *testing.T) {
 	installPeopleSources(t, ds)
 
 	p := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Nina", "phones": []any{"+301234567890"}},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Nina", "phones": []any{"+301234567890"}},
 	})
 	g := syncSource(t, ds, people, typeGoogleContact, "g-nina", map[string]any{
 		"name":   aname("Nina Ray"),
@@ -472,10 +472,10 @@ func TestAmbiguousMatchCreates(t *testing.T) {
 	installPeopleSources(t, ds)
 
 	a := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Alex", "emails": []any{"family@acme.com"}},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alex", "emails": []any{"family@acme.com"}},
 	})
 	b := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Alexa", "emails": []any{"family@acme.com"}},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alexa", "emails": []any{"family@acme.com"}},
 	})
 	g := syncSource(t, ds, people, typeGoogleContact, "g-fam", map[string]any{
 		"name": aname("The Family"), "emails": gemails("family@acme.com"),
@@ -545,7 +545,7 @@ func TestSamScenario(t *testing.T) {
 	installPeopleSources(t, ds)
 
 	sam := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
 	})
 
 	// Google matches by email, fills phones, and YIELDS on the owner's name
@@ -861,7 +861,7 @@ func TestSubjectEdgeIsCreateTimeOnly(t *testing.T) {
 
 	g := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})
 	pid := personOf(t, ds, g)
-	other := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Someone"}})
+	other := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Someone"}})
 
 	// Re-asserting the same target is what every re-sync does.
 	syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")}, pid)
@@ -899,7 +899,7 @@ func TestOneHopResolution(t *testing.T) {
 	pid := personOf(t, ds, s)
 	conv := newConversation(t, ds)
 	msg := mustPut(t, ds, slack, substrate.PutInput{
-		Kind: "conversationmessage", ID: "s-msg-1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "s-msg-1",
 		Properties: map[string]any{
 			"text": "hi", "at": "2026-08-03T10:00:00Z", "conversation": conv.ID,
 			"author": vocabulary.RecordPath(slackPackage+"/slackuser", s.ID),
@@ -938,7 +938,7 @@ func TestUnlinkedSourceGetsAShell(t *testing.T) {
 
 	// Resolving through the record links a new shell in line.
 	msg := mustPut(t, ds, slack, substrate.PutInput{
-		Kind: "conversationmessage", ID: "s-msg-1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "s-msg-1",
 		Properties: map[string]any{
 			"text": "hi", "at": "2026-08-03T10:00:00Z",
 			"conversation": newConversation(t, ds).ID,
@@ -1080,8 +1080,8 @@ func TestNestedMergeSplitKeepsOneSubject(t *testing.T) {
 
 	src := syncSource(t, ds, slack, typeSlackUser, "s-U1", map[string]any{"realName": "Ada"})
 	a := personOf(t, ds, src)
-	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "B"}})
-	c := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "C"}})
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "B"}})
+	c := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "C"}})
 
 	m1, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: b.Kind, Winner: b.ID, Loser: a})
 	if err != nil {
@@ -1144,7 +1144,7 @@ func TestConcurrentShellBirthMintsOneShell(t *testing.T) {
 	for i := range 2 {
 		go func() {
 			_, err := ds.Put(ctx, slack, substrate.PutInput{
-				Kind: "conversationmessage", ID: "s-msg-" + string(rune('a'+i)),
+				Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "s-msg-" + string(rune('a'+i)),
 				Properties: map[string]any{
 					"text": "hi", "conversation": conv.ID,
 					"author": vocabulary.RecordPath(googlePackage+"/contact", src.ID),
@@ -1417,10 +1417,10 @@ func TestSearchDemotesUtilityPersons(t *testing.T) {
 	_, ds := newDataset(t)
 
 	utility := mustPut(t, ds, people, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Zorionak Zorionak Zorionak"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Zorionak Zorionak Zorionak"},
 	})
 	known := mustPut(t, ds, people, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Zorionak"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Zorionak"},
 	})
 	if s := mustGet(t, ds, utility.Kind, utility.ID).Properties["prominence"]; s != "utility" {
 		t.Fatalf("born %q, want utility", s)
@@ -1441,10 +1441,10 @@ func TestSearchDemotesUtilityPersons(t *testing.T) {
 	}
 	// A type with no prominence machine is never demoted by it.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "organization", Properties: map[string]any{"name": "Zorionak Ltd"},
+		Kind: "samples.substrate.reamde.dev/people/organization", Properties: map[string]any{"name": "Zorionak Ltd"},
 	})
 	hits, err = searchHits(ds.Search(ctx, substrate.SearchInput{
-		Q: "Zorionak", Mode: substrate.SearchLexical, Kinds: []string{"organization", "person"},
+		Q: "Zorionak", Mode: substrate.SearchLexical, Kinds: []string{"samples.substrate.reamde.dev/people/organization", "samples.substrate.reamde.dev/people/person"},
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -1470,7 +1470,7 @@ func TestUndeclaredNullDeletes(t *testing.T) {
 	_, ds := newDataset(t)
 	ctx := context.Background()
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "task", Properties: map[string]any{"name": "t"},
+		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "t"},
 	})
 	if _, err := ds.Patch(ctx, owner, task.Kind, task.ID, substrate.PatchInput{
 		Properties: map[string]any{"neverDeclared": "x"},
@@ -1916,7 +1916,7 @@ func TestSyncAfterASubjectMergeMintsNothing(t *testing.T) {
 
 	// The owner decides the shell is a person they already have.
 	ada := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Ada Lovelace"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Ada Lovelace"},
 	})
 	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: typePerson, Winner: ada.ID, Loser: shell}); err != nil {
 		t.Fatalf("merge: %v", err)
@@ -1944,7 +1944,7 @@ func TestSyncAfterASubjectMergeMintsNothing(t *testing.T) {
 	// And the immutability guard has not evaporated with the merge: the subject
 	// is still set, so a write moving it elsewhere is refused.
 	grace := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Grace Hopper"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Grace Hopper"},
 	})
 	_, err := ds.Put(ctx, people, substrate.PutInput{
 		Kind: typeGoogleContact, ID: "g-ned",

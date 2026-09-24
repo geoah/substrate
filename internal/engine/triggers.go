@@ -162,12 +162,12 @@ func callableGone(tr *trigger) error {
 
 // resolveKinds canonicalizes an record source's kind patterns against the
 // repository's own vocabulary — the same resolve-at-the-gate the runner's
-// reads allowlist gets. A kind has two spellings, `task` and
-// `samples.substrate.reamde.dev/tasks/task`, and the changelog rows the matcher compares against
-// carry the IDENTITY, so a source declared in the bare spelling would validate
-// and then never fire. A glob is left alone (it is not a reference), and so is
-// a name the registry does not know: it matches nothing, which is exactly what
-// an undeclared kind should do.
+// reads allowlist gets. The changelog rows the matcher compares against carry
+// the IDENTITY, and a selector is admitted spelled in full (a bare word is
+// refused above), so this settles the case admission cannot: a full
+// reference at a kind the registry does not know matches nothing, which is
+// exactly what an undeclared kind should do. A glob is left alone (it is not
+// a reference).
 func (t *trigger) resolveKinds(reg *vocabulary.Registry) {
 	if t.Record == nil {
 		return
@@ -462,6 +462,14 @@ func parseRecordSource(raw any) (*recordSource, error) {
 		pat := fmt.Sprint(tv)
 		if !vocabulary.ValidTypeGlob(pat) {
 			return nil, fmt.Errorf("source.record.kinds[%d]: %q is not a kind reference, `<authority>/*` or `*`", i, pat)
+		}
+		// A bare word is refused at admission (decision record 0101): the
+		// matcher compares against identities, so a source spelled bare would
+		// validate and then never fire, which is the silence resolveKinds
+		// below exists to avoid for an undeclared kind and must never give a
+		// declared one.
+		if pat != "*" && !strings.HasSuffix(pat, "/*") && !vocabulary.Qualified(pat) {
+			return nil, fmt.Errorf("source.record.kinds[%d]: %q is a bare name, and a kind is named in full as <authority>/<package>/<name>", i, pat)
 		}
 		src.Kinds = append(src.Kinds, pat)
 	}

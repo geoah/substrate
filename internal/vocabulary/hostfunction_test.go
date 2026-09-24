@@ -193,14 +193,19 @@ data:
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	fn, err := r.ResolveFunction("query")
-	if err != nil {
-		t.Fatalf("the bare name did not resolve: %v", err)
+	// A bare name is refused and the refusal names both: the repository's
+	// own query AND the built-in, so the caller sees what the word covers
+	// (decision record 0101).
+	_, err = r.ResolveFunction("query")
+	if err == nil || !strings.Contains(err.Error(), `"query" is a bare name`) ||
+		!strings.Contains(err.Error(), "own.example.com/own/query, substrate.reamde.dev/core/query") {
+		t.Fatalf("a bare function name: %v, want the refusal naming both spellings", err)
 	}
-	if fn.Identity() != "own.example.com/own/query" {
-		t.Fatalf("the bare name resolved to %s", fn.Identity())
+	fn, err := r.ResolveFunction("own.example.com/own/query")
+	if err != nil || fn.Identity() != "own.example.com/own/query" {
+		t.Fatalf("the repository's own query by identity: %v %v", fn, err)
 	}
-	// The identity still resolves the built-in.
+	// The identity resolves the built-in.
 	host, err := r.ResolveFunction(vocabulary.HostFunctionQuery)
 	if err != nil || !host.IsHost() {
 		t.Fatalf("the host identity did not resolve: %v", err)

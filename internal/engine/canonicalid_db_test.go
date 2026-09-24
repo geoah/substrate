@@ -23,10 +23,10 @@ func TestCanonicalIDReadByFormerID(t *testing.T) {
 	_, ds := newDataset(t)
 
 	winner := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Nina Ray"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Nina Ray"},
 	})
 	loser := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "N. Ray"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "N. Ray"},
 	})
 	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
@@ -45,7 +45,7 @@ func TestCanonicalIDReadByFormerID(t *testing.T) {
 	}
 	// An id that never existed is still not found: the redirect is not a
 	// wildcard.
-	if _, err := ds.Get(ctx, "person", "zzzzzzzzzzzz"); err == nil {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/people/person", "zzzzzzzzzzzz"); err == nil {
 		t.Fatal("an unknown id must not resolve")
 	} else {
 		wantErr(t, err, substrate.ErrNotFound, "unknown id")
@@ -62,14 +62,14 @@ func TestCanonicalIDReferenceResolution(t *testing.T) {
 	_, ds := newDataset(t)
 	installShelf(t, ds)
 
-	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "A"}})
-	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "B"}})
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "A"}})
+	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "B"}})
 	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 
 	book := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{
+		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{
 			"title":  "Piranesi",
 			"author": []any{loser.ID},
 		},
@@ -108,18 +108,18 @@ func TestCanonicalIDMergeRepointsNothing(t *testing.T) {
 	_, ds := newDataset(t)
 	installShelf(t, ds)
 
-	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "A"}})
-	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "B"}})
-	org := mustPut(t, ds, owner, substrate.PutInput{Kind: "organization", Properties: map[string]any{"name": "Acme"}})
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "A"}})
+	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "B"}})
+	org := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/organization", Properties: map[string]any{"name": "Acme"}})
 
 	// Outgoing from the loser…
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", ID: loser.ID,
+		Kind: "samples.substrate.reamde.dev/people/person", ID: loser.ID,
 		Properties: map[string]any{"memberOf": []any{org.ID}},
 	})
 	// …and incoming to it.
 	book := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{
+		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{
 			"title":  "Piranesi",
 			"author": []any{loser.ID},
 		},
@@ -181,9 +181,9 @@ func TestCanonicalIDTrailsFlatten(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "A"}})
-	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "B"}})
-	c := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "C"}})
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "A"}})
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "B"}})
+	c := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "C"}})
 
 	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: b.Kind, Winner: b.ID, Loser: a.ID}); err != nil {
 		t.Fatalf("merge a into b: %v", err)
@@ -224,10 +224,10 @@ func TestFormerIDNamesItsWinner(t *testing.T) {
 	installPeopleSources(t, ds)
 
 	winner := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "A"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "A"},
 	})
 	loser := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "B"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "B"},
 	})
 	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
@@ -286,8 +286,8 @@ func TestCanonicalIDDeleteByFormerID(t *testing.T) {
 	_, ds := newDataset(t)
 	ctx := context.Background()
 
-	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "A"}})
-	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "B"}})
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "A"}})
+	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "B"}})
 	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -312,10 +312,10 @@ func TestCanonicalIDReferenceWriteAtFormerIDs(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "A"}})
-	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "B"}})
-	org := mustPut(t, ds, owner, substrate.PutInput{Kind: "organization", Properties: map[string]any{"name": "Acme"}})
-	orgLoser := mustPut(t, ds, owner, substrate.PutInput{Kind: "organization", Properties: map[string]any{"name": "Acme Inc"}})
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "A"}})
+	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "B"}})
+	org := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/organization", Properties: map[string]any{"name": "Acme"}})
+	orgLoser := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/organization", Properties: map[string]any{"name": "Acme Inc"}})
 	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge people: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestCanonicalIDReferenceWriteAtFormerIDs(t *testing.T) {
 	// record forward (a put with a supplied id is refused outright: an id is
 	// the writer's own key and a former one names the winner), and the VALUE is
 	// left exactly as written.
-	if _, err := ds.Patch(ctx, owner, "person", loser.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, owner, "samples.substrate.reamde.dev/people/person", loser.ID, substrate.PatchInput{
 		Properties: map[string]any{"memberOf": []any{orgLoser.ID}},
 	}); err != nil {
 		t.Fatalf("patch at a former id: %v", err)
@@ -347,7 +347,7 @@ func TestCanonicalIDReferenceWriteAtFormerIDs(t *testing.T) {
 		t.Fatalf("the surviving organization's referencing `memberOf` = %v", pathsOf(page))
 	}
 	// Clearing is writing the property away; there is no second verb.
-	if _, err := ds.Patch(ctx, owner, "person", loser.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, owner, "samples.substrate.reamde.dev/people/person", loser.ID, substrate.PatchInput{
 		Properties: map[string]any{"memberOf": nil},
 	}); err != nil {
 		t.Fatalf("clear at a former id: %v", err)
@@ -367,39 +367,39 @@ func TestRekeySameIDAcrossTypes(t *testing.T) {
 
 	const shared = "shared-id-1"
 	person := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", ID: shared, Properties: map[string]any{"name": "Pat"},
+		Kind: "samples.substrate.reamde.dev/people/person", ID: shared, Properties: map[string]any{"name": "Pat"},
 	})
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "task", ID: shared, Properties: map[string]any{"name": "file taxes"},
+		Kind: "samples.substrate.reamde.dev/tasks/task", ID: shared, Properties: map[string]any{"name": "file taxes"},
 	})
 	if person.ID != shared || task.ID != shared {
 		t.Fatalf("both puts should keep the shared id: %s / %s", person.ID, task.ID)
 	}
 
 	// Each (type, id) resolves to its own record.
-	if got := mustGet(t, ds, "person", shared); got.Kind != person.Kind {
+	if got := mustGet(t, ds, "samples.substrate.reamde.dev/people/person", shared); got.Kind != person.Kind {
 		t.Fatalf("get(person, %s) = %s", shared, got.Kind)
 	}
-	if got := mustGet(t, ds, "task", shared); got.Kind != task.Kind {
+	if got := mustGet(t, ds, "samples.substrate.reamde.dev/tasks/task", shared); got.Kind != task.Kind {
 		t.Fatalf("get(task, %s) = %s", shared, got.Kind)
 	}
 
 	// A write to one never touches the other.
-	mustPatch(t, ds, owner, "person", shared, substrate.PatchInput{
+	mustPatch(t, ds, owner, "samples.substrate.reamde.dev/people/person", shared, substrate.PatchInput{
 		Properties: map[string]any{"displayName": "Patricia"},
 	})
-	if got := mustGet(t, ds, "task", shared); got.Properties["displayName"] != nil {
+	if got := mustGet(t, ds, "samples.substrate.reamde.dev/tasks/task", shared); got.Properties["displayName"] != nil {
 		t.Fatalf("a person patch leaked onto the task: %+v", got.Properties)
 	}
 
 	// A delete of one leaves the other live.
-	if _, err := ds.Delete(ctx, owner, "task", shared, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, owner, "samples.substrate.reamde.dev/tasks/task", shared, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete task: %v", err)
 	}
-	if got := mustGet(t, ds, "person", shared); got.DeletedAt != nil {
+	if got := mustGet(t, ds, "samples.substrate.reamde.dev/people/person", shared); got.DeletedAt != nil {
 		t.Fatal("deleting the task tombstoned the person")
 	}
-	if got := mustGet(t, ds, "task", shared); got.DeletedAt == nil {
+	if got := mustGet(t, ds, "samples.substrate.reamde.dev/tasks/task", shared); got.DeletedAt == nil {
 		t.Fatal("the task should be tombstoned")
 	}
 }
@@ -414,17 +414,17 @@ func TestRekeyFormerIDTrailIsPerType(t *testing.T) {
 	_, ds := newDataset(t)
 
 	winner := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", ID: "trail-w", Properties: map[string]any{"name": "A"},
+		Kind: "samples.substrate.reamde.dev/people/person", ID: "trail-w", Properties: map[string]any{"name": "A"},
 	})
 	loser := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", ID: "trail-l", Properties: map[string]any{"name": "B"},
+		Kind: "samples.substrate.reamde.dev/people/person", ID: "trail-l", Properties: map[string]any{"name": "B"},
 	})
-	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: "person", Winner: winner.ID, Loser: loser.ID}); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: "samples.substrate.reamde.dev/people/person", Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 
 	// Within the type: the former id resolves to the winner and says so.
-	got := mustGet(t, ds, "person", loser.ID)
+	got := mustGet(t, ds, "samples.substrate.reamde.dev/people/person", loser.ID)
 	if got.ID != winner.ID || got.CanonicalID != winner.ID {
 		t.Fatalf("get(person, %s) = %s (canonicalId %q)", loser.ID, got.ID, got.CanonicalID)
 	}
@@ -432,7 +432,7 @@ func TestRekeyFormerIDTrailIsPerType(t *testing.T) {
 	// Another type may use the loser's id as its OWN key: the trail is the
 	// person type's, not the repository's.
 	tk, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "task", ID: loser.ID, Properties: map[string]any{"name": "unrelated"},
+		Kind: "samples.substrate.reamde.dev/tasks/task", ID: loser.ID, Properties: map[string]any{"name": "unrelated"},
 	})
 	if err != nil {
 		t.Fatalf("a task may wear a person's former id: %v", err)
@@ -440,18 +440,18 @@ func TestRekeyFormerIDTrailIsPerType(t *testing.T) {
 	if tk.ID != loser.ID || tk.CanonicalID != "" {
 		t.Fatalf("the task should hold the id plainly: id=%s canonicalId=%q", tk.ID, tk.CanonicalID)
 	}
-	if got := mustGet(t, ds, "task", loser.ID); got.Kind != "samples.substrate.reamde.dev/tasks/task" || got.ID != loser.ID {
+	if got := mustGet(t, ds, "samples.substrate.reamde.dev/tasks/task", loser.ID); got.Kind != "samples.substrate.reamde.dev/tasks/task" || got.ID != loser.ID {
 		t.Fatalf("get(task, %s) = %s %s", loser.ID, got.Kind, got.ID)
 	}
 	// And the person read still resolves through the trail, unshaken.
-	if got := mustGet(t, ds, "person", loser.ID); got.ID != winner.ID {
+	if got := mustGet(t, ds, "samples.substrate.reamde.dev/people/person", loser.ID); got.ID != winner.ID {
 		t.Fatalf("the person trail broke: %s", got.ID)
 	}
 
 	// The per-type collision rule stands where it belongs: a PERSON put at
 	// the former id is still a conflict.
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "person", ID: loser.ID, Properties: map[string]any{"name": "C"},
+		Kind: "samples.substrate.reamde.dev/people/person", ID: loser.ID, Properties: map[string]any{"name": "C"},
 	}); !errors.Is(err, substrate.ErrConflict) {
 		t.Fatalf("a person put at a person former id must conflict, got %v", err)
 	}

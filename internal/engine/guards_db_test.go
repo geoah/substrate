@@ -77,7 +77,7 @@ func TestAnyActorMayDeleteAProperty(t *testing.T) {
 	_, ds := newDataset(t)
 
 	c := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Alexandros Papas"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alexandros Papas"},
 	})
 	before := maxSeq(t, ds)
 
@@ -110,7 +110,7 @@ func TestResyncIsSilentUnderAnyActor(t *testing.T) {
 	_, ds := newDataset(t)
 
 	c := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Alexandros Papas"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alexandros Papas"},
 	})
 	mustPatch(t, ds, slack, c.Kind, c.ID, substrate.PatchInput{Properties: map[string]any{"name": "alex"}})
 	v := mustGet(t, ds, c.Kind, c.ID).Version
@@ -277,10 +277,10 @@ func TestSharedEmailDoesNotFuse(t *testing.T) {
 	_, ds := newDataset(t)
 
 	a := mustPut(t, ds, people, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Alex", "emails": []any{"alex@acme.com"}},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alex", "emails": []any{"alex@acme.com"}},
 	})
 	b := mustPut(t, ds, people, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Alexa", "emails": []any{"alex@acme.com"}},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alexa", "emails": []any{"alex@acme.com"}},
 	})
 	if a.ID == b.ID {
 		t.Fatal("a shared address fused two people")
@@ -300,9 +300,9 @@ func TestApplyDiffChecksTargetVersion(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "Draft the memo"}})
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "Draft the memo"}})
 	req := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"diff":   map[string]any{"properties": map[string]any{"description": "due Friday"}},
 			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", task.ID),
@@ -336,7 +336,7 @@ func TestApplyDiffChecksTargetVersion(t *testing.T) {
 	// Re-syncing the same request (same target, same diff) must not rebase it
 	// onto the newer target.
 	resynced := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest", ID: req.ID,
+		Kind: "substrate.reamde.dev/core/recordpatchrequest", ID: req.ID,
 		Properties: map[string]any{
 			"diff":   map[string]any{"properties": map[string]any{"description": "due Friday"}},
 			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", task.ID),
@@ -350,7 +350,7 @@ func TestApplyDiffChecksTargetVersion(t *testing.T) {
 
 	// A request computed against the current version still applies.
 	fresh := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "recordpatchrequest",
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
 			"diff":   map[string]any{"properties": map[string]any{"description": "due Tuesday"}},
 			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", task.ID),
@@ -372,7 +372,7 @@ func TestRequiredReferencesEnforcedOnCreate(t *testing.T) {
 	}
 
 	_, err := ds.Put(ctx, slack, substrate.PutInput{
-		Kind: "conversationmessage", ID: "slack:T1:C1:1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "slack:T1:C1:1",
 		Properties: map[string]any{"text": "orphan"},
 	})
 	if err == nil {
@@ -388,14 +388,14 @@ func TestRequiredReferencesEnforcedOnCreate(t *testing.T) {
 		Properties: map[string]any{"provider": "slack"},
 	})
 	conv := mustPut(t, ds, slack, substrate.PutInput{
-		Kind: "conversation", ID: "slack:T1:C1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "slack:T1:C1",
 		Properties: map[string]any{"category": "channel", "name": "general", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	author := mustPut(t, ds, slack, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Alex"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alex"},
 	})
 	msg := mustPut(t, ds, slack, substrate.PutInput{
-		Kind: "conversationmessage", ID: "slack:T1:C1:1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "slack:T1:C1:1",
 		Properties: map[string]any{
 			"text":         "hello",
 			"conversation": conv.ID,
@@ -413,7 +413,7 @@ func TestRequiredReferencesEnforcedOnCreate(t *testing.T) {
 	// addressed to the property, never a silent stub: there is no
 	// resolve-by-value any more.
 	if _, err := ds.Put(ctx, slack, substrate.PutInput{
-		Kind: "conversationmessage", ID: "slack:T1:C1:2",
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "slack:T1:C1:2",
 		Properties: map[string]any{
 			"conversation": "slack:T1:C2",
 			"author":       author.ID,

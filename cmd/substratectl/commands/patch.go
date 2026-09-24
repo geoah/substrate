@@ -12,7 +12,6 @@ import (
 
 func (a *app) patchCommand() *cobra.Command {
 	var (
-		pkg        string
 		states     []string
 		labels     []string
 		properties []string
@@ -35,7 +34,7 @@ key-wise; a raw -p patch may use null values to delete keys.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			col, err := a.resolveCollection(ctx, args[0], pkg)
+			col, err := a.resolveCollection(ctx, args[0])
 			if err != nil {
 				return err
 			}
@@ -103,7 +102,6 @@ key-wise; a raw -p patch may use null values to delete keys.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&pkg, "package", "", "the package (<authority>/<package>) a bare kind name resolves in")
 	cmd.Flags().StringArrayVar(&states, "state", nil, "state transition name=state (repeatable)")
 	cmd.Flags().StringArrayVar(&labels, "label", nil, "label key=value (repeatable)")
 	cmd.Flags().StringArrayVar(&properties, "prop", nil, "property key=value (repeatable)")

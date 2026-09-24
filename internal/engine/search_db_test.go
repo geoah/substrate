@@ -34,11 +34,11 @@ func TestLexicalSearch(t *testing.T) {
 		Properties: map[string]any{"provider": "gcal", "label": "Work"},
 	})
 	cal := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "calendar", ID: "gcal-cal:primary",
+		Kind: "samples.substrate.reamde.dev/calendar/calendar", ID: "gcal-cal:primary",
 		Properties: map[string]any{"name": "Primary", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	titled := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "calendarevent", ID: "gcal-event:e1",
+		Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: "gcal-event:e1",
 		Properties: map[string]any{
 			"at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T14:00:00Z",
 			"summary": "Rack layout review", "description": "Weekly sync",
@@ -46,7 +46,7 @@ func TestLexicalSearch(t *testing.T) {
 		},
 	})
 	bodied := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "calendarevent", ID: "gcal-event:e2",
+		Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: "gcal-event:e2",
 		Properties: map[string]any{
 			"at": "2026-08-06T13:00:00Z", "endsAt": "2026-08-06T14:00:00Z",
 			"summary": "Standup", "description": "we will discuss the rack layout",
@@ -54,7 +54,7 @@ func TestLexicalSearch(t *testing.T) {
 		},
 	})
 	mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "calendarevent", ID: "gcal-event:e3",
+		Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: "gcal-event:e3",
 		Properties: map[string]any{
 			"at": "2026-08-07T13:00:00Z", "endsAt": "2026-08-07T14:00:00Z",
 			"summary": "Lunch", "description": "food",
@@ -78,7 +78,7 @@ func TestLexicalSearch(t *testing.T) {
 	}
 	// Type narrowing.
 	hits, err = searchHits(ds.Search(ctx, substrate.SearchInput{
-		Q: "rack layout", Mode: substrate.SearchLexical, Kinds: []string{"conversationmessage"},
+		Q: "rack layout", Mode: substrate.SearchLexical, Kinds: []string{"samples.substrate.reamde.dev/messaging/conversationmessage"},
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -111,12 +111,12 @@ func TestEmbedQueueAndHybridSearch(t *testing.T) {
 		Properties: map[string]any{"provider": "gcal", "label": "Work"},
 	})
 	cal := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "calendar", ID: "gcal-cal:primary",
+		Kind: "samples.substrate.reamde.dev/calendar/calendar", ID: "gcal-cal:primary",
 		Properties: map[string]any{"name": "Primary", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	newEvent := func(ext, summary, desc, day string) *substrate.Record {
 		return mustPut(t, ds, gcal, substrate.PutInput{
-			Kind: "calendarevent", ID: extID("gcal.event", ext),
+			Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: extID("gcal.event", ext),
 			Properties: map[string]any{
 				"at": "2026-08-" + day + "T13:00:00Z", "endsAt": "2026-08-" + day + "T14:00:00Z",
 				"summary": summary, "description": desc,
@@ -173,7 +173,7 @@ func TestEmbedQueueAndHybridSearch(t *testing.T) {
 		t.Fatalf("expected several chunks, embedded %d", firstChunks)
 	}
 	mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "calendarevent", ID: ev.ID, Properties: map[string]any{"description": long + " and a tail"},
+		Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: ev.ID, Properties: map[string]any{"description": long + " and a tail"},
 	})
 	_, before = emb.counts()
 	if _, err := ds.ProcessEmbedQueue(ctx, 10); err != nil {
@@ -206,7 +206,7 @@ func TestHybridSearchSkipsTheSemanticArmWithoutVectors(t *testing.T) {
 	installShelf(t, ds)
 	installEmbedProvider(t, ds, "vectors", down.URL, "text-embedding-3-small")
 	book := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{
+		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{
 			"title": "The Work", "description": "alpha unique marmalade prose",
 		},
 	})

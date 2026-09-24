@@ -273,7 +273,7 @@ func TestSchemaWritesSerializeDataWritesFlow(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			_, err := ds.Put(ctx, owner, substrate.PutInput{
-				Kind: "task", Properties: map[string]any{"name": fmt.Sprintf("t%d", i)},
+				Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": fmt.Sprintf("t%d", i)},
 			})
 			if err != nil {
 				errs <- fmt.Errorf("data write %d: %w", i, err)

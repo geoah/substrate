@@ -27,17 +27,18 @@ type Dataset interface {
 
 	// --- kind registry (builtin + installed) ---
 	Kinds(ctx context.Context) ([]KindInfo, error)
-	// KindByRef resolves a kind REFERENCE ("samples.substrate.reamde.dev/tasks/task", or a bare
-	// "task"), or an unambiguous local name. A REST collection segment IS the
-	// kind name, so the segments a request addresses spell the reference this
-	// resolves, with nothing to look up in between (decision 0033).
+	// KindByRef resolves a kind REFERENCE, in full
+	// ("samples.substrate.reamde.dev/tasks/task"); a bare "task" names nothing
+	// (decision record 0101). A REST collection segment IS the kind name, so
+	// the segments a request addresses spell the reference this resolves, with
+	// nothing to look up in between (decision 0033).
 	KindByRef(ctx context.Context, ref string) (KindInfo, error)
 
 	// --- the five mutations ---
 	// Record identity is the FULL (type, id) pair: every
 	// addressed mutation names the type beside the id — a bare id names
-	// nothing. `typ` accepts a full type identity or an unambiguous local
-	// name, exactly like PutInput.Type.
+	// nothing. `typ` is the kind's full identity, exactly like PutInput.Kind;
+	// a bare name is refused (decision record 0101).
 	Put(ctx context.Context, actor Actor, in PutInput) (*Record, error)
 	Patch(ctx context.Context, actor Actor, typ, id string, in PatchInput) (*Record, error)
 	// Delete tombstones one record. The input carries the optional version

@@ -855,11 +855,13 @@ func TestShadowAccountConfigTraitIsNotAnAccount(t *testing.T) {
 			t.Fatalf("shadow-bound kind answers the core trait query: %+v", types)
 		}
 	}
-	// The BARE name is now ambiguous — core and shadow both declare it — and
-	// an ambiguous bare filter errors instead of aggregating look-alikes.
+	// A BARE name is refused (decision record 0101), and the refusal names
+	// both declarations, core's and the shadow, so the caller sees what the
+	// word covers instead of one of them answering for the other.
 	if _, err := ds.TypesImplementing(ctx, "accountconfig"); err == nil ||
-		!strings.Contains(err.Error(), "ambiguous trait") {
-		t.Fatalf("ambiguous bare trait filter: %v", err)
+		!strings.Contains(err.Error(), `"accountconfig" is a bare name`) ||
+		!strings.Contains(err.Error(), mbPackage+"/accountconfig, substrate.reamde.dev/core/accountconfig") {
+		t.Fatalf("bare trait filter: %v", err)
 	}
 	// The runner injects no shadow records as accounts.
 	out, _, err := ds.CallFunction(ctx, mbEchoFn, map[string]any{})

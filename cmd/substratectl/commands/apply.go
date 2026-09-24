@@ -27,8 +27,7 @@ func (a *app) applyCommand() *cobra.Command {
 
 Every document wears the envelope — kind, metadata, data:
 
-  kind: samples.substrate.reamde.dev/tasks/task             # the kind reference; a bare
-                                         # kind: task resolves in the registry
+  kind: samples.substrate.reamde.dev/tasks/task             # the kind reference, in full
   metadata:
     id: t9                               # the record id; omit to create
     labels:
@@ -40,9 +39,9 @@ Every document wears the envelope — kind, metadata, data:
       detail: "rack layout"
       source: samples.substrate.reamde.dev/calendar/transcript/f81k
 
-A qualified kind resolves outright; a bare one resolves against the kind
-registry, and a name several authorities declare (every bundle installs a
-` + "`config`" + `) has to be qualified. A document with ` + "`metadata.id`" + `
+The kind is the full reference, ` + "`<authority>/<package>/<name>`" + `; a bare
+name is refused by the substrate, naming the kinds it declares under that
+word. A document with ` + "`metadata.id`" + `
 is PUT at that id; without one it is POSTed to the records route, which
 assigns one. The
 ` + "`status`" + ` block written by ` + "`substratectl get -o yaml`" + ` is ignored, so

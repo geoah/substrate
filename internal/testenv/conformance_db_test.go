@@ -20,6 +20,7 @@ import (
 	"go/parser"
 	"go/token"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -396,13 +397,14 @@ func conformanceCases() []codeCase {
 		// A function whose body raises is a server-side execution fault, not
 		// bad caller input: the runner reaches the body and it throws, which is
 		// substrate.ErrFunctionFault (500), never the 422 an input-schema
-		// violation would be. The route is one path segment, so the call names
-		// the function by its bare name and the registry resolves it.
+		// violation would be. The route is one path segment, the function's
+		// full identity with its slashes percent-encoded (decision record
+		// 0101).
 		name: "a function whose body faults answers 500 function_failed",
 		code: "function_failed",
 		run: func(t *testing.T, e *testenv.Env) {
 			status, body := e.Do(http.MethodPost,
-				"/api/v1/substrate.reamde.dev/core/function/faulting/call",
+				"/api/v1/substrate.reamde.dev/core/function/"+url.PathEscape(conformanceRef+"/faulting")+"/call",
 				map[string]any{"input": map[string]any{}})
 			wantError(t, status, body, http.StatusInternalServerError, "function_failed")
 		},

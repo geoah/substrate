@@ -17,7 +17,6 @@ import (
 
 func (a *app) getCommand() *cobra.Command {
 	var (
-		pkg         string
 		output      string
 		filter      string
 		selector    []string
@@ -37,14 +36,10 @@ func (a *app) getCommand() *cobra.Command {
 		Short: "List or read records",
 		Long: `Read the records of one kind, or one record.
 
-The kind may be qualified ("samples.substrate.reamde.dev/people/person") — which
-is resolved without a round trip — or bare ("person"), which is resolved against
-the kind registry and errors when several packages declare it. The shipped
-vocabulary is split across several packages (people, messaging, calendar,
-tasks), so a bare name is only unambiguous while one package declares it:
-"task" is tasks' alone and resolves, but every provider installs a "config", so
-"config" always needs qualifying (or --package to name the package it lives
-in).
+The kind is its full reference ("samples.substrate.reamde.dev/people/person"),
+which is what the wire takes. A bare name ("person") is refused, naming every
+kind the repository declares under that word so the fix is a copy;
+` + "`substratectl kinds`" + ` lists them all.
 
 -o yaml writes each record as a manifest — kind, metadata, data and the
 server-set status — ---separated, and -o json writes the same shape. status is
@@ -69,7 +64,7 @@ states.`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			col, err := a.resolveCollection(ctx, args[0], pkg)
+			col, err := a.resolveCollection(ctx, args[0])
 			if err != nil {
 				return err
 			}
@@ -141,7 +136,6 @@ states.`,
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&pkg, "package", "", "the package (<authority>/<package>) a bare kind name resolves in")
 	f.StringVarP(&output, "output", "o", "", "output format: table|wide|yaml|json (default table for lists, yaml for a single record)")
 	f.StringVar(&filter, "filter", "", `filter as JSON (substrate.Filter), e.g. '{"properties":{"prominence":{"eq":"known"}}}'`)
 	f.StringArrayVarP(&selector, "selector", "l", nil, "label selector, key=value (repeatable); bare key means present")

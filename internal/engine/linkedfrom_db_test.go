@@ -37,7 +37,7 @@ func TestLinkedFromListsEverySourceThatMapsOntoTheRecord(t *testing.T) {
 	installPeopleSources(t, ds)
 
 	sam := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
 	})
 	g := syncSource(t, ds, people, typeGoogleContact, "g-sam", map[string]any{
 		"name":   map[string]any{"displayName": "Samuel Jones"},
@@ -56,7 +56,7 @@ func TestLinkedFromListsEverySourceThatMapsOntoTheRecord(t *testing.T) {
 	// a mapping-owned link and must not appear: `linkedFrom` is the mirror
 	// question, and `filter.referencing` is the general one.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "task", Properties: map[string]any{"name": "Ship it", "assignee": sam.ID},
+		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "Ship it", "assignee": sam.ID},
 	})
 
 	want := [][4]string{
@@ -74,7 +74,7 @@ func TestLinkedFromListsEverySourceThatMapsOntoTheRecord(t *testing.T) {
 	}
 	// A kind no mapping targets carries nothing either.
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "task", Properties: map[string]any{"name": "Unmapped"},
+		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "Unmapped"},
 	})
 	if got := mustGet(t, ds, task.Kind, task.ID); got.LinkedFrom != nil {
 		t.Fatalf("a kind no mapping targets carried linkedFrom: %v", got.LinkedFrom)
@@ -99,10 +99,10 @@ func TestLinkedFromAnswersForAMergedFormerID(t *testing.T) {
 	installPeopleSources(t, ds)
 
 	winner := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Ada", "emails": []any{"ada@acme.com"}},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Ada", "emails": []any{"ada@acme.com"}},
 	})
 	loser := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "A. Lovelace", "emails": []any{"al@acme.com"}},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "A. Lovelace", "emails": []any{"al@acme.com"}},
 	})
 	kept := syncSource(t, ds, people, typeGoogleContact, "g-ada", map[string]any{
 		"name": map[string]any{"displayName": "Ada Lovelace"}, "emails": gemails("ada@acme.com"),
