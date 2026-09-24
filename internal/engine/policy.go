@@ -71,7 +71,6 @@ func (ds *dataset) loadPolicies(ctx context.Context) ([]policyRule, error) {
 	if err != nil {
 		return nil, err
 	}
-	reg := ds.registry()
 	rules := make([]policyRule, 0, len(page.Records))
 	for _, rec := range page.Records {
 		if disabled, _ := rec.Properties["disabled"].(bool); disabled {
@@ -87,7 +86,7 @@ func (ds *dataset) loadPolicies(ctx context.Context) ([]policyRule, error) {
 			continue
 		}
 		if sel, ok := rec.Properties["selector"].(map[string]any); ok {
-			rule.kinds = resolveSelectorKinds(reg, stringList(sel["kinds"]))
+			rule.kinds = stringList(sel["kinds"])
 			rule.ops = stringList(sel["ops"])
 			rule.agents = stringList(sel["agents"])
 		}
@@ -119,29 +118,6 @@ func (ds *dataset) warnActionless(id string) {
 	}
 	ds.svc.log.Warn("substrate: policy: no action, so the rule speaks for nothing — give it allow, gate or refuse, or delete it",
 		"repository", logSafeID(ds.Repository().ID), "policy", logSafeID(id))
-}
-
-// resolveSelectorKinds canonicalizes a selector's exact patterns against the
-// repository's own vocabulary, the same resolve-at-the-gate a trigger source
-// gets (triggers.go resolveKinds). A kind has two spellings, `task` and
-// `samples.substrate.reamde.dev/tasks/task`, and the door compares against the
-// IDENTITY, so a selector written in the bare spelling would admit and then
-// never match. A glob is not a reference and is left alone; so is a name the
-// registry does not know, which matches nothing, which is what an undeclared
-// kind should do.
-func resolveSelectorKinds(reg *vocabulary.Registry, pats []string) []string {
-	if reg == nil {
-		return pats
-	}
-	for i, pat := range pats {
-		if pat == "*" || strings.HasSuffix(pat, "/*") {
-			continue
-		}
-		if ty, err := reg.Resolve(pat); err == nil && ty != nil {
-			pats[i] = ty.Identity
-		}
-	}
-	return pats
 }
 
 // validatePolicyRow admits a recordpatchpolicy at the write door, the way a

@@ -4,27 +4,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// A trigger source may name a kind in either spelling — `task` and
-// `samples.substrate.reamde.dev/tasks/task` are ONE kind — and the changelog rows
-// the matcher compares against carry the identity. So a source declared bare
-// must fire on the qualified rows, exactly as the runner's reads allowlist
-// resolves at its gate; before resolveKinds it validated and then never fired.
-func TestTriggerSourceResolvesBareKinds(t *testing.T) {
-	// `task` is an IMPORTED vocabulary bundle now — creation seeds core alone
-	// — so the registry a trigger resolves against is the seed plus what the
-	// repository imported.
-	reg, err := enginetest.SeededRegistry(SeedKindsDir, "people", "scheduling", "tasks")
-	if err != nil {
-		t.Fatalf("build the repository registry: %v", err)
-	}
+// A trigger's source is compared against the changelog row's kind IDENTITY,
+// exactly: a bare word is refused at parse (decision record 0101), a full
+// reference fires on its rows, and a reference the repository does not
+// declare is kept as written and matches nothing.
+func TestTriggerSourceMatchesTheIdentityExactly(t *testing.T) {
 	// A bare word is refused at parse (decision record 0101): admitted, it
 	// would compare against identities and never fire.
-	_, err = parseTrigger("t1", map[string]any{
+	_, err := parseTrigger("t1", map[string]any{
 		"callable": vocabulary.RecordPath(kindFunction, "x.substrate.reamde.dev/x/f"),
 		"source": map[string]any{
 			"record": map[string]any{"kinds": []any{"task"}, "ops": []any{"create"}},
@@ -42,11 +33,11 @@ func TestTriggerSourceResolvesBareKinds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	tr.resolveKinds(reg)
 	if !tr.Record.matches("samples.substrate.reamde.dev/tasks/task", "create") {
-		t.Fatalf("a trigger on kinds [task] did not fire for samples.substrate.reamde.dev/tasks/task: %v", tr.Record.Kinds)
+		t.Fatalf("a trigger on the full kind did not fire for samples.substrate.reamde.dev/tasks/task: %v", tr.Record.Kinds)
 	}
-	// A kind the registry does not know is left alone and matches nothing.
+	// A kind the repository does not declare is kept as written and matches
+	// nothing: the pattern is compared against the identity, exactly.
 	tr2, err := parseTrigger("t2", map[string]any{
 		"callable": vocabulary.RecordPath(kindFunction, "x.substrate.reamde.dev/x/f"),
 		"source": map[string]any{
@@ -56,7 +47,6 @@ func TestTriggerSourceResolvesBareKinds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	tr2.resolveKinds(reg)
 	if tr2.Record.matches("samples.substrate.reamde.dev/tasks/task", "create") {
 		t.Fatal("an unknown kind matched something")
 	}

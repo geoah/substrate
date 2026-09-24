@@ -113,7 +113,6 @@ func (t *trigger) resolveCallable(reg *vocabulary.Registry) {
 			t.Callable = fn
 		}
 	}
-	t.resolveKinds(reg)
 }
 
 // refreshCallable RE-RESOLVES the callable against the live registry, in the
@@ -158,28 +157,6 @@ func (ds *dataset) refreshCallable(tr *trigger) error {
 // wake is answered with.
 func callableGone(tr *trigger) error {
 	return fmt.Errorf("%w: %w: trigger %s names %s", substrate.ErrValidation, errCallableGone, tr.ID, tr.CallableID)
-}
-
-// resolveKinds canonicalizes an record source's kind patterns against the
-// repository's own vocabulary — the same resolve-at-the-gate the runner's
-// reads allowlist gets. The changelog rows the matcher compares against carry
-// the IDENTITY, and a selector is admitted spelled in full (a bare word is
-// refused above), so this settles the case admission cannot: a full
-// reference at a kind the registry does not know matches nothing, which is
-// exactly what an undeclared kind should do. A glob is left alone (it is not
-// a reference).
-func (t *trigger) resolveKinds(reg *vocabulary.Registry) {
-	if t.Record == nil {
-		return
-	}
-	for i, pat := range t.Record.Kinds {
-		if pat == "*" || strings.HasSuffix(pat, "/*") {
-			continue
-		}
-		if ty, err := reg.Resolve(pat); err == nil && ty != nil {
-			t.Record.Kinds[i] = ty.Identity
-		}
-	}
 }
 
 // recordSource is a changelog subscription: type globs, ops, an optional CEL
@@ -465,9 +442,8 @@ func parseRecordSource(raw any) (*recordSource, error) {
 		}
 		// A bare word is refused at admission (decision record 0101): the
 		// matcher compares against identities, so a source spelled bare would
-		// validate and then never fire, which is the silence resolveKinds
-		// below exists to avoid for an undeclared kind and must never give a
-		// declared one.
+		// validate and then never fire. A row stored bare before this rule
+		// was rewritten once by repository migration 2.
 		if pat != "*" && !strings.HasSuffix(pat, "/*") && !vocabulary.Qualified(pat) {
 			return nil, fmt.Errorf("source.record.kinds[%d]: %q is a bare name, and a kind is named in full as <authority>/<package>/<name>", i, pat)
 		}

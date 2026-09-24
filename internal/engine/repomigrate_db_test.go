@@ -168,7 +168,7 @@ func TestRepositoryMigrationQualifiesStoredBareNames(t *testing.T) {
 	// bare and recorded it, as every fresh repository's first open does. A
 	// repository from before the migration existed has no such row, so the
 	// ledger is cleared to stand for one.
-	if got := rmLedger(t, raw); !reflect.DeepEqual(got, map[int]string{1: "qualify_bare_declaration_names"}) {
+	if got := rmLedger(t, raw); !reflect.DeepEqual(got, map[int]string{1: "qualify_bare_declaration_names", 2: "qualify_bare_selector_kinds"}) {
 		t.Fatalf("a fresh repository's first open recorded %v", got)
 	}
 	rmClearLedger(t, dsn, repo)
@@ -182,7 +182,7 @@ func TestRepositoryMigrationQualifiesStoredBareNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a repository holding bare stored names did not open: %v", err)
 	}
-	if got := rmLedger(t, raw); !reflect.DeepEqual(got, map[int]string{1: "qualify_bare_declaration_names"}) {
+	if got := rmLedger(t, raw); !reflect.DeepEqual(got, map[int]string{1: "qualify_bare_declaration_names", 2: "qualify_bare_selector_kinds"}) {
 		t.Fatalf("ledger = %v", got)
 	}
 	migrated := changelogHead(t, raw)
@@ -235,7 +235,7 @@ func TestRepositoryMigrationQualifiesStoredBareNames(t *testing.T) {
 	if head := changelogHead(t, raw); head != migrated {
 		t.Fatalf("the second open appended: head %d, was %d", head, migrated)
 	}
-	if got := rmLedger(t, raw); len(got) != 1 {
+	if got := rmLedger(t, raw); len(got) != 2 {
 		t.Fatalf("ledger after the second open = %v", got)
 	}
 	// A rebuild replays the plant and then the migration's writes, and the
@@ -379,7 +379,7 @@ func TestRepositoryMigrationRunsOnAnImportedDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the imported repository did not open: %v", err)
 	}
-	if got := rmLedger(t, raw2); !reflect.DeepEqual(got, map[int]string{1: "qualify_bare_declaration_names"}) {
+	if got := rmLedger(t, raw2); !reflect.DeepEqual(got, map[int]string{1: "qualify_bare_declaration_names", 2: "qualify_bare_selector_kinds"}) {
 		t.Fatalf("ledger after the first open = %v", got)
 	}
 	beta, err := ds2.KindByRef(ctx, rmBeta)
@@ -442,4 +442,139 @@ func rmProjections(t *testing.T, snapshot []byte) ([]map[string]any, map[string]
 		}
 	}
 	return refs, fts
+}
+
+// THE SELECTOR MIGRATION (migration 2). A trigger source and a policy
+// selector stored bare, as a binary before decision record 0101 admitted
+// them, open spelled in full and appended through the changelog; a word no
+// single kind carries stays as it is; a second open appends nothing; a
+// rebuild reproduces the rewrite.
+func TestRepositoryMigrationQualifiesStoredSelectorKinds(t *testing.T) {
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	root := t.TempDir()
+	repo := testdb.Repository(t)
+
+	svc := rmOpen(t, dsn, root)
+	if _, err := svc.CreateRepository(ctx, repo); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One kind to select, and a function for the trigger to call.
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(rmPackage, 1),
+		vocabulary.KindManifest(rmPackage, map[string]any{"singular": "alpha"}, map[string]any{
+			"properties": map[string]any{"score": map[string]any{"type": "int"}},
+		}),
+		vocabulary.FunctionManifest(rmPackage, "note", map[string]any{
+			"description": "notes a change",
+			"runtime":     vocabulary.RuntimePython,
+			"source":      "def main(input, host):\n    return {}\n",
+		}),
+	}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	trigger, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "substrate.reamde.dev/core/trigger", ID: "on-alpha",
+		Properties: map[string]any{
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{rmAlpha}, "ops": []any{"create"}}},
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", rmPackage+"/note"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("put trigger: %v", err)
+	}
+	policy, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-alpha",
+		Properties: map[string]any{
+			"selector": map[string]any{"kinds": []any{rmAlpha, "*"}, "ops": []any{"put"}},
+			"action":   "gate",
+		},
+	})
+	if err != nil {
+		t.Fatalf("put policy: %v", err)
+	}
+
+	// Plant both rows as the binary before 0101 stored them: the kind spelled
+	// bare, and on the policy a second word no kind carries, which the old
+	// resolution left alone too.
+	plant := func(rec *substrate.Record, edit func(props map[string]any)) {
+		t.Helper()
+		props := rec.Properties
+		edit(props)
+		if err := planter(t, ds).PlantDeclarationRow(ctx, rec.Kind, rec.ID, props); err != nil {
+			t.Fatalf("plant %s: %v", rec.ID, err)
+		}
+	}
+	plant(trigger, func(p map[string]any) {
+		p["source"].(map[string]any)["record"].(map[string]any)["kinds"] = []any{"alpha"}
+	})
+	plant(policy, func(p map[string]any) {
+		p["selector"].(map[string]any)["kinds"] = []any{"alpha", "nosuch", "*"}
+	})
+	raw, err := engine.OpenScopedDB(dsn, repo, engine.RoleApp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	rmClearLedger(t, dsn, repo)
+	planted := changelogHead(t, raw)
+	_ = svc.Close()
+
+	svc2 := rmOpen(t, dsn, root)
+	ds2, err := svc2.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatalf("a repository holding bare stored selectors did not open: %v", err)
+	}
+	if got := rmLedger(t, raw); got[2] != "qualify_bare_selector_kinds" {
+		t.Fatalf("ledger = %v, want migration 2 recorded", got)
+	}
+	migrated := changelogHead(t, raw)
+	if migrated <= planted {
+		t.Fatalf("the migration appended nothing: head %d before, %d after", planted, migrated)
+	}
+	kindsOf := func(ds substrate.Dataset, kind, id string, path ...string) []any {
+		t.Helper()
+		rec, err := ds.Get(ctx, kind, id)
+		if err != nil {
+			t.Fatalf("get %s/%s: %v", kind, id, err)
+		}
+		var cur any = rec.Properties
+		for _, key := range path {
+			cur = cur.(map[string]any)[key]
+		}
+		list, _ := cur.([]any)
+		return list
+	}
+	if got := kindsOf(ds2, trigger.Kind, trigger.ID, "source", "record", "kinds"); !reflect.DeepEqual(got, []any{rmAlpha}) {
+		t.Errorf("trigger kinds = %v, want [%s]", got, rmAlpha)
+	}
+	if got := kindsOf(ds2, policy.Kind, policy.ID, "selector", "kinds"); !reflect.DeepEqual(got, []any{rmAlpha, "nosuch", "*"}) {
+		t.Errorf("policy kinds = %v, want [%s nosuch *]", got, rmAlpha)
+	}
+	_ = svc2.Close()
+
+	// A second open finds the ledger row and appends nothing.
+	svc3 := rmOpen(t, dsn, root)
+	if _, err := svc3.Dataset(ctx, repo); err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if head := changelogHead(t, raw); head != migrated {
+		t.Fatalf("the second open appended: head %d, was %d", head, migrated)
+	}
+	// A rebuild replays the plant and then the migration's writes.
+	if _, err := svc3.(engine.Rebuilder).RebuildRepository(ctx, repo); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	ds3, err := svc3.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := kindsOf(ds3, trigger.Kind, trigger.ID, "source", "record", "kinds"); !reflect.DeepEqual(got, []any{rmAlpha}) {
+		t.Errorf("after the rebuild trigger kinds = %v", got)
+	}
+	_ = svc3.Close()
 }

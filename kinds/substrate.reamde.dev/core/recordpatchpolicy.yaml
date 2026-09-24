@@ -50,9 +50,9 @@ data:
         # matcher (vocabulary.MatchTypeGlob): a kind reference, every kind one
         # package publishes (`samples.substrate.reamde.dev/tasks/*`), every kind
         # one authority publishes (`samples.substrate.reamde.dev/*`), or every
-        # kind (`*`). A bare local name resolves to the kind's identity at
-        # load, the same resolve-at-the-gate a trigger source gets, because the
-        # door compares against identities.
+        # kind (`*`). A bare local name is refused (decision record 0101):
+        # the door compares against identities, so a pattern spelled bare
+        # would admit and then never match.
         #
         # The write door (policy.go validatePolicyRow) refuses every pattern
         # that can never match: `tasks.*`, which is neither a reference nor a

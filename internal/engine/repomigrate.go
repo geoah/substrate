@@ -70,6 +70,7 @@ type repositoryMigration struct {
 // TestRepositoryMigrationsMatchTheirFiles holds the two together).
 var repositoryMigrations = []repositoryMigration{
 	{Version: 1, Name: "qualify_bare_declaration_names", Run: migrateQualifyBareDeclarationNames},
+	{Version: 2, Name: "qualify_bare_selector_kinds", Run: migrateQualifyBareSelectorKinds},
 }
 
 // ErrRepositoryMigrationsNewer is the per-repository downgrade refusal beside
