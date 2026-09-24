@@ -96,11 +96,33 @@ fi
 # --- the task names the pages tell people to run ------------------------
 #
 # A page naming `mise run something-that-was-renamed` is a broken instruction
-# that no link checker can see. mise is a hard dependency of every other task
-# here, so its absence is a broken environment rather than a reason to skip.
-tasks="$(mise tasks ls --no-header 2>/dev/null | awk '{print $1}')"
-if [ -z "$tasks" ]; then
-  flag "cannot list mise tasks; refusing to pass without checking the names"
+# that no link checker can see.
+#
+# The names are read off the tree's own .mise.toml, not off `mise tasks ls`.
+# The listing is a subprocess, and a subprocess inside `$(...)` fails without
+# a trace: CI once got a partial list back, flagged `build:cli` on a tree that
+# defines it, and passed on rerun. It is also not this tree's list: mise merges
+# every config up the directory tree, so a worktree nested under a checkout
+# sees the checkout's tasks too, and a page naming one of those passes on the
+# laptop and fails in CI. A file read has neither problem. `.mise.local.toml`
+# is left out because CI never has it.
+#
+# Every task here is a `[tasks.name]` or `[tasks."name"]` table, and those
+# headers are the set. A task written another way (a key under a bare
+# `[tasks]` table, a file under .mise/tasks/) is unknown to this rule until it
+# is taught the form, and reads as a false "does not exist": loud, so nothing
+# passes unchecked.
+task_files=()
+for task_file in .mise.toml mise.toml; do
+  [ -f "$task_file" ] && task_files+=("$task_file")
+done
+tasks=""
+if [ "${#task_files[@]}" -eq 0 ]; then
+  flag "no .mise.toml in the tree; refusing to pass without checking the names"
+elif ! tasks="$(sed -nE 's/^\[tasks\.([^]]+)\][[:space:]]*(#.*)?$/\1/p' "${task_files[@]}" | tr -d "\"'")"; then
+  flag "cannot read the task tables in ${task_files[*]}; refusing to pass without checking the names"
+elif [ -z "$tasks" ]; then
+  flag "no [tasks.<name>] table in ${task_files[*]}; refusing to pass without checking the names"
 else
   while read -r name; do
     # `mise run ci:<job>` is prose about a family, not a command to run. The
