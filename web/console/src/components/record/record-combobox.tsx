@@ -46,6 +46,10 @@ export interface RecordComboboxProps extends RecordOptions {
    * joins onto it. */
   value?: string
   onSelect: (value: string) => void
+  /** The chosen record's title where the loaded options do not hold it (the
+   * page was capped, or the read failed); absent, the trigger falls back to
+   * the id. */
+  valueTitle?: string
   /** What the trigger reads while nothing is chosen. */
   placeholder?: string
   /** Named when no `<label>` points at the trigger (a row of a list). */
@@ -95,6 +99,7 @@ function OptionRow({
 export function RecordCombobox({
   id,
   value = "",
+  valueTitle,
   onSelect,
   options,
   loading,
@@ -119,6 +124,10 @@ export function RecordCombobox({
   // The escape hatch, offered only when it would say something the list does
   // not already: an exact match is the row above, not a second way to pick it.
   const freeText = typed && !options.some((o) => o.value === typed)
+  // The chosen record reads by its title, as its row in the list does; the id
+  // stays on the hover.
+  const chosenTitle =
+    options.find((o) => o.value === value)?.title || valueTitle || ""
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -146,8 +155,11 @@ export function RecordCombobox({
           </>
         ) : (
           <>
-            <span className={cn("truncate", value && "data")}>
-              {value || placeholder}
+            <span
+              className={cn("truncate", value && !chosenTitle && "data")}
+              title={value || undefined}
+            >
+              {chosenTitle || value || placeholder}
             </span>
             <ChevronsUpDownIcon className="ml-2 size-3.5 shrink-0 opacity-50" />
           </>
