@@ -130,6 +130,12 @@ function linkPropertyNames(raw: unknown): string[] | undefined {
   return names.length ? names : undefined
 }
 
+/** Core's `temporal` trait, named in full (decision 0101) or, as older
+ * declarations still spell it, bare. The prefix is core's own and nothing
+ * else: another package's `temporal` is not the trait that binds hot columns. */
+const TEMPORAL_TRAIT =
+  /^(?:substrate\.reamde\.dev\/core\/)?temporal\(\s*(point|range)(?:\s*:\s*(\w+))?\s*\)$/
+
 /** The hot columns a kind's traits bind: `temporal(point)` → `at`,
  * `temporal(range)` → `at` + `endsAt`, and a remap like
  * `temporal(point: dueAt)` moves the point onto `dueAt`. */
@@ -139,7 +145,7 @@ export function temporalProperties(k: KindInfo): string[] {
   const out: string[] = []
   for (const trait of traits) {
     if (typeof trait !== "string") continue
-    const m = trait.match(/^temporal\(\s*(point|range)(?:\s*:\s*(\w+))?\s*\)$/)
+    const m = trait.match(TEMPORAL_TRAIT)
     if (!m) continue
     if (m[1] === "range") out.push("at", "endsAt")
     else out.push(m[2] ?? "at")
