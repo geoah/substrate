@@ -13,6 +13,7 @@ import {
   providerInfo,
   type ProviderInfo,
 } from "@/lib/actor-identity"
+import { firstClause } from "@/lib/kind-copy"
 import {
   displayName,
   displayPlural,
@@ -373,19 +374,12 @@ const HOST_DESCRIPTIONS: Record<string, string> = {
     "Lets an agent ask you a few questions and carry on once you answer.",
 }
 
-/** The sentence a card and a page lede show. */
+/** The line a card and a page lede show: the description's first clause, as
+ * a kind's everyday line is (the full text is one section down the page). */
 export function toolDescription(
   tool: Pick<Tool, "ref" | "description">
 ): string {
-  return HOST_DESCRIPTIONS[tool.ref] ?? firstSentence(tool.description)
-}
-
-/** The first sentence of a description: up to the first full stop that ends
- * a sentence, else the whole text. */
-export function firstSentence(text: string): string {
-  const trimmed = text.trim()
-  const match = /^(.+?[.!?])(\s|$)/s.exec(trimmed)
-  return match ? match[1] : trimmed
+  return HOST_DESCRIPTIONS[tool.ref] ?? firstClause(tool.description)
 }
 
 // ── groups ──────────────────────────────────────────────────────────────────

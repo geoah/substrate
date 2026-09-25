@@ -9,7 +9,6 @@ import {
   cadenceWords,
   canTryIt,
   effectsWords,
-  firstSentence,
   groupTools,
   isPaused,
   isoDurationWords,
@@ -221,9 +220,14 @@ describe("names", () => {
     expect(toolIconName(IDLE)).toBe("wrench")
   })
 
-  it("reads the first sentence, and core's four in everyday words", () => {
-    expect(firstSentence("Does a thing. And more.")).toBe("Does a thing.")
-    expect(firstSentence("no stop")).toBe("no stop")
+  it("reads the first clause, and core's four in everyday words", () => {
+    expect(
+      toolDescription({
+        ref: "providers.substrate.reamde.dev/google/synccalendar",
+        description:
+          "Sync a Google account's calendars: drain each calendar's events on its own sync token.",
+      })
+    ).toBe("Sync a Google account's calendars.")
     expect(
       toolDescription({ ref: QUERY, description: "Read records." })
     ).toMatch(/^Finds and reads records/)
