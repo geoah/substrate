@@ -101,7 +101,7 @@ func (ds *dataset) Window(ctx context.Context, q substrate.WindowQuery) (*substr
 	// --- the rows: plain events and overrides in the window, after the key.
 	rb.add(windowBound(rb, atKinds, dueKinds, q.From, q.To))
 	if len(seriesKinds) > 0 {
-		rb.add(`NOT (kind IN ` + rb.jsonArray(seriesKinds) + ` AND ` + seriesPredicate + `)`)
+		rb.add(`NOT (kind = ANY(` + rb.textArray(seriesKinds) + `) AND ` + seriesPredicate + `)`)
 	}
 	if q.After != nil {
 		rb.add(windowSeek(rb, q.After, q.Desc))
@@ -135,7 +135,7 @@ func (ds *dataset) Window(ctx context.Context, q substrate.WindowQuery) (*substr
 		if _, err := ds.buildFilter(ctx, tx, sb, base); err != nil {
 			return nil, err
 		}
-		sb.add(`kind IN ` + sb.jsonArray(seriesKinds))
+		sb.add(`kind = ANY(` + sb.textArray(seriesKinds) + `)`)
 		sb.add(seriesPredicate)
 		seriesSQL := `SELECT ` + recordCols + ` FROM records WHERE ` + strings.Join(sb.where, " AND ") +
 			` ORDER BY kind, id LIMIT ` + sb.arg(substrate.WindowSeriesBudget+1)
@@ -173,9 +173,9 @@ func (ds *dataset) Window(ctx context.Context, q substrate.WindowQuery) (*substr
 			}
 			ob := &builder{}
 			ob.add(`deleted_at IS NULL`)
-			ob.add(`kind IN ` + ob.jsonArray(overrideKinds))
+			ob.add(`kind = ANY(` + ob.textArray(overrideKinds) + `)`)
 			ob.add(`EXISTS (SELECT 1 FROM refs r WHERE r.src_kind = records.kind AND r.src = records.id AND r.property = ` +
-				ob.arg(vocabulary.PropRecurrenceOf) + ` AND (r.dst_kind || '/' || r.dst) IN ` + ob.jsonArray(paths) + `)`)
+				ob.arg(vocabulary.PropRecurrenceOf) + ` AND (r.dst_kind || '/' || r.dst) = ANY(` + ob.textArray(paths) + `))`)
 			originalAt := `(props->>` + sqlLiteral(vocabulary.PropOriginalAt) + `)::timestamptz`
 			ob.add(originalAt + ` >= ` + ob.arg(q.From))
 			ob.add(originalAt + ` < ` + ob.arg(q.To))
@@ -253,10 +253,10 @@ func slotColumnOf(t *vocabulary.Kind) string {
 func windowBound(b *builder, atKinds, dueKinds []string, from, to any) string {
 	var arms []string
 	if len(atKinds) > 0 {
-		arms = append(arms, `(kind IN `+b.jsonArray(atKinds)+` AND at >= `+b.arg(from)+` AND at < `+b.arg(to)+`)`)
+		arms = append(arms, `(kind = ANY(`+b.textArray(atKinds)+`) AND at >= `+b.arg(from)+` AND at < `+b.arg(to)+`)`)
 	}
 	if len(dueKinds) > 0 {
-		arms = append(arms, `(kind IN `+b.jsonArray(dueKinds)+` AND due_at >= `+b.arg(from)+` AND due_at < `+b.arg(to)+`)`)
+		arms = append(arms, `(kind = ANY(`+b.textArray(dueKinds)+`) AND due_at >= `+b.arg(from)+` AND due_at < `+b.arg(to)+`)`)
 	}
 	return `(` + strings.Join(arms, " OR ") + `)`
 }
