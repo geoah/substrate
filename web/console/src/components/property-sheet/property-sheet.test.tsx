@@ -120,6 +120,9 @@ const task = kind(TASK, {
       ],
     },
     assignee: { type: "reference", kind: PERSON },
+    tags: { type: "string", repeated: true },
+    emails: { type: "email", repeated: true },
+    quotes: { type: "string", repeated: true },
     token: { type: "string", writer: "oauth" },
     notes: { type: "string" },
     url: { type: "url" },
@@ -370,6 +373,15 @@ describe("OwnershipChip", () => {
     const chip = row("location").querySelector("[data-slot=owner-chip]")!
     expect(chip.getAttribute("data-holder")).toBe("you")
     expect(chip.textContent).toBe("You")
+  })
+
+  it("sits in its own column, never inside the value it describes", () => {
+    renderSheet(record())
+    const cell = row("location").querySelector("[data-slot=provenance]")!
+    expect(cell.querySelector("[data-slot=owner-chip]")).not.toBeNull()
+    expect(
+      valueOf("location")!.querySelector("[data-slot=owner-chip]")
+    ).toBeNull()
   })
 
   it("names the provider for a synced value, with its badge", () => {
