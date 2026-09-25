@@ -513,7 +513,9 @@ export function KindBrowsePage() {
         {header}
         {tabBar}
         <div className="min-h-0 flex-1 overflow-auto">
-          <div className={GUTTER}>
+          {/* The definition pads itself; this tops it up to the page's
+              gutter so it lines up with the header. */}
+          <div className="md:px-2">
             <KindDefinition kind={kindInfo} kinds={registry.data ?? []} />
           </div>
         </div>
