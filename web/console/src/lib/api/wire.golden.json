@@ -3,6 +3,7 @@
     "deleted": false,
     "id": true,
     "kind": true,
+    "properties": false,
     "version": false
   },
   "AgentEvent": {
@@ -278,6 +279,12 @@
     "source": false,
     "updatedAt": true,
     "value": true
+  },
+  "PropertyChange": {
+    "after": false,
+    "before": false,
+    "beforeUnknown": false,
+    "name": true
   },
   "PropertyMeta": {
     "alternatives": false,

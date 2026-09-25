@@ -70,6 +70,7 @@ import type {
   Page,
   ProblemDetail,
   PropertyAlternative,
+  PropertyChange,
   PropertyMeta,
   PutInput,
   RankedPage,
@@ -254,6 +255,15 @@ const affectedRecord: Shape<AffectedRecord> = {
   id: true,
   version: false,
   deleted: false,
+  properties: false,
+}
+
+/** One property's before and after on an affected record (decision 0106). */
+const propertyChange: Shape<PropertyChange> = {
+  name: true,
+  before: false,
+  after: false,
+  beforeUnknown: false,
 }
 
 const changeTrigger: Shape<ChangeTrigger> = {
@@ -623,6 +633,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   KindInfo: kindInfo,
   Change: change,
   AffectedRecord: affectedRecord,
+  PropertyChange: propertyChange,
   ChangeTrigger: changeTrigger,
   ChangeRow: changeRow,
   ChangePage: changePage,

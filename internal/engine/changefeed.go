@@ -127,7 +127,7 @@ func escapeLike(s string) string {
 }
 
 // queryChanges runs one changelog page over the builder's predicates.
-func (ds *dataset) queryChanges(ctx context.Context, b *builder, order string, limit int) ([]substrate.Change, error) {
+func (ds *dataset) queryChanges(ctx context.Context, b *builder, order string, limit int, values bool) ([]substrate.Change, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -140,10 +140,14 @@ func (ds *dataset) queryChanges(ctx context.Context, b *builder, order string, l
 	}
 	defer func() { _ = rows.Close() }()
 	var out []substrate.Change
+	var effects [][]foldOp
 	for rows.Next() {
 		c, err := scanChange(rows)
 		if err != nil {
 			return nil, err
+		}
+		if values {
+			effects = append(effects, effectsOf(c))
 		}
 		if c.Op == substrate.OpDelivery {
 			// The ledger's own entry (delivery.go) moves no record and has
@@ -155,7 +159,20 @@ func (ds *dataset) queryChanges(ctx context.Context, b *builder, order string, l
 		}
 		out = append(out, c)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if !values {
+		return out, nil
+	}
+	// The walk reads the changelog again; the page's cursor closes first.
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := ds.deriveValues(ctx, out, effects); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // projectAffected turns a row's stored replay effects into the public change
@@ -272,7 +289,7 @@ func (ds *dataset) ChangesBefore(ctx context.Context, before int64, f substrate.
 	if err := ds.buildChangeFilter(b, f); err != nil {
 		return nil, err
 	}
-	return ds.queryChanges(ctx, b, `seq DESC`, limit)
+	return ds.queryChanges(ctx, b, `seq DESC`, limit, f.Values)
 }
 
 // ChangeTriggers computes, for each given change, every runnable enabled
