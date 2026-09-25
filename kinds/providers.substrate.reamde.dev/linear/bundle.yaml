@@ -97,7 +97,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: linear
-  version: 18
+  version: 19
 ---
 # ---- the bundle document: the install unit -----------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -147,10 +147,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: linear
   description: >-
-    The Linear API key this bundle spends and the API origin it may be sent
-    to. The bundle's connector input resolves one record of this kind; the
-    key is sealed against read-back and the origin is pinned, so an owner
-    edit can never become an exfiltration channel.
+    The API key and address your Linear workspace connects through. The Linear
+    API key this bundle spends and the API origin it may be sent to. The bundle's
+    connector input resolves one record of this kind; the key is sealed against
+    read-back and the origin is pinned, so an owner edit can never become
+    an exfiltration channel.
   purpose: internal
   names:
     singular: config
@@ -201,10 +202,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: linear
   description: >-
-    One connected Linear workspace: the owner's sync toggles, the workspace
-    and the member the API key turned out to be, and the connector's own per-stage
-    progress. The accountconfig trait's OAuth hands are declared but stay
-    dormant, since no OAuth flow ever runs for this bundle.
+    Your Linear workspace, connected here. One connected Linear workspace:
+    the owner's sync toggles, the workspace and the member the API key turned
+    out to be, and the connector's own per-stage progress. The accountconfig
+    trait's OAuth hands are declared but stay dormant, since no OAuth flow
+    ever runs for this bundle.
   purpose: internal
   names:
     singular: account
@@ -497,10 +499,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: linear
   description: >-
-    One Linear workspace, from the `organization` query (schema introspected
-    2026-09-16); `at` is `createdAt`. Omitted as classes: GraphQL's envelope
-    (`data`, `errors`, `pageInfo`) and its hypermedia, the `*Connection` sub-queries.
-    Every payload is authoritative: a selected field returned null is a clear.
+    Your Linear workspace. One Linear workspace, from the `organization` query
+    (schema introspected 2026-09-16); `at` is `createdAt`. Omitted as classes:
+    GraphQL's envelope (`data`, `errors`, `pageInfo`) and its hypermedia,
+    the `*Connection` sub-queries. Every payload is authoritative: a selected
+    field returned null is a clear.
   purpose: supporting
   names:
     singular: organization
@@ -1016,10 +1019,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: linear
   description: >-
-    One Linear team, from the `teams` connection (schema introspected 2026-09-16);
-    `at` is `createdAt`. Omitted as classes: GraphQL's envelope (`data`, `errors`,
-    `pageInfo`) and its hypermedia, the `*Connection` sub-queries. Every payload
-    is authoritative: a selected field returned null is a clear.
+    A team in your Linear workspace. One Linear team, from the `teams` connection
+    (schema introspected 2026-09-16); `at` is `createdAt`. Omitted as classes:
+    GraphQL's envelope (`data`, `errors`, `pageInfo`) and its hypermedia,
+    the `*Connection` sub-queries. Every payload is authoritative: a selected
+    field returned null is a clear.
   purpose: supporting
   names:
     singular: team
@@ -1509,11 +1513,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: linear
   description: >-
-    One Linear workspace member, from the `users` connection and the `viewer`
-    query (introspected 2026-09-16); `at` is `createdAt`. Omitted as classes:
-    GraphQL's envelope (`data`, `errors`, `pageInfo`) and its hypermedia,
-    the `*Connection` sub-queries. Every payload is authoritative: a selected
-    field returned null is a clear.
+    Someone in your Linear workspace. One Linear workspace member, from the
+    `users` connection and the `viewer` query (introspected 2026-09-16); `at`
+    is `createdAt`. Omitted as classes: GraphQL's envelope (`data`, `errors`,
+    `pageInfo`) and its hypermedia, the `*Connection` sub-queries. Every payload
+    is authoritative: a selected field returned null is a clear.
   purpose: supporting
   names:
     singular: user
@@ -1713,10 +1717,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: linear
   description: >-
-    One Linear workflow state - an issue status - from `workflowStates` (introspected
-    2026-09-16); `at` is `createdAt`. Omitted as classes: GraphQL's envelope
-    (`data`, `errors`, `pageInfo`) and its hypermedia, the `*Connection` sub-queries.
-    Every payload is authoritative: a selected field returned null is a clear.
+    A status a Linear issue can be in, such as Todo or Done. One Linear workflow
+    state - an issue status - from `workflowStates` (introspected 2026-09-16);
+    `at` is `createdAt`. Omitted as classes: GraphQL's envelope (`data`, `errors`,
+    `pageInfo`) and its hypermedia, the `*Connection` sub-queries. Every payload
+    is authoritative: a selected field returned null is a clear.
   purpose: supporting
   names:
     singular: workflowstate
@@ -1812,10 +1817,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: linear
   description: >-
-    One Linear issue label, from the `issueLabels` connection (introspected
-    2026-09-16); `at` is `createdAt`. Omitted as classes: GraphQL's envelope
-    (`data`, `errors`, `pageInfo`) and its hypermedia, the `*Connection` sub-queries.
-    Every payload is authoritative: a selected field returned null is a clear.
+    A label for Linear issues. One Linear issue label, from the `issueLabels`
+    connection (introspected 2026-09-16); `at` is `createdAt`. Omitted as
+    classes: GraphQL's envelope (`data`, `errors`, `pageInfo`) and its hypermedia,
+    the `*Connection` sub-queries. Every payload is authoritative: a selected
+    field returned null is a clear.
   purpose: supporting
   names:
     singular: issuelabel
@@ -1933,7 +1939,8 @@ data:
   authority: providers.substrate.reamde.dev
   package: linear
   description: >-
-    One Linear project status, from `organization.projectStatuses` (introspected
+    A status a Linear project can be in, such as Planned or Completed. One
+    Linear project status, from `organization.projectStatuses` (introspected
     2026-09-16); `at` is `createdAt`. Omitted as classes: GraphQL's envelope
     (`data`, `errors`, `pageInfo`) and its hypermedia, the `*Connection` sub-queries.
     Every payload is authoritative: a selected field returned null is a clear.
@@ -2038,10 +2045,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: linear
   description: >-
-    One Linear project, from the `projects` connection (introspected 2026-09-16);
-    `at` is `createdAt`. Omitted as classes: GraphQL's envelope (`data`, `errors`,
-    `pageInfo`) and its hypermedia, the `*Connection` sub-queries. Every payload
-    is authoritative: a selected field returned null is a clear.
+    A project in Linear. One Linear project, from the `projects` connection
+    (introspected 2026-09-16); `at` is `createdAt`. Omitted as classes: GraphQL's
+    envelope (`data`, `errors`, `pageInfo`) and its hypermedia, the `*Connection`
+    sub-queries. Every payload is authoritative: a selected field returned
+    null is a clear.
   names:
     singular: project
   traits:
@@ -2469,7 +2477,8 @@ data:
   authority: providers.substrate.reamde.dev
   package: linear
   description: >-
-    One Linear cycle, from the `cycles` connection (introspected 2026-09-16);
+    A Linear cycle: a fixed stretch of time a team plans its work in. One
+    Linear cycle, from the `cycles` connection (introspected 2026-09-16);
     `at`/`endsAt` are `startsAt`/`endsAt`. Omitted as classes: GraphQL's envelope
     (`data`, `errors`, `pageInfo`) and its hypermedia, the `*Connection` sub-queries.
     Every payload is authoritative: a selected field returned null is a clear.
@@ -2639,11 +2648,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: linear
   description: >-
-    One Linear issue, from the `issues` connection (introspected 2026-09-16);
-    `at` is `createdAt`, the heading `issueTitle`. Omitted as classes: GraphQL's
-    envelope (`data`, `errors`, `pageInfo`) and its hypermedia, the `*Connection`
-    sub-queries. Every payload is authoritative: a selected field returned
-    null is a clear.
+    An issue in Linear. One Linear issue, from the `issues` connection (introspected
+    2026-09-16); `at` is `createdAt`, the heading `issueTitle`. Omitted as
+    classes: GraphQL's envelope (`data`, `errors`, `pageInfo`) and its hypermedia,
+    the `*Connection` sub-queries. Every payload is authoritative: a selected
+    field returned null is a clear.
   names:
     singular: issue
   traits:
@@ -3176,10 +3185,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: linear
   description: >-
-    One Linear comment, from an issue's nested `comments` connection (introspected
-    2026-09-16); `at` is `createdAt`. Omitted as classes: GraphQL's envelope
-    (`data`, `errors`, `pageInfo`) and its hypermedia, the `*Connection` sub-queries.
-    Every payload is authoritative: a selected field returned null is a clear.
+    A comment on a Linear issue. One Linear comment, from an issue's nested
+    `comments` connection (introspected 2026-09-16); `at` is `createdAt`.
+    Omitted as classes: GraphQL's envelope (`data`, `errors`, `pageInfo`)
+    and its hypermedia, the `*Connection` sub-queries. Every payload is authoritative:
+    a selected field returned null is a clear.
   purpose: supporting
   names:
     singular: comment
@@ -3410,10 +3420,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: linear
   description: >-
-    One Linear emoji reaction on an issue or a comment (introspected 2026-09-16);
-    `at` is `createdAt`. Omitted as classes: GraphQL's envelope (`data`, `errors`,
-    `pageInfo`) and its hypermedia, the `*Connection` sub-queries. Every payload
-    is authoritative: a selected field returned null is a clear.
+    An emoji reaction on a Linear issue or comment. One Linear emoji reaction
+    on an issue or a comment (introspected 2026-09-16); `at` is `createdAt`.
+    Omitted as classes: GraphQL's envelope (`data`, `errors`, `pageInfo`)
+    and its hypermedia, the `*Connection` sub-queries. Every payload is authoritative:
+    a selected field returned null is a clear.
   purpose: supporting
   names:
     singular: reaction

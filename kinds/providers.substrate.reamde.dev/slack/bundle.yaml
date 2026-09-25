@@ -109,7 +109,10 @@ data:
   # their writers, and the sync body writes them beside the legacy
   # `syncStatus`/`lastSyncedAt`/`streamCursors` fields on every run. Nothing
   # is renamed, narrowed or dropped.
-  version: 8
+  #
+  # 9 — every kind's description opens with one plain sentence
+  # saying what a record is to a person.
+  version: 9
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -154,10 +157,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: slack
   description: >-
-    The Slack user token this bundle spends and the API origin it may be sent
-    to. The bundle's connector input resolves one record of this kind; the
-    token is sealed against read-back and the origin is pinned, so an owner
-    edit cannot become an exfiltration channel.
+    The token and address your Slack workspace connects through. The Slack
+    user token this bundle spends and the API origin it may be sent to. The
+    bundle's connector input resolves one record of this kind; the token is
+    sealed against read-back and the origin is pinned, so an owner edit cannot
+    become an exfiltration channel.
   purpose: internal
   names:
     singular: config
@@ -198,10 +202,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: slack
   description: >-
-    One connected Slack workspace: the owner's sync toggles, the workspace
-    and the user the token turned out to belong to, and the connector's own
-    per-stream progress. The accountconfig trait's OAuth hands are declared
-    but stay dormant, since no OAuth flow ever runs for this bundle.
+    Your Slack workspace, connected here. One connected Slack workspace: the
+    owner's sync toggles, the workspace and the user the token turned out
+    to belong to, and the connector's own per-stream progress. The accountconfig
+    trait's OAuth hands are declared but stay dormant, since no OAuth flow
+    ever runs for this bundle.
   purpose: internal
   names:
     singular: account
@@ -464,9 +469,9 @@ data:
   authority: providers.substrate.reamde.dev
   package: slack
   description: >-
-    One Slack workspace, as team.info returns it: its id, name, host, email
-    domain, icon and enterprise grid membership. The response envelope (ok)
-    is the only thing dropped. Written once per sync.
+    A Slack workspace. One Slack workspace, as team.info returns it: its id,
+    name, host, email domain, icon and enterprise grid membership. The response
+    envelope (ok) is the only thing dropped. Written once per sync.
   purpose: supporting
   names:
     singular: team
@@ -608,10 +613,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: slack
   description: >-
-    One person in a Slack workspace, as users.list and users.info return them:
-    the handle, the real name, the whole profile Slack renders them from,
-    the workspace roles and whether they are a bot or deactivated. The envelope
-    (ok, response_metadata) is dropped; everything else is here.
+    Someone in your Slack workspace. One person in a Slack workspace, as users.list
+    and users.info return them: the handle, the real name, the whole profile
+    Slack renders them from, the workspace roles and whether they are a bot
+    or deactivated. The envelope (ok, response_metadata) is dropped; everything
+    else is here.
   purpose: supporting
   names:
     singular: user
@@ -1062,11 +1068,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: slack
   description: >-
-    One Slack conversation from conversations.info: a channel, a private channel,
-    a group DM or a 1:1 DM, told apart by Slack's own flags. Members come
-    from conversations.members. The envelope is dropped, sync state lives
-    on slack/conversationsync, `at` is `created`, and history is walked only
-    where the account's user is a member.
+    A Slack channel or direct message. One Slack conversation from conversations.info:
+    a channel, a private channel, a group DM or a 1:1 DM, told apart by Slack's
+    own flags. Members come from conversations.members. The envelope is dropped,
+    sync state lives on slack/conversationsync, `at` is `created`, and history
+    is walked only where the account's user is a member.
   names:
     singular: conversation
   traits:
@@ -1476,10 +1482,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: slack
   description: >-
-    One Slack message on the timeline, as conversations.history and conversations.replies
-    return it: its verbatim mrkdwn, who wrote it, the thread it sits in, who
-    it mentions, what it carried and who reacted. `at` is its ts. Every subtype
-    is this one kind; `type` is always `message` and is not declared.
+    A message in Slack. One Slack message on the timeline, as conversations.history
+    and conversations.replies return it: its verbatim mrkdwn, who wrote it,
+    the thread it sits in, who it mentions, what it carried and who reacted.
+    `at` is its ts. Every subtype is this one kind; `type` is always `message`
+    and is not declared.
   purpose: supporting
   names:
     singular: message
@@ -1888,10 +1895,10 @@ data:
   authority: providers.substrate.reamde.dev
   package: slack
   description: >-
-    One Slack bot identity, from the bot_profile a message inlines and from
-    bots.info: its name, its icons, the app behind it and the user it posts
-    as. Minted thin from a bare bot_id and read from bots.info when nothing
-    carried a profile.
+    A bot that posts in your Slack workspace. One Slack bot identity, from
+    the bot_profile a message inlines and from bots.info: its name, its icons,
+    the app behind it and the user it posts as. Minted thin from a bare bot_id
+    and read from bots.info when nothing carried a profile.
   purpose: supporting
   names:
     singular: bot
@@ -1976,10 +1983,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: slack
   description: >-
-    One file shared in Slack, from the file objects conversations.history
-    embeds and from files.info: its name, type, size, thumbnails, media renditions,
-    canvas and external facts, access and where it has been shared. `at` is
-    the file's `created`. The bytes are never fetched.
+    A file shared in Slack. One file shared in Slack, from the file objects
+    conversations.history embeds and from files.info: its name, type, size,
+    thumbnails, media renditions, canvas and external facts, access and where
+    it has been shared. `at` is the file's `created`. The bytes are never
+    fetched.
   purpose: supporting
   names:
     singular: file
@@ -2718,10 +2726,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: slack
   description: >-
-    Where this connector's walk of one conversation got to: the history cursor,
-    the replies cursor, when the roster was last read and what Slack last
-    said about it. Connector-written state, kept off the conversation so a
-    page of history never bumps the mirrored row.
+    How far copying one Slack channel or direct message has got. Where this
+    connector's walk of one conversation got to: the history cursor, the replies
+    cursor, when the roster was last read and what Slack last said about it.
+    Connector-written state, kept off the conversation so a page of history
+    never bumps the mirrored row.
   purpose: internal
   names:
     singular: conversationsync
