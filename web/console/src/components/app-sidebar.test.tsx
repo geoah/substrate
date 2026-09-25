@@ -48,7 +48,7 @@ function kind(pkg: string, name: string): KindInfo {
     authority: "ada.example.com",
     package: pkg,
     version: 1,
-    source: "declared",
+    source: "installed",
     description: "",
     definition: { properties: {} },
   }
