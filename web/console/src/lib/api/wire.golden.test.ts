@@ -696,6 +696,7 @@ const notOnTheWire: Record<string, string> = {
   DecisionNotice: "a view the console folds from llm/message records",
   InteractionNotice: "a view the console folds from llm/message records",
   DeliveryNotice: "a view the console folds from llm/message records",
+  LiveOverlay: "the chat stream's events folded client-side, never serialized",
   // actors.ts
   ActorMirrors: "client-side actor resolution state",
   ResolvedActor: "client-side actor resolution state",

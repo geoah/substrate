@@ -12,7 +12,6 @@ import { AppShell } from "@/components/app-shell"
 import { hasSession } from "@/lib/api/session"
 import { AccountPage } from "@/pages/account"
 import { ActorPage } from "@/pages/actor"
-import { AgentChatPage } from "@/pages/agent-chat"
 import { AgentsPage } from "@/pages/agents"
 import { ChangelogPage } from "@/pages/changelog"
 import { BundleDetailPage } from "@/pages/bundle-detail"
@@ -158,10 +157,21 @@ export const agentsRoute = createRoute({
   component: AgentsPage,
 })
 
+// The old per-agent address: the chat app opens a new chat with that agent,
+// and a `?thread=` it carried opens that conversation instead.
 export const agentChatRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/agents/$id",
-  component: AgentChatPage,
+  beforeLoad: ({ params, search }) => {
+    const thread = (search as Record<string, unknown>).thread
+    throw redirect({
+      to: "/agents",
+      search: (typeof thread === "string" && thread
+        ? { thread }
+        : { agent: params.id }) as never,
+      replace: true,
+    })
+  },
 })
 
 export const mergeRequestDetailRoute = createRoute({
