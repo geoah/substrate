@@ -74,7 +74,7 @@ export function RecordBody({
               void save()
             }
           }}
-          className="-mx-2 block w-[calc(100%+1rem)] resize-y rounded-md border border-primary bg-background px-2 py-1 leading-[1.65] ring-3 ring-primary-soft outline-none"
+          className="-mx-2 block field-sizing-content min-h-24 w-[calc(100%+1rem)] resize-y rounded-md border border-primary bg-background px-2 py-1 leading-[1.65] ring-3 ring-primary-soft outline-none"
         />
       ) : (
         <div
