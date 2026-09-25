@@ -218,7 +218,82 @@ describe("record writes (integrations flow)", () => {
   })
 })
 
-describe("countRecords (one-row offset probes)", () => {
+describe("countRecords (the server's count)", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+  beforeEach(() => vi.stubGlobal("fetch", fetchMock))
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+
+  it("asks for count=1 over one row and answers the server's number", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ records: [{ id: "a" }], count: 1284 }), {
+        status: 200,
+      })
+    )
+    expect(
+      await countRecords("g.dev", "k", "things", {
+        properties: { status: { eq: "open" } },
+      })
+    ).toEqual({ value: 1284, capped: false })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const url = new URL(String(fetchMock.mock.calls[0][0]), "http://x")
+    expect(url.searchParams.get("count")).toBe("1")
+    expect(url.searchParams.get("first")).toBe("1")
+    expect(JSON.parse(url.searchParams.get("filter") ?? "")).toEqual({
+      properties: { status: { eq: "open" } },
+      kinds: ["g.dev/k/things"],
+    })
+  })
+
+  it("answers a zero count without probing", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ records: [], count: 0 }), { status: 200 })
+    )
+    expect(await countRecords("g.dev", "k", "things", undefined)).toEqual({
+      value: 0,
+      capped: false,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("probes when an older server refuses count by name", async () => {
+    const size = 37
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input), "http://x")
+      if (url.searchParams.has("count"))
+        return new Response(
+          JSON.stringify({
+            error: { code: "bad_request", message: "count" },
+          }),
+          { status: 400 }
+        )
+      const offset = Number(url.searchParams.get("offset") ?? 0)
+      const records = offset < size ? [{ id: String(offset) }] : []
+      return new Response(JSON.stringify({ records }), { status: 200 })
+    })
+    expect(await countRecords("g.dev", "k", "things", undefined)).toEqual({
+      value: size,
+      capped: false,
+    })
+  })
+
+  it("does not fall back past a failure of the read itself", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: { code: "not_found", message: "unknown" } }),
+        { status: 404 }
+      )
+    )
+    await expect(
+      countRecords("g.dev", "k", "things", undefined)
+    ).rejects.toMatchObject({ status: 404 })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("countRecords (one-row offset probes, a server without count)", () => {
   const fetchMock = vi.fn<typeof fetch>()
   beforeEach(() => vi.stubGlobal("fetch", fetchMock))
   afterEach(() => {
@@ -247,6 +322,12 @@ describe("countRecords (one-row offset probes)", () => {
         expect(String(input)).toContain("first=1")
         expect(String(input)).not.toContain("after=")
       }
+      // The count request's own row stands in for the probe at offset 0.
+      const zeroes = fetchMock.mock.calls.filter(
+        ([input]) =>
+          !new URL(String(input), "http://x").searchParams.has("offset")
+      )
+      expect(zeroes).toHaveLength(1)
       // A bracket of doubling probes plus a bisection: never a full read.
       expect(fetchMock.mock.calls.length).toBeLessThan(40)
     }

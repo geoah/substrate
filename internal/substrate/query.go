@@ -158,6 +158,13 @@ type Query struct {
 	// the filter admits; a name no admitted kind declares is a validation
 	// error, because a silently ignored expansion reads as a dangling graph.
 	Expand []string `json:"expand,omitempty"`
+	// Count asks for the size of the whole filtered set beside the page, in
+	// Page.Count. It counts what the filter admits, not what is left after
+	// After or Offset, so every page of one walk answers the same number
+	// unless a write lands between them. A window read refuses it: its page
+	// merges computed occurrences, which are not rows and cannot be counted
+	// by one.
+	Count bool `json:"count,omitempty"`
 }
 
 // Page is a page of records plus continuation cursor ("" = exhausted).
@@ -184,6 +191,10 @@ type Page struct {
 	// Problems names each series a window read could not expand (a rule too
 	// dense, an unknown zone, no anchor); the page stands without it.
 	Problems []OccurrenceProblem `json:"problems,omitempty"`
+	// Count is the size of the filtered set Query.Count asked for, read in
+	// the page's own snapshot, and absent when it was not asked for. Zero is
+	// a count and is emitted.
+	Count *int64 `json:"count,omitempty"`
 }
 
 // RankedPage is a ranked read's answer: the records in rank order, each one's

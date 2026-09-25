@@ -291,12 +291,13 @@ func TestReferenceRendersInADisplayTemplate(t *testing.T) {
 
 	// A DOTTED token over a dangling reference renders empty, and must: the
 	// referent is not there to be asked, and answering with the id would claim
-	// the id was its `name`.
+	// the id was its `name`. The separator joining the empty token goes with
+	// it, so the title is the note alone.
 	unread := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: firstClassPackage + "/pointer", ID: "p2",
 		Properties: map[string]any{"note": "second", "target": ghost},
 	})
-	if unread.Title != ": second" {
+	if unread.Title != "second" {
 		t.Fatalf("a dotted token over a dangling reference must render empty, got %q", unread.Title)
 	}
 }

@@ -854,6 +854,10 @@ func (d *fakeDataset) List(_ context.Context, q substrate.Query) (*substrate.Pag
 		out = append(out, e)
 	}
 	page.Records = out
+	if q.Count {
+		n := int64(len(out))
+		page.Count = &n
+	}
 	// Expand: one hop, the referents the page's rows point at through the
 	// named properties, keyed by record path; a dangling pointer has no entry.
 	for _, name := range q.Expand {

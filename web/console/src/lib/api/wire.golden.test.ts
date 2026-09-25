@@ -286,6 +286,7 @@ const page: Shape<Page<unknown>> = {
   included: false,
   matches: false,
   problems: false,
+  count: false,
 }
 
 /** The ranked read's envelope, and one hit's per-arm scores. */

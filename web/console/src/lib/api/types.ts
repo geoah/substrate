@@ -248,6 +248,9 @@ export interface Page<T = SubstrateRecord> {
   /** On a window read (`at` bounded on both ends): each series the expansion
    * could not read, named; the page stands without it. */
   problems?: OccurrenceProblem[]
+  /** The size of the whole filtered set, when the read asked `count=1`;
+   * absent otherwise, and from a server that predates the parameter. */
+  count?: number
 }
 
 /** A ranked read's answer (`substrate.RankedPage`, `GET /records?q=`): the
