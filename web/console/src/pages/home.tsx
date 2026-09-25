@@ -1,75 +1,167 @@
-/** Overview (`/`): "is everything okay, what needs me?" — three zones, every
- * tile a door, nothing decorative (IA ticket 003; charts deferred). Zone 1
- * answers what just happened (the changelog's feed, 60s refetch, no watch), zone 2
- * what needs a verdict (the merge queue's evidence cards and the pending
- * changes beneath them), zone 3 what the substrate
- * holds (per-kind counts, one probe at a time, the repository's own
- * authorities only — the machinery is in the nav, not on the glance). Each
- * zone loads, empties and fails on its own — one slow surface never blanks
- * the glance. */
+/** Home (`/`): what the substrate holds and what just happened. The four
+ * things the console is for (data, providers, agents, tools) as cards, the
+ * main collections with their sizes, and the latest changes in History's
+ * sentences. No inbox: nothing here asks the reader to act. */
 
+import { useMemo, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { Link } from "@tanstack/react-router"
 
-import { ActivityCard } from "@/components/home/activity-card"
-import { ChangeRequestsCard } from "@/components/home/change-requests-card"
-import { DataCountsZone } from "@/components/home/data-counts"
-import { MergeRequestsCard } from "@/components/home/merge-requests-card"
-import { ZoneError } from "@/components/home/zone"
+import {
+  HistorySentences,
+  HistorySkeleton,
+  useHistoryFeed,
+} from "@/components/changelog/history-feed"
+import { CollectionCard } from "@/components/home/collection-card"
+import { OverviewCards } from "@/components/home/overview-cards"
+import { DocPage } from "@/components/identity/page-layout"
+import { PageHeader } from "@/components/identity/page-header"
+import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { buildKindNav, kindsQueryOptions } from "@/lib/api/kinds"
+import { kindsQueryOptions } from "@/lib/api/kinds"
+import { repositoryQueryOptions } from "@/lib/api/repository"
+import { getRepository } from "@/lib/api/session"
+import { collectionGroups } from "@/lib/collections"
+
+/** The collections Home shows before "All data" takes over: yours first,
+ * then what providers bring in. */
+const SHOWN_COLLECTIONS = 9
+const SHOWN_YOURS = 6
+/** The newest changes Home shows, as folded sentences, and the rows read to
+ * fold them from. */
+const SHOWN_CHANGES = 6
+const RECENT_ROWS = 60
+
+function Section({
+  title,
+  action,
+  children,
+}: {
+  title: string
+  action?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <section className="mt-8">
+      <div className="mb-2.5 flex items-center gap-2">
+        <h2 className="text-[15px] font-semibold tracking-[-0.01em]">
+          {title}
+        </h2>
+        {action && <div className="ml-auto">{action}</div>}
+      </div>
+      {children}
+    </section>
+  )
+}
 
 export function HomePage() {
-  // One registry read feeds three zones: record links in the activity rows,
-  // the MR pair peeks, and the data zone's authority → kind shape.
   const registry = useQuery(kindsQueryOptions)
-  const kinds = registry.data ?? []
-  const nav = buildKindNav(kinds)
+  const repository = useQuery(repositoryQueryOptions)
+  const groups = useMemo(
+    () =>
+      registry.data
+        ? collectionGroups(
+            registry.data,
+            repository.data?.authority ?? getRepository() ?? ""
+          )
+        : undefined,
+    [registry.data, repository.data]
+  )
+  const yours = (groups ?? [])
+    .filter((g) => g.type === "yours")
+    .flatMap((g) => g.primary)
+  const provided = (groups ?? [])
+    .filter((g) => g.type === "provider")
+    .flatMap((g) => g.primary)
+  const shownYours = yours.slice(
+    0,
+    Math.max(SHOWN_YOURS, SHOWN_COLLECTIONS - provided.length)
+  )
+  const collections = [...shownYours, ...provided].slice(0, SHOWN_COLLECTIONS)
+  const recent = useHistoryFeed({}, { first: RECENT_ROWS })
 
   return (
-    <div className="flex flex-col gap-6 px-6 py-5">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
-        <p className="text-xs text-muted-foreground">
-          Recent activity, what needs a decision, and what this repository
-          holds.
-        </p>
+    <DocPage>
+      <PageHeader
+        title="Your substrate"
+        description="Everything you keep here, the services that fill it, the agents that work on it, and the tools they use."
+      />
+      <div className="mt-[22px]">
+        <OverviewCards groups={groups} />
       </div>
 
-      {/* The cards share the row's height — a shorter card stretches so
-          the blank sits inside its border, deliberate, not a dead zone
-          between zones (codex finding, 2026-08-06). The verdict zone is one
-          column of two queues: both ask the same question of the reader (is
-          this right?) and differ only in what they would write. */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="min-w-0 lg:col-span-2">
-          <ActivityCard kinds={kinds} />
-        </div>
-        <div className="flex min-w-0 flex-col gap-4">
-          <MergeRequestsCard kinds={kinds} />
-          <ChangeRequestsCard kinds={kinds} />
-        </div>
-      </div>
-
-      {registry.isPending ? (
-        <section className="flex flex-col gap-2.5">
-          <Skeleton className="h-4 w-16" />
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 2 }, (_, i) => (
-              <Skeleton key={i} className="h-32 rounded-xl" />
+      <Section
+        title="Collections"
+        action={
+          <Button
+            variant="ghost"
+            size="sm"
+            render={<Link to="/data" />}
+            nativeButton={false}
+          >
+            All data
+          </Button>
+        }
+      >
+        {registry.isPending ? (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2.5">
+            {Array.from({ length: 6 }, (_, i) => (
+              <Skeleton key={i} className="h-[98px] rounded-[10px]" />
             ))}
           </div>
-        </section>
-      ) : registry.isError ? (
-        <section className="flex flex-col gap-2.5">
-          <h2 className="text-sm font-semibold">Data</h2>
-          <ZoneError
-            message={registry.error.message}
-            onRetry={() => void registry.refetch()}
-          />
-        </section>
-      ) : (
-        <DataCountsZone authorities={nav.authorities} />
-      )}
-    </div>
+        ) : registry.isError ? (
+          <p className="text-muted-foreground">
+            Your collections didn’t load: {registry.error.message}{" "}
+            <button
+              type="button"
+              className="cursor-pointer underline"
+              onClick={() => void registry.refetch()}
+            >
+              Try again
+            </button>
+          </p>
+        ) : collections.length === 0 ? (
+          <p className="text-muted-foreground">
+            Nothing here yet. Add a collection from{" "}
+            <Link to="/data">All data</Link>, or a provider from{" "}
+            <Link to="/providers">Providers</Link>.
+          </p>
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2.5">
+            {collections.slice(0, SHOWN_COLLECTIONS).map((k) => (
+              <CollectionCard key={k.identity} kind={k} />
+            ))}
+          </div>
+        )}
+      </Section>
+
+      <Section
+        title="Recent changes"
+        action={
+          <Button
+            variant="ghost"
+            size="sm"
+            render={<Link to="/history" />}
+            nativeButton={false}
+          >
+            See all
+          </Button>
+        }
+      >
+        {recent.isPending ? (
+          <HistorySkeleton rows={4} />
+        ) : recent.error ? (
+          <p className="text-muted-foreground">
+            Recent changes didn’t load: {recent.error.message}
+          </p>
+        ) : recent.rows.length === 0 ? (
+          <p className="text-muted-foreground">
+            Nothing has changed yet. Changes show up here as they happen.
+          </p>
+        ) : (
+          <HistorySentences rows={recent.rows} limit={SHOWN_CHANGES} />
+        )}
+      </Section>
+    </DocPage>
   )
 }

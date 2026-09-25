@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
-/** The Data tree's navigation contract: an authority row reaches the
- * authority's kinds table, a package row reaches the same table filtered to
- * the package, and the chevron beside each is the only thing that folds the
- * level under it.
+/** The sidebar's collection groups: everyday mode lists a group's primary
+ * collections by display plural; technical mode lists the authority /
+ * package tree with each kind's own name and can show the supporting ones;
+ * provider groups start folded; favorites and folds persist on the console
+ * preference record.
  *
- * The two group components are rendered on their own rather than through
- * `AppSidebar`: the whole sidebar pulls the kind registry and the catalog over
- * the network, and neither answer says anything about the tree's shape. The
- * router is a real one, because `Link` builds its href from the route tree. */
+ * The group components are rendered on their own rather than through
+ * `AppSidebar`: the whole sidebar pulls the kind registry, the repository and
+ * the bundle statuses over the network, and none of them says anything about
+ * a group's shape. The router is a real one, because `Link` builds its href
+ * from the route tree. */
 
 import {
   createMemoryHistory,
@@ -25,8 +27,8 @@ import {
 } from "@testing-library/react"
 import {
   afterEach,
-  beforeEach,
   beforeAll,
+  beforeEach,
   describe,
   expect,
   it,
@@ -35,35 +37,41 @@ import {
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
-import { buildKindNav } from "@/lib/api/kinds"
-import type { BundleStatus, KindInfo } from "@/lib/api/types"
-import { AuthorityGroup, Favorites, SettingsSetupBadge } from "./app-sidebar"
+import type { KindInfo } from "@/lib/api/types"
+import { collectionGroups } from "@/lib/collections"
+import { CollectionGroupNav, Favorites } from "./app-sidebar"
 import { NavigationProvider } from "./console-preferences"
-import { SidebarMenu } from "./ui/sidebar"
 
-function kind(pkg: string, name: string): KindInfo {
+function kind(identity: string, purpose?: string): KindInfo {
+  const [authority, pkg, name] = identity.split("/")
   return {
-    identity: `ada.example.com/${pkg}/${name}`,
+    identity,
     name,
-    authority: "ada.example.com",
+    authority,
     package: pkg,
     version: 1,
     source: "installed",
     description: "",
-    definition: { properties: {} },
+    definition: { properties: {}, ...(purpose && { purpose }) },
   }
 }
 
-const nav = buildKindNav([
-  kind("tasks", "task"),
-  kind("tasks", "project"),
-  kind("people", "person"),
-]).authorities[0]
+const [yours, google] = collectionGroups(
+  [
+    kind("ada.example.com/tasks/task"),
+    kind("ada.example.com/tasks/project"),
+    kind("ada.example.com/tasks/tasklog", "supporting"),
+    kind("ada.example.com/people/person"),
+    kind("providers.substrate.reamde.dev/google/contact"),
+  ],
+  "ada.example.com"
+)
 
 let storedPreferences: Record<string, unknown> = {}
 
 beforeEach(() => {
   storedPreferences = {}
+  localStorage.clear()
   vi.stubGlobal(
     "fetch",
     vi.fn(async (_url: string, init?: RequestInit) => {
@@ -82,7 +90,7 @@ beforeEach(() => {
   )
 })
 
-function renderTree() {
+function renderGroups() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -91,33 +99,28 @@ function renderTree() {
       <QueryClientProvider client={client}>
         <NavigationProvider>
           <Favorites />
-          <SidebarMenu>
-            <AuthorityGroup nav={nav} />
-          </SidebarMenu>
+          <CollectionGroupNav group={yours} />
+          <CollectionGroupNav group={google} />
         </NavigationProvider>
       </QueryClientProvider>
     ),
   })
   // The paths the links spell have to exist, or the router has no href to
   // build. Their components are never reached: the memory history stays at the
-  // root, which renders the tree under test.
-  const routeTree = rootRoute.addChildren([
-    createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/data/$authority",
-      component: () => null,
-    }),
-    createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/data/$authority/$pkg",
-      component: () => null,
-    }),
-    createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/data/$authority/$pkg/$name",
-      component: () => null,
-    }),
-  ])
+  // root, which renders the groups under test.
+  const routeTree = rootRoute.addChildren(
+    [
+      "/data/$authority",
+      "/data/$authority/$pkg",
+      "/data/$authority/$pkg/$name",
+    ].map((path) =>
+      createRoute({
+        getParentRoute: () => rootRoute,
+        path,
+        component: () => null,
+      })
+    )
+  )
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: ["/"] }),
@@ -135,6 +138,14 @@ function renderTree() {
 
 async function href(name: string): Promise<string | null> {
   return (await screen.findByRole("link", { name })).getAttribute("href")
+}
+
+async function press(label: string | RegExp) {
+  const button = await screen.findByRole("button", { name: label })
+  await waitFor(() =>
+    expect((button as HTMLButtonElement).disabled).toBe(false)
+  )
+  fireEvent.click(button)
 }
 
 beforeAll(() => {
@@ -158,28 +169,33 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe("the Data tree", () => {
-  it("links the authority's own label to its kinds table", async () => {
-    renderTree()
-    expect(await href("ada.example.com")).toBe("/data/ada.example.com")
+describe("everyday groups", () => {
+  it("lists a group's primary collections by display plural", async () => {
+    renderGroups()
+    expect(await href("Tasks")).toBe("/data/ada.example.com/tasks/task")
+    expect(await href("People")).toBe("/data/ada.example.com/people/person")
+    expect(screen.queryByRole("link", { name: "Task logs" })).toBeNull()
   })
 
-  it("links a package's label to its filtered table", async () => {
-    renderTree()
-    expect(await href("tasks")).toBe("/data/ada.example.com/tasks")
+  it("starts a provider's group folded and remembers opening it", async () => {
+    renderGroups()
+    await screen.findByRole("link", { name: "Tasks" })
+    expect(screen.queryByRole("link", { name: "Contacts" })).toBeNull()
+    await press(/^From Google/)
+    expect(await href("Contacts")).toBe(
+      "/data/providers.substrate.reamde.dev/google/contact"
+    )
+    await waitFor(() =>
+      expect(storedPreferences.collapsed).toEqual([
+        "group:provider:google:open",
+      ])
+    )
   })
 
-  it("restores collapsed groups and reordered favorites in a new session", async () => {
-    const first = renderTree()
+  it("restores a folded group and reordered favorites in a new session", async () => {
+    const first = renderGroups()
     const task = "ada.example.com/tasks/task"
     const person = "ada.example.com/people/person"
-    async function press(label: string) {
-      const button = await screen.findByRole("button", { name: label })
-      await waitFor(() =>
-        expect((button as HTMLButtonElement).disabled).toBe(false)
-      )
-      fireEvent.click(button)
-    }
     await press(`Star ${task}`)
     await waitFor(() => expect(storedPreferences.favorites).toEqual([task]))
     await press(`Star ${person}`)
@@ -190,118 +206,48 @@ describe("the Data tree", () => {
     await waitFor(() =>
       expect(storedPreferences.favorites).toEqual([person, task])
     )
-    await press("Toggle the kinds in tasks")
+    await press(/^Your data/)
     await waitFor(() =>
-      expect(storedPreferences.collapsed).toEqual(["ada.example.com/tasks"])
+      expect(storedPreferences.collapsed).toEqual(["group:yours"])
     )
     first.unmount()
-    renderTree()
+    renderGroups()
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: `Move ${person} up` })
-      ).toBeTruthy()
+        (
+          screen.getByRole("button", {
+            name: `Move ${person} up`,
+          }) as HTMLButtonElement
+        ).disabled
+      ).toBe(true)
     )
-    expect(
-      (
-        screen.getByRole("button", {
-          name: `Move ${person} up`,
-        }) as HTMLButtonElement
-      ).disabled
-    ).toBe(true)
-    expect(screen.queryByRole("link", { name: "project" })).toBeNull()
+    // The folded group lists nothing; the favorite still reaches its kind.
+    expect(screen.queryByRole("link", { name: "Projects" })).toBeNull()
     expect(screen.getByRole("link", { name: task })).toBeTruthy()
-  })
-
-  it("folds and unfolds one package's kinds from its chevron alone", async () => {
-    renderTree()
-    expect(await href("task")).toBe("/data/ada.example.com/tasks/task")
-    expect(screen.getByRole("link", { name: "person" })).toBeDefined()
-
-    const chevron = screen.getByRole("button", {
-      name: "Toggle the kinds in tasks",
-    })
-    await waitFor(() =>
-      expect((chevron as HTMLButtonElement).disabled).toBe(false)
-    )
-    fireEvent.click(chevron)
-    await waitFor(() =>
-      expect(screen.queryByRole("link", { name: "task" })).toBeNull()
-    )
-    expect(storedPreferences.collapsed).toEqual(["ada.example.com/tasks"])
-    // Only the package the chevron belongs to folds.
-    expect(screen.getByRole("link", { name: "person" })).toBeDefined()
-    // The package's own row stays reachable while its kinds are hidden.
-    expect(screen.getByRole("link", { name: "tasks" })).toBeDefined()
-
-    fireEvent.click(chevron)
-    await waitFor(() =>
-      expect(screen.getByRole("link", { name: "task" })).toBeDefined()
-    )
   })
 })
 
-/** The Settings row's number, off the bundle statuses the Registry already
- * reads. A repository with nothing to fill in shows no badge at all. */
-describe("the Settings badge", () => {
-  const fetchMock = vi.fn<typeof fetch>()
-
-  function serve(statuses: Partial<BundleStatus>[]) {
-    fetchMock.mockImplementation(
-      async () =>
-        new Response(JSON.stringify({ items: statuses }), { status: 200 })
-    )
-    vi.stubGlobal("fetch", fetchMock)
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    })
-    return render(
-      <QueryClientProvider client={client}>
-        <SettingsSetupBadge />
-      </QueryClientProvider>
-    )
-  }
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
-    fetchMock.mockReset()
+describe("technical groups", () => {
+  beforeEach(() => {
+    localStorage.setItem("substrate.console.technicalDetails", "true")
   })
 
-  it("counts every empty setting across the held bundles", async () => {
-    const { container } = serve([
-      {
-        setup: [
-          { code: "setting", message: "API key is not set" },
-          { code: "missing", input: "client", message: "no record yet" },
-        ],
-      },
-      { setup: [{ code: "setting", message: "Base URL is not set" }] },
-    ])
-    expect(await screen.findByText("2")).toBeDefined()
-    expect(container.textContent).toContain("2 settings to fill in")
+  it("lists the authority and package tree, linked to their pages", async () => {
+    renderGroups()
+    expect(await href("ada.example.com")).toBe("/data/ada.example.com")
+    expect(await href("tasks")).toBe("/data/ada.example.com/tasks")
+    expect(await href("task")).toBe("/data/ada.example.com/tasks/task")
   })
 
-  it("renders nothing when there is nothing to fill in", async () => {
-    const { container } = serve([{ setup: [] }])
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    expect(container.textContent).toBe("")
-  })
-
-  // The badge sits on the primary fill, and the sidebar row recolours its
-  // badge on hover and while active. A count that only named the resting
-  // colour went near-black on dark blue in both of those states.
-  it("keeps the primary foreground on hover and while the row is active", async () => {
-    const { container } = serve([
-      { setup: [{ code: "setting", message: "API key is not set" }] },
-    ])
-    await screen.findByText("1")
-    const badge = container.querySelector('[data-slot="sidebar-menu-badge"]')!
-    const classes = badge.className
-    expect(classes).toContain("bg-primary")
-    expect(classes).toContain("text-primary-foreground")
-    expect(classes).toContain("peer-hover/menu-button:text-primary-foreground")
-    expect(classes).toContain(
-      "peer-data-active/menu-button:text-primary-foreground"
-    )
-    expect(classes).not.toContain("text-sidebar-accent-foreground")
+  it("shows the supporting kinds on request, tagged", async () => {
+    renderGroups()
+    await screen.findByRole("link", { name: "task" })
+    expect(screen.queryByRole("link", { name: /tasklog/ })).toBeNull()
+    await press("Show 1 supporting and internal")
+    const tasklog = await screen.findByRole("link", { name: /tasklog/ })
+    expect(tasklog.textContent).toContain("supporting")
+    expect(
+      screen.getByRole("button", { name: "Hide 1 supporting and internal" })
+    ).toBeTruthy()
   })
 })

@@ -1,15 +1,25 @@
+/** ⌘K: jump to any page or collection, or hand what was typed to the Search
+ * page as a records query. Collections are grouped the way the sidebar groups
+ * them, by display plural, and every kind is reachable here, the supporting
+ * and internal ones too, each labelled for what it is. */
+
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import {
-  ActivityIcon,
   BotIcon,
-  FolderIcon,
+  DatabaseIcon,
+  HistoryIcon,
   HomeIcon,
-  PackageIcon,
+  PlugIcon,
   SearchIcon,
+  SlidersHorizontalIcon,
+  WrenchIcon,
 } from "lucide-react"
 
+import { KindGlyph } from "@/components/identity/kind-glyph"
+import { KindPath } from "@/components/identity/kind-ref"
+import { ProviderBadge } from "@/components/identity/provider-badge"
 import {
   Command,
   CommandDialog,
@@ -19,19 +29,23 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
-import { buildKindNav, kindsQueryOptions } from "@/lib/api/kinds"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { splitKind } from "@/lib/api/http"
+import { kindsQueryOptions } from "@/lib/api/kinds"
+import { collectionGroups } from "@/lib/collections"
+import { kindPurpose } from "@/lib/definition"
+import { displayPlural } from "@/lib/kind-names"
 
 const pages = [
-  { title: "Overview", to: "/", icon: HomeIcon },
-  { title: "Search", to: "/search", icon: SearchIcon },
-  { title: "Changelog", to: "/changelog", icon: ActivityIcon },
-  { title: "Registry", to: "/registry", icon: PackageIcon },
+  { title: "Home", to: "/", icon: HomeIcon },
+  { title: "All data", to: "/data", icon: DatabaseIcon },
   { title: "Agents", to: "/agents", icon: BotIcon },
+  { title: "Tools", to: "/tools", icon: WrenchIcon },
+  { title: "Providers", to: "/providers", icon: PlugIcon },
+  { title: "History", to: "/history", icon: HistoryIcon },
+  { title: "Settings", to: "/settings", icon: SlidersHorizontalIcon },
 ] as const
 
-/** ⌘K: jump to any page or kind, or hand what was typed to the Search page
- * as a records query. The palette itself matches page and kind names; the
- * records live behind the ranked read, one Enter away. */
 export function CommandMenu({
   open,
   onOpenChange,
@@ -40,9 +54,10 @@ export function CommandMenu({
   onOpenChange: (open: boolean) => void
 }) {
   const navigate = useNavigate()
+  const [technical] = useTechnicalDetails()
   const registry = useQuery(kindsQueryOptions)
-  const nav = useMemo(
-    () => (registry.data ? buildKindNav(registry.data) : undefined),
+  const groups = useMemo(
+    () => collectionGroups(registry.data ?? []),
     [registry.data]
   )
   const [typed, setTyped] = useState("")
@@ -62,21 +77,21 @@ export function CommandMenu({
         if (!next) setTyped("")
         onOpenChange(next)
       }}
-      title="Go to"
-      description="Jump to a page or a kind, or search the records"
+      title="Search or jump to"
+      description="Jump to a page or a collection, or search your records"
     >
       <Command>
         <CommandInput
-          placeholder="Go to a page or a kind, or search records…"
+          placeholder="Search or jump to…"
           value={typed}
           onValueChange={setTyped}
         />
         <CommandList>
-          <CommandEmpty>No page or kind matches.</CommandEmpty>
+          <CommandEmpty>No page or collection matches.</CommandEmpty>
           {query && (
             <CommandGroup heading="Records">
-              {/* forceMount-free: the value carries the typed text so the
-                  item always matches what filters the list */}
+              {/* the value carries the typed text so the item always matches
+                  what filters the list */}
               <CommandItem
                 value={`search records ${query}`}
                 onSelect={() =>
@@ -86,8 +101,9 @@ export function CommandMenu({
                 }
               >
                 <SearchIcon />
-                Search records for{" "}
-                <span className="truncate data">{query}</span>
+                <span className="min-w-0 truncate">
+                  Search your records for “{query}”
+                </span>
               </CommandItem>
             </CommandGroup>
           )}
@@ -103,54 +119,54 @@ export function CommandMenu({
               </CommandItem>
             ))}
           </CommandGroup>
-          {nav &&
-            nav.authorities.map((a) => (
-              <CommandGroup key={a.authority} heading={a.authority}>
-                {/* the authority page itself — its kinds-at-a-glance table */}
-                <CommandItem
-                  value={`authority ${a.authority}`}
-                  onSelect={() =>
-                    go(
-                      () =>
-                        void navigate({
-                          to: "/data/$authority",
-                          params: { authority: a.authority },
-                        })
-                    )
-                  }
-                >
-                  <FolderIcon />
-                  {a.authority}
-                  <span className="ml-auto data text-xs text-muted-foreground">
-                    authority
-                  </span>
-                </CommandItem>
-                {a.kinds.map((k) => (
+          {groups.map((g) => (
+            <CommandGroup
+              key={g.id}
+              heading={
+                <span className="inline-flex items-center gap-1.5">
+                  {g.provider && (
+                    <ProviderBadge provider={g.provider} size="xs" />
+                  )}
+                  {g.label}
+                </span>
+              }
+            >
+              {[...g.primary, ...g.hidden].map((k) => {
+                const { authority, pkg, name } = splitKind(k.identity)
+                const purpose = kindPurpose(k)
+                const plural = displayPlural(k)
+                return (
                   <CommandItem
                     key={k.identity}
-                    value={`${k.name} ${k.package} ${k.identity}`}
+                    value={`${plural} ${g.label} ${k.identity}`}
                     onSelect={() =>
                       go(
                         () =>
                           void navigate({
                             to: "/data/$authority/$pkg/$name",
-                            params: {
-                              authority: a.authority,
-                              pkg: k.package,
-                              name: k.name,
-                            },
+                            params: { authority, pkg, name },
                           })
                       )
                     }
                   >
-                    {k.name}
-                    <span className="ml-auto data text-xs text-muted-foreground">
-                      {a.authority}/{k.package}
-                    </span>
+                    <KindGlyph kind={k} size="xs" />
+                    <span className="truncate">{plural}</span>
+                    {purpose !== "primary" && (
+                      <span className="shrink-0 rounded-[3px] border border-border-strong px-1 text-[10px] leading-4 text-faint">
+                        {purpose}
+                      </span>
+                    )}
+                    {technical && (
+                      <KindPath
+                        reference={k.identity}
+                        className="ml-auto min-w-0 truncate text-[11px]"
+                      />
+                    )}
                   </CommandItem>
-                ))}
-              </CommandGroup>
-            ))}
+                )
+              })}
+            </CommandGroup>
+          ))}
         </CommandList>
       </Command>
     </CommandDialog>
