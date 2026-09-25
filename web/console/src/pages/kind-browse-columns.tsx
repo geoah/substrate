@@ -12,25 +12,16 @@
 
 import { Link } from "@tanstack/react-router"
 import {
-  ArrowUpRightIcon,
-  AtSignIcon,
   CalendarIcon,
-  CircleDotIcon,
   ClockIcon,
-  GlobeIcon,
   HashIcon,
-  LinkIcon,
-  ListIcon,
   Maximize2Icon,
-  PhoneIcon,
-  RepeatIcon,
-  SquareCheckIcon,
   TypeIcon,
-  type LucideIcon,
 } from "lucide-react"
 
 import type { DataTableColumn } from "@/components/data-table/data-table"
 import { GridColumnHeader } from "@/components/data-table/data-grid-header"
+import { propertyIcon } from "@/components/data-table/property-icon"
 import {
   INDENT_PX,
   TreeToggle,
@@ -154,23 +145,6 @@ const WIDTHS: Record<string, number> = {
 function widthOf(prop: DeclaredProperty): number {
   if (prop.kind === "reference") return prop.repeated ? 220 : 190
   return WIDTHS[prop.kind] ?? 180
-}
-
-const ICONS: Record<string, LucideIcon> = {
-  state: CircleDotIcon,
-  enum: ListIcon,
-  reference: ArrowUpRightIcon,
-  datetime: CalendarIcon,
-  date: CalendarIcon,
-  email: AtSignIcon,
-  url: LinkIcon,
-  phone: PhoneIcon,
-  int: HashIcon,
-  float: HashIcon,
-  decimal: HashIcon,
-  bool: SquareCheckIcon,
-  timezone: GlobeIcon,
-  recurrence: RepeatIcon,
 }
 
 const NUMERIC = new Set(["int", "float", "decimal"])
@@ -386,18 +360,22 @@ interface CellContext {
 }
 
 /** The title cell: the tree's indent and chevron where the grid nests, the
- * kind's glyph, the title (the link to the record), the children's badge and
- * the Open button a hovered row shows. */
+ * kind's glyph, the title (the link to the record), the children's badge, the
+ * parent a filtered match belongs to, and the Open button a hovered row shows.
+ * The button takes its room from the title rather than covering it, so a long
+ * title truncates before it. */
 function TitleCell({
   kind,
   record,
   doneState,
   noun,
+  titles,
 }: {
   kind: KindInfo
   record: SubstrateRecord
   doneState?: DeclaredProperty
   noun: string
+  titles?: ReferenceTitles
 }) {
   const tree = useRowTreeNode(record.id)
   const title = recordTitle(record.properties)
@@ -411,13 +389,19 @@ function TitleCell({
   const counts = children?.length
     ? subtaskCounts(children, doneState)
     : undefined
+  const context = tree?.context ? splitRecordPath(tree.context) : undefined
   return (
     <span
       className="flex min-w-0 items-center gap-1.5"
       style={tree ? { paddingLeft: tree.node.depth * INDENT_PX } : undefined}
     >
       {tree && (
-        <TreeToggle node={tree.node} onToggle={tree.toggle} noun={noun} />
+        <TreeToggle
+          node={tree.node}
+          onToggle={tree.toggle}
+          gutter={tree.gutter}
+          noun={noun}
+        />
       )}
       <KindGlyph kind={kind} size="xs" />
       <Link
@@ -445,12 +429,26 @@ function TitleCell({
             : counts.total}
         </span>
       )}
+      {context && tree?.context && (
+        <span
+          data-slot="tree-context"
+          className="flex max-w-[40%] min-w-0 shrink-0 items-center gap-1 text-[12px] font-normal whitespace-nowrap text-faint"
+        >
+          in
+          <RecordRef
+            kind={context.kind}
+            id={context.id}
+            title={titles?.get(tree.context)}
+            className="min-w-0 text-muted-foreground [&_[data-slot=kind-glyph]]:hidden"
+          />
+        </span>
+      )}
       <Link
         to="/data/$authority/$pkg/$name/$id"
         params={params}
         aria-label={`Open ${title || untitled(kind)}`}
         tabIndex={-1}
-        className="absolute top-1/2 right-2 hidden h-[22px] -translate-y-1/2 items-center gap-1 rounded-[5px] border border-border-strong bg-background px-[7px] text-[11.5px] font-medium text-muted-foreground no-underline shadow-[0_1px_2px_rgba(0,0,0,.06)] group-hover/row:inline-flex hover:text-foreground"
+        className="ml-auto hidden h-[22px] shrink-0 items-center gap-1 rounded-[5px] border border-border-strong bg-background px-[7px] text-[11.5px] font-medium text-muted-foreground no-underline shadow-[0_1px_2px_rgba(0,0,0,.06)] group-hover/row:inline-flex hover:text-foreground"
       >
         <Maximize2Icon aria-hidden className="size-3" />
         Open
@@ -501,6 +499,7 @@ export function buildColumns(
         record={row.original}
         doneState={doneState}
         noun={opts.childNoun ?? "rows"}
+        titles={titles}
       />
     ),
     meta: { label: technical ? "title" : "Name", width: 300 },
@@ -542,7 +541,7 @@ export function buildColumns(
         <GridColumnHeader
           column={column}
           label={labelOf(prop.name)}
-          icon={ICONS[prop.kind] ?? TypeIcon}
+          icon={propertyIcon(prop)}
           description={prop.description}
           mono={technical}
           align={numeric ? "right" : "left"}

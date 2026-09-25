@@ -11,7 +11,16 @@
  * something to open. A level read that the page cap cut short cannot say who
  * has children, so its rows fall back to a read each, on demand.
  * `resolveTree` is that decision, pure, so the hook around it
- * (hooks/use-record-tree.ts) only fetches what it names. */
+ * (hooks/use-record-tree.ts) only fetches what it names.
+ *
+ * A FILTERED tree (a filter or a search is set) nests the matches rather than
+ * the collection. The page is the matches, every level's read carries the same
+ * filter, and a match stands at the top level unless its parent matches too,
+ * in which case it sits under that parent instead (`matchedRoots`), so every
+ * match is drawn exactly once. A top-level match whose parent does not match
+ * carries that parent as its context, so where it lives is not lost. Rows open
+ * by themselves there, because a match hidden behind a closed parent is a
+ * match the reader asked for and cannot see. */
 
 import {
   readReference,
@@ -118,9 +127,14 @@ export interface TreeNode {
 export interface ResolveTreeInput {
   roots: readonly SubstrateRecord[]
   property: string
-  /** The ids the reader has opened. An id that is a leaf, or not on the
-   * page, is simply ignored. */
+  /** The ids the reader has toggled away from their default: opened, or,
+   * under `openByDefault`, closed. An id that is a leaf, or not on the page,
+   * is simply ignored. */
   expanded: ReadonlySet<string>
+  /** A row whose children are known opens without being asked (the filtered
+   * tree). A row whose level read was cut short still waits for a click: its
+   * own read is one request per row. */
+  openByDefault?: boolean
   /** What the cache holds for one level's read over these parents. */
   lookup: (parentIds: readonly string[]) => ChildrenPage | undefined
 }
@@ -159,7 +173,7 @@ export function resolveTree(input: ResolveTreeInput): ResolvedTree {
       ? groupByParent(batch.records, fresh, input.property)
       : undefined
     for (const record of fresh) {
-      const open = input.expanded.has(record.id)
+      const toggled = input.expanded.has(record.id)
       const node: TreeNode = {
         id: record.id,
         depth,
@@ -172,13 +186,14 @@ export function resolveTree(input: ResolveTreeInput): ResolvedTree {
       if (byParent) {
         children = byParent.get(record.id) ?? []
         node.children = children.length ? "some" : "none"
-        node.open = open && children.length > 0
+        node.open =
+          children.length > 0 && (input.openByDefault ? !toggled : toggled)
         if (children.length) node.childRecords = children
       } else if (batch) {
         // Cut short or refused: the level's read cannot say who has children,
         // so every row offers to open, and opening asks about that row alone.
         node.children = "unknown"
-        if (open) {
+        if (toggled) {
           node.open = true
           wanted.push([record.id])
           const own = input.lookup([record.id])
@@ -205,6 +220,79 @@ export function resolveTree(input: ResolveTreeInput): ResolvedTree {
 
   place(input.roots, 0)
   return { rows, nodes, wanted }
+}
+
+/** Whether any row can open, so the grid reserves the chevron's width on
+ * every row (titles on one level stay aligned) or on none (a tree with nothing
+ * to open reads as the flat table it is). A row whose level has not answered
+ * yet reserves nothing: its chevron is not known to exist. */
+export function hasToggles(nodes: ReadonlyMap<string, TreeNode>): boolean {
+  for (const node of nodes.values()) {
+    if (node.children === "some" || node.children === "unknown") return true
+  }
+  return false
+}
+
+/** The distinct parents a page of matches names, which the filtered tree asks
+ * the server about: those that match hold their matching children. */
+export function parentIdsOf(
+  page: readonly SubstrateRecord[],
+  property: string
+): string[] {
+  const out = new Set<string>()
+  for (const record of page) {
+    const id = parentIdOf(record, property)
+    if (id !== undefined && id !== record.id) out.add(id)
+  }
+  return [...out]
+}
+
+/** The read that says which of `parentIds` match the view's own filter. */
+export function matchingParentsFilter(
+  filter: RecordFilter | undefined,
+  parentIds: readonly string[]
+): RecordFilter {
+  return { ...filter, ids: [...parentIds] }
+}
+
+export interface MatchedRoots {
+  /** The matches that stand at the top level, in the page's order. */
+  roots: SubstrateRecord[]
+  /** Top-level match id → the record path of the parent it names that does
+   * not match: the context the row shows beside its title. */
+  context: Map<string, string>
+}
+
+/** The filtered tree's top level. A match whose parent matches is left out:
+ * it is drawn under that parent, whose own level read carries the filter. A
+ * match naming a parent that does not match (or that does not exist) stands
+ * at the top level, with the parent as its context. `matchingParents` are the
+ * parent records the matching-parents read returned; a pointer written
+ * before a merge names one by a former id, so former ids count too. */
+export function matchedRoots(
+  page: readonly SubstrateRecord[],
+  property: string,
+  matchingParents: readonly SubstrateRecord[]
+): MatchedRoots {
+  const matching = new Set<string>()
+  for (const parent of matchingParents) {
+    matching.add(parent.id)
+    for (const former of parent.formerIds ?? []) matching.add(former)
+  }
+  const roots: SubstrateRecord[] = []
+  const context = new Map<string, string>()
+  for (const record of page) {
+    const parentId = parentIdOf(record, property)
+    if (parentId === undefined || parentId === record.id) {
+      roots.push(record)
+      continue
+    }
+    if (matching.has(parentId)) continue
+    roots.push(record)
+    const held = readReference(record.properties[property])
+    if (held) context.set(record.id, held.path)
+  }
+  return { roots, context }
 }
 
 /** The children on a level's page, by the parent each names. A pointer

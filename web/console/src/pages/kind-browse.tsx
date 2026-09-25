@@ -16,9 +16,11 @@
  * A TREE where the kind allows one: a single reference pinned at the kind
  * itself nests the collection. The page's rows are then the records naming no
  * parent, and each opens onto the records naming it
- * (`hooks/use-record-tree.ts`). `?nest=false` draws the same rows flat; a
- * filter or a search draws them flat regardless, so a match is shown wherever
- * it sits rather than hidden under a parent that does not match. */
+ * (`hooks/use-record-tree.ts`). `?nest=false` draws the same rows flat.
+ * A filter or a search keeps the tree but nests the MATCHES: the page is every
+ * match, a match sits under its parent when that parent matches too, and one
+ * whose parent does not match stands at the top level saying which record it
+ * is in (lib/record-tree.ts, `matchedRoots`). */
 
 import { useEffect, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -226,15 +228,16 @@ export function KindBrowsePage() {
     [kindInfo]
   )
   const hasFilters = filters.length > 0 || search.trim().length > 0
-  // A filter or a search draws the table flat: a match nested under a parent
-  // that does not match would otherwise be a row the reader cannot reach.
-  const nesting = nestProperty !== undefined && nest && !hasFilters
+  const nesting = nestProperty !== undefined && nest
+  // Unfiltered, the page is the top level and the footer pages it; filtered,
+  // the page is the matches (the tree hook sorts out which stand on top).
+  const nestingRoots = nesting && !hasFilters
   const listFilter = useMemo(
     () =>
-      nesting && nestProperty
+      nestingRoots && nestProperty
         ? rootsFilter(recordFilter, nestProperty.name)
         : recordFilter,
-    [nesting, nestProperty, recordFilter]
+    [nestingRoots, nestProperty, recordFilter]
   )
 
   // A hand-typed ?page= is clamped to a page that exists; the request below
@@ -274,6 +277,7 @@ export function KindBrowsePage() {
     property: nesting ? nestProperty : undefined,
     roots,
     filter: recordFilter,
+    filtered: hasFilters,
     orderBy: sort,
     expand,
   })
@@ -299,9 +303,9 @@ export function KindBrowsePage() {
   // bounded walk over the view's own filter says how many.
   const collectionCount = useQuery({
     ...recordCountQueryOptions(authority, pkg, name, recordFilter),
-    enabled: Boolean(kindInfo) && nesting,
+    enabled: Boolean(kindInfo) && nestingRoots,
   })
-  const totalText = nesting
+  const totalText = nestingRoots
     ? collectionCount.data
       ? formatCount(collectionCount.data)
       : undefined
@@ -424,7 +428,7 @@ export function KindBrowsePage() {
   const provider = providerOfKind(kindInfo.identity)
   const showTabs = tab === "definition"
   const emptyHidden = table.options.meta?.emptyHidden ?? []
-  const loadingPage = records.isPending
+  const loadingPage = records.isPending || tree.loading
   const refetching = records.isPlaceholderData && records.isFetching
 
   const header = (
@@ -566,7 +570,7 @@ export function KindBrowsePage() {
   )
 
   const summary =
-    nesting && total !== undefined && collectionCount.data ? (
+    nestingRoots && total !== undefined && collectionCount.data ? (
       <span className="tabular-nums">
         {formatCount(collectionCount.data)} {lowerFirst(plural)},{" "}
         {total.toLocaleString()}
@@ -588,14 +592,13 @@ export function KindBrowsePage() {
         {nestProperty && (
           <button
             type="button"
-            aria-pressed={nest && !hasFilters}
-            disabled={hasFilters}
+            aria-pressed={nest}
             title={
               hasFilters
-                ? "Flat while a filter or a search is set, so a match shows wherever it sits"
+                ? `While filtered, a match sits under the ${lowerFirst(singular)} it belongs to when that one matches too. Otherwise it shows at the top level, with the ${lowerFirst(singular)} it's in beside its name`
                 : `The top level is the ${lowerFirst(plural)} with no ${lowerFirst(propertyLabel(nestProperty.name))}; each opens onto the ones that name it`
             }
-            className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border-strong bg-background px-2.5 text-[12.5px] text-muted-foreground outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-50 aria-pressed:border-transparent aria-pressed:bg-primary-soft aria-pressed:text-primary-text"
+            className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border-strong bg-background px-2.5 text-[12.5px] text-muted-foreground outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 aria-pressed:border-transparent aria-pressed:bg-primary-soft aria-pressed:text-primary-text"
             onClick={() => {
               void setNest(!nest)
               resetPages()
@@ -663,7 +666,13 @@ export function KindBrowsePage() {
         <>
           <RowTreeProvider
             tree={
-              tree.active ? { nodes: tree.nodes, toggle: tree.toggle } : null
+              tree.active
+                ? {
+                    nodes: tree.nodes,
+                    toggle: tree.toggle,
+                    context: tree.context,
+                  }
+                : null
             }
           >
             <DataGrid

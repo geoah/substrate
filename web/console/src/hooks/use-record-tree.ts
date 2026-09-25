@@ -6,10 +6,16 @@
  * `useQueries`. A read that lands re-renders the tree, and the next level's
  * read is named on that render. Reading the cache during render is sound
  * here because every key read is subscribed in the same render, and TanStack
- * re-renders on the first snapshot that differs from what was drawn. */
+ * re-renders on the first snapshot that differs from what was drawn.
+ *
+ * FILTERED (`filtered`), the page is the matches, not the roots: one more read
+ * asks which of the parents the page names match too, and `matchedRoots`
+ * keeps the rest at the top level (lib/record-tree.ts says why). Until that
+ * read answers the tree is `loading`, because drawing the page flat first
+ * would show rows that are about to move under a parent. */
 
 import { useMemo, useState } from "react"
-import { useQueries, useQueryClient } from "@tanstack/react-query"
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { recordsQueryOptions, type ListParams } from "@/lib/api/records"
 import type {
@@ -21,6 +27,9 @@ import type {
 import type { DeclaredProperty } from "@/lib/definition"
 import {
   childrenFilter,
+  matchedRoots,
+  matchingParentsFilter,
+  parentIdsOf,
   resolveTree,
   type ChildrenPage,
   type TreeNode,
@@ -35,10 +44,13 @@ export interface RecordTreeOptions {
   kind: KindInfo | undefined
   /** The self-reference to nest by; `undefined` draws the rows flat. */
   property: DeclaredProperty | undefined
-  /** The page of top-level rows. */
+  /** The page: the top-level rows, or under `filtered` the matches. */
   roots: SubstrateRecord[]
   /** The view's own filter, applied at every level. */
   filter: RecordFilter | undefined
+  /** A filter or a search is set: the page is its matches, nested under the
+   * matches they belong to, and rows open by themselves. */
+  filtered?: boolean
   orderBy: string
   /** The references the page expands, so a child's reference columns read as
    * names the way a root's do. */
@@ -54,6 +66,11 @@ export interface RecordTree {
   included: Record<string, SubstrateRecord>
   /** A tree is being drawn. */
   active: boolean
+  /** The filtered tree's top level is not known yet. */
+  loading: boolean
+  /** Top-level row id → the record path of the parent it belongs to, where
+   * that parent is not among the matches. Empty outside a filtered tree. */
+  context: ReadonlyMap<string, string>
 }
 
 /** One level's read: the kind's collection, narrowed to the records naming one
@@ -76,6 +93,7 @@ export function childrenListParams(
 }
 
 const NO_NODES: ReadonlyMap<string, TreeNode> = new Map()
+const NO_CONTEXT: ReadonlyMap<string, string> = new Map()
 
 export function useRecordTree(opts: RecordTreeOptions): RecordTree {
   const client = useQueryClient()
@@ -83,15 +101,48 @@ export function useRecordTree(opts: RecordTreeOptions): RecordTree {
   // Another collection is other ids: a row here must not open because a row
   // there with the same id was open. State, not a ref, adjusted while
   // rendering: React's sanctioned shape for "reset on a prop change".
-  const identity = opts.kind?.identity
-  const [lastIdentity, setLastIdentity] = useState(identity)
-  if (lastIdentity !== identity) {
-    setLastIdentity(identity)
+  // A new filter is a new question, and what a toggle means flips with it
+  // (opened, or closed under a filter), so the rows start from their default.
+  const scope = `${opts.kind?.identity ?? ""} ${opts.filtered ? "f" : "-"} ${JSON.stringify(opts.filter ?? null)}`
+  const [lastScope, setLastScope] = useState(scope)
+  if (lastScope !== scope) {
+    setLastScope(scope)
     setExpanded(new Set())
   }
 
   const { kind, property } = opts
   const active = kind !== undefined && property !== undefined
+  const filtered = active && Boolean(opts.filtered)
+
+  const parentIds = useMemo(
+    () => (filtered && property ? parentIdsOf(opts.roots, property.name) : []),
+    [filtered, opts.roots, property]
+  )
+  const parents = useQuery({
+    ...recordsQueryOptions({
+      kinds: [kind?.identity ?? ""],
+      first: CHILDREN_PAGE,
+      filter: matchingParentsFilter(opts.filter, parentIds),
+    }),
+    enabled: filtered && parentIds.length > 0,
+  })
+  // The list options keep the previous key's data while the next one loads;
+  // another page's parents would hide the wrong rows.
+  const parentsKnown =
+    parentIds.length === 0 ||
+    (parents.data !== undefined && !parents.isPlaceholderData) ||
+    parents.isError
+  const matched = useMemo(
+    () =>
+      filtered && property && parentsKnown
+        ? matchedRoots(
+            opts.roots,
+            property.name,
+            parentIds.length ? (parents.data?.records ?? []) : []
+          )
+        : undefined,
+    [filtered, parentsKnown, opts.roots, property, parentIds, parents.data]
+  )
   const optionsFor = (ids: readonly string[]) =>
     recordsQueryOptions(
       childrenListParams(
@@ -118,14 +169,17 @@ export function useRecordTree(opts: RecordTreeOptions): RecordTree {
     return undefined
   }
 
-  const tree = active
-    ? resolveTree({
-        roots: opts.roots,
-        property: property.name,
-        expanded,
-        lookup,
-      })
-    : undefined
+  const loading = filtered && !matched
+  const tree =
+    active && !loading
+      ? resolveTree({
+          roots: matched ? matched.roots : opts.roots,
+          property: property.name,
+          expanded,
+          lookup,
+          openByDefault: filtered,
+        })
+      : undefined
   const wanted = tree?.wanted ?? []
   useQueries({ queries: wanted.map(optionsFor) })
 
@@ -158,10 +212,12 @@ export function useRecordTree(opts: RecordTreeOptions): RecordTree {
   }
 
   return {
-    rows: tree ? tree.rows : opts.roots,
+    rows: tree ? tree.rows : loading ? [] : opts.roots,
     nodes: tree?.nodes ?? NO_NODES,
     toggle,
     included,
     active,
+    loading,
+    context: matched?.context ?? NO_CONTEXT,
   }
 }

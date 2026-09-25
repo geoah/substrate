@@ -197,4 +197,77 @@ describe("useRecordTree", () => {
     expect(result.current.rows).toBe(roots)
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  /** Filtered: the page is the matches, one more read asks which of the
+   * parents it names match, and each match is drawn once, under its parent
+   * where that parent matches, else on top with its parent as context. */
+  it("nests the matches of a filter under the matches they belong to", async () => {
+    const research = record("research", "design")
+    const matches = new Set(["engineering", "platform", "infra", "research"])
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input), "http://console.test")
+      const filter = JSON.parse(url.searchParams.get("filter") ?? "{}") as {
+        ids?: string[]
+        properties?: { parent?: { in?: string[] } }
+      }
+      let records = [...ALL, research].filter((r) => matches.has(r.id))
+      if (filter.ids)
+        records = records.filter((r) => filter.ids!.includes(r.id))
+      const parents = filter.properties?.parent?.in
+      if (parents) {
+        records = records.filter((r) => {
+          const held = r.properties.parent as { ref?: string } | undefined
+          return held?.ref !== undefined && parents.includes(held.ref)
+        })
+      }
+      return new Response(
+        JSON.stringify({ records, head: 1, generation: "g" }),
+        { status: 200 }
+      )
+    })
+    const page = [ALL[4], research, ALL[0], ALL[2]] // infra, research, engineering, platform
+    const { result } = renderHook(
+      () =>
+        useRecordTree({
+          kind: team,
+          property: parent,
+          roots: page,
+          filter: { search: "ops" },
+          filtered: true,
+          orderBy: "name:asc",
+          expand: [],
+        }),
+      { wrapper: wrapper() }
+    )
+    // Nothing is drawn until the top level is known.
+    expect(result.current.loading).toBe(true)
+    expect(result.current.rows).toEqual([])
+
+    await waitFor(() =>
+      expect(result.current.rows.map((r) => r.id)).toEqual([
+        "research",
+        "engineering",
+        "platform",
+        "infra",
+      ])
+    )
+    expect(result.current.loading).toBe(false)
+    expect(result.current.nodes.get("infra")?.depth).toBe(2)
+    expect([...result.current.context]).toEqual([
+      ["research", `${TEAM}/design`],
+    ])
+    // The parents' read carries the view's own filter, narrowed to the ids.
+    expect(filterOf(fetchMock.mock.calls[0][0])).toEqual({
+      kinds: [TEAM],
+      search: "ops",
+      ids: ["platform", "design", "engineering"],
+    })
+
+    // A toggle on a row that opened by itself closes it.
+    act(() => result.current.toggle("engineering"))
+    expect(result.current.rows.map((r) => r.id)).toEqual([
+      "research",
+      "engineering",
+    ])
+  })
 })
