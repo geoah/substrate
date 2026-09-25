@@ -20,7 +20,7 @@
  * filter or a search draws them flat regardless, so a match is shown wherever
  * it sits rather than hidden under a parent that does not match. */
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import type { SortingState, Updater } from "@tanstack/react-table"
@@ -175,14 +175,22 @@ export function KindBrowsePage() {
     const params = new URLSearchParams(window.location.search)
     const stored = loadBrowsePrefs(`${authority}/${pkg}`, name)
     if (!stored) return
+    let restored = false
     if (!params.has("filter") && stored.filter?.length) {
       void setFilterTokens(stored.filter, { history: "replace" })
+      restored = true
     }
     if (!params.has("sort") && stored.sort) {
       void setSort(stored.sort, { history: "replace" })
+      restored = true
     }
     if (!params.has("nest") && stored.nest === false) {
       void setNest(false, { history: "replace" })
+      restored = true
+    }
+    // A restored view is another view, numbered from its own first page.
+    if (restored && params.has("page")) {
+      void setPageParam(null, { history: "replace" })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per collection
   }, [authority, pkg, name])
@@ -235,13 +243,10 @@ export function KindBrowsePage() {
     ? Math.max(1, Math.trunc(pageParam))
     : 1
   // A changed filter, sort or tree switch renumbers the whole collection, so
-  // the view resets to page one.
-  const viewKey = `${authority}/${pkg}/${name}|${JSON.stringify(recordFilter ?? null)}|${sort}|${nesting ? "tree" : "flat"}`
-  const [lastViewKey, setLastViewKey] = useState(viewKey)
-  if (lastViewKey !== viewKey) {
-    setLastViewKey(viewKey)
-    if (page !== 1) void setPageParam(null, { history: "replace" })
-  }
+  // the view resets to page one — in the handlers that change it, never by
+  // watching the derived view: that also moves when the registry arrives and
+  // turns a flat view into a tree, and on back and forward, where the URL
+  // already names the page it wants.
 
   // Every reference this kind declares rides the page read as `expand=`, so
   // a reference column reads as the referent's NAME instead of its id, in one
