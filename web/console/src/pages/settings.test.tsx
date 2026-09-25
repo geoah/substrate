@@ -316,6 +316,32 @@ describe("the settings surfaces", () => {
       )
     })
 
+    // A form nobody has used says nothing is wrong with it yet: a required
+    // setting's error waits for the control to be touched or a save tried.
+    it("holds a required setting's error until it is touched or a save is tried", async () => {
+      renderBundle("ada.example.com/firecrawl")
+      const secret = await screen.findByLabelText(/API key/)
+      expect(screen.queryByText(/Required\. This has no value yet/)).toBeNull()
+
+      // Typed into, then emptied again: now it has been touched.
+      fireEvent.change(secret, { target: { value: "sk" } })
+      expect(screen.queryByText(/Required\. This has no value yet/)).toBeNull()
+      fireEvent.change(secret, { target: { value: "" } })
+      expect(screen.getByText(/Required\. This has no value yet/)).toBeTruthy()
+    })
+
+    it("names every unset required setting once a save is tried", async () => {
+      renderBundle("ada.example.com/firecrawl")
+      fireEvent.change(await screen.findByLabelText(/Base URL/), {
+        target: { value: "https://crawl.example.com" },
+      })
+      expect(screen.queryByText(/Required\. This has no value yet/)).toBeNull()
+      fireEvent.click(screen.getAllByRole("button", { name: "Save" })[0])
+      expect(
+        await screen.findByText(/Required\. This has no value yet/)
+      ).toBeTruthy()
+    })
+
     it("says so when the bundle in the path ships none", async () => {
       renderBundle("ada.example.com/nothing")
       expect(await screen.findByText("No settings here")).toBeTruthy()
