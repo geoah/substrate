@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/geoah/substrate/internal/metrics"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -162,6 +163,9 @@ func declinedDelivery(err error) bool {
 // It returns the number of deliveries that applied effects. Only
 // infrastructure errors surface; eval and effect errors park.
 func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
+	// The whole pass is one observation, whatever it drained or fired.
+	start := time.Now()
+	defer func() { metrics.TriggerPassSeconds.Observe(time.Since(start).Seconds()) }()
 	// Collect paged-cursor rows no live trigger, parked failure, or in-flight
 	// drain owns anymore before the pass — best-effort, a sweep
 	// error never blocks delivery.
@@ -203,6 +207,9 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 			// Webhook triggers deliver on wake only.
 		}
 		total += n
+		if n > 0 {
+			metrics.TriggerDeliveries.WithLabelValues(lt.ID).Add(float64(n))
+		}
 		if perr != nil {
 			errs = append(errs, fmt.Errorf("trigger %s: %w", lt.ID, perr))
 		}

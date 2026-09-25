@@ -77,6 +77,15 @@ type Config struct {
 	// target. Empty (local dev) uses targetOrigin "*" and renders no redirect.
 	ConsoleURL string `envconfig:"SUBSTRATE_CONSOLE_URL" default:""`
 
+	// Metrics serves the Prometheus exposition at GET /metrics, unauthenticated
+	// and DB-free like /healthz: request latency by route, requests in
+	// flight, the pools' sql.DBStats, the trigger dispatcher's pass time and
+	// deliveries, and the Go runtime. OFF by default: the path carries route
+	// names and pool sizes to anyone who can reach the port, so a deployment
+	// that turns it on scrapes the pod directly and keeps /metrics off its
+	// ingress. The instruments record either way; this is only the door.
+	Metrics bool `envconfig:"SUBSTRATE_METRICS" default:"false"`
+
 	// There is NO LLM configuration here. Completions and embeddings alike are
 	// bought through a repository's own llm/provider records, which carry the
 	// wire, the endpoint, the key and (for embeddings) the model, so the
