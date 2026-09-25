@@ -164,7 +164,8 @@ Three behaviors fall out of this one document:
   reference is resolved in the same transaction: exactly one live person
   carrying that email links, and none mints a fresh person, a **shell** with
   no properties. Two syncs racing the same new person mint **one** shell.
-  SEVERAL candidates mint nothing: the
+  SEVERAL candidates follow the mapping's `onAmbiguous`
+  ([below](#when-a-probe-finds-several-candidates-onambiguous)); by default the
   source parks with its slot unset rather than add a third person the same
   address then points at, and it resolves on its next write once the owner has
   settled the ambiguity. A source that offers nothing at all — no probe value
@@ -182,6 +183,44 @@ Three behaviors fall out of this one document:
   **you** wrote is never touched (the next section is the whole rule).
 - **Ids that never lie.** After a merge, the losing id resolves to the winner
   forever, and any read by it says so.
+
+### When a probe finds several candidates: `onAmbiguous`
+
+A probe that finds two people sharing an address cannot tell them apart. The
+mapping says what happens then, beside its `match`:
+
+```yaml
+  match:
+    - from: emailAddresses[].value
+      to: emails
+  onAmbiguous: park                # park (the default) | oldest | mint
+```
+
+- `park` leaves the source's slot unset and **marks** the source. The mark is
+  derived storage like the [orphan mark](#when-the-last-source-goes-the-orphan-mark):
+  the source's own write sets and clears it, a rebuild derives it again, and
+  the list filter reads it, `filter.ambiguous` (`substratectl get <kind>
+  --ambiguous`). It is read when the source is written, so merging the two
+  people leaves it in place until the source's next sync links it and clears
+  it. A source that is unlinked because it offers nothing is not marked.
+- `oldest` links the candidate created first. Ids are random, so creation is
+  the only order among candidates that means anything.
+- `mint` mints a fresh subject, as though the probe had found none.
+
+The two callers that must mint (the subject hop, and a slot declared
+`required:`) still mint under `park`, and link the oldest under `oldest`.
+
+**Whatever the policy, a probed value never spreads.** Recompute does not
+write a value of a property some probe matches on (`emails` above) onto a
+target when another live target already holds it and this one does not. That
+is what stops a shell minted out of an ambiguous probe from taking the shared
+address through `merge: union`, and a linked contact from writing an address
+it shares with another person onto the person it linked. A value the target
+already holds stays, so a duplicate that exists is the owner's to settle with
+`merge`. The withheld value is still the source's, and a read shows it as an
+[alternative](#reading-provenance-propertymeta) the owner may adopt by writing
+it
+([decision record 0103](decisions/0103-an-ambiguous-probe-follows-its-mappings-policy-and-a-probed-value-never-spreads.md)).
 
 ### Reading the links back: `linkedFrom`
 

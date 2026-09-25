@@ -30,6 +30,7 @@ func (a *app) getCommand() *cobra.Command {
 		referencing string
 		search      string
 		orphaned    bool
+		ambiguous   bool
 	)
 	cmd := &cobra.Command{
 		Use:   "get <kind> [id]",
@@ -52,7 +53,8 @@ the page under "records" and the referents under "included", keyed by
 is the reverse read: only the records of this kind that point at that one.
 --orphaned lists the mapping targets the engine marked: rows minted from a
 source that is now gone, with nothing above the machine tier holding a
-property on them.
+property on them. --ambiguous lists the mapping sources the engine marked: rows
+left unlinked because a probe found several candidates.
 
 -w streams this kind's changes instead of listing it; --from and --generation
 resume the stream the way "substratectl watch" does.
@@ -105,6 +107,12 @@ states.`,
 					return err
 				}
 			}
+			if cmd.Flags().Changed("ambiguous") {
+				mark := ambiguous
+				if err := editFilter(q, func(f *substrate.Filter) { f.Ambiguous = &mark }); err != nil {
+					return err
+				}
+			}
 			if len(expand) > 0 {
 				q.Set("expand", strings.Join(expand, ","))
 			}
@@ -149,6 +157,7 @@ states.`,
 	f.StringVar(&referencing, "referencing", "", "only records pointing at this one, as <kind>/<id>")
 	f.StringVar(&search, "search", "", `only records whose text matches, in the search grammar: words, "a phrase", -excluded, a OR b, prefix*`)
 	f.BoolVar(&orphaned, "orphaned", false, "only the records the engine marked orphaned: a mapping target whose sources are all gone (--orphaned=false is only the unmarked)")
+	f.BoolVar(&ambiguous, "ambiguous", false, "only the records the engine marked ambiguous: a mapping source left unlinked because its probe found several candidates (--ambiguous=false is only the unmarked)")
 	return cmd
 }
 

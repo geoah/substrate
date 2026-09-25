@@ -31,6 +31,17 @@ const (
 	MergeFirst  = "first"
 )
 
+// OnAmbiguous is what a mapping does when a probe finds SEVERAL candidates
+// (#577): park leaves the source's slot unset and marks it, oldest links the
+// candidate created first, mint mints a shell as though the probe had found
+// none. park is the default. Whatever the policy, a probed value another
+// target holds is never written onto a target that does not (record 0103).
+const (
+	OnAmbiguousPark   = "park"
+	OnAmbiguousOldest = "oldest"
+	OnAmbiguousMint   = "mint"
+)
+
 // Mapping is one parsed recordmapping. From and To are full kind references,
 // each resolved like a reference pin, and the declaring package owns at least
 // one of them (record 49); Property names the declared `subject: true`
@@ -45,10 +56,13 @@ type Mapping struct {
 	// Match is the ordered identifier probes: when a source record
 	// arrives without a subject, the first probe whose values find candidates
 	// decides — exactly one candidate links, none mints a fresh subject, and
-	// several park the source unlinked rather than mint a duplicate of people
-	// the probe cannot tell apart (record 0087). May be empty: a link-only
-	// mapping always creates.
+	// several do what OnAmbiguous says (records 0087 and 0103). May be empty:
+	// a link-only mapping always creates.
 	Match []MatchRule
+	// OnAmbiguous is what several candidates do: OnAmbiguousPark (the
+	// default), OnAmbiguousOldest or OnAmbiguousMint. Never empty once
+	// parsed.
+	OnAmbiguous string
 	// Map is assignment paths per target property, nothing else — no
 	// expression language, computation stays in connector normalize.
 	// May be empty.
@@ -173,7 +187,7 @@ func PathProperty(t *Kind, p Path) (*Property, bool, error) {
 
 var mappingDataKeys = map[string]bool{
 	"authority": true, "package": true, "from": true, "to": true, "property": true,
-	"match": true, "map": true, "description": true,
+	"match": true, "map": true, "description": true, "onAmbiguous": true,
 }
 
 var matchRuleKeys = map[string]bool{"from": true, "to": true}
@@ -194,11 +208,12 @@ func (l *loader) parseMapping(d Document) *Mapping {
 	}
 	m := &Mapping{
 		Name: local, Package: g.Identity,
-		From:       ReferentID(d.Data["from"], CoreKind(DocKind)),
-		To:         ReferentID(d.Data["to"], CoreKind(DocKind)),
-		Property:   mstr(d.Data, "property"),
-		Map:        map[string]*MapRule{},
-		Definition: d.Data,
+		From:        ReferentID(d.Data["from"], CoreKind(DocKind)),
+		To:          ReferentID(d.Data["to"], CoreKind(DocKind)),
+		Property:    mstr(d.Data, "property"),
+		OnAmbiguous: OnAmbiguousPark,
+		Map:         map[string]*MapRule{},
+		Definition:  d.Data,
 	}
 	// Both ends are spelled in full: a bare name would go ambiguous the day a
 	// second authority ships the same word, at registration and not at review.
@@ -240,6 +255,15 @@ func (l *loader) parseMapping(d Document) *Mapping {
 	if m.Property == "" {
 		l.errf("%s: data.property is required — the `subject: true` reference on %s that names the subject", where, m.From)
 		return nil
+	}
+	if raw, set := d.Data["onAmbiguous"]; set {
+		switch v, _ := raw.(string); v {
+		case OnAmbiguousPark, OnAmbiguousOldest, OnAmbiguousMint:
+			m.OnAmbiguous = v
+		default:
+			l.errf("%s: data.onAmbiguous: %v is not a policy: \"park\", \"oldest\" or \"mint\"", where, raw)
+			return nil
+		}
 	}
 	if _, isMap := d.Data["match"].(map[string]any); isMap {
 		l.errf("%s: data.match: an ordered LIST of probes — order is which one decides", where)

@@ -111,6 +111,10 @@ that point at that one. `--orphaned` lists the
 [orphaned mapping targets](projection.md#when-the-last-source-goes-the-orphan-mark)
 of that kind — rows minted from a source that is now gone, with nothing above
 the machine tier holding a property (`--orphaned=false` is the complement).
+`--ambiguous` lists the
+[ambiguous mapping sources](projection.md#when-a-probe-finds-several-candidates-onambiguous)
+of that kind, rows a probe with several candidates left unlinked
+(`--ambiguous=false` is the complement).
 `-w` streams that one kind's changes instead of
 listing it, resumable with `--from` and `--generation` like `watch`.
 

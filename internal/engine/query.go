@@ -614,6 +614,13 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 			b.add(`orphaned_at IS NULL`)
 		}
 	}
+	if f.Ambiguous != nil {
+		if *f.Ambiguous {
+			b.add(`ambiguous_at IS NOT NULL`)
+		} else {
+			b.add(`ambiguous_at IS NULL`)
+		}
+	}
 	for _, name := range sortedKeys(f.Properties) {
 		if err := ds.condProp(ctx, b, types, name, f.Properties[name]); err != nil {
 			return nil, err
