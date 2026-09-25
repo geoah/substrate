@@ -122,10 +122,16 @@ export function DataGrid<TData extends RowData>({
                   <th
                     key={header.id}
                     scope="col"
+                    // The upward shadow is the header's cover: the scroller
+                    // clips it while the row sits at the top, and wherever an
+                    // engine rounds the pinned row a fraction of a pixel
+                    // below the scroller's edge it paints over the strip a
+                    // scrolled row would otherwise show through.
                     className={cn(
-                      "group/th sticky top-0 z-[2] h-[34px] overflow-hidden border-b border-border bg-background px-2.5 text-left text-[12.5px] font-medium whitespace-nowrap text-faint",
+                      "group/th sticky top-0 z-[2] h-[34px] overflow-hidden border-b border-border bg-background bg-clip-border px-2.5 text-left text-[12.5px] font-medium whitespace-nowrap text-faint shadow-[0_-2px_0_var(--background)]",
                       i > 0 && "border-l",
-                      i === 0 && "left-0 z-[3] shadow-[1px_0_0_var(--border)]",
+                      i === 0 &&
+                        "left-0 z-[3] shadow-[1px_0_0_var(--border),0_-2px_0_var(--background)]",
                       meta?.headerClassName
                     )}
                   >
