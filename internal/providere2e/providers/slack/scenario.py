@@ -191,6 +191,35 @@ def version(row):
     return None
 
 
+def writes_since(kind, record_id, after_version):
+    """The property names each changelog write to one record touched after
+    `after_version`, one list per write, or a string when the changelog could
+    not be read. The engine lists only the properties a write changed."""
+    req = urllib.request.Request(
+        SERVER + "/api/v1/changes?" + urllib.parse.urlencode(
+            {"recordId": record_id, "recordKind": kind}),
+        headers={"Authorization": "Bearer " + TOKEN})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            raw = r.read()
+    except (urllib.error.URLError, OSError) as e:
+        return "unreadable (%s)" % e
+    out = []
+    entries = []
+    for line in raw.decode("utf-8", "replace").splitlines():
+        try:
+            doc = json.loads(line)
+        except ValueError:
+            continue
+        # NDJSON is one change per line; the JSON form wraps a page of them.
+        entries.extend(doc.get("changes") or [] if "changes" in doc else [doc])
+    for entry in entries:
+        mine = [a for a in entry.get("affected") or [] if a.get("id") == record_id]
+        if mine and (mine[0].get("version") or 0) > (after_version or 0):
+            out.append((entry.get("payload") or {}).get("properties"))
+    return out
+
+
 def ref_id(value):
     """A reference is `{"ref": "<kind>/<id>"}` on the wire when it carries
     link properties and a bare path otherwise; the id is its last segment."""
@@ -1016,14 +1045,18 @@ def main():
     # cover them — and `members` IS the conversation's own field (§1, a
     # sibling call keyed by the object's id). Anything ELSE moving is the bug
     # the state kind exists to prevent.
-    # The assertion is on CONTENT, not on the version counter: the engine
-    # bumps a version for a patch whose values are identical (a no-op patch is
-    # still a write), so a version is not evidence of a change. What the state
-    # kind promises is that a page of history CHANGES NOTHING on the
-    # conversation — and the only property a later sync may legitimately move
-    # is `members`, the roster from conversations.members, which the drain
-    # walks one channel per invocation over several runs.
-    unexplained = []
+    # Two assertions. CONTENT: nothing but the properties in MOVING may
+    # change. WRITES: every write the row took since the second sync touched
+    # only MOVING properties. The engine suppresses a write whose values equal
+    # the stored ones (internal/engine/noopwrite_db_test.go), so a write that
+    # names `purpose` on a row whose `purpose` ends where it began is one of
+    # two writes that cancel out: two calls disagreeing about one field, every
+    # sync. That is real trigger churn, and it is what substrate#575 was (the
+    # recordings of conversations.list and conversations.info carried
+    # different purpose and topic text for three channels). A version with no
+    # changelog write behind it would be the engine bug #575 first suspected.
+    MOVING = ("members", "priority")
+    unexplained, bumped, rostered = [], [], 0
     for c in convs3:
         was = settled.get(rid(c))
         if was is None:
@@ -1039,19 +1072,34 @@ def main():
         # conversations.info, because the two calls were made moments apart.
         # A mirror that reflects it is correct; a test that calls it drift is
         # not. Neither is sync state on the row.
-        changed = [k for k in changed if k not in ("members", "priority")]
+        moved = [k for k in changed if k in MOVING]
+        changed = [k for k in changed if k not in MOVING]
         if changed:
             unexplained.append("%s: %s" % (props(c).get("conversationId"), changed))
+            continue
+        if moved:
+            rostered += 1
+        if version(c) == was[0]:
+            continue
+        writes = writes_since(CONV, rid(c), was[0])
+        touched = sorted({k for w in (writes if isinstance(writes, list) else [])
+                          for k in (w or []) if k not in MOVING})
+        if not isinstance(writes, list) or not writes or touched:
+            bumped.append("%s: v%s -> v%s, net change %s, writes %s"
+                          % (props(c).get("conversationId"), was[0], version(c),
+                             moved or "none", writes))
     ok(not unexplained,
        "%d conversation rows CHANGED during a sync that only advanced cursors "
        "and history — the mirror is carrying sync state: %s"
        % (len(unexplained), unexplained[:3]))
-    bumped = [props(c).get("conversationId") for c in convs3
-              if settled.get(rid(c)) and version(c) != settled[rid(c)][0]]
-    if bumped:
-        note("%d conversation rows took a new VERSION with no property change "
-             "(the engine writes a no-op patch; see README, Platform asks)"
-             % len(bumped))
+    note("third sync: %d conversation rows moved only %s" % (rostered, "/".join(MOVING)))
+    ok(all(version(c) is not None for c in convs3),
+       "a conversation row carries no version, so the version check proves "
+       "nothing")
+    ok(not bumped,
+       "%d conversation rows took a write to a property that ended where it "
+       "began (two calls disagree and cancel out), or a version with no write "
+       "behind it: %s" % (len(bumped), bumped[:3]))
     ok(len(msgs3) == len(msgs2),
        "the third sync changed the message count: %d -> %d"
        % (len(msgs2), len(msgs3)))
