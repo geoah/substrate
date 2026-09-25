@@ -64,6 +64,9 @@ Collapsed authorities and packages, the desktop sidebar state, and favorite
 kinds are saved in the repository's `core/consolepreference` record. Stars add
 kinds to **Favorites** above Data; up and down controls reorder them. Updates
 use version preconditions and retry against fresh state after a conflict.
+The same kind declares the layout settings — `recordWidth`, `tableWidth`,
+`density`, `technicalDetails` and `theme` — each optional, so an absent one is
+the console's own default.
 
 ## Search
 

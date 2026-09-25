@@ -4,12 +4,16 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  version: 1
-  description: Repository-owned console navigation preferences, shared across
-    sessions.
+  version: 2
+  description: Repository-owned console preferences, for navigation and display,
+    shared across sessions.
+  purpose: internal
   names:
     singular: consolepreference
   displayTemplate: "{localName}"
+  # Every property is optional and read by the console alone: an absent one is
+  # the console's own default, so a record written before a property existed
+  # keeps meaning what it meant.
   properties:
     collapsed:
       type: string
@@ -23,3 +27,33 @@ data:
     sidebarOpen:
       type: bool
       description: Whether the desktop sidebar is expanded.
+    recordWidth:
+      type: enum
+      values:
+        - narrow
+        - wide
+        - full
+      description: How wide record, tool and provider pages are.
+    tableWidth:
+      type: enum
+      values:
+        - wide
+        - full
+      description: How wide record lists and other tables are.
+    density:
+      type: enum
+      values:
+        - comfortable
+        - compact
+      description: How much space rows and fields take.
+    technicalDetails:
+      type: bool
+      description: Whether pages show references, ids, actors, tiers and changelog
+        numbers.
+    theme:
+      type: enum
+      values:
+        - system
+        - light
+        - dark
+      description: The color theme; system follows the device.

@@ -107,7 +107,7 @@ speaks:
 | `recordpatchpolicy`  | An owner's standing rule for an agent's writes: a `selector` (kinds, ops, agents) and an `action` of `allow`, `gate` or `refuse` ([the policy door](agents.md#the-policy-door)). |
 | `setting`            | One configuration value a bundle needs, at `<bundle id>/<name>`: `value` as a string, held on write to a `type` of `string`, `url`, `int`, `bool` or `enum` with `values` ([settings](bundles.md#settings)). |
 | `secret`             | The same, with `value` typed `secret`: sealed at rest, injected only into its own bundle's functions, never read back.                               |
-| `consolepreference`  | The console's navigation preferences for the repository, shared across sessions: `collapsed`, `favorites`, `sidebarOpen`.                            |
+| `consolepreference`  | The console's preferences for the repository, shared across sessions: navigation (`collapsed`, `favorites`, `sidebarOpen`) and layout (`recordWidth`, `tableWidth`, `density`, `technicalDetails`, `theme`). |
 
 The delivery machinery is core's too, declared as data kinds so a trigger is
 console-editable and changelog-visible like anything else
