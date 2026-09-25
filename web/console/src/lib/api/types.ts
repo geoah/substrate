@@ -417,6 +417,9 @@ export interface ReferenceSite {
 export interface EnumValue {
   value: string
   label: string
+  /** The add-and-deprecate marker: still admitted and still held by records
+   * that carry it, never offered by a picker. */
+  deprecated?: boolean
 }
 
 /** Parse a property's raw `values` (the enum admitted set) into `EnumValue[]`.
@@ -436,6 +439,7 @@ export function parseEnumValues(raw: unknown): EnumValue[] | undefined {
         out.push({
           value: rec.value,
           label: typeof rec.label === "string" ? rec.label : "",
+          ...(rec.deprecated === true ? { deprecated: true } : {}),
         })
       }
     }

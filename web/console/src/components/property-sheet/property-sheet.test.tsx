@@ -101,6 +101,14 @@ const task = kind(TASK, {
       type: "enum",
       values: ["none", "low", "high"],
     },
+    relationship: {
+      type: "enum",
+      values: [
+        "friend",
+        { value: "publicfigure", label: "Public figure" },
+        { value: "colleague", label: "Colleague", deprecated: true },
+      ],
+    },
     status: {
       type: "state",
       states: ["proposed", "open", "done", "abandoned"],
@@ -278,6 +286,54 @@ describe("PropertySheet inline edit", () => {
       properties: { priority: "low" },
       ifVersion: 7,
     })
+  })
+
+  it("chooses an enum value from the keyboard", async () => {
+    renderSheet(record())
+    fireEvent.click(valueOf("priority")!)
+    const list = screen.getByRole("listbox", { name: "Choose Priority" })
+    // The list opens on the value held, so one step up is the one before it.
+    fireEvent.keyDown(list, { key: "ArrowUp" })
+    fireEvent.keyDown(list, { key: "Enter" })
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].body).toEqual({
+      properties: { priority: "low" },
+      ifVersion: 7,
+    })
+  })
+
+  it("writes an authored value's own spelling, never its label", async () => {
+    renderSheet(record())
+    fireEvent.click(screen.getByRole("button", { name: /empty:/ }))
+    fireEvent.click(valueOf("relationship")!)
+    fireEvent.click(screen.getByRole("option", { name: "Public figure" }))
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].body).toEqual({
+      properties: { relationship: "publicfigure" },
+      ifVersion: 7,
+    })
+  })
+
+  it("never offers a deprecated value, but still reads the one held", () => {
+    const names = () => screen.getAllByRole("option").map((o) => o.textContent)
+    renderSheet(
+      record({ properties: { ...record().properties, relationship: "friend" } })
+    )
+    fireEvent.click(valueOf("relationship")!)
+    expect(names().some((n) => n?.startsWith("Colleague"))).toBe(false)
+    expect(names().some((n) => n?.startsWith("Public figure"))).toBe(true)
+    cleanup()
+
+    // A record still holding it reads it, and its row says it is on its way
+    // out rather than vanishing from the list it was chosen from.
+    renderSheet(
+      record({
+        properties: { ...record().properties, relationship: "colleague" },
+      })
+    )
+    expect(row("relationship").textContent).toContain("Colleague")
+    fireEvent.click(valueOf("relationship")!)
+    expect(names()).toContain("Colleagueno longer offered")
   })
 
   it("says the server's refusal under the row", async () => {
