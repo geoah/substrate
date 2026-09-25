@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { envelopeError, request } from "./http"
+import { envelopeError, olderServerMessage, request } from "./http"
 import {
   clearSession,
   getToken,
@@ -161,5 +161,24 @@ describe("envelopeError", () => {
     expect(envelopeError(503, undefined).code).toBe("unavailable")
     // A transport failure that never reached the substrate stays `network`.
     expect(envelopeError(0, undefined).code).toBe("network")
+  })
+})
+
+/** A route this console calls that an older substrate predates answers 404,
+ * 405 or 501; the surface says so in words instead of the transport's. */
+describe("olderServerMessage", () => {
+  it("names an older substrate for a route it does not serve", () => {
+    for (const status of [404, 405, 501]) {
+      expect(
+        olderServerMessage(envelopeError(status, undefined), "download")
+      ).toMatch(/older version.*download/)
+    }
+  })
+
+  it("keeps any other refusal's own words", () => {
+    expect(olderServerMessage(envelopeError(422, undefined), "x")).toBe(
+      undefined
+    )
+    expect(olderServerMessage(new Error("boom"), "x")).toBe(undefined)
   })
 })

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { callFunction } from "@/lib/api/functions"
+import { olderServerMessage } from "@/lib/api/http"
 import type { FunctionCalled } from "@/lib/api/types"
 import {
   argumentLabel,
@@ -113,7 +114,9 @@ export function TryIt({
           </Button>
           {run.isError && (
             <span className="text-[12.5px] text-destructive">
-              It didn’t run. {(run.error as Error).message}
+              It didn’t run.{" "}
+              {olderServerMessage(run.error, "run a tool from here") ??
+                (run.error as Error).message}
             </span>
           )}
         </div>

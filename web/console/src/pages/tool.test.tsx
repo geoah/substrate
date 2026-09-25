@@ -152,14 +152,18 @@ function listed(path: string): string[] {
 describe("ToolPage", () => {
   const fetchMock = vi.fn<typeof fetch>()
   let runs: SubstrateRecord[] = []
+  let callStatus = 200
 
   beforeEach(() => {
     runs = []
+    callStatus = 200
     fetchMock.mockImplementation(async (url) => {
       const path = String(url)
       if (path.endsWith("/sync/status")) return jsonResponse(200, { items: [] })
       if (path.includes("/function/") && path.endsWith("/call"))
-        return jsonResponse(200, { output: { saved: "n1" }, effects: 1 })
+        return callStatus === 200
+          ? jsonResponse(200, { output: { saved: "n1" }, effects: 1 })
+          : new Response("method not allowed", { status: callStatus })
       const kinds = listed(path)
       const page = (records: SubstrateRecord[]) =>
         jsonResponse(200, { records, head: 1, generation: "g" })
@@ -282,6 +286,19 @@ describe("ToolPage", () => {
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({
       input: { text: "hello there", words: 2 },
     })
+  })
+
+  it("says an older substrate cannot run a tool, not the transport's words", async () => {
+    callStatus = 405
+    renderAt(SAVE)
+    const form = await screen.findByRole("form", { name: "Try it" })
+    fireEvent.change(within(form).getByLabelText(/^Text/), {
+      target: { value: "hello there" },
+    })
+    fireEvent.click(within(form).getByRole("button", { name: /Run/ }))
+    expect(
+      await within(form).findByText(/older version that can’t run a tool/)
+    ).toBeTruthy()
   })
 
   it("says so when no tool has that reference", async () => {

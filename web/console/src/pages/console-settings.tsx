@@ -28,7 +28,7 @@ import {
   useTechnicalDetails,
 } from "@/hooks/use-console-preferences"
 import { downloadExport } from "@/lib/api/export"
-import { CORE_AUTHORITY, request } from "@/lib/api/http"
+import { CORE_AUTHORITY, olderServerMessage, request } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import {
   CONSOLE_PREFERENCE_KIND,
@@ -141,7 +141,8 @@ function DownloadRow() {
       toast.add({
         type: "error",
         title: "The download didn’t start",
-        description: error.message,
+        description:
+          olderServerMessage(error, "make this download") ?? error.message,
       }),
   })
   return (
