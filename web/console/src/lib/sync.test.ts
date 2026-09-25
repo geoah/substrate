@@ -200,6 +200,19 @@ describe("kindHasTrait", () => {
     ).toBe(false)
     expect(kindHasTrait(undefined, "x")).toBe(false)
   })
+
+  it("finds a core trait named bare in a declaration that names it in full", () => {
+    const full = kind(ACCOUNT, [
+      "substrate.reamde.dev/core/accountconfig",
+      "substrate.reamde.dev/core/oauth2",
+    ])
+    expect(kindHasTrait(full, "accountconfig")).toBe(true)
+    expect(kindHasTrait(full, "oauth2")).toBe(true)
+    // A package-local look-alike is not the core trait.
+    expect(
+      kindHasTrait(kind(ACCOUNT, ["a.example.com/p/oauth2"]), "oauth2")
+    ).toBe(false)
+  })
 })
 
 describe("providerViews", () => {
