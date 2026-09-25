@@ -56,7 +56,7 @@ describe("netMoves", () => {
         { name: "url", after: "https://a.example.com" },
       ]),
     ])
-    // The url came and went: no net change to tell.
+    // The url came and went: it moved, and it ended where it began.
     expect(moves).toEqual([
       {
         name: "priority",
@@ -64,7 +64,45 @@ describe("netMoves", () => {
         after: "urgent",
         beforeUnknown: false,
       },
+      { name: "url", beforeUnknown: false, changedBack: true },
     ])
+  })
+
+  it("says a secret the change replaced, though both sides are sealed", () => {
+    const sealed = { before: "<redacted>", after: "<redacted>" }
+    expect(netMoves([row(2, [{ name: "apiKey", ...sealed }])])).toEqual([
+      { name: "apiKey", ...sealed, beforeUnknown: false, replaced: true },
+    ])
+    // Rotated twice in a run: still replaced, never "changed back".
+    expect(
+      netMoves([
+        row(3, [{ name: "apiKey", ...sealed }]),
+        row(2, [{ name: "apiKey", ...sealed }]),
+      ])
+    ).toEqual([
+      { name: "apiKey", ...sealed, beforeUnknown: false, replaced: true },
+    ])
+  })
+
+  it("says a value moved and moved back across a run", () => {
+    expect(
+      netMoves([
+        row(3, [{ name: "priority", before: "high", after: "low" }]),
+        row(2, [{ name: "priority", before: "low", after: "high" }]),
+      ])
+    ).toEqual([
+      {
+        name: "priority",
+        before: "low",
+        after: "low",
+        beforeUnknown: false,
+        changedBack: true,
+      },
+    ])
+  })
+
+  it("falls back to names when rows that name properties tell no values", () => {
+    expect(netMoves([row(2, [], ["labels"])])).toBeUndefined()
   })
 
   it("keeps an unknown before as unknown", () => {

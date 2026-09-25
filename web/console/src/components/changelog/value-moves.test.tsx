@@ -122,6 +122,29 @@ describe("ValueMoves", () => {
     expect(row?.textContent?.match(/sealed/g)).toHaveLength(2)
   })
 
+  it("says a replaced secret and a value changed back in words", () => {
+    show([
+      move({
+        name: "apiKey",
+        before: "<redacted>",
+        after: "<redacted>",
+        replaced: true,
+      }),
+      move({
+        name: "priority",
+        before: "high",
+        after: "high",
+        changedBack: true,
+      }),
+    ])
+    const key = screen.getByText("API key").closest("[data-slot=value-move]")
+    expect(key?.textContent).toBe("API keyreplaced")
+    const priority = screen
+      .getByText("Priority")
+      .closest("[data-slot=value-move]")
+    expect(priority?.textContent).toBe("Prioritychanged and changed back")
+  })
+
   it("cuts long text to a line and keeps the whole in the hover", () => {
     const long = "Numbers from finance first, ".repeat(6).trim()
     show([move({ name: "description", after: long, beforeUnknown: true })])

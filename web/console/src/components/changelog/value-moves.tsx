@@ -106,7 +106,11 @@ function Move({ move, spec }: { move: ValueMove; spec?: PropSpec }) {
   const label = technical ? move.name : (spec?.label ?? humanizeName(move.name))
   const has = (v: unknown) => v !== undefined
   let body: ReactNode
-  if (move.added || move.removed) {
+  if (move.replaced) {
+    body = <span className="text-faint">replaced</span>
+  } else if (move.changedBack) {
+    body = <span className="text-faint">changed and changed back</span>
+  } else if (move.added || move.removed) {
     body = (
       <>
         {(move.added ?? []).map((v, i) => (

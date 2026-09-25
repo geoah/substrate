@@ -8,6 +8,7 @@ import type { ChangeRow, KindInfo, PropertyChange } from "@/lib/api/types"
 import { changedProperties } from "@/lib/changelog"
 import {
   propSpecsByName,
+  REDACTED,
   systemSpecs,
   type PropSpec,
 } from "@/lib/record-schema"
@@ -25,6 +26,11 @@ export interface ValueMove {
    * a single value, and for a list that only changed order. */
   added?: unknown[]
   removed?: unknown[]
+  /** A sensitive value was written: both sides read sealed, so the words say
+   * it was replaced rather than show two equal markers. */
+  replaced?: boolean
+  /** Across a run, the value moved and came back to where it began. */
+  changedBack?: boolean
 }
 
 /** The values one row carries for one record, or undefined when the server
@@ -71,15 +77,18 @@ function listDiff(move: ValueMove): ValueMove {
 
 /** The net move of each property across a run of rows on one record, newest
  * first as the feed reads: the oldest row's before, the newest row's after. A
- * property that came back to where it started drops out. Undefined when any
- * row that names properties carries no values for the record, so the caller
- * says names, never a half-told story. */
+ * move whose two sides read the same is still a move the server named: a
+ * sealed value was replaced, or the run moved it and moved it back. Undefined
+ * when any row that names properties carries no values for the record, or
+ * when rows that name properties leave nothing to tell, so the caller says
+ * names, never a half-told story or none at all. */
 export function netMoves(
   rows: readonly ChangeRow[],
   id?: string,
   kind?: string
 ): ValueMove[] | undefined {
   const moves = new Map<string, ValueMove>()
+  const touched = new Map<string, number>()
   for (const row of [...rows].reverse()) {
     const values = rowValues(row, id ?? row.recordId, kind ?? row.kind)
     if (!values) {
@@ -87,6 +96,7 @@ export function netMoves(
       continue
     }
     for (const pc of values) {
+      touched.set(pc.name, (touched.get(pc.name) ?? 0) + 1)
       const seen = moves.get(pc.name)
       if (seen) {
         seen.after = pc.after
@@ -100,9 +110,19 @@ export function netMoves(
       })
     }
   }
-  return [...moves.values()]
-    .filter((m) => m.beforeUnknown || !same(m.before, m.after))
-    .map(listDiff)
+  const out = [...moves.values()].map((m): ValueMove => {
+    if (m.beforeUnknown || !same(m.before, m.after)) return listDiff(m)
+    // A sealed value reads the marker on both sides whatever was written; a
+    // single row the server named moved something it cannot show.
+    if (m.before === REDACTED || (touched.get(m.name) ?? 0) < 2) {
+      return { ...m, replaced: true }
+    }
+    return { ...m, changedBack: true }
+  })
+  if (!out.length && rows.some((r) => changedProperties(r).length)) {
+    return undefined
+  }
+  return out
 }
 
 /** Each property's spec for rendering its values: the declared ones, and the
