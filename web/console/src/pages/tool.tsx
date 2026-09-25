@@ -351,7 +351,7 @@ function ToolDoc({
 
       <Section
         title="Recent runs"
-        hint={runs.length ? `the last ${runs.length}` : undefined}
+        hint={runs.length > 1 ? `the last ${runs.length}` : undefined}
       >
         {runsPending ? (
           <Skeleton className="h-20 w-full" />
@@ -642,10 +642,14 @@ function Developer({ tool }: { tool: Tool }) {
             ? " · runs inside substrate, held to the calling agent’s grants"
             : ` · stops after ${timeout ?? "5 seconds"}`}
         </div>
-        <SubHead>What the model reads</SubHead>
-        <p className="whitespace-pre-wrap text-foreground">
-          {tool.description}
-        </p>
+        {tool.description !== toolDescription(tool) && (
+          <>
+            <SubHead>What the model reads</SubHead>
+            <p className="whitespace-pre-wrap text-foreground">
+              {tool.description}
+            </p>
+          </>
+        )}
         <SubHead>permissions</SubHead>
         <CodeBlock
           lang="yaml"

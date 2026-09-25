@@ -1129,6 +1129,7 @@ export function sortRuns(runs: ToolRun[]): ToolRun[] {
 /** A run's length: "0.4s", "12s", "2 min". */
 export function tookWords(ms: number | undefined): string {
   if (ms === undefined) return "—"
+  if (ms < 100) return "under 0.1s"
   if (ms < 10_000) return `${(ms / 1000).toFixed(1)}s`
   if (ms < 60_000) return `${Math.round(ms / 1000)}s`
   return `${Math.round(ms / 60_000)} min`

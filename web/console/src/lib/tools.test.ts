@@ -507,6 +507,7 @@ describe("runs and status", () => {
 
   it("says durations and effects in words", () => {
     expect(tookWords(420)).toBe("0.4s")
+    expect(tookWords(40)).toBe("under 0.1s")
     expect(tookWords(12_400)).toBe("12s")
     expect(tookWords(125_000)).toBe("2 min")
     expect(tookWords(undefined)).toBe("—")
