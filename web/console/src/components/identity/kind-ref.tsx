@@ -16,6 +16,7 @@ import type { KindInfo } from "@/lib/api/types"
 import { kindPurpose, type KindPurpose } from "@/lib/definition"
 import { displayPlural } from "@/lib/kind-names"
 import { cn } from "@/lib/utils"
+import { kindDescription } from "@/lib/kind-copy"
 
 const PURPOSE_WORDS: Record<KindPurpose, string> = {
   primary: "A collection",
@@ -149,6 +150,7 @@ function KindCardView({
   kind: KindInfo | string
   count?: number
 }) {
+  const [technical] = useTechnicalDetails()
   const reference = typeof kind === "string" ? kind : kind.identity
   const facts = [
     ...(count !== undefined
@@ -165,9 +167,7 @@ function KindCardView({
     <IdentityCard
       mark={<KindGlyph kind={kind} size="sm" />}
       title={displayPlural(kind)}
-      description={
-        typeof kind === "string" ? undefined : kind.description || undefined
-      }
+      description={kindDescription(kind, technical)}
       facts={facts}
       reference={reference}
     />

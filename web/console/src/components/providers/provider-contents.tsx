@@ -28,6 +28,7 @@ import type { CatalogItem, KindInfo } from "@/lib/api/types"
 import { kindPackage, kindPurpose, splitKind } from "@/lib/definition"
 import { relativeTime } from "@/lib/format"
 import { fillsIn, providerTools, toolActivity } from "@/lib/providers"
+import { kindDescription } from "@/lib/kind-copy"
 
 const PURPOSE_WORD = {
   primary: "Collection",
@@ -65,6 +66,14 @@ function kindLines(
     description: described[reference],
     purpose: kindPurpose(reference),
   }))
+}
+
+function lineText(line: KindLine, technical: boolean): string | undefined {
+  return kindDescription(
+    line.kind ?? line.reference,
+    technical,
+    line.description
+  )
 }
 
 export function BringsIn({
@@ -122,7 +131,7 @@ export function BringsIn({
             >
               <div className="min-w-0">
                 <KindRef kind={line.kind ?? line.reference} link={installed} />
-                {line.description && (
+                {lineText(line, technical) && (
                   <p
                     className={
                       technical
@@ -131,7 +140,7 @@ export function BringsIn({
                     }
                     title={technical ? undefined : line.description}
                   >
-                    {line.description}
+                    {lineText(line, technical)}
                   </p>
                 )}
                 {targets.map((t) => (

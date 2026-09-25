@@ -104,6 +104,7 @@ import {
   sortPropertyOf,
 } from "@/pages/kind-browse-columns"
 import { kindBrowseRoute } from "@/router"
+import { kindDescription } from "@/lib/kind-copy"
 
 const PAGE_SIZE = 50
 const DEFAULT_SORT = "updatedAt:desc"
@@ -458,7 +459,7 @@ export function KindBrowsePage() {
             )}
           </>
         }
-        description={kindInfo.description || undefined}
+        description={kindDescription(kindInfo, technical)}
         actions={
           provider ? undefined : (
             <Button

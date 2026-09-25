@@ -35,6 +35,7 @@ import { kindPurpose } from "@/lib/definition"
 import { hiddenKindsNote } from "@/lib/grid-values"
 import { displayPlural } from "@/lib/kind-names"
 import { authorityRoute, packageRoute } from "@/router"
+import { kindDescription } from "@/lib/kind-copy"
 
 function CountCell({ kind }: { kind: KindInfo }) {
   const count = useQuery(
@@ -122,7 +123,9 @@ function KindsList({ kinds }: { kinds: KindInfo[] }) {
                         className="block truncate"
                         title={k.description || undefined}
                       >
-                        {k.description || <span className="text-faint">—</span>}
+                        {kindDescription(k, technical) || (
+                          <span className="text-faint">—</span>
+                        )}
                       </span>
                     </td>
                     <td className="text-right">

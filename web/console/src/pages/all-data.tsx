@@ -40,6 +40,7 @@ import {
 import { kindPurpose } from "@/lib/definition"
 import { displayPlural } from "@/lib/kind-names"
 import { cn } from "@/lib/utils"
+import { kindDescription } from "@/lib/kind-copy"
 
 const HINT: Record<CollectionGroup["type"], (g: CollectionGroup) => string> = {
   yours: () => "yours to change",
@@ -104,7 +105,9 @@ function CollectionRow({
         </td>
       )}
       <td className={cn(cell, "border-l text-muted-foreground")}>
-        <span className="line-clamp-1">{kind.description || "—"}</span>
+        <span className="line-clamp-1">
+          {kindDescription(kind, technical) || "—"}
+        </span>
       </td>
       <td className={cn(cell, "border-l text-right tabular-nums")}>
         <RecordCount kind={kind} />
