@@ -496,6 +496,12 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   only the unmarked. Absent is every record. It is derived state, not a
   property, so a re-linked record leaves the set on its next write
   ([the orphan mark](projection.md#when-the-last-source-goes-the-orphan-mark)).
+- `ambiguous` picks the **ambiguous mapping sources**: `true` lists only the
+  records the engine has marked (a source a mapping left unlinked because its
+  probe found several candidates), and `false` only the unmarked. Absent is
+  every record. Derived state like `orphaned`, it clears on the write that
+  links the source
+  ([`onAmbiguous`](projection.md#when-a-probe-finds-several-candidates-onambiguous)).
 - `implements` selects every kind carrying one [trait](data-model.md#traits),
   across every package. Every arm narrows, so `implements` intersects with the
   kinds already in play rather than widening them; alone it is the cross-kind

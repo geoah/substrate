@@ -1011,14 +1011,16 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// it ends pointing at one — the one it named, one a match probe found, or a
 	// shell born here. The subject is one of its own properties, so the pointer
 	// lands in the row about to be folded.
+	parked := false
 	for _, m := range srcMappings {
-		set, err := t.ensureSubject(sp, row, m)
+		set, p, err := t.ensureSubject(sp, row, m)
 		if err != nil {
 			return nil, err
 		}
 		if set {
 			accepted = append(accepted, m.Property)
 		}
+		parked = parked || p
 	}
 
 	// `required` is a statement about the RECORD: the merged row is what has to
@@ -1248,6 +1250,13 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 			if err := t.recomputeSubjectOf(sp.ref(), m); err != nil {
 				return nil, err
 			}
+		}
+	}
+	// The ambiguity mark reads what ensureSubject decided above, now that
+	// the row it marks is stored (ambiguous.go).
+	if len(srcMappings) > 0 {
+		if err := t.markAmbiguous(sp.ref(), parked); err != nil {
+			return nil, err
 		}
 	}
 
