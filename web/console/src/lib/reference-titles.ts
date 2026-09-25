@@ -17,7 +17,11 @@
  * a surface that knows no titles simply hands nothing and falls back to the
  * id, which is what every surface did before. */
 
-import { readReference, type SubstrateRecord } from "@/lib/api/types"
+import { queryOptions } from "@tanstack/react-query"
+
+import { request } from "@/lib/api/http"
+import { listPath } from "@/lib/api/records"
+import { readReference, type Page, type SubstrateRecord } from "@/lib/api/types"
 import { recordTitle } from "@/lib/format"
 import { splitRecordPath } from "@/lib/record-path"
 
@@ -130,4 +134,75 @@ export function titleReadScope(
     ids.add(target.id)
   }
   return { kinds: [...kinds].sort(), ids: [...ids].sort() }
+}
+
+// ── one record's title, read in batches ─────────────────────────────────────
+
+/** How many referents one batched read asks for. */
+const BATCH = 200
+/** How long a batch waits for more asks: long enough for one render pass. */
+const BATCH_WINDOW_MS = 10
+
+interface Waiter {
+  kind: string
+  id: string
+  settle: Array<{
+    resolve: (title: string | null) => void
+    reject: (error: unknown) => void
+  }>
+}
+
+const waiting = new Map<string, Waiter>()
+let flushTimer: ReturnType<typeof setTimeout> | undefined
+
+async function flush(): Promise<void> {
+  flushTimer = undefined
+  const all = [...waiting.values()]
+  waiting.clear()
+  for (let at = 0; at < all.length; at += BATCH) {
+    const batch = all.slice(at, at + BATCH)
+    const kinds = [...new Set(batch.map((w) => w.kind))].sort()
+    const ids = [...new Set(batch.map((w) => w.id))].sort()
+    try {
+      const page = await request<Page>(
+        "GET",
+        listPath({ kinds, first: BATCH * 2, filter: { ids } })
+      )
+      const titles = titlesFromRecords(page.records ?? [])
+      for (const w of batch) {
+        const title = titles.get(`${w.kind}/${w.id}`) ?? null
+        for (const s of w.settle) s.resolve(title)
+      }
+    } catch (error) {
+      for (const w of batch) for (const s of w.settle) s.reject(error)
+    }
+  }
+}
+
+/** One referent's title, collected with every other title asked for in the
+ * same render into ONE list read. `kind` must be a kind the repository
+ * declares: naming an unknown kind refuses the whole batch. */
+export function batchedRecordTitle(
+  kind: string,
+  id: string
+): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    const path = `${kind}/${id}`
+    let waiter = waiting.get(path)
+    if (!waiter) {
+      waiter = { kind, id, settle: [] }
+      waiting.set(path, waiter)
+    }
+    waiter.settle.push({ resolve, reject })
+    flushTimer ??= setTimeout(() => void flush(), BATCH_WINDOW_MS)
+  })
+}
+
+/** A single record's display title (null: it has none), batched. */
+export function recordTitleQueryOptions(kind: string, id: string) {
+  return queryOptions({
+    queryKey: ["record-title", kind, id],
+    queryFn: () => batchedRecordTitle(kind, id),
+    staleTime: 60_000,
+  })
 }

@@ -187,3 +187,10 @@ export function displayPlural(kind: KindInfo | string): string {
   parts[at] = pluralWord(parts[at])
   return capitalise(parts.join(" "))
 }
+
+/** What a record with no title is called: "Untitled person",
+ * "Untitled gmail thread". Never its id. */
+export function untitled(kind: KindInfo | string): string {
+  const name = displayName(kind)
+  return `Untitled ${name.charAt(0).toLowerCase()}${name.slice(1)}`
+}

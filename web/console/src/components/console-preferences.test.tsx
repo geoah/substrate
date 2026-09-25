@@ -2,6 +2,7 @@
 /** The provider's promise: an action made while the record is still loading,
  * or while another save is in flight, is queued and lands, never dropped. */
 
+import { useEffect } from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -62,10 +63,13 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-let handle: ReturnType<typeof useConsolePreferences> | undefined
+const probe: { handle?: ReturnType<typeof useConsolePreferences> } = {}
 
 function Probe() {
-  handle = useConsolePreferences()
+  const handle = useConsolePreferences()
+  useEffect(() => {
+    probe.handle = handle
+  })
   return (
     <p data-testid="state">
       {handle.preferences.favorites.join(",")}|
@@ -91,12 +95,12 @@ describe("ConsolePreferencesProvider", () => {
   it("queues actions made while busy and saves every one of them", async () => {
     renderProvider()
     act(() => {
-      handle!.change({
+      probe.handle!.change({
         type: "favorite",
         key: "example.com/a/a",
         starred: true,
       })
-      handle!.change({
+      probe.handle!.change({
         type: "favorite",
         key: "example.com/b/b",
         starred: true,
@@ -112,7 +116,7 @@ describe("ConsolePreferencesProvider", () => {
 
   it("keeps a setting the stored kind does not declare in this browser", async () => {
     renderProvider()
-    act(() => handle!.set("technicalDetails", true))
+    act(() => probe.handle!.set("technicalDetails", true))
     await waitFor(() =>
       expect(localStorage.getItem("substrate.console.technicalDetails")).toBe(
         "true"

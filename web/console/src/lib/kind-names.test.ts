@@ -6,6 +6,7 @@ import {
   displayPlural,
   pluralWord,
   splitWords,
+  untitled,
 } from "./kind-names"
 
 describe("kind display names", () => {
@@ -85,5 +86,14 @@ describe("kind display names", () => {
     expect(pluralWord("box")).toBe("boxes")
     expect(pluralWord("Person")).toBe("People")
     expect(pluralWord("series")).toBe("series")
+  })
+
+  it("names a record without a title by its kind", () => {
+    expect(untitled("samples.substrate.reamde.dev/people/person")).toBe(
+      "Untitled person"
+    )
+    expect(untitled("providers.substrate.reamde.dev/google/gmailthread")).toBe(
+      "Untitled gmail thread"
+    )
   })
 })
