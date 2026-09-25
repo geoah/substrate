@@ -34,7 +34,12 @@ import {
 import { Spinner } from "@/components/ui/spinner"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { recordTitleQueryOptions } from "@/lib/reference-titles"
-import { seedField, type FormField, type FormValue } from "@/lib/record-form"
+import {
+  seedField,
+  type FormField,
+  type FormValue,
+  type RefValue,
+} from "@/lib/record-form"
 import { humanizeName, movesFrom } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
 
@@ -383,10 +388,7 @@ function ReferencePicker(props: InlineEditorProps) {
   const { save, pending } = useSave(props)
   const pin = row.field.spec.to ?? ""
   const chosen = useRef(false)
-  const seeded = seedField(row.field, row.value, false) as {
-    kind: string
-    id: string
-  }
+  const seeded = seedField(row.field, row.value, false) as RefValue
   // The chosen record may sit past the loaded page; its title is read.
   const title = useQuery({
     ...recordTitleQueryOptions(seeded.kind || pin, seeded.id),
@@ -405,7 +407,9 @@ function ReferencePicker(props: InlineEditorProps) {
         placeholder="Choose…"
         onSelect={(id) => {
           chosen.current = true
-          void save({ kind: pin, id })
+          // The record already held keeps its link data; another starts
+          // with none.
+          void save(id === seeded.id ? seeded : { kind: pin, id })
         }}
         onClear={
           row.field.required

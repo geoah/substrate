@@ -29,7 +29,7 @@
  *   sends `null` to delete the key; a merely-blank field is left untouched. */
 
 import type { SubstrateRecord, EnumValue, KindInfo } from "@/lib/api/types"
-import { readReference } from "@/lib/api/types"
+import { REFERENCE_KEY, readReference } from "@/lib/api/types"
 import { coerceReferencePath, splitRecordPath } from "@/lib/record-path"
 import type { EditPath as DocumentPath } from "@/lib/record-yaml"
 import {
@@ -155,10 +155,15 @@ export type FormValue =
   | KeyedRow[]
 export type FormValues = Record<string, FormValue>
 
-/** A pointer as the FORM holds it: two halves, one value. */
+/** A pointer as the FORM holds it: two halves, one value, and the link data
+ * a stored reference carries beside its pointer (the reference's declared
+ * `properties:`, decision 0044). The link rides along untouched, so adding,
+ * removing or reordering pointers never erases what the others hold; a
+ * pointer picked fresh has none. */
 export interface RefValue {
   kind: string
   id: string
+  link?: Record<string, unknown>
 }
 
 /** Which shape a value is in is the CONTROL's business, never a guess at the
@@ -359,12 +364,12 @@ export function toFieldValue(field: FormField, value: FormValue): FieldValue {
     return refValue(asRef(value))
   }
   if (field.control === "referenceList") {
-    const out: string[] = []
+    const out: unknown[] = []
     for (const ref of asRefs(value)) {
       const submitted = refValue(ref)
       if (submitted.error) return submitted
       if (submitted.value === undefined) continue
-      out.push(submitted.value as string)
+      out.push(submitted.value)
     }
     return out.length ? { value: out } : {}
   }
@@ -386,7 +391,11 @@ function refValue(ref: RefValue): FieldValue {
   // The write path's own decision, mirrored once: whether this is a path, a
   // short form the pin completes, or a value that reads two ways and is
   // refused naming both.
-  return coerceReferencePath(ref.kind.trim(), id)
+  const path = coerceReferencePath(ref.kind.trim(), id)
+  if (path.error || !ref.link || !Object.keys(ref.link).length) return path
+  // Link data is written in the stored shape: the pointer under `ref`, the
+  // link properties beside it.
+  return { value: { [REFERENCE_KEY]: path.value, ...ref.link } }
 }
 
 /** One pointer, seeded from its stored value. A served reference is the object
@@ -398,7 +407,10 @@ function seedRef(field: FormField, stored: unknown): RefValue {
   const pinned = field.spec.to && field.spec.to !== TO_ANY ? field.spec.to : ""
   const held = readReference(stored)
   if (!held) return { kind: pinned, id: "" }
-  return splitRecordPath(held.path) ?? { kind: pinned, id: held.path }
+  const pointer = splitRecordPath(held.path) ?? { kind: pinned, id: held.path }
+  return Object.keys(held.properties).length
+    ? { ...pointer, link: held.properties }
+    : pointer
 }
 
 /** One object row, coerced field by field. A field that fails its datatype

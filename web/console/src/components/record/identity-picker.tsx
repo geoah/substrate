@@ -16,6 +16,40 @@ import { RecordCombobox } from "@/components/record/record-combobox"
 import { Button } from "@/components/ui/button"
 import type { KindInfo } from "@/lib/api/types"
 import type { RefValue } from "@/lib/record-form"
+import { humanizeName, type PropSpec } from "@/lib/record-schema"
+
+/** What a membership carries beside its pointer ("Role: lead · Since:
+ * 2020-01-01"), read-only: it rides along unchanged through every add, remove
+ * and reorder, and is edited in the record's YAML. */
+function LinkData({
+  link,
+  fields,
+}: {
+  link?: Record<string, unknown>
+  fields?: PropSpec[]
+}) {
+  const entries = Object.entries(link ?? {}).filter(
+    ([, v]) => v !== undefined && v !== null && v !== ""
+  )
+  if (!entries.length) return null
+  return (
+    <span
+      data-slot="reference-link"
+      className="flex flex-wrap gap-x-2 text-xs text-muted-foreground"
+    >
+      {entries.map(([key, value]) => {
+        const label =
+          fields?.find((f) => f.name === key)?.label ?? humanizeName(key)
+        return (
+          <span key={key}>
+            {label.charAt(0).toUpperCase() + label.slice(1)}:{" "}
+            {typeof value === "object" ? JSON.stringify(value) : String(value)}
+          </span>
+        )
+      })}
+    </span>
+  )
+}
 
 export function ReferenceListPicker({
   id,
@@ -26,6 +60,7 @@ export function ReferenceListPicker({
   value,
   onChange,
   invalid,
+  linkFields,
 }: {
   id: string
   /** The property's own label, so each row says which list it belongs to. */
@@ -37,6 +72,8 @@ export function ReferenceListPicker({
   value: RefValue[]
   onChange: (value: RefValue[]) => void
   invalid?: boolean
+  /** The reference's declared link properties, for their labels. */
+  linkFields?: PropSpec[]
 }) {
   // A list of pointers is a SET: what is already in it is not offered again.
   const held = new Set(value.filter((r) => r.kind === pin).map((r) => r.id))
@@ -52,7 +89,7 @@ export function ReferenceListPicker({
               className="flex min-h-9 items-center gap-2 border-b px-2.5 py-1 last:border-b-0"
             >
               <span
-                className="min-w-0 flex-1 text-sm"
+                className="flex min-w-0 flex-1 flex-col gap-0.5 text-sm"
                 aria-label={`${label} ${i + 1}`}
               >
                 {ref.kind ? (
@@ -60,6 +97,7 @@ export function ReferenceListPicker({
                 ) : (
                   <span className="data">{ref.id}</span>
                 )}
+                <LinkData link={ref.link} fields={linkFields} />
               </span>
               <Button
                 type="button"

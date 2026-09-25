@@ -51,8 +51,23 @@ export function editStyle(field: FormField): "line" | "pop" | "panel" {
   }
 }
 
+/** Structural equality, blind to key order: a stored reference's link data
+ * comes back in whatever order the server serialized it, and the form writes
+ * the pointer first. */
 const same = (a: unknown, b: unknown) =>
-  JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+  JSON.stringify(sorted(a ?? null)) === JSON.stringify(sorted(b ?? null))
+
+function sorted(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sorted)
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((k) => [k, sorted((value as Record<string, unknown>)[k])])
+    )
+  }
+  return value
+}
 
 /** The one write, from a control's value: the property and nothing else, or
  * `null` to empty it. Answers `undefined` when there is nothing to send. */

@@ -437,7 +437,7 @@ describe("reference fields", () => {
     })
   })
 
-  it("seeds a reference that carries link data from the path under `ref`", () => {
+  it("seeds a reference that carries link data from the path under `ref`, and keeps the link", () => {
     const record = {
       properties: {
         owner: {
@@ -449,6 +449,7 @@ describe("reference fields", () => {
     expect(initialValues(fieldsOf(), record).owner).toEqual({
       kind: "samples.substrate.reamde.dev/people/person",
       id: "alice",
+      link: { role: "lead" },
     })
   })
 
@@ -563,5 +564,61 @@ describe("reference fields", () => {
     const values = initialValues(fields)
     expect(toProperties(fields, values)).toEqual({})
     expect(validate(fields, values, "create")).toEqual([])
+  })
+})
+
+describe("link data on a reference", () => {
+  const ORG = "samples.substrate.reamde.dev/people/organization"
+  const kind = typeWith({
+    employer: {
+      type: "reference",
+      kind: ORG,
+      properties: { role: { type: "string" } },
+    },
+    memberOf: {
+      type: "reference",
+      kind: ORG,
+      repeated: true,
+      properties: { role: { type: "string" }, since: { type: "date" } },
+    },
+  })
+  const fields = () => buildFormFields(kind)
+  const stored = {
+    properties: {
+      employer: { ref: `${ORG}/acme`, role: "CTO" },
+      memberOf: [
+        { ref: `${ORG}/acme`, role: "CTO", since: "2020-01-01" },
+        { ref: `${ORG}/globex` },
+        { ref: `${ORG}/initech`, role: "advisor" },
+      ],
+    },
+  } as unknown as SubstrateRecord
+
+  // Owner report follow-up, 2026-09-26: a person's Member of carries each
+  // membership's role and start date beside the pointer, and a save that
+  // wrote the paths alone erased them from every row it touched.
+  it("writes a list back with every item's link data, unchanged", () => {
+    const f = fields()
+    expect(toProperties(f, initialValues(f, stored)).memberOf).toEqual([
+      { ref: `${ORG}/acme`, role: "CTO", since: "2020-01-01" },
+      `${ORG}/globex`,
+      { ref: `${ORG}/initech`, role: "advisor" },
+    ])
+    expect(toProperties(f, initialValues(f, stored)).employer).toEqual({
+      ref: `${ORG}/acme`,
+      role: "CTO",
+    })
+  })
+
+  it("keeps link data through a remove, a reorder and an add; the added item has none", () => {
+    const f = fields()
+    const values = initialValues(f, stored)
+    const [acme, , initech] = values.memberOf as { kind: string; id: string }[]
+    values.memberOf = [initech, acme, { kind: ORG, id: "umbrella" }]
+    expect(toProperties(f, values).memberOf).toEqual([
+      { ref: `${ORG}/initech`, role: "advisor" },
+      { ref: `${ORG}/acme`, role: "CTO", since: "2020-01-01" },
+      `${ORG}/umbrella`,
+    ])
   })
 })

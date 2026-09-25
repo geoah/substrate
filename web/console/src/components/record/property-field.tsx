@@ -301,6 +301,7 @@ export function PropertyField({
         {label}
         <ReferenceListPicker
           id={id}
+          linkFields={field.spec.linkFields}
           label={field.label}
           pin={pinned}
           kinds={kinds}
@@ -613,7 +614,15 @@ function ReferenceField({
           valueTitle={titles.get(`${chosen}/${ref.id}`)}
           invalid={Boolean(error)}
           placeholder={target ? "Choose…" : "Choose a kind first"}
-          onSelect={(next) => onChange({ kind: chosen, id: next })}
+          // Choosing the record already held keeps what its link carries;
+          // another record starts with none.
+          onSelect={(next) =>
+            onChange(
+              next === ref.id && ref.kind === chosen
+                ? ref
+                : { kind: chosen, id: next }
+            )
+          }
         />
       </div>
       {help(

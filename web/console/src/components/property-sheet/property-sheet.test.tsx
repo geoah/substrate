@@ -123,6 +123,12 @@ const task = kind(TASK, {
     tags: { type: "string", repeated: true },
     emails: { type: "email", repeated: true },
     quotes: { type: "string", repeated: true },
+    members: {
+      type: "reference",
+      kind: PERSON,
+      repeated: true,
+      properties: { role: { type: "string", displayName: "role" } },
+    },
     token: { type: "string", writer: "oauth" },
     notes: { type: "string" },
     url: { type: "url" },
@@ -446,6 +452,55 @@ describe("PropertySheet lists", () => {
     })
     fireEvent.click(screen.getByRole("button", { name: "Save" }))
     expect((await screen.findByRole("alert")).textContent).toMatch(/^Item 2/)
+    expect(wire.writes).toHaveLength(0)
+  })
+})
+
+describe("PropertySheet references with link data", () => {
+  const linked = () =>
+    record({
+      properties: {
+        ...record().properties,
+        members: [
+          { ref: `${PERSON}/ada`, role: "lead" },
+          { ref: `${PERSON}/grace` },
+          { ref: `${PERSON}/alan`, role: "reviewer" },
+        ],
+      },
+    })
+
+  it("reads each item's link data beside it", () => {
+    renderSheet(linked())
+    expect(row("members").textContent).toMatch(/Role: lead/)
+  })
+
+  it("keeps the link data of every item it did not touch", async () => {
+    renderSheet(linked())
+    fireEvent.click(valueOf("members")!)
+    // The editor says what each membership carries, under its record.
+    const links = [
+      ...document.querySelectorAll("[data-slot=reference-link]"),
+    ].map((el) => el.textContent)
+    expect(links).toEqual(["Role: lead", "Role: reviewer"])
+    fireEvent.click(screen.getByRole("button", { name: "Remove Members 2" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].body).toEqual({
+      properties: {
+        members: [
+          { ref: `${PERSON}/ada`, role: "lead" },
+          { ref: `${PERSON}/alan`, role: "reviewer" },
+        ],
+      },
+      ifVersion: 7,
+    })
+  })
+
+  it("writes nothing when the list is saved as it was", async () => {
+    renderSheet(linked())
+    fireEvent.click(valueOf("members")!)
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await new Promise((r) => setTimeout(r, 0))
     expect(wire.writes).toHaveLength(0)
   })
 })
