@@ -77,8 +77,9 @@ export interface SheetRows {
   all: SheetRow[]
   filled: SheetRow[]
   empty: SheetRow[]
-  /** The property the page title shows, never a row. */
-  title: string
+  /** The property the page title shows, never a row; undefined when the
+   * kind's template holds no one property. */
+  title?: string
   /** The prose property shown as the body under the sheet, never a row. */
   body?: PropSpec
 }
@@ -92,7 +93,8 @@ export function sheetRows(
 ): SheetRows {
   const title = titleProperty(kind)
   const body = bodyProperty(kind)
-  const skip = new Set(["title", title])
+  const skip = new Set(["title"])
+  if (title) skip.add(title)
   if (body) skip.add(body.name)
   const specs: PropSpec[] = []
   const named = new Set<string>()

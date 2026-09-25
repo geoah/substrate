@@ -48,12 +48,7 @@ import type { ChangeRow, KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { recordTitle } from "@/lib/format"
 import { displayPlural, untitled } from "@/lib/kind-names"
 import { fieldOf } from "@/lib/record-form"
-import {
-  ownerWritable,
-  propSpecsByName,
-  systemSpecs,
-  titleProperty,
-} from "@/lib/record-schema"
+import { titleEditor } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
 import { headerFacts } from "./record-model"
 
@@ -67,14 +62,11 @@ function Title({
   readOnly: boolean
 }) {
   const title = recordTitle(record.properties)
-  const name = titleProperty(kind)
-  const spec = kind
-    ? [...propSpecsByName(kind), ...systemSpecs(kind)].find(
-        (s) => s.name === name
-      )
-    : undefined
-  const editable =
-    !readOnly && spec && !spec.managed && ownerWritable(spec) && !spec.repeated
+  // A heading the server derives from a template holding no one property is
+  // not typed into: a written `title` there is ignored and the edit reverts.
+  const spec = titleEditor(kind)
+  const name = spec?.name ?? ""
+  const editable = !readOnly && spec !== undefined
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState("")
   const [error, setError] = useState<string>()

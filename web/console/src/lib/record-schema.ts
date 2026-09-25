@@ -348,22 +348,43 @@ export function movesFrom(spec: PropSpec, current: string): StateTransition[] {
   )
 }
 
-/** The property a kind titles itself from: the first name its
- * `displayTemplate` reads (`{name|title}` is `name`) when that is a string,
- * else the built-in `title` (decision 0016). */
-export function titleProperty(kind: KindInfo | undefined): string {
+/** The property the heading shows in full, or undefined when it shows no
+ * one property (decision 0016).
+ *
+ * A kind with no `displayTemplate` is headed by the built-in `title`. A kind
+ * with one is headed by what the template renders, and the server ignores a
+ * written `title` there, so the heading is a property only when the template
+ * is ONE placeholder whose first name is a declared, one-line string property
+ * (`{name}`, `{name|title}`: `name`). Literal text or a second placeholder
+ * around it (`Issue {number}`, `{first} {last}`), a path into a value, or an
+ * engine word the kind does not declare (`{localName}`) is a heading no one
+ * property holds. */
+export function titleProperty(kind: KindInfo | undefined): string | undefined {
   if (!kind) return "title"
   const template = (kind.definition as Record<string, unknown>).displayTemplate
-  if (typeof template === "string") {
-    const m = template.match(/\{\s*([A-Za-z][A-Za-z0-9]*)/)
-    const def = m ? rawProps(kind)[m[1]] : undefined
-    // Only a one-line text heading is the title: a template reading a
-    // reference or a number renders a title but is not one to type.
-    if (m && def && (def.type === undefined || def.type === "string")) {
-      return m[1]
-    }
-  }
-  return "title"
+  if (typeof template !== "string" || !template.trim()) return "title"
+  const m = template
+    .trim()
+    .match(/^\{\s*([A-Za-z][A-Za-z0-9]*)\s*(?:\|[^{}]*)?\}$/)
+  const def = m ? rawProps(kind)[m[1]] : undefined
+  if (!m || !def) return undefined
+  const spec = specOf(m[1], def)
+  return spec.kind === "string" && !spec.repeated && !spec.keyed
+    ? m[1]
+    : undefined
+}
+
+/** The property typing into the heading writes, or undefined when the
+ * heading is read-only: it shows no one property, or that property is the
+ * engine's or another writer's to set. */
+export function titleEditor(kind: KindInfo | undefined): PropSpec | undefined {
+  // Until the declaration is read nobody knows whether a template heads it.
+  if (!kind) return undefined
+  const name = titleProperty(kind)
+  if (!name) return undefined
+  const spec =
+    name === "title" ? systemSpecs(kind)[0] : specOf(name, rawProps(kind)[name])
+  return !spec.managed && ownerWritable(spec) ? spec : undefined
 }
 
 /** The names a kind's prose usually goes under, most body-like first. */

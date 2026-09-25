@@ -19,7 +19,7 @@ import {
 } from "@/lib/declarations"
 import { displayPlural, lowerFirst, untitled } from "@/lib/kind-names"
 import { fieldOf, type FormField, type FormValue } from "@/lib/record-form"
-import { bodyProperty, systemSpecs, titleProperty } from "@/lib/record-schema"
+import { bodyProperty, systemSpecs, titleEditor } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
 
 /** Whether a control holds anything yet. */
@@ -78,7 +78,9 @@ export function CreateSheet({
 }) {
   const [technical] = useTechnicalDetails()
   const form = useDocumentForm({ text, kind, onChange })
-  const titleName = titleProperty(kind)
+  // Undefined where the kind's template holds no one property the owner
+  // types: the heading is then derived, and a typed `title` would be ignored.
+  const titleName = titleEditor(kind)?.name
   const body = bodyProperty(kind)
   const titleField = form.fields.find((f) => f.name === titleName)
   const bodyField = body
@@ -131,18 +133,24 @@ export function CreateSheet({
 
   return (
     <div data-slot="create-sheet">
-      <input
-        aria-label={titleField?.label ?? "Title"}
-        placeholder={untitled(kind)}
-        value={titleValue}
-        autoFocus
-        onChange={(e) =>
-          titleField
-            ? form.commit(titleField, e.target.value)
-            : form.setProperty("title", e.target.value)
-        }
-        className="mt-2.5 mb-1 w-full border-0 bg-transparent text-[32px] leading-[1.15] font-bold tracking-[-0.025em] outline-none placeholder:text-faint"
-      />
+      {titleName ? (
+        <input
+          aria-label={titleField?.label ?? "Title"}
+          placeholder={untitled(kind)}
+          value={titleValue}
+          autoFocus
+          onChange={(e) =>
+            titleField
+              ? form.commit(titleField, e.target.value)
+              : form.setProperty("title", e.target.value)
+          }
+          className="mt-2.5 mb-1 w-full border-0 bg-transparent text-[32px] leading-[1.15] font-bold tracking-[-0.025em] outline-none placeholder:text-faint"
+        />
+      ) : (
+        <p className="mt-2.5 mb-1 text-[32px] leading-[1.15] font-bold tracking-[-0.025em] text-faint">
+          {untitled(kind)}
+        </p>
+      )}
       {titleField && form.errors[titleField.name] && titleValue && (
         <p role="alert" className="text-[12.5px] text-destructive">
           {form.errors[titleField.name]}
