@@ -52,6 +52,9 @@ interface DataTableFiltersProps {
   /** The registry, which resolves a reference field's pin to the collection
    * its picker offers. Absent, a reference field takes text. */
   kinds?: KindInfo[]
+  /** How a field is named on screen; its key by default. */
+  labelOf?: (name: string) => string
+  className?: string
 }
 
 /** The kind a reference field's picker offers: the one its pin names. A pin
@@ -141,7 +144,7 @@ function ValueEditor({
                   >
                     {on && <CheckIcon className="size-3" />}
                   </span>
-                  <span className="data">{state}</span>
+                  <span>{state}</span>
                 </CommandItem>
               )
             })}
@@ -158,7 +161,7 @@ function ValueEditor({
           <CommandGroup>
             {["true", "false"].map((v) => (
               <CommandItem key={v} value={v} onSelect={() => onCommit(v)}>
-                <span className="data">{v}</span>
+                <span>{v}</span>
               </CommandItem>
             ))}
           </CommandGroup>
@@ -187,7 +190,7 @@ function ValueEditor({
                 ? `${field.name} contains…`
                 : `${field.name} is…`
         }
-        className="h-8 data"
+        className="h-8"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
@@ -229,6 +232,7 @@ function ActiveFilterControl({
   field,
   target,
   kinds,
+  label,
   onChange,
   onRemove,
 }: {
@@ -236,6 +240,7 @@ function ActiveFilterControl({
   field: DeclaredProperty | undefined
   target?: KindInfo
   kinds?: KindInfo[]
+  label: string
   onChange: (next: ActiveFilter) => void
   onRemove: () => void
 }) {
@@ -246,17 +251,17 @@ function ActiveFilterControl({
           but the × is a REAL sibling button: nested inside the trigger it
           sat under the Button's [&_svg]:pointer-events-none and could never
           be clicked (owner redline, 2026-08-06). */}
-      <div className="flex h-8 items-stretch overflow-hidden rounded-lg border border-border bg-background bg-clip-padding dark:border-input dark:bg-input/30">
+      <div className="flex h-7 items-stretch overflow-hidden rounded-md border border-border-strong bg-background text-[12.5px]">
         <PopoverTrigger
           render={
             <Button
               variant="ghost"
               size="sm"
-              className="h-full gap-1.5 rounded-none pr-1.5 font-normal"
+              className="h-full gap-2 rounded-none px-2 text-[12.5px] font-normal"
             />
           }
         >
-          <span className="text-muted-foreground">{filter.field}</span>
+          <span className="text-muted-foreground">{label}</span>
           {/* an explicit rule, not Separator: the field | value seam must be
               visible inside the control (codex finding, 2026-08-05) */}
           <span aria-hidden className="h-4 w-px shrink-0 bg-border" />
@@ -271,7 +276,7 @@ function ActiveFilterControl({
             />
           ) : (
             <span
-              className="max-w-72 truncate data"
+              className="max-w-72 truncate"
               title={displayValue(filter, field).replaceAll(",", ", ")}
             >
               {displayValue(filter, field).replaceAll(",", ", ")}
@@ -281,8 +286,8 @@ function ActiveFilterControl({
         <Button
           variant="ghost"
           size="sm"
-          aria-label={`Remove ${filter.field} filter`}
-          className="h-full w-6 rounded-none px-0 text-muted-foreground hover:text-foreground"
+          aria-label={`Remove ${label} filter`}
+          className="h-full w-7 rounded-none border-l border-border px-0 text-faint hover:text-foreground"
           onClick={onRemove}
         >
           <XIcon className="size-3.5" />
@@ -329,6 +334,8 @@ export function DataTableFilters({
   filters,
   onChange,
   kinds,
+  labelOf = (name) => name,
+  className,
 }: DataTableFiltersProps) {
   const [addOpen, setAddOpen] = useState(false)
   const [pending, setPending] = useState<DeclaredProperty | null>(null)
@@ -353,7 +360,12 @@ export function DataTableFilters({
   }
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 px-6 py-2.5">
+    <div
+      className={cn(
+        "flex shrink-0 flex-wrap items-center gap-2 px-6 py-2.5",
+        className
+      )}
+    >
       {filters.map((filter, i) => {
         const field = fields.find((f) => f.name === filter.field)
         return (
@@ -363,6 +375,7 @@ export function DataTableFilters({
             field={field}
             target={referenceTarget(field, kinds)}
             kinds={kinds}
+            label={labelOf(filter.field)}
             onChange={(next) => upsert(next, i)}
             onRemove={() => onChange(filters.filter((_, j) => j !== i))}
           />
@@ -378,13 +391,14 @@ export function DataTableFilters({
         <PopoverTrigger
           render={
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="h-8 gap-1.5 border-dashed font-normal text-muted-foreground"
+              className="h-7 gap-1.5 text-[12.5px] font-normal text-muted-foreground"
             />
           }
         >
-          <ListFilterIcon className="size-3.5" /> Add filter
+          <ListFilterIcon className="size-3.5" />
+          Add filter
         </PopoverTrigger>
         <PopoverContent
           align="start"
@@ -427,7 +441,7 @@ export function DataTableFilters({
                       onSelect={() => setPending(field)}
                       className="[&>svg:last-child]:hidden"
                     >
-                      <span>{field.name}</span>
+                      <span>{labelOf(field.name)}</span>
                       <span className="ml-auto text-right text-xs text-muted-foreground">
                         {propertyTypeLabel(field)}
                       </span>
@@ -443,7 +457,7 @@ export function DataTableFilters({
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 font-normal text-muted-foreground"
+          className="h-7 text-[12.5px] font-normal text-muted-foreground"
           onClick={() => onChange([])}
         >
           Clear all

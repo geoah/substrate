@@ -4,10 +4,9 @@
  * records the generic browse renders; this module adds the agent-scoped
  * reads and the one thing the record API cannot do — the streaming chat loop.
  *
- * The whole agent-loop vocabulary lives in CORE: core absorbed the runtime
- * kinds, so `llm/provider`, `llm/thread` and `llm/message` sit beside `agent`
- * under `substrate.reamde.dev/core` — there is no separate runtime authority
- * to seed. */
+ * The agent row is core's (`substrate.reamde.dev/core/agent`); the runtime
+ * rows it produces — provider, thread, message, interaction — are the seeded
+ * `substrate.reamde.dev/llm` package's (decision record 0077). */
 
 import { queryOptions } from "@tanstack/react-query"
 
@@ -57,17 +56,88 @@ export function providerHasKey(record: SubstrateRecord): boolean {
   return typeof key === "string" && key !== ""
 }
 
-/** One agent's threads, newest first — its run history (a thread IS a run). */
-export function agentThreadsQueryOptions(agent: string, first = 50) {
+/** The modes a person reads as a conversation: every run of a root agent.
+ * A sub-agent's thread and a judge's verdict are parts of another run, and
+ * they stay under Data. */
+export const CONVERSATION_MODES = [
+  "chat",
+  "manual",
+  "call",
+  "record",
+  "schedule",
+  "webhook",
+]
+
+/** How many conversations the chat list reads. */
+export const CHAT_LIST_WINDOW = 100
+
+/** Every agent's conversations, newest first: the chat list. */
+export function conversationsQueryOptions(first = CHAT_LIST_WINDOW) {
   return recordsQueryOptions({
     authority: CORE_AUTHORITY,
     package: LLM_PACKAGE_NAME,
     name: "thread",
     first,
-    // `agent` is a REFERENCE: the filter names the record it points at, and
-    // a bare id is admitted because the declaration pins the kind.
-    filter: { properties: { agent: { eq: agent } } },
+    filter: { properties: { mode: { in: CONVERSATION_MODES } } },
     orderBy: "startedAt:desc",
+  })
+}
+
+/** The user messages of a set of threads, oldest turn first, so the first
+ * one per thread is what opened it (`openingMessages` reads it). One read for
+ * the whole list: `thread` is a reference whose declaration pins the kind, so
+ * bare ids are admitted. */
+export function openingMessagesQueryOptions(threadIds: string[]) {
+  return queryOptions({
+    ...recordsQueryOptions({
+      authority: CORE_AUTHORITY,
+      package: LLM_PACKAGE_NAME,
+      name: "message",
+      first: TRANSCRIPT_WINDOW,
+      filter: {
+        properties: { role: { eq: "user" }, thread: { in: threadIds } },
+      },
+      orderBy: "turn:asc,createdAt:asc",
+    }),
+    enabled: threadIds.length > 0,
+  })
+}
+
+/** The llm/provider rows an agent completes against. */
+export function llmProvidersQueryOptions() {
+  return recordsQueryOptions({
+    authority: CORE_AUTHORITY,
+    package: LLM_PACKAGE_NAME,
+    name: "provider",
+    first: 100,
+  })
+}
+
+/** The standing rules for agent writes (`recordpatchpolicy`). */
+export function writePoliciesQueryOptions() {
+  return recordsQueryOptions({
+    authority: CORE_AUTHORITY,
+    package: CORE_PACKAGE_NAME,
+    name: "recordpatchpolicy",
+    first: 200,
+  })
+}
+
+/** The policies that speak for one agent's writes: enabled, and naming the
+ * agent's identity or no agent at all (an empty list matches every agent). */
+export function policiesForAgent(
+  agentId: string,
+  policies: SubstrateRecord[]
+): SubstrateRecord[] {
+  return policies.filter((policy) => {
+    if (policy.properties.disabled === true) return false
+    const selector = policy.properties.selector
+    const agents =
+      selector && typeof selector === "object" && !Array.isArray(selector)
+        ? (selector as Record<string, unknown>).agents
+        : undefined
+    if (!Array.isArray(agents) || agents.length === 0) return true
+    return agents.includes(agentId)
   })
 }
 

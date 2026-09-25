@@ -26,6 +26,7 @@ import type {
   SuggestedMapping,
 } from "@/lib/api/types"
 import { kindByIdentity, kindPackage, splitKind } from "@/lib/definition"
+import { kindHasTrait } from "@/lib/sync"
 
 /** One bundle row: the installed status (when the lifecycle knows it) and the
  * catalog entry (when it is a shipped closure) folded by the id the bundle
@@ -569,11 +570,9 @@ export function importFailureLines(error: unknown): string[] {
   ]
 }
 
-/** A kind carries a trait when its reconciled declaration lists it. */
-function hasTrait(kind: KindInfo, trait: string): boolean {
-  const traits = (kind.definition as { traits?: unknown } | undefined)?.traits
-  return Array.isArray(traits) && traits.includes(trait)
-}
+/** A kind carries a core trait, named in full or in the bare shipped
+ * spelling (`lib/sync` kindHasTrait). */
+const hasTrait = kindHasTrait
 
 /** The bundle's account-config kind: the kind in its owned package that
  * implements the `accountconfig` trait (the host writes tokens onto its

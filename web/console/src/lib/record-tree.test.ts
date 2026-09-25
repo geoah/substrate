@@ -160,6 +160,11 @@ describe("resolveTree", () => {
     })
     expect(out.nodes.get("engineering")?.children).toBe("some")
     expect(out.nodes.get("design")?.children).toBe("none")
+    // A closed parent still knows its children, which its badge counts.
+    expect(
+      out.nodes.get("engineering")?.childRecords?.map((r) => r.id)
+    ).toEqual(["platform", "product"])
+    expect(out.nodes.get("design")?.childRecords).toBeUndefined()
     expect(ids(out.rows)).toEqual(["engineering", "design"])
   })
 

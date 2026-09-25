@@ -1,6 +1,10 @@
-/** The tree a table's rows may form: the indent and the chevron that open a
- * row onto its children, drawn INSIDE the identity cell so the tree reads
- * where the eye already is. A context feeds it, so the column factory stays a
+/* eslint-disable react-refresh/only-export-components -- the provider, its
+ * hook and the toggle are one module by design; nothing here hot-reloads
+ * alone. */
+
+/** The tree a grid's rows may form: the indent and the chevron that open a
+ * row onto its children, drawn INSIDE the title cell so the tree reads where
+ * the eye already is. A context feeds it, so the column factory stays a
  * function of the kind alone; without a provider the cell is the plain cell,
  * and every flat table is untouched. */
 
@@ -32,57 +36,45 @@ export function RowTreeProvider({
 }
 
 /** One level of nesting, in px. */
-const INDENT_PX = 20
+export const INDENT_PX = 22
 
-/** The identity cell of a row that may sit in a tree: indented to its depth,
- * with the chevron that opens it before the content. */
-export function TreeCell({
-  id,
-  children,
-}: {
+/** The row's place in the tree, or `undefined` in a flat table. */
+export function useRowTreeNode(
   id: string
-  children: React.ReactNode
-}) {
+): { node: TreeNode; toggle: () => void } | undefined {
   const tree = useContext(RowTreeContext)
   const node = tree?.nodes.get(id)
-  if (!tree || !node) return <>{children}</>
-  return (
-    <span
-      className="flex min-w-0 items-center gap-1"
-      style={{ paddingLeft: node.depth * INDENT_PX }}
-      data-depth={node.depth}
-    >
-      <TreeToggle node={node} onToggle={() => tree.toggle(id)} />
-      <span className="min-w-0 flex-1">{children}</span>
-    </span>
-  )
+  if (!tree || !node) return undefined
+  return { node, toggle: () => tree.toggle(id) }
 }
 
-function TreeToggle({
+/** The chevron that opens a row, or its width in blank where there is
+ * nothing (yet) to open, so titles on one level stay aligned. */
+export function TreeToggle({
   node,
   onToggle,
+  noun = "rows",
 }: {
   node: TreeNode
   onToggle: () => void
+  /** What the children are called, for the accessible name. */
+  noun?: string
 }) {
-  // A row known to be a leaf, or not yet known at all, keeps the chevron's
-  // width so the titles on one level stay aligned.
   if (node.children === "none" || node.children === "pending") {
-    return <span aria-hidden className="size-4 shrink-0" />
+    return <span aria-hidden className="w-[18px] shrink-0" />
   }
   const title =
     node.error ??
     (node.truncated
-      ? "More children than one read returns: the first page is shown"
+      ? "More than one read returns: the first page is shown"
       : undefined)
   return (
     <button
       type="button"
       aria-expanded={node.open}
-      aria-label={node.open ? "Collapse" : "Expand"}
+      aria-label={`${node.open ? "Hide" : "Show"} ${noun}`}
       title={title}
-      className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-      // The row itself navigates on click; the chevron must not.
+      className="inline-grid size-[18px] shrink-0 cursor-pointer place-items-center rounded-[4px] text-faint outline-none hover:bg-border-strong hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
       onClick={(e) => {
         e.stopPropagation()
         onToggle()
@@ -95,7 +87,7 @@ function TreeToggle({
       ) : (
         <ChevronRightIcon
           className={cn(
-            "size-3.5 transition-transform",
+            "size-[13px] transition-transform",
             node.open && "rotate-90"
           )}
         />

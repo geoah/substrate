@@ -105,13 +105,9 @@ export function crumbsFor(pathname: string, technical = false): Crumb[] {
       return [{ label: "History" }]
     case "search":
       return [{ label: "Search" }]
+    // A bundle's own settings, the account and its tokens all redirect: the
+    // first to its provider, the others here.
     case "settings":
-      if (!rest.length) return [{ label: "Settings" }]
-      // A bundle's own settings: the id is `<authority>/<package>`, whole.
-      return [
-        { label: "Settings", to: "/settings" },
-        { label: rest.join("/"), mono: true },
-      ]
     case "account":
       return [{ label: "Settings" }]
     case "agents":
@@ -128,7 +124,10 @@ export function crumbsFor(pathname: string, technical = false): Crumb[] {
         { label: "Tools", to: "/tools" },
         technical
           ? { label: rest.join("/"), mono: true }
-          : { label: rest.at(-1) ?? "" },
+          : {
+              // A tool is a function: its plain name is its actor's.
+              label: actorIdentity(`function:${rest.join(":")}`).name,
+            },
       ]
     }
     case "providers": {
@@ -146,19 +145,6 @@ export function crumbsFor(pathname: string, technical = false): Crumb[] {
         { label: provider.name, provider: provider.key },
       ]
     }
-    case "connections":
-      if (!rest.length) return [{ label: "Connections" }]
-      // The account record's kind reference plus its id; the id is last.
-      return [
-        { label: "Connections", to: "/connections" },
-        { label: rest.at(-1) ?? "", mono: true },
-      ]
-    case "registry":
-      if (!rest.length) return [{ label: "Registry" }]
-      return [
-        { label: "Registry", to: "/registry" },
-        { label: rest.join("/"), mono: true },
-      ]
     case "merge-requests":
     case "change-requests": {
       // The queue is the kind's own collection, so the parent crumbs walk back

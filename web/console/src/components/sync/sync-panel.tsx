@@ -47,6 +47,16 @@ const STATE_TEXT: Partial<Record<SyncState, string>> = {
   throttled: "text-warning",
 }
 
+/** The trait's states as a person reads them; an unknown word a body wrote
+ * shows as it is. */
+const STATE_WORD: Record<SyncState, string> = {
+  never: "Not synced yet",
+  running: "Syncing…",
+  ok: "Up to date",
+  erroring: "Having trouble",
+  throttled: "Slowed down",
+}
+
 export function SyncStateBadge({
   fields,
   className,
@@ -54,7 +64,9 @@ export function SyncStateBadge({
   fields: Pick<SyncFields, "state" | "rawState" | "paused">
   className?: string
 }) {
-  const word = fields.paused ? "paused" : (fields.rawState ?? fields.state)
+  const word = fields.paused
+    ? "Paused"
+    : (fields.rawState ?? STATE_WORD[fields.state])
   return (
     <Badge
       variant="outline"
@@ -70,7 +82,7 @@ export function SyncStateBadge({
           fields.paused ? "bg-warning" : STATE_DOT[fields.state]
         )}
       />
-      <span className="data">{word}</span>
+      <span>{word}</span>
     </Badge>
   )
 }
@@ -115,7 +127,7 @@ export function SyncProgressBar({
         <span className="text-muted-foreground">
           {progress.phase ? `Phase ${progress.phase}` : "Progress"}
         </span>
-        <span className="data tabular-nums">
+        <span className="tabular-nums">
           {progress.done.toLocaleString()} / {total.toLocaleString()}
           {progress.pending > 0 && (
             <span className="text-muted-foreground">
@@ -182,7 +194,7 @@ export function SyncStreams({ streams }: { streams: SyncFields["streams"] }) {
               >
                 {s.lastAt ? relativeTime(s.lastAt) : "never"}
               </td>
-              <td className="py-1.5 pr-3 text-right data tabular-nums">
+              <td className="py-1.5 pr-3 text-right tabular-nums">
                 {s.pending.toLocaleString()}
               </td>
               <td className="py-1.5 pr-3 text-muted-foreground">

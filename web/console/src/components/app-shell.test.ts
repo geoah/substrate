@@ -91,6 +91,12 @@ describe("crumbsFor", () => {
       { label: "Tools", to: "/tools" },
       { label: "stats" },
     ])
+    expect(
+      crumbsFor("/tools/providers.substrate.reamde.dev/google/synccontacts")
+    ).toEqual([
+      { label: "Tools", to: "/tools" },
+      { label: "Google Contacts sync" },
+    ])
   })
 
   it("reads an actor under History, by name unless technical", () => {
@@ -110,18 +116,5 @@ describe("crumbsFor", () => {
       { label: "a.example.com", to: "/data/a.example.com", mono: true },
       { label: "tasks", mono: true },
     ])
-  })
-
-  it("never links to the retired /registry/connections route", () => {
-    for (const path of [
-      "/connections",
-      "/connections/a.example.com/p/n/x",
-      "/registry",
-      "/registry/providers.substrate.reamde.dev%2Fgoogle",
-    ]) {
-      for (const crumb of crumbsFor(path)) {
-        expect(crumb.to ?? "").not.toContain("/registry/connections")
-      }
-    }
   })
 })

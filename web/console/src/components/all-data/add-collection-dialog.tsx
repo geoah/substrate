@@ -2,8 +2,8 @@
  * start from a sample (imported under the repository's own authority, the
  * packages it needs first), or declare the kind yourself in YAML. */
 
-import { useMemo, useRef, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMemo, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import {
   BotIcon,
@@ -14,7 +14,7 @@ import {
 } from "lucide-react"
 
 import { CopyButton } from "@/components/identity/copy-button"
-import { ImportRefusal } from "@/components/import-refusal"
+import { TakeButton } from "@/components/providers/bundle-actions"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -24,32 +24,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
-import { toast } from "@/components/ui/toast"
-import {
-  bundleStatusesQueryOptions,
-  refetchBundleStateSoon,
-  seedBundleStatus,
-} from "@/lib/api/bundles"
-import {
-  catalogQueryOptions,
-  fetchCatalogItem,
-  importBundle,
-  installBundle,
-} from "@/lib/api/catalog"
+import { bundleStatusesQueryOptions } from "@/lib/api/bundles"
+import { catalogQueryOptions } from "@/lib/api/catalog"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { repositoryQueryOptions } from "@/lib/api/repository"
 import { getRepository } from "@/lib/api/session"
-import type { BundleStatus } from "@/lib/api/types"
 import {
-  REIMPORT_WARNING,
-  confirmationOf,
   heldVersions,
-  importPlan,
   mergeBundles,
   missingChain,
-  needsConfirmation,
   presentPackages,
   requirementTree,
   upgradeAvailable,
@@ -186,30 +170,6 @@ function AskAnAgent({ onDone }: { onDone: () => void }) {
   )
 }
 
-class NeedsConsent extends Error {
-  readonly bundle: BundleRow
-  constructor(bundle: BundleRow) {
-    super(`${bundle.name} needs your consent`)
-    this.bundle = bundle
-  }
-}
-
-class ChainFailure extends Error {
-  readonly bundle: string
-  constructor(bundle: string, cause: unknown) {
-    super(`${bundle} failed`, { cause })
-    this.bundle = bundle
-  }
-}
-
-function takeAgain(
-  row: BundleRow,
-  upgrade = row.upgrade
-): Promise<BundleStatus> {
-  const door = row.tier === "sample" ? importBundle : installBundle
-  return door(row.catalog?.id ?? row.id, confirmationOf(upgrade))
-}
-
 type SampleState = "add" | "upgrade" | "added"
 
 function sampleState(row: BundleRow): SampleState {
@@ -278,84 +238,9 @@ function SampleRow({
   row: BundleRow
   chain: RequirementNode[]
 }) {
-  const queryClient = useQueryClient()
   const state = sampleState(row)
-  const plan = useMemo(() => importPlan(row, chain), [row, chain])
   const missing = missingChain(chain)
-  const consented = useRef(new Set<string>())
-  const [asking, setAsking] = useState<BundleRow | null>(null)
-  const [failure, setFailure] = useState<{
-    bundle: string
-    cause: unknown
-  } | null>(null)
   const name = capitalise(row.name)
-
-  const take = useMutation({
-    mutationFn: async () => {
-      let landed: BundleStatus | undefined
-      for (const bundle of plan.bundles) {
-        let fresh
-        try {
-          fresh = await fetchCatalogItem(bundle.catalog?.id ?? bundle.id)
-        } catch (error) {
-          throw new ChainFailure(bundle.name, error)
-        }
-        // A replacement that loses edits or values runs only once the reader
-        // has agreed to it, with the preview's own plan hash.
-        if (
-          needsConfirmation(fresh.upgrade) &&
-          !consented.current.has(bundle.id)
-        ) {
-          throw new NeedsConsent(bundle)
-        }
-        try {
-          landed = await takeAgain(bundle, fresh.upgrade)
-        } catch (error) {
-          throw new ChainFailure(bundle.name, error)
-        }
-        seedBundleStatus(queryClient, landed)
-      }
-      return landed!
-    },
-    onSuccess: () => {
-      setAsking(null)
-      setFailure(null)
-      toast.add({
-        type: "success",
-        title:
-          state === "upgrade"
-            ? `${name} upgraded.`
-            : plan.bundles.length > 1
-              ? `${name} and ${plan.bundles.length - 1} more ${plan.bundles.length === 2 ? "sample" : "samples"} it needs are in your data.`
-              : `${name} is in your data.`,
-      })
-      void queryClient.invalidateQueries()
-      refetchBundleStateSoon(queryClient)
-    },
-    onError: (error) => {
-      void queryClient.invalidateQueries()
-      refetchBundleStateSoon(queryClient)
-      if (error instanceof NeedsConsent) {
-        setAsking(error.bundle)
-        return
-      }
-      setFailure(
-        error instanceof ChainFailure
-          ? { bundle: error.bundle, cause: error.cause }
-          : { bundle: row.name, cause: error }
-      )
-    },
-  })
-
-  const start = () => {
-    setFailure(null)
-    if (plan.refusal) {
-      setFailure({ bundle: row.name, cause: new Error(plan.refusal) })
-      return
-    }
-    take.mutate()
-  }
-
   return (
     <li className="border-b border-border px-3.5 py-3 last:border-b-0">
       <div className="flex items-start gap-3">
@@ -382,55 +267,17 @@ function SampleRow({
             Added
           </span>
         ) : (
-          <Button
+          // The providers' own door: the whole missing chain leaves first,
+          // and a copy that would be replaced is confirmed before it is.
+          <TakeButton
+            row={row}
+            chain={chain}
+            name={name}
+            label={state === "upgrade" ? "Upgrade" : "Add"}
             variant={state === "add" ? "default" : "outline"}
-            size="sm"
-            disabled={take.isPending}
-            onClick={start}
-          >
-            {take.isPending && <Spinner />}
-            {state === "upgrade" ? "Upgrade" : "Add"}
-          </Button>
+          />
         )}
       </div>
-      {asking && (
-        <div
-          role="alertdialog"
-          aria-label={`Replace ${asking.name}?`}
-          className="mt-2.5 flex flex-col gap-2 rounded-lg bg-warn-soft px-3 py-2.5 text-[12.5px]"
-        >
-          <p>
-            {capitalise(asking.name)} changed since you added it.{" "}
-            {REIMPORT_WARNING} The old values stay in History.
-          </p>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                consented.current.add(asking.id)
-                take.mutate()
-              }}
-            >
-              Replace it
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setAsking(null)}>
-              Keep mine
-            </Button>
-          </div>
-        </div>
-      )}
-      {failure && (
-        <div
-          role="alert"
-          className="mt-2.5 rounded-lg bg-bad-soft px-3 py-2.5 text-[12.5px] text-destructive"
-        >
-          <p className="mb-1 font-medium">
-            Adding {capitalise(failure.bundle)} didn’t work.
-          </p>
-          <ImportRefusal error={failure.cause} />
-        </div>
-      )}
     </li>
   )
 }
