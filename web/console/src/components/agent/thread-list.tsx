@@ -5,7 +5,7 @@
  * over the loaded chats' titles, Today / Yesterday / Earlier, the most recent
  * few with "Show more". */
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import {
   ChevronDownIcon,
@@ -73,6 +73,11 @@ export function ThreadList({
   const [query, setQuery] = useState("")
   const [limit, setLimit] = useState(CHAT_PAGE)
   const [backgroundOpen, setBackgroundOpen] = useState(false)
+  // The agents list scrolls on its own; the picked agent is kept in view.
+  const pickedRow = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    pickedRow.current?.scrollIntoView?.({ block: "nearest" })
+  }, [agent])
   // A new narrowing or search starts from the most recent page again.
   const [scope, setScope] = useState({ agent, query })
   if (scope.agent !== agent || scope.query !== query) {
@@ -97,7 +102,7 @@ export function ThreadList({
     <div className="flex h-full min-h-0 flex-col bg-panel">
       <nav
         aria-label="Agents"
-        className="flex max-h-[45%] shrink-0 flex-col overflow-y-auto border-b px-2 pt-1 pb-2"
+        className="max-h-[45%] shrink-0 overflow-y-auto border-b px-2 pt-1 pb-2"
       >
         <div className={HEADING}>Agents</div>
         {loading && agents.length === 0 ? (
@@ -124,6 +129,7 @@ export function ThreadList({
             {talkable.map((a) => (
               <button
                 key={a.id}
+                ref={a.id === agent ? pickedRow : undefined}
                 type="button"
                 aria-current={a.id === agent}
                 onClick={() => onAgent(a.id)}
