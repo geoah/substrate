@@ -19,7 +19,7 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => navigate,
 }))
 
-import { TokensPage } from "./tokens"
+import { ApiTokens, SignedInRows, tokenWords } from "./tokens"
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -43,7 +43,7 @@ function renderWithClient(ui: ReactElement) {
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }
 
-describe("TokensPage", () => {
+describe("Signed in and API tokens", () => {
   const fetchMock = vi.fn<typeof fetch>()
 
   beforeEach(() => {
@@ -72,8 +72,16 @@ describe("TokensPage", () => {
     fetchMock.mockReset()
   })
 
-  it("lists tokens and marks this session", async () => {
-    renderWithClient(<TokensPage />)
+  it("names this browser and the command line in everyday words", async () => {
+    renderWithClient(<SignedInRows />)
+    expect(await screen.findByText("This browser")).toBeTruthy()
+    expect(screen.getByText("You are here")).toBeTruthy()
+    // A token with a label of its own reads by it.
+    expect(screen.getByText("ci runner")).toBeTruthy()
+  })
+
+  it("marks this session in the developer table", async () => {
+    renderWithClient(<ApiTokens />)
     const current = await screen.findByText("this browser")
     const row = current.closest("tr") as HTMLElement
     expect(within(row).getByText("this session")).toBeTruthy()
@@ -81,7 +89,7 @@ describe("TokensPage", () => {
   })
 
   it("mints a token and reveals the secret once", async () => {
-    renderWithClient(<TokensPage />)
+    renderWithClient(<ApiTokens />)
     await screen.findByText("ci runner")
     fireEvent.change(screen.getByLabelText("Label"), {
       target: { value: "laptop" },
@@ -103,15 +111,15 @@ describe("TokensPage", () => {
       ([, init]) => (init as RequestInit | undefined)?.method === "DELETE"
     )
 
-  it("revokes a token that is not this session, after asking", async () => {
-    renderWithClient(<TokensPage />)
+  it("signs another token out, after asking", async () => {
+    renderWithClient(<SignedInRows />)
     await screen.findByText("ci runner")
-    fireEvent.click(screen.getByRole("button", { name: "Revoke" }))
+    fireEvent.click(screen.getByRole("button", { name: "Sign out ci runner" }))
     // The consequence is named before anything is sent.
     const dialog = await screen.findByRole("dialog")
-    expect(dialog.textContent).toContain("Revoke ci runner?")
+    expect(dialog.textContent).toContain("Sign out ci runner?")
     expect(dialog.textContent).toContain(
-      "Anything using this token stops working."
+      "Anything using this token stops working"
     )
     expect(deletes()).toHaveLength(0)
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }))
@@ -128,10 +136,12 @@ describe("TokensPage", () => {
     expect(navigate).not.toHaveBeenCalled()
   })
 
-  it("warns that revoking this session signs you out, and cancelling sends nothing", async () => {
-    renderWithClient(<TokensPage />)
+  it("warns that signing this browser out ends the session, and cancelling sends nothing", async () => {
+    renderWithClient(<SignedInRows />)
     await screen.findByText("ci runner")
-    fireEvent.click(screen.getByRole("button", { name: "Revoke (signs out)" }))
+    fireEvent.click(
+      screen.getByRole("button", { name: "Sign out this browser" })
+    )
     const dialog = await screen.findByRole("dialog")
     expect(dialog.textContent).toContain("Sign out this browser?")
     expect(dialog.textContent).toContain("signs you out of this browser")
@@ -139,5 +149,47 @@ describe("TokensPage", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
     expect(deletes()).toHaveLength(0)
     expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it("signs this browser out and returns to the door", async () => {
+    renderWithClient(<SignedInRows />)
+    await screen.findByText("ci runner")
+    fireEvent.click(
+      screen.getByRole("button", { name: "Sign out this browser" })
+    )
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.click(within(dialog).getByRole("button", { name: "Sign out" }))
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({ to: "/login", replace: true })
+    )
+  })
+})
+
+describe("tokenWords", () => {
+  const now = Date.parse("2026-08-12T12:00:00Z")
+  it("reads a command-line token by its host", () => {
+    expect(
+      tokenWords(
+        {
+          id: "t",
+          label: "substratectl@laptop.local",
+          createdAt: "2026-08-10T12:00:00Z",
+        },
+        false,
+        now
+      )
+    ).toEqual({
+      title: "Command line",
+      description: "substratectl on laptop.local · signed in 2d ago",
+    })
+  })
+  it("reads the console's own sign-ins as browsers", () => {
+    expect(
+      tokenWords(
+        { id: "t", label: "console", createdAt: "2026-08-12T11:00:00Z" },
+        false,
+        now
+      ).title
+    ).toBe("Another browser")
   })
 })

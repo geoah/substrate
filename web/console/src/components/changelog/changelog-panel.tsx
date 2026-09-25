@@ -47,9 +47,7 @@ function FollowToggle({
   return (
     <div className="flex items-center gap-2">
       {follow && (
-        <span className="data text-xs text-muted-foreground">
-          {label[status]}
-        </span>
+        <span className="text-xs text-muted-foreground">{label[status]}</span>
       )}
       <Button
         variant={follow ? "default" : "outline"}

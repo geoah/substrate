@@ -1,184 +1,300 @@
 import { Fragment, useEffect, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Link, Outlet, useRouterState } from "@tanstack/react-router"
 import { SearchIcon } from "lucide-react"
 
 import { NavigationProvider } from "@/components/console-preferences"
 import { AppSidebar } from "@/components/app-sidebar"
 import { CommandMenu } from "@/components/command-menu"
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb"
+import { KindGlyph } from "@/components/identity/kind-glyph"
+import { ProviderBadge } from "@/components/identity/provider-badge"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import {
+  actorIdentity,
+  providerInfo,
+  providerOfKind,
+  PROVIDERS_AUTHORITY,
+} from "@/lib/actor-identity"
 import { CR_NAME } from "@/lib/api/changerequests"
-import { CORE_AUTHORITY, CORE_PACKAGE, CORE_PACKAGE_NAME } from "@/lib/api/http"
+import { CORE_AUTHORITY, CORE_PACKAGE_NAME, joinKind } from "@/lib/api/http"
+import { kindsQueryOptions } from "@/lib/api/kinds"
 import { MR_NAME } from "@/lib/api/mergerequests"
+import { collectionSource } from "@/lib/collections"
+import { kindByIdentity } from "@/lib/definition"
+import { displayName, displayPlural, untitled } from "@/lib/kind-names"
+import { recordTitleQueryOptions } from "@/lib/reference-titles"
+import { cn } from "@/lib/utils"
 
-interface Crumb {
+export interface Crumb {
   label: string
-  /** A crumb with an address links back to it (the type crumb on a record
-   * page); label-only crumbs render inert. */
+  /** A crumb with an address links back to it; label-only crumbs render
+   * inert. */
   to?: string
-  /** Path segments (group, type, record id) speak the data voice — mono,
-   * like every id/path in the console. */
+  /** An identifier (a reference segment, an id) set in the copyable voice. */
   mono?: boolean
+  /** The kind whose glyph sits beside the label. */
+  kind?: string
+  /** The provider whose badge sits beside the label. */
+  provider?: string
+  /** The crumb names a record: the renderer reads its title, and `label` is
+   * what shows until it lands. */
+  record?: { kind: string; id: string }
 }
 
-/** Route depth as crumbs: fixed pages are one crumb; the data routes read
- * Data → authority → package → kind → record. */
+const decode = (s: string) => {
+  try {
+    return decodeURIComponent(s)
+  } catch {
+    return s
+  }
+}
+
+/** The crumbs a collection reads as: "Your data / Tasks" or
+ * "From Google / Contacts" in everyday words, the reference spelled segment
+ * by segment in technical mode. */
+function collectionCrumbs(
+  authority: string,
+  pkg: string,
+  name: string,
+  technical: boolean,
+  linkCollection: boolean
+): Crumb[] {
+  const kind = joinKind(authority, pkg, name)
+  const collection = `/data/${authority}/${pkg}/${name}`
+  if (technical) {
+    return [
+      { label: authority, to: `/data/${authority}`, mono: true },
+      { label: pkg, to: `/data/${authority}/${pkg}`, mono: true },
+      {
+        label: name,
+        kind,
+        mono: true,
+        ...(linkCollection && { to: collection }),
+      },
+    ]
+  }
+  const provider = providerOfKind(kind)?.key
+  return [
+    {
+      label: collectionSource(kind),
+      to: "/data",
+      ...(provider && { provider }),
+    },
+    {
+      label: displayPlural(kind),
+      kind,
+      ...(linkCollection && { to: collection }),
+    },
+  ]
+}
+
+/** Route depth as crumbs. Pure over the path and the reader's mode, so every
+ * route the router serves can be checked to read as where it sits. */
 // eslint-disable-next-line react-refresh/only-export-components -- a pure route reading, exported for its test
-export function crumbsFor(pathname: string): Crumb[] {
-  if (pathname === "/") return [{ label: "Overview" }]
-  if (pathname.startsWith("/changelog")) return [{ label: "Changelog" }]
-  if (pathname.startsWith("/search")) return [{ label: "Search" }]
-  if (pathname.startsWith("/connections/")) {
-    // The address is the account record's kind reference plus its id; the id
-    // is the last segment.
-    const id = decodeURIComponent(pathname.split("/").at(-1) ?? "")
-    return [
-      { label: "Connections", to: "/connections" },
-      { label: id, mono: true },
-    ]
-  }
-  if (pathname === "/connections") return [{ label: "Connections" }]
-  if (pathname.startsWith("/settings/")) {
-    // The id is the bundle id, `<authority>/<package>`, whole.
-    const id = decodeURIComponent(pathname.slice("/settings/".length))
-    return [
-      { label: "Settings", to: "/settings" },
-      { label: id, mono: true },
-    ]
-  }
-  if (pathname === "/settings") return [{ label: "Settings" }]
-  if (pathname.startsWith("/agents/")) {
-    const id = decodeURIComponent(pathname.slice("/agents/".length))
-    return [
-      { label: "Agents", to: "/agents" },
-      { label: id, mono: true },
-    ]
-  }
-  if (pathname === "/agents") return [{ label: "Agents" }]
-  if (pathname === "/account/tokens") {
-    return [{ label: "Account", to: "/account" }, { label: "Tokens" }]
-  }
-  if (pathname === "/account") return [{ label: "Account" }]
-  if (pathname.startsWith("/registry/")) {
-    const id = decodeURIComponent(pathname.slice("/registry/".length))
-    return [
-      { label: "Registry", to: "/registry" },
-      { label: id, mono: true },
-    ]
-  }
-  if (pathname.startsWith("/registry")) return [{ label: "Registry" }]
-  if (pathname.startsWith("/merge-requests/")) {
-    const id = decodeURIComponent(pathname.slice("/merge-requests/".length))
-    // The queue is the kind's own collection — there is no bespoke one — so
-    // the parent crumb walks back into the data tree.
-    return [
-      { label: "Data" },
-      { label: CORE_AUTHORITY, to: `/data/${CORE_AUTHORITY}`, mono: true },
-      { label: CORE_PACKAGE_NAME, to: `/data/${CORE_PACKAGE}`, mono: true },
-      {
-        label: MR_NAME,
-        to: `/data/${CORE_PACKAGE}/${MR_NAME}`,
-        mono: true,
-      },
-      { label: id, mono: true },
-    ]
-  }
-  if (pathname.startsWith("/change-requests/")) {
-    const id = decodeURIComponent(pathname.slice("/change-requests/".length))
-    // Same shape as the merge-request crumbs: the queue is the kind's own
-    // collection, so the parent crumb walks back into the data tree.
-    return [
-      { label: "Data" },
-      { label: CORE_AUTHORITY, to: `/data/${CORE_AUTHORITY}`, mono: true },
-      { label: CORE_PACKAGE_NAME, to: `/data/${CORE_PACKAGE}`, mono: true },
-      {
-        label: CR_NAME,
-        to: `/data/${CORE_PACKAGE}/${CR_NAME}`,
-        mono: true,
-      },
-      { label: id, mono: true },
-    ]
-  }
-  if (pathname.startsWith("/actors/")) {
-    const id = decodeURIComponent(pathname.slice("/actors/".length))
-    return [{ label: "Actors" }, { label: id, mono: true }]
-  }
-  if (pathname.startsWith("/data/")) {
-    // A data address IS the kind reference, segment for segment: authority,
-    // package, kind, then the record id (decision 0047).
-    const [authority, pkg, kind, id] = pathname
-      .slice("/data/".length)
-      .split("/")
-      .map((s) => decodeURIComponent(s ?? ""))
-    const crumbs: Crumb[] = [
-      { label: "Data" },
-      {
-        label: authority ?? "",
-        to: pkg ? `/data/${authority}` : undefined,
-        mono: true,
-      },
-    ]
-    if (pkg) {
-      crumbs.push({
-        label: pkg,
-        to: kind ? `/data/${authority}/${pkg}` : undefined,
-        mono: true,
-      })
+export function crumbsFor(pathname: string, technical = false): Crumb[] {
+  const [head, ...rest] = pathname.split("/").filter(Boolean).map(decode)
+  switch (head) {
+    case undefined:
+      return [{ label: "Home" }]
+    case "history":
+    case "changelog":
+      return [{ label: "History" }]
+    case "search":
+      return [{ label: "Search" }]
+    // A bundle's own settings, the account and its tokens all redirect: the
+    // first to its provider, the others here.
+    case "settings":
+    case "account":
+      return [{ label: "Settings" }]
+    case "agents":
+      if (!rest.length) return [{ label: "Agents" }]
+      return [
+        { label: "Agents", to: "/agents" },
+        technical
+          ? { label: rest.join("/"), mono: true }
+          : { label: rest.join("/") },
+      ]
+    case "tools": {
+      if (!rest.length) return [{ label: "Tools" }]
+      return [
+        { label: "Tools", to: "/tools" },
+        technical
+          ? { label: rest.join("/"), mono: true }
+          : {
+              // A tool is a function: its plain name is its actor's.
+              label: actorIdentity(`function:${rest.join(":")}`).name,
+            },
+      ]
     }
-    if (kind) {
-      crumbs.push({
-        label: kind,
-        to: id ? `/data/${authority}/${pkg}/${kind}` : undefined,
-        mono: true,
-      })
+    case "providers": {
+      if (!rest.length) return [{ label: "Providers" }]
+      const [authority, pkg] = rest
+      if (technical || authority !== PROVIDERS_AUTHORITY || !pkg) {
+        return [
+          { label: "Providers", to: "/providers" },
+          { label: rest.join("/"), mono: true },
+        ]
+      }
+      const provider = providerInfo(pkg)
+      return [
+        { label: "Providers", to: "/providers" },
+        { label: provider.name, provider: provider.key },
+      ]
     }
-    if (id) crumbs.push({ label: id, mono: true })
-    return crumbs
+    case "merge-requests":
+    case "change-requests": {
+      // The queue is the kind's own collection, so the parent crumbs walk back
+      // into the data tree.
+      const name = head === "merge-requests" ? MR_NAME : CR_NAME
+      const id = rest[0] ?? ""
+      return [
+        ...collectionCrumbs(
+          CORE_AUTHORITY,
+          CORE_PACKAGE_NAME,
+          name,
+          technical,
+          true
+        ),
+        {
+          label: technical
+            ? id
+            : untitled(joinKind(CORE_AUTHORITY, CORE_PACKAGE_NAME, name)),
+          ...(technical && { mono: true }),
+          record: {
+            kind: joinKind(CORE_AUTHORITY, CORE_PACKAGE_NAME, name),
+            id,
+          },
+        },
+      ]
+    }
+    case "actors": {
+      const actor = rest.join("/")
+      return [
+        { label: "History", to: "/history" },
+        technical
+          ? { label: actor, mono: true }
+          : { label: actorIdentity(actor).name },
+      ]
+    }
+    case "data": {
+      const [authority, pkg, name, id, action] = rest
+      if (!authority) return [{ label: "All data" }]
+      if (!pkg) {
+        return [
+          { label: "All data", to: "/data" },
+          { label: authority, mono: true },
+        ]
+      }
+      if (!name) {
+        return [
+          { label: "All data", to: "/data" },
+          { label: authority, to: `/data/${authority}`, mono: true },
+          { label: pkg, mono: true },
+        ]
+      }
+      const crumbs = collectionCrumbs(
+        authority,
+        pkg,
+        name,
+        technical,
+        Boolean(id)
+      )
+      if (!id) return crumbs
+      const kind = joinKind(authority, pkg, name)
+      if (id === "new") {
+        return [...crumbs, { label: `New ${displayName(kind).toLowerCase()}` }]
+      }
+      crumbs.push({
+        label: technical ? id : untitled(kind),
+        ...(technical && { mono: true }),
+        record: { kind, id },
+        ...(action && { to: `/data/${authority}/${pkg}/${name}/${id}` }),
+      })
+      if (action === "edit") crumbs.push({ label: "Edit" })
+      return crumbs
+    }
+    default:
+      return []
   }
-  return []
+}
+
+/** A record crumb reads as its title; technical mode keeps the id, which is
+ * what the reader came to copy. */
+function RecordCrumbLabel({ crumb }: { crumb: Crumb }) {
+  const [technical] = useTechnicalDetails()
+  const kinds = useQuery(kindsQueryOptions)
+  const record = crumb.record!
+  const known = Boolean(kindByIdentity(kinds.data ?? [], record.kind))
+  const title = useQuery({
+    ...recordTitleQueryOptions(record.kind, record.id),
+    enabled: known && !technical,
+  })
+  if (technical) return <>{crumb.label}</>
+  return <>{title.data || crumb.label}</>
+}
+
+function CrumbBody({ crumb }: { crumb: Crumb }) {
+  return (
+    <>
+      {crumb.kind && <KindGlyph kind={crumb.kind} size="xs" />}
+      {crumb.provider && <ProviderBadge provider={crumb.provider} size="xs" />}
+      <span
+        className={cn(
+          "min-w-0 truncate",
+          crumb.mono && "font-mono text-[12px]"
+        )}
+      >
+        {crumb.record ? <RecordCrumbLabel crumb={crumb} /> : crumb.label}
+      </span>
+    </>
+  )
 }
 
 function ShellBreadcrumb() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
-  const crumbs = crumbsFor(pathname)
+  const [technical] = useTechnicalDetails()
+  const crumbs = crumbsFor(pathname, technical)
   return (
-    <Breadcrumb>
-      <BreadcrumbList>
-        {crumbs.map((crumb, i) => (
-          <Fragment key={`${crumb.label}-${i}`}>
-            {i > 0 && <BreadcrumbSeparator />}
-            <BreadcrumbItem>
-              {i === crumbs.length - 1 ? (
-                <BreadcrumbPage className={crumb.mono ? "data" : undefined}>
-                  {crumb.label}
-                </BreadcrumbPage>
-              ) : crumb.to ? (
-                <BreadcrumbLink
-                  className={crumb.mono ? "data" : undefined}
-                  render={<Link to={crumb.to} />}
-                >
-                  {crumb.label}
-                </BreadcrumbLink>
-              ) : (
-                <BreadcrumbLink className={crumb.mono ? "data" : undefined}>
-                  {crumb.label}
-                </BreadcrumbLink>
+    <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
+      <ol className="flex min-w-0 items-center gap-1 text-[13px] text-muted-foreground">
+        {crumbs.map((crumb, i) => {
+          const last = i === crumbs.length - 1
+          return (
+            <Fragment key={`${crumb.label}-${i}`}>
+              {i > 0 && (
+                <li aria-hidden className="shrink-0 text-faint">
+                  /
+                </li>
               )}
-            </BreadcrumbItem>
-          </Fragment>
-        ))}
-      </BreadcrumbList>
-    </Breadcrumb>
+              <li className="flex min-w-0 items-center">
+                {crumb.to && !last ? (
+                  <Link
+                    to={crumb.to}
+                    className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 whitespace-nowrap text-inherit no-underline hover:bg-hover hover:text-foreground"
+                  >
+                    <CrumbBody crumb={crumb} />
+                  </Link>
+                ) : (
+                  <span
+                    aria-current={last ? "page" : undefined}
+                    className={cn(
+                      "inline-flex min-w-0 items-center gap-1.5 px-1.5 py-0.5 whitespace-nowrap",
+                      last && "text-foreground"
+                    )}
+                  >
+                    <CrumbBody crumb={crumb} />
+                  </span>
+                )}
+              </li>
+            </Fragment>
+          )
+        })}
+      </ol>
+    </nav>
   )
 }
 
@@ -199,25 +315,30 @@ export function AppShell() {
   return (
     <NavigationProvider>
       <TooltipProvider delay={250}>
-        <AppSidebar />
+        <AppSidebar onSearch={() => setCommandOpen(true)} />
         <SidebarInset className="flex h-svh min-w-0 flex-col overflow-hidden">
-          {/* Rule 2 (GUIDE §5): no separator between the trigger and the
-            breadcrumb — the gap carries the seam. */}
-          <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-            <SidebarTrigger className="-ml-1" />
+          <header className="flex h-11 shrink-0 items-center gap-2 px-3 md:px-4">
+            <SidebarTrigger className="-ml-1 text-muted-foreground" />
             <ShellBreadcrumb />
-            <div className="ml-auto flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 w-56 justify-start gap-2 px-2.5 font-normal text-muted-foreground"
-                onClick={() => setCommandOpen(true)}
-              >
-                <SearchIcon className="size-3.5" />
-                <span>Search…</span>
-                <Kbd className="ml-auto">⌘K</Kbd>
-              </Button>
-            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="hidden h-7 w-48 shrink-0 justify-start gap-2 px-2 font-normal text-faint sm:inline-flex"
+              onClick={() => setCommandOpen(true)}
+            >
+              <SearchIcon className="size-3.5" />
+              <span>Search…</span>
+              <Kbd className="ml-auto">⌘K</Kbd>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Search"
+              className="sm:hidden"
+              onClick={() => setCommandOpen(true)}
+            >
+              <SearchIcon />
+            </Button>
           </header>
           <div className="flex min-h-0 flex-1 flex-col overflow-auto">
             <Outlet />

@@ -10,10 +10,8 @@ import {
 
 import { AppShell } from "@/components/app-shell"
 import { hasSession } from "@/lib/api/session"
-import { AccountPage } from "@/pages/account"
 import { ActorPage } from "@/pages/actor"
 import { AgentsPage } from "@/pages/agents"
-import { ChangelogPage } from "@/pages/changelog"
 import { AuthorityPage, PackagePage } from "@/pages/authority"
 import { ChangeRequestDetailPage } from "@/pages/change-request-detail"
 import { HomePage } from "@/pages/home"
@@ -23,7 +21,6 @@ import { RecordPage } from "@/pages/record"
 import { RecordEditPage, RecordNewPage } from "@/pages/record-editor"
 import { RegisterPage } from "@/pages/register"
 import { SearchPage } from "@/pages/search"
-import { TokensPage } from "@/pages/tokens"
 import { KindBrowsePage } from "@/pages/kind-browse"
 import { AllDataPage } from "@/pages/all-data"
 import { HistoryPage } from "@/pages/history"
@@ -92,10 +89,13 @@ export const homeRoute = createRoute({
   component: HomePage,
 })
 
+// The changelog is History now; an old link lands there with its facets.
 export const changelogRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/changelog",
-  component: ChangelogPage,
+  beforeLoad: ({ location }) => {
+    throw redirect({ to: "/history", search: location.search, replace: true })
+  },
 })
 
 // The Registry, Connections and bundle Settings pages became Providers; their
@@ -269,19 +269,23 @@ export const actorRoute = createRoute({
   component: ActorPage,
 })
 
+// The account and its tokens live in Settings now. NOT "/tokens" for either:
+// the API door answers `GET /tokens`, so a browser loading that path would get
+// JSON, not the SPA.
 export const tokensRoute = createRoute({
   getParentRoute: () => shellRoute,
-  // NOT "/tokens": the API door answers `GET /tokens`, so a browser loading or
-  // refreshing that path would get JSON, not the SPA. The console route nests
-  // under /account, which the door does not serve.
   path: "/account/tokens",
-  component: TokensPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/settings", replace: true })
+  },
 })
 
 export const accountRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/account",
-  component: AccountPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/settings", replace: true })
+  },
 })
 
 export const allDataRoute = createRoute({

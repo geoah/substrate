@@ -712,8 +712,6 @@ const notOnTheWire: Record<string, string> = {
   WatchLine:
     "the union of the three ndjson frame shapes (a ChangeRow, `{bookmark, generation}`, `{error}`), keyed by which field is present",
   WatchHandle: "a client handle over the stream, never serialized",
-  // overview.ts
-  KindCount: "a dashboard tally the console computes",
   // records.ts
   ListParams: "the list read's query parameters, never a JSON body",
   RecordCount: "a bounded walk's tally the console computes",

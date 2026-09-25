@@ -1,70 +1,120 @@
 /** The shell's crumbs: every page the router serves reads as where it sits,
- * and a parent crumb links back to a route that exists. */
+ * in everyday words by default and as the reference in technical mode, and a
+ * parent crumb links back to a route that exists. */
 
 import { describe, expect, it } from "vitest"
 
 import { crumbsFor } from "./app-shell"
 
 describe("crumbsFor", () => {
-  it("reads the Connections list and one connection under it", () => {
-    expect(crumbsFor("/connections")).toEqual([{ label: "Connections" }])
-    expect(
-      crumbsFor("/connections/providers.substrate.reamde.dev/google/account/a1")
-    ).toEqual([
-      { label: "Connections", to: "/connections" },
-      { label: "a1", mono: true },
-    ])
-  })
-
-  it("reads Settings and one bundle's settings by its whole bundle id", () => {
+  it("names the fixed pages", () => {
+    expect(crumbsFor("/")).toEqual([{ label: "Home" }])
+    expect(crumbsFor("/data")).toEqual([{ label: "All data" }])
+    expect(crumbsFor("/history")).toEqual([{ label: "History" }])
+    expect(crumbsFor("/changelog")).toEqual([{ label: "History" }])
     expect(crumbsFor("/settings")).toEqual([{ label: "Settings" }])
-    expect(
-      crumbsFor("/settings/providers.substrate.reamde.dev%2Fgoogle")
-    ).toEqual([
-      { label: "Settings", to: "/settings" },
-      { label: "providers.substrate.reamde.dev/google", mono: true },
-    ])
-  })
-
-  it("reads Agents and one agent under it", () => {
+    expect(crumbsFor("/account/tokens")).toEqual([{ label: "Settings" }])
+    expect(crumbsFor("/tools")).toEqual([{ label: "Tools" }])
+    expect(crumbsFor("/providers")).toEqual([{ label: "Providers" }])
     expect(crumbsFor("/agents")).toEqual([{ label: "Agents" }])
-    expect(crumbsFor("/agents/helper")).toEqual([
-      { label: "Agents", to: "/agents" },
-      { label: "helper", mono: true },
-    ])
   })
 
-  it("reads Account and its Tokens page", () => {
-    expect(crumbsFor("/account")).toEqual([{ label: "Account" }])
-    expect(crumbsFor("/account/tokens")).toEqual([
-      { label: "Account", to: "/account" },
-      { label: "Tokens" },
-    ])
-  })
-
-  // Connections moved out of the registry; no crumb may link back to the
-  // route that no longer exists.
-  it("never links to the retired /registry/connections route", () => {
-    for (const path of [
-      "/connections",
-      "/connections/a.example.com/p/n/x",
-      "/registry",
-      "/registry/providers.substrate.reamde.dev%2Fgoogle",
-    ]) {
-      for (const crumb of crumbsFor(path)) {
-        expect(crumb.to ?? "").not.toContain("/registry/connections")
-      }
-    }
-  })
-
-  it("keeps the registry and data crumbs", () => {
-    expect(crumbsFor("/registry")).toEqual([{ label: "Registry" }])
+  it("reads a record in everyday words: where it lives, its collection, the record", () => {
     expect(crumbsFor("/data/a.example.com/tasks/task/t1")).toEqual([
-      { label: "Data" },
+      { label: "Your data", to: "/data" },
+      {
+        label: "Tasks",
+        kind: "a.example.com/tasks/task",
+        to: "/data/a.example.com/tasks/task",
+      },
+      {
+        label: "Untitled task",
+        record: { kind: "a.example.com/tasks/task", id: "t1" },
+      },
+    ])
+  })
+
+  it("reads a provider's collection as coming from it", () => {
+    const [from, contacts] = crumbsFor(
+      "/data/providers.substrate.reamde.dev/google/contact"
+    )
+    expect(from).toEqual({
+      label: "From Google",
+      to: "/data",
+      provider: "google",
+    })
+    expect(contacts).toMatchObject({ label: "Contacts" })
+    expect(contacts.to).toBeUndefined()
+  })
+
+  it("spells the reference segment by segment in technical mode", () => {
+    expect(crumbsFor("/data/a.example.com/tasks/task/t1", true)).toEqual([
       { label: "a.example.com", to: "/data/a.example.com", mono: true },
       { label: "tasks", to: "/data/a.example.com/tasks", mono: true },
-      { label: "task", to: "/data/a.example.com/tasks/task", mono: true },
-      { label: "t1", mono: true },
+      {
+        label: "task",
+        kind: "a.example.com/tasks/task",
+        mono: true,
+        to: "/data/a.example.com/tasks/task",
+      },
+      {
+        label: "t1",
+        mono: true,
+        record: { kind: "a.example.com/tasks/task", id: "t1" },
+      },
+    ])
+  })
+
+  it("links the record back from its edit page", () => {
+    const crumbs = crumbsFor("/data/a.example.com/tasks/task/t1/edit")
+    expect(crumbs.at(-2)?.to).toBe("/data/a.example.com/tasks/task/t1")
+    expect(crumbs.at(-1)).toEqual({ label: "Edit" })
+    expect(crumbsFor("/data/a.example.com/tasks/task/new").at(-1)).toEqual({
+      label: "New task",
+    })
+  })
+
+  it("reads a provider and a tool under their pages", () => {
+    expect(
+      crumbsFor("/providers/providers.substrate.reamde.dev/google")
+    ).toEqual([
+      { label: "Providers", to: "/providers" },
+      { label: "Google", provider: "google" },
+    ])
+    expect(
+      crumbsFor("/providers/providers.substrate.reamde.dev/google", true)
+    ).toEqual([
+      { label: "Providers", to: "/providers" },
+      { label: "providers.substrate.reamde.dev/google", mono: true },
+    ])
+    expect(crumbsFor("/tools/a.example.com/notes/stats")).toEqual([
+      { label: "Tools", to: "/tools" },
+      { label: "stats" },
+    ])
+    expect(
+      crumbsFor("/tools/providers.substrate.reamde.dev/google/synccontacts")
+    ).toEqual([
+      { label: "Tools", to: "/tools" },
+      { label: "Google Contacts sync" },
+    ])
+  })
+
+  it("reads an actor under History, by name unless technical", () => {
+    expect(crumbsFor("/actors/console")).toEqual([
+      { label: "History", to: "/history" },
+      { label: "You" },
+    ])
+    expect(crumbsFor("/actors/console", true)).toEqual([
+      { label: "History", to: "/history" },
+      { label: "console", mono: true },
+    ])
+  })
+
+  it("keeps an authority and a package page under All data", () => {
+    expect(crumbsFor("/data/a.example.com/tasks")).toEqual([
+      { label: "All data", to: "/data" },
+      { label: "a.example.com", to: "/data/a.example.com", mono: true },
+      { label: "tasks", mono: true },
     ])
   })
 })

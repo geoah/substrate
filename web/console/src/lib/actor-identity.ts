@@ -128,6 +128,15 @@ export function actorIdentity(actor: string): ActorIdentity {
       },
     }
   }
+  // The seeded packages install under a bare package word (`bundle:core`).
+  if (head === "bundle" && parts.length === 2) {
+    return {
+      actor,
+      cls: "bundle",
+      name: "Substrate",
+      description: "The substrate's own built-in package.",
+    }
+  }
   if (head === "bundle" && parts.length === 3) {
     return {
       actor,
