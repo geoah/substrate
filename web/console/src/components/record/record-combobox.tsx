@@ -60,6 +60,13 @@ export interface RecordComboboxProps extends RecordOptions {
   adding?: boolean
   /** What the add reads, and what a screen reader is told it adds. */
   addLabel?: string
+  /** Open on mount: an in-place edit has already been asked for. */
+  defaultOpen?: boolean
+  /** Told whenever the list opens or closes; a close without a choice is a
+   * cancel to an in-place edit. */
+  onOpenChange?: (open: boolean) => void
+  /** Offered as the list's last row when the value may be emptied. */
+  onClear?: () => void
 }
 
 /** One offered record, as a row: the title a reader recognises, the id a write
@@ -110,8 +117,15 @@ export function RecordCombobox({
   invalid,
   adding,
   addLabel = "Add",
+  defaultOpen = false,
+  onOpenChange,
+  onClear,
 }: RecordComboboxProps) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpenState] = useState(defaultOpen)
+  function setOpen(next: boolean) {
+    setOpenState(next)
+    onOpenChange?.(next)
+  }
   const [query, setQuery] = useState("")
 
   function choose(next: string) {
@@ -208,6 +222,20 @@ export function RecordCombobox({
                     />
                   </CommandItem>
                 ))}
+              </CommandGroup>
+            )}
+            {onClear && value && (
+              <CommandGroup>
+                <CommandItem
+                  value="remove-the-value"
+                  onSelect={() => {
+                    onClear()
+                    setQuery("")
+                    setOpen(false)
+                  }}
+                >
+                  <span className="text-muted-foreground">Remove</span>
+                </CommandItem>
               </CommandGroup>
             )}
             {freeText && (

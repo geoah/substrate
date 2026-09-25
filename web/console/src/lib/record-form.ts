@@ -104,7 +104,8 @@ export interface FormField {
   spec: PropSpec
 }
 
-function fieldOf(spec: PropSpec): FormField {
+/** One property as a form field: the control its declaration earns. */
+export function fieldOf(spec: PropSpec): FormField {
   const control = controlFor(spec)
   return {
     name: spec.name,

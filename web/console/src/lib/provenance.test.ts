@@ -1,4 +1,4 @@
-/** The pure half of the Provenance tab: sources fold by mapping, dedupe by
+/** The pure half of the record page's provenance: sources fold by mapping, dedupe by
  * record and sort by title; an actor string reads as the thing it is. */
 
 import { describe, expect, it } from "vitest"
@@ -9,7 +9,10 @@ import {
   groupSources,
   mappingOfSource,
   sourceTitles,
-  tierWords,
+  differsLabel,
+  holderOf,
+  tierLabel,
+  unionMembers,
 } from "./provenance"
 
 const BEEPER = "providers.substrate.reamde.dev/beeper/user"
@@ -139,11 +142,74 @@ describe("the source lookups", () => {
   })
 })
 
-describe("tierWords", () => {
-  it("says what each tier means for the value", () => {
-    expect(tierWords("owner").label).toBe("held by you")
-    expect(tierWords("bundle").label).toBe("pinned by a bundle")
-    expect(tierWords("machine").label).toBe("follows sources")
-    expect(tierWords(undefined).label).toBe("no tier")
+const GOOGLE_SYNC =
+  "function:providers.substrate.reamde.dev:google:synccontacts"
+const LINEAR_SYNC = "function:providers.substrate.reamde.dev:linear:linearsync"
+
+describe("holderOf", () => {
+  it("names the owner's hand You, a provider by its name, anything else by its own", () => {
+    expect(holderOf({ manager: "console", tier: "owner" })).toMatchObject({
+      mark: "you",
+      label: "You",
+    })
+    expect(holderOf({ manager: GOOGLE_SYNC, tier: "machine" })).toMatchObject({
+      mark: "provider",
+      label: "Google",
+    })
+    expect(
+      holderOf({ manager: "agent:ada.localhost:llm:substrate", tier: "bundle" })
+    ).toMatchObject({ mark: "actor", label: "substrate" })
+    expect(holderOf({})).toBeUndefined()
+  })
+})
+
+describe("differsLabel", () => {
+  const alt = (actor: string) => ({ actor, value: "x", updatedAt: "" })
+  it("names the one provider that disagrees, or counts several", () => {
+    expect(differsLabel({})).toBeUndefined()
+    expect(differsLabel({ alternatives: [alt(GOOGLE_SYNC)] })).toBe(
+      "Google differs"
+    )
+    expect(
+      differsLabel({ alternatives: [alt(GOOGLE_SYNC), alt(LINEAR_SYNC)] })
+    ).toBe("2 sources differ")
+  })
+})
+
+describe("tierLabel", () => {
+  it("says each tier in the reader's words", () => {
+    expect(tierLabel("owner")).toBe("Yours")
+    expect(tierLabel("machine")).toBe("Synced")
+    expect(tierLabel("bundle", GOOGLE_SYNC)).toBe("Set by provider")
+    expect(tierLabel("bundle", "agent:ada.localhost:llm:substrate")).toBe(
+      "Set by an agent"
+    )
+  })
+})
+
+describe("unionMembers", () => {
+  it("names the sources whose offer carries each item", () => {
+    const members = unionMembers(["a@example.com", "b@example.com"], {
+      manager: GOOGLE_SYNC,
+      tier: "machine",
+      source: `${BEEPER}/u1`,
+      alternatives: [
+        {
+          actor: LINEAR_SYNC,
+          value: ["b@example.com"],
+          updatedAt: "",
+          source: `${GITHUB}/gh1`,
+        },
+      ],
+    })
+    expect(members).toEqual([
+      { item: "a@example.com", sources: [`${BEEPER}/u1`] },
+      { item: "b@example.com", sources: [`${BEEPER}/u1`, `${GITHUB}/gh1`] },
+    ])
+  })
+
+  it("says nothing for a scalar or when no source offers a list", () => {
+    expect(unionMembers("x", { alternatives: [] })).toEqual([])
+    expect(unionMembers(["x"], {})).toEqual([])
   })
 })
