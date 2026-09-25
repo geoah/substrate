@@ -36,11 +36,14 @@ import {
 } from "vitest"
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import type { ReactNode } from "react"
 
 import type { KindInfo } from "@/lib/api/types"
+import { saveSession } from "@/lib/api/session"
 import { collectionGroups } from "@/lib/collections"
-import { CollectionGroupNav, Favorites } from "./app-sidebar"
+import { AppSidebar, CollectionGroupNav, Favorites } from "./app-sidebar"
 import { NavigationProvider } from "./console-preferences"
+import { SidebarProvider } from "./ui/sidebar"
 
 function kind(identity: string, purpose?: string): KindInfo {
   const [authority, pkg, name] = identity.split("/")
@@ -91,17 +94,23 @@ beforeEach(() => {
 })
 
 function renderGroups() {
+  return renderTree(
+    <>
+      <Favorites />
+      <CollectionGroupNav group={yours} />
+      <CollectionGroupNav group={google} />
+    </>
+  )
+}
+
+function renderTree(tree: ReactNode) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   const rootRoute = createRootRoute({
     component: () => (
       <QueryClientProvider client={client}>
-        <NavigationProvider>
-          <Favorites />
-          <CollectionGroupNav group={yours} />
-          <CollectionGroupNav group={google} />
-        </NavigationProvider>
+        <NavigationProvider>{tree}</NavigationProvider>
       </QueryClientProvider>
     ),
   })
@@ -110,6 +119,13 @@ function renderGroups() {
   // root, which renders the groups under test.
   const routeTree = rootRoute.addChildren(
     [
+      "/data",
+      "/agents",
+      "/tools",
+      "/providers",
+      "/history",
+      "/settings",
+      "/login",
       "/data/$authority",
       "/data/$authority/$pkg",
       "/data/$authority/$pkg/$name",
@@ -249,5 +265,39 @@ describe("technical groups", () => {
     expect(
       screen.getByRole("button", { name: "Hide 1 supporting and internal" })
     ).toBeTruthy()
+  })
+})
+
+describe("the repository", () => {
+  beforeEach(() => {
+    saveSession("secret", "ada.example.com", "token-1")
+  })
+
+  it("is named once, and its name opens the account menu", async () => {
+    renderTree(
+      <SidebarProvider>
+        <AppSidebar onSearch={() => {}} />
+      </SidebarProvider>
+    )
+    const trigger = await screen.findByRole("button", {
+      name: "ada.example.com: account menu",
+    })
+    expect(screen.getAllByText("ada.example.com")).toHaveLength(1)
+    // The foot keeps History, Settings and the switch, and no second chip.
+    expect(await href("History")).toBe("/history")
+    expect(await href("Settings")).toBe("/settings")
+    expect(
+      screen.getByRole("switch", { name: "Show technical details" })
+    ).toBeTruthy()
+
+    fireEvent.click(trigger)
+    expect(
+      await screen.findByRole("menuitem", { name: /Account and settings/ })
+    ).toBeTruthy()
+    for (const theme of ["System", "Light", "Dark"])
+      expect(
+        screen.getByRole("menuitemradio", { name: new RegExp(theme) })
+      ).toBeTruthy()
+    expect(screen.getByRole("menuitem", { name: /Sign out/ })).toBeTruthy()
   })
 })
