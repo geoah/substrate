@@ -17,6 +17,7 @@ import {
 } from "@/lib/agent-grants"
 import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import { splitRecordPath } from "@/lib/record-path"
+import { kindPatternWords, toolName } from "@/lib/tools"
 
 /** The `ask` host function: it writes nothing but a question, so it carries no
  * grant and agent-grants does not name it. */
@@ -209,22 +210,6 @@ export function agentSubagents(agent: SubstrateRecord | undefined): string[] {
   return out
 }
 
-/** A tool's name in everyday words. The host functions have fixed ones; any
- * other function reads as its local name, split into words. */
-export function toolLabel(fn: string): string {
-  switch (fn) {
-    case HOST_FUNCTION_QUERY:
-      return "Look things up"
-    case HOST_FUNCTION_WRITE:
-      return "Change your data"
-    case HOST_FUNCTION_PROPOSE:
-      return "Suggest changes"
-    case HOST_FUNCTION_ASK:
-      return "Ask you questions"
-  }
-  return agentName(fn)
-}
-
 /** The route params of a function's tool page. */
 export function toolRoute(
   fn: string
@@ -309,7 +294,7 @@ export function toolSummary(
       return "Asked you some questions"
   }
   if (opts.description) return opts.description
-  return `Used ${toolLabel(opts.function ?? call.name).toLowerCase()}`
+  return `Used ${lowerFirst(toolName(opts.function ?? call.name))}`
 }
 
 // ── grants, in words ───────────────────────────────────────────────────────
@@ -335,13 +320,11 @@ function grantKinds(raw: unknown): string[] {
  * an authority, an exact kind is its display plural. */
 function grantWords(kinds: string[]): string {
   if (kinds.some((k) => k === "*")) return "All your data"
-  const words = kinds.map((k) => {
-    if (!k.endsWith("/*")) return displayPlural(k)
-    const parts = k.slice(0, -2).split("/")
-    return parts.length >= 2
-      ? `everything in ${parts[1]}`
-      : `everything from ${parts[0]}`
-  })
+  const words = kinds.map((k) =>
+    k.endsWith("/*")
+      ? lowerFirst(kindPatternWords(k, displayPlural))
+      : displayPlural(k)
+  )
   return capitalise(joinWords(words))
 }
 

@@ -20,7 +20,6 @@ import {
   resolveTool,
   threadAgentId,
   threadTitle,
-  toolLabel,
   toolRoute,
   toolSummary,
   valueWords,
@@ -261,9 +260,18 @@ describe("what a tool call did", () => {
     expect(toolSummary(call({ name: "stats" }), {})).toBe("Used stats")
   })
 
-  it("labels and routes a tool", () => {
-    expect(toolLabel("substrate.reamde.dev/core/query")).toBe("Look things up")
-    expect(toolLabel("ada.localhost/notes/savenote")).toBe("Savenote")
+  it("names a tool it used as the Tools page does", () => {
+    expect(
+      toolSummary(call({}), {
+        function: "providers.substrate.reamde.dev/google/synccalendar",
+      })
+    ).toBe("Used Google Calendar sync")
+    expect(
+      toolSummary(call({}), { function: "ada.localhost/notes/savenote" })
+    ).toBe("Used save note")
+  })
+
+  it("routes a tool", () => {
     expect(toolRoute("substrate.reamde.dev/core/query")).toEqual({
       authority: "substrate.reamde.dev",
       pkg: "core",
@@ -288,7 +296,7 @@ describe("what an agent may see and change", () => {
         },
       },
     })
-    expect(canSee(agent)).toBe("Tasks and everything in notes")
+    expect(canSee(agent)).toBe("Tasks and everything in Notes")
     expect(canSee(record({}))).toBeUndefined()
   })
 

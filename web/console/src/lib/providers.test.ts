@@ -18,7 +18,6 @@ import {
   setupSteps,
   syncWords,
   toolActivity,
-  toolName,
   triggerCadence,
   triggerCallable,
   type StandingInput,
@@ -335,16 +334,6 @@ describe("tools", () => {
     trigger("google-calendar-on-connect", { record: { kinds: ["x"] } }),
   ]
 
-  it("names a tool off its reference in words", () => {
-    expect(toolName("providers.substrate.reamde.dev/google/synccalendar")).toBe(
-      "Sync calendar"
-    )
-    expect(toolName("providers.substrate.reamde.dev/google/synccontacts")).toBe(
-      "Sync contacts"
-    )
-    expect(toolName("a.example.com/p/zzqx")).toBe("zzqx")
-  })
-
   it("says how often a schedule runs", () => {
     expect(recurrenceWords("FREQ=HOURLY")).toBe("Every hour")
     expect(recurrenceWords("RRULE:FREQ=MINUTELY;INTERVAL=15")).toBe(
@@ -372,7 +361,7 @@ describe("tools", () => {
     )
     expect(tool).toEqual({
       reference: "providers.substrate.reamde.dev/google/synccalendar",
-      name: "Sync calendar",
+      name: "Google Calendar sync",
       description: "Syncs.",
       cadences: [
         "Every hour",

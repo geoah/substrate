@@ -687,7 +687,7 @@ describe("ProviderPage", () => {
 
     it("links each tool to its page with when it runs", async () => {
       renderPage(<ProviderPage />)
-      const tool = await screen.findByText("Sync contacts")
+      const tool = await screen.findByText("Google Contacts sync")
       expect(tool.getAttribute("data-to")).toBe("/tools/$authority/$pkg/$name")
       expect(JSON.parse(tool.getAttribute("data-params")!)).toEqual({
         authority: "providers.substrate.reamde.dev",

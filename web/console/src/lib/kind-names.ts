@@ -128,10 +128,17 @@ export const ACRONYMS: Readonly<Record<string, string>> = {
   url: "URL",
 }
 
-/** Names that keep their own casing mid-sentence. */
+/** Names that keep their own casing mid-sentence: the services the shipped
+ * providers speak for. */
 const PROPER: Readonly<Record<string, string>> = {
+  beeper: "Beeper",
   github: "GitHub",
   gmail: "Gmail",
+  google: "Google",
+  linear: "Linear",
+  notion: "Notion",
+  slack: "Slack",
+  whoop: "Whoop",
 }
 
 /** One lowercase word as it is displayed: an acronym in its capitals, any

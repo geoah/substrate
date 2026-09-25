@@ -4,10 +4,9 @@
  * runs, and what a provider's kinds fill in of yours. No fetching here; the
  * pages fold these off the reads `lib/api/*` returns. */
 
-import { splitKind } from "@/lib/api/http"
 import type { KindInfo, SubstrateRecord, TriggerStatus } from "@/lib/api/types"
-import { splitWords, pluralWord } from "@/lib/kind-names"
 import { mappedKind } from "@/lib/provenance"
+import { toolName } from "@/lib/tools"
 import type { AccountView, ProviderView, SyncFields } from "@/lib/sync"
 
 // ── the four steps ───────────────────────────────────────────────────────────
@@ -297,20 +296,6 @@ export function choiceSentence(
 }
 
 // ── tools ────────────────────────────────────────────────────────────────────
-
-/** A tool's everyday name off its reference's last segment: `synccalendar`
- * → "Sync calendar". A name the word list cannot split is shown as it is. */
-export function toolName(reference: string): string {
-  const name = splitKind(reference).name || reference
-  const words =
-    splitWords(name) ??
-    (name.endsWith("s")
-      ? splitWords(name.slice(0, -1))?.map((w, i, all) =>
-          i === all.length - 1 ? pluralWord(w) : w
-        )
-      : undefined)
-  return words ? capitalise(words.join(" ")) : name
-}
 
 /** An iCalendar recurrence rule in words: FREQ=HOURLY → "Every hour",
  * FREQ=MINUTELY;INTERVAL=15 → "Every 15 minutes". */

@@ -19,11 +19,11 @@ import {
   canChange,
   canSee,
   providerName,
-  toolLabel,
   toolRoute,
 } from "@/lib/agent-chat"
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME, LLM_PACKAGE } from "@/lib/api/http"
 import type { SubstrateRecord } from "@/lib/api/types"
+import { toolName } from "@/lib/tools"
 
 function Section({
   label,
@@ -141,10 +141,10 @@ export function AgentPanel({
                         params={route}
                         className="underline-offset-2 hover:underline"
                       >
-                        {toolLabel(tool.function)}
+                        {toolName(tool.function)}
                       </Link>
                     ) : (
-                      toolLabel(tool.function)
+                      toolName(tool.function)
                     )}
                     {technical && (
                       <span className="block font-mono text-[11px] [overflow-wrap:anywhere] text-faint">
