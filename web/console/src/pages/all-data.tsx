@@ -5,12 +5,16 @@
  * behind them; technical mode lists every kind with its reference, the
  * substrate's own included. */
 
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { PlusIcon } from "lucide-react"
+import { parseAsStringLiteral, useQueryState } from "nuqs"
 
-import { AddCollectionDialog } from "@/components/all-data/add-collection-dialog"
+import {
+  AddCollectionDialog,
+  ADD_WAYS,
+} from "@/components/all-data/add-collection-dialog"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { KindPath } from "@/components/identity/kind-ref"
 import { TablePage } from "@/components/identity/page-layout"
@@ -118,7 +122,7 @@ function GroupTable({
   technical: boolean
   compact: boolean
 }) {
-  const shown = technical ? group.kinds : group.primary
+  const shown = technical ? [...group.primary, ...group.hidden] : group.primary
   const hidden = technical ? 0 : group.hidden.length
   return (
     <section className="mt-8">
@@ -134,10 +138,10 @@ function GroupTable({
         </span>
       </div>
       <div className="overflow-x-auto rounded-[10px] border border-border">
-        <table className="w-full min-w-[560px] table-fixed border-separate border-spacing-0 text-sm">
+        <table className="w-full min-w-[640px] table-fixed border-separate border-spacing-0 text-sm">
           <colgroup>
             <col className="w-[240px]" />
-            {technical && <col className="w-[340px]" />}
+            {technical && <col className="w-[400px]" />}
             <col />
             <col className="w-[90px]" />
           </colgroup>
@@ -185,7 +189,11 @@ function GroupTable({
 export function AllDataPage() {
   const [technical] = useTechnicalDetails()
   const [density] = useDensity()
-  const [adding, setAdding] = useState(false)
+  // In the URL, so "Add a collection" is a link another page can hand over.
+  const [adding, setAdding] = useQueryState(
+    "add",
+    parseAsStringLiteral(ADD_WAYS)
+  )
   const registry = useQuery(kindsQueryOptions)
   const repository = useQuery(repositoryQueryOptions)
   const groups = useMemo(
@@ -205,7 +213,7 @@ export function AllDataPage() {
         title="All data"
         description="Every collection in your substrate. Some are yours to change; some are kept up to date by a provider."
         actions={
-          <Button onClick={() => setAdding(true)}>
+          <Button onClick={() => void setAdding("agent")}>
             <PlusIcon />
             Add a collection
           </Button>
@@ -242,7 +250,10 @@ export function AllDataPage() {
           />
         ))
       )}
-      <AddCollectionDialog open={adding} onOpenChange={setAdding} />
+      <AddCollectionDialog
+        way={adding}
+        onWayChange={(way) => void setAdding(way)}
+      />
     </TablePage>
   )
 }

@@ -159,7 +159,11 @@ export function HomePage() {
             Nothing has changed yet. Changes show up here as they happen.
           </p>
         ) : (
-          <HistorySentences rows={recent.rows} limit={SHOWN_CHANGES} />
+          <HistorySentences
+            rows={recent.rows}
+            limit={SHOWN_CHANGES}
+            more={recent.hasOlder}
+          />
         )}
       </Section>
     </DocPage>

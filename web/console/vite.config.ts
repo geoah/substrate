@@ -24,6 +24,11 @@ export default defineConfig({
       "/api": proxyTarget,
       "/healthz": proxyTarget,
       "/.well-known": proxyTarget,
+      // The credential doors sit at the root, beside the SPA. `/login` and
+      // `/register` are console routes too, so only these three are proxied.
+      "/tokens": proxyTarget,
+      "/password": proxyTarget,
+      "/totp": proxyTarget,
     },
   },
   test: {

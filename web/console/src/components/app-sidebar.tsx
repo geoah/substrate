@@ -257,44 +257,48 @@ export function CollectionGroupNav({ group }: { group: CollectionGroup }) {
       {open &&
         (technical ? (
           <>
-            {group.authorities.map((a) => (
-              <div key={a.authority}>
-                <Link
-                  to="/data/$authority"
-                  params={{ authority: a.authority }}
-                  onClick={close}
-                  className={cn(
-                    "block truncate rounded-md px-2 pt-2.5 pb-0.5 font-mono text-[11px] text-faint no-underline hover:text-foreground",
-                    params.authority === a.authority &&
-                      !params.pkg &&
-                      "text-foreground"
-                  )}
-                >
-                  {a.authority}
-                </Link>
-                {a.packages.map((p) => (
-                  <div key={p.identity}>
-                    <Link
-                      to="/data/$authority/$pkg"
-                      params={{ authority: p.authority, pkg: p.package }}
-                      onClick={close}
-                      className={cn(
-                        "flex items-center gap-1.5 rounded-md py-1 pr-2 pl-2.5 text-[11.5px] text-faint no-underline before:h-px before:w-1.5 before:bg-border-strong hover:text-foreground",
-                        params.authority === p.authority &&
-                          params.pkg === p.package &&
-                          !params.name &&
-                          "text-foreground"
-                      )}
-                    >
-                      {p.package}
-                    </Link>
-                    {p.kinds.filter(visible).map((k) => (
-                      <KindRow key={k.identity} kind={k} technical />
+            {group.authorities
+              .filter((a) => a.packages.some((p) => p.kinds.some(visible)))
+              .map((a) => (
+                <div key={a.authority}>
+                  <Link
+                    to="/data/$authority"
+                    params={{ authority: a.authority }}
+                    onClick={close}
+                    className={cn(
+                      "block truncate rounded-md px-2 pt-2.5 pb-0.5 font-mono text-[11px] text-faint no-underline hover:text-foreground",
+                      params.authority === a.authority &&
+                        !params.pkg &&
+                        "text-foreground"
+                    )}
+                  >
+                    {a.authority}
+                  </Link>
+                  {a.packages
+                    .filter((p) => p.kinds.some(visible))
+                    .map((p) => (
+                      <div key={p.identity}>
+                        <Link
+                          to="/data/$authority/$pkg"
+                          params={{ authority: p.authority, pkg: p.package }}
+                          onClick={close}
+                          className={cn(
+                            "flex items-center gap-1.5 rounded-md py-1 pr-2 pl-2.5 text-[11.5px] text-faint no-underline before:h-px before:w-1.5 before:bg-border-strong hover:text-foreground",
+                            params.authority === p.authority &&
+                              params.pkg === p.package &&
+                              !params.name &&
+                              "text-foreground"
+                          )}
+                        >
+                          {p.package}
+                        </Link>
+                        {p.kinds.filter(visible).map((k) => (
+                          <KindRow key={k.identity} kind={k} technical />
+                        ))}
+                      </div>
                     ))}
-                  </div>
-                ))}
-              </div>
-            ))}
+                </div>
+              ))}
             {group.hidden.length > 0 && (
               <button
                 type="button"

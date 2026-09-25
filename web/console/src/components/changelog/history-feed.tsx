@@ -33,15 +33,22 @@ function collectionLink(kind: string) {
 }
 
 /** The object of the sentence: the one record, or "14 tasks" for a run. */
-function EntryObject({ entry }: { entry: HistoryEntry }) {
-  if (entry.records.length === 1) {
+function EntryObject({
+  entry,
+  openEnded,
+}: {
+  entry: HistoryEntry
+  openEnded?: boolean
+}) {
+  if (entry.records.length === 1 && !openEnded) {
     return <RecordRef kind={entry.kind} id={entry.records[0]} />
   }
   const count = entry.records.length
   const words =
     count === 1 ? displayName(entry.kind) : displayPlural(entry.kind)
   const { authority, pkg, name } = collectionLink(entry.kind)
-  const label = `${count} ${words.toLowerCase()}`
+  // A run cut by the page may go on in older rows: its count is a floor.
+  const label = `${count}${openEnded ? "+" : ""} ${words.toLowerCase()}`
   if (!authority || !pkg || !name) return <span>{label}</span>
   return (
     <Link
@@ -63,8 +70,11 @@ function seqLabel(entry: HistoryEntry): string {
 export function HistoryEntryRow({
   entry,
   today,
+  openEnded,
 }: {
   entry: HistoryEntry
+  /** The feed has older rows, and this is its oldest entry. */
+  openEnded?: boolean
   /** Today's entries read as "3m ago"; older ones by the time of day, under
    * their day's heading. */
   today: boolean
@@ -78,7 +88,7 @@ export function HistoryEntryRow({
     >
       <div className="min-w-0 leading-[1.6]">
         <ActorRef actor={entry.actor} /> <span>{entry.verb}</span>{" "}
-        <EntryObject entry={entry} />
+        <EntryObject entry={entry} openEnded={openEnded} />
         {(changed || technical) && (
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px] text-faint">
             {changed &&
@@ -115,16 +125,28 @@ export function HistoryEntryRow({
 export function HistorySentences({
   rows,
   limit,
+  more = false,
   className,
 }: {
   rows: ChangeRow[]
   limit?: number
+  /** Older rows exist beyond `rows`. */
+  more?: boolean
   className?: string
 }) {
-  const days = useMemo(() => {
-    const entries = foldHistory(rows)
-    return groupByDay(limit ? entries.slice(0, limit) : entries)
-  }, [rows, limit])
+  const [technical] = useTechnicalDetails()
+  const { days, oldest } = useMemo(() => {
+    // Collecting what a delete left behind is housekeeping, not a change a
+    // person made; it reads only with technical details on.
+    const entries = foldHistory(
+      technical ? rows : rows.filter((r) => r.op !== "gc")
+    )
+    const oldest = more ? entries[entries.length - 1]?.key : undefined
+    return {
+      oldest,
+      days: groupByDay(limit ? entries.slice(0, limit) : entries),
+    }
+  }, [rows, limit, technical, more])
   return (
     <div data-slot="history" className={cn("flex flex-col", className)}>
       {days.map((day) => (
@@ -137,6 +159,7 @@ export function HistorySentences({
               key={entry.key}
               entry={entry}
               today={day.label === "Today"}
+              openEnded={entry.key === oldest}
             />
           ))}
         </section>
@@ -180,7 +203,7 @@ export function HistoryFeed({
   }
   return (
     <>
-      <HistorySentences rows={feed.rows} />
+      <HistorySentences rows={feed.rows} more={feed.hasOlder} />
       {feed.hasOlder && (
         <div className="pt-4">
           <Button

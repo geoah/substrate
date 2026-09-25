@@ -59,7 +59,9 @@ import {
 } from "@/lib/bundles"
 import { cn } from "@/lib/utils"
 
-type Way = "agent" | "sample" | "yaml"
+// eslint-disable-next-line react-refresh/only-export-components -- the URL's word for each way, shared with the page that opens it
+export const ADD_WAYS = ["agent", "sample", "yaml"] as const
+type Way = (typeof ADD_WAYS)[number]
 
 const WAYS: { value: Way; icon: LucideIcon; title: string; line: string }[] = [
   {
@@ -82,20 +84,28 @@ const WAYS: { value: Way; icon: LucideIcon; title: string; line: string }[] = [
   },
 ]
 
+/** Package words that are acronyms read in capitals. */
+const ACRONYMS: Record<string, string> = { llm: "LLM" }
+
 function capitalise(text: string): string {
-  return text ? text[0].toUpperCase() + text.slice(1) : text
+  return ACRONYMS[text] ?? (text ? text[0].toUpperCase() + text.slice(1) : text)
 }
 
+/** Open while `way` is set; the way is the caller's (the page keeps it in
+ * the URL, so a link can open the dialog on samples). */
 export function AddCollectionDialog({
-  open,
-  onOpenChange,
+  way,
+  onWayChange,
 }: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  way: Way | null
+  onWayChange: (way: Way | null) => void
 }) {
-  const [way, setWay] = useState<Way>("agent")
+  const setWay = (next: Way) => onWayChange(next)
+  const onOpenChange = (open: boolean) => {
+    if (!open) onWayChange(null)
+  }
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={way !== null} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Add a collection</DialogTitle>
@@ -117,7 +127,7 @@ export function AddCollectionDialog({
               aria-checked={way === w.value}
               onClick={() => setWay(w.value)}
               className={cn(
-                "flex cursor-pointer flex-col items-start gap-1.5 rounded-[10px] border border-border-strong bg-background p-3 text-left transition-shadow",
+                "flex cursor-pointer flex-col items-start gap-1.5 rounded-[10px] border border-border-strong bg-background p-3 text-left transition-shadow outline-none focus-visible:border-ring",
                 way === w.value &&
                   "border-primary shadow-[0_0_0_3px_var(--primary-soft)]"
               )}
