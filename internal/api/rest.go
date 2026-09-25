@@ -209,7 +209,7 @@ var (
 	// changeParams is the cross-collection changefeed: the two modes' cursors
 	// plus the change filter, whose list-valued keys are all PLURAL.
 	changeParams = []string{
-		"watch", "from", "generation", "before", "first",
+		"watch", "from", "generation", "before", "first", "values",
 		"recordId", "recordKind", "q",
 		"kinds", "excludeKinds", "actors", "excludeActors", "ops", "excludeOps",
 	}

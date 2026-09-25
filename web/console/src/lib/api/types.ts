@@ -301,6 +301,21 @@ export interface AffectedRecord {
   id: string
   version?: number
   deleted?: boolean
+  /** What the entry did to each property, before and after, in name order.
+   * Only on a read that asked (`values=1`, decision 0106) from a server that
+   * knows it; absent otherwise, so its absence is never "nothing changed". */
+  properties?: PropertyChange[]
+}
+
+/** One property an entry moved (`substrate.PropertyChange`). `before` is
+ * absent where the record held no value, `after` where the entry cleared it;
+ * a sensitive property reads `<redacted>` on both sides. `beforeUnknown`
+ * marks a before the server could not derive, which is not "there was none". */
+export interface PropertyChange {
+  name: string
+  before?: unknown
+  after?: unknown
+  beforeUnknown?: boolean
 }
 
 /** One changelog entry as the server serializes it (`substrate.Change`). */

@@ -118,7 +118,8 @@ the same ndjson frames `GET /api/v1/changes?watch=1` does, opened with a
 bookmark and resumable from one. The change filter has no property arms, so
 under `watch=1` the `filter` admits `kinds` alone and every other arm is
 refused by name; `/changes` keeps its own richer change filter (`ops`,
-`actors`, their exclusions, `recordId`+`recordKind`, `q`).
+`actors`, their exclusions, `recordId`+`recordKind`, `q`) and alone takes
+`values=1`, each property's [before and after](changelog.md#values-on-request).
 
 ### Who points at a record: `referencing`
 

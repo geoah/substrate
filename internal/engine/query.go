@@ -1504,5 +1504,5 @@ func (ds *dataset) Changes(ctx context.Context, after int64, f substrate.ChangeF
 	if err := ds.buildChangeFilter(b, f); err != nil {
 		return nil, err
 	}
-	return ds.queryChanges(ctx, b, `seq`, limit)
+	return ds.queryChanges(ctx, b, `seq`, limit, f.Values)
 }

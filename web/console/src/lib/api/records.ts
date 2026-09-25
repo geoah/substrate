@@ -773,7 +773,7 @@ async function fetchRecordHistory(
       before,
       generation,
       first: FORMER_SLICE_PAGE,
-      filter: { recordId, recordKind },
+      filter: { recordId, recordKind, values: true },
       signal,
     })
     rows.push(...res.changes)
@@ -820,7 +820,7 @@ export function recordChangesInfiniteOptions(
         before: pageParam.before > 0 ? pageParam.before : undefined,
         generation: pageParam.generation,
         first,
-        filter: { recordId, recordKind },
+        filter: { recordId, recordKind, values: true },
         signal,
       }),
     initialPageParam: { before: 0 } as HistoryPosition,

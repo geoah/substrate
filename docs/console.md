@@ -297,9 +297,12 @@ Under the properties, in order:
   and whether you confirmed it through a merge request; with Technical details
   on, the `recordmerge`, the request and the former id.
 - **History**: this record's own slice of [the changelog](changelog.md) as
-  sentences, newest first: who did what, and which properties each change
-  touched. The changelog carries names, not values, so a row says what changed
-  and the sheet says what it is now. A merged record's history under its former
+  sentences, newest first: who did what, and what each change did to the
+  values ("Priority: High → Urgent", "Emails: + grace@example.com"), each
+  value shown as the sheet shows it, long text cut to a line with the whole in
+  the hover. It reads the feed with
+  [`values=1`](changelog.md#values-on-request); against a server that predates
+  it, a row names the properties it touched instead. A merged record's history under its former
   ids is stitched in, and where the retained changelog does not reach the
   creation, the last row says so from the record's own `createdAt`.
 - **Record**, with Technical details on: the full reference, the kind and the
@@ -504,7 +507,9 @@ that account, and `/settings/{bundle id}` that page's Settings.
 ## History
 
 **History** (`/history`) is [the changelog](changelog.md) as sentences, newest
-first, grouped by day, following new changes live. Four views narrow it by
+first, grouped by day, following new changes live. A change to one record
+says its values, a run of changes to it their net effect, and a run across
+many records the properties they touched. Four views narrow it by
 who made the change: **Everything**, **By you**, **By agents** and **By
 providers**, each an actor filter the change feed applies server-side.
 
