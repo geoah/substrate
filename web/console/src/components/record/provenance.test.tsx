@@ -294,9 +294,10 @@ describe("ProvenanceRail", () => {
     )
     expect(held?.textContent).toContain("adalovelace")
     const alt = row.querySelector<HTMLElement>("[data-alternative]")!
-    expect(
-      alt.querySelector(`a[href="/data/${BEEPER}/u1"]`)?.textContent
-    ).toContain("u1")
+    // An untitled referent reads by its kind, never by a bare id.
+    const altLink = alt.querySelector(`a[href="/data/${BEEPER}/u1"]`)
+    expect(altLink?.textContent).not.toContain("{ref}")
+    expect(altLink?.textContent).not.toMatch(/^u1$/)
     fireEvent.click(alt.querySelector("button")!)
     const dialog = getByRole("dialog")
     expect(dialog.textContent).not.toContain("{ref}")
