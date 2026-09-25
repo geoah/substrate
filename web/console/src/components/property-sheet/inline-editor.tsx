@@ -6,17 +6,12 @@
  * leaving the box saves, Esc cancels, and a save is one property's PATCH
  * carrying the version the page read. */
 
-import {
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactNode,
-} from "react"
+import { useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowRightIcon, CheckIcon } from "lucide-react"
 
 import { fromLocalInput, toLocalInput } from "./dates"
+import { ListEditor } from "./list-editor"
 import { editStyle, propertyWrite } from "./sheet-model"
 import { type SheetRow } from "./sheet-rows"
 import { useRecordPatch, writeError } from "./use-record-patch"
@@ -24,9 +19,20 @@ import { StateBadge } from "@/components/identity/state-badge"
 import { PropertyField } from "@/components/record/property-field"
 import { RecordCombobox } from "@/components/record/record-combobox"
 import { Button } from "@/components/ui/button"
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { Spinner } from "@/components/ui/spinner"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
-import { useRecordOptions } from "@/lib/identities"
 import { recordTitleQueryOptions } from "@/lib/reference-titles"
 import { seedField, type FormField, type FormValue } from "@/lib/record-form"
 import { humanizeName, movesFrom } from "@/lib/record-schema"
@@ -45,6 +51,7 @@ export function InlineEditor(props: InlineEditorProps) {
   const control = props.row.field.control
   if (control === "state") return <StateMoves {...props} />
   if (control === "select") return <EnumPicker {...props} />
+  if (control === "list") return <ListEditor {...props} />
   if (control === "reference" && style === "line") {
     return <ReferencePicker {...props} />
   }
@@ -169,55 +176,81 @@ function LineEditor(props: InlineEditorProps) {
   )
 }
 
-/** A list that drops under the value, closed by Esc or a click outside. */
-function EditPop({
-  onClose,
-  children,
+/** A short list that drops from the value: a popover, so no row below can
+ * paint over it or clip it, and a listbox the keyboard drives (arrows, Home,
+ * End, Enter; typing filters a long one). It opens on the value held. Esc, a
+ * click outside or a click on the value closes it without a write. */
+function ChoicePop({
   label,
+  shown,
+  current,
+  onClose,
+  filter,
+  children,
 }: {
-  onClose: () => void
-  children: ReactNode
   label: string
+  /** What the value reads while the list is open. */
+  shown: ReactNode
+  /** The item value the highlight starts on. */
+  current?: string
+  onClose: () => void
+  /** Offer a filter box: the list is long enough to search. */
+  filter?: boolean
+  children: ReactNode
 }) {
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    function away(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
-    }
-    function key(e: globalThis.KeyboardEvent) {
-      if (e.key === "Escape") onClose()
-    }
-    document.addEventListener("mousedown", away)
-    document.addEventListener("keydown", key)
-    return () => {
-      document.removeEventListener("mousedown", away)
-      document.removeEventListener("keydown", key)
-    }
-  }, [onClose])
-  useEffect(() => {
-    ref.current?.querySelector<HTMLElement>("[data-option]")?.focus()
-  }, [])
+  const root = useRef<HTMLDivElement>(null)
+  const [highlight, setHighlight] = useState(current ?? "")
   return (
-    <div
-      ref={ref}
-      role="listbox"
-      aria-label={label}
-      data-slot="edit-pop"
-      onClick={(e) => e.stopPropagation()}
-      className="absolute top-[calc(100%+4px)] left-0 z-30 flex w-64 max-w-[calc(100vw-2rem)] flex-col rounded-lg border border-border-strong bg-background p-1.5 shadow-card"
+    <Popover
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
     >
-      {children}
-    </div>
+      <PopoverTrigger
+        nativeButton={false}
+        render={<span className="min-w-0 text-muted-foreground" />}
+      >
+        {shown}
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        initialFocus={root}
+        className="w-64 max-w-[calc(100vw-2rem)] gap-0 p-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Command
+          ref={root}
+          tabIndex={-1}
+          loop
+          value={highlight}
+          onValueChange={setHighlight}
+          className="rounded-lg! p-0 outline-none"
+        >
+          {filter && <CommandInput placeholder="Filter…" autoFocus />}
+          <CommandList label={label} data-slot="edit-pop" className="p-1">
+            <CommandEmpty className="py-3 text-[13px] text-faint">
+              Nothing matches.
+            </CommandEmpty>
+            {children}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   )
 }
 
-function Option({
+function Choice({
+  value,
+  keywords,
   chosen,
   onPick,
   children,
   hint,
   disabled,
 }: {
+  value: string
+  keywords?: string[]
   chosen?: boolean
   onPick: () => void
   children: ReactNode
@@ -225,21 +258,19 @@ function Option({
   disabled?: boolean
 }) {
   return (
-    <button
-      type="button"
-      role="option"
-      aria-selected={chosen}
-      data-option
+    <CommandItem
+      value={value}
+      keywords={keywords}
       disabled={disabled}
-      onClick={onPick}
-      className="flex h-[30px] w-full items-center gap-2 rounded-[5px] px-2 text-left text-[13px] outline-none hover:bg-hover focus-visible:bg-hover disabled:opacity-50"
+      onSelect={onPick}
+      className="h-[30px] rounded-[5px] px-2 text-[13px] data-selected:bg-hover [&>svg:last-child]:hidden"
     >
       {children}
       <span className="ml-auto flex items-center gap-1 text-xs text-faint">
         {hint}
         {chosen && <CheckIcon className="size-3.5" />}
       </span>
-    </button>
+    </CommandItem>
   )
 }
 
@@ -253,30 +284,32 @@ function StateMoves(props: InlineEditorProps) {
     onDone()
   }
   return (
-    <>
-      <StateBadge value={current} initial={row.field.spec.initial} />
-      <EditPop onClose={cancel} label={`Move ${row.field.label}`}>
-        <div className="px-2 pt-1 pb-1.5 text-xs text-faint">
-          {moves.length ? "Move to" : `No moves from ${current || "here"}`}
+    <ChoicePop
+      label={`Move ${row.field.label}`}
+      shown={<StateBadge value={current} initial={row.field.spec.initial} />}
+      onClose={cancel}
+    >
+      <div className="px-2 pt-1 pb-1.5 text-xs text-faint">
+        {moves.length ? "Move to" : `No moves from ${current || "here"}`}
+      </div>
+      {moves.map((move) => (
+        <Choice
+          key={move.to}
+          value={move.to}
+          disabled={pending}
+          onPick={() => void save(move.to)}
+          hint={stampHint(move.stamps)}
+        >
+          <ArrowRightIcon className="size-3 text-faint" />
+          <StateBadge value={move.to} initial={row.field.spec.initial} />
+        </Choice>
+      ))}
+      {pending && (
+        <div className="flex items-center gap-2 px-2 py-1 text-xs text-faint">
+          <Spinner className="size-3" /> Saving
         </div>
-        {moves.map((move) => (
-          <Option
-            key={move.to}
-            disabled={pending}
-            onPick={() => void save(move.to)}
-            hint={stampHint(move.stamps)}
-          >
-            <ArrowRightIcon className="size-3 text-faint" />
-            <StateBadge value={move.to} initial={row.field.spec.initial} />
-          </Option>
-        ))}
-        {pending && (
-          <div className="flex items-center gap-2 px-2 py-1 text-xs text-faint">
-            <Spinner className="size-3" /> Saving
-          </div>
-        )}
-      </EditPop>
-    </>
+      )}
+    </ChoicePop>
   )
 }
 
@@ -286,38 +319,62 @@ function stampHint(stamps: string[]): string | undefined {
   return `fills in ${stamps.map((s) => humanizeName(s)).join(", ")}`
 }
 
+/** The label an enum value reads as: its authored label, else its value
+ * humanized. */
+function enumLabel(option: { value: string; label: string }): string {
+  return option.label || humanizeName(option.value)
+}
+
+/** How many values a list shows before it offers a filter box. */
+const FILTER_FROM = 8
+
 function EnumPicker(props: InlineEditorProps) {
   const { row, onDone, onError } = props
   const { save, pending } = useSave(props)
   const current = typeof row.value === "string" ? row.value : ""
+  const all = row.field.options ?? []
+  const held = all.find((o) => o.value === current)
+  // A deprecated value is never offered; the one a record still holds keeps
+  // its row, so the list says what is there.
+  const offered = all.filter((o) => !o.deprecated || o.value === current)
   const cancel = () => {
     onError(undefined)
     onDone()
   }
   return (
-    <>
-      <span className="text-muted-foreground">
-        {row.field.options?.find((o) => o.value === current)?.label ||
-          (current ? humanizeName(current) : "Choose…")}
-      </span>
-      <EditPop onClose={cancel} label={`Choose ${row.field.label}`}>
-        {(row.field.options ?? []).map((option) => (
-          <Option
-            key={option.value}
-            chosen={option.value === current}
-            disabled={pending}
-            onPick={() => void save(option.value)}
-          >
-            {option.label || humanizeName(option.value)}
-          </Option>
-        ))}
-        {!row.field.required && current && (
-          <Option disabled={pending} onPick={() => void save(null)}>
-            <span className="text-muted-foreground">Clear</span>
-          </Option>
-        )}
-      </EditPop>
-    </>
+    <ChoicePop
+      label={`Choose ${row.field.label}`}
+      shown={
+        held ? enumLabel(held) : current ? humanizeName(current) : "Choose…"
+      }
+      current={current || offered[0]?.value}
+      filter={offered.length >= FILTER_FROM}
+      onClose={cancel}
+    >
+      {offered.map((option) => (
+        <Choice
+          key={option.value}
+          value={option.value}
+          keywords={[enumLabel(option)]}
+          chosen={option.value === current}
+          disabled={pending}
+          onPick={() => void save(option.value)}
+          hint={option.deprecated ? "no longer offered" : undefined}
+        >
+          {enumLabel(option)}
+        </Choice>
+      ))}
+      {!row.field.required && current && (
+        <Choice
+          value="__clear"
+          keywords={["clear"]}
+          disabled={pending}
+          onPick={() => void save(null)}
+        >
+          <span className="text-muted-foreground">Clear</span>
+        </Choice>
+      )}
+    </ChoicePop>
   )
 }
 
@@ -325,7 +382,6 @@ function ReferencePicker(props: InlineEditorProps) {
   const { row, kinds, record, onDone, onError } = props
   const { save, pending } = useSave(props)
   const pin = row.field.spec.to ?? ""
-  const offered = useRecordOptions(pin, kinds, record.id)
   const chosen = useRef(false)
   const seeded = seedField(row.field, row.value, false) as {
     kind: string
@@ -339,7 +395,9 @@ function ReferencePicker(props: InlineEditorProps) {
   return (
     <div className="flex w-full min-w-0 items-center gap-2">
       <RecordCombobox
-        {...offered}
+        pin={pin}
+        kinds={kinds}
+        self={record.id}
         defaultOpen
         ariaLabel={row.field.label}
         value={seeded.id}

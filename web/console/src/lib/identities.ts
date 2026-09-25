@@ -8,10 +8,14 @@
  * The four host functions need no special case: they are ordinary `function`
  * records, so they list beside a bundle's with their own cards. */
 
-import { useMemo } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useEffect, useMemo, useState } from "react"
+import { useQuery, type UseQueryResult } from "@tanstack/react-query"
 
-import { recordsQueryOptions } from "@/lib/api/records"
+import {
+  fetchRecordsPage,
+  recordsQueryOptions,
+  type ListParams,
+} from "@/lib/api/records"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { kindByIdentity } from "@/lib/definition"
 import { recordTitle } from "@/lib/format"
@@ -89,6 +93,25 @@ function optionOf(record: SubstrateRecord): RecordOption {
   }
 }
 
+/** A read's progress as the picker words it. Only a read that is RUNNING is
+ * loading: TanStack reports a paused (offline) or idle query with no data as
+ * `isPending` too, and a spinner on that never stops. */
+function pendingState(query: UseQueryResult<unknown>): {
+  loading: boolean
+  error?: string
+} {
+  if (query.error) return { loading: false, error: query.error.message }
+  if (!query.isPending) return { loading: false }
+  if (query.fetchStatus === "fetching") return { loading: true }
+  if (query.fetchStatus === "paused") {
+    return {
+      loading: false,
+      error: "You’re offline. The list reads when you’re back.",
+    }
+  }
+  return { loading: false, error: "The list wasn’t read." }
+}
+
 /** The records a pointer may name, as picker rows. `self` drops one id: a
  * declaration that names itself as its own sub-agent is a loop nobody should
  * be able to spell by accident. */
@@ -115,11 +138,10 @@ export function useRecordOptions(
       options: (page?.records ?? [])
         .filter((r) => !(self && r.id === self))
         .map(optionOf),
-      loading: records.isPending,
-      error: records.error?.message,
+      ...pendingState(records),
       capped: Boolean(page?.cursor),
     }
-  }, [collection, page, self, records.isPending, records.error])
+  }, [collection, page, self, records])
 }
 
 /** What is typed into a picker, as the search grammar's type-ahead: every
@@ -169,9 +191,189 @@ export function useRecordSearch(
     if (!on) return { options: [], loading: false, capped: false }
     return {
       options: (page?.records ?? []).map(optionOf),
-      loading: records.isPending,
-      error: records.error?.message,
+      ...pendingState(records),
       capped: Boolean(page?.cursor),
     }
-  }, [on, page, records.isPending, records.error])
+  }, [on, page, records])
+}
+
+// ── the picker's read: a page to browse, the server to search ───────────────
+
+/** How many records the picker browses before typing takes over: the most
+ * recent, enough to recognise one without scrolling past it. Whatever else the
+ * collection holds is a server search away. */
+export const BROWSE_PAGE = 50
+
+/** How long a picker waits for the server before it says so and offers a
+ * retry. A read that never answers must not read as "still loading" forever
+ * (owner report, 2026-09-26). */
+export const PICKER_TIMEOUT_MS = 15_000
+
+/** How long typing settles before the server is asked. */
+export const PICKER_DEBOUNCE_MS = 200
+
+/** Where a picker's read stands. `unresolved`: the pin names no kind this
+ * repository declares, so there is nothing to read. `offline`: the browser is
+ * offline and the read waits for it (TanStack pauses a query then, and a
+ * paused query with no data is `isPending` forever). `error` carries a
+ * message and is retried by hand. */
+export type PickerStatus =
+  "unresolved" | "loading" | "offline" | "error" | "ready"
+
+export interface PickerRecords {
+  /** The rows to offer: server matches first, then the loaded page's own. */
+  options: RecordOption[]
+  status: PickerStatus
+  error?: string
+  /** The browse page did not hold the whole collection. */
+  capped: boolean
+  /** What is typed is being answered by the server. */
+  searching: boolean
+  /** The search answer itself was capped: keep typing to narrow. */
+  searchCapped: boolean
+  /** A read is on its way, rows in hand or not. */
+  busy: boolean
+  /** The page held rows, and every one was left out (the record itself, or
+   * what the caller already holds): there is nothing OTHER to choose. */
+  allHeld: boolean
+  retry: () => void
+}
+
+class PickerTimeout extends Error {
+  constructor() {
+    super("The server took too long to answer.")
+  }
+}
+
+/** One page read that gives up after `ms`, aborting the request with it. */
+async function pageWithin(params: ListParams, signal: AbortSignal, ms: number) {
+  const inner = new AbortController()
+  const forward = () => inner.abort()
+  signal.addEventListener("abort", forward)
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    inner.abort()
+  }, ms)
+  try {
+    return await fetchRecordsPage(params, inner.signal)
+  } catch (error) {
+    if (timedOut) throw new PickerTimeout()
+    throw error
+  } finally {
+    clearTimeout(timer)
+    signal.removeEventListener("abort", forward)
+  }
+}
+
+function useSettled(value: string, ms: number): string {
+  const [settled, setSettled] = useState(value)
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), ms)
+    return () => clearTimeout(timer)
+  }, [value, ms])
+  return settled
+}
+
+/** Whether an option holds every typed word, in anything a reader can see. */
+export function optionMatches(option: RecordOption, typed: string): boolean {
+  const hay =
+    `${option.value} ${option.title} ${option.description}`.toLowerCase()
+  return typed
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((word) => hay.includes(word))
+}
+
+function statusOf(
+  query: UseQueryResult<unknown>
+): Pick<PickerRecords, "status" | "error"> {
+  if (query.data !== undefined) return { status: "ready" }
+  if (query.isError) return { status: "error", error: query.error.message }
+  if (query.fetchStatus === "fetching") return { status: "loading" }
+  if (query.fetchStatus === "paused") return { status: "offline" }
+  // Pending and idle: no read is running and none will start by itself
+  // (a cancelled read reverts here). Said as what it is, with the retry.
+  return { status: "error", error: "The list wasn’t read." }
+}
+
+/** The records a picker offers: the most recent page of the pinned
+ * collection to browse, and, once something is typed, the server's own
+ * search over the WHOLE collection (`filter.search`, typed words made
+ * prefixes) merged with whatever the loaded page matches (so an id or a
+ * one-liner the search index does not hold still finds its row). Every read
+ * ends: rows, an empty answer, or an error the caller offers to retry. */
+export function usePickerRecords(
+  pin: string | undefined,
+  kinds: KindInfo[],
+  text: string,
+  { self, exclude }: { self?: string; exclude?: ReadonlySet<string> } = {}
+): PickerRecords {
+  const collection = collectionFor(pin, kinds)
+  const typed = useSettled(text.trim(), PICKER_DEBOUNCE_MS)
+  const words = typeaheadQuery(typed)
+  const base = {
+    authority: collection?.authority ?? "",
+    package: collection?.package ?? "",
+    name: collection?.name ?? "",
+    first: BROWSE_PAGE,
+  }
+  const page = useQuery({
+    ...recordsQueryOptions(base),
+    queryFn: ({ signal }) => pageWithin(base, signal, PICKER_TIMEOUT_MS),
+    enabled: Boolean(collection),
+    retry: false,
+  })
+  const capped = Boolean(page.data?.cursor)
+  // A page that holds the whole collection is searched where it is; only a
+  // capped one sends what is typed to the server.
+  const searching = Boolean(collection) && capped && words.length > 0
+  const searchParams = { ...base, filter: { search: words } }
+  const found = useQuery({
+    ...recordsQueryOptions(searchParams),
+    queryFn: ({ signal }) =>
+      pageWithin(searchParams, signal, PICKER_TIMEOUT_MS),
+    enabled: searching,
+    retry: false,
+  })
+
+  if (!collection) {
+    return {
+      options: [],
+      status: "unresolved",
+      capped: false,
+      searching: false,
+      searchCapped: false,
+      busy: false,
+      allHeld: false,
+      retry: () => {},
+    }
+  }
+  const keep = (o: RecordOption) =>
+    !(self && o.value === self) && !exclude?.has(o.value)
+  const loaded = (page.data?.records ?? []).map(optionOf)
+  const local = loaded
+    .filter(keep)
+    .filter((o) => !typed || optionMatches(o, typed))
+  const active = searching ? found : page
+  const state = statusOf(active)
+  // The search's placeholder is the previous search's answer, so rows stay
+  // put while the next one is on its way.
+  const remote = searching ? (found.data?.records ?? []).map(optionOf) : []
+  const seen = new Set<string>()
+  const options = [...remote.filter(keep), ...local].filter(
+    (o) => !seen.has(o.value) && (seen.add(o.value), true)
+  )
+  return {
+    options,
+    status: state.status,
+    error: state.error,
+    busy: active.fetchStatus === "fetching",
+    allHeld: loaded.length > 0 && !loaded.some(keep),
+    capped,
+    searching,
+    searchCapped: searching && Boolean(found.data?.cursor),
+    retry: () => void active.refetch(),
+  }
 }

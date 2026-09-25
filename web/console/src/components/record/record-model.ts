@@ -213,3 +213,9 @@ export function headerFacts(
 export function hasMerges(record: SubstrateRecord): boolean {
   return (record.formerIds ?? []).length > 0
 }
+
+/** A group's size in words: a page that did not reach the end says so
+ * ("28 or more") rather than a bare "28+". */
+export function countWords(total: number, partial: boolean): string {
+  return partial ? `${total} or more` : String(total)
+}

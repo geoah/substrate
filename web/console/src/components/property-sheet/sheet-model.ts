@@ -27,6 +27,7 @@ import {
   TO_ANY,
   elementSpec,
   emptyContainer,
+  parseValue,
   type PropSpec,
 } from "@/lib/record-schema"
 
@@ -78,6 +79,36 @@ export function propertyWrite(
     return {}
   }
   return { properties: { [field.name]: submitted.value } }
+}
+
+/** The one write a list editor makes: the whole list, each item checked
+ * against the element's datatype, blank items dropped. An emptied list is a
+ * claim ("none") and writes `[]`, as `propertyWrite` does; an absent list left
+ * empty writes nothing. Items are taken as typed, never split on commas: a
+ * phone number or a name may carry one. */
+export function listWrite(
+  field: FormField,
+  stored: unknown,
+  items: readonly string[]
+): { properties?: Record<string, unknown>; error?: string } {
+  const kept = items.map((s) => s.trim()).filter(Boolean)
+  const values: unknown[] = []
+  for (const [i, item] of kept.entries()) {
+    const parsed = parseValue(field.spec, item)
+    if (parsed.error) return { error: `Item ${i + 1}: ${parsed.error}` }
+    values.push(...((parsed.value as unknown[] | undefined) ?? []))
+  }
+  if (!values.length && (stored === undefined || stored === null)) return {}
+  if (same(stored, values)) return {}
+  return { properties: { [field.name]: values } }
+}
+
+/** A stored list's items as the strings a list editor holds. */
+export function listItems(stored: unknown): string[] {
+  if (!Array.isArray(stored)) return []
+  return stored.map((v) =>
+    typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)
+  )
 }
 
 /** A stored reference is served as `{ref}` and written as the path; compare
@@ -134,16 +165,46 @@ export function propertyIcon(spec: PropSpec): { icon: LucideIcon } {
   }
 }
 
+/** How a list's items read: short tokens (addresses, numbers, enum values,
+ * tags) as chips that wrap inside the value's column, and anything a reader
+ * reads rather than scans (records, links, prose, longer strings) one per
+ * line. */
+export function repeatedLayout(
+  item: PropSpec,
+  values: readonly unknown[]
+): "chips" | "lines" {
+  if (item.kind === "reference" || item.kind === "url") return "lines"
+  if (item.kind === "markdown" || item.kind === "text") return "lines"
+  if (item.values?.length) return "chips"
+  if (item.kind === "email" || item.kind === "phone") return "chips"
+  return values.every(
+    (v) =>
+      (typeof v === "string" && v.length <= CHIP_MAX && !v.includes("\n")) ||
+      typeof v === "number" ||
+      typeof v === "boolean"
+  )
+    ? "chips"
+    : "lines"
+}
+
+/** The longest string that still reads as a chip. */
+const CHIP_MAX = 32
+
 /** Whether a value renders as a block under its row rather than on the
  * row's line. */
 export function isBlockValue(spec: PropSpec, value: unknown): boolean {
   if (value === undefined || value === null) return false
-  if (spec.kind === "reference") return false
+  if (spec.kind === "reference" && !spec.repeated) return false
   if (spec.keyed) return true
   if (spec.kind === "object" || spec.kind === "json") return true
   if (spec.repeated) {
     const item = elementSpec(spec)
-    return item.kind === "object" || item.kind === "json"
+    if (item.kind === "object" || item.kind === "json") return true
+    return (
+      Array.isArray(value) &&
+      value.length > 1 &&
+      repeatedLayout(item, value) === "lines"
+    )
   }
   return false
 }

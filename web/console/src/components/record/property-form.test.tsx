@@ -125,9 +125,7 @@ function emitted(onChange: { mock: { calls: unknown[][] } }): string {
 // ── the record dropdown, as a caller drives it ──────────────────────────────
 
 function searchBox(): HTMLInputElement {
-  return screen.getByPlaceholderText(
-    "Search records, or type an id"
-  ) as HTMLInputElement
+  return screen.getByPlaceholderText(/, or type an id$/) as HTMLInputElement
 }
 
 /** The record ids the open dropdown is offering, in order. */

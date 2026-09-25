@@ -155,7 +155,7 @@ export function OwnershipChip({
         />
       }
       label={`Where ${row.spec.label} comes from`}
-      className="group/own ml-auto inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-[5px] px-1 py-0.5 outline-none hover:bg-border focus-visible:ring-2 focus-visible:ring-ring/50"
+      className="group/own inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-[5px] px-1 py-0.5 outline-none hover:bg-border focus-visible:ring-2 focus-visible:ring-ring/50 sm:ml-auto"
       card={
         <div className="flex flex-col">
           <div className="flex flex-col gap-1.5 px-3 pt-3 pb-2.5">

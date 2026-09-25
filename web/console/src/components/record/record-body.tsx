@@ -1,5 +1,7 @@
 /** The record's prose, read as the page's body under a divider and edited in
  * place: a click opens a textarea, leaving it or ⌘Enter saves, Esc cancels.
+ * Reader and editor span the document column, as the property sheet does,
+ * and sit on the same box so opening the editor does not move the text.
  * The same single-property PATCH as every other in-place edit. */
 
 import { useRef, useState } from "react"
@@ -72,7 +74,7 @@ export function RecordBody({
               void save()
             }
           }}
-          className="w-full max-w-[68ch] resize-y rounded-md border border-primary bg-background px-2.5 py-2 leading-[1.65] ring-3 ring-primary-soft outline-none"
+          className="-mx-2 block field-sizing-content min-h-24 w-[calc(100%+1rem)] resize-y rounded-md border border-primary bg-background px-2 py-1 leading-[1.65] ring-3 ring-primary-soft outline-none"
         />
       ) : (
         <div
@@ -99,7 +101,7 @@ export function RecordBody({
             }
           }}
           className={cn(
-            "-mx-2 max-w-[calc(68ch+1rem)] rounded-md px-2 py-1 leading-[1.65] outline-none",
+            "-mx-2 rounded-md px-2 py-1 leading-[1.65] outline-none",
             !readOnly && "cursor-text hover:bg-hover focus-visible:bg-hover"
           )}
         >

@@ -35,7 +35,7 @@ function Label({ row }: { row: SheetRow }) {
   return (
     <IdentityHoverCard
       trigger={<div />}
-      className="flex min-h-9 min-w-0 items-center gap-[7px] pr-1.5 pl-0.5 text-[13.5px] text-muted-foreground"
+      className="flex min-h-9 min-w-0 items-center gap-[7px] self-start pr-1.5 pl-0.5 text-[13.5px] text-muted-foreground"
       card={
         <IdentityCard
           title={row.spec.label}
@@ -126,7 +126,7 @@ export function PropertySheet({
   return (
     <div
       data-slot="property-sheet"
-      className="my-[18px] grid grid-cols-[minmax(96px,120px)_minmax(0,1fr)] gap-y-0.5 sm:grid-cols-[minmax(120px,170px)_minmax(0,1fr)]"
+      className="my-[18px] grid grid-cols-[minmax(96px,120px)_minmax(0,1fr)] gap-y-0.5 sm:grid-cols-[minmax(120px,170px)_minmax(0,1fr)_auto]"
     >
       {rows.map((row) => {
         const isEditing = editing === row.name && Boolean(row.field)
@@ -134,6 +134,13 @@ export function PropertySheet({
         const panel = isEditing && style === "panel"
         const block = !isEditing && isBlockValue(row.spec, row.value)
         const detailOpen = open.includes(row.name)
+        // Where the value comes from sits in its own column, so a long value
+        // wraps inside its own and never runs under the chip.
+        const locked = Boolean(
+          row.lock && row.lock !== "provider" && row.filled
+        )
+        const chip = Boolean(row.filled && !isEditing && row.meta?.manager)
+        const provenance = !isEditing && (locked || chip)
         return (
           <div
             key={row.name}
@@ -162,6 +169,7 @@ export function PropertySheet({
               }}
               className={cn(
                 "relative flex min-h-9 min-w-0 flex-wrap items-center gap-1.5 rounded-md px-2 py-[3px] text-sm outline-none",
+                !provenance && "sm:col-span-2",
                 row.field &&
                   !isEditing &&
                   "cursor-text hover:bg-hover focus-visible:bg-hover",
@@ -192,29 +200,36 @@ export function PropertySheet({
                   <Value row={row} />
                 </span>
               )}
-              {row.lock && row.lock !== "provider" && row.filled && (
-                <span
-                  title={LOCK_WORDS[row.lock]}
-                  aria-label={LOCK_WORDS[row.lock]}
-                  className="text-faint"
-                >
-                  <LockIcon aria-hidden className="size-3" />
-                </span>
-              )}
-              {row.filled && !isEditing && (
-                <OwnershipChip
-                  row={row}
-                  open={detailOpen}
-                  onToggle={() =>
-                    setOpen((prev) =>
-                      prev.includes(row.name)
-                        ? prev.filter((n) => n !== row.name)
-                        : [...prev, row.name]
-                    )
-                  }
-                />
-              )}
             </div>
+            {provenance && (
+              <div
+                data-slot="provenance"
+                className="col-start-2 -mt-1 mb-1 flex min-w-0 items-center gap-1.5 self-start px-1 sm:col-start-3 sm:mt-0 sm:mb-0 sm:min-h-9 sm:justify-end sm:pl-3"
+              >
+                {locked && (
+                  <span
+                    title={LOCK_WORDS[row.lock!]}
+                    aria-label={LOCK_WORDS[row.lock!]}
+                    className="text-faint"
+                  >
+                    <LockIcon aria-hidden className="size-3" />
+                  </span>
+                )}
+                {chip && (
+                  <OwnershipChip
+                    row={row}
+                    open={detailOpen}
+                    onToggle={() =>
+                      setOpen((prev) =>
+                        prev.includes(row.name)
+                          ? prev.filter((n) => n !== row.name)
+                          : [...prev, row.name]
+                      )
+                    }
+                  />
+                )}
+              </div>
+            )}
             {panel && (
               <div className="col-span-full mb-2">
                 <InlineEditor
@@ -231,7 +246,7 @@ export function PropertySheet({
             {errors[row.name] && (
               <p
                 role="alert"
-                className="col-span-full -mt-0.5 mb-1.5 rounded-md bg-bad-soft px-2.5 py-1.5 text-[12.5px] text-destructive sm:col-start-2"
+                className="col-span-full -mt-0.5 mb-1.5 rounded-md bg-bad-soft px-2.5 py-1.5 text-[12.5px] text-destructive sm:col-start-2 sm:col-end-4"
               >
                 {errors[row.name]}
               </p>

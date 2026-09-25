@@ -41,7 +41,6 @@ import {
 import { useReferenceTitles } from "@/hooks/use-reference-titles"
 import type { KindInfo } from "@/lib/api/types"
 import { kindByIdentity } from "@/lib/definition"
-import { useRecordOptions } from "@/lib/identities"
 import {
   asBag,
   asKeyedRows,
@@ -582,18 +581,8 @@ function ReferenceField({
   const pinned = pinnedKind(field)
   const chosen = ref.kind || pinned
   const target = kindByIdentity(kinds, chosen)
-  // The PIN names a kind, a KindInfo is an authority and a name, so the
-  // registry the editor already holds says which collection to offer.
-  const offered = useRecordOptions(chosen, kinds, self)
-  // A chosen record the loaded page does not hold still reads by its title:
-  // one batched read over its path, and only then.
-  const unlisted =
-    chosen &&
-    ref.id &&
-    !offered.loading &&
-    !offered.options.some((o) => o.value === ref.id)
-      ? [`${chosen}/${ref.id}`]
-      : []
+  // The chosen record reads by its title: one batched read over its path.
+  const unlisted = chosen && ref.id ? [`${chosen}/${ref.id}`] : []
   const titles = useReferenceTitles(unlisted, kinds)
 
   return (
@@ -616,14 +605,14 @@ function ReferenceField({
           </select>
         )}
         <RecordCombobox
-          {...offered}
+          pin={chosen}
+          kinds={kinds}
+          self={self}
           id={id}
           value={ref.id}
           valueTitle={titles.get(`${chosen}/${ref.id}`)}
           invalid={Boolean(error)}
-          placeholder={
-            target ? `select a ${target.name}` : "select a kind first"
-          }
+          placeholder={target ? "Choose…" : "Choose a kind first"}
           onSelect={(next) => onChange({ kind: chosen, id: next })}
         />
       </div>

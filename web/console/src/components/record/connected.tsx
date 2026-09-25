@@ -40,6 +40,7 @@ import {
   MERGE_REQUEST_KIND,
   REVIEW_ROUTES,
   connectedGroups,
+  countWords,
   everydayGroups,
   sortConnected,
   doneState,
@@ -163,11 +164,12 @@ function Group({
                   }}
                 />
               </span>
-              {done} of {total}
-              {partial ? "+" : ""} done
+              {partial
+                ? `${done} of the first ${total} done`
+                : `${done} of ${total} done`}
             </span>
           ) : (
-            `${total}${partial ? "+" : ""}`
+            countWords(total, partial)
           )}
         </span>
       </div>
@@ -179,40 +181,50 @@ function Group({
         return (
           <div
             key={`${row.record.kind}/${row.record.id}/${row.path ?? ""}`}
-            className="flex min-h-9 flex-wrap items-center gap-3 border-b px-3 last:border-b-0"
+            data-slot="connected-row"
+            className="flex min-h-9 items-center gap-3 border-b px-3 last:border-b-0"
           >
-            {REVIEW_ROUTES[row.record.kind] ? (
-              <Link
-                to={REVIEW_ROUTES[row.record.kind]}
-                params={{ id: row.record.id }}
-                className="inline-flex min-w-0 items-center gap-[5px] text-foreground no-underline"
-              >
-                <KindGlyph kind={row.record.kind} size="xs" />
-                <span className="truncate border-b border-border-strong leading-tight hover:border-muted-foreground">
-                  {recordTitle(row.record.properties) ||
-                    untitled(row.record.kind)}
-                </span>
-              </Link>
-            ) : (
-              <RecordRef
-                kind={row.record.kind}
-                id={row.record.id}
-                title={recordTitle(row.record.properties) || undefined}
-              />
-            )}
-            <span className="ml-auto flex items-center gap-3 text-[12.5px] text-faint">
-              {typeof state === "string" && (
-                <StateBadge value={state} initial={stateSpec?.initial} />
-              )}
-              {typeof when === "string" && (
-                <span title={when}>{friendlyDay(when)}</span>
-              )}
-              {technical && (
-                <span className="font-mono text-[11px] [overflow-wrap:anywhere]">
-                  {recordPath(row.record.kind, row.record.id)}
-                </span>
+            <span className="flex min-w-0 flex-1">
+              {REVIEW_ROUTES[row.record.kind] ? (
+                <Link
+                  to={REVIEW_ROUTES[row.record.kind]}
+                  params={{ id: row.record.id }}
+                  className="inline-flex max-w-full min-w-0 items-center gap-[5px] text-foreground no-underline"
+                >
+                  <KindGlyph kind={row.record.kind} size="xs" />
+                  <span className="truncate border-b border-border-strong leading-tight hover:border-muted-foreground">
+                    {recordTitle(row.record.properties) ||
+                      untitled(row.record.kind)}
+                  </span>
+                </Link>
+              ) : (
+                <RecordRef
+                  kind={row.record.kind}
+                  id={row.record.id}
+                  title={recordTitle(row.record.properties) || undefined}
+                />
               )}
             </span>
+            {technical && (
+              <span
+                title={recordPath(row.record.kind, row.record.id)}
+                className="max-w-[40%] min-w-0 truncate font-mono text-[11px] text-faint"
+              >
+                {recordPath(row.record.kind, row.record.id)}
+              </span>
+            )}
+            {(typeof state === "string" || typeof when === "string") && (
+              <span className="flex shrink-0 items-center gap-3 text-[12.5px] whitespace-nowrap text-faint">
+                {typeof state === "string" && (
+                  <StateBadge value={state} initial={stateSpec?.initial} />
+                )}
+                {typeof when === "string" && (
+                  <span title={when} className="min-w-[3.25rem] text-right">
+                    {friendlyDay(when)}
+                  </span>
+                )}
+              </span>
+            )}
           </div>
         )
       })}
@@ -306,20 +318,22 @@ export function ConnectedSection({
             {outgoing.map((o) => (
               <div
                 key={`${o.property} ${o.kind}/${o.id}`}
-                className="flex min-h-9 flex-wrap items-center gap-3 border-b px-3 last:border-b-0"
+                className="flex min-h-9 items-center gap-3 border-b px-3 last:border-b-0"
               >
                 {technical ? (
-                  <code className="rounded bg-hover px-1 font-mono text-[11.5px]">
+                  <code className="shrink-0 rounded bg-hover px-1 font-mono text-[11.5px]">
                     {o.property}
                   </code>
                 ) : (
-                  <span className="font-medium">{o.label}</span>
+                  <span className="shrink-0 font-medium">{o.label}</span>
                 )}
                 <span aria-hidden className="text-faint">
                   →
                 </span>
-                <RecordRef kind={o.kind} id={o.id} />
-                <span className="ml-auto text-[12.5px] text-faint">
+                <span className="flex min-w-0 flex-1">
+                  <RecordRef kind={o.kind} id={o.id} />
+                </span>
+                <span className="max-w-[40%] min-w-0 shrink-0 truncate text-[12.5px] whitespace-nowrap text-faint">
                   {technical ? (
                     <KindPath reference={o.kind} className="text-[11.5px]" />
                   ) : (
