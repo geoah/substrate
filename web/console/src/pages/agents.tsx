@@ -75,6 +75,9 @@ export function AgentsPage() {
   const [draft, setDraft] = useState(search.prompt)
   // A new chat whose run minted a thread keeps its conversation mounted.
   const [adopted, setAdopted] = useState<{ from: string; to: string }>()
+  // Which new chat this is. A conversation that adopted a thread holds it as
+  // its own, so the next new chat, even with the same agent, is another one.
+  const [chat, setChat] = useState(0)
 
   const agents = useQuery(agentsQueryOptions())
   const conversations = useQuery(conversationsQueryOptions())
@@ -132,11 +135,18 @@ export function AgentsPage() {
       threadTitle(undefined))
     : "New chat"
 
+  const newKey = `new:${chat}:${agentId ?? ""}`
+  // Back at a new chat whose conversation already adopted a thread (New
+  // chat, or the browser's back button): that one is spent.
+  if (!threadId && adopted?.from === newKey) {
+    setChat(chat + 1)
+    setAdopted(undefined)
+  }
   const conversationKey = threadId
     ? adopted?.to === threadId
       ? adopted.from
       : threadId
-    : `new:${agentId ?? ""}`
+    : newKey
 
   function openThread(id: string) {
     setChatsSheet(false)
