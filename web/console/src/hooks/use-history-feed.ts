@@ -70,14 +70,16 @@ export function useHistoryFeed(
   }: HistoryFeedOptions = {}
 ): HistoryFeedState {
   const queryClient = useQueryClient()
+  // Every sentence says what changed in values where the server can.
+  const asked: ChangeFeedFilter = { ...filter, values: true }
   const history = useInfiniteQuery({
-    ...changesInfiniteOptions(filter, { first }),
+    ...changesInfiniteOptions(asked, { first }),
     enabled,
   })
   const [liveRows, setLiveRows] = useState<ChangeRow[]>([])
   const [status, setStatus] = useState<WatchStatus>("off")
   const [nonce, setNonce] = useState(0)
-  const filterKey = JSON.stringify(filter)
+  const filterKey = JSON.stringify(asked)
   const [lastKey, setLastKey] = useState(filterKey)
   if (lastKey !== filterKey) {
     setLastKey(filterKey)

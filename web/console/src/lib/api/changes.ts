@@ -44,6 +44,29 @@ export interface ChangeFeedFilter {
   recordKind?: string
   /** Case-insensitive substring over kind, actor, record id, payload text. */
   q?: string
+  /** Ask for each affected record's before and after property values
+   * (`values=1`, decision 0106). It narrows nothing. A server that predates
+   * it refuses the parameter; the read then retries without it and the rows
+   * carry names alone. */
+  values?: boolean
+}
+
+/** Whether this server takes `values=1`. Learned from the first refusal and
+ * kept for the page's life: the server does not change under a tab. */
+let valuesSupported = true
+
+/** An older server's refusal of the parameter it does not know. */
+function refusedValues(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    err.status === 400 &&
+    err.message.includes("values")
+  )
+}
+
+/** Forget what an earlier refusal taught (tests). */
+export function resetValuesSupport() {
+  valuesSupported = true
 }
 
 export function changesSearch(filter: ChangeFeedFilter = {}): URLSearchParams {
@@ -58,6 +81,7 @@ export function changesSearch(filter: ChangeFeedFilter = {}): URLSearchParams {
     params.set("recordKind", filter.recordKind)
   }
   if (filter.q) params.set("q", filter.q)
+  if (filter.values && valuesSupported) params.set("values", "1")
   return params
 }
 
@@ -70,6 +94,7 @@ function filterKey(filter: ChangeFeedFilter) {
     recordId: filter.recordId ?? null,
     recordKind: filter.recordKind ?? null,
     q: filter.q ?? null,
+    values: filter.values ?? false,
   }
 }
 
@@ -97,12 +122,18 @@ export async function fetchChangesPage(opts: {
   // oldest seq on the page, the next `before`), and it advances past
   // scope-filtered rows, so a short page is NOT the end; the walk continues
   // while a cursor comes back and stops when it is omitted.
-  return request<ChangePage>(
-    "GET",
-    `${rootPath("changes")}?${params}`,
-    undefined,
-    { signal: opts.signal }
-  )
+  try {
+    return await request<ChangePage>(
+      "GET",
+      `${rootPath("changes")}?${params}`,
+      undefined,
+      { signal: opts.signal }
+    )
+  } catch (err) {
+    if (!params.has("values") || !refusedValues(err)) throw err
+    valuesSupported = false
+    return fetchChangesPage(opts)
+  }
 }
 
 export interface ChangesFeedOpts {
@@ -372,7 +403,13 @@ export function watchChanges(opts: {
           return
         }
         if (!res.ok || !res.body) {
-          throw envelopeError(res.status, await parseBody(res))
+          const err = envelopeError(res.status, await parseBody(res))
+          if (params.has("values") && refusedValues(err)) {
+            // An older server: reopen at once, names alone.
+            valuesSupported = false
+            continue
+          }
+          throw err
         }
         opened = true
         opts.onStatus?.("live")

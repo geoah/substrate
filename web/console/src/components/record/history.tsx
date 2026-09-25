@@ -1,7 +1,8 @@
-/** A record's history as sentences: who did what, newest first, with the
- * properties each change touched. The changelog carries no values, only the
- * names of what moved (a state's new value rides beside them), so a row says
- * what changed and the record says what it is now.
+/** A record's history as sentences: who did what, newest first, with what
+ * each change did to the values ("Priority  High → Urgent", "Emails  +
+ * grace@example.com"). The server derives each before and after when asked
+ * (decision 0106); against one that predates it, a row falls back to the
+ * names of what moved (a state's new value rides beside them).
  *
  * Two honesty rules hold (owner redline, 2026-08-06):
  * - Former ids are part of the record: the wire's `recordId` scope follows
@@ -15,6 +16,7 @@
 import { useMemo } from "react"
 
 import { ago } from "@/components/property-sheet/dates"
+import { ValueMoves } from "@/components/changelog/value-moves"
 import { ActorRef } from "@/components/identity/actor-ref"
 import { StateBadge } from "@/components/identity/state-badge"
 import { Button } from "@/components/ui/button"
@@ -22,26 +24,33 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import type { ChangeRow, KindInfo, SubstrateRecord } from "@/lib/api/types"
-import { humanizeName, propSpecsByName } from "@/lib/record-schema"
+import { netMoves, valueSpecs } from "@/lib/change-values"
+import { humanizeName, type PropSpec } from "@/lib/record-schema"
 import { changeSentence, plainChanges, stateMoves } from "./record-model"
 import { useRecordChanges } from "./use-record-changes"
 
 function Row({
   row,
   record,
-  labels,
+  specs,
   formerIds,
 }: {
   row: ChangeRow
   record: SubstrateRecord
-  labels: Map<string, string>
+  specs: ReadonlyMap<string, PropSpec>
   formerIds: string[]
 }) {
   const [technical] = useTechnicalDetails()
   const created = row.op === "put" && row.payload?.created === true
-  const moves = stateMoves(row)
-  const changed = plainChanges(row)
-  const label = (p: string) => labels.get(p) ?? humanizeName(p)
+  // A row under a former id speaks for that id; every other row (a merge or
+  // split addressed to the other side included) for this record.
+  const id = formerIds.includes(row.recordId) ? row.recordId : record.id
+  const values = netMoves([row], id, record.kind)
+  // A creation's values are the record itself, which the page already shows.
+  const showValues = values !== undefined && (!created || technical)
+  const moves = values ? [] : stateMoves(row)
+  const changed = values ? [] : plainChanges(row)
+  const label = (p: string) => specs.get(p)?.label ?? humanizeName(p)
   const showChanged = changed.length > 0 && (!created || technical)
   return (
     <div
@@ -53,6 +62,9 @@ function Row({
           <ActorRef actor={row.actor} />
           <span>{changeSentence(row, record)}</span>
         </div>
+        {showValues && (
+          <ValueMoves moves={values} specs={specs} className="mt-1" />
+        )}
         {(moves.length > 0 || showChanged) && (
           <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12.5px] text-muted-foreground">
             {moves.map(([p, to]) => (
@@ -101,13 +113,7 @@ export function HistorySection({
   kind?: KindInfo
 }) {
   const { changes, rows } = useRecordChanges(record)
-  const labels = useMemo(
-    () =>
-      new Map(
-        (kind ? propSpecsByName(kind) : []).map((s) => [s.name, s.label])
-      ),
-    [kind]
-  )
+  const specs = useMemo(() => valueSpecs(kind), [kind])
   const formerIds = record.formerIds ?? []
 
   if (changes.isPending) {
@@ -137,7 +143,7 @@ export function HistorySection({
           key={row.seq}
           row={row}
           record={record}
-          labels={labels}
+          specs={specs}
           formerIds={formerIds}
         />
       ))}
