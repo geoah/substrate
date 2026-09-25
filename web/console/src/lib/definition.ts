@@ -4,7 +4,7 @@
  * that feed every hover. Key order in `definition` is lost to jsonb, so
  * declared names sort alphabetically — stable and honest. */
 
-import { splitKind } from "@/lib/api/http"
+import { CORE_AUTHORITY, splitKind } from "@/lib/api/http"
 import { parseEnumValues, type EnumValue, type KindInfo } from "@/lib/api/types"
 
 /** A kind reference split into `{authority, pkg, name}`:
@@ -18,6 +18,25 @@ export { splitKind }
  * repository-local kind, which carries neither. */
 export function kindPackage(k: KindInfo): string {
   return k.authority ? `${k.authority}/${k.package}` : ""
+}
+
+/** What a kind is FOR, as the console lists it: `primary` kinds are the
+ * collections a person keeps; `supporting` kinds hold what those need
+ * (email addresses, labels); `internal` kinds are machinery. */
+export type KindPurpose = "primary" | "supporting" | "internal"
+
+const PURPOSES: readonly KindPurpose[] = ["primary", "supporting", "internal"]
+
+/** The declaration's `purpose`, absent reading `primary`. Every kind the
+ * substrate's own authority publishes is machinery whatever it declares. */
+export function kindPurpose(k: KindInfo | string): KindPurpose {
+  const authority = typeof k === "string" ? splitKind(k).authority : k.authority
+  if (authority === CORE_AUTHORITY) return "internal"
+  if (typeof k === "string") return "primary"
+  const declared = k.definition?.purpose
+  return PURPOSES.includes(declared as KindPurpose)
+    ? (declared as KindPurpose)
+    : "primary"
 }
 
 export interface DeclaredProperty {

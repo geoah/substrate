@@ -11,6 +11,7 @@ import {
   propertyTypeLabel,
   kindByCollection,
   kindByIdentity,
+  kindPurpose,
   splitKind,
   stateProperties,
   temporalProperties,
@@ -337,5 +338,31 @@ describe("the reference properties a page may expand", () => {
 
   it("reads the live person kind's own pointer", () => {
     expect(expandableReferences(person)).toEqual(["memberOf"])
+  })
+})
+
+describe("kindPurpose", () => {
+  const withPurpose = (purpose: unknown, authority = "example.com") => ({
+    ...person,
+    identity: `${authority}/things/thing`,
+    authority,
+    definition: { ...person.definition, purpose },
+  })
+
+  it("reads the declared purpose, absent being primary", () => {
+    expect(kindPurpose(person)).toBe("primary")
+    expect(kindPurpose(withPurpose("supporting"))).toBe("supporting")
+    expect(kindPurpose(withPurpose("internal"))).toBe("internal")
+    expect(kindPurpose(withPurpose("decorative"))).toBe("primary")
+  })
+
+  it("treats every kind of the substrate's own authority as internal", () => {
+    expect(kindPurpose(withPurpose("primary", "substrate.reamde.dev"))).toBe(
+      "internal"
+    )
+    expect(kindPurpose("substrate.reamde.dev/llm/thread")).toBe("internal")
+    expect(kindPurpose("samples.substrate.reamde.dev/tasks/task")).toBe(
+      "primary"
+    )
   })
 })
