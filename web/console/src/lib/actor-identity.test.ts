@@ -105,3 +105,11 @@ describe("providers", () => {
     )
   })
 })
+
+describe("a seeded package's bundle actor", () => {
+  it("reads bundle:core as the substrate, never as you", () => {
+    const core = actorIdentity("bundle:core")
+    expect(core.cls).toBe("bundle")
+    expect(core.name).toBe("Substrate")
+  })
+})
