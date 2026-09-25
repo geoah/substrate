@@ -28,6 +28,7 @@ import { AgentMark } from "@/components/agent/agent-mark"
 import { Composer } from "@/components/agent/composer"
 import { Transcript } from "@/components/agent/transcript"
 import { IdText } from "@/components/identity/id-text"
+import { Button } from "@/components/ui/button"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { agentName, examplePrompts, providerName } from "@/lib/agent-chat"
 import {
@@ -156,13 +157,21 @@ export function Conversation({
 
   const persisted = transcriptOrder(messages.data?.records ?? [])
   const handedOver = settledAt > 0 && messages.dataUpdatedAt >= settledAt
+  // The read after a run failed for good: no handover will come on its own.
+  // The overlay stays (it is the only view of the run), the composer is
+  // released, and a retry that lands completes the handover.
+  const reloadFailed =
+    settledAt > 0 &&
+    !handedOver &&
+    messages.isError &&
+    messages.errorUpdatedAt >= settledAt
   const turns = handedOver
     ? transcriptOf(persisted)
     : [...transcriptOf(persisted), ...live.turns]
   // A run that has settled but whose rows have not arrived is still busy: a
   // send in that window would push onto an overlay the refetch is about to
   // duplicate.
-  const busy = streaming || (settledAt > 0 && !handedOver)
+  const busy = streaming || (settledAt > 0 && !handedOver && !reloadFailed)
   const liveKey = streaming
     ? [...live.turns].reverse().find((t) => t.role === "assistant")?.key
     : undefined
@@ -252,10 +261,12 @@ export function Conversation({
     setError(null)
     setResult(null)
     seqRef.current++
-    // The previous run's overlay is the persisted transcript's job now.
+    // The previous run's overlay is the persisted transcript's job now —
+    // unless its read failed, when the overlay is still the only view of it.
     setSettledAt(0)
     update({
       turns: [
+        ...(reloadFailed ? liveRef.current.turns : []),
         {
           key: `live-u${seqRef.current}`,
           role: "user",
@@ -386,6 +397,25 @@ export function Conversation({
           {error && (
             <div className="rounded-lg border border-destructive/30 bg-bad-soft px-3.5 py-2.5 text-[13px] text-destructive">
               {name} couldn’t answer: {error}
+            </div>
+          )}
+          {reloadFailed && (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-destructive/30 bg-bad-soft px-3.5 py-2.5 text-[13px] text-destructive"
+            >
+              <span>
+                The conversation didn’t reload after that answer:{" "}
+                {messages.error?.message}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={messages.isFetching}
+                onClick={() => void messages.refetch()}
+              >
+                Try again
+              </Button>
             </div>
           )}
           {technical && result && (

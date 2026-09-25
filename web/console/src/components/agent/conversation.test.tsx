@@ -4,7 +4,14 @@
  * the error is shown, and what was typed comes back so a retry is one press. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
 import { useState, type ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -37,11 +44,12 @@ import { Conversation } from "./conversation"
 afterEach(() => {
   cleanup()
   calls.length = 0
+  vi.unstubAllGlobals()
 })
 
-function Harness() {
+function Harness({ initialThread = "" }: { initialThread?: string }) {
   const [draft, setDraft] = useState("")
-  const [thread, setThread] = useState("")
+  const [thread, setThread] = useState(initialThread)
   return (
     <Conversation
       agentId="helper"
@@ -54,13 +62,13 @@ function Harness() {
   )
 }
 
-function mount() {
+function mount(initialThread?: string) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   return render(
     <QueryClientProvider client={client}>
-      <Harness />
+      <Harness initialThread={initialThread} />
     </QueryClientProvider>
   )
 }
@@ -89,5 +97,42 @@ describe("Conversation", () => {
     fireEvent.click(send)
     expect(calls).toHaveLength(2)
     expect(calls[1].message).toBe("hello there")
+  })
+
+  it("says the finished run's messages did not reload, releases the composer, and retries", async () => {
+    let fail = false
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fail
+          ? new Response(JSON.stringify({ error: { message: "db down" } }), {
+              status: 500,
+            })
+          : new Response(JSON.stringify({ records: [] }), { status: 200 })
+      )
+    )
+    mount("t-1")
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "hello" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    fail = true
+    act(() => calls[0].onDone?.())
+
+    const note = await screen.findByRole("alert")
+    expect(note.textContent).toContain("db down")
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "again" },
+    })
+    expect(
+      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+        .disabled
+    ).toBe(false)
+
+    fail = false
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull())
   })
 })
