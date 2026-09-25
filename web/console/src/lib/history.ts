@@ -4,8 +4,9 @@
  * component only renders. */
 
 import { actorIdentity, PROVIDERS_AUTHORITY } from "@/lib/actor-identity"
-import type { ChangeRow } from "@/lib/api/types"
+import type { ChangeRow, KindInfo } from "@/lib/api/types"
 import { changedProperties } from "@/lib/changelog"
+import { kindPurpose } from "@/lib/definition"
 
 /** Runs of the same actor doing the same thing to the same kind fold into one
  * sentence while each row lands within this long of the one before it. */
@@ -205,4 +206,23 @@ export function viewActors(
           .map((id) => `bundle:${colons(id)}`),
       ].sort()
   }
+}
+
+/** A change to machinery rather than to data a person keeps: a write to a
+ * kind the console lists as internal (every kind the substrate's own
+ * authority publishes among them) — trigger runs, tokens, preferences. A
+ * row whose kind the registry no longer carries is judged by its reference
+ * alone. */
+export function isSystemChange(
+  row: ChangeRow,
+  kinds: ReadonlyMap<string, KindInfo>
+): boolean {
+  return kindPurpose(kinds.get(row.kind) ?? row.kind) === "internal"
+}
+
+/** The registry keyed by full reference, the lookup `isSystemChange` reads. */
+export function kindsByReference(
+  kinds: readonly KindInfo[] | undefined
+): Map<string, KindInfo> {
+  return new Map((kinds ?? []).map((k) => [k.identity, k]))
 }

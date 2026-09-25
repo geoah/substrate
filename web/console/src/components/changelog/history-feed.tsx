@@ -4,7 +4,7 @@
  * adds each entry's changelog sequence numbers and property keys; the actor's
  * raw id rides `ActorRef`. */
 
-import { useMemo } from "react"
+import { useMemo, type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 
 import { ActorRef } from "@/components/identity/actor-ref"
@@ -179,6 +179,45 @@ export function HistorySkeleton({ rows = 6 }: { rows?: number }) {
   )
 }
 
+/** The line that says what an everyday feed left out, so nothing is lost
+ * silently: "12 system changes hidden · Show". With `shown`, the way back. */
+export function SystemChangesNote({
+  hidden,
+  shown = false,
+  onToggle,
+  action,
+  className,
+}: {
+  hidden: number
+  shown?: boolean
+  onToggle?: () => void
+  /** In place of the toggle: somewhere else they can be seen. */
+  action?: ReactNode
+  className?: string
+}) {
+  if (!shown && hidden === 0) return null
+  return (
+    <p
+      data-slot="system-changes"
+      className={cn("text-[12.5px] text-faint", className)}
+    >
+      {shown
+        ? "Showing system changes"
+        : `${hidden} system ${hidden === 1 ? "change" : "changes"} hidden`}
+      {" · "}
+      {action ?? (
+        <button
+          type="button"
+          onClick={onToggle}
+          className="cursor-pointer text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          {shown ? "Hide" : "Show"}
+        </button>
+      )}
+    </p>
+  )
+}
+
 /** A feed with its own paging: the sentences, then "Show older changes". */
 export function HistoryFeed({
   feed,
@@ -198,12 +237,20 @@ export function HistoryFeed({
       </div>
     )
   }
-  if (!feed.rows.length) {
+  if (!feed.rows.length && !feed.hidden && !feed.hasOlder) {
     return <p className="py-8 text-muted-foreground">{empty}</p>
   }
   return (
     <>
-      <HistorySentences rows={feed.rows} more={feed.hasOlder} />
+      {feed.rows.length ? (
+        <HistorySentences rows={feed.rows} more={feed.hasOlder} />
+      ) : (
+        <p className="py-8 text-muted-foreground">
+          {feed.hasOlder
+            ? "Only system changes among the latest ones."
+            : "Only system changes so far."}
+        </p>
+      )}
       {feed.hasOlder && (
         <div className="pt-4">
           <Button

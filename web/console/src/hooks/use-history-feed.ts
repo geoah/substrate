@@ -2,7 +2,13 @@
  * what History, the actor page and Home read their sentences from. */
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
+
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 
 import {
   changesInfiniteOptions,
@@ -10,15 +16,25 @@ import {
   type ChangeFeedFilter,
   type WatchStatus,
 } from "@/lib/api/changes"
+import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { ChangeRow } from "@/lib/api/types"
 import { mergeFeed } from "@/lib/changelog"
+import { isSystemChange, kindsByReference } from "@/lib/history"
 
 /** Rows one history page reads: enough to fill a screen with sentences once
  * the runs fold. */
 const HISTORY_PAGE = 100
 
+/** How many further pages a filtered feed reads on its own to fill the
+ * screen before it waits for "Show older changes": a repository whose last
+ * thousand rows are all machinery must not page forever. */
+const FILL_PAGES = 5
+
 export interface HistoryFeedState {
+  /** The rows `keep` admits, newest first. */
   rows: ChangeRow[]
+  /** Loaded rows `keep` refused. */
+  hidden: number
   status: WatchStatus
   isPending: boolean
   error: Error | null
@@ -28,12 +44,30 @@ export interface HistoryFeedState {
   retry: () => void
 }
 
+export interface HistoryFeedOptions {
+  live?: boolean
+  /** `false` reads nothing (a view whose actor set is empty). */
+  enabled?: boolean
+  first?: number
+  /** A client-side filter over the loaded rows, for what the change feed
+   * cannot filter server-side. Keep it referentially stable. */
+  keep?: (row: ChangeRow) => boolean
+  /** With `keep`: read further pages, up to FILL_PAGES of them, until this
+   * many rows pass. */
+  fill?: number
+}
+
 /** The change feed for one filter, newest first, with the live tail joined on
- * top while `live` is on. `enabled: false` reads nothing (a view whose actor
- * set is empty). */
+ * top while `live` is on. */
 export function useHistoryFeed(
   filter: ChangeFeedFilter,
-  { live = true, enabled = true, first = HISTORY_PAGE } = {}
+  {
+    live = true,
+    enabled = true,
+    first = HISTORY_PAGE,
+    keep,
+    fill = 0,
+  }: HistoryFeedOptions = {}
 ): HistoryFeedState {
   const queryClient = useQueryClient()
   const history = useInfiniteQuery({
@@ -91,18 +125,71 @@ export function useHistoryFeed(
     return () => handle.stop()
   }, [live, enabled, ready, filterKey, nonce, queryClient])
 
-  const rows = useMemo(
+  const merged = useMemo(
     () => mergeFeed(liveRows, historyRows),
     [liveRows, historyRows]
   )
+  const rows = useMemo(
+    () => (keep ? merged.filter(keep) : merged),
+    [merged, keep]
+  )
+
+  // A filtered page can come back nearly empty; read on until the screen
+  // fills or the budget runs out. "Show older changes" raises the goal and
+  // renews the budget.
+  const goal = useRef(fill)
+  const budget = useRef(FILL_PAGES)
+  useEffect(() => {
+    goal.current = fill
+    budget.current = FILL_PAGES
+  }, [filterKey, fill, keep])
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = history
+  useEffect(() => {
+    if (!keep || !enabled || !head) return
+    if (rows.length >= goal.current || budget.current <= 0) return
+    if (!hasNextPage || isFetchingNextPage) return
+    budget.current -= 1
+    void fetchNextPage()
+  }, [
+    keep,
+    enabled,
+    head,
+    rows.length,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  ])
+
   return {
     rows,
+    hidden: merged.length - rows.length,
     status: live && enabled && ready ? status : "off",
     isPending: enabled && history.isPending,
     error: history.error,
     hasOlder: Boolean(history.hasNextPage),
     loadingOlder: history.isFetchingNextPage,
-    loadOlder: () => void history.fetchNextPage(),
+    loadOlder: () => {
+      if (keep) {
+        goal.current = rows.length + Math.max(fill, 1)
+        budget.current = FILL_PAGES
+      }
+      void history.fetchNextPage()
+    },
     retry: () => void history.refetch(),
   }
+}
+
+/** The `keep` everyday History reads with: only changes to data a person
+ * keeps, machinery left out. Undefined — everything — with technical details
+ * on, or once the reader asked to `show` the system changes. */
+export function useEverydayChanges(
+  show = false
+): ((row: ChangeRow) => boolean) | undefined {
+  const [technical] = useTechnicalDetails()
+  const registry = useQuery(kindsQueryOptions)
+  return useMemo(() => {
+    if (technical || show) return undefined
+    const kinds = kindsByReference(registry.data)
+    return (row: ChangeRow) => !isSystemChange(row, kinds)
+  }, [technical, show, registry.data])
 }

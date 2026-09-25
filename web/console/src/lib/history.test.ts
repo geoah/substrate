@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest"
 
-import type { ChangeRow } from "@/lib/api/types"
+import type { ChangeRow, KindInfo } from "@/lib/api/types"
 import {
   dayLabel,
   foldHistory,
   groupByDay,
   historyVerb,
+  isSystemChange,
+  kindsByReference,
   propertyLabel,
   viewActors,
 } from "./history"
@@ -132,5 +134,42 @@ describe("viewActors", () => {
       "bundle:providers.substrate.reamde.dev:google",
       "function:providers.substrate.reamde.dev:google:synccontacts",
     ])
+  })
+})
+
+function kindInfo(identity: string, purpose?: string): KindInfo {
+  const [authority, pkg, name] = identity.split("/")
+  return {
+    identity,
+    name,
+    authority,
+    package: pkg,
+    version: 1,
+    source: "builtin",
+    description: "",
+    definition: purpose ? { purpose } : {},
+  }
+}
+
+describe("system changes", () => {
+  const kinds = kindsByReference([
+    kindInfo("ada.example.com/tasks/task"),
+    kindInfo("ada.example.com/tasks/checklist", "supporting"),
+    kindInfo("ada.example.com/tasks/cursor", "internal"),
+    kindInfo("substrate.reamde.dev/core/triggerrun"),
+  ])
+
+  it("is a write to an internal kind, core's included", () => {
+    const at = (kind: string) => isSystemChange(row({ kind }), kinds)
+    expect(at("ada.example.com/tasks/task")).toBe(false)
+    expect(at("ada.example.com/tasks/checklist")).toBe(false)
+    expect(at("ada.example.com/tasks/cursor")).toBe(true)
+    expect(at("substrate.reamde.dev/core/triggerrun")).toBe(true)
+  })
+
+  it("judges a kind the registry no longer carries by its reference", () => {
+    const at = (kind: string) => isSystemChange(row({ kind }), new Map())
+    expect(at("substrate.reamde.dev/core/token")).toBe(true)
+    expect(at("ada.example.com/gone/thing")).toBe(false)
   })
 })

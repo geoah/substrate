@@ -10,6 +10,7 @@ import { Link } from "@tanstack/react-router"
 import {
   HistorySentences,
   HistorySkeleton,
+  SystemChangesNote,
 } from "@/components/changelog/history-feed"
 import { CollectionCard } from "@/components/home/collection-card"
 import { OverviewCards } from "@/components/home/overview-cards"
@@ -17,7 +18,7 @@ import { DocPage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useHistoryFeed } from "@/hooks/use-history-feed"
+import { useEverydayChanges, useHistoryFeed } from "@/hooks/use-history-feed"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { repositoryQueryOptions } from "@/lib/api/repository"
 import { getRepository } from "@/lib/api/session"
@@ -78,7 +79,11 @@ export function HomePage() {
     Math.max(SHOWN_YOURS, SHOWN_COLLECTIONS - provided.length)
   )
   const collections = [...shownYours, ...provided].slice(0, SHOWN_COLLECTIONS)
-  const recent = useHistoryFeed({}, { first: RECENT_ROWS })
+  const keep = useEverydayChanges()
+  const recent = useHistoryFeed(
+    {},
+    { first: RECENT_ROWS, keep, fill: SHOWN_CHANGES * 3 }
+  )
 
   return (
     <DocPage>
@@ -154,16 +159,37 @@ export function HomePage() {
           <p className="text-muted-foreground">
             Recent changes didn’t load: {recent.error.message}
           </p>
-        ) : recent.rows.length === 0 ? (
+        ) : recent.rows.length === 0 && !recent.hidden ? (
           <p className="text-muted-foreground">
             Nothing has changed yet. Changes show up here as they happen.
           </p>
         ) : (
-          <HistorySentences
-            rows={recent.rows}
-            limit={SHOWN_CHANGES}
-            more={recent.hasOlder}
-          />
+          <>
+            {recent.rows.length > 0 ? (
+              <HistorySentences
+                rows={recent.rows}
+                limit={SHOWN_CHANGES}
+                more={recent.hasOlder}
+              />
+            ) : (
+              <p className="text-muted-foreground">
+                Only system changes lately.
+              </p>
+            )}
+            <SystemChangesNote
+              className="pt-2.5"
+              hidden={recent.hidden}
+              action={
+                <Link
+                  to="/history"
+                  search={{ system: true }}
+                  className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  Show in History
+                </Link>
+              }
+            />
+          </>
         )}
       </Section>
     </DocPage>

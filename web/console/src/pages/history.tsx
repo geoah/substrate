@@ -7,15 +7,19 @@
 
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { parseAsStringLiteral, useQueryState } from "nuqs"
+import { parseAsBoolean, parseAsStringLiteral, useQueryState } from "nuqs"
 
 import { ChangelogPanel } from "@/components/changelog/changelog-panel"
-import { HistoryFeed, LiveStatus } from "@/components/changelog/history-feed"
+import {
+  HistoryFeed,
+  LiveStatus,
+  SystemChangesNote,
+} from "@/components/changelog/history-feed"
 import { functionsQueryOptions } from "@/components/home/overview-cards"
 import { DocPage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import { useHistoryFeed } from "@/hooks/use-history-feed"
+import { useEverydayChanges, useHistoryFeed } from "@/hooks/use-history-feed"
 import { actorMirrorsQueryOptions, actorNames } from "@/lib/api/actors"
 import { agentsQueryOptions } from "@/lib/api/agents"
 import { bundleStatusesQueryOptions } from "@/lib/api/bundles"
@@ -83,8 +87,15 @@ export function HistoryPage() {
   const { actors, ready } = useViewActors(view)
   const filter = useMemo(() => (actors ? { actors } : {}), [actors])
   const nobody = actors !== undefined && actors.length === 0
+  const [showSystem, setShowSystem] = useQueryState(
+    "system",
+    parseAsBoolean.withDefault(false)
+  )
+  const keep = useEverydayChanges(showSystem)
   const feed = useHistoryFeed(filter, {
     enabled: ready && !nobody && !table,
+    keep,
+    fill: 30,
   })
 
   return (
@@ -146,6 +157,14 @@ export function HistoryPage() {
                   {v.label}
                 </button>
               ))}
+              {!technical && (
+                <SystemChangesNote
+                  className="ml-auto self-center"
+                  hidden={feed.hidden}
+                  shown={showSystem}
+                  onToggle={() => void setShowSystem(showSystem ? null : true)}
+                />
+              )}
             </div>
             {nobody ? (
               <p className="py-8 text-muted-foreground">{EMPTY[view]}</p>
