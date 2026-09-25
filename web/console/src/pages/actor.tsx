@@ -11,17 +11,14 @@ import { useQuery } from "@tanstack/react-query"
 import { parseAsStringLiteral, useQueryState } from "nuqs"
 
 import { ChangelogPanel } from "@/components/changelog/changelog-panel"
-import {
-  HistoryFeed,
-  LiveStatus,
-  useHistoryFeed,
-} from "@/components/changelog/history-feed"
+import { HistoryFeed, LiveStatus } from "@/components/changelog/history-feed"
 import { ActorMark } from "@/components/identity/actor-ref"
 import { CopyButton } from "@/components/identity/copy-button"
 import { DocPage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
 import { RecordRef } from "@/components/identity/record-ref"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { useHistoryFeed } from "@/hooks/use-history-feed"
 import { actorIdentity } from "@/lib/actor-identity"
 import { actorMirrorsQueryOptions, resolveActor } from "@/lib/api/actors"
 import { CORE_PACKAGE } from "@/lib/api/http"
@@ -79,7 +76,7 @@ export function ActorPage() {
       <DocPage className={cn(table && "pb-2 md:pb-3")}>
         <PageHeader
           glyph={
-            <span className="inline-grid scale-[1.6] origin-top-left p-0.5">
+            <span className="inline-grid origin-top-left scale-[1.6] p-0.5">
               <ActorMark identity={identity} />
             </span>
           }

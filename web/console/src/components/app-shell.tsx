@@ -174,7 +174,9 @@ export function crumbsFor(pathname: string, technical = false): Crumb[] {
           true
         ),
         {
-          label: technical ? id : untitled(joinKind(CORE_AUTHORITY, CORE_PACKAGE_NAME, name)),
+          label: technical
+            ? id
+            : untitled(joinKind(CORE_AUTHORITY, CORE_PACKAGE_NAME, name)),
           ...(technical && { mono: true }),
           record: {
             kind: joinKind(CORE_AUTHORITY, CORE_PACKAGE_NAME, name),
@@ -255,7 +257,10 @@ function CrumbBody({ crumb }: { crumb: Crumb }) {
       {crumb.kind && <KindGlyph kind={crumb.kind} size="xs" />}
       {crumb.provider && <ProviderBadge provider={crumb.provider} size="xs" />}
       <span
-        className={cn("min-w-0 truncate", crumb.mono && "font-mono text-[12px]")}
+        className={cn(
+          "min-w-0 truncate",
+          crumb.mono && "font-mono text-[12px]"
+        )}
       >
         {crumb.record ? <RecordCrumbLabel crumb={crumb} /> : crumb.label}
       </span>

@@ -18,7 +18,10 @@ import { PageHeader } from "@/components/identity/page-header"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useDensity, useTechnicalDetails } from "@/hooks/use-console-preferences"
+import {
+  useDensity,
+  useTechnicalDetails,
+} from "@/hooks/use-console-preferences"
 import { splitKind } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { formatCount, recordCountQueryOptions } from "@/lib/api/records"
@@ -36,7 +39,8 @@ import { cn } from "@/lib/utils"
 
 const HINT: Record<CollectionGroup["type"], (g: CollectionGroup) => string> = {
   yours: () => "yours to change",
-  provider: (g) => `copies kept up to date by ${g.provider?.name ?? "a provider"}`,
+  provider: (g) =>
+    `copies kept up to date by ${g.provider?.name ?? "a provider"}`,
   system: () => "the substrate’s own machinery",
 }
 
@@ -125,7 +129,9 @@ function GroupTable({
           )}
           {group.label}
         </h2>
-        <span className="text-[12.5px] text-faint">{HINT[group.type](group)}</span>
+        <span className="text-[12.5px] text-faint">
+          {HINT[group.type](group)}
+        </span>
       </div>
       <div className="overflow-x-auto rounded-[10px] border border-border">
         <table className="w-full min-w-[560px] table-fixed border-separate border-spacing-0 text-sm">

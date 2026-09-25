@@ -33,9 +33,7 @@ describe("providerState", () => {
     ).toBe("Google not set up yet")
     expect(providerState(status({ accounts: 1 }))).toBe("Google connected")
     expect(providerState(status({}))).toBe("Google needs an account")
-    expect(providerState(status({ enabled: false }))).toBe(
-      "Google turned off"
-    )
+    expect(providerState(status({ enabled: false }))).toBe("Google turned off")
   })
 })
 

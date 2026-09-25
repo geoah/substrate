@@ -120,7 +120,12 @@ export function OverviewCards({
 
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2.5">
-      <OverviewCard to="/data" icon={DatabaseIcon} title="Data" summary={data} />
+      <OverviewCard
+        to="/data"
+        icon={DatabaseIcon}
+        title="Data"
+        summary={data}
+      />
       <OverviewCard
         to="/providers"
         icon={PlugIcon}

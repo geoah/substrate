@@ -148,13 +148,17 @@ export function collectionGroups(
 export function collectionSource(kind: string): string {
   const provider = providerOfKind(kind)
   if (provider) return `From ${provider.name}`
-  return splitKind(kind).authority === CORE_AUTHORITY ? "Substrate" : "Your data"
+  return splitKind(kind).authority === CORE_AUTHORITY
+    ? "Substrate"
+    : "Your data"
 }
 
 /** Provider groups start folded; every other group starts open. The stored
  * `collapsed` list records a group only while it differs from its default,
  * so a provider group the reader opened is stored under its `:open` key. */
-export function groupToggleKey(g: Pick<CollectionGroup, "id" | "type">): string {
+export function groupToggleKey(
+  g: Pick<CollectionGroup, "id" | "type">
+): string {
   return g.type === "provider" ? `${g.id}:open` : g.id
 }
 

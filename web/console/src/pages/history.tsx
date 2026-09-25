@@ -10,23 +10,16 @@ import { useQuery } from "@tanstack/react-query"
 import { parseAsStringLiteral, useQueryState } from "nuqs"
 
 import { ChangelogPanel } from "@/components/changelog/changelog-panel"
-import {
-  HistoryFeed,
-  LiveStatus,
-  useHistoryFeed,
-} from "@/components/changelog/history-feed"
+import { HistoryFeed, LiveStatus } from "@/components/changelog/history-feed"
 import { functionsQueryOptions } from "@/components/home/overview-cards"
 import { DocPage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { useHistoryFeed } from "@/hooks/use-history-feed"
 import { actorMirrorsQueryOptions, actorNames } from "@/lib/api/actors"
 import { agentsQueryOptions } from "@/lib/api/agents"
 import { bundleStatusesQueryOptions } from "@/lib/api/bundles"
-import {
-  HISTORY_VIEWS,
-  viewActors,
-  type HistoryView,
-} from "@/lib/history"
+import { HISTORY_VIEWS, viewActors, type HistoryView } from "@/lib/history"
 import { cn } from "@/lib/utils"
 
 const VIEW_VALUES = HISTORY_VIEWS.map((v) => v.value)

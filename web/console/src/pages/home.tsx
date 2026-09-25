@@ -10,7 +10,6 @@ import { Link } from "@tanstack/react-router"
 import {
   HistorySentences,
   HistorySkeleton,
-  useHistoryFeed,
 } from "@/components/changelog/history-feed"
 import { CollectionCard } from "@/components/home/collection-card"
 import { OverviewCards } from "@/components/home/overview-cards"
@@ -18,6 +17,7 @@ import { DocPage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useHistoryFeed } from "@/hooks/use-history-feed"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { repositoryQueryOptions } from "@/lib/api/repository"
 import { getRepository } from "@/lib/api/session"

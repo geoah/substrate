@@ -96,8 +96,6 @@ describe("collectionSource", () => {
     expect(
       collectionSource("providers.substrate.reamde.dev/google/contact")
     ).toBe("From Google")
-    expect(collectionSource("substrate.reamde.dev/core/kind")).toBe(
-      "Substrate"
-    )
+    expect(collectionSource("substrate.reamde.dev/core/kind")).toBe("Substrate")
   })
 })

@@ -224,10 +224,7 @@ function Samples() {
     const versions = heldVersions(rows)
     const byId = new Map(rows.map((row) => [row.id, row]))
     return new Map(
-      rows.map((row) => [
-        row.id,
-        requirementTree(row, byId, present, versions),
-      ])
+      rows.map((row) => [row.id, requirementTree(row, byId, present, versions)])
     )
   }, [rows, registry.data])
   const samples = rows
@@ -252,19 +249,13 @@ function Samples() {
   }
   if (!samples.length) {
     return (
-      <p className="text-muted-foreground">
-        This substrate ships no samples.
-      </p>
+      <p className="text-muted-foreground">This substrate ships no samples.</p>
     )
   }
   return (
     <ul className="max-h-80 overflow-y-auto rounded-[10px] border border-border">
       {samples.map((row) => (
-        <SampleRow
-          key={row.id}
-          row={row}
-          chain={chains.get(row.id) ?? []}
-        />
+        <SampleRow key={row.id} row={row} chain={chains.get(row.id) ?? []} />
       ))}
     </ul>
   )
@@ -368,7 +359,9 @@ function SampleRow({
           {state === "add" && missing.length > 0 && (
             <p className="mt-1 text-[12.5px] text-muted-foreground">
               Adds{" "}
-              {missing.map((m) => capitalise(m.row?.name ?? m.package)).join(", ")}{" "}
+              {missing
+                .map((m) => capitalise(m.row?.name ?? m.package))
+                .join(", ")}{" "}
               first, which it needs.
             </p>
           )}
@@ -438,8 +431,8 @@ function WriteIt() {
   return (
     <div className="flex flex-col gap-3 text-muted-foreground">
       <p>
-        A collection is a kind: a YAML document naming its properties. Write
-        one and apply it from the command line; it shows up here as soon as it
+        A collection is a kind: a YAML document naming its properties. Write one
+        and apply it from the command line; it shows up here as soon as it
         lands.
       </p>
       {[example, apply].map((command) => (

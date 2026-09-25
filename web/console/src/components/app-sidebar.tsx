@@ -99,13 +99,7 @@ function useCloseOnPhone(): () => void {
 }
 
 type Place =
-  | "/"
-  | "/data"
-  | "/agents"
-  | "/tools"
-  | "/providers"
-  | "/history"
-  | "/settings"
+  "/" | "/data" | "/agents" | "/tools" | "/providers" | "/history" | "/settings"
 
 function NavRow({
   to,
@@ -307,8 +301,8 @@ export function CollectionGroupNav({ group }: { group: CollectionGroup }) {
                 onClick={() => setShowAll((v) => !v)}
                 className="w-full cursor-pointer rounded-md py-1 pr-2 pl-[30px] text-left text-xs text-faint hover:text-muted-foreground"
               >
-                {showAll ? "Hide" : "Show"} {group.hidden.length} supporting
-                and internal
+                {showAll ? "Hide" : "Show"} {group.hidden.length} supporting and
+                internal
               </button>
             )}
           </>

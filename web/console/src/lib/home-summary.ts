@@ -31,7 +31,10 @@ export function providerState(b: BundleStatus): string {
 export function providersSummary(statuses: BundleStatus[]): CardSummary {
   const providers = statuses.filter((b) => b.authority === PROVIDERS_AUTHORITY)
   if (!providers.length) {
-    return { big: "None added", sub: "Bring in your mail, calendar or contacts" }
+    return {
+      big: "None added",
+      sub: "Bring in your mail, calendar or contacts",
+    }
   }
   return {
     big: `${providers.length.toLocaleString()} added`,

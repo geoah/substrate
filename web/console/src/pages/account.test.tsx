@@ -21,7 +21,7 @@ vi.mock("@tanstack/react-router", () => ({
 const policy = vi.hoisted(() => ({ inviteRequired: true, totpRequired: true }))
 vi.mock("@/lib/api/discovery", () => ({ useAuthPolicy: () => policy }))
 
-import { AccountPage } from "./account"
+import { AccountRows } from "./account"
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -29,16 +29,13 @@ function jsonResponse(status: number, body: unknown): Response {
   })
 }
 
-function cardFor(title: string): HTMLElement {
-  // The section title and its submit button can share text ("Change
-  // password"), so anchor on the card-title element specifically.
-  const heading = screen
-    .getAllByText(title)
-    .find((n) => n.getAttribute("data-slot") === "card-title")
-  return heading!.closest("[data-slot=card]") as HTMLElement
+/** Open a row's form by its button and hand back the form. */
+function open(button: string, form: string): HTMLElement {
+  fireEvent.click(screen.getByRole("button", { name: button }))
+  return screen.getByRole("form", { name: form })
 }
 
-describe("AccountPage", () => {
+describe("AccountRows", () => {
   const fetchMock = vi.fn<typeof fetch>()
 
   beforeEach(() => {
@@ -55,14 +52,14 @@ describe("AccountPage", () => {
   })
 
   it("shows the signed-in repository", () => {
-    render(<AccountPage />)
+    render(<AccountRows />)
     expect(screen.getByText("geoah")).toBeTruthy()
   })
 
   it("changes the password with the password factor in the body", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { repository: "geoah" }))
-    render(<AccountPage />)
-    const card = within(cardFor("Change password"))
+    render(<AccountRows />)
+    const card = within(open("Change…", "Change your password"))
     fireEvent.change(card.getByLabelText("Current password"), {
       target: { value: "old-passphrase" },
     })
@@ -98,8 +95,10 @@ describe("AccountPage", () => {
   })
 
   it("re-enrolls TOTP in two proven steps", async () => {
-    render(<AccountPage />)
-    const card = within(cardFor("Replace your authenticator"))
+    render(<AccountRows />)
+    const card = within(
+      open("Replace authenticator…", "Replace your authenticator")
+    )
 
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, { totpSecret: "NEWSEED", otpauthUri: "otpauth://x" })
@@ -143,12 +142,14 @@ describe("AccountPage", () => {
   it("drops the code field and the re-enrollment where no factor is verified", async () => {
     policy.totpRequired = false
     fetchMock.mockResolvedValue(jsonResponse(200, { repository: "geoah" }))
-    render(<AccountPage />)
-    // Nothing to replace, so the re-enrollment card is not offered at all.
-    expect(screen.queryByText("Replace your authenticator")).toBeNull()
+    render(<AccountRows />)
+    // Nothing to replace, so the re-enrollment is not offered at all.
+    expect(
+      screen.queryByRole("button", { name: "Replace authenticator…" })
+    ).toBeNull()
     expect(screen.getByText("Second factor: off")).toBeTruthy()
 
-    const card = within(cardFor("Change password"))
+    const card = within(open("Change…", "Change your password"))
     expect(card.queryByLabelText("Current code")).toBeNull()
     fireEvent.change(card.getByLabelText("Current password"), {
       target: { value: "old-passphrase" },
