@@ -15,6 +15,11 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { DataTableFilters } from "./data-table-filters"
+import {
+  ConsolePreferencesContext,
+  type ConsolePreferencesContextValue,
+} from "@/hooks/use-console-preferences"
+import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import type { ActiveFilter } from "@/lib/filters"
 import type { DeclaredProperty } from "@/lib/definition"
@@ -25,6 +30,23 @@ const fields: DeclaredProperty[] = [
 ]
 
 const titleFilter: ActiveFilter = { field: "title", op: "eq", value: "geo" }
+
+function preferences(
+  technicalDetails: boolean
+): ConsolePreferencesContextValue {
+  return {
+    preferences: {
+      collapsed: [],
+      favorites: [],
+      sidebarOpen: true,
+      ...DEFAULT_SETTINGS,
+      technicalDetails,
+    },
+    busy: false,
+    change: () => {},
+    set: () => {},
+  }
+}
 
 afterEach(cleanup)
 
@@ -151,10 +173,18 @@ describe("a reference field", () => {
       const url = new URL(String(input), "http://test")
       const filter = JSON.parse(url.searchParams.get("filter") ?? "{}") as {
         ids?: string[]
+        search?: string
       }
+      // The server's search reaches past the page: Zed is only found there.
       const records = filter.ids
         ? people.filter((p) => filter.ids?.includes(p.id))
-        : people
+        : filter.search
+          ? [...people, person("zed", "Zed Shaw")].filter((p) =>
+              String(p.properties.title)
+                .toLowerCase()
+                .includes(filter.search!.replace(/\*$/, "").toLowerCase())
+            )
+          : people
       return new Response(
         JSON.stringify({ records, head: 0, generation: "g" }),
         { status: 200 }
@@ -163,20 +193,27 @@ describe("a reference field", () => {
     vi.stubGlobal("fetch", fetchMock)
   }
 
-  function mount(filters: ActiveFilter[], onChange = vi.fn()) {
+  function mount(
+    filters: ActiveFilter[],
+    onChange = vi.fn(),
+    technical = false
+  ) {
     serve()
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     })
     render(
-      <QueryClientProvider client={client}>
-        <DataTableFilters
-          fields={referenceFields}
-          filters={filters}
-          onChange={onChange}
-          kinds={[taskKind, personKind]}
-        />
-      </QueryClientProvider>
+      <ConsolePreferencesContext.Provider value={preferences(technical)}>
+        <QueryClientProvider client={client}>
+          <DataTableFilters
+            fields={referenceFields}
+            filters={filters}
+            onChange={onChange}
+            kinds={[taskKind, personKind]}
+            labelOf={technical ? undefined : (name) => `The ${name}`}
+          />
+        </QueryClientProvider>
+      </ConsolePreferencesContext.Provider>
     )
     return onChange
   }
@@ -189,9 +226,9 @@ describe("a reference field", () => {
   it("offers the pinned collection by title and applies the pick as the id", async () => {
     const onChange = mount([])
     fireEvent.click(screen.getByRole("button", { name: /Add filter/ }))
-    fireEvent.click(await screen.findByText("assignee"))
+    fireEvent.click(await screen.findByText("The assignee"))
     // The pin names the people collection; the bar looked it up and read it.
-    expect(await screen.findByPlaceholderText("Search person…")).toBeTruthy()
+    expect(await screen.findByPlaceholderText("Search people…")).toBeTruthy()
     fireEvent.click(await screen.findByText("Grace Hopper"))
     expect(onChange).toHaveBeenCalledExactlyOnceWith([
       { field: "assignee", op: "eq", value: "grace" },
@@ -225,8 +262,66 @@ describe("a reference field", () => {
   it("keeps the text box for a reference pinned to no kind", async () => {
     mount([])
     fireEvent.click(screen.getByRole("button", { name: /Add filter/ }))
-    fireEvent.click(await screen.findByText("source"))
-    expect(await screen.findByPlaceholderText("source points at…")).toBeTruthy()
+    fireEvent.click(await screen.findByText("The source"))
+    expect(
+      await screen.findByPlaceholderText("The source points at…")
+    ).toBeTruthy()
     expect(screen.queryByPlaceholderText(/^Search /)).toBeNull()
+  })
+
+  it("names a property by its label alone, the datatype and target only in technical mode", async () => {
+    mount([])
+    fireEvent.click(screen.getByRole("button", { name: /Add filter/ }))
+    const item = (await screen.findByText("The assignee")).closest(
+      "[data-slot=command-item]"
+    )
+    expect(item?.textContent).toBe("The assignee")
+    cleanup()
+
+    mount([], vi.fn(), true)
+    fireEvent.click(screen.getByRole("button", { name: /Add filter/ }))
+    const tech = (await screen.findByText("assignee")).closest(
+      "[data-slot=command-item]"
+    )
+    expect(tech?.textContent).toContain("reference → acme.test/people/person")
+  })
+
+  it("lists referents as a record mark with a visible check, the id only in technical mode", async () => {
+    mount([{ field: "assignee", op: "eq", value: "grace" }])
+    fireEvent.click(await screen.findByText("Grace Hopper"))
+    const ada = (await screen.findByText("Ada Lovelace")).closest(
+      "[data-slot=command-item]"
+    )!
+    expect(ada.querySelector("[data-slot=kind-glyph]")).toBeTruthy()
+    expect(ada.textContent).not.toContain("ada")
+    const rows = [...document.querySelectorAll("[data-slot=command-item]")]
+    // The chosen row leads, and says so; the others show an empty box.
+    expect(rows[0].textContent).toContain("Grace Hopper(chosen)")
+    expect(ada.querySelector("[data-slot=picker-check] svg")).toBeNull()
+    cleanup()
+
+    mount([{ field: "assignee", op: "eq", value: "grace" }], vi.fn(), true)
+    fireEvent.click(await screen.findByText("Grace Hopper"))
+    const techAda = (await screen.findByText("Ada Lovelace")).closest(
+      "[data-slot=command-item]"
+    )!
+    expect(techAda.textContent).toContain("ada")
+  })
+
+  it("asks the server as the reader types, past the page in hand", async () => {
+    mount([])
+    fireEvent.click(screen.getByRole("button", { name: /Add filter/ }))
+    fireEvent.click(await screen.findByText("The assignee"))
+    const input = await screen.findByPlaceholderText("Search people…")
+    await screen.findByText("Ada Lovelace")
+    fireEvent.change(input, { target: { value: "zed" } })
+    expect(await screen.findByText("Zed Shaw")).toBeTruthy()
+    // The page's own rows that do not hold the text are gone meanwhile.
+    expect(screen.queryByText("Ada Lovelace")).toBeNull()
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        decodeURIComponent(String(input)).includes('"search":"zed*"')
+      )
+    ).toBe(true)
   })
 })

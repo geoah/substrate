@@ -7,7 +7,11 @@
  * A reference is filtered by PICKING its referents: the bar is handed the
  * registry so a pin resolves to the collection to offer, and the control
  * reads the chosen records' titles. A bar handed none (the changelog's) keeps
- * the text box. */
+ * the text box.
+ *
+ * Everyday, a property is its icon and its label; its datatype and a
+ * reference's target kind are technical details, shown under the label only
+ * with the switch on. */
 
 import { useState } from "react"
 import { CheckIcon, ListFilterIcon, XIcon } from "lucide-react"
@@ -22,6 +26,7 @@ import {
   CommandList,
 } from "@/components/ui/command"
 import { Input } from "@/components/ui/input"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import {
   Popover,
   PopoverContent,
@@ -43,6 +48,7 @@ import {
   type DeclaredProperty,
 } from "@/lib/definition"
 import { cn } from "@/lib/utils"
+import { propertyIcon } from "./property-icon"
 import { ReferenceFilterLabel, ReferencePicker } from "./reference-picker"
 
 interface DataTableFiltersProps {
@@ -75,6 +81,7 @@ function referenceTarget(
  * the same way; everything else takes text on Enter. */
 function ValueEditor({
   field,
+  label,
   value,
   target,
   kinds,
@@ -82,6 +89,8 @@ function ValueEditor({
   onCommit,
 }: {
   field: DeclaredProperty
+  /** How the field is named on screen. */
+  label: string
   value: string
   /** A reference field's resolved referent kind; the picker wants it. */
   target?: KindInfo
@@ -116,7 +125,7 @@ function ValueEditor({
         {/* A short machine reads at a glance; a long facet (the changelog's
             type list) earns the search line. */}
         {field.states.length > 8 && (
-          <CommandInput placeholder={`Filter ${field.name}…`} />
+          <CommandInput placeholder={`Filter ${label}…`} />
         )}
         <CommandList>
           <CommandEmpty>No match.</CommandEmpty>
@@ -183,12 +192,12 @@ function ValueEditor({
         autoFocus
         placeholder={
           pointer
-            ? `${field.name} points at…`
+            ? `${label} points at…`
             : matches
-              ? `${field.name} mentions…`
+              ? `${label} mentions…`
               : field.repeated
-                ? `${field.name} contains…`
-                : `${field.name} is…`
+                ? `${label} contains…`
+                : `${label} is…`
         }
         className="h-8"
         value={draft}
@@ -300,6 +309,7 @@ function ActiveFilterControl({
         {field ? (
           <ValueEditor
             field={field}
+            label={label}
             value={displayValue(filter, field)}
             target={target}
             kinds={kinds}
@@ -337,6 +347,7 @@ export function DataTableFilters({
   labelOf = (name) => name,
   className,
 }: DataTableFiltersProps) {
+  const [technical] = useTechnicalDetails()
   const [addOpen, setAddOpen] = useState(false)
   const [pending, setPending] = useState<DeclaredProperty | null>(null)
   const pendingTarget = referenceTarget(pending ?? undefined, kinds)
@@ -402,11 +413,12 @@ export function DataTableFilters({
         </PopoverTrigger>
         <PopoverContent
           align="start"
-          className={cn("p-1", pendingTarget ? "w-80" : "w-64")}
+          className={cn("p-1", pendingTarget || technical ? "w-80" : "w-64")}
         >
           {pending ? (
             <ValueEditor
               field={pending}
+              label={labelOf(pending.name)}
               value={filters.find((f) => f.field === pending.name)?.value ?? ""}
               target={pendingTarget}
               kinds={kinds}
@@ -431,22 +443,38 @@ export function DataTableFilters({
               <CommandList>
                 <CommandEmpty>No property can be filtered here.</CommandEmpty>
                 <CommandGroup>
-                  {fields.map((field) => (
-                    // [&>svg:last-child]:hidden drops CommandItem's built-in
-                    // trailing check slot: its reserved width shoved the kind
-                    // text off the right edge (owner redline, 2026-08-06).
-                    <CommandItem
-                      key={field.name}
-                      value={field.name}
-                      onSelect={() => setPending(field)}
-                      className="[&>svg:last-child]:hidden"
-                    >
-                      <span>{labelOf(field.name)}</span>
-                      <span className="ml-auto text-right text-xs text-muted-foreground">
-                        {propertyTypeLabel(field)}
-                      </span>
-                    </CommandItem>
-                  ))}
+                  {fields.map((field) => {
+                    const Icon = propertyIcon(field)
+                    const label = labelOf(field.name)
+                    return (
+                      // [&>svg:last-child]:hidden drops CommandItem's built-in
+                      // trailing check slot: its reserved width shoved the
+                      // text off the right edge (owner redline, 2026-08-06).
+                      // The label and the key are both searched.
+                      <CommandItem
+                        key={field.name}
+                        value={`${label} ${field.name}`}
+                        onSelect={() => setPending(field)}
+                        className="items-start [&>svg:last-child]:hidden"
+                      >
+                        <Icon
+                          aria-hidden
+                          className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+                        />
+                        <span className="flex min-w-0 flex-col">
+                          <span className="truncate">{label}</span>
+                          {technical && (
+                            <span
+                              className="truncate font-mono text-[11.5px] text-muted-foreground"
+                              title={propertyTypeLabel(field)}
+                            >
+                              {propertyTypeLabel(field)}
+                            </span>
+                          )}
+                        </span>
+                      </CommandItem>
+                    )
+                  })}
                 </CommandGroup>
               </CommandList>
             </Command>
