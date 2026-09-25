@@ -14,6 +14,7 @@ import {
 
 import { Skeleton } from "@/components/ui/skeleton"
 import { PROVIDERS_AUTHORITY } from "@/lib/actor-identity"
+import { agentName } from "@/lib/agent-chat"
 import { agentsQueryOptions } from "@/lib/api/agents"
 import { bundleStatusesQueryOptions } from "@/lib/api/bundles"
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME, splitKind } from "@/lib/api/http"
@@ -73,10 +74,6 @@ function OverviewCard({
   )
 }
 
-function lastSegment(id: string): string {
-  return id.split("/").at(-1) ?? id
-}
-
 export function OverviewCards({
   groups,
 }: {
@@ -96,7 +93,7 @@ export function OverviewCards({
       )
     : undefined
   const providers = statuses.data ? providersSummary(statuses.data) : undefined
-  const agentNames = (agents.data?.records ?? []).map((r) => lastSegment(r.id))
+  const agentNames = (agents.data?.records ?? []).map((r) => agentName(r.id))
   const agentSummary = agents.data
     ? {
         big: plural(agentNames.length, "agent", "agents"),
