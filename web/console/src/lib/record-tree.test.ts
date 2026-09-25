@@ -348,6 +348,21 @@ describe("the filtered tree", () => {
     ])
   })
 
+  it("draws one member of a parent cycle on top, so every match is drawn once", () => {
+    const a = record("a", "b")
+    const b = record("b", "a")
+    const c = record("c", "a")
+    const out = matchedRoots([b, c, a], "parent", [a, b])
+    // a leads the cycle; b sits under a, c under a too.
+    expect(ids(out.roots)).toEqual(["a"])
+    const x = record("x", "z")
+    const y = record("y", "x")
+    const z = record("z", "y")
+    expect(ids(matchedRoots([z, y, x], "parent", [x, y, z]).roots)).toEqual([
+      "x",
+    ])
+  })
+
   it("counts a parent matched under a former id", () => {
     const merged = { ...record("eng2"), formerIds: ["engineering"] }
     const out = matchedRoots([platform], "parent", [merged])

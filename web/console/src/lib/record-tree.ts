@@ -274,10 +274,34 @@ export function matchedRoots(
   property: string,
   matchingParents: readonly SubstrateRecord[]
 ): MatchedRoots {
-  const matching = new Set<string>()
+  const matching = new Map<string, SubstrateRecord>()
   for (const parent of matchingParents) {
-    matching.add(parent.id)
-    for (const former of parent.formerIds ?? []) matching.add(former)
+    matching.set(parent.id, parent)
+    for (const former of parent.formerIds ?? []) matching.set(former, parent)
+  }
+  const onPage = new Set(page.map((r) => r.id))
+  // A chain of matching parents that comes back on itself has no member
+  // standing on top, so each would be drawn only under another that is never
+  // drawn. One member leads the cycle at the top level and the rest hang
+  // under it, where the tree places each record once: the smallest id on the
+  // page, so every record of the cycle picks the same one.
+  const leaderOf = (start: SubstrateRecord): string | undefined => {
+    const path: SubstrateRecord[] = []
+    const at = new Map<string, number>()
+    let cur: SubstrateRecord | undefined = start
+    while (cur) {
+      const i = at.get(cur.id)
+      if (i !== undefined) {
+        const members = path.slice(i).map((r) => r.id)
+        return members.filter((id) => onPage.has(id)).sort()[0]
+      }
+      at.set(cur.id, path.length)
+      path.push(cur)
+      const parentId = parentIdOf(cur, property)
+      if (parentId === undefined || parentId === cur.id) return undefined
+      cur = matching.get(parentId)
+    }
+    return undefined
   }
   const roots: SubstrateRecord[] = []
   const context = new Map<string, string>()
@@ -287,7 +311,7 @@ export function matchedRoots(
       roots.push(record)
       continue
     }
-    if (matching.has(parentId)) continue
+    if (matching.has(parentId) && leaderOf(record) !== record.id) continue
     roots.push(record)
     const held = readReference(record.properties[property])
     if (held) context.set(record.id, held.path)
