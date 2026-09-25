@@ -26,8 +26,9 @@ data:
   names:
     singular: thread
   displayTemplate: "{agent}: {status}"
-  # No index on `agent`: a reference filters by containment, which rides the
-  # repository-wide GIN index on props.
+  # No declared index on `agent`: the engine builds one for every single
+  # reference property on the path it points at (engine/indices.go), and the
+  # filter by agent compares that path.
   indices:
     - properties:
         - status

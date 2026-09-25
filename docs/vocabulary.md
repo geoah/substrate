@@ -147,7 +147,10 @@ that candidate, the closure's own data documents included, so a closure may
 ship a record, a reference, a mapping source or a trigger of a kind or callable
 it declares in the same batch. The kinds' declared indexes are built before
 the transaction too, so an index the engine cannot build refuses the batch
-with nothing landed. One per-repository mutex serializes vocabulary writes
+with nothing landed; beside them the engine builds one index per single
+(neither `repeated` nor `keyed`) reference property a kind declares, on the
+path it points at, so a filter by pointer never needs an `indices:` entry.
+One per-repository mutex serializes vocabulary writes
 against each other, and a registry-dependency lock orders them against data
 writes: a data write holds it shared from kind resolution to commit, an apply
 holds it exclusive, so no write lands a value against a declaration the apply
