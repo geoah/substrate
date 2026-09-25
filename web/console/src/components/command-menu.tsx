@@ -119,54 +119,60 @@ export function CommandMenu({
               </CommandItem>
             ))}
           </CommandGroup>
-          {groups.map((g) => (
-            <CommandGroup
-              key={g.id}
-              heading={
-                <span className="inline-flex items-center gap-1.5">
-                  {g.provider && (
-                    <ProviderBadge provider={g.provider} size="xs" />
-                  )}
-                  {g.label}
-                </span>
-              }
-            >
-              {[...g.primary, ...g.hidden].map((k) => {
-                const { authority, pkg, name } = splitKind(k.identity)
-                const purpose = kindPurpose(k)
-                const plural = displayPlural(k)
-                return (
-                  <CommandItem
-                    key={k.identity}
-                    value={`${plural} ${g.label} ${k.identity}`}
-                    onSelect={() =>
-                      go(
-                        () =>
-                          void navigate({
-                            to: "/data/$authority/$pkg/$name",
-                            params: { authority, pkg, name },
-                          })
-                      )
-                    }
-                  >
-                    <KindGlyph kind={k} size="xs" />
-                    <span className="truncate">{plural}</span>
-                    {purpose !== "primary" && (
-                      <span className="shrink-0 rounded-[3px] border border-border-strong px-1 text-[10px] leading-4 text-faint">
-                        {purpose}
-                      </span>
+          {groups.map((g) => {
+            // Everyday navigation lists the collections a person keeps; the
+            // supporting and internal kinds are one switch away.
+            const shown = technical ? [...g.primary, ...g.hidden] : g.primary
+            if (!shown.length) return null
+            return (
+              <CommandGroup
+                key={g.id}
+                heading={
+                  <span className="inline-flex items-center gap-1.5">
+                    {g.provider && (
+                      <ProviderBadge provider={g.provider} size="xs" />
                     )}
-                    {technical && (
-                      <KindPath
-                        reference={k.identity}
-                        className="ml-auto min-w-0 truncate text-[11px]"
-                      />
-                    )}
-                  </CommandItem>
-                )
-              })}
-            </CommandGroup>
-          ))}
+                    {g.label}
+                  </span>
+                }
+              >
+                {shown.map((k) => {
+                  const { authority, pkg, name } = splitKind(k.identity)
+                  const purpose = kindPurpose(k)
+                  const plural = displayPlural(k)
+                  return (
+                    <CommandItem
+                      key={k.identity}
+                      value={`${plural} ${g.label} ${k.identity}`}
+                      onSelect={() =>
+                        go(
+                          () =>
+                            void navigate({
+                              to: "/data/$authority/$pkg/$name",
+                              params: { authority, pkg, name },
+                            })
+                        )
+                      }
+                    >
+                      <KindGlyph kind={k} size="xs" />
+                      <span className="truncate">{plural}</span>
+                      {purpose !== "primary" && (
+                        <span className="shrink-0 rounded-[3px] border border-border-strong px-1 text-[10px] leading-4 text-faint">
+                          {purpose}
+                        </span>
+                      )}
+                      {technical && (
+                        <KindPath
+                          reference={k.identity}
+                          className="ml-auto min-w-0 truncate text-[11px]"
+                        />
+                      )}
+                    </CommandItem>
+                  )
+                })}
+              </CommandGroup>
+            )
+          })}
         </CommandList>
       </Command>
     </CommandDialog>
