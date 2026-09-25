@@ -196,13 +196,14 @@ describe("PropertiesRail", () => {
   it("links a reference to its referent's detail page, as a RecordPill", () => {
     const { container } = renderRail()
     const link = [...container.querySelectorAll("a")].find(
-      (a) => a.textContent === "t0"
+      (a) =>
+        a.getAttribute("href") ===
+        "/data/samples.substrate.reamde.dev/tasks/task/t0"
     )
-    expect(link?.getAttribute("href")).toBe(
-      "/data/samples.substrate.reamde.dev/tasks/task/t0"
-    )
-    // The one way a record is referenced from elsewhere — not an ad-hoc link.
-    expect(link?.className).toContain("rounded-full")
+    // The one way a record is referenced from elsewhere — not an ad-hoc link:
+    // the kind's glyph and a title, never the bare id.
+    expect(link?.querySelector("[data-slot=kind-glyph]")).not.toBeNull()
+    expect(link?.textContent).not.toBe("t0")
   })
 
   it("lists a repeated property one item per line", () => {
@@ -227,7 +228,9 @@ describe("PropertiesRail", () => {
 
   it("renders a state as its badge", () => {
     const { container } = renderRail()
-    expect(container.textContent).toContain("open")
+    expect(
+      container.querySelector("[data-slot=state-badge]")?.textContent
+    ).toBe("Open")
   })
 
   it("says a secret is redacted and never shows more", () => {
@@ -277,12 +280,11 @@ describe("PropertiesRail", () => {
     const { container } = renderRail(linked)
     // The pointer still reads as the pill every other surface uses...
     const link = [...container.querySelectorAll("a")].find(
-      (a) => a.textContent === "p1"
+      (a) =>
+        a.getAttribute("href") ===
+        "/data/samples.substrate.reamde.dev/people/person/p1"
     )
-    expect(link?.getAttribute("href")).toBe(
-      "/data/samples.substrate.reamde.dev/people/person/p1"
-    )
-    expect(link?.className).toContain("rounded-full")
+    expect(link?.querySelector("[data-slot=kind-glyph]")).not.toBeNull()
     // ...and the link data rides beside it rather than being dropped.
     expect(container.textContent).toContain("role: reviewer")
   })

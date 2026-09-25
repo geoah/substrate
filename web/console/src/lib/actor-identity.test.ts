@@ -76,6 +76,17 @@ describe("actorIdentity", () => {
   })
 })
 
+it("names an authority-shaped actor as the bundle behind it, never You", () => {
+  expect(actorIdentity("providers.substrate.reamde.dev/github")).toMatchObject({
+    cls: "bundle",
+    name: "GitHub",
+  })
+  expect(actorIdentity("samples.substrate.reamde.dev")).toMatchObject({
+    cls: "bundle",
+    name: "samples.substrate.reamde.dev",
+  })
+})
+
 describe("providers", () => {
   it("spells a provider's name and letter", () => {
     expect(providerInfo("github")).toMatchObject({

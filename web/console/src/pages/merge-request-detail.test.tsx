@@ -5,7 +5,7 @@
  * than as literal `{"ref":"…"}` text (issue #332). */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import type { ReactElement, ReactNode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -170,8 +170,12 @@ describe("MergeRequestDetailPage", () => {
     renderPage(<MergeRequestDetailPage />)
 
     // The pill, routed at the referent, not the literal `{"ref":"…"}` text.
-    const pill = await screen.findByText("task-42")
-    expect(pill.closest("a")?.getAttribute("data-params")).toBe(
+    const pill = await waitFor(() => {
+      const link = document.querySelector('a[data-params*="task-42"]')
+      if (!link) throw new Error("no pill for task-42")
+      return link
+    })
+    expect(pill.getAttribute("data-params")).toBe(
       JSON.stringify({
         authority: "samples.substrate.reamde.dev",
         pkg: "tasks",

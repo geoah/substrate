@@ -156,12 +156,12 @@ describe("a reference column", () => {
 
   // The expansion is a sidecar: a page that could not carry it (the server
   // refused the expand and the read degraded) still has rows, and the pill
-  // falls back to the id it always showed.
-  it("falls back to the id when no title came back", () => {
+  // names the referent by its kind, never by its bare id.
+  it("names the referent by its kind when no title came back", () => {
     const { container } = renderCell(propertyColumnId("assignee"), {
       ref: "ada.example.com/people/person/p1",
     })
-    expect(container.textContent).toBe("p1")
+    expect(container.textContent).toBe("Untitled person")
     expect(container.querySelector("a")).not.toBeNull()
   })
 

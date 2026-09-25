@@ -63,7 +63,8 @@ describe("a reference in a cell", () => {
         kinds={registry}
       />
     )
-    expect(container.textContent).toContain("default")
+    // Never a bare id: an untitled referent is named by its kind.
+    expect(container.textContent).toBe("Untitled provider")
     expect(container.textContent).not.toContain("{ref}")
     const link = container.querySelector("a")
     expect(link?.getAttribute("href")).toBe(
@@ -94,7 +95,10 @@ describe("a reference in a cell", () => {
       />
     )
     const links = [...container.querySelectorAll("a")]
-    expect(links.map((a) => a.textContent)).toEqual(["one", "two"])
+    expect(links.map((a) => a.getAttribute("href"))).toEqual([
+      "/data/samples.substrate.reamde.dev/tasks/task/one",
+      "/data/samples.substrate.reamde.dev/tasks/task/two",
+    ])
   })
 
   // A reference may name a kind nobody installed: there is no page to link to,
@@ -155,14 +159,9 @@ describe("a reference wearing its referent's title", () => {
     expect(link?.getAttribute("href")).toBe(
       "/data/samples.substrate.reamde.dev/tasks/task/one"
     )
-    // The full path stays reachable on hover: the title is the label, not a
-    // replacement for the identity.
-    expect(link?.getAttribute("title")).toBe(
-      "samples.substrate.reamde.dev/tasks/task/one"
-    )
   })
 
-  it("keeps the id for a path the resolver does not answer", () => {
+  it("names a path the resolver does not answer by its kind, never its id", () => {
     const { container } = render(
       <ReferenceCell
         value={{ ref: "samples.substrate.reamde.dev/tasks/task/two" }}
@@ -170,7 +169,7 @@ describe("a reference wearing its referent's title", () => {
         titles={titles}
       />
     )
-    expect(container.textContent).toBe("two")
+    expect(container.textContent).toBe("Untitled task")
   })
 
   it("titles the record page's value and keeps its link data beside it", () => {
@@ -202,15 +201,15 @@ describe("a reference wearing its referent's title", () => {
     expect(container.textContent).toBe("ada.example.com/crm/lead/7")
   })
 
-  // Every surface that has resolved nothing hands nothing down, which is the
-  // behaviour every reference had before titles existed.
-  it("reads as the id when the surface resolved no titles at all", () => {
+  // A surface that resolved nothing hands nothing down; with no query client
+  // to read the title either, the referent is named by its kind.
+  it("reads as untitled when the surface resolved no titles at all", () => {
     const { container } = render(
       <ReferenceValue
         value={{ ref: "samples.substrate.reamde.dev/tasks/task/one" }}
         kinds={registry}
       />
     )
-    expect(container.textContent).toBe("one")
+    expect(container.textContent).toBe("Untitled task")
   })
 })

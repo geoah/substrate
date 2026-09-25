@@ -178,19 +178,18 @@ describe("ProvenanceRail", () => {
     expect(rowOf(container, "name").textContent).toContain("Ada Lovelace")
   })
 
-  it("never shows a bare actor string: a function manager is the sync of its source kind, linked", () => {
+  it("never shows a bare actor string: a function manager is its provider's sync, linked", () => {
     const { container } = renderRail()
     const row = rowOf(container, "displayName")
-    expect(row.textContent).toContain("sync of user")
-    expect(row.textContent).not.toContain("function:providers")
-    const pill = [...row.querySelectorAll("a")].find(
-      (a) => a.textContent === "sync of user"
+    expect(row.textContent).toContain("GitHub sync")
+    expect(row.textContent).not.toContain(GITHUB_SYNC)
+    const pill = [...row.querySelectorAll("a")].find((a) =>
+      a.textContent?.includes("GitHub sync")
     )
+    // The full actor rides the hover card; the click reaches its declaration.
     expect(pill?.getAttribute("href")).toBe(
       "/data/substrate.reamde.dev/core/function/providers.substrate.reamde.dev/github/githubsync"
     )
-    // The full actor is the hover, never dropped.
-    expect(pill?.getAttribute("title")).toBe(GITHUB_SYNC)
   })
 
   it("shows the source record behind a machine-held value as a pill titled off the links", () => {
@@ -215,7 +214,7 @@ describe("ProvenanceRail", () => {
     const alts = row.querySelectorAll("[data-alternative]")
     expect(alts).toHaveLength(2)
     expect(alts[0].textContent).toContain("Ada L.")
-    expect(alts[0].textContent).toContain("sync of user")
+    expect(alts[0].textContent).toContain("Beeper sync")
     expect(alts[0].textContent).toContain("Ada (Beeper)")
     expect(alts[0].textContent).toContain("via beeperuserperson")
     expect(alts[1].textContent).toContain("adalovelace")

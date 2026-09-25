@@ -1,23 +1,8 @@
-/** The cross-cutting actor grammar: a name pill, identical everywhere an
- * actor appears (changelog rows, activity rows, property managers), linking to
- * the actor view. Name only — no avatar bubble (owner redline, 2026-08-06).
- * Unregistered names still link — the actor view renders an identity stub
- * over that actor's real changelog. */
+/** An actor, linking to the actor view. Kept as the name existing surfaces
+ * import; the mark itself is `ActorRef`. */
 
-import { Link } from "@tanstack/react-router"
+import { ActorRef } from "@/components/identity/actor-ref"
 
 export function ActorChip({ actor }: { actor: string }) {
-  return (
-    <Link
-      to="/actors/$actorId"
-      params={{ actorId: actor }}
-      title={actor}
-      className="inline-flex max-w-full min-w-0 items-center rounded-full border bg-muted/50 px-2 py-0.5 text-xs transition-colors hover:bg-muted"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <span className="data break-all whitespace-normal">
-        {actor === "substrate" ? "Engine (substrate)" : actor}
-      </span>
-    </Link>
-  )
+  return <ActorRef actor={actor} />
 }

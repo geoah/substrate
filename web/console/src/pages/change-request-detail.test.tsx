@@ -184,8 +184,8 @@ describe("ChangeRequestDetailPage", () => {
     expect(screen.getByText("removed")).toBeTruthy()
     expect(screen.getByText("removes")).toBeTruthy()
     expect(screen.getByText("overwrites")).toBeTruthy()
-    // Whose value the accept overwrites.
-    expect(screen.getByText("owner")).toBeTruthy()
+    // Whose value the accept overwrites: a request-asserted actor is You.
+    expect(screen.getByText("You")).toBeTruthy()
   })
 
   it("accepts with the REQUEST's version as ifVersion", async () => {
@@ -329,8 +329,8 @@ describe("ChangeRequestDetailPage", () => {
     renderPage(<ChangeRequestDetailPage />)
 
     await screen.findByText(/Nothing was applied/)
-    expect(screen.getByText("rejected")).toBeTruthy()
-    expect(screen.getByText("console")).toBeTruthy()
+    expect(screen.getByText("Rejected")).toBeTruthy()
+    expect(screen.getByText("You")).toBeTruthy()
     expect(screen.queryByRole("button", { name: /Accept/ })).toBeNull()
     expect(screen.queryByRole("button", { name: /Reject/ })).toBeNull()
   })
@@ -459,8 +459,12 @@ describe("ChangeRequestDetailPage", () => {
     renderPage(<ChangeRequestDetailPage />)
 
     // The pill, routed at the referent, not the literal `{"ref":"…"}` text.
-    const pill = await screen.findByText("task-42")
-    expect(pill.closest("a")?.getAttribute("data-params")).toBe(
+    const pill = await waitFor(() => {
+      const link = document.querySelector('a[data-params*="task-42"]')
+      if (!link) throw new Error("no pill for task-42")
+      return link
+    })
+    expect(pill.getAttribute("data-params")).toBe(
       JSON.stringify({
         authority: "samples.substrate.reamde.dev",
         pkg: "tasks",

@@ -140,6 +140,24 @@ export function actorIdentity(actor: string): ActorIdentity {
       record: { kind: `${CORE_PACKAGE}/bundle`, id: `${authority}/${pkg}` },
     }
   }
+  // An authority-shaped name is a single-writer bundle acting under its
+  // authority's name (record 60), or a provider's package under it.
+  if (!actor.includes(":") && actor.includes(".")) {
+    const [owner, pkgWord] = actor.split("/")
+    const named =
+      owner === PROVIDERS_AUTHORITY && pkgWord
+        ? providerInfo(pkgWord)
+        : undefined
+    return {
+      actor,
+      cls: "bundle",
+      name: named ? named.name : actor,
+      provider: named,
+      description: named
+        ? "A provider you added."
+        : "A bundle acting under its authority's name.",
+    }
+  }
   // Every other name is one a request asserted, and a request carries one of
   // this repository's tokens: it is the person who owns them.
   return {

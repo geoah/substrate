@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest"
 
 import type { LinkedRecord, SubstrateRecord } from "@/lib/api/types"
 import {
-  actorWords,
   contributesOf,
   groupSources,
   mappingOfSource,
@@ -137,63 +136,6 @@ describe("the source lookups", () => {
   it("name the mapping a source came through", () => {
     expect(mappingOfSource(links, `${BEEPER}/u1`)).toBe(BEEPER_MAPPING)
     expect(mappingOfSource(links, `${GITHUB}/gh1`)).toBeUndefined()
-  })
-})
-
-describe("actorWords", () => {
-  it("reads a function actor as the sync of the kind its value came from", () => {
-    const words = actorWords(
-      "function:providers.substrate.reamde.dev:beeper:beepersync",
-      BEEPER
-    )
-    expect(words.kind).toBe("function")
-    expect(words.label).toBe("sync of user")
-    expect(words.actor).toBe(
-      "function:providers.substrate.reamde.dev:beeper:beepersync"
-    )
-    expect(words.record).toEqual({
-      kind: "substrate.reamde.dev/core/function",
-      id: "providers.substrate.reamde.dev/beeper/beepersync",
-    })
-  })
-  it("names the function itself when no source is known", () => {
-    expect(
-      actorWords("function:providers.substrate.reamde.dev:beeper:beepersync")
-        .label
-    ).toBe("function beepersync")
-  })
-  it("reads agents, bundles and the engine", () => {
-    expect(actorWords("agent:ada.example.com:llm:triage")).toMatchObject({
-      kind: "agent",
-      label: "agent triage",
-      record: {
-        kind: "substrate.reamde.dev/core/agent",
-        id: "ada.example.com/llm/triage",
-      },
-    })
-    expect(
-      actorWords("bundle:providers.substrate.reamde.dev:github")
-    ).toMatchObject({
-      kind: "bundle",
-      label: "bundle github",
-      record: {
-        kind: "substrate.reamde.dev/core/bundle",
-        id: "providers.substrate.reamde.dev/github",
-      },
-    })
-    expect(actorWords("substrate")).toMatchObject({
-      kind: "engine",
-      label: "Engine",
-    })
-  })
-  it("leaves a name a request asserted as it is", () => {
-    expect(actorWords("console")).toEqual({
-      kind: "plain",
-      label: "console",
-      actor: "console",
-    })
-    // The retired connector spelling has no record either.
-    expect(actorWords("connector:slack").kind).toBe("plain")
   })
 })
 
