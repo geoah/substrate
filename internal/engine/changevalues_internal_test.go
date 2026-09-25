@@ -245,3 +245,50 @@ func TestAnUndecodableEntryOfAnotherKindLeavesTheWalkAlone(t *testing.T) {
 		t.Fatalf("the record's own undecodable entry is not opaque: %+v", own)
 	}
 }
+
+// cvWalkOf owes the befores of one request per seq, newest first, each for
+// the named property.
+func cvWalkOf(name string, seqs ...int64) (*recordWalk, []*substrate.PropertyChange) {
+	w := newRecordWalk(cvRef, cvKind())
+	w.below = seqs[0] + 1
+	var out []*substrate.PropertyChange
+	for _, seq := range seqs {
+		pc := &substrate.PropertyChange{Name: name}
+		w.requests = append(w.requests, valueRequest{seq: seq, props: []*substrate.PropertyChange{pc}})
+		out = append(out, pc)
+	}
+	return w, out
+}
+
+func TestAGapLeavesTheBeforesBelowItKnown(t *testing.T) {
+	// Version 3 rode an entry the walk never read, between seq 20 and 40:
+	// the request at 40 cannot know its before, the one at 20 still can.
+	w, pcs := cvWalkOf("name", 40, 20)
+	w.step([]earlierEntry{
+		{seq: 40, ops: cvSet(4, false, map[string]any{"name": "D"})},
+		{seq: 20, ops: cvSet(2, false, map[string]any{"name": "B"})},
+		{seq: 10, ops: cvSet(1, true, map[string]any{"name": "A"})},
+	}, valuesBatch)
+	if !pcs[0].BeforeUnknown {
+		t.Fatalf("before at 40 = %+v, want unknown", pcs[0])
+	}
+	if pcs[1].Before != "A" || pcs[1].BeforeUnknown {
+		t.Fatalf("before at 20 = %+v, want the creation's value", pcs[1])
+	}
+}
+
+func TestAnOpaqueEntryLeavesTheBeforesBelowItKnown(t *testing.T) {
+	w, pcs := cvWalkOf("name", 30, 15)
+	w.step([]earlierEntry{
+		{seq: 30, ops: cvSet(4, false, map[string]any{"name": "D"})},
+		{seq: 20, opaque: true},
+		{seq: 15, ops: cvSet(2, false, map[string]any{"name": "B"})},
+		{seq: 10, ops: cvSet(1, true, map[string]any{"name": "A"})},
+	}, valuesBatch)
+	if !pcs[0].BeforeUnknown {
+		t.Fatalf("before at 30 = %+v, want unknown", pcs[0])
+	}
+	if pcs[1].Before != "A" || pcs[1].BeforeUnknown {
+		t.Fatalf("before at 15 = %+v, want the creation's value", pcs[1])
+	}
+}

@@ -490,17 +490,25 @@ func (w *recordWalk) step(batch []earlierEntry, limit int) {
 // newer requests owe, then its own request (if the page holds one) starts
 // owing.
 func (w *recordWalk) visit(e earlierEntry) {
+	var rc recordChange
 	if e.opaque {
-		w.giveUp()
-		return
+		// What the entry did is unknowable, and so is every before still
+		// owed. A request older than it owes a before that lies further back,
+		// so the walk goes on for those, with no version to hold the next
+		// entry to.
+		w.forget()
+		w.expect = 0
+	} else {
+		rc = composeRecordChange(w.ty, e.ops, w.ref)
 	}
-	rc := composeRecordChange(w.ty, e.ops, w.ref)
 	if rc.touched {
 		if w.expect > 0 && rc.last > 0 && rc.last != w.expect {
 			// A version the walk never saw: an effect on the record rode an
-			// entry it did not read, so a value found further back may be stale.
-			w.giveUp()
-			return
+			// entry it did not read, newer than this one, so a value found
+			// from here back may be stale for what is owed now. A request at
+			// or below this entry is older than that effect and still
+			// derivable.
+			w.forget()
 		}
 		for name, v := range rc.moved {
 			for _, pc := range w.pending[name] {
@@ -535,6 +543,17 @@ func (w *recordWalk) visit(e earlierEntry) {
 	if len(w.pending) == 0 && w.next == len(w.requests) {
 		w.done = true
 	}
+}
+
+// forget marks the befores the reached requests owe unknown; the requests
+// not yet reached keep theirs owed.
+func (w *recordWalk) forget() {
+	for _, pcs := range w.pending {
+		for _, pc := range pcs {
+			pc.BeforeUnknown = true
+		}
+	}
+	w.pending = map[string][]*substrate.PropertyChange{}
 }
 
 // giveUp marks every before the walk still owes, reached or not, unknown.
