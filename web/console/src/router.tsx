@@ -28,9 +28,16 @@ import { RecordEditPage, RecordNewPage } from "@/pages/record-editor"
 import { RegisterPage } from "@/pages/register"
 import { RegistryPage } from "@/pages/registry"
 import { SearchPage } from "@/pages/search"
-import { BundleSettingsPage, SettingsPage } from "@/pages/settings"
+import { BundleSettingsPage } from "@/pages/settings"
 import { TokensPage } from "@/pages/tokens"
 import { KindBrowsePage } from "@/pages/kind-browse"
+import { AllDataPage } from "@/pages/all-data"
+import { HistoryPage } from "@/pages/history"
+import { ToolsPage } from "@/pages/tools"
+import { ToolPage } from "@/pages/tool"
+import { ProvidersPage } from "@/pages/providers"
+import { ProviderPage } from "@/pages/provider"
+import { ConsoleSettingsPage } from "@/pages/console-settings"
 
 const rootRoute = createRootRoute()
 
@@ -133,7 +140,7 @@ export const connectionDetailRoute = createRoute({
 export const settingsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/settings",
-  component: SettingsPage,
+  component: ConsoleSettingsPage,
 })
 
 // The settings list is the index; one bundle's form is the page under it, and
@@ -234,6 +241,45 @@ export const accountRoute = createRoute({
   component: AccountPage,
 })
 
+export const allDataRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/data",
+  component: AllDataPage,
+})
+
+export const historyRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/history",
+  component: HistoryPage,
+})
+
+export const toolsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/tools",
+  component: ToolsPage,
+})
+
+// A tool is a function record, addressed by its reference segment for segment,
+// the way a data address is (decision 0047).
+export const toolRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/tools/$authority/$pkg/$name",
+  component: ToolPage,
+})
+
+export const providersRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/providers",
+  component: ProvidersPage,
+})
+
+// A provider is a bundle, and a bundle's id is its package: authority, package.
+export const providerRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/providers/$authority/$pkg",
+  component: ProviderPage,
+})
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   registerRoute,
@@ -260,6 +306,12 @@ const routeTree = rootRoute.addChildren([
     actorRoute,
     tokensRoute,
     accountRoute,
+    allDataRoute,
+    historyRoute,
+    toolsRoute,
+    toolRoute,
+    providersRoute,
+    providerRoute,
   ]),
 ])
 
