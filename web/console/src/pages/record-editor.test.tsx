@@ -52,6 +52,8 @@ vi.mock("@/lib/api/records", async (importOriginal) => ({
   putRecord: (...args: unknown[]) => putRecord(...args),
 }))
 
+import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
+import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { templateYAML } from "@/lib/record-yaml"
 import { RecordEditorForm } from "./record-editor"
 
@@ -87,11 +89,15 @@ const openTask: SubstrateRecord = {
   updatedAt: "x",
 }
 
+const EDIT_SEED =
+  "kind: samples.substrate.reamde.dev/tasks/task\nmetadata:\n  id: t1\ndata:\n  properties:\n    title: write it\n    status: open\n"
+
 function renderEditor(
   over: {
     mode?: "create" | "edit"
     record?: SubstrateRecord
     seed?: string
+    technical?: boolean
   } = {}
 ) {
   const mode = over.mode ?? "create"
@@ -99,20 +105,35 @@ function renderEditor(
     defaultOptions: { queries: { retry: false } },
   })
   return render(
-    <QueryClientProvider client={client}>
-      <Toaster>
-        <RecordEditorForm
-          authority="samples.substrate.reamde.dev"
-          pkg="tasks"
-          name="task"
-          mode={mode}
-          kind={taskKind}
-          kinds={[taskKind]}
-          record={over.record}
-          seed={over.seed ?? templateYAML(taskKind)}
-        />
-      </Toaster>
-    </QueryClientProvider>
+    <ConsolePreferencesContext.Provider
+      value={{
+        preferences: {
+          collapsed: [],
+          favorites: [],
+          sidebarOpen: true,
+          ...DEFAULT_SETTINGS,
+          technicalDetails: over.technical ?? false,
+        },
+        busy: false,
+        change: () => {},
+        set: () => {},
+      }}
+    >
+      <QueryClientProvider client={client}>
+        <Toaster>
+          <RecordEditorForm
+            authority="samples.substrate.reamde.dev"
+            pkg="tasks"
+            name="task"
+            mode={mode}
+            kind={taskKind}
+            kinds={[taskKind]}
+            record={over.record}
+            seed={over.seed ?? templateYAML(taskKind)}
+          />
+        </Toaster>
+      </QueryClientProvider>
+    </ConsolePreferencesContext.Provider>
   )
 }
 
@@ -140,53 +161,63 @@ afterEach(() => {
   putRecord.mockReset()
 })
 
-describe("the record editor", () => {
-  it("opens on the form lens, composed from the declaration", () => {
+describe("the new-record sheet", () => {
+  it("opens as the record it will become: a title, rows, and the rest folded", () => {
     renderEditor()
     expect(screen.getByLabelText(/^Title/)).toBeTruthy()
-    expect(screen.getByText("when it is due")).toBeTruthy()
-    // The required blank is already named, before anything is applied.
-    expect(screen.getByText(/`title` is required/)).toBeTruthy()
+    expect(screen.getByLabelText(/^Status/)).toBeTruthy()
+    expect(screen.queryByLabelText(/Due at/)).toBeNull()
+    expect(screen.getByLabelText(/^Effort/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /1 more: Due at/ }))
+    expect(screen.getByLabelText(/Due at/)).toBeTruthy()
+    // Nothing is named wrong before the person asks to create.
+    expect(screen.queryByText(/`title` is required/)).toBeNull()
   })
 
-  it("carries an edit between the lenses: one document, two views", async () => {
+  it("names what is missing when asked to create, and creates nothing", () => {
     renderEditor()
+    fireEvent.click(screen.getByRole("button", { name: "Create task" }))
+    expect(screen.getByText(/`title` is required/)).toBeTruthy()
+    expect(createRecord).not.toHaveBeenCalled()
+  })
+
+  it("carries an edit between the sheet and the YAML: one document", async () => {
+    renderEditor({ technical: true })
     fireEvent.change(screen.getByLabelText(/^Title/), {
       target: { value: "write the editor" },
     })
-    fireEvent.click(screen.getByRole("tab", { name: "YAML" }))
+    fireEvent.click(screen.getByRole("button", { name: "Write YAML" }))
     const yaml = await yamlLens()
     expect(yaml.text()).toContain("title: write the editor")
-    // ...and back, with a YAML edit showing up on the form.
     yaml.replace(yaml.text().replace("write the editor", "renamed"))
-    fireEvent.click(screen.getByRole("tab", { name: "Form" }))
+    fireEvent.click(screen.getByRole("button", { name: "Use the form" }))
     expect((screen.getByLabelText(/^Title/) as HTMLInputElement).value).toBe(
       "renamed"
     )
   })
 
-  it("names a datatype problem before the apply, and bars the save", async () => {
+  it("offers the YAML only in technical mode", () => {
     renderEditor()
+    expect(screen.queryByRole("button", { name: "Write YAML" })).toBeNull()
+  })
+
+  it("names a datatype problem on its row and in the YAML, and bars the create", async () => {
+    renderEditor({ technical: true })
     fireEvent.change(screen.getByLabelText(/^Title/), {
       target: { value: "hi" },
     })
+    fireEvent.click(screen.getByRole("button", { name: /more:/ }))
     fireEvent.change(screen.getByLabelText(/Due at/), {
       target: { value: "yesterday" },
     })
-    // The control says it on the field...
     expect(screen.getByText(/expected a timestamp/)).toBeTruthy()
-    // ...and a value the document never took cannot bar the save, so put a
-    // bad one in through the YAML lens, which is where a hand edit lands.
-    fireEvent.click(screen.getByRole("tab", { name: "YAML" }))
+    fireEvent.click(screen.getByRole("button", { name: "Write YAML" }))
     const yaml = await yamlLens()
     yaml.replace(yaml.text().replace('dueAt: ""', "dueAt: yesterday"))
     await waitFor(() =>
       expect(screen.getByText(/`dueAt`: expected a timestamp/)).toBeTruthy()
     )
-    expect(
-      (screen.getByRole("button", { name: "Create" }) as HTMLButtonElement)
-        .disabled
-    ).toBe(true)
+    fireEvent.click(screen.getByRole("button", { name: "Create task" }))
     expect(createRecord).not.toHaveBeenCalled()
   })
 
@@ -199,7 +230,7 @@ describe("the record editor", () => {
     fireEvent.change(screen.getByLabelText(/^Effort/), {
       target: { value: "3" },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Create" }))
+    fireEvent.click(screen.getByRole("button", { name: "Create task" }))
     await waitFor(() => expect(createRecord).toHaveBeenCalled())
     const [authority, pkg, name, input] = createRecord.mock.calls[0]
     expect(authority).toBe("samples.substrate.reamde.dev")
@@ -213,13 +244,30 @@ describe("the record editor", () => {
     expect(input.id).toBeUndefined()
   })
 
-  it("refuses to move a state on an edit, because a put may not", async () => {
+  it("formats the document on demand, in the YAML", async () => {
     renderEditor({
-      mode: "edit",
-      record: openTask,
-      seed: "kind: samples.substrate.reamde.dev/tasks/task\nmetadata:\n  id: t1\ndata:\n  properties:\n    title: write it\n    status: open\n",
+      technical: true,
+      seed: "kind: samples.substrate.reamde.dev/tasks/task\ndata:\n      properties:\n            title: hi\n",
     })
-    fireEvent.click(screen.getByRole("tab", { name: "YAML" }))
+    expect(screen.queryByRole("button", { name: /Format/ })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Write YAML" }))
+    fireEvent.click(screen.getByRole("button", { name: /Format/ }))
+    expect((await yamlLens()).text()).toContain("    title: hi")
+  })
+})
+
+describe("the record editor (edit)", () => {
+  it("opens an edit on the YAML, and keeps the form a tab away", async () => {
+    renderEditor({ mode: "edit", record: openTask, seed: EDIT_SEED })
+    expect((await yamlLens()).text()).toContain("title: write it")
+    fireEvent.click(screen.getByRole("tab", { name: "Form" }))
+    expect((screen.getByLabelText(/^Title/) as HTMLInputElement).value).toBe(
+      "write it"
+    )
+  })
+
+  it("refuses to move a state on an edit, because a put may not", async () => {
+    renderEditor({ mode: "edit", record: openTask, seed: EDIT_SEED })
     const yaml = await yamlLens()
     yaml.replace(yaml.text().replace("status: open", "status: done"))
     await waitFor(() =>
@@ -232,15 +280,5 @@ describe("the record editor", () => {
         }) as HTMLButtonElement
       ).disabled
     ).toBe(true)
-  })
-
-  it("formats the document on demand, in the lens that has one", async () => {
-    renderEditor({
-      seed: "kind: samples.substrate.reamde.dev/tasks/task\ndata:\n      properties:\n            title: hi\n",
-    })
-    expect(screen.queryByRole("button", { name: /Format/ })).toBeNull()
-    fireEvent.click(screen.getByRole("tab", { name: "YAML" }))
-    fireEvent.click(screen.getByRole("button", { name: /Format/ }))
-    expect((await yamlLens()).text()).toContain("    title: hi")
   })
 })

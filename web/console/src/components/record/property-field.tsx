@@ -86,6 +86,9 @@ export interface PropertyFieldProps {
   labelAction?: React.ReactNode
   /** Distinguishes ids when two forms are mounted at once. */
   idPrefix?: string
+  /** The control alone: the surface around it says the label and the
+   * one-liner (the property sheet's rows). Errors still show. */
+  bare?: boolean
 }
 
 /** A worked example as a placeholder. In the data voice an example reads like
@@ -105,6 +108,7 @@ export function PropertyField({
   derivedNote,
   labelAction,
   idPrefix = "f",
+  bare = false,
 }: PropertyFieldProps) {
   const id = `${idPrefix}-${field.name}`
   // A cleared field (`null`) and an untouched blank one both render empty; what
@@ -117,6 +121,14 @@ export function PropertyField({
   // input that only ever gets overwritten.
   if (field.spec.managed || derivedNote) {
     const stamped = field.spec.managed
+    if (bare) {
+      return (
+        <p className="text-sm text-muted-foreground">
+          {formatValue(field.spec, value) ||
+            (derivedNote ?? (stamped ? "Set automatically" : "Not set yet"))}
+        </p>
+      )
+    }
     return (
       <Field>
         <div className="flex items-center gap-2">
@@ -144,6 +156,17 @@ export function PropertyField({
   // A bool is its own block: the checkbox and label ride one line and the
   // description flows full-width beneath, never trapped in a label column.
   if (field.control === "bool") {
+    if (bare) {
+      return (
+        <input
+          id={id}
+          type="checkbox"
+          className="size-4 accent-primary"
+          checked={value === true}
+          onChange={(e) => onChange(e.target.checked)}
+        />
+      )
+    }
     return (
       <Field>
         <div className="flex items-center gap-2">
@@ -166,7 +189,7 @@ export function PropertyField({
     )
   }
 
-  const label = (
+  const label = bare ? null : (
     <div className="flex items-center justify-between gap-2">
       <FieldLabel htmlFor={id} className="font-normal">
         {field.label}
@@ -183,14 +206,15 @@ export function PropertyField({
 
   // The declaration's one-liner and the control's own hint are two sentences,
   // never one run-on line.
-  const help = (hint?: string) => (
-    <>
-      {field.description && (
-        <FieldDescription>{field.description}</FieldDescription>
-      )}
-      {hint && <FieldDescription>{hint}</FieldDescription>}
-    </>
-  )
+  const help = (hint?: string) =>
+    bare ? null : (
+      <>
+        {field.description && (
+          <FieldDescription>{field.description}</FieldDescription>
+        )}
+        {hint && <FieldDescription>{hint}</FieldDescription>}
+      </>
+    )
 
   if (field.control === "select") {
     // The empty choice is offered for OPTIONAL enums (its "— none —" is a real
@@ -398,11 +422,13 @@ export function PropertyField({
           value={text}
           onChange={(e) => onChange(e.target.value)}
         />
-        <FieldDescription>
-          {field.description
-            ? `${field.description}: one per line.`
-            : "One value per line."}
-        </FieldDescription>
+        {!bare && (
+          <FieldDescription>
+            {field.description
+              ? `${field.description}: one per line.`
+              : "One value per line."}
+          </FieldDescription>
+        )}
         {error && <FieldError>{error}</FieldError>}
       </Field>
     )

@@ -381,6 +381,7 @@ function PanelEditor(props: InlineEditorProps) {
         kinds={kinds}
         self={record.id}
         idPrefix="sheet"
+        bare
       />
       <div className="flex items-center gap-2">
         <Button size="sm" disabled={pending} onClick={() => void save(value)}>

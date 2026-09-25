@@ -31,6 +31,7 @@ import { Suspense, lazy, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import {
+  CodeIcon,
   AlertCircleIcon,
   AlertTriangleIcon,
   CheckCircle2Icon,
@@ -38,6 +39,10 @@ import {
   WandSparklesIcon,
 } from "lucide-react"
 
+import { KindGlyph } from "@/components/identity/kind-glyph"
+import { KindRef } from "@/components/identity/kind-ref"
+import { DocPage } from "@/components/identity/page-layout"
+import { CreateSheet } from "@/components/record/create-sheet"
 import { PropertyForm } from "@/components/record/property-form"
 
 /** CodeMirror and its YAML grammar are the editor's alone: they load when the
@@ -76,6 +81,8 @@ import {
   type Problem,
 } from "@/lib/record-yaml"
 import { kindByCollection } from "@/lib/definition"
+import { displayName } from "@/lib/kind-names"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { cn } from "@/lib/utils"
 import { recordEditRoute, recordNewRoute } from "@/router"
 
@@ -201,7 +208,11 @@ export function RecordEditorForm({
 
   // The lens is this editor's own state, not the URL's: the address already
   // names the record, and a half-typed document is nobody's link.
-  const [lens, setLens] = useState<Lens>("form")
+  const [lens, setLens] = useState<Lens>(mode === "edit" ? "yaml" : "form")
+  const [technical] = useTechnicalDetails()
+  // A create names its problems once the person asks to create, not while
+  // the template is still blank.
+  const [attempted, setAttempted] = useState(false)
 
   // The API's own rejection (schema/admission), shown inline until the next edit.
   const [serverError, setServerError] = useState<ApiError | undefined>()
@@ -310,17 +321,123 @@ export function RecordEditorForm({
 
   const canSave = errorCount === 0 && !mutation.isPending
 
+  if (mode === "create") {
+    const noun = displayName(kind).toLowerCase()
+    return (
+      <DocPage>
+        <div className="flex items-start justify-between gap-3">
+          <KindGlyph kind={kind} size="lg" />
+          <div className="flex items-center gap-1.5">
+            {lens === "yaml" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={mutation.isPending}
+                onClick={format}
+              >
+                <WandSparklesIcon />
+                Format
+              </Button>
+            )}
+            {(technical || lens === "yaml") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-pressed={lens === "yaml"}
+                onClick={() => setLens(lens === "form" ? "yaml" : "form")}
+              >
+                <CodeIcon />
+                {lens === "form" ? "Write YAML" : "Use the form"}
+              </Button>
+            )}
+          </div>
+        </div>
+        {lens === "form" ? (
+          <CreateSheet
+            text={text}
+            kind={kind}
+            kinds={kinds}
+            onChange={onChange}
+            meta={
+              <span className="inline-flex items-center gap-1.5">
+                New in <KindRef kind={kind} />
+              </span>
+            }
+          />
+        ) : (
+          <>
+            <h1 className="mt-2.5 mb-3 text-[26px] leading-tight font-[650] tracking-[-0.02em]">
+              New {noun}
+            </h1>
+            <div className="overflow-hidden rounded-lg border">
+              <Suspense
+                fallback={
+                  <div className="p-4">
+                    <Skeleton className="h-4 w-64" />
+                  </div>
+                }
+              >
+                <YamlEditor
+                  value={text}
+                  onChange={onChange}
+                  kind={kind}
+                  ctx={ctx}
+                />
+              </Suspense>
+            </div>
+          </>
+        )}
+        {(attempted || lens === "yaml" || serverError) &&
+          (errorCount > 0 || warnCount > 0 || serverError) && (
+            <div className="mt-4 rounded-lg border bg-panel">
+              <ProblemsList
+                problems={problems}
+                errorCount={errorCount}
+                warnCount={warnCount}
+                serverError={serverError}
+                onShowLine={() => setLens("yaml")}
+              />
+            </div>
+          )}
+        <div className="mt-6 flex items-center gap-2 border-t pt-4">
+          <Button
+            disabled={mutation.isPending}
+            onClick={() => {
+              setAttempted(true)
+              if (canSave) mutation.mutate()
+            }}
+          >
+            {mutation.isPending && <Spinner className="size-3.5" />}
+            Create {noun}
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={mutation.isPending}
+            render={
+              <Link
+                to="/data/$authority/$pkg/$name"
+                params={{ authority: authority, pkg: pkg, name }}
+              />
+            }
+          >
+            Cancel
+          </Button>
+        </div>
+      </DocPage>
+    )
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-start justify-between gap-3 px-6 pt-5 pb-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight break-words">
-            {mode === "edit" ? `Edit ${kind.name}` : `New ${kind.name}`}
+            Edit {displayName(kind).toLowerCase()}
           </h1>
           <p className="data text-xs text-muted-foreground">
             {mode === "edit" && record
-              ? `${authority}/${name}/${record.id}`
-              : `${authority}/${name}`}
+              ? `${kind.identity}/${record.id}`
+              : kind.identity}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
@@ -429,80 +546,88 @@ export function RecordEditorForm({
 
 /** The validation surface: a status line, the API's rejection when there is
  * one, and the live client-side problems, each keyed to its line. */
-function ProblemsPanel({
-  problems,
-  errorCount,
-  warnCount,
-  serverError,
-  onShowLine,
-}: {
+interface ProblemsProps {
   problems: Problem[]
   errorCount: number
   warnCount: number
   serverError?: ApiError
   onShowLine: () => void
-}) {
-  const clean = errorCount === 0 && warnCount === 0 && !serverError
+}
+
+function ProblemsPanel(props: ProblemsProps) {
   return (
     <ScrollArea className="h-full">
-      <div className="flex flex-col gap-3 p-4">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          {clean ? (
-            <>
-              <CheckCircle2Icon className="size-4 text-primary" />
-              <span>Ready to apply</span>
-            </>
-          ) : (
-            <span>
-              {errorCount > 0 && (
-                <span className="text-destructive">
-                  {errorCount} {errorCount === 1 ? "error" : "errors"}
-                </span>
-              )}
-              {errorCount > 0 && warnCount > 0 && ", "}
-              {warnCount > 0 && (
-                <span className="text-muted-foreground">
-                  {warnCount} {warnCount === 1 ? "warning" : "warnings"}
-                </span>
-              )}
-            </span>
-          )}
-        </div>
+      <ProblemsList {...props} />
+    </ScrollArea>
+  )
+}
 
-        {serverError && (
-          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-destructive">
-              <AlertCircleIcon className="size-4 shrink-0" />
-              The substrate rejected this apply
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {serverError.message}
-            </p>
-            {serverError.problems.length > 0 && (
-              <ul className="mt-2 flex flex-col gap-1">
-                {serverError.problems.map((p, i) => (
-                  <li key={i} className="data text-xs text-muted-foreground">
-                    {p}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-
+function ProblemsList({
+  problems,
+  errorCount,
+  warnCount,
+  serverError,
+  onShowLine,
+}: ProblemsProps) {
+  const clean = errorCount === 0 && warnCount === 0 && !serverError
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      <div className="flex items-center gap-2 text-sm font-medium">
         {clean ? (
-          <p className="text-xs text-muted-foreground">
-            The document parses and satisfies the kind's declaration.
-          </p>
+          <>
+            <CheckCircle2Icon className="size-4 text-primary" />
+            <span>Ready to apply</span>
+          </>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {problems.map((p, i) => (
-              <ProblemRow key={i} problem={p} onShowLine={onShowLine} />
-            ))}
-          </ul>
+          <span>
+            {errorCount > 0 && (
+              <span className="text-destructive">
+                {errorCount} {errorCount === 1 ? "error" : "errors"}
+              </span>
+            )}
+            {errorCount > 0 && warnCount > 0 && ", "}
+            {warnCount > 0 && (
+              <span className="text-muted-foreground">
+                {warnCount} {warnCount === 1 ? "warning" : "warnings"}
+              </span>
+            )}
+          </span>
         )}
       </div>
-    </ScrollArea>
+
+      {serverError && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-destructive">
+            <AlertCircleIcon className="size-4 shrink-0" />
+            The substrate rejected this apply
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {serverError.message}
+          </p>
+          {serverError.problems.length > 0 && (
+            <ul className="mt-2 flex flex-col gap-1">
+              {serverError.problems.map((p, i) => (
+                <li key={i} className="data text-xs text-muted-foreground">
+                  {p}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {clean ? (
+        <p className="text-xs text-muted-foreground">
+          The document parses and satisfies the kind's declaration.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {problems.map((p, i) => (
+            <ProblemRow key={i} problem={p} onShowLine={onShowLine} />
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 
