@@ -26,7 +26,7 @@ describe("actorIdentity", () => {
   it("names an agent by its own name and links its declaration", () => {
     expect(actorIdentity("agent:ada.localhost:llm:substrate")).toMatchObject({
       cls: "agent",
-      name: "substrate",
+      name: "Substrate",
       record: {
         kind: "substrate.reamde.dev/core/agent",
         id: "ada.localhost/llm/substrate",

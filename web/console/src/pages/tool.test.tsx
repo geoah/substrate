@@ -255,7 +255,7 @@ describe("ToolPage", () => {
     ).toBeTruthy()
     expect(screen.getByText("Yours")).toBeTruthy()
     expect(screen.getByText("By an agent")).toBeTruthy()
-    const usedBy = screen.getByText("notekeeper").closest("a")
+    const usedBy = screen.getByText("Notekeeper").closest("a")
     expect(usedBy?.getAttribute("data-to")).toBe("/agents/$id")
     expect(screen.getByText("The note body")).toBeTruthy()
 

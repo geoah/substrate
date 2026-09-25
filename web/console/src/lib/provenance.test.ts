@@ -158,7 +158,7 @@ describe("holderOf", () => {
     })
     expect(
       holderOf({ manager: "agent:ada.localhost:llm:substrate", tier: "bundle" })
-    ).toMatchObject({ mark: "actor", label: "substrate" })
+    ).toMatchObject({ mark: "actor", label: "Substrate" })
     expect(holderOf({})).toBeUndefined()
   })
 })

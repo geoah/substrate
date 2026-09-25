@@ -89,6 +89,18 @@ function functionName(provider: ProviderInfo, name: string): string {
     : `${provider.name} sync`
 }
 
+/** An agent's name as a person reads it: the local name, camelCase split into
+ * words, the first capitalised (`substrateEditor` → "Substrate editor"). The
+ * id stays the identity; this is a label. */
+export function agentName(id: string): string {
+  const local = id.slice(Math.max(id.lastIndexOf("/"), id.lastIndexOf(":")) + 1)
+  const spaced = local
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[-_]+/g, " ")
+    .toLowerCase()
+  return capitalise(spaced.trim() || id)
+}
+
 export function actorIdentity(actor: string): ActorIdentity {
   if (actor === "substrate") {
     return {
@@ -106,7 +118,7 @@ export function actorIdentity(actor: string): ActorIdentity {
     return {
       actor,
       cls: "agent",
-      name,
+      name: agentName(name),
       description: "One of your agents.",
       record: {
         kind: `${CORE_PACKAGE}/agent`,

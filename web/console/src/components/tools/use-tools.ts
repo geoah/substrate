@@ -21,7 +21,7 @@ import {
   triggerRecordsQueryOptions,
 } from "@/lib/api/sync"
 import type { SubstrateRecord, SyncStatus } from "@/lib/api/types"
-import type { ProviderInfo } from "@/lib/actor-identity"
+import { agentName, type ProviderInfo } from "@/lib/actor-identity"
 import {
   buildTools,
   kindLabeler,
@@ -138,10 +138,8 @@ export function useTools(): ToolsModel {
   }
 }
 
-/** An agent record's display name: its local name. */
-export function agentName(id: string): string {
-  return id.slice(id.lastIndexOf("/") + 1)
-}
+/** An agent record's display name, the actor mark's. */
+export { agentName }
 
 /** An agent record id as its actor string. */
 export function agentActor(id: string): string {

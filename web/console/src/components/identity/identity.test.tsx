@@ -157,7 +157,7 @@ describe("ActorRef", () => {
 
   it("shows the raw actor inline only in technical mode", async () => {
     renderWith(<ActorRef actor="agent:ada.localhost:llm:substrate" />)
-    expect((await screen.findByRole("link")).textContent).toBe("substrateagent")
+    expect((await screen.findByRole("link")).textContent).toBe("Substrateagent")
     cleanup()
     renderWith(<ActorRef actor="agent:ada.localhost:llm:substrate" />, {
       technical: true,

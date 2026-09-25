@@ -221,7 +221,7 @@ describe("headerFacts", () => {
     ]
     expect(headerFacts(t, rows)).toEqual({
       addedBy: "you",
-      changedBy: "helper",
+      changedBy: "Helper",
       changed: true,
     })
     expect(headerFacts(t, rows.slice(0, 1)).addedBy).toBeUndefined()

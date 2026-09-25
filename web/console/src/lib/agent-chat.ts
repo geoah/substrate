@@ -5,6 +5,7 @@
  *
  * Nothing here is sent to the API: display names are the console's own. */
 
+import { agentName } from "@/lib/actor-identity"
 import { deliveryNoticeOf, type ToolCallView } from "@/lib/api/transcript"
 import { readReference, type SubstrateRecord } from "@/lib/api/types"
 import {
@@ -30,17 +31,8 @@ function capitalise(text: string): string {
   return text ? text[0].toUpperCase() + text.slice(1) : text
 }
 
-/** An agent's name as a person reads it: the local name, camelCase split into
- * words, the first capitalised (`substrateEditor` → "Substrate editor"). The
- * id stays the identity; this is a label. */
-export function agentName(id: string): string {
-  const local = id.slice(id.lastIndexOf("/") + 1)
-  const spaced = local
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/[-_]+/g, " ")
-    .toLowerCase()
-  return capitalise(spaced.trim() || id)
-}
+/** An agent's name as a person reads it; one rule, the actor mark's. */
+export { agentName }
 
 /** The actor string an agent writes under (decision 0025), from its record id
  * `<authority>/<package>/<name>`. */
