@@ -859,8 +859,11 @@ repository.
   …/trigger/{id}/parked/{failureId}` forgets one — the two ways a parked row
   ends. A RETRY runs the delivery and settles the row whatever the delivery
   then does: effects, or a `when` that no longer matches, which is a settled
-  delivery and not a reason to leave the row parked. A FORGET runs nothing and
-  needs nothing to resolve: it is the answer for a delivery that can never be
+  delivery and not a reason to leave the row parked. A retry whose delivery
+  fails AGAIN leaves the row parked one attempt older, carrying the new
+  error, and answers `409` `parked` with that error's first line — the
+  retry's outcome, not a server fault, so never a bare `500`. A FORGET runs
+  nothing and needs nothing to resolve: it is the answer for a delivery that can never be
   made again — the callable uninstalled, the record deleted, the work done by
   another route — and it answers `204`, or `404` when the row is already gone
   ([#579](https://github.com/geoah/substrate/issues/579)). A

@@ -38,6 +38,12 @@ const (
 	// distinct from codeValidation (422) so a caller tells its own bad
 	// arguments from the function failing to execute (substrate.ErrFunctionFault).
 	codeFunctionFailed = "function_failed" // 500 — a callable body faulted
+	// codeParked is 409: a hand's retry of a parked delivery ran and failed
+	// again, so the row stays parked one attempt older and the message names
+	// the new error (substrate.ErrParked). The retry did what was asked; the
+	// delivery still cannot be made, which is the row's state and not a
+	// server fault, so it is never the masked 500 it once was.
+	codeParked = "parked" // 409 — the retried delivery failed again and stays parked
 )
 
 // problemDetails derives the structured siblings from the engine's problem
@@ -108,6 +114,8 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Message: err.Error(), Problems: ve.Problems, ProblemDetails: problemDetails(ve.Problems)}
 	case errors.Is(err, substrate.ErrValidation):
 		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Message: err.Error()}
+	case errors.Is(err, substrate.ErrParked):
+		return http.StatusConflict, substrate.ErrorPayload{Code: codeParked, Message: err.Error()}
 	case errors.Is(err, substrate.ErrFunctionFault):
 		return http.StatusInternalServerError, substrate.ErrorPayload{Code: codeFunctionFailed, Message: err.Error()}
 	case errors.Is(err, substrate.ErrNotFound):

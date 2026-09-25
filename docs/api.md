@@ -1008,6 +1008,7 @@ The code set is closed. The client-error codes:
 | `bad_request`  | 400  | A malformed request, an unknown field, or an unsupported list parameter.                         |
 | `validation`   | 422  | An undeclared property, a malformed value, a type mismatch, or a `mustExist` reference naming a record that does not exist — a value in the body, addressed by `problemDetails[].path`. |
 | `conflict`     | 409  | A version check failed (`ifVersion`); re-read and retry. Also the accept of a change request whose change no longer applies, whatever the cause ([the patch request sibling](projection.md#the-patch-request-sibling)) — the message says which, and only an `ifVersion` says "version conflict". |
+| `parked`       | 409  | A retry of a parked delivery (`POST …/parked/{failureId}/retry`) ran and failed again: the row stays parked one attempt older, and the message names the new error's first line ([functions](functions.md#triggers)). |
 | `guard`        | 403  | A refused state transition, or a protected operation (a subject reference, a kind with live records). |
 | `lossy`        | 403  | A declaration change would remove values from the fold, or a re-import would replace a sample copy edited since it was imported, and no confirmation for that plan came with it; preview the plan and confirm it ([bundles](bundles.md#install-and-lifecycle)). |
 | `forbidden`    | 403  | The caller may not do this at all.                                                               |

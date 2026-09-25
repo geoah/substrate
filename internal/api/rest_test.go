@@ -178,6 +178,7 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 		{"auth", fmt.Errorf("token: %w", substrate.ErrAuth), http.StatusUnauthorized, codeAuth},
 		{"not_found", fmt.Errorf("id: %w", substrate.ErrNotFound), http.StatusNotFound, codeNotFound},
 		{"function_failed", fmt.Errorf("body: %w", substrate.ErrFunctionFault), http.StatusInternalServerError, codeFunctionFailed},
+		{"parked", fmt.Errorf("%w: trigger t: parked delivery 7 ran again and failed", substrate.ErrParked), http.StatusConflict, codeParked},
 		{"internal", errBoom, http.StatusInternalServerError, codeInternal},
 		{"unavailable", fmt.Errorf("vectors: %w", substrate.ErrUnavailable), http.StatusServiceUnavailable, codeUnavailable},
 		// The engine's two directory refusals (engine.ErrDirectoryWrite,
