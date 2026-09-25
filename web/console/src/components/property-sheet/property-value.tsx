@@ -8,6 +8,7 @@
 import type { ReactNode } from "react"
 
 import { friendlyCalendarDay, friendlyDateTime } from "./dates"
+import { repeatedLayout } from "./sheet-model"
 import { RecordRef } from "@/components/identity/record-ref"
 import { StateBadge } from "@/components/identity/state-badge"
 import { readReference } from "@/lib/api/types"
@@ -240,19 +241,31 @@ export function DeclaredValue({
         </ol>
       )
     }
+    if (repeatedLayout(item, value) === "chips") {
+      return (
+        <ul
+          data-layout="chips"
+          className="flex min-w-0 flex-wrap items-center gap-1.5 py-[3px]"
+        >
+          {value.map((one, i) => (
+            <li
+              key={i}
+              className="max-w-full rounded-[5px] bg-hover px-1.5 py-px text-[13px] break-all [&_a]:hover:underline [&>span]:rounded-none [&>span]:bg-transparent [&>span]:p-0"
+            >
+              <ScalarValue spec={item} value={one} />
+            </li>
+          ))}
+        </ul>
+      )
+    }
     return (
-      <span className="inline-flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+      <ul data-layout="lines" className="flex w-full min-w-0 flex-col gap-1">
         {value.map((one, i) => (
-          <span key={i} className="inline-flex items-center gap-2">
-            {i > 0 && item.kind !== "reference" && (
-              <span aria-hidden className="text-faint">
-                ·
-              </span>
-            )}
+          <li key={i} className="min-w-0 break-words">
             <ScalarValue spec={item} value={one} />
-          </span>
+          </li>
         ))}
-      </span>
+      </ul>
     )
   }
   return <ScalarValue spec={spec} value={value} />

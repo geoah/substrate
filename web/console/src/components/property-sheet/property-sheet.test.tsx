@@ -364,6 +364,92 @@ describe("PropertySheet inline edit", () => {
   })
 })
 
+describe("PropertySheet lists", () => {
+  const listed = () =>
+    record({
+      properties: {
+        ...record().properties,
+        tags: ["alpha", "beta"],
+        emails: ["ada@example.com", "a.lovelace@example.com"],
+        quotes: [
+          "That brain of mine is something more than merely mortal, as time will show.",
+          "short",
+        ],
+      },
+    })
+  const box = (name: string) =>
+    screen.getByRole("textbox", { name }) as HTMLInputElement
+
+  it("reads short tokens as chips and longer text one per line", () => {
+    renderSheet(listed())
+    const emails = row("emails").querySelector("[data-layout=chips]")!
+    expect(emails.querySelectorAll("li")).toHaveLength(2)
+    const quotes = row("quotes").querySelector("[data-layout=lines]")!
+    expect(quotes.querySelectorAll("li")).toHaveLength(2)
+  })
+
+  it("edits one box per item and saves the whole list in one PATCH", async () => {
+    renderSheet(listed())
+    fireEvent.click(valueOf("tags")!)
+    expect(box("Tags 1").value).toBe("alpha")
+    // Enter adds an item after the one being typed in.
+    fireEvent.keyDown(box("Tags 2"), { key: "Enter" })
+    fireEvent.change(box("Tags 3"), { target: { value: "gamma" } })
+    // Moving is an edit: gamma goes first.
+    fireEvent.click(screen.getByRole("button", { name: "Move Tags 3 up" }))
+    fireEvent.click(screen.getByRole("button", { name: "Move Tags 2 up" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].body).toEqual({
+      properties: { tags: ["gamma", "alpha", "beta"] },
+      ifVersion: 7,
+    })
+  })
+
+  it("removes an empty item on Backspace and splits a pasted list", async () => {
+    renderSheet(listed())
+    fireEvent.click(valueOf("tags")!)
+    fireEvent.keyDown(box("Tags 2"), { key: "Enter" })
+    fireEvent.keyDown(box("Tags 3"), { key: "Backspace" })
+    expect(screen.queryByRole("textbox", { name: "Tags 3" })).toBeNull()
+    fireEvent.paste(box("Tags 2"), {
+      clipboardData: { getData: () => "delta\nepsilon, zeta\n" },
+    })
+    expect(box("Tags 2").value).toBe("betadelta")
+    expect(box("Tags 3").value).toBe("epsilon, zeta")
+    fireEvent.keyDown(box("Tags 3"), { key: "Enter", metaKey: true })
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].body).toEqual({
+      properties: { tags: ["alpha", "betadelta", "epsilon, zeta"] },
+      ifVersion: 7,
+    })
+  })
+
+  it("writes an emptied list as [], not as a deletion", async () => {
+    renderSheet(listed())
+    fireEvent.click(valueOf("tags")!)
+    fireEvent.click(screen.getByRole("button", { name: "Remove Tags 2" }))
+    fireEvent.click(screen.getByRole("button", { name: "Remove Tags 1" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].body).toEqual({
+      properties: { tags: [] },
+      ifVersion: 7,
+    })
+  })
+
+  it("says which item its datatype refuses, and writes nothing", async () => {
+    renderSheet(listed())
+    fireEvent.click(valueOf("emails")!)
+    fireEvent.change(screen.getByLabelText("Emails 2"), {
+      target: { value: "not an address" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    expect((await screen.findByRole("alert")).textContent).toMatch(/^Item 2/)
+    expect(wire.writes).toHaveLength(0)
+  })
+})
+
 describe("OwnershipChip", () => {
   const held = (meta: SubstrateRecord["propertyMeta"]) =>
     record({ propertyMeta: meta })

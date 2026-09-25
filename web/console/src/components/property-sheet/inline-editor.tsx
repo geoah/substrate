@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query"
 import { ArrowRightIcon, CheckIcon } from "lucide-react"
 
 import { fromLocalInput, toLocalInput } from "./dates"
+import { ListEditor } from "./list-editor"
 import { editStyle, propertyWrite } from "./sheet-model"
 import { type SheetRow } from "./sheet-rows"
 import { useRecordPatch, writeError } from "./use-record-patch"
@@ -50,6 +51,7 @@ export function InlineEditor(props: InlineEditorProps) {
   const control = props.row.field.control
   if (control === "state") return <StateMoves {...props} />
   if (control === "select") return <EnumPicker {...props} />
+  if (control === "list") return <ListEditor {...props} />
   if (control === "reference" && style === "line") {
     return <ReferencePicker {...props} />
   }

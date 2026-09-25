@@ -9,7 +9,7 @@ import {
   friendlyDay,
   fromLocalInput,
 } from "./dates"
-import { editStyle, propertyWrite } from "./sheet-model"
+import { editStyle, listItems, listWrite, propertyWrite } from "./sheet-model"
 import { sheetRows } from "./sheet-rows"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { fieldOf } from "@/lib/record-form"
@@ -131,6 +131,33 @@ describe("propertyWrite", () => {
     })
     expect(propertyWrite(field("tags"), [], [])).toEqual({})
     expect(propertyWrite(field("tags"), undefined, [])).toEqual({})
+  })
+
+  it("writes a list editor's items whole, commas and all, and an emptied one as []", () => {
+    const tags = field("tags")
+    expect(listWrite(tags, ["a"], ["a", " Smith, J ", ""])).toEqual({
+      properties: { tags: ["a", "Smith, J"] },
+    })
+    expect(listWrite(tags, ["a", "b"], ["", " "])).toEqual({
+      properties: { tags: [] },
+    })
+    expect(listWrite(tags, undefined, [""])).toEqual({})
+    expect(listWrite(tags, ["a", "b"], ["a", "b"])).toEqual({})
+    // Reordering is an edit.
+    expect(listWrite(tags, ["a", "b"], ["b", "a"])).toEqual({
+      properties: { tags: ["b", "a"] },
+    })
+    expect(listItems(["a", 2])).toEqual(["a", "2"])
+  })
+
+  it("says which list item its datatype refuses", () => {
+    const emails = fieldOf({
+      ...propSpecsByName(task).find((s) => s.name === "tags")!,
+      kind: "email",
+    })
+    expect(listWrite(emails, [], ["a@example.com", "nope"]).error).toMatch(
+      /^Item 2: /
+    )
   })
 
   it("writes a picked reference as its path", () => {
