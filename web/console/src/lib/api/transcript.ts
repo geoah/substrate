@@ -420,3 +420,105 @@ export function decisionNoticeOf(turn: TurnView): DecisionNotice | undefined {
     return undefined
   }
 }
+
+// ── the live overlay ────────────────────────────────────────────────────────
+
+/** A run's turns while it streams, folded into the same `TurnView` shape the
+ * persisted rows fold into. `closed` marks the assistant turn as finished with
+ * its tools: the loop dispatches every call of a turn in sequence, so a
+ * finished call does NOT end the turn — but the next prose delta does begin a
+ * new one. */
+export interface LiveOverlay {
+  turns: TurnView[]
+  closed: boolean
+}
+
+export const EMPTY_OVERLAY: LiveOverlay = { turns: [], closed: false }
+
+/** Appends a delta, starting a new assistant turn when the previous one has
+ * already dispatched and settled its tools. */
+export function pushDelta(
+  live: LiveOverlay,
+  text: string,
+  seq: number
+): LiveOverlay {
+  const turns = [...live.turns]
+  const last = turns[turns.length - 1]
+  if (!last || last.role !== "assistant" || live.closed) {
+    turns.push({
+      key: `live-a${seq}`,
+      role: "assistant",
+      content: text,
+      tools: [],
+    })
+    return { turns, closed: false }
+  }
+  turns[turns.length - 1] = { ...last, content: last.content + text }
+  return { turns, closed: false }
+}
+
+/** Attaches a started call to the assistant turn in flight, opening one when
+ * the turn dispatched before it said anything. */
+export function pushToolStart(
+  live: LiveOverlay,
+  call: ToolCallView,
+  seq: number
+): LiveOverlay {
+  const turns = [...live.turns]
+  const last = turns[turns.length - 1]
+  if (!last || last.role !== "assistant") {
+    turns.push({
+      key: `live-a${seq}`,
+      role: "assistant",
+      content: "",
+      tools: [call],
+    })
+    return { ...live, turns }
+  }
+  turns[turns.length - 1] = { ...last, tools: [...last.tools, call] }
+  return { ...live, turns }
+}
+
+/** Settles a call BY ID: one turn may dispatch the same tool twice, and
+ * settling by name would close the wrong card.
+ *
+ * A finish with no card is not a no-op. The loop refuses a dispatch past the
+ * tool-call budget WITHOUT starting it — the refusal is a finished event and
+ * nothing else — so the one card a reader most needs ("stop calling tools")
+ * would never appear live, only on reload. An unclaimed finish opens its own
+ * card, already settled. */
+export function settleTool(
+  live: LiveOverlay,
+  call: ToolCallView,
+  output: string,
+  ok: boolean,
+  seq: number
+): LiveOverlay {
+  const settled = { ...call, output, ok }
+  // An empty id cannot identify anything, so it settles the OLDEST card still
+  // running rather than every id-less card at once.
+  const match = (c: ToolCallView) =>
+    call.id ? c.id === call.id : c.ok === undefined
+  let claimed = false
+  const turns = live.turns.map((turn) => {
+    if (claimed || !turn.tools.some(match)) return turn
+    claimed = true
+    let done = false
+    return {
+      ...turn,
+      tools: turn.tools.map((c) => {
+        if (done || !match(c)) return c
+        done = true
+        return { ...c, output, ok }
+      }),
+    }
+  })
+  if (claimed) return { turns, closed: true }
+  return {
+    turns: [
+      ...turns,
+      { key: `live-a${seq}`, role: "assistant", content: "", tools: [settled] },
+    ],
+    closed: true,
+  }
+}

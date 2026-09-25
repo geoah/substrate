@@ -1,7 +1,6 @@
 /** One bundle's settings as a form: every `setting` and `secret` record under
- * the bundle's id prefix, one control each (decision record 0076). The
- * Settings page renders one per bundle and the bundle page renders the bundle's
- * own, so there is one form and one set of rules.
+ * the bundle's id prefix, one control each (decision record 0076), on the
+ * bundle's own page under Providers.
  *
  * The controls are `PropertyField`'s, the same ones every other typed surface
  * renders, so a datatype looks and validates the same wherever it is edited.
@@ -131,8 +130,12 @@ export function BundleSettingsForm({ fields }: { fields: SettingField[] }) {
             }
             labelAction={
               field.secret ? (
-                <span className="text-xs text-muted-foreground">
-                  {field.set ? "set" : "not set"}
+                <span
+                  className={
+                    field.set ? "text-xs text-ok" : "text-xs text-warning"
+                  }
+                >
+                  {field.set ? "Saved" : "Not saved yet"}
                 </span>
               ) : undefined
             }

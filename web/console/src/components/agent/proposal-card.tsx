@@ -1,22 +1,32 @@
-/** The proposal, inline in the thread that proposed it. The card RESOLVES the
- * recordpatchrequest and renders its live state — never a snapshot the row
- * carried — so the transcript and the review inbox can never disagree about
- * what a proposal says or whether it is decided. Accept/reject here is the
- * same atomic decision patch the review page submits (`submitDecision`,
- * CAS'd on the request version as loaded); the full diff review stays on the
- * request page, one link away.
+/** A change the agent suggested, inline in the thread that suggested it. The
+ * card RESOLVES the recordpatchrequest and renders its live state — never a
+ * snapshot the row carried — so the thread and the review page can never
+ * disagree about what a suggestion says or whether it is decided.
  *
- * Deciding also writes a `system` message into this very thread and resumes
- * the agent, so a decision made here shows up as new turns — the invalidation
- * below is what lets them arrive. */
+ * Apply and Dismiss are the same atomic decision patch the review page
+ * submits (`submitDecision`, CAS'd on the request version as loaded); Edit
+ * first is the review page itself. Deciding also writes a `system` message
+ * into this very thread and resumes the agent, so a decision made here shows
+ * up as new turns — the invalidation below is what lets them arrive. */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { useState } from "react"
-import { ArrowUpRightIcon, FilePenLineIcon } from "lucide-react"
+import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react"
 
+import { AgentMark } from "@/components/agent/agent-mark"
+import { RecordRef } from "@/components/identity/record-ref"
+import { StateBadge } from "@/components/identity/state-badge"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import {
+  agentName,
+  propertyLabel,
+  proposedHeading,
+  threadAgentId,
+  valueWords,
+} from "@/lib/agent-chat"
 import {
   changeRequestQueryOptions,
   submitDecision,
@@ -26,8 +36,9 @@ import {
   CORE_PACKAGE_NAME,
   LLM_PACKAGE_NAME,
 } from "@/lib/api/http"
+import { kindsQueryOptions } from "@/lib/api/kinds"
 import { putRecord, recordQueryOptions } from "@/lib/api/records"
-import type { SubstrateRecord } from "@/lib/api/types"
+import { readReference, type SubstrateRecord } from "@/lib/api/types"
 import {
   changeOp,
   changeTarget,
@@ -38,30 +49,31 @@ import {
   type ChangeRow,
   type Verdict,
 } from "@/lib/changerequests"
-import { kindsQueryOptions } from "@/lib/api/kinds"
 import { kindByIdentity } from "@/lib/definition"
-import { cn } from "@/lib/utils"
+import { displayName, displayPlural } from "@/lib/kind-names"
+import { splitRecordPath } from "@/lib/record-path"
+
+const CARD =
+  "flex flex-col gap-2 rounded-[10px] border border-border-strong bg-background px-3.5 py-3 text-sm"
 
 export function ProposalCard({ id }: { id: string }) {
   const client = useQueryClient()
+  const [technical] = useTechnicalDetails()
   const request = useQuery(changeRequestQueryOptions(id))
   const [submitting, setSubmitting] = useState<Verdict | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [remedyOpen, setRemedyOpen] = useState(false)
   // The remedy needs the proposer's identity, which lives on the thread the
   // request points at; fetched lazily, only for gated pending requests.
-  const threadPath =
-    typeof request.data?.properties.thread === "string"
-      ? request.data.properties.thread
-      : ""
+  const threadPath = readReference(request.data?.properties.thread)?.path ?? ""
   const threadId = threadPath.slice(threadPath.lastIndexOf("/") + 1)
-  const gated = typeof request.data?.properties.policy === "string"
+  const gated = readReference(request.data?.properties.policy) !== undefined
   const thread = useQuery({
     ...recordQueryOptions(CORE_AUTHORITY, LLM_PACKAGE_NAME, "thread", threadId),
     enabled: gated && Boolean(threadId),
   })
-  // The card shows WHAT would change, not a link to find out: for a patch,
-  // the live target is read so every row renders before AND after.
+  // The card shows WHAT would change: for a patch, the live target is read so
+  // every row renders before AND after.
   const pendingOp = request.data ? (changeOp(request.data) ?? "patch") : "patch"
   const pendingTarget = request.data ? changeTarget(request.data) : undefined
   const registry = useQuery({
@@ -85,9 +97,11 @@ export function ProposalCard({ id }: { id: string }) {
 
   if (request.isPending) {
     return (
-      <div className="flex items-center gap-1.5 border-t px-2 py-1.5 text-xs text-muted-foreground">
-        <Spinner className="size-3" />
-        loading the proposal
+      <div className={CARD}>
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          <Spinner className="size-3" />
+          Loading the suggested change…
+        </span>
       </div>
     )
   }
@@ -95,8 +109,11 @@ export function ProposalCard({ id }: { id: string }) {
   // honest rendering — the id came off the transcript, not a guess.
   if (request.isError || !request.data) {
     return (
-      <div className="border-t px-2 py-1.5">
-        <ReviewLink id={id} />
+      <div className={CARD}>
+        <span className="text-muted-foreground">
+          This suggested change couldn’t be read.{" "}
+          <ReviewLink id={id}>Open it</ReviewLink>
+        </span>
       </div>
     )
   }
@@ -107,13 +124,14 @@ export function ProposalCard({ id }: { id: string }) {
   const target = changeTarget(record)
   const rationale = rationaleOf(record)
   const verdict = judgeVerdictOf(record)
-  const targetLabel = target
-    ? `${target.kind.split("/").pop()}/${target.id}`
-    : undefined
+  const diff = proposedDiff(record)
+  const pending = decision === "proposed"
 
-  // The remedy, server-shaped and deliberately narrow: exactly this agent,
-  // this kind, this op — never a wildcard, provenance on the minted rule —
-  // shown verbatim behind its own confirmation before anything lands.
+  // The remedy, deliberately narrow: exactly this agent, this kind, this op —
+  // never a wildcard, provenance on the minted rule — shown behind its own
+  // confirmation before anything lands. The selector names the agent by its
+  // IDENTITY (`<authority>/<package>/<name>`), which is what policy matching
+  // compares.
   //
   // THE REQUEST'S OP IS NOT THE SELECTOR'S. A selector matches the verb the
   // agent called (put/patch/delete); the request records what accepting would
@@ -121,11 +139,7 @@ export function ProposalCard({ id }: { id: string }) {
   // live) or patch (target live), keeping no record of which. So a request
   // that reads create or patch is remedied by naming both verbs; only delete
   // maps one to one. See docs/changelog.md#change-verbs.
-  const proposerPath =
-    typeof thread.data?.properties.agent === "string"
-      ? thread.data.properties.agent
-      : ""
-  const proposer = proposerPath.slice(proposerPath.lastIndexOf("/") + 1)
+  const proposer = thread.data ? threadAgentId(thread.data) : undefined
   const remedyRule =
     gated && proposer && target
       ? {
@@ -167,11 +181,11 @@ export function ProposalCard({ id }: { id: string }) {
     }
   }
 
-  async function decide(verdict: Verdict) {
-    setSubmitting(verdict)
+  async function decide(next: Verdict) {
+    setSubmitting(next)
     setError(null)
     try {
-      await submitDecision(id, verdict, record.version)
+      await submitDecision(id, next, record.version)
       // The decision changed the request, (on accept) the target, and wrote a
       // system turn into THIS thread; the resumed agent's reply lands a few
       // seconds later, so one more sweep catches it without polling forever.
@@ -185,74 +199,85 @@ export function ProposalCard({ id }: { id: string }) {
     }
   }
 
+  const heading = op === "create" ? proposedHeading(diff.properties) : undefined
+  const Icon =
+    op === "create" ? PlusIcon : op === "delete" ? Trash2Icon : PencilIcon
+  const applyLabel =
+    op === "create" ? "Add it" : op === "delete" ? "Delete it" : "Apply"
+
   return (
-    <div className="flex flex-col gap-1.5 border-t px-2 py-1.5">
-      <div className="flex items-center gap-1.5 text-xs">
-        <FilePenLineIcon className="size-3 shrink-0 text-muted-foreground" />
-        <span className="truncate">
-          Proposes <span className="data">{op}</span>
-          {targetLabel && (
-            <>
-              {" "}
-              on <span className="data">{targetLabel}</span>
-            </>
-          )}
-        </span>
-        <span
-          className={cn(
-            "ml-auto shrink-0 rounded-sm px-1.5 py-0.5 text-[0.65rem] tracking-wide uppercase",
-            decision === "proposed" && "bg-amber-500/15 text-amber-600",
-            decision === "accepted" && "bg-emerald-500/15 text-emerald-600",
-            decision === "rejected" && "bg-muted text-muted-foreground"
-          )}
-        >
-          {decision}
-        </span>
+    <div className={CARD} data-slot="proposal-card">
+      <div className="flex flex-wrap items-center gap-2 font-medium">
+        <Icon className="size-4 shrink-0 text-faint" />
+        {op === "create" ? (
+          <>
+            <span>
+              New {target ? displayName(target.kind).toLowerCase() : "record"}
+            </span>
+            {heading && <span className="font-semibold">{heading.text}</span>}
+          </>
+        ) : (
+          <>
+            <span>{op === "delete" ? "Delete" : "Change"}</span>
+            {target && <RecordRef kind={target.kind} id={target.id} />}
+          </>
+        )}
+        {technical && target && (
+          <span className="font-mono text-[11px] font-normal [overflow-wrap:anywhere] text-faint">
+            {target.kind}/{target.id}
+          </span>
+        )}
+        {!pending && (
+          <StateBadge value={decision} className="ml-auto text-[12.5px]" />
+        )}
       </div>
       {rationale && (
-        <p className="text-xs [overflow-wrap:anywhere] text-muted-foreground">
+        <p className="text-[13px] [overflow-wrap:anywhere] text-muted-foreground">
           {rationale}
         </p>
       )}
-      {decision === "proposed" && (
-        <ChangePreview
+      {pending && (
+        <ChangeWords
           record={record}
           op={op}
-          targetLabel={targetLabel}
           target={targetRecord.data}
+          skip={heading?.key}
         />
       )}
       {verdict && (
-        <p className="text-xs [overflow-wrap:anywhere] text-muted-foreground">
-          Judge: <span className="data">{verdict.verdict}</span>
-          {typeof verdict.confidence === "number" && (
-            <>
-              {" "}
-              at <span className="data">{verdict.confidence.toFixed(2)}</span>
-            </>
-          )}
-          {verdict.outcome && (
-            <>
-              {" "}
-              (<span className="data">{verdict.outcome}</span>)
-            </>
-          )}
-          {verdict.rationale && <>: {verdict.rationale}</>}
+        <p className="text-[12.5px] [overflow-wrap:anywhere] text-muted-foreground">
+          A judge said {verdict.verdict ?? verdict.outcome}
+          {typeof verdict.confidence === "number" &&
+            ` (${Math.round(verdict.confidence * 100)}% sure)`}
+          {verdict.rationale && `: ${verdict.rationale}`}
         </p>
       )}
-      {error && <p className="text-xs text-destructive">{error}</p>}
-      <div className="flex items-center gap-2">
-        {decision === "proposed" && (
+      {error && (
+        <p className="text-[12.5px] text-destructive">
+          That didn’t go through: {error}
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {pending ? (
           <>
             <Button
               size="sm"
-              variant="outline"
+              variant={op === "delete" ? "destructive" : "default"}
               disabled={submitting !== null}
               onClick={() => void decide("accepted")}
             >
               {submitting === "accepted" && <Spinner className="size-3" />}
-              Accept
+              {applyLabel}
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              render={
+                <Link to="/change-requests/$id" params={{ id }}>
+                  Edit first
+                </Link>
+              }
+            />
             <Button
               size="sm"
               variant="ghost"
@@ -260,31 +285,38 @@ export function ProposalCard({ id }: { id: string }) {
               onClick={() => void decide("rejected")}
             >
               {submitting === "rejected" && <Spinner className="size-3" />}
-              Reject
+              Dismiss
             </Button>
+            {remedyRule && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-muted-foreground"
+                disabled={submitting !== null}
+                onClick={() => setRemedyOpen((v) => !v)}
+              >
+                Always allow this
+              </Button>
+            )}
           </>
+        ) : (
+          <ReviewLink id={id}>See the change</ReviewLink>
         )}
-        {decision === "proposed" && remedyRule && (
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={submitting !== null}
-            onClick={() => setRemedyOpen((v) => !v)}
-          >
-            Accept + always allow
-          </Button>
-        )}
-        <ReviewLink id={id} />
       </div>
-      {remedyOpen && remedyRule && (
-        <div className="flex flex-col gap-1.5 rounded-sm border bg-background/60 p-2">
-          <p className="text-xs text-muted-foreground">
-            This also saves a rule. Every future change like this one lands
-            without asking you.
+      {remedyOpen && remedyRule && proposer && target && (
+        <div className="flex flex-col gap-2 rounded-lg bg-panel p-2.5">
+          <p className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-muted-foreground">
+            This also saves a rule:
+            <AgentMark id={proposer} size="xs" />
+            <span className="text-foreground">{agentName(proposer)}</span>
+            may {op === "delete" ? "delete" : "change"}{" "}
+            {displayPlural(target.kind).toLowerCase()} without asking you first.
           </p>
-          <pre className="overflow-x-auto rounded-sm bg-muted/40 p-1.5 data text-[0.7rem]">
-            {JSON.stringify(remedyRule, null, 2)}
-          </pre>
+          {technical && (
+            <pre className="overflow-x-auto rounded-md bg-background p-2 font-mono text-[11px]">
+              {JSON.stringify(remedyRule, null, 2)}
+            </pre>
+          )}
           <div>
             <Button
               size="sm"
@@ -293,7 +325,7 @@ export function ProposalCard({ id }: { id: string }) {
               onClick={() => void acceptAndAllow()}
             >
               {submitting === "accepted" && <Spinner className="size-3" />}
-              Save the rule and accept
+              Save the rule and apply
             </Button>
           </div>
         </div>
@@ -302,35 +334,35 @@ export function ProposalCard({ id }: { id: string }) {
   )
 }
 
-/** One value, rendered short: the card previews a change, it does not dump
- * JSON. Long values truncate; the full diff stays one click away. */
-function short(value: unknown): string {
-  if (value === undefined) return ""
-  if (value === null) return "null"
-  const text = typeof value === "string" ? value : JSON.stringify(value)
-  return text.length > 80 ? text.slice(0, 77) + "…" : text
+/** A value as the card shows it: a reference as the record it names, anything
+ * else in words. */
+function Value({ value }: { value: unknown }) {
+  const held = readReference(value)
+  const split =
+    held && typeof value === "object" ? splitRecordPath(held.path) : undefined
+  if (split) return <RecordRef kind={split.kind} id={split.id} />
+  return <span>{valueWords(value)}</span>
 }
 
-/** WHAT the accept would do, inline: per-property before → after for a
- * patch, the values a create would mint, the one line a delete means. Shown
- * while the request is PENDING — that is the moment of decision; a decided
- * card keeps the outcome line, and the live rows would drift anyway. */
-function ChangePreview({
+/** WHAT the accept would do, in words: per property before → after for a
+ * patch, the values a create would set, the consequence of a delete. Shown
+ * while the suggestion is PENDING — the moment of decision. */
+function ChangeWords({
   record,
   op,
-  targetLabel,
   target,
+  skip,
 }: {
   record: SubstrateRecord
   op: string
-  targetLabel?: string
   target?: SubstrateRecord
+  /** A create's heading property, already in the card's title. */
+  skip?: string
 }) {
   if (op === "delete") {
     return (
-      <p className="text-xs text-destructive/80">
-        Deletes <span className="data">{targetLabel}</span>. It stops answering
-        reads, and the changelog keeps what it was.
+      <p className="text-[13px] text-destructive">
+        Deleting it removes it from your data. History keeps what it was.
       </p>
     )
   }
@@ -338,43 +370,69 @@ function ChangePreview({
   const rows = deriveChangeRows(
     diff.properties,
     op === "patch" ? target : undefined
-  )
+  ).filter((row) => row.key !== skip)
   if (rows.length === 0) return null
   return (
-    <div className="flex flex-col gap-0.5 rounded-sm bg-background/60 p-1.5">
-      {rows.map((row) => (
-        <ChangeRowLine key={row.key} row={row} create={op === "create"} />
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
+      {rows.map((row, i) => (
+        <span
+          key={row.key}
+          className="inline-flex flex-wrap items-center gap-1.5"
+        >
+          {i > 0 && <span className="text-faint">·</span>}
+          <RowWords row={row} />
+        </span>
       ))}
     </div>
   )
 }
 
-function ChangeRowLine({ row, create }: { row: ChangeRow; create: boolean }) {
-  return (
-    <div className="flex items-baseline gap-1.5 text-xs [overflow-wrap:anywhere]">
-      <span className="shrink-0 data text-muted-foreground">{row.key}</span>
-      {row.effect === "clear" ? (
-        <span className="text-destructive/80">
-          <s className="data">{short(row.before)}</s> cleared
-        </span>
-      ) : row.effect === "unchanged" ? (
-        <span className="text-muted-foreground">
-          <span className="data">{short(row.after)}</span> (already matches)
-        </span>
-      ) : row.effect === "set" ? (
-        <span>
-          <s className="data text-muted-foreground">{short(row.before)}</s>{" "}
-          <span className="data text-emerald-700 dark:text-emerald-400">
-            {short(row.after)}
+function RowWords({ row }: { row: ChangeRow }) {
+  const label = propertyLabel(row.key)
+  switch (row.effect) {
+    case "clear":
+      return (
+        <>
+          <span>{label}</span>
+          <s className="text-faint">
+            <Value value={row.before} />
+          </s>
+          <span>cleared</span>
+        </>
+      )
+    case "unchanged":
+      return (
+        <>
+          <span>{label}</span>
+          <span className="text-foreground">
+            <Value value={row.after} />
           </span>
-        </span>
-      ) : (
-        <span className="data text-emerald-700 dark:text-emerald-400">
-          {create ? short(row.after) : `+ ${short(row.after)}`}
-        </span>
-      )}
-    </div>
-  )
+          <span className="text-faint">(already set)</span>
+        </>
+      )
+    case "set":
+      return (
+        <>
+          <span>{label}</span>
+          <s className="text-faint">
+            <Value value={row.before} />
+          </s>
+          <span aria-hidden>→</span>
+          <span className="text-foreground">
+            <Value value={row.after} />
+          </span>
+        </>
+      )
+    default:
+      return (
+        <>
+          <span>{label}</span>
+          <span className="text-foreground">
+            <Value value={row.after} />
+          </span>
+        </>
+      )
+  }
 }
 
 /** The engine-owned policy/verdict audit, read tolerantly for the card. */
@@ -399,15 +457,14 @@ function judgeVerdictOf(record: SubstrateRecord):
   return out
 }
 
-function ReviewLink({ id }: { id: string }) {
+function ReviewLink({ id, children }: { id: string; children: string }) {
   return (
     <Link
       to="/change-requests/$id"
       params={{ id }}
-      className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:underline"
+      className="text-[12.5px] text-muted-foreground underline underline-offset-4 hover:text-foreground"
     >
-      Review the full change
-      <ArrowUpRightIcon className="size-3" />
+      {children}
     </Link>
   )
 }

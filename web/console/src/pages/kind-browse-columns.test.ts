@@ -179,7 +179,7 @@ describe("a reference column", () => {
     expect(container.querySelector("a")).not.toBeNull()
   })
 
-  it("titles each referent of a repeated reference", () => {
+  it("shows the first referent of a repeated reference and how many more", () => {
     const { container } = renderCell(
       propertyColumnId("watchers"),
       [
@@ -193,22 +193,66 @@ describe("a reference column", () => {
     )
     expect(
       [...container.querySelectorAll("a")].map((a) => a.textContent)
-    ).toEqual(["Ada Lovelace", "Grace Hopper"])
+    ).toEqual(["Ada Lovelace"])
+    expect(container.textContent).toContain("+1")
   })
 
   // A reference may name a kind nobody installed. There is no page to link
-  // to, the batch never asks about it, and the path reads as inert text.
-  it("stays inert text for a kind the registry does not have", () => {
+  // to, the batch never asks about it, and it reads by its kind, never its id.
+  it("stays unlinked for a kind the registry does not have", () => {
     const { container } = renderCell(propertyColumnId("assignee"), {
       ref: "ada.example.com/crm/lead/7",
     })
     expect(container.querySelector("a")).toBeNull()
-    expect(container.textContent).toBe("ada.example.com/crm/lead/7")
+    expect(container.textContent).toBe("Untitled lead")
   })
 })
 
 describe("what the page asks the list to expand", () => {
   it("names every reference the kind declares, and nothing else", () => {
     expect(expandableReferences(TASK)).toEqual(["assignee", "watchers"])
+  })
+})
+
+describe("the opening columns", () => {
+  const RICH: KindInfo = {
+    ...kind("ada.example.com/tasks/task"),
+    source: "installed",
+    definition: {
+      displayTemplate: "{name|title}",
+      traits: ["substrate.reamde.dev/core/temporal(point: dueAt)"],
+      properties: {
+        name: { type: "string" },
+        notes: { type: "markdown" },
+        priority: { type: "enum", values: ["low", "high"] },
+        owner: { type: "reference", kind: "ada.example.com/people/person" },
+        status: { type: "state", states: ["open", "done"], initial: "open" },
+        dueAt: { type: "datetime" },
+      },
+    },
+  }
+
+  it("leads with the title, then state, time, references and enums", () => {
+    expect(buildColumns(RICH, [RICH]).map((c) => c.id)).toEqual([
+      "title",
+      "prop:status",
+      "dueAt",
+      "prop:owner",
+      "prop:priority",
+      "prop:name",
+      "updatedAt",
+    ])
+  })
+
+  it("adds the record id in technical mode", () => {
+    expect(
+      buildColumns(RICH, [RICH], undefined, { technical: true }).map(
+        (c) => c.id
+      )
+    ).toContain("id")
+  })
+
+  it("hides the properties the title is made of", () => {
+    expect(defaultHiddenColumns(RICH)).toEqual([propertyColumnId("name")])
   })
 })

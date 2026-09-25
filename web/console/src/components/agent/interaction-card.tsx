@@ -1,4 +1,4 @@
-/** The ask, inline in the thread that asked it. The card RESOLVES the
+/** The agent's questions, inline in the thread that asked them. The card RESOLVES the
  * llm/interaction and renders its live state, exactly as the proposal card
  * does: a pending batch is a form (radio per single-select question,
  * checkboxes per multi, dismissal beside submit), a resolved one shows what
@@ -15,12 +15,16 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 import { MessageCircleQuestionIcon } from "lucide-react"
 
+import { StateBadge } from "@/components/identity/state-badge"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { CORE_AUTHORITY, LLM_PACKAGE_NAME } from "@/lib/api/http"
 import { patchRecord, recordQueryOptions } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { cn } from "@/lib/utils"
+
+const CARD =
+  "flex flex-col gap-2 rounded-[10px] border border-border-strong bg-background px-3.5 py-3 text-sm"
 
 // The collection segment is the kind name (decision 0033).
 const INTERACTION_KIND = "interaction"
@@ -96,9 +100,11 @@ export function InteractionCard({ id }: { id: string }) {
 
   if (interaction.isPending) {
     return (
-      <div className="flex items-center gap-1.5 border-t px-2 py-1.5 text-xs text-muted-foreground">
-        <Spinner className="size-3" />
-        loading the questions
+      <div className={CARD}>
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          <Spinner className="size-3" />
+          Loading the questions…
+        </span>
       </div>
     )
   }
@@ -166,24 +172,19 @@ export function InteractionCard({ id }: { id: string }) {
   }
 
   return (
-    <div className="flex flex-col gap-2 border-t px-2 py-2">
-      <div className="flex items-center gap-1.5 text-xs">
-        <MessageCircleQuestionIcon className="size-3 shrink-0 text-muted-foreground" />
-        <span>The agent asks</span>
-        <span
-          className={cn(
-            "ml-auto shrink-0 rounded-sm px-1.5 py-0.5 text-[0.65rem] tracking-wide uppercase",
-            pending && "bg-amber-500/15 text-amber-600",
-            state === "answered" && "bg-emerald-500/15 text-emerald-600",
-            state === "dismissed" && "bg-muted text-muted-foreground"
-          )}
-        >
-          {state}
+    <div className={CARD} data-slot="interaction-card">
+      <div className="flex flex-wrap items-center gap-2 font-medium">
+        <MessageCircleQuestionIcon className="size-4 shrink-0 text-faint" />
+        <span>
+          {pending ? "A few questions before it goes on" : "Its questions"}
         </span>
+        {!pending && (
+          <StateBadge value={state} className="ml-auto text-[12.5px]" />
+        )}
       </div>
       {questions.map((q) => (
         <fieldset key={q.id} className="flex flex-col gap-1">
-          <legend className="text-xs [overflow-wrap:anywhere]">
+          <legend className="mb-1 text-[13px] [overflow-wrap:anywhere]">
             {q.prompt}
           </legend>
           <div className="flex flex-col gap-0.5">
@@ -195,9 +196,9 @@ export function InteractionCard({ id }: { id: string }) {
                 <label
                   key={o.value}
                   className={cn(
-                    "flex cursor-pointer items-start gap-1.5 rounded-sm px-1.5 py-0.5 text-xs",
-                    pending && "hover:bg-muted/60",
-                    !pending && chosen && "bg-emerald-500/10",
+                    "flex cursor-pointer items-start gap-2 rounded-md px-2 py-1 text-[13px]",
+                    pending && "hover:bg-hover",
+                    !pending && chosen && "bg-ok-soft",
                     !pending && "cursor-default"
                   )}
                 >
@@ -225,12 +226,15 @@ export function InteractionCard({ id }: { id: string }) {
           </div>
         </fieldset>
       ))}
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && (
+        <p className="text-[12.5px] text-destructive">
+          That didn’t go through: {error}
+        </p>
+      )}
       {pending && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <Button
             size="sm"
-            variant="outline"
             disabled={!complete || submitting !== null}
             onClick={() => void resolve("answer")}
           >

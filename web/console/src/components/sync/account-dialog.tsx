@@ -147,7 +147,7 @@ export function AccountDialog({
         type: "success",
         title: "Account created",
         description: oauth
-          ? "Press Connect on its row to approve it with the provider."
+          ? "Press Connect beside it to approve it with the provider."
           : "Its first sync starts on its own.",
       })
     },
@@ -189,7 +189,7 @@ export function AccountDialog({
       groups.toggles.length > 0 &&
       !groups.toggles.some((f) => values[f.name] === true)
     ) {
-      setFormError("Turn on at least one thing to sync.")
+      setFormError("Turn on at least one thing to bring in.")
       return
     }
     // The consent tab is opened HERE, from the press, before the create's
@@ -202,14 +202,14 @@ export function AccountDialog({
     ? `Edit ${label ?? accountName}`
     : `Add a ${providerName} account`
   const description = record
-    ? "Change what this account syncs, how often, and how far back. The connection itself is not edited here."
+    ? "Change what this account brings in, how often, and how far back. Its sign-in stays as it is."
     : oauth
       ? configured
-        ? `Choose what to sync. ${providerName} then opens in a new tab and asks you to approve access to each item you turned on. Syncing starts once you approve.`
-        : `Choose what to sync. This account cannot connect until ${providerName}'s credentials are set up.`
+        ? `Choose what to bring in. ${providerName} then opens in a new tab and asks you to approve access to each thing you turned on. It starts once you approve.`
+        : `Choose what to bring in. This account cannot connect until ${providerName}’s sign-in details are added.`
       : configured
-        ? `Choose what to sync. The account uses the token in ${providerName}'s credentials, and its first sync starts on its own.`
-        : `Choose what to sync. This account cannot sync until ${providerName}'s credentials are set up.`
+        ? `Choose what to bring in. The account uses ${providerName}’s sign-in details, and its first sync starts on its own.`
+        : `Choose what to bring in. This account cannot sync until ${providerName}’s sign-in details are added.`
 
   const field = (f: (typeof groups.all)[number]) => (
     <PropertyField
@@ -237,7 +237,7 @@ export function AccountDialog({
 
         {!record && (
           <ol className="flex flex-col gap-1.5 text-xs text-muted-foreground">
-            <Step n={1}>Choose what to sync and how often, below.</Step>
+            <Step n={1}>Choose what to bring in and how often, below.</Step>
             {oauth ? (
               <>
                 <Step n={2}>
@@ -261,10 +261,9 @@ export function AccountDialog({
             <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
             <div className="flex flex-col gap-1.5">
               <p>
-                {providerName}'s credentials are not set up yet, so this account
-                cannot {oauth ? "connect" : "sync"} until they are.
-                {!onSetUpCredentials &&
-                  " Set them up under Setup on this page first."}
+                {providerName}’s sign-in details are not added yet, so this
+                account cannot {oauth ? "connect" : "sync"} until they are.
+                {!onSetUpCredentials && " Add them in step 2 first."}
               </p>
               {onSetUpCredentials && (
                 <Button
@@ -274,7 +273,7 @@ export function AccountDialog({
                   onClick={onSetUpCredentials}
                 >
                   <KeyRoundIcon className="size-3" />
-                  Set up credentials
+                  Add sign-in details
                 </Button>
               )}
             </div>
@@ -292,11 +291,11 @@ export function AccountDialog({
           <FieldGroup className="gap-6">
             {groups.toggles.length > 0 && (
               <FieldSet className="gap-3">
-                <FieldLegend variant="label">What to sync</FieldLegend>
+                <FieldLegend variant="label">What to bring in</FieldLegend>
                 <FieldDescription>
                   {oauth
-                    ? `Each item is a permission ${providerName} asks you to approve. Turn on only what you want mirrored here.`
-                    : "Turn on what you want mirrored here."}
+                    ? `Each is a permission ${providerName} asks you to approve. Turn on only what you want copied here.`
+                    : "Turn on what you want copied here."}
                 </FieldDescription>
                 {groups.toggles.map(field)}
               </FieldSet>

@@ -218,7 +218,7 @@ describe("record writes (integrations flow)", () => {
   })
 })
 
-describe("countRecords (bounded keyset walk)", () => {
+describe("countRecords (one-row offset probes)", () => {
   const fetchMock = vi.fn<typeof fetch>()
   beforeEach(() => vi.stubGlobal("fetch", fetchMock))
   afterEach(() => {
@@ -226,43 +226,60 @@ describe("countRecords (bounded keyset walk)", () => {
     fetchMock.mockReset()
   })
 
-  function page(n: number, cursor?: string): Response {
-    return new Response(
-      JSON.stringify({
-        records: Array.from({ length: n }, (_, i) => ({ id: String(i) })),
-        cursor,
-      }),
-      { status: 200 }
-    )
+  function collection(size: number) {
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input), "http://x")
+      const offset = Number(url.searchParams.get("offset") ?? 0)
+      const records = offset < size ? [{ id: String(offset) }] : []
+      return new Response(JSON.stringify({ records }), { status: 200 })
+    })
   }
 
-  it("sums pages, resends the server cursor verbatim, and stops when it is omitted", async () => {
-    fetchMock
-      .mockResolvedValueOnce(page(500, "CUR1"))
-      .mockResolvedValueOnce(page(120))
+  it.each([0, 1, 2, 7, 500, 620, 1284, 10000])(
+    "counts a collection of %i rows exactly, one row per read",
+    async (size) => {
+      collection(size)
+      expect(await countRecords("g.dev", "k", "things", undefined)).toEqual({
+        value: size,
+        capped: false,
+      })
+      for (const [input] of fetchMock.mock.calls) {
+        expect(String(input)).toContain("first=1")
+        expect(String(input)).not.toContain("after=")
+      }
+      // A bracket of doubling probes plus a bisection: never a full read.
+      expect(fetchMock.mock.calls.length).toBeLessThan(40)
+    }
+  )
+
+  it("caps a collection past the probe ceiling", async () => {
+    collection(Number.MAX_SAFE_INTEGER)
     const count = await countRecords("g.dev", "k", "things", undefined)
-    expect(count).toEqual({ value: 620, capped: false })
-    // Page one asks with no cursor; page two resends the returned one verbatim.
-    expect(String(fetchMock.mock.calls[0][0])).not.toContain("after=")
-    expect(String(fetchMock.mock.calls[1][0])).toContain("after=CUR1")
+    expect(count).toEqual({ value: 1 << 17, capped: true })
   })
 
-  it("answers a single cursorless page exactly", async () => {
-    fetchMock.mockResolvedValueOnce(page(7))
+  it("falls back to the keyset walk when the server refuses an offset", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input), "http://x")
+      if (
+        url.searchParams.has("offset") ||
+        url.searchParams.get("first") === "1"
+      )
+        return new Response(
+          JSON.stringify({ code: "invalid", message: "offset is refused" }),
+          { status: 422 }
+        )
+      return new Response(
+        JSON.stringify({
+          records: Array.from({ length: 7 }, (_, i) => ({ id: String(i) })),
+        }),
+        { status: 200 }
+      )
+    })
     expect(await countRecords("g.dev", "k", "things", undefined)).toEqual({
       value: 7,
       capped: false,
     })
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-  })
-
-  it("caps a collection that outruns the ceiling", async () => {
-    // Every page returns a cursor, so the walk hits its 20-page ceiling.
-    fetchMock.mockImplementation(async () => page(500, "MORE"))
-    const count = await countRecords("g.dev", "k", "things", undefined)
-    expect(count.capped).toBe(true)
-    expect(count.value).toBe(500 * 20)
-    expect(fetchMock).toHaveBeenCalledTimes(20)
   })
 })
 

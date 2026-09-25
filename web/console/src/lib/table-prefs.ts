@@ -18,6 +18,9 @@ export interface TablePrefs {
    * the proportional distribution and keeps its exact width; absent columns
    * stay computed. Reset clears this along with order and visibility. */
   sizing?: Record<string, number>
+  /** Columns the reader asked to see even on a page where they hold nothing;
+   * a surface that hides empty columns leaves these in. */
+  shown?: string[]
 }
 
 function sizingOf(value: unknown): Record<string, number> | undefined {
@@ -59,7 +62,14 @@ export function loadTablePrefs(surface: string): TablePrefs | null {
     }
     const sizing = sizingOf(p.sizing)
     if (sizing) out.sizing = sizing
-    return out.order || out.hidden || out.sizing ? out : null
+    if (
+      Array.isArray(p.shown) &&
+      p.shown.length &&
+      p.shown.every((t): t is string => typeof t === "string")
+    ) {
+      out.shown = p.shown
+    }
+    return out.order || out.hidden || out.sizing || out.shown ? out : null
   } catch {
     return null
   }
@@ -76,7 +86,8 @@ export function saveTablePrefs(surface: string, prefs: TablePrefs): void {
     if (prefs.sizing && Object.keys(prefs.sizing).length) {
       out.sizing = prefs.sizing
     }
-    if (out.order || out.hidden || out.sizing) {
+    if (prefs.shown?.length) out.shown = prefs.shown
+    if (out.order || out.hidden || out.sizing || out.shown) {
       localStorage.setItem(prefsKey(surface), JSON.stringify(out))
     } else {
       localStorage.removeItem(prefsKey(surface))
@@ -132,7 +143,8 @@ export function prefsDelta(
   order: string[],
   visibility: Record<string, boolean>,
   defaultHidden: string[] = [],
-  sizing: Record<string, number> = {}
+  sizing: Record<string, number> = {},
+  shown: string[] = []
 ): TablePrefs {
   const out: TablePrefs = {}
   const effective = orderedColumns(naturalIds, order)
@@ -145,5 +157,7 @@ export function prefsDelta(
     Object.entries(sizing).filter(([id]) => naturalIds.includes(id))
   )
   if (Object.keys(kept).length) out.sizing = kept
+  const keptShown = shown.filter((id) => naturalIds.includes(id))
+  if (keptShown.length) out.shown = keptShown
   return out
 }
