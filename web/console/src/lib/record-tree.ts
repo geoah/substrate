@@ -110,6 +110,9 @@ export interface TreeNode {
   truncated: boolean
   /** Open, and the read that answers its children was refused. */
   error?: string
+  /** Its children, once a read has answered them: what a row's badge counts
+   * whether or not the row is open. */
+  childRecords?: readonly SubstrateRecord[]
 }
 
 export interface ResolveTreeInput {
@@ -170,6 +173,7 @@ export function resolveTree(input: ResolveTreeInput): ResolvedTree {
         children = byParent.get(record.id) ?? []
         node.children = children.length ? "some" : "none"
         node.open = open && children.length > 0
+        if (children.length) node.childRecords = children
       } else if (batch) {
         // Cut short or refused: the level's read cannot say who has children,
         // so every row offers to open, and opening asks about that row alone.
@@ -189,6 +193,7 @@ export function resolveTree(input: ResolveTreeInput): ResolvedTree {
               ) ?? []
             node.children = children.length ? "some" : "none"
             node.truncated = !own.complete
+            if (children.length) node.childRecords = children
           }
         }
       }
