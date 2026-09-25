@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router"
 
 import { AppShell } from "@/components/app-shell"
+import { PageError } from "@/components/page-error"
 import { hasSession } from "@/lib/api/session"
 import { ActorPage } from "@/pages/actor"
 import { AgentsPage } from "@/pages/agents"
@@ -387,6 +388,9 @@ const routeTree = rootRoute.addChildren([
 export const router = createRouter({
   routeTree,
   defaultPreload: "intent",
+  // Every route catches its own render failure, so a page that fails keeps
+  // the shell and its sidebar around it.
+  defaultErrorComponent: PageError,
   // Record ids carry `@` (calendar/email-derived ids); leaving it raw in the
   // URL keeps the address bar honest to the id the API stores.
   pathParamsAllowedCharacters: ["@"],

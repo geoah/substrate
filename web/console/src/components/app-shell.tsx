@@ -7,6 +7,7 @@ import { NavigationProvider } from "@/components/console-preferences"
 import { AppSidebar } from "@/components/app-sidebar"
 import { CommandMenu } from "@/components/command-menu"
 import { KindGlyph } from "@/components/identity/kind-glyph"
+import { SectionBoundary } from "@/components/page-error"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
@@ -305,6 +306,9 @@ function ShellBreadcrumb() {
 
 export function AppShell() {
   const [commandOpen, setCommandOpen] = useState(false)
+  // The shell outlives every page, so a part of it that failed tries again
+  // on the next address.
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -320,11 +324,15 @@ export function AppShell() {
   return (
     <NavigationProvider>
       <TooltipProvider delay={250}>
-        <AppSidebar onSearch={() => setCommandOpen(true)} />
+        <SectionBoundary name="The sidebar" resetKey={pathname}>
+          <AppSidebar onSearch={() => setCommandOpen(true)} />
+        </SectionBoundary>
         <SidebarInset className="flex h-svh min-w-0 flex-col overflow-hidden">
           <header className="flex h-11 shrink-0 items-center gap-2 px-3 md:px-4">
             <SidebarTrigger className="-ml-1 text-muted-foreground" />
-            <ShellBreadcrumb />
+            <SectionBoundary name="Where you are" resetKey={pathname}>
+              <ShellBreadcrumb />
+            </SectionBoundary>
             <Button
               variant="outline"
               size="sm"
@@ -349,7 +357,9 @@ export function AppShell() {
             <Outlet />
           </div>
         </SidebarInset>
-        <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
+        <SectionBoundary name="Search" resetKey={pathname}>
+          <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
+        </SectionBoundary>
       </TooltipProvider>
     </NavigationProvider>
   )
