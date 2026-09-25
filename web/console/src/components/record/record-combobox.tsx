@@ -259,9 +259,15 @@ export function RecordCombobox({
   const typed = query.trim()
   // The escape hatch, offered only when it would say something the list does
   // not already: an exact match is the row above, not a second way to pick it.
-  // An id is one word; a phrase is a search, never a record's name.
+  // An id is one word; a phrase is a search, never a record's name. An id
+  // the list leaves out on purpose (one already held, or the record itself)
+  // is not offered back through the side door either.
   const freeText =
-    typed && !/\s/.test(typed) && !options.some((o) => o.value === typed)
+    typed &&
+    !/\s/.test(typed) &&
+    typed !== self &&
+    !exclude?.has(typed) &&
+    !options.some((o) => o.value === typed)
   const chosenTitle =
     valueTitle || options.find((o) => o.value === value)?.title || ""
 

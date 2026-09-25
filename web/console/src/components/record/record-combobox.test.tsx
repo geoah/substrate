@@ -247,6 +247,16 @@ describe("the record dropdown", () => {
     expect(screen.queryByText("Acme Robotics")).toBeNull()
   })
 
+  it("never offers a held id, or the record itself, as a typed one", async () => {
+    open({ exclude: new Set(["acme"]), self: "globex" })
+    await screen.findByText("No other organizations to choose.")
+    fireEvent.change(search(), { target: { value: "acme" } })
+    await waitFor(() => expect(wire.reads.length).toBeGreaterThan(1))
+    expect(screen.queryByText(/^Use/)).toBeNull()
+    fireEvent.change(search(), { target: { value: "globex" } })
+    expect(screen.queryByText(/^Use/)).toBeNull()
+  })
+
   it("says the collection is empty in words, not as a failed search", async () => {
     wire.answer = () => ({ records: [] })
     open()
