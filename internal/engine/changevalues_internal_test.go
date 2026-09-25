@@ -151,15 +151,51 @@ func TestAPageRowAddressedElsewhereJoinsTheWalk(t *testing.T) {
 
 func TestASecretReadsRedactedOnBothSides(t *testing.T) {
 	ty := cvKind()
-	if got := redactValue(ty, "token", "sealed:abc"); got != Redacted {
+	set := func(v any) valueAt { return valueAt{value: v, present: true} }
+	if got := set("secret:abc").render(ty, "token"); got != Redacted {
 		t.Fatalf("secret = %v", got)
 	}
-	if got := redactValue(ty, "token", ""); got != "" {
+	if got := set("").render(ty, "token"); got != "" {
 		t.Fatalf("an unset secret = %v, want empty", got)
 	}
-	if got := redactValue(ty, "name", "Ada"); got != "Ada" {
+	if got := set("Ada").render(ty, "name"); got != "Ada" {
 		t.Fatalf("plain = %v", got)
 	}
+}
+
+func TestAValueTheDeclarationNoLongerVouchesForReadsRedacted(t *testing.T) {
+	ty := cvKind()
+	ty.Props["label"] = &vocabulary.Property{Name: "label", Datatype: "string", RenamedFrom: "caption"}
+	set := func(v any) valueAt { return valueAt{value: v, present: true} }
+	for _, c := range []struct {
+		name string
+		v    valueAt
+		want any
+	}{
+		{"dropped", set("anything"), Redacted},
+		{"dropped", set([]any{"a"}), Redacted},
+		{"caption", set("renamed plain"), "renamed plain"},
+		{"name", set("secret:0123"), Redacted},
+		{"name", set("9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"), Redacted},
+		{substrate.PropAt, valueAt{value: "2026-01-02T03:04:05Z", present: true, column: true}, "2026-01-02T03:04:05Z"},
+	} {
+		if got := c.v.render(ty, c.name); jsonOfValue(t, got) != jsonOfValue(t, c.want) {
+			t.Errorf("%s = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func jsonOfValue(t *testing.T, v any) string {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+func TestATemplatedTitleIsNotAChangeOfItsOwn(t *testing.T) {
+	ty := cvKind()
 	rc := composeRecordChange(ty, []foldOp{{
 		Kind: foldRecord, Ref: cvRef.Kind, ID: cvRef.ID,
 		Delta: &rowDelta{Set: map[string]any{"name": "B"}, Title: ptrTo("B")},

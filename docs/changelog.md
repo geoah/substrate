@@ -121,6 +121,15 @@ same names: the declared properties, `title` where the kind does not render
 it from a template, a declared `body`, the instants, and each state. A
 sensitive property reads `<redacted>` on both sides, exactly as a record read
 renders it, and a kind the repository no longer declares carries no values.
+
+The redaction fails closed, because the history outlives the declaration it
+was written under and only the current one is consulted. A property value is
+shown only where the kind declares that name now (or declares it as a
+property's `renamedFrom`), with a datatype that is not sensitive, and the
+value is not shaped like what a secret or a digest stores. So a secret that
+was renamed, dropped or retyped, or whose kind was redeclared, still reads
+`<redacted>` in every entry that sealed it, and so does any property the kind
+no longer declares at all.
 A delete, a tombstone or a purge moves no property, so its record carries
 none.
 

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"sort"
+	"strings"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -36,6 +37,10 @@ const (
 type valueAt struct {
 	value   any
 	present bool
+	// column marks a value the fold moved through a built-in column (the
+	// title, a declared body, the three instants) or the machine states: none
+	// of them can hold a sensitive datatype, so none is redacted.
+	column bool
 }
 
 // recordChange is what one entry did to one record, composed across the
@@ -106,10 +111,10 @@ func movedBy(ty *vocabulary.Kind, d *rowDelta, into map[string]valueAt) {
 			return
 		}
 		if *v == "" {
-			into[name] = valueAt{}
+			into[name] = valueAt{column: true}
 			return
 		}
-		into[name] = valueAt{value: *v, present: true}
+		into[name] = valueAt{value: *v, present: true, column: true}
 	}
 	// A title the kind renders from its own properties is derived storage
 	// (decision 0016): the property it renders from is already in the set.
@@ -124,22 +129,56 @@ func movedBy(ty *vocabulary.Kind, d *rowDelta, into map[string]valueAt) {
 	column(substrate.PropDueAt, d.DueAt)
 	if d.States != nil {
 		for name, state := range *d.States {
-			into[name] = valueAt{value: state, present: true}
+			into[name] = valueAt{value: state, present: true, column: true}
 		}
 	}
 }
 
-// redactValue renders one value as a record read does (redactProps): a
-// sensitive property's value is the marker, and its empty string stays empty.
-func redactValue(ty *vocabulary.Kind, name string, v any) any {
-	p, ok := ty.Prop(name)
-	if !ok || !p.Sensitive() {
-		return v
+// render renders one value as a record read does (redactProps): a sensitive
+// property's value is the marker, and its empty string stays empty.
+//
+// It fails closed, because the history outlives the declaration it was written
+// under and the current one is all it can consult: a secret renamed, dropped,
+// retyped or its kind redeclared still has its sealed ref (or its digest) in
+// every earlier entry. So a property value is shown only where the current
+// kind declares its name, or declares it as a `renamedFrom`, with a datatype
+// that is not sensitive, AND the value does not have the shape of what a
+// sensitive datatype stores. Anything else reads as the marker.
+func (v valueAt) render(ty *vocabulary.Kind, name string) any {
+	if v.column {
+		return v.value
 	}
-	if s, isStr := v.(string); isStr && s == "" {
+	if s, isStr := v.value.(string); isStr && s == "" {
 		return ""
 	}
-	return Redacted
+	p, ok := currentProp(ty, name)
+	if !ok || p.Sensitive() || looksSealed(v.value) {
+		return Redacted
+	}
+	return v.value
+}
+
+// currentProp resolves a name the history carries to the property the kind
+// declares under it now: the name itself, else the property that names it as
+// its `renamedFrom`.
+func currentProp(ty *vocabulary.Kind, name string) (*vocabulary.Property, bool) {
+	if p, ok := ty.Prop(name); ok {
+		return p, true
+	}
+	for _, p := range ty.Props {
+		if p.RenamedFrom == name {
+			return p, true
+		}
+	}
+	return nil, false
+}
+
+// looksSealed reports a value shaped like what a secret (a sealed ref) or a
+// digest (a lowercase hex SHA-256) stores: under a declaration that no longer
+// says so, the shape is the one witness left that it once was sensitive.
+func looksSealed(v any) bool {
+	s, ok := v.(string)
+	return ok && (strings.HasPrefix(s, secretRefPrefix) || reDigest.MatchString(s))
 }
 
 // valueRequest is one (row, affected record) whose befores the walk owes.
@@ -193,7 +232,7 @@ func (ds *dataset) deriveValues(ctx context.Context, changes []substrate.Change,
 			for _, name := range sortedKeys(rc.moved) {
 				pc := substrate.PropertyChange{Name: name}
 				if v := rc.moved[name]; v.present {
-					pc.After = redactValue(ty, name, v.value)
+					pc.After = v.render(ty, name)
 				}
 				props = append(props, pc)
 			}
@@ -372,7 +411,7 @@ func (w *recordWalk) visit(e earlierEntry) {
 		for name, v := range rc.moved {
 			for _, pc := range w.pending[name] {
 				if v.present {
-					pc.Before = redactValue(w.ty, name, v.value)
+					pc.Before = v.render(w.ty, name)
 				}
 			}
 			delete(w.pending, name)

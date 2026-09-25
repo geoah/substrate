@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // Before and after values on a change row (decision 0106): asked for with
@@ -286,5 +288,90 @@ func TestChangeValuesRedactASecretLikeARead(t *testing.T) {
 	}
 	if !sawKey || !sawLabel {
 		t.Fatalf("patch values: key redacted both sides = %v, label plain = %v: %s", sawKey, sawLabel, raw)
+	}
+}
+
+// A secret's history outlives its declaration: renamed, dropped or retyped,
+// the value an earlier entry sealed is still no reader's to see.
+func TestChangeValuesKeepAFormerSecretRedacted(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds, db := newSealingDataset(t)
+	const (
+		pkg         = "redact.example.substrate.reamde.dev/rd"
+		vault       = pkg + "/vault"
+		fingerprint = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+	)
+	declare := func(props map[string]any) {
+		t.Helper()
+		if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+			vocabulary.PackageManifest(pkg, 0),
+			vocabulary.KindManifest(pkg, map[string]any{"singular": "vault"}, map[string]any{"properties": props}),
+		}); err != nil {
+			t.Fatalf("declare the vault: %v", err)
+		}
+	}
+	declare(map[string]any{
+		"label":       map[string]any{"type": "string"},
+		"token":       map[string]any{"type": "secret"},
+		"fingerprint": map[string]any{"type": "digest"},
+		"pin":         map[string]any{"type": "secret"},
+	})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: vault, ID: "v1", Properties: map[string]any{
+		"label": "first", "token": "s3cret-one", "fingerprint": fingerprint, "pin": "pin-0042",
+	}})
+	mustPatch(t, ds, owner, vault, "v1", substrate.PatchInput{Properties: map[string]any{"token": "s3cret-two"}})
+	// Cleared, so no live record holds the shape the next declaration drops
+	// and retypes.
+	mustPatch(t, ds, owner, vault, "v1", substrate.PatchInput{Properties: map[string]any{"fingerprint": nil, "pin": nil}})
+	// token renamed (still a secret), fingerprint dropped, pin retyped to a
+	// plain string.
+	declare(map[string]any{
+		"label":  map[string]any{"type": "string"},
+		"apiKey": map[string]any{"type": "secret", "renamedFrom": "token"},
+		"pin":    map[string]any{"type": "string"},
+	})
+	mustPatch(t, ds, owner, vault, "v1", substrate.PatchInput{Properties: map[string]any{"label": "second", "pin": "now-plain"}})
+
+	var sealed []string
+	rows, err := db.Query(`SELECT payload::text FROM changelog WHERE kind = $1 AND record_id = 'v1'`, vault)
+	if err != nil {
+		t.Fatalf("read the raw changelog: %v", err)
+	}
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			t.Fatal(err)
+		}
+		sealed = append(sealed, p)
+	}
+	_ = rows.Close()
+	if !strings.Contains(strings.Join(sealed, "\n"), `"secret:`) {
+		t.Fatalf("the changelog holds no sealed ref to guard: %v", sealed)
+	}
+
+	changes, err := ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{Kinds: []string{vault}, RecordID: "v1", Values: true}, 100)
+	if err != nil {
+		t.Fatalf("changes before: %v", err)
+	}
+	raw := jsonOf(t, changes)
+	for _, leak := range []string{`secret:`, fingerprint, "s3cret-one", "s3cret-two", "pin-0042"} {
+		if strings.Contains(raw, leak) {
+			t.Fatalf("a change row spells %q: %s", leak, raw)
+		}
+	}
+	var sawRename, sawPlain bool
+	for _, c := range changes {
+		for _, pc := range c.Affected[0].Properties {
+			switch {
+			case pc.Name == "token" && pc.After == nil && pc.Before == engine.Redacted:
+				sawRename = true
+			case pc.Name == "pin" && pc.After == "now-plain":
+				sawPlain = pc.Before == nil && !pc.BeforeUnknown
+			}
+		}
+	}
+	if !sawRename || !sawPlain {
+		t.Fatalf("rename row's old name redacted = %v, the retyped value plain = %v: %s", sawRename, sawPlain, raw)
 	}
 }
