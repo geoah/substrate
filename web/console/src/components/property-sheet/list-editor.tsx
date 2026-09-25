@@ -3,7 +3,9 @@
  * Enter adds an item after the one being typed in, Backspace in an empty item
  * removes it, the arrows move between items and Alt with an arrow moves the
  * item itself (as do the up and down buttons and dragging by the grip), and a
- * paste of several lines becomes several items. Nothing is written until Save
+ * paste of several lines becomes several items. A prose item (text, markdown)
+ * is a box that grows with its lines instead: Enter and a paste stay inside
+ * it, and the arrows leave it only from its first or last character. Nothing is written until Save
  * (or ⌘Enter): the write is the WHOLE list in one PATCH carrying the version
  * the page read, and a list emptied on purpose is written as `[]`. */
 
@@ -29,7 +31,7 @@ import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import type { SubstrateRecord } from "@/lib/api/types"
 import type { FormField } from "@/lib/record-form"
-import { elementSpec, humanizeName } from "@/lib/record-schema"
+import { controlFor, elementSpec, humanizeName } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
 
 interface Item {
@@ -41,8 +43,12 @@ interface Item {
 let nextKey = 0
 const make = (text: string): Item => ({ key: nextKey++, text })
 
-const BOX =
-  "h-8 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary-soft"
+const FRAME =
+  "w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary-soft"
+const BOX = `h-8 ${FRAME}`
+const PROSE_BOX = `block field-sizing-content min-h-8 resize-none py-1.5 leading-normal ${FRAME}`
+
+type Box = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
 
 export function ListEditor({
   row,
@@ -57,12 +63,13 @@ export function ListEditor({
 }) {
   const { field } = row
   const item = elementSpec(field.spec)
+  const prose = controlFor(item) === "prose"
   const patch = useRecordPatch(record)
   const [items, setItems] = useState<Item[]>(() => {
     const seeded = listItems(row.value).map(make)
     return seeded.length ? seeded : [make("")]
   })
-  const boxes = useRef(new Map<number, HTMLInputElement | HTMLSelectElement>())
+  const boxes = useRef(new Map<number, Box>())
   const [focus, setFocus] = useState<{ key: number; end?: boolean } | null>(
     () => ({ key: items[items.length - 1].key, end: true })
   )
@@ -72,7 +79,7 @@ export function ListEditor({
     if (!focus) return
     const box = boxes.current.get(focus.key)
     box?.focus()
-    if (box instanceof HTMLInputElement && focus.end) {
+    if (!(box instanceof HTMLSelectElement) && box && focus.end) {
       // email and number boxes have no caret to place, and say so by throwing.
       try {
         box.setSelectionRange(box.value.length, box.value.length)
@@ -148,20 +155,30 @@ export function ListEditor({
     }
   }
 
-  function onKeyDown(e: KeyboardEvent, it: Item, i: number) {
+  function onKeyDown(e: KeyboardEvent<Box>, it: Item, i: number) {
+    // A prose box keeps Enter for its own lines, and its arrows for its own
+    // caret until the caret is already at the box's edge.
+    const box = e.currentTarget
+    const inProse = box instanceof HTMLTextAreaElement
+    const atEdge =
+      !inProse ||
+      (e.key === "ArrowUp"
+        ? box.selectionStart === 0 && box.selectionEnd === 0
+        : box.selectionStart === box.value.length &&
+          box.selectionEnd === box.value.length)
     if (e.key === "Escape") {
       e.preventDefault()
       cancel()
     } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       void save()
-    } else if (e.key === "Enter") {
+    } else if (e.key === "Enter" && !inProse) {
       e.preventDefault()
       insertAfter(it.key)
     } else if (e.key === "Backspace" && it.text === "" && items.length > 1) {
       e.preventDefault()
       remove(it.key)
-    } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+    } else if ((e.key === "ArrowUp" || e.key === "ArrowDown") && atEdge) {
       const by = e.key === "ArrowUp" ? -1 : 1
       if (e.altKey) {
         e.preventDefault()
@@ -174,6 +191,8 @@ export function ListEditor({
   }
 
   function onPaste(e: ClipboardEvent<HTMLInputElement>, it: Item) {
+    // A pasted paragraph is one prose item's text, not several items.
+    if (prose) return
     const text = e.clipboardData.getData("text")
     const lines = text.split(/\r?\n/).map((l) => l.trim())
     if (lines.filter(Boolean).length < 2) return
@@ -217,7 +236,10 @@ export function ListEditor({
               e.preventDefault()
               setDragging(null)
             }}
-            className="group/item flex items-center gap-1 data-dragging:opacity-50"
+            className={cn(
+              "group/item flex gap-1 data-dragging:opacity-50",
+              prose ? "items-start" : "items-center"
+            )}
           >
             <span
               draggable
@@ -255,6 +277,23 @@ export function ListEditor({
                     </option>
                   ))}
               </select>
+            ) : prose ? (
+              <textarea
+                ref={(el) => {
+                  if (el) boxes.current.set(it.key, el)
+                  else boxes.current.delete(it.key)
+                }}
+                aria-label={label(i)}
+                rows={1}
+                value={it.text}
+                disabled={pending}
+                placeholder={
+                  field.example ? `e.g. ${field.example}` : undefined
+                }
+                onChange={(e) => change(it.key, e.target.value)}
+                onKeyDown={(e) => onKeyDown(e, it, i)}
+                className={PROSE_BOX}
+              />
             ) : (
               <input
                 ref={(el) => {
@@ -332,7 +371,8 @@ export function ListEditor({
           Cancel
         </Button>
         <span className={cn("ml-auto text-xs text-faint", "max-sm:hidden")}>
-          Enter adds a line · ⌘Enter saves · Esc cancels
+          {prose ? "Enter starts a new line" : "Enter adds a line"} · ⌘Enter
+          saves · Esc cancels
         </span>
       </div>
     </div>

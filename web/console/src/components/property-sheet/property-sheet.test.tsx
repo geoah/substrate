@@ -123,6 +123,7 @@ const task = kind(TASK, {
     tags: { type: "string", repeated: true },
     emails: { type: "email", repeated: true },
     quotes: { type: "string", repeated: true },
+    steps: { type: "markdown", repeated: true },
     members: {
       type: "reference",
       kind: PERSON,
@@ -440,6 +441,31 @@ describe("PropertySheet lists", () => {
     await waitFor(() => expect(wire.writes).toHaveLength(1))
     expect(wire.writes[0].body).toEqual({
       properties: { tags: [] },
+      ifVersion: 7,
+    })
+  })
+
+  it("edits a prose item in a box that keeps its lines", async () => {
+    renderSheet(
+      record({
+        properties: {
+          ...record().properties,
+          steps: ["Draft\n\n- outline", "Review"],
+        },
+      })
+    )
+    fireEvent.click(valueOf("steps")!)
+    const first = box("Steps 1")
+    expect(first.tagName).toBe("TEXTAREA")
+    expect(first.value).toBe("Draft\n\n- outline")
+    // Enter is a new line inside the item, never a new item.
+    fireEvent.keyDown(first, { key: "Enter" })
+    expect(screen.queryByRole("textbox", { name: "Steps 3" })).toBeNull()
+    fireEvent.change(box("Steps 2"), { target: { value: "Review\nand send" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].body).toEqual({
+      properties: { steps: ["Draft\n\n- outline", "Review\nand send"] },
       ifVersion: 7,
     })
   })

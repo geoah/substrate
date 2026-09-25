@@ -97,21 +97,39 @@ export function propertyWrite(
 }
 
 /** The one write a list editor makes: the whole list, each item checked
- * against the element's datatype, blank items dropped. An emptied list is a
- * claim ("none") and writes `[]`, as `propertyWrite` does; an absent list left
- * empty writes nothing. Items are taken as typed, never split on commas: a
- * phone number or a name may carry one. */
+ * against the element's datatype ALONE (the list's own parse splits on lines,
+ * which would cut a multi-line item into several). An item saved as the text
+ * it was seeded with keeps its stored value exactly, spaces and lines and all;
+ * only an item emptied of everything is dropped. An emptied list is a claim
+ * ("none") and writes `[]`, as `propertyWrite` does; an absent list left empty
+ * writes nothing. Items are taken as typed, never split on commas: a phone
+ * number or a name may carry one. */
 export function listWrite(
   field: FormField,
   stored: unknown,
   items: readonly string[]
 ): { properties?: Record<string, unknown>; error?: string } {
-  const kept = items.map((s) => s.trim()).filter(Boolean)
+  const element = elementSpec(field.spec)
+  // The stored items by the text the editor seeded, so an untouched item is
+  // recognized wherever a move left it.
+  const untouched = new Map<string, unknown[]>()
+  if (Array.isArray(stored)) {
+    listItems(stored).forEach((text, i) => {
+      untouched.set(text, [...(untouched.get(text) ?? []), stored[i]])
+    })
+  }
   const values: unknown[] = []
-  for (const [i, item] of kept.entries()) {
-    const parsed = parseValue(field.spec, item)
+  for (const [i, item] of items.entries()) {
+    const held = untouched.get(item)
+    if (held?.length) {
+      values.push(held.shift())
+      continue
+    }
+    if (!item.trim()) continue
+    const parsed = parseValue(element, item)
+    // Numbered as the editor labels its boxes.
     if (parsed.error) return { error: `Item ${i + 1}: ${parsed.error}` }
-    values.push(...((parsed.value as unknown[] | undefined) ?? []))
+    if (parsed.value !== undefined) values.push(parsed.value)
   }
   if (!values.length && (stored === undefined || stored === null)) return {}
   if (same(stored, values)) return {}

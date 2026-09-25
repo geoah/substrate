@@ -150,6 +150,27 @@ describe("propertyWrite", () => {
     expect(listItems(["a", 2])).toEqual(["a", "2"])
   })
 
+  it("reads each list item alone: its lines and its untouched spaces stay", () => {
+    const tags = field("tags")
+    const notes = fieldOf({
+      ...propSpecsByName(task).find((s) => s.name === "tags")!,
+      kind: "markdown",
+    })
+    expect(
+      listWrite(notes, ["one\ntwo"], ["one\ntwo", "three\n\nfour"])
+    ).toEqual({ properties: { tags: ["one\ntwo", "three\n\nfour"] } })
+    // An item saved as it was is no edit, whatever it holds.
+    expect(listWrite(notes, ["one\ntwo"], ["one\ntwo"])).toEqual({})
+    expect(listWrite(tags, ["  padded "], ["  padded "])).toEqual({})
+    expect(listWrite(tags, ["  padded "], ["  padded ", " b "])).toEqual({
+      properties: { tags: ["  padded ", "b"] },
+    })
+    // Only an item emptied of everything is dropped.
+    expect(listWrite(tags, ["a", "b"], ["a", "  "])).toEqual({
+      properties: { tags: ["a"] },
+    })
+  })
+
   it("says which list item its datatype refuses", () => {
     const emails = fieldOf({
       ...propSpecsByName(task).find((s) => s.name === "tags")!,
