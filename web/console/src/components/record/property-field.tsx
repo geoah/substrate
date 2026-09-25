@@ -38,6 +38,7 @@ import {
   FieldError,
   FieldLabel,
 } from "@/components/ui/field"
+import { useReferenceTitles } from "@/hooks/use-reference-titles"
 import type { KindInfo } from "@/lib/api/types"
 import { kindByIdentity } from "@/lib/definition"
 import { useRecordOptions } from "@/lib/identities"
@@ -85,6 +86,12 @@ export interface PropertyFieldProps {
   labelAction?: React.ReactNode
   /** Distinguishes ids when two forms are mounted at once. */
   idPrefix?: string
+}
+
+/** A worked example as a placeholder. In the data voice an example reads like
+ * a stored value, so it says it is one. */
+function exampleHint(example: string | undefined): string | undefined {
+  return example ? `e.g. ${example}` : undefined
 }
 
 export function PropertyField({
@@ -387,7 +394,7 @@ export function PropertyField({
           rows={3}
           className="data text-xs"
           aria-invalid={Boolean(error)}
-          placeholder={field.example}
+          placeholder={exampleHint(field.example)}
           value={text}
           onChange={(e) => onChange(e.target.value)}
         />
@@ -411,7 +418,7 @@ export function PropertyField({
           rows={isJSON ? 4 : 5}
           className={cn(isJSON && "data text-xs")}
           aria-invalid={Boolean(error)}
-          placeholder={isJSON ? field.example : undefined}
+          placeholder={isJSON ? exampleHint(field.example) : undefined}
           value={text}
           onChange={(e) => onChange(e.target.value)}
         />
@@ -443,7 +450,7 @@ export function PropertyField({
             ? mode === "patch"
               ? "•••••••• (unchanged)"
               : undefined
-            : field.example
+            : exampleHint(field.example)
         }
         value={text}
         onChange={(e) => onChange(e.target.value)}
@@ -552,6 +559,16 @@ function ReferenceField({
   // The PIN names a kind, a KindInfo is an authority and a name, so the
   // registry the editor already holds says which collection to offer.
   const offered = useRecordOptions(chosen, kinds, self)
+  // A chosen record the loaded page does not hold still reads by its title:
+  // one batched read over its path, and only then.
+  const unlisted =
+    chosen &&
+    ref.id &&
+    !offered.loading &&
+    !offered.options.some((o) => o.value === ref.id)
+      ? [`${chosen}/${ref.id}`]
+      : []
+  const titles = useReferenceTitles(unlisted, kinds)
 
   return (
     <Field>
@@ -576,6 +593,7 @@ function ReferenceField({
           {...offered}
           id={id}
           value={ref.id}
+          valueTitle={titles.get(`${chosen}/${ref.id}`)}
           invalid={Boolean(error)}
           placeholder={
             target ? `select a ${target.name}` : "select a kind first"

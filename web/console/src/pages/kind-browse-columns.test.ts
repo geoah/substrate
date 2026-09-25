@@ -76,6 +76,20 @@ describe("the columns a kind opens without", () => {
   })
 })
 
+describe("the temporal columns", () => {
+  it("opens a column for the hot column core's qualified trait binds", () => {
+    const task: KindInfo = {
+      ...kind("ada.example.com/tasks/task"),
+      source: "installed",
+      definition: {
+        traits: ["substrate.reamde.dev/core/temporal(point: dueAt)"],
+        properties: {},
+      },
+    }
+    expect(buildColumns(task, [task]).map((c) => c.id)).toContain("dueAt")
+  })
+})
+
 // ── reference columns read as names ────────────────────────────────────────
 
 /** A reference stores the referent's PATH and nothing else, so a cell built

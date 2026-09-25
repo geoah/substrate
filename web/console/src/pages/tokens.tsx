@@ -25,6 +25,14 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   Field,
   FieldDescription,
   FieldError,
@@ -231,10 +239,14 @@ function TokenRows({
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const currentId = getTokenId()
+  // The token the reader is about to revoke, held while the dialog asks: a
+  // revoke cannot be undone, and revoking this session signs the reader out.
+  const [pending, setPending] = useState<TokenInfo | null>(null)
 
   const revoke = useMutation({
     mutationFn: (t: TokenInfo) => revokeToken(t.id),
     onSuccess: (_res, t) => {
+      setPending(null)
       onMintedRevoked(t.id)
       toast.add({ type: "success", title: `Revoked ${t.label}.` })
       if (t.id === currentId) {
@@ -281,13 +293,53 @@ function TokenRows({
               variant="destructive"
               size="sm"
               disabled={revoke.isPending}
-              onClick={() => revoke.mutate(t)}
+              onClick={() => setPending(t)}
             >
               {t.id === currentId ? "Revoke (signs out)" : "Revoke"}
             </Button>
           </TableCell>
         </TableRow>
       ))}
+      {pending && (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !revoke.isPending) setPending(null)
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {pending.id === currentId
+                  ? `Sign out ${pending.label}?`
+                  : `Revoke ${pending.label}?`}
+              </DialogTitle>
+              <DialogDescription>
+                {pending.id === currentId
+                  ? "This is the token this browser is signed in with. Revoking it signs you out of this browser."
+                  : "Anything using this token stops working. A revoked token cannot be restored."}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                disabled={revoke.isPending}
+                onClick={() => setPending(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={revoke.isPending}
+                onClick={() => revoke.mutate(pending)}
+              >
+                {revoke.isPending && <Spinner />}
+                {pending.id === currentId ? "Revoke and sign out" : "Revoke"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   )
 }

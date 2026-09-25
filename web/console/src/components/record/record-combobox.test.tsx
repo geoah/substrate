@@ -184,4 +184,53 @@ describe("the record dropdown", () => {
     open({ adding: true, addLabel: "Add", ariaLabel: "Add Agents" })
     expect(screen.getByLabelText("Add Agents")).toBeTruthy()
   })
+
+  // The trigger is what a reader sees once a record is chosen; an id there
+  // reads as noise where the list row beside it reads as a name.
+  it("reads the chosen record by its title, with the id on the hover", () => {
+    render(
+      <RecordCombobox
+        id="pick"
+        value="crew.test.dev/summarize"
+        onSelect={vi.fn()}
+        options={HOST_FUNCTIONS}
+        loading={false}
+        capped={false}
+        ariaLabel="Tool"
+      />
+    )
+    const trigger = screen.getByLabelText("Tool")
+    expect(trigger.textContent).toBe("Summarize")
+    expect(trigger.querySelector("[title]")?.getAttribute("title")).toBe(
+      "crew.test.dev/summarize"
+    )
+  })
+
+  it("titles a chosen record the loaded options do not hold, else shows its id", () => {
+    const { rerender } = render(
+      <RecordCombobox
+        id="pick"
+        value="p9"
+        valueTitle="Ada Lovelace"
+        onSelect={vi.fn()}
+        options={HOST_FUNCTIONS}
+        loading={false}
+        capped
+        ariaLabel="Person"
+      />
+    )
+    expect(screen.getByLabelText("Person").textContent).toBe("Ada Lovelace")
+    rerender(
+      <RecordCombobox
+        id="pick"
+        value="p9"
+        onSelect={vi.fn()}
+        options={HOST_FUNCTIONS}
+        loading={false}
+        capped
+        ariaLabel="Person"
+      />
+    )
+    expect(screen.getByLabelText("Person").textContent).toBe("p9")
+  })
 })

@@ -139,6 +139,23 @@ describe("temporalProperties", () => {
     ).toEqual(["at"])
     expect(temporalProperties({ ...event, definition: {} })).toEqual([])
   })
+
+  // Every shipped declaration names core's trait in full (decision 0101);
+  // matching only the bare spelling dropped a task's `dueAt` everywhere.
+  it("reads core's fully qualified temporal trait the same as the bare one", () => {
+    const traits = (t: string) =>
+      temporalProperties({ ...event, definition: { traits: [t] } })
+    expect(traits("substrate.reamde.dev/core/temporal(point: dueAt)")).toEqual([
+      "dueAt",
+    ])
+    expect(traits("substrate.reamde.dev/core/temporal(point)")).toEqual(["at"])
+    expect(traits("substrate.reamde.dev/core/temporal(range)")).toEqual([
+      "at",
+      "endsAt",
+    ])
+    // Another package's `temporal` is not core's.
+    expect(traits("ada.example.com/tasks/temporal(point: dueAt)")).toEqual([])
+  })
 })
 
 describe("state and descriptions", () => {
