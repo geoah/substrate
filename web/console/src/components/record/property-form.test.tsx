@@ -171,6 +171,14 @@ describe("the form lens", () => {
     ])
   })
 
+  // A worked example in the data voice reads like a stored value; the
+  // placeholder says it is an example.
+  it("marks a worked example as one", () => {
+    renderForm(templateYAML(providerKind))
+    const url = screen.getByPlaceholderText("e.g. https://example.com")
+    expect((url as HTMLInputElement).value).toBe("")
+  })
+
   it("never offers a host-managed property (writer: oauth)", () => {
     renderForm(templateYAML(providerKind))
     expect(screen.queryByLabelText(/Token ref/)).toBeNull()

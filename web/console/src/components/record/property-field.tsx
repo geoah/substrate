@@ -87,6 +87,12 @@ export interface PropertyFieldProps {
   idPrefix?: string
 }
 
+/** A worked example as a placeholder. In the data voice an example reads like
+ * a stored value, so it says it is one. */
+function exampleHint(example: string | undefined): string | undefined {
+  return example ? `e.g. ${example}` : undefined
+}
+
 export function PropertyField({
   field,
   value,
@@ -387,7 +393,7 @@ export function PropertyField({
           rows={3}
           className="data text-xs"
           aria-invalid={Boolean(error)}
-          placeholder={field.example}
+          placeholder={exampleHint(field.example)}
           value={text}
           onChange={(e) => onChange(e.target.value)}
         />
@@ -411,7 +417,7 @@ export function PropertyField({
           rows={isJSON ? 4 : 5}
           className={cn(isJSON && "data text-xs")}
           aria-invalid={Boolean(error)}
-          placeholder={isJSON ? field.example : undefined}
+          placeholder={isJSON ? exampleHint(field.example) : undefined}
           value={text}
           onChange={(e) => onChange(e.target.value)}
         />
@@ -443,7 +449,7 @@ export function PropertyField({
             ? mode === "patch"
               ? "•••••••• (unchanged)"
               : undefined
-            : field.example
+            : exampleHint(field.example)
         }
         value={text}
         onChange={(e) => onChange(e.target.value)}
