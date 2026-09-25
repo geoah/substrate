@@ -6,7 +6,13 @@
 
 import type { ReactNode } from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("@tanstack/react-router", () => ({
@@ -30,6 +36,8 @@ const tasks = Array.from({ length: 12 }, (_, i) => ({
   createdAt: "",
   updatedAt: "",
 }))
+
+const paging = vi.hoisted(() => ({ more: false }))
 
 vi.mock("@/lib/api/http", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/http")>()
@@ -56,6 +64,7 @@ vi.mock("@/lib/api/http", async (importOriginal) => {
           },
           head: 1,
           generation: "g",
+          ...(paging.more ? { cursor: "next" } : {}),
         })
       }
       return Promise.resolve({ records: [], head: 1, generation: "g" })
@@ -64,6 +73,7 @@ vi.mock("@/lib/api/http", async (importOriginal) => {
 })
 
 import { ConnectedSection } from "./connected"
+import { countWords } from "./record-model"
 import {
   ConsolePreferencesContext,
   type ConsolePreferencesContextValue,
@@ -139,7 +149,10 @@ function renderSection(technical = false) {
   )
 }
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  paging.more = false
+})
 
 describe("ConnectedSection", () => {
   it("groups by kind and property, in everyday words, without the mapping slot", async () => {
@@ -166,5 +179,26 @@ describe("ConnectedSection", () => {
     expect(group.closest("[data-slot=connected-group]")?.textContent).toContain(
       "assignee"
     )
+  })
+
+  it("keeps every row to one line: the title truncates, the state and date never wrap", async () => {
+    renderSection()
+    await screen.findAllByRole("link", { name: /Task \d+/ })
+    const row = document.querySelector("[data-slot=connected-row]")!
+    expect(row.className).not.toMatch(/flex-wrap/)
+    const [title, meta] = [...row.children] as HTMLElement[]
+    expect(title.className).toMatch(/min-w-0/)
+    expect(title.className).toMatch(/flex-1/)
+    expect(meta.className).toMatch(/shrink-0/)
+    expect(meta.className).toMatch(/whitespace-nowrap/)
+    expect(within(meta).getByText(/Open|Done/)).toBeTruthy()
+  })
+
+  it("says a count that did not reach the end in words", async () => {
+    expect(countWords(28, true)).toBe("28 or more")
+    expect(countWords(28, false)).toBe("28")
+    paging.more = true
+    renderSection()
+    expect(await screen.findByText("3 of the first 12 done")).toBeTruthy()
   })
 })
