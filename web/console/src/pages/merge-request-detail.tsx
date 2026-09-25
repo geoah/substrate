@@ -21,10 +21,14 @@ import {
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { ActorChip } from "@/components/actor-chip"
-import { RecordPeek, type PeekTarget } from "@/components/record-peek"
+import { ActorRef } from "@/components/identity/actor-ref"
+import { IdText } from "@/components/identity/id-text"
+import { KindGlyph } from "@/components/identity/kind-glyph"
+import { DocPage } from "@/components/identity/page-layout"
+import { RecordRef } from "@/components/identity/record-ref"
+import { StateBadge } from "@/components/identity/state-badge"
+import type { PeekTarget } from "@/components/record-peek"
 import { ReferenceValue } from "@/components/record/reference-value"
-import { StateBadge } from "@/components/state-badge"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -56,7 +60,6 @@ import {
   FieldError,
   FieldLabel,
 } from "@/components/ui/field"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
@@ -85,6 +88,8 @@ import {
   type MergeVerdict,
 } from "@/lib/mergerequests"
 import { kindByIdentity } from "@/lib/definition"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { CORE_PACKAGE } from "@/lib/api/http"
 import { cn } from "@/lib/utils"
 import { EvidenceChips } from "@/components/merge-request"
 import { mergeRequestDetailRoute } from "@/router"
@@ -165,7 +170,7 @@ function ValueCell({
         {references.map((one, at) => (
           <ReferenceValue key={at} value={one} kinds={kinds} />
         ))}
-        {manager && row.posture !== "equal" && <ActorChip actor={manager} />}
+        {manager && row.posture !== "equal" && <ActorRef actor={manager} />}
       </span>
     )
   }
@@ -177,19 +182,19 @@ function ValueCell({
     <span className="flex min-w-0 flex-col items-start gap-1">
       {text ? (
         <span className="flex w-full min-w-0 items-baseline gap-1.5">
-          <span className="min-w-0 truncate data" title={text}>
+          <span className="min-w-0 truncate" title={text}>
             {text}
           </span>
           {count > 0 && (
-            <span className="shrink-0 data text-xs text-muted-foreground">
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
               ×{count}
             </span>
           )}
         </span>
       ) : (
-        <span className="data text-muted-foreground">—</span>
+        <span className="text-faint">—</span>
       )}
-      {manager && row.posture !== "equal" && <ActorChip actor={manager} />}
+      {manager && row.posture !== "equal" && <ActorRef actor={manager} />}
     </span>
   )
 }
@@ -206,7 +211,7 @@ function DiffRows({ rows, kinds }: { rows: DiffRow[]; kinds: KindInfo[] }) {
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <span className="block truncate data text-muted-foreground" />
+                  <span className="block truncate text-muted-foreground" />
                 }
               >
                 {row.key}
@@ -260,7 +265,7 @@ function SideBySide({
   const [showEqual, setShowEqual] = useState(false)
 
   return (
-    <div className="mx-6 mb-4 overflow-x-auto rounded-md border">
+    <div className="mb-4 overflow-x-auto rounded-md border">
       <Table className="table-fixed [&_td]:py-2.5" style={{ minWidth: 640 }}>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
@@ -277,12 +282,12 @@ function SideBySide({
                     kind: loser.kind,
                     title: String(loser.properties.title ?? ""),
                   })}{" "}
-                  <span className="data font-normal text-muted-foreground">
+                  <span className="font-mono text-xs font-normal text-faint">
                     {loser.id}
                   </span>
                 </span>
-                <span className="text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">
-                  merges away
+                <span className="text-xs font-normal text-faint">
+                  goes into the other
                 </span>
               </span>
             </TableHead>
@@ -294,12 +299,12 @@ function SideBySide({
                     kind: winner.kind,
                     title: String(winner.properties.title ?? ""),
                   })}{" "}
-                  <span className="data font-normal text-muted-foreground">
+                  <span className="font-mono text-xs font-normal text-faint">
                     {winner.id}
                   </span>
                 </span>
-                <span className="text-[0.65rem] font-medium tracking-wide text-primary uppercase">
-                  survives
+                <span className="text-xs font-normal text-primary-text">
+                  stays
                 </span>
               </span>
             </TableHead>
@@ -390,24 +395,24 @@ function VerdictDialog({
           <DialogHeader>
             <DialogTitle>
               {approving
-                ? `Merge ${loserTitle} into ${winnerTitle}?`
-                : "Reject this suggestion?"}
+                ? `Combine ${loserTitle} into ${winnerTitle}?`
+                : "Keep these two apart?"}
             </DialogTitle>
             <DialogDescription className="space-y-2">
               {/* who is who, unambiguously — twins share a name, ids differ
                   (codex finding, 2026-08-06) */}
               <span className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 rounded-sm border bg-muted/40 px-2.5 py-1.5 text-xs">
-                <span>merges away</span>
+                <span>goes into</span>
                 <span className="min-w-0 truncate text-foreground">
                   {loserTitle}{" "}
-                  <span className="data text-muted-foreground">
+                  <span className="font-mono text-muted-foreground">
                     {loser?.id}
                   </span>
                 </span>
-                <span>survives</span>
+                <span>stays</span>
                 <span className="min-w-0 truncate text-foreground">
                   {winnerTitle}{" "}
-                  <span className="data text-muted-foreground">
+                  <span className="font-mono text-muted-foreground">
                     {winner?.id}
                   </span>
                 </span>
@@ -415,20 +420,18 @@ function VerdictDialog({
               {approving ? (
                 <>
                   <span className="block">
-                    The merged-away record stops answering reads, but every
-                    reference to it still resolves through the survivor. Values
-                    you hold are left alone.
+                    {loserTitle} stops being a record of its own: its history
+                    and everything that points to it move to {winnerTitle}.
+                    Values you set are kept.
                   </span>
                   <span className="block">
-                    This can be undone. A{" "}
-                    <span className="data">recordsplit</span> takes the merge
-                    apart later.
+                    A split can take them apart again later.
                   </span>
                 </>
               ) : (
                 <span className="block">
-                  Both records are left as they are. This pair will not be
-                  suggested again.
+                  Both are left as they are, and this pair won’t be suggested
+                  again.
                 </span>
               )}
             </DialogDescription>
@@ -462,7 +465,7 @@ function VerdictDialog({
             </Button>
             <Button type="submit" disabled={busy}>
               {busy && <Spinner className="size-3.5" />}
-              {approving ? "Accept and merge" : "Reject"}
+              {approving ? "Combine" : "Keep apart"}
             </Button>
           </DialogFooter>
         </form>
@@ -523,6 +526,7 @@ export function MergeRequestDetailPage() {
   const loserSide = useSideQuery(loserRef, types, proposed)
 
   const [confirming, setConfirming] = useState<MergeVerdict | null>(null)
+  const [technicalMode] = useTechnicalDetails()
 
   const verdict = useMutation({
     mutationFn: ({ v, note }: { v: MergeVerdict; note?: string }) =>
@@ -596,6 +600,7 @@ export function MergeRequestDetailPage() {
   const proposer = request.propertyMeta?.rationale?.manager
   const decider = request.propertyMeta?.decidedAt?.manager
   const note = verdictNote(request)
+  const technical = technicalMode
   const conflict = conflictAnnotation(request)
 
   const sidesReady = proposed && winnerSide.query.data && loserSide.query.data
@@ -607,133 +612,146 @@ export function MergeRequestDetailPage() {
     (Boolean(winnerRef && !winnerSide.type) ||
       Boolean(loserRef && !loserSide.type))
 
+  const pairKind = winnerRef?.kind ?? loserRef?.kind
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-start justify-between gap-3 px-6 pt-5 pb-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight break-words">
-            {loserTitle} <span className="text-muted-foreground">→</span>{" "}
-            {winnerTitle}
-          </h1>
-          <p className="data text-xs text-muted-foreground">
-            substrate.reamde.dev/core/recordmergerequests/{request.id}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2 pt-0.5">
-          {decision && (
-            <StateBadge value={decision} initial={DECISION_INITIAL} />
-          )}
-          {proposed && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={verdict.isPending}
-                onClick={() => setConfirming("rejected")}
-              >
-                <XIcon className="size-3.5" />
-                Reject
-              </Button>
-              <Button
-                size="sm"
-                disabled={verdict.isPending}
-                onClick={() => setConfirming("accepted")}
-              >
-                <CheckIcon className="size-3.5" />
-                Accept
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-
-      <ScrollArea className="min-h-0 flex-1">
-        {/* the matcher's case */}
-        <div className="mx-6 mb-4 flex flex-col gap-2 rounded-md border bg-muted/40 px-4 py-3 text-sm">
-          {rationale && <p>{rationale}</p>}
-          <EvidenceChips mr={request} />
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
-            {proposer && (
-              <span className="flex items-center gap-1.5">
-                proposed by <ActorChip actor={proposer} />
-              </span>
-            )}
-            <span className="data" title={request.createdAt}>
-              {relativeTime(request.createdAt)}
-            </span>
-            {decidedAt && (
-              <span className="flex items-center gap-1.5">
-                decided{" "}
-                <span className="data" title={decidedAt}>
-                  {relativeTime(decidedAt)}
-                </span>
-                {decider && (
-                  <>
-                    by <ActorChip actor={decider} />
-                  </>
-                )}
-              </span>
-            )}
-          </div>
-          {note && (
-            <p className="text-xs">
-              <span className="text-muted-foreground">note:</span> {note}
-            </p>
-          )}
-          {conflict && (
-            <p className="border-l-2 border-l-warning pl-2 text-xs">
-              <span className="text-warning">conflict:</span>{" "}
-              <span className="data">{conflict}</span>
-            </p>
-          )}
-        </div>
-
-        {/* the resolved record */}
-        {!proposed && (
-          <div className="mx-6 mb-4 flex items-start gap-3 rounded-md border px-4 py-3 text-sm">
-            <GitMergeIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            {decision === "accepted" ? (
-              <p>
-                Merged. The survivor{" "}
-                <span className="data">
-                  {winnerRef ? (
-                    <RecordPeek target={winnerRef} types={types} />
-                  ) : (
-                    winnerTitle
-                  )}
-                </span>{" "}
-                carries both histories now.{" "}
-                <span className="data">recordsplit</span> takes the merge apart
-                if it was wrong.
-              </p>
-            ) : (
-              <p>
-                Rejected. The pair stays separate, and you will not be asked
-                about{" "}
-                <span className="data">
-                  {loserRef ? (
-                    <RecordPeek target={loserRef} types={types} />
-                  ) : (
-                    loserTitle
-                  )}
-                </span>{" "}
-                and{" "}
-                <span className="data">
-                  {winnerRef ? (
-                    <RecordPeek target={winnerRef} types={types} />
-                  ) : (
-                    winnerTitle
-                  )}
-                </span>{" "}
-                again.
-              </p>
-            )}
+    <DocPage>
+      <header className="flex items-start justify-between gap-3">
+        {pairKind ? (
+          <KindGlyph kind={pairKind} size="lg" />
+        ) : (
+          <span className="grid size-10 place-items-center rounded-[10px] bg-hover text-muted-foreground">
+            <GitMergeIcon className="size-5" />
+          </span>
+        )}
+        {proposed && (
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={verdict.isPending}
+              onClick={() => setConfirming("rejected")}
+            >
+              <XIcon className="size-3.5" />
+              Keep them apart
+            </Button>
+            <Button
+              size="sm"
+              disabled={verdict.isPending}
+              onClick={() => setConfirming("accepted")}
+            >
+              <CheckIcon className="size-3.5" />
+              Combine them
+            </Button>
           </div>
         )}
+      </header>
+      <h1 className="mt-2.5 mb-1.5 text-[26px] leading-tight font-[650] tracking-[-0.02em] text-balance break-words">
+        {proposed ? "Are these the same?" : "Suggested as the same"}
+      </h1>
+      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[12.5px] text-faint">
+        {decision && <StateBadge value={decision} initial={DECISION_INITIAL} />}
+        {proposer && (
+          <span className="flex items-center gap-1.5">
+            Suggested by <ActorRef actor={proposer} />
+          </span>
+        )}
+        <span title={request.createdAt}>{relativeTime(request.createdAt)}</span>
+        {decidedAt && (
+          <span className="flex items-center gap-1.5">
+            Decided <span title={decidedAt}>{relativeTime(decidedAt)}</span>
+            {decider && (
+              <>
+                by <ActorRef actor={decider} />
+              </>
+            )}
+          </span>
+        )}
+        {technical && (
+          <IdText
+            value={`${CORE_PACKAGE}/recordmergerequest/${request.id}`}
+            copy
+          />
+        )}
+      </div>
 
-        {/* the side-by-side */}
-        {proposed &&
-          (sidesReady ? (
+      {/* the pair */}
+      <div className="mt-5 flex flex-wrap items-center gap-2 text-[15px]">
+        {loserRef ? (
+          <RecordRef kind={loserRef.kind} id={loserRef.id} />
+        ) : (
+          loserTitle
+        )}
+        <span className="text-faint">and</span>
+        {winnerRef ? (
+          <RecordRef kind={winnerRef.kind} id={winnerRef.id} />
+        ) : (
+          winnerTitle
+        )}
+      </div>
+
+      {/* the matcher's case */}
+      <div className="mt-4 flex flex-col gap-2 rounded-lg border bg-panel px-4 py-3 text-[13px]">
+        {rationale && <p>{rationale}</p>}
+        <EvidenceChips mr={request} />
+        {note && (
+          <p className="text-xs">
+            <span className="text-faint">Note:</span> {note}
+          </p>
+        )}
+        {conflict && (
+          <p className="border-l-2 border-l-warning pl-2 text-xs">
+            <span className="text-warning">Conflict:</span>{" "}
+            <span className="font-mono">{conflict}</span>
+          </p>
+        )}
+      </div>
+
+      {/* the resolved record */}
+      {!proposed && (
+        <div className="mt-4 flex items-start gap-3 rounded-lg border px-4 py-3 text-[13px]">
+          <GitMergeIcon className="mt-0.5 size-4 shrink-0 text-faint" />
+          {decision === "accepted" ? (
+            <p>
+              Combined.{" "}
+              {winnerRef ? (
+                <RecordRef kind={winnerRef.kind} id={winnerRef.id} />
+              ) : (
+                winnerTitle
+              )}{" "}
+              carries both histories now.
+            </p>
+          ) : (
+            <p>
+              Kept apart. You won’t be asked about{" "}
+              {loserRef ? (
+                <RecordRef kind={loserRef.kind} id={loserRef.id} />
+              ) : (
+                loserTitle
+              )}{" "}
+              and{" "}
+              {winnerRef ? (
+                <RecordRef kind={winnerRef.kind} id={winnerRef.id} />
+              ) : (
+                winnerTitle
+              )}{" "}
+              again.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* the side-by-side */}
+      {proposed && (
+        <>
+          <div className="mt-8 mb-2.5 flex items-baseline gap-2">
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">
+              Side by side
+            </h2>
+            <span className="text-[12.5px] text-faint">
+              what each one holds, and what combining keeps
+            </span>
+          </div>
+          {sidesReady ? (
             <SideBySide
               loser={loserSide.query.data!}
               winner={winnerSide.query.data!}
@@ -741,20 +759,19 @@ export function MergeRequestDetailPage() {
               kinds={types}
             />
           ) : sideError ? (
-            <div className="mx-6 mb-4 rounded-md border px-4 py-3 text-sm text-muted-foreground">
-              One side of the pair didn't load: {sideError.message}
+            <div className="rounded-lg border px-4 py-3 text-[13px] text-muted-foreground">
+              One of the two didn’t load: {sideError.message}
             </div>
           ) : sideTypeMissing ? (
-            <div className="mx-6 mb-4 rounded-md border px-4 py-3 text-sm text-muted-foreground">
-              This repository does not have the pair's kind, so the two records
-              cannot be shown side by side. You can still accept or reject.
+            <div className="rounded-lg border px-4 py-3 text-[13px] text-muted-foreground">
+              This repository doesn’t have their kind, so the two can’t be shown
+              side by side. You can still decide.
             </div>
           ) : (
-            <div className="mx-6 mb-4 flex flex-col gap-2">
-              <Skeleton className="h-24 w-full rounded-md" />
-            </div>
-          ))}
-      </ScrollArea>
+            <Skeleton className="h-24 w-full rounded-lg" />
+          )}
+        </>
+      )}
 
       {confirming && (
         <VerdictDialog
@@ -766,22 +783,19 @@ export function MergeRequestDetailPage() {
           onClose={() => setConfirming(null)}
         />
       )}
-    </div>
+    </DocPage>
   )
 }
 
 /** Mirrors the final layout: header, evidence band, diff grid. */
 function DetailSkeleton() {
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 px-6 pt-5 pb-3">
-        <Skeleton className="h-6 w-72" />
-        <Skeleton className="mt-1.5 h-3.5 w-80" />
-      </div>
-      <div className="flex flex-col gap-3 px-6">
-        <Skeleton className="h-20 w-full rounded-md" />
-        <Skeleton className="h-48 w-full rounded-md" />
-      </div>
-    </div>
+    <DocPage>
+      <Skeleton className="size-10 rounded-[10px]" />
+      <Skeleton className="mt-3 h-7 w-72" />
+      <Skeleton className="mt-2 h-3.5 w-80" />
+      <Skeleton className="mt-5 h-20 w-full rounded-lg" />
+      <Skeleton className="mt-4 h-48 w-full rounded-lg" />
+    </DocPage>
   )
 }

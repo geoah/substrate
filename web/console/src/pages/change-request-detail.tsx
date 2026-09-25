@@ -25,10 +25,13 @@ import {
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { ActorChip } from "@/components/actor-chip"
+import { ActorRef } from "@/components/identity/actor-ref"
+import { IdText } from "@/components/identity/id-text"
+import { KindGlyph } from "@/components/identity/kind-glyph"
+import { DocPage } from "@/components/identity/page-layout"
 import { ChangeTarget, OpBadge } from "@/components/change-request"
 import { ReferenceValue } from "@/components/record/reference-value"
-import { StateBadge } from "@/components/state-badge"
+import { StateBadge } from "@/components/identity/state-badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -52,7 +55,6 @@ import {
   FieldError,
   FieldLabel,
 } from "@/components/ui/field"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import {
@@ -106,6 +108,7 @@ import {
 } from "@/lib/changerequests"
 import { kindByIdentity } from "@/lib/definition"
 import { cellValue, referenceObjects, relativeTime } from "@/lib/format"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { cn } from "@/lib/utils"
 import { changeRequestDetailRoute } from "@/router"
 
@@ -190,7 +193,7 @@ function ValueCell({
         {references.map((one, at) => (
           <ReferenceValue key={at} value={one} kinds={kinds} />
         ))}
-        {manager && <ActorChip actor={manager} />}
+        {manager && <ActorRef actor={manager} />}
       </span>
     )
   }
@@ -216,7 +219,7 @@ function ValueCell({
           {value === undefined ? "—" : '""'}
         </span>
       )}
-      {manager && <ActorChip actor={manager} />}
+      {manager && <ActorRef actor={manager} />}
     </span>
   )
 }
@@ -257,7 +260,7 @@ function BeforeAfter({
   emptyText: string
 }) {
   return (
-    <div className="mx-6 mb-4 overflow-x-auto rounded-md border">
+    <div className="mb-4 overflow-x-auto rounded-md border">
       <Table className="table-fixed [&_td]:py-2.5" style={{ minWidth: 640 }}>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
@@ -348,7 +351,7 @@ function ProposedValues({
   emptyText: string
 }) {
   return (
-    <div className="mx-6 mb-4 overflow-x-auto rounded-md border">
+    <div className="mb-4 overflow-x-auto rounded-md border">
       <Table className="table-fixed [&_td]:py-2.5" style={{ minWidth: 480 }}>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
@@ -397,7 +400,7 @@ function Warning({
   return (
     <div
       className={cn(
-        "mx-6 mb-4 flex items-start gap-3 rounded-md border px-4 py-3 text-sm",
+        "mb-4 flex items-start gap-3 rounded-md border px-4 py-3 text-sm",
         tone === "destructive"
           ? "border-destructive/40 bg-destructive/5"
           : "border-warning/40 bg-warning/5"
@@ -600,6 +603,7 @@ export function ChangeRequestDetailPage() {
   const targetSide = useTargetQuery(target, types, proposed && op !== "create")
 
   const [confirming, setConfirming] = useState<Verdict | null>(null)
+  const [technical] = useTechnicalDetails()
 
   const decide = useMutation({
     mutationFn: ({ v, note }: { v: Verdict; note?: string }) =>
@@ -682,21 +686,16 @@ export function ChangeRequestDetailPage() {
   const emptyText = emptyTableText(diff, blocked)
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-start justify-between gap-3 px-6 pt-5 pb-3">
-        <div className="min-w-0">
-          <h1 className="flex min-w-0 items-center gap-2 truncate text-lg font-semibold">
-            <OpBadge op={op} />
-            <ChangeTarget target={target} types={types} />
-          </h1>
-          <p className="data text-xs text-muted-foreground">
-            {CORE_PACKAGE}/{CR_NAME}/{request.id}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2 pt-0.5">
-          {decision && (
-            <StateBadge value={decision} initial={DECISION_INITIAL} />
-          )}
+    <DocPage>
+      <header className="flex items-start justify-between gap-3">
+        {target?.kind ? (
+          <KindGlyph kind={target.kind} size="lg" />
+        ) : (
+          <span className="grid size-10 place-items-center rounded-[10px] bg-hover text-muted-foreground">
+            <FilePenLineIcon className="size-5" />
+          </span>
+        )}
+        <div className="flex shrink-0 items-center gap-2">
           {proposed && (
             <>
               <Button
@@ -720,11 +719,22 @@ export function ChangeRequestDetailPage() {
             </>
           )}
         </div>
+      </header>
+      <h1 className="mt-2.5 mb-1.5 flex min-w-0 flex-wrap items-center gap-2 text-[26px] leading-tight font-[650] tracking-[-0.02em]">
+        <OpBadge op={op} />
+        <ChangeTarget target={target} types={types} />
+      </h1>
+      <div className="mb-5 flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[12.5px] text-faint">
+        {decision && <StateBadge value={decision} initial={DECISION_INITIAL} />}
+        <span className="text-muted-foreground">A suggested change</span>
+        {technical && (
+          <IdText value={`${CORE_PACKAGE}/${CR_NAME}/${request.id}`} copy />
+        )}
       </div>
 
-      <ScrollArea className="min-h-0 flex-1">
+      <div className="flex flex-col">
         {/* the proposal's own case */}
-        <div className="mx-6 mb-4 flex flex-col gap-2 rounded-md border bg-muted/40 px-4 py-3 text-sm">
+        <div className="mb-4 flex flex-col gap-2 rounded-lg border bg-panel px-4 py-3 text-[13px]">
           {rationale ? (
             <p>{rationale}</p>
           ) : (
@@ -735,21 +745,18 @@ export function ChangeRequestDetailPage() {
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
             {proposer && (
               <span className="flex items-center gap-1.5">
-                proposed by <ActorChip actor={proposer} />
+                proposed by <ActorRef actor={proposer} />
               </span>
             )}
-            <span className="data" title={request.createdAt}>
+            <span title={request.createdAt}>
               {relativeTime(request.createdAt)}
             </span>
             {decidedAt && (
               <span className="flex items-center gap-1.5">
-                decided{" "}
-                <span className="data" title={decidedAt}>
-                  {relativeTime(decidedAt)}
-                </span>
+                decided <span title={decidedAt}>{relativeTime(decidedAt)}</span>
                 {decider && (
                   <>
-                    by <ActorChip actor={decider} />
+                    by <ActorRef actor={decider} />
                   </>
                 )}
               </span>
@@ -872,7 +879,7 @@ export function ChangeRequestDetailPage() {
 
         {/* the decided record */}
         {!proposed && (
-          <div className="mx-6 mb-4 flex items-start gap-3 rounded-md border px-4 py-3 text-sm">
+          <div className="mb-4 flex items-start gap-3 rounded-md border px-4 py-3 text-sm">
             {decision === "accepted" ? (
               <>
                 {op === "delete" ? (
@@ -914,7 +921,7 @@ export function ChangeRequestDetailPage() {
 
         <ExtraDiffKeys diff={diff} />
         <UnreadableFields fields={diff.malformed} />
-      </ScrollArea>
+      </div>
 
       {confirming && (
         <DecisionDialog
@@ -927,7 +934,7 @@ export function ChangeRequestDetailPage() {
           onClose={() => setConfirming(null)}
         />
       )}
-    </div>
+    </DocPage>
   )
 }
 
@@ -978,7 +985,7 @@ function PatchBody({
   if (op === "patch" && !comparable) {
     if (loading) {
       return (
-        <div className="mx-6 mb-4">
+        <div className="mb-4">
           <Skeleton className="h-24 w-full rounded-md" />
         </div>
       )
@@ -1015,7 +1022,7 @@ function PatchBody({
         </Warning>
       )}
       {op === "create" && (
-        <p className="mx-6 mb-2 text-sm text-muted-foreground">
+        <p className="mb-2 text-sm text-muted-foreground">
           Accepting creates{" "}
           <span className="data">{target?.id ?? request.id}</span> as{" "}
           <span className="data">{target?.kind}</span> with the values below. If
@@ -1057,7 +1064,7 @@ function DeleteSummary({
     .filter(([, value]) => value !== null && value !== undefined)
     .slice(0, 6)
   return (
-    <div className="mx-6 mb-4 rounded-md border px-4 py-3 text-sm">
+    <div className="mb-4 rounded-md border px-4 py-3 text-sm">
       <p className="mb-2 text-xs text-muted-foreground">
         {kind?.name ?? record.kind} <span className="data">{record.id}</span>,
         version <span className="data">{record.version}</span>, last written{" "}
@@ -1113,7 +1120,7 @@ function ExtraDiffKeys({ diff }: { diff: ProposedDiff }) {
   }
   if (!groups.length) return null
   return (
-    <div className="mx-6 mb-4 flex flex-col gap-2 rounded-md border px-4 py-3 text-sm">
+    <div className="mb-4 flex flex-col gap-2 rounded-md border px-4 py-3 text-sm">
       {groups.map(([name, values]) => (
         <div key={name}>
           <p className="text-xs text-muted-foreground">
@@ -1146,7 +1153,7 @@ function ExtraDiffKeys({ diff }: { diff: ProposedDiff }) {
 function UnreadableFields({ fields }: { fields: UnreadableField[] }) {
   if (!fields.length) return null
   return (
-    <div className="mx-6 mb-4 rounded-md border border-warning/40 px-4 py-3 text-sm">
+    <div className="mb-4 rounded-md border border-warning/40 px-4 py-3 text-sm">
       <p className="text-xs text-muted-foreground">
         stored values the substrate cannot read
       </p>
@@ -1172,15 +1179,12 @@ function UnreadableFields({ fields }: { fields: UnreadableField[] }) {
 /** Mirrors the final layout: header, the proposal's band, the value table. */
 function DetailSkeleton() {
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 px-6 pt-5 pb-3">
-        <Skeleton className="h-6 w-72" />
-        <Skeleton className="mt-1.5 h-3.5 w-80" />
-      </div>
-      <div className="flex flex-col gap-3 px-6">
-        <Skeleton className="h-20 w-full rounded-md" />
-        <Skeleton className="h-48 w-full rounded-md" />
-      </div>
-    </div>
+    <DocPage>
+      <Skeleton className="size-10 rounded-[10px]" />
+      <Skeleton className="mt-3 h-7 w-72" />
+      <Skeleton className="mt-2 h-3.5 w-80" />
+      <Skeleton className="mt-5 h-20 w-full rounded-lg" />
+      <Skeleton className="mt-4 h-48 w-full rounded-lg" />
+    </DocPage>
   )
 }
