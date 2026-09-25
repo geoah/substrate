@@ -26,7 +26,6 @@ import { RecordCombobox } from "@/components/record/record-combobox"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
-import { useRecordOptions } from "@/lib/identities"
 import { recordTitleQueryOptions } from "@/lib/reference-titles"
 import { seedField, type FormField, type FormValue } from "@/lib/record-form"
 import { humanizeName, movesFrom } from "@/lib/record-schema"
@@ -325,7 +324,6 @@ function ReferencePicker(props: InlineEditorProps) {
   const { row, kinds, record, onDone, onError } = props
   const { save, pending } = useSave(props)
   const pin = row.field.spec.to ?? ""
-  const offered = useRecordOptions(pin, kinds, record.id)
   const chosen = useRef(false)
   const seeded = seedField(row.field, row.value, false) as {
     kind: string
@@ -339,7 +337,9 @@ function ReferencePicker(props: InlineEditorProps) {
   return (
     <div className="flex w-full min-w-0 items-center gap-2">
       <RecordCombobox
-        {...offered}
+        pin={pin}
+        kinds={kinds}
+        self={record.id}
         defaultOpen
         ariaLabel={row.field.label}
         value={seeded.id}
