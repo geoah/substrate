@@ -132,7 +132,7 @@ describe("HistoryEntryRow", () => {
     const move = (await screen.findByText("Priority")).closest(
       "[data-slot=value-move]"
     )
-    expect(move?.textContent).toBe("PriorityHigh→Urgent")
+    expect(move?.textContent).toBe("PriorityHigh→toUrgent")
   })
 
   it("falls back to the names against a server that sends none", async () => {

@@ -84,12 +84,10 @@ function Item({
   const item = spec && elementSpec(spec)
   return (
     <span className="inline-flex items-center gap-1">
-      <span
-        aria-label={sign === "+" ? "added" : "removed"}
-        className={sign === "+" ? "text-ok" : "text-faint"}
-      >
+      <span aria-hidden className={sign === "+" ? "text-ok" : "text-faint"}>
         {sign}
       </span>
+      <span className="sr-only">{sign === "+" ? "added" : "removed"}</span>
       {sign === "+" ? (
         <ChangeValue value={value} spec={item} />
       ) : (
@@ -133,6 +131,7 @@ function Move({ move, spec }: { move: ValueMove; spec?: PropSpec }) {
         <span aria-hidden className="text-faint">
           →
         </span>
+        <span className="sr-only">now</span>
         <ChangeValue value={move.after} spec={spec} />
       </>
     ) : (
@@ -144,9 +143,10 @@ function Move({ move, spec }: { move: ValueMove; spec?: PropSpec }) {
         <Old>
           <ChangeValue value={move.before} spec={spec} />
         </Old>
-        <span aria-label="to" className="text-faint">
+        <span aria-hidden className="text-faint">
           →
         </span>
+        <span className="sr-only">to</span>
         <ChangeValue value={move.after} spec={spec} />
       </>
     )

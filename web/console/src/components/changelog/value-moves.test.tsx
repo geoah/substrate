@@ -87,7 +87,27 @@ describe("ValueMoves", () => {
   it("says an enum's move by its labels", () => {
     show([move({ name: "priority", before: "high", after: "urgent" })])
     const row = screen.getByText("Priority").closest("[data-slot=value-move]")
-    expect(row?.textContent).toBe("PriorityHigh→Urgent")
+    expect(row?.textContent).toBe("PriorityHigh→toUrgent")
+  })
+
+  it("says each sign and arrow in words a screen reader reads", () => {
+    show([
+      move({ name: "priority", before: "high", after: "urgent" }),
+      move({
+        name: "emails",
+        before: ["old@example.com"],
+        after: ["grace@example.com"],
+        added: ["grace@example.com"],
+        removed: ["old@example.com"],
+      }),
+    ])
+    for (const words of ["to", "added", "removed"]) {
+      const said = screen.getByText(words)
+      expect(said.className).toContain("sr-only")
+      expect(said.previousElementSibling?.getAttribute("aria-hidden")).toBe(
+        "true"
+      )
+    }
   })
 
   it("says a state's move with its badges", () => {
@@ -107,10 +127,10 @@ describe("ValueMoves", () => {
         removed: ["old@example.com"],
       }),
     ])
-    expect(screen.getByLabelText("added").nextSibling?.textContent).toBe(
+    expect(screen.getByText("added").nextSibling?.textContent).toBe(
       "grace@example.com"
     )
-    expect(screen.getByLabelText("removed").nextSibling?.textContent).toBe(
+    expect(screen.getByText("removed").nextSibling?.textContent).toBe(
       "old@example.com"
     )
   })
@@ -157,16 +177,14 @@ describe("ValueMoves", () => {
       move({ name: "description", before: "Draft" }),
       move({ name: "priority", after: "urgent", beforeUnknown: true }),
     ])
-    expect(screen.getByLabelText("removed").nextSibling?.textContent).toBe(
-      "Draft"
-    )
+    expect(screen.getByText("removed").nextSibling?.textContent).toBe("Draft")
     const row = screen.getByText("Priority").closest("[data-slot=value-move]")
-    expect(row?.textContent).toBe("Priority→Urgent")
+    expect(row?.textContent).toBe("Priority→nowUrgent")
   })
 
   it("shows keys and raw values in technical mode", () => {
     show([move({ name: "priority", before: "high", after: "urgent" })], true)
     const row = screen.getByText("priority").closest("[data-slot=value-move]")
-    expect(row?.textContent).toBe("priorityhigh→urgent")
+    expect(row?.textContent).toBe("priorityhigh→tourgent")
   })
 })
