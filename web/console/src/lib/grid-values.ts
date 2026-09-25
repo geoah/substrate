@@ -5,7 +5,7 @@
 
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import type { DeclaredProperty } from "@/lib/definition"
-import { displayPlural } from "@/lib/kind-names"
+import { displayPlural, lowerFirst } from "@/lib/kind-names"
 import { stateTone } from "@/lib/state-words"
 
 /** Words a label keeps in capitals. */
@@ -202,7 +202,7 @@ export function hiddenKindsNote(hidden: readonly KindInfo[]): string {
   if (!hidden.length) return ""
   const like = hidden
     .slice(0, 2)
-    .map((k) => displayPlural(k).toLowerCase())
+    .map((k) => lowerFirst(displayPlural(k)))
     .join(" and ")
   const n = hidden.length
   return `${n} more ${n === 1 ? "holds" : "hold"} supporting details (like ${like}). You see them from the records they belong to, or here with Technical details on.`

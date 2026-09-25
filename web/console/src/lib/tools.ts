@@ -13,7 +13,13 @@ import {
   providerInfo,
   type ProviderInfo,
 } from "@/lib/actor-identity"
-import { displayName, displayPlural, splitWords } from "@/lib/kind-names"
+import {
+  displayName,
+  displayPlural,
+  lowerFirst,
+  packageDisplayName,
+  splitWords,
+} from "@/lib/kind-names"
 
 export const FUNCTION_KIND = `${CORE_PACKAGE}/function`
 export const TRIGGER_KIND = `${CORE_PACKAGE}/trigger`
@@ -522,16 +528,10 @@ export function kindPatternWords(pattern: string, label: KindLabeler): string {
     if (authority === CORE_AUTHORITY)
       return pkg ? `Everything built into ${pkg}` : "Everything built in"
     return pkg
-      ? `Everything in ${capitalise(pkg)}`
+      ? `Everything in ${packageDisplayName(pkg)}`
       : `Everything from ${authority}`
   }
   return label(pattern)
-}
-
-function lowerFirst(text: string): string {
-  return text && text !== text.toUpperCase()
-    ? text[0].toLowerCase() + text.slice(1)
-    : text
 }
 
 export type StartKind = "agent" | "schedule" | "change" | "webhook" | "you"
@@ -630,7 +630,7 @@ export function toolStarts(tool: Tool, label: KindLabeler): ToolStart[] {
         }
         const only = t.source.kinds.length === 1 ? t.source.kinds[0] : ""
         if (onConnect(t) && only && !only.endsWith("*")) {
-          const noun = displayName(only).toLowerCase()
+          const noun = lowerFirst(displayName(only))
           push({
             ...base,
             kind: "change",

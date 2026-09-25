@@ -42,6 +42,7 @@ import {
   type RequirementNode,
 } from "@/lib/bundles"
 import { cn } from "@/lib/utils"
+import { packageDisplayName } from "@/lib/kind-names"
 
 // eslint-disable-next-line react-refresh/only-export-components -- the URL's word for each way, shared with the page that opens it
 export const ADD_WAYS = ["agent", "sample", "yaml"] as const
@@ -67,13 +68,6 @@ const WAYS: { value: Way; icon: LucideIcon; title: string; line: string }[] = [
     line: "For developers: declare the kind in YAML.",
   },
 ]
-
-/** Package words that are acronyms read in capitals. */
-const ACRONYMS: Record<string, string> = { llm: "LLM" }
-
-function capitalise(text: string): string {
-  return ACRONYMS[text] ?? (text ? text[0].toUpperCase() + text.slice(1) : text)
-}
 
 /** Open while `way` is set; the way is the caller's (the page keeps it in
  * the URL, so a link can open the dialog on samples). */
@@ -240,7 +234,7 @@ function SampleRow({
 }) {
   const state = sampleState(row)
   const missing = missingChain(chain)
-  const name = capitalise(row.name)
+  const name = packageDisplayName(row.name)
   return (
     <li className="border-b border-border px-3.5 py-3 last:border-b-0">
       <div className="flex items-start gap-3">
@@ -255,7 +249,7 @@ function SampleRow({
             <p className="mt-1 text-[12.5px] text-muted-foreground">
               Adds{" "}
               {missing
-                .map((m) => capitalise(m.row?.name ?? m.package))
+                .map((m) => packageDisplayName(m.row?.name ?? m.package))
                 .join(", ")}{" "}
               first, which it needs.
             </p>

@@ -15,7 +15,7 @@ import {
   TOOL_FUNCTION_FIELD,
   valueIdentity,
 } from "@/lib/agent-grants"
-import { displayName, displayPlural } from "@/lib/kind-names"
+import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import { splitRecordPath } from "@/lib/record-path"
 
 /** The `ask` host function: it writes nothing but a question, so it carries no
@@ -287,7 +287,7 @@ export function toolSummary(
       let words = "Looked things up"
       if (q) words = `Searched for “${q}”`
       else if (typeof args.kind === "string" && typeof args.id === "string")
-        words = `Looked up one ${displayName(args.kind).toLowerCase()}`
+        words = `Looked up one ${lowerFirst(displayName(args.kind))}`
       else if (kinds.length)
         words = `Looked through your ${joinWords(kinds.map((k) => displayPlural(k)))}`
       const found = parseJSON(call.output).records
@@ -300,7 +300,7 @@ export function toolSummary(
       return "Suggested a change"
     case HOST_FUNCTION_WRITE: {
       const kind = typeof args.kind === "string" ? args.kind : ""
-      const what = kind ? displayName(kind).toLowerCase() : "record"
+      const what = kind ? lowerFirst(displayName(kind)) : "record"
       if (args.op === "put" || args.op === "create") return `Saved a ${what}`
       if (args.op === "delete") return `Deleted a ${what}`
       return kind ? `Changed a ${what}` : "Made a change"

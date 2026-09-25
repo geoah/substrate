@@ -24,7 +24,7 @@ import {
   propertyLabel,
   type HistoryEntry,
 } from "@/lib/history"
-import { displayName, displayPlural } from "@/lib/kind-names"
+import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import { cn } from "@/lib/utils"
 
 function collectionLink(kind: string) {
@@ -48,7 +48,7 @@ function EntryObject({
     count === 1 ? displayName(entry.kind) : displayPlural(entry.kind)
   const { authority, pkg, name } = collectionLink(entry.kind)
   // A run cut by the page may go on in older rows: its count is a floor.
-  const label = `${count}${openEnded ? "+" : ""} ${words.toLowerCase()}`
+  const label = `${count}${openEnded ? "+" : ""} ${lowerFirst(words)}`
   if (!authority || !pkg || !name) return <span>{label}</span>
   return (
     <Link

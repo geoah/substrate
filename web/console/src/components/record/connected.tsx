@@ -27,7 +27,7 @@ import {
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { kindByIdentity, temporalProperties } from "@/lib/definition"
 import { recordTitle } from "@/lib/format"
-import { displayName, displayPlural } from "@/lib/kind-names"
+import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import { humanizeName, propSpecsByName } from "@/lib/record-schema"
 import {
   GROUP_FOLD,
@@ -259,7 +259,7 @@ export function ConnectedSection({
       {outgoing.length > 0 && (
         <>
           <div className="mt-1.5 -mb-1 text-[11.5px] font-medium text-faint">
-            This {displayName(record.kind).toLowerCase()} points to
+            This {lowerFirst(displayName(record.kind))} points to
           </div>
           <div className="overflow-hidden rounded-[10px] border">
             {outgoing.map((o) => (

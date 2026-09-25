@@ -60,6 +60,7 @@ import {
 } from "@/lib/bundles"
 import { bundleParams, firstSentence } from "@/lib/providers"
 import { cn } from "@/lib/utils"
+import { packageDisplayName } from "@/lib/kind-names"
 
 export function ProvidersPage() {
   const [technical] = useTechnicalDetails()
@@ -201,10 +202,6 @@ function tierWord(row: BundleRow): string {
   return "Applied directly"
 }
 
-function capitalise(text: string): string {
-  return text ? text[0].toUpperCase() + text.slice(1) : text
-}
-
 function OtherPackages({
   rows,
   chains,
@@ -267,7 +264,9 @@ function OtherPackages({
       )}
       <LossyUpgradeDialog
         row={rows.find((r) => r.id === lossyID)}
-        name={capitalise(rows.find((r) => r.id === lossyID)?.package ?? "")}
+        name={packageDisplayName(
+          rows.find((r) => r.id === lossyID)?.package ?? ""
+        )}
         onClose={closeLoss}
       />
     </section>
@@ -286,7 +285,7 @@ function OtherPackageRow({
   const status = row.status!
   const state = STATE_WORDS[bundleState(status)]
   const setup = setupCount(status)
-  const name = capitalise(row.package || row.name)
+  const name = packageDisplayName(row.package || row.name)
   return (
     <tr
       data-slot="other-package"

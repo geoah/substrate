@@ -75,7 +75,7 @@ describe("collectionGroups", () => {
   })
 
   it("names a few hidden kinds for the note under a group", () => {
-    expect(hiddenExamples(groups[1])).toBe("email addresses and gmail labels")
+    expect(hiddenExamples(groups[1])).toBe("email addresses and Gmail labels")
   })
 })
 

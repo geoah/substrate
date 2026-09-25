@@ -38,7 +38,7 @@ import { searchQueryOptions } from "@/lib/api/records"
 import type { KindInfo, Scores, SubstrateRecord } from "@/lib/api/types"
 import { collectionGroups } from "@/lib/collections"
 import { recordTitle } from "@/lib/format"
-import { displayPlural } from "@/lib/kind-names"
+import { displayPlural, lowerFirst } from "@/lib/kind-names"
 import {
   SEARCH_GRAMMAR,
   SEARCH_MODE_DESCRIPTION,
@@ -160,7 +160,7 @@ export function SearchPage() {
         ) : results.data.records.length === 0 ? (
           <p className="py-8 text-muted-foreground">
             Nothing{" "}
-            {narrowed ? `in ${displayPlural(narrowed).toLowerCase()} ` : ""}
+            {narrowed ? `in ${lowerFirst(displayPlural(narrowed))} ` : ""}
             matches “{words}” by {SEARCH_MODE_LABEL[mode].toLowerCase()}.
           </p>
         ) : (

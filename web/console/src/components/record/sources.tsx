@@ -24,7 +24,7 @@ import {
   type KindInfo,
   type SubstrateRecord,
 } from "@/lib/api/types"
-import { displayName } from "@/lib/kind-names"
+import { displayName, lowerFirst } from "@/lib/kind-names"
 import {
   groupSources,
   holderOf,
@@ -216,7 +216,7 @@ export function MergedSection({ record }: { record: SubstrateRecord }) {
   const unmatched = former.filter(
     (id) => !rows.some((m) => loserOf(m) === recordPath(record.kind, id))
   )
-  const noun = displayName(record.kind).toLowerCase()
+  const noun = lowerFirst(displayName(record.kind))
   return (
     <div data-slot="merged" className="flex flex-col gap-3">
       {rows.map((merge) => (
@@ -265,7 +265,7 @@ function MergedRow({
   )
   const mergeKind = `${CORE_PACKAGE}/recordmerge`
   const requestKind = `${CORE_PACKAGE}/recordmergerequest`
-  const noun = displayName(record.kind).toLowerCase()
+  const noun = lowerFirst(displayName(record.kind))
   return (
     <div
       data-slot="merge"

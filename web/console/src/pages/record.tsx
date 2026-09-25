@@ -42,7 +42,7 @@ import {
 } from "@/lib/api/records"
 import { ApiError, type KindInfo, type SubstrateRecord } from "@/lib/api/types"
 import { kindByCollection } from "@/lib/definition"
-import { displayName } from "@/lib/kind-names"
+import { displayName, lowerFirst } from "@/lib/kind-names"
 import { linkTargetsOf, manifestYAML } from "@/lib/manifest"
 import { SYNC_TRAIT_IDENTITY, kindHasTrait } from "@/lib/sync"
 import { keyDocsOf } from "@/lib/yaml-annotations"
@@ -134,7 +134,7 @@ export function RecordDocument({
     [record, kind, readOnly]
   )
   const syncable = kindHasTrait(kind, SYNC_TRAIT_IDENTITY)
-  const noun = displayName(kind ?? record.kind).toLowerCase()
+  const noun = lowerFirst(displayName(kind ?? record.kind))
 
   return (
     <DocPage>

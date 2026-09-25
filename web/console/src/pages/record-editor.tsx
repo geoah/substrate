@@ -81,7 +81,7 @@ import {
   type Problem,
 } from "@/lib/record-yaml"
 import { kindByCollection } from "@/lib/definition"
-import { displayName } from "@/lib/kind-names"
+import { displayName, lowerFirst } from "@/lib/kind-names"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { cn } from "@/lib/utils"
 import { recordEditRoute, recordNewRoute } from "@/router"
@@ -322,7 +322,7 @@ export function RecordEditorForm({
   const canSave = errorCount === 0 && !mutation.isPending
 
   if (mode === "create") {
-    const noun = displayName(kind).toLowerCase()
+    const noun = lowerFirst(displayName(kind))
     return (
       <DocPage>
         <div className="flex items-start justify-between gap-3">
@@ -432,7 +432,7 @@ export function RecordEditorForm({
       <div className="flex shrink-0 items-start justify-between gap-3 px-6 pt-5 pb-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight break-words">
-            Edit {displayName(kind).toLowerCase()}
+            Edit {lowerFirst(displayName(kind))}
           </h1>
           <p className="data text-xs text-muted-foreground">
             {mode === "edit" && record

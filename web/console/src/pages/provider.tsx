@@ -84,6 +84,7 @@ import { currentStep } from "@/lib/providers"
 import { groupSettings, type SettingField } from "@/lib/settings"
 import { cn } from "@/lib/utils"
 import { providerRoute } from "@/router"
+import { packageDisplayName } from "@/lib/kind-names"
 
 export function ProviderPage() {
   const { authority, pkg } = providerRoute.useParams()
@@ -340,7 +341,7 @@ function PackageDoc({
 }) {
   const [technical] = useTechnicalDetails()
   const status = row.status!
-  const name = capitalise(row.package || row.name)
+  const name = packageDisplayName(row.package || row.name)
   const lossy = useLossy()
   const state = bundleState(status)
   return (
@@ -635,10 +636,6 @@ function Callout({
       <div className="min-w-0 space-y-0.5">{children}</div>
     </div>
   )
-}
-
-function capitalise(text: string): string {
-  return text ? text[0].toUpperCase() + text.slice(1) : text
 }
 
 function ProviderSkeleton() {

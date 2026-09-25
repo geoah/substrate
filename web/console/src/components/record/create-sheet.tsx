@@ -17,7 +17,7 @@ import {
   PACKAGE_PROPERTY,
   declarationIdShape,
 } from "@/lib/declarations"
-import { displayPlural, untitled } from "@/lib/kind-names"
+import { displayPlural, lowerFirst, untitled } from "@/lib/kind-names"
 import { fieldOf, type FormField, type FormValue } from "@/lib/record-form"
 import { bodyProperty, systemSpecs, titleProperty } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
@@ -228,7 +228,7 @@ export function CreateSheet({
                 />
                 {field.control === "state" && (
                   <span className="text-xs text-faint">
-                    New {displayPlural(kind).toLowerCase()} start here.
+                    New {lowerFirst(displayPlural(kind))} start here.
                   </span>
                 )}
               </div>

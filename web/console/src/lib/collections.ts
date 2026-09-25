@@ -9,7 +9,7 @@ import { providerOfKind, type ProviderInfo } from "@/lib/actor-identity"
 import { CORE_AUTHORITY, splitKind } from "@/lib/api/http"
 import type { KindInfo } from "@/lib/api/types"
 import { kindPurpose } from "@/lib/definition"
-import { displayPlural } from "@/lib/kind-names"
+import { displayPlural, lowerFirst } from "@/lib/kind-names"
 
 export type CollectionGroupKind = "yours" | "provider" | "system"
 
@@ -178,7 +178,7 @@ export function hiddenExamples(g: CollectionGroup, count = 2): string {
     ...g.hidden.filter((k) => kindPurpose(k) !== "supporting"),
   ]
     .slice(0, count)
-    .map((k) => displayPlural(k).toLowerCase())
+    .map((k) => lowerFirst(displayPlural(k)))
   if (names.length <= 1) return names[0] ?? ""
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
 }

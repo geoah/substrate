@@ -4,6 +4,7 @@
  * and technical mode shows it inline. */
 
 import { CORE_PACKAGE } from "@/lib/api/http"
+import { packageDisplayName } from "@/lib/kind-names"
 
 /** The authority shipped providers publish under. */
 export const PROVIDERS_AUTHORITY = "providers.substrate.reamde.dev"
@@ -33,7 +34,7 @@ function capitalise(text: string): string {
 
 export function providerInfo(key: string): ProviderInfo {
   const brand = BRANDS[key]
-  const name = brand?.name ?? capitalise(key)
+  const name = brand?.name ?? packageDisplayName(key)
   return {
     key,
     name,

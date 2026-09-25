@@ -13,7 +13,7 @@ import {
 import { changedProperties } from "@/lib/changelog"
 import { declaredReferences } from "@/lib/definition"
 import { recordTitle } from "@/lib/format"
-import { displayName } from "@/lib/kind-names"
+import { displayName, lowerFirst } from "@/lib/kind-names"
 import { splitRecordPath } from "@/lib/record-path"
 import { humanizeName, propSpecsByName } from "@/lib/record-schema"
 
@@ -103,7 +103,7 @@ export function changeSentence(
   row: ChangeRow,
   record: SubstrateRecord
 ): string {
-  const noun = displayName(record.kind).toLowerCase()
+  const noun = lowerFirst(displayName(record.kind))
   const winner = String(row.payload?.winner ?? "")
   const loser = String(row.payload?.loser ?? "")
   switch (row.op) {

@@ -50,7 +50,7 @@ import {
   type Verdict,
 } from "@/lib/changerequests"
 import { kindByIdentity } from "@/lib/definition"
-import { displayName, displayPlural } from "@/lib/kind-names"
+import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import { splitRecordPath } from "@/lib/record-path"
 
 const CARD =
@@ -212,7 +212,7 @@ export function ProposalCard({ id }: { id: string }) {
         {op === "create" ? (
           <>
             <span>
-              New {target ? displayName(target.kind).toLowerCase() : "record"}
+              New {target ? lowerFirst(displayName(target.kind)) : "record"}
             </span>
             {heading && <span className="font-semibold">{heading.text}</span>}
           </>
@@ -310,7 +310,7 @@ export function ProposalCard({ id }: { id: string }) {
             <AgentMark id={proposer} size="xs" />
             <span className="text-foreground">{agentName(proposer)}</span>
             may {op === "delete" ? "delete" : "change"}{" "}
-            {displayPlural(target.kind).toLowerCase()} without asking you first.
+            {lowerFirst(displayPlural(target.kind))} without asking you first.
           </p>
           {technical && (
             <pre className="overflow-x-auto rounded-md bg-background p-2 font-mono text-[11px]">

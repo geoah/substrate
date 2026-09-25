@@ -4,6 +4,8 @@ import type { KindInfo } from "@/lib/api/types"
 import {
   displayName,
   displayPlural,
+  lowerFirst,
+  packageDisplayName,
   pluralWord,
   splitWords,
   untitled,
@@ -50,6 +52,34 @@ describe("kind display names", () => {
     expect(displayPlural(name)).toBe(plural)
   })
 
+  it.each([
+    ["apikey", "API key", "API keys"],
+    ["llmprovider", "LLM provider", "LLM providers"],
+    ["oauthclient", "OAuth client", "OAuth clients"],
+    ["weburl", "Web URL", "Web URLs"],
+    ["htmlpage", "HTML page", "HTML pages"],
+    ["userid", "User ID", "User IDs"],
+  ])("reads acronyms in capitals: %s → %s / %s", (name, one, many) => {
+    expect(displayName(name)).toBe(one)
+    expect(displayPlural(name)).toBe(many)
+  })
+
+  it("names a package by its word, acronyms in capitals", () => {
+    expect(packageDisplayName("llm")).toBe("LLM")
+    expect(packageDisplayName("tasks")).toBe("Tasks")
+    expect(packageDisplayName("google")).toBe("Google")
+    expect(packageDisplayName("oauth")).toBe("OAuth")
+    expect(packageDisplayName("github")).toBe("GitHub")
+  })
+
+  it("lowers a display name for a sentence, keeping acronyms and brands", () => {
+    expect(lowerFirst("Calendar events")).toBe("calendar events")
+    expect(lowerFirst("API keys")).toBe("API keys")
+    expect(lowerFirst("LLM providers")).toBe("LLM providers")
+    expect(lowerFirst("Gmail threads")).toBe("Gmail threads")
+    expect(lowerFirst("OAuth client")).toBe("OAuth client")
+  })
+
   it("reads the name off a full kind reference", () => {
     expect(displayPlural("samples.substrate.reamde.dev/people/person")).toBe(
       "People"
@@ -93,7 +123,7 @@ describe("kind display names", () => {
       "Untitled person"
     )
     expect(untitled("providers.substrate.reamde.dev/google/gmailthread")).toBe(
-      "Untitled gmail thread"
+      "Untitled Gmail thread"
     )
   })
 })

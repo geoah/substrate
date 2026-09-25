@@ -17,6 +17,7 @@ const WORDS = new Set([
   "actor",
   "address",
   "agent",
+  "api",
   "app",
   "attachment",
   "authority",
@@ -27,6 +28,7 @@ const WORDS = new Set([
   "bundle",
   "calendar",
   "chat",
+  "client",
   "code",
   "comment",
   "conduct",
@@ -47,6 +49,8 @@ const WORDS = new Set([
   "function",
   "gmail",
   "group",
+  "html",
+  "id",
   "instruction",
   "interaction",
   "issue",
@@ -56,12 +60,14 @@ const WORDS = new Set([
   "label",
   "license",
   "list",
+  "llm",
   "log",
   "mapping",
   "merge",
   "message",
   "milestone",
   "note",
+  "oauth",
   "occurrence",
   "of",
   "organization",
@@ -102,11 +108,45 @@ const WORDS = new Set([
   "transcript",
   "trigger",
   "type",
+  "url",
   "user",
   "web",
   "workflow",
   "workout",
 ])
+
+/** Words that read in capitals wherever a name is shown: "LLM", not "Llm".
+ * The one table every display name reads — kind names here, package and
+ * provider words through `packageDisplayName`. */
+export const ACRONYMS: Readonly<Record<string, string>> = {
+  api: "API",
+  html: "HTML",
+  id: "ID",
+  json: "JSON",
+  llm: "LLM",
+  oauth: "OAuth",
+  url: "URL",
+}
+
+/** Names that keep their own casing mid-sentence. */
+const PROPER: Readonly<Record<string, string>> = {
+  github: "GitHub",
+  gmail: "Gmail",
+}
+
+/** One lowercase word as it is displayed: an acronym in its capitals, any
+ * other word as it came. */
+export function displayWord(word: string): string {
+  const lower = word.toLowerCase()
+  return ACRONYMS[lower] ?? PROPER[lower] ?? word
+}
+
+/** A package's (or a provider's) own word as a heading: "Tasks", "LLM",
+ * "Google". A compound word splits as a kind name does. */
+export function packageDisplayName(pkg: string): string {
+  const parts = splitWords(pkg) ?? [pkg]
+  return capitalise(parts.map(displayWord).join(" "))
+}
 
 const LONGEST = Math.max(...[...WORDS].map((w) => w.length))
 
@@ -169,7 +209,7 @@ function nameOf(kind: KindInfo | string): string {
 
 function words(kind: KindInfo | string): string[] {
   const name = nameOf(kind)
-  return splitWords(name) ?? [name]
+  return (splitWords(name) ?? [name]).map(displayWord)
 }
 
 /** "Calendar event series", "Gmail thread", "Person". */
@@ -189,8 +229,19 @@ export function displayPlural(kind: KindInfo | string): string {
 }
 
 /** What a record with no title is called: "Untitled person",
- * "Untitled gmail thread". Never its id. */
+ * "Untitled gmail thread", "Untitled API key". Never its id. */
 export function untitled(kind: KindInfo | string): string {
-  const name = displayName(kind)
-  return `Untitled ${name.charAt(0).toLowerCase()}${name.slice(1)}`
+  return `Untitled ${lowerFirst(displayName(kind))}`
+}
+
+/** A display name inside a sentence: the first letter down unless the first
+ * word keeps its casing ("Calendar events" → "calendar events"; "API keys"
+ * and "Gmail threads" stay). */
+export function lowerFirst(name: string): string {
+  const first = name.split(" ")[0]
+  const proper = Object.values(PROPER).some(
+    (p) => first === p || first === pluralWord(p)
+  )
+  if (proper || /[A-Z]/.test(first.slice(1))) return name
+  return name.charAt(0).toLowerCase() + name.slice(1)
 }

@@ -25,7 +25,12 @@ import { kindsQueryOptions } from "@/lib/api/kinds"
 import { MR_NAME } from "@/lib/api/mergerequests"
 import { collectionSource } from "@/lib/collections"
 import { kindByIdentity } from "@/lib/definition"
-import { displayName, displayPlural, untitled } from "@/lib/kind-names"
+import {
+  displayName,
+  displayPlural,
+  lowerFirst,
+  untitled,
+} from "@/lib/kind-names"
 import { recordTitleQueryOptions } from "@/lib/reference-titles"
 import { cn } from "@/lib/utils"
 
@@ -206,7 +211,7 @@ export function crumbsFor(pathname: string, technical = false): Crumb[] {
       if (!id) return crumbs
       const kind = joinKind(authority, pkg, name)
       if (id === "new") {
-        return [...crumbs, { label: `New ${displayName(kind).toLowerCase()}` }]
+        return [...crumbs, { label: `New ${lowerFirst(displayName(kind))}` }]
       }
       crumbs.push({
         label: technical ? id : untitled(kind),

@@ -92,7 +92,7 @@ import {
   toRecordFilter,
 } from "@/lib/filters"
 import { emptyColumnIds, propertyLabel } from "@/lib/grid-values"
-import { displayName, displayPlural } from "@/lib/kind-names"
+import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import { nestingProperty, rootsFilter } from "@/lib/record-tree"
 import { titlesFromIncluded } from "@/lib/reference-titles"
 import { cn } from "@/lib/utils"
@@ -126,7 +126,7 @@ function parseSort(sort: string): SortingState {
 /** What a nested row's children are called: "subtasks" for tasks, "nested
  * calendar events" where the plural is more than a word. */
 function childNoun(kind: KindInfo): string {
-  const plural = displayPlural(kind).toLowerCase()
+  const plural = lowerFirst(displayPlural(kind))
   return plural.includes(" ") ? `nested ${plural}` : `sub${plural}`
 }
 
