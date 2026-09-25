@@ -33,7 +33,7 @@ import type {
 
 const navigate = vi.fn().mockResolvedValue(undefined)
 let params = { authority: "providers.substrate.reamde.dev", pkg: "google" }
-let search: { account?: string } = {}
+let search: { account?: string; connected?: string; error?: string } = {}
 
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => navigate,
@@ -646,6 +646,17 @@ describe("ProviderPage", () => {
       )
       await waitFor(() => expect(calls("DELETE").length).toBe(1))
       expect(calls("DELETE")[0].url).toBe(`/api/v1/${ACCOUNT}/george-home`)
+    })
+
+    it("says the account the address names was connected", async () => {
+      search = {
+        account: "george-home",
+        connected: `${ACCOUNT}/george-home`,
+      }
+      renderPage(<ProviderPage />)
+      const note = await screen.findByRole("status")
+      expect(note.textContent).toContain("Account connected")
+      expect(note.textContent).toContain("george-home")
     })
 
     it("highlights the account the address names", async () => {

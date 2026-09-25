@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Link } from "@tanstack/react-router"
+import { Link, useNavigate } from "@tanstack/react-router"
 import {
   CheckIcon,
   PackageIcon,
@@ -36,6 +36,7 @@ import {
   UpgradeButton,
 } from "@/components/providers/bundle-actions"
 import { ConnectionDetails } from "@/components/providers/connection-details"
+import { OAuthReturnNote } from "@/components/providers/oauth-return-note"
 import {
   BringsIn,
   ProviderTools,
@@ -88,8 +89,24 @@ import { packageDisplayName } from "@/lib/kind-names"
 
 export function ProviderPage() {
   const { authority, pkg } = providerRoute.useParams()
-  const { account } = providerRoute.useSearch()
+  const { account, connected, error } = providerRoute.useSearch()
+  const navigate = useNavigate()
   const id = `${authority}/${pkg}`
+  const oauthReturn = (
+    <OAuthReturnNote
+      connected={connected}
+      error={error}
+      className="mt-6"
+      onDismiss={() =>
+        void navigate({
+          to: "/providers/$authority/$pkg",
+          params: { authority, pkg },
+          search: { account },
+          replace: true,
+        })
+      }
+    />
+  )
   const data = useProviders()
   const settings = useQuery(settingRecordsQueryOptions)
   const settingFields = useMemo(
@@ -165,6 +182,7 @@ export function ProviderPage() {
       data={data}
       settingFields={settingFields}
       highlight={account}
+      notice={oauthReturn}
     />
   ) : (
     <PackageDoc row={row} data={data} settingFields={settingFields} />
@@ -185,11 +203,14 @@ function ProviderDoc({
   data,
   settingFields,
   highlight,
+  notice,
 }: {
   entry: ProviderEntry
   data: ProvidersData
   settingFields: SettingField[]
   highlight?: string
+  /** What an account's connect came back with, above everything else. */
+  notice?: React.ReactNode
 }) {
   const [technical] = useTechnicalDetails()
   const { row, info, view, standing, steps } = entry
@@ -239,6 +260,7 @@ function ProviderDoc({
         onClose={lossy.close}
       />
 
+      {notice}
       {status?.quarantined && (
         <Callout className="mt-6">
           <p className="font-medium">{info.name} failed to load.</p>

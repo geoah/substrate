@@ -15,11 +15,12 @@ import {
 /** What a route's beforeLoad redirects to. */
 function target(
   route: { options: { beforeLoad?: unknown } },
-  params: Record<string, string> = {}
+  params: Record<string, string> = {},
+  search: Record<string, unknown> = {}
 ): unknown {
   const beforeLoad = route.options.beforeLoad as (ctx: unknown) => void
   try {
-    beforeLoad({ params })
+    beforeLoad({ params, search, location: { search } })
   } catch (thrown) {
     const r = thrown as { options?: Record<string, unknown> }
     const { to, params: p, search, hash } = r.options ?? {}
@@ -32,6 +33,39 @@ describe("the retired provider addresses", () => {
   it("sends the registry and connections lists to Providers", () => {
     expect(target(registryRoute)).toMatchObject({ to: "/providers" })
     expect(target(connectionsRoute)).toMatchObject({ to: "/providers" })
+  })
+
+  it("carries an OAuth return to the connected account's provider page", () => {
+    // The substrate's return page falls back to `/registry?connected=`.
+    expect(
+      target(
+        registryRoute,
+        {},
+        {
+          connected:
+            "providers.substrate.reamde.dev/google/account/george-work",
+        }
+      )
+    ).toMatchObject({
+      to: "/providers/$authority/$pkg",
+      params: { authority: "providers.substrate.reamde.dev", pkg: "google" },
+      search: {
+        account: "george-work",
+        connected: "providers.substrate.reamde.dev/google/account/george-work",
+      },
+    })
+  })
+
+  it("carries an OAuth failure, or an account it cannot place, to Providers", () => {
+    // A digit-only correlation arrives parsed as a number.
+    expect(target(registryRoute, {}, { error: 4812 })).toEqual({
+      to: "/providers",
+      search: { error: "4812" },
+    })
+    expect(target(registryRoute, {}, { connected: "george-work" })).toEqual({
+      to: "/providers",
+      search: { connected: "george-work" },
+    })
   })
 
   it("sends a bundle to its provider page, and a shipped sample to All data", () => {

@@ -49,6 +49,11 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }))
 
+let search: { connected?: string; error?: string } = {}
+vi.mock("@/router", () => ({
+  providersRoute: { useSearch: () => search },
+}))
+
 import { ProvidersPage } from "./providers"
 
 const CATALOG_PATH = "/api/v1/catalog"
@@ -366,6 +371,19 @@ describe("ProvidersPage", () => {
     expect(
       await screen.findByText(/Services that bring your data in/)
     ).toBeTruthy()
+  })
+
+  it("says how an account's connect came back when it lands here", async () => {
+    search = { error: "c-4812" }
+    renderPage(<ProvidersPage />)
+    const note = await screen.findByRole("status")
+    expect(note.textContent).toContain("Connecting the account failed")
+    expect(note.textContent).toContain("c-4812")
+    fireEvent.click(within(note).getByRole("button", { name: "Dismiss" }))
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "/providers", search: {} })
+    )
+    search = {}
   })
 
   it("shows one card per provider, never a sample", async () => {

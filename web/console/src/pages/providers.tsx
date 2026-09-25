@@ -11,12 +11,13 @@
  * removal, so nothing the old Registry listed is out of reach. */
 
 import { useCallback, useState } from "react"
-import { Link } from "@tanstack/react-router"
+import { Link, useNavigate } from "@tanstack/react-router"
 import { SearchXIcon, TriangleAlertIcon } from "lucide-react"
 
 import { IdText } from "@/components/identity/id-text"
 import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
+import { OAuthReturnNote } from "@/components/providers/oauth-return-note"
 import {
   LossyUpgradeDialog,
   PendingUpgradeNotice,
@@ -61,16 +62,27 @@ import {
 import { bundleParams, firstSentence } from "@/lib/providers"
 import { cn } from "@/lib/utils"
 import { packageDisplayName } from "@/lib/kind-names"
+import { providersRoute } from "@/router"
 
 export function ProvidersPage() {
   const [technical] = useTechnicalDetails()
   const data = useProviders()
+  const { connected, error } = providersRoute.useSearch()
+  const navigate = useNavigate()
 
   return (
     <TablePage>
       <PageHeader
         title="Providers"
         description="Services that bring your data in and keep it up to date. What they bring in is a copy: you can read it, link to it and let agents use it."
+      />
+      <OAuthReturnNote
+        connected={connected}
+        error={error}
+        className="mt-6"
+        onDismiss={() =>
+          void navigate({ to: "/providers", search: {}, replace: true })
+        }
       />
       {data.error ? (
         <Empty className="mt-6 rounded-[10px] border py-10">

@@ -27,6 +27,11 @@ import { HistoryPage } from "@/pages/history"
 import { ToolsPage } from "@/pages/tools"
 import { ToolPage } from "@/pages/tool"
 import { ProvidersPage } from "@/pages/providers"
+import {
+  oauthReturnRedirect,
+  oauthReturnSearch,
+  type OAuthReturnSearch,
+} from "@/lib/oauth-return"
 import { ProviderPage } from "@/pages/provider"
 import { ConsoleSettingsPage } from "@/pages/console-settings"
 
@@ -100,11 +105,16 @@ export const changelogRoute = createRoute({
 
 // The Registry, Connections and bundle Settings pages became Providers; their
 // old addresses still land somewhere true.
+// It is also where the substrate's OAuth return page falls back to
+// (`?connected=` / `?error=`), so the result travels on with the redirect.
 export const registryRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/registry",
-  beforeLoad: () => {
-    throw redirect({ to: "/providers" })
+  beforeLoad: ({ location }) => {
+    throw redirect({
+      ...oauthReturnRedirect(location.search as Record<string, unknown>),
+      replace: true,
+    })
   },
 })
 
@@ -317,6 +327,8 @@ export const toolRoute = createRoute({
 export const providersRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/providers",
+  validateSearch: (search: Record<string, unknown>): OAuthReturnSearch =>
+    oauthReturnSearch(search),
   component: ProvidersPage,
 })
 
@@ -325,11 +337,14 @@ export const providersRoute = createRoute({
 export const providerRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/providers/$authority/$pkg",
-  validateSearch: (search: Record<string, unknown>): { account?: string } => ({
+  validateSearch: (
+    search: Record<string, unknown>
+  ): OAuthReturnSearch & { account?: string } => ({
     account:
       typeof search.account === "string" && search.account
         ? search.account
         : undefined,
+    ...oauthReturnSearch(search),
   }),
   component: ProviderPage,
 })
