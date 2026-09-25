@@ -63,7 +63,10 @@ export function ActorPage() {
   )
   const table = technical && layout === "table"
   const identity = actorIdentity(actorId)
-  const feed = useHistoryFeed({ actors: [actorId] }, { enabled: !table })
+  const feed = useHistoryFeed(
+    { actors: [actorId] },
+    { enabled: !table, values: true }
+  )
   const title =
     identity.cls === "agent"
       ? `${identity.name} agent`

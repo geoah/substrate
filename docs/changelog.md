@@ -139,9 +139,9 @@ any merge or split naming it) to the last one that set or cleared the
 property, stopping at the record's creation. The walk checks the record's
 versions run unbroken. Where it cannot answer (a gap in them, an entry written
 before entries held values, a history with no creation, or a previous write
-more than 1024 of the record's entries back) the property carries
-`"beforeUnknown": true` and no `before`, which is not the same as "there was
-none"
+further back than the read's budget of 4096 earlier entries, which every
+record on the page shares) the property carries `"beforeUnknown": true` and
+no `before`, which is not the same as "there was none"
 ([decision 0106](decisions/0106-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md)).
 The walk costs a read per record on the page, so a client that does not ask
 pays nothing and gets the same rows without `properties`. Every mode of

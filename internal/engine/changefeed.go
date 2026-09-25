@@ -93,7 +93,7 @@ func (ds *dataset) buildChangeFilter(b *builder, f substrate.ChangeFilter) error
 		// The match is the addressed pair only: the winner's later writes do
 		// not follow a former id here, and the entry count is unchanged.
 		//
-		// Three flat arms, each with an index: changelog_record_idx for the
+		// Three flat arms, each with an index: changelog_record_seq_idx for the
 		// first, the partial changelog_pair_idx for the other two, whose WHERE
 		// the op test must repeat as a LITERAL. Bound as a parameter, a generic
 		// plan could not prove the partial index applicable and would walk the

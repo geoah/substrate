@@ -96,6 +96,7 @@ export function HistoryPage() {
     enabled: ready && !nobody && !table,
     keep,
     fill: 30,
+    values: true,
   })
 
   return (

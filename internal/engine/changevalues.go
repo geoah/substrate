@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"database/sql"
 	"sort"
 	"strings"
 
@@ -22,15 +23,16 @@ import (
 // (no value before it), and a before it cannot derive reads BeforeUnknown,
 // never a guess: history written before entries carried values, a gap in the
 // record's version sequence (an effect on the record rode an entry the walk
-// does not find by the record's id), or a record whose previous write lies
-// further back than the budget.
+// does not find by the record's id), or a previous write further back than
+// the request's budget.
 
 const (
 	// valuesBatch is how many earlier entries one round reads per record.
 	valuesBatch = 64
-	// valuesBudget is how many earlier entries a record's walk reads in all
-	// before the befores it still owes read unknown.
-	valuesBudget = 1024
+	// valuesBudget is how many earlier entries one request reads in all,
+	// shared by every record's walk: a page of many records costs what a
+	// page of one does. What is still owed when it runs out reads unknown.
+	valuesBudget = 4096
 )
 
 // valueAt is one property's value after an entry: present=false is cleared.
@@ -196,16 +198,20 @@ type recordWalk struct {
 	next     int
 	// pending holds the befores owed by reached requests, by property name.
 	pending map[string][]*substrate.PropertyChange
-	// page holds the page's own rows that touch the record, by seq: an
-	// effect can ride an entry addressed to another record, which the
-	// record's own walk would not find.
-	page map[int64][]foldOp
+	// known holds, by seq, the entries the walk has without reading them by
+	// the record's id: the page's own rows that touch the record (an effect
+	// can ride an entry addressed to another record) and every merge or split
+	// naming it, which one statement per request reads for every walk.
+	known map[int64]earlierEntry
 	// below is where the next round reads under; expect the version the next
 	// older effect on the record must have reached, 0 when unknown.
 	below  int64
 	expect int64
-	read   int
 	done   bool
+}
+
+func newRecordWalk(ref eref, ty *vocabulary.Kind) *recordWalk {
+	return &recordWalk{ref: ref, ty: ty, pending: map[string][]*substrate.PropertyChange{}, known: map[int64]earlierEntry{}}
 }
 
 // deriveValues fills Properties on every affected record of changes whose
@@ -243,7 +249,7 @@ func (ds *dataset) deriveValues(ctx context.Context, changes []substrate.Change,
 			}
 			w := walks[ref]
 			if w == nil {
-				w = &recordWalk{ref: ref, ty: ty, pending: map[string][]*substrate.PropertyChange{}, page: map[int64][]foldOp{}}
+				w = newRecordWalk(ref, ty)
 				walks[ref] = w
 				order = append(order, w)
 			}
@@ -260,15 +266,29 @@ func (ds *dataset) deriveValues(ctx context.Context, changes []substrate.Change,
 	for i := range changes {
 		for _, w := range order {
 			if composeRecordChange(w.ty, effects[i], w.ref).touched {
-				w.page[changes[i].Seq] = effects[i]
+				w.known[changes[i].Seq] = earlierEntry{seq: changes[i].Seq, ops: effects[i], fromPage: true}
 			}
 		}
 	}
+	top := int64(0)
 	for _, w := range order {
 		// Newest first, whichever direction the page was read in.
 		sort.Slice(w.requests, func(a, b int) bool { return w.requests[a].seq > w.requests[b].seq })
 		w.below = w.requests[0].seq + 1
+		top = max(top, w.below)
 	}
+	spent, err := ds.readPairs(ctx, order, top)
+	if err != nil {
+		return err
+	}
+	return runWalks(order, valuesBudget-spent, func(active []*recordWalk, limit int) ([][]earlierEntry, error) {
+		return ds.walkRound(ctx, active, limit)
+	})
+}
+
+// runWalks steps every walk through the rounds read returns until each is
+// done or the budget, shared by all of them, is spent.
+func runWalks(order []*recordWalk, budget int, read func(active []*recordWalk, limit int) ([][]earlierEntry, error)) error {
 	for {
 		var active []*recordWalk
 		for _, w := range order {
@@ -279,8 +299,22 @@ func (ds *dataset) deriveValues(ctx context.Context, changes []substrate.Change,
 		if len(active) == 0 {
 			return nil
 		}
-		if err := ds.walkRound(ctx, active); err != nil {
+		// Each active walk reads its share of what is left, never more than a
+		// batch; a share under one entry is a spent budget.
+		limit := min(valuesBatch, budget/len(active))
+		if limit < 1 {
+			for _, w := range active {
+				w.giveUp()
+			}
+			return nil
+		}
+		batches, err := read(active, limit)
+		if err != nil {
 			return err
+		}
+		for i, w := range active {
+			budget -= len(batches[i])
+			w.step(batches[i], limit)
 		}
 	}
 }
@@ -293,90 +327,144 @@ type earlierEntry struct {
 	fromPage bool
 }
 
-// walkRound reads the next batch of earlier entries for every active walk in
-// one statement and steps each walk through its own.
-func (ds *dataset) walkRound(ctx context.Context, active []*recordWalk) error {
+// earlierOf decodes one changelog row a walk read back.
+func (w *recordWalk) earlierOf(seq int64, recordID, kind string, raw []byte) earlierEntry {
+	e := earlierEntry{seq: seq}
+	payload, err := decodeNumberPreserving(raw)
+	if err == nil {
+		e.ops, err = foldOpsOf(substrate.Change{Seq: seq, Payload: payload})
+	}
+	if err != nil {
+		e.opaque = true
+	}
+	// An entry that names properties and carries no effects was written
+	// before entries held values: what it set is not in the changelog.
+	if _, named := payload["properties"]; named && e.ops == nil && recordID == w.ref.ID && kind == w.ref.Kind {
+		e.opaque = true
+	}
+	return e
+}
+
+// pairOp is the op test the pair reads spell as a literal, so the partial
+// changelog_pair_idx applies: bound as a parameter, a generic plan could not
+// prove the partial index applicable and would walk the changelog.
+var pairOp = `op IN ('` + string(substrate.OpMerge) + `', '` + string(substrate.OpSplit) + `')`
+
+// readPairs gives each walk every merge and split under top that names its
+// record as either side, in one statement for the whole request. The `->>`
+// test is never an index condition under row-level security (0001_init says
+// why), so this scans the repository's merge and split rows through the
+// partial changelog_pair_idx: once per request, where an arm in every walk's
+// round would scan them once per record per round. It returns how many rows
+// it read, which the request's budget pays for.
+func (ds *dataset) readPairs(ctx context.Context, order []*recordWalk, top int64) (int, error) {
+	byID := map[string][]*recordWalk{}
+	ids := make([]string, 0, len(order))
+	for _, w := range order {
+		if byID[w.ref.ID] == nil {
+			ids = append(ids, w.ref.ID)
+		}
+		byID[w.ref.ID] = append(byID[w.ref.ID], w)
+	}
+	rows, err := ds.db.QueryContext(ctx, `
+		SELECT seq, record_id, kind, payload, payload->>'`+payloadWinner+`', payload->>'`+payloadLoser+`'
+		FROM changelog
+		WHERE `+pairOp+` AND seq < $2
+		  AND (payload->>'`+payloadWinner+`' = ANY($1) OR payload->>'`+payloadLoser+`' = ANY($1))`,
+		ids, top)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for rows.Next() {
+		var (
+			seq            int64
+			recordID, kind string
+			raw            []byte
+			winner, loser  sql.NullString
+		)
+		if err := rows.Scan(&seq, &recordID, &kind, &raw, &winner, &loser); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		n++
+		for _, id := range []sql.NullString{winner, loser} {
+			if !id.Valid {
+				continue
+			}
+			for _, w := range byID[id.String] {
+				if _, held := w.known[seq]; !held {
+					w.known[seq] = w.earlierOf(seq, recordID, kind, raw)
+				}
+			}
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
+	return n, rows.Err()
+}
+
+// walkRound reads the next batch of at most limit earlier entries for every
+// active walk in one statement, from the record's own entries, and returns
+// them index-aligned with active. changelog_record_seq_idx leads with the
+// record and ends with seq, so each walk's batch is a backward index range,
+// never a sort of the record's whole history.
+func (ds *dataset) walkRound(ctx context.Context, active []*recordWalk, limit int) ([][]earlierEntry, error) {
 	ids := make([]string, len(active))
 	below := make([]int64, len(active))
 	for i, w := range active {
 		ids[i], below[i] = w.ref.ID, w.below
 	}
-	// The same three arms as the record scope (buildChangeFilter), for the
-	// same indexes: the record's own entries, and a merge or split that names
-	// it as either side. The pair arms repeat the op test as a literal so the
-	// partial changelog_pair_idx applies.
-	pair := `c.op IN ('` + string(substrate.OpMerge) + `', '` + string(substrate.OpSplit) + `')`
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT r.i, c.seq, c.op, c.record_id, c.kind, c.payload
+		SELECT r.i, c.seq, c.record_id, c.kind, c.payload
 		FROM unnest($1::text[], $2::bigint[]) WITH ORDINALITY AS r(id, below, i)
 		CROSS JOIN LATERAL (
-			SELECT seq, op, record_id, kind, payload FROM changelog c
-			WHERE c.seq < r.below AND c.op <> $3
-			  AND (c.record_id = r.id
-			       OR (`+pair+` AND c.payload->>'`+payloadWinner+`' = r.id)
-			       OR (`+pair+` AND c.payload->>'`+payloadLoser+`' = r.id))
+			SELECT seq, record_id, kind, payload FROM changelog c
+			WHERE c.record_id = r.id AND c.seq < r.below AND c.op <> $3
 			ORDER BY c.seq DESC LIMIT $4) c
 		ORDER BY r.i, c.seq DESC`,
-		ids, below, string(substrate.OpDelivery), valuesBatch)
+		ids, below, string(substrate.OpDelivery), limit)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	read := make([][]earlierEntry, len(active))
 	for rows.Next() {
 		var (
-			i                  int
-			seq                int64
-			op, recordID, kind string
-			raw                []byte
+			i              int
+			seq            int64
+			recordID, kind string
+			raw            []byte
 		)
-		if err := rows.Scan(&i, &seq, &op, &recordID, &kind, &raw); err != nil {
+		if err := rows.Scan(&i, &seq, &recordID, &kind, &raw); err != nil {
 			_ = rows.Close()
-			return err
+			return nil, err
 		}
 		w := active[i-1]
-		e := earlierEntry{seq: seq}
-		payload, err := decodeNumberPreserving(raw)
-		if err == nil {
-			e.ops, err = foldOpsOf(substrate.Change{Seq: seq, Payload: payload})
-		}
-		if err != nil {
-			e.opaque = true
-		}
-		// An entry that names properties and carries no effects was written
-		// before entries held values: what it set is not in the changelog.
-		if _, named := payload["properties"]; named && e.ops == nil && recordID == w.ref.ID && kind == w.ref.Kind {
-			e.opaque = true
-		}
-		read[i-1] = append(read[i-1], e)
+		read[i-1] = append(read[i-1], w.earlierOf(seq, recordID, kind, raw))
 	}
 	if err := rows.Close(); err != nil {
-		return err
+		return nil, err
 	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for i, w := range active {
-		w.step(read[i])
-	}
-	return nil
+	return read, rows.Err()
 }
 
 // step walks one batch of a record's earlier entries, newest first, merged
-// with the page's own rows in the same span.
-func (w *recordWalk) step(batch []earlierEntry) {
-	exhausted := len(batch) < valuesBatch
+// with the entries it already holds in the same span. A batch shorter than
+// the limit it was read under is the end of the record's own entries.
+func (w *recordWalk) step(batch []earlierEntry, limit int) {
+	exhausted := len(batch) < limit
 	floor := int64(0)
 	if !exhausted {
 		floor = batch[len(batch)-1].seq
 	}
-	w.read += len(batch)
 	seen := map[int64]bool{}
 	for _, e := range batch {
 		seen[e.seq] = true
 	}
-	for seq, ops := range w.page {
+	for seq, e := range w.known {
 		if seq < w.below && seq >= floor && !seen[seq] {
-			batch = append(batch, earlierEntry{seq: seq, ops: ops, fromPage: true})
+			batch = append(batch, e)
 		}
 	}
 	sort.Slice(batch, func(a, b int) bool { return batch[a].seq > batch[b].seq })
@@ -387,7 +475,7 @@ func (w *recordWalk) step(batch []earlierEntry) {
 		w.visit(e)
 	}
 	w.below = floor
-	if exhausted || w.read >= valuesBudget {
+	if exhausted {
 		w.giveUp()
 	}
 }

@@ -55,6 +55,22 @@ export interface HistoryFeedOptions {
   /** With `keep`: read further pages, up to FILL_PAGES of them, until this
    * many rows pass. */
   fill?: number
+  /** Ask the history pages for before and after values (`values=1`). Off by
+   * default: each page's values cost the server a walk back through every
+   * record on it, which a glance at recent changes does not repay. */
+  values?: boolean
+}
+
+/** What the feed asks of the server: its pages carry values only where the
+ * reader asked, and the live tail never does, because every row it streams
+ * would cost the server a walk of its own. */
+export function historyFeedFilters(
+  filter: ChangeFeedFilter,
+  values = false
+): { pages: ChangeFeedFilter; tail: ChangeFeedFilter } {
+  const plain: ChangeFeedFilter = { ...filter }
+  delete plain.values
+  return { pages: values ? { ...plain, values: true } : plain, tail: plain }
 }
 
 /** The change feed for one filter, newest first, with the live tail joined on
@@ -67,11 +83,11 @@ export function useHistoryFeed(
     first = HISTORY_PAGE,
     keep,
     fill = 0,
+    values = false,
   }: HistoryFeedOptions = {}
 ): HistoryFeedState {
   const queryClient = useQueryClient()
-  // Every sentence says what changed in values where the server can.
-  const asked: ChangeFeedFilter = { ...filter, values: true }
+  const { pages: asked, tail } = historyFeedFilters(filter, values)
   const history = useInfiniteQuery({
     ...changesInfiniteOptions(asked, { first }),
     enabled,
@@ -80,6 +96,7 @@ export function useHistoryFeed(
   const [status, setStatus] = useState<WatchStatus>("off")
   const [nonce, setNonce] = useState(0)
   const filterKey = JSON.stringify(asked)
+  const tailKey = JSON.stringify(tail)
   const [lastKey, setLastKey] = useState(filterKey)
   if (lastKey !== filterKey) {
     setLastKey(filterKey)
@@ -109,7 +126,7 @@ export function useHistoryFeed(
     const handle = watchChanges({
       from: resume.current.from,
       generation: resume.current.generation,
-      filter: JSON.parse(filterKey) as ChangeFeedFilter,
+      filter: JSON.parse(tailKey) as ChangeFeedFilter,
       onRow: (row) =>
         setLiveRows((rows) =>
           rows.some((r) => r.seq === row.seq) ? rows : [row, ...rows]
@@ -125,7 +142,7 @@ export function useHistoryFeed(
       },
     })
     return () => handle.stop()
-  }, [live, enabled, ready, filterKey, nonce, queryClient])
+  }, [live, enabled, ready, filterKey, tailKey, nonce, queryClient])
 
   const merged = useMemo(
     () => mergeFeed(liveRows, historyRows),
