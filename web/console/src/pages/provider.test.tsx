@@ -289,6 +289,7 @@ interface Wire {
   catalog?: CatalogItem[]
   accounts?: SubstrateRecord[]
   settings?: SubstrateRecord[]
+  triggerStatuses?: TriggerStatus[]
 }
 
 function filterOf(path: string): { kinds?: string[]; implements?: string } {
@@ -344,7 +345,9 @@ describe("ProviderPage", () => {
         return jsonResponse(200, { items: [] })
       }
       if (path === "/api/v1/substrate.reamde.dev/core/trigger/status") {
-        return jsonResponse(200, { items: TRIGGER_STATUSES })
+        return jsonResponse(200, {
+          items: wire.triggerStatuses ?? TRIGGER_STATUSES,
+        })
       }
       if (path === "/api/v1/sync/status") {
         return jsonResponse(200, {
@@ -408,6 +411,27 @@ describe("ProviderPage", () => {
           properties: { ...WORK.properties, ...body.properties },
         })
       }
+      if (method === "GET" && path.endsWith("/parked"))
+        return jsonResponse(200, {
+          items: [
+            {
+              id: 7,
+              trigger: "google-contacts-scheduled",
+              attempts: 5,
+              lastError: "HTTP 500",
+              parkedAt: HOUR_AGO,
+            },
+            {
+              id: 8,
+              trigger: "google-contacts-scheduled",
+              attempts: 5,
+              lastError: "HTTP 500",
+              parkedAt: HOUR_AGO,
+            },
+          ],
+        })
+      if (method === "POST" && path.endsWith("/retry"))
+        return jsonResponse(200, { ran: 1 })
       if (method === "POST" && path.endsWith("/wake"))
         return jsonResponse(200, { ran: 1 })
       if (method === "POST" && path.endsWith("/bind"))
@@ -713,6 +737,141 @@ describe("ProviderPage", () => {
     })
   })
 
+  describe("why it needs attention", () => {
+    const problems = async () =>
+      screen.findByRole("region", { name: "Why it needs attention" })
+
+    it("names the account whose sync fails, its error, and the fixes", async () => {
+      renderPage(<ProviderPage />)
+      const callout = await problems()
+      expect(
+        within(callout).getByText("Syncing george@example.com is failing")
+      ).toBeTruthy()
+      expect(within(callout).getByText("gmail: HTTP 403")).toBeTruthy()
+      expect(
+        within(callout).getByRole("button", { name: "Reconnect" })
+      ).toBeTruthy()
+      fireEvent.click(within(callout).getByRole("button", { name: /Sync now/ }))
+      await waitFor(() =>
+        expect(
+          fetchMock.mock.calls.some(
+            ([url, init]) =>
+              String(url).endsWith(`${ACCOUNT}/george-work`) &&
+              (init as RequestInit | undefined)?.method === "PATCH" &&
+              String((init as RequestInit).body).includes("syncRequestedAt")
+          )
+        ).toBe(true)
+      )
+    })
+
+    it("asks to reconnect an account whose sign-in stopped working", async () => {
+      serve({
+        accounts: [
+          account("george-work", {
+            email: "george@example.com",
+            tokenStatus: "erroring",
+          }),
+        ],
+      })
+      renderPage(<ProviderPage />)
+      const callout = await problems()
+      expect(
+        within(callout).getByText(
+          "The sign-in for george@example.com stopped working"
+        )
+      ).toBeTruthy()
+      expect(
+        within(callout).getByRole("button", { name: "Reconnect" })
+      ).toBeTruthy()
+      expect(
+        within(callout).queryByRole("button", { name: /Sync now/ })
+      ).toBeNull()
+    })
+
+    it("says a provider that failed to load, and why", async () => {
+      serve({
+        statuses: [
+          status({
+            installed: false,
+            quarantined: true,
+            quarantineReason: "kind contact: unknown key",
+          }),
+        ],
+      })
+      renderPage(<ProviderPage />)
+      const callout = await problems()
+      expect(within(callout).getByText("It failed to load")).toBeTruthy()
+      expect(
+        within(callout).getByText("kind contact: unknown key")
+      ).toBeTruthy()
+      expect(
+        within(callout).getByRole("button", { name: "Add again" })
+      ).toBeTruthy()
+    })
+
+    it("counts the parked runs and retries each of them", async () => {
+      serve({
+        accounts: [PERSONAL],
+        triggerStatuses: [{ ...TRIGGER_STATUSES[0], parked: 2 }],
+      })
+      renderPage(<ProviderPage />)
+      const callout = await problems()
+      expect(
+        within(callout).getByText("2 runs failed and are waiting to be retried")
+      ).toBeTruthy()
+      const retry = within(callout).getByRole("button", { name: "Retry" })
+      await waitFor(() =>
+        expect((retry as HTMLButtonElement).disabled).toBe(false)
+      )
+      fireEvent.click(retry)
+      await waitFor(() => {
+        const retried = fetchMock.mock.calls
+          .map(([url]) => String(url))
+          .filter((u) => u.endsWith("/retry"))
+        expect(retried).toEqual([
+          "/api/v1/substrate.reamde.dev/core/trigger/google-contacts-scheduled/parked/7/retry",
+          "/api/v1/substrate.reamde.dev/core/trigger/google-contacts-scheduled/parked/8/retry",
+        ])
+      })
+    })
+
+    it("names what blocks an update", async () => {
+      serve({
+        accounts: [PERSONAL],
+        catalog: [
+          {
+            ...CATALOG,
+            upgrade: {
+              available: true,
+              from: 34,
+              to: 35,
+              blockers: ["google/contact: 3 records still hold nickname"],
+            },
+          } as CatalogItem,
+        ],
+      })
+      renderPage(<ProviderPage />)
+      const callout = await problems()
+      expect(
+        within(callout).getByText("An update is waiting on your records")
+      ).toBeTruthy()
+      expect(
+        within(callout).getByText(
+          "google/contact: 3 records still hold nickname"
+        )
+      ).toBeTruthy()
+    })
+
+    it("says nothing when nothing needs attention", async () => {
+      serve({ accounts: [PERSONAL] })
+      renderPage(<ProviderPage />)
+      await screen.findByText("home@example.com")
+      expect(
+        screen.queryByRole("region", { name: "Why it needs attention" })
+      ).toBeNull()
+    })
+  })
+
   describe("the header", () => {
     it("pauses the provider after saying what stops", async () => {
       renderPage(<ProviderPage />)
@@ -753,22 +912,6 @@ describe("ProviderPage", () => {
       await waitFor(() =>
         expect(navigate).toHaveBeenCalledWith({ to: "/providers" })
       )
-    })
-
-    it("says a provider that failed to load, and why", async () => {
-      serve({
-        statuses: [
-          status({
-            installed: false,
-            quarantined: true,
-            quarantineReason: "kind contact: unknown key",
-          }),
-        ],
-      })
-      renderPage(<ProviderPage />)
-      expect(await screen.findByText("Google failed to load.")).toBeTruthy()
-      expect(screen.getByText("kind contact: unknown key")).toBeTruthy()
-      expect(screen.getByRole("button", { name: "Add again" })).toBeTruthy()
     })
 
     it("offers an update through the install door, asking first where it loses values", async () => {

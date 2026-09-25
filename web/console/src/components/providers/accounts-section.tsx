@@ -209,6 +209,7 @@ function AccountRow({
               view={account}
               providerName={providerName}
               disabled={connectBlocked}
+              reconnect={account.tokenStatus === "erroring"}
             />
           )}
           {account.syncable && connected && (

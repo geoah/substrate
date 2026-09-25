@@ -22,7 +22,8 @@ import {
 } from "@/lib/api/catalog"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { repositoryQueryOptions } from "@/lib/api/repository"
-import type { KindInfo } from "@/lib/api/types"
+import { triggerStatusesQueryOptions } from "@/lib/api/sync"
+import type { KindInfo, TriggerStatus } from "@/lib/api/types"
 import {
   accountKindOf,
   heldVersions,
@@ -74,10 +75,20 @@ export function accountToggles(
   }))
 }
 
+/** The triggers that run one bundle's own functions: a function's reference
+ * is `<bundle id>/<name>`. */
+export function bundleTriggers(
+  statuses: readonly TriggerStatus[],
+  bundleId: string
+): TriggerStatus[] {
+  return statuses.filter((t) => t.callable.startsWith(`${bundleId}/`))
+}
+
 function entryOf(
   row: BundleRow,
   view: ProviderView | undefined,
-  kinds: KindInfo[]
+  kinds: KindInfo[],
+  triggers: readonly TriggerStatus[]
 ): ProviderEntry {
   const accountKind = view?.accountKind ?? accountKindOf(kinds, row.id)
   const toggles = accountToggles(accountKind)
@@ -95,7 +106,7 @@ function entryOf(
     (item) =>
       item.code !== "oauth-client" &&
       !(isInputSetupCode(item.code) && item.input === configInputName(view))
-  ).length
+  )
   return {
     row,
     info: providerInfo(row.package),
@@ -107,10 +118,14 @@ function entryOf(
       installed,
       enabled: row.status?.enabled ?? false,
       quarantined: Boolean(row.status?.quarantined),
-      upgradeBlocked: installed && upgradeBlocked(row),
+      quarantineReason: row.status?.quarantineReason,
+      upgradeBlockers:
+        installed && upgradeBlocked(row) ? (row.upgrade?.blockers ?? []) : [],
       otherSetup,
       steps,
+      oauth: view?.oauth,
       accounts: view?.accounts ?? [],
+      triggers: installed ? bundleTriggers(triggers, row.id) : [],
     }),
   }
 }
@@ -132,6 +147,9 @@ export function useProviders() {
   const repository = useQuery(repositoryQueryOptions)
   const registry = useQuery(kindsQueryOptions)
   const accountsRead = useQuery(traitRecordsQueryOptions(ACCOUNT_CONFIG_TRAIT))
+  // Not waited on: a provider's parked and broken runs join its state once
+  // they are read.
+  const triggerStatuses = useQuery(triggerStatusesQueryOptions)
 
   const kinds = useMemo(() => registry.data ?? [], [registry.data])
   const home = repository.data?.authority ?? ""
@@ -175,13 +193,15 @@ export function useProviders() {
         (r) =>
           r.tier === "provider" || (!r.tier && r.status && viewOf.has(r.id))
       )
-      .map((r) => entryOf(r, viewOf.get(r.id), kinds))
+      .map((r) =>
+        entryOf(r, viewOf.get(r.id), kinds, triggerStatuses.data ?? [])
+      )
       .sort(
         (a, b) =>
           Number(!a.row.status) - Number(!b.row.status) ||
           a.info.name.localeCompare(b.info.name)
       )
-  }, [rows, views, kinds])
+  }, [rows, views, kinds, triggerStatuses.data])
 
   // Everything else this repository holds: imported samples, the seeded
   // llm package, anything applied directly.

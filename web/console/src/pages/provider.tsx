@@ -37,6 +37,7 @@ import {
 } from "@/components/providers/bundle-actions"
 import { ConnectionDetails } from "@/components/providers/connection-details"
 import { OAuthReturnNote } from "@/components/providers/oauth-return-note"
+import { ProviderProblems } from "@/components/providers/provider-problems"
 import {
   BringsIn,
   ProviderTools,
@@ -261,22 +262,10 @@ function ProviderDoc({
       />
 
       {notice}
-      {status?.quarantined && (
-        <Callout className="mt-6">
-          <p className="font-medium">{info.name} failed to load.</p>
-          {status.quarantineReason && (
-            <p className="text-muted-foreground">{status.quarantineReason}</p>
-          )}
-          <p className="text-muted-foreground">
-            Adding it again clears this; what it brought in stays.
-          </p>
-        </Callout>
-      )}
-      {installed && upgradeBlocked(row) && (
-        <UpgradeBlockedNote row={row} className="mt-6" />
-      )}
+      <ProviderProblems entry={entry} chain={chain} className="mt-6" />
 
       <SectionHead
+        id="setup"
         title="Set up"
         hint={
           now

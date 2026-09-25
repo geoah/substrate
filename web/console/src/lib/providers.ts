@@ -4,7 +4,13 @@
  * runs, and what a provider's kinds fill in of yours. No fetching here; the
  * pages fold these off the reads `lib/api/*` returns. */
 
-import type { KindInfo, SubstrateRecord, TriggerStatus } from "@/lib/api/types"
+import type {
+  KindInfo,
+  SetupItem,
+  SubstrateRecord,
+  TriggerStatus,
+} from "@/lib/api/types"
+import { FAILED_PREVIEW_BLOCKER } from "@/lib/bundles"
 import { mappedKind } from "@/lib/provenance"
 import { toolName } from "@/lib/tools"
 import type { AccountView, ProviderView, SyncFields } from "@/lib/sync"
@@ -111,9 +117,41 @@ export function stepFactsOf(
   }
 }
 
-// ── the card's one state ─────────────────────────────────────────────────────
+// ── the card's one state, and why ────────────────────────────────────────────
 
 export type ProviderTone = "on" | "setup" | "attention" | "paused" | "add"
+
+/** What a person can do about a problem, in the order the callout offers it.
+ * `sync-now` asks the account for a run; `reconnect` sends it through the
+ * provider's consent again; `add-again` reinstalls the provider; `set-up`
+ * goes to the set-up step (sign-in details) or the settings that are
+ * empty; `retry-parked` retries every parked run of the provider's. */
+export type ProblemFix =
+  "sync-now" | "reconnect" | "add-again" | "set-up" | "retry-parked"
+
+export type ProblemCode =
+  | "failed-to-load"
+  | "sign-in"
+  | "sync"
+  | "credentials-missing"
+  | "setup-missing"
+  | "trigger-broken"
+  | "parked"
+  | "update-blocked"
+
+/** One reason a provider needs attention: what is wrong in a sentence, the
+ * server's own words when it gave some, and what fixes it. */
+export interface ProviderProblem {
+  code: ProblemCode
+  /** What is wrong, in one sentence: the card's line and the callout's. */
+  summary: string
+  /** The server's words for it (an error, a reason, guard lines), when it
+   * gave some. */
+  detail?: string[]
+  /** The account the problem is on, by record id. */
+  account?: string
+  fixes: ProblemFix[]
+}
 
 export interface ProviderStanding {
   tone: ProviderTone
@@ -123,6 +161,9 @@ export interface ProviderStanding {
   line: string
   /** The current step's number while one is open. */
   step?: number
+  /** Why it needs attention: never empty when the tone is `attention`, empty
+   * otherwise. */
+  problems: ProviderProblem[]
 }
 
 export interface StandingInput {
@@ -130,42 +171,53 @@ export interface StandingInput {
   installed: boolean
   enabled: boolean
   quarantined: boolean
-  upgradeBlocked: boolean
+  quarantineReason?: string
+  /** The server's guard lines on an update it will not offer; empty when
+   * none blocks it. */
+  upgradeBlockers: string[]
   /** Setup items the four steps do not cover (a required setting). */
-  otherSetup: number
+  otherSetup: Pick<SetupItem, "code" | "message">[]
   steps: SetupStep[]
-  accounts: Pick<AccountView, "health" | "sync" | "label">[]
+  /** Accounts connect through the provider's consent (an OAuth grant). */
+  oauth?: boolean
+  accounts: (Pick<
+    AccountView,
+    "sync" | "label" | "tokenStatus" | "legacySyncStatus"
+  > & { record: Pick<SubstrateRecord, "id"> })[]
+  /** The delivery bookkeeping of the triggers that run the provider's own
+   * functions. */
+  triggers?: Pick<TriggerStatus, "id" | "parked" | "error">[]
 }
 
+const ATTENTION = "Needs attention"
+
 /** One state per provider, in the order a reader needs to hear it: broken
- * before paused before unfinished before on. */
+ * before paused before unfinished before on. A broken one carries every
+ * reason it is broken. */
 export function providerStanding(s: StandingInput): ProviderStanding {
   if (s.quarantined) {
-    return {
-      tone: "attention",
-      pill: "Needs attention",
-      line: "It failed to load · add it again to fix",
-    }
+    return attention([
+      {
+        code: "failed-to-load",
+        summary: "It failed to load",
+        detail: s.quarantineReason ? [s.quarantineReason] : undefined,
+        fixes: ["add-again"],
+      },
+    ])
   }
-  if (!s.installed) return { tone: "add", pill: "", line: "Not added" }
+  if (!s.installed) {
+    return { tone: "add", pill: "", line: "Not added", problems: [] }
+  }
   if (!s.enabled) {
-    return { tone: "paused", pill: "Paused", line: "Paused · nothing syncs" }
-  }
-  const broken = s.accounts.find((a) => a.health === "broken")
-  if (broken) {
     return {
-      tone: "attention",
-      pill: "Needs attention",
-      line: `Having trouble with ${broken.label}`,
+      tone: "paused",
+      pill: "Paused",
+      line: "Paused · nothing syncs",
+      problems: [],
     }
   }
-  if (s.upgradeBlocked) {
-    return {
-      tone: "attention",
-      pill: "Needs attention",
-      line: "An update is waiting on your records",
-    }
-  }
+  const problems = standingProblems(s)
+  if (problems.length) return attention(problems)
   const now = currentStep(s.steps)
   if (now) {
     return {
@@ -173,16 +225,129 @@ export function providerStanding(s: StandingInput): ProviderStanding {
       pill: "Set up",
       line: `Almost there · step ${now.n} of ${s.steps.length}`,
       step: now.n,
+      problems: [],
     }
   }
-  if (s.otherSetup > 0) {
+  if (s.otherSetup.length > 0) {
     return {
       tone: "setup",
       pill: "Set up",
       line: "Almost there · finish its settings",
+      problems: [],
     }
   }
-  return { tone: "on", pill: "On", line: connectedLine(s.accounts) }
+  return {
+    tone: "on",
+    pill: "On",
+    line: connectedLine(s.accounts),
+    problems: [],
+  }
+}
+
+function attention(problems: ProviderProblem[]): ProviderStanding {
+  const more = problems.length - 1
+  return {
+    tone: "attention",
+    pill: ATTENTION,
+    line:
+      more > 0
+        ? `${problems[0].summary} · and ${more} more`
+        : problems[0].summary,
+    problems,
+  }
+}
+
+/** Every reason an added, running provider needs attention, most pressing
+ * first: an account that cannot sign in or sync, a gap in its setup once it
+ * has accounts, a trigger that cannot run, runs that failed and wait to be
+ * retried, an update your records block. */
+export function standingProblems(s: StandingInput): ProviderProblem[] {
+  const out: ProviderProblem[] = []
+  for (const a of s.accounts) {
+    const why = firstLine(
+      a.sync.error ?? a.sync.message ?? a.legacySyncStatus ?? ""
+    )
+    if (a.tokenStatus === "erroring") {
+      out.push({
+        code: "sign-in",
+        summary: `The sign-in for ${a.label} stopped working`,
+        detail: why ? [why] : undefined,
+        account: a.record.id,
+        fixes: ["reconnect"],
+      })
+    } else if (
+      a.sync.state === "erroring" ||
+      Boolean(a.legacySyncStatus?.startsWith("erroring"))
+    ) {
+      out.push({
+        code: "sync",
+        summary: `Syncing ${a.label} is failing`,
+        detail: why ? [why] : undefined,
+        account: a.record.id,
+        fixes: s.oauth ? ["sync-now", "reconnect"] : ["sync-now"],
+      })
+    }
+  }
+  // A gap in setup is a problem once accounts depend on it; before then it
+  // is the set-up the steps walk through.
+  if (s.accounts.length > 0) {
+    if (currentStep(s.steps)?.key === "credentials") {
+      out.push({
+        code: "credentials-missing",
+        summary: "Its sign-in details are missing",
+        fixes: ["set-up"],
+      })
+    }
+    for (const item of s.otherSetup) {
+      out.push({
+        code: "setup-missing",
+        summary:
+          item.code === "setting"
+            ? "A setting it needs is empty"
+            : "Something it needs is missing",
+        detail: item.message ? [item.message] : undefined,
+        fixes: ["set-up"],
+      })
+    }
+  }
+  const triggers = s.triggers ?? []
+  const broken = triggers.filter((t) => t.error)
+  if (broken.length) {
+    out.push({
+      code: "trigger-broken",
+      summary:
+        broken.length === 1
+          ? "One of its syncs can’t run"
+          : `${broken.length} of its syncs can’t run`,
+      detail: broken.map((t) => `${t.id}: ${t.error}`),
+      fixes: ["add-again"],
+    })
+  }
+  const parked = triggers.reduce((n, t) => n + t.parked, 0)
+  if (parked > 0) {
+    out.push({
+      code: "parked",
+      summary:
+        parked === 1
+          ? "1 run failed and is waiting to be retried"
+          : `${parked} runs failed and are waiting to be retried`,
+      fixes: ["retry-parked"],
+    })
+  }
+  if (s.upgradeBlockers.length) {
+    const unchecked = s.upgradeBlockers.includes(FAILED_PREVIEW_BLOCKER)
+    out.push({
+      code: "update-blocked",
+      summary: unchecked
+        ? "An update couldn’t be checked"
+        : "An update is waiting on your records",
+      detail: unchecked
+        ? ["The server couldn’t preview it; its log says why."]
+        : s.upgradeBlockers,
+      fixes: [],
+    })
+  }
+  return out
 }
 
 function connectedLine(accounts: StandingInput["accounts"]): string {

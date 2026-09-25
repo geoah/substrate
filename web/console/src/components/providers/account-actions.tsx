@@ -43,15 +43,16 @@ function ConnectConfirm({
   view,
   providerName,
   connect,
+  reconnect,
   onClose,
 }: {
   view: AccountView
   providerName: string
   connect: OAuthConnect
+  reconnect: boolean
   onClose: () => void
 }) {
-  const connected = view.tokenStatus === "connected"
-  const verb = connected ? "Reconnect" : "Connect"
+  const verb = reconnect ? "Reconnect" : "Connect"
   return (
     <Dialog
       open
@@ -65,7 +66,7 @@ function ConnectConfirm({
           <DialogDescription>
             {providerName} opens in a new tab and asks you to approve access.
             Once you do, this account starts bringing in what you turned on.
-            {connected && " Reconnecting replaces the current approval."}
+            {reconnect && " Reconnecting replaces the current approval."}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -95,11 +96,14 @@ export function ConnectButton({
   providerName,
   disabled,
   variant = "outline",
+  reconnect = view.tokenStatus === "connected",
 }: {
   view: AccountView
   providerName: string
   disabled?: boolean
   variant?: "outline" | "default"
+  /** Says Reconnect: the account had an approval, working or not. */
+  reconnect?: boolean
 }) {
   const [confirming, setConfirming] = useState(false)
   const connect = useOAuthConnect(
@@ -115,13 +119,14 @@ export function ConnectButton({
         onClick={() => setConfirming(true)}
       >
         {connect.isPending && <Spinner className="size-3" />}
-        {view.tokenStatus === "connected" ? "Reconnect" : "Connect"}
+        {reconnect ? "Reconnect" : "Connect"}
       </Button>
       {confirming && (
         <ConnectConfirm
           view={view}
           providerName={providerName}
           connect={connect}
+          reconnect={reconnect}
           onClose={() => setConfirming(false)}
         />
       )}
@@ -215,6 +220,7 @@ export function AccountMenu({
           view={view}
           providerName={providerName}
           connect={connect}
+          reconnect={view.tokenStatus === "connected"}
           onClose={() => setReconnecting(false)}
         />
       )}
