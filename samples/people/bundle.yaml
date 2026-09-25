@@ -33,7 +33,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: people
-  version: 7
+  version: 8
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A SAMPLE bundle: a bare package the substrate publishes, delivered

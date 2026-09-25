@@ -17,7 +17,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: tasks
-  version: 12
+  version: 13
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A SAMPLE bundle (see samples.substrate.reamde.dev/people): kinds and one

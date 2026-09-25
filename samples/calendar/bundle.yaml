@@ -22,7 +22,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: calendar
-  version: 13
+  version: 14
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A SAMPLE bundle (see samples.substrate.reamde.dev/people): kinds only, imported from the

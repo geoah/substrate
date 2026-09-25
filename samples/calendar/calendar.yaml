@@ -6,9 +6,10 @@ data:
   authority: samples.substrate.reamde.dev
   package: calendar
   description: >-
-    One provider calendar: the container its events and series live in. It
-    hangs off the account record it synced through, so disconnecting that
-    account takes the calendar and everything under it along.
+    A calendar, copied in from one of your accounts. One provider calendar:
+    the container its events and series live in. It hangs off the account
+    record it synced through, so disconnecting that account takes the calendar
+    and everything under it along.
   purpose: supporting
   names:
     singular: calendar

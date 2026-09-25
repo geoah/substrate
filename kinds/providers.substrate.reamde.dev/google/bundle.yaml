@@ -211,7 +211,10 @@ data:
   # same `eventId` (`_retract_strays`). A full re-read runs the same path, so
   # one requested sync per account clears what a repository already holds.
   # Behaviour only; no declaration moved.
-  version: 34
+  #
+  # 35 — every kind's description opens with one plain sentence
+  # saying what a record is to a person.
+  version: 35
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -343,10 +346,10 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   description: >-
-    The Google OAuth client this bundle authenticates through: a client id,
-    a sealed client secret, and the API base the syncs call. The endpoints
-    and the feature-to-scope mapping are trusted manifest metadata, never
-    properties on this row.
+    The Google app settings your accounts connect through. The Google OAuth
+    client this bundle authenticates through: a client id, a sealed client
+    secret, and the API base the syncs call. The endpoints and the feature-to-scope
+    mapping are trusted manifest metadata, never properties on this row.
   purpose: internal
   names:
     singular: config
@@ -415,7 +418,7 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   description: >-
-    One connected Google account. The OAuth facility writes its credential
+    Your Google account, connected here. The OAuth facility writes its credential
     reference, status and granted scopes; the owner enables features and picks
     the cadence, and each stream keeps its own cursor here — except the per-calendar
     one, which lives in a calendarsync state row.
@@ -1190,11 +1193,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   description: >-
-    NOT a Google API object: Google publishes no EmailAddress resource and
-    this kind mirrors none. It is OUR identity hub — one mailbox address,
-    per account, shared by Gmail headers, Calendar attendees and People contacts,
-    so all three reach ONE row. Hence no product prefix: it belongs to all
-    three. No envelope, no sibling call, no instant, no trait; the address
+    An email address that appears in your Gmail, calendar or contacts. NOT
+    a Google API object: Google publishes no EmailAddress resource. It is
+    OUR hub: one mailbox address, per account, shared by Gmail headers, Calendar
+    attendees and People contacts, so all three reach ONE row. Hence no product
+    prefix. No envelope, no sibling call, no instant, no trait; the address
     alone.
   purpose: supporting
   names:
@@ -1325,11 +1328,12 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   description: >-
-    Any People v1 Person this account can see — its address book (people.connections.list)
-    or its Workspace directory (people:listDirectoryPeople): one kind, one
-    row per resourceName, metadata.sources[].type saying which. Arrays are
-    occurrence objects, closed sets enums, addresses reference the emailaddress
-    hub. Omits the envelope, the five permanently-empty fields and source.profileMetadata.
+    A Google contact, or someone in your work directory. A People v1 Person
+    from the address book (people.connections.list) or Workspace directory
+    (people:listDirectoryPeople), a row per resourceName; metadata.sources[].type
+    says which. Arrays are occurrence objects, closed sets enums, addresses
+    point at the emailaddress hub. Omits the envelope, five always-empty fields
+    and source.profileMetadata.
   names:
     singular: contact
   # The first name entry's display name, falling back to the People resource
@@ -6652,10 +6656,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   description: >-
-    One People v1 ContactGroup, from contactGroups.list: the label a contact
-    is filed under, system (myContacts, starred, …) or the owner's own. Its
-    resourceName is what contact.memberships[] points at. Omits the list envelope;
-    no hypermedia, no instant, no trait.
+    A Google contacts label, such as Starred or one you made. One People v1
+    ContactGroup, from contactGroups.list: the label a contact is filed under,
+    system (myContacts, starred, …) or the owner's own. Its resourceName is
+    what contact.memberships[] points at. Omits the list envelope; no hypermedia,
+    no instant, no trait.
   purpose: supporting
   names:
     singular: contactgroup
@@ -6786,10 +6791,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   description: >-
-    One Gmail v1 Label, from users.labels.list: a system label (INBOX, SENT,
-    CATEGORY_*) or one this mailbox made. gmailmessage.labels points here.
-    The four counts come only from users.labels.get, which this bundle does
-    not call, so they are absent. Omits the envelope; no instant, no trait.
+    A Gmail label, such as Inbox or one you made. One Gmail v1 Label, from
+    users.labels.list: a system label (INBOX, SENT, CATEGORY_*) or one this
+    mailbox made. gmailmessage.labels points here. The four counts come only
+    from users.labels.get, which this bundle does not call, so they are absent.
+    Omits the envelope; no instant, no trait.
   purpose: supporting
   names:
     singular: gmaillabel
@@ -6920,11 +6926,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   description: >-
-    One Gmail Thread, Gmail API v1, read from users.threads.get (format=minimal)
-    — all four of the resource's fields, none of them derived from a message.
-    Omits the response envelope; there is no hypermedia and no instant, so
-    no temporal trait. A thread this sync could not read is written thin:
-    its account and its threadId alone.
+    An email conversation in Gmail. One Gmail Thread, Gmail API v1, read from
+    users.threads.get (format=minimal) — all four of the resource's fields,
+    none of them derived from a message. Omits the response envelope; there
+    is no hypermedia and no instant, so no temporal trait. A thread this sync
+    could not read is written thin: its account and its threadId alone.
   names:
     singular: gmailthread
   displayTemplate: "{threadId}"
@@ -7046,7 +7052,7 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   description: >-
-    One Gmail Message, Gmail API v1, from users.messages.get?format=FULL.
+    An email in Gmail. One Gmail Message, Gmail API v1, from users.messages.get?format=FULL.
     `internalDate` IS the temporal trait's `at`. The MIME tree is STORED whole
     on `payload`, encoded bytes included, with its lossless header and address
     decodes beside it. Omits the response envelope and the separate base64
@@ -7397,11 +7403,12 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   description: >-
-    One Gmail attachment: the filename-bearing MessagePart of a Message (Gmail
-    API v1, format=FULL), projected — its identity, its own headers and the
-    handle a later users.messages.attachments.get reads the bytes by. The
-    COMPLETE part, children and exact bytes included, is on `gmailmessage.payload`.
-    No envelope and no hypermedia to omit; no instant, so no temporal trait.
+    A file attached to an email in Gmail. The filename-bearing MessagePart
+    of a Message (Gmail API v1, format=FULL), projected: its ids, its own
+    headers and the handle a later users.messages.attachments.get reads the
+    bytes by. The COMPLETE part, children and exact bytes included, is on
+    `gmailmessage.payload`. No envelope and no hypermedia to omit; no instant,
+    so no temporal trait.
   purpose: supporting
   names:
     singular: gmailattachment
@@ -10452,12 +10459,12 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   description: >-
-    One CalendarListEntry of Google Calendar API v3 (`calendarList.list`),
-    whole: how this account sees one calendar, with the colours, reminders
-    and notifications it set locally. Omits the response envelope (`kind`,
-    the list's `etag` and `nextSyncToken`) and nothing else. Binds no temporal
-    trait — a calendar has no instant. No sibling call: the sync cursor is
-    a calendarsync row.
+    One of your Google calendars. A CalendarListEntry of Google Calendar API
+    v3 (`calendarList.list`), whole: how this account sees one calendar, with
+    the colours, reminders and notifications it set locally. Omits the response
+    envelope (`kind`, the list's `etag` and `nextSyncToken`) and nothing else.
+    No temporal trait: a calendar has no instant. No sibling call: the sync
+    cursor is a calendarsync row.
   purpose: supporting
   names:
     singular: calendar
@@ -10687,11 +10694,12 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   description: >-
-    Where one calendar's events drain has got to — its sync token, the walk
-    that token was minted under, and the generation of the last full read.
-    Provider-owned state, not an API resource and not a property of the calendar
-    mirror, so a page of events never moves the calendar's version. Binds
-    no trait: it has no instant of its own.
+    How far copying one Google calendar has got. Where one calendar's events
+    drain has got to — its sync token, the walk that token was minted under,
+    and the generation of the last full read. Provider-owned state, not an
+    API resource and not a property of the calendar mirror, so a page of events
+    never moves the calendar's version. Binds no trait: it has no instant
+    of its own.
   purpose: internal
   names:
     singular: calendarsync
@@ -10757,11 +10765,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   description: >-
-    One Google Calendar API v3 Event CARRYING `recurrence` (`events.list`,
-    singleEvents=false), whole, with its rule decoded beside the lines it
-    came from. `at`/`endsAt` are `start`/`end` resolved in each object's own
-    zone. Never expanded into rows: a records read computes the occurrences.
-    Omits the response envelope (`kind`, the list's `etag` and `nextSyncToken`)
+    A repeating event on your Google calendar. A Calendar API v3 Event CARRYING
+    `recurrence` (`events.list`, singleEvents=false), whole, its rule decoded
+    beside its lines. `at`/`endsAt` are `start`/`end` in each object's own
+    zone. Never expanded into rows; a records read computes occurrences. Omits
+    the response envelope (`kind`, the list's `etag` and `nextSyncToken`)
     and nothing else. No sibling call.
   purpose: supporting
   names:
@@ -11678,11 +11686,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   description: >-
-    One Google Calendar API v3 Event WITHOUT `recurrence` (`events.list`,
-    singleEvents=false), whole: a single event, or an exception naming the
-    series it overrides and the slot it replaces, cancelled ones included.
-    `at`/`endsAt` are `start`/`end` resolved in each object's own zone. Omits
-    the response envelope (`kind`, the list's `etag` and `nextSyncToken`).
+    A single event on your Google calendar. A Calendar API v3 Event WITHOUT
+    `recurrence` (`events.list`, singleEvents=false), whole: a single event,
+    or an exception naming the series it overrides and the slot it replaces,
+    cancelled ones included. `at`/`endsAt` are `start`/`end` in each object's
+    own zone. Omits the response envelope (`kind`, the list's `etag` and `nextSyncToken`).
     No sibling call.
   names:
     singular: calendarevent
@@ -15475,9 +15483,9 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   description: >-
-    One Google Drive file (Drive API v3 File) from files.list and changes.list
+    A file in your Google Drive. A Drive API v3 File from files.list and changes.list
     under one fields mask, authoritative for what it returns; `at` is `createdTime`;
-    `text` is the files.export of a Doc, Sheet or Slides deck. Envelope omitted:
+    `text` is the files.export of a Doc, Sheet or Slides. Envelope omitted:
     kind, nextPageToken, incompleteSearch. Not requested: capabilities, permissions,
     contentHints, media metadata, app/properties, spaces, labelInfo, shortcutDetails.
   names:

@@ -40,7 +40,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: notes
-  version: 9
+  version: 10
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -67,9 +67,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: notes
   description: >-
-    One saved note: the text the owner handed in, a title the sub-agent wrote,
-    and the word and character counts the stats function computed. Written
-    by the savenote function, never by hand.
+    A note you saved. One saved note: the text the owner handed in, a title
+    the sub-agent wrote, and the word and character counts the stats function
+    computed. Written by the savenote function, never by hand.
   names:
     singular: note
   properties:

@@ -75,7 +75,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: github
-  version: 24
+  version: 25
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -161,10 +161,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: github
   description: >-
-    The GitHub OAuth app this bundle authenticates through — its client id,
-    a sealed client secret, and a test-only API base. The record the bundle's
-    client input resolves; endpoints and scopes are manifest metadata rather
-    than editable rows.
+    The GitHub app settings your account connects through. The GitHub OAuth
+    app this bundle authenticates through — its client id, a sealed client
+    secret, and a test-only API base. The record the bundle's client input
+    resolves; endpoints and scopes are manifest metadata rather than editable
+    rows.
   purpose: internal
   names:
     singular: config
@@ -210,10 +211,10 @@ data:
   authority: providers.substrate.reamde.dev
   package: github
   description: >-
-    One connected GitHub account: these records ARE the bundle's connections.
-    The OAuth facility writes the credential reference and the connection
-    status, the owner flips the feature toggles, and the sync keeps its per-stream
-    watermarks here rather than on any mirror.
+    Your GitHub account, connected here. One connected GitHub account: these
+    records ARE the bundle's connections. The OAuth facility writes the credential
+    reference and the connection status, the owner flips the feature toggles,
+    and the sync keeps its per-stream watermarks here rather than on any mirror.
   purpose: internal
   names:
     singular: account
@@ -493,10 +494,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: github
   description: >-
-    One GitHub account — a person, an organization or a bot — as REST v3 describes
-    it (simple-user embedded, public-user from GET /users/{login}, private-user
-    from GET /user). `at` is `created_at`; hypermedia `*_url` templates are
-    the one omitted class.
+    Someone on GitHub: a person, an organization or a bot. One GitHub account
+    — a person, an organization or a bot — as REST v3 describes it (simple-user
+    embedded, public-user from GET /users/{login}, private-user from GET /user).
+    `at` is `created_at`; hypermedia `*_url` templates are the one omitted
+    class.
   purpose: supporting
   names:
     singular: user
@@ -693,10 +695,10 @@ data:
   authority: providers.substrate.reamde.dev
   package: github
   description: >-
-    One GitHub repository as the REST API v3 full-repository schema describes
-    it, with its owner, parent, source and template as references. `at` is
-    GitHub's `created_at`. The omitted classes are the hypermedia `*_url`
-    templates and the search envelope.
+    A code repository on GitHub. One GitHub repository as the REST API v3
+    full-repository schema describes it, with its owner, parent, source and
+    template as references. `at` is GitHub's `created_at`. The omitted classes
+    are the hypermedia `*_url` templates and the search envelope.
   names:
     singular: repository
   traits:
@@ -1260,10 +1262,10 @@ data:
   authority: providers.substrate.reamde.dev
   package: github
   description: >-
-    One GitHub team, as the REST API v3 embeds it in a pull request's `requested_teams`.
-    Hypermedia `*_url` templates are the one omitted class — the constant
-    `type: team` is a one-value enum — and a team carries no instant, so it
-    binds no temporal trait.
+    A team in a GitHub organization. One GitHub team, as the REST API v3 embeds
+    it in a pull request's `requested_teams`. Hypermedia `*_url` templates
+    are the one omitted class — the constant `type: team` is a one-value enum
+    — and a team carries no instant, so it binds no temporal trait.
   purpose: supporting
   names:
     singular: team
@@ -1408,6 +1410,7 @@ data:
   authority: providers.substrate.reamde.dev
   package: github
   description: >-
+    A milestone that gathers issues and pull requests in a GitHub repository.
     One GitHub milestone, as the REST API v3 embeds it in an issue or a pull
     request. `at` is GitHub's `created_at`; `labels_url` is the one omitted
     hypermedia field. The repository is taken from the item the milestone
@@ -1520,9 +1523,10 @@ data:
   authority: providers.substrate.reamde.dev
   package: github
   description: >-
-    One GitHub label, in its repository, as the REST API v3 embeds it in an
-    issue or a pull request. A label carries no creation instant, so it binds
-    no temporal trait; the repository is taken from the item it arrived on.
+    A label on GitHub issues and pull requests. One GitHub label, in its repository,
+    as the REST API v3 embeds it in an issue or a pull request. A label carries
+    no creation instant, so it binds no temporal trait; the repository is
+    taken from the item it arrived on.
   purpose: supporting
   names:
     singular: label
@@ -1616,10 +1620,10 @@ data:
   authority: providers.substrate.reamde.dev
   package: github
   description: >-
-    One GitHub issue, complete, as the REST API v3 issue schema describes
-    it — author, assignees, milestone and labels as references. `at` is GitHub's
-    `created_at`. The omitted classes are the hypermedia `*_url` templates
-    and the search envelope (`score`, `incomplete_results`).
+    An issue in a GitHub repository. One GitHub issue, complete, as the REST
+    API v3 issue schema describes it — author, assignees, milestone and labels
+    as references. `at` is GitHub's `created_at`. The omitted classes are
+    the hypermedia `*_url` templates and the search envelope (`score`, `incomplete_results`).
   names:
     singular: issue
   traits:
@@ -1993,7 +1997,8 @@ data:
   authority: providers.substrate.reamde.dev
   package: github
   description: >-
-    One GitHub pull request, complete, as the REST API v3 pull-request schema
+    A pull request on GitHub: a proposed change to a repository's code. One
+    GitHub pull request, complete, as the REST API v3 pull-request schema
     describes it — author, assignees, requested reviewers, requested teams
     and merger as references. `at` is `created_at`. The omitted classes are
     the hypermedia links and the search envelope.
@@ -2512,10 +2517,10 @@ data:
   authority: providers.substrate.reamde.dev
   package: github
   description: >-
-    One review on a pull request, from GET /repos/{o}/{r}/pulls/{n}/reviews.
-    `at` is GitHub's `submitted_at`, absent while a review is still pending.
-    `_links` and `pull_request_url` are the omitted hypermedia — the pull
-    request is a reference.
+    A review someone left on a GitHub pull request. One review on a pull request,
+    from GET /repos/{o}/{r}/pulls/{n}/reviews. `at` is GitHub's `submitted_at`,
+    absent while a review is still pending. `_links` and `pull_request_url`
+    are the omitted hypermedia — the pull request is a reference.
   purpose: supporting
   names:
     singular: review
@@ -5407,9 +5412,9 @@ data:
   authority: providers.substrate.reamde.dev
   package: github
   description: >-
-    One open-source license as REST v3 describes it: five fields from the
-    object a repository embeds (key, name, spdxId, nodeId, url) and the other
-    nine from the catalogue read GET /licenses/{key}, which the sync makes
+    An open-source license a GitHub repository is published under. REST v3's:
+    five fields from the object a repository embeds (key, name, spdxId, nodeId,
+    url) and the other nine from GET /licenses/{key}, which the sync reads
     for every key GitHub gives a url (`other` has none). No instant, so no
     temporal trait; `*_url` templates are the omitted class.
   purpose: supporting
@@ -5496,11 +5501,12 @@ data:
   authority: providers.substrate.reamde.dev
   package: github
   description: >-
-    One code of conduct as REST v3 describes it: key, name and the urls from
-    the object a repository embeds, and `body` — the text itself — from the
-    catalogue read GET /codes_of_conduct/{key}, which the sync makes for every
-    key it sees. No instant, so no temporal trait; the omitted class is the
-    hypermedia templates.
+    A code of conduct a GitHub repository asks people to follow. One code
+    of conduct as REST v3 describes it: key, name and the urls from the object
+    a repository embeds, and `body` — the text itself — from the catalogue
+    read GET /codes_of_conduct/{key}, which the sync makes for every key it
+    sees. No instant, so no temporal trait; the omitted class is the hypermedia
+    templates.
   purpose: supporting
   names:
     singular: codeofconduct
@@ -5550,6 +5556,7 @@ data:
   authority: providers.substrate.reamde.dev
   package: github
   description: >-
+    A category of issue a GitHub organization uses, such as Bug or Feature.
     One organization issue type (Bug, Feature, Task …) as REST v3 embeds it
     on an issue. `at` is `created_at`; the omitted class is the hypermedia
     templates.
@@ -5628,9 +5635,10 @@ data:
   authority: providers.substrate.reamde.dev
   package: github
   description: >-
-    One GitHub App as REST v3 describes it, embedded on an issue or a pull
-    request that an app acted through. `at` is `created_at`; the omitted class
-    is the hypermedia templates.
+    A GitHub App that acted on an issue or a pull request. One GitHub App
+    as REST v3 describes it, embedded on an issue or a pull request that an
+    app acted through. `at` is `created_at`; the omitted class is the hypermedia
+    templates.
   purpose: supporting
   names:
     singular: app
@@ -5720,9 +5728,10 @@ data:
   authority: providers.substrate.reamde.dev
   package: github
   description: >-
-    One comment on an issue or a pull request, as REST v3 describes it. `at`
-    is `created_at`; the omitted class is the hypermedia templates. Today
-    only a pinned comment embedded on an issue mints one.
+    A comment on a GitHub issue or pull request. One comment on an issue or
+    a pull request, as REST v3 describes it. `at` is `created_at`; the omitted
+    class is the hypermedia templates. Today only a pinned comment embedded
+    on an issue mints one.
   purpose: supporting
   names:
     singular: comment
