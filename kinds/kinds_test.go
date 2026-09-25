@@ -299,6 +299,40 @@ func TestEveryKindDeclaresADisplayTemplate(t *testing.T) {
 	}
 }
 
+// A SHIPPED KIND'S PURPOSE IS ONE OF THE THREE, AND THE SEED IS MACHINERY
+// (decision record 0104). The loader already refuses any other value; this
+// reads the documents so the rule holds for every file in both trees, and adds
+// the one the loader cannot know: a seeded kind is the substrate's own
+// machinery, so an unclassified core or llm kind would read as primary and
+// land in every console's navigation.
+func TestEveryShippedPurposeIsValidAndTheSeedIsInternal(t *testing.T) {
+	valid := map[string]bool{
+		vocabulary.PurposePrimary:    true,
+		vocabulary.PurposeSupporting: true,
+		vocabulary.PurposeInternal:   true,
+	}
+	declared := 0
+	for _, d := range readTreeDocuments(t) {
+		if d.Kind != vocabulary.DocKind {
+			continue
+		}
+		raw, has := d.Data["purpose"]
+		if has {
+			declared++
+			if v, ok := raw.(string); !ok || !valid[v] {
+				t.Errorf("%s: purpose %v is not primary, supporting or internal", d.ID, raw)
+			}
+		}
+		if authority, _, _ := vocabulary.SplitKindRef(d.ID); authority == kinds.SeedAuthority && raw != vocabulary.PurposeInternal {
+			t.Errorf("%s is seeded machinery and declares purpose %v; declare `purpose: internal`", d.ID, raw)
+		}
+	}
+	// A reader that stopped finding the key would pass this test forever.
+	if declared == 0 {
+		t.Fatal("read no purpose at all: the documents no longer spell it as data.purpose")
+	}
+}
+
 // EVERY STAMP IN THE TREE NAMES A DECLARED DATETIME PROPERTY. A transition's
 // stamp writes a stored property, and the loader SYNTHESIZES an implicit
 // datetime one where the author declared none — it has to, because stored

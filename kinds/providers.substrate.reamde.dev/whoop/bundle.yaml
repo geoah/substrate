@@ -109,7 +109,7 @@ data:
   # Connections page, `GET /api/v1/sync/status` and `substratectl sync status`
   # render this bundle without knowing it (T-084). ADDITIVE, unlike 10: every
   # property version 10 declared stays, at its own name and type.
-  version: 13
+  version: 14
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -221,6 +221,7 @@ data:
     a sealed client secret, and the data API's origin. The record the bundle's
     client input resolves; endpoints and scopes are manifest metadata rather
     than editable rows.
+  purpose: internal
   names:
     singular: config
   traits: [substrate.reamde.dev/core/oauth2]
@@ -274,6 +275,7 @@ data:
     The OAuth facility writes the credential reference, status, granted scopes
     and address; the owner chooses which collections sync and how often; the
     sync keeps its cursors and stamps here rather than on any mirror.
+  purpose: internal
   names:
     singular: account
   # `sync` is the core trait the Connections page, `GET /api/v1/sync/status`
@@ -591,6 +593,7 @@ data:
     The sync runs BOTH, both are authoritative, neither is paged, and WHOOP
     negotiates no media type (the sync sends Accept: application/json). No
     instant of its own, so no temporal trait.
+  purpose: supporting
   names:
     singular: user
   displayTemplate: "{firstName} {lastName}"
@@ -669,6 +672,7 @@ data:
     `at` is the cycle's `start` and `endsAt` its `end`; the CURRENT cycle
     has no `end` and so no `endsAt`. The paging envelope is the one omitted
     class.
+  purpose: supporting
   names:
     singular: cycle
   traits:

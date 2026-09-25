@@ -10,7 +10,8 @@ data:
     a kind binds — `temporal`, `accountconfig`, `oauth2`. Traits resolve across
     authorities, and host behavior keys on the trait a kind binds rather than
     on what the kind is called.
-  version: 8
+  version: 9
+  purpose: internal
   names:
     singular: trait
   # id = "<authority>/<package>/<name>". Traits resolve across authorities, so

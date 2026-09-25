@@ -143,7 +143,7 @@ data:
   # with no raw, no derived property, every relation a reference and every
   # closed set an enum. A changed declaration shipping the same version
   # reaches no repository, which is why this moves.
-  version: 15
+  version: 16
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -191,6 +191,7 @@ data:
     spends. The bundle's connector input resolves one record of this kind;
     the token is sealed against read-back and the origin must be a private
     one, so an owner edit cannot become an exfiltration channel.
+  purpose: internal
   names:
     singular: config
   displayTemplate: Beeper at {apiBase}
@@ -236,6 +237,7 @@ data:
     the token turned out to belong to, and where each stream's walk stopped.
     The accountconfig trait's OAuth hands are declared but stay dormant, since
     no OAuth flow ever runs for this bundle.
+  purpose: internal
   names:
     singular: account
   # `sync` is the core trait the Connections page and `substratectl sync
@@ -499,6 +501,7 @@ data:
     the Bridge schema of GET /v1/bridges (Beeper Client API v5.0.0); the `items`
     envelope is the only omission and there is no hypermedia. The list is
     authoritative. No instant of its own, so no temporal trait.
+  purpose: supporting
   names:
     singular: bridge
   displayTemplate: "{displayName|bridgeId}"
@@ -617,6 +620,7 @@ data:
     the Account schema of GET /v1/accounts (Beeper Client API v5.0.0), which
     also arrives embedded in a Bridge's `accounts`; both write this one kind.
     No envelope, no hypermedia, no instant, so no temporal trait.
+  purpose: internal
   names:
     singular: chataccount
   displayTemplate: "{network|chatAccountId}"
@@ -729,6 +733,7 @@ data:
     a participant, an account's own identity and a contact-list entry; the
     contact list is authoritative, the rest are thin and patch. No envelope,
     no instant, so no temporal trait.
+  purpose: supporting
   names:
     singular: user
   displayTemplate: "{fullName|username|displayText|phoneNumber|userId}"
@@ -821,6 +826,7 @@ data:
     /v1/labels (Beeper Client API v5.0.0), which also arrives embedded in
     a chat's `labels`; the list is authoritative. No envelope, no hypermedia,
     no instant, so no temporal trait.
+  purpose: supporting
   names:
     singular: label
   displayTemplate: "{name|labelId}"
@@ -1614,6 +1620,7 @@ data:
     far back the backfill reached, and the last outcome. Connector-written
     state, kept off the chat so a page of history never bumps the mirrored
     row.
+  purpose: internal
   names:
     singular: chatsync
   displayTemplate: "{chat.chatTitle}"

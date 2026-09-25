@@ -5,12 +5,13 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  version: 19
+  version: 20
   description: >-
     One package whose kinds this repository holds: the group a declaration
     is versioned, owned and quarantined in. The row says who may write under
     it and where its declarations came from, and carries the quarantine mark
     set when a stored closure no longer admits.
+  purpose: internal
   names:
     singular: package
   displayTemplate: "{localName}"

@@ -11,7 +11,8 @@ data:
     its reference names, so a Google contact keeps a person up to date. It
     is declared by the package that owns the TARGET kind, one per source kind
     and subject property.
-  version: 11
+  version: 12
+  purpose: internal
   names:
     singular: recordmapping
   # id = "<authority>/<package>/<name>". A mapping belongs to the package that

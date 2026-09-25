@@ -109,7 +109,7 @@ data:
   # their writers, and the sync body writes them beside the legacy
   # `syncStatus`/`lastSyncedAt`/`streamCursors` fields on every run. Nothing
   # is renamed, narrowed or dropped.
-  version: 7
+  version: 8
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -158,6 +158,7 @@ data:
     to. The bundle's connector input resolves one record of this kind; the
     token is sealed against read-back and the origin is pinned, so an owner
     edit cannot become an exfiltration channel.
+  purpose: internal
   names:
     singular: config
   displayTemplate: Slack connection
@@ -201,6 +202,7 @@ data:
     and the user the token turned out to belong to, and the connector's own
     per-stream progress. The accountconfig trait's OAuth hands are declared
     but stay dormant, since no OAuth flow ever runs for this bundle.
+  purpose: internal
   names:
     singular: account
   # `sync` is the core trait the Connections page and `substratectl sync
@@ -465,6 +467,7 @@ data:
     One Slack workspace, as team.info returns it: its id, name, host, email
     domain, icon and enterprise grid membership. The response envelope (ok)
     is the only thing dropped. Written once per sync.
+  purpose: supporting
   names:
     singular: team
   displayTemplate: "{name|teamId}"
@@ -609,6 +612,7 @@ data:
     the handle, the real name, the whole profile Slack renders them from,
     the workspace roles and whether they are a bot or deactivated. The envelope
     (ok, response_metadata) is dropped; everything else is here.
+  purpose: supporting
   names:
     singular: user
   displayTemplate: "{profile.displayName|realName|name}"
@@ -1476,6 +1480,7 @@ data:
     return it: its verbatim mrkdwn, who wrote it, the thread it sits in, who
     it mentions, what it carried and who reacted. `at` is its ts. Every subtype
     is this one kind; `type` is always `message` and is not declared.
+  purpose: supporting
   names:
     singular: message
   traits:
@@ -1887,6 +1892,7 @@ data:
     bots.info: its name, its icons, the app behind it and the user it posts
     as. Minted thin from a bare bot_id and read from bots.info when nothing
     carried a profile.
+  purpose: supporting
   names:
     singular: bot
   displayTemplate: "{name|botId}"
@@ -1974,6 +1980,7 @@ data:
     embeds and from files.info: its name, type, size, thumbnails, media renditions,
     canvas and external facts, access and where it has been shared. `at` is
     the file's `created`. The bytes are never fetched.
+  purpose: supporting
   names:
     singular: file
   traits:
@@ -2715,6 +2722,7 @@ data:
     the replies cursor, when the roster was last read and what Slack last
     said about it. Connector-written state, kept off the conversation so a
     page of history never bumps the mirrored row.
+  purpose: internal
   names:
     singular: conversationsync
   displayTemplate: "{conversation.name}"

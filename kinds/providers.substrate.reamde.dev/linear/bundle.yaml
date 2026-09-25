@@ -97,7 +97,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: linear
-  version: 17
+  version: 18
 ---
 # ---- the bundle document: the install unit -----------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -151,6 +151,7 @@ data:
     to. The bundle's connector input resolves one record of this kind; the
     key is sealed against read-back and the origin is pinned, so an owner
     edit can never become an exfiltration channel.
+  purpose: internal
   names:
     singular: config
   displayTemplate: Linear connection
@@ -204,6 +205,7 @@ data:
     and the member the API key turned out to be, and the connector's own per-stage
     progress. The accountconfig trait's OAuth hands are declared but stay
     dormant, since no OAuth flow ever runs for this bundle.
+  purpose: internal
   names:
     singular: account
   # `sync` is the core trait the Connections page, `GET /api/v1/sync/status`
@@ -499,6 +501,7 @@ data:
     2026-09-16); `at` is `createdAt`. Omitted as classes: GraphQL's envelope
     (`data`, `errors`, `pageInfo`) and its hypermedia, the `*Connection` sub-queries.
     Every payload is authoritative: a selected field returned null is a clear.
+  purpose: supporting
   names:
     singular: organization
   traits:
@@ -1017,6 +1020,7 @@ data:
     `at` is `createdAt`. Omitted as classes: GraphQL's envelope (`data`, `errors`,
     `pageInfo`) and its hypermedia, the `*Connection` sub-queries. Every payload
     is authoritative: a selected field returned null is a clear.
+  purpose: supporting
   names:
     singular: team
   traits:
@@ -1510,6 +1514,7 @@ data:
     GraphQL's envelope (`data`, `errors`, `pageInfo`) and its hypermedia,
     the `*Connection` sub-queries. Every payload is authoritative: a selected
     field returned null is a clear.
+  purpose: supporting
   names:
     singular: user
   traits:
@@ -1712,6 +1717,7 @@ data:
     2026-09-16); `at` is `createdAt`. Omitted as classes: GraphQL's envelope
     (`data`, `errors`, `pageInfo`) and its hypermedia, the `*Connection` sub-queries.
     Every payload is authoritative: a selected field returned null is a clear.
+  purpose: supporting
   names:
     singular: workflowstate
   traits:
@@ -1810,6 +1816,7 @@ data:
     2026-09-16); `at` is `createdAt`. Omitted as classes: GraphQL's envelope
     (`data`, `errors`, `pageInfo`) and its hypermedia, the `*Connection` sub-queries.
     Every payload is authoritative: a selected field returned null is a clear.
+  purpose: supporting
   names:
     singular: issuelabel
   traits:
@@ -1930,6 +1937,7 @@ data:
     2026-09-16); `at` is `createdAt`. Omitted as classes: GraphQL's envelope
     (`data`, `errors`, `pageInfo`) and its hypermedia, the `*Connection` sub-queries.
     Every payload is authoritative: a selected field returned null is a clear.
+  purpose: supporting
   names:
     singular: projectstatus
   traits:
@@ -2465,6 +2473,7 @@ data:
     `at`/`endsAt` are `startsAt`/`endsAt`. Omitted as classes: GraphQL's envelope
     (`data`, `errors`, `pageInfo`) and its hypermedia, the `*Connection` sub-queries.
     Every payload is authoritative: a selected field returned null is a clear.
+  purpose: supporting
   names:
     singular: cycle
   traits:
@@ -3171,6 +3180,7 @@ data:
     2026-09-16); `at` is `createdAt`. Omitted as classes: GraphQL's envelope
     (`data`, `errors`, `pageInfo`) and its hypermedia, the `*Connection` sub-queries.
     Every payload is authoritative: a selected field returned null is a clear.
+  purpose: supporting
   names:
     singular: comment
   traits:
@@ -3404,6 +3414,7 @@ data:
     `at` is `createdAt`. Omitted as classes: GraphQL's envelope (`data`, `errors`,
     `pageInfo`) and its hypermedia, the `*Connection` sub-queries. Every payload
     is authoritative: a selected field returned null is a clear.
+  purpose: supporting
   names:
     singular: reaction
   traits:

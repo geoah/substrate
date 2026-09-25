@@ -10,6 +10,7 @@ data:
     and a manager tier, never authorization: `api`, `console` and `substratectl`
     are the doors a human write comes through, and machine hands like `function:<authority>:<package>:<name>`
     are minted at dispatch.
+  purpose: internal
   names:
     singular: actor
   # projections of declared actors — the shipped ones at boot, an installed

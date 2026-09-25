@@ -65,7 +65,7 @@ data:
   # 9: the webhook trigger declares the headers the ingest function reads
   #    (`source.webhook.headers`), now that the engine keeps no global
   #    provider allowlist (decision record 0097).
-  version: 9
+  version: 10
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -149,6 +149,7 @@ data:
     One spoken instruction from an agent-mode capture: the text the owner
     said, when, and the recording it came from. The assistant reads it and
     writes tasks.
+  purpose: supporting
   names:
     singular: instruction
   displayTemplate: "{text}"
