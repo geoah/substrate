@@ -58,10 +58,10 @@ func oldPolicyTree(t *testing.T) string {
 	// back then it took the authority's, so the fixture drops the pin and it
 	// rides the authority's 9 with everything else.
 	patchShipped(t, coreKind(tree, "trigger.yaml"), func(doc string) string {
-		if !strings.Contains(doc, "\n  version: 17\n") {
-			t.Fatal("trigger no longer pins version 17; retune this fixture")
+		if !strings.Contains(doc, "\n  version: 18\n") {
+			t.Fatal("trigger no longer pins version 18; retune this fixture")
 		}
-		return strings.Replace(doc, "\n  version: 17\n", "\n", 1)
+		return strings.Replace(doc, "\n  version: 18\n", "\n", 1)
 	})
 	bumpPackageVersion(t, tree, corePackage, "9")
 	return tree
@@ -143,8 +143,8 @@ func TestPolicySelectorOpsUpgradeToTheEnum(t *testing.T) {
 	}
 	// The rest of core rode the same upgrade: `trigger` was unpinned in the
 	// old tree (oldPolicyTree), and the shipped tree lands it at its own pin.
-	if v := kindVersion(t, ds, corePackage+"/trigger"); v != 17 {
-		t.Fatalf("trigger is at version %d, want 17", v)
+	if v := kindVersion(t, ds, corePackage+"/trigger"); v != 18 {
+		t.Fatalf("trigger is at version %d, want 18", v)
 	}
 	rec, err := ds.Get(ctx, vocabulary.KindRecordPatchPolicy, "gate-puts")
 	if err != nil {

@@ -40,7 +40,8 @@ data:
     this row.
   # `source` is one object field per arm and carries no discriminator: the
   # arm present names the source.
-  version: 17
+  version: 18
+  purpose: internal
   names:
     singular: trigger
   # A random-id row reads as the callable it delivers to.

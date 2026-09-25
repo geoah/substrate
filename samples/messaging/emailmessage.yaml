@@ -9,6 +9,7 @@ data:
     One mail message in a thread: subject, preview, body, the provider's label
     ids, and the people it came from and went to. To, cc and bcc are not distinguished
     — `recipients` declares no link data, so every addressee is a recipient.
+  purpose: supporting
   names:
     singular: emailmessage
   traits:

@@ -211,7 +211,7 @@ data:
   # same `eventId` (`_retract_strays`). A full re-read runs the same path, so
   # one requested sync per account clears what a repository already holds.
   # Behaviour only; no declaration moved.
-  version: 33
+  version: 34
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -347,6 +347,7 @@ data:
     a sealed client secret, and the API base the syncs call. The endpoints
     and the feature-to-scope mapping are trusted manifest metadata, never
     properties on this row.
+  purpose: internal
   names:
     singular: config
   traits: [substrate.reamde.dev/core/oauth2]
@@ -399,6 +400,7 @@ data:
         it stops cleanly and leaves the rest pending; empty means the built-in
         55 s, which sits under the engine's two-minute deadline"
 ---
+
 ---
 # ---- the account type: one connected Google account -----------------------
 # accountconfig (its records ARE the bundle's connected accounts; the host
@@ -417,6 +419,7 @@ data:
     reference, status and granted scopes; the owner enables features and picks
     the cadence, and each stream keeps its own cursor here — except the per-calendar
     one, which lives in a calendarsync state row.
+  purpose: internal
   names:
     singular: account
   # `sync` is the core trait the Connections page, `GET /api/v1/sync/status`
@@ -1193,6 +1196,7 @@ data:
     so all three reach ONE row. Hence no product prefix: it belongs to all
     three. No envelope, no sibling call, no instant, no trait; the address
     alone.
+  purpose: supporting
   names:
     singular: emailaddress
   displayTemplate: "{address}"
@@ -6652,6 +6656,7 @@ data:
     is filed under, system (myContacts, starred, …) or the owner's own. Its
     resourceName is what contact.memberships[] points at. Omits the list envelope;
     no hypermedia, no instant, no trait.
+  purpose: supporting
   names:
     singular: contactgroup
   displayTemplate: "{formattedName|name}"
@@ -6785,6 +6790,7 @@ data:
     CATEGORY_*) or one this mailbox made. gmailmessage.labels points here.
     The four counts come only from users.labels.get, which this bundle does
     not call, so they are absent. Omits the envelope; no instant, no trait.
+  purpose: supporting
   names:
     singular: gmaillabel
   displayTemplate: "{name}"
@@ -7045,6 +7051,7 @@ data:
     on `payload`, encoded bytes included, with its lossless header and address
     decodes beside it. Omits the response envelope and the separate base64
     `raw` representation, which FULL does not return.
+  purpose: supporting
   names:
     singular: gmailmessage
   traits:
@@ -7395,6 +7402,7 @@ data:
     handle a later users.messages.attachments.get reads the bytes by. The
     COMPLETE part, children and exact bytes included, is on `gmailmessage.payload`.
     No envelope and no hypermedia to omit; no instant, so no temporal trait.
+  purpose: supporting
   names:
     singular: gmailattachment
   displayTemplate: "{filename}"
@@ -10450,6 +10458,7 @@ data:
     the list's `etag` and `nextSyncToken`) and nothing else. Binds no temporal
     trait — a calendar has no instant. No sibling call: the sync cursor is
     a calendarsync row.
+  purpose: supporting
   names:
     singular: calendar
   displayTemplate: "{summary}"
@@ -10683,6 +10692,7 @@ data:
     Provider-owned state, not an API resource and not a property of the calendar
     mirror, so a page of events never moves the calendar's version. Binds
     no trait: it has no instant of its own.
+  purpose: internal
   names:
     singular: calendarsync
   displayTemplate: "sync state"
@@ -10753,6 +10763,7 @@ data:
     zone. Never expanded into rows: a records read computes the occurrences.
     Omits the response envelope (`kind`, the list's `etag` and `nextSyncToken`)
     and nothing else. No sibling call.
+  purpose: supporting
   names:
     singular: calendarseries
   traits:

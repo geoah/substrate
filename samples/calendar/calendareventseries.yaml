@@ -12,6 +12,7 @@ data:
     stores the rule and never expands it into rows; a records read that bounds
     `at` computes its occurrences beside the calendarevents that override
     them.
+  purpose: supporting
   names:
     singular: calendareventseries
   displayTemplate: "{summary}"

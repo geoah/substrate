@@ -105,7 +105,7 @@ data:
   # the first cut, written to the v4 guide rather than migrated from a
   # pre-guide draft. A changed declaration shipping the same version reaches
   # no repository, so every edit from here bumps this.
-  version: 13
+  version: 14
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -154,6 +154,7 @@ data:
     may be sent to. The bundle's connector input resolves one record of this
     kind; the token is sealed against read-back and the origin is pinned,
     so an owner edit cannot become an exfiltration channel.
+  purpose: internal
   names:
     singular: config
   displayTemplate: Notion connection
@@ -197,6 +198,7 @@ data:
     user the token turned out to be, and the connector's own per-stream progress.
     The accountconfig trait's OAuth hands are declared but stay dormant, since
     no OAuth flow ever runs for this bundle.
+  purpose: internal
   names:
     singular: account
   # `sync` is the core trait the Connections page, `GET /api/v1/sync/status`
@@ -464,6 +466,7 @@ data:
     and a list's object/results/next_cursor/has_more) is the one omitted class;
     Notion publishes no hypermedia. No instant of its own, so no temporal
     trait.
+  purpose: supporting
   names:
     singular: user
   displayTemplate: "{name|userId}"
@@ -876,6 +879,7 @@ data:
     in every pair observed, so this bundle never makes that call and an omitted
     property is left absent rather than nulled. `at` is `created_time`; the
     response envelope (request_id) is omitted.
+  purpose: supporting
   names:
     singular: datasource
   traits:
@@ -1464,6 +1468,7 @@ data:
     where the shape allows, `json` where it holds rich text or is empty. `at`
     is `created_time`; the response envelope (request_id and the list wrapper)
     is the one omitted class.
+  purpose: supporting
   names:
     singular: block
   traits:
@@ -1902,6 +1907,7 @@ data:
     when it last ran, the page edit it ran against and what Notion last said
     about it. Connector-written state, kept off the page so a page of blocks
     never bumps the mirrored row.
+  purpose: internal
   names:
     singular: pagesync
   displayTemplate: "{page.titlePlainText}"

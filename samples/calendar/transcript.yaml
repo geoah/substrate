@@ -9,7 +9,8 @@ data:
     A meeting's transcript, pointed at the occurrence that actually happened
     and the people who spoke. The text is embedded, so what was said in a
     meeting is searchable alongside everything else rather than only scrollable.
-  version: 6
+  version: 7
+  purpose: supporting
   names:
     singular: transcript
   traits:
