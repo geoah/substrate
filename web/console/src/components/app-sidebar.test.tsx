@@ -38,7 +38,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { buildKindNav } from "@/lib/api/kinds"
 import type { BundleStatus, KindInfo } from "@/lib/api/types"
 import { AuthorityGroup, Favorites, SettingsSetupBadge } from "./app-sidebar"
-import { NavigationProvider } from "./sidebar-preferences"
+import { NavigationProvider } from "./console-preferences"
 import { SidebarMenu } from "./ui/sidebar"
 
 function kind(pkg: string, name: string): KindInfo {

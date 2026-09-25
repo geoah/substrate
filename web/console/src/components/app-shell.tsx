@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState } from "react"
 import { Link, Outlet, useRouterState } from "@tanstack/react-router"
 import { SearchIcon } from "lucide-react"
 
-import { NavigationProvider } from "@/components/sidebar-preferences"
+import { NavigationProvider } from "@/components/console-preferences"
 import { AppSidebar } from "@/components/app-sidebar"
 import { CommandMenu } from "@/components/command-menu"
 import {

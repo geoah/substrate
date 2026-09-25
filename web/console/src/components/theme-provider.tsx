@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import * as React from "react"
 
-type Theme = "dark" | "light" | "system"
+export type Theme = "dark" | "light" | "system"
 type ResolvedTheme = "dark" | "light"
 
 type ThemeProviderProps = {
@@ -111,3 +111,7 @@ export const useTheme = () => {
 
   return context
 }
+
+/** The theme context where one is mounted; the console preferences provider
+ * reads it to keep the stored preference and this browser's theme in step. */
+export const useOptionalTheme = () => React.useContext(ThemeProviderContext)

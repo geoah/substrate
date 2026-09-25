@@ -28,9 +28,11 @@ import {
   UserRoundIcon,
 } from "lucide-react"
 
-import { useSidebarPreferences } from "@/hooks/use-sidebar-preferences"
+import {
+  useConsolePreferences,
+  useSidebarPreferences,
+} from "@/hooks/use-console-preferences"
 import { splitKind } from "@/lib/api/http"
-import { useTheme } from "@/components/theme-provider"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -425,7 +427,7 @@ export function Favorites() {
 function ActorFooter() {
   const { isMobile } = useSidebar()
   const navigate = useNavigate()
-  const { theme, setTheme } = useTheme()
+  const { preferences, set } = useConsolePreferences()
   const repository = getRepository()
 
   async function logOut() {
@@ -467,9 +469,9 @@ function ActorFooter() {
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuRadioGroup
-              value={theme}
+              value={preferences.theme}
               onValueChange={(value) =>
-                setTheme(value as "light" | "dark" | "system")
+                set("theme", value as "light" | "dark" | "system")
               }
             >
               <DropdownMenuRadioItem value="light">
