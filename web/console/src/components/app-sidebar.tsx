@@ -1,8 +1,10 @@
-/** The sidebar: the repository at the top, the search that opens ⌘K, the
- * five places (Home, All data, Agents, Tools, Providers), then the
- * collections grouped the way a person meets them ("Your data", one
- * "From <Provider>" per provider) and, at the foot, History, Settings, the
- * Technical details switch and the account menu.
+/** The sidebar: the repository at the top (the one account menu: settings,
+ * theme, sign out), the search that opens ⌘K, the five places (Home, All
+ * data, Agents, Tools, Providers), then the collections grouped the way a
+ * person meets them ("Your data", one "From <Provider>" per provider) and, at
+ * the foot, History, Settings and the Technical details switch. The
+ * repository's name appears once: a second chip for it is a second door to
+ * the same menu.
  *
  * Everyday mode lists each group's primary collections by display plural.
  * Technical mode lists the authority / package tree with each kind's own
@@ -46,6 +48,7 @@ import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
@@ -483,11 +486,13 @@ export function TechnicalSwitchRow() {
   )
 }
 
-function AccountMenu() {
+/** The repository's name and the menu behind it. It is the only place the
+ * sidebar names the repository. */
+export function RepositoryMenu() {
   const { isMobile } = useSidebar()
   const navigate = useNavigate()
   const { preferences, set } = useConsolePreferences()
-  const repository = getRepository() ?? "Signed in"
+  const repository = getRepository() ?? "substrate"
 
   async function signOut() {
     // Signing out revokes the token record this browser holds; a session IS
@@ -500,21 +505,30 @@ function AccountMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className={cn(ROW, "mt-1 h-9 cursor-pointer aria-expanded:bg-hover")}
+        aria-label={`${repository}: account menu`}
+        className="flex h-9 w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-foreground outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-hover"
       >
         <RepositoryMark repository={repository} />
-        <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+        <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold">
           {repository}
         </span>
         <ChevronsUpDownIcon className="size-3.5 shrink-0 text-faint" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        className="min-w-52"
-        side={isMobile ? "bottom" : "right"}
-        align="end"
-        sideOffset={6}
+        className="min-w-56"
+        side="bottom"
+        align={isMobile ? "center" : "start"}
+        sideOffset={4}
       >
-        <DropdownMenuLabel className="truncate">{repository}</DropdownMenuLabel>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="flex flex-col gap-0.5">
+            <span className="text-[11px] font-normal text-faint">
+              Signed in to
+            </span>
+            <span className="truncate text-foreground">{repository}</span>
+          </DropdownMenuLabel>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
         <DropdownMenuItem render={<Link to="/settings" />}>
           <SlidersHorizontalIcon /> Account and settings
         </DropdownMenuItem>
@@ -525,6 +539,9 @@ function AccountMenu() {
             set("theme", value as "light" | "dark" | "system")
           }
         >
+          <DropdownMenuLabel className="text-[11px] font-normal text-faint">
+            Theme
+          </DropdownMenuLabel>
           <DropdownMenuRadioItem value="system">
             <SunMoonIcon /> System
           </DropdownMenuRadioItem>
@@ -545,21 +562,10 @@ function AccountMenu() {
 }
 
 export function AppSidebar({ onSearch }: { onSearch: () => void }) {
-  const repository = getRepository() ?? "substrate"
-  const close = useCloseOnPhone()
   return (
     <Sidebar collapsible="offcanvas">
       <SidebarHeader className="gap-1 px-3 pt-3 pb-2">
-        <Link
-          to="/"
-          onClick={close}
-          className="flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-foreground no-underline hover:bg-hover"
-        >
-          <RepositoryMark repository={repository} />
-          <span className="min-w-0 truncate text-[13.5px] font-semibold">
-            {repository}
-          </span>
-        </Link>
+        <RepositoryMenu />
         <button
           type="button"
           onClick={onSearch}
@@ -592,7 +598,6 @@ export function AppSidebar({ onSearch }: { onSearch: () => void }) {
         <NavRow to="/history" icon={HistoryIcon} label="History" />
         <NavRow to="/settings" icon={SlidersHorizontalIcon} label="Settings" />
         <TechnicalSwitchRow />
-        <AccountMenu />
       </SidebarFooter>
     </Sidebar>
   )

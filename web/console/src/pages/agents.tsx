@@ -7,7 +7,8 @@
  * `?agent=<agent id>` opens a new chat with that agent; `?prompt=<text>`
  * prefills the composer of a new chat (other pages link here with a question).
  * A bare `/agents` opens the most recent conversation, or a new chat when
- * there is none. `/agents/<agent id>` is the old per-agent address and
+ * there is none. The chats column can be narrowed to one agent; `?agent=`
+ * narrows it too, and New chat starts with the agent it is narrowed to. `/agents/<agent id>` is the old per-agent address and
  * redirects to `?agent=` (its `?thread=` carried along).
  *
  * The llm/provider rows are not agents and are not listed; an agent's
@@ -78,6 +79,15 @@ export function AgentsPage() {
   // Which new chat this is. A conversation that adopted a thread holds it as
   // its own, so the next new chat, even with the same agent, is another one.
   const [chat, setChat] = useState(0)
+  // The agent the chats column is narrowed to. It follows `?agent=` whenever
+  // the address names one, and stays while a chat from the narrowed list is
+  // read (which drops `?agent=`).
+  const [narrowed, setNarrowed] = useState(search.agent)
+  const [addressed, setAddressed] = useState(search.agent)
+  if (addressed !== search.agent) {
+    setAddressed(search.agent)
+    if (search.agent) setNarrowed(search.agent)
+  }
 
   const agents = useQuery(agentsQueryOptions())
   const conversations = useQuery(conversationsQueryOptions())
@@ -159,9 +169,16 @@ export function AgentsPage() {
     setDraft("")
     void setSearch({
       thread: null,
-      agent: agent ?? agentId ?? talkable[0]?.id ?? null,
+      agent: agent ?? (narrowed || agentId) ?? talkable[0]?.id ?? null,
       prompt: null,
     })
+  }
+
+  /** Narrows the chats to one agent. Unless the conversation open is already
+   * with it, a new chat with it opens, so the middle matches the list. */
+  function pickAgent(next: string) {
+    setNarrowed(next)
+    if (next && next !== agentId) startChat(next)
   }
 
   function togglePanel() {
@@ -176,6 +193,8 @@ export function AgentsPage() {
       error={conversations.error?.message ?? agents.error?.message}
       agents={allAgents}
       selected={threadId}
+      agent={narrowed}
+      onAgent={pickAgent}
       onSelect={openThread}
       onNewChat={startChat}
     />

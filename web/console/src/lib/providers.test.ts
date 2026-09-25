@@ -23,6 +23,7 @@ import {
   type StandingInput,
   type StepFacts,
 } from "@/lib/providers"
+import { FAILED_PREVIEW_BLOCKER } from "@/lib/bundles"
 import { syncFieldsOf } from "@/lib/sync"
 
 function record(
@@ -137,24 +138,25 @@ describe("chosenCount", () => {
 })
 
 describe("providerStanding", () => {
+  const ada = {
+    record: { id: "ada" },
+    label: "ada@example.com",
+    tokenStatus: "connected",
+    sync: syncFieldsOf({ syncState: "ok" }),
+  }
   const base: StandingInput = {
     installed: true,
     enabled: true,
     quarantined: false,
-    upgradeBlocked: false,
-    otherSetup: 0,
+    upgradeBlockers: [],
+    otherSetup: [],
     steps: setupSteps({
       ...FACTS,
       configured: true,
       accounts: [{ connected: true, chosen: 1 }],
     }),
-    accounts: [
-      {
-        label: "ada@example.com",
-        health: "healthy",
-        sync: syncFieldsOf({ syncState: "ok" }),
-      },
-    ],
+    oauth: true,
+    accounts: [ada],
   }
 
   it("is On and up to date when every step is done", () => {
@@ -162,6 +164,7 @@ describe("providerStanding", () => {
       tone: "on",
       pill: "On",
       line: "Connected · up to date",
+      problems: [],
     })
   })
 
@@ -169,9 +172,7 @@ describe("providerStanding", () => {
     expect(
       providerStanding({
         ...base,
-        accounts: [
-          { ...base.accounts[0], sync: syncFieldsOf({ syncState: "running" }) },
-        ],
+        accounts: [{ ...ada, sync: syncFieldsOf({ syncState: "running" }) }],
       }).line
     ).toBe("Connected · syncing")
   })
@@ -181,41 +182,187 @@ describe("providerStanding", () => {
       tone: "add",
       pill: "",
       line: "Not added",
+      problems: [],
     })
   })
 
   it("names the step a provider is on", () => {
-    const s = providerStanding({ ...base, steps: setupSteps(FACTS) })
+    const s = providerStanding({
+      ...base,
+      accounts: [],
+      steps: setupSteps(FACTS),
+    })
     expect(s).toMatchObject({
       tone: "setup",
       pill: "Set up",
       step: 2,
       line: "Almost there · step 2 of 4",
+      problems: [],
     })
   })
 
-  it("puts a broken account before anything else but a failed load", () => {
-    const broken = {
+  it("says which account fails to sync, with the error and the fixes", () => {
+    const s = providerStanding({
       ...base,
-      steps: setupSteps(FACTS),
-      accounts: [{ ...base.accounts[0], health: "broken" as const }],
-    }
-    expect(providerStanding(broken)).toMatchObject({
+      accounts: [
+        {
+          ...ada,
+          sync: syncFieldsOf({
+            syncState: "erroring",
+            syncError: "gmail: HTTP 403\ntrace",
+          }),
+        },
+      ],
+    })
+    expect(s).toMatchObject({
       tone: "attention",
       pill: "Needs attention",
-      line: "Having trouble with ada@example.com",
+      line: "Syncing ada@example.com is failing",
     })
-    expect(
-      providerStanding({ ...broken, quarantined: true, installed: false })
-    ).toMatchObject({
-      tone: "attention",
-      line: expect.stringMatching(/failed to load/),
+    expect(s.problems).toEqual([
+      {
+        code: "sync",
+        summary: "Syncing ada@example.com is failing",
+        detail: ["gmail: HTTP 403"],
+        account: "ada",
+        fixes: ["sync-now", "reconnect"],
+      },
+    ])
+  })
+
+  it("reads a legacy erroring status as a failing sync", () => {
+    const s = providerStanding({
+      ...base,
+      oauth: false,
+      accounts: [
+        {
+          ...ada,
+          sync: syncFieldsOf({}),
+          legacySyncStatus: "erroring: token expired",
+        },
+      ],
+    })
+    expect(s.problems[0]).toMatchObject({
+      code: "sync",
+      detail: ["erroring: token expired"],
+      fixes: ["sync-now"],
     })
   })
 
-  it("says a blocked update needs attention", () => {
-    expect(providerStanding({ ...base, upgradeBlocked: true }).tone).toBe(
-      "attention"
+  it("asks to reconnect an account whose sign-in stopped working", () => {
+    const s = providerStanding({
+      ...base,
+      accounts: [
+        {
+          ...ada,
+          tokenStatus: "erroring",
+          sync: syncFieldsOf({ syncState: "erroring", syncError: "401" }),
+        },
+      ],
+    })
+    expect(s.problems).toEqual([
+      {
+        code: "sign-in",
+        summary: "The sign-in for ada@example.com stopped working",
+        detail: ["401"],
+        account: "ada",
+        fixes: ["reconnect"],
+      },
+    ])
+  })
+
+  it("says why it failed to load, before anything else", () => {
+    const s = providerStanding({
+      ...base,
+      quarantined: true,
+      installed: false,
+      quarantineReason: "kind google/contact: unknown key",
+      accounts: [{ ...ada, tokenStatus: "erroring" }],
+    })
+    expect(s).toMatchObject({ tone: "attention", line: "It failed to load" })
+    expect(s.problems).toEqual([
+      {
+        code: "failed-to-load",
+        summary: "It failed to load",
+        detail: ["kind google/contact: unknown key"],
+        fixes: ["add-again"],
+      },
+    ])
+  })
+
+  it("names what blocks an update", () => {
+    const s = providerStanding({
+      ...base,
+      upgradeBlockers: ["google/contact: 3 records still hold nickname"],
+    })
+    expect(s.line).toBe("An update is waiting on your records")
+    expect(s.problems[0].detail).toEqual([
+      "google/contact: 3 records still hold nickname",
+    ])
+    expect(
+      providerStanding({ ...base, upgradeBlockers: [FAILED_PREVIEW_BLOCKER] })
+        .problems[0].summary
+    ).toBe("An update couldn’t be checked")
+  })
+
+  it("counts the parked runs of its triggers and offers to retry them", () => {
+    const s = providerStanding({
+      ...base,
+      triggers: [
+        { id: "google-gmail-scheduled", parked: 2 },
+        { id: "google-drive-scheduled", parked: 1 },
+        { id: "google-contacts-scheduled", parked: 0 },
+      ],
+    })
+    expect(s.line).toBe("3 runs failed and are waiting to be retried")
+    expect(s.problems[0].fixes).toEqual(["retry-parked"])
+  })
+
+  it("names a trigger that cannot run", () => {
+    const s = providerStanding({
+      ...base,
+      triggers: [
+        { id: "google-gmail-scheduled", parked: 0, error: "no such function" },
+      ],
+    })
+    expect(s.problems[0]).toMatchObject({
+      code: "trigger-broken",
+      summary: "One of its syncs can’t run",
+      detail: ["google-gmail-scheduled: no such function"],
+    })
+  })
+
+  it("calls a setup gap a problem once accounts depend on it", () => {
+    const gap = {
+      ...base,
+      otherSetup: [{ code: "setting" as const, message: "apiBase is empty" }],
+    }
+    expect(providerStanding(gap).problems).toEqual([
+      {
+        code: "setup-missing",
+        summary: "A setting it needs is empty",
+        detail: ["apiBase is empty"],
+        fixes: ["set-up"],
+      },
+    ])
+    expect(
+      providerStanding({ ...gap, steps: setupSteps(FACTS) }).problems[0]
+    ).toMatchObject({ summary: "Its sign-in details are missing" })
+    // Without accounts it is still the set-up the steps walk through.
+    expect(providerStanding({ ...gap, accounts: [] })).toMatchObject({
+      tone: "setup",
+      line: "Almost there · finish its settings",
+    })
+  })
+
+  it("adds how many more problems there are to the card's line", () => {
+    const s = providerStanding({
+      ...base,
+      upgradeBlockers: ["x"],
+      triggers: [{ id: "t", parked: 1 }],
+    })
+    expect(s.line).toBe(
+      "1 run failed and is waiting to be retried · and 1 more"
     )
   })
 
@@ -226,11 +373,74 @@ describe("providerStanding", () => {
     })
   })
 
-  it("stays in set-up while a setting is empty", () => {
-    expect(providerStanding({ ...base, otherSetup: 1 })).toMatchObject({
-      tone: "setup",
-      line: "Almost there · finish its settings",
-    })
+  it("gives every Needs attention a reason and a line that says it", () => {
+    const accounts = {
+      none: [],
+      healthy: [ada],
+      pending: [{ ...ada, tokenStatus: "pending" }],
+      signIn: [{ ...ada, tokenStatus: "erroring" }],
+      sync: [{ ...ada, sync: syncFieldsOf({ syncState: "erroring" }) }],
+      legacy: [
+        { ...ada, sync: syncFieldsOf({}), legacySyncStatus: "erroring" },
+      ],
+    }
+    const triggers = {
+      none: [],
+      parked: [{ id: "t", parked: 2 }],
+      broken: [{ id: "t", parked: 0, error: "no callable" }],
+    }
+    const flags = [true, false]
+    let attention = 0
+    for (const quarantined of flags)
+      for (const installed of flags)
+        for (const enabled of flags)
+          for (const blockers of [[], ["x"], [FAILED_PREVIEW_BLOCKER]])
+            for (const otherSetup of [
+              [],
+              [{ code: "setting" as const, message: "m" }],
+            ])
+              for (const steps of [base.steps, setupSteps(FACTS)])
+                for (const oauth of flags)
+                  for (const [name, list] of Object.entries(accounts))
+                    for (const t of Object.values(triggers)) {
+                      const input: StandingInput = {
+                        installed,
+                        enabled,
+                        quarantined,
+                        upgradeBlockers: blockers,
+                        otherSetup,
+                        steps,
+                        oauth,
+                        accounts: list,
+                        triggers: t,
+                      }
+                      const s = providerStanding(input)
+                      const context = JSON.stringify({ input, name })
+                      expect(s.tone === "attention", context).toBe(
+                        s.problems.length > 0
+                      )
+                      if (s.tone !== "attention") continue
+                      attention++
+                      expect(s.pill, context).toBe("Needs attention")
+                      expect(s.line.startsWith(s.problems[0].summary)).toBe(
+                        true
+                      )
+                      for (const p of s.problems) {
+                        expect(p.summary, context).toMatch(/\S/)
+                        expect(
+                          p.fixes.length > 0 || (p.detail?.length ?? 0) > 0,
+                          context
+                        ).toBe(true)
+                      }
+                      // Whatever the old rule called broken still is.
+                      const broken =
+                        name === "signIn" ||
+                        name === "sync" ||
+                        name === "legacy"
+                      if (quarantined || (installed && enabled && broken))
+                        expect(s.tone, context).toBe("attention")
+                    }
+    expect(attention).toBeGreaterThan(0)
   })
 })
 

@@ -27,6 +27,7 @@ import type {
   CatalogItem,
   KindInfo,
   ShippedUpgrade,
+  TriggerStatus,
 } from "@/lib/api/types"
 
 const navigate = vi.fn().mockResolvedValue(undefined)
@@ -217,6 +218,7 @@ interface Wire {
   shipped?: ShippedUpgrade[]
   fresh?: (id: string) => CatalogItem | undefined
   take?: (id: string, verb: string) => Response
+  triggerStatuses?: TriggerStatus[]
 }
 
 function listedKinds(path: string): string[] {
@@ -280,6 +282,9 @@ describe("ProvidersPage", () => {
         return jsonResponse(200, { kinds: KINDS })
       }
       if (path === CATALOG_PATH) return jsonResponse(200, { items: catalog })
+      if (path === "/api/v1/substrate.reamde.dev/core/trigger/status") {
+        return jsonResponse(200, { items: wire.triggerStatuses ?? [] })
+      }
       if (path === SHIPPED_PATH) {
         return jsonResponse(200, { items: wire.shipped ?? [] })
       }
@@ -440,6 +445,42 @@ describe("ProvidersPage", () => {
     renderPage(<ProvidersPage />)
     const google = await card("Google")
     expect(within(google).getByText("Needs attention")).toBeTruthy()
+    expect(within(google).getByText("It failed to load")).toBeTruthy()
+  })
+
+  it("says on the card why a provider needs attention", async () => {
+    serve({
+      statuses: [googleStatus()],
+      triggerStatuses: [
+        {
+          id: "google-gmail-scheduled",
+          kind: "schedule",
+          callable: `${GOOGLE_ID}/syncgmail`,
+          enabled: true,
+          head: 3,
+          parked: 2,
+          pending: 0,
+        },
+        {
+          id: "linear-issues-scheduled",
+          kind: "schedule",
+          callable: "providers.substrate.reamde.dev/linear/syncissues",
+          enabled: true,
+          head: 3,
+          parked: 5,
+          pending: 0,
+        },
+      ],
+    })
+    renderPage(<ProvidersPage />)
+    const google = await card("Google")
+    expect(within(google).getByText("Needs attention")).toBeTruthy()
+    // Only its own triggers count.
+    expect(
+      await within(google).findByText(
+        "2 runs failed and are waiting to be retried"
+      )
+    ).toBeTruthy()
   })
 
   it("shows the bundle id on the card in technical mode only", async () => {
