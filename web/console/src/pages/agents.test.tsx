@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /** A new chat is new: once a new chat's run has named its thread, starting
  * another chat with the same agent opens a fresh conversation rather than the
- * one the first run adopted. */
+ * one the first run adopted. The chats column's narrowing follows `?agent=`,
+ * outlives reading one of its chats, and names New chat's agent. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
@@ -14,6 +15,7 @@ let mounts = 0
 vi.mock("@/components/agent/conversation", () => ({
   Conversation: (props: {
     thread: string
+    agentId?: string
     onThread: (thread: string) => void
     actions?: ReactNode
   }) => {
@@ -21,6 +23,7 @@ vi.mock("@/components/agent/conversation", () => ({
     return (
       <div data-testid="conversation" data-mount={mount}>
         <span data-testid="thread">{props.thread}</span>
+        <span data-testid="agent">{props.agentId}</span>
         <button type="button" onClick={() => props.onThread("t-1")}>
           Mint
         </button>
@@ -29,7 +32,26 @@ vi.mock("@/components/agent/conversation", () => ({
     )
   },
 }))
-vi.mock("@/components/agent/thread-list", () => ({ ThreadList: () => null }))
+vi.mock("@/components/agent/thread-list", () => ({
+  ThreadList: (props: {
+    agent: string
+    onAgent: (agent: string) => void
+    onSelect: (thread: string) => void
+  }) => (
+    <div>
+      <span data-testid="narrowed">{props.agent}</span>
+      <button type="button" onClick={() => props.onSelect("t-9")}>
+        Open t-9
+      </button>
+      <button type="button" onClick={() => props.onAgent("")}>
+        All agents
+      </button>
+      <button type="button" onClick={() => props.onAgent("other")}>
+        Pick other
+      </button>
+    </div>
+  ),
+}))
 vi.mock("@/components/agent/agent-panel", () => ({ AgentPanel: () => null }))
 
 import { AgentsPage } from "./agents"
@@ -75,7 +97,58 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+function renderPage(searchParams: string) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  const onUrlUpdate = vi.fn()
+  render(
+    <QueryClientProvider client={client}>
+      <NuqsTestingAdapter
+        searchParams={searchParams}
+        hasMemory
+        onUrlUpdate={onUrlUpdate}
+      >
+        <AgentsPage />
+      </NuqsTestingAdapter>
+    </QueryClientProvider>
+  )
+  return onUrlUpdate
+}
+
 describe("AgentsPage", () => {
+  it("narrows the chats to the addressed agent and starts New chat with it", async () => {
+    const onUrlUpdate = renderPage("?agent=helper")
+    expect(screen.getByTestId("narrowed").textContent).toBe("helper")
+
+    await act(async () => fireEvent.click(screen.getByText("Open t-9")))
+    expect(screen.getByTestId("thread").textContent).toBe("t-9")
+    // Reading one of its chats keeps the narrowing.
+    expect(screen.getByTestId("narrowed").textContent).toBe("helper")
+
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: /New chat/ }))
+    )
+    expect(onUrlUpdate.mock.lastCall?.[0].queryString).toBe("?agent=helper")
+    expect(screen.getByTestId("agent").textContent).toBe("helper")
+  })
+
+  it("picking an agent narrows and opens a chat with it; All agents only widens", async () => {
+    const onUrlUpdate = renderPage("?thread=t-9")
+    expect(screen.getByTestId("narrowed").textContent).toBe("")
+
+    await act(async () => fireEvent.click(screen.getByText("Pick other")))
+    expect(screen.getByTestId("narrowed").textContent).toBe("other")
+    expect(onUrlUpdate.mock.lastCall?.[0].queryString).toBe("?agent=other")
+
+    const calls = onUrlUpdate.mock.calls.length
+    await act(async () => fireEvent.click(screen.getByText("All agents")))
+    expect(screen.getByTestId("narrowed").textContent).toBe("")
+    // The conversation open stays open.
+    expect(onUrlUpdate.mock.calls.length).toBe(calls)
+    expect(screen.getByTestId("agent").textContent).toBe("other")
+  })
+
   it("opens a fresh conversation for a new chat after the last one adopted its thread", async () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
