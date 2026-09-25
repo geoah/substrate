@@ -254,7 +254,7 @@ export function CreateSheet({
           <div className="my-[18px] h-px bg-border" />
           <textarea
             aria-label={bodyField.label}
-            placeholder={`Add ${bodyField.label.toLowerCase()}…`}
+            placeholder={`Add ${lowerFirst(bodyField.label)}…`}
             value={String(form.values[bodyField.name] ?? "")}
             rows={5}
             onChange={(e) => form.commit(bodyField, e.target.value)}

@@ -531,7 +531,7 @@ export function KindBrowsePage() {
           <InboxIcon />
         </EmptyMedia>
         <EmptyTitle>
-          {hasFilters ? "Nothing matches" : `No ${plural.toLowerCase()} yet`}
+          {hasFilters ? "Nothing matches" : `No ${lowerFirst(plural)} yet`}
         </EmptyTitle>
         <EmptyDescription>
           {hasFilters
@@ -563,7 +563,7 @@ export function KindBrowsePage() {
   const summary =
     nesting && total !== undefined && collectionCount.data ? (
       <span className="tabular-nums">
-        {formatCount(collectionCount.data)} {plural.toLowerCase()},{" "}
+        {formatCount(collectionCount.data)} {lowerFirst(plural)},{" "}
         {total.toLocaleString()}
         {totalCapped ? "+" : ""} at the top level
       </span>
@@ -588,7 +588,7 @@ export function KindBrowsePage() {
             title={
               hasFilters
                 ? "Flat while a filter or a search is set, so a match shows wherever it sits"
-                : `The top level is the ${plural.toLowerCase()} with no ${propertyLabel(nestProperty.name).toLowerCase()}; each opens onto the ones that name it`
+                : `The top level is the ${lowerFirst(plural)} with no ${lowerFirst(propertyLabel(nestProperty.name))}; each opens onto the ones that name it`
             }
             className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border-strong bg-background px-2.5 text-[12.5px] text-muted-foreground outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-50 aria-pressed:border-transparent aria-pressed:bg-primary-soft aria-pressed:text-primary-text"
             onClick={() => {
@@ -629,8 +629,8 @@ export function KindBrowsePage() {
             sort. */}
         <SearchBox
           className="h-[30px] w-60 [&_input]:font-sans"
-          label={`Search ${plural.toLowerCase()}`}
-          placeholder={`Search ${totalText && totalText !== "0" && !nesting ? `${totalText} ` : ""}${plural.toLowerCase()}`}
+          label={`Search ${lowerFirst(plural)}`}
+          placeholder={`Search ${totalText && totalText !== "0" && !nesting ? `${totalText} ` : ""}${lowerFirst(plural)}`}
           value={search}
           onChange={(next) => {
             void setSearch(next || null)

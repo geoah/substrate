@@ -98,8 +98,8 @@ function GroupHead({
     return (
       <span className="flex min-w-0 flex-wrap items-center gap-1.5">
         <KindGlyph kind={group.kind} size="xs" />
-        <b className="font-medium text-foreground">Sub{plural.toLowerCase()}</b>
-        <span>smaller {plural.toLowerCase()} that are part of this one</span>
+        <b className="font-medium text-foreground">Sub{lowerFirst(plural)}</b>
+        <span>smaller {lowerFirst(plural)} that are part of this one</span>
       </span>
     )
   }

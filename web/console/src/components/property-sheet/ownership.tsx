@@ -48,6 +48,7 @@ import {
 import { splitRecordPath } from "@/lib/record-path"
 import { typeLabel, type PropSpec } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
+import { lowerFirst } from "@/lib/kind-names"
 
 const TIER_TONES: Record<Tier, string> = {
   owner: "bg-primary-soft text-primary-text",
@@ -420,8 +421,8 @@ export function OwnershipDetail({
             <DialogHeader>
               <DialogTitle>
                 {pending.kind === "use"
-                  ? `Use ${sourceName(pending.alternative.actor)}’s ${row.spec.label.toLowerCase()}?`
-                  : `Follow ${pending.follow} for ${row.spec.label.toLowerCase()}?`}
+                  ? `Use ${sourceName(pending.alternative.actor)}’s ${lowerFirst(row.spec.label)}?`
+                  : `Follow ${pending.follow} for ${lowerFirst(row.spec.label)}?`}
               </DialogTitle>
               <DialogDescription>
                 {pending.kind === "use" ? (

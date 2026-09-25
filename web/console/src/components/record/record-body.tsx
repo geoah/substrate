@@ -11,6 +11,7 @@ import {
 import type { SubstrateRecord } from "@/lib/api/types"
 import type { PropSpec } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
+import { lowerFirst } from "@/lib/kind-names"
 
 export function RecordBody({
   record,
@@ -109,7 +110,7 @@ export function RecordBody({
               </p>
             ))
           ) : (
-            <p className="text-faint">Add {spec.label.toLowerCase()}…</p>
+            <p className="text-faint">Add {lowerFirst(spec.label)}…</p>
           )}
         </div>
       )}
