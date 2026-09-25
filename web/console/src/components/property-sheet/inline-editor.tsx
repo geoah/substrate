@@ -85,15 +85,20 @@ function LineEditor(props: InlineEditorProps) {
   const { field } = row
   const { save, pending } = useSave(props)
   const isDate = field.control === "datetime" && field.spec.kind !== "date"
-  const [text, setText] = useState(() => {
+  const [initial] = useState(() => {
     const seeded = seedField(field, row.value, false)
     const s = typeof seeded === "string" ? seeded : ""
     return isDate ? toLocalInput(s) : s
   })
+  const [text, setText] = useState(initial)
   const done = useRef(false)
 
   function commit() {
     if (done.current) return
+    // Leaving the box as it opened is not an edit. The draft is compared,
+    // not the stored value: a date shown to the minute would otherwise write
+    // back the stored instant without its seconds.
+    if (text === initial) return cancel()
     done.current = true
     void save(isDate ? fromLocalInput(text) : text).finally(() => {
       done.current = false
@@ -368,9 +373,18 @@ function ReferencePicker(props: InlineEditorProps) {
 function PanelEditor(props: InlineEditorProps) {
   const { row, kinds, record, onDone, onError } = props
   const { save, pending } = useSave(props)
-  const [value, setValue] = useState<FormValue>(() =>
+  const [initial] = useState<FormValue>(() =>
     seedField(row.field, row.value, false)
   )
+  const [value, setValue] = useState<FormValue>(initial)
+  // A save with nothing changed closes: the seeded draft is the stored value
+  // as the control shows it, which may round what is stored.
+  const commit = () => {
+    if (value === initial) {
+      onError(undefined)
+      onDone()
+    } else void save(value)
+  }
   return (
     <div
       className="flex w-full min-w-0 flex-col gap-3 rounded-lg border border-primary bg-background p-3 ring-3 ring-primary-soft"
@@ -392,7 +406,7 @@ function PanelEditor(props: InlineEditorProps) {
         bare
       />
       <div className="flex items-center gap-2">
-        <Button size="sm" disabled={pending} onClick={() => void save(value)}>
+        <Button size="sm" disabled={pending} onClick={commit}>
           {pending && <Spinner className="size-3.5" />}
           Save
         </Button>

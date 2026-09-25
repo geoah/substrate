@@ -115,6 +115,7 @@ const task = kind(TASK, {
     token: { type: "string", writer: "oauth" },
     notes: { type: "string" },
     url: { type: "url" },
+    due: { type: "datetime" },
   },
 })
 
@@ -223,6 +224,23 @@ describe("PropertySheet inline edit", () => {
       properties: { location: null },
       ifVersion: 7,
     })
+  })
+
+  it("writes nothing when an editor is opened and left unchanged", async () => {
+    // The date editor shows minutes; the stored instant carries seconds, so
+    // leaving it as shown must not round the stored value down.
+    renderSheet(
+      record({
+        properties: { ...record().properties, due: "2026-09-26T10:15:42.123Z" },
+      })
+    )
+    fireEvent.click(valueOf("due")!)
+    const input = screen.getByLabelText("Due")
+    fireEvent.blur(input)
+    fireEvent.click(valueOf("location")!)
+    fireEvent.blur(screen.getByRole("textbox", { name: "Location" }))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(wire.writes).toHaveLength(0)
   })
 
   it("writes nothing on Esc", async () => {
