@@ -132,6 +132,7 @@ export const ACRONYMS: Readonly<Record<string, string>> = {
  * providers speak for. */
 const PROPER: Readonly<Record<string, string>> = {
   beeper: "Beeper",
+  drive: "Drive",
   github: "GitHub",
   gmail: "Gmail",
   google: "Google",

@@ -78,6 +78,9 @@ describe("everydayDescription", () => {
     expect(
       everydayDescription("providers.substrate.reamde.dev/google/gmailthread")
     ).toBe("Your Google Gmail threads, copied in and kept up to date.")
+    expect(
+      everydayDescription("providers.substrate.reamde.dev/google/drivefile")
+    ).toBe("Your Google Drive files, copied in and kept up to date.")
   })
 
   it("reads a sample kind's first clause", () => {
