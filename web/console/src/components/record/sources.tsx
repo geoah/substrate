@@ -25,7 +25,12 @@ import {
   type SubstrateRecord,
 } from "@/lib/api/types"
 import { displayName } from "@/lib/kind-names"
-import { groupSources, syncedAt, type SourceGroup } from "@/lib/provenance"
+import {
+  groupSources,
+  holderOf,
+  syncedAt,
+  type SourceGroup,
+} from "@/lib/provenance"
 import { humanizeName, propSpecsByName } from "@/lib/record-schema"
 import { splitRecordPath } from "@/lib/record-path"
 
@@ -153,9 +158,19 @@ export function SourcesSection({
     )
   }
   if (!links) {
+    const others = [
+      ...new Set(
+        Object.values(record.propertyMeta ?? {})
+          .map(holderOf)
+          .filter((h) => h && h.mark !== "you")
+          .map((h) => h!.label)
+      ),
+    ]
     return (
       <p className="flex flex-wrap items-center gap-1.5 py-0.5 text-[13px] text-faint">
-        Only you have added to this. No provider fills it in.
+        {others.length
+          ? `${others.join(" and ")} set values here directly. No provider’s copy is linked to it.`
+          : "Only you have added to this. No provider fills it in."}
         {technical && (
           <>
             <span>No mapping targets</span>

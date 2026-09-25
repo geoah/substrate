@@ -349,14 +349,19 @@ export function movesFrom(spec: PropSpec, current: string): StateTransition[] {
 }
 
 /** The property a kind titles itself from: the first name its
- * `displayTemplate` reads (`{name|title}` is `name`), else the built-in
- * `title` (decision 0016). */
+ * `displayTemplate` reads (`{name|title}` is `name`) when that is a string,
+ * else the built-in `title` (decision 0016). */
 export function titleProperty(kind: KindInfo | undefined): string {
   if (!kind) return "title"
   const template = (kind.definition as Record<string, unknown>).displayTemplate
   if (typeof template === "string") {
     const m = template.match(/\{\s*([A-Za-z][A-Za-z0-9]*)/)
-    if (m && m[1] in rawProps(kind)) return m[1]
+    const def = m ? rawProps(kind)[m[1]] : undefined
+    // Only a one-line text heading is the title: a template reading a
+    // reference or a number renders a title but is not one to type.
+    if (m && def && (def.type === undefined || def.type === "string")) {
+      return m[1]
+    }
   }
   return "title"
 }

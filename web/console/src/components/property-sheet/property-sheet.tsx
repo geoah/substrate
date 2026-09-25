@@ -164,7 +164,7 @@ export function PropertySheet({
                   !isEditing &&
                   "cursor-text hover:bg-hover focus-visible:bg-hover",
                 !row.field && "cursor-default",
-                block && "py-1.5",
+                block && "flex-nowrap items-start py-1.5",
                 isEditing &&
                   style === "pop" &&
                   "bg-background ring-1 ring-primary"
@@ -184,7 +184,7 @@ export function PropertySheet({
                 <span
                   className={cn(
                     "inline-flex min-w-0 flex-wrap items-center gap-1.5",
-                    block && "w-full"
+                    block && "flex-1"
                   )}
                 >
                   <Value row={row} />
