@@ -159,7 +159,9 @@ function AccountRow({
         <div className="font-medium [overflow-wrap:anywhere]">
           {account.label}
         </div>
-        {technical && <IdText value={account.record.id} copy />}
+        {technical && account.label !== account.record.id && (
+          <IdText value={account.record.id} copy />
+        )}
       </td>
       <td className="px-3 py-2.5">
         <span className="inline-flex items-start gap-1.5">

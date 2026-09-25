@@ -206,7 +206,7 @@ export function ProviderTools({
             <div
               key={tool.reference}
               data-slot="tool-row"
-              className="grid grid-cols-1 gap-x-3 gap-y-1 px-3 py-2.5 text-[13px] sm:grid-cols-[minmax(0,200px)_minmax(0,1fr)_auto] sm:items-start"
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 px-3 py-2.5 text-[13px]"
             >
               <div className="min-w-0">
                 <Link
@@ -216,18 +216,14 @@ export function ProviderTools({
                 >
                   {tool.name}
                 </Link>
-                {technical && (
-                  <div>
-                    <IdText value={tool.reference} />
-                  </div>
-                )}
+                <p className="mt-0.5 text-muted-foreground">
+                  {tool.cadences.length
+                    ? tool.cadences.join(" · ")
+                    : "When it is called"}
+                </p>
+                {technical && <IdText value={tool.reference} />}
               </div>
-              <div className="min-w-0 text-muted-foreground">
-                {tool.cadences.length
-                  ? tool.cadences.join(" · ")
-                  : "When it is called"}
-              </div>
-              <div className="text-[12.5px] whitespace-nowrap sm:text-right">
+              <div className="text-right text-[12.5px] whitespace-nowrap">
                 {!installed ? null : activity.parked > 0 ? (
                   <ToneText tone="bad">
                     {activity.parked} {activity.parked === 1 ? "run" : "runs"}{" "}
