@@ -142,7 +142,19 @@ export function cellValue(value: unknown): string {
  * nothing — the caller falls back to the id in the data voice. */
 export function recordTitle(properties: Record<string, unknown>): string {
   const title = properties.title
-  return typeof title === "string" ? title : ""
+  return typeof title === "string" ? cleanTitle(title) : ""
+}
+
+/** A derived title without the separator an empty template token left
+ * behind: `{decision}: {winner} + {loser}` with no decision yet renders
+ * ": Grace Hopper + Grace B. Hopper", which reads as "Grace Hopper + Grace B.
+ * Hopper". A separator is only dropped at an edge and beside a space, so
+ * "C++" keeps its pluses. */
+export function cleanTitle(title: string): string {
+  return title
+    .replace(/^\s*[:·—–+-](\s+|$)/, "")
+    .replace(/(^|\s+)[:·—–+-]\s*$/, "")
+    .trim()
 }
 
 /** A machine actor's short voice: the first two labels

@@ -3,6 +3,7 @@
  * the header's who-and-when. */
 
 import { actorIdentity } from "@/lib/actor-identity"
+import { CORE_PACKAGE } from "@/lib/api/http"
 import type { ReferencingGroup, ReferencingRow } from "@/lib/api/records"
 import {
   readReference,
@@ -11,7 +12,7 @@ import {
   type SubstrateRecord,
 } from "@/lib/api/types"
 import { changedProperties } from "@/lib/changelog"
-import { declaredReferences } from "@/lib/definition"
+import { declaredReferences, kindPurpose } from "@/lib/definition"
 import { recordTitle } from "@/lib/format"
 import { displayName, lowerFirst } from "@/lib/kind-names"
 import { splitRecordPath } from "@/lib/record-path"
@@ -67,6 +68,47 @@ export function connectedGroups(
     (record.linkedFrom ?? []).map((l) => `${l.kind}\u0000${l.property}`)
   )
   return groups.filter((g) => !slots.has(`${g.kind}\u0000${g.property}`))
+}
+
+/** The two machinery kinds a person still meets on a record page, each with
+ * the review page its rows open. */
+export const MERGE_REQUEST_KIND = `${CORE_PACKAGE}/recordmergerequest`
+export const CHANGE_REQUEST_KIND = `${CORE_PACKAGE}/recordpatchrequest`
+export const REVIEW_ROUTES: Readonly<
+  Record<string, "/merge-requests/$id" | "/change-requests/$id">
+> = {
+  [MERGE_REQUEST_KIND]: "/merge-requests/$id",
+  [CHANGE_REQUEST_KIND]: "/change-requests/$id",
+}
+
+/** The groups everyday mode lists: no machinery but the merge and change
+ * requests, and those as one group each, whichever of the request's
+ * references points here. */
+export function everydayGroups(
+  groups: ReferencingGroup[],
+  kinds: ReadonlyMap<string, KindInfo>
+): ReferencingGroup[] {
+  const out: ReferencingGroup[] = []
+  const review = new Map<string, ReferencingGroup>()
+  for (const group of groups) {
+    if (REVIEW_ROUTES[group.kind]) {
+      const held = review.get(group.kind)
+      if (!held) {
+        const merged = { ...group, rows: [...group.rows] }
+        review.set(group.kind, merged)
+        out.push(merged)
+        continue
+      }
+      for (const row of group.rows)
+        if (!held.rows.some((r) => r.record.id === row.record.id))
+          held.rows.push(row)
+      continue
+    }
+    if (kindPurpose(kinds.get(group.kind) ?? group.kind) === "internal")
+      continue
+    out.push(group)
+  }
+  return out
 }
 
 /** The records this one points to, off its own declared references. */

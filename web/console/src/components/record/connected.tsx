@@ -7,6 +7,7 @@
 
 import { useMemo, useState } from "react"
 import { useInfiniteQuery } from "@tanstack/react-query"
+import { Link } from "@tanstack/react-router"
 
 import { friendlyDay } from "@/components/property-sheet/dates"
 import { KindGlyph } from "@/components/identity/kind-glyph"
@@ -27,11 +28,19 @@ import {
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { kindByIdentity, temporalProperties } from "@/lib/definition"
 import { recordTitle } from "@/lib/format"
-import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
+import {
+  displayName,
+  displayPlural,
+  lowerFirst,
+  untitled,
+} from "@/lib/kind-names"
 import { humanizeName, propSpecsByName } from "@/lib/record-schema"
 import {
   GROUP_FOLD,
+  MERGE_REQUEST_KIND,
+  REVIEW_ROUTES,
   connectedGroups,
+  everydayGroups,
   sortConnected,
   doneState,
   outgoingOf,
@@ -64,6 +73,23 @@ function GroupHead({
           {group.property}
         </code>
         <span>property</span>
+      </span>
+    )
+  }
+  if (REVIEW_ROUTES[group.kind]) {
+    const n = group.rows.length
+    const merge = group.kind === MERGE_REQUEST_KIND
+    return (
+      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <KindGlyph kind={group.kind} size="xs" />
+        <b className="font-medium text-foreground">
+          {merge ? "Possible duplicates" : "Suggested changes"}
+        </b>
+        <span>
+          {merge
+            ? `${n} ${n === 1 ? "record" : "records"} that may be the same as this one`
+            : `${n} ${n === 1 ? "change" : "changes"} suggested for this one`}
+        </span>
       </span>
     )
   }
@@ -155,11 +181,25 @@ function Group({
             key={`${row.record.kind}/${row.record.id}/${row.path ?? ""}`}
             className="flex min-h-9 flex-wrap items-center gap-3 border-b px-3 last:border-b-0"
           >
-            <RecordRef
-              kind={row.record.kind}
-              id={row.record.id}
-              title={recordTitle(row.record.properties) || undefined}
-            />
+            {REVIEW_ROUTES[row.record.kind] ? (
+              <Link
+                to={REVIEW_ROUTES[row.record.kind]}
+                params={{ id: row.record.id }}
+                className="inline-flex min-w-0 items-center gap-[5px] text-foreground no-underline"
+              >
+                <KindGlyph kind={row.record.kind} size="xs" />
+                <span className="truncate border-b border-border-strong leading-tight hover:border-muted-foreground">
+                  {recordTitle(row.record.properties) ||
+                    untitled(row.record.kind)}
+                </span>
+              </Link>
+            ) : (
+              <RecordRef
+                kind={row.record.kind}
+                id={row.record.id}
+                title={recordTitle(row.record.properties) || undefined}
+              />
+            )}
             <span className="ml-auto flex items-center gap-3 text-[12.5px] text-faint">
               {typeof state === "string" && (
                 <StateBadge value={state} initial={stateSpec?.initial} />
@@ -202,16 +242,17 @@ export function ConnectedSection({
   const referencing = useInfiniteQuery(
     referencingInfiniteOptions(recordPath(record.kind, record.id), 200)
   )
-  const groups = useMemo(
-    () =>
-      connectedGroups(
-        groupReferencing(
-          (referencing.data?.pages ?? []).flatMap(referencingRows)
-        ),
-        record
+  const groups = useMemo(() => {
+    const all = connectedGroups(
+      groupReferencing(
+        (referencing.data?.pages ?? []).flatMap(referencingRows)
       ),
-    [referencing.data, record]
-  )
+      record
+    )
+    return technical
+      ? all
+      : everydayGroups(all, new Map(kinds.map((k) => [k.identity, k])))
+  }, [referencing.data, record, technical, kinds])
   const outgoing = useMemo(() => outgoingOf(record, kind), [record, kind])
 
   return (

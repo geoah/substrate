@@ -6,8 +6,11 @@ import { describe, expect, it } from "vitest"
 
 import {
   changeSentence,
+  CHANGE_REQUEST_KIND,
+  MERGE_REQUEST_KIND,
   connectedGroups,
   doneState,
+  everydayGroups,
   headerFacts,
   outgoingOf,
   sortConnected,
@@ -77,6 +80,47 @@ describe("connectedGroups", () => {
       { kind: TASK, property: "assignee", rows: [] },
     ]
     expect(connectedGroups(groups, grace).map((g) => g.kind)).toEqual([TASK])
+  })
+})
+
+describe("everydayGroups", () => {
+  it("keeps data and the review requests, one group each, and drops machinery", () => {
+    const req = (id: string, k: string) => rec(id, {}, k)
+    const groups: ReferencingGroup[] = [
+      { kind: TASK, property: "assignee", rows: [] },
+      {
+        kind: MERGE_REQUEST_KIND,
+        property: "winner",
+        rows: [row(req("m1", MERGE_REQUEST_KIND), "winner")],
+      },
+      {
+        kind: MERGE_REQUEST_KIND,
+        property: "loser",
+        rows: [
+          row(req("m1", MERGE_REQUEST_KIND), "loser"),
+          row(req("m2", MERGE_REQUEST_KIND), "loser"),
+        ],
+      },
+      { kind: CHANGE_REQUEST_KIND, property: "target", rows: [] },
+      { kind: "substrate.reamde.dev/core/triggerrun", property: "x", rows: [] },
+      { kind: "ada.example.com/tasks/cursor", property: "task", rows: [] },
+    ]
+    const kinds = new Map([
+      [
+        "ada.example.com/tasks/cursor",
+        {
+          ...kind("ada.example.com/tasks/cursor", {}),
+          definition: { purpose: "internal" },
+        },
+      ],
+    ])
+    const out = everydayGroups(groups, kinds)
+    expect(out.map((g) => g.kind)).toEqual([
+      TASK,
+      MERGE_REQUEST_KIND,
+      CHANGE_REQUEST_KIND,
+    ])
+    expect(out[1].rows.map((r) => r.record.id)).toEqual(["m1", "m2"])
   })
 })
 
