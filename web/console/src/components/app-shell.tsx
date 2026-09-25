@@ -33,23 +33,42 @@ interface Crumb {
 
 /** Route depth as crumbs: fixed pages are one crumb; the data routes read
  * Data → authority → package → kind → record. */
-function crumbsFor(pathname: string): Crumb[] {
+// eslint-disable-next-line react-refresh/only-export-components -- a pure route reading, exported for its test
+export function crumbsFor(pathname: string): Crumb[] {
   if (pathname === "/") return [{ label: "Overview" }]
   if (pathname.startsWith("/changelog")) return [{ label: "Changelog" }]
   if (pathname.startsWith("/search")) return [{ label: "Search" }]
-  if (pathname.startsWith("/registry/connections/")) {
-    const id = decodeURIComponent(
-      pathname.slice("/registry/connections/".length)
-    )
+  if (pathname.startsWith("/connections/")) {
+    // The address is the account record's kind reference plus its id; the id
+    // is the last segment.
+    const id = decodeURIComponent(pathname.split("/").at(-1) ?? "")
     return [
-      { label: "Registry", to: "/registry" },
-      { label: "Connections", to: "/registry/connections" },
+      { label: "Connections", to: "/connections" },
       { label: id, mono: true },
     ]
   }
-  if (pathname.startsWith("/registry/connections")) {
-    return [{ label: "Registry", to: "/registry" }, { label: "Connections" }]
+  if (pathname === "/connections") return [{ label: "Connections" }]
+  if (pathname.startsWith("/settings/")) {
+    // The id is the bundle id, `<authority>/<package>`, whole.
+    const id = decodeURIComponent(pathname.slice("/settings/".length))
+    return [
+      { label: "Settings", to: "/settings" },
+      { label: id, mono: true },
+    ]
   }
+  if (pathname === "/settings") return [{ label: "Settings" }]
+  if (pathname.startsWith("/agents/")) {
+    const id = decodeURIComponent(pathname.slice("/agents/".length))
+    return [
+      { label: "Agents", to: "/agents" },
+      { label: id, mono: true },
+    ]
+  }
+  if (pathname === "/agents") return [{ label: "Agents" }]
+  if (pathname === "/account/tokens") {
+    return [{ label: "Account", to: "/account" }, { label: "Tokens" }]
+  }
+  if (pathname === "/account") return [{ label: "Account" }]
   if (pathname.startsWith("/registry/")) {
     const id = decodeURIComponent(pathname.slice("/registry/".length))
     return [
