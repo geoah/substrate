@@ -242,8 +242,8 @@ function OtherPackages({
           <table className="w-full min-w-[720px] text-[13px]">
             <thead>
               <tr className="border-b text-left text-xs text-faint">
-                <th className="px-3 py-2 font-medium">Package</th>
-                <th className="px-3 py-2 font-medium">From</th>
+                <th className="w-[30%] px-3 py-2 font-medium">Package</th>
+                <th className="w-[26%] px-3 py-2 font-medium">From</th>
                 <th className="px-3 py-2 text-right font-medium">Version</th>
                 <th className="px-3 py-2 font-medium">State</th>
                 <th className="px-3 py-2 font-medium">Update</th>
@@ -267,6 +267,7 @@ function OtherPackages({
       )}
       <LossyUpgradeDialog
         row={rows.find((r) => r.id === lossyID)}
+        name={capitalise(rows.find((r) => r.id === lossyID)?.package ?? "")}
         onClose={closeLoss}
       />
     </section>

@@ -492,8 +492,8 @@ export function LossyUpgradeDialog({
         </DialogHeader>
         {stale && (
           <p role="status" className="text-sm text-warning">
-            Records changed since this plan was read, so the update was
-            refused. Check the plan below and confirm it again.
+            Records changed since this plan was read, so the update was refused.
+            Check the plan below and confirm it again.
           </p>
         )}
         <ul className="space-y-1 text-sm">
@@ -589,7 +589,8 @@ export function PendingUpgradeNotice({ item }: { item: ShippedUpgrade }) {
       />
       <div className="min-w-0 space-y-1">
         <p>
-          The update of <span className="font-mono text-xs">{item.package}</span>
+          The update of{" "}
+          <span className="font-mono text-xs">{item.package}</span>
           {motion ? ` (version ${motion})` : ""}{" "}
           {refused
             ? "was refused when the server started. Fix what the lines below name, then start the server again."
@@ -694,8 +695,7 @@ export function PauseBundleButton({
               <DialogTitle>Pause {name}?</DialogTitle>
               <DialogDescription>
                 {name} stops syncing and its tools stop running. Everything it
-                brought in stays where it is. Resume picks up where it left
-                off.
+                brought in stays where it is. Resume picks up where it left off.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -706,10 +706,7 @@ export function PauseBundleButton({
               >
                 Cancel
               </Button>
-              <Button
-                disabled={verb.isPending}
-                onClick={() => verb.mutate()}
-              >
+              <Button disabled={verb.isPending} onClick={() => verb.mutate()}>
                 {verb.isPending && <Spinner className="size-3.5" />}
                 Pause
               </Button>
@@ -748,7 +745,8 @@ export function RemoveBundleButton({
       let last: BundleStatus | null = null
       for (const step of ladder) {
         try {
-          if (step === "disable") last = await runBundleVerb(bundle.id, "disable")
+          if (step === "disable")
+            last = await runBundleVerb(bundle.id, "disable")
           else if (step === "purge") await purgeBundle(bundle.id)
           else await uninstallBundle(bundle.id)
         } catch (error) {
@@ -784,7 +782,11 @@ export function RemoveBundleButton({
       <Button
         variant={variant}
         size="sm"
-        className="text-destructive"
+        className={
+          variant === "ghost"
+            ? "text-muted-foreground hover:text-destructive"
+            : "text-destructive"
+        }
         disabled={remove.isPending}
         onClick={() => setConfirming(true)}
       >

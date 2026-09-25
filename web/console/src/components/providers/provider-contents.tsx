@@ -118,22 +118,27 @@ export function BringsIn({
             <div
               key={line.reference}
               data-slot="brings-in-row"
-              className="grid grid-cols-1 gap-x-3 gap-y-1 px-3 py-2.5 text-[13px] sm:grid-cols-[minmax(0,200px)_minmax(0,1fr)_auto] sm:items-start"
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 px-3 py-2.5 text-[13px]"
             >
               <div className="min-w-0">
                 <KindRef kind={line.kind ?? line.reference} link={installed} />
-              </div>
-              <div className="min-w-0 text-muted-foreground">
                 {line.description && (
                   <p
-                    className={technical ? undefined : "line-clamp-1"}
+                    className={
+                      technical
+                        ? "mt-0.5 text-muted-foreground"
+                        : "mt-0.5 line-clamp-1 text-muted-foreground"
+                    }
                     title={technical ? undefined : line.description}
                   >
                     {line.description}
                   </p>
                 )}
                 {targets.map((t) => (
-                  <p key={t} className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                  <p
+                    key={t}
+                    className="mt-0.5 flex flex-wrap items-center gap-1.5 text-muted-foreground"
+                  >
                     <span>Also fills in your</span>
                     <KindRef kind={t} />
                   </p>
@@ -172,7 +177,10 @@ export function ProviderTools({
   installed: boolean
 }) {
   const [technical] = useTechnicalDetails()
-  const triggers = useQuery({ ...triggerRecordsQueryOptions, enabled: installed })
+  const triggers = useQuery({
+    ...triggerRecordsQueryOptions,
+    enabled: installed,
+  })
   const statuses = useQuery({
     ...triggerStatusesQueryOptions,
     enabled: installed,
@@ -215,7 +223,9 @@ export function ProviderTools({
                 )}
               </div>
               <div className="min-w-0 text-muted-foreground">
-                {tool.cadences.length ? tool.cadences.join(" · ") : "When it is called"}
+                {tool.cadences.length
+                  ? tool.cadences.join(" · ")
+                  : "When it is called"}
               </div>
               <div className="text-[12.5px] whitespace-nowrap sm:text-right">
                 {!installed ? null : activity.parked > 0 ? (

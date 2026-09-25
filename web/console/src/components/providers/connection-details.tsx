@@ -65,7 +65,10 @@ export function ConnectionDetails({ accounts }: { accounts: AccountView[] }) {
           >
             <div className="flex flex-wrap items-baseline gap-x-2">
               <span className="font-medium">{account.label}</span>
-              <IdText value={`${account.record.kind}/${account.record.id}`} copy />
+              <IdText
+                value={`${account.record.kind}/${account.record.id}`}
+                copy
+              />
             </div>
             {account.syncable ? (
               <SyncSummary
@@ -74,8 +77,8 @@ export function ConnectionDetails({ accounts }: { accounts: AccountView[] }) {
               />
             ) : (
               <p className="text-[12.5px] text-muted-foreground">
-                This kind does not bind the core sync trait, so there is no
-                sync state to show
+                This kind does not bind the core sync trait, so there is no sync
+                state to show
                 {account.legacySyncStatus
                   ? ` beyond its own status: ${account.legacySyncStatus}`
                   : ""}
@@ -177,7 +180,11 @@ function TriggerRow({
       refresh()
     },
     onError: (e) =>
-      toast.add({ type: "error", title: "Wake failed", description: e.message }),
+      toast.add({
+        type: "error",
+        title: "Wake failed",
+        description: e.message,
+      }),
   })
   const run = useMutation({
     mutationFn: () => runTrigger(source.id, record.kind, record.id),
@@ -259,11 +266,7 @@ function TriggerRow({
             onClick={() => run.mutate()}
             title="Deliver this account's current state through the trigger, guard applied"
           >
-            {run.isPending ? (
-              <Spinner className="size-3" />
-            ) : (
-              <RotateCcwIcon />
-            )}
+            {run.isPending ? <Spinner className="size-3" /> : <RotateCcwIcon />}
             Run
           </Button>
         </div>
@@ -295,19 +298,22 @@ function ParkedList({
       refresh()
     },
     onError: (e) =>
-      toast.add({ type: "error", title: "Retry failed", description: e.message }),
+      toast.add({
+        type: "error",
+        title: "Retry failed",
+        description: e.message,
+      }),
   })
   // This record's own failures, plus a fire's (a schedule occurrence names
   // no record and may have touched this one).
   const rows = parked
     .flatMap((q) => q.data ?? [])
     .filter((f) => !f.recordId || f.recordId === recordId)
-  if (parked.some((q) => q.isPending)) return <Skeleton className="h-10 w-full" />
+  if (parked.some((q) => q.isPending))
+    return <Skeleton className="h-10 w-full" />
   if (!rows.length) {
     return (
-      <p className="text-[12.5px] text-muted-foreground">
-        Nothing is parked.
-      </p>
+      <p className="text-[12.5px] text-muted-foreground">Nothing is parked.</p>
     )
   }
   return (

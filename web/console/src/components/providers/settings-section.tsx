@@ -130,7 +130,9 @@ export function InputCard({
     onSuccess: (status, record) => {
       toast.add({
         type: "success",
-        title: record ? `${input.name} now uses that record.` : `${input.name} unbound.`,
+        title: record
+          ? `${input.name} now uses that record.`
+          : `${input.name} unbound.`,
       })
       seedBundleStatus(queryClient, status)
       refetchBundleStateSoon(queryClient)
@@ -161,7 +163,11 @@ export function InputCard({
             </p>
           )}
           <div className="mt-0.5">
-            <KindRef kind={kind ?? input.kind} mode="reference" link={Boolean(kind)} />
+            <KindRef
+              kind={kind ?? input.kind}
+              mode="reference"
+              link={Boolean(kind)}
+            />
           </div>
         </div>
         <div className="min-w-0 text-right text-[12.5px]">
@@ -180,8 +186,8 @@ export function InputCard({
       </div>
       {!kind ? (
         <p className="px-3.5 py-2.5 text-[12.5px] text-muted-foreground">
-          Its kind is not in this repository yet, so there is nothing to
-          choose from.
+          Its kind is not in this repository yet, so there is nothing to choose
+          from.
         </p>
       ) : records.isPending ? (
         <Skeleton className="m-3 h-12 rounded-md" />

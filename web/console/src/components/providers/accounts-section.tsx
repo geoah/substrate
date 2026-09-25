@@ -68,9 +68,7 @@ export function AccountsSection({
             <th className="px-3 py-2 font-medium">How it’s doing</th>
             <th className="px-3 py-2 font-medium">Last synced</th>
             <th className="px-3 py-2 font-medium">How often</th>
-            {technical && (
-              <th className="px-3 py-2 font-medium">Deliveries</th>
-            )}
+            {technical && <th className="px-3 py-2 font-medium">Deliveries</th>}
             <th className="px-3 py-2">
               <span className="sr-only">Actions</span>
             </th>

@@ -263,8 +263,9 @@ function ProviderDoc({
       />
       {missingChain(chain).length > 0 && !installed && (
         <p className="mb-2 text-[12.5px] text-muted-foreground">
-          Adding it also adds the {missingChain(chain).length === 1 ? "package" : "packages"}{" "}
-          it needs first.
+          Adding it also adds the{" "}
+          {missingChain(chain).length === 1 ? "package" : "packages"} it needs
+          first.
         </p>
       )}
       <SetupSteps entry={entry} chain={chain} />
@@ -382,7 +383,9 @@ function PackageDoc({
             {technical && status.origin && (
               <span>
                 from <IdText value={status.origin} />
-                {status.originVersion ? ` at version ${status.originVersion}` : ""}
+                {status.originVersion
+                  ? ` at version ${status.originVersion}`
+                  : ""}
                 {status.modified ? ", edited since" : ""}
               </span>
             )}

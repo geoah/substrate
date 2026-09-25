@@ -71,9 +71,7 @@ export function SetupSteps({
                   row={row}
                   chain={chain}
                   name={name}
-                  label={
-                    row.status?.quarantined ? "Add again" : `Add ${name}`
-                  }
+                  label={row.status?.quarantined ? "Add again" : `Add ${name}`}
                   variant="default"
                 />
               ),
@@ -134,7 +132,11 @@ export function SetupSteps({
               labels.length > 2 ? ` and ${labels.length - 2} more` : ""
             }, connected.`,
             action: (
-              <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAdding(true)}
+              >
                 Add another
               </Button>
             ),
@@ -255,7 +257,9 @@ export function SetupSteps({
                   <div
                     className={cn(
                       "mt-0.5 max-w-[60ch] text-[12.5px]",
-                      step.state === "todo" ? "text-faint" : "text-muted-foreground"
+                      step.state === "todo"
+                        ? "text-faint"
+                        : "text-muted-foreground"
                     )}
                   >
                     {text}

@@ -154,7 +154,8 @@ export function useProviders() {
   }, [rows, kinds])
 
   const accounts = useMemo<AccountView[]>(
-    () => (accountsRead.data?.records ?? []).map((r) => accountViewOf(r, kinds)),
+    () =>
+      (accountsRead.data?.records ?? []).map((r) => accountViewOf(r, kinds)),
     [accountsRead.data, kinds]
   )
   const views = useMemo(() => {
@@ -172,8 +173,7 @@ export function useProviders() {
     return rows
       .filter(
         (r) =>
-          r.tier === "provider" ||
-          (!r.tier && r.status && viewOf.has(r.id))
+          r.tier === "provider" || (!r.tier && r.status && viewOf.has(r.id))
       )
       .map((r) => entryOf(r, viewOf.get(r.id), kinds))
       .sort(

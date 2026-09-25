@@ -5,11 +5,7 @@
  * pages fold these off the reads `lib/api/*` returns. */
 
 import { splitKind } from "@/lib/api/http"
-import type {
-  KindInfo,
-  SubstrateRecord,
-  TriggerStatus,
-} from "@/lib/api/types"
+import type { KindInfo, SubstrateRecord, TriggerStatus } from "@/lib/api/types"
 import { splitWords, pluralWord } from "@/lib/kind-names"
 import { mappedKind } from "@/lib/provenance"
 import type { AccountView, ProviderView, SyncFields } from "@/lib/sync"
@@ -57,7 +53,8 @@ function stepDone(key: StepKey, f: StepFacts): boolean {
       return f.installed && (!f.needsCredentials || f.configured)
     case "account":
       return (
-        f.installed && (!f.hasAccountKind || f.accounts.some((a) => a.connected))
+        f.installed &&
+        (!f.hasAccountKind || f.accounts.some((a) => a.connected))
       )
     case "choose":
       return (
@@ -244,7 +241,10 @@ export function connectionWords(
     case "connected":
       return { text: "Connected", tone: "ok" }
     case "pending":
-      return { text: `Waiting for you to approve it at ${providerName}`, tone: "warn" }
+      return {
+        text: `Waiting for you to approve it at ${providerName}`,
+        tone: "warn",
+      }
     case "erroring":
       return { text: "Its sign-in stopped working · reconnect it", tone: "bad" }
     case undefined:
@@ -264,8 +264,7 @@ export function enumLabel(
 ): string | undefined {
   if (!value) return undefined
   const props = kind?.definition?.properties as
-    | Record<string, { values?: unknown }>
-    | undefined
+    Record<string, { values?: unknown }> | undefined
   const values = props?.[property]?.values
   if (Array.isArray(values)) {
     for (const v of values) {
@@ -352,7 +351,10 @@ export function triggerCadence(trigger: SubstrateRecord): string {
   const record = source.record as Record<string, unknown> | undefined
   if (record) {
     const when = typeof record.when === "string" ? record.when : ""
-    if (/-on-(request|demand)$/.test(trigger.id) || when.includes("syncRequestedAt"))
+    if (
+      /-on-(request|demand)$/.test(trigger.id) ||
+      when.includes("syncRequestedAt")
+    )
       return "When you press Sync now"
     if (/-on-connect$/.test(trigger.id)) return "When an account connects"
     return "When records change"
@@ -415,7 +417,8 @@ export function toolActivity(
   for (const s of statuses) {
     if (!triggerIds.includes(s.id)) continue
     parked += s.parked
-    if (s.lastFire && (!lastFire || s.lastFire > lastFire)) lastFire = s.lastFire
+    if (s.lastFire && (!lastFire || s.lastFire > lastFire))
+      lastFire = s.lastFire
   }
   return { lastFire, parked }
 }

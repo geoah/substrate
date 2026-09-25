@@ -53,7 +53,10 @@ function ConnectConfirm({
   const connected = view.tokenStatus === "connected"
   const verb = connected ? "Reconnect" : "Connect"
   return (
-    <Dialog open onOpenChange={(open) => !open && !connect.isPending && onClose()}>
+    <Dialog
+      open
+      onOpenChange={(open) => !open && !connect.isPending && onClose()}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
@@ -226,10 +229,10 @@ export function AccountMenu({
             <DialogHeader>
               <DialogTitle>Disconnect {view.label}?</DialogTitle>
               <DialogDescription>
-                {providerName} stops bringing anything in from this account,
-                and its approval is withdrawn. What it already brought in
-                stays until you remove {providerName}. Connecting it again
-                means approving it again.
+                {providerName} stops bringing anything in from this account, and
+                its approval is withdrawn. What it already brought in stays
+                until you remove {providerName}. Connecting it again means
+                approving it again.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
