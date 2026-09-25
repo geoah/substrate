@@ -369,7 +369,11 @@ first label.
   escape hatch
   ([0020](docs/decisions/0020-dialect-keys-are-reserved-not-tolerated.md)).
   `unique` and `deprecated` are reserved today: stored, refused where they
-  could not be honored, and acted on by nothing. `renamedFrom` is live, on a
+  could not be honored, and acted on by nothing. A kind's `purpose`
+  (`primary`, `supporting` or `internal`; absent reads as `primary`) is
+  validated and stored and read by clients alone, to decide what they list;
+  every seeded kind is `internal`
+  ([0104](docs/decisions/0104-a-kind-declares-its-purpose.md)). `renamedFrom` is live, on a
   property and on an enum value entry alike:
   admitting the declaration moves every live record's value to the new name,
   or rewrites the old spelling to the new one, inside the apply's

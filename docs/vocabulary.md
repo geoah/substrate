@@ -618,7 +618,9 @@ key an upgrade of every binary that might read the closure, which is why a key
 enters the dialect before anything acts on it. Two are reserved today: each is
 admitted, validated at load and stored on the declaration, and neither changes
 a write. `renamedFrom:`, above, was reserved the same way and is acted on now,
-on a property and on a value entry alike.
+on a property and on a value entry alike. A kind's `purpose:` sits between the
+two: it changes no write either, but it is not waiting on anything, because
+the reader it exists for is a client.
 
 **`unique:` marks one value per record.** At most one live record of the kind
 carries any given value, which is the constraint behind "one person per email"
@@ -663,6 +665,39 @@ card suggests writing. This repository prefers add-and-deprecate to narrowing,
 and the marker is what makes the deprecated half tellable from the live one. A
 `deprecated:` declaration may not also be `required:`, because a form cannot
 both stop offering a value and refuse to submit without it.
+
+**`purpose:` says why a kind exists**
+([record 0104](decisions/0104-a-kind-declares-its-purpose.md)). It sits on the
+kind, beside `names:`, and takes one of three values:
+
+```yaml
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/google/calendarsync
+data:
+  authority: providers.substrate.reamde.dev
+  package: google
+  purpose: internal
+  names:
+    singular: calendarsync
+```
+
+- `primary` is a thing a person browses and opens directly: a task, a person,
+  a mail thread.
+- `supporting` is a detail of another kind, reached from the records it
+  belongs to: a calendar series, an email address, a label, a comment.
+- `internal` is machinery: an account, a sync cursor, a provider's
+  configuration, the vocabulary itself. Every seeded kind is `internal`.
+
+An absent `purpose:` reads as `primary`, so a kind a user or an agent declares
+is listed without anyone classifying it; the default is the reader's and is
+never written into the stored declaration. Any other value, or a value that is
+not a word, is refused with the three named. The server stores the key and
+acts on nothing: no read filters by it and no write is refused over it. A
+client reads it off the kind's `definition` to decide what its navigation
+lists, and still reaches every kind by its reference. A kind's `purpose:` is
+not a property named `purpose` — a kind may declare one of those too, under
+`properties:`, and it is an ordinary property.
 
 ## Reference properties
 
