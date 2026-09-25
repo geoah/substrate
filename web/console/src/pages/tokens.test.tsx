@@ -98,10 +98,23 @@ describe("TokensPage", () => {
     })
   })
 
-  it("revokes a token that is not this session", async () => {
+  const deletes = () =>
+    fetchMock.mock.calls.filter(
+      ([, init]) => (init as RequestInit | undefined)?.method === "DELETE"
+    )
+
+  it("revokes a token that is not this session, after asking", async () => {
     renderWithClient(<TokensPage />)
     await screen.findByText("ci runner")
     fireEvent.click(screen.getByRole("button", { name: "Revoke" }))
+    // The consequence is named before anything is sent.
+    const dialog = await screen.findByRole("dialog")
+    expect(dialog.textContent).toContain("Revoke ci runner?")
+    expect(dialog.textContent).toContain(
+      "Anything using this token stops working."
+    )
+    expect(deletes()).toHaveLength(0)
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }))
     await waitFor(() =>
       expect(
         fetchMock.mock.calls.some(
@@ -112,6 +125,19 @@ describe("TokensPage", () => {
       ).toBe(true)
     )
     // Not the current session, so it does not bounce to the login door.
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it("warns that revoking this session signs you out, and cancelling sends nothing", async () => {
+    renderWithClient(<TokensPage />)
+    await screen.findByText("ci runner")
+    fireEvent.click(screen.getByRole("button", { name: "Revoke (signs out)" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(dialog.textContent).toContain("Sign out this browser?")
+    expect(dialog.textContent).toContain("signs you out of this browser")
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    expect(deletes()).toHaveLength(0)
     expect(navigate).not.toHaveBeenCalled()
   })
 })
