@@ -3,7 +3,7 @@
  * the header's who-and-when. */
 
 import { actorIdentity } from "@/lib/actor-identity"
-import type { ReferencingGroup } from "@/lib/api/records"
+import type { ReferencingGroup, ReferencingRow } from "@/lib/api/records"
 import {
   readReference,
   type ChangeRow,
@@ -12,6 +12,7 @@ import {
 } from "@/lib/api/types"
 import { changedProperties } from "@/lib/changelog"
 import { declaredReferences } from "@/lib/definition"
+import { recordTitle } from "@/lib/format"
 import { displayName } from "@/lib/kind-names"
 import { splitRecordPath } from "@/lib/record-path"
 import { humanizeName, propSpecsByName } from "@/lib/record-schema"
@@ -32,6 +33,28 @@ export function doneState(
     if (done) return { property: spec.name, done, initial: spec.initial }
   }
   return undefined
+}
+
+/** A group's rows as a reader scans them: what is not done yet first, then
+ * soonest due, then by title. */
+export function sortConnected(
+  rows: ReferencingRow[],
+  progress: { property: string; done: string } | undefined,
+  due: string | undefined
+): ReferencingRow[] {
+  const isDone = (r: ReferencingRow) =>
+    progress ? r.record.properties[progress.property] === progress.done : false
+  const when = (r: ReferencingRow) => {
+    const v = due ? r.record.properties[due] : undefined
+    return typeof v === "string" ? v : "\uffff"
+  }
+  const title = (r: ReferencingRow) => recordTitle(r.record.properties)
+  return [...rows].sort(
+    (a, b) =>
+      Number(isDone(a)) - Number(isDone(b)) ||
+      when(a).localeCompare(when(b)) ||
+      title(a).localeCompare(title(b))
+  )
 }
 
 /** The groups a record page lists: the fan-in, minus the mapping slots its
@@ -89,9 +112,7 @@ export function changeSentence(
       if (row.payload?.restored === true) return `restored this ${noun}`
       return changedProperties(row).length ? "changed" : `saved this ${noun}`
     case "patch":
-      return stateMoves(row).length && !plainChanges(row).length
-        ? "moved"
-        : "changed"
+      return stateMoves(row).length ? "moved" : "changed"
     case "delete":
       return `deleted this ${noun}`
     case "merge":

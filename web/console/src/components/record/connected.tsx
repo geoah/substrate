@@ -32,6 +32,7 @@ import { humanizeName, propSpecsByName } from "@/lib/record-schema"
 import {
   GROUP_FOLD,
   connectedGroups,
+  sortConnected,
   doneState,
   outgoingOf,
 } from "./record-model"
@@ -107,7 +108,8 @@ function Group({
     ? propSpecsByName(source).find((s) => s.kind === "state")
     : undefined
   const due = source ? temporalProperties(source)[0] : undefined
-  const rows = all ? group.rows : group.rows.slice(0, GROUP_FOLD)
+  const ordered = sortConnected(group.rows, progress, due)
+  const rows = all ? ordered : ordered.slice(0, GROUP_FOLD)
   const total = group.rows.length
   const done = progress
     ? group.rows.filter(

@@ -112,8 +112,7 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
 export function propertyIcon(spec: PropSpec): { icon: LucideIcon } {
   if (spec.kind === "reference") {
     return {
-      icon:
-        spec.to && spec.to !== TO_ANY ? kindGlyph(spec.to).icon : LinkIcon,
+      icon: spec.to && spec.to !== TO_ANY ? kindGlyph(spec.to).icon : LinkIcon,
     }
   }
   if (spec.values?.length) return { icon: TagIcon }
