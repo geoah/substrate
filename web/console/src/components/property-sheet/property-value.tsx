@@ -7,7 +7,7 @@
 
 import type { ReactNode } from "react"
 
-import { friendlyDateTime } from "./dates"
+import { friendlyCalendarDay, friendlyDateTime } from "./dates"
 import { RecordRef } from "@/components/identity/record-ref"
 import { StateBadge } from "@/components/identity/state-badge"
 import { readReference } from "@/lib/api/types"
@@ -146,10 +146,10 @@ function ScalarValue({
       </span>
     )
   }
-  if (
-    (spec.kind === "datetime" || spec.kind === "date") &&
-    typeof value === "string"
-  ) {
+  if (spec.kind === "date" && typeof value === "string") {
+    return <span title={value}>{friendlyCalendarDay(value)}</span>
+  }
+  if (spec.kind === "datetime" && typeof value === "string") {
     return <span title={value}>{friendlyDateTime(value)}</span>
   }
   if (spec.kind === "url" && typeof value === "string") {

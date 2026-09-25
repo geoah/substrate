@@ -31,6 +31,16 @@ export function friendlyDay(iso: string, now = Date.now()): string {
   })
 }
 
+/** A bare `date` (`2026-10-03`) is a calendar day, not an instant: parsed as
+ * UTC midnight it would read as the day before west of Greenwich. Anything
+ * else is read as a stamp. */
+export function friendlyCalendarDay(value: string, now = Date.now()): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!m) return friendlyDay(value, now)
+  const local = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  return friendlyDay(local.toISOString(), now)
+}
+
 /** The day and, when the value carries one that is not midnight, the time. */
 export function friendlyDateTime(iso: string, now = Date.now()): string {
   const t = Date.parse(iso)

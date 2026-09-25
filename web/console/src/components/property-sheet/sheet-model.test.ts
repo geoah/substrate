@@ -3,7 +3,12 @@
 
 import { describe, expect, it } from "vitest"
 
-import { friendlyDateTime, friendlyDay, fromLocalInput } from "./dates"
+import {
+  friendlyCalendarDay,
+  friendlyDateTime,
+  friendlyDay,
+  fromLocalInput,
+} from "./dates"
 import { editStyle, propertyWrite } from "./sheet-model"
 import { sheetRows } from "./sheet-rows"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
@@ -32,6 +37,8 @@ const task: KindInfo = {
       priority: { type: "enum", values: ["low", "high"] },
       stamp: { type: "datetime", managed: true },
       token: { type: "string", writer: "oauth" },
+      tags: { type: "string", repeated: true },
+      born: { type: "date" },
     },
   },
 }
@@ -118,6 +125,14 @@ describe("propertyWrite", () => {
     expect(propertyWrite(field("zeta"), undefined, "")).toEqual({})
   })
 
+  it("empties a list to [] rather than deleting it, and an absent one stays absent", () => {
+    expect(propertyWrite(field("tags"), ["a", "b"], [])).toEqual({
+      properties: { tags: [] },
+    })
+    expect(propertyWrite(field("tags"), [], [])).toEqual({})
+    expect(propertyWrite(field("tags"), undefined, [])).toEqual({})
+  })
+
   it("writes a picked reference as its path", () => {
     expect(
       propertyWrite(field("project"), undefined, {
@@ -168,6 +183,17 @@ describe("dates", () => {
     expect(fromLocalInput("")).toBe("")
     expect(fromLocalInput("2026-09-26T10:00")).toBe(
       new Date(2026, 8, 26, 10, 0).toISOString().replace(".000Z", "Z")
+    )
+  })
+})
+
+describe("friendlyCalendarDay", () => {
+  it("reads a bare date as the reader's calendar day, in any zone", () => {
+    const now = new Date(2026, 8, 25, 12).getTime()
+    expect(friendlyCalendarDay("2026-09-25", now)).toBe("Today")
+    expect(friendlyCalendarDay("2026-09-26", now)).toBe("Tomorrow")
+    expect(friendlyCalendarDay("2026-10-20", now)).toBe(
+      friendlyDay(new Date(2026, 9, 20, 9).toISOString(), now)
     )
   })
 })
