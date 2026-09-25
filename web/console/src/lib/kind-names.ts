@@ -129,7 +129,7 @@ export const ACRONYMS: Readonly<Record<string, string>> = {
 }
 
 /** Names that keep their own casing mid-sentence: the services the shipped
- * providers speak for. */
+ * providers speak for, spelled as each service spells itself. */
 const PROPER: Readonly<Record<string, string>> = {
   beeper: "Beeper",
   drive: "Drive",
@@ -139,8 +139,16 @@ const PROPER: Readonly<Record<string, string>> = {
   linear: "Linear",
   notion: "Notion",
   slack: "Slack",
-  whoop: "Whoop",
+  whoop: "WHOOP",
 }
+
+/** Every word a display name spells in capitals on purpose — "LLM",
+ * "WHOOP" — so a reader that lowers shouting knows to leave them. */
+export const KEPT_CAPITALS: ReadonlySet<string> = new Set(
+  [...Object.values(ACRONYMS), ...Object.values(PROPER)].filter(
+    (w) => w === w.toUpperCase()
+  )
+)
 
 /** One lowercase word as it is displayed: an acronym in its capitals, any
  * other word as it came. */

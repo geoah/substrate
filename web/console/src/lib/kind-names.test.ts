@@ -70,6 +70,7 @@ describe("kind display names", () => {
     expect(packageDisplayName("google")).toBe("Google")
     expect(packageDisplayName("oauth")).toBe("OAuth")
     expect(packageDisplayName("github")).toBe("GitHub")
+    expect(packageDisplayName("whoop")).toBe("WHOOP")
   })
 
   it("lowers a display name for a sentence, keeping acronyms and brands", () => {
@@ -77,6 +78,7 @@ describe("kind display names", () => {
     expect(lowerFirst("API keys")).toBe("API keys")
     expect(lowerFirst("LLM providers")).toBe("LLM providers")
     expect(lowerFirst("Gmail threads")).toBe("Gmail threads")
+    expect(lowerFirst("WHOOP cycles")).toBe("WHOOP cycles")
     expect(lowerFirst("OAuth client")).toBe("OAuth client")
   })
 
