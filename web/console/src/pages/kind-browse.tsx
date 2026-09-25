@@ -1,29 +1,36 @@
-/** Kind browse (`/data/:authority/:package/:kind`): ONE schema-driven DataTable for
- * every kind ever installed. Server-side everything — the filter, the search,
- * the sort and the page live in the URL (nuqs) and travel to the wire as
- * `?filter=/orderBy=/offset=`. Pagination is NUMBERED: a page is `offset=`
- * on the wire (decision 0084), so every page is one request away and `?page=`
- * makes one linkable. The bounded count query sizes the bar as well as the
- * header, and Next reads the page's own cursor rather than that count, so a
+/** A collection (`/data/:authority/:package/:kind`): every record of one kind
+ * in a grid that fills the page — the header, the toolbar, the grid (which
+ * scrolls both ways under a pinned header row and a pinned title column), and
+ * the footer pinned under it with the range and the pages.
+ *
+ * Server-side everything: the filter, the search, the sort and the page live
+ * in the URL (nuqs) and travel to the wire as `?filter=/orderBy=/offset=`.
+ * A page is `offset=` on the wire (decision 0084), so every page is one
+ * request away and `?page=` makes one linkable. The bounded count sizes the
+ * footer, and Next reads the page's own cursor rather than that count, so a
  * collection past the count's ceiling still pages to its end.
  *
- * TOP TABS, the record page's idiom (owner ask, 2026-08-12): **Records** is the
- * collection, **Definition** is the kind that shapes it — its declaration YAML
- * and the properties it declares. The active tab lives in `?tab=` so it
- * is linkable, and both tabs read the ONE kinds query this page already makes.
+ * The kind's DEFINITION is the second view (`?tab=definition`), reached from
+ * the header in technical mode.
  *
  * A TREE where the kind allows one: a single reference pinned at the kind
- * itself (a team's `parent` team) nests the collection. The page's rows are
- * then the records naming no parent, and each opens onto the records naming
- * it (`hooks/use-record-tree.ts`). `?nest=false` draws the same rows flat; a
+ * itself nests the collection. The page's rows are then the records naming no
+ * parent, and each opens onto the records naming it
+ * (`hooks/use-record-tree.ts`). `?nest=false` draws the same rows flat; a
  * filter or a search draws them flat regardless, so a match is shown wherever
  * it sits rather than hidden under a parent that does not match. */
 
 import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Link, useNavigate } from "@tanstack/react-router"
+import { Link } from "@tanstack/react-router"
 import type { SortingState, Updater } from "@tanstack/react-table"
-import { InboxIcon, PlusIcon, SearchXIcon } from "lucide-react"
+import {
+  CodeIcon,
+  InboxIcon,
+  ListTreeIcon,
+  PlusIcon,
+  SearchXIcon,
+} from "lucide-react"
 import {
   parseAsArrayOf,
   parseAsBoolean,
@@ -33,11 +40,19 @@ import {
   useQueryState,
 } from "nuqs"
 
-import { DataTable, useDataTable } from "@/components/data-table/data-table"
-import { DataTablePagination } from "@/components/data-table/data-table-pagination"
+import { DataGrid } from "@/components/data-table/data-grid"
+import { DataGridSort } from "@/components/data-table/data-grid-sort"
+import { useDataTable } from "@/components/data-table/data-table"
 import { DataTableFilters } from "@/components/data-table/data-table-filters"
+import { DataTablePagination } from "@/components/data-table/data-table-pagination"
 import { RowTreeProvider } from "@/components/data-table/data-table-tree"
 import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
+import { CopyButton } from "@/components/identity/copy-button"
+import { KindGlyph } from "@/components/identity/kind-glyph"
+import { KindRef } from "@/components/identity/kind-ref"
+import { PageHeader } from "@/components/identity/page-header"
+import { TablePage } from "@/components/identity/page-layout"
+import { ProviderBadge } from "@/components/identity/provider-badge"
 import { KindDefinition } from "@/components/record/definition"
 import { SearchBox } from "@/components/search-box"
 import { Button } from "@/components/ui/button"
@@ -49,16 +64,26 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useRecordTree } from "@/hooks/use-record-tree"
 import {
-  recordsQueryOptions,
-  recordCountQueryOptions,
+  useDensity,
+  useLayoutWidths,
+  useTechnicalDetails,
+} from "@/hooks/use-console-preferences"
+import { useRecordTree } from "@/hooks/use-record-tree"
+import { providerOfKind } from "@/lib/actor-identity"
+import {
   formatCount,
+  recordCountQueryOptions,
+  recordsQueryOptions,
 } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
+import type { KindInfo } from "@/lib/api/types"
+import {
+  expandableReferences,
+  filterableProperties,
+  kindByCollection,
+} from "@/lib/definition"
 import {
   decodeFilters,
   encodeFilter,
@@ -66,17 +91,15 @@ import {
   saveBrowsePrefs,
   toRecordFilter,
 } from "@/lib/filters"
-import {
-  expandableReferences,
-  filterableProperties,
-  kindByCollection,
-} from "@/lib/definition"
+import { emptyColumnIds, propertyLabel } from "@/lib/grid-values"
+import { displayName, displayPlural } from "@/lib/kind-names"
 import { nestingProperty, rootsFilter } from "@/lib/record-tree"
 import { titlesFromIncluded } from "@/lib/reference-titles"
 import { cn } from "@/lib/utils"
 import {
   buildColumns,
   columnIdOf,
+  columnValue,
   defaultHiddenColumns,
   sortPropertyOf,
 } from "@/pages/kind-browse-columns"
@@ -85,22 +108,34 @@ import { kindBrowseRoute } from "@/router"
 const PAGE_SIZE = 50
 const DEFAULT_SORT = "updatedAt:desc"
 
-/** The tab keys, in bar order; the records lead and are the default. */
+/** The views, in bar order; the records lead and are the default. */
 const TABS = ["records", "definition"] as const
 const tabParser = parseAsStringLiteral(TABS)
   .withDefault("records")
   .withOptions({ history: "push" })
+
+/** The page's side gutter, shared by every band so they line up. */
+const GUTTER = "px-4 md:px-8"
+const GUTTER_MX = "mx-4 md:mx-8"
 
 function parseSort(sort: string): SortingState {
   const [property, dir] = sort.split(":")
   return property ? [{ id: columnIdOf(property), desc: dir !== "asc" }] : []
 }
 
+/** What a nested row's children are called: "subtasks" for tasks, "nested
+ * calendar events" where the plural is more than a word. */
+function childNoun(kind: KindInfo): string {
+  const plural = displayPlural(kind).toLowerCase()
+  return plural.includes(" ") ? `nested ${plural}` : `sub${plural}`
+}
+
 export function KindBrowsePage() {
-  // The route params are the kind reference, segment for segment; `$name` (the
-  // kind name) is the collection segment.
+  // The route params are the kind reference, segment for segment.
   const { authority, pkg, name } = kindBrowseRoute.useParams()
-  const navigate = useNavigate()
+  const [technical] = useTechnicalDetails()
+  const [density] = useDensity()
+  const { tableWidth } = useLayoutWidths()
 
   const [tab, setTab] = useQueryState("tab", tabParser)
   const [sort, setSort] = useQueryState(
@@ -119,16 +154,13 @@ export function KindBrowsePage() {
     parseAsString.withDefault("")
   )
   // The page is in the URL too, so a page of a collection is a link. It is
-  // not persisted either: where a reader had got to is not a view
-  // preference, and restoring page 9 on a bare url would open a collection
-  // at rows nobody asked for.
+  // not persisted: where a reader had got to is not a view preference.
   const [pageParam, setPageParam] = useQueryState(
     "page",
     parseAsInteger.withDefault(1)
   )
-  // The tree switch: in the URL beside the sort so a flat view is shareable,
-  // and in the stored prefs so a reader who turned it off stays off. On by
-  // default, and shown only on a kind that can nest at all.
+  // The tree switch: in the URL so a flat view is shareable, and in the
+  // stored prefs so a reader who turned it off stays off.
   const [nest, setNest] = useQueryState(
     "nest",
     parseAsBoolean.withDefault(true)
@@ -180,7 +212,6 @@ export function KindBrowsePage() {
     return words ? { ...base, search: words } : base
   }, [filters, filterFields, search])
 
-  // The reference this kind nests by, where it declares one at itself.
   const nestProperty = useMemo(
     () => (kindInfo ? nestingProperty(kindInfo) : undefined),
     [kindInfo]
@@ -189,7 +220,6 @@ export function KindBrowsePage() {
   // A filter or a search draws the table flat: a match nested under a parent
   // that does not match would otherwise be a row the reader cannot reach.
   const nesting = nestProperty !== undefined && nest && !hasFilters
-  // What the page reads: the whole view, or only the records naming no parent.
   const listFilter = useMemo(
     () =>
       nesting && nestProperty
@@ -204,8 +234,7 @@ export function KindBrowsePage() {
     ? Math.max(1, Math.trunc(pageParam))
     : 1
   // A changed filter, sort or tree switch renumbers the whole collection, so
-  // the page a reader was on no longer names the same rows: the view resets to
-  // page one.
+  // the view resets to page one.
   const viewKey = `${authority}/${pkg}/${name}|${JSON.stringify(recordFilter ?? null)}|${sort}|${nesting ? "tree" : "flat"}`
   const [lastViewKey, setLastViewKey] = useState(viewKey)
   if (lastViewKey !== viewKey) {
@@ -214,11 +243,8 @@ export function KindBrowsePage() {
   }
 
   // Every reference this kind declares rides the page read as `expand=`, so
-  // a reference column reads as the referent's NAME instead of the record id
-  // the value carries (owner report, 2026-09-18: a task's `assignee`). It is
-  // one sidecar on the read the table already makes, not a second request,
-  // and a kind whose expansion the server refuses degrades to no expansion
-  // rather than to no rows (`fetchRecordsPage`).
+  // a reference column reads as the referent's NAME instead of its id, in one
+  // sidecar on the read the grid already makes.
   const expand = useMemo(
     () => (kindInfo ? expandableReferences(kindInfo) : []),
     [kindInfo]
@@ -236,8 +262,6 @@ export function KindBrowsePage() {
   })
   const records = useQuery({ ...listOptions, enabled: Boolean(kindInfo) })
 
-  // The page's own rows are the tree's roots; under the tree the table draws
-  // each open root's children right after it.
   const roots = records.data?.records ?? []
   const tree = useRecordTree({
     kind: kindInfo,
@@ -248,33 +272,25 @@ export function KindBrowsePage() {
     expand,
   })
   const rows = tree.rows
-  // Absent `included` — the expansion degraded, or the kind declares no
-  // reference at all — this is empty and every pill reads as its id. The
-  // tree's level reads expand the same properties, so their referents join.
   const referenceTitles = useMemo(
     () => titlesFromIncluded({ ...records.data?.included, ...tree.included }),
     [records.data, tree.included]
   )
   const pageCursor = records.data?.cursor
   // A single page with nothing behind it IS the exact count, for free. Any
-  // larger collection pays the bounded count walk, which the numbered bar
-  // needs as well as the header — but only for the NUMBERS: Next below reads
-  // the page's own cursor, so a collection past the walk's ceiling still
-  // pages to its end. Under the tree these count the top-level rows, which is
-  // what the bar pages through.
+  // larger collection pays the bounded count walk, which the footer's numbers
+  // need — but only the numbers: Next reads the page's own cursor. Under the
+  // tree these count the top-level rows, which is what the footer pages.
   const derivedTotal =
     records.data && !pageCursor && page === 1 ? roots.length : undefined
   const count = useQuery({
-    // Only once a second page is known to exist: a collection that fits on
-    // one page has already answered its own size above, and the walk is a
-    // second round trip over the same rows.
     ...recordCountQueryOptions(authority, pkg, name, listFilter),
     enabled: Boolean(kindInfo) && (page > 1 || Boolean(pageCursor)),
   })
   const total = derivedTotal ?? count.data?.value
   const totalCapped = derivedTotal === undefined && count.data?.capped
-  // The header counts the collection, which under the tree is more than the
-  // top-level rows: the same bounded walk over the view's own filter says.
+  // Under the tree the collection is more than its top-level rows: the same
+  // bounded walk over the view's own filter says how many.
   const collectionCount = useQuery({
     ...recordCountQueryOptions(authority, pkg, name, recordFilter),
     enabled: Boolean(kindInfo) && nesting,
@@ -289,10 +305,8 @@ export function KindBrowsePage() {
         ? formatCount(count.data)
         : undefined
 
-  // A ?page= past the end — hand-typed, or bookmarked before rows were
-  // deleted — answers an empty page that reads like an empty collection.
-  // Land on the last page that has rows instead. A CAPPED count is a floor,
-  // so it can never justify moving a reader back.
+  // A ?page= past the end lands on the last page that has rows. A CAPPED
+  // count is a floor, so it can never justify moving a reader back.
   const pageCount =
     total !== undefined && !totalCapped
       ? Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -312,18 +326,33 @@ export function KindBrowsePage() {
     if (page !== 1) void setPageParam(null)
   }
 
+  const noun = kindInfo ? childNoun(kindInfo) : "rows"
   const columns = useMemo(
     () =>
       kindInfo
-        ? buildColumns(kindInfo, registry.data ?? [], referenceTitles)
+        ? buildColumns(kindInfo, registry.data ?? [], referenceTitles, {
+            technical,
+            childNoun: noun,
+          })
         : [],
-    [kindInfo, registry.data, referenceTitles]
+    [kindInfo, registry.data, referenceTitles, technical, noun]
   )
-  // Only the OPENING set: a reader who has saved a column preference for this
-  // kind keeps it, and the Columns menu turns any of these back on.
   const defaultHidden = useMemo(
     () => (kindInfo ? defaultHiddenColumns(kindInfo) : []),
     [kindInfo]
+  )
+  // Columns with nothing in them on the rows loaded open hidden; the footer
+  // says so and the Columns menu brings any of them back.
+  const emptyIds = useMemo(
+    () =>
+      records.data
+        ? emptyColumnIds(
+            columns.map((c) => c.id ?? "").filter((id) => id !== "title"),
+            rows,
+            columnValue
+          )
+        : [],
+    [records.data, columns, rows]
   )
 
   const sorting = useMemo(() => parseSort(sort), [sort])
@@ -346,12 +375,12 @@ export function KindBrowsePage() {
     getRowId: (row) => row.id,
     prefsKey: `browse:${authority}/${pkg}/${name}`,
     defaultHidden,
+    autoHidden: emptyIds,
   })
 
   // Only the REGISTRY gates the whole page — it names the collection and it
-  // is what the Definition tab reads. Records pending or failing is the
-  // Records tab's business alone, so a collection whose rows won't load still
-  // opens on its definition.
+  // is what the Definition view reads. Records pending or failing is the
+  // grid's business alone.
   if (registry.isPending) {
     return <BrowseSkeleton />
   }
@@ -360,15 +389,15 @@ export function KindBrowsePage() {
     return (
       <PageEmpty
         icon={<SearchXIcon />}
-        title="Kinds didn't load"
-        description="This page needs the list of kinds to name the collection."
+        title="This collection didn't load"
+        description="The list of kinds didn't come back, and this page needs it to know what the collection is."
       >
         <Button
           variant="outline"
           size="sm"
           onClick={() => void registry.refetch()}
         >
-          Retry
+          Try again
         </Button>
       </PageEmpty>
     )
@@ -378,216 +407,304 @@ export function KindBrowsePage() {
     return (
       <PageEmpty
         icon={<SearchXIcon />}
-        title="No such kind"
+        title="No such collection"
         description={`This repository has no kind called ${authority}/${pkg}/${name}.`}
       />
     )
   }
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-start justify-between gap-3 px-6 pt-5 pb-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {kindInfo.name}
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            {totalText !== undefined ? `${totalText} records in ` : ""}
-            <span className="data">
-              {authority}/{pkg}
-            </span>
-          </p>
-          {/* What the kind IS, from its declaration — the reader arriving at a
-           * collection they did not install should not have to open the
-           * definition tab to find out what lives in it. */}
-          {kindInfo.description && (
-            <p className="mt-1.5 max-w-prose text-sm text-muted-foreground">
-              {kindInfo.description}
-            </p>
-          )}
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="shrink-0 gap-1.5"
-          render={
-            <Link
-              to="/data/$authority/$pkg/$name/new"
-              params={{ authority: authority, pkg: pkg, name: name }}
-            />
-          }
-        >
-          <PlusIcon className="size-3.5" />
-          New
-        </Button>
-      </div>
-      <Tabs
-        value={tab}
-        onValueChange={(next) => void setTab(next as (typeof TABS)[number])}
-        className="min-h-0 flex-1 gap-0"
-      >
-        <TabsList variant="line" className="mx-4 shrink-0 justify-start">
-          <TabsTrigger value="records">Records</TabsTrigger>
-          <TabsTrigger value="definition">Definition</TabsTrigger>
-        </TabsList>
+  const plural = displayPlural(kindInfo)
+  const singular = displayName(kindInfo)
+  const provider = providerOfKind(kindInfo.identity)
+  const showTabs = tab === "definition"
+  const emptyHidden = table.options.meta?.emptyHidden ?? []
+  const loadingPage = records.isPending
+  const refetching = records.isPlaceholderData && records.isFetching
 
-        <TabsContent value="records" className="flex min-h-0 flex-col border-t">
-          {records.isError ? (
-            <PageEmpty
-              icon={<SearchXIcon />}
-              title={`${kindInfo.name} records didn't load`}
-              description={records.error.message}
-            >
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void records.refetch()}
-              >
-                Retry
-              </Button>
-            </PageEmpty>
-          ) : records.isPending ? (
-            <BrowseTableSkeleton />
-          ) : (
-            <>
-              <div className="flex shrink-0 flex-wrap items-center gap-2 pr-6">
-                <DataTableFilters
-                  fields={filterFields}
-                  filters={filters}
-                  kinds={registry.data ?? []}
-                  onChange={(next) => {
-                    const tokens = next.map(encodeFilter)
-                    void setFilterTokens(tokens.length ? tokens : null)
-                    resetPages()
-                    persist({ filter: tokens })
-                  }}
-                />
-                <div className="ml-auto flex items-center gap-2 py-2.5 pl-2">
-                  {nestProperty && (
-                    <label
-                      className={cn(
-                        "flex h-8 shrink-0 items-center gap-2 rounded-lg border px-2.5 text-sm text-muted-foreground",
-                        hasFilters
-                          ? "opacity-50"
-                          : "cursor-pointer hover:text-foreground"
-                      )}
-                      title={
-                        hasFilters
-                          ? "Flat while a filter or a search is set, so a match shows wherever it sits"
-                          : `The rows are the ${kindInfo.name} records with no ${nestProperty.name}; each opens onto the ones naming it`
-                      }
-                    >
-                      <input
-                        type="checkbox"
-                        className="accent-primary"
-                        checked={nest}
-                        disabled={hasFilters}
-                        onChange={(e) => {
-                          void setNest(e.target.checked)
-                          resetPages()
-                          persist({ nest: e.target.checked })
-                        }}
-                      />
-                      Nest by <span className="data">{nestProperty.name}</span>
-                    </label>
-                  )}
-                  {/* Words against every text this kind indexes (the wire's
-                      `filter.search`), composed with the property filters and
-                      the sort. */}
-                  <SearchBox
-                    className="w-64"
-                    label="Search these records"
-                    placeholder="Search these records…"
-                    value={search}
-                    onChange={(next) => {
-                      void setSearch(next || null)
-                      resetPages()
-                    }}
-                  />
-                  <DataTableViewOptions table={table} />
-                </div>
-              </div>
-              <div className="min-h-0 flex-1 overflow-auto">
-                <RowTreeProvider
-                  tree={
-                    tree.active
-                      ? { nodes: tree.nodes, toggle: tree.toggle }
-                      : null
-                  }
-                >
-                  <DataTable
-                    table={table}
-                    loading={records.isPlaceholderData && records.isFetching}
-                    onRowClick={(row) =>
-                      void navigate({
-                        to: "/data/$authority/$pkg/$name/$id",
-                        params: {
-                          authority: authority,
-                          pkg: pkg,
-                          name,
-                          id: row.id,
-                        },
-                      })
-                    }
-                    empty={
-                      <Empty className="py-16">
-                        <EmptyHeader>
-                          <EmptyMedia variant="icon">
-                            <InboxIcon />
-                          </EmptyMedia>
-                          <EmptyTitle>
-                            {hasFilters
-                              ? "Nothing matches"
-                              : `No ${kindInfo.name} records yet`}
-                          </EmptyTitle>
-                          <EmptyDescription>
-                            {hasFilters
-                              ? "No record matches the filters and search you set."
-                              : "Press New to create the first one."}
-                          </EmptyDescription>
-                        </EmptyHeader>
-                        {hasFilters && (
-                          <EmptyContent>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                void setFilterTokens(null)
-                                void setSearch(null)
-                                resetPages()
-                                persist({ filter: [] })
-                              }}
-                            >
-                              Clear filters
-                            </Button>
-                          </EmptyContent>
-                        )}
-                      </Empty>
-                    }
-                  />
-                </RowTreeProvider>
-              </div>
-              <DataTablePagination
-                page={page}
-                pageSize={PAGE_SIZE}
-                rows={roots.length}
-                total={total}
-                totalCapped={totalCapped}
-                hasNext={Boolean(pageCursor)}
-                onPage={goToPage}
-                loading={records.isPlaceholderData && records.isFetching}
+  const header = (
+    <div className={cn("shrink-0 pt-6", GUTTER)}>
+      <PageHeader
+        title={
+          <span className="flex items-center gap-2.5">
+            <KindGlyph kind={kindInfo} size="md" />
+            {plural}
+          </span>
+        }
+        meta={
+          <>
+            <span className="inline-flex min-w-0 items-center gap-1">
+              <KindRef kind={kindInfo} mode="reference" link={false} />
+              <CopyButton
+                value={kindInfo.identity}
+                label="Copy the kind reference"
               />
-            </>
-          )}
-        </TabsContent>
-
-        <TabsContent value="definition" className="min-h-0 border-t">
-          <ScrollArea className="h-full">
-            <KindDefinition kind={kindInfo} kinds={registry.data ?? []} />
-          </ScrollArea>
-        </TabsContent>
-      </Tabs>
+            </span>
+            {provider && (
+              <span className="inline-flex items-center gap-1.5">
+                <ProviderBadge provider={provider.key} size="xs" />
+                read-only copies, kept up to date by {provider.name}
+              </span>
+            )}
+            {technical && tab !== "definition" && (
+              <Button
+                variant="ghost"
+                size="xs"
+                className="-my-1 h-[22px] gap-1 px-1.5 font-normal text-faint"
+                onClick={() => void setTab("definition")}
+              >
+                <CodeIcon className="size-3.5" />
+                Definition
+              </Button>
+            )}
+          </>
+        }
+        description={kindInfo.description || undefined}
+        actions={
+          provider ? undefined : (
+            <Button
+              size="sm"
+              className="gap-1.5"
+              render={
+                <Link
+                  to="/data/$authority/$pkg/$name/new"
+                  params={{ authority, pkg, name }}
+                />
+              }
+            >
+              <PlusIcon className="size-3.5" />
+              New {singular.charAt(0).toLowerCase() + singular.slice(1)}
+            </Button>
+          )
+        }
+      />
     </div>
+  )
+
+  const tabBar = showTabs && (
+    <div
+      role="tablist"
+      aria-label="Views of this collection"
+      className={cn(
+        "mt-4 flex shrink-0 gap-4 border-b border-border",
+        GUTTER_MX
+      )}
+    >
+      {TABS.map((key) => (
+        <button
+          key={key}
+          type="button"
+          role="tab"
+          aria-selected={tab === key}
+          className={cn(
+            "-mb-px cursor-pointer border-b-2 border-transparent pb-2 text-[13px] text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground",
+            tab === key && "border-foreground font-medium text-foreground"
+          )}
+          onClick={() => void setTab(key)}
+        >
+          {key === "records" ? "Records" : "Definition"}
+        </button>
+      ))}
+    </div>
+  )
+
+  if (tab === "definition") {
+    return (
+      <TablePage className="flex min-h-0 flex-1 flex-col px-0 py-0 md:px-0">
+        {header}
+        {tabBar}
+        <div className="min-h-0 flex-1 overflow-auto">
+          {/* The definition pads itself; this tops it up to the page's
+              gutter so it lines up with the header. */}
+          <div className="md:px-2">
+            <KindDefinition kind={kindInfo} kinds={registry.data ?? []} />
+          </div>
+        </div>
+      </TablePage>
+    )
+  }
+
+  const emptyState = (
+    <Empty className="py-16">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <InboxIcon />
+        </EmptyMedia>
+        <EmptyTitle>
+          {hasFilters ? "Nothing matches" : `No ${plural.toLowerCase()} yet`}
+        </EmptyTitle>
+        <EmptyDescription>
+          {hasFilters
+            ? "No record matches the filters and search you set."
+            : provider
+              ? `${provider.name} adds them here when it syncs.`
+              : `Add the first one with New ${singular.toLowerCase()}, or ask an agent to.`}
+        </EmptyDescription>
+      </EmptyHeader>
+      {hasFilters && (
+        <EmptyContent>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void setFilterTokens(null)
+              void setSearch(null)
+              resetPages()
+              persist({ filter: [] })
+            }}
+          >
+            Clear filters
+          </Button>
+        </EmptyContent>
+      )}
+    </Empty>
+  )
+
+  const summary =
+    nesting && total !== undefined && collectionCount.data ? (
+      <span className="tabular-nums">
+        {formatCount(collectionCount.data)} {plural.toLowerCase()},{" "}
+        {total.toLocaleString()}
+        {totalCapped ? "+" : ""} at the top level
+      </span>
+    ) : undefined
+
+  return (
+    <TablePage className="flex min-h-0 flex-1 flex-col px-0 py-0 md:px-0">
+      {header}
+      {tabBar}
+      <div
+        className={cn(
+          "flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border py-2.5",
+          showTabs ? "mt-0" : "mt-3.5",
+          GUTTER_MX
+        )}
+      >
+        {nestProperty && (
+          <button
+            type="button"
+            aria-pressed={nest && !hasFilters}
+            disabled={hasFilters}
+            title={
+              hasFilters
+                ? "Flat while a filter or a search is set, so a match shows wherever it sits"
+                : `The top level is the ${plural.toLowerCase()} with no ${propertyLabel(nestProperty.name).toLowerCase()}; each opens onto the ones that name it`
+            }
+            className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border-strong bg-background px-2.5 text-[12.5px] text-muted-foreground outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-50 aria-pressed:border-transparent aria-pressed:bg-primary-soft aria-pressed:text-primary-text"
+            onClick={() => {
+              void setNest(!nest)
+              resetPages()
+              persist({ nest: !nest })
+            }}
+          >
+            <ListTreeIcon className="size-3.5" />
+            {technical ? (
+              <>
+                Nested by{" "}
+                <span className="font-mono text-[11.5px]">
+                  {nestProperty.name}
+                </span>
+              </>
+            ) : (
+              `Show ${noun} nested`
+            )}
+          </button>
+        )}
+        <DataTableFilters
+          className="gap-1.5 px-0 py-0"
+          fields={filterFields}
+          filters={filters}
+          kinds={registry.data ?? []}
+          labelOf={technical ? undefined : propertyLabel}
+          onChange={(next) => {
+            const tokens = next.map(encodeFilter)
+            void setFilterTokens(tokens.length ? tokens : null)
+            resetPages()
+            persist({ filter: tokens })
+          }}
+        />
+        <span className="flex-1" />
+        {/* Words against every text this kind indexes (the wire's
+            `filter.search`), composed with the property filters and the
+            sort. */}
+        <SearchBox
+          className="h-[30px] w-60 [&_input]:font-sans"
+          label={`Search ${plural.toLowerCase()}`}
+          placeholder={`Search ${totalText && totalText !== "0" && !nesting ? `${totalText} ` : ""}${plural.toLowerCase()}`}
+          value={search}
+          onChange={(next) => {
+            void setSearch(next || null)
+            resetPages()
+          }}
+        />
+        <DataGridSort table={table} />
+        <DataTableViewOptions table={table} toolbar />
+      </div>
+      {records.isError ? (
+        <PageEmpty
+          icon={<SearchXIcon />}
+          title={`${plural} didn't load`}
+          description={records.error.message}
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void records.refetch()}
+          >
+            Try again
+          </Button>
+        </PageEmpty>
+      ) : (
+        <>
+          <RowTreeProvider
+            tree={
+              tree.active ? { nodes: tree.nodes, toggle: tree.toggle } : null
+            }
+          >
+            <DataGrid
+              table={table}
+              density={density}
+              fill={tableWidth === "full"}
+              loading={loadingPage}
+              empty={emptyState}
+              scrollKey={page}
+              className={cn(
+                "flex-1 border-b border-border",
+                refetching && "opacity-60 transition-opacity",
+                GUTTER_MX
+              )}
+            />
+          </RowTreeProvider>
+          <DataTablePagination
+            className={cn("pt-2.5 pb-3", GUTTER)}
+            page={page}
+            pageSize={PAGE_SIZE}
+            rows={roots.length}
+            total={total}
+            totalCapped={totalCapped}
+            hasNext={Boolean(pageCursor)}
+            onPage={goToPage}
+            loading={refetching}
+            summary={summary}
+          >
+            {emptyHidden.length > 0 && (
+              <span>
+                ·{" "}
+                {emptyHidden.length === 1
+                  ? "1 column with nothing in it is hidden"
+                  : `${emptyHidden.length} columns with nothing in them are hidden`}
+                <button
+                  type="button"
+                  className="ml-1.5 cursor-pointer text-muted-foreground underline decoration-border-strong underline-offset-2 hover:text-foreground"
+                  onClick={() => table.options.meta?.showEmptyColumns?.()}
+                >
+                  Show
+                </button>
+              </span>
+            )}
+          </DataTablePagination>
+        </>
+      )}
+    </TablePage>
   )
 }
 
@@ -617,44 +734,31 @@ function PageEmpty({
 }
 
 /** The whole-page loading state — nothing is known yet, not even the kind's
- * name: header block, tab bar, filter row, table rows, pagination seam. */
+ * name: header, toolbar, rows, footer. */
 function BrowseSkeleton() {
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 px-6 pt-5 pb-3">
-        <Skeleton className="h-6 w-32" />
-        <Skeleton className="mt-1.5 h-3.5 w-48" />
+    <TablePage className="flex min-h-0 flex-1 flex-col px-0 py-0 md:px-0">
+      <div className={cn("shrink-0 pt-6", GUTTER)}>
+        <Skeleton className="h-7 w-40" />
+        <Skeleton className="mt-2 h-3.5 w-72" />
       </div>
-      <div className="flex shrink-0 gap-2 px-4 pb-3">
-        <Skeleton className="h-7 w-20" />
+      <div
+        className={cn(
+          "mt-3.5 flex shrink-0 gap-2 border-b border-border py-2.5",
+          GUTTER_MX
+        )}
+      >
         <Skeleton className="h-7 w-24" />
+        <span className="flex-1" />
+        <Skeleton className="h-7 w-60" />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col border-t">
-        <BrowseTableSkeleton />
-      </div>
-    </div>
-  )
-}
-
-/** The Records tab's own loading state: the collection is named and the tabs
- * are live — only the page of rows is still on the wire. */
-function BrowseTableSkeleton() {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-2 px-6 py-2.5">
-        <Skeleton className="h-8 w-24" />
-      </div>
-      <div className="min-h-0 flex-1 space-y-0 overflow-hidden px-6">
+      <div className={cn("min-h-0 flex-1 overflow-hidden", GUTTER_MX)}>
         {Array.from({ length: 12 }, (_, i) => (
-          <div key={i} className="flex h-9 items-center border-b last:border-0">
+          <div key={i} className="flex h-[38px] items-center border-b">
             <Skeleton className="h-4 w-2/5" />
           </div>
         ))}
       </div>
-      <div className="flex shrink-0 items-center justify-between border-t px-6 py-2">
-        <Skeleton className="h-4 w-24" />
-        <Skeleton className="h-4 w-40" />
-      </div>
-    </div>
+    </TablePage>
   )
 }
