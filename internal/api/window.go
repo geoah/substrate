@@ -123,6 +123,14 @@ func (h *handler) windowList(w http.ResponseWriter, r *http.Request, ds substrat
 			"offset is not supported on a window read (filter.properties.at bounded on both ends): it merges computed occurrences into the page, so pages are addressed by cursor alone")
 		return
 	}
+	// Nor is there a row count to answer: occurrences are computed per slot
+	// and are not rows, so a count of the stored rows would disagree with
+	// the page it sits beside.
+	if q.Count {
+		writeError(w, http.StatusBadRequest, codeBadRequest,
+			"count is not supported on a window read (filter.properties.at bounded on both ends): its page merges computed occurrences, which are not rows and cannot be counted as rows")
+		return
+	}
 	first := q.First
 	if first <= 0 {
 		first = 50

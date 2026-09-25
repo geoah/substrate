@@ -261,6 +261,7 @@
     "items": true
   },
   "Page": {
+    "count": false,
     "cursor": false,
     "generation": true,
     "head": true,

@@ -141,6 +141,78 @@ func TestRecordsListOffset(t *testing.T) {
 	wantMessage(t, rec, "offset")
 }
 
+// `count=1` asks for the size of the filtered set beside the page. It reaches
+// the dataset as Query.Count, the answer carries `count` (zero included), a
+// list that did not ask carries none, and the ranked read and the tail, which
+// have no filtered set to count, refuse it by name.
+func TestRecordsListCount(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+	f := substrate.Filter{Kinds: []string{personKind}}
+
+	counted := func(rec *httptest.ResponseRecorder) (int64, bool) {
+		t.Helper()
+		var body map[string]json.RawMessage
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		raw, ok := body["count"]
+		if !ok {
+			return 0, false
+		}
+		var n int64
+		if err := json.Unmarshal(raw, &n); err != nil {
+			t.Fatalf("count = %s, want a number", raw)
+		}
+		return n, true
+	}
+
+	// An empty set is counted, not omitted: zero is an answer.
+	rec := env.do(t, http.MethodGet, filterPath(t, f, "first=1", "count=1"), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if n, ok := counted(rec); !ok || n != 0 {
+		t.Fatalf("count over an empty set = %d (present %v), want 0 present", n, ok)
+	}
+
+	for _, name := range []string{"Ada", "Grace", "Hedy"} {
+		createRecord(t, env, tok, personKind, map[string]any{"name": name})
+	}
+	rec = env.do(t, http.MethodGet, filterPath(t, f, "first=1", "count=1"), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if !ds.lastQuery.Count {
+		t.Fatal("count=1 did not reach the dataset")
+	}
+	if n, ok := counted(rec); !ok || n != 3 {
+		t.Fatalf("count = %d (present %v), want 3", n, ok)
+	}
+
+	// A list that did not ask carries no count at all.
+	rec = env.do(t, http.MethodGet, filterPath(t, f), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if ds.lastQuery.Count {
+		t.Fatal("a list without count=1 asked the dataset for one")
+	}
+	if n, ok := counted(rec); ok {
+		t.Fatalf("a list without count=1 answered count %d", n)
+	}
+
+	// One spelling: a value read as "no" would answer a page without the
+	// number the caller is about to render.
+	for _, bad := range []string{"count=true", "count=0", "count="} {
+		rec := env.do(t, http.MethodGet, filterPath(t, f, bad), tok, nil)
+		wantStatus(t, rec, http.StatusBadRequest)
+		wantMessage(t, rec, "count")
+	}
+
+	// The ranked read and the tail name their own grammar.
+	for _, mode := range []string{"q=ada", "watch=1"} {
+		rec := env.do(t, http.MethodGet, filterPath(t, f, mode, "count=1"), tok, nil)
+		wantStatus(t, rec, http.StatusBadRequest)
+		wantMessage(t, rec, "count")
+	}
+}
+
 // With no filter at all the list is every record: there is no collection to
 // scope it, so the route does not invent one.
 func TestRecordsListWithoutAFilterIsEveryKind(t *testing.T) {
