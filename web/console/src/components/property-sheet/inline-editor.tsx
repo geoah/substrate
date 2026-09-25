@@ -13,6 +13,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { ArrowRightIcon, CheckIcon } from "lucide-react"
 
 import { fromLocalInput, toLocalInput } from "./dates"
@@ -26,6 +27,7 @@ import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { useRecordOptions } from "@/lib/identities"
+import { recordTitleQueryOptions } from "@/lib/reference-titles"
 import { seedField, type FormField, type FormValue } from "@/lib/record-form"
 import { humanizeName, movesFrom } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
@@ -324,6 +326,11 @@ function ReferencePicker(props: InlineEditorProps) {
     kind: string
     id: string
   }
+  // The chosen record may sit past the loaded page; its title is read.
+  const title = useQuery({
+    ...recordTitleQueryOptions(seeded.kind || pin, seeded.id),
+    enabled: Boolean(seeded.id),
+  })
   return (
     <div className="flex w-full min-w-0 items-center gap-2">
       <RecordCombobox
@@ -331,6 +338,7 @@ function ReferencePicker(props: InlineEditorProps) {
         defaultOpen
         ariaLabel={row.field.label}
         value={seeded.id}
+        valueTitle={title.data ?? undefined}
         placeholder="Choose…"
         onSelect={(id) => {
           chosen.current = true

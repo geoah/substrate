@@ -87,7 +87,11 @@ function Title({
     const next = text.trim()
     const stored = record.properties[name]
     try {
-      if (next !== (typeof stored === "string" ? stored : "")) {
+      const held = typeof stored === "string" ? stored : ""
+      // A title read through a fallback (`{displayName|name}` with no
+      // displayName) that was not changed is not a value to write.
+      const unchanged = next === held || (!held && next === title)
+      if (!unchanged) {
         await patch.mutateAsync({ [name]: next || null })
       }
       setError(undefined)

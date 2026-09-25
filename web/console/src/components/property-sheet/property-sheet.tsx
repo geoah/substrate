@@ -51,12 +51,14 @@ function Label({ row }: { row: SheetRow }) {
       }
     >
       <Icon aria-hidden className="size-3.5 shrink-0 text-faint" />
-      <span className="truncate">{row.spec.label}</span>
-      {technical && row.spec.label !== row.name && (
-        <span className="truncate font-mono text-[11.5px] text-faint">
-          {row.name}
-        </span>
-      )}
+      <span className="flex min-w-0 flex-col leading-tight">
+        <span className="truncate">{row.spec.label}</span>
+        {technical && row.spec.label !== row.name && (
+          <span className="truncate font-mono text-[11px] text-faint">
+            {row.name}
+          </span>
+        )}
+      </span>
     </IdentityHoverCard>
   )
 }

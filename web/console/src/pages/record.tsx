@@ -232,7 +232,9 @@ function SourceView({
           Edit YAML
         </Button>
       </div>
-      <YamlView source={yaml} docs={docs} targets={targets} />
+      <div className="overflow-hidden rounded-lg border bg-panel">
+        <YamlView source={yaml} docs={docs} targets={targets} />
+      </div>
     </div>
   )
 }
