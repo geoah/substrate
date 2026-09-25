@@ -23,7 +23,12 @@ import {
 
 import { kindGlyph } from "@/lib/kind-glyph"
 import { toFieldValue, type FormField, type FormValue } from "@/lib/record-form"
-import { TO_ANY, elementSpec, type PropSpec } from "@/lib/record-schema"
+import {
+  TO_ANY,
+  elementSpec,
+  emptyContainer,
+  type PropSpec,
+} from "@/lib/record-schema"
 
 /** How a row is edited: on its own line, from a list that drops under it,
  * or in a panel that takes the row's full width. */
@@ -60,6 +65,13 @@ export function propertyWrite(
   if (submitted.value === undefined || submitted.value === null) {
     if (stored === undefined || stored === null) return {}
     if (field.control === "secret") return {}
+    // An emptied container is a claim ("none"), not an absence: null would
+    // delete the property and let its sources refill it. Releasing to the
+    // sources is the ownership chip's explicit act, never a side effect.
+    const empty = emptyContainer(field.spec)
+    if (empty !== undefined) {
+      return same(stored, empty) ? {} : { properties: { [field.name]: empty } }
+    }
     return { properties: { [field.name]: null } }
   }
   if (field.control !== "secret" && same(normalize(stored), submitted.value)) {
