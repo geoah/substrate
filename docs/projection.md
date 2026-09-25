@@ -214,9 +214,9 @@ read is the bulk, paged answer. `linkedFrom` is the mirror question;
 `referencing` is the general one — every record pointing at this one, through
 any property, mapping or not.
 
-The console shows it as the **Sources** section of a record's Provenance tab,
-grouped by the mapping that brought each record
-([web console](console.md#the-record-editor)).
+The console shows it as the **Where it comes from** section of a record's
+page, grouped by the mapping that brought each record
+([web console](console.md#a-record)).
 
 ## Managed properties
 
@@ -550,7 +550,7 @@ Nothing ships a duplicate detector today: suggestions come from whatever
 [function](functions.md) or app you install to write them (probing for a
 shared email address, scoring overlapping names, whatever the matcher
 decides), one request per strong candidate. The owner reviews the queue in
-the [console](console.md) and accepts or rejects, with the request's
+the [console](console.md#merge-and-change-requests) and accepts or rejects, with the request's
 rationale beside a field-by-field comparison of the two records. Merging without a request is the same mutation driven directly:
 a REST post naming the kind and the two ids:
 

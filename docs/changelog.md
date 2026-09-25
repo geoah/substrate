@@ -400,8 +400,8 @@ horizon, and the horizon is where policy lives.
   never shows.
 - **Watchers**: the stream above, and `substratectl watch` is that stream in a
   terminal ([substratectl](substratectl.md)). Providers reconcile from it.
-- **The console's events page** is the same feed, paged backward through
-  history and filtered ([web console](console.md)).
+- **The console's History page** is the same feed, paged backward through
+  history and filtered ([web console](console.md#history)).
 - **`rebuild`** replays it from the segment files, which is what makes the
   fold disposable and the repository directory the thing you back up
   ([running a substrate](operations.md#backups)).

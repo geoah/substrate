@@ -521,7 +521,7 @@ batch is refused with the `lossy` code, and a confirmation is refused after
 any write since the preview (`conflict`) or for a plan that recounts to
 another hash. A lossless plan (renames, backfills, state entries, remaps onto
 new values) runs unconfirmed. `substratectl apply --allow-data-loss` previews first,
-prints the steps and confirms exactly that hash; the console's Registry asks
+prints the steps and confirms exactly that hash; the console's Providers page asks
 before a lossy upgrade. The boot upgrade of the shipped tree has nobody to
 confirm it, so it never runs a lossy step: it refuses and `GET
 /api/v1/vocabulary/upgrade` names the step, cleared by rewriting the records
@@ -764,8 +764,8 @@ logged with its admission reason, left out of the live registry (its kinds
 refuse writes and its callables do not run), and marked `quarantined: true`
 with a `quarantineReason` on its `package` record. The package is the unit, so
 one broken closure parks it and leaves every other package its authority
-publishes serving. The console shows such a bundle with the state
-`quarantined`. Re-applying a valid closure clears
+publishes serving. The console says such a bundle failed to load and offers
+to add it again. Re-applying a valid closure clears
 the marker, and so does a later open under a binary that relaxed the contract
 again.
 

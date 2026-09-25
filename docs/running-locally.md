@@ -6,9 +6,23 @@ with no invite code (set `SUBSTRATE_INVITE_CODE` in your shell to test the
 gate). It serves the API alone until `web/console/dist`
 exists, because the dev task passes `WEB_DIR` only when that directory is
 there: run `mise run console:build` once and the console is at `/` from the
-next start, or `mise run console:dev` to serve it on `:5173` proxying `/api` to
-`:8080`. The binary runs from the tree rather than an image, so a change is a
-restart and not a rebuild.
+next start, or `mise run console:dev` to serve it on `:5173`. The binary runs
+from the tree rather than an image, so a change is a restart and not a
+rebuild.
+
+The console's dev server forwards everything that is not the console to a
+substrate: the API (`/api`, `/healthz`, `/.well-known`) and the auth door at
+the root (`/login`, `/register`, `/password`, `/totp`, `/tokens`), those five
+only for a request that does not ask for HTML, so `/login` and `/register`
+still load as console pages. The target is `http://localhost:8080` unless
+`VITE_PROXY_SUBSTRATE` names another, so the same task runs this tree's
+console against any substrate, a server moved by `SUBSTRATE_DEV_PORT`
+included:
+
+```bash
+VITE_PROXY_SUBSTRATE=http://localhost:8081 mise run console:dev
+VITE_PROXY_SUBSTRATE=https://substrate.example.com mise run console:dev
+```
 
 The state lives in two places, which is why throwing it away is a task and not
 an `rm`: `.dev/` in the tree holds the data root, the pid, the log and the

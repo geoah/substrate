@@ -68,14 +68,14 @@ thing, and the Records column counts them.
 
 ## Connecting an OAuth provider
 
-In the console it is three presses on the **Connections** page
-([console](console.md#connections)). Install the provider from the Registry
-if it is not there yet, then, on its card: *Set up credentials* asks for the
-client id and secret of an OAuth client you create with the provider, and
-shows the callback URL to register as that client's redirect URI; *Add
-account* asks what to sync and how often; *Create and connect* opens the
-provider in a new tab, and once you approve there the account's first sync
-starts on its own. The card says which of the three comes next.
+In the console it is the four numbered steps on the provider's page, opened
+from **Providers** ([console](console.md#providers)): *Add* it if it is not
+there yet; *Sign-in details* asks for the client id and secret of an OAuth
+client you create with the provider, and shows the callback URL to register
+as that client's redirect URI; *Connect your account* asks what to bring in
+and how often, and *Create and connect* opens the provider in a new tab, where
+once you approve the account's first sync starts on its own. The current step
+is highlighted with its one action.
 
 Over the API and the CLI, Google, GitHub and WHOOP take the same four steps,
 because the host runs the flow and the bundle only declares it
