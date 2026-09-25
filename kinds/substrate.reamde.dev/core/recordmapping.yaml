@@ -11,7 +11,7 @@ data:
     its reference names, so a Google contact keeps a person up to date. It
     is declared by the package that owns the TARGET kind, one per source kind
     and subject property.
-  version: 12
+  version: 13
   purpose: internal
   names:
     singular: recordmapping
@@ -84,6 +84,16 @@ data:
           type: string
           required: true
           description: the subject property the probe matches on
+    # What SEVERAL candidates do (#577, record 0103). Absent is park.
+    onAmbiguous:
+      type: enum
+      values:
+        - park
+        - oldest
+        - mint
+      description: what a probe that finds several candidates does; park leaves
+        the source unlinked and marked, oldest links the candidate created
+        first, mint mints a new subject
     # A MAP: the key is the subject property written, the value the rule.
     map:
       type: object

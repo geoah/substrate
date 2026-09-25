@@ -222,6 +222,7 @@ const recordFilter: Shape<RecordFilter> = {
   deleted: false,
   referencing: false,
   orphaned: false,
+  ambiguous: false,
 }
 
 const kindInfo: Shape<KindInfo> = {

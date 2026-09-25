@@ -193,6 +193,8 @@ func filterArmBeyondKinds(f substrate.Filter) string {
 		return "deleted"
 	case f.Orphaned != nil:
 		return "orphaned"
+	case f.Ambiguous != nil:
+		return "ambiguous"
 	case f.Referencing != nil:
 		return "referencing"
 	}

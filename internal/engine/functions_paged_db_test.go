@@ -846,3 +846,171 @@ func TestPagedCursorLifecycleDropAndSweep(t *testing.T) {
 		t.Fatalf("the sweep left an orphaned paged row (no live trigger)")
 	}
 }
+
+// brokenPagedBody commits page 0 and raises on every later page: a drain that
+// parks MID-CHAIN on its first attempt, the shape issue #579's twenty rows
+// were in (attempts 1, a resume cursor behind them).
+const brokenPagedBody = `
+def main(input, host):
+    page = input.get("resume") or 0
+    if page > 0:
+        raise Exception("the endpoint is dead")
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
+                         "id": "p-0", "properties": {"name": "0"}}],
+            "more": {"cursor": 1}}
+`
+
+// parkMidChain opens a paged repository on brokenPagedBody, writes one widget
+// and runs a pass, answering the widget's change seq and the parked row.
+func parkMidChain(t *testing.T, pkg string) (*dataset, string, int64, substrate.TriggerFailure) {
+	t.Helper()
+	ctx := context.Background()
+	ds, triggerID := openPagedDataset(t, pkg, brokenPagedBody)
+	w, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: pkg + "/widget", Properties: map[string]any{"name": "go"}})
+	if err != nil {
+		t.Fatalf("put widget: %v", err)
+	}
+	wch, err := ds.latestChangeOf(ctx, w.Kind, w.ID)
+	if err != nil {
+		t.Fatalf("widget change: %v", err)
+	}
+	if _, err := ds.ProcessTriggers(ctx); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	failures, err := ds.TriggerFailures(ctx, triggerID)
+	if err != nil || len(failures) != 1 || failures[0].Attempts != 1 {
+		t.Fatalf("want one row parked at attempt 1, got %+v (%v)", failures, err)
+	}
+	if cur, ok := pagedCursor(t, ds, chainKey(ds, triggerID, wch.Seq)); !ok || cur != 1 {
+		t.Fatalf("resume cursor after the mid-chain park: %v ok=%v, want 1", cur, ok)
+	}
+	return ds, triggerID, wch.Seq, failures[0]
+}
+
+// fixPagedBody applies pagedBody(3) over brokenPagedBody, same identity.
+func fixPagedBody(t *testing.T, ds *dataset, pkg string) {
+	t.Helper()
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, []map[string]any{
+		vocabulary.FunctionManifest(pkg, "page", map[string]any{
+			"description": "a paged backfill body",
+			"runtime":     vocabulary.RuntimePython,
+			"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
+			"source":      pagedBody(3),
+		}),
+	}); err != nil {
+		t.Fatalf("apply the fixed body: %v", err)
+	}
+}
+
+// A drain parked mid-chain by its BODY, the body fixed and the trigger
+// toggled off and on, then retried: the retry resumes from the committed
+// page under the fixed body, finishes the chain, drops its resume row and
+// retires the parked row (issue #579).
+func TestAMidChainParkRetriedUnderAFixedBodyRetires(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	pkg := "pagedfix.test.dev/pagedfix"
+	ds, triggerID, seq, parked := parkMidChain(t, pkg)
+
+	fixPagedBody(t, ds, pkg)
+	for _, enabled := range []bool{false, true} {
+		if _, err := ds.Patch(ctx, substrate.ActorAPI, "substrate.reamde.dev/core/trigger", triggerID, substrate.PatchInput{
+			Properties: map[string]any{"enabled": enabled},
+		}); err != nil {
+			t.Fatalf("set enabled=%v: %v", enabled, err)
+		}
+		if _, err := ds.ProcessTriggers(ctx); err != nil {
+			t.Fatalf("process: %v", err)
+		}
+	}
+
+	// Erase the committed page: a resume leaves it erased, a restart from
+	// page zero would write it again.
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, "samples.substrate.reamde.dev/tasks/task", "p-0", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete p-0: %v", err)
+	}
+	ran, err := ds.RetryTriggerFailure(ctx, triggerID, parked.ID)
+	if err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if ran != 1 {
+		t.Fatalf("the retry applied %d deliveries, want 1", ran)
+	}
+	if liveExists(t, ds, "p-0") {
+		t.Fatal("the retry restarted the drain from page zero")
+	}
+	for _, id := range []string{"p-1", "p-2"} {
+		if !liveExists(t, ds, id) {
+			t.Fatalf("the resumed drain did not write %s", id)
+		}
+	}
+	if _, ok := pagedCursor(t, ds, chainKey(ds, triggerID, seq)); ok {
+		t.Fatal("the resume row outlived the finished drain")
+	}
+	if failures, err := ds.TriggerFailures(ctx, triggerID); err != nil || len(failures) != 0 {
+		t.Fatalf("the retry finished the drain and left %+v parked (%v)", failures, err)
+	}
+}
+
+// A drain parked mid-chain whose guard no longer matches: the retry settles
+// the delivery as a skip, runs nothing and retires the parked row. The resume
+// row is left for the sweep: its key is the seq, and a replay can park a
+// second failure on the same seq, so this retry cannot tell whose it is.
+func TestAMidChainParkRetriedAsASkipRetiresTheRow(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	pkg := "pagedskip.test.dev/pagedskip"
+	ds, triggerID, seq, parked := parkMidChain(t, pkg)
+
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, "substrate.reamde.dev/core/trigger", triggerID, substrate.PatchInput{
+		Properties: map[string]any{"source": map[string]any{"record": map[string]any{
+			"kinds": []any{pkg + "/widget"},
+			"when":  `record != null && record.properties.name == "go"`,
+		}}},
+	}); err != nil {
+		t.Fatalf("guard the trigger: %v", err)
+	}
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, pkg+"/widget", parked.RecordID, substrate.PatchInput{
+		Properties: map[string]any{"name": "done"},
+	}); err != nil {
+		t.Fatalf("satisfy the widget: %v", err)
+	}
+
+	ran, err := ds.RetryTriggerFailure(ctx, triggerID, parked.ID)
+	if err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if ran != 0 {
+		t.Fatalf("the retry applied %d deliveries; the guard says no", ran)
+	}
+	if liveExists(t, ds, "p-1") {
+		t.Fatal("a skipped retry ran the body")
+	}
+	if failures, err := ds.TriggerFailures(ctx, triggerID); err != nil || len(failures) != 0 {
+		t.Fatalf("the skip left %+v parked (%v)", failures, err)
+	}
+	if cur, ok := pagedCursor(t, ds, chainKey(ds, triggerID, seq)); !ok || cur != 1 {
+		t.Fatalf("the skip touched the resume row: %v ok=%v, want it still at 1", cur, ok)
+	}
+}
+
+// Forgetting a delivery parked mid-chain retires it without running the
+// body, the operator's way out for a chain that should not resume.
+func TestForgettingAMidChainParkRetiresTheRow(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	pkg := "pagedforget.test.dev/pagedforget"
+	ds, triggerID, _, parked := parkMidChain(t, pkg)
+	// A body that WOULD write the next page, so running it is observable.
+	fixPagedBody(t, ds, pkg)
+
+	if err := ds.ForgetTriggerFailure(ctx, triggerID, parked.ID); err != nil {
+		t.Fatalf("forget: %v", err)
+	}
+	if liveExists(t, ds, "p-1") {
+		t.Fatal("forget ran the body")
+	}
+	if failures, err := ds.TriggerFailures(ctx, triggerID); err != nil || len(failures) != 0 {
+		t.Fatalf("forget left %+v parked (%v)", failures, err)
+	}
+}

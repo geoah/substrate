@@ -59,6 +59,13 @@ type Filter struct {
 	// of the present, so a re-linked record leaves the set on its next write
 	// (docs/projection.md, decision 0092).
 	Orphaned *bool `json:"orphaned,omitempty"`
+	// Ambiguous narrows to the mapping SOURCES the engine has marked: a
+	// record whose subject slot a mapping left unset because its probe found
+	// several candidates and the mapping's `onAmbiguous` is `park`. nil is
+	// every record, true only the marked ones, false only the unmarked. The
+	// mark is a reading taken at the source's last write, so it clears on the
+	// write that links it (docs/projection.md, decision 0103).
+	Ambiguous *bool `json:"ambiguous,omitempty"`
 	// Referencing narrows to the records holding a reference AT one record:
 	// the reverse read, as a predicate over the refs index rather than a
 	// sub-resource of its own. The target is matched by its canonical id and

@@ -261,7 +261,16 @@ func (t *txn) rederiveOffers() error {
 	// cannot reproduce a clock, and a rebuild restarting the grace window is
 	// the conservative end of that — a collection sweep waits the window out
 	// again rather than collecting on the strength of a mark it just made.
-	return t.deriveOrphansOf(targets)
+	if err := t.deriveOrphansOf(targets); err != nil {
+		return err
+	}
+	// The ambiguity mark, on the sources, for the same reason (ambiguous.go).
+	// Every mark goes first: the import's first pass folds under an empty
+	// registry and names no source kind at all.
+	if _, err := t.exec(`UPDATE records SET ambiguous_at = NULL WHERE ambiguous_at IS NOT NULL`); err != nil {
+		return fmt.Errorf("substrate/engine: rebuild: clear the ambiguity marks: %w", err)
+	}
+	return t.deriveAmbiguousOf(ambiguitySources(t.declarations()))
 }
 
 // recomputeMappingTargets is the vocabulary apply's half of recompute. For
@@ -276,6 +285,12 @@ func (t *txn) rederiveOffers() error {
 // mapping is the same computation against an empty candidate set, so a value
 // the machine wrote for no mapping (a system write, a default) is not touched.
 func (t *txn) recomputeMappingTargets(live, cand *vocabulary.Registry) error {
+	// A source kind whose mapping set changed is read again for ambiguity
+	// against the candidate (ambiguous.go); one with no mapping left loses
+	// every mark.
+	if err := t.deriveAmbiguousOf(changedMappingSources(live, cand)); err != nil {
+		return err
+	}
 	for _, kind := range changedMappingTargets(live, cand) {
 		removed := mappedProperties(live.MappingsTo(kind))
 		for name := range mappedProperties(cand.MappingsTo(kind)) {

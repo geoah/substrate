@@ -1711,6 +1711,13 @@ data:
 `,
 		"unknown mapping key": recperson(`  fuse: true
 `),
+		// onAmbiguous is one of three words (#577, record 0103); `first` is
+		// refused because the policy links the OLDEST candidate, and ids
+		// carry no order a first could mean.
+		"unknown onAmbiguous": recperson(`  onAmbiguous: first
+`),
+		"onAmbiguous is a word": recperson(`  onAmbiguous: true
+`),
 	}
 	for name, src := range bad {
 		t.Run(name, func(t *testing.T) {
@@ -1721,6 +1728,24 @@ data:
 				t.Fatalf("expected ErrValidation, got %v", err)
 			}
 		})
+	}
+
+	// onAmbiguous parses to its word, and an absent one is park.
+	for _, tc := range []struct{ rules, want string }{
+		{"", vocabulary.OnAmbiguousPark},
+		{"  onAmbiguous: park\n", vocabulary.OnAmbiguousPark},
+		{"  onAmbiguous: oldest\n", vocabulary.OnAmbiguousOldest},
+		{"  onAmbiguous: mint\n", vocabulary.OnAmbiguousMint},
+	} {
+		fsys := fstest.MapFS{"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(recperson(tc.rules))}}
+		reg, err := vocabulary.LoadFS(fsys)
+		if err != nil {
+			t.Fatalf("load %q: %v", tc.rules, err)
+		}
+		m, ok := reg.MappingFor("x.example.com/x/rec", "person")
+		if !ok || m.OnAmbiguous != tc.want {
+			t.Fatalf("%q: onAmbiguous = %+v, want %s", tc.rules, m, tc.want)
+		}
 	}
 
 	// A REFERENCE MAY PIN A MAPPING'S SOURCE KIND (record 95). Against the old

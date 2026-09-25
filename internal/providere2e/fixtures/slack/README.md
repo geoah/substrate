@@ -80,6 +80,15 @@ moved with its body, because a long request slug is truncated and hashed.
 
 `tools/pseudonymise.py` does the rest, under `RULES["slack"]`.
 
+The pseudonymiser rewrites prose per file, so the same channel's `purpose`
+and `topic` text came out different in the `conversations.list` and
+`conversations.info` recordings. Real Slack returns one text for both, and
+the mismatch made every sync write the list's text and then the info's text
+back onto three conversations (substrate#575). The info recordings for
+`C0HDRLQ9144`, `CSP27K97J3K` and `CYN8N70KH7F` were edited by hand to carry
+the list's text. A re-cut must keep the two equal: the scenario's section 9
+fails on any conversation write that cancels out.
+
 ## What the cut proves
 
 Six conversations, named only by the pseudonymous ids the committed set

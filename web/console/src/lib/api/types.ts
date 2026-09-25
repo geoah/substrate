@@ -372,8 +372,9 @@ export interface Cond {
  * read and the tail admit `kinds` alone. `implements` intersects with it;
  * `deleted` absent means live records only; `orphaned` picks the mapping
  * targets the engine marked (sources all gone, nothing above the machine
- * tier holding a property); `referencing` is the reverse read. A state
- * property filters through `properties` like any other. */
+ * tier holding a property); `ambiguous` picks the mapping sources a probe
+ * with several candidates left unlinked; `referencing` is the reverse read.
+ * A state property filters through `properties` like any other. */
 export interface RecordFilter {
   /** Words against the record's whole search index (every text the kind
    * indexes), in the search grammar: a PREDICATE, so it composes with every
@@ -386,6 +387,7 @@ export interface RecordFilter {
   labels?: Record<string, Cond>
   deleted?: boolean
   orphaned?: boolean
+  ambiguous?: boolean
   referencing?: Referencing
 }
 

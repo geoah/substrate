@@ -97,7 +97,7 @@ func (t *txn) subjectOf(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapping
 	// pinned at the subject kind, so there has to be a record to point at:
 	// this is the one caller that mints whatever the source carries, and the
 	// one that still mints out of an ambiguous probe.
-	target, err := t.matchOrMint(src, srcTy, m, true)
+	target, _, err := t.matchOrMint(src, srcTy, m, true)
 	if err != nil {
 		return "", err
 	}
@@ -132,8 +132,9 @@ func (t *txn) writeSubject(src eref, property string, target eref) error {
 // phone) still describes a person, and refusing the write would lose the
 // record instead of the link. A record whose target was
 // deleted is pointed again the same way. A record that offers NOTHING AT ALL,
-// and one whose probe found several candidates, leaves the slot unset and is
-// resolved again on its next write (matchOrMint, record 0087).
+// and one whose probe found several candidates under `onAmbiguous: park`,
+// leaves the slot unset and is resolved again on its next write (matchOrMint,
+// records 0087 and 0103).
 //
 // It writes the value INTO THE ROW the caller is about to fold, and never
 // through a nested write: the subject is one of the source record's own
@@ -141,10 +142,12 @@ func (t *txn) writeSubject(src eref, property string, target eref) error {
 // The write's own value wins — a caller that named a subject reaches here with
 // the property already set — and the caller recomputes the subject after the
 // row is stored, so no recompute happens here. It reports whether it set the
-// property, so the caller can credit the write in the manager ledger.
-func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) (bool, error) {
+// property, so the caller can credit the write in the manager ledger, and
+// whether the source PARKED on an ambiguous probe, so the caller can mark it
+// once the row is stored (ambiguous.go).
+func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) (set, parked bool, err error) {
 	if err := t.lockRecord(sp.ref()); err != nil {
-		return false, err
+		return false, false, err
 	}
 	if path := referencePathOf(row.Props[m.Property]); path != "" {
 		// A value naming a live record stands, and the id it names is RESOLVED
@@ -158,10 +161,10 @@ func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) (bo
 		if kind, id, ok := vocabulary.SplitRecordPath(path); ok {
 			live, err := t.liveCanonical(eref{Kind: kind, ID: id})
 			if err != nil {
-				return false, err
+				return false, false, err
 			}
 			if live.ID != "" {
-				return false, nil
+				return false, false, nil
 			}
 		}
 	}
@@ -170,14 +173,12 @@ func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) (bo
 	// written before record 96 does) keeps the old unconditional mint. The
 	// slot a mapping synthesizes is not required, and there the write may
 	// leave it unset: a source that offers nothing mints nothing, and an
-	// ambiguous probe parks rather than minting a duplicate (record 0087).
+	// ambiguous probe does what the mapping's onAmbiguous says, parking by
+	// default (records 0087 and 0103).
 	slot, declared := sp.ty.Prop(m.Property)
-	target, err := t.matchOrMint(row, sp.ty, m, declared && slot.Required)
-	if err != nil {
-		return false, err
-	}
-	if target == "" {
-		return false, nil
+	target, parked, err := t.matchOrMint(row, sp.ty, m, declared && slot.Required)
+	if err != nil || target == "" {
+		return false, parked, err
 	}
 	// THE STORED SHAPE, not the bare path. This runs AFTER coercion (write.go
 	// ensureSubject), so nothing downstream normalizes what it writes: a bare
@@ -185,7 +186,7 @@ func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) (bo
 	// does not hold for (decision 0044), readable only because every reader
 	// still tolerates the old spelling.
 	row.Props[m.Property] = referenceValueOf(vocabulary.RecordPath(m.To, target))
-	return true, nil
+	return true, false, nil
 }
 
 // matchOrMint resolves an unpointed source record to its subject: the match
@@ -202,8 +203,13 @@ func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) (bo
 //   - SEVERAL candidates is not no candidates (#577). Minting a third person
 //     out of two who share an address, and then unioning that address onto the
 //     shell, made every later probe on it ambiguous too — convergence that
-//     degraded as more sources synced. The source parks instead, and the next
-//     write after the owner merges the two links it.
+//     degraded as more sources synced. What happens instead is the mapping's
+//     `onAmbiguous` (record 0103): `park`, the default, leaves the slot unset
+//     for the next write after the owner merges the two; `oldest` links the
+//     candidate created first; `mint` mints a shell whatever the caller
+//     demands. A demanding caller under `park` still mints, because it cannot
+//     wait. None of the three puts the shared value on a new target: that is
+//     recompute's rule (withheldElsewhere), not this function's.
 //   - A source with NOTHING TO OFFER mints nothing — the empty shells #578
 //     counts, cut off at their source: 614 Slack users with no profile at all
 //     each minted an empty person. A record that carries no probe value and no
@@ -212,22 +218,26 @@ func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) (bo
 //
 // Both are recoverable on the next write of the source, because an unset slot
 // is resolved again exactly as an absent one is.
-func (t *txn) matchOrMint(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapping, mustMint bool) (string, error) {
+func (t *txn) matchOrMint(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapping, mustMint bool) (target string, parked bool, err error) {
 	// Concurrent resolution serializes per subject type: two syncs racing
 	// the same new person must probe one after the other, so the second
 	// finds the shell the first minted. Coarse, and fine at personal scale.
 	if err := t.lockKey("subject|" + m.To); err != nil {
-		return "", err
+		return "", false, err
 	}
-	target, ambiguous, err := t.matchSubject(src, srcTy, m)
-	if err != nil {
-		return "", err
+	target, candidates, err := t.matchSubject(src, srcTy, m)
+	if err != nil || target != "" {
+		return target, false, err
 	}
-	if target != "" {
-		return target, nil
-	}
-	if !mustMint && (ambiguous || !sourceOffers(src, srcTy, m)) {
-		return "", nil
+	ambiguous := len(candidates) > 1
+	switch {
+	case ambiguous && m.OnAmbiguous == vocabulary.OnAmbiguousOldest:
+		target, err := t.oldestOf(m.To, candidates)
+		return target, false, err
+	case ambiguous && m.OnAmbiguous == vocabulary.OnAmbiguousMint:
+		// Mints below, whatever the caller demands.
+	case !mustMint && (ambiguous || !sourceOffers(src, srcTy, m)):
+		return "", ambiguous, nil
 	}
 	// The shell carries no properties, so a subject kind with a `required:`
 	// property and no `default:` refuses it and the source write fails with
@@ -235,20 +245,33 @@ func (t *txn) matchOrMint(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mappi
 	// empty is not one a mapping can mint a subject of.
 	shell, err := t.put(substrate.PutInput{Kind: m.To})
 	if err != nil {
-		return "", fmt.Errorf("substrate/engine: shell subject for %s: %w", src.ID, err)
+		return "", false, fmt.Errorf("substrate/engine: shell subject for %s: %w", src.ID, err)
 	}
-	return shell.ID, nil
+	return shell.ID, false, nil
+}
+
+// oldestOf picks the candidate created first, the id breaking a tie. Ids are
+// random, so creation is the one order among candidates that means something:
+// a shell an earlier ambiguity minted is always younger than the people it
+// could not tell apart.
+func (t *txn) oldestOf(kind string, candidates []string) (string, error) {
+	var id string
+	err := t.row(`
+		SELECT id FROM records
+		WHERE kind = $1 AND id = ANY($2::text[]) AND deleted_at IS NULL
+		ORDER BY created_at, id LIMIT 1`, kind, candidates).Scan(&id)
+	return id, err
 }
 
 // matchSubject runs the mapping's probes against the target kind the
 // transaction's declarations hold, "" when nothing decides. Only an
-// EXACTLY-ONE candidate set links; `ambiguous` reports the other way of
-// deciding nothing — a probe that found SEVERAL — which the caller must not
-// confuse with a probe that found none.
-func (t *txn) matchSubject(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapping) (string, bool, error) {
+// EXACTLY-ONE candidate set links; `candidates` is the other way of deciding
+// nothing (the deciding probe's SEVERAL hits, in id order), which the caller
+// must not confuse with a probe that found none (nil).
+func (t *txn) matchSubject(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapping) (string, []string, error) {
 	to, ok := t.declarations().ByIdentity(m.To)
 	if !ok {
-		return "", false, nil
+		return "", nil, nil
 	}
 	for _, probe := range m.Match {
 		values := probeValues(srcTy, src, probe)
@@ -261,18 +284,19 @@ func (t *txn) matchSubject(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapp
 		}
 		candidates, err := t.probeCandidates(m.To, tp, values)
 		if err != nil {
-			return "", false, err
+			return "", nil, err
 		}
 		if len(candidates) == 0 {
 			continue
 		}
 		// The first probe whose values find candidates decides.
 		if len(candidates) == 1 {
-			return candidates[0], false, nil
+			return candidates[0], nil, nil
 		}
-		return "", true, nil
+		sort.Strings(candidates)
+		return "", candidates, nil
 	}
-	return "", false, nil
+	return "", nil, nil
 }
 
 // sourceOffers reports whether a source record carries anything its mapping
@@ -536,10 +560,14 @@ func changedMappingTargets(old, cand *vocabulary.Registry) []string {
 // computed from: its live sources, latest write first, and the union of the
 // properties its mappings map.
 type mappedInputs struct {
+	row       *erow
 	ty        *vocabulary.Kind
 	srcs      []mappedSource
 	props     []string
 	unionProp map[string]bool
+	// probed is the target properties some mapping's probe matches on, the
+	// ones withheldElsewhere guards.
+	probed map[string]*vocabulary.Property
 }
 
 // mappedInputsOf loads a target's mapped inputs, nil when there is nothing to
@@ -594,7 +622,15 @@ func (t *txn) mappedInputsOf(target eref) (*mappedInputs, error) {
 		// A link-only mapping carries structure and copies nothing.
 		return nil, nil
 	}
-	return &mappedInputs{ty: ty, srcs: srcs, props: props, unionProp: unionProp}, nil
+	probed := map[string]*vocabulary.Property{}
+	for _, m := range mappings {
+		for _, probe := range m.Match {
+			if tp, ok := ty.Props[probe.To]; ok {
+				probed[probe.To] = tp
+			}
+		}
+	}
+	return &mappedInputs{row: row, ty: ty, srcs: srcs, props: props, unionProp: unionProp, probed: probed}, nil
 }
 
 // syncOffersOf is the offers half of recompute alone: the target's
@@ -656,7 +692,13 @@ func (t *txn) recomputeValues(target eref) error {
 		if m, held := managers[name]; held && m.tier != substrate.TierMachine {
 			continue // yield: the offer above is the whole record of it
 		}
-		value, actor := selectValue(in.unionProp[name], contributionsFor(name, in.srcs))
+		cands := contributionsFor(name, in.srcs)
+		if tp := in.probed[name]; tp != nil {
+			if cands, err = t.withheldElsewhere(in.row, tp, cands); err != nil {
+				return err
+			}
+		}
+		value, actor := selectValue(in.unionProp[name], cands)
 		// nil deletes: release-by-omission. Not on a required property, which
 		// the write path refuses to empty (checkRequiredProps): the last value
 		// stands, and its property_managers row goes on crediting the actor
@@ -845,6 +887,94 @@ func contributionOf(s mappedSource, name string) any {
 		return firstItem(v)
 	}
 	return v
+}
+
+// withheldElsewhere drops from each contribution the PROBED values another
+// live target already holds and this one does not (#577, record 0103). A
+// probe on a value two targets hold is ambiguous, so writing a value onto a
+// second target is what turns one source's link into every later source's
+// ambiguity: the shell an ambiguous probe minted used to take the shared
+// address through `merge: union`, and the next probe on it saw three
+// candidates. The rule is per value and reads the target's stored value, so a
+// duplicate that already exists stays where it is (the owner settles it with
+// merge) and only a new one is refused.
+//
+// A withheld value is not lost: the source still carries it, its offer row
+// still does, and a read shows it as an alternative beside the stored value,
+// which is where the owner adopts it by writing it. A contribution left with
+// nothing contributes nothing, exactly as an empty source does.
+//
+// Values compare the way a probe compares them (probeKey), because the
+// question is what the next probe would find.
+func (t *txn) withheldElsewhere(target *erow, tp *vocabulary.Property, cands []contribution) ([]contribution, error) {
+	held := map[string]bool{}
+	for _, item := range asItems(target.Props[tp.Name]) {
+		if key, ok := probeKey(tp, item); ok {
+			held[key] = true
+		}
+	}
+	withheld := map[string]bool{}
+	decided := map[string]bool{}
+	out := make([]contribution, 0, len(cands))
+	for _, c := range cands {
+		items, isList := c.value.([]any)
+		if !isList {
+			items = []any{c.value}
+		}
+		if len(items) == 0 {
+			out = append(out, c)
+			continue
+		}
+		kept := make([]any, 0, len(items))
+		for _, item := range items {
+			key, ok := probeKey(tp, item)
+			if !ok || held[key] {
+				kept = append(kept, item)
+				continue
+			}
+			if !decided[key] {
+				holders, err := t.probeCandidates(target.Kind, tp, []string{key})
+				if err != nil {
+					return nil, err
+				}
+				for _, h := range holders {
+					if h != target.ID {
+						withheld[key] = true
+						break
+					}
+				}
+				decided[key] = true
+			}
+			if !withheld[key] {
+				kept = append(kept, item)
+			}
+		}
+		switch {
+		case len(kept) == 0:
+			continue
+		case isList:
+			c.value = kept
+		default:
+			c.value = kept[0]
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+// probeKey is one value as a probe looks it up: a trimmed string, lowercased
+// for an email property, and not a probe value at all when it is empty or not
+// a string.
+func probeKey(tp *vocabulary.Property, v any) (string, bool) {
+	s, ok := v.(string)
+	if !ok {
+		return "", false
+	}
+	s = strings.TrimSpace(s)
+	if tp.Datatype == vocabulary.DatatypeEmail {
+		s = strings.ToLower(s)
+	}
+	return s, s != ""
 }
 
 // firstItem is the head of a repeated contribution: a list's first non-null
@@ -1138,6 +1268,12 @@ func (t *txn) afterTombstone(ref eref) error {
 	if len(t.declarations().MappingsTo(ref.Kind)) > 0 {
 		if _, err := t.exec(`UPDATE records SET orphaned_at = NULL WHERE kind = $1 AND id = $2 AND orphaned_at IS NOT NULL`,
 			ref.Kind, ref.ID); err != nil {
+			return err
+		}
+	}
+	// And its ambiguity mark, as a source (ambiguous.go).
+	if len(t.declarations().MappingsFrom(ref.Kind)) > 0 {
+		if err := t.markAmbiguous(ref, false); err != nil {
 			return err
 		}
 	}

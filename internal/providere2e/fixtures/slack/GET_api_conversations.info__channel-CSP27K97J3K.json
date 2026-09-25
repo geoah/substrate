@@ -23,12 +23,12 @@
   "pending_shared": [],
   "parent_conversation": null,
   "purpose": {
-   "value": "The review landed ahead of the owner's sign-off, assuming the counts hold. The ingest path.",
+   "value": "The rollout depends on the numbers from Friday, if nothing else moves. The queue is waiting on.",
    "creator": "UF82Q2XD66Z",
    "last_set": 1767970987
   },
   "topic": {
-   "value": "The schedule will be folded into the numbers from Friday.",
+   "value": "The rollout now covers next week's window, after the handover.",
    "creator": "UF82Q2XD66Z",
    "last_set": 1767971169
   },
