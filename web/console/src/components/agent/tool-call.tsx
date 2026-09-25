@@ -1,129 +1,182 @@
-/** One dispatched tool call, as a card that survives the run: the tool's name,
- * whether it is running / settled / failed, and — on expansion — the REQUEST
- * the model sent and the RESPONSE the dispatch returned, both pretty-printed
- * and tinted. A live card and the same card replayed off the records are the
- * same component: `ToolCallView` (lib/api/transcript.ts) is filled from the
- * stream while the run is in flight and from the `llm/message` rows afterwards,
- * so nothing disappears when the stream ends. */
+/** One dispatched tool call, as one compact line: what the agent did in
+ * words, and whether it worked. Opening it says what came back (the records a
+ * read found, why a call failed); technical mode names the function and shows
+ * the request and the response verbatim.
+ *
+ * A live card and the same card replayed off the records are one component:
+ * `ToolCallView` (lib/api/transcript.ts) is filled from the stream while the
+ * run is in flight and from the `llm/message` rows afterwards. What the call
+ * LANDED — a suggested change, a batch of questions, records it changed —
+ * renders under the line, where it is the thing the reader acts on. */
 
-import { ChevronRightIcon, WrenchIcon } from "lucide-react"
+import { useState } from "react"
+import {
+  CheckIcon,
+  ChevronRightIcon,
+  CircleAlertIcon,
+  HourglassIcon,
+  WrenchIcon,
+} from "lucide-react"
 
 import { ChangesList } from "@/components/agent/changes"
 import { InteractionCard } from "@/components/agent/interaction-card"
 import { ProposalCard } from "@/components/agent/proposal-card"
 import { CodeBlock } from "@/components/code-block"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
+import { RecordRef } from "@/components/identity/record-ref"
 import { Spinner } from "@/components/ui/spinner"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import {
+  foundRecords,
+  resolveTool,
+  toolFailure,
+  toolSummary,
+} from "@/lib/agent-chat"
 import {
   interactionIdOf,
   requestIdOf,
   type ToolCallView,
 } from "@/lib/api/transcript"
+import type { SubstrateRecord } from "@/lib/api/types"
 import { prettyJSON } from "@/lib/code"
 import { cn } from "@/lib/utils"
-
-/** A call is RUNNING until something settles it. `ok` is the settled signal —
- * an empty output is a legitimate result, so output alone cannot be. */
-function running(call: ToolCallView): boolean {
-  return call.ok === undefined
-}
 
 function Payload({ label, raw }: { label: string; raw: string }) {
   const { text, json } = prettyJSON(raw)
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[0.65rem] tracking-wide text-muted-foreground uppercase">
-        {label}
-      </span>
+      <span className="text-[11.5px] font-medium text-faint">{label}</span>
       {text ? (
         json ? (
           <CodeBlock source={text} lang="json" />
         ) : (
           // Not JSON: a tool returns whatever it returns, and tinting a stack
           // trace as if it had parsed would be a lie about the payload.
-          <pre className="overflow-x-auto rounded-sm bg-background/60 p-2 data text-xs [overflow-wrap:anywhere] whitespace-pre-wrap">
+          <pre className="overflow-x-auto rounded-md bg-background p-2 font-mono text-xs [overflow-wrap:anywhere] whitespace-pre-wrap">
             {text}
           </pre>
         )
       ) : (
-        <span className="data text-xs text-muted-foreground">—</span>
+        <span className="text-xs text-faint">Nothing</span>
       )}
     </div>
   )
 }
 
-export function ToolCallCard({ call }: { call: ToolCallView }) {
-  const isRunning = running(call)
+/** What came back, for a reader who does not read JSON. */
+function Outcome({ call }: { call: ToolCallView }) {
+  if (call.ok === undefined) {
+    return (
+      <span className="flex items-center gap-1.5">
+        <Spinner className="size-3" />
+        Still working on it…
+      </span>
+    )
+  }
+  if (call.ok === false) {
+    const reason = toolFailure(call.output)
+    return <span>It didn’t work{reason ? `: ${reason}` : "."}</span>
+  }
+  const found = foundRecords(call.output)
+  if (found.length > 0) {
+    return (
+      <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span>Found</span>
+        {found.map((r) => (
+          <RecordRef key={`${r.kind}/${r.id}`} kind={r.kind} id={r.id} />
+        ))}
+      </span>
+    )
+  }
+  return <span>It worked.</span>
+}
+
+export function ToolCallCard({
+  call,
+  agent,
+}: {
+  call: ToolCallView
+  /** The agent that made the call, whose `tools:` say what the name means. */
+  agent?: SubstrateRecord
+}) {
+  const [technical] = useTechnicalDetails()
+  const [open, setOpen] = useState(false)
+  const resolved = resolveTool(agent, call.name)
+  const summary = toolSummary(call, resolved)
+  const running = call.ok === undefined
   const failed = call.ok === false
-  // A propose lands a row in the review queue and nothing else: the change is
-  // NOT applied until somebody decides it, so the card carries the proposal
-  // itself — live state, accept/reject and the way to the full review.
+  // A propose lands a row somebody has to decide: the change is NOT applied
+  // until then, so the call carries the suggestion itself.
   const proposed = requestIdOf(call)
   // An ask's interaction renders as the form card, the same live-state rule.
   const asked = interactionIdOf(call)
-  // The dispatch's other writes (a write's records, a function's effects):
-  // the interaction and request rows already render as their cards, so they
-  // are not chips.
+  // The dispatch's other writes; the request and the interaction already
+  // render as their own cards.
   const changes = (call.changes ?? []).filter(
     (c) => c.id !== proposed && c.id !== asked
   )
-  // A failed call that LANDED a request was not a failure: the policy door
-  // held the write for review, and the chip says so instead of crying red.
+  // A failed call that LANDED a request was not a failure: the policy held
+  // the write for review, and the line says so instead of crying red.
   const held = failed && proposed !== undefined
+
   return (
-    <Collapsible className="group/tool rounded-md border bg-muted/40">
-      <CollapsibleTrigger
-        className={cn(
-          "flex w-full cursor-pointer items-center gap-1.5 px-2 py-1.5 text-left text-xs",
-          "hover:bg-muted/60"
-        )}
+    <div className="flex min-w-0 flex-col gap-2">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex max-w-full cursor-pointer flex-wrap items-center gap-2 self-start rounded-lg border bg-background px-2.5 py-1 text-left text-[12.5px] text-muted-foreground hover:bg-hover"
       >
-        <WrenchIcon className="size-3 shrink-0 text-muted-foreground" />
-        <span className="truncate data">{call.name || "tool"}</span>
-        {isRunning ? (
-          <Spinner className="size-3 shrink-0 text-muted-foreground" />
+        <WrenchIcon className="size-3.5 shrink-0 text-faint" />
+        <span className="min-w-0 [overflow-wrap:anywhere]">{summary}</span>
+        {running ? (
+          <Spinner className="size-3 shrink-0" />
+        ) : held ? (
+          <span className="inline-flex items-center gap-1 text-warning">
+            <HourglassIcon className="size-3.5" />
+            Waiting for you
+          </span>
+        ) : failed ? (
+          <span className="inline-flex items-center gap-1 text-destructive">
+            <CircleAlertIcon className="size-3.5" />
+            Didn’t work
+          </span>
         ) : (
-          <span
-            className={cn(
-              "shrink-0 data",
-              held
-                ? "text-amber-600"
-                : failed
-                  ? "text-destructive"
-                  : "text-muted-foreground"
-            )}
-          >
-            {held ? "held" : failed ? "failed" : "ok"}
+          <CheckIcon aria-label="Done" className="size-3.5 shrink-0 text-ok" />
+        )}
+        {technical && (
+          <span className="font-mono text-[11px] [overflow-wrap:anywhere] text-faint">
+            {resolved.function ?? resolved.subagent ?? call.name}
           </span>
         )}
-        <ChevronRightIcon className="ml-auto size-3 shrink-0 text-muted-foreground transition-transform group-data-open/tool:rotate-90" />
-      </CollapsibleTrigger>
-      {proposed && <ProposalCard id={proposed} />}
-      {asked && <InteractionCard id={asked} />}
-      {changes.length > 0 && (
-        <div className="border-t px-2 py-1.5">
-          <ChangesList changes={changes} />
-        </div>
-      )}
-      <CollapsibleContent>
-        <div className="flex flex-col gap-2 border-t px-2 py-2">
-          <Payload label="request" raw={call.arguments} />
-          {/* A running call has no response yet — say so, rather than
-              rendering an empty block that reads as an empty result. */}
-          {isRunning && call.output === undefined ? (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Spinner className="size-3" />
-              waiting for the result
-            </div>
+        <ChevronRightIcon
+          className={cn(
+            "size-3 shrink-0 text-faint transition-transform",
+            open && "rotate-90"
+          )}
+        />
+      </button>
+      {open && (
+        <div className="flex flex-col gap-2 rounded-lg border bg-panel px-3 py-2 text-[12.5px] text-muted-foreground">
+          {technical ? (
+            <>
+              <Payload label="Request" raw={call.arguments} />
+              {running && call.output === undefined ? (
+                <span className="flex items-center gap-1.5 text-xs">
+                  <Spinner className="size-3" />
+                  Waiting for the result
+                </span>
+              ) : (
+                <Payload label="Response" raw={call.output ?? ""} />
+              )}
+            </>
           ) : (
-            <Payload label="response" raw={call.output ?? ""} />
+            <Outcome call={call} />
           )}
         </div>
-      </CollapsibleContent>
-    </Collapsible>
+      )}
+      {changes.length > 0 && <ChangesList changes={changes} />}
+      {proposed && <ProposalCard id={proposed} />}
+      {asked && <InteractionCard id={asked} />}
+    </div>
   )
 }

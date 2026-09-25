@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /** The transcript's one opening promise: a triggered thread's first user turn
- * is a delivery envelope, and it renders as the trigger's context — what fired
- * and which record arrived, as a pill — never as a JSON bubble. A thread whose
- * first message is plain chat keeps its bubble. */
+ * is a delivery envelope, and it renders as the trigger's context — which
+ * record's change started the run, as its mark — never as a JSON bubble.
+ * Technical mode adds what fired and the raw envelope. A thread whose first
+ * message is plain chat keeps its bubble. */
 
 import { cleanup, render, screen } from "@testing-library/react"
 import type { ReactNode } from "react"
@@ -25,7 +26,9 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }))
 
+import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import type { TurnView } from "@/lib/api/transcript"
+import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { Transcript } from "./transcript"
 
 const envelope = JSON.stringify({
@@ -54,46 +57,66 @@ const turn = (over: Partial<TurnView>): TurnView => ({
 
 afterEach(cleanup)
 
+function technically(children: ReactNode) {
+  return (
+    <ConsolePreferencesContext.Provider
+      value={{
+        preferences: {
+          collapsed: [],
+          favorites: [],
+          sidebarOpen: true,
+          ...DEFAULT_SETTINGS,
+          technicalDetails: true,
+        },
+        busy: false,
+        change: () => {},
+        set: () => {},
+      }}
+    >
+      {children}
+    </ConsolePreferencesContext.Provider>
+  )
+}
+
+const triggered = [
+  turn({ content: envelope }),
+  turn({ key: "t1", role: "assistant", content: "on it" }),
+]
+
 describe("the trigger context", () => {
-  it("renders the first user envelope as what fired + the delivered record", () => {
-    const { container } = render(
-      <Transcript
-        turns={[
-          turn({ content: envelope }),
-          turn({ key: "t1", role: "assistant", content: "on it" }),
-        ]}
-      />
-    )
-    // What fired: the op, the change's address, its seq and actor.
-    expect(screen.getByText("update")).toBeTruthy()
-    expect(
-      screen.getByText(
-        /samples\.substrate\.reamde\.dev\/calendar\/transcript\/tr-chitchat/
-      )
-    ).toBeTruthy()
-    expect(screen.getByText(/changelog seq 216/)).toBeTruthy()
-    expect(
-      screen.getByText(/agent:stories\.e2e\.example:e2e:matcher/)
-    ).toBeTruthy()
-    // The delivered record, as a pill linking to it, titled off the snapshot.
-    const pill = container.querySelector(
+  it("renders the first user envelope as the record whose change started it", () => {
+    const { container } = render(<Transcript turns={triggered} />)
+    expect(screen.getByText("Started on its own because")).toBeTruthy()
+    expect(screen.getByText("changed")).toBeTruthy()
+    // The delivered record, as its mark linking to it, titled off the snapshot.
+    const mark = container.querySelector(
       'a[data-to="/data/$authority/$pkg/$name/$id"]'
     )
-    expect(pill?.textContent).toContain("Billing migration sync")
-    expect(JSON.parse(pill?.getAttribute("data-params") ?? "{}")).toEqual({
+    expect(mark?.textContent).toContain("Billing migration sync")
+    expect(JSON.parse(mark?.getAttribute("data-params") ?? "{}")).toEqual({
       authority: "samples.substrate.reamde.dev",
       pkg: "calendar",
       name: "transcript",
       id: "tr-chitchat",
     })
-    // The raw envelope stays reachable, collapsed.
-    expect(screen.getByText("raw envelope")).toBeTruthy()
+    // What fired is technical.
+    expect(screen.queryByText(/changelog seq 216/)).toBeNull()
+    expect(screen.queryByText("Raw envelope")).toBeNull()
+  })
+
+  it("says what fired, and keeps the raw envelope reachable, in technical mode", () => {
+    render(technically(<Transcript turns={triggered} />))
+    expect(screen.getByText(/changelog seq 216/)).toBeTruthy()
+    expect(
+      screen.getByText(/agent:stories\.e2e\.example:e2e:matcher/)
+    ).toBeTruthy()
+    expect(screen.getByText("Raw envelope")).toBeTruthy()
   })
 
   it("keeps a plain first message as the bubble it is", () => {
     render(<Transcript turns={[turn({ content: "hello there" })]} />)
     expect(screen.getByText("hello there")).toBeTruthy()
-    expect(screen.queryByText("raw envelope")).toBeNull()
+    expect(screen.queryByText("Started on its own because")).toBeNull()
   })
 
   it("reads only the FIRST turn as a delivery", () => {
@@ -106,6 +129,6 @@ describe("the trigger context", () => {
       />
     )
     // The later JSON-shaped user message is a message somebody sent.
-    expect(screen.queryByText("raw envelope")).toBeNull()
+    expect(screen.queryByText("Started on its own because")).toBeNull()
   })
 })

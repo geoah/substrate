@@ -22,16 +22,28 @@ const DISCS = {
   engine: { icon: ShieldCheck, tone: "bg-kind-gray-bg text-kind-gray-fg" },
 } as const
 
-/** The actor's small mark on its own. */
+const MARK_SIZES = {
+  xs: { disc: "size-4", icon: "size-[10px]" },
+  sm: { disc: "size-5", icon: "size-3" },
+  md: { disc: "size-6", icon: "size-3.5" },
+  lg: { disc: "size-8", icon: "size-4" },
+} as const
+
+/** The actor's mark on its own. */
 export function ActorMark({
   identity,
   size = "sm",
 }: {
   identity: ActorIdentity
-  size?: "xs" | "sm"
+  size?: "xs" | "sm" | "md" | "lg"
 }) {
   if (identity.provider) {
-    return <ProviderBadge provider={identity.provider} size={size} />
+    return (
+      <ProviderBadge
+        provider={identity.provider}
+        size={size === "lg" ? "md" : size}
+      />
+    )
   }
   const { icon: Icon, tone } = DISCS[identity.cls]
   return (
@@ -41,14 +53,11 @@ export function ActorMark({
       data-actor={identity.cls}
       className={cn(
         "inline-grid shrink-0 place-items-center rounded-full",
-        size === "xs" ? "size-4" : "size-5",
+        MARK_SIZES[size].disc,
         tone
       )}
     >
-      <Icon
-        className={size === "xs" ? "size-[10px]" : "size-3"}
-        strokeWidth={2}
-      />
+      <Icon className={MARK_SIZES[size].icon} strokeWidth={2} />
     </span>
   )
 }
