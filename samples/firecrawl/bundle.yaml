@@ -19,7 +19,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: firecrawl
-  version: 8
+  version: 9
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -57,9 +57,10 @@ data:
   authority: samples.substrate.reamde.dev
   package: firecrawl
   description: >-
-    What a scrape leaves behind: the page as markdown, capped, with the scrape
-    metadata beside it. The id is a hash of the URL, so scraping the same
-    page again updates one document instead of minting a second.
+    A web page, saved as text. What a scrape leaves behind: the page as markdown,
+    capped, with the scrape metadata beside it. The id is a hash of the URL,
+    so scraping the same page again updates one document instead of minting
+    a second.
   names:
     singular: webdocument
   properties:

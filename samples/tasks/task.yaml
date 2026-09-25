@@ -6,11 +6,11 @@ data:
   authority: samples.substrate.reamde.dev
   package: tasks
   description: >-
-    Something to do, however it arrived: typed by hand, projected from a Linear
-    issue, or proposed by an agent. Status carries the whole lifecycle — a
-    proposal waits for the owner, an open task is due, and completing it stamps
-    the time by itself.
-  version: 11
+    Something you need to do. It can arrive any way: typed by hand, projected
+    from a Linear issue, or proposed by an agent. Status carries the whole
+    lifecycle — a proposal waits for the owner, an open task is due, and completing
+    it stamps the time by itself.
+  version: 12
   names:
     singular: task
   # `recurring` (core's) is the repeat rule seeded off dueAt; `override`
