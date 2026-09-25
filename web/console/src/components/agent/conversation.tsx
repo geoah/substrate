@@ -135,6 +135,15 @@ export function Conversation({
   // When the last run settled, or 0 when none is waiting to be handed over.
   // The handover is DERIVED from it against the query's own `dataUpdatedAt`.
   const [settledAt, setSettledAt] = useState(0)
+  // The thread the in-flight run is writing to, once one is known: a new
+  // chat's run that fails before its thread event has no rows to hand over to.
+  const runThreadRef = useRef("")
+  // The draft as of the last render, read by a failure that restores what
+  // was sent only when nothing new has been typed since.
+  const draftRef = useRef(draft)
+  useEffect(() => {
+    draftRef.current = draft
+  }, [draft])
 
   // The stored transcript. Held still while the run streams: a mid-run read
   // returns rows the overlay is already showing, and the two would double.
@@ -192,6 +201,7 @@ export function Conversation({
       case "thread":
         // A minted thread names itself on the first event; putting it in the
         // URL now keeps the address linkable even if the run is abandoned.
+        if (ev.thread) runThreadRef.current = ev.thread
         if (ev.thread && ev.thread !== current) {
           setMinted(ev.thread)
           onThread(ev.thread)
@@ -256,6 +266,7 @@ export function Conversation({
       closed: false,
     })
     setStreaming(true)
+    runThreadRef.current = current
     const run = ++runRef.current
 
     // Both endings hand over the same way: the rows the loop wrote are the
@@ -273,6 +284,17 @@ export function Conversation({
       void client.invalidateQueries({ queryKey: ["records-count"] })
     }
 
+    // A run that never named a thread wrote nothing, so no read will ever
+    // hand over and settling would leave the composer busy for good. The
+    // optimistic turn goes, and the message comes back to be retried.
+    const end = () => {
+      if (run !== runRef.current) return
+      if (runThreadRef.current) return settle()
+      update(EMPTY_OVERLAY)
+      setStreaming(false)
+      if (!draftRef.current.trim()) onDraft(message)
+    }
+
     handleRef.current = streamChat({
       agent: agentId,
       thread: current || undefined,
@@ -281,9 +303,9 @@ export function Conversation({
       onError: (err) => {
         if (run !== runRef.current) return
         setError(err.message)
-        settle()
+        end()
       },
-      onDone: settle,
+      onDone: end,
     })
   }
 
