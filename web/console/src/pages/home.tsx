@@ -4,7 +4,7 @@
  * sentences. No inbox: nothing here asks the reader to act. */
 
 import { useMemo, type ReactNode } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQueries, useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 
 import {
@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useEverydayChanges, useHistoryFeed } from "@/hooks/use-history-feed"
 import { kindsQueryOptions } from "@/lib/api/kinds"
+import { recordCountQueryOptions } from "@/lib/api/records"
 import { repositoryQueryOptions } from "@/lib/api/repository"
 import { getRepository } from "@/lib/api/session"
 import { collectionGroups } from "@/lib/collections"
@@ -68,9 +69,21 @@ export function HomePage() {
         : undefined,
     [registry.data, repository.data]
   )
-  const yours = (groups ?? [])
+  const yourKinds = (groups ?? [])
     .filter((g) => g.type === "yours")
     .flatMap((g) => g.primary)
+  // The collections that hold something lead; the counts are the ones the
+  // cards read, so this costs no extra request.
+  const counts = useQueries({
+    queries: yourKinds.map((k) =>
+      recordCountQueryOptions(k.authority, k.package, k.name)
+    ),
+  })
+  const held = (i: number) => ((counts[i]?.data?.value ?? 0) > 0 ? 0 : 1)
+  const yours = yourKinds
+    .map((k, i) => ({ k, i }))
+    .sort((a, b) => held(a.i) - held(b.i) || a.i - b.i)
+    .map(({ k }) => k)
   const provided = (groups ?? [])
     .filter((g) => g.type === "provider")
     .flatMap((g) => g.primary)
