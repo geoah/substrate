@@ -124,6 +124,7 @@ const task = kind(TASK, {
     emails: { type: "email", repeated: true },
     quotes: { type: "string", repeated: true },
     steps: { type: "markdown", repeated: true },
+    moods: { type: "enum", values: ["calm", "busy"], repeated: true },
     members: {
       type: "reference",
       kind: PERSON,
@@ -468,6 +469,21 @@ describe("PropertySheet lists", () => {
       properties: { steps: ["Draft\n\n- outline", "Review\nand send"] },
       ifVersion: 7,
     })
+  })
+
+  it("leaves a choice item's keys to the choice itself", () => {
+    renderSheet(
+      record({
+        properties: { ...record().properties, moods: ["calm", "busy"] },
+      })
+    )
+    fireEvent.click(valueOf("moods")!)
+    const first = screen.getByRole("combobox", { name: "Moods 1" })
+    for (const key of ["ArrowDown", "ArrowUp", "Enter"]) {
+      // Not prevented: the select opens, or steps its own value.
+      expect(fireEvent.keyDown(first, { key })).toBe(true)
+    }
+    expect(screen.queryByRole("combobox", { name: "Moods 3" })).toBeNull()
   })
 
   it("says which item its datatype refuses, and writes nothing", async () => {

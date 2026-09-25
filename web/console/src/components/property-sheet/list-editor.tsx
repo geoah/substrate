@@ -5,7 +5,8 @@
  * item itself (as do the up and down buttons and dragging by the grip), and a
  * paste of several lines becomes several items. A prose item (text, markdown)
  * is a box that grows with its lines instead: Enter and a paste stay inside
- * it, and the arrows leave it only from its first or last character. Nothing is written until Save
+ * it, and the arrows leave it only from its first or last character. A choice
+ * item (an enum) keeps Enter and the arrows for itself. Nothing is written until Save
  * (or ⌘Enter): the write is the WHOLE list in one PATCH carrying the version
  * the page read, and a list emptied on purpose is written as `[]`. */
 
@@ -159,6 +160,8 @@ export function ListEditor({
     // A prose box keeps Enter for its own lines, and its arrows for its own
     // caret until the caret is already at the box's edge.
     const box = e.currentTarget
+    // A choice keeps Enter and the arrows: they open it and step its value.
+    const inChoice = box instanceof HTMLSelectElement
     const inProse = box instanceof HTMLTextAreaElement
     const atEdge =
       !inProse ||
@@ -172,6 +175,8 @@ export function ListEditor({
     } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       void save()
+    } else if (inChoice && e.key !== "Backspace") {
+      return
     } else if (e.key === "Enter" && !inProse) {
       e.preventDefault()
       insertAfter(it.key)
