@@ -8,6 +8,8 @@
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: "Geist Variable", sans-serif;
+  /* Mono is only for what a reader would copy: ids, references, YAML, URLs. */
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -26,6 +28,38 @@
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-warning: var(--warning);
+  --color-warn-soft: var(--warn-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-bad-soft: var(--bad-soft);
+  --color-panel: var(--panel);
+  --color-hover: var(--hover);
+  --color-selection: var(--selection);
+  --color-faint: var(--faint);
+  --color-border-strong: var(--border-strong);
+  --color-primary-text: var(--primary-text);
+  --color-primary-soft: var(--primary-soft);
+  --shadow-card: var(--elevation);
+  --color-kind-gray-bg: var(--kind-gray-bg);
+  --color-kind-gray-fg: var(--kind-gray-fg);
+  --color-kind-brown-bg: var(--kind-brown-bg);
+  --color-kind-brown-fg: var(--kind-brown-fg);
+  --color-kind-orange-bg: var(--kind-orange-bg);
+  --color-kind-orange-fg: var(--kind-orange-fg);
+  --color-kind-yellow-bg: var(--kind-yellow-bg);
+  --color-kind-yellow-fg: var(--kind-yellow-fg);
+  --color-kind-green-bg: var(--kind-green-bg);
+  --color-kind-green-fg: var(--kind-green-fg);
+  --color-kind-teal-bg: var(--kind-teal-bg);
+  --color-kind-teal-fg: var(--kind-teal-fg);
+  --color-kind-blue-bg: var(--kind-blue-bg);
+  --color-kind-blue-fg: var(--kind-blue-fg);
+  --color-kind-purple-bg: var(--kind-purple-bg);
+  --color-kind-purple-fg: var(--kind-purple-fg);
+  --color-kind-pink-bg: var(--kind-pink-bg);
+  --color-kind-pink-fg: var(--kind-pink-fg);
+  --color-kind-red-bg: var(--kind-red-bg);
+  --color-kind-red-fg: var(--kind-red-fg);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -49,81 +83,143 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Shared readable scale for navigation, tables, forms and page headings. */
+/* The Paper palette (console design guide). Every colour is a semantic token
+   so both modes tune it; a page never reaches for a raw palette utility. */
 :root {
   font-size: 16px;
-  --spacing: 0.235rem;
-  --radius: 0.4rem;
-  --background: oklch(0.99 0.002 250);
-  --foreground: oklch(0.2 0.015 255);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2 0.015 255);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2 0.015 255);
-  --primary: oklch(0.45 0.11 235);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.955 0.006 250);
-  --secondary-foreground: oklch(0.28 0.02 255);
-  --muted: oklch(0.962 0.005 250);
-  --muted-foreground: oklch(0.45 0.02 255);
-  --accent: oklch(0.945 0.01 240);
-  --accent-foreground: oklch(0.3 0.05 240);
-  --destructive: oklch(0.577 0.245 27.325);
-  /* Transient-trouble amber (slice 4): the connector health grammar needs
-       "error" ≠ red "action required" (IA ticket 003); a semantic token, so
-       both modes tune it — never a raw palette utility. */
-  --warning: oklch(0.6 0.13 65);
-  --border: oklch(0.885 0.008 250);
-  --input: oklch(0.885 0.008 250);
-  --ring: oklch(0.6 0.09 235);
+  --radius: 0.375rem;
+  --background: #ffffff;
+  --foreground: #252420;
+  --card: #ffffff;
+  --card-foreground: #252420;
+  --popover: #ffffff;
+  --popover-foreground: #252420;
+  --primary: #2f6bdb;
+  --primary-foreground: #ffffff;
+  --primary-text: #2358bf;
+  --primary-soft: #eaf1fd;
+  --secondary: #f3f2ef;
+  --secondary-foreground: #252420;
+  --muted: #f5f4f1;
+  --muted-foreground: #5d5c56;
+  --faint: #9a9892;
+  --accent: rgba(55, 53, 47, 0.055);
+  --accent-foreground: #252420;
+  --panel: #fbfaf8;
+  --hover: rgba(55, 53, 47, 0.055);
+  --selection: rgba(47, 107, 219, 0.09);
+  --destructive: #c94a3d;
+  --bad-soft: #fbe9e6;
+  /* Transient trouble is amber, never the red of "action required". */
+  --warning: #b7791f;
+  --warn-soft: #fbf1de;
+  --ok: #2f8f5b;
+  --ok-soft: #e6f4ec;
+  --border: #ecebe7;
+  --border-strong: #dedcd6;
+  --input: #dedcd6;
+  --ring: #2f6bdb;
+  --elevation: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.08);
   --chart-1: oklch(0.87 0.005 250);
   --chart-2: oklch(0.556 0.01 250);
   --chart-3: oklch(0.439 0.01 250);
   --chart-4: oklch(0.371 0.01 250);
   --chart-5: oklch(0.269 0.01 250);
-  --sidebar: oklch(0.972 0.004 250);
-  --sidebar-foreground: oklch(0.28 0.015 255);
-  --sidebar-primary: oklch(0.45 0.11 235);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.93 0.008 250);
-  --sidebar-accent-foreground: oklch(0.25 0.03 240);
-  --sidebar-border: oklch(0.9 0.006 250);
-  --sidebar-ring: oklch(0.6 0.09 235);
+  --sidebar: #f8f7f5;
+  --sidebar-foreground: #5d5c56;
+  --sidebar-primary: #2f6bdb;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(55, 53, 47, 0.055);
+  --sidebar-accent-foreground: #252420;
+  --sidebar-border: #ecebe7;
+  --sidebar-ring: #2f6bdb;
+  --kind-gray-bg: #efeeeb;
+  --kind-gray-fg: #6f6d67;
+  --kind-brown-bg: #f3eae3;
+  --kind-brown-fg: #8a5a3b;
+  --kind-orange-bg: #fcebdd;
+  --kind-orange-fg: #c2621d;
+  --kind-yellow-bg: #fbf1d2;
+  --kind-yellow-fg: #a07a12;
+  --kind-green-bg: #e3f2e8;
+  --kind-green-fg: #2e7d4f;
+  --kind-teal-bg: #ddf1f0;
+  --kind-teal-fg: #1f7a77;
+  --kind-blue-bg: #e3edfb;
+  --kind-blue-fg: #2f63c0;
+  --kind-purple-bg: #eee8fa;
+  --kind-purple-fg: #6b4bb8;
+  --kind-pink-bg: #fbe7f0;
+  --kind-pink-fg: #b03a72;
+  --kind-red-bg: #fbe6e3;
+  --kind-red-fg: #be3b2e;
 }
 
 .dark {
-  --background: oklch(0.16 0.01 255);
-  --foreground: oklch(0.9 0.008 250);
-  --card: oklch(0.19 0.012 255);
-  --card-foreground: oklch(0.9 0.008 250);
-  --popover: oklch(0.19 0.012 255);
-  --popover-foreground: oklch(0.9 0.008 250);
-  --primary: oklch(0.72 0.1 235);
-  --primary-foreground: oklch(0.14 0.01 255);
-  --secondary: oklch(0.24 0.012 255);
-  --secondary-foreground: oklch(0.88 0.008 250);
-  --muted: oklch(0.22 0.01 255);
-  --muted-foreground: oklch(0.68 0.015 250);
-  --accent: oklch(0.26 0.02 240);
-  --accent-foreground: oklch(0.92 0.008 250);
-  --destructive: oklch(0.704 0.191 22.216);
-  --warning: oklch(0.78 0.14 75);
-  --border: oklch(0.27 0.012 255);
-  --input: oklch(0.27 0.012 255);
-  --ring: oklch(0.55 0.08 235);
+  --background: #191919;
+  --foreground: #e8e7e3;
+  --card: #1d1d1d;
+  --card-foreground: #e8e7e3;
+  --popover: #202020;
+  --popover-foreground: #e8e7e3;
+  --primary: #5b92f0;
+  --primary-foreground: #0e1420;
+  --primary-text: #8ab2f6;
+  --primary-soft: rgba(91, 146, 240, 0.16);
+  --secondary: #262626;
+  --secondary-foreground: #e8e7e3;
+  --muted: #222222;
+  --muted-foreground: #a9a8a3;
+  --faint: #74736e;
+  --accent: rgba(255, 255, 255, 0.055);
+  --accent-foreground: #e8e7e3;
+  --panel: #1d1d1d;
+  --hover: rgba(255, 255, 255, 0.055);
+  --selection: rgba(91, 146, 240, 0.16);
+  --destructive: #ea7a6d;
+  --bad-soft: rgba(234, 122, 109, 0.14);
+  --warning: #e0a84a;
+  --warn-soft: rgba(224, 168, 74, 0.14);
+  --ok: #5bc08a;
+  --ok-soft: rgba(91, 192, 138, 0.14);
+  --border: #2b2b29;
+  --border-strong: #3a3a37;
+  --input: #3a3a37;
+  --ring: #5b92f0;
+  --elevation: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5);
   --chart-1: oklch(0.87 0.005 250);
   --chart-2: oklch(0.556 0.01 250);
   --chart-3: oklch(0.439 0.01 250);
   --chart-4: oklch(0.371 0.01 250);
   --chart-5: oklch(0.269 0.01 250);
-  --sidebar: oklch(0.13 0.008 255);
-  --sidebar-foreground: oklch(0.85 0.008 250);
-  --sidebar-primary: oklch(0.72 0.1 235);
-  --sidebar-primary-foreground: oklch(0.14 0.01 255);
-  --sidebar-accent: oklch(0.22 0.015 240);
-  --sidebar-accent-foreground: oklch(0.92 0.008 250);
-  --sidebar-border: oklch(0.22 0.01 255);
-  --sidebar-ring: oklch(0.55 0.08 235);
+  --sidebar: #202020;
+  --sidebar-foreground: #a9a8a3;
+  --sidebar-primary: #5b92f0;
+  --sidebar-primary-foreground: #0e1420;
+  --sidebar-accent: rgba(255, 255, 255, 0.055);
+  --sidebar-accent-foreground: #e8e7e3;
+  --sidebar-border: #2b2b29;
+  --sidebar-ring: #5b92f0;
+  --kind-gray-bg: #2c2c2a;
+  --kind-gray-fg: #b3b1ab;
+  --kind-brown-bg: #352a22;
+  --kind-brown-fg: #d2a17e;
+  --kind-orange-bg: #3a2717;
+  --kind-orange-fg: #f09a5a;
+  --kind-yellow-bg: #352e17;
+  --kind-yellow-fg: #e3c15a;
+  --kind-green-bg: #1b3024;
+  --kind-green-fg: #6fcb93;
+  --kind-teal-bg: #163130;
+  --kind-teal-fg: #5ecfc9;
+  --kind-blue-bg: #1b2a42;
+  --kind-blue-fg: #86aef3;
+  --kind-purple-bg: #2a2340;
+  --kind-purple-fg: #b7a0f0;
+  --kind-pink-bg: #3a1f2c;
+  --kind-pink-fg: #f08dba;
+  --kind-red-bg: #3c211d;
+  --kind-red-fg: #f28b7e;
 }
 
 @layer base {
@@ -132,17 +228,20 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
   }
   html {
     @apply font-sans;
   }
 }
 
-/* The data voice: everything the substrate stores reads in mono — table cell
-   values, ids/paths, YAML, timestamps in detail contexts, offer values. */
+/* The copyable-identifier voice: ids, references, YAML, URLs — the things a
+   reader would copy. Never times, verbs, statuses or counts. */
 @utility data {
-  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
-  font-size: 0.82rem;
+  font-family: var(--font-mono);
+  font-size: 0.86em;
   letter-spacing: -0.01em;
 }
 
