@@ -226,3 +226,22 @@ func TestATemplatedTitleIsNotAChangeOfItsOwn(t *testing.T) {
 		t.Fatalf("a templated title is its own change: %+v", rc.moved)
 	}
 }
+
+func TestAnUndecodableEntryOfAnotherKindLeavesTheWalkAlone(t *testing.T) {
+	w, pcs := cvWalk(30, "name")
+	other := w.earlierOf(20, cvRef.ID, "samples.substrate.reamde.dev/people/person", []byte(`{not json`))
+	if other.opaque {
+		t.Fatalf("another kind's entry under the same id is opaque to this walk: %+v", other)
+	}
+	w.step([]earlierEntry{
+		{seq: 30, ops: cvSet(2, false, map[string]any{"name": "B"})},
+		other,
+		{seq: 10, ops: cvSet(1, true, map[string]any{"name": "A"})},
+	}, valuesBatch)
+	if pcs[0].Before != "A" || pcs[0].BeforeUnknown {
+		t.Fatalf("before = %+v, want the creation's value", pcs[0])
+	}
+	if own := w.earlierOf(20, cvRef.ID, cvRef.Kind, []byte(`{not json`)); !own.opaque {
+		t.Fatalf("the record's own undecodable entry is not opaque: %+v", own)
+	}
+}

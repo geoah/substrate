@@ -335,7 +335,13 @@ func (w *recordWalk) earlierOf(seq int64, recordID, kind string, raw []byte) ear
 		e.ops, err = foldOpsOf(substrate.Change{Seq: seq, Payload: payload})
 	}
 	if err != nil {
-		e.opaque = true
+		// Only the record's own kind makes an undecodable entry opaque. The
+		// record arm matches by id alone, so another kind's record under the
+		// same id reaches the walk too; an effect of that entry on this
+		// record would show as a gap in its versions, which visit refuses.
+		e.ops = nil
+		e.opaque = kind == w.ref.Kind
+		return e
 	}
 	// An entry that names properties and carries no effects was written
 	// before entries held values: what it set is not in the changelog.
