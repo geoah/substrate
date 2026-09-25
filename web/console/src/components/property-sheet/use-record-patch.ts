@@ -7,7 +7,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { splitKind } from "@/lib/api/http"
-import { patchRecord } from "@/lib/api/records"
+import { patchRecord, recordWriteReaches } from "@/lib/api/records"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
 
 /** What a refused write says, in words that tell the reader what to do. */
@@ -27,15 +27,13 @@ export function useRecordPatch(record: SubstrateRecord) {
         properties,
         ifVersion: record.version,
       }),
-    onSuccess: async () => {
-      await Promise.all([
-        client.invalidateQueries({
-          queryKey: ["record", authority, pkg, name, record.id],
-        }),
-        client.invalidateQueries({
-          queryKey: ["changes", "record", record.kind, record.id],
-        }),
-      ])
-    },
+    // Every read that can show the record, not only its page: a collection
+    // holds its rows fresh for a while, and a list keyed on the kind (the
+    // Agents page's providers) would otherwise go on showing the old values.
+    onSuccess: () =>
+      client.invalidateQueries({
+        predicate: (q) =>
+          recordWriteReaches(q.queryKey, record.kind, record.id),
+      }),
   })
 }

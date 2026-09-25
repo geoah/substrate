@@ -467,6 +467,55 @@ export function recordQueryOptions(
   })
 }
 
+// ── what a write makes stale ────────────────────────────────────────────────
+
+/** Whether a cached read can show a record one write just changed: the
+ * record itself and its history, any read that names its kind anywhere in its
+ * key (a collection, a count, a trait's read, the Agents page's providers), a
+ * list or a ranking over every kind, the batched title reads that name the
+ * record, and the reverse reads, since a moved pointer moves who is pointed
+ * at. Everything else keeps its cache: another kind's list is not this
+ * record's business. */
+export function recordWriteReaches(
+  queryKey: readonly unknown[],
+  kind: string,
+  id: string
+): boolean {
+  const [head, second, third] = queryKey
+  switch (head) {
+    case "record":
+      return (
+        joinKind(String(second), String(third), String(queryKey[3])) === kind &&
+        queryKey[4] === id
+      )
+    case "reference-titles":
+      return (
+        Array.isArray(second) &&
+        second.includes(kind) &&
+        Array.isArray(third) &&
+        third.includes(id)
+      )
+    case "referencing":
+      return true
+    case "records":
+      if (Array.isArray(second) && second.length === 0) return true
+      break
+    case "records-search":
+      if ((third as { kinds?: unknown } | undefined)?.kinds == null) return true
+      break
+  }
+  return mentions(queryKey, kind)
+}
+
+function mentions(value: unknown, kind: string): boolean {
+  if (typeof value === "string")
+    return value === kind || value.startsWith(`${kind}/`)
+  if (Array.isArray(value)) return value.some((v) => mentions(v, kind))
+  if (value && typeof value === "object")
+    return Object.values(value).some((v) => mentions(v, kind))
+  return false
+}
+
 // ── writes (bundle config + account records, integrations flow) ─────────────
 
 /** A create/upsert write body: `substrate.PutInput` without `kind`, which the
