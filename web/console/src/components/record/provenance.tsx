@@ -22,6 +22,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { FileLockIcon } from "lucide-react"
 
 import { ActorPill } from "@/components/record/actor-pill"
+import { ReferenceValue } from "@/components/record/reference-value"
 import { RecordPill } from "@/components/record-pill"
 import { Button } from "@/components/ui/button"
 import {
@@ -49,7 +50,7 @@ import type {
   SubstrateRecord,
 } from "@/lib/api/types"
 import { kindByIdentity } from "@/lib/definition"
-import { cellValue, relativeTime } from "@/lib/format"
+import { cellValue, referenceObjects, relativeTime } from "@/lib/format"
 import {
   WORDS,
   mappingOfSource,
@@ -58,6 +59,7 @@ import {
   type Tier,
 } from "@/lib/provenance"
 import { splitRecordPath } from "@/lib/record-path"
+import { NO_TITLES, type ReferenceTitles } from "@/lib/reference-titles"
 import { cn } from "@/lib/utils"
 
 interface LedgerRow {
@@ -99,11 +101,38 @@ function rowsOf(record: SubstrateRecord, kind?: KindInfo): LedgerRow[] {
   }))
 }
 
-/** A value on one line, the whole value on hover. */
-function Value({ value, className }: { value: unknown; className?: string }) {
+/** A value on one line, the whole value on hover. A reference (or a repeated
+ * one) is the referent's pill: `cellValue` summarizes the served `{ref}`
+ * object by its keys, which names no record at all. */
+function Value({
+  value,
+  kinds,
+  titles,
+  className,
+}: {
+  value: unknown
+  kinds: KindInfo[]
+  titles: ReferenceTitles
+  className?: string
+}) {
   if (value === undefined || value === null) {
     return (
       <span className={cn("text-muted-foreground/70", className)}>not set</span>
+    )
+  }
+  const refs = referenceObjects(value)
+  if (refs) {
+    return (
+      <span
+        className={cn(
+          "inline-flex max-w-full min-w-0 flex-wrap items-center gap-1.5",
+          className
+        )}
+      >
+        {refs.map((one, i) => (
+          <ReferenceValue key={i} value={one} kinds={kinds} titles={titles} />
+        ))}
+      </span>
     )
   }
   const text = cellValue(value)
@@ -224,10 +253,14 @@ export function ProvenanceRail({
   record,
   kind,
   kinds,
+  referenceTitles = NO_TITLES,
 }: {
   record: SubstrateRecord
   kind?: KindInfo
   kinds: KindInfo[]
+  /** Record path → the referent's title, off the record page's batched read;
+   * absent, a reference value's pill reads as the id. */
+  referenceTitles?: ReferenceTitles
 }) {
   const client = useQueryClient()
   const rows = useMemo(() => rowsOf(record, kind), [record, kind])
@@ -297,7 +330,12 @@ export function ProvenanceRail({
                   <span className="data text-xs text-muted-foreground">
                     {row.name}
                   </span>
-                  <Value value={row.value} className="text-base" />
+                  <Value
+                    value={row.value}
+                    kinds={kinds}
+                    titles={referenceTitles}
+                    className="text-base"
+                  />
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {row.meta.manager && <TierChip tier={row.meta.tier} />}
@@ -346,6 +384,8 @@ export function ProvenanceRail({
                       >
                         <Value
                           value={alt.value}
+                          kinds={kinds}
+                          titles={referenceTitles}
                           className="text-sm font-medium text-foreground"
                         />
                         <Origin
@@ -404,9 +444,11 @@ export function ProvenanceRail({
               <DialogDescription>
                 {pending.kind === "use" ? (
                   <>
-                    <span className="data">
-                      {cellValue(pending.alternative.value)}
-                    </span>{" "}
+                    <Value
+                      value={pending.alternative.value}
+                      kinds={kinds}
+                      titles={referenceTitles}
+                    />{" "}
                     is written to <code>{pending.property}</code>, and you
                     become its manager at the owner tier. A held value ignores
                     fresher source values until you release it; the sources'

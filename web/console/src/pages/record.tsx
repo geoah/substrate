@@ -265,6 +265,7 @@ export function RecordPage() {
                 record={e}
                 kind={kindInfo}
                 kinds={registry.data ?? []}
+                referenceTitles={referenceTitles}
               />
             </div>
           </ScrollArea>

@@ -256,6 +256,54 @@ describe("ProvenanceRail", () => {
     expect(container.querySelector("[role=dialog]")).toBeNull()
   })
 
+  // A reference value is served as `{ref: "<kind>/<id>"}`; the ledger read it
+  // through `cellValue`, which printed the object's keys — the literal `{ref}`.
+  it("renders a reference value, its alternatives and the confirm dialog as record pills", () => {
+    const client = new QueryClient()
+    const e: SubstrateRecord = {
+      ...record,
+      properties: { ...record.properties, name: { ref: `${GITHUB}/gh1` } },
+      propertyMeta: {
+        name: {
+          manager: "console",
+          tier: "owner",
+          alternatives: [
+            {
+              actor: BEEPER_SYNC,
+              value: { ref: `${BEEPER}/u1` },
+              updatedAt: "2026-09-09T00:00:00Z",
+            },
+          ],
+        },
+      },
+      linkedFrom: [],
+    }
+    const { container, getByRole } = render(
+      <QueryClientProvider client={client}>
+        <ProvenanceRail
+          record={e}
+          kind={person}
+          kinds={kinds}
+          referenceTitles={new Map([[`${GITHUB}/gh1`, "adalovelace"]])}
+        />
+      </QueryClientProvider>
+    )
+    const row = rowOf(container, "name")
+    expect(row.textContent).not.toContain("{ref}")
+    const held = [...row.querySelectorAll("a")].find(
+      (a) => a.getAttribute("href") === `/data/${GITHUB}/gh1`
+    )
+    expect(held?.textContent).toContain("adalovelace")
+    const alt = row.querySelector<HTMLElement>("[data-alternative]")!
+    expect(
+      alt.querySelector(`a[href="/data/${BEEPER}/u1"]`)?.textContent
+    ).toContain("u1")
+    fireEvent.click(alt.querySelector("button")!)
+    const dialog = getByRole("dialog")
+    expect(dialog.textContent).not.toContain("{ref}")
+    expect(dialog.querySelector(`a[href="/data/${BEEPER}/u1"]`)).not.toBeNull()
+  })
+
   it("cancelling writes nothing", () => {
     const { container, getByText } = renderRail()
     const row = rowOf(container, "name")
