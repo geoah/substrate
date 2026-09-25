@@ -288,6 +288,16 @@ func parseChangeFilter(r *http.Request) (substrate.ChangeFilter, error) {
 		return substrate.ChangeFilter{}, &parseError{"recordKind requires recordId — the pair scopes the feed to one record"}
 	}
 	f := substrate.ChangeFilter{RecordID: recordID, Q: v.Get("q")}
+	// `values=1` asks every row for its records' before and after values
+	// (decision 0106). Any other spelling is refused rather than read as
+	// "no", so a client that meant to ask never silently gets names alone.
+	switch raw := v.Get("values"); raw {
+	case "", "0":
+	case "1":
+		f.Values = true
+	default:
+		return substrate.ChangeFilter{}, &parseError{"values: 1 asks for before and after values, 0 or absent does not; got " + strconv.Quote(raw)}
+	}
 	if recordKind != "" {
 		f.Kinds = append(f.Kinds, recordKind)
 	}
