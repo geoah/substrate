@@ -167,17 +167,19 @@ export function SourcesSection({
       ),
     ]
     return (
-      <p className="flex flex-wrap items-center gap-1.5 py-0.5 text-[13px] text-faint">
-        {others.length
-          ? `${others.join(" and ")} set values here directly. No provider’s copy is linked to it.`
-          : "Only you have added to this. No provider fills it in."}
+      <div className="flex flex-col gap-1 py-0.5 text-[13px] text-faint">
+        <p>
+          {others.length
+            ? `${others.join(" and ")} set values here directly. No provider’s copy is linked to it.`
+            : "Only you have added to this. No provider fills it in."}
+        </p>
         {technical && (
-          <>
-            <span>No mapping targets</span>
+          <p className="flex flex-wrap items-center gap-1.5">
+            <span>No record mapping targets</span>
             <KindPath reference={record.kind} className="text-[12px]" />
-          </>
+          </p>
         )}
-      </p>
+      </div>
     )
   }
   if (!links.length) {
