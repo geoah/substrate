@@ -13,12 +13,12 @@ import { DocPage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
 import { ToggleSwitch } from "@/components/nav/toggle-switch"
 import {
-  Segmented,
   SettingRow,
   SettingsSection,
   WidthPicker,
 } from "@/components/settings-page/setting-row"
 import { Button } from "@/components/ui/button"
+import { Segmented } from "@/components/ui/segmented"
 import { Spinner } from "@/components/ui/spinner"
 import { toast } from "@/components/ui/toast"
 import {

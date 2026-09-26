@@ -31,6 +31,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { kindsQueryOptions } from "@/lib/api/kinds"
@@ -102,30 +103,18 @@ export function SearchPage() {
           />
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          <div
-            role="radiogroup"
-            aria-label="Rank by"
-            className="inline-flex gap-0.5 rounded-[7px] border border-border-strong p-0.5"
-          >
-            {SEARCH_MODES.map((m) => (
-              <button
-                key={m}
-                type="button"
-                role="radio"
-                aria-checked={mode === m}
-                onClick={() => {
-                  saveSearchMode(m)
-                  void setModeParam(m)
-                }}
-                className={cn(
-                  "cursor-pointer rounded-[5px] px-2.5 py-1 text-[12.5px] text-muted-foreground",
-                  mode === m && "bg-foreground text-background"
-                )}
-              >
-                {SEARCH_MODE_LABEL[m]}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            label="Rank by"
+            value={mode}
+            options={SEARCH_MODES.map((m) => ({
+              value: m,
+              label: SEARCH_MODE_LABEL[m],
+            }))}
+            onChange={(m) => {
+              saveSearchMode(m)
+              void setModeParam(m)
+            }}
+          />
           <p className="max-w-prose text-[12.5px] text-faint">
             {SEARCH_MODE_DESCRIPTION[mode]}
             {technical && ` ${SEARCH_MODE_DETAIL[mode]}`}
