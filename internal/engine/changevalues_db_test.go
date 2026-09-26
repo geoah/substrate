@@ -73,11 +73,18 @@ func holdToSnapshots(t *testing.T, changes []substrate.Change, snaps snapshots) 
 			got := map[string]bool{}
 			for _, pc := range a.Properties {
 				got[pc.Name] = true
+				// A paired rename (decision 0108) reads its before under the
+				// old name, and stands for the old name's clear too.
+				from := pc.Name
+				if pc.RenamedFrom != "" {
+					from = pc.RenamedFrom
+					got[from] = true
+				}
 				if pc.BeforeUnknown {
 					t.Fatalf("seq %d %s.%s: before unknown on a history the changelog holds whole", c.Seq, a.ID, pc.Name)
 				}
-				if jsonOf(t, pc.Before) != jsonOf(t, before[pc.Name]) {
-					t.Fatalf("seq %d %s.%s: before = %s, the read at version %d says %s", c.Seq, a.ID, pc.Name, jsonOf(t, pc.Before), a.Version-1, jsonOf(t, before[pc.Name]))
+				if jsonOf(t, pc.Before) != jsonOf(t, before[from]) {
+					t.Fatalf("seq %d %s.%s: before = %s, the read at version %d says %s", c.Seq, a.ID, pc.Name, jsonOf(t, pc.Before), a.Version-1, jsonOf(t, before[from]))
 				}
 				if jsonOf(t, pc.After) != jsonOf(t, after[pc.Name]) {
 					t.Fatalf("seq %d %s.%s: after = %s, the read at version %d says %s", c.Seq, a.ID, pc.Name, jsonOf(t, pc.After), a.Version, jsonOf(t, after[pc.Name]))

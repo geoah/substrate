@@ -17,6 +17,10 @@ import {
 /** One property's move across one or more rows. */
 export interface ValueMove {
   name: string
+  /** The property's former name, where a schema change renamed it and moved
+   * its value across: the move says the rename, and its values only when
+   * they differ. */
+  renamedFrom?: string
   /** Absent: the record held no value before (unless `beforeUnknown`). */
   before?: unknown
   /** Absent: the change cleared it. */
@@ -44,7 +48,8 @@ export function rowValues(
   return row.affected?.find((a) => a.id === id && a.kind === kind)?.properties
 }
 
-function same(a: unknown, b: unknown): boolean {
+/** Whether two values are equal as the wire carries them. */
+export function same(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
@@ -98,6 +103,21 @@ export function netMoves(
     }
     for (const pc of values) {
       touched.set(pc.name, (touched.get(pc.name) ?? 0) + 1)
+      // A rename carries the run's earlier moves under the old name across
+      // to the new one, so the run reads as one move.
+      const former = pc.renamedFrom ? moves.get(pc.renamedFrom) : undefined
+      if (former && !moves.has(pc.name)) {
+        moves.delete(former.name)
+        touched.set(pc.name, (touched.get(former.name) ?? 0) + 1)
+        touched.delete(former.name)
+        moves.set(pc.name, {
+          ...former,
+          name: pc.name,
+          renamedFrom: former.renamedFrom ?? former.name,
+          after: pc.after,
+        })
+        continue
+      }
       const seen = moves.get(pc.name)
       if (seen) {
         seen.after = pc.after
@@ -105,6 +125,7 @@ export function netMoves(
       }
       moves.set(pc.name, {
         name: pc.name,
+        ...(pc.renamedFrom ? { renamedFrom: pc.renamedFrom } : {}),
         before: pc.before,
         after: pc.after,
         beforeUnknown: pc.beforeUnknown === true,
@@ -113,6 +134,9 @@ export function netMoves(
   }
   const out = [...moves.values()].map((m): ValueMove => {
     if (m.beforeUnknown || !same(m.before, m.after)) return listDiff(m)
+    // A rename that kept its value: the rename is the whole move, a sealed
+    // value included, never "replaced".
+    if (m.renamedFrom) return m
     // A sealed value reads the marker on both sides whatever was written; a
     // single row the server named moved something it cannot show.
     if (m.before === REDACTED || (touched.get(m.name) ?? 0) < 2) {
@@ -162,7 +186,7 @@ export function readerMoves(
 ): ValueMove[] {
   return moves.filter((m) => {
     if (hostWritten(specs.get(m.name))) return false
-    if (m.replaced || m.changedBack) return true
+    if (m.replaced || m.changedBack || m.renamedFrom) return true
     if (m.added || m.removed) {
       return (m.added ?? []).length + (m.removed ?? []).length > 0
     }

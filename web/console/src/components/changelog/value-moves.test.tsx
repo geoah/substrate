@@ -174,6 +174,49 @@ describe("ValueMoves", () => {
     expect(priority?.textContent).toBe("Priority:changed and changed back")
   })
 
+  it("says a rename by the old name, and values only when they differ", () => {
+    show([
+      move({
+        name: "apiKey",
+        renamedFrom: "token",
+        before: "<redacted>",
+        after: "<redacted>",
+      }),
+      move({
+        name: "priority",
+        renamedFrom: "urgency",
+        before: "high",
+        after: "urgent",
+      }),
+    ])
+    const key = screen.getByText("API key:").closest("[data-slot=value-move]")
+    expect(key?.textContent).toBe("API key:renamed fromToken")
+    const priority = screen
+      .getByText("Priority:")
+      .closest("[data-slot=value-move]")
+    expect(priority?.textContent).toBe(
+      "Priority:renamed fromUrgency,High→toUrgent"
+    )
+  })
+
+  it("says a rename by its raw keys in technical mode", () => {
+    show(
+      [
+        move({
+          name: "originDigest",
+          renamedFrom: "digest",
+          before: "abc",
+          after: "abc",
+        }),
+      ],
+      true
+    )
+    const row = screen
+      .getByText("originDigest:")
+      .closest("[data-slot=value-move]")
+    expect(row?.textContent).toBe("originDigest:renamed fromdigest")
+  })
+
   it("cuts long text to a line and keeps the whole in the hover", () => {
     const long = "Numbers from finance first, ".repeat(6).trim()
     show([move({ name: "description", after: long, beforeUnknown: true })])

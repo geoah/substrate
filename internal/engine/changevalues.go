@@ -291,9 +291,12 @@ func (ds *dataset) deriveValues(ctx context.Context, changes []substrate.Change,
 			// A rename is one change under the new name: the old name's
 			// clear is the same move, not a removal of its own.
 			renamed := renamesOf(c, ref, rc.moved)
-			gone := map[string]bool{}
-			for _, from := range renamed {
-				gone[from] = true
+			var gone map[string]bool
+			if renamed != nil {
+				gone = make(map[string]bool, len(renamed))
+				for _, from := range renamed {
+					gone[from] = true
+				}
 			}
 			props := make([]substrate.PropertyChange, 0, len(rc.moved))
 			for _, name := range sortedKeys(rc.moved) {
