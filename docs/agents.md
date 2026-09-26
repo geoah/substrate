@@ -269,7 +269,8 @@ the owner in the console, a judge agent through `write` — the deciding
 transaction also writes one `system` message into the proposing thread: the
 content is a JSON envelope (`event: "proposalDecision"`, the request's record
 path, the verdict, the target and — on an accepted patch or create — the
-target's new version), and its `changes` carry the decision's own changelog
+target's new version, plus `adjustedDiff` where the owner adjusted the values
+before accepting), and its `changes` carry the decision's own changelog
 entries (the request's patch, and the accept's apply). Decision and report
 land together or not at all.
 

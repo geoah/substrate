@@ -60,6 +60,9 @@ const (
 	// propIfVersion is a delete request's precondition on its target; a patch
 	// request carries its own inside the diff.
 	propIfVersion = "ifVersion"
+	// propAdjustedDiff is the owner's adjustment of a patch or create request,
+	// written with the accept and applied instead of `diff` (decision 0106).
+	propAdjustedDiff = "adjustedDiff"
 )
 
 // diffConflict marks an onEnter apply that lost — a stale applyDiff CAS, a
@@ -746,7 +749,11 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 			if err := t.canonicalizeResubmittedDiff(sp); err != nil {
 				return nil, err
 			}
-			if err := guardImmutableEnvelope(sp); err != nil {
+			adjusting, err := t.admitAdjustedDiff(sp)
+			if err != nil {
+				return nil, err
+			}
+			if err := guardImmutableEnvelope(sp, adjusting); err != nil {
 				return nil, err
 			}
 		}
@@ -1848,18 +1855,100 @@ func (t *txn) canonicalizeResubmittedDiff(sp *applySpec) error {
 // canonicalizeResubmittedDiff runs first), but never changed. The `target`
 // reference is guarded in apply, where the write's resolved target is compared to
 // the current one (a re-sync of the same target is fine; a swap is not).
-func guardImmutableEnvelope(sp *applySpec) error {
-	for _, name := range []string{"op", "targetKind", "targetId", "diff", propIfVersion, "policy", "policyRevision", msgRelThread} {
+//
+// `adjustedDiff` is frozen the same way, except on the one write admitAdjustedDiff
+// admitted it on (adjusting): the owner's accept.
+func guardImmutableEnvelope(sp *applySpec, adjusting bool) error {
+	for _, name := range []string{"op", "targetKind", "targetId", "diff", propAdjustedDiff, propIfVersion, "policy", "policyRevision", msgRelThread} {
 		next, named := sp.props[name]
 		if !named {
 			continue
 		}
+		if name == propAdjustedDiff && adjusting {
+			continue
+		}
 		if !jsonEqual(sp.existing.Props[name], next) {
+			if name == propAdjustedDiff {
+				return fmt.Errorf("%w: adjustedDiff is immutable once written: it records what the owner's accept applied",
+					substrate.ErrForbidden)
+			}
 			return fmt.Errorf("%w: %s is immutable on a proposed change request — the reviewed envelope is fixed at propose time",
 				substrate.ErrForbidden, name)
 		}
 	}
 	return nil
+}
+
+// admitAdjustedDiff admits the owner's adjustment of a request's values
+// (decision 0106). It rides the write that moves `decision` from proposed to
+// accepted and no other, so the values the accept applies are the ones the
+// deciding owner wrote in the same breath, and it is admitted exactly as a
+// proposed diff is (normalizeDiffFor against the target's kind) before the
+// transition's applyDiff re-validates it against the target. Only the owner's
+// hand adjusts: installed code and the policy judge accept or reject what was
+// proposed, since an adjusting callable is a writer that skipped review.
+//
+// It reports whether this write adjusts, which is what lets the envelope guard
+// admit the one write of a property it otherwise freezes. An adjustment that
+// is already stored falls through to the guard, which refuses any change to it.
+func (t *txn) admitAdjustedDiff(sp *applySpec) (bool, error) {
+	next, named := sp.props[propAdjustedDiff]
+	if !named || next == nil {
+		return false, nil
+	}
+	if _, stored := sp.existing.Props[propAdjustedDiff]; stored {
+		return false, nil
+	}
+	// A put onto a tombstoned request resurrects it with its states set
+	// directly and never runs the accept's applyDiff, so it may not store
+	// values that were never applied.
+	if sp.op != substrate.OpPatch || sp.resurrect ||
+		sp.existing.States[propDecision] != "proposed" || sp.states[propDecision] != decisionAccepted {
+		return false, fmt.Errorf("%w: adjustedDiff is written only with the accept: the same write moves decision from proposed to accepted",
+			substrate.ErrValidation)
+	}
+	if t.tier != substrate.TierOwner || t.policyDecision {
+		return false, fmt.Errorf("%w: only the owner adjusts a change request; installed code and the policy judge decide what was proposed",
+			substrate.ErrForbidden)
+	}
+	op := requestOp(sp.existing.Props)
+	if op == opDelete {
+		return false, fmt.Errorf("%w: op delete proposes no values, so there is nothing to adjust",
+			substrate.ErrValidation)
+	}
+	diff, ok := next.(map[string]any)
+	if !ok {
+		return false, fmt.Errorf("%w: adjustedDiff must be an object", substrate.ErrValidation)
+	}
+	var ty *vocabulary.Kind
+	ident := ""
+	if op == opCreate {
+		ident, _ = sp.existing.Props["targetKind"].(string)
+	} else {
+		ident = referenceTargetOf(sp.existing, propTarget).Kind
+	}
+	if ident != "" {
+		resolved, err := t.resolveType(ident)
+		if err != nil {
+			return false, err
+		}
+		ty = resolved
+	}
+	norm, err := normalizeDiffFor(ty, diff, op)
+	if err != nil {
+		return false, fmt.Errorf("adjustedDiff: %w", err)
+	}
+	sp.props[propAdjustedDiff] = norm
+	return true, nil
+}
+
+// appliedDiff is the diff an accepted request applies: the owner's adjustment
+// where the accept carried one, else what was proposed.
+func appliedDiff(edit *erow) any {
+	if v, ok := edit.Props[propAdjustedDiff]; ok && v != nil {
+		return v
+	}
+	return edit.Props["diff"]
 }
 
 // propertyWritable reports whether a name may appear in a proposed diff for
@@ -1902,6 +1991,10 @@ func sensitiveProp(ty *vocabulary.Kind, name string) bool {
 // request that landed BEFORE this check keeps failing at accept — nothing here
 // re-judges stored rows.
 func (t *txn) admitRequestDiff(sp *applySpec) error {
+	if v, named := sp.props[propAdjustedDiff]; named && v != nil {
+		return fmt.Errorf("%w: adjustedDiff is the owner's, written with the accept; a proposal carries its values in diff",
+			substrate.ErrValidation)
+	}
 	op := requestOp(sp.props)
 	target := requestTarget(sp)
 	// A create names the record it would mint by targetKind/targetId — that
@@ -2388,6 +2481,10 @@ func (t *txn) applyPatchRequest(edit *erow) error {
 	// applies nothing (the stored value already matched). A green accept that
 	// changed nothing is exactly the silent no-op of issue 004: fail it.
 	if ent != nil && in.IfVersion != nil && ent.Version == *in.IfVersion {
+		if adj, ok := edit.Props[propAdjustedDiff]; ok && adj != nil {
+			return fmt.Errorf(
+				"%w: the adjusted diff applied no change — the target already matches the owner's adjusted values", substrate.ErrValidation)
+		}
 		return fmt.Errorf(
 			"%w: the diff applied no change — the target already matches the proposed values", substrate.ErrValidation)
 	}
@@ -2400,7 +2497,7 @@ func (t *txn) applyPatchRequest(edit *erow) error {
 // instead of decoding into an empty patch that applies nothing.
 func decodeDiff(edit *erow) (substrate.PatchInput, error) {
 	var in substrate.PatchInput
-	raw, err := json.Marshal(edit.Props["diff"])
+	raw, err := json.Marshal(appliedDiff(edit))
 	if err != nil {
 		return in, err
 	}
@@ -2523,7 +2620,7 @@ func (t *txn) existingSatisfiesCreate(row *erow, ty *vocabulary.Kind, in substra
 // patch path uses.
 func decodeCreate(edit *erow) (substrate.PutInput, error) {
 	var in substrate.PutInput
-	raw, err := json.Marshal(edit.Props["diff"])
+	raw, err := json.Marshal(appliedDiff(edit))
 	if err != nil {
 		return in, err
 	}
