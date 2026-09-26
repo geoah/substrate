@@ -67,3 +67,36 @@ func TestPackageDocumentCannotWriteDeclaredBy(t *testing.T) {
 		t.Fatalf("a document writing declaredBy was not refused by name: %v", err)
 	}
 }
+
+// An agent that declares a package through the generic PUT door is named as
+// its declarer, and a package re-declared after a delete names the new hand.
+func TestAgentPutOfPackageRecordsTheAgent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newCoreDataset(t)
+
+	authority, name := vocabulary.SplitPackageRef(swPackage)
+	agent := substrate.AgentActor(authority, name, "notekeeper")
+	if _, err := ds.Put(ctx, agent, substrate.PutInput{
+		Kind:       kindPackageRef,
+		ID:         swPackage,
+		Properties: map[string]any{"authority": authority, "package": name},
+	}); err != nil {
+		t.Fatalf("agent put: %v", err)
+	}
+	if got := mustGet(t, ds, kindPackageRef, swPackage).Properties["declaredBy"]; got != string(agent) {
+		t.Fatalf("declaredBy = %v, want %q", got, agent)
+	}
+
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, kindPackageRef, swPackage, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorConsole, []map[string]any{
+		vocabulary.PackageManifest(swPackage, 0),
+	}); err != nil {
+		t.Fatalf("re-declare: %v", err)
+	}
+	if got := mustGet(t, ds, kindPackageRef, swPackage).Properties["declaredBy"]; got != string(substrate.ActorConsole) {
+		t.Fatalf("declaredBy after a re-declare = %v, want %q", got, substrate.ActorConsole)
+	}
+}

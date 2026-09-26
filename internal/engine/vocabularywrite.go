@@ -1298,9 +1298,9 @@ const propPackageDeclaredBy = "declaredBy"
 // stamping a package created before the stamp would name whoever touched it
 // next, which is not who declared it. A transaction with no actor stamps
 // nothing rather than refuse the declaration, and so does a `package` kind
-// that does not declare the property: a repository still on a core older than
-// the stamp (a boot upgrade's first pass, a fixed pre-upgrade seed) validates
-// the row against that older kind, which would refuse it.
+// that does not declare the property: a repository whose shipped upgrade a
+// guard withheld, or a server seeded from an older tree as the upgrade drills
+// are, validates the row against that older kind, which would refuse it.
 func (t *txn) stampDeclaredBy(ty *vocabulary.Kind, d declaration, props map[string]any) error {
 	if ty == nil || ty.Props[propPackageDeclaredBy] == nil {
 		return nil
