@@ -39,6 +39,9 @@ func prManifest() enginetest.Manifest {
 						"author":  map[string]any{"type": "email"},
 						"state":   map[string]any{"type": "enum", "values": []any{"open", "closed"}},
 						"reviews": map[string]any{"type": "int"},
+						// A declared name the filter grammar reads as the
+						// record's own column, as the GitHub mirrors declare.
+						"updatedAt": map[string]any{"type": "datetime"},
 					},
 				}),
 			// A note ABOUT a person, which a writer may point at the pull
@@ -218,6 +221,13 @@ func TestAMappingWhereIsCheckedAtApply(t *testing.T) {
 		"an undeclared name":   {"status": map[string]any{"eq": "open"}},
 		"a bare value":         {"state": "open"},
 		"an unknown operator":  {"state": map[string]any{"is": "open"}},
+		"a record column name": {"updatedAt": map[string]any{"gte": "2026-01-01T00:00:00Z"}},
+		"eq null":              {"state": map[string]any{"eq": nil}},
+		"an empty in":          {"state": map[string]any{"in": []any{}}},
+		"eq null beside a real condition": {
+			"state":   map[string]any{"eq": "open"},
+			"reviews": map[string]any{"eq": nil},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

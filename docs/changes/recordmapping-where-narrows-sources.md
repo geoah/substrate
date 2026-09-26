@@ -6,10 +6,12 @@ type: feature
 
 A mapping may name which records of its source kind it covers, one filter
 condition object per declared source property. A record outside the `where`
-links and mints no subject and contributes nothing; one that leaves it
+links no subject and mints none, and contributes nothing; one that leaves it
 releases what it projected, and its subject is orphan-marked like one whose
 source was deleted. A bare value (`state: open`) is refused: write the
-condition object, as `filter.properties` takes it.
+condition object, as `filter.properties` takes it. A declared property named
+`createdAt`, `updatedAt`, `deletedAt`, `id` or `version`, and a condition that
+tests nothing (`eq: null`, `in: []`), are refused too.
 
 ```yaml
 kind: substrate.reamde.dev/core/recordmapping

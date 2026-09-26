@@ -248,6 +248,14 @@ one and never the mapping's own slot, and a bare value (`state: open`) is
 refused, as the filter refuses one. An operator that does not fit the type
 (`match` on a number, `gt` on a reference) fails the apply that declares it.
 
+Two things a list accepts are refused in a `where`. A declared property named
+`createdAt`, `updatedAt`, `deletedAt`, `id` or `version` is refused, because
+the filter grammar reads that name as the record's own column, which a
+`where` cannot read. A condition that tests nothing (`eq: null`, `in: []`, an
+empty `prefix`) is refused rather than dropped. Every apply compiles every
+`where` again, so a change to the source kind that breaks one (a retyped
+property it names) fails that apply.
+
 A record outside the `where` is treated as a deleted source is:
 
 - **Its own write resolves nothing.** It links no subject, mints none, and is

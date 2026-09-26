@@ -33,7 +33,13 @@ a one-row relation. It is the grammar every client already writes for
 `filter.properties`, so a condition means on a mapping exactly what it means
 on a list, including reference paths, the former-id trail and the operator
 refusals; a second language would drift from it, and CEL would be a third
-spelling of the same predicates.
+spelling of the same predicates. Two exceptions: a declared property named
+`createdAt`, `updatedAt`, `deletedAt`, `id` or `version`, which the grammar
+reads as the record's own column and the one-row relation does not carry, is
+refused; and a condition that compiles to no clause (`eq: null`, `in: []`) is
+refused where a list would ignore it. Every apply compiles every `where`
+again, since whether one compiles also depends on its `from` kind's
+declaration.
 
 A record outside the `where` is treated as a tombstoned source: its write
 resolves and mints no subject and is not marked ambiguous, recompute reads
@@ -56,6 +62,9 @@ not be written at all.
   recompute over such sources, pays one extra query per source row.
 - Bad, because a kept pointer means `linkedFrom` still lists a record the
   mapping no longer covers.
+- Bad, because merging a record a reference condition names extends its
+  former-id trail without a source write, so live offers and orphan marks can
+  differ from what a rebuild derives until that source is next written.
 
 ### Confirmation
 
@@ -67,5 +76,8 @@ recompute, the hop refusal, the apply-time compile check);
 ## More Information
 
 Reopen this if a `where` needs to read something other than the source row's
-own properties (another record, labels), or if the per-row query shows up in
-a sync's cost.
+own properties (another record, labels), if the per-row query shows up in
+a sync's cost, or if one mapping needs an OR of conditions: the conditions
+join with AND and one mapping per (source kind, target kind) still holds, so
+a review queue of "assigned OR shared OR awaiting review" cannot be one
+mapping.
