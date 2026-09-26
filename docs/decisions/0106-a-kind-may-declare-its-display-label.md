@@ -57,9 +57,11 @@ the retired `plural` key stays refused at the top of a declaration and in
   list shrinks to the fallback for kinds that declare no label.
 - Good: a provider author, who knows what the service calls a thing, writes
   the label beside the declaration.
-- Bad: one more dialect key. A binary older than this one quarantines a
-  closure that declares it (decision
-  [0020](0020-dialect-keys-are-reserved-not-tolerated.md)).
+- Bad: one more dialect key. A binary older than this one refuses a document
+  that declares it (decision
+  [0020](0020-dialect-keys-are-reserved-not-tolerated.md)). After a rollback,
+  the older binary reads stored rows through its own key set, drops `label`,
+  and serves those kinds without one.
 - Bad: labels are English only; nothing here localizes them.
 
 ### Confirmation

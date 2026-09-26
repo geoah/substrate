@@ -1,9 +1,6 @@
 package vocabulary
 
-import (
-	"strings"
-	"unicode/utf8"
-)
+import "strings"
 
 // A KIND MAY DECLARE ITS DISPLAY LABEL (decision record 0106). The kind's name
 // is an identifier (`conversation`, `contactgroup`), and some names read wrong
@@ -55,10 +52,14 @@ func (l *loader) parseKindLabel(where string, d map[string]any) KindLabel {
 }
 
 func (l *loader) labelForm(where string, m map[string]any, key string) string {
-	v, ok := m[key].(string)
+	raw, present := m[key]
+	v, ok := raw.(string)
 	s := strings.TrimSpace(v)
 	switch {
-	case !ok || s == "":
+	case present && !ok:
+		l.errf("%s: data.label.%s: must be a string, got %T", where, key, raw)
+		return ""
+	case s == "":
 		l.errf("%s: data.label.%s is required: a label declares both forms", where, key)
 		return ""
 	case s != v:
@@ -67,8 +68,9 @@ func (l *loader) labelForm(where string, m map[string]any, key string) string {
 	case strings.ContainsAny(s, "\n\r"):
 		l.errf("%s: data.label.%s: a short single-line caption, no newlines", where, key)
 		return ""
-	case utf8.RuneCountInString(s) > maxDisplayName:
-		l.errf("%s: data.label.%s: a short caption (at most %d chars), got %d", where, key, maxDisplayName, utf8.RuneCountInString(s))
+	case len(s) > maxDisplayName:
+		// Bytes, as parseDisplayName counts them: the same bound.
+		l.errf("%s: data.label.%s: a short caption (at most %d chars), got %d", where, key, maxDisplayName, len(s))
 		return ""
 	}
 	return s

@@ -11,13 +11,20 @@ shipped Slack `conversation` and `user`, Google `contactgroup` and
 `calendarseries`, and the four `*sync` state kinds declare one (decision
 record 0106).
 
+A client reads the kind list with
+`GET /api/v1/records?filter={"kinds":["substrate.reamde.dev/core/kind"]}` and
+finds the label on each declaration record at `properties.label`:
+
 ```json
 {
-  "identity": "providers.substrate.reamde.dev/slack/conversation",
-  "name": "conversation",
-  "label": {"singular": "Channel", "plural": "Channels"}
+  "id": "providers.substrate.reamde.dev/slack/conversation",
+  "properties": {
+    "label": {"singular": "Channel", "plural": "Channels"}
+  }
 }
 ```
 
-A client shows `label.plural` as the collection heading and `label.singular`
-for one record, and falls back to humanizing `name` when `label` is absent.
+`GET /api/v1/substrate.reamde.dev/core/trait/{id}/implementors` returns the
+flat `KindInfo` shape, with the label at top-level `label`. A client shows
+`label.plural` as the collection heading and `label.singular` for one record,
+and falls back to humanizing the kind's name when `label` is absent.
