@@ -125,4 +125,15 @@ describe("RecordBody", () => {
     await waitFor(() => expect(wire.writes).toHaveLength(1))
     expect((await screen.findByRole("status")).textContent).toContain("Saved")
   })
+
+  it("gives focus back to the body after Esc", () => {
+    renderBody(record("Old."))
+    fireEvent.click(screen.getByRole("button", { name: "Edit Details" }))
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Details" }), {
+      key: "Escape",
+    })
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Edit Details" })
+    )
+  })
 })

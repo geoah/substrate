@@ -201,3 +201,17 @@ describe("RecordHeader menu", () => {
     expect(nav.to[0]).toMatchObject({ params: { id: "copy1" } })
   })
 })
+
+describe("RecordHeader title", () => {
+  it("is edited from the keyboard, and focus comes back to it", () => {
+    renderHeader(rec())
+    const title = screen.getByRole("button", { name: /^Plan\s*, edit$/ })
+    expect(title.closest("h1")).not.toBeNull()
+    fireEvent.click(title)
+    const box = screen.getByRole("textbox", { name: "Name" })
+    fireEvent.keyDown(box, { key: "Escape" })
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: /^Plan\s*, edit$/ })
+    )
+  })
+})

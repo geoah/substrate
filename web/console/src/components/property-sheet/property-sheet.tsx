@@ -7,7 +7,7 @@
  * value came from, as does the label's hover card. Empty properties fold
  * into one line that expands. */
 
-import { useMemo, useState } from "react"
+import { useEffect, useId, useMemo, useRef, useState } from "react"
 import { ChevronDownIcon, ChevronRightIcon, LockIcon } from "lucide-react"
 
 import { InlineEditor } from "./inline-editor"
@@ -15,6 +15,7 @@ import { OwnershipChip, OwnershipDetail } from "./ownership"
 import { DeclaredValue, LooseValue } from "./property-value"
 import { editStyle, isBlockValue, propertyIcon } from "./sheet-model"
 import { ago } from "./dates"
+import { focusLost } from "./focus-return"
 import { sheetRows, type RowLock, type SheetRow } from "./sheet-rows"
 import { useRecordPatch, writeError } from "./use-record-patch"
 import {
@@ -36,9 +37,12 @@ const LOCK_WORDS: Record<RowLock, string> = {
 
 function Label({
   row,
+  id,
   onDetails,
 }: {
   row: SheetRow
+  /** The label text's id, which names the row's value cell. */
+  id: string
   /** Opens where the value came from, when the row has a holder. */
   onDetails?: () => void
 }) {
@@ -89,7 +93,9 @@ function Label({
     >
       <Icon aria-hidden className="size-3.5 shrink-0 text-faint" />
       <span className="flex min-w-0 flex-col leading-tight">
-        <span className="truncate">{row.spec.label}</span>
+        <span id={id} className="truncate">
+          {row.spec.label}
+        </span>
         {technical && row.spec.label !== row.name && (
           <span className="truncate font-mono text-[11px] text-faint">
             {row.name}
@@ -135,6 +141,18 @@ export function PropertySheet({
   const [open, setOpen] = useState<string[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const toggle = useRecordPatch(record)
+  const uid = useId()
+  const cells = useRef(new Map<string, HTMLElement>())
+  // An editor unmounts on save or cancel and takes focus with it; the cell
+  // that opened it takes it back, so Tab carries on from the row.
+  const last = useRef(editing)
+  useEffect(() => {
+    const prev = last.current
+    last.current = editing
+    if (prev && prev !== editing && focusLost()) {
+      cells.current.get(prev)?.focus({ preventScroll: true })
+    }
+  }, [editing])
   const toggleDetail = (name: string) =>
     setOpen((prev) =>
       prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
@@ -191,6 +209,7 @@ export function PropertySheet({
           (holders || departsFromDefault(row.meta))
         )
         const provenance = !isEditing && (locked || chip)
+        const editable = Boolean(row.field && !isEditing)
         return (
           <div
             key={row.name}
@@ -200,15 +219,22 @@ export function PropertySheet({
           >
             <Label
               row={row}
+              id={`${uid}-${row.name}-label`}
               onDetails={
                 row.meta?.manager ? () => toggleDetail(row.name) : undefined
               }
             />
             <div
-              role={row.field && !isEditing ? "button" : undefined}
-              tabIndex={row.field && !isEditing ? 0 : undefined}
-              aria-label={
-                row.field && !isEditing ? `Edit ${row.spec.label}` : undefined
+              ref={(el) => {
+                if (el) cells.current.set(row.name, el)
+                else cells.current.delete(row.name)
+              }}
+              role={editable ? "button" : undefined}
+              tabIndex={editable ? 0 : undefined}
+              aria-labelledby={
+                editable
+                  ? `${uid}-${row.name}-label ${uid}-${row.name}-value ${uid}-${row.name}-edit`
+                  : undefined
               }
               data-editing={isEditing || undefined}
               onClick={() => startEdit(row)}
@@ -227,7 +253,7 @@ export function PropertySheet({
                 !provenance && "sm:col-span-2",
                 row.field &&
                   !isEditing &&
-                  "cursor-text hover:bg-hover focus-visible:bg-hover",
+                  "cursor-text hover:bg-hover focus-visible:bg-hover focus-visible:ring-2 focus-visible:ring-ring",
                 !row.field && "cursor-default",
                 block && "flex-nowrap items-start py-1.5",
                 isEditing &&
@@ -246,14 +272,22 @@ export function PropertySheet({
                   onError={(m) => setError(row.name, m)}
                 />
               ) : (
-                <span
-                  className={cn(
-                    "inline-flex min-w-0 flex-wrap items-center gap-1.5",
-                    block && "flex-1"
+                <>
+                  <span
+                    id={`${uid}-${row.name}-value`}
+                    className={cn(
+                      "inline-flex min-w-0 flex-wrap items-center gap-1.5",
+                      block && "flex-1"
+                    )}
+                  >
+                    <Value row={row} />
+                  </span>
+                  {editable && (
+                    <span id={`${uid}-${row.name}-edit`} className="sr-only">
+                      , edit
+                    </span>
                   )}
-                >
-                  <Value row={row} />
-                </span>
+                </>
               )}
             </div>
             {provenance && (

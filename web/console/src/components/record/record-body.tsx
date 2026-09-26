@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react"
 import { CheckIcon } from "lucide-react"
 
+import { useFocusReturn } from "@/components/property-sheet/focus-return"
 import {
   useRecordPatch,
   writeError,
@@ -41,6 +42,8 @@ export function RecordBody({
   const patch = useRecordPatch(record)
   const busy = useRef(false)
   const editor = useRef<HTMLDivElement>(null)
+  const reader = useRef<HTMLDivElement>(null)
+  useFocusReturn(editing, reader)
 
   useEffect(() => {
     if (!saved) return undefined
@@ -131,6 +134,7 @@ export function RecordBody({
         </div>
       ) : (
         <div
+          ref={reader}
           role={readOnly ? undefined : "button"}
           tabIndex={readOnly ? undefined : 0}
           aria-label={readOnly ? undefined : `Edit ${spec.label}`}
@@ -155,7 +159,8 @@ export function RecordBody({
           }}
           className={cn(
             "-mx-2 rounded-md px-2 py-1 leading-[1.65] outline-none",
-            !readOnly && "cursor-text hover:bg-hover focus-visible:bg-hover"
+            !readOnly &&
+              "cursor-text hover:bg-hover focus-visible:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
           )}
         >
           {text ? (

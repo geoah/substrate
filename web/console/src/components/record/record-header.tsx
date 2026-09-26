@@ -21,6 +21,7 @@ import {
   useRecordPatch,
   writeError,
 } from "@/components/property-sheet/use-record-patch"
+import { useFocusReturn } from "@/components/property-sheet/focus-return"
 import { CopyButton } from "@/components/identity/copy-button"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { KindPath, KindRef } from "@/components/identity/kind-ref"
@@ -91,6 +92,8 @@ function Title({
   const [error, setError] = useState<string>()
   const patch = useRecordPatch(record)
   const busy = useRef(false)
+  const button = useRef<HTMLButtonElement>(null)
+  useFocusReturn(editing, button)
 
   async function save() {
     if (busy.current || !spec) return
@@ -151,25 +154,27 @@ function Title({
       </>
     )
   }
+  const shown = title || untitled(record.kind)
   return (
-    <h1
-      className={cn(
-        heading,
-        "mt-2.5 mb-1.5",
-        !title && "text-faint",
-        editable && "-mx-1 cursor-text rounded-md px-1 hover:bg-hover"
+    <h1 className={cn(heading, "mt-2.5 mb-1.5", !title && "text-faint")}>
+      {editable ? (
+        <button
+          ref={button}
+          type="button"
+          data-slot="record-title"
+          onClick={() => {
+            const stored = record.properties[name]
+            setText(typeof stored === "string" ? stored : title)
+            setEditing(true)
+          }}
+          className="-mx-1 w-[calc(100%+0.5rem)] cursor-text rounded-md px-1 text-left outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {shown}
+          <span className="sr-only">, edit</span>
+        </button>
+      ) : (
+        shown
       )}
-      onClick={
-        editable
-          ? () => {
-              const stored = record.properties[name]
-              setText(typeof stored === "string" ? stored : title)
-              setEditing(true)
-            }
-          : undefined
-      }
-    >
-      {title || untitled(record.kind)}
     </h1>
   )
 }

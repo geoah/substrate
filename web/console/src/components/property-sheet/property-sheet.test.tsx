@@ -383,6 +383,43 @@ describe("PropertySheet inline edit", () => {
   })
 })
 
+describe("PropertySheet from the keyboard", () => {
+  it("names a value cell by its label and value, and says it edits", () => {
+    renderSheet(record())
+    expect(
+      screen.getByRole("button", { name: /^Location\s+Lisbon\s*, edit$/ })
+    ).toBe(valueOf("location"))
+  })
+
+  it("gives focus back to the cell after Enter saves nothing and after Esc", () => {
+    renderSheet(record())
+    const cell = valueOf("location")!
+    cell.focus()
+    fireEvent.keyDown(cell, { key: "Enter" })
+    const box = screen.getByRole("textbox", { name: "Location" })
+    expect(document.activeElement).toBe(box)
+    fireEvent.keyDown(box, { key: "Enter" })
+    expect(document.activeElement).toBe(valueOf("location"))
+    fireEvent.keyDown(valueOf("location")!, { key: "Enter" })
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Location" }), {
+      key: "Escape",
+    })
+    expect(document.activeElement).toBe(valueOf("location"))
+  })
+
+  it("gives focus back to the cell after a save", async () => {
+    renderSheet(record())
+    fireEvent.keyDown(valueOf("location")!, { key: "Enter" })
+    const box = screen.getByRole("textbox", { name: "Location" })
+    fireEvent.change(box, { target: { value: "Porto" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    await waitFor(() =>
+      expect(document.activeElement).toBe(valueOf("location"))
+    )
+  })
+})
+
 describe("PropertySheet lists", () => {
   const listed = () =>
     record({
