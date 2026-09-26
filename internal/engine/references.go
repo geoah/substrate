@@ -320,6 +320,20 @@ func referenceAdmits(reg *vocabulary.Registry, p *vocabulary.Property, rt *vocab
 	return p.To == rt.Identity
 }
 
+// hopMappings lists the mappings from rt whose target a reference's pin
+// admits: the candidates the subject hop resolves a value of kind rt through.
+// More than one is an ambiguity the caller must refuse, never pick from.
+func hopMappings(reg *vocabulary.Registry, p *vocabulary.Property, rt *vocabulary.Kind) []*vocabulary.Mapping {
+	var admitted []*vocabulary.Mapping
+	for _, cand := range reg.MappingsFrom(rt.Identity) {
+		to, known := reg.ByIdentity(cand.To)
+		if known && referenceAdmits(reg, p, to) {
+			admitted = append(admitted, cand)
+		}
+	}
+	return admitted
+}
+
 // subjectHop is the ONE hop a pinned reference is allowed, and it exists because
 // a sync body holds a MIRROR and not the thing: google writes an emailaddress
 // path into a person-pinned reference, linear writes a user mirror into its
@@ -365,13 +379,7 @@ func (t *txn) subjectHop(p *vocabulary.Property, target eref, rt *vocabulary.Kin
 	// of a mirror's targets means the value names one record and the
 	// declaration means either, so it is refused naming both mappings rather
 	// than resolved by load order.
-	var admitted []*vocabulary.Mapping
-	for _, cand := range t.declarations().MappingsFrom(rt.Identity) {
-		to, known := t.declarations().ByIdentity(cand.To)
-		if known && referenceAdmits(t.declarations(), p, to) {
-			admitted = append(admitted, cand)
-		}
-	}
+	admitted := hopMappings(t.declarations(), p, rt)
 	if len(admitted) == 0 {
 		return eref{}, mismatch()
 	}

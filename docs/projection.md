@@ -119,6 +119,33 @@ itself to one provider, is left dangling when that provider is uninstalled,
 and is not carried by a merge. Pin the mirror when the relation IS the
 provider's — inside its own package — and the subject everywhere else.
 
+**A mapping carries a relation the same way.** A map rule copies a mirror
+reference as it is, and the target's pin decides what is stored
+([decision record 0106](decisions/0106-a-map-rule-reaches-a-mirrors-subject-through-the-targets-pin.md)).
+This rule, in the package that owns `task`, gives a GitHub issue's task its
+assignee:
+
+```yaml
+  from: providers.substrate.reamde.dev/github/issue
+  to: <authority>/tasks/task
+  property: task
+  map:
+    name:
+      path: issueTitle
+    assignee:                      # pinned at person on task
+      path: assignee               # a github/user reference on the issue
+```
+
+The recompute writes the `github/user` reference into the person-pinned
+`assignee`, and the subject hop stores that user's person. A user with no
+person yet gets one, as any hop does. The offer behind the value names the
+person too, so a read shows no alternative. A repeated source onto a repeated
+target (`assignees` onto a `person[]` slot) resolves each item, and two users
+of one person are one entry. A path never crosses a reference:
+`assignees[].person` is refused, naming this spelling. The value follows the
+user's person when the ISSUE is next written. Moving the user to another
+person (a split) leaves the task on the old one until then.
+
 **A `match` probe reads the source record's own values**, so it needs a value
 and not a pointer: a source that declares its email addresses as references
 cannot probe them onto `person.emails`, because what the row holds there is a

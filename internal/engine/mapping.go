@@ -663,7 +663,7 @@ func (t *txn) syncOffersOf(target eref) error {
 	if err != nil || in == nil {
 		return err
 	}
-	return t.syncOffers(target, in.props, in.unionProp, in.srcs)
+	return t.syncOffers(target, in)
 }
 
 // recompute recomputes targetID's mapped properties from its live sources.
@@ -697,7 +697,7 @@ func (t *txn) recomputeValues(target eref) error {
 
 	// Offers first, accepted or yielded: one row per (property,
 	// actor), so a held value's alternatives are visible on every read.
-	if err := t.syncOffers(target, in.props, in.unionProp, in.srcs); err != nil {
+	if err := t.syncOffers(target, in); err != nil {
 		return err
 	}
 
@@ -712,7 +712,10 @@ func (t *txn) recomputeValues(target eref) error {
 		if m, held := managers[name]; held && m.tier != substrate.TierMachine {
 			continue // yield: the offer above is the whole record of it
 		}
-		cands := contributionsFor(name, in.srcs)
+		cands, err := t.throughSubjects(in.ty, name, contributionsFor(name, in.srcs))
+		if err != nil {
+			return err
+		}
 		if tp := in.probed[name]; tp != nil {
 			if cands, err = t.withheldElsewhere(in.row, tp, cands); err != nil {
 				return err
@@ -1062,6 +1065,88 @@ func contributionsFor(name string, srcs []mappedSource) []contribution {
 	return out
 }
 
+// throughSubjects reads each reference a contribution carries the way the
+// target property's pin will store it (#580). A map rule copying a MIRROR
+// reference (`issue.assignee` at `github/user`) onto a slot pinned at the
+// mirror's subject kind (`task.assignee` at `person`) is resolved by the
+// subject hop when recompute writes it (references.go subjectHop), so the
+// stored value names the person. The offer has to name the person too: an
+// offer is compared with the stored value on every read (query.go), and one
+// still spelling the mirror reads as an alternative the same source never
+// offered.
+//
+// It READS the mirror's stored subject and never mints, because the offers
+// half also runs on a rebuild, which must append nothing
+// (rebuild.go rederiveOffers). A mirror with no subject yet stays as written,
+// and the write's own hop resolves it. Items that land on one subject collapse
+// to one, since a repeated reference holds each record once.
+func (t *txn) throughSubjects(ty *vocabulary.Kind, name string, cands []contribution) ([]contribution, error) {
+	tp, ok := ty.Props[name]
+	if !ok || tp.Datatype != vocabulary.DatatypeReference || len(cands) == 0 {
+		return cands, nil
+	}
+	reg := t.declarations()
+	resolve := func(item any) (any, error) {
+		kind, id, ok := vocabulary.SplitRecordPath(referencePathOf(item))
+		if !ok {
+			return item, nil
+		}
+		// An unknown kind is left for the write to refuse, in its own words.
+		rt, known := reg.ByIdentity(kind)
+		if !known || referenceAdmits(reg, tp, rt) {
+			return item, nil
+		}
+		hops := hopMappings(reg, tp, rt)
+		if len(hops) != 1 {
+			return item, nil
+		}
+		subject, err := t.subjectTargetOf(eref{Kind: rt.Identity, ID: id}, hops[0].Property)
+		if err != nil || subject.ID == "" {
+			return item, err
+		}
+		out := referenceValueOf(vocabulary.RecordPath(subject.Kind, subject.ID))
+		if m, ok := item.(map[string]any); ok {
+			for k, v := range m {
+				if k != vocabulary.ReferenceValueKey {
+					out[k] = v
+				}
+			}
+		}
+		return out, nil
+	}
+	out := make([]contribution, 0, len(cands))
+	for _, c := range cands {
+		items, isList := c.value.([]any)
+		if !isList {
+			v, err := resolve(c.value)
+			if err != nil {
+				return nil, err
+			}
+			c.value = v
+			out = append(out, c)
+			continue
+		}
+		seen := map[string]bool{}
+		kept := make([]any, 0, len(items))
+		for _, item := range items {
+			v, err := resolve(item)
+			if err != nil {
+				return nil, err
+			}
+			if path := referencePathOf(v); path != "" {
+				if seen[path] {
+					continue
+				}
+				seen[path] = true
+			}
+			kept = append(kept, v)
+		}
+		c.value = kept
+		out = append(out, c)
+	}
+	return out, nil
+}
+
 // selectValue applies the selection to one property's ordered candidates:
 // atomic takes the first candidate whole, union takes the deduped
 // concatenation of every candidate's items, attributed to the first
@@ -1118,9 +1203,10 @@ func selectValue(union bool, cands []contribution) (any, string) {
 // is that record's path: both are a function of the live records exactly as
 // the value is, so a rebuild, which derives the table again (rebuild.go
 // rederiveOffers), reproduces them.
-func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool, srcs []mappedSource) error {
+func (t *txn) syncOffers(target eref, in *mappedInputs) error {
+	srcs, unionProp := in.srcs, in.unionProp
 	current := map[offerKey]offer{}
-	for _, name := range props {
+	for _, name := range in.props {
 		actors := map[string]bool{}
 		for _, s := range srcs {
 			if actors[s.actor] {
@@ -1132,7 +1218,10 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 					mine = append(mine, x)
 				}
 			}
-			cands := contributionsFor(name, mine)
+			cands, err := t.throughSubjects(in.ty, name, contributionsFor(name, mine))
+			if err != nil {
+				return err
+			}
 			if v, _ := selectValue(unionProp[name], cands); v != nil {
 				// cands[0] is the latest source CARRYING the path. For a union
 				// property it may carry an empty list and contribute no item,

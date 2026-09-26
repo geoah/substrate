@@ -404,6 +404,15 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 		mwhere := fmt.Sprintf("%s: data.map.%s", where, tname)
 		sp, repeated, err := PathProperty(from, rule.Path)
 		if err != nil {
+			if ref, ok := from.Props[rule.Path.Prop]; ok && rule.Path.Field != "" && ref.Datatype == DatatypeReference {
+				// A path never crosses a reference (#580). The relation it
+				// reaches for is already expressible: copy the reference, and
+				// a target slot pinned at the mirror's subject kind stores the
+				// subject through the hop (record 0106).
+				errf("%s: %s.%s is a reference, and a path never crosses one: map {path: %s} onto a reference pinned at the kind you want, and a mirror resolves to its subject when the value is written",
+					mwhere, from.Identity, rule.Path.Prop, rule.Path.Prop)
+				continue
+			}
 			errf("%s: %v", mwhere, err)
 			continue
 		}
