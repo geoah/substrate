@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -131,6 +132,23 @@ func TestShippedBundlesInstall(t *testing.T) {
 	for _, b := range c.Bundles() {
 		install(b)
 	}
+	// Taking every one of them again changes nothing: no shipped closure
+	// differs from the rows its first install wrote (issue #643).
+	head, err := ds.Head(ctx)
+	if err != nil {
+		t.Fatalf("head: %v", err)
+	}
+	for _, b := range c.Bundles() {
+		if _, _, err := c.Install(ctx, substrate.ActorAPI, b.ID, ds); err != nil {
+			t.Fatalf("re-install %s: %v", b.ID, err)
+		}
+		if after, err := ds.Head(ctx); err != nil {
+			t.Fatalf("head: %v", err)
+		} else if after != head {
+			t.Errorf("re-installing the unchanged %s moved the changelog head %d -> %d", b.ID, head.Seq, after.Seq)
+			head = after
+		}
+	}
 	for _, b := range c.Bundles() {
 		st, err := ds.(bundleStatuser).BundleStatus(ctx, b.ID)
 		if err != nil {
@@ -224,9 +242,15 @@ func TestInstallLandsClosureAndIsIdempotent(t *testing.T) {
 	}
 
 	// Re-install is the bundle's own whole-authority re-apply: idempotent, no
-	// error, and nothing new appears.
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, rlBundleID, ds); err != nil {
-		t.Fatalf("re-install: %v", err)
+	// error, and nothing new appears. An unchanged closure writes nothing, so
+	// neither the package nor any kind moves its version, however many times
+	// it is taken (issue #643).
+	before := closureVersions(t, ds, b)
+	for i := 2; i <= 3; i++ {
+		if _, _, err := c.Install(ctx, substrate.ActorAPI, rlBundleID, ds); err != nil {
+			t.Fatalf("install %d: %v", i, err)
+		}
+		assertVersionsKept(t, fmt.Sprintf("install %d", i), before, closureVersions(t, ds, b))
 	}
 	st2, err := ds.(bundleStatuser).BundleStatus(ctx, rlBundleID)
 	if err != nil {
@@ -343,5 +367,74 @@ func TestInstallRefusesNonOwner(t *testing.T) {
 	// Refused before anything is touched: the closure's types never appeared.
 	if _, err := ds.KindByRef(ctx, "samples.substrate.reamde.dev/readinglist/digest"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Errorf("type present after a refused install: %v", err)
+	}
+}
+
+// closureVersions reads the stored version of a bundle's owned package and of
+// every kind its closure declares, keyed by declaration id.
+func closureVersions(t *testing.T, ds substrate.Dataset, b *catalog.Bundle) map[string]int64 {
+	t.Helper()
+	ctx := context.Background()
+	st, err := ds.(bundleStatuser).BundleStatus(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("bundle status %s: %v", b.ID, err)
+	}
+	out := map[string]int64{"package " + b.ID: st.Version}
+	for _, ref := range b.Closure.Kinds {
+		k, err := ds.KindByRef(ctx, ref)
+		if err != nil {
+			t.Fatalf("kind %s: %v", ref, err)
+		}
+		out["kind "+ref] = k.Version
+	}
+	return out
+}
+
+// assertVersionsKept fails for every declaration whose version moved.
+func assertVersionsKept(t *testing.T, step string, before, after map[string]int64) {
+	t.Helper()
+	for id, v := range before {
+		if after[id] != v {
+			t.Errorf("%s: %s version = %d, want %d", step, id, after[id], v)
+		}
+	}
+}
+
+// Taking an unchanged PROVIDER again is a no-op (issue #643): the closure
+// equals the stored one, so the install appends nothing to the changelog and
+// every declaration keeps the version the first install landed, which is the
+// shipped one. A tool may install on every run to stay current.
+func TestReinstallingAnUnchangedProviderWritesNothing(t *testing.T) {
+	ds := newDataset(t)
+	c := loadCatalog(t)
+	ctx := context.Background()
+	const id = "providers.substrate.reamde.dev/whoop"
+	b, ok := c.ByID(id)
+	if !ok {
+		t.Fatalf("the shipped catalog no longer carries %s", id)
+	}
+	if _, _, err := c.Install(ctx, substrate.ActorAPI, id, ds); err != nil {
+		t.Fatalf("install 1: %v", err)
+	}
+	first := closureVersions(t, ds, b)
+	if got := first["package "+id]; got != b.Version {
+		t.Errorf("install 1: package version = %d, want the shipped %d", got, b.Version)
+	}
+	head, err := ds.Head(ctx)
+	if err != nil {
+		t.Fatalf("head: %v", err)
+	}
+	for i := 2; i <= 3; i++ {
+		if _, _, err := c.Install(ctx, substrate.ActorAPI, id, ds); err != nil {
+			t.Fatalf("install %d: %v", i, err)
+		}
+		assertVersionsKept(t, fmt.Sprintf("install %d", i), first, closureVersions(t, ds, b))
+		after, err := ds.Head(ctx)
+		if err != nil {
+			t.Fatalf("head: %v", err)
+		}
+		if after != head {
+			t.Errorf("install %d moved the changelog head %+v -> %+v", i, head, after)
+		}
 	}
 }
