@@ -1,7 +1,7 @@
 /** A record's history as sentences: who did what, newest first, with what
  * each change did to the values ("Priority  High → Urgent", "Emails  +
  * grace@example.com"). The server derives each before and after when asked
- * (decision 0106); against one that predates it, a row falls back to the
+ * (decision 0108); against one that predates it, a row falls back to the
  * names of what moved (a state's new value rides beside them).
  *
  * Two honesty rules hold (owner redline, 2026-08-06):

@@ -11,7 +11,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// Before and after values on a change row (decision 0107): asked for with
+// Before and after values on a change row (decision 0108): asked for with
 // ChangeFilter.Values, each affected record names what the entry did to each
 // property, the before derived from the changelog and the after from the
 // entry, both as a read of the record renders them.

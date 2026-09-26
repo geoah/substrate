@@ -804,7 +804,7 @@ var typeDataKeys = map[string]bool{
 	// live reference at them.
 	"movedFrom": true,
 	// `purpose` is why the kind exists — primary, supporting or internal
-	// (decision 0105): validated and stored, read by clients deciding what
+	// (decision 0106): validated and stored, read by clients deciding what
 	// to list, and acted on by nothing server-side.
 	"purpose": true,
 }

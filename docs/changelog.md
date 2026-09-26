@@ -142,7 +142,7 @@ before entries held values, a history with no creation, or a previous write
 further back than the read's budget of 4096 earlier entries, which every
 record on the page shares) the property carries `"beforeUnknown": true` and
 no `before`, which is not the same as "there was none"
-([decision 0107](decisions/0107-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md)).
+([decision 0108](decisions/0108-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md)).
 The walk costs a read per record on the page, so a client that does not ask
 pays nothing and gets the same rows without `properties`. Every mode of
 `/changes` honours it: the history page, the forward read and the watch.

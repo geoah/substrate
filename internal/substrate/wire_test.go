@@ -75,7 +75,7 @@ var wireTypes = map[string]any{
 	// The public change event nested in a Change (decision 0061): the console
 	// renders it in place of the replay effects it used to decode.
 	"AffectedRecord": AffectedRecord{},
-	// One property's before and after on an affected record (decision 0107),
+	// One property's before and after on an affected record (decision 0108),
 	// what the console's History sentences say.
 	"PropertyChange": PropertyChange{},
 	// The list envelope: the console hands its `head` and `generation` to the

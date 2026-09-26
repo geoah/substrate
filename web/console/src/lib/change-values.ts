@@ -1,6 +1,6 @@
 /** What a change did to each property, in values: "Priority: High → Urgent",
  * "+ grace@example.com". The server derives each before and after
- * (`affected[].properties`, decision 0106) when a read asks with `values=1`;
+ * (`affected[].properties`, decision 0108) when a read asks with `values=1`;
  * a server that predates it sends names alone, and every helper here answers
  * `undefined` so the caller falls back to them. Pure. */
 

@@ -803,26 +803,47 @@ func (ds *dataset) quarantinedBundleStatuses(ctx context.Context) ([]substrate.B
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-	var out []substrate.BundleStatus
-	for rows.Next() {
-		var id, reason, origin, digest string
-		var rawVersion []byte
-		if err := rows.Scan(&id, &reason, &origin, &rawVersion, &digest); err != nil {
-			return nil, err
+	// The rows are read whole and closed before any stamp: the stamp reads
+	// the closure digest, and a read made while the rows hold their
+	// connection needs a second one from the shared pool.
+	type quarantinedRow struct {
+		st             substrate.BundleStatus
+		origin, digest string
+		rawVersion     []byte
+	}
+	var found []quarantinedRow
+	func() {
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var id, reason, origin, digest string
+			var rawVersion []byte
+			if err = rows.Scan(&id, &reason, &origin, &rawVersion, &digest); err != nil {
+				return
+			}
+			authority, name := vocabulary.SplitPackageRef(id)
+			found = append(found, quarantinedRow{
+				st: substrate.BundleStatus{
+					ID: id, Name: name, Authority: authority, Package: name,
+					Installed: false, Enabled: false,
+					Quarantined: true, QuarantineReason: reason,
+				},
+				origin: origin, digest: digest, rawVersion: rawVersion,
+			})
 		}
-		authority, name := vocabulary.SplitPackageRef(id)
-		st := substrate.BundleStatus{
-			ID: id, Name: name, Authority: authority, Package: name,
-			Installed: false, Enabled: false,
-			Quarantined: true, QuarantineReason: reason,
-		}
-		if err := ds.applyOriginStamp(ctx, &st, origin, rawVersion, digest); err != nil {
+		err = rows.Err()
+	}()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]substrate.BundleStatus, 0, len(found))
+	for _, r := range found {
+		st := r.st
+		if err := ds.applyOriginStamp(ctx, &st, r.origin, r.rawVersion, r.digest); err != nil {
 			return nil, err
 		}
 		out = append(out, st)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // packageOrigin reads the provenance a SAMPLE import stamped on the package
@@ -830,7 +851,7 @@ func (ds *dataset) quarantinedBundleStatuses(ctx context.Context) ([]substrate.B
 // (a provider, a hand apply, a copy imported before the stamp) leaves all
 // three zero.
 func (ds *dataset) packageOrigin(ctx context.Context, pkg string, st *substrate.BundleStatus) error {
-	stamp, err := ds.packageStamp(ctx, pkg)
+	stamp, err := ds.packageStamp(ctx, ds.db, pkg)
 	if err != nil {
 		return err
 	}
@@ -849,9 +870,9 @@ type originStamp struct {
 // packageStamp reads the stamp off one package row. The bundle status, the
 // upgrade preview and the door's edited-copy check all read it here, so the
 // three cannot disagree about what a copy claims.
-func (ds *dataset) packageStamp(ctx context.Context, pkg string) (originStamp, error) {
+func (ds *dataset) packageStamp(ctx context.Context, q dbx, pkg string) (originStamp, error) {
 	var s originStamp
-	err := ds.db.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 		SELECT COALESCE(props->>$3, ''), props->$4, COALESCE(props->>$5, '')
 		FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`,
 		kindPackage, pkg, propPackageOrigin, propPackageOriginVersion, propPackageOriginDigest,
@@ -879,7 +900,7 @@ func (ds *dataset) applyOriginStamp(ctx context.Context, st *substrate.BundleSta
 		return err
 	}
 	st.Origin, st.OriginVersion = origin, version
-	current, err := ds.packageClosureDigest(ctx, st.ID)
+	current, err := ds.packageClosureDigest(ctx, ds.db, st.ID)
 	if err != nil {
 		return err
 	}

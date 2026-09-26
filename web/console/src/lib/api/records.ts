@@ -308,7 +308,7 @@ const PROBE_MAX = 1 << 17
 /** Count a collection without reading it.
  *
  * The list answers the size of its filtered set when asked (`count=1`,
- * decision 0105): one read of one row, and the number is exact. A server
+ * decision 0107): one read of one row, and the number is exact. A server
  * that predates the parameter refuses it by name (`400`: the list refuses
  * every parameter it does not know), and a window read refuses it too, since
  * computed occurrences are not rows; either way, and on a `200` that carries

@@ -318,7 +318,7 @@ func TestSchemaEvolutionReservedKeysRoundTrip(t *testing.T) {
 			vocabulary.PackageManifest(evoPackage, 0),
 			vocabulary.KindManifest(evoPackage,
 				map[string]any{"singular": "gizmo"},
-				// A kind's purpose (record 0105) is a kind-level key, so its row
+				// A kind's purpose (record 0106) is a kind-level key, so its row
 				// property is core/kind's own `purpose` enum, not a property of
 				// the kind it describes.
 				map[string]any{"properties": props, "purpose": vocabulary.PurposeSupporting}),

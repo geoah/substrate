@@ -108,7 +108,7 @@ data:
       type: string
       description: the kind reference this kind used to be spelled as; admitting
         it moves the old kind's live rows here and repoints every reference
-    # Why this kind exists (decision record 0104). Authored, and advisory:
+    # Why this kind exists (decision record 0106). Authored, and advisory:
     # the loader holds the three values, clients read it to decide what they
     # list, and nothing on the server filters or refuses by it. Absent reads
     # as primary, so a kind nobody classified is still listed; the default is

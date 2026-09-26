@@ -302,7 +302,7 @@ export interface AffectedRecord {
   version?: number
   deleted?: boolean
   /** What the entry did to each property, before and after, in name order.
-   * Only on a read that asked (`values=1`, decision 0106) from a server that
+   * Only on a read that asked (`values=1`, decision 0108) from a server that
    * knows it; absent otherwise, so its absence is never "nothing changed". */
   properties?: PropertyChange[]
 }
@@ -679,7 +679,7 @@ export interface BundleClosure {
    * kinds ARE before an install has put them in the registry. Absent for a
    * kind that declares none, and from an older server whole. */
   kindDescriptions?: Record<string, string>
-  /** Each kind's declared `purpose` (decision record 0104), keyed the same
+  /** Each kind's declared `purpose` (decision record 0106), keyed the same
    * way. Absent for a kind that declares none, which reads as primary, and
    * from an older server whole. */
   kindPurposes?: Record<string, string>
@@ -754,10 +754,11 @@ export interface ConversionPlan {
    * a ConversionConfirm naming `planHash` and `changelogSeq`; the console
    * asks before it sends one. The old values stay in the changelog. */
   lossy: boolean
-  /** A hash over the steps and their counts; absent when nothing is planned. */
+  /** A hash over the steps and their counts, the records they rewrite and the
+   * declarations they convert; absent when nothing is planned. */
   planHash?: string
-  /** The changelog head the plan was counted at; any write moves it and
-   * invalidates a confirmation. */
+  /** The changelog head the plan was counted at. It dates the preview; a
+   * write elsewhere moves it without invalidating a confirmation. */
   changelogSeq?: number
 }
 
@@ -780,8 +781,10 @@ export interface ConversionStep {
 }
 
 /** Consent to a lossy plan (substrate.ConversionConfirm), bound to the preview
- * it was read from: the server refuses it once the changelog moved
- * (`conflict`) or when the plan it recounts hashes differently (`lossy`). */
+ * it was read from: the server refuses it when the plan it recounts hashes
+ * differently, because a record the plan rewrites or a declaration it converts
+ * was written since, or when `changelogSeq` is past the head; both answer
+ * `409 conflict`, and the way through is a fresh preview. */
 export interface ConversionConfirm {
   planHash: string
   changelogSeq: number

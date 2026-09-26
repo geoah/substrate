@@ -45,7 +45,7 @@ export interface ChangeFeedFilter {
   /** Case-insensitive substring over kind, actor, record id, payload text. */
   q?: string
   /** Ask for each affected record's before and after property values
-   * (`values=1`, decision 0106). It narrows nothing. A server that predates
+   * (`values=1`, decision 0108). It narrows nothing. A server that predates
    * it refuses the parameter; the read then retries without it and the rows
    * carry names alone. */
   values?: boolean

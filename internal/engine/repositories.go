@@ -194,12 +194,12 @@ func assertPoolPrincipal(ctx context.Context, db *sql.DB, wantRole string, wantB
 	return nil
 }
 
-// assertAppPoolPrincipal opens a throwaway scoped pool — the exact shape every
-// request rides — and asserts its principal is substrate_app, not a superuser
-// and not bypassing RLS. The scoped pools open lazily per repository, so this
-// is the boot-time proof that the one they will run as is safe.
+// assertAppPoolPrincipal takes a throwaway scoped handle on the shared
+// repository pool (the exact shape every request rides) and asserts its
+// principal is substrate_app, not a superuser and not bypassing RLS. This is
+// the boot-time proof that what every repository runs as is safe.
 func (s *service) assertAppPoolPrincipal(ctx context.Context) error {
-	probe, err := openPool(s.dsn, "_principal_probe", s.appRole)
+	probe, err := s.scopedDB(Scope{Repository: "_principal_probe"})
 	if err != nil {
 		return err
 	}

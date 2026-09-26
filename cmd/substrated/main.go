@@ -108,8 +108,32 @@ func run() error {
 		return err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancelCause := context.WithCancelCause(context.Background())
+	cancel := func() { cancelCause(nil) }
 	defer cancel()
+
+	// SIGNALS ARE HEARD FROM HERE, not from the listener on. engine.Open runs
+	// the boot check, and a boot that imports a long repository directory
+	// takes minutes; a SIGTERM left to its default action ends the import
+	// with nothing in the log, and the next boot's "resuming an interrupted
+	// import" has no cause beside it. The first signal during the boot
+	// cancels it, logged, so the boot check names the repository it stopped
+	// on; a second one takes the default action, for a boot that does not
+	// return promptly.
+	stopCh := make(chan os.Signal, 1)
+	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM)
+	booted := make(chan struct{})
+	go func() {
+		select {
+		case sig := <-stopCh:
+			signal.Stop(stopCh)
+			slog.Warn("boot interrupted before the listener was up; the next boot resumes it",
+				"signal", sig.String(), "action", "interrupted")
+			cancelCause(fmt.Errorf("signal %s", sig))
+		case <-booted:
+		}
+	}()
+	go bootHeartbeat(slog.Default(), booted, bootHeartbeatEvery)
 
 	// There is no embedder here, and no LLM gateway either. Both are a
 	// REPOSITORY's data: an llm/provider row names the endpoint, the key and
@@ -132,6 +156,7 @@ func run() error {
 		engine.WithCredentialKey(cfg.CredentialKey),
 		engine.WithBlobStore(blobs),
 		engine.WithConversionCeiling(cfg.ConversionCeiling),
+		engine.WithRepositoryConnections(cfg.RepositoryConnections),
 		engine.WithOrphanCollection(cfg.OrphanGrace),
 	}
 	if cfg.OrphanGrace > 0 {
@@ -157,7 +182,12 @@ func run() error {
 		opts = append(opts, engine.WithInsecureDisableTOTP())
 	}
 	svc, err := engine.Open(ctx, cfg.DatabaseURL, opts...)
+	close(booted)
 	if err != nil {
+		if ctx.Err() != nil {
+			// The signal above, already logged: a shutdown, not a fault.
+			return nil
+		}
 		return err
 	}
 	defer func() { _ = svc.Close() }()
@@ -240,13 +270,14 @@ func run() error {
 		errCh <- httpSrv.ListenAndServe()
 	}()
 
-	stopCh := make(chan os.Signal, 1)
-	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM)
 	select {
 	case err := <-errCh:
 		return err
 	case sig := <-stopCh:
 		slog.Info("shutting down", "signal", sig.String())
+	case <-ctx.Done():
+		// A signal that landed as the boot returned.
+		slog.Info("shutting down", "cause", context.Cause(ctx).Error())
 	}
 	cancel()
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -255,6 +286,31 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+// bootHeartbeatEvery is how often a boot that has not reached the listener
+// logs that it is still running. The schema migrations and the boot check's
+// import log nothing while they work, and a first boot on a new database
+// beside a long data root spends minutes there, so the heartbeat is how a
+// waiter tells a slow boot from a hung one. .mise/dev.sh's readiness poll
+// stops a server whose log has been silent for 30 s: keep this well under it.
+const bootHeartbeatEvery = 10 * time.Second
+
+// bootHeartbeat logs, every `every` until done is closed, that the boot is
+// still running and for how long.
+func bootHeartbeat(log *slog.Logger, done <-chan struct{}, every time.Duration) {
+	begun := time.Now()
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-t.C:
+			log.Info("still booting: the listener opens when the migrations and the boot check finish",
+				"elapsed", time.Since(begun).Round(time.Second).String())
+		}
+	}
 }
 
 func loop(ctx context.Context, name string, every time.Duration, fn func(context.Context)) {

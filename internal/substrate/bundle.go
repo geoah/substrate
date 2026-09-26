@@ -128,12 +128,16 @@ type ConversionPlan struct {
 	// unconfirmed. The old values stay in the changelog either way: a lossy
 	// step removes them from the fold and nothing erases them.
 	Lossy bool `json:"lossy"`
-	// PlanHash identifies the plan: a hash over the steps and their counts.
-	// Empty when nothing was planned.
+	// PlanHash identifies the plan: a hash over the steps and their counts,
+	// the id and version of every record a step rewrites, and the stored
+	// declaration of every kind a step converts, for a lossy plan within the
+	// ceiling; the steps alone otherwise, since nothing else is confirmed. A
+	// write to any of those changes it; a write anywhere else does not. Empty
+	// when nothing was planned.
 	PlanHash string `json:"planHash,omitempty"`
 	// ChangelogSeq is the repository's changelog head when the plan was
-	// counted. Any write moves it, and a confirmation carrying another seq is
-	// refused.
+	// counted. It dates the preview and binds nothing: a confirmation is
+	// refused only when its seq is past the head.
 	ChangelogSeq int64 `json:"changelogSeq,omitempty"`
 }
 
@@ -191,8 +195,9 @@ const (
 // ConversionConfirm is the caller's consent to a lossy plan, bound to what
 // was previewed: the plan's hash and the changelog head it was counted at.
 // The door recounts the plan under its locks and refuses a confirmation whose
-// seq is not the current head (a write landed since the preview) or whose
-// hash is not the recounted plan's (the consent covers a different plan).
+// hash is not the recounted plan's (the consent covers a different plan, or a
+// record or declaration the plan affects was written since the preview) or
+// whose seq is past the current head (no preview here counted it).
 type ConversionConfirm struct {
 	PlanHash     string `json:"planHash"`
 	ChangelogSeq int64  `json:"changelogSeq"`

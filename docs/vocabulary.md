@@ -196,6 +196,10 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   nothing and hand the next alternative its turn, which is what lets a mirror
   whose provider sends arrays title itself
   ([decision record 0086](decisions/0086-the-head-of-a-repeated-source-is-spelled-with-brackets.md)).
+  A state property renders the state the record is in (`{status}` is `open`),
+  an instant renders as the RFC 3339 value a read returns, and a declared
+  `body` renders its text, though all three live outside the record's other
+  properties.
   Every token is checked against the kind's own declarations at load, so a typo
   fails on the manifest and not as an empty title: a `[]` head that is not
   repeated is refused naming the plain spelling, and a sensitive property never
@@ -517,9 +521,15 @@ counts, is **lossy**
 without writing: every step with the live records it touches, `work`, `lossy`,
 a `planHash` and the `changelogSeq` it was counted at. The apply then takes
 `confirm: {planHash, changelogSeq}` beside `documents`; without it a lossy
-batch is refused with the `lossy` code, and a confirmation is refused after
-any write since the preview (`conflict`) or for a plan that recounts to
-another hash. A lossless plan (renames, backfills, state entries, remaps onto
+batch is refused with the `lossy` code. The hash covers the steps and their
+counts, the id and version of every record a step rewrites, and the stored
+declaration of every kind a step converts, so a confirmation is refused
+(`conflict`, preview again) when the plan recounts to another hash: another batch, or a write since the
+preview to a record the plan rewrites or to a declaration it converts. A write
+to any other record, the same kind's included, leaves it standing
+([decision 0105](decisions/0105-a-lossy-confirmation-binds-to-what-the-plan-affects.md)).
+The `changelogSeq` dates the preview, and one past the head is refused
+(`conflict`). A lossless plan (renames, backfills, state entries, remaps onto
 new values) runs unconfirmed. `substratectl apply --allow-data-loss` previews first,
 prints the steps and confirms exactly that hash; the console's Providers page asks
 before a lossy upgrade. The boot upgrade of the shipped tree has nobody to
@@ -667,7 +677,7 @@ and the marker is what makes the deprecated half tellable from the live one. A
 both stop offering a value and refuse to submit without it.
 
 **`purpose:` says why a kind exists**
-([record 0105](decisions/0105-a-kind-declares-its-purpose.md)). It sits on the
+([record 0106](decisions/0106-a-kind-declares-its-purpose.md)). It sits on the
 kind, beside `names:`, and takes one of three values:
 
 ```yaml

@@ -300,7 +300,7 @@ func TestEveryKindDeclaresADisplayTemplate(t *testing.T) {
 }
 
 // A SHIPPED KIND'S PURPOSE IS ONE OF THE THREE, AND THE SEED IS MACHINERY
-// (decision record 0104). The loader already refuses any other value; this
+// (decision record 0106). The loader already refuses any other value; this
 // reads the documents so the rule holds for every file in both trees, and adds
 // the one the loader cannot know: a seeded kind is the substrate's own
 // machinery, so an unclassified core or llm kind would read as primary and

@@ -452,7 +452,7 @@ export function LossyUpgradeDialog({
             } and removes some values from them. ` +
             `The removed values stay in History. `
           : "") +
-        `This confirms exactly the plan below. If anything is written before it lands, the plan is read again.`
+        `This confirms exactly the plan below. If a record or collection it changes is written before it lands, the plan is read again.`
       }
       confirm={
         upgrade?.discardsEdits
@@ -466,8 +466,9 @@ export function LossyUpgradeDialog({
     >
       {stale && (
         <p role="status" className="text-sm text-warning">
-          Records changed since this plan was read, so the update was refused.
-          Check the plan below and confirm it again.
+          A record or collection this plan changes was written since it was
+          read, so the update was refused. Check the plan below and confirm it
+          again.
         </p>
       )}
       <ul className="space-y-1 text-sm">

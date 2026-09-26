@@ -4,7 +4,7 @@ date: 2026-09-26
 decision-makers: George Antoniadis
 ---
 
-# 0106. The records list counts its filtered set on request
+# 0107. The records list counts its filtered set on request
 
 ## Context and Problem Statement
 

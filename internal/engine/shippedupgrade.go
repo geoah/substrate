@@ -215,7 +215,7 @@ func (ds *dataset) shippedCandidate(ctx context.Context, current, reg *vocabular
 	// valid boot, or passed staging and failed the reload. The stored
 	// documents of the upgraded packages come first; a shipped declaration
 	// replaces its stored twin unless the key is kept.
-	merged, err := ds.vocabularyDocumentRows(ctx, upgrade)
+	merged, err := ds.vocabularyDocumentRows(ctx, ds.db, upgrade)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -302,7 +302,7 @@ func (st *shippedUpgradeStage) guards(q sqlReader, ceiling int64) ([]string, sub
 	}
 	st.conversions.moves, st.conversions.grantPatches = planned, grants
 	lines = append(lines, moveLines...)
-	plan, err := st.conversions.wire(q)
+	plan, err := st.conversions.wire(q, ceiling, false)
 	if err != nil {
 		return nil, plan, err
 	}

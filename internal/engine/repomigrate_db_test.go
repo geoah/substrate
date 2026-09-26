@@ -240,7 +240,7 @@ func TestRepositoryMigrationQualifiesStoredBareNames(t *testing.T) {
 	}
 	// A rebuild replays the plant and then the migration's writes, and the
 	// fold comes back qualified.
-	if _, err := svc3.(engine.Rebuilder).RebuildRepository(ctx, repo); err != nil {
+	if _, err := svc3.(engine.Operator).RebuildRepository(ctx, repo); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	ds3, err := svc3.Dataset(ctx, repo)
@@ -566,7 +566,7 @@ func TestRepositoryMigrationQualifiesStoredSelectorKinds(t *testing.T) {
 		t.Fatalf("the second open appended: head %d, was %d", head, migrated)
 	}
 	// A rebuild replays the plant and then the migration's writes.
-	if _, err := svc3.(engine.Rebuilder).RebuildRepository(ctx, repo); err != nil {
+	if _, err := svc3.(engine.Operator).RebuildRepository(ctx, repo); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	ds3, err := svc3.Dataset(ctx, repo)

@@ -65,9 +65,12 @@ package engine
 // the same property lands its own records on, judged over the whole plan once
 // every step is counted. A remap onto a value the declaration keeps but no
 // record holds loses nothing and needs no consent. A lossy plan runs only
-// with a confirmation naming the plan's hash and the changelog head it was
-// previewed at (admitConversion); the boot door has nobody to confirm and
-// refuses instead. The old values stay in the changelog either way: a lossy
+// with a confirmation naming the plan's hash (admitConversion), and a lossy
+// plan's hash covers what the conversion affects: the steps and their counts, the id and
+// version of every record a step rewrites, and the stored declaration of
+// every kind a step converts (issue #641). A write elsewhere in the
+// repository moves the head and leaves the hash alone; the boot door has
+// nobody to confirm and refuses instead. The old values stay in the changelog either way: a lossy
 // step removes them from the fold, and nothing here erases anything.
 //
 // The bound is the live count: a kind with N records a step touches costs N
@@ -405,8 +408,19 @@ func (p conversionPlan) byKind() []*kindConversion {
 // the changelog head the counts were taken at. The previews read it over the
 // bare pool and the doors inside their transaction, through the same queries,
 // so the hash a preview handed out is the hash the door recomputes when
-// nothing moved in between.
-func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
+// nothing the plan affects moved in between: the hash of a lossy plan folds
+// in a digest of the (id, version) pairs each rewriting step touches and of
+// each converted kind's stored declaration, so a write to a record no step
+// rewrites, or to another kind, leaves it standing.
+//
+// The digests are read only where a confirmation can be given for them: with
+// bind set (the previews and the doors, never the boot, which takes no
+// confirmation), for a lossy plan (a lossless one ignores the confirmation),
+// and once the counts put the work at or under the ceiling (a plan above it is
+// refused before any confirmation is read). So the aggregate over the rows is
+// bounded by the ceiling wherever it runs, and a plan with no ceiling pays it
+// in full.
+func (p conversionPlan) wire(q sqlReader, ceiling int64, bind bool) (substrate.ConversionPlan, error) {
 	var plan substrate.ConversionPlan
 	if err := q.row(`SELECT coalesce(max(seq), 0) FROM changelog`).Scan(&plan.ChangelogSeq); err != nil {
 		return plan, err
@@ -419,7 +433,12 @@ func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
 		err := q.row(query, args...).Scan(&n)
 		return n, err
 	}
-	add := func(step substrate.ConversionStep, n int64, err error) error {
+	var counted []countedStepQuery
+	rows := func(query string, args ...any) (int64, countedStepQuery, error) {
+		n, err := count(query, args...)
+		return n, countedStepQuery{query: query, args: args}, err
+	}
+	add := func(step substrate.ConversionStep, n int64, c countedStepQuery, err error) error {
 		if err != nil {
 			return err
 		}
@@ -427,6 +446,8 @@ func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
 			return nil // nothing to rewrite, so nothing to plan, confirm or count
 		}
 		step.Records = n
+		c.index = len(plan.Steps)
+		counted = append(counted, c)
 		plan.Steps = append(plan.Steps, step)
 		plan.Work += n
 		return nil
@@ -451,8 +472,8 @@ func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
 	for _, kc := range p.byKind() {
 		ident := kc.kind.Identity
 		for _, r := range kc.renames {
-			n, err := count(countPropQuery, ident, r.from)
-			if err := add(substrate.ConversionStep{Step: substrate.StepRename, Kind: ident, Property: r.to, From: r.from, To: r.to}, n, err); err != nil {
+			n, c, err := rows(countPropQuery, ident, r.from)
+			if err := add(substrate.ConversionStep{Step: substrate.StepRename, Kind: ident, Property: r.to, From: r.from, To: r.to}, n, c, err); err != nil {
 				return plan, err
 			}
 		}
@@ -460,8 +481,8 @@ func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
 			// Counted under the name the rows hold NOW (storedName): a
 			// backfill of a rename's target fills only the rows the old name
 			// was missing on, because the rename moves the rest first.
-			n, err := count(countMissingPropQuery, ident, kc.storedName(b.prop))
-			if err := add(substrate.ConversionStep{Step: substrate.StepBackfill, Kind: ident, Property: b.prop}, n, err); err != nil {
+			n, c, err := rows(countMissingPropQuery, ident, kc.storedName(b.prop))
+			if err := add(substrate.ConversionStep{Step: substrate.StepBackfill, Kind: ident, Property: b.prop}, n, c, err); err != nil {
 				return plan, err
 			}
 		}
@@ -470,8 +491,8 @@ func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
 			// record already stands in has none of: no step, so the hash a
 			// preview handed out does not move merely because the kind declares
 			// a machine.
-			n, err := count(countAbsentStateQuery, ident, e.prop)
-			if err := add(substrate.ConversionStep{Step: substrate.StepEnter, Kind: ident, Property: e.prop, To: e.initial}, n, err); err != nil {
+			n, c, err := rows(countAbsentStateQuery, ident, e.prop)
+			if err := add(substrate.ConversionStep{Step: substrate.StepEnter, Kind: ident, Property: e.prop, To: e.initial}, n, c, err); err != nil {
 				return plan, err
 			}
 		}
@@ -482,7 +503,7 @@ func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
 			// under the name the rows hold now.
 			path := containerPath(nil, kc.kind.Props[m.prop], kc.storedName(m.prop))
 			query, args := valuesAtPath(ident, path, []string{m.from})
-			n, err := count(query, args...)
+			n, c, err := rows(query, args...)
 			if err != nil {
 				return plan, err
 			}
@@ -499,13 +520,13 @@ func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
 				}
 				held[key] = t > 0
 			}
-			if err := add(substrate.ConversionStep{Step: substrate.StepRemap, Kind: ident, Property: m.prop, From: m.from, To: m.to}, n, nil); err != nil {
+			if err := add(substrate.ConversionStep{Step: substrate.StepRemap, Kind: ident, Property: m.prop, From: m.from, To: m.to}, n, c, nil); err != nil {
 				return plan, err
 			}
 		}
 		for _, nl := range kc.nulls {
-			n, err := count(countPropQuery, ident, nl.prop)
-			if err := add(substrate.ConversionStep{Step: substrate.StepNull, Kind: ident, Property: nl.prop, Lossy: true}, n, err); err != nil {
+			n, c, err := rows(countPropQuery, ident, nl.prop)
+			if err := add(substrate.ConversionStep{Step: substrate.StepNull, Kind: ident, Property: nl.prop, Lossy: true}, n, c, err); err != nil {
 				return plan, err
 			}
 		}
@@ -518,15 +539,88 @@ func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
 		}
 		plan.Lossy = plan.Lossy || s.Lossy
 	}
-	plan.PlanHash = planHash(plan.Steps)
+	if !bind || !plan.Lossy || ceilingGuard(plan, ceiling) != "" {
+		plan.PlanHash = planHash(plan.Steps, nil)
+		return plan, nil
+	}
+	affected, err := p.affectedDigests(q, plan.Steps, counted)
+	if err != nil {
+		return plan, err
+	}
+	plan.PlanHash = planHash(plan.Steps, affected)
 	return plan, nil
 }
+
+// countedStepQuery is one rewriting step's count query beside the index of
+// the step it counted, so the digest of its rows is read over the same
+// predicate once the whole plan is judged.
+type countedStepQuery struct {
+	index int
+	query string
+	args  []any
+}
+
+// affectedDigests answers what a lossy plan's hash binds beyond its steps:
+// per rewriting step, the digest of the rows it rewrites, then per converted
+// kind, the digest of its stored declaration.
+func (p conversionPlan) affectedDigests(q sqlReader, steps []substrate.ConversionStep, counted []countedStepQuery) ([]string, error) {
+	var affected []string
+	for _, c := range counted {
+		query, err := affectedRowsQuery(c.query)
+		if err != nil {
+			return nil, err
+		}
+		var n int64
+		var digest string
+		if err := q.row(query, c.args...).Scan(&n, &digest); err != nil {
+			return nil, err
+		}
+		affected = append(affected, fmt.Sprintf("rows\x1f%d\x1f%d\x1f%s", c.index, n, digest))
+	}
+	converted := map[string]bool{}
+	for _, s := range steps {
+		converted[s.Kind] = true
+	}
+	for _, ident := range sortedKeys(converted) {
+		var digest string
+		if err := q.row(storedDeclarationDigestQuery, kindKind, ident).Scan(&digest); err != nil {
+			return nil, err
+		}
+		affected = append(affected, fmt.Sprintf("declaration\x1f%s\x1f%s", ident, digest))
+	}
+	return affected, nil
+}
+
+// countRecordsSelect is the head every step count starts with; the plan's
+// row digest replaces it (affectedRowsQuery), so the rows a step is counted
+// over and the rows its digest covers are one predicate.
+const countRecordsSelect = "SELECT count(*) FROM records"
+
+// affectedRowsQuery turns a step's count into the count and a digest of the
+// (id, version) pairs it counts, in id order. Every write to a row bumps its
+// version, so the digest moves exactly when a row the step rewrites was
+// written, created or removed.
+func affectedRowsQuery(countQuery string) (string, error) {
+	rest, ok := strings.CutPrefix(countQuery, countRecordsSelect)
+	if !ok {
+		return "", fmt.Errorf("conversion count does not start with %q: %s", countRecordsSelect, countQuery)
+	}
+	return "SELECT count(*), coalesce(md5(string_agg(id || ':' || version::text, ',' ORDER BY id)), '') FROM records" + rest, nil
+}
+
+// storedDeclarationDigestQuery digests a kind's stored declaration row, the
+// definition the plan was classified against; empty when none is stored. The
+// content rather than the row version, so a re-projection that writes the
+// same definition back leaves a confirmation standing.
+const storedDeclarationDigestQuery = `SELECT coalesce((SELECT md5(props::text) FROM records
+	WHERE kind = $1 AND id = $2 AND deleted_at IS NULL), '')`
 
 // packagePlan is the plan as one shipped package reads it: the steps that
 // rewrite its own kinds, with the work, the lossy judgment and the hash
 // recounted over them. The changelog head is the whole plan's. The boot
 // refuses the shipped set whole, so the blockers are shared; the rewrites are
-// each package's own.
+// each package's own. Its hash covers the steps alone: the boot takes no
+// confirmation, so the hash names the listed steps and binds nothing.
 func packagePlan(plan substrate.ConversionPlan, pkg string) substrate.ConversionPlan {
 	out := substrate.ConversionPlan{ChangelogSeq: plan.ChangelogSeq}
 	for _, s := range plan.Steps {
@@ -537,21 +631,26 @@ func packagePlan(plan substrate.ConversionPlan, pkg string) substrate.Conversion
 		out.Work += s.Records
 		out.Lossy = out.Lossy || s.Lossy
 	}
-	out.PlanHash = planHash(out.Steps)
+	out.PlanHash = planHash(out.Steps, nil)
 	return out
 }
 
-// planHash identifies a plan by its steps and their counts: the same steps
-// over the same live records hash the same, and one record more or less does
-// not. A confirmation names this hash, so it covers exactly what the preview
-// showed and nothing the data has since become.
-func planHash(steps []substrate.ConversionStep) string {
+// planHash identifies a plan by its steps and their counts, and by the
+// affected lines wire adds (the digests of the rows the steps rewrite and of
+// the declarations they convert): the same steps over the same records and
+// declarations hash the same, and one of them written since does not. A
+// confirmation names this hash, so it covers exactly what the preview showed
+// and nothing the data has since become.
+func planHash(steps []substrate.ConversionStep, affected []string) string {
 	if len(steps) == 0 {
 		return ""
 	}
 	h := sha256.New()
 	for _, s := range steps {
 		fmt.Fprintf(h, "%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%d\x1f%t\n", s.Step, s.Kind, s.Property, s.From, s.To, s.Records, s.Lossy)
+	}
+	for _, line := range affected {
+		fmt.Fprintf(h, "%s\n", line)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -607,7 +706,7 @@ func ceilingGuard(plan substrate.ConversionPlan, ceiling int64) string {
 // 0070). The current digest is what the consent binds to: bindEditedCopy
 // folds it into the plan hash, so a confirmation read off a preview covers
 // exactly the edited state the preview saw, and one more edit refuses it the
-// way one more write does through the changelog head.
+// way one more write to a record the plan rewrites does.
 type editedCopy struct {
 	pkg    string
 	digest string
@@ -632,20 +731,22 @@ func bindEditedCopy(plan *substrate.ConversionPlan, edited *editedCopy) bool {
 // closure's. A batch with no origin, a package with no stamp and a pristine
 // copy all answer nil. The digest is read the way the bundle status reads it
 // (packageClosureDigest), under the schema-write mutex every caller holds, so
-// the rows it hashes are the rows the replacement is about to prune.
-func (ds *dataset) editedCopy(ctx context.Context, origin string, docs []vocabulary.Document) (*editedCopy, error) {
+// the rows it hashes are the rows the replacement is about to prune. q is the
+// apply's own transaction on the write path, so the stamp and the digest are
+// read in the snapshot the batch writes in and on the connection it holds.
+func (ds *dataset) editedCopy(ctx context.Context, q dbx, origin string, docs []vocabulary.Document) (*editedCopy, error) {
 	pkg := originPackage(origin, docs)
 	if pkg == "" {
 		return nil, nil
 	}
-	stamp, err := ds.packageStamp(ctx, pkg)
+	stamp, err := ds.packageStamp(ctx, q, pkg)
 	if err != nil {
 		return nil, err
 	}
 	if stamp.origin == "" || stamp.digest == "" {
 		return nil, nil
 	}
-	current, err := ds.packageClosureDigest(ctx, pkg)
+	current, err := ds.packageClosureDigest(ctx, q, pkg)
 	if err != nil {
 		return nil, err
 	}
@@ -683,11 +784,14 @@ func originPackage(origin string, docs []vocabulary.Document) string {
 // admitConversion is the plan's own guard, after the refuse-breakage guards
 // passed: the work ceiling, then the confirmation a lossy plan needs, and a
 // batch that discards a copy's edits needs the same one (editedCopy). The
-// confirmation is bound to what was previewed: the changelog head must still
-// be the one the preview counted at (any write moves it, so the counts may
-// have too) and the hash must be the one the door just recomputed (the
-// consent covers that plan and no other). A lossless plan that discards
-// nothing ignores a confirmation: there is nothing to consent to.
+// confirmation is bound to what was previewed through the hash alone, which
+// the door just recomputed over the records and declarations the plan
+// affects (wire): a write elsewhere moves the head and refuses nothing, and
+// one to an affected record or declaration changes the hash, refused as a
+// conflict (409) because a fresh preview is the way through. The seq only
+// has to be one this repository has reached, since a preview here cannot
+// have counted past the head. A lossless plan that discards nothing ignores
+// a confirmation: there is nothing to consent to.
 func admitConversion(plan substrate.ConversionPlan, ceiling int64, confirm *substrate.ConversionConfirm, edited *editedCopy) error {
 	if line := ceilingGuard(plan, ceiling); line != "" {
 		return fmt.Errorf("%w: %s", substrate.ErrGuard, line)
@@ -706,12 +810,12 @@ func admitConversion(plan substrate.ConversionPlan, ceiling int64, confirm *subs
 	case confirm == nil:
 		return fmt.Errorf("%w: %w: the change removes values from the fold and runs only with a confirmation carrying the previewed planHash and changelogSeq (planHash %s at changelogSeq %d): %s",
 			substrate.ErrGuard, substrate.ErrLossyConversion, plan.PlanHash, plan.ChangelogSeq, strings.Join(lossyLines(plan), "; "))
-	case confirm.ChangelogSeq != plan.ChangelogSeq:
-		return fmt.Errorf("%w: the changelog moved since the plan was previewed (confirmed at seq %d, the head is %d): preview the plan again and confirm what it says now",
+	case confirm.ChangelogSeq > plan.ChangelogSeq:
+		return fmt.Errorf("%w: the confirmation names changelog seq %d, past this repository's head %d, so no preview here counted it: preview the plan and confirm what it says",
 			substrate.ErrConflict, confirm.ChangelogSeq, plan.ChangelogSeq)
 	case confirm.PlanHash != plan.PlanHash:
-		return fmt.Errorf("%w: %w: the confirmation is for another plan (%s; this plan is %s): preview the plan again and confirm what it says now",
-			substrate.ErrGuard, substrate.ErrLossyConversion, confirm.PlanHash, plan.PlanHash)
+		return fmt.Errorf("%w: the confirmation is for another plan (%s; this plan is %s): a record the plan rewrites or a declaration it converts was written since the preview, or the batch is not the one previewed; preview the plan again and confirm what it says now",
+			substrate.ErrConflict, confirm.PlanHash, plan.PlanHash)
 	}
 	return nil
 }

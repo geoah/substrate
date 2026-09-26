@@ -66,7 +66,7 @@ func TestClosureCarriesEveryPlaneWithItsProse(t *testing.T) {
 	}
 }
 
-// A kind's declared purpose rides the closure (decision record 0105): before
+// A kind's declared purpose rides the closure (decision record 0106): before
 // an import there is no stored declaration to read it from, and a reader that
 // sorts what a sample adds into collections and machinery has nothing else to
 // decide by. An undeclared purpose stays absent, because primary is the

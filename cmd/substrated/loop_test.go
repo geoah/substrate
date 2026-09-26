@@ -73,3 +73,35 @@ func (w *syncWriter) String() string {
 	defer w.mu.Unlock()
 	return w.buf.String()
 }
+
+// A BOOT THAT HAS NOT REACHED THE LISTENER SAYS SO, on a timer. The migrations
+// and the boot check's import log nothing while they work, and .mise/dev.sh
+// stops a server whose log has been quiet for 30 s, so without the heartbeat
+// a first boot that imports a long data root is killed mid-import every time
+// (issue 568). Once the boot is done the heartbeat stops.
+func TestABootLogsAHeartbeatUntilItIsDone(t *testing.T) {
+	var logs syncWriter
+	log := slog.New(slog.NewTextHandler(&logs, nil))
+	done := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		bootHeartbeat(log, done, time.Millisecond)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for strings.Count(logs.String(), "still booting") < 2 {
+		if time.Now().After(deadline) {
+			t.Fatalf("no heartbeat while booting: %s", logs.String())
+		}
+		time.Sleep(time.Millisecond)
+	}
+	close(done)
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the heartbeat kept running after the boot finished")
+	}
+	if out := logs.String(); !strings.Contains(out, "elapsed=") {
+		t.Fatalf("the heartbeat does not say how long the boot has run: %s", out)
+	}
+}

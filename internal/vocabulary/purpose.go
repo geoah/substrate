@@ -1,6 +1,6 @@
 package vocabulary
 
-// A KIND DECLARES ITS PURPOSE (decision record 0105). `purpose:` says why a
+// A KIND DECLARES ITS PURPOSE (decision record 0106). `purpose:` says why a
 // kind exists — a thing a person browses, a detail of another kind, or
 // machinery — because the declaration is the one place that knows, and a
 // client listing every kind it holds has nothing else to decide by.

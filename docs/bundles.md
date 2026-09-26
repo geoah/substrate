@@ -155,6 +155,9 @@ each with the number of live records it touches; `work`, the sum of those counts
 step removes values from the fold (a dropped property nulled, an enum value
 renamed onto a value live records already hold); and `planHash` and
 `changelogSeq`, the plan's identity and the changelog head it was counted at.
+The hash covers the steps and their counts, the id and version of every
+record a step rewrites, and the stored declaration of every kind a step
+converts.
 A `move` step is a whole kind's rows travelling to the kind that named it with
 `movedFrom:` ([decision
 0078](decisions/0078-a-kind-move-is-ordinary-record-writes.md)): same id, same
@@ -163,10 +166,14 @@ declared and empty. It runs first, loses nothing, and is never lossy.
 A lossless plan installs on the bare `POST …/install`. A lossy one runs only
 with a body confirming what was previewed, `{"confirm": {"planHash",
 "changelogSeq"}}`: without it the install is refused with the `lossy` code,
-after any write since the preview with `conflict`, and with a hash that is not
-the recounted plan's with `lossy` again. The console's Providers page offers
-**Update** where nothing blocks, asks first (listing the lossy steps) where
-the preview is lossy, and states the guard lines where something blocks; `substratectl install <provider>
+and with a hash that is not the recounted plan's with `conflict`, which is
+what a write since the preview to a record the plan rewrites or a declaration
+it converts produces: preview again. A write anywhere else moves the
+changelog head and leaves the confirmation standing ([decision
+0105](decisions/0105-a-lossy-confirmation-binds-to-what-the-plan-affects.md));
+a `changelogSeq` past the head is refused with `conflict` too. The console's Providers page offers
+**Update** where nothing blocks, asks first (listing the lossy steps) where the preview is lossy, and states the
+guard lines where something blocks; `substratectl install <provider>
 --allow-data-loss` reads the preview, prints the steps and confirms exactly
 that hash. The old values stay in the changelog either way; a lossy step
 removes them from the fold and nothing erases them. A plan whose `work` is
@@ -634,7 +641,7 @@ unknown id is a 404 `not_found`. The id is a package identity, so it carries a
 `…/catalog/samples.substrate.reamde.dev%2Ftasks`.
 The closure names every kind, trait, function, agent, mapping and shipped
 record, each declaration's description beside it, and in `kindPurposes` each
-kind's declared [`purpose`](decisions/0105-a-kind-declares-its-purpose.md)
+kind's declared [`purpose`](decisions/0106-a-kind-declares-its-purpose.md)
 (absent where the kind declares none, which reads as `primary`), so a client
 can tell a sample's collections from its machinery before taking it.
 
@@ -705,7 +712,8 @@ it. That preview stays on the entry even when nothing shipped moved, so the
 re-import can be confirmed. The import door refuses a re-import over an
 edited copy the way it refuses a lossy plan, `403 lossy`, until the body
 carries `confirm: {planHash, changelogSeq}` from that preview; the hash binds
-the edited state, so one more edit refuses it as one more write does. A
+the edited state, so one more edit refuses it as one more write to a record
+the plan rewrites does. A
 confirmed re-import re-stamps the copy, and it reads pristine again. The
 console offers Upgrade on a moved sample through the import door,
 asks first where the copy was edited, and sends the confirmation on Import

@@ -4,7 +4,7 @@ date: 2026-09-25
 decision-makers: George Antoniadis
 ---
 
-# 0105. A kind declares its purpose
+# 0106. A kind declares its purpose
 
 ## Context and Problem Statement
 

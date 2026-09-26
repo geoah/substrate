@@ -182,6 +182,16 @@ db_ensure() {
 	fi
 	docker exec "$CONTAINER" createdb -U postgres "$DB_NAME"
 	echo "dev: database ${DB_NAME} created (one per tree, named after this directory)"
+	# A new database beside an old data root is an IMPORT of every directory
+	# in it at the next boot, and a long history takes minutes. Said here,
+	# where the cause is, so a slow first start is not read as a hang.
+	local dirs=0
+	if [ -d "${DATA_ROOT}/repositories" ]; then
+		dirs="$(find "${DATA_ROOT}/repositories" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+	fi
+	if [ "$dirs" -gt 0 ]; then
+		echo "dev: the first boot on it imports ${dirs} repository directories from ${DATA_ROOT}; that can take minutes (mise run dev:logs shows the progress)"
+	fi
 }
 
 db_up() {
@@ -268,10 +278,29 @@ server_pid() {
 	echo "$pid"
 }
 
+# QUIET_POLLS is how long wait_healthy tolerates a server that neither answers
+# /healthz nor writes to its log: 60 polls of 0.5 s. The deadline is SILENCE,
+# not age: a first boot on a new database runs every migration and imports
+# every directory in the data root, which takes minutes, and the server logs a
+# heartbeat every 10 s until its listener is up (cmd/substrated
+# bootHeartbeatEvery), so that boot is waited for and a boot that has gone
+# quiet for 30 s is the one that is stopped.
+readonly QUIET_POLLS=60
+
+# log_size is the server log's length in bytes, 0 before it exists.
+log_size() {
+	if [ -f "$LOGFILE" ]; then
+		wc -c <"$LOGFILE" | tr -d ' '
+	else
+		echo 0
+	fi
+}
+
 wait_healthy() {
-	local pid
+	local pid size last quiet=0 polls=0
 	pid="$(cat "$PIDFILE" 2>/dev/null)"
-	for _ in $(seq 1 60); do
+	last="$(log_size)"
+	while [ "$quiet" -lt "$QUIET_POLLS" ]; do
 		# The pid first: a server that died at boot (say, the port was taken)
 		# must not be vouched for by whatever else answers /healthz there.
 		# Liveness, not the command name: right after the fork the child is
@@ -280,8 +309,23 @@ wait_healthy() {
 		if curl -fsS "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1; then
 			return 0
 		fi
+		size="$(log_size)"
+		if [ "$size" != "$last" ]; then
+			last="$size"
+			quiet=0
+		else
+			quiet=$((quiet + 1))
+		fi
+		# Every 10 s, said on the terminal: a boot that keeps logging is
+		# waited for with no ceiling, so the wait must be visible and the
+		# way to watch it named.
+		polls=$((polls + 1))
+		if [ $((polls % 20)) -eq 0 ]; then
+			echo "dev: still waiting for the server to answer /healthz ($((polls / 2)) s); tail -f ${LOGFILE}"
+		fi
 		sleep 0.5
 	done
+	echo "dev: the server wrote nothing to its log for $((QUIET_POLLS / 2)) s and never answered /healthz; stopping it" >&2
 	return 1
 }
 

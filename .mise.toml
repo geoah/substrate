@@ -128,7 +128,7 @@ description = "The suites that want a database: a pgvector container, or SUBSTRA
 # -timeout 45m: the engine suite alone runs 4 to 10 minutes depending on the
 # machine, and Go's default of 10m has killed it on a slow CI runner with no
 # test failing. It was 30m before internal/providere2e joined.
-run = "go test -count=1 -p 1 -timeout 45m -skip '^TestLive' ./internal/engine/... ./internal/catalog/... ./internal/providere2e/... ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/..."
+run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 45m -skip '^TestLive' ./internal/engine/... ./internal/catalog/... ./internal/providere2e/... ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/..."
 
 # `test:db` cut in two for the runner. The engine package is most of the
 # suite's time, so CI runs it as parallel shards and every other database
@@ -136,17 +136,23 @@ run = "go test -count=1 -p 1 -timeout 45m -skip '^TestLive' ./internal/engine/..
 # `test:db`'s flags, and `test:db` itself stays the one sequential run a
 # laptop wants. The whole engine package, `mise run test:db:engine`, is the
 # run AGENTS.md recommends when working in the engine.
+[tasks."test:clean"]
+description = "Remove this machine's test containers whose owner process has exited"
+# The same sweep every database run does at its start (testdb.SweepOrphans)
+# and dblock.sh does at its end; this is it on its own, after a killed run.
+run = ".mise/testclean.sh"
+
 [tasks."test:db:engine"]
 description = "The engine suite alone, or one shard of it: SHARD and SHARDS from the environment"
 # `go test -list` in the script, the cut itself in .mise/shardselect.sh
 # (sorted, round robin), which `lint:ci` holds to disjoint and complete.
-run = ".mise/dbshard.sh"
+run = ".mise/dblock.sh .mise/dbshard.sh"
 
 [tasks."test:db:rest"]
 description = "Every database package but the engine and the provider suite: catalog, providertest, testenv, substratectl"
 # -p 1 for the same reason `test:db` has it: one binary at a time against one
 # server, so no two race on CREATE EXTENSION.
-run = "go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/catalog/... ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/..."
+run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/catalog/... ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/..."
 
 [tasks."test:db:providers"]
 description = "The provider suite: seven closures synced end to end against a substrated the test starts, over recorded upstreams"
@@ -156,7 +162,7 @@ description = "The provider suite: seven closures synced end to end against a su
 # suite pins one mock port per provider, so two of it at once would serve one
 # provider's recordings to another's sync. It wants `uv` and `python3` beside
 # the database and skips itself without them.
-run = "go test -count=1 -p 1 -timeout 55m -skip '^TestLive' ./internal/providere2e/..."
+run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 55m -skip '^TestLive' ./internal/providere2e/..."
 
 [tasks."test:race"]
 description = "The short suite under the race detector"
@@ -779,7 +785,7 @@ run = "mise run test:short"
 description = "CI job `db catalog k/n`: one shard of internal/catalog against the database, SHARD and SHARDS from the environment"
 # The second-slowest database package, so it is sharded the way the engine is.
 env = { PKG = "internal/catalog" }
-run = ".mise/dbshard.sh"
+run = ".mise/dblock.sh .mise/dbshard.sh"
 
 [tasks."ci:db:rest"]
 description = "CI job `db rest`: providertest, testenv and substratectl against the database, without the acceptance drill"

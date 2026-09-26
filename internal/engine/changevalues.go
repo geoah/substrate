@@ -10,7 +10,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// Before and after values on a change row (decision 0107).
+// Before and after values on a change row (decision 0108).
 //
 // Nothing here is stored. An entry's effects already carry what each property
 // BECAME (fold.go rowDelta), so the "after" side is a projection of the row's

@@ -7,7 +7,7 @@ type: breaking
 A kind may now declare `purpose: primary | supporting | internal`: why it
 exists, so a client can decide what its navigation lists. Absent reads as
 primary, and the server acts on nothing but the value's validity
-(decision record 0105). The console's sidebar lists primary kinds and puts
+(decision record 0106). The console's sidebar lists primary kinds and puts
 the rest behind Technical details. Core's `kind` kind declares the key
 (version 19), and the shipped providers and samples now carry it, so their
 package versions were bumped.

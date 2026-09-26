@@ -192,7 +192,7 @@ func TestDeprecatedReserved(t *testing.T) {
 
 // --- purpose -----------------------------------------------------------------
 
-// A kind's `purpose:` (decision record 0105) is not inert like the markers
+// A kind's `purpose:` (decision record 0106) is not inert like the markers
 // above: clients read it to decide what to list. It is advisory all the same,
 // so the loader's whole job is the closed value set and leaving the authored
 // document alone.

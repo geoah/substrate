@@ -48,7 +48,7 @@ lists collections (the sidebar, ⌘K, All data, Home) uses the same sections:
 
 What a section lists is decided by each kind's declared
 [`purpose`](vocabulary.md#the-reserved-keys)
-([0105](decisions/0105-a-kind-declares-its-purpose.md)): `primary` is a thing
+([0106](decisions/0106-a-kind-declares-its-purpose.md)): `primary` is a thing
 you browse and open directly, `supporting` is a detail of another kind,
 reached from the records it belongs to, and `internal` is machinery. A kind
 that declares none reads as `primary`, so a kind you or an agent declares is
@@ -165,7 +165,7 @@ straight to it:
 - **Start from a sample**: the shipped [samples](bundles-catalog.md) that
   declare at least one primary kind (tasks, people, notes and the rest), each
   by the collections it adds and with **Add**. A kind's
-  [purpose](decisions/0105-a-kind-declares-its-purpose.md) is read from the
+  [purpose](decisions/0106-a-kind-declares-its-purpose.md) is read from the
   catalog's closure until the repository holds the kind, so a sample whose
   kinds are all supporting or internal is not offered as a collection. Adding
   one imports it under the repository's own authority

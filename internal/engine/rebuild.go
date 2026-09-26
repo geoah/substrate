@@ -97,14 +97,6 @@ var foldTables = append([]string{
 // cursor while it writes, so the changelog is read a page at a time by seq.
 const rebuildBatch = 500
 
-// Rebuilder is the operator hat's rebuild seam, off substrate.Service like
-// Resetter (auth.go) and asserted here for the same reason.
-type Rebuilder interface {
-	RebuildRepository(ctx context.Context, repository string) (RebuildReport, error)
-}
-
-var _ Rebuilder = (*service)(nil)
-
 // RebuildRepository clears one repository's fold and replays its whole
 // changelog into it FROM THE SEGMENT FILES under the data root, so the
 // directory alone is proven to reproduce the fold. The repository's own

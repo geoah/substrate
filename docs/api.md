@@ -648,7 +648,7 @@ on the ranked read, which has no keyset at all.
 
 `count=1` asks the list for the size of the whole set its filter admits, and
 the page answers it as `count` beside the rows
-([decision 0106](decisions/0106-the-records-list-counts-its-filtered-set-on-request.md)):
+([decision 0107](decisions/0107-the-records-list-counts-its-filtered-set-on-request.md)):
 
 ```http
 GET /api/v1/records?filter={"kinds":["samples.substrate.reamde.dev/tasks/task"],

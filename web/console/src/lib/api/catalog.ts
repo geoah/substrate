@@ -194,10 +194,11 @@ export function catalogItemQueryOptions(id: string, home = "") {
 }
 
 /** ONE catalog entry, read fresh from the server rather than from the list's
- * cache. A confirmation names one plan at one changelog head, so a chain
- * import re-reads the preview of each bundle right before it takes it: the
- * step before it moved the head, and the token the list was read with is
- * refused (engine convert.go). The id is a package reference, so its slash is
+ * cache. A confirmation names one plan, hashed over the records it rewrites
+ * and the declarations it converts, so a chain import re-reads the preview of
+ * each bundle right before it takes it: the step before it may have written
+ * either, and the token the list was read with is then refused (engine
+ * convert.go). The id is a package reference, so its slash is
  * one encoded path segment. */
 export function fetchCatalogItem(id: string): Promise<CatalogItem> {
   return request<CatalogItem>("GET", `${CATALOG}/${seg(id)}`)

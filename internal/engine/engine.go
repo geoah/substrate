@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/geoah/substrate/internal/blobbytes"
@@ -49,6 +50,9 @@ type options struct {
 	dataRoot  string
 	// segmentBytes is the changelog segment size (WithChangelogSegmentBytes).
 	segmentBytes int64
+	// repositoryConns caps the pool every repository shares
+	// (WithRepositoryConnections).
+	repositoryConns int
 	// conversionCeiling is the work ceiling (WithConversionCeiling); the set
 	// flag tells an explicit zero (no ceiling) from the default.
 	conversionCeiling    int64
@@ -169,6 +173,13 @@ func WithDataRoot(root string) Option { return func(o *options) { o.dataRoot = r
 // when not given or not positive.
 func WithChangelogSegmentBytes(n int64) Option { return func(o *options) { o.segmentBytes = n } }
 
+// WithRepositoryConnections caps the Postgres connections every repository
+// of the process shares (SUBSTRATE_REPOSITORY_CONNECTIONS). One repository
+// takes at most half of them, and never more than eight. Zero, or not given,
+// is DefaultRepositoryConnections; a cap under MinRepositoryConnections
+// refuses the Open.
+func WithRepositoryConnections(n int) Option { return func(o *options) { o.repositoryConns = n } }
+
 // WithConversionCeiling bounds the live records one declaration change may
 // rewrite in its transaction (SUBSTRATE_CONVERSION_CEILING, decision 0067): a
 // plan whose estimated work is above n is refused on both doors, and the
@@ -265,6 +276,20 @@ type service struct {
 	// It carries NO repository setting, so an accidental repository-scoped
 	// insert through it raises instead of landing somewhere arbitrary.
 	maint *sql.DB
+	// repoPool is the one pool every repository's connections come from,
+	// each pinned to its repository as it is handed out (scope.go scopedDB).
+	// Connections held stay bounded by its cap however many repositories
+	// the process has opened.
+	repoPool *pgxpool.Pool
+	// repoConnsPerHandle is what one repository may take of repoPool
+	// (repositoryConnsPerHandle).
+	repoConnsPerHandle int
+	// migrationConns and catchUpConns budget the connections dialed outside
+	// repoPool (scope.go MigrationConnections, CatchUpConnections).
+	migrationConns, catchUpConns connBudget
+	// testMigrationHook, when set (tests only), runs inside each repository
+	// migration's transaction, with its own connection held.
+	testMigrationHook func()
 	// appRole is the role every repository-scoped pool assumes; empty when the
 	// cluster would not let the engine create its roles.
 	appRole string
@@ -355,6 +380,24 @@ type service struct {
 // runs the shared schema's DDL. It provisions nothing: a repository exists
 // once its control-plane row does.
 func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, error) {
+	s, err := open(ctx, dsn, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// OpenOperator opens the engine the way Open does and returns it with the
+// operator hat's methods (operator.go). Only substratectl calls it.
+func OpenOperator(ctx context.Context, dsn string, opts ...Option) (Operator, error) {
+	s, err := open(ctx, dsn, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	o := options{log: slog.Default(), now: nowUTC}
 	for _, fn := range opts {
 		fn(&o)
@@ -535,11 +578,33 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	// registration that already holds one of them itself.
 	maint.SetMaxOpenConns(5)
 	s.maint = maint
+	repoConns := o.repositoryConns
+	if repoConns == 0 {
+		repoConns = DefaultRepositoryConnections
+	}
+	repoPool, err := openRepositoryPool(ctx, dsn, s.appRole, repoConns)
+	if err != nil {
+		_ = maint.Close()
+		_ = admin.Close()
+		return nil, err
+	}
+	s.repoPool = repoPool
+	s.migrationConns = newConnBudget(MigrationConnections)
+	s.catchUpConns = newConnBudget(CatchUpConnections)
+	s.repoConnsPerHandle = repositoryConnsPerHandle(repoConns)
 	// The two process-wide pools, published by role; a repository's pool
 	// publishes itself by authority when it opens (openNew).
 	s.unregisterMetrics = []func(){
 		metrics.RegisterDBStats("admin", admin),
 		metrics.RegisterDBStats("maint", maint),
+		metrics.RegisterPoolStats("repositories", func() metrics.PoolStats {
+			st := repoPool.Stat()
+			return metrics.PoolStats{
+				Max: st.MaxConns(), Total: st.TotalConns(), Acquired: st.AcquiredConns(), Idle: st.IdleConns(),
+				Acquires: st.AcquireCount(), Waits: st.EmptyAcquireCount(), Canceled: st.CanceledAcquireCount(),
+				WaitDuration: st.EmptyAcquireWaitTime().Seconds(),
+			}
+		}),
 	}
 	// Role EXISTENCE with the right attributes is one thing; that the pools
 	// ACTUALLY assume them at runtime — and that the DSN user is not itself a
@@ -549,11 +614,13 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	// deliberately runs degraded.
 	if !degraded {
 		if err := assertPoolPrincipal(ctx, maint, roleMaint, true); err != nil {
+			repoPool.Close()
 			_ = maint.Close()
 			_ = admin.Close()
 			return nil, fmt.Errorf("substrate/engine: maintenance pool principal: %w", err)
 		}
 		if err := s.assertAppPoolPrincipal(ctx); err != nil {
+			repoPool.Close()
 			_ = maint.Close()
 			_ = admin.Close()
 			return nil, err
@@ -569,6 +636,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	// registration in flight, not a crash.
 	if !s.readOnly {
 		if err := s.sweepOrphans(ctx); err != nil {
+			repoPool.Close()
 			_ = maint.Close()
 			_ = admin.Close()
 			return nil, err
@@ -580,6 +648,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	// the open path a request drives. What arrives later (a bundle's
 	// kinds) is materialized by the schema write that admits it.
 	if err := ensureIndices(ctx, admin, reg.Kinds()); err != nil {
+		repoPool.Close()
 		_ = maint.Close()
 		_ = admin.Close()
 		return nil, err
@@ -588,6 +657,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	// this database already holds is refused HERE, not discovered one
 	// repository at a time by whoever opens one first.
 	if err := s.requireCredentialKeyOpens(ctx); err != nil {
+		repoPool.Close()
 		_ = maint.Close()
 		_ = admin.Close()
 		return nil, err
@@ -609,6 +679,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	if !s.readOnly {
 		if err := s.reconcileRepositories(ctx); err != nil {
 			s.lease.close()
+			repoPool.Close()
 			_ = maint.Close()
 			_ = admin.Close()
 			return nil, err
@@ -698,6 +769,11 @@ func (s *service) Close() error {
 	for _, unregister := range s.unregisterMetrics {
 		unregister()
 	}
+	// After every dataset: a dataset's handle hands its connections back
+	// here as it closes.
+	if s.repoPool != nil {
+		closeRepositoryPool(s.repoPool, repositoryPoolCloseWait, s.log)
+	}
 	err := s.maint.Close()
 	if cerr := s.admin.Close(); err == nil {
 		err = cerr
@@ -761,7 +837,7 @@ func (s *service) open(ctx context.Context, repo Repository) (*dataset, error) {
 // is called under open's per-repository singleflight, never directly.
 func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error) {
 	sc := repo.scope()
-	db, err := openScoped(s.dsn, sc, s.appRole)
+	db, err := s.scopedDB(sc)
 	if err != nil {
 		return nil, err
 	}
@@ -769,7 +845,6 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		_ = db.Close()
 		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
 	}
-	db.SetMaxOpenConns(8)
 	// The repository's DEK for the dataset's lifetime, unwrapped from the
 	// control-plane row.
 	keys, err := s.repoKeys(ctx, repo.ID)
@@ -1001,7 +1076,7 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	}
 	repo.DEKKeyID = s.credKeyID
 
-	db, err := openScoped(s.dsn, repo.scope(), s.appRole)
+	db, err := s.scopedDB(repo.scope())
 	if err != nil {
 		return zero, err
 	}
@@ -1009,7 +1084,6 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 		_ = db.Close()
 		return zero, fmt.Errorf("substrate/engine: create repository %s: %w", authority, err)
 	}
-	db.SetMaxOpenConns(8)
 	// The creation dataset carries the BINARY's registry — the seed has to
 	// resolve the kinds it is writing, and the repository has no rows yet.
 	// After the seed commits, the dataset is thrown away and the repository is

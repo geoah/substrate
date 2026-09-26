@@ -289,7 +289,7 @@ func parseChangeFilter(r *http.Request) (substrate.ChangeFilter, error) {
 	}
 	f := substrate.ChangeFilter{RecordID: recordID, Q: v.Get("q")}
 	// `values=1` asks every row for its records' before and after values
-	// (decision 0107). Any other spelling is refused rather than read as
+	// (decision 0108). Any other spelling is refused rather than read as
 	// "no", so a client that meant to ask never silently gets names alone.
 	switch raw := v.Get("values"); raw {
 	case "", "0":

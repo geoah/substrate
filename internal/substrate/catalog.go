@@ -183,7 +183,7 @@ type CatalogClosure struct {
 	// registry a reader could look them up in. Omitted where a kind declares
 	// none, so the map is only as big as the prose.
 	KindDescriptions map[string]string `json:"kindDescriptions,omitempty"`
-	// KindPurposes is each kind's declared `purpose` (decision record 0105),
+	// KindPurposes is each kind's declared `purpose` (decision record 0106),
 	// keyed the same way: a reader deciding which of a closure's kinds are
 	// collections has no stored declaration to read it from before the
 	// bundle lands. Omitted where a kind declares none, which reads as

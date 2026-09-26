@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
-	"github.com/geoah/substrate/internal/engine"
 )
 
 // A user is a repository, a password and a TOTP secret. Changing either factor
@@ -70,11 +68,7 @@ opens the repository as its writer, and a running server holds that lock.
 				return errors.New("a new password is required")
 			}
 			defer func() { _ = svc.Close() }()
-			r, ok := svc.(engine.Resetter)
-			if !ok {
-				return seamMissing("ResetUser")
-			}
-			enrollment, err := r.ResetUser(cmd.Context(), repository, password)
+			enrollment, err := svc.ResetUser(cmd.Context(), repository, password)
 			if err != nil {
 				return lockHint(err)
 			}

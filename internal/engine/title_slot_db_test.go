@@ -159,3 +159,49 @@ func TestClearingTheHeadingKeepsTheRenderedTitle(t *testing.T) {
 		t.Fatalf("a new heading did not take: %q", renamed.Title)
 	}
 }
+
+// A state and a temporal slot are declared properties the row stores outside
+// its ordinary properties (the states column, the hot columns), and a template
+// names them like any other property (issue 634). Mneme's tasklog titles each
+// row `{status}`, and every one of them rendered empty.
+func TestDisplayTemplateRendersStateAndTemporalSlots(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+	docs := []map[string]any{
+		vocabulary.PackageManifest(tsPackage, 0),
+		vocabulary.KindManifest(tsPackage, map[string]any{"singular": "entry"}, map[string]any{
+			"displayTemplate": "{status} at {at}: {body}",
+			"traits":          []any{"substrate.reamde.dev/core/temporal(point)"},
+			"properties": map[string]any{
+				"status": map[string]any{
+					"type": "state", "states": []any{"open", "done"}, "initial": "open",
+					"transitions": []any{map[string]any{"from": "open", "to": "done"}},
+				},
+				"body": map[string]any{"type": "text"},
+			},
+		}),
+	}
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
+		t.Fatalf("install the entry kind: %v", err)
+	}
+
+	created := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: tsPackage + "/entry", ID: "e1",
+		Properties: map[string]any{"at": "2026-09-26T10:00:00Z", "body": "shipped"},
+	})
+	if want := "open at 2026-09-26T10:00:00Z: shipped"; created.Title != want {
+		t.Fatalf("the initial state, the instant and the body render: got %q, want %q", created.Title, want)
+	}
+	moved := mustPatch(t, ds, owner, tsPackage+"/entry", "e1", substrate.PatchInput{
+		Properties: map[string]any{"status": "done"},
+	})
+	if want := "done at 2026-09-26T10:00:00Z: shipped"; moved.Title != want {
+		t.Fatalf("a transition re-renders the state: got %q, want %q", moved.Title, want)
+	}
+	// An unset slot renders nothing, so the token's next alternative or the
+	// literal around it is what remains.
+	bare := mustPut(t, ds, owner, substrate.PutInput{Kind: tsPackage + "/entry", ID: "e2"})
+	if want := "open at :"; bare.Title != want {
+		t.Fatalf("an unset instant and body render empty: got %q, want %q", bare.Title, want)
+	}
+}

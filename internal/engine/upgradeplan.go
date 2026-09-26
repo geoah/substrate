@@ -98,7 +98,7 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 	// computed even when nothing moved, because the re-import door still
 	// needs a confirmation to read the hash from. A row with no stamp (a
 	// provider, a package the user declared) has neither.
-	stamp, err := ds.packageStamp(ctx, bundlePackage)
+	stamp, err := ds.packageStamp(ctx, ds.db, bundlePackage)
 	if err != nil {
 		return plan, err
 	}
@@ -117,7 +117,7 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 	}
 	var edited *editedCopy
 	if stamp.origin != "" && stamp.digest != "" {
-		current, err := ds.packageClosureDigest(ctx, bundlePackage)
+		current, err := ds.packageClosureDigest(ctx, ds.db, bundlePackage)
 		if err != nil {
 			return plan, err
 		}
@@ -232,7 +232,7 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 	// work, whether it is lossy, and the hash and changelog head a
 	// confirmation names (convert.go, decision 0067). A plan above the work
 	// ceiling is refused by the install, so it blocks here.
-	if plan.ConversionPlan, err = st.conversions.wire(q); err != nil {
+	if plan.ConversionPlan, err = st.conversions.wire(q, ds.svc.conversionCeiling, true); err != nil {
 		return plan, err
 	}
 	// An edited copy binds the hash to its edited state, exactly as the

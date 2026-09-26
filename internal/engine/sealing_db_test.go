@@ -653,7 +653,7 @@ func TestRotateHistoryGenerationHoldsTheHeadAndSurvivesARestart(t *testing.T) {
 	}
 	root := engine.DataRootOf(svc)
 
-	report, err := svc.(engine.GenerationRotator).RotateHistoryGeneration(ctx, testdb.Repository(t))
+	report, err := svc.(engine.Operator).RotateHistoryGeneration(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("rotate: %v", err)
 	}
@@ -688,7 +688,7 @@ func TestRotateHistoryGenerationRefusesWhileTheServerHoldsTheLock(t *testing.T) 
 	if err != nil {
 		t.Fatalf("a second process could not boot beside the server: %v", err)
 	}
-	_, err = second.(engine.GenerationRotator).RotateHistoryGeneration(ctx, testdb.Repository(t))
+	_, err = second.(engine.Operator).RotateHistoryGeneration(ctx, testdb.Repository(t))
 	if err == nil {
 		t.Fatal("a rotation landed beside a running server")
 	}
