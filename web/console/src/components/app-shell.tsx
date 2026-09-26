@@ -1,17 +1,21 @@
-import { Fragment, useEffect, useState } from "react"
+import { Fragment, useCallback, useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link, Outlet, useRouterState } from "@tanstack/react-router"
 import { SearchIcon } from "lucide-react"
 
 import { NavigationProvider } from "@/components/console-preferences"
-import { AppSidebar } from "@/components/app-sidebar"
+import { AppSidebar, type SidebarPeek } from "@/components/app-sidebar"
 import { CommandMenu } from "@/components/command-menu"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { SectionBoundary } from "@/components/page-error"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
-import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
+import {
+  SidebarInset,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import {
@@ -304,11 +308,54 @@ function ShellBreadcrumb() {
   )
 }
 
+/** How long the peeked sidebar waits after the pointer leaves, so a pointer
+ * that overshoots its edge does not snap it shut. */
+const PEEK_HIDE_MS = 300
+
+/** The collapsed sidebar's peek: shown while the pointer is on the page's
+ * left edge, the toggle or the sidebar itself, or while focus is inside it.
+ * Only a collapsed desktop sidebar peeks; the phone has its own sheet. */
+// eslint-disable-next-line react-refresh/only-export-components -- the shell's own hook, exported for its test
+export function useSidebarPeek(): SidebarPeek & {
+  collapsed: boolean
+  reset: () => void
+} {
+  const { open, isMobile } = useSidebar()
+  const collapsed = !open && !isMobile
+  const [peek, setPeek] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
+  const show = useCallback(() => {
+    clearTimeout(timer.current)
+    // Hovering the toggle of an OPEN sidebar must not arm a peek that the
+    // click collapsing it would then show.
+    if (collapsed) setPeek(true)
+  }, [collapsed])
+  const hide = useCallback(() => {
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => setPeek(false), PEEK_HIDE_MS)
+  }, [])
+  const reset = useCallback(() => {
+    clearTimeout(timer.current)
+    setPeek(false)
+  }, [])
+  return { open: peek && collapsed, collapsed, show, hide, reset }
+}
+
 export function AppShell() {
+  return (
+    <NavigationProvider>
+      <ShellBody />
+    </NavigationProvider>
+  )
+}
+
+function ShellBody() {
   const [commandOpen, setCommandOpen] = useState(false)
   // The shell outlives every page, so a part of it that failed tries again
   // on the next address.
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const peek = useSidebarPeek()
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -322,45 +369,57 @@ export function AppShell() {
   }, [])
 
   return (
-    <NavigationProvider>
-      <TooltipProvider delay={250}>
-        <SectionBoundary name="The sidebar" resetKey={pathname}>
-          <AppSidebar onSearch={() => setCommandOpen(true)} />
-        </SectionBoundary>
-        <SidebarInset className="flex h-svh min-w-0 flex-col overflow-hidden">
-          <header className="flex h-11 shrink-0 items-center gap-2 px-3 md:px-4">
-            <SidebarTrigger className="-ml-1 text-muted-foreground" />
-            <SectionBoundary name="Where you are" resetKey={pathname}>
-              <ShellBreadcrumb />
-            </SectionBoundary>
-            <Button
-              variant="outline"
-              size="sm"
-              className="hidden h-7 w-48 shrink-0 justify-start gap-2 px-2 font-normal text-faint sm:inline-flex"
-              onClick={() => setCommandOpen(true)}
-            >
-              <SearchIcon className="size-3.5" />
-              <span>Search…</span>
-              <Kbd className="ml-auto">⌘K</Kbd>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Search"
-              className="sm:hidden"
-              onClick={() => setCommandOpen(true)}
-            >
-              <SearchIcon />
-            </Button>
-          </header>
-          <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-            <Outlet />
-          </div>
-        </SidebarInset>
-        <SectionBoundary name="Search" resetKey={pathname}>
-          <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
-        </SectionBoundary>
-      </TooltipProvider>
-    </NavigationProvider>
+    <TooltipProvider delay={250}>
+      {peek.collapsed && (
+        <div
+          aria-hidden
+          data-slot="sidebar-peek-edge"
+          className="fixed inset-y-0 left-0 z-20 w-3"
+          onMouseEnter={peek.show}
+          onMouseLeave={peek.hide}
+        />
+      )}
+      <SectionBoundary name="The sidebar" resetKey={pathname}>
+        <AppSidebar onSearch={() => setCommandOpen(true)} peek={peek} />
+      </SectionBoundary>
+      <SidebarInset className="flex h-svh min-w-0 flex-col overflow-hidden">
+        <header className="flex h-11 shrink-0 items-center gap-2 px-3 md:px-4">
+          <SidebarTrigger
+            className="-ml-1 text-muted-foreground"
+            onMouseEnter={peek.show}
+            onMouseLeave={peek.hide}
+            onClick={peek.reset}
+          />
+          <SectionBoundary name="Where you are" resetKey={pathname}>
+            <ShellBreadcrumb />
+          </SectionBoundary>
+          <Button
+            variant="outline"
+            size="sm"
+            className="hidden h-7 w-48 shrink-0 justify-start gap-2 px-2 font-normal text-faint sm:inline-flex"
+            onClick={() => setCommandOpen(true)}
+          >
+            <SearchIcon className="size-3.5" />
+            <span>Search…</span>
+            <Kbd className="ml-auto">⌘K</Kbd>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Search"
+            className="sm:hidden"
+            onClick={() => setCommandOpen(true)}
+          >
+            <SearchIcon />
+          </Button>
+        </header>
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+          <Outlet />
+        </div>
+      </SidebarInset>
+      <SectionBoundary name="Search" resetKey={pathname}>
+        <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
+      </SectionBoundary>
+    </TooltipProvider>
   )
 }

@@ -41,9 +41,10 @@ import type { ReactNode } from "react"
 import type { KindInfo } from "@/lib/api/types"
 import { saveSession } from "@/lib/api/session"
 import { collectionGroups } from "@/lib/collections"
+import { useSidebarPeek } from "./app-shell"
 import { AppSidebar, CollectionGroupNav, Favorites } from "./app-sidebar"
 import { NavigationProvider } from "./console-preferences"
-import { SidebarProvider } from "./ui/sidebar"
+import { SidebarProvider, SidebarTrigger } from "./ui/sidebar"
 
 function kind(identity: string, purpose?: string): KindInfo {
   const [authority, pkg, name] = identity.split("/")
@@ -212,13 +213,13 @@ describe("everyday groups", () => {
     const first = renderGroups()
     const task = "ada.example.com/tasks/task"
     const person = "ada.example.com/people/person"
-    await press(`Star ${task}`)
+    await press("Star Tasks")
     await waitFor(() => expect(storedPreferences.favorites).toEqual([task]))
-    await press(`Star ${person}`)
+    await press("Star People")
     await waitFor(() =>
       expect(storedPreferences.favorites).toEqual([task, person])
     )
-    await press(`Move ${person} up`)
+    await press("Move People up")
     await waitFor(() =>
       expect(storedPreferences.favorites).toEqual([person, task])
     )
@@ -232,14 +233,20 @@ describe("everyday groups", () => {
       expect(
         (
           screen.getByRole("button", {
-            name: `Move ${person} up`,
+            name: "Move People up",
           }) as HTMLButtonElement
         ).disabled
       ).toBe(true)
     )
     // The folded group lists nothing; the favorite still reaches its kind.
     expect(screen.queryByRole("link", { name: "Projects" })).toBeNull()
-    expect(screen.getByRole("link", { name: task })).toBeTruthy()
+    expect(await href("Tasks")).toBe("/data/ada.example.com/tasks/task")
+  })
+
+  it("never shows a raw reference as a row's name or tooltip", async () => {
+    renderGroups()
+    const tasks = await screen.findByRole("link", { name: "Tasks" })
+    expect(tasks.getAttribute("title") ?? "").not.toContain("ada.example.com")
   })
 })
 
@@ -294,10 +301,88 @@ describe("the repository", () => {
     expect(
       await screen.findByRole("menuitem", { name: /Account and settings/ })
     ).toBeTruthy()
+    expect(screen.getByText("Appearance")).toBeTruthy()
     for (const theme of ["System", "Light", "Dark"])
       expect(
         screen.getByRole("menuitemradio", { name: new RegExp(theme) })
       ).toBeTruthy()
     expect(screen.getByRole("menuitem", { name: /Sign out/ })).toBeTruthy()
+
+    // The switch is in the menu too, for a sidebar that is tucked away.
+    const item = screen.getByRole("menuitemcheckbox", {
+      name: /Technical details/,
+    })
+    expect(item.getAttribute("aria-checked")).toBe("false")
+    fireEvent.click(item)
+    await waitFor(() =>
+      expect(localStorage.getItem("substrate.console.technicalDetails")).toBe(
+        "true"
+      )
+    )
+  })
+})
+
+/** The collapsed sidebar and the shell's peek, as the shell wires them. */
+function PeekHarness() {
+  const peek = useSidebarPeek()
+  return (
+    <>
+      {peek.collapsed && (
+        <div
+          data-testid="edge"
+          onMouseEnter={peek.show}
+          onMouseLeave={peek.hide}
+        />
+      )}
+      <AppSidebar onSearch={() => {}} peek={peek} />
+      <SidebarTrigger
+        onMouseEnter={peek.show}
+        onMouseLeave={peek.hide}
+        onClick={peek.reset}
+      />
+    </>
+  )
+}
+
+describe("a collapsed sidebar", () => {
+  beforeEach(() => {
+    saveSession("secret", "ada.example.com", "token-1")
+    localStorage.setItem("substrate.console.sidebarOpen", "false")
+  })
+
+  const sidebar = () =>
+    document.querySelector("[data-slot=sidebar-container]") as HTMLElement
+
+  it("peeks while the pointer is on the left edge, and tucks away after it leaves", async () => {
+    renderTree(<PeekHarness />)
+    const edge = await screen.findByTestId("edge")
+    expect(sidebar().dataset.peek).toBeUndefined()
+    fireEvent.mouseEnter(edge)
+    expect(sidebar().dataset.peek).toBe("true")
+    fireEvent.mouseLeave(edge)
+    fireEvent.mouseEnter(sidebar())
+    fireEvent.mouseLeave(sidebar())
+    await waitFor(() => expect(sidebar().dataset.peek).toBeUndefined())
+  })
+
+  it("peeks from the toggle, and a click opens it for good", async () => {
+    renderTree(<PeekHarness />)
+    const toggle = await screen.findByRole("button", { name: "Toggle Sidebar" })
+    fireEvent.mouseEnter(toggle)
+    expect(sidebar().dataset.peek).toBe("true")
+    fireEvent.click(toggle)
+    await waitFor(() => expect(screen.queryByTestId("edge")).toBeNull())
+    expect(sidebar().dataset.peek).toBeUndefined()
+    expect(localStorage.getItem("substrate.console.sidebarOpen")).toBe("true")
+  })
+
+  it("does not peek an open sidebar that its toggle is closing", async () => {
+    localStorage.setItem("substrate.console.sidebarOpen", "true")
+    renderTree(<PeekHarness />)
+    const toggle = await screen.findByRole("button", { name: "Toggle Sidebar" })
+    fireEvent.mouseEnter(toggle)
+    fireEvent.click(toggle)
+    await screen.findByTestId("edge")
+    expect(sidebar().dataset.peek).toBeUndefined()
   })
 })
