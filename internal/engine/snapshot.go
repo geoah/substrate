@@ -50,14 +50,6 @@ type SnapshotReport struct {
 	Took      time.Duration `json:"took"`
 }
 
-// Snapshotter is the operator hat's snapshot seam, off substrate.Service like
-// Rebuilder and asserted here for the same reason.
-type Snapshotter interface {
-	SnapshotRepository(ctx context.Context, repository, destRoot string) (SnapshotReport, error)
-}
-
-var _ Snapshotter = (*service)(nil)
-
 var (
 	// ErrSnapshotExists is the refusal to write a snapshot where a
 	// repository directory already is: a snapshot is a fresh copy, never a

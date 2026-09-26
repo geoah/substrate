@@ -19,7 +19,6 @@ import (
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/config"
 	"github.com/geoah/substrate/internal/engine"
-	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -68,7 +67,7 @@ func (a *app) dsn() (string, error) {
 // against a live server and neither appends to a repository. Whatever
 // credential key the environment holds is used; its absence is not fatal
 // here, since nothing sealed is written.
-func (a *app) openEngineReadOnly(ctx context.Context) (substrate.Service, error) {
+func (a *app) openEngineReadOnly(ctx context.Context) (engine.Operator, error) {
 	return a.openEngineWithKey(ctx, os.Getenv(credentialKeyEnv), true)
 }
 
@@ -78,7 +77,7 @@ func (a *app) openEngineReadOnly(ctx context.Context) (substrate.Service, error)
 // REFUSES beside a running server, because the server's writer holds the
 // repository's lock (engine.ErrChangelogLocked). The credential key is
 // optional: a rebuild re-links sealed material and never opens it.
-func (a *app) openEngineExclusive(ctx context.Context) (substrate.Service, error) {
+func (a *app) openEngineExclusive(ctx context.Context) (engine.Operator, error) {
 	return a.openEngineWithKey(ctx, os.Getenv(credentialKeyEnv), false)
 }
 
@@ -88,7 +87,7 @@ func (a *app) openEngineExclusive(ctx context.Context) (substrate.Service, error
 // plain-marked DEK wrap the server later accepts. The refusal is here, before
 // a password is typed, rather than at the write. Like openEngineExclusive it
 // needs the server stopped.
-func (a *app) openEngineWrite(ctx context.Context) (substrate.Service, error) {
+func (a *app) openEngineWrite(ctx context.Context) (engine.Operator, error) {
 	credKey := os.Getenv(credentialKeyEnv)
 	if credKey == "" {
 		return nil, fmt.Errorf(
@@ -99,7 +98,7 @@ func (a *app) openEngineWrite(ctx context.Context) (substrate.Service, error) {
 }
 
 // openEngineWithKey is the shared opener the three hats route through.
-func (a *app) openEngineWithKey(ctx context.Context, credKey string, readOnly bool) (substrate.Service, error) {
+func (a *app) openEngineWithKey(ctx context.Context, credKey string, readOnly bool) (engine.Operator, error) {
 	// A present key must be key material of the right shape, or the engine
 	// refuses to open under it. Report that here, before the DSN, rather than
 	// wrapped in an open error. An absent key is the read hat's keyless case
@@ -141,7 +140,7 @@ func (a *app) openEngineWithKey(ctx context.Context, credKey string, readOnly bo
 	if readOnly {
 		opts = append(opts, engine.WithDirectoryReadOnly())
 	}
-	svc, err := engine.Open(ctx, dsn, opts...)
+	svc, err := engine.OpenOperator(ctx, dsn, opts...)
 	if err != nil {
 		return nil, lockHint(fmt.Errorf("open the substrate database: %w", err))
 	}
@@ -303,15 +302,4 @@ func assertScopedAppPrincipal(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("effective principal %q is a superuser", user)
 	}
 	return nil
-}
-
-// The operator hat's seams are engine.Resetter, engine.Rebuilder and
-// engine.Verifier. All are deliberately OFF substrate.Service — nothing reachable from the network
-// should be able to call them — so substratectl asks for them by shape, and
-// the engine asserts each against *service at compile time.
-
-// seamMissing is what an engine build without one of the operator seams gets:
-// a named refusal rather than a nil dereference.
-func seamMissing(what string) error {
-	return fmt.Errorf("this build's engine does not implement %s", what)
 }

@@ -399,7 +399,7 @@ func shippedKindVersion(t *testing.T, pkg, file string) int64 {
 func rebuildAndCompare(t *testing.T, dsn, dataRoot, key, repository string) {
 	t.Helper()
 	ctx := context.Background()
-	svc, err := engine.Open(ctx, dsn,
+	svc, err := engine.OpenOperator(ctx, dsn,
 		engine.WithKindsFS(kinds.Seed()),
 		engine.WithDataRoot(dataRoot),
 		engine.WithCredentialKey(key))
@@ -408,11 +408,7 @@ func rebuildAndCompare(t *testing.T, dsn, dataRoot, key, repository string) {
 	}
 	defer func() { _ = svc.Close() }()
 	before := foldDigest(t, dsn, repository)
-	rebuilder, ok := svc.(engine.Rebuilder)
-	if !ok {
-		t.Fatal("the engine no longer offers the rebuild seam")
-	}
-	if _, err := rebuilder.RebuildRepository(ctx, repository); err != nil {
+	if _, err := svc.RebuildRepository(ctx, repository); err != nil {
 		t.Fatalf("rebuild %s: %v", repository, err)
 	}
 	if after := foldDigest(t, dsn, repository); after != before {

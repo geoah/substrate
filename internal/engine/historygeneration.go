@@ -21,14 +21,6 @@ type RotateReport struct {
 	Generation string `json:"generation"`
 }
 
-// GenerationRotator is the operator hat's rotation seam, off
-// substrate.Service like Rebuilder and asserted here for the same reason.
-type GenerationRotator interface {
-	RotateHistoryGeneration(ctx context.Context, repository string) (RotateReport, error)
-}
-
-var _ GenerationRotator = (*service)(nil)
-
 // RotateHistoryGeneration mints a new history generation for one repository
 // and stores it on the row, so every cursor saved under the old one is refused
 // at its next resume and re-lists. It opens the repository the way a rebuild
