@@ -518,12 +518,12 @@ describe("the upgrade preview helpers", () => {
       "backfills size with its default on geoah.example.com/shop/widget: 1 live record rewritten",
       "enters attention at quiet on geoah.example.com/shop/widget: 2 live records rewritten",
       "rewrites status active to open on geoah.example.com/shop/widget: 2 live records rewritten (lossy: the records holding either value become one set)",
-      "drops color on geoah.example.com/shop/widget: its value leaves 1 live record (lossy: the values stay in the changelog only)",
+      "drops color on geoah.example.com/shop/widget: its value leaves 1 live record (lossy: the old values stay in History only)",
     ])
     // The dialog lists the lossy steps alone: what the click consents to.
     expect(lossyStepLines(plan)).toEqual([
       "rewrites status active to open on geoah.example.com/shop/widget: 2 live records rewritten (lossy: the records holding either value become one set)",
-      "drops color on geoah.example.com/shop/widget: its value leaves 1 live record (lossy: the values stay in the changelog only)",
+      "drops color on geoah.example.com/shop/widget: its value leaves 1 live record (lossy: the old values stay in History only)",
     ])
   })
 

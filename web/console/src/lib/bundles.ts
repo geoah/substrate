@@ -226,7 +226,7 @@ export function stepLines(plan: ConversionPlan | undefined): string[] {
             : ""
         }`
       default:
-        return `drops ${s.property} on ${s.kind}: its value leaves ${n} (lossy: the values stay in the changelog only)`
+        return `drops ${s.property} on ${s.kind}: its value leaves ${n} (lossy: the old values stay in History only)`
     }
   })
 }
