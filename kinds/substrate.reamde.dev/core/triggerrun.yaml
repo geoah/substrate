@@ -128,7 +128,7 @@ data:
     output:
       type: json
       description: what the call returned, for a call run whose output encodes
-        to at most 4096 bytes of JSON
+        to at most 4096 bytes of JSON and carries no NUL (U+0000)
     outputBytes:
       type: int
       min: 0
