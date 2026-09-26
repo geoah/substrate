@@ -120,9 +120,10 @@ function PostureCell({ posture }: { posture: DiffPosture }) {
     <Tooltip>
       <TooltipTrigger
         render={
-          <span
+          <button
+            type="button"
             className={cn(
-              "inline-flex w-fit items-center text-xs whitespace-nowrap",
+              "inline-flex w-fit cursor-help items-center text-xs whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
               posture === "choice"
                 ? "rounded-sm border border-warning/60 px-1.5 py-0.5 text-warning"
                 : "pt-0.5 text-muted-foreground"
@@ -203,7 +204,10 @@ function DiffRows({ rows, kinds }: { rows: DiffRow[]; kinds: KindInfo[] }) {
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <span className="block truncate text-muted-foreground" />
+                  <button
+                    type="button"
+                    className="block max-w-full cursor-help truncate rounded-[2px] text-left text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  />
                 }
               >
                 {row.key}

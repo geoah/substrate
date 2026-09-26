@@ -72,10 +72,10 @@ export function GridColumnHeader<TData extends RowData, TValue>({
         <Tooltip>
           <TooltipTrigger
             render={
-              <span
-                tabIndex={0}
+              <button
+                type="button"
                 aria-label={description}
-                className="inline-grid shrink-0 place-items-center rounded-[4px] opacity-0 outline-none group-hover/th:opacity-100 focus-visible:opacity-100"
+                className="inline-grid shrink-0 cursor-help place-items-center rounded-[4px] opacity-0 outline-none group-hover/th:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50"
               />
             }
           >

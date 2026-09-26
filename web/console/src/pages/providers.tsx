@@ -348,7 +348,12 @@ function OtherPackageRow({
         {upgradeBlocked(row) ? (
           <Tooltip>
             <TooltipTrigger
-              render={<span className="inline-flex cursor-help" />}
+              render={
+                <button
+                  type="button"
+                  className="inline-flex cursor-help rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                />
+              }
             >
               <Pill tone="warn" dot={false}>
                 <TriangleAlertIcon aria-hidden className="size-3" />

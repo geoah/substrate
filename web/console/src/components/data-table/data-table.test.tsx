@@ -258,3 +258,43 @@ describe("useDataTable sorting", () => {
     ])
   })
 })
+
+/** A column's description is reachable from the keyboard: it rides a button,
+ * the sort button where the column sorts. */
+describe("DataTableColumnHeader descriptions", () => {
+  afterEach(cleanup)
+
+  function Surface({ sortable }: { sortable: boolean }) {
+    const table = useDataTable({
+      columns: [
+        {
+          id: "a",
+          accessorFn: (r: Row) => r.a,
+          enableSorting: sortable,
+          header: ({ column }) => (
+            <DataTableColumnHeader
+              column={column}
+              title="Due"
+              description="When it is due"
+            />
+          ),
+        },
+      ],
+      data: DATA,
+      sorting: [],
+      onSortingChange: () => {},
+    })
+    return <DataTable table={table} />
+  }
+
+  it("puts a plain column's description on a focusable button", () => {
+    render(<Surface sortable={false} />)
+    const trigger = screen.getByRole("button", { name: "Due" })
+    expect(trigger.tagName).toBe("BUTTON")
+  })
+
+  it("puts a sortable column's description on its sort button", () => {
+    render(<Surface sortable />)
+    expect(screen.getAllByRole("button", { name: /Due/ })).toHaveLength(1)
+  })
+})
