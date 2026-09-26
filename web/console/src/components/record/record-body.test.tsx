@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /** The record's body: prose under the sheet, the full width of the document
- * column in reading and in editing, and one PATCH when it changes. */
+ * column in reading and in editing, a footer that says how it saves, and one
+ * PATCH when it changes. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -84,5 +85,44 @@ describe("RecordBody", () => {
       properties: { details: "Met at the conference." },
       ifVersion: 4,
     })
+  })
+
+  it("shows how it saves under the editor, and Save writes", async () => {
+    renderBody(record("Old."))
+    fireEvent.click(screen.getByRole("button", { name: "Edit Details" }))
+    expect(screen.getByText(/⌘Enter saves · Esc cancels/)).toBeTruthy()
+    const editor = screen.getByRole("textbox", { name: "Details" })
+    fireEvent.change(editor, { target: { value: "New." } })
+    const save = screen.getByRole("button", { name: "Save" })
+    // Moving to the footer is not leaving the editor.
+    fireEvent.blur(editor, { relatedTarget: save })
+    expect(wire.writes).toHaveLength(0)
+    fireEvent.click(save)
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0]).toEqual({
+      properties: { details: "New." },
+      ifVersion: 4,
+    })
+  })
+
+  it("Cancel throws the draft away and writes nothing", () => {
+    renderBody(record("Old."))
+    fireEvent.click(screen.getByRole("button", { name: "Edit Details" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "Details" }), {
+      target: { value: "New." },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(screen.queryByRole("textbox")).toBeNull()
+    expect(wire.writes).toHaveLength(0)
+  })
+
+  it("saves on leaving the editor and says it did", async () => {
+    renderBody(record("Old."))
+    fireEvent.click(screen.getByRole("button", { name: "Edit Details" }))
+    const editor = screen.getByRole("textbox", { name: "Details" })
+    fireEvent.change(editor, { target: { value: "New." } })
+    fireEvent.blur(editor, { relatedTarget: document.body })
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect((await screen.findByRole("status")).textContent).toContain("Saved")
   })
 })
