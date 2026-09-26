@@ -816,8 +816,8 @@ Read only: nothing here writes back to Notion.
   writes the rows that page produced, checkpoints its cursor and its backlog on
   the account, and hands the drain back to the engine.
 - **Triggers (3)**: `notion-on-connect` fires when an `account` carries
-  `enabledPages` true and no `lastSyncedAt`; `notion-on-request` fires when
-  `syncRequestedAt` is newer than `lastSyncedAt`; `notion-scheduled` fires
+  `enabledPages` true and no `lastSyncedAt`; `notion-on-request` fires while
+  `syncRequestedAt` differs from `syncRequestedAck`; `notion-scheduled` fires
   hourly.
 - **Mappings**: none shipped. The `people` sample ships `googlecontactperson`,
   `googleaddressperson`, `githubuserperson` and `linearuserperson`, and `tasks`
@@ -955,8 +955,8 @@ Beeper, and no media.
 - **Triggers (3)**: `beeper-messages-on-connect` fires when an account carries
   `enabledMessages` and no `lastSyncedAt`; `beeper-messages-scheduled` fires
   every 15 minutes and walks the enabled account when it is due;
-  `beeper-messages-on-demand` fires when the owner stamps `syncRequestedAt`
-  later than `lastSyncedAt`.
+  `beeper-messages-on-demand` fires while the owner's `syncRequestedAt`
+  differs from `syncRequestedAck`.
 - **Mappings**: none shipped. `user` is the kind a repository's person mapping
   would probe, and it carries `fullName`, `username`, `email` and
   `phoneNumber` to probe on; it declares no person slot, so the mapping
@@ -1077,8 +1077,8 @@ chats. Read only, it never posts, reacts or joins.
 - **Triggers (3)**: `slack-messages-on-connect` fires on an account whose
   `enabledMessages` is true and which carries no `lastSyncedAt`;
   `slack-messages-scheduled` fires every 15 minutes and takes the account
-  when it is due; `slack-messages-on-demand` fires when `syncRequestedAt` is
-  newer than `lastSyncedAt`.
+  when it is due; `slack-messages-on-demand` fires while `syncRequestedAt`
+  differs from `syncRequestedAck`.
 - **Mappings**: none shipped. `user` is the identity kind a repository would
   map onto a person, and `profile.email` is the property a mapping matches
   on.

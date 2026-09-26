@@ -448,11 +448,12 @@ def sync_now():
     NOT a function call. Call mode runs ONE invocation and does not drain a
     paged body, so a paged sync fired that way stops after its first page."""
     import datetime as dt
-    # MICROSECONDS, deliberately. The trigger fires on `syncRequestedAt >
-    # lastSyncedAt` and the sync stamps `lastSyncedAt` to the whole second;
-    # a request stamped in the same second is NOT greater, so the guard
-    # closes and the continuation deadlocks. A sub-second request is strictly
-    # later than a whole-second completion in the same second.
+    # MICROSECONDS, so two requests inside one second are two requests: the
+    # trigger fires while `syncRequestedAt` differs from `syncRequestedAck`.
+    # It used to fire on `syncRequestedAt > lastSyncedAt`, which CEL compares
+    # as strings, and a request stamped in the same second as the
+    # whole-second `lastSyncedAt` sorted below it ("." before "Z") and never
+    # ran. That is what failed sections 9, 15 and 16 at random in CI.
     now = dt.datetime.now(dt.timezone.utc).isoformat()
     return api("PATCH", "/api/v1/%s/%s" % (ACCOUNT_KIND, ACCOUNT_ID),
                {"properties": {"syncRequestedAt": now}})
@@ -486,21 +487,31 @@ def pending(p):
 def wait_for_sync(previous_stamp, seconds=240):
     """Wait for a sync to settle, DRIVING it while it has work left.
 
-    The on-demand trigger fires on `syncRequestedAt > lastSyncedAt`, and both
-    are whole seconds: a drain that stamps its completion in the same second
-    as the request closes its own guard, and nothing fires again. Re-stamping
-    only when `lastSyncedAt` CHANGED therefore deadlocks — the owner's
-    workspace stalled at 1,249 pending with the two equal to the second. So
-    the driver re-stamps whenever the account still has pending work and the
-    last stamp has gone quiet, whether or not it moved.
+    A bounded drain stamps `lastSyncedAt` with work still pending and nothing
+    fires again on its own, so the driver re-stamps the request whenever the
+    account still has pending work and the last stamp has gone quiet, whether
+    or not it moved.
+
+    SETTLED means the LATEST request was served, not only that some run
+    finished with nothing pending: a drive stamped while a run was in flight
+    queues one more delivery, and returning before it ran left a check
+    reading `syncRequestedAck` one request behind `syncRequestedAt`. A run
+    that walks to the end always acknowledges the request it read, so the
+    wait is for that. It never drives while the dispatcher says a run is
+    `running`, for the same reason.
     """
     deadline = time.time() + seconds
-    quiet_since, driven = time.time(), 0
+    quiet_since, driven, moved = time.time(), 0, False
     while time.time() < deadline:
         _st, body = api("GET", "/api/v1/%s/%s" % (ACCOUNT_KIND, ACCOUNT_ID))
         p = props(body or {})
         stamp = p.get("lastSyncedAt")
-        if stamp and stamp != previous_stamp and not pending(p):
+        running = p.get("syncState") == "running"
+        served = p.get("syncRequestedAck") == p.get("syncRequestedAt")
+        # MOVED ONCE is enough: two runs can stamp the same whole second, so
+        # the run that serves the last request may leave the stamp unchanged.
+        moved = moved or bool(stamp and stamp != previous_stamp)
+        if moved and not pending(p) and not running and served:
             return p
         if stamp != previous_stamp:
             quiet_since = time.time()
@@ -508,7 +519,7 @@ def wait_for_sync(previous_stamp, seconds=240):
             if pending(p):
                 sync_now()
                 driven += 1
-        elif pending(p) and time.time() - quiet_since > 20:
+        elif pending(p) and not running and time.time() - quiet_since > 20:
             # Nothing has run for twenty seconds and there is work left: the
             # guard is closed, so open it again.
             quiet_since = time.time()

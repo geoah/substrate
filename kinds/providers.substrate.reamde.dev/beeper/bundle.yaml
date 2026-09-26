@@ -146,7 +146,12 @@ data:
   #
   # 16, #675: `chatsync` is labelled Sync progress (decision 0117). Display
   # text only.
-  version: 16
+  #
+  # 17: the on-demand trigger fires while `syncRequestedAt` differs from
+  # `syncRequestedAck`. Its `syncRequestedAt > lastSyncedAt` guard compared
+  # the two instants as strings and could drop a request stamped in the same
+  # second as the last run.
+  version: 17
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -1949,10 +1954,10 @@ data:
     # ------------------------------------------------------------- the clock
 
     def _now_iso():
-        """SUB-SECOND, deliberately. `syncRequestedAt > lastSyncedAt` is the
-        on-demand trigger's whole guard, and a request landing in the same SECOND
-        as the stamp is not greater than it — which is how the owner's Slack seed
-        stalled with the two equal (provider-practices §4)."""
+        """SUB-SECOND, so two runs inside one second stamp distinct instants.
+        The stamp no longer gates Sync now: the on-demand guard compares
+        `syncRequestedAt` with `syncRequestedAck` (triggers.yaml), because a
+        string comparison against `lastSyncedAt` dropped same-second requests."""
         return _dt.datetime.now(_dt.timezone.utc).isoformat()
 
 

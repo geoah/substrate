@@ -363,7 +363,11 @@ def force_sync(api, kind, aid, timeout=300):
     back to its caller rather than draining it.
     """
     before = account(api, kind, aid).get("lastSyncedAt") or ""
-    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    # SUB-SECOND: the on-request guard fires while `syncRequestedAt` differs
+    # from `syncRequestedAck`, so two whole-second requests inside one second
+    # would be one request and the second would never run.
+    import datetime as _dt
+    stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     st, body, _ = api.call("PATCH", "/api/v1/%s/%s" % (kind, aid),
                            {"properties": {"syncRequestedAt": stamp}})
     if st >= 400:
@@ -371,7 +375,9 @@ def force_sync(api, kind, aid, timeout=300):
     deadline = time.time() + timeout
     while time.time() < deadline:
         p = account(api, kind, aid)
-        if (p.get("lastSyncedAt") or "") > before:
+        # MOVED, not "greater": instants compared as strings misorder inside
+        # one second, and nothing but a new run moves the stamp.
+        if (p.get("lastSyncedAt") or "") != before:
             return p
         time.sleep(2)
     raise SystemExit("the requested sync never stamped the account (last: %s)"
