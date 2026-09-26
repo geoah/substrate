@@ -1,13 +1,15 @@
-/** ONE control per declared property, and the only place the console decides
- * what a datatype looks like on a form. Both typed surfaces render through it:
- * the integrations dialog (`RecordConfigForm`, one bundle config or account)
- * and the record editor's form lens (any kind at all).
+/** ONE control per declared property, for the surfaces that edit a whole
+ * record at once: a provider's dialogs (`RecordConfigForm`, one bundle config
+ * or account), the record editor's form lens, and the property sheet's panel
+ * for the shapes that need room. Its controls are the sheet's own: a choice
+ * is the same popover list, a date the same picker, a list the same stack of
+ * items, so a value type is edited one way everywhere.
  *
  * What the declaration buys, control by control:
- * - an enum (or any property that narrows its values) is a SELECT, never a
- *   free-text guess;
- * - a `state` offers its machine's states, and says so when a put may not move
- *   it (the transition is a patch, driven from the record page);
+ * - an enum (or any property that narrows its values) is chosen from a list
+ *   of its display words, never a free-text guess;
+ * - a `state` offers its machine's states on a create, and on an edit says
+ *   the record page moves it (a put may not);
  * - a `reference` offers the records of the kind it is pinned to, so an id is
  *   picked rather than remembered, and asks for the kind when `to: any`; a
  *   REPEATED one is a list of those pickers, because the write carries a list;
@@ -21,14 +23,21 @@
  *   and a `keyed:` map is an add-remove list of key/value rows whose keys are
  *   held to the declared `keyPattern`;
  * - a `json` gets a monospaced editor validated as JSON, a repeated scalar a
- *   one-per-line list, a number a number input, and every datatype with a
+ *   stack of items, a number a number input, and every datatype with a
  *   worked example carries it as the placeholder. */
 
-import { PlusIcon } from "lucide-react"
+import { useEffect, useRef, type KeyboardEvent } from "react"
+import { PlusIcon, XIcon } from "lucide-react"
 
+import { fromLocalInput, toLocalInput } from "@/components/property-sheet/dates"
+import { KindGlyph } from "@/components/identity/kind-glyph"
+import { StateBadge } from "@/components/identity/state-badge"
 import { ReferenceListPicker } from "@/components/record/identity-picker"
+import {
+  PropertyChoice,
+  type Choice,
+} from "@/components/record/property-choice"
 import { RecordCombobox } from "@/components/record/record-combobox"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -38,9 +47,11 @@ import {
   FieldError,
   FieldLabel,
 } from "@/components/ui/field"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useReferenceTitles } from "@/hooks/use-reference-titles"
-import type { KindInfo } from "@/lib/api/types"
+import type { EnumValue, KindInfo } from "@/lib/api/types"
 import { kindByIdentity } from "@/lib/definition"
+import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import {
   asBag,
   asKeyedRows,
@@ -56,13 +67,33 @@ import {
   type FormValue,
   type KeyedRow,
 } from "@/lib/record-form"
-import { TO_ANY, formatValue } from "@/lib/record-schema"
+import { TO_ANY, elementSpec, formatValue } from "@/lib/record-schema"
+import { stateWord } from "@/lib/state-words"
 import { cn } from "@/lib/utils"
 
-/** A native select styled to match the Input primitive (no shadcn Select
- * primitive is vendored yet; an enum field is a small, closed set). */
-const SELECT_CLASS =
-  "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 disabled:opacity-50 md:text-sm dark:bg-input/30"
+/** The label an enum value reads as: its authored label, else its value
+ * humanized. */
+function enumLabel(option: EnumValue): string {
+  return option.label || humanizeName(option.value)
+}
+
+/** An enum's values as choices. A deprecated value is never offered; the one
+ * held keeps its row, so the list says what is there. */
+function enumChoices(options: EnumValue[], held: string): Choice[] {
+  return options
+    .filter((o) => !o.deprecated || o.value === held)
+    .map((o) => ({
+      value: o.value,
+      label: enumLabel(o),
+      hint: o.deprecated ? "no longer offered" : undefined,
+    }))
+}
+
+/** "a person", "an organization": a record of a kind, in a sentence. */
+function aRecordOf(kind: KindInfo | string): string {
+  const noun = lowerFirst(displayName(kind))
+  return `${/^[aeiou]/.test(noun) ? "an" : "a"} ${noun}`
+}
 
 export interface PropertyFieldProps {
   field: FormField
@@ -109,6 +140,7 @@ export function PropertyField({
   idPrefix = "f",
   bare = false,
 }: PropertyFieldProps) {
+  const [technical] = useTechnicalDetails()
   const id = `${idPrefix}-${field.name}`
   // A cleared field (`null`) and an untouched blank one both render empty; what
   // separates them is what the write does, which is the form core's business.
@@ -130,16 +162,11 @@ export function PropertyField({
     }
     return (
       <Field>
-        <div className="flex items-center gap-2">
-          <FieldLabel className="font-normal">{field.label}</FieldLabel>
-          <Badge variant="secondary" className="text-[0.65rem]">
-            {stamped ? "engine-stamped" : "derived"}
-          </Badge>
-        </div>
-        <p className="data text-sm">
+        <FieldLabel className="font-normal">{field.label}</FieldLabel>
+        <p className="text-sm">
           {formatValue(field.spec, value) || (
             <span className="text-muted-foreground">
-              {stamped ? "not stamped on this record yet" : "not set yet"}
+              {stamped ? "Set automatically" : "Not set yet"}
             </span>
           )}
         </p>
@@ -216,30 +243,20 @@ export function PropertyField({
     )
 
   if (field.control === "select") {
-    // The empty choice is offered for OPTIONAL enums (its "— none —" is a real
-    // value: unset). A REQUIRED enum offers it ONLY while the field is empty,
-    // so a required select seeded with a default does not present an empty
-    // option beside the enum's own `none` value.
-    const showEmpty = !field.required || text === ""
+    // An OPTIONAL enum may be emptied (unset is a real answer); a required one
+    // never offers the empty beside its own values.
     return (
       <Field>
         {label}
-        <select
+        <PropertyChoice
           id={id}
-          className={cn(SELECT_CLASS, "data")}
-          aria-invalid={Boolean(error)}
+          label={`Choose ${field.label}`}
+          choices={enumChoices(field.options ?? [], text)}
           value={text}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          {showEmpty && (
-            <option value="">{field.required ? "Select…" : "None"}</option>
-          )}
-          {field.options?.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label || humanizeName(opt.value)}
-            </option>
-          ))}
-        </select>
+          onChange={onChange}
+          clearLabel={field.required ? undefined : "Clear"}
+          invalid={Boolean(error)}
+        />
         {help()}
         {error && <FieldError>{error}</FieldError>}
       </Field>
@@ -250,28 +267,36 @@ export function PropertyField({
     // A put may not move a state (engine/write.go): a create may be born in
     // any declared state, an edit may not change it.
     const frozen = mode === "patch"
+    const initial = field.spec.initial
     return (
       <Field>
         {label}
-        <select
-          id={id}
-          className={cn(SELECT_CLASS, "data")}
-          disabled={frozen}
-          aria-invalid={Boolean(error)}
-          value={text}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          {!text && <option value="">Select…</option>}
-          {(field.spec.states ?? []).map((state) => (
-            <option key={state} value={state}>
-              {state}
-            </option>
-          ))}
-        </select>
+        {frozen ? (
+          <output id={id} className="flex min-h-8 items-center text-sm">
+            {text ? (
+              <StateBadge value={text} initial={initial} />
+            ) : (
+              <span className="text-muted-foreground">Not set</span>
+            )}
+          </output>
+        ) : (
+          <PropertyChoice
+            id={id}
+            label={`Choose ${field.label}`}
+            choices={(field.spec.states ?? []).map((state) => ({
+              value: state,
+              label: stateWord(state),
+              node: <StateBadge value={state} initial={initial} />,
+            }))}
+            value={text}
+            onChange={onChange}
+            invalid={Boolean(error)}
+          />
+        )}
         {help(
           frozen
-            ? "A state changes by transition, not by editing it here."
-            : "The state this record starts in."
+            ? `${field.label} changes by moving it on the record’s page.`
+            : "Where it starts."
         )}
         {error && <FieldError>{error}</FieldError>}
       </Field>
@@ -311,9 +336,11 @@ export function PropertyField({
           invalid={Boolean(error)}
         />
         {help(
-          pinned
-            ? `Each one points at a ${pinned}.`
-            : "Each one points at any kind. Give the whole path."
+          technical
+            ? pinned
+              ? `Each one points at ${pinned}.`
+              : "Each one points at any kind: give the whole path."
+            : undefined
         )}
         {error && <FieldError>{error}</FieldError>}
       </Field>
@@ -379,9 +406,7 @@ export function PropertyField({
                 <RemoveButton
                   label={`Remove ${field.label} row ${i + 1}`}
                   onClick={() => onChange(rows.filter((_, at) => at !== i))}
-                >
-                  Remove
-                </RemoveButton>
+                />
               </div>
               <ObjectRow
                 field={field}
@@ -399,9 +424,7 @@ export function PropertyField({
           <AddButton
             label={`Add ${field.label} row`}
             onClick={() => onChange([...rows, {} as FieldBag])}
-          >
-            Add row
-          </AddButton>
+          />
         </div>
         {help()}
         {error && <FieldError>{error}</FieldError>}
@@ -413,22 +436,14 @@ export function PropertyField({
     return (
       <Field>
         {label}
-        <Textarea
+        <ItemList
           id={id}
-          rows={3}
-          className="data text-xs"
-          aria-invalid={Boolean(error)}
-          placeholder={exampleHint(field.example)}
-          value={text}
-          onChange={(e) => onChange(e.target.value)}
+          field={field}
+          text={text}
+          onChange={onChange}
+          invalid={Boolean(error)}
         />
-        {!bare && (
-          <FieldDescription>
-            {field.description
-              ? `${field.description}: one per line.`
-              : "One value per line."}
-          </FieldDescription>
-        )}
+        {help()}
         {error && <FieldError>{error}</FieldError>}
       </Field>
     )
@@ -442,7 +457,10 @@ export function PropertyField({
         <Textarea
           id={id}
           rows={isJSON ? 4 : 5}
-          className={cn(isJSON && "data text-xs")}
+          className={cn(
+            "field-sizing-content min-h-16",
+            isJSON && "font-mono text-xs"
+          )}
           aria-invalid={Boolean(error)}
           placeholder={isJSON ? exampleHint(field.example) : undefined}
           value={text}
@@ -455,13 +473,18 @@ export function PropertyField({
   }
 
   const isSecret = field.control === "secret"
+  // A time is picked on the same local-time control the sheet opens; what is
+  // stored is the instant it names.
+  const isInstant = field.control === "datetime" && field.spec.kind !== "date"
   const inputType = isSecret
     ? "password"
     : field.control === "number"
       ? "number"
       : field.spec.kind === "date"
         ? "date"
-        : field.inputType
+        : isInstant
+          ? "datetime-local"
+          : field.inputType
   return (
     <Field>
       {label}
@@ -469,7 +492,6 @@ export function PropertyField({
         id={id}
         type={inputType}
         autoComplete={isSecret ? "off" : undefined}
-        className="data"
         aria-invalid={Boolean(error)}
         placeholder={
           isSecret
@@ -478,12 +500,14 @@ export function PropertyField({
               : undefined
             : exampleHint(field.example)
         }
-        value={text}
-        onChange={(e) => onChange(e.target.value)}
+        value={isInstant ? toLocalInput(text) || text : text}
+        onChange={(e) =>
+          onChange(isInstant ? fromLocalInput(e.target.value) : e.target.value)
+        }
       />
       {help(
         isSecret && mode === "patch"
-          ? "This value never reads back. Leave it blank to keep the stored one."
+          ? "It’s never shown again. Leave it blank to keep the saved one."
           : undefined
       )}
       {error && <FieldError>{error}</FieldError>}
@@ -491,59 +515,147 @@ export function PropertyField({
   )
 }
 
-/** The affordances a container's rows carry. An action is a BUTTON, not an
- * underlined word: adding and removing a row are things this form DOES, and
- * they wear the console's own variants (secondary to add, destructive to
- * remove) wherever a list grows. */
+/** The affordances a container's rows carry, the property sheet's own: a
+ * quiet cross to take a row out and a quiet "Add another" to grow the list.
+ * Each is NAMED for the property it acts on: a declaration nests, so one form
+ * can hold three lists at three depths. */
 function RemoveButton({
   label,
   onClick,
-  className,
-  children,
 }: {
   label: string
   onClick: () => void
-  className?: string
-  children: React.ReactNode
 }) {
   return (
     <Button
       type="button"
-      variant="destructive"
-      size="xs"
+      variant="ghost"
+      size="icon-xs"
       aria-label={label}
-      className={cn("shrink-0", className)}
+      title="Remove"
+      className="shrink-0 text-muted-foreground"
       onClick={onClick}
     >
-      {children}
+      <XIcon />
     </Button>
   )
 }
 
-/** The add for one container. It is LABELLED with the property it grows: a
- * declaration nests, so one form can hold three lists at three depths, and
- * three buttons all reading "Add" name none of them. */
-function AddButton({
-  label,
-  onClick,
-  children,
-}: {
-  label: string
-  onClick: () => void
-  children: React.ReactNode
-}) {
+function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <Button
       type="button"
-      variant="secondary"
+      variant="ghost"
       size="xs"
       aria-label={label}
-      className="self-start"
+      className="self-start text-muted-foreground"
       onClick={onClick}
     >
       <PlusIcon />
-      {children}
+      Add another
     </Button>
+  )
+}
+
+/** A repeated scalar as the stack of items it is, one box per item, held as
+ * the lines of one text (the form core's shape for a list). Enter adds an
+ * item after the one being typed in and Backspace in an empty one removes it;
+ * a choice item is chosen from its list. */
+function ItemList({
+  id,
+  field,
+  text,
+  onChange,
+  invalid,
+}: {
+  id: string
+  field: FormField
+  text: string
+  onChange: (value: FormValue) => void
+  invalid: boolean
+}) {
+  const item = elementSpec(field.spec)
+  const items = text === "" ? [""] : text.split("\n")
+  const boxes = useRef<(HTMLInputElement | null)[]>([])
+  // The item to focus once the list re-renders with it.
+  const focusNext = useRef<number | null>(null)
+  useEffect(() => {
+    if (focusNext.current === null) return
+    boxes.current[focusNext.current]?.focus()
+    focusNext.current = null
+  })
+
+  const set = (next: string[]) => onChange(next.join("\n"))
+  const change = (at: number, value: string) =>
+    set(items.map((v, i) => (i === at ? value : v)))
+  const remove = (at: number) => {
+    const rest = items.filter((_, i) => i !== at)
+    set(rest.length ? rest : [""])
+    focusNext.current = Math.max(0, at - 1)
+  }
+  const insertAfter = (at: number) => {
+    set([...items.slice(0, at + 1), "", ...items.slice(at + 1)])
+    focusNext.current = at + 1
+  }
+  function onKeyDown(e: KeyboardEvent<HTMLInputElement>, at: number) {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      insertAfter(at)
+    } else if (e.key === "Backspace" && items[at] === "" && items.length > 1) {
+      e.preventDefault()
+      remove(at)
+    }
+  }
+  const inputType =
+    field.inputType === "email" || field.inputType === "url"
+      ? field.inputType
+      : item.kind === "phone"
+        ? "tel"
+        : ["int", "integer", "number", "float", "decimal"].includes(item.kind)
+          ? "number"
+          : "text"
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <ol aria-label={field.label} className="flex flex-col gap-1.5">
+        {items.map((value, i) => (
+          <li key={i} className="flex items-center gap-1">
+            {item.values?.length ? (
+              <PropertyChoice
+                id={i === 0 ? id : undefined}
+                label={`${field.label} ${i + 1}`}
+                choices={enumChoices(item.values, value)}
+                value={value}
+                onChange={(next) => change(i, next)}
+                invalid={invalid}
+              />
+            ) : (
+              <Input
+                id={i === 0 ? id : undefined}
+                ref={(el) => {
+                  boxes.current[i] = el
+                }}
+                aria-label={`${field.label} ${i + 1}`}
+                type={inputType}
+                aria-invalid={invalid}
+                placeholder={exampleHint(field.example)}
+                value={value}
+                onChange={(e) => change(i, e.target.value)}
+                onKeyDown={(e) => onKeyDown(e, i)}
+              />
+            )}
+            <RemoveButton
+              label={`Remove ${field.label} ${i + 1}`}
+              onClick={() => remove(i)}
+            />
+          </li>
+        ))}
+      </ol>
+      <AddButton
+        label={`Add ${field.label}`}
+        onClick={() => insertAfter(items.length - 1)}
+      />
+    </div>
   )
 }
 
@@ -578,6 +690,7 @@ function ReferenceField({
   label: React.ReactNode
   help: (hint?: string) => React.ReactNode
 }) {
+  const [technical] = useTechnicalDetails()
   const ref = asRef(value)
   const pinned = pinnedKind(field)
   const chosen = ref.kind || pinned
@@ -591,19 +704,22 @@ function ReferenceField({
       {label}
       <div className="flex flex-col gap-1.5">
         {!pinned && (
-          <select
-            aria-label={`${field.label} kind`}
-            className={cn(SELECT_CLASS, "data")}
+          <PropertyChoice
+            label={`${field.label} collection`}
+            placeholder="Pick a collection"
+            choices={kinds.map((k) => ({
+              value: k.identity,
+              label: displayPlural(k),
+              node: (
+                <>
+                  <KindGlyph kind={k} size="xs" />
+                  {displayPlural(k)}
+                </>
+              ),
+            }))}
             value={ref.kind}
-            onChange={(e) => onChange({ kind: e.target.value, id: "" })}
-          >
-            <option value="">select a kind</option>
-            {kinds.map((k) => (
-              <option key={k.identity} value={k.identity}>
-                {k.identity}
-              </option>
-            ))}
-          </select>
+            onChange={(next) => onChange({ kind: next, id: "" })}
+          />
         )}
         <RecordCombobox
           pin={chosen}
@@ -613,7 +729,11 @@ function ReferenceField({
           value={ref.id}
           valueTitle={titles.get(`${chosen}/${ref.id}`)}
           invalid={Boolean(error)}
-          placeholder={target ? "Choose…" : "Choose a kind first"}
+          placeholder={
+            chosen
+              ? `Pick ${aRecordOf(target ?? chosen)}`
+              : "Pick a collection first"
+          }
           // Choosing the record already held keeps what its link carries;
           // another record starts with none.
           onSelect={(next) =>
@@ -626,9 +746,11 @@ function ReferenceField({
         />
       </div>
       {help(
-        pinned
-          ? `Points at a ${pinned}.`
-          : "Points at any kind. Name it, or give the whole path."
+        technical
+          ? pinned
+            ? `Points at ${pinned}.`
+            : "Points at any kind: pick its collection, or give the whole path."
+          : undefined
       )}
       {error && <FieldError>{error}</FieldError>}
     </Field>
@@ -686,7 +808,7 @@ function KeyedRows({
               </FieldLabel>
               <Input
                 id={`${idPrefix}-key-${i}`}
-                className="data"
+                className="font-mono"
                 aria-label={`${field.label} key ${i + 1}`}
                 placeholder={field.spec.keyPattern ?? "the key"}
                 value={row.key}
@@ -696,9 +818,7 @@ function KeyedRows({
             <RemoveButton
               label={`Remove ${field.label} entry ${i + 1}`}
               onClick={() => onChange(rows.filter((_, at) => at !== i))}
-            >
-              Remove
-            </RemoveButton>
+            />
           </div>
           <PropertyField
             field={valueField}
@@ -714,9 +834,7 @@ function KeyedRows({
       <AddButton
         label={`Add ${field.label} entry`}
         onClick={() => onChange([...rows, { key: "", value: "" }])}
-      >
-        Add entry
-      </AddButton>
+      />
     </div>
   )
 }
