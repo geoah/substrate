@@ -501,4 +501,4 @@ first label.
   A rule here may link its record. Before citing a new record's number,
   `git fetch --prune` and run `mise run decisions:check`: it refuses a number `main`
   or another live branch already took, and names a free one
-  ([0109](docs/decisions/0109-a-decision-number-is-checked-against-every-live-branch-before-the-merge.md)).
+  ([0124](docs/decisions/0124-a-decision-number-is-checked-against-every-live-branch-before-the-merge.md)).

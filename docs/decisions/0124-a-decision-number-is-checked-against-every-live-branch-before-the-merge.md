@@ -4,7 +4,7 @@ date: 2026-09-26
 decision-makers: George Antoniadis (via the issue-587 agent session)
 ---
 
-# 0109. A decision number is checked against every live branch before the merge
+# 0124. A decision number is checked against every live branch before the merge
 
 ## Context and Problem Statement
 

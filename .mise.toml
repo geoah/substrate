@@ -406,7 +406,7 @@ run = ".mise/frozencheck.sh"
 # Not in `lint` either: it reads the OTHER branches on origin, so its answer
 # depends on what has been pushed. lint:docs refuses two records with one
 # number in one tree; this refuses a record whose number another live branch
-# added first, before either merges (decision 0109).
+# added first, before either merges (decision 0124).
 [tasks."decisions:check"]
 description = "Refuse a decision record whose number main or another branch already took"
 run = ".mise/decisionscheck.sh"

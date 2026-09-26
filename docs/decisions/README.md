@@ -77,7 +77,7 @@ already taken as well as `main`'s. Numbers are permanent once merged to
 `main`. `mise run decisions:check` refuses a record whose number `main`
 already uses, or that another branch pushed in the last 30 days added first,
 and names the next number nobody holds
-([0109](0109-a-decision-number-is-checked-against-every-live-branch-before-the-merge.md)).
+([0124](0124-a-decision-number-is-checked-against-every-live-branch-before-the-merge.md)).
 Run it after `git fetch --prune` (a deleted branch's stale ref still reads as
 a claim) and before citing the number anywhere. CI runs it on pull requests
 and on `main`, so a pushed branch without a pull request counts as a claim for
@@ -278,4 +278,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0115](0115-an-owner-adjusts-a-change-request-on-the-accepting-write.md) | An owner adjusts a change request on the accepting write | accepted |
 | [0116](0116-a-probe-folds-case-only-when-it-declares-fold-case.md) | A probe folds case only when it declares `fold: case` | accepted |
 | [0117](0117-a-kind-may-declare-its-display-label.md) | A kind may declare its display label, singular and plural | accepted |
-| [0109](0109-a-decision-number-is-checked-against-every-live-branch-before-the-merge.md) | A decision number is checked against every live branch before the merge | accepted |
+| [0124](0124-a-decision-number-is-checked-against-every-live-branch-before-the-merge.md) | A decision number is checked against every live branch before the merge | accepted |
