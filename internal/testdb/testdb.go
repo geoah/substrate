@@ -148,12 +148,14 @@ func tmpfsSize() string {
 // loaded Docker daemon does; left alone it sits in Created or Up until the
 // reaper's session ends, and a killed run's reaper may never end it.
 func Postgres(ctx context.Context, extra ...testcontainers.ContainerCustomizer) (*postgres.PostgresContainer, error) {
+	sweepOnce.Do(func() { SweepOrphans(ctx) })
 	opts := []testcontainers.ContainerCustomizer{
 		postgres.WithDatabase("substrate"),
 		postgres.WithUsername("postgres"),
 		postgres.WithPassword("postgres"),
 		testcontainers.WithTmpfs(map[string]string{dataDir: "rw,size=" + tmpfsSize()}),
 		DurabilityOff(),
+		OwnerLabels(),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2).WithStartupTimeout(120 * time.Second)),

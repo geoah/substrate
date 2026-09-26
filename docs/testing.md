@@ -65,6 +65,26 @@ mise run test:db                                        # a container per binary
 SUBSTRATE_TEST_DATABASE_URL="$(mise run dev:dsn)" mise run test:db
 ```
 
+**One database suite per machine at a time.** `test:db`, `test:db:engine`,
+`test:db:rest` and `test:db:providers` run under `.mise/dblock.sh`, which takes
+a machine-wide `flock` slot before the suite starts and holds it until the
+suite's last process exits, whatever signal ends it. A second run on the same
+machine prints `dblock: waiting for a database test slot` with the holder's
+directory and command, and starts when the slot frees.
+`SUBSTRATE_TEST_DB_SLOTS=2` allows two at once; `SUBSTRATE_TEST_DB_LOCK_DIR`
+moves the lock files (default `/tmp/substrate-testdb`). CI (`CI=true`) and a
+machine without `flock(1)` run unlocked, the latter with a note.
+
+**A killed run leaves nothing behind.** Ryuk removes a session's containers
+when the test process goes away, but a killed run can still leave some: its
+ryuk exits while container creates are in flight, and those land in `Created`
+with nothing to reap them. So every container `testdb.Postgres` starts carries
+`substrate.test=1` and its host and owner pid as labels. The first container a
+process starts is preceded by a sweep that removes this host's labeled
+containers whose owner pid is gone (`testdb.SweepOrphans`), `dblock.sh` runs
+the same sweep after each suite, and `mise run test:clean` runs it by hand. A
+container whose owner is alive belongs to another run and is never touched.
+
 `internal/testenv` layers a whole substrate on top of that: a real engine, a
 real HTTP listener and a real token, which is what the end-to-end cases drive.
 It also holds the release acceptance drill, `TestReleaseAcceptanceDrill`
