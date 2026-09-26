@@ -40,6 +40,7 @@ export function DataGrid<TData extends RowData>({
   loading = false,
   empty,
   scrollKey,
+  marks,
   className,
 }: {
   table: DataTableInstance<TData>
@@ -52,6 +53,9 @@ export function DataGrid<TData extends RowData>({
   empty?: ReactNode
   /** A change scrolls the grid back to its top-left (a new page). */
   scrollKey?: string | number
+  /** Rows (by id) that just changed under the reader: tinted while `fresh`,
+   * easing back while `fading`. */
+  marks?: ReadonlyMap<string, "fresh" | "fading">
   className?: string
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -186,29 +190,42 @@ export function DataGrid<TData extends RowData>({
               </tr>
             ))
           ) : rows.length ? (
-            rows.map((row) => (
-              <tr
-                key={row.id}
-                data-slot="grid-row"
-                className="group/row [&:hover>td]:bg-[color-mix(in_oklab,var(--background)_96%,var(--foreground))]"
-              >
-                {row.getVisibleCells().map((cell, i) => (
-                  <td
-                    key={cell.id}
-                    className={cn(
-                      rowH,
-                      "overflow-hidden border-b border-border bg-background px-2.5 text-ellipsis whitespace-nowrap",
-                      i > 0 && "border-l",
-                      i === 0 &&
-                        "sticky left-0 z-[1] font-medium shadow-[1px_0_0_var(--border)]",
-                      cell.column.columnDef.meta?.cellClassName
-                    )}
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))
+            rows.map((row) => {
+              const mark = marks?.get(row.id)
+              return (
+                <tr
+                  key={row.id}
+                  data-slot="grid-row"
+                  data-changed={mark}
+                  className="group/row [&:hover>td]:bg-[color-mix(in_oklab,var(--background)_96%,var(--foreground))]"
+                >
+                  {row.getVisibleCells().map((cell, i) => (
+                    <td
+                      key={cell.id}
+                      className={cn(
+                        rowH,
+                        "overflow-hidden border-b border-border bg-background px-2.5 text-ellipsis whitespace-nowrap",
+                        i > 0 && "border-l",
+                        i === 0 &&
+                          "sticky left-0 z-[1] font-medium shadow-[1px_0_0_var(--border)]",
+                        cell.column.columnDef.meta?.cellClassName,
+                        // Opaque, because the title column is pinned over the
+                        // cells that scroll under it.
+                        mark === "fresh" &&
+                          "bg-[color-mix(in_oklab,var(--background)_86%,var(--primary))]",
+                        mark === "fading" &&
+                          "transition-[background-color] duration-[1500ms] ease-out motion-reduce:transition-none"
+                      )}
+                    >
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext()
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              )
+            })
           ) : (
             <tr>
               <td colSpan={visible.length || 1} className="p-0">

@@ -22,7 +22,7 @@
  * the page, and any other stands at the top level saying which record it is
  * in (lib/record-tree.ts, `matchedRoots`). */
 
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import type { SortingState, Updater } from "@tanstack/react-table"
@@ -72,6 +72,10 @@ import {
   useLayoutWidths,
   useTechnicalDetails,
 } from "@/hooks/use-console-preferences"
+import {
+  useChangeMarks,
+  useLiveInvalidation,
+} from "@/hooks/use-live-invalidation"
 import { useRecordTree } from "@/hooks/use-record-tree"
 import { providerOfKind } from "@/lib/actor-identity"
 import {
@@ -211,6 +215,22 @@ export function KindBrowsePage() {
   const kindInfo = registry.data
     ? kindByCollection(registry.data, authority, pkg, name)
     : undefined
+
+  // Records an agent, a sync or another tab writes re-read here as they
+  // land, and the rows they moved carry a brief mark.
+  const { marks, mark } = useChangeMarks()
+  const [announcement, setAnnouncement] = useState("")
+  useLiveInvalidation(
+    { kinds: kindInfo ? [kindInfo.identity] : [] },
+    (changed) => {
+      const live = changed.filter((c) => !c.deleted)
+      mark(live.map((c) => c.id))
+      if (kindInfo && live.length)
+        setAnnouncement(
+          `${live.length} ${lowerFirst(live.length === 1 ? displayName(kindInfo) : displayPlural(kindInfo))} updated`
+        )
+    }
+  )
 
   const filters = useMemo(() => decodeFilters(filterTokens), [filterTokens])
   const filterFields = useMemo(
@@ -682,6 +702,7 @@ export function KindBrowsePage() {
               loading={loadingPage}
               empty={emptyState}
               scrollKey={page}
+              marks={marks}
               className={cn(
                 "flex-1 border-b border-border",
                 refetching && "opacity-60 transition-opacity",
@@ -689,6 +710,9 @@ export function KindBrowsePage() {
               )}
             />
           </RowTreeProvider>
+          <p aria-live="polite" className="sr-only">
+            {announcement}
+          </p>
           <DataTablePagination
             className={cn("pt-2.5 pb-3", GUTTER)}
             page={page}

@@ -43,3 +43,42 @@ describe("the pinned header", () => {
     }
   })
 })
+
+describe("changed rows", () => {
+  it("tints a fresh row opaquely and eases a fading one back", () => {
+    const { result } = renderHook(() =>
+      useDataTable({
+        columns,
+        data: [
+          { id: "a", name: "A" },
+          { id: "b", name: "B" },
+          { id: "c", name: "C" },
+        ],
+        getRowId: (r) => r.id,
+      })
+    )
+    const { container } = render(
+      <DataGrid
+        table={result.current}
+        marks={
+          new Map([
+            ["a", "fresh"],
+            ["b", "fading"],
+          ])
+        }
+      />
+    )
+    const rows = [...container.querySelectorAll("tbody tr")]
+    expect(rows.map((r) => r.getAttribute("data-changed"))).toEqual([
+      "fresh",
+      "fading",
+      null,
+    ])
+    const [fresh, fading, still] = rows.map((r) => r.querySelector("td")!)
+    expect(fresh.className).toContain("var(--primary)")
+    expect(fresh.className).not.toMatch(/\bbg-background\b/)
+    expect(fading.className).toMatch(/\bbg-background\b/)
+    expect(fading.className).toContain("transition-[background-color]")
+    expect(still.className).not.toContain("transition-[background-color]")
+  })
+})
