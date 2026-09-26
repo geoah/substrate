@@ -835,6 +835,11 @@ func (t *txn) convertKind(kc *kindConversion) (int64, error) {
 	return n, nil
 }
 
+// payloadRenamed is the key of a rewrite entry's renames, old name to new:
+// descriptive for the fold, and what a change read pairs a rename by
+// (changevalues.go renamesOf).
+const payloadRenamed = "renamed"
+
 // convertRecord rewrites one record: every step that finds something to move
 // on it lands in a single record effect, renames first, then backfills, then
 // remaps, then nulls. It reports false when the record is gone or no step
@@ -990,7 +995,7 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 	properties := sortedKeys(touched)
 	payload := map[string]any{"properties": properties}
 	if len(renamed) > 0 {
-		payload["renamed"] = renamed
+		payload[payloadRenamed] = renamed
 	}
 	if len(backfilled) > 0 || len(entered) > 0 {
 		// One key for both: a machine's `initial` and a property's `default`

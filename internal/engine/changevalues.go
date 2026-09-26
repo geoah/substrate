@@ -191,7 +191,50 @@ func looksSealed(v any) bool {
 // valueRequest is one (row, affected record) whose befores the walk owes.
 type valueRequest struct {
 	seq   int64
-	props []*substrate.PropertyChange
+	props []owedBefore
+}
+
+// owedBefore is one before a request owes and the name the walk finds it
+// under: the property's own name, or for a rename the old name, which is
+// where the record held the value before the entry moved it.
+type owedBefore struct {
+	name string
+	pc   *substrate.PropertyChange
+}
+
+// renamesOf answers, new name to old, the renames an apply's rewrite of ref
+// made in entry c (convert.go convertRecord writes them to the payload, old
+// name to new). The rewrite is one entry per record, addressed to it, so only
+// the addressed record's renames are read, and only a pair the entry's
+// effects moved as a move is kept: the old name cleared and the new one set.
+func renamesOf(c *substrate.Change, ref eref, moved map[string]valueAt) map[string]string {
+	if c.RecordID != ref.ID || c.Kind != ref.Kind {
+		return nil
+	}
+	var out map[string]string
+	pair := func(from, to string) {
+		old, oldMoved := moved[from]
+		now, newMoved := moved[to]
+		if from == "" || to == "" || from == to || !oldMoved || old.present || !newMoved || !now.present {
+			return
+		}
+		if out == nil {
+			out = map[string]string{}
+		}
+		out[to] = from
+	}
+	switch renamed := c.Payload[payloadRenamed].(type) {
+	case map[string]any:
+		for from, to := range renamed {
+			s, _ := to.(string)
+			pair(from, s)
+		}
+	case map[string]string:
+		for from, to := range renamed {
+			pair(from, to)
+		}
+	}
+	return out
 }
 
 // recordWalk is one record's walk back through its earlier entries.
@@ -245,9 +288,19 @@ func (ds *dataset) deriveValues(ctx context.Context, changes []substrate.Change,
 			if len(rc.moved) == 0 {
 				continue
 			}
+			// A rename is one change under the new name: the old name's
+			// clear is the same move, not a removal of its own.
+			renamed := renamesOf(c, ref, rc.moved)
+			gone := map[string]bool{}
+			for _, from := range renamed {
+				gone[from] = true
+			}
 			props := make([]substrate.PropertyChange, 0, len(rc.moved))
 			for _, name := range sortedKeys(rc.moved) {
-				pc := substrate.PropertyChange{Name: name}
+				if gone[name] {
+					continue
+				}
+				pc := substrate.PropertyChange{Name: name, RenamedFrom: renamed[name]}
 				if v := rc.moved[name]; v.present {
 					pc.After = v.render(ty, name)
 				}
@@ -266,7 +319,12 @@ func (ds *dataset) deriveValues(ctx context.Context, changes []substrate.Change,
 			}
 			req := valueRequest{seq: c.Seq}
 			for k := range a.Properties {
-				req.props = append(req.props, &a.Properties[k])
+				pc := &a.Properties[k]
+				name := pc.Name
+				if pc.RenamedFrom != "" {
+					name = pc.RenamedFrom
+				}
+				req.props = append(req.props, owedBefore{name: name, pc: pc})
 			}
 			w.requests = append(w.requests, req)
 		}
@@ -597,8 +655,8 @@ func (w *recordWalk) visit(e earlierEntry) {
 		}
 	}
 	for w.next < len(w.requests) && w.requests[w.next].seq == e.seq {
-		for _, pc := range w.requests[w.next].props {
-			w.pending[pc.Name] = append(w.pending[pc.Name], pc)
+		for _, o := range w.requests[w.next].props {
+			w.pending[o.name] = append(w.pending[o.name], o.pc)
 		}
 		w.next++
 	}
@@ -631,8 +689,8 @@ func (w *recordWalk) giveUp() {
 		}
 	}
 	for ; w.next < len(w.requests); w.next++ {
-		for _, pc := range w.requests[w.next].props {
-			pc.BeforeUnknown = true
+		for _, o := range w.requests[w.next].props {
+			o.pc.BeforeUnknown = true
 		}
 	}
 	w.pending = nil

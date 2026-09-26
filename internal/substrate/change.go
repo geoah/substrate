@@ -99,9 +99,14 @@ type AffectedRecord struct {
 // has no Before, one it cleared has no After. BeforeUnknown marks a Before
 // the read could not derive from the changelog (history older than the
 // stored values, or a walk that reached its bound), which is not the same
-// as "there was none".
+// as "there was none". RenamedFrom names the property's previous name where
+// the entry is a vocabulary apply moving the record's value to Name (a
+// declaration's `renamedFrom`): the one change is the move, Before is the
+// value the record held under the old name, and the old name has no change
+// of its own (decision 0108).
 type PropertyChange struct {
 	Name          string `json:"name"`
+	RenamedFrom   string `json:"renamedFrom,omitempty"`
 	Before        any    `json:"before,omitempty"`
 	After         any    `json:"after,omitempty"`
 	BeforeUnknown bool   `json:"beforeUnknown,omitempty"`

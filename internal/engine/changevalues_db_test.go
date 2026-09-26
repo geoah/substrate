@@ -435,7 +435,7 @@ func TestChangeValuesKeepAFormerSecretRedacted(t *testing.T) {
 	for _, c := range changes {
 		for _, pc := range c.Affected[0].Properties {
 			switch {
-			case pc.Name == "token" && pc.After == nil && pc.Before == engine.Redacted:
+			case pc.Name == "apiKey" && pc.RenamedFrom == "token" && pc.After == engine.Redacted && pc.Before == engine.Redacted:
 				sawRename = true
 			case pc.Name == "pin" && pc.After == "now-plain":
 				sawPlain = pc.Before == nil && !pc.BeforeUnknown
@@ -443,6 +443,64 @@ func TestChangeValuesKeepAFormerSecretRedacted(t *testing.T) {
 		}
 	}
 	if !sawRename || !sawPlain {
-		t.Fatalf("rename row's old name redacted = %v, the retyped value plain = %v: %s", sawRename, sawPlain, raw)
+		t.Fatalf("rename row redacted on both sides = %v, the retyped value plain = %v: %s", sawRename, sawPlain, raw)
+	}
+}
+
+// A vocabulary apply's rename is one change under the new name, paired to
+// the old one, never a removal and an addition (decision 0108).
+func TestChangeValuesPairARenameAsOneMove(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	if err := rnApply(t, ds, rnClosure(rnBaseProps(), nil, "size")); err != nil {
+		t.Fatalf("install the package: %v", err)
+	}
+	g := mustPut(t, ds, owner, substrate.PutInput{Kind: rnGizmo, Properties: map[string]any{
+		"size": "big", "token": "s3cret", "note": "kept",
+	}})
+	mustPatch(t, ds, owner, rnGizmo, g.ID, substrate.PatchInput{Properties: map[string]any{"size": "bigger"}})
+	if err := rnApply(t, ds, rnClosure(rnRenamedProps(), nil, "dimensions")); err != nil {
+		t.Fatalf("the rename must land: %v", err)
+	}
+	mustPatch(t, ds, owner, rnGizmo, g.ID, substrate.PatchInput{Properties: map[string]any{"dimensions": "huge"}})
+
+	changes, err := ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{Kinds: []string{rnGizmo}, RecordID: g.ID, Values: true}, 10)
+	if err != nil {
+		t.Fatalf("changes before: %v", err)
+	}
+	if len(changes) != 4 {
+		t.Fatalf("got %d changes, want put, patch, rename and patch", len(changes))
+	}
+	props := func(c substrate.Change) map[string]substrate.PropertyChange {
+		out := map[string]substrate.PropertyChange{}
+		for _, a := range c.Affected {
+			if a.ID != g.ID {
+				continue
+			}
+			for _, pc := range a.Properties {
+				out[pc.Name] = pc
+			}
+		}
+		return out
+	}
+	// The rename: each moved value is one change under its new name, the
+	// before read under the old one, and the old names carry nothing.
+	rename := props(changes[1])
+	want := map[string]substrate.PropertyChange{
+		"dimensions": {Name: "dimensions", RenamedFrom: "size", Before: "bigger", After: "bigger"},
+		"apiKey":     {Name: "apiKey", RenamedFrom: "token", Before: engine.Redacted, After: engine.Redacted},
+	}
+	if len(rename) != len(want) {
+		t.Fatalf("rename changes = %+v, want only %v", rename, want)
+	}
+	for name, w := range want {
+		if got := rename[name]; jsonOf(t, got) != jsonOf(t, w) {
+			t.Fatalf("rename change %s = %s, want %s", name, jsonOf(t, got), jsonOf(t, w))
+		}
+	}
+	// A write after the rename finds its before in the rename's entry.
+	if got := props(changes[0])["dimensions"]; got.RenamedFrom != "" || got.Before != "bigger" || got.After != "huge" || got.BeforeUnknown {
+		t.Fatalf("patch after the rename = %s, want bigger to huge", jsonOf(t, got))
 	}
 }
