@@ -35,8 +35,11 @@ import { ActorRef } from "@/components/identity/actor-ref"
 import { IdText } from "@/components/identity/id-text"
 import { PageHeader } from "@/components/identity/page-header"
 import { DocPage } from "@/components/identity/page-layout"
+import { OriginMark } from "@/components/identity/origin-mark"
+import { Pill } from "@/components/identity/pill"
+import { SectionHead } from "@/components/identity/section-head"
 import { RunIO } from "@/components/tools/run-io"
-import { OriginTag, StatusPill, ToolTile } from "@/components/tools/tool-marks"
+import { ToolTile } from "@/components/tools/tool-marks"
 import { TryIt } from "@/components/tools/try-it"
 import {
   agentActor,
@@ -262,8 +265,11 @@ function ToolDoc({
         title={toolName(tool)}
         meta={
           <>
-            <OriginTag origin={tool.origin} />
-            {status && <StatusPill status={status} />}
+            <OriginMark
+              origin={tool.origin}
+              className="text-muted-foreground"
+            />
+            {status && <Pill tone={status.tone}>{status.label}</Pill>}
             {technical && <IdText value={tool.ref} copy />}
           </>
         }
@@ -403,12 +409,7 @@ function Section({
 }) {
   return (
     <section>
-      <div className="mt-8 mb-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <h2 className="text-[15px] font-semibold tracking-[-0.01em]">
-          {title}
-        </h2>
-        {hint && <span className="text-[12.5px] text-faint">{hint}</span>}
-      </div>
+      <SectionHead title={title} hint={hint} />
       {children}
     </section>
   )
@@ -518,7 +519,7 @@ function InputsOutputs({
           <span className="font-medium break-words">
             {argumentLabel(a.name)}
             {technical && (
-              <span className="mt-0.5 block font-mono text-[11px] font-normal text-faint">
+              <span className="mt-0.5 block font-mono text-[11.5px] font-normal text-faint">
                 {a.name}: {argumentTypeWords(a)}
               </span>
             )}
@@ -538,7 +539,7 @@ function InputsOutputs({
             <span>
               {argumentLabel(r.name)}
               {technical && (
-                <span className="mt-0.5 block font-mono text-[11px] font-normal text-faint">
+                <span className="mt-0.5 block font-mono text-[11.5px] font-normal text-faint">
                   {r.name}: {argumentTypeWords(r)}
                 </span>
               )}
@@ -669,7 +670,7 @@ function RunsTable({
                 {tookWords(r.tookMs)}
               </span>
               <span role="cell">
-                <StatusPill status={s} />
+                <Pill tone={s.tone}>{s.label}</Pill>
               </span>
             </div>
             {expanded && (
@@ -696,7 +697,7 @@ function Developer({ tool }: { tool: Tool }) {
   return (
     <Section title="Developer">
       <div className="flex flex-col gap-3 rounded-[8px] border border-dashed border-border-strong px-3.5 py-3 text-[12.5px] text-muted-foreground">
-        <div className="flex items-center gap-1.5 text-[11px] tracking-[0.05em] text-faint uppercase">
+        <div className="flex items-center gap-1.5 text-[11.5px] tracking-[0.05em] text-faint uppercase">
           <Code className="size-3.5" />
           Developer
         </div>

@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { ActorRef } from "./actor-ref"
 import { KindRef } from "./kind-ref"
 import { RecordRef } from "./record-ref"
+import { ReferenceValue } from "./reference-value"
 import { StateBadge } from "./state-badge"
 import {
   ConsolePreferencesContext,
@@ -141,6 +142,36 @@ describe("RecordRef", () => {
     await waitFor(() =>
       expect(screen.getByRole("link").textContent).toBe("Grace Hopper")
     )
+  })
+})
+
+describe("ReferenceValue", () => {
+  it("draws a stored reference as its referent, never the {ref} shape", async () => {
+    renderWith(
+      <ReferenceValue value={{ ref: `${PERSON}/grace` }} title="Grace Hopper" />
+    )
+    const link = await screen.findByRole("link", { name: /Grace Hopper/ })
+    expect(link.getAttribute("href")).toBe(
+      "/data/samples.substrate.reamde.dev/people/person/grace"
+    )
+    expect(document.body.textContent).not.toContain("ref")
+  })
+
+  it("keeps the link data a reference carries beside it", async () => {
+    renderWith(
+      <ReferenceValue
+        value={{ ref: `${PERSON}/grace`, role: "Reviewer" }}
+        title="Grace Hopper"
+      />
+    )
+    await screen.findByRole("link", { name: /Grace Hopper/ })
+    expect(screen.getByText("Role: Reviewer")).toBeTruthy()
+  })
+
+  it("reads a value that is not a reference as it is", async () => {
+    renderWith(<ReferenceValue value="not a pointer" />)
+    expect(await screen.findByText("not a pointer")).toBeTruthy()
+    expect(screen.queryByRole("link")).toBeNull()
   })
 })
 

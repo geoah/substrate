@@ -783,7 +783,9 @@ describe("OwnershipChip", () => {
         },
       })
     )
-    const pill = row("location").querySelector("[data-slot=differs]")!
+    const pill = row("location").querySelector(
+      "[data-slot=pill][data-tone=warn]"
+    )!
     expect(pill.textContent).toBe("Google differs")
     fireEvent.click(
       screen.getByRole("button", { name: "Where Location comes from" })

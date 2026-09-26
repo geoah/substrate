@@ -15,6 +15,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { CopyIcon, XIcon } from "lucide-react"
 
+import { Pill } from "@/components/identity/pill"
+
 import { SettingRow } from "@/components/settings-page/setting-row"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog, SignOutDialog } from "@/components/ui/confirm-dialog"
@@ -188,9 +190,9 @@ export function SignedInRows() {
             control={
               <>
                 {current && (
-                  <span className="inline-flex items-center rounded-full bg-ok-soft px-2 py-px text-xs font-medium text-ok">
+                  <Pill tone="ok" dot={false}>
                     You are here
-                  </span>
+                  </Pill>
                 )}
                 <Button
                   variant="outline"

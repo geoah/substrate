@@ -127,7 +127,7 @@ export function ProposalCard({ id }: { id: string }) {
           </>
         )}
         {technical && target && (
-          <span className="font-mono text-[11px] font-normal [overflow-wrap:anywhere] text-faint">
+          <span className="font-mono text-[11.5px] font-normal [overflow-wrap:anywhere] text-faint">
             {target.kind}/{target.id}
           </span>
         )}

@@ -39,8 +39,11 @@ import {
   WandSparklesIcon,
 } from "lucide-react"
 
+import { IdText } from "@/components/identity/id-text"
+
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { KindRef } from "@/components/identity/kind-ref"
+import { PageHeader } from "@/components/identity/page-header"
 import { DocPage } from "@/components/identity/page-layout"
 import { SectionBoundary } from "@/components/page-error"
 import { CreateSheet } from "@/components/record/create-sheet"
@@ -320,35 +323,35 @@ export function RecordEditorForm({
 
   if (mode === "create") {
     const noun = lowerFirst(displayName(kind))
+    const glyph = <KindGlyph kind={kind} size="lg" />
+    const headActions = (
+      <>
+        {lens === "yaml" && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={mutation.isPending}
+            onClick={format}
+          >
+            <WandSparklesIcon />
+            Format
+          </Button>
+        )}
+        {(technical || lens === "yaml") && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-pressed={lens === "yaml"}
+            onClick={() => setLens(lens === "form" ? "yaml" : "form")}
+          >
+            <CodeIcon />
+            {lens === "form" ? "Write YAML" : "Use the form"}
+          </Button>
+        )}
+      </>
+    )
     return (
       <DocPage>
-        <div className="flex items-start justify-between gap-3">
-          <KindGlyph kind={kind} size="lg" />
-          <div className="flex items-center gap-1.5">
-            {lens === "yaml" && (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={mutation.isPending}
-                onClick={format}
-              >
-                <WandSparklesIcon />
-                Format
-              </Button>
-            )}
-            {(technical || lens === "yaml") && (
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-pressed={lens === "yaml"}
-                onClick={() => setLens(lens === "form" ? "yaml" : "form")}
-              >
-                <CodeIcon />
-                {lens === "form" ? "Write YAML" : "Use the form"}
-              </Button>
-            )}
-          </div>
-        </div>
         {lens === "form" ? (
           <SectionBoundary name="The form" resetKey={text}>
             <CreateSheet
@@ -359,6 +362,8 @@ export function RecordEditorForm({
               seed={seededFrom}
               problems={liveErrors}
               attempted={attempted}
+              glyph={glyph}
+              actions={headActions}
               meta={
                 <span className="inline-flex items-center gap-1.5">
                   New in <KindRef kind={kind} />
@@ -368,9 +373,13 @@ export function RecordEditorForm({
           </SectionBoundary>
         ) : (
           <>
-            <h1 className="mt-2.5 mb-3 text-[26px] leading-tight font-[650] tracking-[-0.02em]">
-              New {noun}
-            </h1>
+            <PageHeader
+              size="record"
+              glyph={glyph}
+              actions={headActions}
+              title={`New ${noun}`}
+              className="mb-3"
+            />
             <div className="overflow-hidden rounded-lg border">
               <Suspense
                 fallback={
@@ -437,66 +446,69 @@ export function RecordEditorForm({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-start justify-between gap-3 px-6 pt-5 pb-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight break-words">
-            Edit {lowerFirst(displayName(kind))}
-          </h1>
-          <p className="data text-xs text-muted-foreground">
-            {mode === "edit" && record
-              ? `${kind.identity}/${record.id}`
-              : kind.identity}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
-          {lens === "yaml" && (
+      <PageHeader
+        className="shrink-0 px-6 pt-5 pb-3"
+        title={`Edit ${lowerFirst(displayName(kind))}`}
+        meta={
+          <IdText
+            value={
+              mode === "edit" && record
+                ? `${kind.identity}/${record.id}`
+                : kind.identity
+            }
+          />
+        }
+        actions={
+          <>
+            {lens === "yaml" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                disabled={mutation.isPending}
+                onClick={format}
+              >
+                <WandSparklesIcon className="size-3.5" />
+                Format
+              </Button>
+            )}
             <Button
-              variant="ghost"
+              variant="outline"
+              size="sm"
+              disabled={mutation.isPending}
+              render={
+                mode === "edit" && record ? (
+                  <Link
+                    to="/data/$authority/$pkg/$name/$id"
+                    params={{
+                      authority: authority,
+                      pkg: pkg,
+                      name,
+                      id: record.id,
+                    }}
+                  />
+                ) : (
+                  <Link
+                    to="/data/$authority/$pkg/$name"
+                    params={{ authority: authority, pkg: pkg, name }}
+                  />
+                )
+              }
+            >
+              Cancel
+            </Button>
+            <Button
               size="sm"
               className="gap-1.5"
-              disabled={mutation.isPending}
-              onClick={format}
+              disabled={!canSave}
+              onClick={() => mutation.mutate()}
             >
-              <WandSparklesIcon className="size-3.5" />
-              Format
+              {mutation.isPending && <Spinner className="size-3.5" />}
+              {mode === "edit" ? "Save changes" : "Create"}
             </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={mutation.isPending}
-            render={
-              mode === "edit" && record ? (
-                <Link
-                  to="/data/$authority/$pkg/$name/$id"
-                  params={{
-                    authority: authority,
-                    pkg: pkg,
-                    name,
-                    id: record.id,
-                  }}
-                />
-              ) : (
-                <Link
-                  to="/data/$authority/$pkg/$name"
-                  params={{ authority: authority, pkg: pkg, name }}
-                />
-              )
-            }
-          >
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            className="gap-1.5"
-            disabled={!canSave}
-            onClick={() => mutation.mutate()}
-          >
-            {mutation.isPending && <Spinner className="size-3.5" />}
-            {mode === "edit" ? "Save changes" : "Create"}
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <div className="flex min-h-0 flex-1 flex-col border-t xl:flex-row">
         <Tabs

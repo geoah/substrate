@@ -9,7 +9,7 @@
  * it from the live sources and it follows them again. Each asks first. */
 
 import { useState, type ReactNode } from "react"
-import { Undo2Icon, UserRoundIcon } from "lucide-react"
+import { Undo2Icon } from "lucide-react"
 
 import { ago } from "./dates"
 import { DeclaredValue } from "./property-value"
@@ -18,6 +18,8 @@ import { useRecordPatch, writeError } from "./use-record-patch"
 import { ActorMark, ActorRef } from "@/components/identity/actor-ref"
 import { IdText } from "@/components/identity/id-text"
 import { IdentityHoverCard } from "@/components/identity/identity-hover-card"
+import { OriginMark } from "@/components/identity/origin-mark"
+import { Pill } from "@/components/identity/pill"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { RecordRef } from "@/components/identity/record-ref"
 import { Button } from "@/components/ui/button"
@@ -42,6 +44,7 @@ import { splitRecordPath } from "@/lib/record-path"
 import { typeLabel, type PropSpec } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
 import { lowerFirst } from "@/lib/kind-names"
+import { originOfActor } from "@/lib/origin"
 
 const TIER_TONES: Record<Tier, string> = {
   owner: "bg-primary-soft text-primary-text",
@@ -79,20 +82,9 @@ function Holding({ meta }: { meta: PropertyMeta }) {
     <span
       data-slot="owner-chip"
       data-holder={holder.mark}
-      className="inline-flex h-[22px] items-center gap-[5px] rounded-full border border-border-strong bg-background pr-2 pl-[5px] text-xs whitespace-nowrap text-muted-foreground group-aria-expanded/own:border-primary group-aria-expanded/own:text-primary-text"
+      className="inline-flex h-[22px] items-center rounded-full border border-border-strong bg-background pr-2 pl-[3px] text-xs whitespace-nowrap text-muted-foreground group-aria-expanded/own:border-primary group-aria-expanded/own:text-primary-text"
     >
-      {holder.mark === "you" ? (
-        <UserRoundIcon aria-hidden className="size-3" />
-      ) : holder.mark === "provider" ? (
-        <ProviderBadge
-          provider={holder.identity.provider!}
-          size="xs"
-          className="size-3.5 border-0 text-[10.5px]"
-        />
-      ) : (
-        <ActorMark identity={holder.identity} size="xs" />
-      )}
-      {holder.label}
+      <OriginMark origin={originOfActor(meta.manager!)} short />
     </span>
   )
 }
@@ -182,12 +174,9 @@ export function OwnershipChip({
       }
     >
       {differs && (
-        <span
-          data-slot="differs"
-          className="rounded-full bg-warn-soft px-[7px] text-[11.5px] font-medium whitespace-nowrap text-warning"
-        >
+        <Pill tone="warn" dot={false}>
           {differs}
-        </span>
+        </Pill>
       )}
       <Holding meta={meta} />
     </IdentityHoverCard>
@@ -202,7 +191,7 @@ function Source({ path }: { path: string }) {
   return (
     <>
       <RecordRef kind={target.kind} id={target.id} />
-      {technical && <IdText value={path} copy className="text-[11px]" />}
+      {technical && <IdText value={path} copy className="text-[11.5px]" />}
     </>
   )
 }
@@ -371,7 +360,7 @@ export function OwnershipDetail({
                       </>
                     )}
                     {technical && (
-                      <span className="font-mono text-[11px] [overflow-wrap:anywhere]">
+                      <span className="font-mono text-[11.5px] [overflow-wrap:anywhere]">
                         · {alt.actor}
                       </span>
                     )}

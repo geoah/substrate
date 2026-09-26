@@ -43,6 +43,7 @@ import {
 
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { ProviderBadge } from "@/components/identity/provider-badge"
+import { PurposeTag } from "@/components/identity/purpose-tag"
 import { SwitchMark, ToggleSwitch } from "@/components/nav/toggle-switch"
 import { Button } from "@/components/ui/button"
 import {
@@ -208,11 +209,7 @@ function KindRow({ kind, technical }: { kind: KindInfo; technical: boolean }) {
         >
           {technical ? name : displayPlural(kind)}
         </span>
-        {technical && purpose !== "primary" && (
-          <span className="shrink-0 rounded-[3px] border border-border-strong px-1 text-[10px] leading-4 font-normal text-faint">
-            {purpose}
-          </span>
-        )}
+        {technical && <PurposeTag purpose={purpose} />}
         <CachedCount kind={kind} />
       </Link>
       <StarButton identity={kind.identity} />
@@ -274,7 +271,7 @@ export function CollectionGroupNav({ group }: { group: CollectionGroup }) {
                     params={{ authority: a.authority }}
                     onClick={close}
                     className={cn(
-                      "block truncate rounded-md px-2 pt-2.5 pb-0.5 font-mono text-[11px] text-faint no-underline hover:text-foreground",
+                      "block truncate rounded-md px-2 pt-2.5 pb-0.5 font-mono text-[11.5px] text-faint no-underline hover:text-foreground",
                       params.authority === a.authority &&
                         !params.pkg &&
                         "text-foreground"
@@ -536,7 +533,7 @@ export function RepositoryMenu() {
         >
           <DropdownMenuGroup>
             <DropdownMenuLabel className="flex flex-col gap-0.5">
-              <span className="text-[11px] font-normal text-faint">
+              <span className="text-[11.5px] font-normal text-faint">
                 Signed in to
               </span>
               <span className="truncate text-foreground">{repository}</span>
@@ -553,7 +550,7 @@ export function RepositoryMenu() {
               set("theme", value as "light" | "dark" | "system")
             }
           >
-            <DropdownMenuLabel className="text-[11px] font-normal text-faint">
+            <DropdownMenuLabel className="text-[11.5px] font-normal text-faint">
               Appearance
             </DropdownMenuLabel>
             <DropdownMenuRadioItem value="system">

@@ -30,7 +30,7 @@ function ChangeRow({ change }: { change: ChangeStamp }) {
       </span>
       <RecordRef kind={change.kind} id={change.id} className="min-w-0" />
       {technical && (
-        <span className="font-mono text-[11px] text-faint">
+        <span className="font-mono text-[11.5px] text-faint">
           {change.op || "unknown op"} · seq {change.seq}
         </span>
       )}

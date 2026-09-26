@@ -34,7 +34,8 @@ export function ActorMark({
   identity,
   size = "sm",
 }: {
-  identity: ActorIdentity
+  /** Who: their class, and the provider behind them when there is one. */
+  identity: Pick<ActorIdentity, "cls" | "provider">
   size?: "xs" | "sm" | "md" | "lg"
 }) {
   if (identity.provider) {
@@ -126,7 +127,7 @@ export function ActorRef({
       </span>
       {identity.cls === "agent" && <span className="text-faint">agent</span>}
       {technical && inlineId && (
-        <span className="font-mono text-[11px] [overflow-wrap:anywhere] text-faint">
+        <span className="font-mono text-[11.5px] [overflow-wrap:anywhere] text-faint">
           {actor}
         </span>
       )}

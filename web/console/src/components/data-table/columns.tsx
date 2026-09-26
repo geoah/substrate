@@ -12,7 +12,7 @@ import type { RowData } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 
 import { ChangeActor } from "@/components/change-actor"
-import { ActorChip } from "@/components/actor-chip"
+import { ActorRef } from "@/components/identity/actor-ref"
 import type { DataTableColumn } from "@/components/data-table/data-table"
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
 import { EmptyValue } from "@/components/identity/empty-value"
@@ -117,7 +117,7 @@ export function actorColumn<T extends RowData>(opts: {
       if (!actor) return <EmptyValue />
       return (
         <span className="flex min-w-0 items-center">
-          <ActorChip actor={actor} />
+          <ActorRef actor={actor} />
         </span>
       )
     },

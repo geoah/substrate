@@ -9,8 +9,11 @@ import { PlusIcon } from "lucide-react"
 import { IdText } from "@/components/identity/id-text"
 import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
+import { OriginMark } from "@/components/identity/origin-mark"
+import { Pill } from "@/components/identity/pill"
+import { SectionHead } from "@/components/identity/section-head"
 import { AddSampleDialog } from "@/components/samples/add-sample-dialog"
-import { OriginTag, StatusPill, ToolTile } from "@/components/tools/tool-marks"
+import { ToolTile } from "@/components/tools/tool-marks"
 import {
   agentName,
   useTools,
@@ -65,15 +68,7 @@ export function ToolsPage() {
       ) : (
         groups.map((g) => (
           <section key={g.key} aria-labelledby={`tools-${g.key}`}>
-            <div className="mt-8 mb-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-              <h2
-                id={`tools-${g.key}`}
-                className="text-[15px] font-semibold tracking-[-0.01em]"
-              >
-                {g.title}
-              </h2>
-              <span className="text-[12.5px] text-faint">{g.hint}</span>
-            </div>
+            <SectionHead id={`tools-${g.key}`} title={g.title} hint={g.hint} />
             <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
               {g.tools.map((t) => (
                 <ToolCard
@@ -123,14 +118,14 @@ function ToolCard({
         <span className="min-w-0 flex-1 font-semibold break-words">
           {toolName(tool)}
         </span>
-        {status && <StatusPill status={status} />}
+        {status && <Pill tone={status.tone}>{status.label}</Pill>}
       </div>
       <p className="line-clamp-3 text-[13px] text-muted-foreground">
         {toolDescription(tool)}
       </p>
       {technical && <IdText value={tool.ref} />}
       <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-faint">
-        <OriginTag origin={tool.origin} className="text-xs" />
+        <OriginMark origin={tool.origin} className="text-muted-foreground" />
         <span aria-hidden>·</span>
         <span>
           {users.length

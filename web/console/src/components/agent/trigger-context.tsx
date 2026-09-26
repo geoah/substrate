@@ -45,7 +45,7 @@ export function TriggerContext({
       </div>
       {technical && (
         <>
-          <p className="font-mono text-[11px] [overflow-wrap:anywhere] text-faint">
+          <p className="font-mono text-[11.5px] [overflow-wrap:anywhere] text-faint">
             <span>{change.op}</span> {change.kind}/{change.id}
             {change.seq !== undefined && `, changelog seq ${change.seq}`}
             {change.actor && `, by ${change.actor}`}

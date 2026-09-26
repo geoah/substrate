@@ -434,7 +434,7 @@ export function Conversation({
             </div>
           )}
           {technical && result && (
-            <p className="font-mono text-[11px] text-faint">
+            <p className="font-mono text-[11.5px] text-faint">
               {result.status}
               {result.reason ? ` (${result.reason})` : ""} · {result.turns}{" "}
               turns · {result.toolCalls} tool calls ·{" "}

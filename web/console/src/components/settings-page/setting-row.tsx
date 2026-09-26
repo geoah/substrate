@@ -4,6 +4,7 @@
 
 import type { ReactNode } from "react"
 
+import { SectionHead } from "@/components/identity/section-head"
 import { radioKeys, radioTabIndex } from "@/components/ui/segmented"
 import { cn } from "@/lib/utils"
 
@@ -20,12 +21,7 @@ export function SettingsSection({
 }) {
   return (
     <section id={id} aria-label={title} className="mt-8 first:mt-6">
-      <div className="mb-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <h2 className="text-[15px] font-semibold tracking-[-0.01em]">
-          {title}
-        </h2>
-        {hint && <span className="text-[12.5px] text-faint">{hint}</span>}
-      </div>
+      <SectionHead title={title} hint={hint} className="mt-0" />
       <div className="overflow-hidden rounded-[10px] border border-border">
         {children}
       </div>

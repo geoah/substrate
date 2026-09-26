@@ -25,12 +25,11 @@ import {
   TakeButton,
   UpgradeButton,
 } from "@/components/providers/bundle-actions"
+import { Pill, type PillTone } from "@/components/identity/pill"
+import { SectionHead } from "@/components/identity/section-head"
 import {
-  Pill,
   ProviderLogo,
-  SectionHead,
   StandingPill,
-  type PillTone,
 } from "@/components/providers/provider-marks"
 import {
   useProviders,

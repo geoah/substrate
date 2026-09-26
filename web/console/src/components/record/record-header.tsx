@@ -25,6 +25,8 @@ import { useFocusReturn } from "@/components/property-sheet/focus-return"
 import { CopyButton } from "@/components/identity/copy-button"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { KindPath, KindRef } from "@/components/identity/kind-ref"
+import { PageHeader } from "@/components/identity/page-header"
+import { pageTitleClass } from "@/components/identity/page-title"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -109,8 +111,7 @@ function Title({
     }
   }
 
-  const heading =
-    "text-[32px] leading-[1.15] font-bold tracking-[-0.025em] text-balance break-words"
+  const heading = cn(pageTitleClass("record"), "mt-2.5")
   if (editing && spec) {
     return (
       <>
@@ -135,11 +136,11 @@ function Title({
           }}
           className={cn(
             heading,
-            "-mx-1 mt-2.5 mb-1.5 w-full rounded-md bg-transparent px-1 ring-1 ring-primary outline-none"
+            "-mx-1 w-full rounded-md bg-transparent px-1 ring-1 ring-primary outline-none"
           )}
         />
         {error && (
-          <p role="alert" className="mb-1 text-[12.5px] text-destructive">
+          <p role="alert" className="mt-1 text-[12.5px] text-destructive">
             {error}
           </p>
         )}
@@ -148,7 +149,7 @@ function Title({
   }
   const shown = title || untitled(record.kind)
   return (
-    <h1 className={cn(heading, "mt-2.5 mb-1.5", !title && "text-faint")}>
+    <h1 className={cn(heading, !title && "text-faint")}>
       {editable ? (
         <button
           ref={button}
@@ -221,9 +222,13 @@ export function RecordHeader({
   })
 
   return (
-    <header data-slot="record-header">
-      <div className="flex items-start justify-between gap-3">
-        <KindGlyph kind={kind ?? record.kind} size="lg" />
+    <PageHeader
+      size="record"
+      glyph={<KindGlyph kind={kind ?? record.kind} size="lg" />}
+      heading={
+        <Title record={record} kind={kind} readOnly={Boolean(provider)} />
+      }
+      actions={
         <div className="flex items-center gap-1">
           {technical && (
             <Button
@@ -295,10 +300,9 @@ export function RecordHeader({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      </div>
-      <Title record={record} kind={kind} readOnly={Boolean(provider)} />
-      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[12.5px] text-faint">
-        {technical ? (
+      }
+      meta={
+        technical ? (
           <span className="inline-flex min-w-0 flex-wrap items-center gap-1">
             <KindPath reference={record.kind} className="text-[12px]" />
             <span className="font-mono text-[12px] text-muted-foreground">
@@ -324,8 +328,9 @@ export function RecordHeader({
               <span data-slot="all-yours">Every value is yours</span>
             )}
           </>
-        )}
-      </div>
+        )
+      }
+    >
       {provider && (
         <div className="mt-4 flex items-center gap-2.5 rounded-lg border bg-panel px-3 py-2.5 text-[13px] text-muted-foreground">
           <ProviderBadge provider={provider} />
@@ -342,7 +347,7 @@ export function RecordHeader({
           onClose={() => setDeleting(false)}
         />
       )}
-    </header>
+    </PageHeader>
   )
 }
 

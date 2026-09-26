@@ -121,7 +121,7 @@ export function IdentityCard({
       {reference && (
         <div
           className={cn(
-            "border-t bg-panel px-3 py-[7px] font-mono text-[11px] break-all text-faint"
+            "border-t bg-panel px-3 py-[7px] font-mono text-[11.5px] break-all text-faint"
           )}
         >
           {reference}

@@ -184,7 +184,7 @@ describe("MergeRequestDetailPage", () => {
       })
     )
     // The link data the reference carries stays beside it.
-    expect(screen.getByText("since: 2021")).toBeTruthy()
+    expect(screen.getByText("Since: 2021")).toBeTruthy()
     expect(screen.queryByText(/\{"ref"/)).toBeNull()
     // An object that is not a reference is still summarized as its keys.
     expect(screen.getByText("{shape, n}")).toBeTruthy()

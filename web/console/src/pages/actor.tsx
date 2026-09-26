@@ -17,6 +17,7 @@ import { CopyButton } from "@/components/identity/copy-button"
 import { DocPage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
 import { RecordRef } from "@/components/identity/record-ref"
+import { SectionHead } from "@/components/identity/section-head"
 import { Segmented } from "@/components/ui/segmented"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useHistoryFeed } from "@/hooks/use-history-feed"
@@ -106,9 +107,9 @@ export function ActorPage() {
         />
         {!table && (
           <>
-            <h2 className="mt-8 mb-1 text-[15px] font-semibold tracking-[-0.01em]">
-              What {identity.cls === "you" ? "you" : "it"} changed
-            </h2>
+            <SectionHead
+              title={`What ${identity.cls === "you" ? "you" : "it"} changed`}
+            />
             <HistoryFeed
               feed={feed}
               empty={`${identity.cls === "you" ? "You haven’t" : "It hasn’t"} changed anything yet.`}

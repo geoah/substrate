@@ -24,11 +24,12 @@ import { z } from "zod"
 import { ActorRef } from "@/components/identity/actor-ref"
 import { IdText } from "@/components/identity/id-text"
 import { KindGlyph } from "@/components/identity/kind-glyph"
+import { PageHeader } from "@/components/identity/page-header"
 import { DocPage } from "@/components/identity/page-layout"
 import { RecordRef } from "@/components/identity/record-ref"
+import { SectionHead } from "@/components/identity/section-head"
 import { StateBadge } from "@/components/identity/state-badge"
-import type { PeekTarget } from "@/components/record-peek"
-import { ReferenceValue } from "@/components/record/reference-value"
+import { ReferenceValue } from "@/components/identity/reference-value"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -86,7 +87,15 @@ import { cn } from "@/lib/utils"
 import { EvidenceChips } from "@/components/merge-request"
 import { mergeRequestDetailRoute } from "@/router"
 
-function refTitle(ref?: PeekTarget): string {
+/** One side of the pair: its kind reference and id, and the title the
+ * request carries for it. */
+interface PairTarget {
+  id: string
+  kind: string
+  title?: string
+}
+
+function refTitle(ref?: PairTarget): string {
   return ref?.title || ref?.id || "unknown"
 }
 
@@ -140,16 +149,7 @@ function PostureCell({ posture }: { posture: DiffPosture }) {
 
 // ── side-by-side ────────────────────────────────────────────────────────────
 
-function ValueCell({
-  row,
-  side,
-  kinds,
-}: {
-  row: DiffRow
-  side: "loser" | "winner"
-  /** The registry, so a reference value renders as its referent's pill. */
-  kinds: KindInfo[]
-}) {
+function ValueCell({ row, side }: { row: DiffRow; side: "loser" | "winner" }) {
   const value = side === "loser" ? row.loser : row.winner
   const manager = side === "loser" ? row.loserManager : row.winnerManager
 
@@ -161,7 +161,7 @@ function ValueCell({
     return (
       <span className="flex min-w-0 flex-col items-start gap-1">
         {references.map((one, at) => (
-          <ReferenceValue key={at} value={one} kinds={kinds} />
+          <ReferenceValue key={at} value={one} />
         ))}
         {manager && row.posture !== "equal" && <ActorRef actor={manager} />}
       </span>
@@ -195,7 +195,7 @@ function ValueCell({
 /** The diff rides the table system's look (owner ruling, 2026-08-06): real
  * table anatomy — fixed columns, bordered rows, muted lowercase headers —
  * though it stays a comparison, not a list, so no column dropdown or pages. */
-function DiffRows({ rows, kinds }: { rows: DiffRow[]; kinds: KindInfo[] }) {
+function DiffRows({ rows }: { rows: DiffRow[] }) {
   return (
     <>
       {rows.map((row) => (
@@ -226,10 +226,10 @@ function DiffRows({ rows, kinds }: { rows: DiffRow[]; kinds: KindInfo[] }) {
             </Tooltip>
           </TableCell>
           <TableCell className="align-top">
-            <ValueCell row={row} side="loser" kinds={kinds} />
+            <ValueCell row={row} side="loser" />
           </TableCell>
           <TableCell className="align-top">
-            <ValueCell row={row} side="winner" kinds={kinds} />
+            <ValueCell row={row} side="winner" />
           </TableCell>
           <TableCell className="pr-4 align-top">
             <PostureCell posture={row.posture} />
@@ -244,13 +244,10 @@ function SideBySide({
   loser,
   winner,
   type,
-  kinds,
 }: {
   loser: SubstrateRecord
   winner: SubstrateRecord
   type?: KindInfo
-  /** The registry, so a reference value renders as its referent's pill. */
-  kinds: KindInfo[]
 }) {
   const rows = useMemo(
     () => deriveDiff(winner, loser, type),
@@ -311,7 +308,7 @@ function SideBySide({
         </TableHeader>
         <TableBody>
           {open.length > 0 ? (
-            <DiffRows rows={open} kinds={kinds} />
+            <DiffRows rows={open} />
           ) : (
             <TableRow className="hover:bg-transparent">
               <TableCell
@@ -344,7 +341,7 @@ function SideBySide({
               </TableCell>
             </TableRow>
           )}
-          {showEqual && <DiffRows rows={equal} kinds={kinds} />}
+          {showEqual && <DiffRows rows={equal} />}
         </TableBody>
       </Table>
     </div>
@@ -367,8 +364,8 @@ function VerdictDialog({
   onClose,
 }: {
   verdict: MergeVerdict
-  loser?: PeekTarget
-  winner?: PeekTarget
+  loser?: PairTarget
+  winner?: PairTarget
   busy: boolean
   onConfirm: (note?: string) => void
   onClose: () => void
@@ -468,7 +465,7 @@ function conflictAnnotation(mr: SubstrateRecord): string | undefined {
 }
 
 function useSideQuery(
-  ref: PeekTarget | undefined,
+  ref: PairTarget | undefined,
   types: KindInfo[],
   enabled: boolean
 ) {
@@ -596,64 +593,73 @@ export function MergeRequestDetailPage() {
   const pairKind = winnerRef?.kind ?? loserRef?.kind
   return (
     <DocPage>
-      <header className="flex items-start justify-between gap-3">
-        {pairKind ? (
-          <KindGlyph kind={pairKind} size="lg" />
-        ) : (
-          <span className="grid size-10 place-items-center rounded-[10px] bg-hover text-muted-foreground">
-            <GitMergeIcon className="size-5" />
-          </span>
-        )}
-        {proposed && (
-          <div className="flex shrink-0 items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={verdict.isPending}
-              onClick={() => setConfirming("rejected")}
-            >
-              <XIcon className="size-3.5" />
-              Keep them apart
-            </Button>
-            <Button
-              size="sm"
-              disabled={verdict.isPending}
-              onClick={() => setConfirming("accepted")}
-            >
-              <CheckIcon className="size-3.5" />
-              Combine them
-            </Button>
-          </div>
-        )}
-      </header>
-      <h1 className="mt-2.5 mb-1.5 text-[26px] leading-tight font-[650] tracking-[-0.02em] text-balance break-words">
-        {proposed ? "Are these the same?" : "Suggested as the same"}
-      </h1>
-      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[12.5px] text-faint">
-        {decision && <StateBadge value={decision} initial={DECISION_INITIAL} />}
-        {proposer && (
-          <span className="flex items-center gap-1.5">
-            Suggested by <ActorRef actor={proposer} />
-          </span>
-        )}
-        <span title={request.createdAt}>{relativeTime(request.createdAt)}</span>
-        {decidedAt && (
-          <span className="flex items-center gap-1.5">
-            Decided <span title={decidedAt}>{relativeTime(decidedAt)}</span>
-            {decider && (
-              <>
-                by <ActorRef actor={decider} />
-              </>
+      <PageHeader
+        size="record"
+        glyph={
+          pairKind ? (
+            <KindGlyph kind={pairKind} size="lg" />
+          ) : (
+            <span className="grid size-10 place-items-center rounded-[10px] bg-hover text-muted-foreground">
+              <GitMergeIcon className="size-5" />
+            </span>
+          )
+        }
+        actions={
+          proposed && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={verdict.isPending}
+                onClick={() => setConfirming("rejected")}
+              >
+                <XIcon className="size-3.5" />
+                Keep them apart
+              </Button>
+              <Button
+                size="sm"
+                disabled={verdict.isPending}
+                onClick={() => setConfirming("accepted")}
+              >
+                <CheckIcon className="size-3.5" />
+                Combine them
+              </Button>
+            </>
+          )
+        }
+        title={proposed ? "Are these the same?" : "Suggested as the same"}
+        meta={
+          <>
+            {decision && (
+              <StateBadge value={decision} initial={DECISION_INITIAL} />
             )}
-          </span>
-        )}
-        {technical && (
-          <IdText
-            value={`${CORE_PACKAGE}/recordmergerequest/${request.id}`}
-            copy
-          />
-        )}
-      </div>
+            {proposer && (
+              <span className="flex items-center gap-1.5">
+                Suggested by <ActorRef actor={proposer} />
+              </span>
+            )}
+            <span title={request.createdAt}>
+              {relativeTime(request.createdAt)}
+            </span>
+            {decidedAt && (
+              <span className="flex items-center gap-1.5">
+                Decided <span title={decidedAt}>{relativeTime(decidedAt)}</span>
+                {decider && (
+                  <>
+                    by <ActorRef actor={decider} />
+                  </>
+                )}
+              </span>
+            )}
+            {technical && (
+              <IdText
+                value={`${CORE_PACKAGE}/recordmergerequest/${request.id}`}
+                copy
+              />
+            )}
+          </>
+        }
+      />
 
       {/* the pair */}
       <div className="mt-5 flex flex-wrap items-center gap-2 text-[15px]">
@@ -724,20 +730,15 @@ export function MergeRequestDetailPage() {
       {/* the side-by-side */}
       {proposed && (
         <>
-          <div className="mt-8 mb-2.5 flex items-baseline gap-2">
-            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">
-              Side by side
-            </h2>
-            <span className="text-[12.5px] text-faint">
-              what each one holds, and what combining keeps
-            </span>
-          </div>
+          <SectionHead
+            title="Side by side"
+            hint="what each one holds, and what combining keeps"
+          />
           {sidesReady ? (
             <SideBySide
               loser={loserSide.query.data!}
               winner={winnerSide.query.data!}
               type={winnerSide.type}
-              kinds={types}
             />
           ) : sideError ? (
             <div className="rounded-lg border px-4 py-3 text-[13px] text-muted-foreground">

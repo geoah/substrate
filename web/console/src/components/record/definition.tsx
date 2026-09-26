@@ -18,7 +18,7 @@ import { FileQuestionIcon } from "lucide-react"
 import { DataTable, useDataTable } from "@/components/data-table/data-table"
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
 import { YamlView } from "@/components/record/yaml-view"
-import { Badge } from "@/components/ui/badge"
+import { Pill } from "@/components/identity/pill"
 import {
   Empty,
   EmptyDescription,
@@ -139,9 +139,9 @@ function propertyColumns(): DataTableColumn<DeclaredProperty>[] {
       ),
       cell: ({ row }) =>
         row.original.required ? (
-          <Badge variant="secondary" className="px-1.5 font-normal">
+          <Pill tone="neutral" dot={false}>
             required
-          </Badge>
+          </Pill>
         ) : (
           <Muted>—</Muted>
         ),
@@ -227,13 +227,9 @@ function HoldsCell({ reference }: { reference: DeclaredProperty }) {
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-1">
       {holds.map((held) => (
-        <Badge
-          key={held}
-          variant="secondary"
-          className="px-1.5 data font-normal"
-        >
+        <Pill key={held} tone="neutral" dot={false}>
           {held}
-        </Badge>
+        </Pill>
       ))}
     </span>
   )

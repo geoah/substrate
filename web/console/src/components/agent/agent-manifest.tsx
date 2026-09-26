@@ -24,7 +24,7 @@ function Row({
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-[11.5px] font-medium text-faint">{label}</span>
-      <div className="font-mono text-[11px] [overflow-wrap:anywhere] text-muted-foreground">
+      <div className="font-mono text-[11.5px] [overflow-wrap:anywhere] text-muted-foreground">
         {children}
       </div>
     </div>
@@ -48,7 +48,7 @@ export function AgentManifest({ agent }: { agent: SubstrateRecord }) {
           System prompt
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <p className="max-h-64 overflow-y-auto rounded-md border bg-background p-2 font-mono text-[11px] [overflow-wrap:anywhere] whitespace-pre-wrap text-muted-foreground">
+          <p className="max-h-64 overflow-y-auto rounded-md border bg-background p-2 font-mono text-[11.5px] [overflow-wrap:anywhere] whitespace-pre-wrap text-muted-foreground">
             {prompt || "No prompt"}
           </p>
         </CollapsibleContent>

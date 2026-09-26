@@ -16,7 +16,7 @@ import {
   RefreshCwIcon,
 } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
+import { Pill, type PillTone } from "@/components/identity/pill"
 import { Button } from "@/components/ui/button"
 import { PauseDialog } from "@/components/ui/confirm-dialog"
 import { Spinner } from "@/components/ui/spinner"
@@ -34,19 +34,14 @@ import {
 } from "@/lib/sync"
 import { cn } from "@/lib/utils"
 
-/** Semantic tokens only: running and ok are primary (running pulses), an
- * error is destructive, throttled wants a look, never recedes. */
-const STATE_DOT: Record<SyncState, string> = {
-  never: "bg-muted-foreground/40",
-  running: "bg-primary animate-pulse",
-  ok: "bg-primary",
-  erroring: "bg-destructive",
-  throttled: "bg-warning",
-}
-
-const STATE_TEXT: Partial<Record<SyncState, string>> = {
-  erroring: "text-destructive",
-  throttled: "text-warning",
+/** Running is under way (its dot pulses), ok is fine, an error is bad,
+ * throttled wants a look, never recedes. */
+const STATE_TONE: Record<SyncState, PillTone> = {
+  never: "neutral",
+  running: "accent",
+  ok: "ok",
+  erroring: "bad",
+  throttled: "warn",
 }
 
 /** The trait's states as a person reads them; an unknown word a body wrote
@@ -70,22 +65,13 @@ export function SyncStateBadge({
     ? "Paused"
     : (fields.rawState ?? STATE_WORD[fields.state])
   return (
-    <Badge
-      variant="outline"
-      className={cn(
-        "gap-1.5 font-normal",
-        fields.paused ? "text-warning" : STATE_TEXT[fields.state],
-        className
-      )}
+    <Pill
+      tone={fields.paused ? "neutral" : STATE_TONE[fields.state]}
+      live={!fields.paused && fields.state === "running"}
+      className={className}
     >
-      <span
-        className={cn(
-          "size-1.5 shrink-0 rounded-full",
-          fields.paused ? "bg-warning" : STATE_DOT[fields.state]
-        )}
-      />
-      <span>{word}</span>
-    </Badge>
+      {word}
+    </Pill>
   )
 }
 

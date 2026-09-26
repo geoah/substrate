@@ -20,6 +20,8 @@ import { KindPath } from "@/components/identity/kind-ref"
 import { TablePage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
 import { ProviderBadge } from "@/components/identity/provider-badge"
+import { PurposeTag } from "@/components/identity/purpose-tag"
+import { SectionHead } from "@/components/identity/section-head"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -92,11 +94,7 @@ function CollectionRow({
         >
           <KindGlyph kind={kind} size="sm" />
           <span className="truncate">{displayPlural(kind)}</span>
-          {technical && purpose !== "primary" && (
-            <span className="shrink-0 rounded-[3px] border border-border-strong px-1 text-[10px] leading-4 font-normal text-faint">
-              {purpose}
-            </span>
-          )}
+          {technical && <PurposeTag purpose={purpose} />}
         </Link>
       </td>
       {technical && (
@@ -128,18 +126,18 @@ function GroupTable({
   const shown = technical ? [...group.primary, ...group.hidden] : group.primary
   const hidden = technical ? 0 : group.hidden.length
   return (
-    <section className="mt-8">
-      <div className="mb-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <h2 className="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.01em]">
-          {group.provider && (
-            <ProviderBadge provider={group.provider} size="sm" />
-          )}
-          {group.label}
-        </h2>
-        <span className="text-[12.5px] text-faint">
-          {HINT[group.type](group)}
-        </span>
-      </div>
+    <section>
+      <SectionHead
+        title={
+          <>
+            {group.provider && (
+              <ProviderBadge provider={group.provider} size="sm" />
+            )}
+            {group.label}
+          </>
+        }
+        hint={HINT[group.type](group)}
+      />
       <div className="overflow-x-auto rounded-[10px] border border-border">
         <table className="w-full min-w-[640px] table-fixed border-separate border-spacing-0 text-sm">
           <colgroup>
