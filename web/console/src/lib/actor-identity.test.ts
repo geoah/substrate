@@ -70,8 +70,12 @@ describe("actorIdentity", () => {
     expect(
       actorIdentity("bundle:providers.substrate.reamde.dev:google")
     ).toMatchObject({ cls: "bundle", name: "Google" })
-    expect(actorIdentity("bundle:ada.localhost:tasks").name).toBe(
-      "tasks bundle"
+  })
+
+  it("names any other bundle by its package's display name", () => {
+    expect(actorIdentity("bundle:ada.localhost:notes").name).toBe("Notes")
+    expect(actorIdentity("bundle:ada.localhost:readinglist").name).toBe(
+      "Reading list"
     )
   })
 })
