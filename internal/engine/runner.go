@@ -15,6 +15,7 @@ import (
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
+	"github.com/geoah/substrate/internal/window"
 )
 
 // The engine's half of the run contract: build the level-triggered envelope,
@@ -258,7 +259,22 @@ func (b *callBackend) Get(ctx context.Context, typ, id string) (*substrate.Recor
 }
 
 func (b *callBackend) List(ctx context.Context, q substrate.Query) (*substrate.Page, error) {
-	return b.inv.ds.List(ctx, q)
+	return b.inv.ds.readList(ctx, q)
+}
+
+// readList is a function body's or an agent's list read. A filter bounding
+// `at` on both ends is the window read the records route answers, computed
+// occurrences and all (internal/window, decision 0107), so no body carries
+// its own recurrence expander; any other filter is the plain list.
+func (ds *dataset) readList(ctx context.Context, q substrate.Query) (*substrate.Page, error) {
+	from, to, bounded, err := window.Bounds(q.Filter)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+	}
+	if !bounded {
+		return ds.List(ctx, q)
+	}
+	return window.Read(ctx, ds, q, from, to)
 }
 
 func (b *callBackend) Search(ctx context.Context, in substrate.SearchInput) (substrate.SearchResult, error) {

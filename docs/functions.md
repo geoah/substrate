@@ -573,6 +573,21 @@ route](api.md#the-filter-grammar) takes: the compact string (`"at"`,
 `{"property": …, "desc": …}`. One parser reads both, so a body may sort the
 way a URL does.
 
+A `list` whose `where` bounds `at` on both ends is the records route's
+[window read](api.md#the-window-read): the page carries the rows in the
+window and, merged by slot, the occurrences computed from every series among
+the kinds read, with overrides and `exdates` folded in and `computed: true` on
+each ([decision 0107](decisions/0107-a-function-and-an-agent-list-read-is-the-window-read.md)).
+A body never expands a recurrence rule itself. The window read's rules hold:
+`order` is `at` alone, `offset` is refused, and pages follow `after`.
+
+```python
+page = host.records.list(["providers.substrate.reamde.dev/google/calendarseries"],
+                         where={"at": {"gte": "2026-09-24T00:00:00Z",
+                                       "lt": "2026-09-25T00:00:00Z"}})
+# page["records"]: [{"id": "abc_20260924T130000Z", "computed": True, ...}, ...]
+```
+
 **Reads are scoped and budgeted.** Reads see committed state, never this
 delivery's own staged effects, so a local overlay can never lie. They are held
 to the `permissions.reads` grant: with no `reads:` block the allowlist is

@@ -583,6 +583,10 @@ error rather than a short page; a series whose rule the expander cannot walk
 and direction it was minted under. One bound alone (`at` with only `gte`) is
 an ordinary list: the rows are filtered as ever and nothing is computed.
 
+A function body's `host.records.list` and an agent's `query` tool answer the
+same window read for the same filter
+([decision 0107](decisions/0107-a-function-and-an-agent-list-read-is-the-window-read.md)).
+
 ## Pagination
 
 Lists page forward with a keyset cursor carried behind one opaque token. You

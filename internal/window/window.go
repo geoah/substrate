@@ -1,4 +1,9 @@
-package api
+// Package window is the window read: a records list whose filter bounds `at`
+// on both ends answers with the stored rows in the window and the occurrences
+// computed from every series among the kinds in play. The records route and a
+// function's or an agent's list read call the same Read, so every reader sees
+// one timeline (decision records 0081 and 0107).
+package window
 
 import (
 	"context"
@@ -8,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -25,13 +29,15 @@ import (
 // `override` row claims. One read, one page, ordered by the slot.
 //
 // The rule is stored and never expanded into rows (decision 0039); this is
-// where the expansion happens, in the API layer and never the engine, which
-// answers the three halves on one snapshot (Dataset.Window) and holds no
-// expander. A computed occurrence is served in the record envelope so every
-// consumer renders it unchanged: the series' kind, the id `<seriesId>_<slot>`,
-// the series' properties with the slot in its temporal columns and
-// `recurrenceOf`/`originalAt` filled, version 0, `computed: true`. A put at
-// that id is how it becomes a stored override.
+// where the expansion happens, above the engine's storage, which answers the
+// three halves on one snapshot (Dataset.Window) and holds no expander. The
+// records route and the engine's function and agent list reads call Read, so
+// every reader sees one timeline (decision 0107). A computed occurrence is
+// served in the record envelope so every consumer renders it unchanged: the
+// series' kind, the id `<seriesId>_<slot>`, the series' properties with the
+// slot in its temporal columns and `recurrenceOf`/`originalAt` filled,
+// version 0, `computed: true`. A put at that id is how it becomes a stored
+// override.
 
 // slotLayout spells a slot inside a computed id: UTC, basic format, second
 // grain. Google's own instance ids carry the same spelling, so a mirror's
@@ -51,12 +57,12 @@ type windowCursor struct {
 	G    string    `json:"g,omitempty"`
 }
 
-// windowBounds reads the `at` bound off a filter. Both ends set is a window
+// Bounds reads the `at` bound off a filter. Both ends set is a window
 // read; one end alone is not (the rows are filtered as today and nothing is
 // computed, because an unbounded side would make the expansion unbounded).
 // `gt` and `lte` are folded into the half-open [from, to) at the column's
 // microsecond grain.
-func windowBounds(f substrate.Filter) (from, to time.Time, ok bool, err error) {
+func Bounds(f substrate.Filter) (from, to time.Time, ok bool, err error) {
 	c, has := f.Properties[substrate.PropAt]
 	if !has {
 		return from, to, false, nil
@@ -102,26 +108,38 @@ func instantValue(v any) (time.Time, error) {
 	return t.UTC(), nil
 }
 
-// windowList answers a window read.
-func (h *handler) windowList(w http.ResponseWriter, r *http.Request, ds substrate.Dataset, q substrate.Query, from, to time.Time) {
-	ctx := r.Context()
+// Reader is what a window read needs of a dataset: the engine's half of the
+// read, and the kinds binding `override`.
+type Reader interface {
+	Window(ctx context.Context, q substrate.WindowQuery) (*substrate.WindowPage, error)
+	TypesImplementing(ctx context.Context, trait string) ([]substrate.KindInfo, error)
+}
+
+// QueryError refuses a window read the caller shaped wrong: an order other
+// than `at`, an offset, a cursor that does not decode. The records route
+// answers it 400; a function body receives its message.
+type QueryError string
+
+func (e QueryError) Error() string { return string(e) }
+
+// Read answers a window read: q is a records list whose filter Bounds reads
+// as [from, to). A cursor minted against another filter or direction is
+// substrate.ErrValidation, and one minted against another history is
+// substrate.ErrStaleHistory, as on a plain list.
+func Read(ctx context.Context, ds Reader, q substrate.Query, from, to time.Time) (*substrate.Page, error) {
 	desc := false
 	switch {
 	case len(q.OrderBy) == 0:
 	case len(q.OrderBy) == 1 && q.OrderBy[0].Property == substrate.PropAt:
 		desc = q.OrderBy[0].Desc
 	default:
-		writeError(w, http.StatusBadRequest, codeBadRequest,
-			"a window read (filter.properties.at bounded on both ends) orders by at alone, ascending or descending: it merges computed occurrences into the page, and only their slot is known")
-		return
+		return nil, QueryError("a window read (filter.properties.at bounded on both ends) orders by at alone, ascending or descending: it merges computed occurrences into the page, and only their slot is known")
 	}
 	// A window page is rows MERGED with occurrences computed for the slot, so
 	// there is no row count to skip: offset would address a page of the
 	// stored rows alone and silently drop the occurrences between them.
 	if q.Offset > 0 {
-		writeError(w, http.StatusBadRequest, codeBadRequest,
-			"offset is not supported on a window read (filter.properties.at bounded on both ends): it merges computed occurrences into the page, so pages are addressed by cursor alone")
-		return
+		return nil, QueryError("offset is not supported on a window read (filter.properties.at bounded on both ends): it merges computed occurrences into the page, so pages are addressed by cursor alone")
 	}
 	first := q.First
 	if first <= 0 {
@@ -136,12 +154,10 @@ func (h *handler) windowList(w http.ResponseWriter, r *http.Request, ds substrat
 	if q.After != "" {
 		cur, err := decodeWindowCursor(q.After)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
-			return
+			return nil, err
 		}
 		if cur.S != sig {
-			writeError(w, http.StatusUnprocessableEntity, codeValidation, "cursor does not match this filter and orderBy")
-			return
+			return nil, fmt.Errorf("%w: cursor does not match this filter and orderBy", substrate.ErrValidation)
 		}
 		after = &substrate.WindowKey{At: cur.At, Kind: cur.Kind, ID: cur.ID}
 		carried = cur
@@ -151,23 +167,14 @@ func (h *handler) windowList(w http.ResponseWriter, r *http.Request, ds substrat
 		WithAnnotations: q.WithAnnotations, Expand: q.Expand,
 	})
 	if err != nil {
-		writeSubstrateError(w, err)
-		return
+		return nil, err
 	}
 	if carried != nil && carried.G != "" && carried.G != wp.Generation {
-		// The same signal the list gives a cursor from another history.
-		head, herr := ds.Head(ctx)
-		if herr != nil {
-			writeSubstrateError(w, herr)
-			return
-		}
-		writeCompacted(w, head, "cursor was minted against another history; list again")
-		return
+		return nil, fmt.Errorf("%w: cursor was minted against another history; list again", substrate.ErrStaleHistory)
 	}
 	overrides, err := overrideKinds(ctx, ds)
 	if err != nil {
-		writeSubstrateError(w, err)
-		return
+		return nil, err
 	}
 	page := mergeWindow(wp, from, to, desc, first, after, overrides)
 	page.Generation = wp.Generation
@@ -182,7 +189,7 @@ func (h *handler) windowList(w http.ResponseWriter, r *http.Request, ds substrat
 		page.Cursor = encodeWindowCursor(*last)
 	}
 	page.Included = wp.Included
-	writeJSON(w, http.StatusOK, page)
+	return page, nil
 }
 
 // windowItem is one candidate for the page: a stored row or a computed
@@ -220,22 +227,22 @@ func mergeWindow(wp *substrate.WindowPage, from, to time.Time, desc bool, first 
 
 	var items []windowItem
 	for _, rec := range wp.Rows {
-		items = append(items, windowItem{key: keyOf(rec), rec: rec})
+		items = append(items, windowItem{key: KeyOf(rec), rec: rec})
 	}
 	var bound *substrate.WindowKey
 	if wp.More && len(wp.Rows) > 0 {
-		k := keyOf(wp.Rows[len(wp.Rows)-1])
+		k := KeyOf(wp.Rows[len(wp.Rows)-1])
 		bound = &k
 	}
 
 	// Which slots the overrides claim, per series path.
 	claimed := map[string]map[int64]bool{}
 	for _, o := range wp.Overrides {
-		slot, ok := propInstant(o.Properties, vocabulary.PropOriginalAt)
+		slot, ok := PropInstant(o.Properties, vocabulary.PropOriginalAt)
 		if !ok {
 			continue
 		}
-		for _, path := range referencePaths(o.Properties[vocabulary.PropRecurrenceOf]) {
+		for _, path := range ReferencePaths(o.Properties[vocabulary.PropRecurrenceOf]) {
 			if claimed[path] == nil {
 				claimed[path] = map[int64]bool{}
 			}
@@ -319,9 +326,9 @@ func mergeWindow(wp *substrate.WindowPage, from, to time.Time, desc bool, first 
 	return page
 }
 
-// keyOf positions a stored row: its bound temporal slot (`at`, or `dueAt` on a
+// KeyOf positions a stored row: its bound temporal slot (`at`, or `dueAt` on a
 // point-renamed binding), then kind, then id.
-func keyOf(rec *substrate.Record) substrate.WindowKey {
+func KeyOf(rec *substrate.Record) substrate.WindowKey {
 	k := substrate.WindowKey{Kind: rec.Kind, ID: rec.ID}
 	switch {
 	case rec.At != nil:
@@ -329,9 +336,9 @@ func keyOf(rec *substrate.Record) substrate.WindowKey {
 	case rec.DueAt != nil:
 		k.At = rec.DueAt.UTC()
 	default:
-		if t, ok := propInstant(rec.Properties, substrate.PropAt); ok {
+		if t, ok := PropInstant(rec.Properties, substrate.PropAt); ok {
 			k.At = t
-		} else if t, ok := propInstant(rec.Properties, substrate.PropDueAt); ok {
+		} else if t, ok := PropInstant(rec.Properties, substrate.PropDueAt); ok {
 			k.At = t
 		}
 	}
@@ -355,9 +362,9 @@ func ruleOf(s *substrate.Record) (rule occurrence.Rule, slotName string, empty b
 	case s.DueAt != nil:
 		rule.StartsAt, slotName = s.DueAt.UTC(), substrate.PropDueAt
 	default:
-		if t, ok := propInstant(s.Properties, substrate.PropAt); ok {
+		if t, ok := PropInstant(s.Properties, substrate.PropAt); ok {
 			rule.StartsAt = t
-		} else if t, ok := propInstant(s.Properties, substrate.PropDueAt); ok {
+		} else if t, ok := PropInstant(s.Properties, substrate.PropDueAt); ok {
 			rule.StartsAt, slotName = t, substrate.PropDueAt
 		}
 	}
@@ -402,7 +409,7 @@ func computedRecord(s *substrate.Record, rule occurrence.Rule, slotName string, 
 		props[k] = v
 	}
 	props[slotName] = at.UTC().Format(time.RFC3339Nano)
-	if end, ok := propInstant(s.Properties, substrate.PropEndsAt); ok {
+	if end, ok := PropInstant(s.Properties, substrate.PropEndsAt); ok {
 		props[substrate.PropEndsAt] = wallClockEnd(rule.StartsAt, end, at, rule.Timezone).Format(time.RFC3339Nano)
 	}
 	if overridable {
@@ -444,7 +451,7 @@ func wallClockEnd(anchorStart, anchorEnd, slot time.Time, zone string) time.Time
 
 // overrideKinds is the set of kinds binding core's `override`: the kinds
 // whose computed envelopes carry the pair a put needs to become one.
-func overrideKinds(ctx context.Context, ds substrate.Dataset) (map[string]bool, error) {
+func overrideKinds(ctx context.Context, ds Reader) (map[string]bool, error) {
 	infos, err := ds.TypesImplementing(ctx, vocabulary.TraitOverrideCore)
 	if err != nil {
 		return nil, err
@@ -473,24 +480,32 @@ func encodeWindowCursor(c windowCursor) string {
 func decodeWindowCursor(s string) (*windowCursor, error) {
 	body, ok := strings.CutPrefix(s, "w.")
 	if !ok {
-		return nil, errors.New("bad cursor: not a window cursor")
+		return nil, QueryError("bad cursor: not a window cursor")
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(body)
 	if err != nil {
-		return nil, errors.New("bad cursor")
+		return nil, QueryError("bad cursor")
 	}
 	var c windowCursor
 	if err := json.Unmarshal(raw, &c); err != nil {
-		return nil, errors.New("bad cursor")
+		return nil, QueryError("bad cursor")
 	}
 	return &c, nil
 }
 
-// computedResource answers a GET at a computed id: when the kind binds
+// OccurrenceReader is what Occurrence needs: a window reader that also reads
+// one record and lists the overrides at a slot.
+type OccurrenceReader interface {
+	Reader
+	Get(ctx context.Context, kind, id string) (*substrate.Record, error)
+	List(ctx context.Context, q substrate.Query) (*substrate.Page, error)
+}
+
+// Occurrence answers a GET at a computed id: when the kind binds
 // `recurring`, the prefix names a live series whose rule produces the slot,
 // and no override claims it, the same envelope the window read would have
 // served. Otherwise the caller's not-found stands.
-func (h *handler) computedResource(ctx context.Context, ds substrate.Dataset, kind, id string) (*substrate.Record, bool) {
+func Occurrence(ctx context.Context, ds OccurrenceReader, kind, id string) (*substrate.Record, bool) {
 	seriesID, at, ok := splitComputedID(id)
 	if !ok {
 		return nil, false
@@ -537,11 +552,11 @@ func (h *handler) computedResource(ctx context.Context, ds substrate.Dataset, ki
 		// the engine's filter is exact, and a reader that is not (a fake, a
 		// row written before 0044 holding a bare path) still answers right.
 		for _, o := range claimed.Records {
-			slot, ok := propInstant(o.Properties, vocabulary.PropOriginalAt)
+			slot, ok := PropInstant(o.Properties, vocabulary.PropOriginalAt)
 			if !ok || !slot.Equal(at) {
 				continue
 			}
-			for _, p := range referencePaths(o.Properties[vocabulary.PropRecurrenceOf]) {
+			for _, p := range ReferencePaths(o.Properties[vocabulary.PropRecurrenceOf]) {
 				if p == path {
 					return nil, false
 				}
@@ -562,7 +577,8 @@ func propString(props map[string]any, key string) string {
 	return s
 }
 
-func propInstant(props map[string]any, key string) (time.Time, bool) {
+// PropInstant reads an RFC 3339 instant property, in UTC.
+func PropInstant(props map[string]any, key string) (time.Time, bool) {
 	s, _ := props[key].(string)
 	if s == "" {
 		return time.Time{}, false
@@ -589,11 +605,11 @@ func propInstants(props map[string]any, key string) []time.Time {
 	return out
 }
 
-// referencePaths reads the record paths a property value holds. A reference is
+// ReferencePaths reads the record paths a property value holds. A reference is
 // SERVED as an object carrying the path under the reserved `ref` key, and a
 // repeated one as a list of those; the bare string arm is what a row written
 // before decision 0044 still holds.
-func referencePaths(v any) []string {
+func ReferencePaths(v any) []string {
 	switch v := v.(type) {
 	case string:
 		return []string{v}
@@ -604,7 +620,7 @@ func referencePaths(v any) []string {
 	case []any:
 		var out []string
 		for _, item := range v {
-			out = append(out, referencePaths(item)...)
+			out = append(out, ReferencePaths(item)...)
 		}
 		return out
 	}

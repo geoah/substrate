@@ -428,3 +428,60 @@ func TestTriggerEffectMergeAndSplit(t *testing.T) {
 		t.Fatalf("split did not restore the loser: %+v", restored)
 	}
 }
+
+// windowSource lists one day of the timeline kinds, as a schedule surface
+// does, and writes what it saw as `<id>@<at>` for rows and `<id>@<at>*` for
+// computed occurrences.
+const windowSource = `
+def main(input, host):
+    e = input["envelope"]["record"]
+    if e["properties"].get("mode") != "window":
+        return {}
+    page = host.records.list([
+        "window.e2e.example/timeline/series",
+        "window.e2e.example/timeline/meeting",
+    ], where={"at": {"gte": "2026-09-24T00:00:00Z", "lt": "2026-09-25T00:00:00Z"}})
+    seen = []
+    for r in page.get("records") or []:
+        seen.append(r["id"] + "@" + r["properties"]["at"] + ("*" if r.get("computed") else ""))
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
+                         "id": "t-" + e["id"], "properties": {"name": ",".join(seen)}}]}
+`
+
+// A function's list whose filter bounds `at` on both ends is the window read
+// the records route answers (decision 0107): the series' occurrences are
+// computed into the page, BYHOUR slots included, so a body never expands a
+// rule itself.
+func TestTriggerHostListBoundedOnAtComputesOccurrences(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, winManifest()); err != nil {
+		t.Fatalf("declare the timeline kinds: %v", err)
+	}
+	fn := pyFn("timeline", map[string]any{
+		"permissions": map[string]any{"reads": map[string]any{"kinds": []any{winSeries, winMeeting}}},
+	}, []any{taskType}, windowSource)
+	if err := enginetest.Install(ctx, ds, owner, fnConnector([]enginetest.Trigger{readerTrigger("timeline")}, fn)); err != nil {
+		t.Fatalf("register connector: %v", err)
+	}
+	put := func(kind, id string, props map[string]any) {
+		t.Helper()
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
+			t.Fatalf("put %s/%s: %v", kind, id, err)
+		}
+	}
+	put(winSeries, "meds", map[string]any{
+		"name": "Meds", "recurrence": "FREQ=DAILY;BYHOUR=7,19;BYMINUTE=30", "timezone": "UTC",
+		"at": "2026-09-01T07:30:00Z", "endsAt": "2026-09-01T07:35:00Z",
+	})
+	put(winMeeting, "sync", map[string]any{"name": "Sync", "at": "2026-09-24T13:00:00Z", "endsAt": "2026-09-24T13:30:00Z"})
+
+	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"mode": "window"}})
+	process(t, ds)
+
+	want := "meds_20260924T073000Z@2026-09-24T07:30:00Z*,sync@2026-09-24T13:00:00Z,meds_20260924T193000Z@2026-09-24T19:30:00Z*"
+	if got := mustGet(t, ds, taskType, "t-"+w.ID); got.Title != want {
+		t.Fatalf("the body saw %q, want %q", got.Title, want)
+	}
+}

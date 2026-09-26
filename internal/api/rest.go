@@ -12,6 +12,7 @@ import (
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
+	"github.com/geoah/substrate/internal/window"
 )
 
 // THE RECORD PATH (decisions 0033, 0042, 0047).
@@ -103,7 +104,7 @@ func (h *handler) getResource(w http.ResponseWriter, r *http.Request) {
 		// slot, the read answers the envelope the window read would, so
 		// `get -o yaml | apply -f` is a complete path to an override. A
 		// stored record always won above.
-		if computed, ok := h.computedResource(r.Context(), ds, ti.Identity, addr.id); ok {
+		if computed, ok := window.Occurrence(r.Context(), ds, ti.Identity, addr.id); ok {
 			writeJSON(w, http.StatusOK, computed)
 			return
 		}

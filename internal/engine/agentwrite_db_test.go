@@ -454,3 +454,49 @@ func TestHiddenFromChatWithholdsChatAlone(t *testing.T) {
 		t.Fatalf("sub-agent hop to a subagent-only agent: %+v %v", res, err)
 	}
 }
+
+// An agent's query list whose filter bounds `at` on both ends is the window
+// read the records route answers (decision 0107): the series' occurrences
+// are computed into the page beside the stored rows.
+func TestAgentQueryBoundedOnAtComputesOccurrences(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openAgentDataset(t)
+	const pkg = "window.agent.example/timeline"
+	series := pkg + "/series"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		vocabulary.PackageManifest(pkg, 1),
+		vocabulary.KindManifest(pkg, map[string]any{"singular": "series"}, map[string]any{
+			"traits": []any{"substrate.reamde.dev/core/temporal(range)", "substrate.reamde.dev/core/recurring"},
+			"properties": map[string]any{
+				"name":       map[string]any{"type": "string"},
+				"recurrence": map[string]any{"type": "recurrence"},
+				"rdates":     map[string]any{"type": "datetime", "repeated": true},
+				"exdates":    map[string]any{"type": "datetime", "repeated": true},
+				"timezone":   map[string]any{"type": "timezone"},
+			},
+		}),
+	}); err != nil {
+		t.Fatalf("declare the series kind: %v", err)
+	}
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: series, ID: "meds", Properties: map[string]any{
+		"name": "Meds", "recurrence": "FREQ=DAILY;BYHOUR=7,19;BYMINUTE=30", "timezone": "UTC",
+		"at": "2026-09-01T07:30:00Z", "endsAt": "2026-09-01T07:35:00Z",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	out, ok, rows := ds.runQueryTool(ctx, queryScope{kinds: []string{series}, rows: 50}, map[string]any{
+		"filter": map[string]any{
+			"kinds":      []any{series},
+			"properties": map[string]any{"at": map[string]any{"gte": "2026-09-24T00:00:00Z", "lt": "2026-09-25T00:00:00Z"}},
+		},
+	})
+	if !ok || rows != 2 {
+		t.Fatalf("query: ok=%v rows=%d %s", ok, rows, out)
+	}
+	for _, id := range []string{"meds_20260924T073000Z", "meds_20260924T193000Z"} {
+		if !strings.Contains(out, id) {
+			t.Fatalf("the page misses the computed occurrence %s: %s", id, out)
+		}
+	}
+}
