@@ -215,8 +215,9 @@ that collection to pick from, by title, with a search on top; several picked
 records mean any of them, which is the wire's `in`. A reference pinned to no
 kind takes the record's whole `<kind>/<id>` path as text. The **search box**
 beside the filters is the same grammar against every text the kind indexes at
-once (the filter's `search` arm), composed with the filters and the sort, so
-the grid stays a grid: the rows that match, in the order you chose, paged like
+once (the filter's `search` arm), each typed word also matching as the start
+of a longer one, composed with the filters and the sort, so the grid stays a
+grid: the rows that match, in the order you chose, paged like
 any other list.
 
 Opening a collection at its bare address restores the filters, sort and
@@ -535,7 +536,12 @@ it. The old address `/changelog` redirects here with its filters.
 
 `/search` is the [ranked read](api.md#search) as a page: a query in the
 [search grammar](api.md#the-search-grammar), a collection to narrow to (or
-every one), and the hits best first, each with its collection. How to rank is
+every one), and the hits best first, each with its collection. Each typed
+word also matches as the start of a longer one (`ans` finds `Ansel`), and the
+server ranks the word itself above its completions. In everyday mode the page
+searches what you keep and its details (`filter.purposes` `primary` and
+`supporting`); machinery is found with Technical details on, or by picking its
+collection. How to rank is
 the reader's choice and it sticks: **Words** (the default: full-text over
 every indexed text, free, and it answers on every repository), **Words +
 meaning** (the fused hybrid ranking, which falls back to words alone where no

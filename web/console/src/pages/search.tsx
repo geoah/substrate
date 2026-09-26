@@ -36,9 +36,15 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { searchQueryOptions } from "@/lib/api/records"
-import type { KindInfo, Scores, SubstrateRecord } from "@/lib/api/types"
+import type {
+  KindInfo,
+  RecordFilter,
+  Scores,
+  SubstrateRecord,
+} from "@/lib/api/types"
 import { collectionGroups } from "@/lib/collections"
 import { recordTitle } from "@/lib/format"
+import { typeaheadQuery } from "@/lib/identities"
 import { displayPlural, lowerFirst } from "@/lib/kind-names"
 import {
   SEARCH_GRAMMAR,
@@ -54,6 +60,9 @@ import { cn } from "@/lib/utils"
 
 /** How many hits one search asks for. A ranking has no next page. */
 const HITS = 50
+
+/** The purposes everyday mode searches: machinery is left out. */
+const EVERYDAY_PURPOSES: RecordFilter["purposes"] = ["primary", "supporting"]
 
 export function SearchPage() {
   const [technical] = useTechnicalDetails()
@@ -71,10 +80,16 @@ export function SearchPage() {
   const narrowed = kinds.find((k) => k.identity === kind)
 
   const words = q.trim()
+  // What is typed is searched as it is typed: every plain word also matches
+  // as the start of a longer one, and the server ranks the word itself above
+  // its completions. Everyday mode searches what a person keeps and what
+  // belongs to it; machinery (accounts, sync state, the vocabulary) is the
+  // technical view's, as it is in the sidebar.
   const results = useQuery(
-    searchQueryOptions(words, {
+    searchQueryOptions(typeaheadQuery(words), {
       mode,
       kinds: narrowed ? [narrowed.identity] : undefined,
+      purposes: technical || narrowed ? undefined : EVERYDAY_PURPOSES,
       first: HITS,
     })
   )

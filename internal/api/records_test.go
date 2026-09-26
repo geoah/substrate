@@ -426,6 +426,14 @@ func TestRecordsRankedReadShapesTheSearch(t *testing.T) {
 		t.Fatalf("ranked page must always say how much of the index is pending: %s", rec.Body.String())
 	}
 
+	// filter.purposes narrows the ranked read and reaches Search beside the
+	// kinds.
+	rec = env.do(t, http.MethodGet, filterPath(t, substrate.Filter{Purposes: []string{"primary", "supporting"}}, "q=ada"), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if got := ds.lastSearch.Purposes; len(got) != 2 || got[0] != "primary" || got[1] != "supporting" {
+		t.Fatalf("search purposes = %v", got)
+	}
+
 	// An empty ranking is `[]`, never null.
 	rec = env.do(t, http.MethodGet, recordsPath+"?q=nobody", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
@@ -434,10 +442,10 @@ func TestRecordsRankedReadShapesTheSearch(t *testing.T) {
 	}
 }
 
-// The ranked read narrows by filter.kinds alone: both arms cap candidates
-// before hydration, so a predicate applied afterwards would not produce the
-// filtered top-k. Every other arm, and every list parameter, is refused by
-// name.
+// The ranked read narrows by filter.kinds and filter.purposes alone: both
+// arms cap candidates before hydration, so a predicate applied afterwards
+// would not produce the filtered top-k. Every other arm, and every list
+// parameter, is refused by name.
 func TestRecordsRankedReadRefusesWhatItCannotHonor(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
@@ -483,6 +491,9 @@ func TestRecordsWatchRefusesWhatItCannotHonor(t *testing.T) {
 		{filterPath(t, substrate.Filter{Properties: map[string]substrate.Cond{"a": {Eq: 1}}}, "watch=1"), "filter.properties"},
 		{filterPath(t, substrate.Filter{Implements: "x"}, "watch=1"), "filter.implements"},
 		{filterPath(t, substrate.Filter{Search: "x"}, "watch=1"), "filter.search"},
+		// The tail matches a change against its kinds as it streams, and a
+		// purpose resolved once would go stale as kinds are declared.
+		{filterPath(t, substrate.Filter{Purposes: []string{"primary"}}, "watch=1"), "filter.purposes"},
 	} {
 		rec := env.do(t, http.MethodGet, tc.path, tok, nil)
 		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)

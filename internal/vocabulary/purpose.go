@@ -6,8 +6,9 @@ package vocabulary
 // client listing every kind it holds has nothing else to decide by.
 //
 // The loader's half is the grammar: one of three words or nothing. The value
-// is live but advisory: stored with the declaration and read by clients, and
-// nothing on the server filters, refuses or orders by it.
+// is stored with the declaration and read by clients; on the server,
+// `filter.purposes` narrows a read by it and the ranked read weighs it
+// (decision record 0108). No write is refused over it.
 //
 // The key is reserved by name, not tolerated by prefix (record 0020): it is in
 // typeDataKeys, so a binary that did not know it quarantines the package rather
@@ -15,6 +16,16 @@ package vocabulary
 
 // purposes is the closed value set, in the order a refusal names them.
 var purposes = []string{PurposePrimary, PurposeSupporting, PurposeInternal}
+
+// IsPurpose reports whether p is one of the three purposes.
+func IsPurpose(p string) bool {
+	for _, v := range purposes {
+		if v == p {
+			return true
+		}
+	}
+	return false
+}
 
 // parseKindPurpose reads a kind's `purpose:`. The raw value is asserted rather
 // than read through mstr, which would turn a number or a list into "" and so

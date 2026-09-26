@@ -317,6 +317,7 @@
     "labels": false,
     "orphaned": false,
     "properties": false,
+    "purposes": false,
     "referencing": false,
     "search": false
   },

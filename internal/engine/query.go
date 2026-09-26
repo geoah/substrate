@@ -599,6 +599,16 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 			types = kept
 		}
 	}
+	// `purposes` narrows the same way `implements` does. A narrowing that
+	// admits no kind is an empty answer, not every kind: a repository with no
+	// supporting kinds has no supporting records.
+	types, restrict, err := narrowByPurpose(reg, types, f.Purposes)
+	if err != nil {
+		return nil, err
+	}
+	if restrict && len(types) == 0 {
+		b.add(`FALSE`)
+	}
 	if len(types) > 0 {
 		idents := make([]string, 0, len(types))
 		for _, t := range types {
@@ -628,11 +638,11 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 		// every text the kind indexes (validate.go ftsBands), matched by the
 		// grammar the ranked read ranks by, and nothing about rank here — the
 		// list keeps the caller's order.
-		tq, err := tsqueryText("filter.search", f.Search)
+		tq, err := searchExpr(b, "filter.search", f.Search)
 		if err != nil {
 			return nil, err
 		}
-		b.add(`fts @@ to_tsquery('english', ` + b.arg(tq) + `)`)
+		b.add(`fts @@ ` + tq)
 	}
 	// The orphan mark is a column on the row, derived (orphans.go), so it is
 	// a predicate here and not a property condition: no kind declares it.
@@ -1132,11 +1142,11 @@ func condColumn(b *builder, col string, c substrate.Cond) error {
 			return fmt.Errorf("%w: %s is not a text property — match needs one, use eq, prefix or the comparison operators",
 				substrate.ErrValidation, col)
 		}
-		tq, err := tsqueryText(col+": match", c.Match)
+		tq, err := searchExpr(b, col+": match", c.Match)
 		if err != nil {
 			return err
 		}
-		b.add(`to_tsvector('english', coalesce(` + expr + `, '')) @@ to_tsquery('english', ` + b.arg(tq) + `)`)
+		b.add(`to_tsvector('english', coalesce(` + expr + `, '')) @@ ` + tq)
 	}
 	if c.Exists != nil {
 		if *c.Exists {
@@ -1257,7 +1267,7 @@ func condJSON(b *builder, col, key string, c substrate.Cond, kind vocabulary.Dat
 		b.add(col + `->(` + b.arg(key) + `::text) @> ` + b.arg(raw) + `::jsonb`)
 	}
 	if c.Match != "" {
-		tq, err := tsqueryText(key+": match", c.Match)
+		tq, err := searchExpr(b, key+": match", c.Match)
 		if err != nil {
 			return err
 		}
@@ -1271,7 +1281,7 @@ func condJSON(b *builder, col, key string, c substrate.Cond, kind vocabulary.Dat
 		text := `(CASE jsonb_typeof(` + v + `) WHEN 'array' THEN ` +
 			`(SELECT coalesce(string_agg(x.v, ' '), '') FROM jsonb_array_elements_text(` + v + `) AS x(v)) ` +
 			`ELSE coalesce(` + col + `->>(` + k + `::text), '') END)`
-		b.add(`to_tsvector('english', ` + text + `) @@ to_tsquery('english', ` + b.arg(tq) + `)`)
+		b.add(`to_tsvector('english', ` + text + `) @@ ` + tq)
 	}
 	if c.Exists != nil {
 		clause := `jsonb_exists(` + col + `, ` + b.arg(key) + `)`

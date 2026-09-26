@@ -13,6 +13,7 @@ import (
 	"github.com/pgvector/pgvector-go"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 const (
@@ -32,9 +33,9 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) (substr
 	// The lexical arm ranks by the search grammar (tsquery.go), the same text
 	// the list's `search` arm filters by; the semantic arm embeds the query as
 	// typed, stars and all, because a prefix means nothing to an embedding.
-	tq, err := tsqueryText("q", q)
-	if err != nil {
-		return out, err
+	plan := parseSearch(q)
+	if plan.empty() {
+		return out, fmt.Errorf("%w: q: %q has no word to match", substrate.ErrValidation, q)
 	}
 	k := in.K
 	if k <= 0 {
@@ -43,6 +44,16 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) (substr
 	mode := in.Mode
 	if mode == "" {
 		mode = substrate.SearchHybrid
+	}
+	reg := ds.registry()
+	types, restrict, err := searchKinds(reg, in.Kinds, in.Purposes)
+	if err != nil {
+		return out, err
+	}
+	if restrict && len(types) == 0 {
+		// The purposes admit no kind this repository declares: nothing can
+		// match, and neither arm needs asking.
+		return out, nil
 	}
 	// The embeddings provider is the REPOSITORY's, resolved here rather than
 	// held by the process: a repository that names none searches lexically,
@@ -85,95 +96,30 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) (substr
 			return out, ds.refuseSemantic(ctx, provider, out.Pending)
 		}
 	}
-	var types []string
-	reg := ds.registry()
-	for _, name := range in.Kinds {
-		t, err := reg.Resolve(name)
-		if err != nil {
-			return out, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
-		}
-		types = append(types, t.Identity)
-	}
 
-	scores := map[eref]*substrate.Hit{}
-	demoted := map[eref]bool{}
-	var order []eref
-	touch := func(id eref) *substrate.Hit {
-		h, ok := scores[id]
-		if !ok {
-			h = &substrate.Hit{}
-			scores[id] = h
-			order = append(order, id)
-		}
-		return h
-	}
-
+	// Each arm is asked for more than k: the purpose weight and the fusion
+	// reorder what the arms return, and a row an arm cut at k could have been
+	// in the final k.
+	armK := max(2*k, 40)
+	var lex, sem map[eref]arm
 	if mode == substrate.SearchLexical || mode == substrate.SearchHybrid {
-		lex, err := ds.lexical(ctx, tq, types, k)
-		if err != nil {
+		if lex, err = ds.lexical(ctx, plan, types, restrict, armK); err != nil {
 			return out, err
-		}
-		for id, r := range lex {
-			touch(id).Lexical = r.score
-			demoted[id] = demoted[id] || r.demoted
 		}
 	}
 	if semanticArm {
-		sem, err := ds.semantic(ctx, provider, q, types, k)
-		if err != nil {
+		if sem, err = ds.semantic(ctx, provider, q, types, restrict, armK); err != nil {
 			return out, err
 		}
-		for id, r := range sem {
-			touch(id).Semantic = r.score
-			demoted[id] = demoted[id] || r.demoted
-		}
 	}
-	if len(order) == 0 {
-		return out, nil
+	ranked := fuseArms(lex, sem, func(id eref) string { return kindPurpose(reg, id.Kind) })
+	if len(ranked) > k {
+		ranked = ranked[:k]
 	}
-
-	// Max-normalise each arm so the two scales merge without tuning.
-	var maxLex, maxSem float64
-	for _, id := range order {
-		h := scores[id]
-		if h.Lexical > maxLex {
-			maxLex = h.Lexical
-		}
-		if h.Semantic > maxSem {
-			maxSem = h.Semantic
-		}
-	}
-	combined := make(map[eref]float64, len(order))
-	for _, id := range order {
-		h := scores[id]
-		var c float64
-		if maxLex > 0 {
-			c += h.Lexical / maxLex
-		}
-		if maxSem > 0 {
-			c += h.Semantic / maxSem
-		}
-		combined[id] = c
-	}
-	// Prominence demotion: a person the machine still calls
-	// `utility` ranks below every `known` match, however well they score.
-	// The engine stays otherwise unopinionated — filtering is the client's.
-	sort.SliceStable(order, func(i, j int) bool {
-		if demoted[order[i]] != demoted[order[j]] {
-			return !demoted[order[i]]
-		}
-		if combined[order[i]] != combined[order[j]] {
-			return combined[order[i]] > combined[order[j]]
-		}
-		return order[i].less(order[j])
-	})
-	if len(order) > k {
-		order = order[:k]
-	}
-	out.Hits = make([]substrate.Hit, 0, len(order))
-	for _, id := range order {
+	out.Hits = make([]substrate.Hit, 0, len(ranked))
+	for _, r := range ranked {
 		row, err := scanRecord(ds.db.QueryRowContext(ctx,
-			`SELECT `+recordCols+` FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`, id.Kind, id.ID))
+			`SELECT `+recordCols+` FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`, r.id.Kind, r.id.ID))
 		if err != nil {
 			continue
 		}
@@ -181,11 +127,209 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) (substr
 		if err != nil {
 			return out, err
 		}
-		h := scores[id]
-		h.Record = e
-		out.Hits = append(out.Hits, *h)
+		out.Hits = append(out.Hits, substrate.Hit{Record: e, Lexical: r.lexical, Semantic: r.semantic})
 	}
 	return out, nil
+}
+
+// searchKinds resolves a search's kind narrowing: the named kinds, the kinds
+// of the named purposes, or both intersected, because every filter arm
+// narrows. restrict says whether any narrowing was asked for; a restriction
+// that admits no kind is an empty list, and the caller answers empty.
+func searchKinds(reg *vocabulary.Registry, kinds, purposes []string) ([]string, bool, error) {
+	var named []*vocabulary.Kind
+	for _, name := range kinds {
+		t, err := reg.Resolve(name)
+		if err != nil {
+			return nil, false, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+		}
+		named = append(named, t)
+	}
+	kept, restrict, err := narrowByPurpose(reg, named, purposes)
+	if err != nil {
+		return nil, false, err
+	}
+	out := make([]string, 0, len(kept))
+	for _, t := range kept {
+		out = append(out, t.Identity)
+	}
+	return out, restrict || len(named) > 0, nil
+}
+
+// narrowByPurpose keeps the kinds whose purpose is one of purposes: of named
+// where it names any, of every kind the registry holds otherwise. restrict is
+// false only when purposes is empty, so the caller can tell "no narrowing"
+// from "narrowed to nothing". An unknown purpose is refused, naming the three.
+func narrowByPurpose(reg *vocabulary.Registry, named []*vocabulary.Kind, purposes []string) ([]*vocabulary.Kind, bool, error) {
+	if len(purposes) == 0 {
+		return named, false, nil
+	}
+	want := map[string]bool{}
+	for _, p := range purposes {
+		if !vocabulary.IsPurpose(p) {
+			return nil, false, fmt.Errorf("%w: filter.purposes: %q is not a purpose: %q, %q or %q",
+				substrate.ErrValidation, p, vocabulary.PurposePrimary, vocabulary.PurposeSupporting, vocabulary.PurposeInternal)
+		}
+		want[p] = true
+	}
+	from := named
+	if len(from) == 0 {
+		from = reg.Kinds()
+	}
+	kept := make([]*vocabulary.Kind, 0, len(from))
+	for _, t := range from {
+		if want[t.PurposeOrPrimary()] {
+			kept = append(kept, t)
+		}
+	}
+	return kept, true, nil
+}
+
+// purposeWeights is the ranking prior a kind's declared purpose sets
+// (decision record 0108): a record a person browses ranks above a detail of
+// one, and both above machinery, by a factor rather than a tier, so a strong
+// match on machinery still outranks a weak one on data. A kind the registry no
+// longer declares reads as primary, as an undeclared purpose does.
+var purposeWeights = map[string]float64{
+	vocabulary.PurposePrimary:    1.0,
+	vocabulary.PurposeSupporting: 0.8,
+	vocabulary.PurposeInternal:   0.4,
+}
+
+func kindPurpose(reg *vocabulary.Registry, kind string) string {
+	if t, ok := reg.ByIdentity(kind); ok {
+		return t.PurposeOrPrimary()
+	}
+	return vocabulary.PurposePrimary
+}
+
+// demotedWeight scales a demoted hit's score against the hits of other kinds.
+const demotedWeight = 0.5
+
+// knownFirstWithinKind reorders, in place, the hits of each kind that holds a
+// demoted one: the positions those hits occupy stay theirs, and the kind's
+// undemoted hits take the earlier ones, each group keeping its order.
+func knownFirstWithinKind(hits []rankedHit) {
+	slots := map[string][]int{}
+	demoted := map[string]bool{}
+	for i, h := range hits {
+		slots[h.id.Kind] = append(slots[h.id.Kind], i)
+		demoted[h.id.Kind] = demoted[h.id.Kind] || h.demoted
+	}
+	for kind, idx := range slots {
+		if !demoted[kind] {
+			continue
+		}
+		group := make([]rankedHit, len(idx))
+		for n, i := range idx {
+			group[n] = hits[i]
+		}
+		sort.SliceStable(group, func(a, b int) bool { return !group[a].demoted && group[b].demoted })
+		for n, i := range idx {
+			hits[i] = group[n]
+		}
+	}
+}
+
+// rrfK is reciprocal rank fusion's constant: a row's fused score is the sum,
+// over the arms that ranked it, of 1/(rrfK + rank). 60 is the value the method
+// was published with and the one every engine that fuses this way ships.
+const rrfK = 60
+
+// rankedHit is one row's place in the final ranking.
+type rankedHit struct {
+	id                eref
+	lexical, semantic float64
+	demoted           bool
+	// whole is the lexical arm's tier, kept only when that arm ranks alone.
+	whole bool
+	score float64
+}
+
+// fuseArms orders the rows the arms returned. Each arm is ranked on its own
+// terms: the lexical arm puts the rows matching every word first, then orders
+// by BM25F; the semantic arm by cosine. One arm alone keeps its own score, and
+// the lexical arm its tier: a row matching every word ranks above any that
+// misses one. Two arms fuse by reciprocal rank, because a BM25 sum and a
+// cosine are on scales no normalization makes comparable (the max-normalized
+// sum this replaces let the best semantic hit tie the best lexical one however
+// weak it was). The purpose weight then scales the score.
+//
+// The prominence demotion is two rules. Among the hits of one kind, a person
+// the machine still calls `utility` ranks below every `known` one, however
+// well they score: the recruiter who emailed once never outranks a friend.
+// Across kinds a demoted hit's score is weighed down (demotedWeight) and
+// competes with the rest, so a person born `utility` a moment ago, as every
+// synced contact is, still outranks the machinery their name happens to match.
+func fuseArms(lex, sem map[eref]arm, purpose func(eref) string) []rankedHit {
+	hits := map[eref]*rankedHit{}
+	touch := func(id eref, a arm) *rankedHit {
+		h, ok := hits[id]
+		if !ok {
+			h = &rankedHit{id: id}
+			hits[id] = h
+		}
+		h.demoted = h.demoted || a.demoted
+		return h
+	}
+	both := len(lex) > 0 && len(sem) > 0
+	for rank, id := range armOrder(lex, true) {
+		h := touch(id, lex[id])
+		h.lexical = lex[id].score
+		if both {
+			h.score += 1.0 / float64(rrfK+rank+1)
+		} else {
+			h.score, h.whole = lex[id].score, lex[id].whole
+		}
+	}
+	for rank, id := range armOrder(sem, false) {
+		h := touch(id, sem[id])
+		h.semantic = sem[id].score
+		if both {
+			h.score += 1.0 / float64(rrfK+rank+1)
+		} else {
+			h.score = sem[id].score
+		}
+	}
+	out := make([]rankedHit, 0, len(hits))
+	for _, h := range hits {
+		h.score *= purposeWeights[purpose(h.id)]
+		if h.demoted {
+			h.score *= demotedWeight
+		}
+		out = append(out, *h)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].whole != out[j].whole {
+			return out[i].whole
+		}
+		if out[i].score != out[j].score {
+			return out[i].score > out[j].score
+		}
+		return out[i].id.less(out[j].id)
+	})
+	knownFirstWithinKind(out)
+	return out
+}
+
+// armOrder is one arm's own ranking: by score, the lexical arm's rows
+// matching every word first.
+func armOrder(a map[eref]arm, tiered bool) []eref {
+	ids := make([]eref, 0, len(a))
+	for id := range a {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		x, y := a[ids[i]], a[ids[j]]
+		if tiered && x.whole != y.whole {
+			return x.whole
+		}
+		if x.score != y.score {
+			return x.score > y.score
+		}
+		return ids[i].less(ids[j])
+	})
+	return ids
 }
 
 // demotionExpr is the prominence rank a search arm orders by: true for a
@@ -200,37 +344,9 @@ func demotion(alias string) string { return fmt.Sprintf(demotionExpr, alias, ali
 type arm struct {
 	score   float64
 	demoted bool
-}
-
-// lexical ranks the records whose index matches tq, tsquery text in the search
-// grammar (searchQuery), by ts_rank over the weighted bands.
-func (ds *dataset) lexical(ctx context.Context, tq string, types []string, k int) (map[eref]arm, error) {
-	b := &builder{}
-	qarg := b.arg(tq)
-	clause := ""
-	if len(types) > 0 {
-		clause = ` AND kind = ANY(` + b.textArray(types) + `)`
-	}
-	rows, err := ds.db.QueryContext(ctx, `
-		SELECT kind, id, ts_rank(fts, to_tsquery('english', `+qarg+`)) AS rank,
-		       `+demotion("records")+` AS demoted
-		FROM records
-		WHERE deleted_at IS NULL AND fts @@ to_tsquery('english', `+qarg+`)`+clause+`
-		ORDER BY demoted, rank DESC LIMIT `+b.arg(k), b.args...)
-	if err != nil {
-		return nil, fmt.Errorf("substrate/engine: lexical search: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	out := map[eref]arm{}
-	for rows.Next() {
-		var id eref
-		var a arm
-		if err := rows.Scan(&id.Kind, &id.ID, &a.score, &a.demoted); err != nil {
-			return nil, err
-		}
-		out[id] = a
-	}
-	return out, rows.Err()
+	// whole is the lexical arm's: the row matches the query as typed, every
+	// word, and not only the relaxed candidate query.
+	whole bool
 }
 
 // embedPending is how many (record, property) pairs wait in the repository's
@@ -285,7 +401,7 @@ func (ds *dataset) refuseSemantic(ctx context.Context, provider *embedProvider, 
 	return nil
 }
 
-func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q string, types []string, k int) (map[eref]arm, error) {
+func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q string, types []string, restrict bool, k int) (map[eref]arm, error) {
 	vecs, err := provider.Embed(ctx, []string{q})
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: embed query: %w", err)
@@ -296,7 +412,7 @@ func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q stri
 	b := &builder{}
 	vec := b.arg(pgvector.NewVector(vecs[0]))
 	clause := ""
-	if len(types) > 0 {
+	if restrict {
 		clause = ` AND e.kind = ANY(` + b.textArray(types) + `)`
 	}
 	// ONLY the resolved pair's vectors are scored. Cosine distance between two
@@ -309,7 +425,7 @@ func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q stri
 		       bool_or(`+demotion("e")+`) AS demoted
 		FROM embeddings em JOIN records e ON e.kind = em.record_kind AND e.id = em.record_id
 		WHERE e.deleted_at IS NULL`+prov+clause+`
-		GROUP BY em.record_kind, em.record_id ORDER BY demoted, sim DESC LIMIT `+b.arg(k), b.args...)
+		GROUP BY em.record_kind, em.record_id ORDER BY sim DESC LIMIT `+b.arg(k), b.args...)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: semantic search: %w", err)
 	}

@@ -66,7 +66,7 @@ learn, not one uniform grammar.
 | Mode | Selected by | Parameters | Filter arms | Answer |
 | --- | --- | --- | --- | --- |
 | **list** | neither `q` nor `watch=1` | `filter`, `orderBy`, `first`, `after` or `offset`, `expand`, `withAnnotations`, `count` | all of them | `{records, cursor?, head, generation, included?, matches?, count?}` |
-| **ranked** | `q` | `q`, `mode`, `filter`, `first` | `kinds` alone | `{records, scores, pending}` |
+| **ranked** | `q` | `q`, `mode`, `filter`, `first` | `kinds` and `purposes` | `{records, scores, pending}` |
 | **watch** | `watch=1` | `watch`, `filter`, `from`, `generation` | `kinds` alone | the ndjson tail |
 
 A kind named in `filter.kinds` that this repository never declared is
@@ -103,12 +103,12 @@ expansion would load more than 500 referents is `422` telling you to lower
 
 **The ranked read** is [search](#search): `q` scores and orders instead of
 filtering, `mode` picks the arm, `first` is the hit count, and `filter.kinds`
-narrows the candidates. It carries `records` in rank order, a `scores` sidecar
+and `filter.purposes` narrow the candidates. It carries `records` in rank order, a `scores` sidecar
 keyed by record path, and `pending`; no `cursor`, `head` or `generation`,
 because a ranking has no keyset and opens no single snapshot, so it claims
 none. Every other list parameter (`orderBy`, `after`, `offset`, `expand`,
-`withAnnotations`) and every filter arm but `kinds` is refused with `q` by
-name: both ranking arms cap candidates BEFORE hydration, so a predicate applied
+`withAnnotations`) and every filter arm but `kinds` and `purposes` is refused
+with `q` by name: both ranking arms cap candidates BEFORE hydration, so a predicate applied
 to the top-k afterwards would not be the filtered top-k, and the substrate does
 not pretend otherwise.
 
@@ -513,6 +513,14 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   kinds already in play rather than widening them; alone it is the cross-kind
   query. A pair that can match nothing is a `validation` error naming the
   mismatch, not an empty page.
+- `purposes` selects the kinds declaring one of the named
+  [purposes](vocabulary.md#the-reserved-keys), `primary`, `supporting` or
+  `internal`, an undeclared purpose reading as `primary`:
+  `{"purposes": ["primary", "supporting"]}` is everything but machinery. It
+  intersects with `kinds` like `implements` does, and a set that admits no
+  kind is an empty page, because a repository with no supporting kinds has no
+  supporting records. Any other word is `422 validation` naming the three.
+  The ranked read takes it beside `kinds`; the tail refuses it.
 - `referencing` is the reverse read: the records pointing at one record,
   `{"ref": "<kind>/<id>", "property": …}` with `property` optional
   ([above](#who-points-at-a-record-referencing)).
@@ -659,7 +667,7 @@ GET /api/v1/records?filter={"kinds":["samples.substrate.reamde.dev/tasks/task"],
 The count is the filter's, not the page's: `first`, `after` and `offset`
 do not move it, so every page of one walk answers the same number unless a
 write lands between them. It honors every arm the list does (`kinds`,
-`implements`, `properties`, `labels`, `search`, `ids`, `referencing`,
+`implements`, `purposes`, `properties`, `labels`, `search`, `ids`, `referencing`,
 `deleted`, `orphaned`, `ambiguous`) and excludes exactly what the list
 excludes, a tombstone and a merged-away loser included. It is read in the
 page's own snapshot, so the rows and the number agree. Zero is a count and is
@@ -840,9 +848,14 @@ It has two arms:
   string-family property index into full-text search, weighted in three bands
   (title first, then declared string properties, then the rest), and `q` takes
   the [search grammar](#the-search-grammar) below. A property opts
-  out with `fts: false`; secret-typed properties never index. Changing what a
-  kind indexes re-indexes its existing records in the same apply, without
-  moving their `version` or `updatedAt`.
+  out with `fts: false`; secret-typed properties never index. An email
+  address, a URL or a path also indexes the words inside it
+  (`ada@inbox.example` is found by `ada`, `inbox` and `inbox.example`), and a
+  word with a diacritic also indexes its folded spelling (`José` is found by
+  `jose`). Changing what a kind indexes re-indexes its existing records in the
+  same apply, and a binary whose indexing rules changed re-indexes every
+  record at the repository's next open, in both cases without moving a
+  `version` or `updatedAt`.
 - **Semantic**, strictly opt-in per property with `embed: true` (the shipped
   vocabulary opts in long prose: message and mail bodies, task and event
   descriptions, and transcripts). Opted-in text is chunked into overlapping windows
@@ -851,10 +864,27 @@ It has two arms:
   everything else, 1536 wide
   ([0026](decisions/0026-embedding-vectors-are-1536-wide-or-refused.md)).
 
+**How the lexical arm ranks.** Its candidates are the records holding ANY of
+the query's words, every `-exclusion` still applied, so a query with one word
+no record holds still finds the records holding the others. The records
+holding every word rank first. Within that, the arm ranks by
+[BM25F](decisions/0108-search-ranks-by-bm25f-and-a-kinds-purpose.md): each band is a
+field with its own weight (title 3, short strings 1.5, prose 1) and its own
+length normalization, a word held by few records weighs more than one held by
+many, and repetition saturates, so a title match outranks a long text that
+repeats the word. A prefix (`lay*`) ranks the word itself above its
+completions. `filter.search` and `match` stay predicates: they require every
+word, exactly as the grammar reads.
+
 `mode` picks `lexical`, `semantic`, or `hybrid` (the default): hybrid runs both
-arms, normalizes each against its own best hit, and merges. `first` is the hit
-count, 20 by default. The answer is the records in rank order, each one's raw
-per-arm scores under `scores` keyed by record path (`lexical` is `ts_rank`,
+arms and fuses them by rank (reciprocal rank fusion), so a record near the
+top of both ranks highest and neither arm's scale decides. Every hit's score
+is then weighed by its kind's [purpose](vocabulary.md#the-reserved-keys):
+`primary` 1, `supporting` 0.8, `internal` 0.4, so machinery (accounts, sync
+state, the vocabulary itself) ranks below the data it describes without being
+hidden; `filter.purposes` hides it. `first` is the hit count, 20 by default.
+The answer is the records in rank order, each one's raw per-arm scores under
+`scores` keyed by record path (`lexical` is the BM25F sum, unbounded,
 `semantic` cosine similarity, 0 where an arm did not rank), so a caller can
 threshold rather than trust a rank, and `pending`: the number of properties
 the drain has yet to buy vectors for, counted whenever the semantic arm was
@@ -891,13 +921,14 @@ case:
 | You type | It means |
 | --- | --- |
 | `rack layout` | every word, in any order |
-| `lay*` | a word starting with `lay` (a star anywhere in a word marks it a prefix of its letters: `*lay*` and `lay*` are one query, because the index holds whole words and can answer "starts with" but never "contains") |
+| `lay*` | a word starting with `lay` (a star anywhere in a word marks it a prefix of its letters: `*lay*` and `lay*` are one query, because the index holds whole words and can answer "starts with" but never "contains"). A prefix is matched as typed, not stemmed: `ans*` finds `Ansel` and not `anthropic`, and it also finds the word's own stemmed form |
 | `"rack layout"` | the words adjacent, in that order |
 | `-lunch` | without this word; `-"weekly sync"` without this phrase |
 | `rack OR lunch` | either word (`OR` in capitals; `or` is a word) |
 
-Nothing typed reaches the query parser as an operator: `geo:*` is the word
-`geo:` (which the dictionary reads as `geo`, as a prefix), `a&b` is one word.
+A word with a diacritic also matches its folded spelling, so `José` and
+`jose` find the same records. Nothing typed reaches the query parser as an
+operator: `geo:*` is the word `geo:` as a prefix, `a&b` is one word.
 A query that is stars, quotes and dashes alone has no word to match and is
 refused as `422 validation` naming the door (`q`, `filter.search`, or the
 property), never answered as "no matches". The semantic arm embeds the query
@@ -913,10 +944,11 @@ read allowlist, and an agent reaches it through the `q` arm of its
 One ranking rule is built in: the shipped `person` carries a two-state
 `prominence` machine (`utility` at birth, `known` once something promotes it,
 an address-book sync or the owner), and search ranks `utility` people below
-every `known` match, so the recruiter who emailed once never outranks a
-friend. The demotion participates in the top-k ordering, so in a mixed-kind
-search a high-scoring utility person can be pushed out of the `first` rows
-entirely.
+every `known` person, however well they score, so the recruiter who emailed
+once never outranks a friend. Against the hits of other kinds a `utility`
+person's score is halved and competes like any other, so a contact synced a
+moment ago still outranks the machinery their name happens to match, and a
+strong match on a task still outranks them.
 
 ## Actors
 

@@ -526,7 +526,7 @@ func ftsBandsUnder(reg *vocabulary.Registry, row *erow) [3]string {
 	// `body` property `fts` flag to read. Index the stored body: it is the safe
 	// default for an unknown row, and it keeps a legacy body searchable rather
 	// than dropping it out of the index on a binary that forgot its kind (#68).
-	return [3]string{row.Title, "", row.Body}
+	return [3]string{searchText(row.Title), "", searchText(row.Body)}
 }
 
 // reprojectFTS re-derives `fts` for every stored row of the named kinds, live
