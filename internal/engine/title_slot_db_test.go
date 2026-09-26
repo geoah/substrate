@@ -198,10 +198,11 @@ func TestDisplayTemplateRendersStateAndTemporalSlots(t *testing.T) {
 	if want := "done at 2026-09-26T10:00:00Z: shipped"; moved.Title != want {
 		t.Fatalf("a transition re-renders the state: got %q, want %q", moved.Title, want)
 	}
-	// An unset slot renders nothing, so the token's next alternative or the
-	// literal around it is what remains.
+	// An unset slot renders nothing and takes its separator with it
+	// (Template.dropSeparators), so the trailing ": " goes with the empty
+	// body and only the literal's word is left.
 	bare := mustPut(t, ds, owner, substrate.PutInput{Kind: tsPackage + "/entry", ID: "e2"})
-	if want := "open at :"; bare.Title != want {
+	if want := "open at"; bare.Title != want {
 		t.Fatalf("an unset instant and body render empty: got %q, want %q", bare.Title, want)
 	}
 }
