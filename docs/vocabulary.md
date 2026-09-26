@@ -196,6 +196,10 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   nothing and hand the next alternative its turn, which is what lets a mirror
   whose provider sends arrays title itself
   ([decision record 0086](decisions/0086-the-head-of-a-repeated-source-is-spelled-with-brackets.md)).
+  A state property renders the state the record is in (`{status}` is `open`),
+  an instant renders as the RFC 3339 value a read returns, and a declared
+  `body` renders its text, though all three live outside the record's other
+  properties.
   Every token is checked against the kind's own declarations at load, so a typo
   fails on the manifest and not as an empty title: a `[]` head that is not
   repeated is refused naming the plain spelling, and a sensitive property never
