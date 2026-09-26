@@ -237,6 +237,10 @@ func TestWindowRefusals(t *testing.T) {
 	rec = env.do(t, http.MethodGet, windowPath("2026-07-01T00:00:00Z", "2026-07-07T00:00:00Z", "first=1", "after="+url.QueryEscape(first.Cursor)), tok, nil)
 	wantStatus(t, rec, http.StatusUnprocessableEntity)
 
+	// A cursor that does not decode is a bad request.
+	rec = env.do(t, http.MethodGet, windowPath("2026-07-01T00:00:00Z", "2026-07-06T00:00:00Z", "after=not-a-cursor"), tok, nil)
+	wantStatus(t, rec, http.StatusBadRequest)
+
 	// A dense rule is a named problem, never a silent absence, and the page
 	// stands without it.
 	ds := env.svc.datasets[fakeRepository]
@@ -250,6 +254,26 @@ func TestWindowRefusals(t *testing.T) {
 	}
 	if len(page.Records) != 5 {
 		t.Fatalf("the page did not stand beside the problem: %d records", len(page.Records))
+	}
+}
+
+// Date-only bounds read as UTC midnight, as they do on a plain list, so the
+// same day asked either way answers the same page.
+func TestWindowDateOnlyBounds(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	seedWindow(env.svc.datasets[fakeRepository])
+	instant := decodeJSON[windowPage](t, env.do(t, http.MethodGet, windowPath("2026-07-01T00:00:00Z", "2026-07-06T00:00:00Z"), tok, nil))
+	rec := env.do(t, http.MethodGet, windowPath("2026-07-01", "2026-07-06"), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	dated := decodeJSON[windowPage](t, rec)
+	if len(dated.Records) == 0 || len(dated.Records) != len(instant.Records) {
+		t.Fatalf("date-only bounds answered %d records, instants %d", len(dated.Records), len(instant.Records))
+	}
+	for i := range dated.Records {
+		if dated.Records[i].ID != instant.Records[i].ID {
+			t.Fatalf("record %d: %s, want %s", i, dated.Records[i].ID, instant.Records[i].ID)
+		}
 	}
 }
 
