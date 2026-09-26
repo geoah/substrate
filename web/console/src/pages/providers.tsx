@@ -211,7 +211,7 @@ const STATE_WORDS: Record<
 function tierWord(row: BundleRow): string {
   if (row.tier === "sample") return "Sample"
   if (row.tier === "provider") return "Provider"
-  return "Applied directly"
+  return "Added by hand"
 }
 
 function OtherPackages({
