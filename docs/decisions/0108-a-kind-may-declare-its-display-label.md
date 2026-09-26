@@ -17,7 +17,9 @@ client's word list leaves every other client wrong. Decision
 [0033](0033-the-path-grammar-has-no-separators.md) removed plurals from
 routing and retired the `plural` declaration key; the working reading since
 was that plural forms are a client's business and never in the API. The owner
-ruled on #675 that a kind declares a display label.
+ruled on #675 that a kind declares a display label. Carrying the plural form
+too, in the API, was the implementer's call, made against that earlier
+reading and stated below.
 
 ## Considered Options
 
@@ -41,8 +43,8 @@ label:
 ```
 
 The block is optional. When present, both keys are required, each a trimmed
-single-line caption of at most 80 characters, the same bound as a property's
-`displayName`. The loader holds the key set closed and refuses anything else.
+single-line caption of at most 80 characters, counted as Unicode characters
+rather than bytes. The loader holds the key set closed and refuses anything else.
 The vocabulary read (`KindInfo`) carries it as `label: {singular, plural}`,
 absent when the kind declares none.
 
@@ -67,7 +69,10 @@ the retired `plural` key stays refused at the top of a declaration and in
 ### Confirmation
 
 `TestKindLabel` and `TestKindLabelRefusals` (`internal/vocabulary/label_test.go`)
-hold the grammar. `TestTypeInfoCarriesTheDeclaredLabel` holds the read.
+hold the grammar. `TestTypeInfoCarriesTheDeclaredLabel` holds the read, and
+`TestADeclaredKindLabelIsStoredAndRead`
+(`internal/engine/vocabularywrite_db_test.go`) checks the stored row and the
+read after a reopen.
 `TestShippedKindsDeclareTheirDisplayLabels` (`kinds/kinds_test.go`) holds the
 labels on the shipped kinds #675 lists. The wire golden pins `KindInfo.label`
 and `KindLabel`.

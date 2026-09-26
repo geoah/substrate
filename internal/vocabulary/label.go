@@ -1,6 +1,9 @@
 package vocabulary
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // A KIND MAY DECLARE ITS DISPLAY LABEL (decision record 0108). The kind's name
 // is an identifier (`conversation`, `contactgroup`), and some names read wrong
@@ -28,8 +31,8 @@ type KindLabel struct {
 func (l KindLabel) Empty() bool { return l.Singular == "" && l.Plural == "" }
 
 // parseKindLabel reads a kind's OPTIONAL `label:` block. A present block
-// carries both forms, each a short single-line caption held to the same bound
-// as a property's displayName.
+// carries both forms, each a short single-line caption of at most
+// maxDisplayName characters.
 func (l *loader) parseKindLabel(where string, d map[string]any) KindLabel {
 	raw, present := d["label"]
 	if !present {
@@ -68,9 +71,10 @@ func (l *loader) labelForm(where string, m map[string]any, key string) string {
 	case strings.ContainsAny(s, "\n\r"):
 		l.errf("%s: data.label.%s: a short single-line caption, no newlines", where, key)
 		return ""
-	case len(s) > maxDisplayName:
-		// Bytes, as parseDisplayName counts them: the same bound.
-		l.errf("%s: data.label.%s: a short caption (at most %d chars), got %d", where, key, maxDisplayName, len(s))
+	case utf8.RuneCountInString(s) > maxDisplayName:
+		// Characters, not bytes, as parseDescriptionMax counts them: an author
+		// counts characters, and a non-ASCII label gets the full bound.
+		l.errf("%s: data.label.%s: a short caption (at most %d characters), got %d", where, key, maxDisplayName, utf8.RuneCountInString(s))
 		return ""
 	}
 	return s

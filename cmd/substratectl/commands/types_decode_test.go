@@ -39,3 +39,37 @@ func TestDecodeTypeInfoTypedRow(t *testing.T) {
 		t.Errorf("description = %q", ti.Description)
 	}
 }
+
+// A record row carries the kind's label only inside its declaration: the
+// decoder lifts it to KindInfo.Label, so `substratectl kinds -o json` prints a
+// top-level `label` as the vocabulary read does (decision 0108). A kind that
+// declares none decodes with no label.
+func TestDecodeTypeInfoCarriesTheDeclaredLabel(t *testing.T) {
+	raw := json.RawMessage(`{
+		"id": "providers.substrate.reamde.dev/slack/conversation",
+		"kind": "substrate.reamde.dev/core/kind",
+		"properties": {
+			"authority": "providers.substrate.reamde.dev",
+			"package": "slack",
+			"names": {"singular": "conversation"},
+			"label": {"singular": "Channel", "plural": "Channels"}
+		}
+	}`)
+	ti, ok := decodeTypeInfo(raw)
+	if !ok {
+		t.Fatal("typed row did not decode")
+	}
+	if ti.Label == nil || ti.Label.Singular != "Channel" || ti.Label.Plural != "Channels" {
+		t.Errorf("label = %+v, want Channel / Channels", ti.Label)
+	}
+
+	bare := json.RawMessage(`{"identity": "d.example.com/d/thing", "label": {"singular": "Thing", "plural": "Things"}}`)
+	if ti, _ := decodeTypeInfo(bare); ti.Label == nil || ti.Label.Plural != "Things" {
+		t.Errorf("bare KindInfo label = %+v", ti.Label)
+	}
+
+	none := json.RawMessage(`{"id": "d.example.com/d/thing", "properties": {"names": {"singular": "thing"}}}`)
+	if ti, _ := decodeTypeInfo(none); ti.Label != nil {
+		t.Errorf("undeclared label = %+v, want nil", ti.Label)
+	}
+}

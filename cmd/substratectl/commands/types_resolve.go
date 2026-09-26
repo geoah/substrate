@@ -85,16 +85,17 @@ func decodeTypeInfo(raw json.RawMessage) (substrate.KindInfo, bool) {
 	// properties) — both numbers now, still two different numbers, so it
 	// cannot decode into a typed field.
 	var r struct {
-		Identity    string         `json:"identity"`
-		ID          string         `json:"id"`
-		Name        string         `json:"name"`
-		Authority   string         `json:"authority"`
-		Package     string         `json:"package"`
-		Version     any            `json:"version"`
-		Source      string         `json:"source"`
-		Description string         `json:"description"`
-		Definition  map[string]any `json:"definition"`
-		Properties  map[string]any `json:"properties"`
+		Identity    string               `json:"identity"`
+		ID          string               `json:"id"`
+		Name        string               `json:"name"`
+		Authority   string               `json:"authority"`
+		Package     string               `json:"package"`
+		Version     any                  `json:"version"`
+		Source      string               `json:"source"`
+		Description string               `json:"description"`
+		Label       *substrate.KindLabel `json:"label"`
+		Definition  map[string]any       `json:"definition"`
+		Properties  map[string]any       `json:"properties"`
 	}
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return substrate.KindInfo{}, false
@@ -123,6 +124,7 @@ func decodeTypeInfo(raw json.RawMessage) (substrate.KindInfo, bool) {
 		Version:     declaredVersion,
 		Source:      firstNonEmpty(r.Source, propString(r.Properties, "source")),
 		Description: firstNonEmpty(r.Description, description),
+		Label:       firstLabel(r.Label, definition["label"]),
 		Definition:  definition,
 	}
 	if ti.Identity == "" {
@@ -327,4 +329,21 @@ func (a *app) collectionForKind(ctx context.Context, ref string) (collection, er
 			name, pkg, strings.Join(elsewhere, ", "))
 	}
 	return collection{}, fmt.Errorf("unknown kind %q; run `substratectl kinds` to list them", ref)
+}
+
+// firstLabel is the kind's display label from whichever shape carried it: the
+// bare-KindInfo shape's top-level `label`, else the declaration's own `label`
+// block, which is all a record row has (decision 0108). Nil unless both forms
+// are strings, so a malformed block reads as no label.
+func firstLabel(top *substrate.KindLabel, declared any) *substrate.KindLabel {
+	if top != nil && top.Singular != "" && top.Plural != "" {
+		return top
+	}
+	m, _ := declared.(map[string]any)
+	singular, _ := m["singular"].(string)
+	plural, _ := m["plural"].(string)
+	if singular == "" || plural == "" {
+		return nil
+	}
+	return &substrate.KindLabel{Singular: singular, Plural: plural}
 }
