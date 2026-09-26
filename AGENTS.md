@@ -418,9 +418,28 @@ first label.
   that passes CI is folded into a version by these titles (`fix:` the patch,
   `feat:` the minor, `!` the major, or the minor below 1.0.0), and that
   version is tagged, built and published without anybody deciding to. A title
-  nothing can parse is a release that does not happen. A PR title is one too:
-  the merge is a squash, so the PR title IS the commit that gets read.
-  `mise run version:next` says what main would release right now.
+  nothing can parse is a release that does not happen. `main` moves only
+  through a pull request, merged by squash or by rebase: a squash lands the
+  PR title as the one commit, a rebase lands every commit as it is, so the
+  PR title AND every commit subject on the branch are held, by
+  `mise run commits:check` (the `conventional commits` check). The ruleset
+  is `.github/rulesets/main.json`, applied by an admin with
+  `mise run repo:settings`. `mise run version:next` says what main would
+  release right now.
+- **A change a user has to act on ships an upgrade note.** A break, a
+  deprecation, or a feature the commit title does not explain adds one file
+  under `docs/changes/`, in the shape
+  [docs/changes/README.md](docs/changes/README.md) gives: a `type:`, one
+  heading, one exact example, and for a break or a deprecation a
+  `## What to do` an agent can follow literally. The release job puts the
+  notes above the commit list on the GitHub release, the `release-notes`
+  workflow (`mise run release:notes`) rewrites a release page whose notes
+  changed later, and `mise run changelog` renders every release. A `!` without a
+  `type: breaking` note is refused by `commits:check`; the rest is held by
+  the agent review (`.github/workflows/review.yml`, briefed by
+  `.github/review.md`), which comments and never blocks. A note is never
+  renamed or deleted once merged: the commit that added it is what places it
+  in a release.
 - Keep `mise run lint` and `mise run fmt:check` at zero. Both are aggregates,
   and the `lint` job runs both: `lint` is Go, YAML, shell, Python, the docs,
   the migrations, the sandbox gate, the toolchain pins and the CI scripts, `fmt:check` is Go and YAML. The console has its own pair

@@ -1,0 +1,67 @@
+# An agent reads each pull request for what the release will owe its readers:
+# a missing or wrong upgrade note under docs/changes/, a `!` the title needs
+# or does not, and a sentence in the agent-facing docs the diff makes false.
+# .github/review.md is the whole brief.
+#
+# Advice, not a gate. It posts one comment and never approves or blocks, and
+# no ruleset requires it: a model's judgement is not a merge condition. The
+# one rule CI enforces, a break ships a note, is `commits:check` in pr.yml.
+#
+# It runs when a pull request opens or leaves draft, not on every push, so a
+# branch that pushes twenty times pays once. "Re-run jobs" on the run is the
+# way to ask again after the notes change.
+#
+# `pull_request`, never `pull_request_target`: a fork's run gets no secrets,
+# so the step skips, and nothing here runs a fork's code with a key in reach.
+# Without ANTHROPIC_API_KEY set on the repository the job skips the same way.
+name: review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+
+concurrency:
+  group: review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  upgrade-notes:
+    name: upgrade notes review
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # To post the one comment.
+      pull-requests: write
+    steps:
+      - id: key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            echo "present=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "no ANTHROPIC_API_KEY for this run (a fork, or the secret is unset); skipping the review" >&2
+          fi
+      - if: steps.key.outputs.present == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - if: steps.key.outputs.present == 'true'
+        uses: anthropics/claude-code-action@756cc22e19660d20e8cc9496b4f242475a7f7790 # v1.0.235
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Follow the brief in .github/review.md exactly.
+          claude_args: |
+            --model claude-sonnet-5
+            --max-turns 40
+            --allowedTools "Read,Glob,Grep,Write,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*)"

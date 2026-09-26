@@ -511,6 +511,13 @@ the directories whole rather than latched.
 
 ## Upgrading the binary
 
+**Read the upgrade notes first.** Every release between the version you run
+and the one you deploy opens its
+[release page](https://github.com/geoah/substrate/releases) with them: the
+breaks, each with a `## What to do`, then deprecations, features and fixes
+([upgrade notes](changes/README.md)). A break in an env var, a default or the
+boot is listed there, not only in the commit list.
+
 **Take a backup before you deploy** ([backups](#backups): the data root and a
 database dump, together). An upgrade that applies a schema migration closes
 the rollback for the whole database, and the copy you take beforehand is the
@@ -549,7 +556,8 @@ body (`content-type`, `content-length`, `content-encoding`, `user-agent`,
 `date`); a header the callable read from the old built-in list
 (`x-github-event`, `stripe-signature`, the Pebble app's `x-index-*`) reads
 as absent until the record lists it under `source.webhook.headers`. Before
-deploying that binary, `substratectl get trigger -o yaml`, find every
+deploying that binary, run
+`substratectl get substrate.reamde.dev/core/trigger -o yaml`, find every
 webhook arm, and add the names each callable reads; a re-import of a shipped
 sample does the same for its own trigger but discards a hand-set `key`
 ([functions](functions.md#triggers)).

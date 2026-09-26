@@ -420,5 +420,6 @@ rules. [docs/testing.md](docs/testing.md) maps the test suites.
 | [kinds/](kinds), [samples/](samples)                 | the shipped vocabulary and the sample packages, as YAML           |
 | [AGENTS.md](AGENTS.md)                               | how to work on this code                                          |
 | [SECURITY.md](SECURITY.md)                           | how to report a vulnerability                                     |
-| [Releases](https://github.com/geoah/substrate/releases) | every released version and what changed in it                  |
+| [Releases](https://github.com/geoah/substrate/releases) | every released version, its upgrade notes and its commits      |
+| [docs/changes](docs/changes/README.md)               | the upgrade notes, one file per change a user must know about     |
 | [Issues](https://github.com/geoah/substrate/issues)  | known bugs and planned work                                       |
