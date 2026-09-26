@@ -104,7 +104,7 @@ speaks:
 | `recordsplit`        | The undo of one merge, likewise performed on creation.                                                                                              |
 | `recordmergerequest` | A proposed merge, performed when its decision is accepted.                                                                                          |
 | `recordpatchrequest` | A proposed create, patch, or delete, applied when its decision is accepted ([the patch request sibling](projection.md#the-patch-request-sibling)). |
-| `recordpatchpolicy`  | An owner's standing rule for an agent's writes: a `selector` (kinds, ops, agents) and an `action` of `allow`, `gate` or `refuse` ([the policy door](agents.md#the-policy-door)). |
+| `recordpatchpolicy`  | An owner's standing rule for an agent's writes: a `selector` (kinds, ops, agents) and an `action` of `allow`, `gate` or `refuse`, and on a narrow allow the gate it `overrides` ([the policy door](agents.md#the-policy-door)). |
 | `setting`            | One configuration value a bundle needs, at `<bundle id>/<name>`: `value` as a string, held on write to a `type` of `string`, `url`, `int`, `bool` or `enum` with `values` ([settings](bundles.md#settings)). |
 | `secret`             | The same, with `value` typed `secret`: sealed at rest, injected only into its own bundle's functions, never read back.                               |
 | `consolepreference`  | The console's navigation preferences for the repository, shared across sessions: `collapsed`, `favorites`, `sidebarOpen`.                            |

@@ -388,6 +388,164 @@ func TestPolicyRefusesAndComposesMostRestrictive(t *testing.T) {
 	}
 }
 
+// AN ALLOW THAT NAMES A GATE OUTRANKS IT (decision record 0106), for the
+// one agent, kind and verb it names and nothing else. Any other matching gate
+// still holds the write, a refuse still wins, and disabling the allow brings
+// the gate back.
+func TestPolicyAllowOverridesTheGateItNames(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openAgentDataset(t)
+	widget, editor := crewPackage+"/widget", crewPackage+"/editor"
+	putPolicy(t, ds, "gate-widgets", map[string]any{
+		"selector": map[string]any{"kinds": []any{widget}},
+		"action":   "gate",
+	})
+	putPolicy(t, ds, "always-editor-put-widget", map[string]any{
+		"selector": map[string]any{
+			"kinds":  []any{widget},
+			"ops":    []any{policyOpPut},
+			"agents": []any{editor},
+		},
+		"action":    "allow",
+		"overrides": "gate-widgets",
+	})
+	expect := func(step, op, agent, verdict, ruleID string) {
+		t.Helper()
+		got, rule, err := ds.policyVerdict(ctx, widget, op, agent)
+		if err != nil || got != verdict || rule == nil || rule.id != ruleID {
+			t.Fatalf("%s: verdict = %s %+v %v, want %s by %s", step, got, rule, err, verdict, ruleID)
+		}
+	}
+	expect("the named write", policyOpPut, editor, policyAllow, "always-editor-put-widget")
+	expect("another verb", policyOpPatch, editor, policyGate, "gate-widgets")
+	expect("another agent", policyOpPut, crewPackage+"/ghost", policyGate, "gate-widgets")
+
+	// A second gate the allow does not name still holds the write.
+	putPolicy(t, ds, "gate-editor", map[string]any{
+		"selector": map[string]any{"agents": []any{editor}},
+		"action":   "gate",
+	})
+	expect("an unnamed gate", policyOpPut, editor, policyGate, "gate-editor")
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchPolicy, "gate-editor", substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A refuse is never lifted.
+	putPolicy(t, ds, "refuse-widgets", map[string]any{
+		"selector": map[string]any{"kinds": []any{widget}},
+		"action":   "refuse",
+	})
+	expect("a refuse", policyOpPut, editor, policyRefuse, "refuse-widgets")
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchPolicy, "refuse-widgets", substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	expect("after the refuse is gone", policyOpPut, editor, policyAllow, "always-editor-put-widget")
+
+	// The named gate edited into a refuse is a refuse, and a refuse is never
+	// lifted, even by the allow that names it.
+	setGateAction := func(action string) {
+		t.Helper()
+		if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchPolicy, "gate-widgets", substrate.PatchInput{
+			Properties: map[string]any{"action": action},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setGateAction(policyRefuse)
+	expect("the named gate turned refuse", policyOpPut, editor, policyRefuse, "gate-widgets")
+	setGateAction(policyGate)
+	expect("the named gate restored", policyOpPut, editor, policyAllow, "always-editor-put-widget")
+
+	// Revoking the allow puts the gate back.
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchPolicy, "always-editor-put-widget", substrate.PatchInput{
+		Properties: map[string]any{"disabled": true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	expect("after revoking", policyOpPut, editor, policyGate, "gate-widgets")
+}
+
+// AN OVERRIDE IS REFUSED AT THE WRITE DOOR unless it is a narrow allow naming
+// a live gate: anything wider would be a blanket exemption, and anything
+// naming no gate would read as "without asking" while the gate still held.
+func TestPolicyOverrideIsRefusedUnlessANarrowAllowNamesALiveGate(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openAgentDataset(t)
+	widget, editor := crewPackage+"/widget", crewPackage+"/editor"
+	putPolicy(t, ds, "gate-widgets", map[string]any{
+		"selector": map[string]any{"kinds": []any{widget}},
+		"action":   "gate",
+	})
+	putPolicy(t, ds, "refuse-widgets", map[string]any{
+		"selector": map[string]any{"kinds": []any{widget}},
+		"action":   "refuse",
+	})
+	narrow := map[string]any{"kinds": []any{widget}, "ops": []any{policyOpPut}, "agents": []any{editor}}
+	cases := []struct {
+		name  string
+		id    string
+		props map[string]any
+		want  string
+	}{
+		{"a gate", "o-gate", map[string]any{"selector": narrow, "action": "gate", "overrides": "gate-widgets"}, "only for an allow"},
+		{"a glob kind", "o-glob", map[string]any{"selector": map[string]any{"kinds": []any{crewPackage + "/*"}, "ops": []any{policyOpPut}, "agents": []any{editor}}, "action": "allow", "overrides": "gate-widgets"}, "exactly one kind"},
+		{"no agent", "o-anyagent", map[string]any{"selector": map[string]any{"kinds": []any{widget}, "ops": []any{policyOpPut}}, "action": "allow", "overrides": "gate-widgets"}, "exactly one kind"},
+		{"two ops", "o-twoops", map[string]any{"selector": map[string]any{"kinds": []any{widget}, "ops": []any{policyOpPut, policyOpPatch}, "agents": []any{editor}}, "action": "allow", "overrides": "gate-widgets"}, "exactly one kind"},
+		{"a missing policy", "o-missing", map[string]any{"selector": narrow, "action": "allow", "overrides": "no-such-gate"}, "does not exist"},
+		{"a refuse", "o-refuse", map[string]any{"selector": narrow, "action": "allow", "overrides": "refuse-widgets"}, "only a gate"},
+		{"itself", "o-self", map[string]any{"selector": narrow, "action": "allow", "overrides": "o-self"}, "this policy itself"},
+	}
+	for _, c := range cases {
+		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: vocabulary.KindRecordPatchPolicy, ID: c.id, Properties: c.props,
+		})
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Fatalf("an override on %s: %v, want a refusal containing %q", c.name, err, c.want)
+		}
+	}
+	// The full record path is the same reference as the bare id.
+	putPolicy(t, ds, "o-ok", map[string]any{
+		"selector":  narrow,
+		"action":    "allow",
+		"overrides": vocabulary.RecordPath(vocabulary.KindRecordPatchPolicy, "gate-widgets"),
+	})
+}
+
+// A STALE OVERRIDE CAN STILL BE REVOKED: once its gate is deleted, a new
+// allow naming that gate is refused, but disabling the allow already
+// standing is admitted.
+func TestPolicyStaleOverrideIsRefusedButCanBeDisabled(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openAgentDataset(t)
+	widget, editor := crewPackage+"/widget", crewPackage+"/editor"
+	putPolicy(t, ds, "gate-widgets", map[string]any{
+		"selector": map[string]any{"kinds": []any{widget}},
+		"action":   "gate",
+	})
+	narrow := map[string]any{"kinds": []any{widget}, "ops": []any{policyOpPut}, "agents": []any{editor}}
+	putPolicy(t, ds, "always-editor-put-widget", map[string]any{
+		"selector": narrow, "action": "allow", "overrides": "gate-widgets",
+	})
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchPolicy, "gate-widgets", substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: vocabulary.KindRecordPatchPolicy, ID: "late-allow",
+		Properties: map[string]any{"selector": narrow, "action": "allow", "overrides": "gate-widgets"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("an override naming a deleted gate: %v, want a refusal containing %q", err, "does not exist")
+	}
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchPolicy, "always-editor-put-widget", substrate.PatchInput{
+		Properties: map[string]any{"disabled": true},
+	}); err != nil {
+		t.Fatalf("disabling a stale override: %v", err)
+	}
+}
+
 func TestBundleHandsStayOffThePolicyKind(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

@@ -341,6 +341,34 @@ data:
     action: gate
 ```
 
+**An allow outranks a gate only by naming it.** "This agent may do this
+without asking me" is an `allow` whose `overrides` names the gate it answers
+([0106](decisions/0106-an-allow-outranks-a-gate-only-by-naming-it.md)). Where
+both match one write, that gate steps aside and the allow governs. A `refuse`
+still wins, and any other matching gate still holds the write. The write door
+refuses `overrides` on anything but an allow whose selector names exactly one
+kind reference (no glob), one op and one agent, and refuses it when the named
+policy is missing, is the allow itself, or is not a gate. Delete the allow, or
+set `disabled`, to revoke it; a disabled allow is admitted even when its gate
+is gone.
+
+```yaml
+kind: substrate.reamde.dev/core/recordpatchpolicy
+metadata:
+  id: taskbot-may-put-tasks
+data:
+  properties:
+    selector:
+      kinds:
+        - samples.substrate.reamde.dev/tasks/task
+      ops:
+        - put
+      agents:
+        - crew.example.com/bots/taskbot
+    action: allow
+    overrides: gate-tasks
+```
+
 A policy may name a `judge`, an agent the engine runs over what the policy
 gated, tool-less, replying `{verdict, confidence, rationale}`. It only ever
 recommends: in `mode: enforce` an `accept` verdict at or above `autoAccept`

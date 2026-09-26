@@ -8,7 +8,9 @@
 # match means today's behavior, the write landing. Two matching rules carrying
 # the SAME action are separated by which one can land the write without the
 # owner: a rule with no judge to auto-accept on governs one that has, so the
-# judge that runs is never picked by alphabet (policy.go governs).
+# judge that runs is never picked by alphabet (policy.go governs). The one
+# way an allow outranks a gate is by naming it in `overrides` (decision record
+# 0106).
 #
 # Policies never run for owner or machine writes: a human's hand and the
 # substrate's own machinery are not what they bound. Bundle-tier actors cannot
@@ -31,7 +33,7 @@ data:
     One rule for agent writes: which kinds, ops and agents it speaks for,
     and whether their writes land, gate into recordpatchrequests, or refuse.
     The most restrictive matching policy wins; no match means the write lands.
-  version: 15
+  version: 16
   names:
     singular: recordpatchpolicy
   displayTemplate: "{action}: {localName}"
@@ -166,6 +168,18 @@ data:
         - advise
       description: enforce decides within the thresholds; advise only ever
         recommends
+    # "THIS AGENT MAY DO THIS WITHOUT ASKING ME" (decision record 0106). An
+    # allow naming a gate here lifts that gate for the writes both match; a
+    # refuse still wins, and any other matching gate still holds the write.
+    # The write door (policy.go validatePolicyOverride, admitPolicyOverride)
+    # admits it only on an allow whose selector names exactly one agent, one
+    # kind reference and one op, and only when it names a live gate other
+    # than itself. Delete the allow, or set `disabled`, to revoke it.
+    overrides:
+      type: reference
+      kind: substrate.reamde.dev/core/recordpatchpolicy
+      description: the gate this allow lifts, for one agent, one kind and
+        one op; only on an allow
     disabled:
       type: bool
       description: a disabled policy matches nothing
