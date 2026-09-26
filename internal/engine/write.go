@@ -508,6 +508,13 @@ func (ds *dataset) patchBounded(ctx context.Context, actor substrate.Actor, typ,
 			if err != nil {
 				return nil, err
 			}
+			// No exception for a finalizer release here: a declaration row
+			// holds none, and patchSchemaRecord re-projects the merged
+			// declaration through a put, which would re-declare a deleted
+			// kind.
+			if existing.DeletedAt != nil {
+				return nil, tombstonePatchErr(id)
+			}
 			return ds.patchSchemaRecord(ctx, actor, existing, in)
 		}
 	}
@@ -604,6 +611,14 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 	if existing == nil {
 		return nil, fmt.Errorf("%w: record %s", substrate.ErrNotFound, id)
 	}
+	// A tombstone is gone to every list, so an edit landing on it would move
+	// the version and the properties of a row nobody can see, and a mapping
+	// source among them would mint subjects from it (#633). A put restores
+	// the record; releasing a finalizer is the one edit a tombstone takes,
+	// because that is how its teardown lets the sweep collect it.
+	if existing.DeletedAt != nil && !isFinalizerRelease(in) {
+		return nil, tombstonePatchErr(id)
+	}
 	authored, hot, states, err := splitProps(ty, in.Properties)
 	if err != nil {
 		return nil, err
@@ -671,6 +686,18 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 		states:        states,
 		addFinalizers: in.AddFinalizers, removeFinalizers: in.RemoveFinalizers,
 	})
+}
+
+// isFinalizerRelease reports whether a patch only releases finalizers: the
+// one patch a tombstone admits.
+func isFinalizerRelease(in substrate.PatchInput) bool {
+	return len(in.RemoveFinalizers) > 0 && len(in.AddFinalizers) == 0 &&
+		len(in.Properties) == 0 && len(in.Labels) == 0 && len(in.Annotations) == 0
+}
+
+// tombstonePatchErr is the refusal of a patch addressed to a tombstone.
+func tombstonePatchErr(id string) error {
+	return fmt.Errorf("%w: record %s is deleted; a put restores it", substrate.ErrNotFound, id)
 }
 
 // isTransitionOnly reports whether a patch carries nothing but state
@@ -761,6 +788,12 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// mapping's subject reference is guarded, ensured, and recomputed through.
 	// A kind carries one per subject property (record 49).
 	srcMappings := t.declarations().MappingsFrom(sp.ty.Identity)
+	// A write that leaves the row a tombstone (a finalizer release) is not a
+	// source write: a tombstone is out of the live set, so it resolves no
+	// subject, mints none, and recomputes nothing (#633).
+	if !create && !sp.resurrect && row.DeletedAt != nil {
+		srcMappings = nil
+	}
 
 	// A blob-ref must name a known blob: the shape passed
 	// coercion, the existence gate is here inside the transaction.

@@ -305,6 +305,11 @@ Ids are stable while a record exists; they are not promised unique across
 time, so a writer that composes an id from a provider's key may delete and
 recreate at will.
 
+A `patch` onto a tombstone is refused `404 not found` and changes nothing:
+a patch edits a record that exists, and a tombstone is gone to every list.
+The one patch a tombstone takes releases finalizers (`removeFinalizers` and
+nothing else), which is how a teardown lets the collector take it.
+
 A `put` addressed to a former id (the loser of a merge) is refused `409
 conflict` naming the canonical id: a supplied id is the writer's own key, not
 an address to resolve. Reads, `patch` and `delete` through a former id resolve

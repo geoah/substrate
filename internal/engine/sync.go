@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -97,6 +98,12 @@ func (ds *dataset) syncStart(ctx context.Context, s *syncStamp, seq int64) error
 				propSyncState:         substrate.SyncStateRunning,
 				propLastSyncStartedAt: s.started.Format(time.RFC3339Nano),
 			}})
+			// Deleted or collected since the envelope was read: t.patch
+			// refuses it under the record lock, before writing anything, and
+			// the settle and the park skip it the same way.
+			if errors.Is(err, substrate.ErrNotFound) {
+				return nil
+			}
 			return err
 		})
 	})
