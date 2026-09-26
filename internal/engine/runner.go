@@ -393,8 +393,9 @@ func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, er
 // declared; no cursor motion; effects — the body's and its sub-calls' —
 // applied in one transaction under the FUNCTION's actor. It returns the
 // output (checked against `output:` when declared) and how many effects
-// applied. A function that declares `permissions.network` also writes a call
-// run naming caller, the door the request came through (callrun.go).
+// applied. A function that declares `permissions.network`, or reaches one
+// through `permissions.call`, also writes a call run naming caller, the door
+// the request came through (callrun.go).
 func (ds *dataset) CallFunction(ctx context.Context, caller substrate.Actor, name string, args any) (any, int, error) {
 	// The request's Idempotency-Key first, before the function is resolved,
 	// admitted or its input checked (idempotency.go): a stored outcome

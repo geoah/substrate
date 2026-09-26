@@ -238,6 +238,56 @@ def main(input, host):
 	}
 }
 
+// The edges of a networked call's run row (#645): a call refused on its input
+// never ran and writes none, an output outside `returns:` writes a failed row,
+// and a keyed call replayed under the same Idempotency-Key writes one row.
+func TestNetworkedCallRunRowEdges(t *testing.T) {
+	t.Parallel()
+	shaped := []any{map[string]any{"name": "sent", "type": "string", "required": true}}
+	fn := pyFn("shaped", map[string]any{
+		"arguments": []any{map[string]any{"name": "title", "type": "string", "required": true}},
+		"returns":   shaped,
+	}, []any{taskType}, `
+def main(input, host):
+    title = input["args"]["title"]
+    if title == "wrong":
+        return {"output": {"sent": 5}}
+    return {"output": {"sent": title}}
+`)
+	fnPermissions(fn["data"].(map[string]any))["network"] = []any{"api.example.com"}
+	ds := newFnDataset(t, nil, fn)
+	name := fnPackage + "/shaped"
+
+	if _, _, err := ds.CallFunction(context.Background(), substrate.ActorAPI, name, map[string]any{"title": 5}); err == nil {
+		t.Fatal("a call with input outside `arguments:` ran")
+	}
+	if runs := callRuns(t, ds); len(runs) != 0 {
+		t.Fatalf("a call refused on its input wrote a run row: %+v", runs)
+	}
+
+	if _, _, err := ds.CallFunction(context.Background(), substrate.ActorAPI, name, map[string]any{"title": "wrong"}); err == nil {
+		t.Fatal("an output outside `returns:` passed")
+	}
+	runs := callRuns(t, ds)
+	if len(runs) != 1 || runs[0].Properties["status"] != "failed" {
+		t.Fatalf("an output outside `returns:` left no failed row: %+v", runs)
+	}
+
+	ctx := keyed("call-645-replay")
+	for i := range 2 {
+		out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, name, map[string]any{"title": "once"})
+		if err != nil {
+			t.Fatalf("keyed call %d: %v", i, err)
+		}
+		if got, _ := out.(map[string]any); got["sent"] != "once" {
+			t.Fatalf("keyed call %d output: %+v", i, out)
+		}
+	}
+	if runs := callRuns(t, ds); len(runs) != 2 {
+		t.Fatalf("a replayed keyed call wrote another row: %d call runs, want 2", len(runs))
+	}
+}
+
 func TestHostCallGatingAndCallerTransaction(t *testing.T) {
 	t.Parallel()
 	// outer Calls adder during a trigger delivery: the grant is

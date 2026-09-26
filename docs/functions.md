@@ -925,7 +925,8 @@ call), `startedAt` and `finishedAt`, the status, the applied-effects summary,
 JSON. A call that settles writes it in the transaction that commits its
 effects and its idempotency key, as `ok`. A call whose body ran and failed
 (a raise, an output outside `output:`, a commit that failed) writes it alone,
-as `failed`, with the error in `reason`. A call refused before its body runs
+as `failed`, with the error in `reason`; so does a runner that failed before
+the body started (provisioning, spawn). A call refused before its body runs
 (an unknown function, input outside `input:`, a disabled bundle) and the
 replay of a stored `Idempotency-Key` outcome write nothing. Call runs are
 never pruned. A function with no network grant still writes no row: its

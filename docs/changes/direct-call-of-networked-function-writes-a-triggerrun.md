@@ -2,7 +2,7 @@
 type: feature
 ---
 
-# A direct call of a networked function writes a `core/triggerrun` row
+# A direct call of a networked function writes a `substrate.reamde.dev/core/triggerrun` row
 
 A `POST …/core/function/{name}/call` of a function that declares
 `permissions.network`, or whose `permissions.call` grant reaches one that

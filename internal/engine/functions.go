@@ -2034,7 +2034,7 @@ func (ds *dataset) ReplayTrigger(ctx context.Context, id string, from int64) err
 
 // RunTrigger synthesizes one delivery of a record's current state through a
 // trigger — the record's latest change replayed through the callable, cursor
-// untouched, no run row (direct invocations mint nothing durable). The
+// untouched, no run row (a manual run mints nothing durable). The
 // source filter is deliberately not applied — a manual run is the owner's
 // hand — but the guard still is: manual runs answer "would it fire".
 func (ds *dataset) RunTrigger(ctx context.Context, id, recordKind, recordID string) (int, error) {
