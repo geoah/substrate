@@ -263,3 +263,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0109](0109-an-allow-outranks-a-gate-only-by-naming-it.md) | An allow outranks a gate only by naming it | proposed |
 | [0110](0110-the-changes-read-summarizes-runs-and-never-ends-a-page-inside-one.md) | The changes read summarizes runs and never ends a page inside one | accepted |
 | [0111](0111-a-package-row-names-the-actor-that-declared-it.md) | A package row names the actor that declared it | accepted |
+| [0112](0112-an-owner-adjusts-a-change-request-on-the-accepting-write.md) | An owner adjusts a change request on the accepting write | accepted |
