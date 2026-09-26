@@ -183,6 +183,12 @@ export function triggerSource(record: SubstrateRecord): TriggerSourceArm {
   return { arm: "unknown" }
 }
 
+/** The kinds a function record declares it may write, by reference. */
+export function writeKinds(record: SubstrateRecord): string[] {
+  const perms = (record.properties.permissions ?? {}) as Record<string, unknown>
+  return refIds(perms.writes)
+}
+
 /** Every tool, joined with the agents that list it and the triggers that
  * invoke it, ordered by the name a person reads. */
 export function buildTools(
@@ -767,7 +773,7 @@ export function permissionWords(
   >
   const reads = (perms.reads ?? {}) as Record<string, unknown>
   const readKinds = refIds(reads.kinds)
-  const writeKinds = refIds(perms.writes)
+  const writes = refIds(perms.writes)
   const mutations = strings(perms.mutations)
   const network = strings(perms.network)
   const calls = refIds(perms.call)
@@ -778,7 +784,7 @@ export function permissionWords(
         return i ? lowerFirst(words) : words
       })
     )
-  let changes: string | null = writeKinds.length ? kindWords(writeKinds) : null
+  let changes: string | null = writes.length ? kindWords(writes) : null
   if (mutations.length) {
     const m = listWords(mutations.map((x) => MUTATION_WORDS[x] ?? x))
     changes = changes ? `${changes}; ${m}` : capitalise(m)

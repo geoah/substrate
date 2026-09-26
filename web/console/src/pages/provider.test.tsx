@@ -26,6 +26,7 @@ import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import type {
   BundleStatus,
   CatalogItem,
+  ChangeRow,
   KindInfo,
   SubstrateRecord,
   TriggerStatus,
@@ -267,6 +268,40 @@ const TRIGGERS = [
   }),
 ]
 
+const FUNCTIONS: SubstrateRecord[] = [
+  {
+    id: `${GOOGLE}/synccontacts`,
+    kind: "substrate.reamde.dev/core/function",
+    properties: {
+      permissions: {
+        writes: [{ ref: `substrate.reamde.dev/core/kind/${CONTACT}` }],
+      },
+    },
+    labels: {},
+    version: 1,
+    createdAt: HOUR_AGO,
+    updatedAt: HOUR_AGO,
+  },
+]
+
+const TRIGGER_RUNS: SubstrateRecord[] = [
+  {
+    id: "run-1",
+    kind: "substrate.reamde.dev/core/triggerrun",
+    properties: {
+      trigger: {
+        ref: "substrate.reamde.dev/core/trigger/google-contacts-scheduled",
+      },
+      status: "ok",
+      finishedAt: HOUR_AGO,
+    },
+    labels: {},
+    version: 1,
+    createdAt: HOUR_AGO,
+    updatedAt: HOUR_AGO,
+  },
+]
+
 const TRIGGER_STATUSES: TriggerStatus[] = [
   {
     id: "google-contacts-scheduled",
@@ -294,6 +329,7 @@ const MAPPING: SubstrateRecord = {
 }
 
 interface Wire {
+  changes?: ChangeRow[]
   statuses?: BundleStatus[]
   catalog?: CatalogItem[]
   accounts?: SubstrateRecord[]
@@ -395,8 +431,26 @@ describe("ProviderPage", () => {
         return jsonResponse(200, { records: [MAPPING] })
       if (filter.kinds?.includes("substrate.reamde.dev/core/setting"))
         return jsonResponse(200, { records: wire.settings ?? [] })
+      if (
+        filter.kinds?.includes(CONTACT) &&
+        new URL(path, "http://x").searchParams.has("count")
+      )
+        return jsonResponse(200, { records: [], count: 12 })
+      if (filter.kinds?.includes("substrate.reamde.dev/core/function"))
+        return jsonResponse(200, { records: FUNCTIONS })
+      if (filter.kinds?.includes("substrate.reamde.dev/core/triggerrun"))
+        return jsonResponse(200, { records: TRIGGER_RUNS })
       if (path.startsWith("/api/v1/changes")) {
-        return jsonResponse(404, { error: { code: "not_found", message: "" } })
+        if (wire.changes === undefined || path.includes("watch=1"))
+          return jsonResponse(404, {
+            error: { code: "not_found", message: "" },
+          })
+        const actors = new URL(path, "http://x").searchParams.getAll("actors")
+        return jsonResponse(200, {
+          changes: wire.changes.filter((c) => actors.includes(c.actor)),
+          head: 50,
+          generation: "g",
+        })
       }
       if (method === "PATCH" && path.startsWith(BUNDLE_PATH)) {
         const body = JSON.parse(String((init as RequestInit).body)) as {
@@ -730,6 +784,71 @@ describe("ProviderPage", () => {
     })
   })
 
+  describe("recent activity", () => {
+    const change = (
+      seq: number,
+      actor: string,
+      id: string,
+      kind = CONTACT
+    ): ChangeRow => ({
+      seq,
+      ts: HOUR_AGO,
+      op: "put",
+      kind,
+      recordId: id,
+      actor,
+    })
+
+    it("tells what the provider's own actors changed, and links to History", async () => {
+      serve({
+        changes: [
+          change(
+            3,
+            "function:providers.substrate.reamde.dev:google:synccontacts",
+            "c1"
+          ),
+          change(
+            2,
+            "function:providers.substrate.reamde.dev:google:synccontacts",
+            "c2"
+          ),
+          change(1, "api", "c3"),
+        ],
+      })
+      renderPage(<ProviderPage />)
+      const section = (
+        await screen.findByRole("heading", { name: "Recent activity" })
+      ).closest("section") as HTMLElement
+      expect(
+        await within(section).findByText("What Google changed in your data")
+      ).toBeTruthy()
+      await waitFor(() =>
+        expect(
+          section.querySelector('[data-slot="history"]')?.textContent
+        ).toContain("Google Contacts sync")
+      )
+      const actorsAsked = fetchMock.mock.calls
+        .map(([u]) => String(u))
+        .filter((u) => u.startsWith("/api/v1/changes"))
+        .filter((u) => !u.includes("watch=1"))
+        .map((u) => new URL(u, "http://x").searchParams.getAll("actors"))
+      expect(actorsAsked[0]).toEqual([
+        "bundle:providers.substrate.reamde.dev:google",
+        "function:providers.substrate.reamde.dev:google:synccontacts",
+      ])
+      const all = within(section).getByText("See all in History")
+      expect(all.closest("a")?.getAttribute("data-to")).toBe("/history")
+    })
+
+    it("says so when the provider has changed nothing yet", async () => {
+      serve({ changes: [] })
+      renderPage(<ProviderPage />)
+      expect(
+        await screen.findByText("Google hasn’t changed anything yet.")
+      ).toBeTruthy()
+    })
+  })
+
   describe("what it adds", () => {
     it("lists its collections with what they fill in of yours, and counts the rest", async () => {
       renderPage(<ProviderPage />)
@@ -754,6 +873,15 @@ describe("ProviderPage", () => {
       ).toHaveLength(4)
       expect(screen.getAllByText("Internal")).toHaveLength(2)
       expect(screen.getByText("Supporting")).toBeTruthy()
+    })
+
+    it("says when each collection last synced", async () => {
+      renderPage(<ProviderPage />)
+      const row = (await screen.findByText("Also fills in your")).closest(
+        '[data-slot="brings-in-row"]'
+      ) as HTMLElement
+      expect(await within(row).findByText("Synced 2h ago")).toBeTruthy()
+      expect(within(row).getByText("12 records")).toBeTruthy()
     })
 
     it("links each tool to its page with when it runs", async () => {

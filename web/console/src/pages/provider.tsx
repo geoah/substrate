@@ -2,7 +2,7 @@
  * a bundle's id is its package). The page a person finishes setting a
  * provider up on and comes back to: its state, the four set-up steps with
  * the current one's action, its accounts with their sync health, what it
- * brings in, its tools, and its own settings. Pause and Remove sit in the
+ * brings in, its tools, what it recently changed, and its own settings. Pause and Remove sit in the
  * header, each confirmed in plain words. Technical mode adds the bundle id
  * and version, which record each declared need uses, and the connection
  * details (triggers, runs, parked deliveries).
@@ -37,6 +37,7 @@ import {
 } from "@/components/providers/bundle-actions"
 import { ConnectionDetails } from "@/components/providers/connection-details"
 import { OAuthReturnNote } from "@/components/providers/oauth-return-note"
+import { RecentActivity } from "@/components/providers/provider-activity"
 import { ProviderProblems } from "@/components/providers/provider-problems"
 import {
   BringsIn,
@@ -309,6 +310,7 @@ function ProviderDoc({
         installed={installed}
       />
       <ProviderTools catalog={row.catalog} installed={installed} />
+      {installed && <RecentActivity bundleId={row.id} name={info.name} />}
 
       {status && (
         <BundleSettings
