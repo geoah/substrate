@@ -19,6 +19,8 @@ import {
   SheetDraftContext,
   type SheetDraft,
 } from "@/components/property-sheet/draft"
+import { PageHeader } from "@/components/identity/page-header"
+import { pageTitleClass } from "@/components/identity/page-title"
 import { PropertySheet } from "@/components/property-sheet/property-sheet"
 import type { SheetRow } from "@/components/property-sheet/sheet-rows"
 import { RecordBody } from "@/components/record/record-body"
@@ -50,6 +52,7 @@ import {
   setIn,
   type Problem,
 } from "@/lib/record-yaml"
+import { cn } from "@/lib/utils"
 
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
@@ -72,6 +75,8 @@ export function CreateSheet({
   kinds,
   onChange,
   meta,
+  glyph,
+  actions,
   seed,
   problems = [],
   attempted = false,
@@ -85,6 +90,9 @@ export function CreateSheet({
   onChange: (text: string) => void
   /** One quiet line under the title. */
   meta?: ReactNode
+  /** The head's glyph and actions, on the row above the title. */
+  glyph?: ReactNode
+  actions?: ReactNode
   /** The document's problems, as the create would meet them. */
   problems?: Problem[]
   /** Create was asked for: every problem is named, touched or not. */
@@ -208,29 +216,38 @@ export function CreateSheet({
   return (
     <SheetDraftContext.Provider value={draft}>
       <div data-slot="create-sheet">
-        {titleSpec ? (
-          <input
-            aria-label={titleSpec.label}
-            placeholder={untitled(kind)}
-            value={titleValue}
-            autoFocus
-            onChange={(e) => setTitle(e.target.value)}
-            className="mt-2.5 mb-1 w-full border-0 bg-transparent text-[32px] leading-[1.15] font-bold tracking-[-0.025em] outline-none placeholder:text-faint"
-          />
-        ) : (
-          <p className="mt-2.5 mb-1 text-[32px] leading-[1.15] font-bold tracking-[-0.025em] text-faint">
-            {untitled(kind)}
-          </p>
-        )}
-        {titleSpec && errors[titleSpec.name] && (
-          <RowError>{errors[titleSpec.name]}</RowError>
-        )}
-
-        {meta && (
-          <div className="flex flex-wrap items-center gap-x-3.5 text-[12.5px] text-faint">
-            {meta}
-          </div>
-        )}
+        <PageHeader
+          size="record"
+          glyph={glyph}
+          actions={actions}
+          heading={
+            <>
+              {titleSpec ? (
+                <input
+                  aria-label={titleSpec.label}
+                  placeholder={untitled(kind)}
+                  value={titleValue}
+                  autoFocus
+                  onChange={(e) => setTitle(e.target.value)}
+                  className={cn(
+                    pageTitleClass("record"),
+                    "mt-2.5 w-full border-0 bg-transparent outline-none placeholder:text-faint"
+                  )}
+                />
+              ) : (
+                <h1
+                  className={cn(pageTitleClass("record"), "mt-2.5 text-faint")}
+                >
+                  {untitled(kind)}
+                </h1>
+              )}
+              {titleSpec && errors[titleSpec.name] && (
+                <RowError>{errors[titleSpec.name]}</RowError>
+              )}
+            </>
+          }
+          meta={meta}
+        />
 
         {hints.length > 0 && (
           <ul className="mt-3 flex flex-col gap-1.5 rounded-md border border-warning/40 bg-warn-soft p-3">

@@ -377,6 +377,7 @@ export function ChangeRequestDetailPage() {
   return (
     <DocPage>
       <PageHeader
+        size="record"
         glyph={
           target?.kind ? (
             <KindGlyph kind={target.kind} size="lg" />

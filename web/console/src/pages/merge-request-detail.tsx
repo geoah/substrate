@@ -24,6 +24,7 @@ import { z } from "zod"
 import { ActorRef } from "@/components/identity/actor-ref"
 import { IdText } from "@/components/identity/id-text"
 import { KindGlyph } from "@/components/identity/kind-glyph"
+import { PageHeader } from "@/components/identity/page-header"
 import { DocPage } from "@/components/identity/page-layout"
 import { RecordRef } from "@/components/identity/record-ref"
 import { SectionHead } from "@/components/identity/section-head"
@@ -616,64 +617,73 @@ export function MergeRequestDetailPage() {
   const pairKind = winnerRef?.kind ?? loserRef?.kind
   return (
     <DocPage>
-      <header className="flex items-start justify-between gap-3">
-        {pairKind ? (
-          <KindGlyph kind={pairKind} size="lg" />
-        ) : (
-          <span className="grid size-10 place-items-center rounded-[10px] bg-hover text-muted-foreground">
-            <GitMergeIcon className="size-5" />
-          </span>
-        )}
-        {proposed && (
-          <div className="flex shrink-0 items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={verdict.isPending}
-              onClick={() => setConfirming("rejected")}
-            >
-              <XIcon className="size-3.5" />
-              Keep them apart
-            </Button>
-            <Button
-              size="sm"
-              disabled={verdict.isPending}
-              onClick={() => setConfirming("accepted")}
-            >
-              <CheckIcon className="size-3.5" />
-              Combine them
-            </Button>
-          </div>
-        )}
-      </header>
-      <h1 className="mt-2.5 mb-1.5 text-[26px] leading-tight font-[650] tracking-[-0.02em] text-balance break-words">
-        {proposed ? "Are these the same?" : "Suggested as the same"}
-      </h1>
-      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[12.5px] text-faint">
-        {decision && <StateBadge value={decision} initial={DECISION_INITIAL} />}
-        {proposer && (
-          <span className="flex items-center gap-1.5">
-            Suggested by <ActorRef actor={proposer} />
-          </span>
-        )}
-        <span title={request.createdAt}>{relativeTime(request.createdAt)}</span>
-        {decidedAt && (
-          <span className="flex items-center gap-1.5">
-            Decided <span title={decidedAt}>{relativeTime(decidedAt)}</span>
-            {decider && (
-              <>
-                by <ActorRef actor={decider} />
-              </>
+      <PageHeader
+        size="record"
+        glyph={
+          pairKind ? (
+            <KindGlyph kind={pairKind} size="lg" />
+          ) : (
+            <span className="grid size-10 place-items-center rounded-[10px] bg-hover text-muted-foreground">
+              <GitMergeIcon className="size-5" />
+            </span>
+          )
+        }
+        actions={
+          proposed && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={verdict.isPending}
+                onClick={() => setConfirming("rejected")}
+              >
+                <XIcon className="size-3.5" />
+                Keep them apart
+              </Button>
+              <Button
+                size="sm"
+                disabled={verdict.isPending}
+                onClick={() => setConfirming("accepted")}
+              >
+                <CheckIcon className="size-3.5" />
+                Combine them
+              </Button>
+            </>
+          )
+        }
+        title={proposed ? "Are these the same?" : "Suggested as the same"}
+        meta={
+          <>
+            {decision && (
+              <StateBadge value={decision} initial={DECISION_INITIAL} />
             )}
-          </span>
-        )}
-        {technical && (
-          <IdText
-            value={`${CORE_PACKAGE}/recordmergerequest/${request.id}`}
-            copy
-          />
-        )}
-      </div>
+            {proposer && (
+              <span className="flex items-center gap-1.5">
+                Suggested by <ActorRef actor={proposer} />
+              </span>
+            )}
+            <span title={request.createdAt}>
+              {relativeTime(request.createdAt)}
+            </span>
+            {decidedAt && (
+              <span className="flex items-center gap-1.5">
+                Decided <span title={decidedAt}>{relativeTime(decidedAt)}</span>
+                {decider && (
+                  <>
+                    by <ActorRef actor={decider} />
+                  </>
+                )}
+              </span>
+            )}
+            {technical && (
+              <IdText
+                value={`${CORE_PACKAGE}/recordmergerequest/${request.id}`}
+                copy
+              />
+            )}
+          </>
+        }
+      />
 
       {/* the pair */}
       <div className="mt-5 flex flex-wrap items-center gap-2 text-[15px]">
