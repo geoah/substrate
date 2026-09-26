@@ -109,7 +109,11 @@ data:
   # their writers, and the sync body writes them beside the legacy
   # `syncStatus`/`lastSyncedAt`/`streamCursors` fields on every run. Nothing
   # is renamed, narrowed or dropped.
-  version: 7
+  #
+  # 8, #650: a run that resumes a walk already past `history` first pulls
+  # new history for every conversation from its stored cursor, inside a
+  # share of the run's budget, and only then resumes the backlog.
+  version: 8
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -2800,6 +2804,12 @@ data:
 # its cadence says, so the hourly tick is also the continuation. A 429 ends a
 # drain the same polite way.
 #
+# NEW HISTORY COMES FIRST. A bounded drain resumes its phase, so a walk stuck
+# in `replies` or `files` behind thousands of queued entries would never reach
+# `history` again. A run that resumes a walk already past `history` therefore
+# spends its first share (25s, 100 calls) pulling each conversation's new
+# messages from its stored cursor, and only then resumes the backlog.
+#
 # WHAT MOVED, versus the first cut of this bundle. Every relation is written
 # as a REFERENCE at a mirrored row — the id is composed with the same
 # host.ids.external the row was minted under, so the pointer is deterministic
@@ -2911,6 +2921,12 @@ data:
     # The self-imposed drain bounds, both comfortably inside the engine's.
     DRAIN_SECONDS = 75
     DRAIN_CALLS = 300
+    # The history-first share of a resumed run (#650). A walk past `history`
+    # would otherwise leave new messages behind every queued thread, file and
+    # bot; the cap keeps the pass from taking the whole run from the backlog in
+    # turn. What the pass does not reach is carried and reached first next run.
+    FRESH_SECONDS = 25
+    FRESH_CALLS = 100
     # What "come back later" means when Slack does not say. Slack's own guidance
     # is one second per tier-3 call; a minute is the conservative read, and the
     # cap stops a hostile or mistyped header from parking the account for a week.
@@ -4708,7 +4724,6 @@ data:
         if resume.get("cursor"):
             params["cursor"] = resume["cursor"]
         body = _call(base, token, "conversations.list", params)
-        flt = resume.get("filter") or ""
         queue = list(resume.get("queue") or [])
         info = list(resume.get("info") or [])
         rosters = list(resume.get("rosters") or [])
@@ -4722,12 +4737,7 @@ data:
             _put(host, CONV_TYPE, _conv_ref(host, aid, team, cid),
                  _conv_props(host, aid, team, c))
             _put_latest(host, aid, team, resume.get("domain") or "", cid, c)
-            if flt and flt not in (c.get("name") or "").lower():
-                continue
-            # A channel the token's user is not in has no readable history, and an
-            # archived one has no news.
-            readable = (c.get("is_member") or c.get("is_im") or c.get("is_mpim"))
-            if not readable or c.get("is_archived"):
+            if not _walkable(resume, c):
                 continue
             info.append(cid)
             queue.append(cid)
@@ -4737,8 +4747,21 @@ data:
         nxt = _cursor_of(body)
         if nxt:
             return dict(resume, cursor=nxt, queue=queue, info=info, rosters=rosters)
+        # `convs` is what the history-first pass of a later resumed run walks:
+        # every conversation this walk reads history for.
         return dict(resume, phase="info", cursor="", queue=queue, info=info,
-                    rosters=rosters)
+                    rosters=rosters, convs=list(dict.fromkeys(queue)))
+
+
+    def _walkable(resume, c):
+        """Does the walk read this conversation's history? A channel the
+        token's user is not in has no readable history, and an archived one has
+        no news."""
+        flt = resume.get("filter") or ""
+        if flt and flt not in (c.get("name") or "").lower():
+            return False
+        readable = (c.get("is_member") or c.get("is_im") or c.get("is_mpim"))
+        return bool(readable) and not c.get("is_archived")
 
 
     def _phase_info(host, base, token, resume):
@@ -4767,7 +4790,7 @@ data:
         return dict(resume, info=info[1:])
 
 
-    def _phase_history(host, base, token, resume):
+    def _phase_history(host, base, token, resume, rewatch=True):
         aid, team = resume["account"], resume["team"]
         queue = list(resume.get("queue") or [])
         if not queue:
@@ -4875,9 +4898,12 @@ data:
             if ts not in queued:
                 queued.add(ts)
                 threads.append([cid, ts])
-        if work["oldest"]:
+        if work["oldest"] and rewatch:
             # An INCREMENTAL walk: re-check every watched thread, not only the
-            # parents this window happened to return.
+            # parents this window happened to return. Not on the history-first
+            # pass, which runs every resumed run: re-queueing up to WATCH_MAX
+            # threads per conversation each time would refill the `replies`
+            # backlog as fast as it drains.
             for ts in watch:
                 if ts not in queued:
                     queued.add(ts)
@@ -5173,6 +5199,78 @@ data:
         return dict(resume, rosters=rosters[1:], roster=None)
 
 
+    def _past_history(phase):
+        return (phase in PHASE_ORDER
+                and PHASE_ORDER.index(phase) > PHASE_ORDER.index("history"))
+
+
+    def _fresh_due(resume):
+        """Does the next step of this run belong to the history-first pass?"""
+        if not resume.get("fresh") and resume.get("freshListing") is None:
+            return False
+        if (resume.get("freshCalls") or 0) >= FRESH_CALLS:
+            return False
+        return (time.time() - (resume.get("startedAt") or 0)) < FRESH_SECONDS
+
+
+    def _fresh_list(host, base, token, resume, listing):
+        """A walk stored before `convs` existed names no conversations, so the
+        pass lists them once, with the walk's own filter. A failure ends the
+        listing with what it has: retrying it at the top of every run would
+        stall the backlog behind it."""
+        params = {"limit": PAGE_LIMIT, "exclude_archived": "false",
+                  "types": "public_channel,private_channel,mpim,im"}
+        if listing.get("cursor"):
+            params["cursor"] = listing["cursor"]
+        convs = list(resume.get("convs") or [])
+        try:
+            body = _call(base, token, "conversations.list", params)
+        except RateLimited:
+            raise
+        except Exception as e:  # noqa: BLE001
+            host.log("slack: listing conversations for new history failed: %s"
+                     % str(getattr(e, "error", e))[:REASON_MAX])
+            convs = list(dict.fromkeys(convs))
+            return dict(resume, convs=convs, fresh=list(convs), freshListing=None)
+        for c in body.get("channels") or []:
+            if c.get("id") and _walkable(resume, c):
+                convs.append(c["id"])
+        nxt = _cursor_of(body)
+        if nxt:
+            return dict(resume, convs=convs, freshListing={"cursor": nxt})
+        convs = list(dict.fromkeys(convs))
+        return dict(resume, convs=convs, fresh=list(convs), freshListing=None)
+
+
+    def _phase_fresh(host, base, token, resume):
+        """One step of the history-first pass: one conversations.history page
+        for the first conversation in `fresh`, from its stored `latestTs`.
+
+        It is `_phase_history` over a queue of its own, so the backlog's phase,
+        queue and in-flight work stay exactly where the last run left them. New
+        thread parents, senders, files and bots it finds join the backlog's
+        queues. A conversation with no stored cursor is skipped: it has never
+        been walked, and walking it here would be a cold walk with no floor."""
+        aid, team = resume["account"], resume["team"]
+        resume = dict(resume, freshCalls=(resume.get("freshCalls") or 0) + 1)
+        listing = resume.get("freshListing")
+        if listing is not None:
+            return _fresh_list(host, base, token, resume, listing)
+        fresh = list(resume.get("fresh") or [])
+        work = resume.get("freshWork")
+        while fresh and not (work and work.get("conversation") == fresh[0]):
+            if _sync_state(host, aid, team, fresh[0])[2].get("latestTs"):
+                break
+            fresh = fresh[1:]
+        if not fresh:
+            return dict(resume, fresh=[], freshWork=None)
+        out = _phase_history(host, base, token,
+                             dict(resume, queue=fresh, work=work), rewatch=False)
+        return dict(out, phase=resume.get("phase"), queue=resume.get("queue"),
+                    work=resume.get("work"), fresh=list(out.get("queue") or []),
+                    freshWork=out.get("work"))
+
+
     PHASES = {
         "team": _phase_team,
         "users": _phase_users,
@@ -5217,6 +5315,14 @@ data:
             "work": resume.get("work"),
             "reply": resume.get("reply"),
             "roster": resume.get("roster"),
+            # The history-first pass (#650): the conversations it covers, the
+            # ones this round has not reached yet, and its in-flight page. NOT
+            # counted by `_pending`: a finished walk starts a new one, and a new
+            # walk reaches `history` anyway.
+            "convs": resume.get("convs"),
+            "fresh": list(resume.get("fresh") or []),
+            "freshWork": resume.get("freshWork"),
+            "freshListing": resume.get("freshListing"),
         }
 
 
@@ -5270,8 +5376,10 @@ data:
                        completed=False, run=resume)
                 return {"output": {"account": aid, "pending": True,
                                    "calls": resume.get("calls") or 0}}
+            fresh = _fresh_due(resume)
+            step = _phase_fresh if fresh else PHASES[phase]
             try:
-                nxt = PHASES[phase](host, base, token, _spend(resume))
+                nxt = step(host, base, token, _spend(resume))
             except RateLimited as rl:
                 # The exact phase, page and window are already in `resume`, so
                 # the retry resumes rather than restarting; the deadline is
@@ -5282,7 +5390,7 @@ data:
                                    "retryAfter": rl.retry_after}}
             except Exception as e:  # noqa: BLE001 - every failure is the account's status
                 _erroring(host, acct, aid, e, _carry(resume), run=resume,
-                          at_phase=phase)
+                          at_phase="history" if fresh else phase)
                 return {"output": {"account": aid, "erroring": True}}
             if (nxt.get("phase") or "done") == "done":
                 _stamp(host, acct, aid, _carry(nxt), run=nxt)
@@ -5387,6 +5495,11 @@ data:
             "work": stored.get("work"),
             "reply": stored.get("reply"),
             "roster": stored.get("roster"),
+            "convs": stored.get("convs"),
+            "fresh": list(stored.get("fresh") or []),
+            "freshWork": stored.get("freshWork"),
+            "freshListing": stored.get("freshListing"),
+            "freshCalls": 0,
         }
         # The retry list, read before anything clears it. It is re-queued ONLY at
         # the top of a NEW walk, and that "only" was exactly backwards: a new
@@ -5407,12 +5520,27 @@ data:
             # never re-queued WITHIN a walk.
             cursor["phase"] = "team"
             cursor["failed"] = []
+            cursor["fresh"], cursor["freshWork"] = [], None
+            cursor["freshListing"] = None
         else:
             # A RESUMED walk keeps its failures and its retry list untouched:
             # the queues it holds are the ones it is still draining, and the
             # retry belongs to the walk after this one.
             cursor["retry"] = retries
             retries = []
+            # NEW HISTORY FIRST (#650). A walk past `history` does not reach it
+            # again until it finishes, so every resumed run pulls each
+            # conversation's new messages before its backlog. A round the last
+            # run did not finish continues where it stopped; a finished one
+            # starts over from `convs`, and a walk stored without `convs` lists
+            # its conversations first.
+            if _past_history(cursor["phase"]) and not cursor["fresh"] \
+                    and cursor["freshListing"] is None:
+                if cursor["convs"] is None:
+                    cursor["convs"] = []
+                    cursor["freshListing"] = {"cursor": ""}
+                else:
+                    cursor["fresh"] = list(cursor["convs"])
         for kind, ident in retries:
             if kind == "thread" and isinstance(ident, list):
                 cursor["threads"].append(list(ident))
