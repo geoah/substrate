@@ -46,7 +46,7 @@ describe("the palette", () => {
       for (const surface of ["background", "sidebar", "panel"]) {
         const on = token(scope, surface)
         expect(contrast(text, on)).toBeGreaterThan(contrast(deco, on))
-        expect(contrast(text, on)).toBeGreaterThanOrEqual(3.9)
+        expect(contrast(text, on)).toBeGreaterThanOrEqual(4.5)
       }
     }
   })
