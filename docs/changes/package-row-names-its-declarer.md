@@ -16,4 +16,4 @@ GET /api/v1/substrate.reamde.dev/core/package/<authority>%2F<package>
 
 It is in `properties.declaredBy`. A later apply never changes it, and no
 document or PUT may write it. A package created before this release carries
-none (decision record 0106).
+none (decision record 0109).

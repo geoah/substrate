@@ -1,7 +1,7 @@
 package engine_test
 
 // A package row names the actor that first declared it (decision record
-// 0106): the engine stamps the transaction's actor on the row it creates,
+// 0109): the engine stamps the transaction's actor on the row it creates,
 // keeps it across every later apply, and no document may write it.
 
 import (

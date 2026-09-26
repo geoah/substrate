@@ -1293,7 +1293,7 @@ func (t *txn) projectPackage(reg *vocabulary.Registry, projecting map[string]boo
 }
 
 // propPackageDeclaredBy is the actor that first declared a package (decision
-// record 0106). `managed` on the core `package` kind and no document key, so
+// record 0109). `managed` on the core `package` kind and no document key, so
 // no document can write it and `engineOwned` keeps it across every later
 // re-projection.
 const propPackageDeclaredBy = "declaredBy"

@@ -103,7 +103,7 @@ adds to an existing repository, the door (`console`, `substratectl`, `api`)
 for a hand apply, and `function:…` or `agent:…` for a callable. Every later apply,
 upgrade or re-import leaves it alone, so it names the first declarer, and no
 document may write it. A package created before the stamp existed carries none
-([0106](decisions/0106-a-package-row-names-the-actor-that-declared-it.md)).
+([0109](decisions/0109-a-package-row-names-the-actor-that-declared-it.md)).
 The package's record read (`GET
 /api/v1/substrate.reamde.dev/core/package/<authority>%2F<package>`) returns it
 in `properties`.
