@@ -207,7 +207,8 @@ data:
       displayName: Access token
       description: >-
         the bearer token Beeper Desktop hands out. Redacted on read, injected
-        only into the sync body, and never sent to a public origin
+        into this bundle's functions (the sync and sendmessage), and never
+        sent to a public origin
     apiBase:
       type: url
       writer: owner
@@ -271,8 +272,8 @@ data:
       writer: oauth
       displayName: Granted scopes
       description: >-
-        accountconfig trait contract — unused. Beeper Desktop mints `read
-        write` whatever is asked for; this bundle calls no write route
+        accountconfig trait contract, unused. Beeper Desktop mints `read write`
+        whatever is asked for; only sendmessage calls a write route
     # The owner's hands.
     displayName:
       type: string

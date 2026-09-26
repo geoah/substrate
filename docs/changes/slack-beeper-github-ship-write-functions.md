@@ -10,8 +10,8 @@ agent tool. No trigger fires them. Each spends the credential the provider's
 sync already uses and writes no record; what it sent reaches the mirror only
 when the sync reads it back. Two sends are never read back: a Slack first
 reply in a thread that had no replies (#711), and a GitHub review by an owner
-who was only asked to review (#710). Do not wait for the mirror to confirm a
-send before retrying.
+who was only asked to review (#710). A `200` answer is the confirmation: do
+not retry a call because its message or review is missing from the mirror.
 
 - `providers.substrate.reamde.dev/slack/postmessage` takes `channel`, `text`
   and an optional `threadTs`. The pasted user token needs Slack's

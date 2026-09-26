@@ -1,4 +1,4 @@
-# The Slack bundle — a SYNC-ONLY workspace mirror, new in Mneme v6.
+# The Slack bundle: a workspace mirror with one write function, new in Mneme v6.
 #
 # Mirrors one Slack workspace as Slack's own object model: the team, its
 # users, its conversations, the messages in them and the files they share.
@@ -176,8 +176,8 @@ data:
       displayName: User token
       description: >-
         the pasted Slack USER token (xoxp-…); a bot token sees neither your
-        DMs nor your group chats. Redacted on read, injected only into the
-        sync body, scrubbed on the way out
+        DMs nor your group chats. Redacted on read, injected into this bundle's
+        functions (the sync and postmessage), scrubbed on the way out
     apiBase:
       type: url
       writer: owner

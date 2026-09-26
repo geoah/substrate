@@ -984,7 +984,7 @@ browser to send anywhere. The sync reads only: eight GET routes and no media.
   the owner puts on a chat), `chat` (one conversation, whose id is a Matrix
   room id) and `message` (one message, `timestamp` bound as its instant),
   beside the state kind `chatsync` (this connector's cursors for one chat).
-- **Functions (1)**: `messagessync` makes at most one Beeper HTTP call per
+- **Functions (2)**: `messagessync` makes at most one Beeper HTTP call per
   invocation and pages the rest off its own cursor, through eight phases:
   `info`, `accounts`, `bridges`, `labels`, `contacts`, `chats`, `whole` (the
   authoritative `GET /v1/chats/{id}` read, with `maxParticipantCount=-1`, which
@@ -1122,7 +1122,7 @@ write.
 - **Kinds (9)**: `config`, `account`, the mirrors `team`, `user`,
   `conversation`, `message`, `file` and `bot`, and `conversationsync`, the
   connector's own per-conversation cursor row.
-- **Functions (1)**: `slacksync` makes at most one Slack Web API call per
+- **Functions (2)**: `slacksync` makes at most one Slack Web API call per
   invocation, writes what that page carried, and hands the rest of the queue
   to the next invocation. Its phases run in this order: `auth.test`,
   `team.info`, `users.list`, `conversations.list`, `conversations.info`,
@@ -1149,9 +1149,11 @@ connection, and every other live row is stamped
 Setting it up is one paste. Mint a Slack user token (`xoxp-…`) and put it on
 `config.userToken`, not on the account: the engine seals an accountconfig's
 secrets at rest and the runner injects account properties as stored, so a
-token pasted on the account reaches the sync body as ciphertext. The bundle
+token pasted on the account reaches the sync body as ciphertext. The sync
 names one scope requirement, `users:read.email`, without which a user
 mirror's `profile.email` is absent (it is also absent for most bots).
+`postmessage` adds a second, `chat:write` (see
+[Writing to Slack](#writing-to-slack)).
 
 The account carries the toggles. `enabledMessages` turns the sync on and
 covers people, conversations and messages together. `enabledMembers` adds one
