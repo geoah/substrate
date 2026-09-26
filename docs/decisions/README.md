@@ -255,5 +255,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0101](0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md) | A kind, trait or callable is named in full on every surface | accepted |
 | [0102](0102-the-oauth-surface-takes-the-full-identity-only.md) | The OAuth surface takes the full identity only | accepted |
 | [0103](0103-an-ambiguous-probe-follows-its-mappings-policy-and-a-probed-value-never-spreads.md) | An ambiguous probe follows its mapping's `onAmbiguous`, and a probed value never spreads to a second target | accepted |
-| [0104](0104-a-break-ships-an-upgrade-note-under-docs-changes.md) | A break ships an upgrade note under docs/changes | proposed |
+| [0104](0104-the-changelog-is-one-keep-a-changelog-file-a-release-bot-dates.md) | The changelog is one Keep a Changelog file, and a release bot dates it | proposed |
 | [0105](0105-a-lossy-confirmation-binds-to-what-the-plan-affects.md) | A lossy confirmation binds to what the plan affects | accepted |
