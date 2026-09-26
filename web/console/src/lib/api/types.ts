@@ -443,12 +443,6 @@ export function parseEnumValues(raw: unknown): EnumValue[] | undefined {
   return out.length ? out : undefined
 }
 
-/** KindInfo — the projection of one declared kind (iface.go). Replaces v0
- * `TypeInfo`: `authority` is what published the kind (empty for a
- * repository-local one), `package` is the package's own word beside it, and
- * `identity` is the kind REFERENCE `<authority>/<package>/<name>`, always in
- * full (records 0098, 0101). There is no `sourceYAML` on the wire (record
- * 61) — the parsed `definition` IS the document. */
 /** What a client calls one record of a kind and what it calls the
  * collection, as the kind's `label:` declares them. */
 export interface KindLabel {
@@ -456,6 +450,12 @@ export interface KindLabel {
   plural: string
 }
 
+/** KindInfo — the projection of one declared kind (iface.go). Replaces v0
+ * `TypeInfo`: `authority` is what published the kind (empty for a
+ * repository-local one), `package` is the package's own word beside it, and
+ * `identity` is the kind REFERENCE `<authority>/<package>/<name>`, always in
+ * full (records 0098, 0101). There is no `sourceYAML` on the wire (record
+ * 61) — the parsed `definition` IS the document. */
 export interface KindInfo {
   /** The kind REFERENCE, `<authority>/<package>/<name>` in full; the wire
    * carries no bare `<name>` (records 0098, 0101). */
