@@ -260,3 +260,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0106](0106-the-apply-door-holds-back-a-mapping-whose-provider-is-absent.md) | The apply door holds back a mapping whose provider is absent, on request | accepted |
 | [0107](0107-an-apply-links-the-sources-its-mappings-left-unlinked.md) | An apply links the sources its mappings left unlinked | accepted |
 | [0108](0108-an-allow-outranks-a-gate-only-by-naming-it.md) | An allow outranks a gate only by naming it | proposed |
+| [0109](0109-a-package-row-names-the-actor-that-declared-it.md) | A package row names the actor that declared it | accepted |
