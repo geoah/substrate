@@ -69,4 +69,29 @@ describe("useLiveRecord", () => {
     rerender({ r: rec(5, { name: "B" }) })
     expect(result.current.size).toBe(0)
   })
+
+  it("lets a mark go even when the reader's own write lands before it expires", () => {
+    const { result, rerender } = renderHook(({ r }) => useLiveRecord(r), {
+      initialProps: { r: rec(10, { status: "open", name: "A" }) },
+    })
+    rerender({ r: rec(11, { status: "done", name: "A" }) })
+    expect([...result.current]).toEqual(["status"])
+    act(() => vi.advanceTimersByTime(1000))
+    noteWrite(TASK, "t1", 12)
+    rerender({ r: rec(12, { status: "done", name: "B" }) })
+    act(() => vi.advanceTimersByTime(3000))
+    expect(result.current.size).toBe(0)
+  })
+
+  it("keeps a mark its full time when an unchanged re-read lands", () => {
+    const { result, rerender } = renderHook(({ r }) => useLiveRecord(r), {
+      initialProps: { r: rec(20, { status: "open" }) },
+    })
+    rerender({ r: rec(21, { status: "done" }) })
+    act(() => vi.advanceTimersByTime(1000))
+    rerender({ r: rec(21, { status: "done" }) })
+    expect([...result.current]).toEqual(["status"])
+    act(() => vi.advanceTimersByTime(3000))
+    expect(result.current.size).toBe(0)
+  })
 })

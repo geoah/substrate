@@ -13,6 +13,8 @@ import type { SubstrateRecord } from "@/lib/api/types"
 /** How long a moved property stays marked. */
 const MARK_MS = 2400
 
+const NONE: ReadonlySet<string> = new Set()
+
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 /** The properties whose values differ between two reads of one record. */
@@ -33,8 +35,13 @@ export function movedProperties(
  * reader. */
 export function useLiveRecord(record: SubstrateRecord): ReadonlySet<string> {
   useLiveInvalidation({ kinds: [record.kind], recordIds: [record.id] })
-  const [moved, setMoved] = useState<ReadonlySet<string>>(() => new Set())
+  const [moved, setMoved] = useState<ReadonlySet<string>>(NONE)
   const seen = useRef(record)
+  // The expiry belongs to the mark, not to the read that set it: a later
+  // re-read (the reader's own write, an unchanged refetch) must neither
+  // cancel it nor restart it.
+  const expiry = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(expiry.current), [])
   useEffect(() => {
     const before = seen.current
     seen.current = record
@@ -44,13 +51,13 @@ export function useLiveRecord(record: SubstrateRecord): ReadonlySet<string> {
       record.version <= before.version ||
       wroteHere(record.kind, record.id, record.version)
     ) {
-      return undefined
+      return
     }
     const names = movedProperties(before, record)
-    if (!names.length) return undefined
+    if (!names.length) return
     setMoved(new Set(names))
-    const timer = setTimeout(() => setMoved(new Set()), MARK_MS)
-    return () => clearTimeout(timer)
+    clearTimeout(expiry.current)
+    expiry.current = setTimeout(() => setMoved(NONE), MARK_MS)
   }, [record])
   return moved
 }
