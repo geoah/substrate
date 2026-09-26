@@ -262,7 +262,7 @@ export function RecordEditorForm({
       if (parsed.error || !parsed.value) {
         throw new ApiError(
           "validation",
-          parsed.error?.message ?? "The document did not parse.",
+          parsed.error?.message ?? "The YAML didn’t parse.",
           0
         )
       }

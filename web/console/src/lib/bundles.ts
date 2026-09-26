@@ -26,6 +26,7 @@ import type {
   SuggestedMapping,
 } from "@/lib/api/types"
 import { kindByIdentity, kindPackage, splitKind } from "@/lib/definition"
+import { displayPlural } from "@/lib/kind-names"
 import { kindHasTrait } from "@/lib/sync"
 
 /** One bundle row: the installed status (when the lifecycle knows it) and the
@@ -209,24 +210,23 @@ export function upgradableBundleCount(catalog: CatalogItem[]): number {
  * before it makes it, and a lossy step says so. Empty when nothing moves. */
 export function stepLines(plan: ConversionPlan | undefined): string[] {
   return (plan?.steps ?? []).map((s) => {
-    const n = `${s.records} live ${s.records === 1 ? "record" : "records"}`
+    const n = `${s.records} ${s.records === 1 ? "record" : "records"}`
+    const where = s.kind ? ` in ${displayPlural(s.kind)}` : ""
     switch (s.step) {
       case "move":
-        return `moves ${n} from ${s.from} to ${s.to}, repointing every reference`
+        return `Moves ${n} from ${displayPlural(s.from ?? "")} to ${displayPlural(s.to ?? "")}; every reference follows`
       case "rename":
-        return `renames ${s.from} to ${s.to} on ${s.kind}: ${n} rewritten`
+        return `Renames ${s.from} to ${s.to} on ${n}${where}`
       case "backfill":
-        return `backfills ${s.property} with its default on ${s.kind}: ${n} rewritten`
+        return `Fills in ${s.property} with its default on ${n}${where}`
       case "enter":
-        return `enters ${s.property} at ${s.to} on ${s.kind}: ${n} rewritten`
+        return `Sets ${s.property} to ${s.to} on ${n}${where}`
       case "remap":
-        return `rewrites ${s.property} ${s.from} to ${s.to} on ${s.kind}: ${n} rewritten${
-          s.lossy
-            ? " (lossy: the records holding either value become one set)"
-            : ""
+        return `Changes ${s.property} from ${s.from} to ${s.to} on ${n}${where}${
+          s.lossy ? "; afterwards the two can’t be told apart" : ""
         }`
       default:
-        return `drops ${s.property} on ${s.kind}: its value leaves ${n} (lossy: the old values stay in History only)`
+        return `Removes ${s.property} from ${n}${where}; the old values stay in History`
     }
   })
 }

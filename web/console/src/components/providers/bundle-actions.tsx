@@ -546,7 +546,7 @@ export function PendingUpgradeNotice({ item }: { item: ShippedUpgrade }) {
           {motion ? ` (version ${motion})` : ""}{" "}
           {refused
             ? "was refused when the server started. Fix what the lines below name, then start the server again."
-            : "lands when the server starts again. Until then this repository runs on the kinds it already stores."}
+            : "lands when the server starts again. Until then everything works as it does now."}
         </p>
         {[...(refused ? blockers : []), ...stepLines(item.upgrade)].map(
           (line) => (
@@ -820,8 +820,8 @@ export function ImportAgainNote({ item }: { item: CatalogItem }) {
           title={`Add ${item.name} again?`}
           consequence={
             `This lands ${what}, now that the provider each one reads is here. ` +
-            `Adding it again REPLACES ${item.id} rather than merging into it: a kind or a property you added is dropped by it, ` +
-            `and it is refused outright while your records still hold a shape the shipped package no longer declares. ` +
+            `Adding it again REPLACES ${item.id} rather than merging into it: a collection or a property you added is dropped by it, ` +
+            `and it is refused outright while your records still hold something the shipped package no longer has. ` +
             `Your records are untouched either way.`
           }
           confirm="Add again"

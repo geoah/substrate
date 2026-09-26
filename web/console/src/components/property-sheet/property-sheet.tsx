@@ -413,7 +413,7 @@ export function PropertySheet({
       )}
       {!filled.length && !empty.length && (
         <p className="col-span-full py-2 text-[13px] text-faint">
-          This collection declares no properties beyond the title.
+          This collection has no properties beyond the title.
         </p>
       )}
     </div>

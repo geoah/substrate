@@ -514,16 +514,16 @@ describe("the upgrade preview helpers", () => {
       ],
     }
     expect(stepLines(plan)).toEqual([
-      "renames label to displayLabel on substrate.reamde.dev/llm/provider: 3 live records rewritten",
-      "backfills size with its default on geoah.example.com/shop/widget: 1 live record rewritten",
-      "enters attention at quiet on geoah.example.com/shop/widget: 2 live records rewritten",
-      "rewrites status active to open on geoah.example.com/shop/widget: 2 live records rewritten (lossy: the records holding either value become one set)",
-      "drops color on geoah.example.com/shop/widget: its value leaves 1 live record (lossy: the old values stay in History only)",
+      "Renames label to displayLabel on 3 records in Providers",
+      "Fills in size with its default on 1 record in Widgets",
+      "Sets attention to quiet on 2 records in Widgets",
+      "Changes status from active to open on 2 records in Widgets; afterwards the two can’t be told apart",
+      "Removes color from 1 record in Widgets; the old values stay in History",
     ])
     // The dialog lists the lossy steps alone: what the click consents to.
     expect(lossyStepLines(plan)).toEqual([
-      "rewrites status active to open on geoah.example.com/shop/widget: 2 live records rewritten (lossy: the records holding either value become one set)",
-      "drops color on geoah.example.com/shop/widget: its value leaves 1 live record (lossy: the old values stay in History only)",
+      "Changes status from active to open on 2 records in Widgets; afterwards the two can’t be told apart",
+      "Removes color from 1 record in Widgets; the old values stay in History",
     ])
   })
 

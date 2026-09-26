@@ -746,8 +746,8 @@ export function MergeRequestDetailPage() {
             </div>
           ) : sideTypeMissing ? (
             <div className="rounded-lg border px-4 py-3 text-[13px] text-muted-foreground">
-              This repository doesn’t have their kind, so the two can’t be shown
-              side by side. You can still decide.
+              This repository doesn’t have their collection, so the two can’t be
+              shown side by side. You can still decide.
             </div>
           ) : (
             <Skeleton className="h-24 w-full rounded-lg" />

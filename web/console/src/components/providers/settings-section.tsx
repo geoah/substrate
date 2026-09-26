@@ -186,8 +186,8 @@ export function InputCard({
       </div>
       {!kind ? (
         <p className="px-3.5 py-2.5 text-[12.5px] text-muted-foreground">
-          Its kind is not in this repository yet, so there is nothing to choose
-          from.
+          Its collection isn’t in this repository yet, so there is nothing to
+          choose from.
         </p>
       ) : records.isPending ? (
         <Skeleton className="m-3 h-12 rounded-md" />
