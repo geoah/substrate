@@ -1,5 +1,6 @@
 # The GitHub bundle — a COMPLETE, FIRST-CLASS mirror of the code work the
-# owner is involved in. SYNC-ONLY: nothing here writes back to GitHub.
+# owner is involved in. The sync never writes back to GitHub; the one write is
+# `submitreview`, a callable nothing fires on its own (decision record 0106).
 #
 # It connects a GitHub account over the host OAuth facility and mirrors what
 # GitHub holds about the owner: the connected user, the repositories the
@@ -75,7 +76,8 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: github
-  version: 24
+  # 25, #644: the `submitreview` function, the bundle's first write to GitHub.
+  version: 25
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -89,7 +91,8 @@ data:
   package: github
   description: >-
     Keeps a copy of the GitHub issues and pull requests you are involved in,
-    with their repositories, milestones, labels and reviews. Read-only.
+    with their repositories, milestones, labels and reviews. It writes to
+    GitHub only when submitreview is called.
   # The one declared input: the OAuth client record. `inject: functions`
   # because the sync reads `apiBase` off it — the engine SKIPS the oauth2
   # trait's `clientSecret` when it builds an injected record view
@@ -149,6 +152,7 @@ data:
     - providers.substrate.reamde.dev/github/pullrequest
     - providers.substrate.reamde.dev/github/review
     - providers.substrate.reamde.dev/github/githubsync
+    - providers.substrate.reamde.dev/github/submitreview
 ---
 # ---- the config type: the `client` input's kind ----------------------------
 # oauth2 (the OAuth CLIENT credentials the facility uses to exchange codes):
@@ -5823,3 +5827,200 @@ data:
       type: datetime
       displayName: Updated
       description: when the comment was last edited
+---
+# ---- function: submitreview ------------------------------------------------
+# The one write this bundle makes, and a CALLABLE only: no trigger fires it.
+# It spends the account's live access token the host injects on
+# `config.accounts[].token`, exactly as the sync does, and sends it only to
+# https://api.github.com or loopback. The `repo` scope the pull request toggle
+# already asks for is what grants a review write. It writes no record: the
+# review reaches the mirror only when the sync still finds the pull request,
+# and it does not when the owner was only review-requested (GitHub drops a
+# reviewer from that list once they review; issue #710, decision record 0106).
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/github/submitreview
+data:
+  authority: providers.substrate.reamde.dev
+  package: github
+  description: >-
+    Submit a review on one GitHub pull request as the connected user: approve
+    it, or leave a review comment. Returns the review's id, state and URL.
+    GitHub refuses an approval of your own pull request.
+  runtime: python
+  timeout: PT30S
+  arguments:
+    - name: repository
+      type: string
+      required: true
+      description: >-
+        the repository as owner/name, the fullName of a mirrored github/repository
+    - name: number
+      type: int
+      required: true
+      description: the pull request's number in that repository
+    - name: event
+      type: enum
+      values: [approve, comment]
+      required: true
+      description: >-
+        approve to approve the pull request, comment to leave a review comment
+        without approving
+    - name: body
+      type: string
+      description: the review's text; required for comment, optional for approve
+    - name: account
+      type: string
+      description: >-
+        the id of the github/account whose token to use; leave it out when
+        one account is connected
+  returns:
+    - name: id
+      type: int
+      required: true
+      description: GitHub's id for the review
+    - name: state
+      type: string
+      required: true
+      description: the review's state as GitHub reports it (APPROVED, COMMENTED)
+    - name: url
+      type: string
+      description: the review's page on github.com
+  permissions:
+    network:
+      - "api.github.com"
+      - "127.0.0.1"
+      - "localhost"
+  source: |
+    """Submit one GitHub pull request review with the account's access token.
+
+    The token arrives host-resolved on `config.accounts[].token`; the API base
+    on the client input (`config.inputs.client.properties.apiBase`), default
+    https://api.github.com. The token leaves this body only toward that exact
+    origin or loopback, and redirects are refused rather than followed, so no
+    hop can carry it elsewhere. One call,
+    `POST /repos/{owner}/{repo}/pulls/{number}/reviews`, with a JSON body of
+    `event` and `body`. A refusal fails the call with GitHub's status and
+    message.
+    """
+    import json
+    import re
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    DEFAULT_API = "https://api.github.com"
+    API_HOST = "api.github.com"
+    LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+    HTTP_TIMEOUT = 20
+    EVENTS = {"approve": "APPROVE", "comment": "COMMENT"}
+    REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+    WRITE_SCOPES = ("repo", "public_repo")
+
+
+    def _check_origin(url):
+        u = urllib.parse.urlsplit(url)
+        host = (u.hostname or "").lower()
+        if u.password or u.username:
+            raise RuntimeError("github: the API base embeds credentials")
+        if host in LOOPBACK_HOSTS:
+            return
+        if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
+            return
+        raise RuntimeError(
+            "github: refusing to send credentials to %s://%s:%s; only "
+            "https://api.github.com or loopback"
+            % (u.scheme, host or "?", u.port or "-"))
+
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **k):
+            return None
+
+
+    def _account(cfg, want):
+        accounts = [a for a in (cfg.get("accounts") or []) if isinstance(a, dict)]
+        if want:
+            for a in accounts:
+                if a.get("id") == want:
+                    return a
+            raise ValueError("github: no account %r; the accounts are %s"
+                             % (want, sorted(str(a.get("id")) for a in accounts)))
+        live = [a for a in accounts if a.get("token")]
+        if len(live) == 1:
+            return live[0]
+        if not live:
+            raise RuntimeError("github: no connected account carries a token")
+        raise ValueError("github: %d accounts are connected; name one in "
+                         "`account`: %s"
+                         % (len(live), sorted(str(a.get("id")) for a in live)))
+
+
+    def main(input, host):
+        args = input.get("args") or {}
+        repo = str(args.get("repository") or "").strip()
+        # The engine holds arguments to their shape only, not to an enum's
+        # values, so the body is what refuses a value outside the enum.
+        event = str(args.get("event") or "")
+        text = str(args.get("body") or "")
+        number = args.get("number")
+        if not REPO_RE.match(repo):
+            raise ValueError("github: repository must be owner/name, got %r" % repo)
+        if isinstance(number, bool) or not isinstance(number, (int, float)) \
+                or int(number) != number or number < 1:
+            raise ValueError("github: number must be a positive integer")
+        if event not in EVENTS:
+            raise ValueError("github: event must be approve or comment, got %r"
+                             % event)
+        if event == "comment" and not text.strip():
+            raise ValueError("github: a comment review needs a body")
+
+        cfg = input.get("config") or {}
+        acct = _account(cfg, str(args.get("account") or "").strip())
+        aid = acct.get("id")
+        token = acct.get("token") or ""
+        if not token:
+            raise RuntimeError("github: account %s has no live token: %s"
+                               % (aid, acct.get("tokenError") or "not connected"))
+        scopes = (acct.get("properties") or {}).get("grantedScopes") or []
+        if scopes and not any(s in scopes for s in WRITE_SCOPES):
+            raise RuntimeError(
+                "github: account %s was granted %s; a review needs `repo` (turn "
+                "on enabledPullRequests and reconnect)" % (aid, sorted(scopes)))
+
+        client = ((cfg.get("inputs") or {}).get("client") or {})
+        base = (((client.get("properties") or {}).get("apiBase") or "").strip()
+                or DEFAULT_API).rstrip("/")
+        url = "%s/repos/%s/pulls/%d/reviews" % (base, repo, int(number))
+        _check_origin(url)
+        payload = {"event": EVENTS[event]}
+        if text:
+            payload["body"] = text
+        req = urllib.request.Request(
+            url, data=json.dumps(payload).encode("utf-8"), method="POST",
+            headers={"Authorization": "Bearer " + token,
+                     "Accept": "application/vnd.github+json",
+                     "Content-Type": "application/json",
+                     "X-GitHub-Api-Version": "2022-11-28"})
+        opener = urllib.request.build_opener(_NoRedirect)
+        try:
+            with opener.open(req, timeout=HTTP_TIMEOUT) as resp:
+                body = json.loads(resp.read().decode("utf-8") or "{}")
+        except urllib.error.HTTPError as e:
+            raw = e.read()[:600].decode("utf-8", "replace")
+            try:
+                err = json.loads(raw)
+                detail = err.get("message") or raw
+                for item in err.get("errors") or []:
+                    detail += "; " + (item if isinstance(item, str)
+                                      else str(item.get("message") or item))
+            except ValueError:
+                detail = raw
+            raise RuntimeError("github: reviewing %s#%d failed: HTTP %d %s"
+                               % (repo, int(number), e.code, detail[:300]))
+        if not isinstance(body.get("id"), int):
+            raise RuntimeError("github: the review answered no id")
+        out = {"id": body["id"], "state": str(body.get("state") or "")}
+        if body.get("html_url"):
+            out["url"] = body["html_url"]
+        return {"output": out}

@@ -4,8 +4,9 @@
 # users, its conversations, the messages in them and the files they share.
 # Every field of every object is a declared, typed, top-level property; every
 # relation the API states is a REFERENCE at the kind that holds the other end;
-# no payload is kept twice. It reads; it never posts, never reacts, never
-# joins.
+# no payload is kept twice. The sync reads; it never posts, never reacts,
+# never joins. The one write is `postmessage`, a callable nothing fires on its
+# own (decision record 0106).
 #
 # WRITTEN TO docs/kind-design.md (v2). What that costs, spelled out, because
 # every one of these is a change from the first cut of this bundle:
@@ -113,7 +114,9 @@ data:
   # 8, #650: a run that resumes a walk already past `history` first pulls
   # new history for every conversation from its stored cursor, inside a
   # share of the run's budget, and only then resumes the backlog.
-  version: 8
+  #
+  # 9, #644: the `postmessage` function, the bundle's first write to Slack.
+  version: 9
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -128,7 +131,7 @@ data:
   description: >-
     Keeps a copy of one Slack workspace — its people, its channels, group
     chats and DMs, the messages in them and the files they share. It takes
-    a pasted token, and cannot post.
+    a pasted token, and posts only when postmessage is called.
   inputs:
     connector:
       kind: providers.substrate.reamde.dev/slack/config
@@ -145,6 +148,7 @@ data:
     - providers.substrate.reamde.dev/slack/file
     - providers.substrate.reamde.dev/slack/conversationsync
     - providers.substrate.reamde.dev/slack/slacksync
+    - providers.substrate.reamde.dev/slack/postmessage
 ---
 # ---- the config type: the `connector` input's kind -------------------------
 # NOT oauth2, and it deliberately carries NO client id or secret: a kind
@@ -5557,3 +5561,147 @@ data:
             elif kind == "history":
                 cursor["queue"].append(ident)
         return {"more": host.page.more(cursor)}
+---
+# ---- function: postmessage -------------------------------------------------
+# The one write this bundle makes, and a CALLABLE only: no trigger fires it.
+# It spends the same pasted user token the sync does, taken from the same
+# injected connector input, and sends it to the same pinned origin. It writes
+# no record: the message it posts reaches the mirror only when the sync reads
+# it back (decision record 0106). A first reply in a thread that had no
+# replies is never read back, because the sync watches only threads it saw
+# with replies (issue #711).
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/slack/postmessage
+data:
+  authority: providers.substrate.reamde.dev
+  package: slack
+  description: >-
+    Post a message to one Slack conversation as the connected user, or reply
+    in a thread when threadTs is given. Returns the conversation id and the
+    new message's ts. The token needs Slack's chat:write user scope.
+  runtime: python
+  timeout: PT30S
+  arguments:
+    - name: channel
+      type: string
+      required: true
+      description: >-
+        the conversation id to post in (C…, G… or D…), the conversationId
+        of a mirrored slack/conversation
+    - name: text
+      type: string
+      required: true
+      description: the message text, in Slack's mrkdwn
+    - name: threadTs
+      type: string
+      description: >-
+        the ts of the thread's parent message, to reply in its thread; leave
+        it out to post at the top level
+  returns:
+    - name: channel
+      type: string
+      required: true
+      description: the conversation id Slack posted in
+    - name: ts
+      type: string
+      required: true
+      description: the new message's ts, its id within the conversation
+  permissions:
+    network:
+      - slack.com
+      - 127.0.0.1
+      - localhost
+  source: |
+    """Post one Slack message with the pasted user token.
+
+    The token arrives on the connector input
+    (config.inputs.connector.properties.userToken) and leaves this body only
+    toward https on a slack.com host, or loopback (the test seam). One call,
+    `chat.postMessage`, as a form POST with the token in the Authorization
+    header. A Slack refusal (`ok: false`) fails the call with Slack's own
+    error code, so `missing_scope` or `not_in_channel` reaches the caller.
+    """
+    import json
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    DEFAULT_API = "https://slack.com"
+    SEALED_PREFIX = "substrate:sealsecret:v1:"
+    HTTP_TIMEOUT = 20
+    TEXT_MAX = 40000
+
+
+    def _pinned(base):
+        u = urllib.parse.urlsplit(base)
+        host = (u.hostname or "").lower()
+        if u.password or u.username:
+            return False
+        if host in ("127.0.0.1", "localhost", "::1"):
+            return True
+        return u.scheme == "https" and (
+            host == "slack.com" or host.endswith(".slack.com"))
+
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        # urllib would follow a redirect as a GET to any host and carry the
+        # Authorization header along; refuse it so the token stays pinned.
+        def redirect_request(self, *a, **k):
+            return None
+
+
+    def main(input, host):
+        args = input.get("args") or {}
+        channel = str(args.get("channel") or "").strip()
+        text = str(args.get("text") or "")
+        thread = str(args.get("threadTs") or "").strip()
+        if not channel:
+            raise ValueError("slack: channel is required")
+        if not text.strip():
+            raise ValueError("slack: text is empty")
+        if len(text) > TEXT_MAX:
+            raise ValueError("slack: text is %d characters; Slack takes at most %d"
+                             % (len(text), TEXT_MAX))
+
+        cfg = input.get("config") or {}
+        conf = (((cfg.get("inputs") or {}).get("connector") or {})
+                .get("properties")) or {}
+        token = conf.get("userToken") or ""
+        base = (conf.get("apiBase") or DEFAULT_API).rstrip("/")
+        if not token:
+            raise RuntimeError("slack: the config record carries no userToken")
+        if token.startswith(SEALED_PREFIX):
+            raise RuntimeError("slack: userToken arrived sealed; paste it on the "
+                               "config, not the account")
+        if not _pinned(base):
+            raise RuntimeError(
+                "slack: apiBase %r is not a pinned origin (https on a slack.com "
+                "host, or loopback); refusing to send the user token" % base)
+
+        form = {"channel": channel, "text": text}
+        if thread:
+            form["thread_ts"] = thread
+        req = urllib.request.Request(
+            base + "/api/chat.postMessage",
+            data=urllib.parse.urlencode(form).encode("utf-8"), method="POST",
+            headers={"Authorization": "Bearer " + token,
+                     "Content-Type": "application/x-www-form-urlencoded",
+                     "Accept": "application/json"})
+        opener = urllib.request.build_opener(_NoRedirect)
+        try:
+            with opener.open(req, timeout=HTTP_TIMEOUT) as resp:
+                body = json.loads(resp.read().decode("utf-8") or "{}")
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                raise RuntimeError("slack chat.postMessage: rate limited; retry "
+                                   "after %ss" % (e.headers.get("Retry-After") or "?"))
+            raise RuntimeError("slack chat.postMessage: HTTP %d %s"
+                               % (e.code, e.read()[:200].decode("utf-8", "replace")))
+        if not body.get("ok"):
+            raise RuntimeError("slack chat.postMessage refused: %s"
+                               % (body.get("error") or "unknown"))
+        if not body.get("ts"):
+            raise RuntimeError("slack chat.postMessage answered ok with no ts")
+        return {"output": {"channel": body.get("channel") or channel,
+                           "ts": str(body.get("ts") or "")}}

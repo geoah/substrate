@@ -3,11 +3,12 @@
 Package `providers.substrate.reamde.dev/beeper`: a provider that mirrors one
 machine's Beeper inbox over the Beeper Client API, which Beeper Desktop serves
 locally at `http://localhost:23373`. It authenticates with a token pasted onto
-its `config` record, since no OAuth flow runs for this bundle, and it reads
-only: it sends nothing, writes nothing back and downloads no media.
+its `config` record, since no OAuth flow runs for this bundle. The sync reads
+only and downloads no media. `sendmessage` is the one write: a function a
+caller invokes, which sends one message with the same token.
 
 `bundle.yaml` is the closure (the config and account kinds, the six mirrors,
-the per-chat state kind and the sync function) and `triggers.yaml` is the
+the per-chat state kind, the sync function and `sendmessage`) and `triggers.yaml` is the
 delivery wiring: on connect, every 15 minutes, and "sync now". They are the
 contract; this file is not.
 

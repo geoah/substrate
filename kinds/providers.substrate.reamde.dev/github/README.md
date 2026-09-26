@@ -4,10 +4,13 @@ Package `providers.substrate.reamde.dev/github`: an OAuth provider that mirrors
 the code work the owner is involved in (the connected user, the repositories
 they can reach, and the issues and pull requests they author, are assigned,
 are mentioned in, comment on or are review-requested on, with the reviews on
-those pull requests). Sync only: nothing here writes back to GitHub.
+those pull requests). The sync never writes to GitHub. `submitreview` is the
+one write: a function a caller invokes, which approves or comments on one
+pull request with the account's token.
 
 `bundle.yaml` is the closure (the config and account kinds, the thirteen
-mirrors, the sync function and the trusted `oauth2:` metadata) and
+mirrors, the sync function, `submitreview` and the trusted `oauth2:`
+metadata) and
 `triggers.yaml` is the delivery wiring. They are the contract; this file is
 not.
 
