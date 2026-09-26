@@ -87,8 +87,9 @@ const (
 )
 
 // Input is one invocation, exactly what the runtime contract pins: mode, the
-// level-triggered envelope (or the call args), config (nil for now), the
-// read budgets, the causal depth and the idempotency key.
+// level-triggered envelope, the args (a call's, or a schedule trigger's
+// `arguments`), config (nil for now), the read budgets, the causal depth and
+// the idempotency key.
 type Input struct {
 	Mode string `json:"mode"`
 	// Envelope carries change/record/repository — the same three bindings the
@@ -96,8 +97,8 @@ type Input struct {
 	// and webhook deliveries carry fire/repository instead; call mode carries no
 	// envelope at all.
 	Envelope map[string]any `json:"envelope,omitempty"`
-	// Args is call mode's arbitrary input, validated against the manifest's
-	// `input:` schema when one is declared.
+	// Args is call mode's input, or the `arguments` of the schedule trigger
+	// that fired, validated against the function's declared `arguments:`.
 	Args any `json:"args,omitempty"`
 	// Config is the callable's resolved configuration, as the engine resolves
 	// it from the bundle's injected inputs and account rows
