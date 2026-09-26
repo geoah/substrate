@@ -168,9 +168,10 @@ Three behaviors fall out of this one document:
   ([below](#when-a-probe-finds-several-candidates-onambiguous)); by default the
   source parks with its slot unset rather than add a third person the same
   address then points at, and it resolves on its next write once the owner has
-  settled the ambiguity. A source that offers nothing at all — no probe value
-  and no mapped value — mints nothing either, because a shell born from it is a
-  row no probe can ever match
+  settled the ambiguity, or when the mapping is applied again
+  ([below](#sources-that-exist-before-their-mapping)). A source that offers
+  nothing at all — no probe value and no mapped value — mints nothing either,
+  because a shell born from it is a row no probe can ever match
   ([decision record 0087](decisions/0087-an-unresolved-source-parks-instead-of-minting.md)).
   Two callers still mint whatever the source carries, because both need a
   record to point at: the [subject hop](data-model.md#kinds-and-references),
@@ -183,6 +184,35 @@ Three behaviors fall out of this one document:
   **you** wrote is never touched (the next section is the whole rule).
 - **Ids that never lie.** After a merge, the losing id resolves to the winner
   forever, and any read by it says so.
+
+### Sources that exist before their mapping
+
+**The apply that admits a mapping links the sources that already exist**
+([decision record 0106](decisions/0106-an-apply-links-the-sources-its-mappings-left-unlinked.md)).
+A mapping resolves a subject on the source's own write, and the usual order is
+the provider first, its sync, then the mapping, so without this every mirror
+synced before the mapping kept an empty slot until the provider wrote that row
+again. In the same transaction as the declaration, every live source whose
+slot names no live record is decided exactly as its own write would decide it:
+one candidate links, none mints, and a source that offers nothing or parks on
+an ambiguous probe stays unlinked. Each link is an ordinary write of the
+source's slot, credited to the mapping, so it is in the changelog and a
+rebuild replays it.
+
+The same pass runs for every mapping a batch **changes**, and for every
+mapping a batch **names by document**, changed or not. Re-applying an
+unchanged mapping is therefore how a repository reprojects it: after the owner
+merges the candidates a parked source was waiting on, or after an upgrade from
+a binary that did not backfill, apply the documents of the package that
+declares the mapping again, the mapping among them.
+
+```bash
+substratectl apply -f people.yaml    # the package closure, recordmapping included
+```
+
+A source that is already linked is not touched, so a second apply links
+nothing new and mints nothing. The cost is one probe per unlinked source, in
+the apply's transaction.
 
 ### When a probe finds several candidates: `onAmbiguous`
 
@@ -201,8 +231,9 @@ mapping says what happens then, beside its `match`:
   the source's own write sets and clears it, a rebuild derives it again, and
   the list filter reads it, `filter.ambiguous` (`substratectl get <kind>
   --ambiguous`). It is read when the source is written, so merging the two
-  people leaves it in place until the source's next sync links it and clears
-  it. A source that is unlinked because it offers nothing is not marked.
+  people leaves it in place until the source's next sync, or the next apply of
+  the mapping, links it and clears it. A source that is unlinked because it
+  offers nothing is not marked.
 - `oldest` links the candidate created first. Ids are random, so creation is
   the only order among candidates that means anything.
 - `mint` mints a fresh subject, as though the probe had found none.

@@ -333,21 +333,14 @@ func TestTheAmbiguityMarkIsDerivedAgain(t *testing.T) {
 		t.Fatalf("ambiguous sources after a rebuild = %v, want c1", got)
 	}
 
-	// Switching the policy re-reads the mark and changes nothing else: the
-	// source is still unlinked, so it is still waiting, until its next write
-	// links it under the new policy.
+	// Switching the policy is an apply of the mapping, and that apply links
+	// the unlinked sources under the new policy (decision record 0106): c1
+	// takes the oldest Alex and its mark clears in the same transaction.
 	if err := enginetest.DeclareMappings(ctx, ds, verbatimContactMappingOn("oldest")); err != nil {
 		t.Fatalf("declare oldest: %v", err)
 	}
-	if got := ambiguousIDs(t, ds, typeVerbatimContact, true); len(got) != 1 {
-		t.Fatalf("ambiguous sources after a policy change = %v, want c1 still", got)
-	}
-	resynced := mustPut(t, ds, book, substrate.PutInput{
-		Kind: typeVerbatimContact, ID: "c1",
-		Properties: map[string]any{"names": gnames("The Family"), "emailAddresses": gaddresses(addr)},
-	})
-	personOf(t, ds, resynced)
+	personOf(t, ds, mustGet(t, ds, typeVerbatimContact, "c1"))
 	if got := ambiguousIDs(t, ds, typeVerbatimContact, true); len(got) != 0 {
-		t.Fatalf("ambiguous sources after the linking write = %v, want none", got)
+		t.Fatalf("ambiguous sources after the linking apply = %v, want none", got)
 	}
 }
