@@ -14,6 +14,7 @@ import {
   isEmptyValue,
   propertyLabel,
   subtaskCounts,
+  gridSummary,
   titleBacking,
   titleProperties,
 } from "./grid-values"
@@ -201,5 +202,41 @@ describe("hiddenKindsNote", () => {
       "3 more hold supporting details (like labels and attachments). You see them from the records they belong to, or here with Technical details on."
     )
     expect(hiddenKindsNote([])).toBe("")
+  })
+})
+
+describe("gridSummary", () => {
+  const nouns: [string, string] = ["task", "tasks"]
+  const at = { page: 1, pageSize: 50, nouns }
+
+  it("says how many there are, one fact", () => {
+    expect(gridSummary({ ...at, total: { value: 72 }, rows: 50 })).toBe(
+      "1–50 of 72 tasks"
+    )
+    expect(gridSummary({ ...at, total: { value: 12 }, rows: 12 })).toBe(
+      "12 tasks"
+    )
+    expect(gridSummary({ ...at, total: { value: 1 }, rows: 1 })).toBe("1 task")
+    expect(gridSummary({ ...at, rows: 12 })).toBeUndefined()
+  })
+
+  it("leads with the range when it pages, a floor saying so", () => {
+    expect(
+      gridSummary({
+        ...at,
+        page: 3,
+        total: { value: 10000, capped: true },
+        rows: 50,
+      })
+    ).toBe("101–150 of 10,000+ tasks")
+  })
+
+  it("says the top level beside the whole only where they differ", () => {
+    expect(
+      gridSummary({ ...at, all: { value: 72 }, total: { value: 60 }, rows: 50 })
+    ).toBe("72 tasks · 60 at the top level")
+    expect(
+      gridSummary({ ...at, all: { value: 72 }, total: { value: 72 }, rows: 50 })
+    ).toBe("72 tasks")
   })
 })

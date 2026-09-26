@@ -31,7 +31,7 @@ interface DataTablePaginationProps {
   /** A page is being fetched: a spinner beside the range. The controls stay
    * live, since a second click means the second page. */
   loading?: boolean
-  /** Replaces the range on the left ("78 tasks, 70 at the top level"). */
+  /** Replaces the range on the left ("72 tasks · 60 at the top level"). */
   summary?: ReactNode
   /** Quiet notes after the range. */
   children?: ReactNode

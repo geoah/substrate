@@ -229,3 +229,47 @@ export function hiddenKindsNote(hidden: readonly KindInfo[]): string {
   const n = hidden.length
   return `${n} more ${n === 1 ? "holds" : "hold"} supporting details (like ${like}). You see them from the records they belong to, or here with Technical details on.`
 }
+
+/** A count the footer may say: a floor when the bounded walk ran out. */
+export interface GridCount {
+  value: number
+  capped?: boolean
+}
+
+function countWords(count: GridCount, one: string, many: string): string {
+  const n = `${count.value.toLocaleString()}${count.capped ? "+" : ""}`
+  return `${n} ${count.value === 1 && !count.capped ? one : many}`
+}
+
+/** The footer's left: how many there are, one fact ("72 tasks"). Paged, the
+ * range on screen leads ("1–50 of 331 people"); nested, the top level the
+ * pages walk follows the whole ("72 tasks · 60 at the top level"), said only
+ * where it differs. Undefined until the count answers. */
+export function gridSummary(o: {
+  /** The collection's words, lowercase: [singular, plural]. */
+  nouns: [string, string]
+  /** The rows the pages walk: the whole view, or its top level nested. */
+  total?: GridCount
+  /** Nested: the whole collection, of which `total` is the top level. */
+  all?: GridCount
+  page: number
+  pageSize: number
+  /** Rows on this page. */
+  rows: number
+}): string | undefined {
+  const [one, many] = o.nouns
+  const { total } = o
+  if (!total) return undefined
+  if (o.all) {
+    const whole = countWords(o.all, one, many)
+    const same = o.all.value === total.value && !o.all.capped && !total.capped
+    return same
+      ? whole
+      : `${whole} · ${total.value.toLocaleString()}${total.capped ? "+" : ""} at the top level`
+  }
+  const paged = total.capped || total.value > o.pageSize || o.page > 1
+  if (!paged || o.rows === 0) return countWords(total, one, many)
+  const first = (o.page - 1) * o.pageSize + 1
+  const last = first + o.rows - 1
+  return `${first.toLocaleString()}–${last.toLocaleString()} of ${countWords(total, one, many)}`
+}

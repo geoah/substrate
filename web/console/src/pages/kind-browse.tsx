@@ -98,7 +98,12 @@ import {
   saveBrowsePrefs,
   toRecordFilter,
 } from "@/lib/filters"
-import { emptyColumnIds, propertyLabel, titleBacking } from "@/lib/grid-values"
+import {
+  emptyColumnIds,
+  gridSummary,
+  propertyLabel,
+  titleBacking,
+} from "@/lib/grid-values"
 import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import { nestingProperty, rootsFilter } from "@/lib/record-tree"
 import { titlesFromIncluded } from "@/lib/reference-titles"
@@ -453,7 +458,6 @@ export function KindBrowsePage() {
   const singular = displayName(kindInfo)
   const provider = providerOfKind(kindInfo.identity)
   const showTabs = tab === "definition"
-  const emptyHidden = table.options.meta?.emptyHidden ?? []
   const loadingPage = records.isPending || tree.loading
   const refetching = records.isPlaceholderData && records.isFetching
 
@@ -619,13 +623,21 @@ export function KindBrowsePage() {
     </Empty>
   )
 
+  const summaryText = gridSummary({
+    nouns: [lowerFirst(singular), lowerFirst(plural)],
+    total:
+      total === undefined
+        ? undefined
+        : { value: total, capped: Boolean(totalCapped) },
+    all: nestingRoots ? collectionCount.data : undefined,
+    page,
+    pageSize: PAGE_SIZE,
+    rows: roots.length,
+  })
+  // Nested, the line waits for the whole collection's count too.
   const summary =
-    nestingRoots && total !== undefined && collectionCount.data ? (
-      <span className="tabular-nums">
-        {formatCount(collectionCount.data)} {lowerFirst(plural)},{" "}
-        {total.toLocaleString()}
-        {totalCapped ? "+" : ""} at the top level
-      </span>
+    summaryText && (!nestingRoots || collectionCount.data) ? (
+      <span className="text-muted-foreground tabular-nums">{summaryText}</span>
     ) : undefined
 
   return (
@@ -755,23 +767,7 @@ export function KindBrowsePage() {
             onPage={goToPage}
             loading={refetching}
             summary={summary}
-          >
-            {emptyHidden.length > 0 && (
-              <span>
-                ·{" "}
-                {emptyHidden.length === 1
-                  ? "1 column with nothing in it is hidden"
-                  : `${emptyHidden.length} columns with nothing in them are hidden`}
-                <button
-                  type="button"
-                  className="ml-1.5 cursor-pointer text-muted-foreground underline decoration-border-strong underline-offset-2 hover:text-foreground"
-                  onClick={() => table.options.meta?.showEmptyColumns?.()}
-                >
-                  Show
-                </button>
-              </span>
-            )}
-          </DataTablePagination>
+          />
         </>
       )}
     </TablePage>
