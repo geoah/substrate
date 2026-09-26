@@ -865,6 +865,10 @@ type originStamp struct {
 	origin     string
 	rawVersion []byte
 	digest     string
+	// rawShipped is the `shippedVersion` a provider install stamped,
+	// as jsonb bytes (originVersionOf decodes it too); empty on every other
+	// row.
+	rawShipped []byte
 }
 
 // packageStamp reads the stamp off one package row. The bundle status, the
@@ -873,10 +877,10 @@ type originStamp struct {
 func (ds *dataset) packageStamp(ctx context.Context, q dbx, pkg string) (originStamp, error) {
 	var s originStamp
 	err := q.QueryRowContext(ctx, `
-		SELECT COALESCE(props->>$3, ''), props->$4, COALESCE(props->>$5, '')
+		SELECT COALESCE(props->>$3, ''), props->$4, COALESCE(props->>$5, ''), props->$6
 		FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`,
-		kindPackage, pkg, propPackageOrigin, propPackageOriginVersion, propPackageOriginDigest,
-	).Scan(&s.origin, &s.rawVersion, &s.digest)
+		kindPackage, pkg, propPackageOrigin, propPackageOriginVersion, propPackageOriginDigest, propPackageShippedVersion,
+	).Scan(&s.origin, &s.rawVersion, &s.digest, &s.rawShipped)
 	if errors.Is(err, sql.ErrNoRows) {
 		return originStamp{}, nil
 	}
@@ -913,19 +917,25 @@ func (ds *dataset) applyOriginStamp(ctx context.Context, st *substrate.BundleSta
 // every other declaration version agree on what an integer is. An absent
 // value is zero; a value that is not an integer is a corrupt row, reported.
 func originVersionOf(pkg string, raw []byte) (int64, error) {
+	return stampedVersionOf(pkg, propPackageOriginVersion, raw)
+}
+
+// stampedVersionOf reads one stamped version property (`originVersion`,
+// `shippedVersion`) off its jsonb value, as originVersionOf describes.
+func stampedVersionOf(pkg, prop string, raw []byte) (int64, error) {
 	if len(raw) == 0 {
 		return 0, nil
 	}
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {
-		return 0, fmt.Errorf("substrate/engine: %s: decode %s: %w", pkg, propPackageOriginVersion, err)
+		return 0, fmt.Errorf("substrate/engine: %s: decode %s: %w", pkg, prop, err)
 	}
 	if v == nil {
 		return 0, nil
 	}
 	n, ok := vocabulary.VersionValue(v)
 	if !ok {
-		return 0, fmt.Errorf("substrate/engine: %s: %s is not an integer: %v", pkg, propPackageOriginVersion, v)
+		return 0, fmt.Errorf("substrate/engine: %s: %s is not an integer: %v", pkg, prop, v)
 	}
 	return n, nil
 }

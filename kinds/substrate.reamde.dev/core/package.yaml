@@ -5,7 +5,7 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  version: 19
+  version: 20
   description: >-
     One package whose kinds this repository holds: the group a declaration
     is versioned, owned and quarantined in. The row says who may write under
@@ -106,4 +106,15 @@ data:
       managed: true
       description: the digest of the closure the import landed, which the
         bundle status compares the stored declarations against
+    # A provider install's provenance: the shipped package version the
+    # install took. The package's own version is the API's, and a hand apply
+    # before the install can run it past the shipped line, so the upgrade
+    # preview measures the next shipped closure from this instead (issue
+    # 642). A provider install stamps it; a verbatim sample install, an
+    # import, a hand apply and a re-projection leave it as it is.
+    shippedVersion:
+      type: int
+      managed: true
+      description: the shipped package version the last provider install took,
+        which the upgrade preview compares the shipped closure against
     # No sourceYAML (record 61): declaration rows store parsed facts only.

@@ -436,7 +436,20 @@ func (c *Catalog) InstallConfirmed(ctx context.Context, actor substrate.Actor, i
 	// hand (`substratectl apply -f` of these very files) carries no tier and
 	// stays the repository's own, which record 0047 sanctions and which is the
 	// only way to hold a provider's declarations open to editing.
+	//
+	// A PROVIDER install records the shipped version it took
+	// (ShippedVersion): the package's stored version is the API's to move,
+	// stored+1 on a change, so over a package a hand apply ran past the
+	// shipped line it lands above the shipped number, and the upgrade preview
+	// reads the stamp to offer the next shipped closure all the same. Only a
+	// provider, because only a published package is closed to the token: a
+	// verbatim sample stays editable, and a stamp that kept offering it the
+	// next shipped closure would offer to replace edits nothing records
+	// (there is no digest to tell an edited copy by).
 	opts := substrate.BundleInstall{Published: b.Tier == substrate.TierProvider, Confirm: confirm}
+	if b.Tier == substrate.TierProvider {
+		opts.ShippedVersion = b.Version
+	}
 	// A sample installed VERBATIM takes the same suggested-mapping filter an
 	// import does: the mapping's `from` is a provider package either way, and
 	// admission refuses it either way while that package is absent. The
