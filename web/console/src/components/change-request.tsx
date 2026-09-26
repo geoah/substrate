@@ -1,9 +1,9 @@
 /** A suggested change's voice, shared by the chat card and the review page so
  * the two can never say the same decision two ways: its values in the
  * sheet's labels and renderers, the decision's words, and the one set of
- * decision buttons (Apply, Dismiss; a delete confirms by a second press). */
+ * decision buttons (Apply, Dismiss; a delete confirms first). */
 
-import { useEffect, useState, type ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 
 import { propertyIcon } from "@/components/property-sheet/sheet-model"
@@ -13,6 +13,7 @@ import {
   LooseValue,
 } from "@/components/property-sheet/property-value"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Spinner } from "@/components/ui/spinner"
 import { applyWord, changeLabel } from "@/lib/agent-chat"
 import { submitDecision } from "@/lib/api/changerequests"
@@ -49,13 +50,10 @@ export function ChangeValue({
   )
 }
 
-/** How long a pressed "Delete it" waits for the second press. */
-const ARMED_MS = 6000
-
 /** Apply and Dismiss, one atomic decision each, CAS'd on the request's
  * version as loaded (the write path refuses a decision without it, which is
- * what keeps the reviewed envelope the decided one). A delete asks for a
- * second press, with the consequence beside it. Deciding writes a system turn
+ * what keeps the reviewed envelope the decided one). A delete asks first,
+ * naming what it costs. Deciding writes a system turn
  * into the thread and resumes the agent, whose reply lands a few seconds
  * later, so one more sweep catches it without polling forever. */
 export function DecisionButtons({
@@ -70,17 +68,11 @@ export function DecisionButtons({
 }) {
   const client = useQueryClient()
   const [submitting, setSubmitting] = useState<Verdict | null>(null)
-  const [armed, setArmed] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  useEffect(() => {
-    if (!armed) return undefined
-    const timer = setTimeout(() => setArmed(false), ARMED_MS)
-    return () => clearTimeout(timer)
-  }, [armed])
 
   async function decide(next: Verdict) {
     setSubmitting(next)
-    setArmed(false)
     setError(null)
     try {
       await submitDecision(request.id, next, request.version)
@@ -95,6 +87,7 @@ export function DecisionButtons({
       void client.invalidateQueries()
     } finally {
       setSubmitting(null)
+      setConfirming(false)
     }
   }
 
@@ -107,11 +100,11 @@ export function DecisionButtons({
           variant={deleting ? "destructive" : "default"}
           disabled={submitting !== null}
           onClick={() =>
-            deleting && !armed ? setArmed(true) : void decide("accepted")
+            deleting ? setConfirming(true) : void decide("accepted")
           }
         >
           {submitting === "accepted" && <Spinner className="size-3" />}
-          {deleting && armed ? "Yes, delete it" : applyWord(op)}
+          {applyWord(op)}
         </Button>
         {review}
         <Button
@@ -123,12 +116,18 @@ export function DecisionButtons({
           {submitting === "rejected" && <Spinner className="size-3" />}
           Dismiss
         </Button>
-        {armed && (
-          <span role="status" className="text-[12.5px] text-destructive">
-            Press again to delete it.
-          </span>
-        )}
       </div>
+      {confirming && (
+        <ConfirmDialog
+          title="Delete this record?"
+          consequence="Applying this suggestion deletes it, and anything that points to it will point to nothing. History keeps what it was."
+          confirm="Delete it"
+          destructive
+          pending={submitting === "accepted"}
+          onConfirm={() => void decide("accepted")}
+          onClose={() => setConfirming(false)}
+        />
+      )}
       {error && (
         <p role="alert" className="text-[12.5px] text-destructive">
           {error}

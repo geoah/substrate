@@ -144,8 +144,10 @@ describe("Signed in and API tokens", () => {
       screen.getByRole("button", { name: "Sign out this browser" })
     )
     const dialog = await screen.findByRole("dialog")
-    expect(dialog.textContent).toContain("Sign out this browser?")
-    expect(dialog.textContent).toContain("It will need your password again.")
+    expect(dialog.textContent).toContain("Sign out?")
+    expect(dialog.textContent).toContain(
+      "This browser will need your password again."
+    )
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }))
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
     expect(deletes()).toHaveLength(0)

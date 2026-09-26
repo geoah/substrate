@@ -1045,7 +1045,7 @@ describe("ProviderPage", () => {
       ) as HTMLElement
       fireEvent.click(within(header).getByRole("button", { name: "Pause" }))
       const dialog = await screen.findByRole("dialog")
-      expect(within(dialog).getByText(/stops syncing/)).toBeTruthy()
+      expect(within(dialog).getByText(/won’t run on its own/)).toBeTruthy()
       fireEvent.click(within(dialog).getByRole("button", { name: "Pause" }))
       await waitFor(() => expect(calls("PATCH").length).toBe(1))
       expect(calls("PATCH")[0]).toEqual({

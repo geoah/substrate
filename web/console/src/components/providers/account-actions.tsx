@@ -14,14 +14,7 @@ import {
 
 import { AccountDialog } from "@/components/sync/account-dialog"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,39 +47,14 @@ function ConnectConfirm({
 }) {
   const verb = reconnect ? "Reconnect" : "Connect"
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => !open && !connect.isPending && onClose()}
-    >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {verb} {view.label}?
-          </DialogTitle>
-          <DialogDescription>
-            {providerName} opens in a new tab and asks you to approve access.
-            Once you do, this account starts bringing in what you turned on.
-            {reconnect && " Reconnecting replaces the current approval."}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            disabled={connect.isPending}
-            onClick={onClose}
-          >
-            Cancel
-          </Button>
-          <Button
-            disabled={connect.isPending}
-            onClick={() => connect.mutate(undefined, { onSettled: onClose })}
-          >
-            {connect.isPending && <Spinner className="size-3.5" />}
-            {verb}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      title={`${verb} ${view.label}?`}
+      consequence={`${providerName} opens in a new tab and asks you to approve access. Once you do, this account starts bringing in what you turned on.${reconnect ? " Reconnecting replaces the current approval." : ""}`}
+      confirm={verb}
+      pending={connect.isPending}
+      onConfirm={() => connect.mutate(undefined, { onSettled: onClose })}
+      onClose={onClose}
+    />
   )
 }
 
@@ -228,41 +196,15 @@ export function AccountMenu({
         />
       )}
       {removing && (
-        <Dialog
-          open
-          onOpenChange={(open) =>
-            !open && !disconnect.isPending && setRemoving(false)
-          }
-        >
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Disconnect {view.label}?</DialogTitle>
-              <DialogDescription>
-                {providerName} stops bringing anything in from this account, and
-                its approval is withdrawn. What it already brought in stays
-                until you remove {providerName}. Connecting it again means
-                approving it again.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                disabled={disconnect.isPending}
-                onClick={() => setRemoving(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                disabled={disconnect.isPending}
-                onClick={() => disconnect.mutate()}
-              >
-                {disconnect.isPending && <Spinner className="size-3.5" />}
-                Disconnect
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <ConfirmDialog
+          title={`Disconnect ${view.label}?`}
+          consequence={`${providerName} stops bringing anything in from this account, and its approval is withdrawn. What it already brought in stays until you remove ${providerName}. Connecting it again means approving it again.`}
+          confirm="Disconnect"
+          destructive
+          pending={disconnect.isPending}
+          onConfirm={() => disconnect.mutate()}
+          onClose={() => setRemoving(false)}
+        />
       )}
     </>
   )

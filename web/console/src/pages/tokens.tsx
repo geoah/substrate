@@ -17,14 +17,7 @@ import { CopyIcon, XIcon } from "lucide-react"
 
 import { SettingRow } from "@/components/settings-page/setting-row"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { ConfirmDialog, SignOutDialog } from "@/components/ui/confirm-dialog"
 import {
   Field,
   FieldDescription,
@@ -121,46 +114,25 @@ function useSignOut() {
       })
     },
   })
-  const dialog = pending && (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !revoke.isPending) setPending(null)
-      }}
-    >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {pending.id === currentId
-              ? "Sign out this browser?"
-              : `Sign out ${signedInAs(pending)}?`}
-          </DialogTitle>
-          <DialogDescription>
-            {pending.id === currentId
-              ? "It will need your password again."
-              : "It stops working straight away and has to sign in again."}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            disabled={revoke.isPending}
-            onClick={() => setPending(null)}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            disabled={revoke.isPending}
-            onClick={() => revoke.mutate(pending)}
-          >
-            {revoke.isPending && <Spinner />}
-            Sign out
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
+  const dialog =
+    pending &&
+    (pending.id === currentId ? (
+      <SignOutDialog
+        pending={revoke.isPending}
+        onConfirm={() => revoke.mutate(pending)}
+        onClose={() => setPending(null)}
+      />
+    ) : (
+      <ConfirmDialog
+        title={`Sign out ${signedInAs(pending)}?`}
+        consequence="It stops working straight away and has to sign in again."
+        confirm="Sign out"
+        destructive
+        pending={revoke.isPending}
+        onConfirm={() => revoke.mutate(pending)}
+        onClose={() => setPending(null)}
+      />
+    ))
   return { ask: setPending, busy: revoke.isPending, dialog, currentId }
 }
 

@@ -24,14 +24,7 @@ import {
 
 import { ImportRefusal } from "@/components/import-refusal"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { ConfirmDialog, PauseDialog } from "@/components/ui/confirm-dialog"
 import { Spinner } from "@/components/ui/spinner"
 import { toast } from "@/components/ui/toast"
 import {
@@ -264,46 +257,24 @@ export function TakeButton({
         {taking.isPending ? `${words.doing}…` : word}
       </Button>
       {asking && (
-        <Dialog
-          open
-          onOpenChange={(open) => !open && !taking.isPending && setAsking(null)}
-        >
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>
-                Replace your edits to{" "}
-                {asking.length === 1 ? asking[0].name : "these packages"}?
-              </DialogTitle>
-              <DialogDescription>
-                {`${asking.map((b) => b.id).join(", ")} ` +
-                  `${asking.length === 1 ? "is" : "are"} here at a version this cannot use, and ` +
-                  `${asking.length === 1 ? "it was" : "they were"} edited since ${asking.length === 1 ? "it" : "they"} arrived. ` +
-                  `Taking ${asking.length === 1 ? "it" : "them"} again replaces the package instead of merging into it, so those edits go with it. ` +
-                  `Your records are untouched.`}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                disabled={taking.isPending}
-                onClick={() => setAsking(null)}
-              >
-                Cancel
-              </Button>
-              <Button
-                disabled={taking.isPending}
-                onClick={() => {
-                  for (const b of asking) consented.current.add(b.id)
-                  setAsking(null)
-                  taking.mutate()
-                }}
-              >
-                {taking.isPending && <Spinner className="size-3.5" />}
-                {word}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <ConfirmDialog
+          title={`Replace your edits to ${asking.length === 1 ? asking[0].name : "these packages"}?`}
+          consequence={
+            `${asking.map((b) => b.id).join(", ")} ` +
+            `${asking.length === 1 ? "is" : "are"} here at a version this cannot use, and ` +
+            `${asking.length === 1 ? "it was" : "they were"} edited since ${asking.length === 1 ? "it" : "they"} arrived. ` +
+            `Taking ${asking.length === 1 ? "it" : "them"} again replaces the package instead of merging into it, so those edits go with it. ` +
+            `Your records are untouched.`
+          }
+          confirm={word}
+          pending={taking.isPending}
+          onConfirm={() => {
+            for (const b of asking) consented.current.add(b.id)
+            setAsking(null)
+            taking.mutate()
+          }}
+          onClose={() => setAsking(null)}
+        />
       )}
     </>
   )
@@ -461,69 +432,51 @@ export function LossyUpgradeDialog({
   }, [lossless, onClose, called])
   if (!row || lossless) return null
   const losses = lossyStepLines(upgrade)
+  const close = () => {
+    setStaleFor(null)
+    onClose()
+  }
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (open || upgrading.isPending) return
-        setStaleFor(null)
-        onClose()
-      }}
+    <ConfirmDialog
+      title={
+        upgrade?.discardsEdits
+          ? `Update ${called} and replace your edits?`
+          : `Update ${called} and remove values?`
+      }
+      consequence={
+        (upgrade?.discardsEdits
+          ? `You edited ${row.id} since you imported it. Updating replaces the package with the shipped one, so your edits go with it. Your records are untouched. `
+          : "") +
+        (upgrade?.lossy
+          ? `Updating rewrites ${upgrade?.work ?? 0} ${
+              upgrade?.work === 1 ? "record" : "records"
+            } and removes some values from them. ` +
+            `The removed values stay in History. `
+          : "") +
+        `This confirms exactly the plan below. If anything is written before it lands, the plan is read again.`
+      }
+      confirm={
+        upgrade?.discardsEdits
+          ? "Update and replace my edits"
+          : "Update and remove values"
+      }
+      pending={upgrading.isPending}
+      disabled={!upgrade?.planHash}
+      onConfirm={() => upgrading.mutate()}
+      onClose={close}
     >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {upgrade?.discardsEdits
-              ? `Update ${called} and replace your edits?`
-              : `Update ${called} and remove values?`}
-          </DialogTitle>
-          <DialogDescription>
-            {(upgrade?.discardsEdits
-              ? `You edited ${row.id} since you imported it. Updating replaces the package with the shipped one, so your edits go with it. Your records are untouched. `
-              : "") +
-              (upgrade?.lossy
-                ? `Updating rewrites ${upgrade?.work ?? 0} ${
-                    upgrade?.work === 1 ? "record" : "records"
-                  } and removes some values from them. ` +
-                  `The removed values stay in History. `
-                : "") +
-              `This confirms exactly the plan below. If anything is written before it lands, the plan is read again.`}
-          </DialogDescription>
-        </DialogHeader>
-        {stale && (
-          <p role="status" className="text-sm text-warning">
-            Records changed since this plan was read, so the update was refused.
-            Check the plan below and confirm it again.
-          </p>
-        )}
-        <ul className="space-y-1 text-sm">
-          {losses.map((s) => (
-            <li key={s}>{s}</li>
-          ))}
-        </ul>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            disabled={upgrading.isPending}
-            onClick={() => {
-              setStaleFor(null)
-              onClose()
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            disabled={upgrading.isPending || !upgrade?.planHash}
-            onClick={() => upgrading.mutate()}
-          >
-            {upgrading.isPending && <Spinner className="size-3.5" />}
-            {upgrade?.discardsEdits
-              ? "Update and replace my edits"
-              : "Update and remove values"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      {stale && (
+        <p role="status" className="text-sm text-warning">
+          Records changed since this plan was read, so the update was refused.
+          Check the plan below and confirm it again.
+        </p>
+      )}
+      <ul className="space-y-1 text-sm">
+        {losses.map((s) => (
+          <li key={s}>{s}</li>
+        ))}
+      </ul>
+    </ConfirmDialog>
   )
 }
 
@@ -684,35 +637,12 @@ export function PauseBundleButton({
         Pause
       </Button>
       {confirming && (
-        <Dialog
-          open
-          onOpenChange={(open) =>
-            !open && !verb.isPending && setConfirming(false)
-          }
-        >
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Pause {name}?</DialogTitle>
-              <DialogDescription>
-                {name} stops syncing and its tools stop running. Everything it
-                brought in stays where it is. Resume picks up where it left off.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                disabled={verb.isPending}
-                onClick={() => setConfirming(false)}
-              >
-                Cancel
-              </Button>
-              <Button disabled={verb.isPending} onClick={() => verb.mutate()}>
-                {verb.isPending && <Spinner className="size-3.5" />}
-                Pause
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <PauseDialog
+          name={name}
+          pending={verb.isPending}
+          onConfirm={() => verb.mutate()}
+          onClose={() => setConfirming(false)}
+        />
       )}
     </>
   )
@@ -794,51 +724,28 @@ export function RemoveBundleButton({
         Remove…
       </Button>
       {confirming && (
-        <Dialog
-          open
-          onOpenChange={(open) =>
-            !open && !remove.isPending && setConfirming(false)
+        <ConfirmDialog
+          title={`Remove ${name}?`}
+          consequence={
+            (records > 0
+              ? `This deletes the ${records.toLocaleString()} ${records === 1 ? "record" : "records"} ${name} brought in, its connected accounts among them, `
+              : "This deletes its connected accounts, if any, ") +
+            `and removes its collections and tools. Your own records stay, but whatever they linked to from ${name} points nowhere afterwards. This cannot be undone. To stop it for a while instead, pause it.`
           }
+          confirm={`Remove ${name}`}
+          destructive
+          pending={remove.isPending}
+          onConfirm={() => remove.mutate()}
+          onClose={() => setConfirming(false)}
         >
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Remove {name}?</DialogTitle>
-              <DialogDescription>
-                {records > 0
-                  ? `This deletes the ${records.toLocaleString()} ${records === 1 ? "record" : "records"} ${name} brought in, its connected accounts among them, `
-                  : "This deletes its connected accounts, if any, "}
-                and removes its collections and tools. Your own records stay,
-                but whatever they linked to from {name} points nowhere
-                afterwards. This cannot be undone. To stop it for a while
-                instead, pause it.
-              </DialogDescription>
-            </DialogHeader>
-            <ol className="space-y-1 text-sm text-muted-foreground">
-              {ladder.map((step, i) => (
-                <li key={step}>
-                  {i + 1}. {LADDER_WORDS[step]}
-                </li>
-              ))}
-            </ol>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                disabled={remove.isPending}
-                onClick={() => setConfirming(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                disabled={remove.isPending}
-                onClick={() => remove.mutate()}
-              >
-                {remove.isPending && <Spinner className="size-3.5" />}
-                Remove {name}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          <ol className="space-y-1 text-sm text-muted-foreground">
+            {ladder.map((step, i) => (
+              <li key={step}>
+                {i + 1}. {LADDER_WORDS[step]}
+              </li>
+            ))}
+          </ol>
+        </ConfirmDialog>
       )}
     </>
   )
@@ -913,40 +820,19 @@ export function ImportAgainNote({ item }: { item: CatalogItem }) {
         Import again
       </Button>
       {confirming && (
-        <Dialog
-          open
-          onOpenChange={(open) =>
-            !open && !importing.isPending && setConfirming(false)
+        <ConfirmDialog
+          title={`Import ${item.name} again?`}
+          consequence={
+            `This lands ${what}, now that the provider each one reads is here. ` +
+            `Importing again REPLACES ${item.id} rather than merging into it: a kind or a property you added is dropped by it, ` +
+            `and it is refused outright while your records still hold a shape the shipped package no longer declares. ` +
+            `Your records are untouched either way.`
           }
-        >
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Import {item.name} again?</DialogTitle>
-              <DialogDescription>
-                {`This lands ${what}, now that the provider each one reads is here. ` +
-                  `Importing again REPLACES ${item.id} rather than merging into it: a kind or a property you added is dropped by it, ` +
-                  `and it is refused outright while your records still hold a shape the shipped package no longer declares. ` +
-                  `Your records are untouched either way.`}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                disabled={importing.isPending}
-                onClick={() => setConfirming(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                disabled={importing.isPending}
-                onClick={() => importing.mutate()}
-              >
-                {importing.isPending && <Spinner className="size-3.5" />}
-                Import again
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          confirm="Import again"
+          pending={importing.isPending}
+          onConfirm={() => importing.mutate()}
+          onClose={() => setConfirming(false)}
+        />
       )}
     </div>
   )
