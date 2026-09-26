@@ -113,7 +113,8 @@ The body's entrypoint is `main(input, host)`, and it returns
 `schedule`, `webhook`, `manual` or `call`) beside an `idempotencyKey`, a
 `causalDepth` and a `callDepth`, then carries that mode's payload: a delivery
 puts the envelope under `input["envelope"]`, while a direct call puts the
-caller's own JSON under **`input["args"]`**.
+caller's own JSON under **`input["args"]`**, and a schedule fire puts its
+trigger's `arguments` there too.
 
 ### Arguments and returns
 
@@ -177,8 +178,11 @@ prose: the model sees the closed set.
 
 Both sides are checked on every path that carries arguments: the
 [call API](#driving-triggers), a [host call](#host-call), and an agent's function
-tool. A trigger delivery checks neither, because its payload is the envelope
-below rather than `args`.
+tool. A schedule trigger's `arguments` are checked against the input side
+when the trigger is written and again at each fire ([Triggers](#triggers)). A
+record or webhook delivery checks neither side, because its payload is the
+envelope below rather than `args`, and no delivery checks `returns:`, because a
+delivery applies the effects and discards the output.
 
 ## Host functions
 
@@ -749,6 +753,17 @@ data:
   occurrences (the server down, the trigger disabled, a repository restored
   to an older fire state) catches up at most ten per dispatcher pass, and none
   is coalesced away.
+  The trigger's optional `arguments` property is a map of named arguments
+  each fire, and each retry of a parked one, hands a function as
+  `input["args"]`, so one function serves several schedules. The map is
+  checked against the function's declared `arguments:` when the trigger is
+  written and again at every fire; a fire the live declaration refuses parks
+  after one attempt. `arguments` is refused on a record or webhook source,
+  on an agent, and on a function that declares no `arguments:`. Every write
+  to the trigger re-checks the whole record, so once the function narrows, a
+  patch that only sets `enabled: false` is refused too: the patch must fix or
+  drop `arguments`. A manual run (`POST .../run`) passes no `arguments`
+  ([decision 0106](decisions/0106-a-schedule-trigger-passes-declared-arguments-to-its-function.md)).
 - A **`webhook`** arm is a public endpoint: `POST
   /webhooks/{authority}/{trigger}`, where `authority` is the repository's
   authority and `trigger` the record's id,

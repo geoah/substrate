@@ -114,3 +114,39 @@ func TestCoalesceChangesKeysByKindAndID(t *testing.T) {
 		t.Fatalf("same-identity coalescing = %+v, want the last (seq 2) only", one)
 	}
 }
+
+// A trigger's `arguments` are admitted on a schedule source to a function and
+// nowhere else (decision 0106): a record delivery and a webhook fire already
+// carry their input, and an agent declares no arguments to check them against.
+func TestTriggerArgumentsAreAdmittedOnAScheduleToAFunctionOnly(t *testing.T) {
+	t.Parallel()
+	fn := vocabulary.RecordPath(kindFunction, "x.substrate.reamde.dev/x/f")
+	schedule := map[string]any{"schedule": map[string]any{"recurrence": "FREQ=DAILY"}}
+	args := map[string]any{"period": "weekly"}
+	tr, err := parseTrigger("t1", map[string]any{"callable": fn, "source": schedule, "arguments": args})
+	if err != nil {
+		t.Fatalf("a schedule to a function with arguments: %v", err)
+	}
+	if tr.Arguments["period"] != "weekly" {
+		t.Fatalf("arguments = %v, want %v", tr.Arguments, args)
+	}
+	for name, tc := range map[string]struct {
+		props map[string]any
+		want  string
+	}{
+		"a record source": {map[string]any{"callable": fn, "arguments": args, "source": map[string]any{
+			"record": map[string]any{"kinds": []any{"samples.substrate.reamde.dev/tasks/task"}},
+		}}, "only a schedule source"},
+		"a webhook source": {map[string]any{"callable": fn, "arguments": args, "source": map[string]any{
+			"webhook": map[string]any{},
+		}}, "only a schedule source"},
+		"an agent callable": {map[string]any{
+			"callable": vocabulary.RecordPath(kindAgent, "x.substrate.reamde.dev/x/a"), "arguments": args, "source": schedule,
+		}, "an agent takes no arguments"},
+		"a list": {map[string]any{"callable": fn, "arguments": []any{"weekly"}, "source": schedule}, "a map of argument name"},
+	} {
+		if _, err := parseTrigger("t1", tc.props); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: parse answered %v, want a refusal naming %q", name, err, tc.want)
+		}
+	}
+}

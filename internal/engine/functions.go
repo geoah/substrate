@@ -1078,7 +1078,7 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 			return 0, ctx.Err()
 		}
 		lastErr = err
-		if runner.Deterministic(err) || errors.Is(err, errPagedParked) {
+		if runner.Deterministic(err) || errors.Is(err, errPagedParked) || errors.Is(err, errTriggerArguments) {
 			attempts = attempt + 1
 			break
 		}
@@ -1192,6 +1192,16 @@ func (ds *dataset) functionFire(ctx context.Context, tr *trigger, mode, fid stri
 		Envelope:       env,
 		IdempotencyKey: key,
 		Resume:         resume.cursor,
+	}
+	// The trigger's arguments, held to the body resolved for THIS fire: an
+	// apply since the trigger was written may have changed what the function
+	// takes. A retry of a parked occurrence reads the trigger as it stands,
+	// so fixing the record is what lets the retry deliver.
+	if tr.Arguments != nil {
+		if err := checkTriggerArguments(tr, tr.Callable); err != nil {
+			return 0, fmt.Errorf("%w: trigger %s: %w", errTriggerArguments, tr.ID, err)
+		}
+		in.Args = tr.Arguments
 	}
 	effects, _, more, err := ds.runCallableRaw(ctx, tr.Callable, in)
 	if err != nil {
