@@ -106,4 +106,21 @@ describe("ChoiceList", () => {
     fireEvent.change(box, { target: { value: "choice 7" } })
     expect(rows().map((r) => r.textContent)).toEqual(["Choice 7"])
   })
+
+  it("offers Clear last while something is chosen, and clearing hears nothing", () => {
+    const onChange = mount({ selected: ["open"], clearLabel: "Clear" })
+    expect(rows().at(-1)?.textContent).toBe("Clear")
+    fireEvent.click(screen.getByText("Clear"))
+    expect(onChange).toHaveBeenCalledExactlyOnceWith([])
+    cleanup()
+    mount({ selected: [], clearLabel: "Clear" })
+    expect(screen.queryByText("Clear")).toBeNull()
+  })
+
+  it("says a heading above the choices and a note under them", () => {
+    mount({ heading: "Move to", footer: "Saving" })
+    const list = screen.getByRole("listbox", { name: "Status" })
+    expect(list.textContent?.startsWith("Move to")).toBe(true)
+    expect(list.textContent?.endsWith("Saving")).toBe(true)
+  })
 })

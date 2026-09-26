@@ -8,6 +8,9 @@ import type { DeclaredProperty } from "@/lib/definition"
 import { displayPlural, lowerFirst } from "@/lib/kind-names"
 import { stateTone } from "@/lib/state-words"
 
+/** The mark an absent value reads as, in the grid and on the sheet alike. */
+export const EMPTY_VALUE = "—"
+
 /** Words a label keeps in capitals. */
 const ACRONYMS: Record<string, string> = {
   url: "URL",
@@ -43,7 +46,10 @@ function capitalise(text: string): string {
 
 /** An enum value's words: its authored label, else the value split like a
  * key ("publicfigure" stays one word; `inProgress` → "In progress"). */
-export function enumLabel(prop: DeclaredProperty, value: string): string {
+export function enumLabel(
+  prop: Pick<DeclaredProperty, "values">,
+  value: string
+): string {
   const authored = prop.values?.find((v) => v.value === value)?.label
   return authored || propertyLabel(value)
 }
@@ -173,6 +179,22 @@ export function titleProperties(kind: KindInfo): string[] {
   return [...out]
 }
 
+/** The one property a kind's title IS, when its `displayTemplate` is a
+ * single slot whose first choice is a plain property (`{name}`,
+ * `{displayName|localName}` → the first). The title column is that property,
+ * so it earns no column and no sort of its own. A composed title
+ * (`{state} #{localName}`) is made of properties, and is none of them. */
+export function titleBacking(kind: KindInfo): string | undefined {
+  const template = kind.definition?.displayTemplate
+  if (typeof template !== "string") return undefined
+  const slot = /^\s*\{([^{}]*)\}\s*$/.exec(template)
+  const first = slot?.[1].split("|")[0].trim()
+  if (!first || first === "title" || !/^[A-Za-z][A-Za-z0-9_]*$/.test(first)) {
+    return undefined
+  }
+  return first
+}
+
 /** The columns with nothing in them on the loaded rows, among `ids`. */
 export function emptyColumnIds(
   ids: readonly string[],
@@ -206,4 +228,48 @@ export function hiddenKindsNote(hidden: readonly KindInfo[]): string {
     .join(" and ")
   const n = hidden.length
   return `${n} more ${n === 1 ? "holds" : "hold"} supporting details (like ${like}). You see them from the records they belong to, or here with Technical details on.`
+}
+
+/** A count the footer may say: a floor when the bounded walk ran out. */
+export interface GridCount {
+  value: number
+  capped?: boolean
+}
+
+function countWords(count: GridCount, one: string, many: string): string {
+  const n = `${count.value.toLocaleString()}${count.capped ? "+" : ""}`
+  return `${n} ${count.value === 1 && !count.capped ? one : many}`
+}
+
+/** The footer's left: how many there are, one fact ("72 tasks"). Paged, the
+ * range on screen leads ("1–50 of 331 people"); nested, the top level the
+ * pages walk follows the whole ("72 tasks · 60 at the top level"), said only
+ * where it differs. Undefined until the count answers. */
+export function gridSummary(o: {
+  /** The collection's words, lowercase: [singular, plural]. */
+  nouns: [string, string]
+  /** The rows the pages walk: the whole view, or its top level nested. */
+  total?: GridCount
+  /** Nested: the whole collection, of which `total` is the top level. */
+  all?: GridCount
+  page: number
+  pageSize: number
+  /** Rows on this page. */
+  rows: number
+}): string | undefined {
+  const [one, many] = o.nouns
+  const { total } = o
+  if (!total) return undefined
+  if (o.all) {
+    const whole = countWords(o.all, one, many)
+    const same = o.all.value === total.value && !o.all.capped && !total.capped
+    return same
+      ? whole
+      : `${whole} · ${total.value.toLocaleString()}${total.capped ? "+" : ""} at the top level`
+  }
+  const paged = total.capped || total.value > o.pageSize || o.page > 1
+  if (!paged || o.rows === 0) return countWords(total, one, many)
+  const first = (o.page - 1) * o.pageSize + 1
+  const last = first + o.rows - 1
+  return `${first.toLocaleString()}–${last.toLocaleString()} of ${countWords(total, one, many)}`
 }

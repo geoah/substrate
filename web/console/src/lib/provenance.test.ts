@@ -14,6 +14,7 @@ import {
   differsLabel,
   everyValueYours,
   holderOf,
+  tierExplanation,
   tierLabel,
   unionMembers,
 } from "./provenance"
@@ -203,6 +204,14 @@ describe("tierLabel", () => {
     expect(tierLabel("bundle", "agent:ada.localhost:llm:substrate")).toBe(
       "Set by an agent"
     )
+  })
+})
+
+describe("tierExplanation", () => {
+  // The detail's head already says "You set this"; the sentence under it
+  // says what that means, not the same words again.
+  it("never repeats who set an owner's value", () => {
+    expect(tierExplanation("owner")).not.toMatch(/you set this/i)
   })
 })
 

@@ -9,6 +9,8 @@ import type { ReactNode } from "react"
 
 import { friendlyCalendarDay, friendlyDateTime } from "./dates"
 import { repeatedLayout } from "./sheet-model"
+import { EmptyValue } from "@/components/identity/empty-value"
+import { EnumTag } from "@/components/identity/enum-tag"
 import { RecordRef } from "@/components/identity/record-ref"
 import { StateBadge } from "@/components/identity/state-badge"
 import { readReference } from "@/lib/api/types"
@@ -24,8 +26,8 @@ function isBag(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-export function Empty({ children = "Empty" }: { children?: ReactNode }) {
-  return <span className="text-faint">{children}</span>
+export function Empty({ children }: { children?: ReactNode }) {
+  return <EmptyValue>{children}</EmptyValue>
 }
 
 function JsonBlock({ value }: { value: unknown }) {
@@ -137,15 +139,7 @@ function ScalarValue({
     return <StateBadge value={value} initial={spec.initial} />
   }
   if (spec.values?.length && typeof value === "string") {
-    const authored = spec.values.find((v) => v.value === value)?.label
-    return (
-      <span
-        title={value}
-        className="rounded-[4px] bg-hover px-1.5 py-px text-[13px]"
-      >
-        {authored || humanizeName(value)}
-      </span>
-    )
+    return <EnumTag prop={spec} value={value} />
   }
   if (spec.kind === "date" && typeof value === "string") {
     return <span title={value}>{friendlyCalendarDay(value)}</span>
@@ -242,6 +236,8 @@ export function DeclaredValue({
       )
     }
     if (repeatedLayout(item, value) === "chips") {
+      // An enum value is its own tag; anything else sits on a plain chip.
+      const tagged = Boolean(item.values?.length)
       return (
         <ul
           data-layout="chips"
@@ -250,7 +246,11 @@ export function DeclaredValue({
           {value.map((one, i) => (
             <li
               key={i}
-              className="max-w-full rounded-[5px] bg-hover px-1.5 py-px text-[13px] break-all [&_a]:hover:underline [&>span]:rounded-none [&>span]:bg-transparent [&>span]:p-0"
+              className={
+                tagged
+                  ? "flex max-w-full"
+                  : "max-w-full rounded-[5px] bg-hover px-1.5 py-px text-[13px] break-all [&_a]:hover:underline [&>span]:rounded-none [&>span]:bg-transparent [&>span]:p-0"
+              }
             >
               <ScalarValue spec={item} value={one} />
             </li>

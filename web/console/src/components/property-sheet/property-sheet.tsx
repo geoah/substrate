@@ -400,8 +400,12 @@ export function PropertySheet({
             <>
               <ChevronDownIcon aria-hidden className="size-3.5" />
               <span className="truncate">
-                {empty.length} {draft ? "more" : "empty"}:{" "}
-                {emptyNames.join(", ")}
+                {empty.length} {draft ? "more" : "empty"}
+                {/* A phone has no room for the names; the count is the
+                    line. */}
+                <span className="hidden min-[480px]:inline">
+                  : {emptyNames.join(", ")}
+                </span>
               </span>
             </>
           )}

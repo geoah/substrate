@@ -21,7 +21,8 @@ import {
 
 import type { DataTableColumn } from "@/components/data-table/data-table"
 import { GridColumnHeader } from "@/components/data-table/data-grid-header"
-import { EnumTag } from "@/components/data-table/enum-tag"
+import { EmptyValue } from "@/components/identity/empty-value"
+import { EnumTag } from "@/components/identity/enum-tag"
 import { propertyIcon } from "@/components/data-table/property-icon"
 import {
   INDENT_PX,
@@ -50,6 +51,7 @@ import {
   isEmptyValue,
   propertyLabel,
   subtaskCounts,
+  titleBacking,
   titleProperties,
 } from "@/lib/grid-values"
 import { untitled } from "@/lib/kind-names"
@@ -115,11 +117,13 @@ const DEFAULT_HIDDEN: Record<string, string[]> = {
 
 /** The column ids a kind's grid hides until the reader asks for them: the
  * machinery above, and the properties the title is made of, which the title
- * column already shows. A saved preference wins over this entirely. */
+ * column already shows. The one the title IS has no column to hide. A saved
+ * preference wins over this entirely. */
 export function defaultHiddenColumns(kind: KindInfo): string[] {
+  const backing = titleBacking(kind)
   return [
     ...(DEFAULT_HIDDEN[kind.identity] ?? []),
-    ...titleProperties(kind),
+    ...titleProperties(kind).filter((name) => name !== backing),
   ].map(propertyColumnId)
 }
 
@@ -159,10 +163,6 @@ function rank(prop: DeclaredProperty): number {
 
 // ── cells ───────────────────────────────────────────────────────────────────
 
-function Empty() {
-  return <span className="text-faint">—</span>
-}
-
 /** The first of several values, and how many more there are. */
 function FirstOf({
   count,
@@ -200,7 +200,7 @@ function ReferenceCell({
 }) {
   const held = listOf(value)
   const first = readReference(held[0])
-  if (!first) return <Empty />
+  if (!first) return <EmptyValue />
   const target = splitRecordPath(first.path)
   if (!target) {
     return <span className="truncate text-muted-foreground">{first.path}</span>
@@ -256,7 +256,7 @@ function propertyCell(
   record: SubstrateRecord | undefined,
   ctx: CellContext
 ): React.ReactNode {
-  if (isEmptyValue(value)) return <Empty />
+  if (isEmptyValue(value)) return <EmptyValue />
   if (prop.kind === "reference") {
     return <ReferenceCell value={value} kinds={ctx.kinds} titles={ctx.titles} />
   }
@@ -438,7 +438,15 @@ export function buildColumns(
   opts: BuildColumnsOptions = {}
 ): DataTableColumn<SubstrateRecord>[] {
   const technical = opts.technical ?? false
-  const declared = columnProperties(kind)
+  // The property the title IS is folded into the title column, which reads
+  // under its label, so Sort and Columns never list it twice.
+  const backing = titleBacking(kind)
+  const titleLabel = technical
+    ? "title"
+    : backing
+      ? propertyLabel(backing)
+      : "Name"
+  const declared = columnProperties(kind).filter((p) => p.name !== backing)
   const doneState = doneStateProperty(declared)
   const ctx: CellContext = { kinds, titles, doneState }
   const labelOf = (name: string) => (technical ? name : propertyLabel(name))
@@ -451,7 +459,7 @@ export function buildColumns(
     header: ({ column }) => (
       <GridColumnHeader
         column={column}
-        label={technical ? "title" : "Name"}
+        label={titleLabel}
         icon={TypeIcon}
         mono={technical}
       />
@@ -465,7 +473,7 @@ export function buildColumns(
         titles={titles}
       />
     ),
-    meta: { label: technical ? "title" : "Name", width: 300 },
+    meta: { label: titleLabel, width: 300 },
   })
 
   if (technical) {
@@ -553,7 +561,7 @@ export function buildColumns(
       ),
       cell: ({ getValue, row }) => {
         const value = getValue()
-        if (typeof value !== "string" || !value) return <Empty />
+        if (typeof value !== "string" || !value) return <EmptyValue />
         const record = row?.original
         const done =
           doneState && record

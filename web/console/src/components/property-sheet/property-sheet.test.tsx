@@ -208,6 +208,11 @@ describe("PropertySheet rows", () => {
     expect(row("notes")).toBeNull()
     const fold = screen.getByRole("button", { name: /empty:/ })
     expect(fold.textContent).toContain("Notes")
+    // Under 480px the names hide and the count stands alone.
+    const names = within(fold).getByText(/^: /)
+    expect(names.className).toContain("hidden")
+    expect(names.className).toContain("min-[480px]:inline")
+    expect(names.textContent).toContain("Notes")
     fireEvent.click(fold)
     expect(row("notes")).not.toBeNull()
     expect(screen.getByRole("button", { name: /Hide empty/ })).toBeTruthy()
@@ -355,7 +360,7 @@ describe("PropertySheet inline edit", () => {
     )
     expect(row("relationship").textContent).toContain("Colleague")
     fireEvent.click(valueOf("relationship")!)
-    expect(names()).toContain("Colleagueno longer offered")
+    expect(names()).toContain("Colleagueno longer offered(chosen)")
   })
 
   it("says the server's refusal under the row", async () => {
