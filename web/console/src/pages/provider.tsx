@@ -43,9 +43,9 @@ import {
   BringsIn,
   ProviderTools,
 } from "@/components/providers/provider-contents"
+import { Pill } from "@/components/identity/pill"
 import { SectionHead } from "@/components/identity/section-head"
 import {
-  Pill,
   ProviderLogo,
   StandingPill,
 } from "@/components/providers/provider-marks"

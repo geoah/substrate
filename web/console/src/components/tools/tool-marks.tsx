@@ -1,5 +1,5 @@
-/** The Tools pages' small marks: a tool's icon tile, its status pill, and
- * where it comes from. */
+/** The Tools pages' small marks: a tool's icon tile, and where it comes
+ * from. */
 
 import type { ReactNode } from "react"
 import {
@@ -21,12 +21,7 @@ import {
 
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { cn } from "@/lib/utils"
-import {
-  toolIconName,
-  type ToolIconName,
-  type ToolOrigin,
-  type ToolStatus,
-} from "@/lib/tools"
+import { toolIconName, type ToolIconName, type ToolOrigin } from "@/lib/tools"
 
 const ICONS: Record<ToolIconName, LucideIcon> = {
   search: Search,
@@ -64,37 +59,6 @@ export function ToolTile({
       )}
     >
       <Icon className={size === "md" ? "size-[17px]" : "size-[22px]"} />
-    </span>
-  )
-}
-
-const PILL_TONES: Record<ToolStatus["tone"], string> = {
-  ok: "bg-ok-soft text-ok",
-  warn: "bg-warn-soft text-warning",
-  neutral: "bg-hover text-muted-foreground",
-}
-
-export function StatusPill({
-  status,
-  className,
-}: {
-  status: ToolStatus
-  className?: string
-}) {
-  return (
-    <span
-      data-slot="status-pill"
-      data-tone={status.tone}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2 py-px text-xs font-medium whitespace-nowrap",
-        PILL_TONES[status.tone],
-        className
-      )}
-    >
-      {status.tone === "ok" && (
-        <span aria-hidden className="size-1.5 rounded-full bg-current" />
-      )}
-      {status.label}
     </span>
   )
 }

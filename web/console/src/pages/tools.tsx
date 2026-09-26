@@ -7,8 +7,9 @@ import { Link } from "@tanstack/react-router"
 import { IdText } from "@/components/identity/id-text"
 import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
+import { Pill } from "@/components/identity/pill"
 import { SectionHead } from "@/components/identity/section-head"
-import { OriginTag, StatusPill, ToolTile } from "@/components/tools/tool-marks"
+import { OriginTag, ToolTile } from "@/components/tools/tool-marks"
 import {
   agentName,
   useTools,
@@ -100,7 +101,7 @@ function ToolCard({
         <span className="min-w-0 flex-1 font-semibold break-words">
           {toolName(tool)}
         </span>
-        {status && <StatusPill status={status} />}
+        {status && <Pill tone={status.tone}>{status.label}</Pill>}
       </div>
       <p className="line-clamp-3 text-[13px] text-muted-foreground">
         {toolDescription(tool)}

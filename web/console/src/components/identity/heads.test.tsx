@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 /** The heads' promises: a section heading is one level-2 heading that names
  * its section, with its hint and actions beside it; a page head keeps one
- * place for the glyph, the title, the meta line and the actions. */
+ * place for the glyph, the title, the meta line and the actions; a status
+ * is one pill whatever page it is on. */
 
 import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { PageHeader } from "./page-header"
+import { Pill } from "./pill"
 import { SectionHead } from "./section-head"
 
 afterEach(cleanup)
@@ -94,5 +96,33 @@ describe("PageHeader", () => {
     const title = screen.getByRole("heading", { level: 1 })
     expect(title.className).not.toContain("break-all")
     expect(title.className).not.toContain("overflow-wrap:anywhere")
+  })
+})
+
+describe("Pill", () => {
+  it("says a status on the fill of its tone, with a dot", () => {
+    render(<Pill tone="ok">On</Pill>)
+    const pill = screen.getByText("On")
+    expect(pill.getAttribute("data-tone")).toBe("ok")
+    expect(pill.querySelector("[aria-hidden]")).not.toBeNull()
+  })
+
+  it("drops the dot for a fact that is not a status, and pulses one under way", () => {
+    const { rerender } = render(
+      <Pill tone="accent" dot={false}>
+        Update available
+      </Pill>
+    )
+    expect(
+      screen.getByText("Update available").querySelector("[aria-hidden]")
+    ).toBeNull()
+    rerender(
+      <Pill tone="accent" live>
+        Syncing…
+      </Pill>
+    )
+    expect(
+      screen.getByText("Syncing…").querySelector("[aria-hidden]")!.className
+    ).toContain("motion-safe:animate-pulse")
   })
 })

@@ -4,7 +4,7 @@
  * the overview's zone and the request's own detail both read from it. */
 
 import { RecordPeek, type PeekTarget } from "@/components/record-peek"
-import { Badge } from "@/components/ui/badge"
+import { Pill } from "@/components/identity/pill"
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import { splitKind } from "@/lib/definition"
 import { evidenceSignals, signalText } from "@/lib/mergerequests"
@@ -59,13 +59,9 @@ export function EvidenceChips({ mr }: { mr: SubstrateRecord }) {
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       {signals.map((s, i) => (
-        <Badge
-          key={`${s.kind}-${i}`}
-          variant="outline"
-          className="data font-normal text-muted-foreground"
-        >
+        <Pill key={`${s.kind}-${i}`} tone="neutral" dot={false}>
           {signalText(s)}
-        </Badge>
+        </Pill>
       ))}
     </span>
   )

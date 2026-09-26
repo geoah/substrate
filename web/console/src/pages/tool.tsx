@@ -34,9 +34,10 @@ import { ActorRef } from "@/components/identity/actor-ref"
 import { IdText } from "@/components/identity/id-text"
 import { PageHeader } from "@/components/identity/page-header"
 import { DocPage } from "@/components/identity/page-layout"
+import { Pill } from "@/components/identity/pill"
 import { SectionHead } from "@/components/identity/section-head"
 import { RunIO } from "@/components/tools/run-io"
-import { OriginTag, StatusPill, ToolTile } from "@/components/tools/tool-marks"
+import { OriginTag, ToolTile } from "@/components/tools/tool-marks"
 import { TryIt } from "@/components/tools/try-it"
 import {
   agentActor,
@@ -250,7 +251,7 @@ function ToolDoc({
         meta={
           <>
             <OriginTag origin={tool.origin} />
-            {status && <StatusPill status={status} />}
+            {status && <Pill tone={status.tone}>{status.label}</Pill>}
             {technical && <IdText value={tool.ref} copy />}
           </>
         }
@@ -653,7 +654,7 @@ function RunsTable({
                 {tookWords(r.tookMs)}
               </span>
               <span role="cell">
-                <StatusPill status={s} />
+                <Pill tone={s.tone}>{s.label}</Pill>
               </span>
             </div>
             {expanded && (

@@ -1,9 +1,10 @@
-/** The Providers area's small marks: a provider's logo tile, the rounded
- * state pill its card and page wear.
+/** The Providers area's small marks: a provider's logo tile and the state
+ * its card and page wear.
  * Everything a provider page draws that is not an identity component. */
 
 import type { ReactNode } from "react"
 
+import { Pill, type PillTone } from "@/components/identity/pill"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import type { ProviderInfo } from "@/lib/actor-identity"
 import type { ProviderStanding, WordTone } from "@/lib/providers"
@@ -28,43 +29,6 @@ export function ProviderLogo({
         size === "lg" && "size-11 rounded-[10px] text-lg"
       )}
     />
-  )
-}
-
-export type PillTone = "ok" | "warn" | "bad" | "neutral" | "accent"
-
-const PILL: Record<PillTone, string> = {
-  ok: "bg-ok-soft text-ok",
-  warn: "bg-warn-soft text-warning",
-  bad: "bg-bad-soft text-destructive",
-  neutral: "bg-hover text-muted-foreground",
-  accent: "bg-primary-soft text-primary-text",
-}
-
-export function Pill({
-  tone,
-  children,
-  dot = true,
-  className,
-}: {
-  tone: PillTone
-  children: ReactNode
-  dot?: boolean
-  className?: string
-}) {
-  return (
-    <span
-      data-slot="pill"
-      data-tone={tone}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2 py-px text-xs font-medium whitespace-nowrap",
-        PILL[tone],
-        className
-      )}
-    >
-      {dot && <span aria-hidden className="size-1.5 rounded-full bg-current" />}
-      {children}
-    </span>
   )
 }
 
