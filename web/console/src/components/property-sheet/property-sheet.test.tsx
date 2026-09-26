@@ -164,14 +164,25 @@ const record = (over: Partial<SubstrateRecord> = {}): SubstrateRecord => ({
   ...over,
 })
 
-function renderSheet(r: SubstrateRecord, k: KindInfo = task, readOnly = false) {
+function renderSheet(
+  r: SubstrateRecord,
+  k: KindInfo = task,
+  readOnly = false,
+  holders = false
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   client.setQueryData(["registry", "kinds"], [task, kind(PERSON, {})])
   return render(
     <QueryClientProvider client={client}>
-      <PropertySheet record={r} kind={k} kinds={[task]} readOnly={readOnly} />
+      <PropertySheet
+        record={r}
+        kind={k}
+        kinds={[task]}
+        readOnly={readOnly}
+        holders={holders}
+      />
     </QueryClientProvider>
   )
 }
@@ -372,6 +383,134 @@ describe("PropertySheet inline edit", () => {
   })
 })
 
+describe("PropertySheet from the keyboard", () => {
+  it("names a value cell by its label and value, and says it edits", () => {
+    renderSheet(record())
+    expect(
+      screen.getByRole("button", { name: /^Location\s+Lisbon\s*, edit$/ })
+    ).toBe(valueOf("location"))
+  })
+
+  it("gives focus back to the cell after Enter saves nothing and after Esc", () => {
+    renderSheet(record())
+    const cell = valueOf("location")!
+    cell.focus()
+    fireEvent.keyDown(cell, { key: "Enter" })
+    const box = screen.getByRole("textbox", { name: "Location" })
+    expect(document.activeElement).toBe(box)
+    fireEvent.keyDown(box, { key: "Enter" })
+    expect(document.activeElement).toBe(valueOf("location"))
+    fireEvent.keyDown(valueOf("location")!, { key: "Enter" })
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Location" }), {
+      key: "Escape",
+    })
+    expect(document.activeElement).toBe(valueOf("location"))
+  })
+
+  it("gives focus back to the cell after a save", async () => {
+    renderSheet(record())
+    fireEvent.keyDown(valueOf("location")!, { key: "Enter" })
+    const box = screen.getByRole("textbox", { name: "Location" })
+    fireEvent.change(box, { target: { value: "Porto" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    await waitFor(() =>
+      expect(document.activeElement).toBe(valueOf("location"))
+    )
+  })
+})
+
+describe("PropertySheet dates", () => {
+  const dated = kind(TASK, {
+    displayTemplate: "{name|title}",
+    properties: {
+      name: { type: "string" },
+      due: { type: "datetime" },
+      birthday: { type: "date" },
+    },
+  })
+  const local = (y: number, m: number, d: number, h = 0, min = 0) =>
+    new Date(y, m, d, h, min).toISOString().replace(".000Z", "Z")
+  const withDates = () =>
+    record({
+      properties: {
+        name: "Plan",
+        due: local(2026, 9, 8, 11, 0),
+        birthday: "1990-03-14",
+      },
+    })
+
+  it("picks a date from the calendar in one click", async () => {
+    renderSheet(withDates(), dated)
+    fireEvent.click(valueOf("birthday")!)
+    const grid = await screen.findByRole("grid", { name: "Birthday" })
+    expect(
+      within(grid).getByRole("button", { name: /14 March 1990/ })
+    ).toBeTruthy()
+    fireEvent.click(within(grid).getByRole("button", { name: /20 March 1990/ }))
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].body).toEqual({
+      properties: { birthday: "1990-03-20" },
+      ifVersion: 7,
+    })
+  })
+
+  it("walks the grid with the arrows and moves month on Page Down", async () => {
+    renderSheet(withDates(), dated)
+    fireEvent.click(valueOf("birthday")!)
+    const grid = await screen.findByRole("grid", { name: "Birthday" })
+    const day = within(grid).getByRole("button", { name: /14 March 1990/ })
+    fireEvent.keyDown(day, { key: "ArrowRight" })
+    expect(
+      within(grid)
+        .getByRole("button", { name: /15 March 1990/ })
+        .getAttribute("tabindex")
+    ).toBe("0")
+    fireEvent.keyDown(grid, { key: "PageDown" })
+    expect(screen.getByText("April 1990")).toBeTruthy()
+  })
+
+  it("sets a day and a typed time, and writes the instant on Save", async () => {
+    renderSheet(withDates(), dated)
+    fireEvent.click(valueOf("due")!)
+    const grid = await screen.findByRole("grid", { name: "Due" })
+    fireEvent.click(
+      within(grid).getByRole("button", { name: /\b9 October 2026/ })
+    )
+    fireEvent.change(screen.getByRole("textbox", { name: "Time" }), {
+      target: { value: "9pm" },
+    })
+    expect(wire.writes).toHaveLength(0)
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].body).toEqual({
+      properties: { due: local(2026, 9, 9, 21, 0) },
+      ifVersion: 7,
+    })
+  })
+
+  it("refuses a time it cannot read, and writes nothing", async () => {
+    renderSheet(withDates(), dated)
+    fireEvent.click(valueOf("due")!)
+    const time = await screen.findByRole("textbox", { name: "Time" })
+    fireEvent.change(time, { target: { value: "noon" } })
+    fireEvent.keyDown(time, { key: "Enter" })
+    expect(screen.getByText("Type a time like 09:30")).toBeTruthy()
+    expect(wire.writes).toHaveLength(0)
+  })
+
+  it("clears an optional date", async () => {
+    renderSheet(withDates(), dated)
+    fireEvent.click(valueOf("birthday")!)
+    fireEvent.click(await screen.findByRole("button", { name: "Clear" }))
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].body).toEqual({
+      properties: { birthday: null },
+      ifVersion: 7,
+    })
+  })
+})
+
 describe("PropertySheet lists", () => {
   const listed = () =>
     record({
@@ -551,15 +690,25 @@ describe("OwnershipChip", () => {
   const held = (meta: SubstrateRecord["propertyMeta"]) =>
     record({ propertyMeta: meta })
 
-  it("says You for the owner's own value", () => {
+  it("stays quiet on the owner's own value, the page's default", () => {
     renderSheet(held({ location: { manager: "console", tier: "owner" } }))
+    expect(row("location").querySelector("[data-slot=owner-chip]")).toBeNull()
+  })
+
+  it("says You on every row when asked who holds each value", () => {
+    renderSheet(
+      held({ location: { manager: "console", tier: "owner" } }),
+      task,
+      false,
+      true
+    )
     const chip = row("location").querySelector("[data-slot=owner-chip]")!
     expect(chip.getAttribute("data-holder")).toBe("you")
     expect(chip.textContent).toBe("You")
   })
 
   it("sits in its own column, never inside the value it describes", () => {
-    renderSheet(record())
+    renderSheet(record(), task, false, true)
     const cell = row("location").querySelector("[data-slot=provenance]")!
     expect(cell.querySelector("[data-slot=owner-chip]")).not.toBeNull()
     expect(
@@ -581,6 +730,35 @@ describe("OwnershipChip", () => {
     expect(chip.getAttribute("data-holder")).toBe("provider")
     expect(chip.textContent).toContain("Google")
     expect(chip.querySelector("[data-slot=provider-badge]")).not.toBeNull()
+  })
+
+  it("names the mapping a synced value came through", () => {
+    renderSheet(
+      record({
+        linkedFrom: [
+          {
+            ref: `${CONTACT}/c1`,
+            kind: CONTACT,
+            property: "person",
+            mapping: "ada.example.com/people/googlecontactperson",
+          },
+        ],
+        propertyMeta: {
+          location: {
+            manager: GOOGLE_SYNC,
+            tier: "machine",
+            source: `${CONTACT}/c1`,
+          },
+        },
+      })
+    )
+    fireEvent.click(
+      screen.getByRole("button", { name: "Where Location comes from" })
+    )
+    const detail = document.querySelector(
+      "[data-slot=ownership-detail]"
+    ) as HTMLElement
+    expect(detail.textContent).toContain("Linked throughContact → Task")
   })
 
   it("marks a value a source disagrees with, and adopts the source's", async () => {

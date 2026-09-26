@@ -3,7 +3,7 @@
  * the header's who-and-when. */
 
 import { actorIdentity } from "@/lib/actor-identity"
-import { CORE_PACKAGE } from "@/lib/api/http"
+import { CORE_PACKAGE, splitKind } from "@/lib/api/http"
 import type { ReferencingGroup, ReferencingRow } from "@/lib/api/records"
 import {
   readReference,
@@ -16,7 +16,8 @@ import { declaredReferences, kindPurpose } from "@/lib/definition"
 import { recordTitle } from "@/lib/format"
 import { displayName, lowerFirst } from "@/lib/kind-names"
 import { splitRecordPath } from "@/lib/record-path"
-import { humanizeName, propSpecsByName } from "@/lib/record-schema"
+import { humanizeName, propSpecsByName, titleEditor } from "@/lib/record-schema"
+import { sheetRows } from "@/components/property-sheet/sheet-rows"
 
 /** How many rows a group shows before "Show all". */
 export const GROUP_FOLD = 10
@@ -218,4 +219,41 @@ export function hasMerges(record: SubstrateRecord): boolean {
  * ("28 or more") rather than a bare "28+". */
 export function countWords(total: number, partial: boolean): string {
   return partial ? `${total} or more` : String(total)
+}
+
+/** What "Duplicate" writes: every value the owner may write (never one the
+ * engine stamps, a host keeps, or a secret, which reads back redacted), the
+ * body, and the title the kind heads itself with, marked as the copy. A state
+ * is copied as it stands: a create may name any declared state. */
+export function duplicateProperties(
+  record: SubstrateRecord,
+  kind: KindInfo | undefined
+): Record<string, unknown> {
+  const { all, body } = sheetRows(record, kind)
+  const out: Record<string, unknown> = {}
+  for (const row of all) {
+    if (row.lock || !row.filled || row.spec.kind === "secret") continue
+    out[row.name] = row.value
+  }
+  if (body && typeof record.properties[body.name] === "string") {
+    out[body.name] = record.properties[body.name]
+  }
+  const title = titleEditor(kind)
+  if (title) {
+    const held = record.properties[title.name]
+    const text =
+      typeof held === "string" ? held : recordTitle(record.properties)
+    if (text) out[title.name] = `${text} (copy)`
+  }
+  return out
+}
+
+/** The record page's own address, whole, for pasting elsewhere. */
+export function recordLink(
+  record: SubstrateRecord,
+  origin = window.location.origin
+): string {
+  const { authority, pkg, name } = splitKind(record.kind)
+  const path = [authority, pkg, name, record.id].map(encodeURIComponent)
+  return `${origin}/data/${path.join("/")}`
 }

@@ -8,6 +8,7 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { ago } from "@/components/property-sheet/dates"
+import { IdText } from "@/components/identity/id-text"
 import { KindPath, KindRef } from "@/components/identity/kind-ref"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { RecordRef } from "@/components/identity/record-ref"
@@ -88,9 +89,7 @@ function Group({
         {technical && (
           <div className="flex flex-wrap items-center gap-1.5">
             <span>mapping</span>
-            <span className="font-mono text-[11.5px] [overflow-wrap:anywhere]">
-              {group.mapping}
-            </span>
+            <IdText value={group.mapping} copy />
             <span>· from</span>
             <KindRef kind={group.from} mode="reference" />
             <span>through its</span>
@@ -114,11 +113,7 @@ function Group({
             <RecordRef kind={m.kind} id={m.id} title={m.title} />
             <span className="ml-auto flex items-center gap-3 text-[12.5px] text-faint">
               {at && <span title={at}>synced {ago(at)}</span>}
-              {technical && (
-                <span className="font-mono text-[11px] [overflow-wrap:anywhere]">
-                  {m.ref}
-                </span>
-              )}
+              {technical && <IdText value={m.ref} copy />}
             </span>
           </div>
         )
@@ -285,9 +280,7 @@ function MergedRow({
         <div className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-faint">
           <span>merge</span>
           <RecordRef kind={mergeKind} id={merge.id} />
-          <span className="font-mono text-[11px]">
-            {mergeKind}/{merge.id}
-          </span>
+          <IdText value={`${mergeKind}/${merge.id}`} copy />
           {request && (
             <>
               <span>· request</span>

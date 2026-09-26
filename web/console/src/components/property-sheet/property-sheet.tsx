@@ -1,16 +1,21 @@
 /** A record's properties as a sheet: the label (an icon for its datatype and
  * its display label; the key too in technical mode) on the left, the value on
  * the right, 36px rows, and read and edit the same row. A click on a value
- * edits it in place; the chip at the row's end says who holds it and opens
- * where it came from. Empty properties fold into one line that expands. */
+ * edits it in place. A chip at the row's end says who holds the value only
+ * where that departs from the page's default (the owner's own hand), or on
+ * every row when the reader asks who holds each value; it opens where the
+ * value came from, as does the label's hover card. Empty properties fold
+ * into one line that expands. */
 
-import { useMemo, useState } from "react"
+import { useEffect, useId, useMemo, useRef, useState } from "react"
 import { ChevronDownIcon, ChevronRightIcon, LockIcon } from "lucide-react"
 
 import { InlineEditor } from "./inline-editor"
-import { OwnershipChip, OwnershipDetail } from "./ownership"
+import { OwnershipChip, OwnershipDetail, type Through } from "./ownership"
 import { DeclaredValue, LooseValue } from "./property-value"
 import { editStyle, isBlockValue, propertyIcon } from "./sheet-model"
+import { ago } from "./dates"
+import { focusLost } from "./focus-return"
 import { sheetRows, type RowLock, type SheetRow } from "./sheet-rows"
 import { useRecordPatch, writeError } from "./use-record-patch"
 import {
@@ -19,8 +24,18 @@ import {
 } from "@/components/identity/identity-hover-card"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+import {
+  departsFromDefault,
+  holderOf,
+  mappingLabel,
+  mappingOfSource,
+} from "@/lib/provenance"
+import { splitRecordPath } from "@/lib/record-path"
 import { typeLabel } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
+
+const NO_MAPPINGS: SubstrateRecord[] = []
+const NONE_MOVED: ReadonlySet<string> = new Set()
 
 const LOCK_WORDS: Record<RowLock, string> = {
   managed: "Set automatically",
@@ -29,9 +44,20 @@ const LOCK_WORDS: Record<RowLock, string> = {
   undeclared: "Not part of this collection’s shape, so it isn’t edited here",
 }
 
-function Label({ row }: { row: SheetRow }) {
+function Label({
+  row,
+  id,
+  onDetails,
+}: {
+  row: SheetRow
+  /** The label text's id, which names the row's value cell. */
+  id: string
+  /** Opens where the value came from, when the row has a holder. */
+  onDetails?: () => void
+}) {
   const [technical] = useTechnicalDetails()
   const { icon: Icon } = propertyIcon(row.spec)
+  const holder = row.filled && row.meta ? holderOf(row.meta) : undefined
   return (
     <IdentityHoverCard
       trigger={<div />}
@@ -45,6 +71,30 @@ function Label({ row }: { row: SheetRow }) {
             ...(row.lock
               ? [{ label: "Editing", value: LOCK_WORDS[row.lock] }]
               : []),
+            ...(holder
+              ? [
+                  {
+                    label: "Held by",
+                    value: (
+                      <span className="inline-flex flex-wrap items-center gap-x-1.5">
+                        {holder.label}
+                        {row.meta?.updatedAt
+                          ? ` · ${ago(row.meta.updatedAt)}`
+                          : ""}
+                        {onDetails && (
+                          <button
+                            type="button"
+                            onClick={onDetails}
+                            className="text-primary-text underline-offset-2 hover:underline"
+                          >
+                            Details
+                          </button>
+                        )}
+                      </span>
+                    ),
+                  },
+                ]
+              : []),
           ]}
           reference={row.name}
         />
@@ -52,7 +102,9 @@ function Label({ row }: { row: SheetRow }) {
     >
       <Icon aria-hidden className="size-3.5 shrink-0 text-faint" />
       <span className="flex min-w-0 flex-col leading-tight">
-        <span className="truncate">{row.spec.label}</span>
+        <span id={id} className="truncate">
+          {row.spec.label}
+        </span>
         {technical && row.spec.label !== row.name && (
           <span className="truncate font-mono text-[11px] text-faint">
             {row.name}
@@ -77,6 +129,14 @@ export interface PropertySheetProps {
   kinds: KindInfo[]
   /** A provider's own copy: nothing is edited here. */
   readOnly?: boolean
+  /** Show who holds every value, not only the values that depart from the
+   * owner's own hand. */
+  holders?: boolean
+  /** The recordmapping declarations the record's links name, so a synced
+   * value says which mapping brought it. */
+  mappings?: SubstrateRecord[]
+  /** Properties that just changed under the reader: marked briefly. */
+  moved?: ReadonlySet<string>
 }
 
 export function PropertySheet({
@@ -84,6 +144,9 @@ export function PropertySheet({
   kind,
   kinds,
   readOnly = false,
+  holders = false,
+  mappings = NO_MAPPINGS,
+  moved = NONE_MOVED,
 }: PropertySheetProps) {
   const { all, filled, empty } = useMemo(
     () => sheetRows(record, kind, readOnly),
@@ -94,6 +157,22 @@ export function PropertySheet({
   const [open, setOpen] = useState<string[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const toggle = useRecordPatch(record)
+  const uid = useId()
+  const cells = useRef(new Map<string, HTMLElement>())
+  // An editor unmounts on save or cancel and takes focus with it; the cell
+  // that opened it takes it back, so Tab carries on from the row.
+  const last = useRef(editing)
+  useEffect(() => {
+    const prev = last.current
+    last.current = editing
+    if (prev && prev !== editing && focusLost()) {
+      cells.current.get(prev)?.focus({ preventScroll: true })
+    }
+  }, [editing])
+  const toggleDetail = (name: string) =>
+    setOpen((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
+    )
 
   const rows = showEmpty ? all : filled
 
@@ -123,6 +202,15 @@ export function PropertySheet({
 
   const emptyNames = empty.map((r) => r.spec.label)
 
+  /** The mapping behind a row's synced value, off the record's own links. */
+  function throughOf(row: SheetRow): Through | undefined {
+    const source = row.meta?.source
+    const id = source && mappingOfSource(record.linkedFrom ?? [], source)
+    if (!source || !id) return undefined
+    const from = splitRecordPath(source)?.kind ?? source
+    return { id, label: mappingLabel(id, mappings, from, record.kind) }
+  }
+
   return (
     <div
       data-slot="property-sheet"
@@ -139,21 +227,40 @@ export function PropertySheet({
         const locked = Boolean(
           row.lock && row.lock !== "provider" && row.filled
         )
-        const chip = Boolean(row.filled && !isEditing && row.meta?.manager)
+        const chip = Boolean(
+          row.filled &&
+          !isEditing &&
+          row.meta?.manager &&
+          (holders || departsFromDefault(row.meta))
+        )
         const provenance = !isEditing && (locked || chip)
+        const editable = Boolean(row.field && !isEditing)
         return (
           <div
             key={row.name}
             className="contents"
             data-property={row.name}
             data-filled={row.filled}
+            data-moved={moved.has(row.name) || undefined}
           >
-            <Label row={row} />
+            <Label
+              row={row}
+              id={`${uid}-${row.name}-label`}
+              onDetails={
+                row.meta?.manager ? () => toggleDetail(row.name) : undefined
+              }
+            />
             <div
-              role={row.field && !isEditing ? "button" : undefined}
-              tabIndex={row.field && !isEditing ? 0 : undefined}
-              aria-label={
-                row.field && !isEditing ? `Edit ${row.spec.label}` : undefined
+              ref={(el) => {
+                if (el) cells.current.set(row.name, el)
+                else cells.current.delete(row.name)
+              }}
+              role={editable ? "button" : undefined}
+              tabIndex={editable ? 0 : undefined}
+              aria-labelledby={
+                editable
+                  ? `${uid}-${row.name}-label ${uid}-${row.name}-value ${uid}-${row.name}-edit`
+                  : undefined
               }
               data-editing={isEditing || undefined}
               onClick={() => startEdit(row)}
@@ -168,11 +275,12 @@ export function PropertySheet({
                 }
               }}
               className={cn(
-                "relative flex min-h-9 min-w-0 flex-wrap items-center gap-1.5 rounded-md px-2 py-[3px] text-sm outline-none",
+                "relative flex min-h-9 min-w-0 flex-wrap items-center gap-1.5 rounded-md px-2 py-[3px] text-sm transition-colors duration-700 outline-none",
+                moved.has(row.name) && "bg-primary-soft",
                 !provenance && "sm:col-span-2",
                 row.field &&
                   !isEditing &&
-                  "cursor-text hover:bg-hover focus-visible:bg-hover",
+                  "cursor-text hover:bg-hover focus-visible:bg-hover focus-visible:ring-2 focus-visible:ring-ring",
                 !row.field && "cursor-default",
                 block && "flex-nowrap items-start py-1.5",
                 isEditing &&
@@ -191,14 +299,22 @@ export function PropertySheet({
                   onError={(m) => setError(row.name, m)}
                 />
               ) : (
-                <span
-                  className={cn(
-                    "inline-flex min-w-0 flex-wrap items-center gap-1.5",
-                    block && "flex-1"
+                <>
+                  <span
+                    id={`${uid}-${row.name}-value`}
+                    className={cn(
+                      "inline-flex min-w-0 flex-wrap items-center gap-1.5",
+                      block && "flex-1"
+                    )}
+                  >
+                    <Value row={row} />
+                  </span>
+                  {editable && (
+                    <span id={`${uid}-${row.name}-edit`} className="sr-only">
+                      , edit
+                    </span>
                   )}
-                >
-                  <Value row={row} />
-                </span>
+                </>
               )}
             </div>
             {provenance && (
@@ -219,13 +335,8 @@ export function PropertySheet({
                   <OwnershipChip
                     row={row}
                     open={detailOpen}
-                    onToggle={() =>
-                      setOpen((prev) =>
-                        prev.includes(row.name)
-                          ? prev.filter((n) => n !== row.name)
-                          : [...prev, row.name]
-                      )
-                    }
+                    onToggle={() => toggleDetail(row.name)}
+                    through={throughOf(row)}
                   />
                 )}
               </div>
@@ -257,6 +368,7 @@ export function PropertySheet({
                 record={record}
                 readOnly={readOnly}
                 onEdit={row.field ? () => setEditing(row.name) : undefined}
+                through={throughOf(row)}
               />
             )}
           </div>

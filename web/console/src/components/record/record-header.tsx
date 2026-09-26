@@ -6,12 +6,14 @@
 
 import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { Link, useNavigate } from "@tanstack/react-router"
+import { useNavigate } from "@tanstack/react-router"
 import {
   CodeIcon,
+  CopyPlusIcon,
+  LinkIcon,
   MoreHorizontalIcon,
-  PencilIcon,
   Trash2Icon,
+  UserRoundIcon,
 } from "lucide-react"
 
 import { ago } from "@/components/property-sheet/dates"
@@ -19,6 +21,7 @@ import {
   useRecordPatch,
   writeError,
 } from "@/components/property-sheet/use-record-patch"
+import { useFocusReturn } from "@/components/property-sheet/focus-return"
 import { CopyButton } from "@/components/identity/copy-button"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { KindPath, KindRef } from "@/components/identity/kind-ref"
@@ -34,23 +37,40 @@ import {
 } from "@/components/ui/dialog"
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Spinner } from "@/components/ui/spinner"
+import { toast } from "@/components/ui/toast"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { providerOfKind } from "@/lib/actor-identity"
 import { splitKind } from "@/lib/api/http"
+import { createRecord } from "@/lib/api/records"
 import { deleteRecord } from "@/lib/api/sync"
 import type { ChangeRow, KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { recordTitle } from "@/lib/format"
 import { displayPlural, untitled } from "@/lib/kind-names"
+import { everyValueYours } from "@/lib/provenance"
 import { fieldOf } from "@/lib/record-form"
 import { titleEditor } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
-import { headerFacts } from "./record-model"
+import { duplicateProperties, headerFacts, recordLink } from "./record-model"
+
+async function copyLink(record: SubstrateRecord) {
+  try {
+    await navigator.clipboard.writeText(recordLink(record))
+    toast.add({ type: "success", title: "Link copied" })
+  } catch {
+    toast.add({
+      type: "error",
+      title: "The link couldn’t be copied",
+      description: recordLink(record),
+    })
+  }
+}
 
 function Title({
   record,
@@ -72,6 +92,8 @@ function Title({
   const [error, setError] = useState<string>()
   const patch = useRecordPatch(record)
   const busy = useRef(false)
+  const button = useRef<HTMLButtonElement>(null)
+  useFocusReturn(editing, button)
 
   async function save() {
     if (busy.current || !spec) return
@@ -132,25 +154,27 @@ function Title({
       </>
     )
   }
+  const shown = title || untitled(record.kind)
   return (
-    <h1
-      className={cn(
-        heading,
-        "mt-2.5 mb-1.5",
-        !title && "text-faint",
-        editable && "-mx-1 cursor-text rounded-md px-1 hover:bg-hover"
+    <h1 className={cn(heading, "mt-2.5 mb-1.5", !title && "text-faint")}>
+      {editable ? (
+        <button
+          ref={button}
+          type="button"
+          data-slot="record-title"
+          onClick={() => {
+            const stored = record.properties[name]
+            setText(typeof stored === "string" ? stored : title)
+            setEditing(true)
+          }}
+          className="-mx-1 w-[calc(100%+0.5rem)] cursor-text rounded-md px-1 text-left outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {shown}
+          <span className="sr-only">, edit</span>
+        </button>
+      ) : (
+        shown
       )}
-      onClick={
-        editable
-          ? () => {
-              const stored = record.properties[name]
-              setText(typeof stored === "string" ? stored : title)
-              setEditing(true)
-            }
-          : undefined
-      }
-    >
-      {title || untitled(record.kind)}
     </h1>
   )
 }
@@ -161,6 +185,8 @@ export function RecordHeader({
   rows,
   source,
   onSource,
+  holders,
+  onHolders,
 }: {
   record: SubstrateRecord
   kind?: KindInfo
@@ -169,6 +195,9 @@ export function RecordHeader({
   /** Whether the YAML source is showing (technical mode). */
   source: boolean
   onSource: (on: boolean) => void
+  /** Whether the sheet names who holds every value. */
+  holders: boolean
+  onHolders: (on: boolean) => void
 }) {
   const [technical] = useTechnicalDetails()
   const provider = providerOfKind(record.kind)
@@ -176,6 +205,28 @@ export function RecordHeader({
   const path = `${record.kind}/${record.id}`
   const { authority, pkg, name } = splitKind(record.kind)
   const [deleting, setDeleting] = useState(false)
+  const navigate = useNavigate()
+  const client = useQueryClient()
+  const duplicate = useMutation({
+    mutationFn: () =>
+      createRecord(authority, pkg, name, {
+        properties: duplicateProperties(record, kind),
+      }),
+    onSuccess: async (copy) => {
+      await client.invalidateQueries({ queryKey: ["records"] })
+      toast.add({ type: "success", title: "Duplicated" })
+      void navigate({
+        to: "/data/$authority/$pkg/$name/$id",
+        params: { authority, pkg, name, id: copy.id },
+      })
+    },
+    onError: (e) =>
+      toast.add({
+        type: "error",
+        title: "It couldn’t be duplicated",
+        description: writeError(e),
+      }),
+  })
 
   return (
     <header data-slot="record-header">
@@ -208,32 +259,46 @@ export function RecordHeader({
             >
               <MoreHorizontalIcon />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-44">
-              {technical && (
-                <DropdownMenuItem
-                  render={
-                    <Link
-                      to="/data/$authority/$pkg/$name/$id/edit"
-                      params={{ authority, pkg, name, id: record.id }}
-                    />
-                  }
-                >
-                  <PencilIcon /> Edit YAML
-                </DropdownMenuItem>
-              )}
-              {technical && !provider && <DropdownMenuSeparator />}
+            <DropdownMenuContent align="end" className="min-w-52">
+              <DropdownMenuItem onClick={() => void copyLink(record)}>
+                <LinkIcon /> Copy link
+              </DropdownMenuItem>
               {!provider && (
                 <DropdownMenuItem
-                  variant="destructive"
-                  onClick={() => setDeleting(true)}
+                  disabled={duplicate.isPending}
+                  onClick={() => duplicate.mutate()}
                 >
-                  <Trash2Icon /> Delete
+                  <CopyPlusIcon /> Duplicate
                 </DropdownMenuItem>
               )}
-              {provider && !technical && (
-                <DropdownMenuItem disabled>
-                  Change it in {provider.name}
+              <DropdownMenuCheckboxItem
+                checked={holders}
+                onCheckedChange={(on) => onHolders(on)}
+              >
+                <UserRoundIcon /> Who holds each value
+              </DropdownMenuCheckboxItem>
+              {technical && (
+                <DropdownMenuItem onClick={() => onSource(true)}>
+                  <CodeIcon /> Open in YAML
                 </DropdownMenuItem>
+              )}
+              {provider ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem disabled>
+                    Change it in {provider.name}
+                  </DropdownMenuItem>
+                </>
+              ) : (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={() => setDeleting(true)}
+                  >
+                    <Trash2Icon /> Delete
+                  </DropdownMenuItem>
+                </>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -262,6 +327,9 @@ export function RecordHeader({
                 Changed {ago(record.updatedAt)}
                 {facts.changedBy ? ` by ${facts.changedBy}` : ""}
               </span>
+            )}
+            {!provider && everyValueYours(record) && (
+              <span data-slot="all-yours">Every value is yours</span>
             )}
           </>
         )}

@@ -10,9 +10,11 @@ import {
   MERGE_REQUEST_KIND,
   connectedGroups,
   doneState,
+  duplicateProperties,
   everydayGroups,
   headerFacts,
   outgoingOf,
+  recordLink,
   sortConnected,
 } from "./record-model"
 import type { ReferencingGroup, ReferencingRow } from "@/lib/api/records"
@@ -226,5 +228,65 @@ describe("headerFacts", () => {
     })
     expect(headerFacts(t, rows.slice(0, 1)).addedBy).toBeUndefined()
     expect(headerFacts(rec("t1", {}), rows.slice(1)).changed).toBe(false)
+  })
+})
+
+describe("duplicateProperties", () => {
+  const note = kind(TASK, {
+    name: { type: "string" },
+    body: { type: "markdown" },
+    status: { type: "state", states: ["open", "done"], initial: "open" },
+    assignee: { type: "reference", kind: PERSON },
+    token: { type: "string", writer: "oauth" },
+    secret: { type: "secret" },
+    empty: { type: "string" },
+  })
+  ;(note.definition as Record<string, unknown>).displayTemplate = "{name}"
+
+  it("copies what the owner writes, the title marked as the copy", () => {
+    const r = {
+      id: "t1",
+      kind: TASK,
+      properties: {
+        name: "Plan",
+        title: "Plan",
+        body: "Words.",
+        status: "done",
+        assignee: { ref: `${PERSON}/ada` },
+        token: "abc",
+        secret: "••••",
+        empty: "",
+        loose: 3,
+      },
+      labels: {},
+      version: 2,
+      createdAt: "",
+      updatedAt: "",
+    } satisfies SubstrateRecord
+    expect(duplicateProperties(r, note)).toEqual({
+      name: "Plan (copy)",
+      body: "Words.",
+      status: "done",
+      assignee: { ref: `${PERSON}/ada` },
+    })
+  })
+})
+
+describe("recordLink", () => {
+  it("is the record page's whole address", () => {
+    expect(
+      recordLink(
+        {
+          id: "t 1",
+          kind: TASK,
+          properties: {},
+          labels: {},
+          version: 1,
+          createdAt: "",
+          updatedAt: "",
+        },
+        "https://example.com"
+      )
+    ).toBe("https://example.com/data/ada.example.com/tasks/task/t%201")
   })
 })
