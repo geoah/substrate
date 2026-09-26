@@ -3,14 +3,18 @@ package engine
 // The recordpatchpolicy door:
 // what happens between a BUNDLE-tier actor wanting a put/patch/delete and the
 // write landing, strictly inside the emit ceiling. Deterministic and cheap —
-// no model call sits inside a tool call: `allow` lands the write (the policy
-// id rides the changelog payload), `refuse` bounces it like an emit refusal,
+// no model call sits inside a tool call: `allow` lands the write (no policy
+// id is recorded on it), `refuse` bounces it like an emit refusal,
 // `gate` CONVERTS it into a recordpatchrequest, entered from the side into
 // the whole propose flow (thread stamped when a loop is running, the request
 // id derived from the dispatch's stable idempotency identity so a retried
 // delivery converts to the SAME request). When several policies match, the
 // most restrictive action wins: refuse over gate over allow, the composition
 // every surveyed harness trains people on. No match means today's behavior.
+// The one exception is an allow that names, in `overrides`, the gate it
+// answers: where both match, that gate steps aside for that write
+// (decision record 0106). It is held narrow at the write door (one agent,
+// one kind, one verb), and it never lifts a refuse.
 //
 // Policy never runs for owner or machine writes, never gates the request
 // kind itself (it IS the gate), and bundle-tier actors cannot write the
@@ -59,6 +63,10 @@ type policyRule struct {
 	autoAccept      *float64
 	autoRefuse      *float64
 	mode            string
+	// overrides is the id of the gate this allow answers (decision record
+	// 0106): where both match one write, the gate steps aside. Empty on
+	// every rule that is not a narrow allow.
+	overrides string
 }
 
 // loadPolicies reads the live policy records. Owner-authored and few, so the
@@ -101,6 +109,13 @@ func (ds *dataset) loadPolicies(ctx context.Context) ([]policyRule, error) {
 		if v, ok := anyFloat(rec.Properties["autoRefuse"]); ok {
 			rule.autoRefuse = &v
 		}
+		// The write door refuses an override on anything but a narrow allow;
+		// evaluation holds the same line, so a row planted past the door
+		// (the engine's own writes skip it) lifts no gate either.
+		if id := referenceID(rec.Properties["overrides"]); id != "" &&
+			rule.action == policyAllow && narrowSelector(rule.kinds, rule.ops, rule.agents) {
+			rule.overrides = id
+		}
 		rules = append(rules, rule)
 	}
 	return rules, nil
@@ -142,6 +157,9 @@ func validatePolicyRow(reg *vocabulary.Registry, props map[string]any) error {
 			substrate.ErrValidation)
 	}
 	sel, _ := props["selector"].(map[string]any)
+	if err := validatePolicyOverride(props, sel); err != nil {
+		return err
+	}
 	if sel == nil {
 		return nil
 	}
@@ -159,6 +177,72 @@ func validatePolicyRow(reg *vocabulary.Registry, props map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// validatePolicyOverride holds `overrides` to the one shape it exists for:
+// "this agent may make this write without asking me". Only an allow may name
+// a gate to override, and its selector must name exactly one agent, one kind
+// reference (no glob) and one verb, so an override can never grow into a
+// blanket exemption. That the named policy exists and is a gate is checked
+// against the stored row (txn.admitPolicyOverride), because this function
+// sees only the row being written.
+func validatePolicyOverride(props, sel map[string]any) error {
+	if referenceID(props["overrides"]) == "" {
+		return nil
+	}
+	if action, _ := props["action"].(string); action != policyAllow {
+		return fmt.Errorf("%w: recordpatchpolicy: `overrides` is only for an allow: a %s cannot lift a gate",
+			substrate.ErrValidation, action)
+	}
+	if !narrowSelector(stringList(sel["kinds"]), stringList(sel["ops"]), stringList(sel["agents"])) {
+		return fmt.Errorf("%w: recordpatchpolicy: an allow with `overrides` must name exactly one kind reference (no glob), one op and one agent in its selector",
+			substrate.ErrValidation)
+	}
+	return nil
+}
+
+// admitPolicyOverride refuses an allow whose `overrides` names no live gate:
+// a missing policy, a deleted one, itself, or a rule that is not a gate. Such
+// a row would sit in the list reading as "this agent may do this without
+// asking" while the gate it meant still held every write. A gate edited into
+// something else later leaves the allow standing and lifting nothing; the
+// door re-reads both at every evaluation. A disabled allow lifts nothing, so
+// it is admitted whatever it names: disabling a stale allow must not be
+// refused because its gate is gone.
+func (t *txn) admitPolicyOverride(id string, props map[string]any) error {
+	target := referenceID(props["overrides"])
+	if target == "" {
+		return nil
+	}
+	if disabled, _ := props["disabled"].(bool); disabled {
+		return nil
+	}
+	if target == id {
+		return fmt.Errorf("%w: recordpatchpolicy: `overrides` names this policy itself; it must name the gate it lifts",
+			substrate.ErrValidation)
+	}
+	row, err := t.loadRow(eref{Kind: vocabulary.KindRecordPatchPolicy, ID: target}, false)
+	if err != nil {
+		return err
+	}
+	if row == nil || row.DeletedAt != nil {
+		return fmt.Errorf("%w: recordpatchpolicy: `overrides` names %s, which does not exist",
+			substrate.ErrValidation, vocabulary.RecordPath(vocabulary.KindRecordPatchPolicy, target))
+	}
+	if action, _ := row.Props["action"].(string); action != policyGate {
+		return fmt.Errorf("%w: recordpatchpolicy: `overrides` names %s, whose action is %q, and only a gate can be overridden",
+			substrate.ErrValidation, vocabulary.RecordPath(vocabulary.KindRecordPatchPolicy, target), action)
+	}
+	return nil
+}
+
+// narrowSelector reports whether a selector speaks for exactly one agent, one
+// exact kind and one verb: the only selector an override may carry.
+func narrowSelector(kinds, ops, agents []string) bool {
+	if len(kinds) != 1 || len(ops) != 1 || len(agents) != 1 {
+		return false
+	}
+	return !vocabulary.IsTypeGlob(kinds[0])
 }
 
 func stringList(v any) []string {
@@ -261,10 +345,24 @@ func (ds *dataset) policyVerdict(ctx context.Context, kind, op, agent string) (s
 	if err != nil {
 		return "", nil, err
 	}
-	var governing *policyRule
+	matched := make([]*policyRule, 0, len(rules))
+	// lifted holds the gates a matching allow overrides for this write
+	// (decision record 0106). Only a gate is lifted: a refuse still wins, and
+	// a gate no matching allow names still holds the write.
+	lifted := map[string]bool{}
 	for i := range rules {
 		rule := &rules[i]
 		if !rule.matches(kind, op, agent) {
+			continue
+		}
+		matched = append(matched, rule)
+		if rule.overrides != "" {
+			lifted[rule.overrides] = true
+		}
+	}
+	var governing *policyRule
+	for _, rule := range matched {
+		if rule.action == policyGate && lifted[rule.id] {
 			continue
 		}
 		if governing == nil || governs(rule, governing) {

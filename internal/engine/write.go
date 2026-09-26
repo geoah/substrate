@@ -1129,6 +1129,9 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		if err := validatePolicyRow(t.declarations(), row.Props); err != nil {
 			return nil, err
 		}
+		if err := t.admitPolicyOverride(sp.id, row.Props); err != nil {
+			return nil, err
+		}
 	}
 
 	// Bundle-owned types carry the lifecycle rules (engine/bundles.go):
