@@ -202,8 +202,22 @@ func (s *service) reconcileRepositories(ctx context.Context) error {
 	hasRow := make(map[string]bool, len(repos))
 	for _, repo := range repos {
 		hasRow[repo.ID] = true
+	}
+	unrowed := 0
+	for _, id := range dirs {
+		if !hasRow[id] {
+			unrowed++
+		}
+	}
+	// Said before the work, because a directory with no row is an import and
+	// an import of a long history takes minutes: whoever is waiting on the
+	// listener learns why it is late from this line.
+	s.log.Info("substrate: boot check started",
+		"repositories", len(repos), "directoriesToImport", unrowed)
+	for _, repo := range repos {
 		out, err := s.reconcileRow(ctx, repo, true)
 		if err != nil {
+			s.logInterrupted(ctx, repo.ID)
 			return fmt.Errorf("substrate/engine: boot check: repository %s: %w", repo.ID, err)
 		}
 		s.logReconcile(out)
@@ -214,11 +228,29 @@ func (s *service) reconcileRepositories(ctx context.Context) error {
 		}
 		out, err := s.importRepositoryDir(ctx, id)
 		if err != nil {
+			s.logInterrupted(ctx, id)
 			return fmt.Errorf("substrate/engine: boot check: repository directory %s: %w", id, err)
 		}
 		s.logReconcile(out)
 	}
 	return nil
+}
+
+// reconcileInterrupted is the action a boot check cut short by its context
+// logs, so the next boot's "resuming an interrupted import" has its cause in
+// the log above it.
+const reconcileInterrupted = "interrupted"
+
+// logInterrupted logs the repository a canceled boot check stopped on, and
+// the cancellation's cause (the signal, from cmd/substrated). A failure that
+// is not a cancellation logs nothing here: the returned error is its record.
+func (s *service) logInterrupted(ctx context.Context, repository string) {
+	if ctx.Err() == nil {
+		return
+	}
+	s.log.Warn("substrate: boot check interrupted; the next boot resumes it",
+		"repository", repository, "action", reconcileInterrupted,
+		"cause", context.Cause(ctx).Error())
 }
 
 func (s *service) logReconcile(out reconcileOutcome) {
@@ -540,6 +572,10 @@ func (ds *dataset) importEntries(ctx context.Context, log *changelogfile.Log, ta
 	if err := markImportIncomplete(ctx, ds.db, log.Head()); err != nil {
 		return 0, err
 	}
+	// Said before the work: the rows and the two fold passes below log
+	// nothing until the import is done, and a long history takes minutes.
+	ds.svc.log.Info("substrate: importing the repository directory",
+		"repository", ds.scope.Repository, "rows", log.Head()-tableHead, "fileHead", log.Head())
 	var n int64
 	after := tableHead
 	for {
