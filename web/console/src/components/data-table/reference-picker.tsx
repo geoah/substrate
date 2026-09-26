@@ -145,6 +145,10 @@ export function ReferencePicker({
     query
   )
   const plural = lowerFirst(displayPlural(target))
+  // A refused search is said on its own line: the page's own matches still
+  // stand, and an empty list is not "Nothing matches" when the server was
+  // never heard from.
+  const searchError = searching && !found.loading ? found.error : undefined
 
   function toggle(id: string) {
     onChange(
@@ -167,7 +171,7 @@ export function ReferencePicker({
           </div>
         ) : page.error ? (
           <div className="px-3 py-6 text-sm text-destructive">{page.error}</div>
-        ) : rows.length === 0 ? (
+        ) : rows.length === 0 && !searchError ? (
           <div className="px-3 py-6 text-center text-sm text-muted-foreground">
             {searching && found.loading ? (
               <span className="inline-flex items-center gap-2">
@@ -231,6 +235,20 @@ export function ReferencePicker({
               )
             })}
           </CommandGroup>
+        )}
+        {searchError && (
+          <div
+            role="alert"
+            className={cn(
+              "px-3 text-xs text-destructive",
+              rows.length > 0 ? "border-t py-2" : "py-6 text-center"
+            )}
+          >
+            The search didn’t finish: {searchError}{" "}
+            <button type="button" className="underline" onClick={found.retry}>
+              Try again
+            </button>
+          </div>
         )}
         {searching && found.loading && rows.length > 0 && (
           <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground">

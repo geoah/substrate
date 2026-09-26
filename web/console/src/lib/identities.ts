@@ -72,6 +72,8 @@ export interface RecordOptions {
   /** The collection outran the page: what is offered is not all there is, and
    * the control has to say so rather than imply the list is the limit. */
   capped: boolean
+  /** Asks the read again, for a control offering "Try again" on `error`. */
+  retry: () => void
 }
 
 function stringProp(
@@ -133,13 +135,17 @@ export function useRecordOptions(
   const page = records.data
 
   return useMemo(() => {
-    if (!collection) return { options: [], loading: false, capped: false }
+    const retry = () => void records.refetch()
+    if (!collection) {
+      return { options: [], loading: false, capped: false, retry }
+    }
     return {
       options: (page?.records ?? [])
         .filter((r) => !(self && r.id === self))
         .map(optionOf),
       ...pendingState(records),
       capped: Boolean(page?.cursor),
+      retry,
     }
   }, [collection, page, self, records])
 }
@@ -188,11 +194,13 @@ export function useRecordSearch(
   const page = records.data
 
   return useMemo(() => {
-    if (!on) return { options: [], loading: false, capped: false }
+    const retry = () => void records.refetch()
+    if (!on) return { options: [], loading: false, capped: false, retry }
     return {
       options: (page?.records ?? []).map(optionOf),
       ...pendingState(records),
       capped: Boolean(page?.cursor),
+      retry,
     }
   }, [on, page, records])
 }

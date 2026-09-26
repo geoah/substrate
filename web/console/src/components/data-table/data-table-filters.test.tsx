@@ -168,12 +168,18 @@ describe("a reference field", () => {
 
   /** The list read, answering the person collection whole, or the ids a
    * title read asks for. */
-  function serve() {
+  function serve({ searchFails = false }: { searchFails?: boolean } = {}) {
     fetchMock.mockImplementation(async (input) => {
       const url = new URL(String(input), "http://test")
       const filter = JSON.parse(url.searchParams.get("filter") ?? "{}") as {
         ids?: string[]
         search?: string
+      }
+      if (filter.search && searchFails) {
+        return new Response(
+          JSON.stringify({ error: { message: "search index unavailable" } }),
+          { status: 503 }
+        )
       }
       // The server's search reaches past the page: Zed is only found there.
       const records = filter.ids
@@ -196,9 +202,10 @@ describe("a reference field", () => {
   function mount(
     filters: ActiveFilter[],
     onChange = vi.fn(),
-    technical = false
+    technical = false,
+    searchFails = false
   ) {
-    serve()
+    serve({ searchFails })
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     })
@@ -306,6 +313,33 @@ describe("a reference field", () => {
       "[data-slot=command-item]"
     )!
     expect(techAda.textContent).toContain("ada")
+  })
+
+  it("says a refused search apart from the page's own matches, and retries it", async () => {
+    mount([], vi.fn(), false, true)
+    fireEvent.click(screen.getByRole("button", { name: /Add filter/ }))
+    fireEvent.click(await screen.findByText("The assignee"))
+    const input = await screen.findByPlaceholderText("Search people…")
+    await screen.findByText("Ada Lovelace")
+    // The page in hand still answers; the refused search is said beside it.
+    fireEvent.change(input, { target: { value: "ada" } })
+    expect((await screen.findByRole("alert")).textContent).toMatch(
+      /search didn’t finish/
+    )
+    expect(screen.getByText("Ada Lovelace")).toBeTruthy()
+    // With no match in hand, the failure is not "Nothing matches".
+    fireEvent.change(input, { target: { value: "zed" } })
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toMatch(
+        /search didn’t finish/
+      )
+    )
+    expect(screen.queryByText("Nothing matches.")).toBeNull()
+    // Try again asks the server once more, and its answer lands.
+    serve()
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+    expect(await screen.findByText("Zed Shaw")).toBeTruthy()
+    expect(screen.queryByRole("alert")).toBeNull()
   })
 
   it("asks the server as the reader types, past the page in hand", async () => {
