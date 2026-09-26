@@ -546,12 +546,13 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		// candidate mapping supplies any more is released first
 		// (recomputeMappingTargets).
 		//
-		// The where comes first: a mapping whose where cannot be compiled
-		// is refused before anything reads it (decision record 0118). The
-		// sources come next: a mapping the batch admits, changes or names
-		// links every live source its where covers whose slot is still
-		// empty, which mints or finds the targets the recompute then reads
-		// (decision record 0107).
+		// Every where compiles first, against the candidate, so neither the
+		// backfill nor the recompute reads a source through a where the
+		// filter grammar refuses (checkMappingWhere, decision record 0118).
+		// The sources come next: a mapping the batch admits, changes or
+		// names links every live source its where covers whose slot is
+		// still empty, which mints or finds the targets the recompute then
+		// reads (decision record 0107).
 		if err := t.checkMappingWhere(candidate); err != nil {
 			return err
 		}
