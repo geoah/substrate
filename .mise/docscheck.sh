@@ -176,12 +176,23 @@ for path in docs/changes/*.md; do
   [ "$note" = "README.md" ] && continue
   [[ "$note" =~ ^[a-z0-9]+(-[a-z0-9]+)*\.md$ ]] ||
     flag "docs/changes/${note} is not a lowercase kebab-case name ending in .md"
-  # The frontmatter is lines 1 to 3 exactly: `---`, `type: <value>`, `---`.
-  front="$(sed -n '1,3p' "$path")"
+  # The frontmatter is `---`, `type: <value>`, an optional
+  # `release: <tag>`, then `---`. The release key is for a note written
+  # after its release, so the tag it names must exist.
   type_line="$(sed -n '2p' "$path")"
-  if [ "$(sed -n '1p' "$path")" != "---" ] || [ "$(sed -n '3p' "$path")" != "---" ] ||
+  third="$(sed -n '3p' "$path")"
+  close=3
+  if [[ "$third" == release:* ]]; then
+    close=4
+    tag="${third#release: }"
+    if ! [[ "$third" =~ ^release:\ v[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+      ! git rev-parse --quiet --verify "refs/tags/${tag}" >/dev/null; then
+      flag "docs/changes/${note} names '${third}'; the release key is 'release: vX.Y.Z' and that tag must exist"
+    fi
+  fi
+  if [ "$(sed -n '1p' "$path")" != "---" ] || [ "$(sed -n "${close}p" "$path")" != "---" ] ||
     ! [[ "$type_line" =~ ^type:\ (breaking|deprecated|feature|fix)$ ]]; then
-    flag "docs/changes/${note} does not open with a frontmatter of one key, 'type:' as breaking, deprecated, feature or fix (got: ${front//$'\n'/ | })"
+    flag "docs/changes/${note} does not open with a frontmatter of 'type:' (breaking, deprecated, feature or fix) and an optional 'release:' (got: $(sed -n "1,${close}p" "$path" | tr '\n' '|'))"
     continue
   fi
   # Outside code fences only: a shell comment in an example is not a heading.

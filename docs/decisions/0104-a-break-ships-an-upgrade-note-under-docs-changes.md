@@ -27,8 +27,10 @@ an agent upgrading a deployment does not read. `CHANGELOG.md` was deleted in
 
 Chosen: one file per change under `docs/changes/`. Each note carries a
 `type:` (`breaking`, `deprecated`, `feature`, `fix`), one heading, an exact
-example and, for a break or a deprecation, a `## What to do`. The release job
-renders the notes the tag's range added above goreleaser's commit list
+example and, for a break or a deprecation, a `## What to do`. A note belongs
+to the first tag containing the commit that added it; a note written after
+its release names the tag in a `release:` key instead. The release job
+renders the tag's notes above goreleaser's commit list
 (`.mise/changelog.sh --release`), and `mise run changelog` renders every
 release. A `!` or a `BREAKING CHANGE:` footer with no `type: breaking` note
 added on the branch is refused.
@@ -44,13 +46,16 @@ a pull request.
 - Good, because the notes are files: `lint:docs` holds their shape, the
   agent review reads them against the diff, and a checkout has them offline.
 - Good, because a note's release is derived from git, so nobody edits a
-  version into it and it cannot name the wrong one.
+  version into it. The `release:` key is the one hand-written version, and
+  lint:docs refuses a tag that does not exist.
 - Bad, because a note is placed by the commit that ADDED it: renaming or
   deleting one after merge moves or drops it from the rendered history.
 - Bad, because only breaks are enforced. A deprecation or a feature that
   needs a note is caught by the agent review's comment or not at all.
-- Bad, because releases before this record have no notes; their breaks are
-  the commit subjects alone.
+- Bad, because notes for releases before this record were written after the
+  fact, from the commits, and only back to v0.70.0 (the squashed migrations:
+  no older database upgrades). Their GitHub releases carry the notes only if
+  someone edits them in; the rendered changelog does.
 
 ### Confirmation
 

@@ -31,8 +31,8 @@ The review is advice; the break rule above is the only one CI enforces.
 ## The format
 
 The file name is the change in a few lowercase words, `a-z`, `0-9` and `-`,
-ending in `.md`. The file opens with a frontmatter block holding one key,
-then one `#` heading, then the body.
+ending in `.md`. The file opens with a frontmatter block holding `type:` (and
+`release:` for a note written late), then one `#` heading, then the body.
 
 ```markdown
 ---
@@ -50,11 +50,15 @@ record path only (decision record 0102).
 
 1. Send `record` as the full path:
    `{"record": "providers.substrate.reamde.dev/google/account/owner"}`.
-2. Upgrade `substratectl` to 0.93.0 or later; `bundle connect` sends the
-   full path from that release on.
+2. Pass the full path to `substratectl bundle connect`; the command sends
+   its argument as given.
 ```
 
 - `type` is one of `breaking`, `deprecated`, `feature`, `fix`.
+- `release: vX.Y.Z` goes on the line after `type:` only when the note is
+  written after its change shipped. It names the tag the change shipped in,
+  and it overrides the commit that added the file. A note written with its
+  change leaves it out.
 - The heading states the change the way a commit subject does: what thing,
   what it does now. Backtick every route, flag, env var and kind reference.
 - The body says who it hits and gives one exact example. An agent will act on
@@ -64,5 +68,6 @@ record path only (decision record 0102).
   to the new. Say when there is nothing to do for someone (for example, when
   a repository migration rewrites the rows at first boot).
 
-`mise run lint:docs` holds the shape: the name, the one key and its value,
-the heading, and the `## What to do` section where one is required.
+`mise run lint:docs` holds the shape: the name, the keys and their values
+(a `release:` tag must exist), the heading, and the `## What to do` section
+where one is required.
