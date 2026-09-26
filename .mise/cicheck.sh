@@ -2,6 +2,10 @@
 #
 # The CI scripts' own tests.
 #
+# .mise/decisionscheck.sh is the fourth: it decides whether a decision
+# record's number is already taken on another branch, so a wrong pass is the
+# collision issue #587 describes, found only after the merge.
+#
 # .mise/commitscheck.sh is the third: it decides whether a pull request's
 # titles can be released, so a wrong pass is a release that never happens or
 # a break that ships without its note. Its scenarios are at the end.
@@ -22,6 +26,7 @@ cd "$(git rev-parse --show-toplevel)" || exit 2
 changescheck="$PWD/.mise/changescheck.sh"
 shardselect="$PWD/.mise/shardselect.sh"
 commitscheck="$PWD/.mise/commitscheck.sh"
+decisionscheck="$PWD/.mise/decisionscheck.sh"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -281,5 +286,125 @@ cg commit --quiet --allow-empty -m 'ci: say it softly' -m 'a breaking change: lo
 (cd "$crepo" && env -u GITHUB_BASE_REF -u CI PR_TITLE='ci: say it softly' COMMITS_CHECK_BASE=main "$commitscheck" >/dev/null 2>&1) ||
   flag "commits lowercase: a lowercase 'breaking change:' was read as a break, which svu does not"
 cg checkout --quiet main
+
+
+# --- the decision number check -------------------------------------------
+
+# One repository whose local branches stand in for origin's: the check reads
+# refs/heads, main is the base. Each record is committed with a fixed author
+# date, so "added first" is decided by the scenario, not by the clock.
+drepo="$tmp/decisions"
+git init --quiet --initial-branch=main "$drepo"
+dg() { git -C "$drepo" -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false "$@"; }
+mkdir -p "$drepo/docs/decisions"
+# record <branch> <from> <file> <author-epoch>: a branch off <from> adding one
+# record, committed at that author date.
+record() {
+  dg checkout --quiet -b "$1" "$2"
+  printf -- '---\nstatus: proposed\n---\n' >"$drepo/docs/decisions/$3"
+  dg add -A
+  GIT_AUTHOR_DATE="@$4 +0000" GIT_COMMITTER_DATE="@$(date +%s) +0000" dg commit --quiet -m "$1"
+  dg checkout --quiet main
+}
+printf -- '---\nstatus: accepted\n---\n' >"$drepo/docs/decisions/0001-one.md"
+printf -- '---\nstatus: accepted\n---\n' >"$drepo/docs/decisions/0002-two.md"
+dg add -A && dg commit --quiet -m base
+
+day=86400
+t0=$(($(date +%s) - 5 * day))
+record first main 0003-first.md "$t0"
+record second main 0003-second.md $((t0 + day))
+record stacked first 0004-stacked.md $((t0 + 2 * day))
+record taken-on-main main 0002-late.md "$t0"
+# A branch that merged: its 0005 landed on main renumbered to 0006.
+record merged main 0005-merged.md "$t0"
+dg checkout --quiet main
+printf -- '---\nstatus: accepted\n---\n' >"$drepo/docs/decisions/0006-merged.md"
+dg add -A && dg commit --quiet -m 'land merged as 0006'
+record after-merge main 0005-fresh.md $((t0 + day))
+# An abandoned branch: its tip is sixty days old, so its 0007 is no claim.
+dg checkout --quiet -b abandoned main
+printf -- '---\nstatus: proposed\n---\n' >"$drepo/docs/decisions/0007-abandoned.md"
+dg add -A
+GIT_AUTHOR_DATE="@$((t0 - 60 * day)) +0000" GIT_COMMITTER_DATE="@$((t0 - 60 * day)) +0000" dg commit --quiet -m abandoned
+dg checkout --quiet main
+record fresh-seven main 0007-fresh.md $((t0 + day))
+# A branch adding two records main already numbers, in one commit.
+dg checkout --quiet -b double main
+printf -- '---\nstatus: proposed\n---\n' >"$drepo/docs/decisions/0001-also-one.md"
+printf -- '---\nstatus: proposed\n---\n' >"$drepo/docs/decisions/0002-also-two.md"
+dg add -A
+GIT_AUTHOR_DATE="@$t0 +0000" dg commit --quiet -m double
+dg checkout --quiet main
+# A branch that adds nothing, forked before main renamed 0001: its tree still
+# has 0001-one.md, which it did not add.
+dg branch before-rename main
+dg mv docs/decisions/0001-one.md docs/decisions/0001-uno.md
+dg commit --quiet -m 'rename 0001'
+
+# decisions <branch> <expected exit> [expected text]: the check on <branch>.
+decisions() {
+  local name="$1" expected="$2" want="${3:-}" status
+  dg checkout --quiet "$name"
+  (cd "$drepo" && env -u CI -u GITHUB_BASE_REF -u GITHUB_HEAD_REF -u GITHUB_REF_NAME \
+    DECISIONS_CHECK_BASE=main DECISIONS_CHECK_REFS=refs/heads "$decisionscheck" 2>"$tmp/stderr")
+  status=$?
+  [ "$status" -eq "$expected" ] ||
+    flag "decisions ${name}: exit ${status}, expected ${expected}: $(cat "$tmp/stderr")"
+  if [ -n "$want" ] && ! grep -qF "$want" "$tmp/stderr"; then
+    flag "decisions ${name}: expected '${want}' in: $(cat "$tmp/stderr")"
+  fi
+  dg checkout --quiet main
+}
+
+decisions main 0
+decisions first 0
+decisions second 1 '0003 is already 0003-first.md on first, added first; renumber to 0008'
+decisions stacked 0
+decisions taken-on-main 1 "0002 is 0002-two.md on main, and main's number is final"
+decisions after-merge 0
+decisions fresh-seven 0
+decisions double 1 'renumber to 0009'
+decisions before-rename 0
+
+# A record not yet committed is added now, so it loses to every branch.
+dg checkout --quiet -b uncommitted main
+printf -- '---\nstatus: proposed\n---\n' >"$drepo/docs/decisions/0004-mine.md"
+(cd "$drepo" && env -u CI -u GITHUB_BASE_REF -u GITHUB_HEAD_REF -u GITHUB_REF_NAME \
+  DECISIONS_CHECK_BASE=main DECISIONS_CHECK_REFS=refs/heads "$decisionscheck" 2>"$tmp/stderr") &&
+  flag "decisions uncommitted: an untracked 0004 passed beside stacked's 0004"
+grep -qF '0004 is already 0004-stacked.md on stacked' "$tmp/stderr" ||
+  flag "decisions uncommitted: expected the stacked collision in: $(cat "$tmp/stderr")"
+rm -f "$drepo/docs/decisions/0004-mine.md"
+dg checkout --quiet main
+
+# A base that names no commit is a failure, never a pass.
+(cd "$drepo" && env -u CI DECISIONS_CHECK_BASE=definitely-not-a-commit "$decisionscheck" >/dev/null 2>&1)
+[ $? -eq 2 ] || flag "decisions: an unresolvable base was not refused with exit 2"
+
+# In CI, a namespace with no branch but the base is a checkout that fetched
+# none, never a pass.
+(cd "$drepo" && env -u GITHUB_BASE_REF -u GITHUB_HEAD_REF -u GITHUB_REF_NAME CI=true \
+  DECISIONS_CHECK_BASE=main DECISIONS_CHECK_REFS=refs/nothing "$decisionscheck" >/dev/null 2>&1)
+[ $? -eq 2 ] || flag "decisions: an empty namespace in CI was not refused with exit 2"
+
+# A base whose record names are over 64 KiB, more than a pipe holds: a record
+# on main must still read as on main. `printf | grep -q` under pipefail
+# failed this every time, refusing main's own records against themselves.
+brepo="$tmp/decisions-big"
+git init --quiet --initial-branch=main "$brepo"
+bg() { git -C "$brepo" -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false "$@"; }
+mkdir -p "$brepo/docs/decisions"
+long="$(printf 'a%.0s' {1..230})"
+for i in $(seq 1 300); do
+  : >"$brepo/docs/decisions/$(printf '%04d' "$i")-r${i}-${long}.md"
+done
+bg add -A && bg commit --quiet -m base
+bg checkout --quiet -b adds-one main
+: >"$brepo/docs/decisions/0301-new.md"
+bg add -A && bg commit --quiet -m adds-one
+(cd "$brepo" && env -u CI -u GITHUB_BASE_REF -u GITHUB_HEAD_REF -u GITHUB_REF_NAME \
+  DECISIONS_CHECK_BASE=main DECISIONS_CHECK_REFS=refs/heads "$decisionscheck" 2>"$tmp/stderr") ||
+  flag "decisions big base: a non-colliding record was refused: $(head -c 400 "$tmp/stderr")"
 
 exit "$fail"

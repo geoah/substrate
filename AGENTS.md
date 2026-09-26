@@ -498,4 +498,7 @@ first label.
   all three of hard to reverse, shapes what other code may do, and reasoning
   not already written down; everything else is a commit. Read the index before
   proposing design work, so an option already rejected is not proposed again.
-  A rule here may link its record.
+  A rule here may link its record. Before citing a new record's number,
+  `git fetch` and run `mise run decisions:check`: it refuses a number `main`
+  or another live branch already took, and names a free one
+  ([0109](docs/decisions/0109-a-decision-number-is-checked-against-every-live-branch-before-the-merge.md)).

@@ -97,7 +97,9 @@ jobs:
       # Full history: kinds:check and frozen:check both diff against the merge
       # base, and on a shallow checkout each would run `git fetch --unshallow`
       # itself. mise runs them in parallel, and two unshallows collide on
-      # .git/shallow.lock, failing whichever loses.
+      # .git/shallow.lock, failing whichever loses. decisions:check needs it
+      # too: fetch-depth 0 is what fetches every branch into
+      # refs/remotes/origin, and without them the check exits 2.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
