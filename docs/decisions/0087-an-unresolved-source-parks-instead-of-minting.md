@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-09-16
 decision-makers: George Antoniadis
-amended-by: 0103
+amended-by: 0103, 0106
 ---
 
 # 0087. A source that offers nothing, or that a probe cannot tell apart, parks instead of minting

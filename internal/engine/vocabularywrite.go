@@ -545,6 +545,14 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		// publishes are the ones the published closure derives; a property no
 		// candidate mapping supplies any more is released first
 		// (recomputeMappingTargets).
+		//
+		// The sources come first: a mapping the batch admits, changes or
+		// names links every live source whose slot is still empty, which
+		// mints or finds the targets the recompute then reads (decision
+		// record 0106).
+		if err := t.linkUnpointedSources(backfilledMappings(ds.registry(), candidate, b.docs)); err != nil {
+			return err
+		}
 		if err := t.recomputeMappingTargets(ds.registry(), candidate); err != nil {
 			return err
 		}

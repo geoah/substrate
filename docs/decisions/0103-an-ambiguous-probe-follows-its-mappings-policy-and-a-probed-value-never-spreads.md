@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-25
 decision-makers: George Antoniadis (via the #577 agent session)
+amended-by: 0106
 ---
 
 # 0103. An ambiguous probe follows its mapping's `onAmbiguous`, and a probed value never spreads to a second target

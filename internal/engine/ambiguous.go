@@ -17,13 +17,15 @@ import (
 // A source is marked when, under at least one mapping from its kind, its
 // subject slot names no live record AND the mapping's probes find several
 // candidates. The definition does not read the policy: under `oldest` and
-// `mint` the source's own write links it, so an unlinked ambiguous source
-// under those policies is one written before the policy changed, and it is
-// waiting exactly as a parked one is.
+// `mint` the source's own write links it, and so does the apply that sets the
+// policy (mappingbackfill.go), so an unlinked ambiguous source under those
+// policies is one an earlier binary left, and it is waiting exactly as a
+// parked one is.
 //
 // It is a reading taken when the SOURCE is written. Settling the ambiguity
 // (a merge, a delete) writes the candidates, not the source, so the mark
-// stands until the source's next write links it and clears it. A rebuild and
+// stands until the source's next write, or the next apply of its mapping,
+// links it and clears it. A rebuild and
 // a mapping change read it again for every source of the kinds involved.
 
 // markAmbiguous sets or clears one source's mark from what its own write just
