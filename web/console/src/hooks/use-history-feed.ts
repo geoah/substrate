@@ -41,6 +41,8 @@ export interface HistoryFeedState {
   hasOlder: boolean
   loadingOlder: boolean
   loadOlder: () => void
+  /** Read one more page and nothing else: no fill goal rises with it. */
+  fetchOlder: () => void
   retry: () => void
 }
 
@@ -194,6 +196,7 @@ export function useHistoryFeed(
       }
       void history.fetchNextPage()
     },
+    fetchOlder: () => void history.fetchNextPage(),
     retry: () => void history.refetch(),
   }
 }

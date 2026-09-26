@@ -1,30 +1,33 @@
 /** Home (`/`): what the substrate holds and what just happened. The four
  * things the console is for (data, providers, agents, tools) as cards, the
- * main collections with their sizes, and the latest changes in History's
- * sentences. No inbox: nothing here asks the reader to act. */
+ * main collections with their sizes, the latest chats with your agents, and
+ * the latest changes to your data in History's sentences. No inbox: nothing
+ * here asks the reader to act. */
 
-import { useMemo, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, type ReactNode } from "react"
 import { useQueries, useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 
 import {
   HistorySentences,
   HistorySkeleton,
-  SystemChangesNote,
 } from "@/components/changelog/history-feed"
 import { CollectionCard } from "@/components/home/collection-card"
 import { OverviewCards } from "@/components/home/overview-cards"
+import { RecentChats } from "@/components/home/recent-chats"
 import { DocPage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useEverydayChanges, useHistoryFeed } from "@/hooks/use-history-feed"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { recordCountQueryOptions } from "@/lib/api/records"
 import { repositoryQueryOptions } from "@/lib/api/repository"
 import { getRepository } from "@/lib/api/session"
 import { collectionGroups } from "@/lib/collections"
+import { historyEntries } from "@/lib/history"
 import { homeSections } from "@/lib/home-summary"
 
 /** The collections Home shows before "All data" takes over: yours first,
@@ -35,6 +38,8 @@ const SHOWN_YOURS = 6
  * fold them from. */
 const SHOWN_CHANGES = 6
 const RECENT_ROWS = 60
+/** The further pages Home reads to close the oldest run it shows. */
+const CLOSE_PAGES = 4
 
 function Section({
   title,
@@ -95,6 +100,22 @@ export function HomePage() {
     {},
     { first: RECENT_ROWS, keep, fill: SHOWN_CHANGES * 3 }
   )
+  // The oldest sentence loaded may go on in older rows. While it is among
+  // the ones shown, read on so its count is whole; past the budget it is
+  // said without one.
+  const [technical] = useTechnicalDetails()
+  const shownEntries = useMemo(
+    () => historyEntries(recent.rows, technical).length,
+    [recent.rows, technical]
+  )
+  const closing = useRef(CLOSE_PAGES)
+  const { hasOlder, loadingOlder, isPending, fetchOlder } = recent
+  const open = hasOlder && shownEntries <= SHOWN_CHANGES
+  useEffect(() => {
+    if (!open || loadingOlder || isPending || closing.current <= 0) return
+    closing.current -= 1
+    fetchOlder()
+  }, [open, loadingOlder, isPending, fetchOlder])
 
   return (
     <DocPage>
@@ -166,6 +187,22 @@ export function HomePage() {
       </Section>
 
       <Section
+        title="Recent chats"
+        action={
+          <Button
+            variant="ghost"
+            size="sm"
+            render={<Link to="/agents" />}
+            nativeButton={false}
+          >
+            Open Agents
+          </Button>
+        }
+      >
+        <RecentChats />
+      </Section>
+
+      <Section
         title="Recent changes"
         action={
           <Button
@@ -184,37 +221,18 @@ export function HomePage() {
           <p className="text-muted-foreground">
             Recent changes didn’t load: {recent.error.message}
           </p>
-        ) : recent.rows.length === 0 && !recent.hidden ? (
+        ) : recent.rows.length === 0 ? (
           <p className="text-muted-foreground">
-            Nothing has changed yet. Changes show up here as they happen.
+            {recent.hidden
+              ? "None of your data has changed lately."
+              : "Nothing has changed yet. Changes show up here as they happen."}
           </p>
         ) : (
-          <>
-            {recent.rows.length > 0 ? (
-              <HistorySentences
-                rows={recent.rows}
-                limit={SHOWN_CHANGES}
-                more={recent.hasOlder}
-              />
-            ) : (
-              <p className="text-muted-foreground">
-                Only system changes lately.
-              </p>
-            )}
-            <SystemChangesNote
-              className="pt-2.5"
-              hidden={recent.hidden}
-              action={
-                <Link
-                  to="/history"
-                  search={{ system: true }}
-                  className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                >
-                  Show in History
-                </Link>
-              }
-            />
-          </>
+          <HistorySentences
+            rows={recent.rows}
+            limit={SHOWN_CHANGES}
+            more={recent.hasOlder}
+          />
         )}
       </Section>
     </DocPage>

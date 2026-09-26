@@ -151,6 +151,24 @@ describe("HistoryEntryRow", () => {
     expect(screen.queryByText("Urgent")).toBeNull()
   })
 
+  it("says a run the page may cut short without a count", async () => {
+    const rows = [1, 2, 3].map((i): ChangeRow => ({
+      ...patch(false),
+      seq: 10 - i,
+      op: "put",
+      recordId: `t${i}`,
+      payload: { created: true },
+      affected: undefined,
+    }))
+    const [entry] = foldHistory(rows)
+    renderRow(<HistoryEntryRow entry={entry} today openEnded />)
+    const said = (await screen.findByText("tasks")).closest(
+      "[data-slot=history-entry]"
+    )
+    expect(said?.textContent).not.toMatch(/\d\+|\+/)
+    expect(said?.textContent).toContain("added tasks")
+  })
+
   it("says a provider's update as what it is, and keeps the digest for technical details", async () => {
     const row: ChangeRow = {
       seq: 1053,

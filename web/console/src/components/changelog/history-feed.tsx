@@ -43,7 +43,9 @@ function collectionLink(kind: string) {
   return { authority, pkg, name }
 }
 
-/** The object of the sentence: the one record, or "14 tasks" for a run. */
+/** The object of the sentence: the one record, or "14 tasks" for a run. A
+ * run the loaded page may cut short goes on in older rows, so it is said
+ * without a count ("added tasks") rather than with one that may be wrong. */
 function EntryObject({
   entry,
   openEnded,
@@ -56,10 +58,13 @@ function EntryObject({
   }
   const count = entry.records.length
   const words =
-    count === 1 ? displayName(entry.kind) : displayPlural(entry.kind)
+    count === 1 && !openEnded
+      ? displayName(entry.kind)
+      : displayPlural(entry.kind)
   const { authority, pkg, name } = collectionLink(entry.kind)
-  // A run cut by the page may go on in older rows: its count is a floor.
-  const label = `${count}${openEnded ? "+" : ""} ${lowerFirst(words)}`
+  const label = openEnded
+    ? lowerFirst(words)
+    : `${count.toLocaleString()} ${lowerFirst(words)}`
   if (!authority || !pkg || !name) return <span>{label}</span>
   return (
     <Link
