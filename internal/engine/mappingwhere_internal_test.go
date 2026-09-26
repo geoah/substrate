@@ -1,6 +1,6 @@
 package engine
 
-// A mapping's where (#581, record 0106) binds only the properties it names to
+// A mapping's where (#581, record 0118) binds only the properties it names to
 // its one-row query. The source's own write asks before its secrets are
 // sealed, so a property the where does not name must not reach Postgres. No
 // database: the extraction is plain Go.

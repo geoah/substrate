@@ -184,6 +184,40 @@ func TestNarrowingAMappingWhereRecomputesItsTargets(t *testing.T) {
 	}
 }
 
+// The apply that admits a mapping links only the existing sources its where
+// covers (decision record 0107), and widening the where is a changed mapping,
+// so that apply links the sources it now covers.
+func TestApplyingAMappingWhereLinksOnlyCoveredExistingSources(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, prManifest()); err != nil {
+		t.Fatalf("install the pull request mirror: %v", err)
+	}
+	closed := syncPR(t, ds, "pr1", "closed")
+	open := syncPR(t, ds, "pr2", "open")
+
+	if err := enginetest.DeclareMappings(ctx, ds, prMapping(openOnly)); err != nil {
+		t.Fatalf("declare the open-only mapping: %v", err)
+	}
+	if got := mustGet(t, ds, typePerson, personOf(t, ds, open)); got.Properties["name"] != "Review pr2" {
+		t.Fatalf("the open pull request did not project: %v", got.Properties)
+	}
+	if got := refPathValue(mustGet(t, ds, typePR, closed.ID), "person"); got != "" {
+		t.Fatalf("the apply linked the closed pull request to %s", got)
+	}
+	if got := livePersons(t, ds); len(got) != 1 {
+		t.Fatalf("%d people after the apply, want one", len(got))
+	}
+
+	if err := enginetest.DeclareMappings(ctx, ds, prMapping(nil)); err != nil {
+		t.Fatalf("widen the mapping: %v", err)
+	}
+	if got := mustGet(t, ds, typePerson, personOf(t, ds, closed)); got.Properties["name"] != "Review pr1" {
+		t.Fatalf("the widened mapping did not project the closed pull request: %v", got.Properties)
+	}
+}
+
 // The subject hop never mints for a record the mapping does not cover.
 func TestTheSubjectHopRefusesAnUncoveredSource(t *testing.T) {
 	t.Parallel()

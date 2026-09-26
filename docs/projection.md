@@ -216,8 +216,9 @@ the provider first, its sync, then the mapping, so without this every mirror
 synced before the mapping kept an empty slot until the provider wrote that row
 again. In the same transaction as the declaration, every live source whose
 slot names no live record is decided exactly as its own write would decide it:
-one candidate links, none mints, and a source that offers nothing or parks on
-an ambiguous probe stays unlinked. Each link is an ordinary write of the
+one candidate links, none mints, and a source that offers nothing, parks on
+an ambiguous probe, or falls outside the mapping's
+[`where`](#which-sources-a-mapping-covers-where) stays unlinked. Each link is an ordinary write of the
 source's slot, credited to the mapping, so it is in the changelog and a
 rebuild replays it.
 
@@ -317,7 +318,8 @@ property it names) fails that apply.
 A record outside the `where` is treated as a deleted source is:
 
 - **Its own write resolves nothing.** It links no subject, mints none, and is
-  never marked ambiguous. The write that brings it inside resolves it then.
+  never marked ambiguous. The write that brings it inside resolves it then,
+  and so does the apply that [links existing sources](#sources-that-exist-before-their-mapping).
 - **It contributes nothing.** Recompute reads no value from it, so a record
   that leaves the `where` releases what it projected, and a subject left with
   no covered source takes the [orphan mark](#when-the-last-source-goes-the-orphan-mark).
@@ -331,8 +333,10 @@ A record outside the `where` is treated as a deleted source is:
 
 Changing a mapping's `where` recomputes every record of its target kind in
 the apply, so a narrowed mapping releases what it no longer covers at once. A
-record that a widened `where` newly covers resolves on its next write
-([decision record 0118](decisions/0118-a-mapping-where-narrows-its-sources-in-the-filter-grammar.md)).
+widened `where` is a changed mapping too, so the same apply links every
+unlinked record it newly covers
+([decision record 0107](decisions/0107-an-apply-links-the-sources-its-mappings-left-unlinked.md),
+[decision record 0118](decisions/0118-a-mapping-where-narrows-its-sources-in-the-filter-grammar.md)).
 
 ### Reading the links back: `linkedFrom`
 

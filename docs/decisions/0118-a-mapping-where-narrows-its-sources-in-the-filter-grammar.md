@@ -56,8 +56,9 @@ not be written at all.
   owned by the package that owns the target (record 0049).
 - Good, because narrowing a live mapping releases what it no longer covers in
   the apply, through the existing recompute of a changed mapping.
-- Bad, because a record a widened `where` newly covers resolves only on its
-  next write; nothing re-resolves the unlinked rows in the apply.
+- Good, because a widened `where` is a changed mapping, so the apply's
+  backfill (record 0107) links the unlinked records it newly covers, and
+  skips every record the `where` leaves out.
 - Bad, because every source write under a mapping with a `where`, and every
   recompute over such sources, pays one extra query per source row.
 - Bad, because a kept pointer means `linkedFrom` still lists a record the

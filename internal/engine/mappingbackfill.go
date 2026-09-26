@@ -113,6 +113,12 @@ func (t *txn) linkSource(src eref, srcTy *vocabulary.Kind, m *vocabulary.Mapping
 	if err != nil || row == nil || row.DeletedAt != nil {
 		return err
 	}
+	// A source the mapping's where does not cover links no subject, mints
+	// none and is never marked ambiguous, as its own write would leave it
+	// (decision record 0118).
+	if ok, err := t.covers(m, srcTy, row); err != nil || !ok {
+		return err
+	}
 	slot, declared := srcTy.Prop(m.Property)
 	target, parked, err := t.matchOrMint(row, srcTy, m, declared && slot.Required)
 	if err != nil {
