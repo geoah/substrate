@@ -82,7 +82,12 @@ var (
 // collector that has been taken over is a no-op: without that, the old pool's
 // late close would drop the NEW pool's collector.
 func RegisterDBStats(name string, db *sql.DB) (unregister func()) {
-	c := collectors.NewDBStatsCollector(db, name)
+	return register(name, collectors.NewDBStatsCollector(db, name))
+}
+
+// register publishes c under key, taking over a collector already published
+// under it, and returns the unregister that drops c and only c.
+func register(name string, c prometheus.Collector) (unregister func()) {
 	dbStatsMu.Lock()
 	defer dbStatsMu.Unlock()
 	if err := Registry.Register(c); err != nil {
@@ -118,4 +123,65 @@ func Handler() http.Handler {
 	return promhttp.HandlerFor(Registry, promhttp.HandlerOpts{
 		ErrorHandling: promhttp.ContinueOnError,
 	})
+}
+
+// PoolStats is one reading of a connection pool that is not a *sql.DB: the
+// pool every repository of the engine shares (a pgxpool).
+type PoolStats struct {
+	// Max is the pool's cap; Total the connections open, Acquired the ones
+	// in use and Idle the rest.
+	Max, Total, Acquired, Idle int32
+	// Acquires counts every acquisition, Waits the ones that found no idle
+	// connection and waited, WaitDuration their summed wait, and Canceled
+	// the acquisitions whose context ended first.
+	Acquires, Waits, Canceled int64
+	WaitDuration              float64
+}
+
+var (
+	poolLabels     = []string{"pool"}
+	poolMaxDesc    = prometheus.NewDesc("substrate_db_pool_max_conns", "The connection pool's cap.", poolLabels, nil)
+	poolTotalDesc  = prometheus.NewDesc("substrate_db_pool_conns", "Connections the pool has open.", poolLabels, nil)
+	poolAcqDesc    = prometheus.NewDesc("substrate_db_pool_acquired_conns", "Connections in use.", poolLabels, nil)
+	poolIdleDesc   = prometheus.NewDesc("substrate_db_pool_idle_conns", "Connections open and unused.", poolLabels, nil)
+	poolAcqsDesc   = prometheus.NewDesc("substrate_db_pool_acquires_total", "Acquisitions from the pool.", poolLabels, nil)
+	poolWaitsDesc  = prometheus.NewDesc("substrate_db_pool_waits_total", "Acquisitions that waited for a connection.", poolLabels, nil)
+	poolWaitDesc   = prometheus.NewDesc("substrate_db_pool_wait_seconds_total", "Time acquisitions spent waiting for a connection.", poolLabels, nil)
+	poolCancelDesc = prometheus.NewDesc("substrate_db_pool_canceled_acquires_total", "Acquisitions whose context ended before a connection was free.", poolLabels, nil)
+)
+
+type poolCollector struct {
+	name string
+	stat func() PoolStats
+}
+
+func (c *poolCollector) Describe(ch chan<- *prometheus.Desc) {
+	for _, d := range []*prometheus.Desc{poolMaxDesc, poolTotalDesc, poolAcqDesc, poolIdleDesc, poolAcqsDesc, poolWaitsDesc, poolWaitDesc, poolCancelDesc} {
+		ch <- d
+	}
+}
+
+func (c *poolCollector) Collect(ch chan<- prometheus.Metric) {
+	s := c.stat()
+	gauge := func(d *prometheus.Desc, v float64) {
+		ch <- prometheus.MustNewConstMetric(d, prometheus.GaugeValue, v, c.name)
+	}
+	counter := func(d *prometheus.Desc, v float64) {
+		ch <- prometheus.MustNewConstMetric(d, prometheus.CounterValue, v, c.name)
+	}
+	gauge(poolMaxDesc, float64(s.Max))
+	gauge(poolTotalDesc, float64(s.Total))
+	gauge(poolAcqDesc, float64(s.Acquired))
+	gauge(poolIdleDesc, float64(s.Idle))
+	counter(poolAcqsDesc, float64(s.Acquires))
+	counter(poolWaitsDesc, float64(s.Waits))
+	counter(poolWaitDesc, s.WaitDuration)
+	counter(poolCancelDesc, float64(s.Canceled))
+}
+
+// RegisterPoolStats publishes stat as the substrate_db_pool_* series under
+// pool=name, with RegisterDBStats's take-over rule for a name registered
+// twice, and returns the matching unregister.
+func RegisterPoolStats(name string, stat func() PoolStats) (unregister func()) {
+	return register("pool:"+name, &poolCollector{name: name, stat: stat})
 }

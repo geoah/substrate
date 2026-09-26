@@ -114,7 +114,7 @@ func (s *service) VerifyRepository(ctx context.Context, repository string) (Veri
 	}
 	// A bare scoped pool: the RLS-bound shape every request rides, with none
 	// of the open ladder's writes.
-	db, err := openScoped(s.dsn, repo.scope(), s.appRole)
+	db, err := s.scopedDB(repo.scope())
 	if err != nil {
 		return VerifyReport{}, err
 	}
@@ -432,7 +432,10 @@ func hashBlob(ctx context.Context, store blobbytes.Store, digest string) (int64,
 // are not walked: rotation deletes their rows and files on purpose.
 func (s *service) verifySecretRefs(ctx context.Context, tx dbx, db *sql.DB, repo Repository, dir string, fileRefs map[string]bool, report *VerifyReport, found func(string)) error {
 	bare := s.bareDataset(repo, db, dir)
-	if err := bare.loadDeclarationsForReplay(ctx); err != nil {
+	// Through the verify's own transaction: a read on the pool while it
+	// holds a connection needs a second one, and the declarations belong to
+	// the same snapshot the rows are checked in.
+	if err := bare.loadDeclarationsForReplay(ctx, tx); err != nil {
 		return err
 	}
 	for _, ty := range bare.registry().Kinds() {

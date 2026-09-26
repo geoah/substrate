@@ -5,6 +5,7 @@ package config
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/kelseyhightower/envconfig"
@@ -21,6 +22,15 @@ type Config struct {
 	// DatabaseURL is the one Postgres holding every repository, in one
 	// shared schema.
 	DatabaseURL string `envconfig:"DATABASE_URL" required:"true"`
+	// RepositoryConnections caps the Postgres connections every repository
+	// of the process shares; one repository takes at most half of them, and
+	// never more than eight. A process holds at most this plus twelve: four
+	// for the admin pool, five for the maintenance pool, two for repository
+	// migrations and one for a commit-time catch-up (engine
+	// MigrationConnections, CatchUpConnections), so the default of 16 holds
+	// it to 28 however many repositories it has opened. Below
+	// MinRepositoryConnections is refused.
+	RepositoryConnections int `envconfig:"SUBSTRATE_REPOSITORY_CONNECTIONS" default:"16"`
 	// Data is the data root every repository directory lives under. Its own
 	// type, because the operator hat loads it without the rest (LoadData).
 	Data Data
@@ -92,6 +102,10 @@ type Config struct {
 	// process holds no bearer that could reach a repository-chosen endpoint.
 }
 
+// MinRepositoryConnections is the smallest SUBSTRATE_REPOSITORY_CONNECTIONS
+// accepted. It is engine.MinRepositoryConnections, which Open enforces too.
+const MinRepositoryConnections = 4
+
 // Load reads the configuration from the environment.
 func Load() (Config, error) {
 	var c Config
@@ -104,6 +118,9 @@ func Load() (Config, error) {
 func (c Config) Validate() error {
 	if err := c.Data.Validate(); err != nil {
 		return err
+	}
+	if c.RepositoryConnections < MinRepositoryConnections {
+		return fmt.Errorf("SUBSTRATE_REPOSITORY_CONNECTIONS is %d: it is the number of Postgres connections every repository shares, one repository takes half of them, and it must be at least %d so each repository gets two", c.RepositoryConnections, MinRepositoryConnections)
 	}
 	if c.OrphanGrace < 0 {
 		return errors.New("SUBSTRATE_ORPHAN_GRACE must not be negative: unset or 0 collects no orphans, and a positive duration (168h) is the window a marked record waits out before the sweep takes it")

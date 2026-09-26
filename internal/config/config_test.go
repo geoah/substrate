@@ -46,7 +46,7 @@ func TestValidateCredentialKey(t *testing.T) {
 		t.Fatalf("ValidateCredentialKey rejected base64 of 32 bytes: %v", err)
 	}
 	data := Data{Root: t.TempDir(), ChangelogSegmentBytes: MinChangelogSegmentBytes}
-	if err := (Config{CredentialKey: good, Data: data}).Validate(); err != nil {
+	if err := (Config{CredentialKey: good, Data: data, RepositoryConnections: 16}).Validate(); err != nil {
 		t.Fatalf("Config.Validate rejected a good key: %v", err)
 	}
 	if err := (Config{CredentialKey: "", Data: data}).Validate(); err == nil {
@@ -132,4 +132,18 @@ func mustRandom(t *testing.T, n int) []byte {
 		t.Fatalf("random: %v", err)
 	}
 	return b
+}
+
+func TestRepositoryConnectionsRefusesACapUnderTheFloor(t *testing.T) {
+	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
+	key := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	for _, n := range []int{-1, 0, 1, MinRepositoryConnections - 1} {
+		if err := (Config{CredentialKey: key, Data: data, RepositoryConnections: n}).Validate(); err == nil ||
+			!strings.Contains(err.Error(), "SUBSTRATE_REPOSITORY_CONNECTIONS") {
+			t.Fatalf("a cap of %d: err = %v, want a refusal naming SUBSTRATE_REPOSITORY_CONNECTIONS", n, err)
+		}
+	}
+	if err := (Config{CredentialKey: key, Data: data, RepositoryConnections: MinRepositoryConnections}).Validate(); err != nil {
+		t.Fatalf("the floor itself was refused: %v", err)
+	}
 }

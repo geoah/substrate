@@ -731,20 +731,22 @@ func bindEditedCopy(plan *substrate.ConversionPlan, edited *editedCopy) bool {
 // closure's. A batch with no origin, a package with no stamp and a pristine
 // copy all answer nil. The digest is read the way the bundle status reads it
 // (packageClosureDigest), under the schema-write mutex every caller holds, so
-// the rows it hashes are the rows the replacement is about to prune.
-func (ds *dataset) editedCopy(ctx context.Context, origin string, docs []vocabulary.Document) (*editedCopy, error) {
+// the rows it hashes are the rows the replacement is about to prune. q is the
+// apply's own transaction on the write path, so the stamp and the digest are
+// read in the snapshot the batch writes in and on the connection it holds.
+func (ds *dataset) editedCopy(ctx context.Context, q dbx, origin string, docs []vocabulary.Document) (*editedCopy, error) {
 	pkg := originPackage(origin, docs)
 	if pkg == "" {
 		return nil, nil
 	}
-	stamp, err := ds.packageStamp(ctx, pkg)
+	stamp, err := ds.packageStamp(ctx, q, pkg)
 	if err != nil {
 		return nil, err
 	}
 	if stamp.origin == "" || stamp.digest == "" {
 		return nil, nil
 	}
-	current, err := ds.packageClosureDigest(ctx, pkg)
+	current, err := ds.packageClosureDigest(ctx, q, pkg)
 	if err != nil {
 		return nil, err
 	}

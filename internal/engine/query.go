@@ -622,7 +622,7 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 		}
 	}
 	for _, name := range sortedKeys(f.Properties) {
-		if err := ds.condProp(ctx, b, types, name, f.Properties[name]); err != nil {
+		if err := ds.condProp(ctx, x, b, types, name, f.Properties[name]); err != nil {
 			return nil, err
 		}
 	}
@@ -666,7 +666,7 @@ func columnFor(name string) (string, error) {
 	return "", nil
 }
 
-func (ds *dataset) condProp(ctx context.Context, b *builder, types []*vocabulary.Kind, name string, c substrate.Cond) error {
+func (ds *dataset) condProp(ctx context.Context, x dbx, b *builder, types []*vocabulary.Kind, name string, c substrate.Cond) error {
 	col, err := columnFor(name)
 	if err != nil {
 		return err
@@ -692,7 +692,7 @@ func (ds *dataset) condProp(ctx context.Context, b *builder, types []*vocabulary
 	// array and is the one jsonb operator `records_props_idx` indexes; either
 	// way a lookup by pointer is index-backed without a per-kind declaration.
 	if shapes := ds.referenceShapes(types, name); len(shapes) > 0 {
-		return ds.condReference(ctx, b, name, shapes, c)
+		return ds.condReference(ctx, x, b, name, shapes, c)
 	}
 	if c.Match != "" {
 		if err := ds.matchRefusal(types, name); err != nil {
@@ -788,17 +788,18 @@ func scalarReference(p *vocabulary.Property) bool {
 // arm and the GC cascade already follow.
 //
 // An unresolvable path is its own answer: a kind this repository never declared
-// has no trail, and the filter still means the literal pointer.
-func (ds *dataset) referenceFilterIDs(ctx context.Context, path string) ([]string, error) {
+// has no trail, and the filter still means the literal pointer. x is the read's
+// own transaction, so the trail is read in its snapshot and on its connection.
+func (ds *dataset) referenceFilterIDs(ctx context.Context, x dbx, path string) ([]string, error) {
 	kind, id, ok := vocabulary.SplitRecordPath(path)
 	if !ok {
 		return []string{path}, nil
 	}
-	canonical, err := ds.canonicalOf(ctx, ds.db, eref{Kind: kind, ID: id})
+	canonical, err := ds.canonicalOf(ctx, x, eref{Kind: kind, ID: id})
 	if err != nil {
 		return nil, err
 	}
-	ids, err := ds.idsOf(ctx, ds.db, canonical)
+	ids, err := ds.idsOf(ctx, x, canonical)
 	if err != nil {
 		return nil, err
 	}
@@ -869,7 +870,7 @@ func referenceValue(name string, p *vocabulary.Property, path string) ([]string,
 // answers are admitted: it names a record or it does not, so equality,
 // membership and presence are the whole grammar — an ordering or a prefix over
 // a record path would be comparing its spelling, not the thing.
-func (ds *dataset) condReference(ctx context.Context, b *builder, name string, shapes []*vocabulary.Property, c substrate.Cond) error {
+func (ds *dataset) condReference(ctx context.Context, x dbx, b *builder, name string, shapes []*vocabulary.Property, c substrate.Cond) error {
 	// A SLICE, not a map: two violated predicates in one filter must name the
 	// same one every time, or the error depends on map iteration order.
 	for _, p := range []struct {
@@ -904,7 +905,7 @@ func (ds *dataset) condReference(ctx context.Context, b *builder, name string, s
 				}
 				paths, cached := trail[path]
 				if !cached {
-					if paths, err = ds.referenceFilterIDs(ctx, path); err != nil {
+					if paths, err = ds.referenceFilterIDs(ctx, x, path); err != nil {
 						return "", err
 					}
 					trail[path] = paths

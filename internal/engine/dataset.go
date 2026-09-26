@@ -500,6 +500,13 @@ type txn struct {
 }
 
 func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal bool, fn func(*txn) error) error {
+	return ds.inTxOn(ctx, ds.db, actor, internal, fn)
+}
+
+// inTxOn is inTx with its transaction begun on db: the dataset's handle on
+// the shared pool, or a connection dialed outside it
+// (runRepositoryMigrations).
+func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor, internal bool, fn func(*txn) error) error {
 	// A read-only process is not the directory's writer, so it appends
 	// nothing to the tables either: a row it committed would be one the file
 	// never receives until the server's next boot (repodir.go).
@@ -517,7 +524,7 @@ func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal boo
 	if err := ds.directoryErr(); err != nil {
 		return err
 	}
-	tx, err := ds.db.BeginTx(ctx, nil)
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
