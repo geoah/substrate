@@ -9,7 +9,7 @@ import type { ReactNode } from "react"
 
 import { friendlyCalendarDay, friendlyDateTime } from "./dates"
 import { repeatedLayout } from "./sheet-model"
-import { RecordRef } from "@/components/identity/record-ref"
+import { ReferenceValue } from "@/components/identity/reference-value"
 import { StateBadge } from "@/components/identity/state-badge"
 import { readReference } from "@/lib/api/types"
 import { splitRecordPath } from "@/lib/record-path"
@@ -33,27 +33,6 @@ function JsonBlock({ value }: { value: unknown }) {
     <pre className="w-full overflow-x-auto rounded-md border bg-panel px-3 py-2 font-mono text-xs break-words whitespace-pre-wrap">
       {JSON.stringify(value, null, 2)}
     </pre>
-  )
-}
-
-/** A reference value: the referent, and any link data beside it. */
-export function ReferenceMark({ value }: { value: unknown }) {
-  const held = readReference(value)
-  const target = held ? splitRecordPath(held.path) : undefined
-  if (!target) {
-    return <span className="break-words">{String(held?.path ?? value)}</span>
-  }
-  const link = Object.entries(held?.properties ?? {})
-  return (
-    <span className="inline-flex min-w-0 flex-wrap items-center gap-x-2">
-      <RecordRef kind={target.kind} id={target.id} />
-      {link.map(([k, v]) => (
-        <span key={k} className="text-xs text-muted-foreground">
-          {humanizeName(k)}:{" "}
-          {typeof v === "object" ? JSON.stringify(v) : String(v)}
-        </span>
-      ))}
-    </span>
   )
 }
 
@@ -126,7 +105,7 @@ function ScalarValue({
   value: unknown
   dense?: boolean
 }) {
-  if (spec.kind === "reference") return <ReferenceMark value={value} />
+  if (spec.kind === "reference") return <ReferenceValue value={value} />
   if (spec.kind === "object" && spec.fields?.length) {
     return <ObjectBlock spec={spec} value={value} dense={dense} />
   }
@@ -275,7 +254,8 @@ export function DeclaredValue({
 export function LooseValue({ value }: { value: unknown }) {
   if (value === undefined || value === null || value === "") return <Empty />
   const held = isBag(value) ? readReference(value) : undefined
-  if (held && splitRecordPath(held.path)) return <ReferenceMark value={value} />
+  if (held && splitRecordPath(held.path))
+    return <ReferenceValue value={value} />
   if (typeof value === "object") return <JsonBlock value={value} />
   return <span className="break-words">{String(value)}</span>
 }

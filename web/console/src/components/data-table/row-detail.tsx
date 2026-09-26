@@ -11,7 +11,7 @@
  * not on the wire, so there is nothing of them to render or to hide. */
 
 import { ChangeActor } from "@/components/change-actor"
-import { ActorChip } from "@/components/actor-chip"
+import { ActorRef } from "@/components/identity/actor-ref"
 import { CodeBlock } from "@/components/code-block"
 import type { ChangeRow } from "@/lib/api/types"
 import { cellValue, shortDate, shortTime } from "@/lib/format"
@@ -120,7 +120,7 @@ export function ChangeDetail({ row }: { row: ChangeRow }) {
       </DetailRow>
       {row.actor === "substrate" && (
         <DetailRow label="committed by">
-          <ActorChip actor={row.actor} />
+          <ActorRef actor={row.actor} />
         </DetailRow>
       )}
       <DetailRow label="change">
@@ -158,7 +158,7 @@ export function ChangeDetail({ row }: { row: ChangeRow }) {
               <span key={name} className="flex items-center gap-1.5">
                 <span className="data">{name}</span>
                 <span className="text-muted-foreground">→</span>
-                <ActorChip actor={String(actor)} />
+                <ActorRef actor={String(actor)} />
               </span>
             ))}
           </div>

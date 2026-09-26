@@ -29,8 +29,7 @@ import { DocPage } from "@/components/identity/page-layout"
 import { RecordRef } from "@/components/identity/record-ref"
 import { SectionHead } from "@/components/identity/section-head"
 import { StateBadge } from "@/components/identity/state-badge"
-import type { PeekTarget } from "@/components/record-peek"
-import { ReferenceValue } from "@/components/record/reference-value"
+import { ReferenceValue } from "@/components/identity/reference-value"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -96,7 +95,15 @@ import { cn } from "@/lib/utils"
 import { EvidenceChips } from "@/components/merge-request"
 import { mergeRequestDetailRoute } from "@/router"
 
-function refTitle(ref?: PeekTarget): string {
+/** One side of the pair: its kind reference and id, and the title the
+ * request carries for it. */
+interface PairTarget {
+  id: string
+  kind: string
+  title?: string
+}
+
+function refTitle(ref?: PairTarget): string {
   return ref?.title || ref?.id || "unknown"
 }
 
@@ -149,16 +156,7 @@ function PostureCell({ posture }: { posture: DiffPosture }) {
 
 // ── side-by-side ────────────────────────────────────────────────────────────
 
-function ValueCell({
-  row,
-  side,
-  kinds,
-}: {
-  row: DiffRow
-  side: "loser" | "winner"
-  /** The registry, so a reference value renders as its referent's pill. */
-  kinds: KindInfo[]
-}) {
+function ValueCell({ row, side }: { row: DiffRow; side: "loser" | "winner" }) {
   const value = side === "loser" ? row.loser : row.winner
   const manager = side === "loser" ? row.loserManager : row.winnerManager
 
@@ -170,7 +168,7 @@ function ValueCell({
     return (
       <span className="flex min-w-0 flex-col items-start gap-1">
         {references.map((one, at) => (
-          <ReferenceValue key={at} value={one} kinds={kinds} />
+          <ReferenceValue key={at} value={one} />
         ))}
         {manager && row.posture !== "equal" && <ActorRef actor={manager} />}
       </span>
@@ -204,7 +202,7 @@ function ValueCell({
 /** The diff rides the table system's look (owner ruling, 2026-08-06): real
  * table anatomy — fixed columns, bordered rows, muted lowercase headers —
  * though it stays a comparison, not a list, so no column dropdown or pages. */
-function DiffRows({ rows, kinds }: { rows: DiffRow[]; kinds: KindInfo[] }) {
+function DiffRows({ rows }: { rows: DiffRow[] }) {
   return (
     <>
       {rows.map((row) => (
@@ -232,10 +230,10 @@ function DiffRows({ rows, kinds }: { rows: DiffRow[]; kinds: KindInfo[] }) {
             </Tooltip>
           </TableCell>
           <TableCell className="align-top">
-            <ValueCell row={row} side="loser" kinds={kinds} />
+            <ValueCell row={row} side="loser" />
           </TableCell>
           <TableCell className="align-top">
-            <ValueCell row={row} side="winner" kinds={kinds} />
+            <ValueCell row={row} side="winner" />
           </TableCell>
           <TableCell className="pr-4 align-top">
             <PostureCell posture={row.posture} />
@@ -250,13 +248,10 @@ function SideBySide({
   loser,
   winner,
   type,
-  kinds,
 }: {
   loser: SubstrateRecord
   winner: SubstrateRecord
   type?: KindInfo
-  /** The registry, so a reference value renders as its referent's pill. */
-  kinds: KindInfo[]
 }) {
   const rows = useMemo(
     () => deriveDiff(winner, loser, type),
@@ -317,7 +312,7 @@ function SideBySide({
         </TableHeader>
         <TableBody>
           {open.length > 0 ? (
-            <DiffRows rows={open} kinds={kinds} />
+            <DiffRows rows={open} />
           ) : (
             <TableRow className="hover:bg-transparent">
               <TableCell
@@ -350,7 +345,7 @@ function SideBySide({
               </TableCell>
             </TableRow>
           )}
-          {showEqual && <DiffRows rows={equal} kinds={kinds} />}
+          {showEqual && <DiffRows rows={equal} />}
         </TableBody>
       </Table>
     </div>
@@ -373,8 +368,8 @@ function VerdictDialog({
   onClose,
 }: {
   verdict: MergeVerdict
-  loser?: PeekTarget
-  winner?: PeekTarget
+  loser?: PairTarget
+  winner?: PairTarget
   busy: boolean
   onConfirm: (note?: string) => void
   onClose: () => void
@@ -489,7 +484,7 @@ function conflictAnnotation(mr: SubstrateRecord): string | undefined {
 }
 
 function useSideQuery(
-  ref: PeekTarget | undefined,
+  ref: PairTarget | undefined,
   types: KindInfo[],
   enabled: boolean
 ) {
@@ -763,7 +758,6 @@ export function MergeRequestDetailPage() {
               loser={loserSide.query.data!}
               winner={winnerSide.query.data!}
               type={winnerSide.type}
-              kinds={types}
             />
           ) : sideError ? (
             <div className="rounded-lg border px-4 py-3 text-[13px] text-muted-foreground">
