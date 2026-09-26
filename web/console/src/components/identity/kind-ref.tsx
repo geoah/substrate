@@ -110,7 +110,9 @@ export function KindRef({
   )
 }
 
-function KindCard({
+/** The kind's hover card body, for a trigger that is not a `KindRef` (a
+ * collection's own heading). */
+export function KindCard({
   kind,
   count,
 }: {
