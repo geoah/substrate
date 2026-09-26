@@ -162,15 +162,19 @@ straight to it:
 
 - **Ask an agent**: say what you want to keep, and the console opens
   [Agents](#agents) with that as your first message.
-- **Start from a sample**: the shipped [samples](bundles-catalog.md) (tasks,
-  people, notes and the rest), each with **Add**. Adding one imports it under
-  the repository's own authority
+- **Start from a sample**: the shipped [samples](bundles-catalog.md) that
+  declare at least one primary kind (tasks, people, notes and the rest), each
+  by the collections it adds and with **Add**. A kind's
+  [purpose](decisions/0104-a-kind-declares-its-purpose.md) is read from the
+  catalog's closure until the repository holds the kind, so a sample whose
+  kinds are all supporting or internal is not offered as a collection. Adding
+  one imports it under the repository's own authority
   ([0048](decisions/0048-providers-are-published-samples-are-copied.md)),
   taking first any package it requires that the repository does not hold, and
-  says so beforehand. A sample already taken reads **Added**, or offers
-  **Upgrade** when the binary ships it at a newer version than the copy was
-  taken at; where the copy was edited since, the confirmation says the edits
-  are replaced
+  says so beforehand. A sample already taken reads **Added**; its package
+  page offers the update when the binary ships it at a newer version than the
+  copy was taken at, and where the copy was edited since, the confirmation
+  says the edits are replaced
   ([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md)).
 - **Write it yourself**: a kind is a YAML document naming its properties,
   applied from the command line; the dialog gives the two `substratectl`

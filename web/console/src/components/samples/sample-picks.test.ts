@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { collectionSamples } from "./sample-collections"
+import { collectionSamples } from "./sample-picks"
 import type { BundleClosure, CatalogItem, KindInfo } from "@/lib/api/types"
 import type { BundleRow } from "@/lib/bundles"
 
@@ -76,29 +76,51 @@ describe("collectionSamples", () => {
       ]
     )
     expect(out).toHaveLength(1)
-    expect(out[0].kinds).toEqual([
+    expect(out[0].members).toEqual([
       `${HOME}/tasks/task`,
       `${HOME}/tasks/project`,
     ])
   })
 
-  it("leaves out samples that ship tools or agents, and ones with no kind", () => {
+  it("offers a sample by its primary kinds whatever else it ships", () => {
     const out = collectionSamples(
       [
         sample("firecrawl", {
           kinds: [`${HOME}/firecrawl/webdocument`],
+          kindPurposes: { [`${HOME}/firecrawl/webdocument`]: "supporting" },
           functions: [`${HOME}/firecrawl/scrape`],
         }),
-        sample("llm", {
-          kinds: [`${HOME}/llm/scratchpad`],
-          agents: [`${HOME}/llm/assistant`],
+        sample("notes", {
+          kinds: [`${HOME}/notes/note`],
+          functions: [`${HOME}/notes/savenote`],
+          agents: [`${HOME}/notes/titler`],
         }),
         sample("scheduling", { traits: [`${HOME}/scheduling/occurrence`] }),
         sample("people", { kinds: [`${HOME}/people/person`] }),
       ],
       []
     )
-    expect(out.map((s) => s.row.package)).toEqual(["people"])
+    expect(out.map((s) => s.row.package)).toEqual(["notes", "people"])
+  })
+
+  it("reads the shipped purpose where the held copy declares none", () => {
+    const scratchpad = `${HOME}/llm/scratchpad`
+    const llm = sample(
+      "llm",
+      {
+        kinds: [scratchpad],
+        kindPurposes: { [scratchpad]: "supporting" },
+        agents: [`${HOME}/llm/substrate`],
+      },
+      true
+    )
+    expect(collectionSamples([llm], [kind(scratchpad)])).toEqual([])
+    // A copy its owner classified keeps its own word.
+    expect(
+      collectionSamples([llm], [kind(scratchpad, "primary")]).map(
+        (s) => s.members
+      )
+    ).toEqual([[scratchpad]])
   })
 
   it("leaves out a sample whose kinds all support another", () => {

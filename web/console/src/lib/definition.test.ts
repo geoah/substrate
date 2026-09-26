@@ -373,6 +373,15 @@ describe("kindPurpose", () => {
     expect(kindPurpose(withPurpose("decorative"))).toBe("primary")
   })
 
+  it("falls back to the shipped purpose where the held one declares none", () => {
+    expect(kindPurpose(person, "supporting")).toBe("supporting")
+    expect(kindPurpose("example.com/things/thing", "internal")).toBe("internal")
+    expect(kindPurpose(withPurpose("primary"), "supporting")).toBe("primary")
+    expect(kindPurpose("example.com/things/thing", "decorative")).toBe(
+      "primary"
+    )
+  })
+
   it("treats every kind of the substrate's own authority as internal", () => {
     expect(kindPurpose(withPurpose("primary", "substrate.reamde.dev"))).toBe(
       "internal"
