@@ -262,4 +262,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0108](0108-an-allow-outranks-a-gate-only-by-naming-it.md) | An allow outranks a gate only by naming it | proposed |
 | [0109](0109-a-package-row-names-the-actor-that-declared-it.md) | A package row names the actor that declared it | accepted |
 | [0110](0110-a-schedule-trigger-passes-declared-arguments-to-its-function.md) | A schedule trigger passes declared arguments to its function | accepted |
+| [0111](0111-a-function-and-an-agent-list-read-is-the-window-read.md) | A function's and an agent's list read is the window read | accepted |
 | [0115](0115-an-owner-adjusts-a-change-request-on-the-accepting-write.md) | An owner adjusts a change request on the accepting write | accepted |

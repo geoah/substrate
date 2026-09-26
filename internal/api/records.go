@@ -9,6 +9,7 @@ import (
 
 	"github.com/geoah/substrate/internal/strictjson"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/window"
 )
 
 // THE RECORDS ROUTE. Every "read some records" question is one route,
@@ -122,19 +123,25 @@ func (h *handler) getRecords(w http.ResponseWriter, r *http.Request) {
 			}
 			q.Filter.Kinds = kinds
 		}
-		// `at` bounded on both ends is the WINDOW read (window.go): the rows
+		// `at` bounded on both ends is the WINDOW read (internal/window): the rows
 		// in the window plus the occurrences computed from every series among
 		// the kinds in play, one page. One bound alone is a plain list.
-		from, to, window, err := windowBounds(q.Filter)
+		var page *substrate.Page
+		from, to, bounded, err := window.Bounds(q.Filter)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 			return
 		}
-		if window {
-			h.windowList(w, r, ds, q, from, to)
+		if bounded {
+			page, err = window.Read(ctx, ds, q, from, to)
+		} else {
+			page, err = ds.List(ctx, q)
+		}
+		var qerr window.QueryError
+		if errors.As(err, &qerr) {
+			writeError(w, http.StatusBadRequest, codeBadRequest, qerr.Error())
 			return
 		}
-		page, err := ds.List(ctx, q)
 		if errors.Is(err, substrate.ErrStaleHistory) {
 			// The same signal the changefeed gives a cursor from another
 			// history: 410 with the head to start over from, never a 422 a

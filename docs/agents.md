@@ -197,7 +197,9 @@ entry could name only a function.
   otherwise `filter` (the whole [grammar](api.md#the-filter-grammar),
   `referencing` included), `orderBy`, `first`, `after` and `expand` list a
   page, which answers `{records, cursor, head, generation, included?,
-  matches?}` exactly as the route does. It requires `permissions.reads`, a
+  matches?}` exactly as the route does. A `filter` bounding `at` on both
+  ends is the [window read](api.md#the-window-read), computed occurrences
+  included. It requires `permissions.reads`, a
   load error otherwise, and every arm is held to that allowlist: a get outside
   it answers like an absent id, a kind outside it in `filter.kinds` or `kinds`
   is refused by name, an expanded referent outside it is left out, and a list
