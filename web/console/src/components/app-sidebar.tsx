@@ -43,7 +43,7 @@ import {
 
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { ProviderBadge } from "@/components/identity/provider-badge"
-import { ToggleSwitch } from "@/components/nav/toggle-switch"
+import { SwitchMark, ToggleSwitch } from "@/components/nav/toggle-switch"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -567,8 +567,10 @@ export function RepositoryMenu() {
         <DropdownMenuCheckboxItem
           checked={technical}
           onCheckedChange={(on) => setTechnical(on)}
+          className="pr-1.5 [&_[data-slot=dropdown-menu-checkbox-item-indicator]]:hidden"
         >
           <CodeIcon /> Technical details
+          <SwitchMark checked={technical} className="ml-auto" />
         </DropdownMenuCheckboxItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={() => void signOut()}>
@@ -598,7 +600,9 @@ export function AppSidebar({
     <Sidebar
       collapsible="offcanvas"
       data-peek={peek?.open || undefined}
-      className={cn(peek?.open && "left-0! z-30 shadow-card")}
+      className={cn(
+        peek?.open && "left-0! z-30 border-border-strong shadow-card"
+      )}
       onMouseEnter={peek?.show}
       onMouseLeave={peek?.hide}
       onFocus={peek?.show}
