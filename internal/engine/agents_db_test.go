@@ -1136,6 +1136,69 @@ func TestChatThreadSingleActiveTurn(t *testing.T) {
 	}
 }
 
+// A thread the owner deletes while its turn runs takes no settle: a tombstone
+// refuses the patch and a collected thread has no row, so the settle skips
+// both and the turn still completes instead of rolling back (#633).
+func TestChatSettleSkipsADeletedThread(t *testing.T) {
+	t.Parallel()
+	t.Run("tombstoned", func(t *testing.T) {
+		t.Parallel()
+		chatWhileTheThreadIsDeleted(t, false)
+	})
+	t.Run("collected", func(t *testing.T) {
+		t.Parallel()
+		chatWhileTheThreadIsDeleted(t, true)
+	})
+}
+
+// chatWhileTheThreadIsDeleted continues a chat thread and deletes the thread
+// while the model turn is held, running the collector too when collect is
+// set, then checks the turn completed and wrote nothing onto the thread.
+func chatWhileTheThreadIsDeleted(t *testing.T, collect bool) {
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	fake.script("chat", fakeTurn{content: "first"})
+	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", "", "hi", nil)
+	if err != nil {
+		t.Fatalf("open thread: %v", err)
+	}
+
+	arrived := make(chan struct{})
+	release := make(chan struct{})
+	fake.script("chat", fakeTurn{content: "second", arrived: arrived, release: release})
+	done := make(chan error, 1)
+	go func() {
+		_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", res.Thread, "more", nil)
+		done <- err
+	}()
+	<-arrived
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeThread, res.Thread, substrate.DeleteInput{}); err != nil {
+		close(release)
+		t.Fatalf("delete the thread: %v", err)
+	}
+	if collect {
+		if _, err := ds.RunGC(ctx); err != nil {
+			close(release)
+			t.Fatalf("gc: %v", err)
+		}
+	}
+	gone, goneErr := ds.Get(ctx, typeThread, res.Thread)
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("the turn failed on its deleted thread: %v", err)
+	}
+	got, err := ds.Get(ctx, typeThread, res.Thread)
+	if collect {
+		if !errors.Is(goneErr, substrate.ErrNotFound) || !errors.Is(err, substrate.ErrNotFound) {
+			t.Fatalf("the thread was not collected, or came back: %v, then %+v %v", goneErr, got, err)
+		}
+		return
+	}
+	if goneErr != nil || err != nil || got.DeletedAt == nil || got.Version != gone.Version {
+		t.Fatalf("the settle wrote the tombstoned thread: %+v %v", got, err)
+	}
+}
+
 func TestProviderRowCarriesItsOwnEndpointAndKey(t *testing.T) {
 	t.Parallel()
 	// The P0 boundary, now held by construction: there is no host gateway and

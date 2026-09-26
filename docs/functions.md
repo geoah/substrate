@@ -473,9 +473,9 @@ Every effect names its target the same way, a `kind` carrying a kind
 reference:
 
 - **`put`** `{action: put, kind, id, ifAbsent?, ifVersion?, onConflict?, properties?}`.
-  `ifAbsent: true` is create-only: any existing row, live or
-  tombstoned, is a no-op, so a minting function never resets state a later
-  stage owns. `ifAbsent` must be a boolean, and it cannot combine with
+  `ifAbsent: true` is create-only: a live row is a no-op, so a minting
+  function never resets state a later stage owns, and a tombstone counts as
+  absent, so the put restores it and a `patch` after it lands on a live row. `ifAbsent` must be a boolean, and it cannot combine with
   `ifVersion` on one put (the version check would be silently dropped).
   A pointer at another record is one of the `properties`, written as the
   `{ref: "<kind>/<id>", …}` object or as the bare path, which the engine
@@ -549,6 +549,10 @@ host.version(record)                              # an int, for if_version
 host.config()
 host.log(msg)
 ```
+
+A `patch` onto a tombstone is refused `not found` and fails the delivery
+([api](api.md#the-five-mutations)), so a function that patches a mirror it may
+have lost puts it first; `if_absent=True` is enough.
 
 `if_version` is unset unless a caller passes one, and the sentinel for that is
 private, so `if_version=0` is a real precondition meaning "no such record". A

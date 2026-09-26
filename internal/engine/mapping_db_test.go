@@ -911,6 +911,46 @@ func TestOneHopResolution(t *testing.T) {
 	}
 }
 
+// A reference through a TOMBSTONED mirror resolves to the subject the mirror
+// stored, even a deleted one, and mints nothing: the mirror still exists for
+// the pointer, but it is out of the live set, and writing a fresh subject onto
+// it is a patch its tombstone refuses. Before this the unrelated write that
+// named the mirror failed on that refusal (#633).
+func TestHopThroughATombstonedMirrorMintsNoSubject(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newVocabularyDataset(t, "messaging")
+	installPeopleSources(t, ds)
+
+	s := syncSource(t, ds, slack, typeSlackUser, "s-U1", map[string]any{"realName": "alex"})
+	pid := personOf(t, ds, s)
+	if _, err := ds.Delete(ctx, owner, typePerson, pid, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete person: %v", err)
+	}
+	if _, err := ds.Delete(ctx, slack, s.Kind, s.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete mirror: %v", err)
+	}
+	conv := newConversation(t, ds)
+	persons := len(livePersons(t, ds))
+
+	msg := mustPut(t, ds, slack, substrate.PutInput{
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "s-msg-1",
+		Properties: map[string]any{
+			"text": "hi", "at": "2026-08-03T10:00:00Z", "conversation": conv.ID,
+			"author": vocabulary.RecordPath(slackPackage+"/slackuser", s.ID),
+		},
+	})
+	if got := refPathValue(mustGet(t, ds, msg.Kind, msg.ID), "author"); got != vocabulary.RecordPath(typePerson, pid) {
+		t.Fatalf("author = %q, want the subject the mirror stored (%s)", got, pid)
+	}
+	if n := len(livePersons(t, ds)); n != persons {
+		t.Fatalf("the hop minted %d person(s) from a tombstoned mirror", n-persons)
+	}
+	if got := mustGet(t, ds, s.Kind, s.ID); got.DeletedAt == nil || got.Version != s.Version+1 {
+		t.Fatalf("the hop wrote the tombstoned mirror: version %d deletedAt %v", got.Version, got.DeletedAt)
+	}
+}
+
 // A source record left unlinked — which only a bad migration can produce,
 // since the loader makes the edge required — gets its subject the moment
 // anything resolves through it.
@@ -1067,6 +1107,75 @@ func TestResurrectedSourceRecomputes(t *testing.T) {
 	}
 	if got := mustGet(t, ds, typePerson, pid).Properties["name"]; got != "Alexandros" {
 		t.Fatalf("recompute did not resume: %v", got)
+	}
+}
+
+// A tombstoned source is not a source. A patch onto it is refused before the
+// write path reaches the mapping, so it mints no subject for a record nobody
+// can see: before #633 the patch landed and, its person gone too, minted a
+// fresh one from the invisible row.
+func TestPatchOnATombstonedSourceMintsNoSubject(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	installPeopleSources(t, ds)
+
+	src := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})
+	pid := personOf(t, ds, src)
+	if _, err := ds.Delete(ctx, owner, typePerson, pid, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete person: %v", err)
+	}
+	if _, err := ds.Delete(ctx, people, src.Kind, src.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete source: %v", err)
+	}
+	gone := mustGet(t, ds, src.Kind, src.ID)
+	persons := len(livePersons(t, ds))
+
+	_, err := ds.Patch(ctx, people, src.Kind, src.ID, substrate.PatchInput{
+		Properties: map[string]any{"name": aname("Renamed")},
+	})
+	wantErr(t, err, substrate.ErrNotFound, "patch onto a tombstoned source")
+
+	got := mustGet(t, ds, src.Kind, src.ID)
+	if got.Version != gone.Version || got.DeletedAt == nil {
+		t.Fatalf("the refused patch moved the tombstone: version %d -> %d, deletedAt=%v",
+			gone.Version, got.Version, got.DeletedAt)
+	}
+	if n := len(livePersons(t, ds)); n != persons {
+		t.Fatalf("a patch onto a tombstoned source minted %d person(s)", n-persons)
+	}
+}
+
+// Releasing a finalizer is the one patch a tombstone takes, and it is still
+// not a source write: the row stays a tombstone, and its dead subject is not
+// resolved again, so no person is minted from it.
+func TestFinalizerReleaseOnATombstonedSourceMintsNoSubject(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	installPeopleSources(t, ds)
+
+	const hold = googlePackage + "/teardown"
+	src := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})
+	pid := personOf(t, ds, src)
+	mustPatch(t, ds, owner, src.Kind, src.ID, substrate.PatchInput{AddFinalizers: []string{hold}})
+	if _, err := ds.Delete(ctx, owner, typePerson, pid, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete person: %v", err)
+	}
+	if _, err := ds.Delete(ctx, people, src.Kind, src.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete source: %v", err)
+	}
+	persons := len(livePersons(t, ds))
+
+	released := mustPatch(t, ds, owner, src.Kind, src.ID, substrate.PatchInput{RemoveFinalizers: []string{hold}})
+	if released.DeletedAt == nil || len(released.Finalizers) != 0 {
+		t.Fatalf("release = deletedAt=%v finalizers=%v", released.DeletedAt, released.Finalizers)
+	}
+	if n := len(livePersons(t, ds)); n != persons {
+		t.Fatalf("releasing a tombstoned source's finalizer minted %d person(s)", n-persons)
+	}
+	if got := personOf(t, ds, released); got != pid {
+		t.Fatalf("the tombstone was re-pointed at %s, want the subject it had (%s)", got, pid)
 	}
 }
 

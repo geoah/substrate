@@ -663,6 +663,12 @@ func (d *fakeDataset) Patch(ctx context.Context, actor substrate.Actor, typ, id 
 	if !ok || (typ != "" && e.Kind != typ) {
 		return nil, fmt.Errorf("%w: %s", substrate.ErrNotFound, id)
 	}
+	// The engine refuses a patch onto a tombstone as not found, releasing a
+	// finalizer excepted (write.go isFinalizerRelease).
+	if e.DeletedAt != nil && (len(in.RemoveFinalizers) == 0 || len(in.AddFinalizers) > 0 ||
+		len(in.Properties) > 0 || len(in.Labels) > 0 || len(in.Annotations) > 0) {
+		return nil, fmt.Errorf("%w: record %s is deleted; a put restores it", substrate.ErrNotFound, id)
+	}
 	if title, ok := in.Properties[substrate.PropTitle].(string); ok {
 		e.Title = title
 	}

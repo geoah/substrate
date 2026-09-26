@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -40,6 +41,29 @@ func TestRESTReferenceIsWrittenAsAProperty(t *testing.T) {
 	wantStatus(t, rec, http.StatusOK)
 	if got := ds.lastPatch.Properties["manager"]; got != nil {
 		t.Fatalf("the patch must carry the null that drops the pointer, got %v", got)
+	}
+}
+
+// A patch addressed to a tombstone answers 404 and writes nothing; a put
+// at the same path is what restores the record. The refusal itself is the
+// engine's (TestPatchOnATombstoneIsNotFound in internal/engine); this pins the
+// fake's copy of it and the route's mapping of ErrNotFound to 404.
+func TestRESTPatchOnATombstoneIsNotFound(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+	gone := time.Unix(10, 0).UTC()
+	ds.records["p1"] = &substrate.Record{
+		ID: "p1", Kind: "samples.substrate.reamde.dev/people/person", Version: 2,
+		Properties: map[string]any{"name": "Sam"}, DeletedAt: &gone,
+	}
+
+	rec := env.do(t, http.MethodPatch, peopleV1+"/p1", tok, map[string]any{
+		"properties": map[string]any{"name": "Renamed"},
+	})
+	wantStatus(t, rec, http.StatusNotFound)
+	if e := ds.records["p1"]; e.Version != 2 || e.Properties["name"] != "Sam" {
+		t.Fatalf("the refused patch changed the tombstone: %+v", e)
 	}
 }
 

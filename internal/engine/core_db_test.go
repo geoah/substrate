@@ -850,6 +850,133 @@ func TestPutResurrectsATombstone(t *testing.T) {
 	}
 }
 
+// A patch onto a TOMBSTONE is refused as not found, and changes nothing: a
+// patch edits a record the caller believes exists, and a tombstone is gone to
+// every list. Before #633 it landed: the version climbed and the properties
+// changed under a row nothing could see. Bringing the record back is a put's
+// job (TestPutResurrectsATombstone), and after the refusal it still does.
+func TestPatchOnATombstoneIsNotFound(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newVocabularyDataset(t, "calendar")
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+		t.Fatalf("install account type: %v", err)
+	}
+	acc := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: enginetest.AccountType, ID: "gcal:acct",
+		Properties: map[string]any{"provider": "gcal", "label": "Work"},
+	})
+	const calKind = "samples.substrate.reamde.dev/calendar/calendar"
+	cal := mustPut(t, ds, gcal, substrate.PutInput{
+		Kind: calKind, ID: "gcal:primary",
+		Properties: map[string]any{"name": "Primary", "timezone": "Europe/Athens", "account": enginetest.AccountType + "/" + acc.ID},
+	})
+	if _, err := ds.Delete(ctx, gcal, cal.Kind, cal.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	gone := mustGet(t, ds, cal.Kind, cal.ID)
+	if gone.DeletedAt == nil {
+		t.Fatal("delete did not tombstone")
+	}
+
+	before := maxSeq(t, ds)
+	_, err := ds.Patch(ctx, gcal, cal.Kind, cal.ID, substrate.PatchInput{
+		Properties: map[string]any{"name": "Renamed"},
+	})
+	wantErr(t, err, substrate.ErrNotFound, "patch onto a tombstone")
+	// A version precondition does not open the door: the stored version
+	// matches, and the record is still gone.
+	_, err = ds.Patch(ctx, gcal, cal.Kind, cal.ID, substrate.PatchInput{
+		Properties: map[string]any{"name": "Renamed"}, IfVersion: &gone.Version,
+	})
+	wantErr(t, err, substrate.ErrNotFound, "conditioned patch onto a tombstone")
+
+	got := mustGet(t, ds, cal.Kind, cal.ID)
+	if got.Version != gone.Version || got.Properties["name"] != "Primary" || got.DeletedAt == nil {
+		t.Fatalf("the refused patch changed the tombstone: version=%d name=%v deletedAt=%v",
+			got.Version, got.Properties["name"], got.DeletedAt)
+	}
+	if rows := changesSince(t, ds, before); len(rows) != 0 {
+		t.Fatalf("the refused patch appended to the changelog: %+v", rows)
+	}
+
+	// A put still brings it back, and a patch then lands as on any live record.
+	mustPut(t, ds, gcal, substrate.PutInput{
+		Kind: calKind, ID: cal.ID,
+		Properties: map[string]any{"name": "Primary", "timezone": "Europe/Athens", "account": enginetest.AccountType + "/" + acc.ID},
+	})
+	if back := mustPatch(t, ds, gcal, cal.Kind, cal.ID, substrate.PatchInput{
+		Properties: map[string]any{"name": "Renamed"},
+	}); back.Properties["name"] != "Renamed" || back.DeletedAt != nil {
+		t.Fatalf("patch after the restore = %+v deletedAt=%v", back.Properties, back.DeletedAt)
+	}
+}
+
+// A finalizer release is the one patch a tombstone takes, and only on its own:
+// with a property beside it the patch is refused like any other.
+func TestPatchOnATombstoneRefusesAFinalizerReleaseWithProperties(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newVocabularyDataset(t, "tasks")
+	const hold = "samples.substrate.reamde.dev/tasks/teardown"
+	task := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "Held"},
+	})
+	mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{AddFinalizers: []string{hold}})
+	if _, err := ds.Delete(ctx, owner, task.Kind, task.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	gone := mustGet(t, ds, task.Kind, task.ID)
+
+	_, err := ds.Patch(ctx, owner, task.Kind, task.ID, substrate.PatchInput{
+		RemoveFinalizers: []string{hold}, Properties: map[string]any{"name": "Renamed"},
+	})
+	wantErr(t, err, substrate.ErrNotFound, "finalizer release with a property onto a tombstone")
+	if got := mustGet(t, ds, task.Kind, task.ID); got.Version != gone.Version || len(got.Finalizers) != 1 {
+		t.Fatalf("the refused patch changed the tombstone: version %d finalizers %v", got.Version, got.Finalizers)
+	}
+
+	released := mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{RemoveFinalizers: []string{hold}})
+	if released.DeletedAt == nil || len(released.Finalizers) != 0 {
+		t.Fatalf("release = deletedAt %v finalizers %v", released.DeletedAt, released.Finalizers)
+	}
+}
+
+// A deleted kind declaration takes no patch at all, a finalizer release
+// included: a declaration patch re-projects the merged declaration through a
+// put, so letting one through would declare the deleted kind again.
+func TestPatchOnATombstonedKindDeclarationIsNotFound(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	const pkg = "gone.example.com/gone"
+	const kind = pkg + "/row"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(pkg, 1),
+		vocabulary.KindManifest(pkg, map[string]any{"singular": "row"},
+			map[string]any{"properties": map[string]any{"headline": map[string]any{"type": "string"}}}),
+	}); err != nil {
+		t.Fatalf("declare: %v", err)
+	}
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", kind, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the declaration: %v", err)
+	}
+	if _, err := ds.KindByRef(ctx, kind); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the deleted kind still resolves: %v", err)
+	}
+
+	for name, in := range map[string]substrate.PatchInput{
+		"finalizer release": {RemoveFinalizers: []string{pkg + "/teardown"}},
+		"property":          {Properties: map[string]any{"description": "back"}},
+	} {
+		_, err := ds.Patch(ctx, owner, "substrate.reamde.dev/core/kind", kind, in)
+		wantErr(t, err, substrate.ErrNotFound, name+" onto a tombstoned declaration")
+		if _, err := ds.KindByRef(ctx, kind); !errors.Is(err, substrate.ErrNotFound) {
+			t.Fatalf("a %s patch declared the deleted kind again: %v", name, err)
+		}
+	}
+}
+
 // Restoring one record restores THAT record. Anything else the owner deleted
 // stays deleted until its own put arrives.
 func TestResurrectDoesNotCascade(t *testing.T) {

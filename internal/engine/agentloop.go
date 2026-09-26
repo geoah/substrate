@@ -884,8 +884,13 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 		if reason != "" {
 			props["reason"] = reason
 		}
-		if _, err := t.patch(eref{Kind: typeThread, ID: l.threadID}, substrate.PatchInput{Properties: props}); err != nil {
-			return err
+		// A thread deleted while the turn ran takes no settle: a tombstone
+		// refuses the patch, a collected row is absent, and what `then`
+		// settles still has to run.
+		if row != nil && row.DeletedAt == nil {
+			if _, err := t.patch(eref{Kind: typeThread, ID: l.threadID}, substrate.PatchInput{Properties: props}); err != nil {
+				return err
+			}
 		}
 		if then != nil {
 			return then(t)

@@ -391,6 +391,13 @@ func (t *txn) subjectHop(p *vocabulary.Property, target eref, rt *vocabulary.Kin
 		return eref{}, fmt.Errorf("reference names %s, which does not exist",
 			vocabulary.RecordPath(target.Kind, target.ID))
 	}
+	// A TOMBSTONED mirror still exists for the pointer (as in resolveReference
+	// above), so the hop resolves to the subject it stored, live or not. It
+	// never mints one: a tombstone is out of the live set, and writing the
+	// pointer onto it is a patch its tombstone refuses (#633).
+	if row.DeletedAt != nil {
+		return t.storedSubjectOf(target, rt, m)
+	}
 	id, err := t.subjectOf(row, rt, m)
 	if err != nil {
 		return eref{}, err
