@@ -196,6 +196,21 @@ printf '%s\n' "$names" | SHARD=30 SHARDS=30 "$shardselect" >/dev/null 2>&1
 [ $? -eq 1 ] || flag "an empty shard (30/30 of 23 names) did not exit 1"
 
 
+# --- the lint jobs cover every linter --------------------------------------
+
+# CI splits `lint` and `fmt:check` across `ci:lint` and `ci:lint:go`. A linter
+# added to the aggregate and to neither job would run on a laptop and never on
+# a pull request.
+missing="$(python3 - <<'PY'
+import tomllib
+t = tomllib.load(open(".mise.toml", "rb"))["tasks"]
+want = set(t["lint"]["depends"]) | set(t["fmt:check"]["depends"])
+have = set(t["ci:lint"]["depends"]) | set(t["ci:lint:go"]["depends"])
+print(" ".join(sorted(want - have)))
+PY
+)"
+[ -z "$missing" ] || flag "in lint or fmt:check but in neither ci:lint nor ci:lint:go: ${missing}"
+
 # --- the commit and title check -----------------------------------------
 
 # One repository, main with one commit; each scenario is a branch off it with

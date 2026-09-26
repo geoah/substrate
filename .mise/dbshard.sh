@@ -4,8 +4,8 @@
 #
 # internal/engine is 800-odd top-level tests and the slowest package in the
 # tree, and internal/catalog is the next. CI runs each as SHARDS parallel
-# jobs, each of which runs this script with its own SHARD. The test binary
-# names every top-level test and .mise/shardselect.sh hands back this shard's
+# jobs, each of which runs this script with its own SHARD. The package's test
+# files name every top-level test and .mise/shardselect.sh hands back this shard's
 # slice, so the same tree always cuts the same way and a failure reproduces
 # by rerunning its shard number.
 #
@@ -56,7 +56,13 @@ if [ "$shards" -eq 1 ]; then
   exec go test -count=1 -skip "$skip" -timeout 30m "./${pkg}/"
 fi
 
-names="$(go test -list '.*' "./${pkg}/" | grep -E '^(Test|Example|Fuzz)')"
+# The names come from the source, not from `go test -list`: listing compiles
+# and links the test binary, which was 11 of a shard's 50 seconds, and the run
+# below compiles it anyway. TestMain is the one `func Test` that is not a test.
+# A helper whose signature `go test` would not run lands in a shard's regex and
+# matches nothing, so the two lists differ only harmlessly.
+names="$(grep -hoE '^func (Test|Example|Fuzz)[A-Za-z0-9_]*\(' "$pkg"/*_test.go |
+  sed -e 's/^func //' -e 's/($//' | grep -vx 'TestMain' | LC_ALL=C sort -u)"
 mine="$(printf '%s\n' "$names" | SHARD="$shard" SHARDS="$shards" .mise/shardselect.sh)"
 total="$(printf '%s\n' "$names" | grep -c .)"
 count="$(printf '%s\n' "$mine" | grep -c .)"

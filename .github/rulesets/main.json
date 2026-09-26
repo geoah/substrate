@@ -51,6 +51,10 @@
             "integration_id": 15368
           },
           {
+            "context": "lint go",
+            "integration_id": 15368
+          },
+          {
             "context": "console",
             "integration_id": 15368
           },
