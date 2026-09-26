@@ -302,7 +302,9 @@ Under the properties, in order:
   on, the `recordmerge`, the request and the former id.
 - **History**: this record's own slice of [the changelog](changelog.md) as
   sentences, newest first: who did what, and what each change did to the
-  values ("Priority: High → Urgent", "Emails: + grace@example.com"), each
+  values ("Priority: High → Urgent", "Emails: + grace@example.com"), a
+  property rename as one move under the new name ("Display label: renamed
+  from Label", its values after it only when they differ), each
   value shown as the sheet shows it, long text cut to a line with the whole in
   the hover. It reads the feed with
   [`values=1`](changelog.md#values-on-request); against a server that predates

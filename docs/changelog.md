@@ -133,6 +133,15 @@ no longer declares at all.
 A delete, a tombstone or a purge moves no property, so its record carries
 none.
 
+A property rename (a declaration's `renamedFrom`, applied as one `patch` per
+record) reads as one change, not a removal and an addition: the entry names
+the new property with `"renamedFrom"` set to the old name, `before` is the
+value the record held under the old name and `after` the value under the new
+one, and the old name carries no change of its own
+([decision 0108](decisions/0108-a-change-row-reads-a-property-rename-as-one-move.md)).
+The pairing reads the entry's own `payload.renamed`, so every rename already
+written reads this way.
+
 Nothing is stored for this: `after` is the entry's own effect, and `before`
 is derived by walking the record's earlier entries newest first (its own, and
 any merge or split naming it) to the last one that set or cleared the
