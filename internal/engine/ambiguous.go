@@ -61,6 +61,11 @@ func (t *txn) isAmbiguousSource(src eref) (bool, error) {
 		if linked.ID != "" {
 			continue
 		}
+		if covered, err := t.covers(m, ty, row); err != nil {
+			return false, err
+		} else if !covered {
+			continue
+		}
 		_, candidates, err := t.matchSubject(row, ty, m)
 		if err != nil {
 			return false, err

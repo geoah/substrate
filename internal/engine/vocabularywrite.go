@@ -545,6 +545,9 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		// publishes are the ones the published closure derives; a property no
 		// candidate mapping supplies any more is released first
 		// (recomputeMappingTargets).
+		if err := t.checkMappingWhere(candidate); err != nil {
+			return err
+		}
 		if err := t.recomputeMappingTargets(ds.registry(), candidate); err != nil {
 			return err
 		}
