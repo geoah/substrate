@@ -1255,7 +1255,7 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 			q.Expand = append(q.Expand, fmt.Sprint(n))
 		}
 	}
-	page, err := ds.List(ctx, q)
+	page, err := ds.readList(ctx, q)
 	if err != nil {
 		return toolError(err.Error()), false, 0
 	}

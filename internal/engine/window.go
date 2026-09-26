@@ -14,9 +14,11 @@ import (
 // The window read's engine half (substrate/occurrence.go). Three reads on ONE
 // repeatable-read snapshot: the rows after the key, every candidate series,
 // and the overrides claiming a slot inside the window. Nothing here expands a
-// rule — the engine stays expander-free (decision 0039 and its successor) —
-// it hands the API layer the complete inputs a correct page needs, so a
-// master and its overrides are never seen in two states.
+// rule: the storage and the fold stay expander-free (decision 0039 and its
+// successor). It hands internal/window the complete inputs a correct page
+// needs, so a master and its overrides are never seen in two states. The
+// records route and a function's or agent's list read (readList) both merge
+// through internal/window (decision 0107).
 
 // seriesPredicate is what makes a row of a recurring kind a series: a rule,
 // or a NON-EMPTY list of extra dates (an empty `rdates` is an ordinary row).

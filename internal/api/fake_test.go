@@ -12,6 +12,7 @@ import (
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
+	"github.com/geoah/substrate/internal/window"
 )
 
 // The api package is developed against this hand-written fake rather than
@@ -864,7 +865,7 @@ func (d *fakeDataset) List(_ context.Context, q substrate.Query) (*substrate.Pag
 	// named properties, keyed by record path; a dangling pointer has no entry.
 	for _, name := range q.Expand {
 		for _, e := range out {
-			for _, path := range referencePaths(e.Properties[name]) {
+			for _, path := range window.ReferencePaths(e.Properties[name]) {
 				target := d.recordAt(path)
 				if target == nil {
 					continue
@@ -905,7 +906,7 @@ func referenceSites(props map[string]any, targets []string, property string) []s
 		if property != "" && name != property {
 			continue
 		}
-		for _, path := range referencePaths(props[name]) {
+		for _, path := range window.ReferencePaths(props[name]) {
 			if containsString(targets, path) {
 				out = append(out, substrate.ReferenceSite{Property: name})
 				break

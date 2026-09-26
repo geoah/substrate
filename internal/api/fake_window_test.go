@@ -9,6 +9,7 @@ import (
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
+	"github.com/geoah/substrate/internal/window"
 )
 
 // The fake's Window mirrors the engine's contract (engine/window.go) over the
@@ -100,7 +101,7 @@ func (d *fakeDataset) Window(_ context.Context, q substrate.WindowQuery) (*subst
 			paths = append(paths, vocabulary.RecordPath(e.Kind, e.ID))
 			continue
 		}
-		k := keyOf(e)
+		k := window.KeyOf(e)
 		if k.At.IsZero() || k.At.Before(q.From) || !k.At.Before(q.To) {
 			continue
 		}
@@ -109,7 +110,7 @@ func (d *fakeDataset) Window(_ context.Context, q substrate.WindowQuery) (*subst
 		}
 		rows = append(rows, e)
 	}
-	sort.SliceStable(rows, func(i, j int) bool { return less(keyOf(rows[i]), keyOf(rows[j])) })
+	sort.SliceStable(rows, func(i, j int) bool { return less(window.KeyOf(rows[i]), window.KeyOf(rows[j])) })
 	if len(rows) > first {
 		page.More = true
 		rows = rows[:first]
@@ -120,11 +121,11 @@ func (d *fakeDataset) Window(_ context.Context, q substrate.WindowQuery) (*subst
 		if e.DeletedAt != nil || !override[e.Kind] {
 			continue
 		}
-		slot, ok := propInstant(e.Properties, vocabulary.PropOriginalAt)
+		slot, ok := window.PropInstant(e.Properties, vocabulary.PropOriginalAt)
 		if !ok || slot.Before(q.From) || !slot.Before(q.To) {
 			continue
 		}
-		for _, p := range referencePaths(e.Properties[vocabulary.PropRecurrenceOf]) {
+		for _, p := range window.ReferencePaths(e.Properties[vocabulary.PropRecurrenceOf]) {
 			if containsString(paths, p) {
 				page.Overrides = append(page.Overrides, e)
 				break

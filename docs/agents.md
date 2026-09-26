@@ -197,12 +197,16 @@ entry could name only a function.
   otherwise `filter` (the whole [grammar](api.md#the-filter-grammar),
   `referencing` included), `orderBy`, `first`, `after` and `expand` list a
   page, which answers `{records, cursor, head, generation, included?,
-  matches?}` exactly as the route does. It requires `permissions.reads`, a
+  matches?}` exactly as the route does. A `filter` bounding `at` on both
+  ends is the [window read](api.md#the-window-read), computed occurrences
+  included. It requires `permissions.reads`, a
   load error otherwise, and every arm is held to that allowlist: a get outside
   it answers like an absent id, a kind outside it in `filter.kinds` or `kinds`
   is refused by name, an expanded referent outside it is left out, and a list
   that names no kinds lists the allowlist — expanded against the repository's
-  current kinds where the allowlist globs. List and search clamp to the
+  current kinds where the allowlist globs. A window read still folds in every
+  override that claims a slot, whatever its kind, so an override outside the
+  allowlist removes its slot (decision 0107). List and search clamp to the
   remaining row budget; a blown budget is a tool error the model sees.
 - **`substrate.reamde.dev/core/write`** is the direct write: one call is
   `{op, kind, id, input, ifVersion}`, where `op` is `put` (create or update,
