@@ -36,8 +36,9 @@ index's second column cannot return rows in seq order, so on Postgres 16 the
 planner either sorts every remaining entry of the kinds or walks the primary
 key and filters out the entries of other kinds, and a kind above about 1% of
 the changelog gets the second plan. A kind named twice is named once, so no
-entry is read twice. A short batch covers through the head, so the cursor moves over every entry of
-another kind in one step; a full batch covers through its last entry. This
+entry is read twice. A short batch covers through the head, so the cursor
+moves over every entry of another kind in one step; a full batch covers
+through its last entry. This
 holds because sequence order is commit-visibility order
 ([changelog.md](../changelog.md)). A package or authority glob is matched in
 Go against the distinct kinds the changelog holds, read at each batch by a
@@ -59,6 +60,10 @@ estimates are harder to reason about than one distinct-kind probe per kind.
 - Bad, because a glob source pays one index probe per distinct kind in the
   changelog on every batch.
 - Bad, because a `*` source gains nothing: it still reads every entry.
+- Bad, because the new index is larger than `changelog_kind_idx`. Postgres
+  deduplicates the repeated `(repository, kind)` keys of the old index, but
+  `seq` makes every key of the new one unique, so it holds one full index
+  tuple per changelog entry.
 - Bad, because migration 0007 builds an index over the whole changelog, and
   the build holds writes to it for its duration.
 
@@ -72,10 +77,14 @@ and every batch covers through its last entry or the head. The plan of the
 read `changesPast` runs, for one kind and for two, under the custom and the
 generic plan, walks `changelog_kind_seq_idx`, has no Sort node, filters out
 no entry, and reads at most 200 entries in each index scan; the old
-`kind = ANY(...)` read fails all four. A replay from seq 0 delivers every
-matched record and leaves the cursor at head.
+`kind = ANY(...)` read fails all four. The plan of the distinct-kind skip
+scan probes `changelog_kind_seq_idx` with the repository and `kind > k.kind`
+as its index condition and reads one entry a step. A glob drain reads a kind
+under the glob whose first entry is written between two batches. A replay
+from seq 0 delivers every matched record and leaves the cursor at head.
 
 ## More Information
 
-The op filter and the CEL guard still run in Go (`matchChanges`): an op is
-derived from the entry's payload (`runner.OpOf`).
+The op filter still runs in Go (`matchChanges`): an op is derived from the
+entry's payload (`runner.OpOf`). The CEL `when:` guard runs at delivery
+(`deliver`, through `evalWhen`).

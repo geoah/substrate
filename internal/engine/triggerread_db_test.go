@@ -88,6 +88,9 @@ var (
 	sortNode    = regexp.MustCompile(`(?m)^\s*(->\s+)?(Incremental )?Sort \(`)
 	indexRows   = regexp.MustCompile(`Index (Only )?Scan.*rows=(\d+)`)
 	indexKindIx = "changelog_kind_seq_idx"
+	// The skip scan's step: the repository and the next-kind bound are both
+	// index conditions.
+	skipScanCond = regexp.MustCompile(`Index Cond: \(\(repository = current_setting\([^)]*\)\) AND \(kind > \w+\.kind\)\)`)
 )
 
 // assertBoundedPlan fails unless the plan walks the kind index with no Sort,
@@ -221,6 +224,23 @@ func TestATriggerReadReturnsOnlyItsKinds(t *testing.T) {
 		})
 	}
 
+	// The glob expansion's skip scan: each step probes
+	// changelog_kind_seq_idx for the next kind, with the repository's RLS
+	// policy and `kind > k.kind` both in the index condition, and reads one
+	// entry. A step that walks a kind's entries instead reads more than one
+	// row per loop.
+	t.Run("the plan of the distinct-kind skip scan", func(t *testing.T) {
+		plan := explainPlan(t, ctx, ds.db, `EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) `+changelogKindsQuery)
+		if !strings.Contains(plan, indexKindIx) || strings.Contains(plan, "Seq Scan") || !skipScanCond.MatchString(plan) {
+			t.Fatalf("the skip scan does not probe the kind index:\n%s", plan)
+		}
+		for _, m := range indexRows.FindAllStringSubmatch(plan, -1) {
+			if n, _ := strconv.Atoi(m[2]); n > 1 {
+				t.Fatalf("a skip-scan step read %d entries, want one:\n%s", n, plan)
+			}
+		}
+	})
+
 	t.Run("every kind", func(t *testing.T) {
 		tr := &trigger{ID: "probe", Record: &recordSource{Kinds: []string{"*"}}}
 		changes, scanned, err := ds.changesPast(ctx, tr, 0)
@@ -273,5 +293,52 @@ func TestAReplayOverOneKindDeliversItAndEndsAtHead(t *testing.T) {
 	}
 	if head := maxSeqOf(t, ds); cursor != head {
 		t.Fatalf("the cursor is %d after the replay drained, want head %d", cursor, head)
+	}
+}
+
+// A glob matches against the kinds the changelog holds at each read, so a
+// kind under the glob whose first entry lands between two batches of a drain
+// is read too.
+func TestAGlobReadPicksUpAKindFirstWrittenMidDrain(t *testing.T) {
+	t.Parallel()
+	const (
+		tasks    = triggerBatch + 50
+		projects = 5
+	)
+	ctx := context.Background()
+	ds := openCursorDataset(t)
+	seedReadBacklog(t, ds, tasks, nil)
+	tr := &trigger{ID: "probe", Record: &recordSource{Kinds: []string{"samples.substrate.reamde.dev/tasks/*"}}}
+	first, after, err := ds.changesPast(ctx, tr, 0)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(first) != triggerBatch {
+		t.Fatalf("the first batch read %d entries, want a full batch of %d", len(first), triggerBatch)
+	}
+	for i := range projects {
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: readProjectKind, ID: fmt.Sprintf("late-%d", i), Properties: map[string]any{"name": "late"},
+		}); err != nil {
+			t.Fatalf("put project: %v", err)
+		}
+	}
+	head := maxSeqOf(t, ds)
+	got := map[string]int{}
+	for _, ch := range first {
+		got[ch.Kind]++
+	}
+	for after < head {
+		changes, scanned, err := ds.changesPast(ctx, tr, after)
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		for _, ch := range changes {
+			got[ch.Kind]++
+		}
+		after = scanned
+	}
+	if got[readTaskKind] != tasks || got[readProjectKind] != projects {
+		t.Fatalf("the drain read %v, want %d tasks and %d projects", got, tasks, projects)
 	}
 }

@@ -319,7 +319,7 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadli
 		// Loop until a read comes back empty rather than on a short batch:
 		// the deliveries above appended the callable's own writes (and their
 		// run rows) past the batch end, and the drain owes the cursor those
-		// rows too. They are self- and type-excluded, so this terminates.
+		// rows too — they are self- and type-excluded, so this terminates.
 	}
 }
 
@@ -1994,19 +1994,21 @@ func (ds *dataset) sourceKinds(ctx context.Context, pats []string) (kinds []stri
 	return kinds, false, nil
 }
 
-// changelogKinds lists the distinct kinds the changelog holds. A recursive
-// skip scan: each step is one probe of changelog_kind_seq_idx for the next
-// kind above the last, so the read costs one probe per distinct kind and not
-// one row per entry.
-func (ds *dataset) changelogKinds(ctx context.Context) ([]string, error) {
-	rows, err := ds.db.QueryContext(ctx, `
+const changelogKindsQuery = `
 		WITH RECURSIVE k(kind) AS (
 			(SELECT kind FROM changelog ORDER BY kind LIMIT 1)
 			UNION ALL
 			SELECT (SELECT c.kind FROM changelog c WHERE c.kind > k.kind ORDER BY c.kind LIMIT 1)
 			FROM k WHERE k.kind IS NOT NULL
 		)
-		SELECT kind FROM k WHERE kind IS NOT NULL`)
+		SELECT kind FROM k WHERE kind IS NOT NULL`
+
+// changelogKinds lists the distinct kinds the changelog holds. A recursive
+// skip scan: each step is one probe of changelog_kind_seq_idx for the next
+// kind above the last, so the read costs one probe per distinct kind and not
+// one row per entry.
+func (ds *dataset) changelogKinds(ctx context.Context) ([]string, error) {
+	rows, err := ds.db.QueryContext(ctx, changelogKindsQuery)
 	if err != nil {
 		return nil, err
 	}

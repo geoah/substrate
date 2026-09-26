@@ -19,7 +19,9 @@ of the whole changelog. A `*` source still reads every entry.
 The first boot on this release runs migration 0007 when the engine opens,
 before it serves any repository. It builds the `changelog (repository, kind,
 seq)` index over the shared changelog table, every repository's entries at
-once, and drops `changelog_kind_idx`. The build holds writes to the
+once, and drops `changelog_kind_idx`. The new index holds one full tuple
+per changelog entry, so it takes more disk than the index it replaces,
+which deduplicated its repeated keys. The build holds writes to the
 changelog while it runs, so on a host with millions of changelog entries in
 total every repository starts later than usual on that boot. Nothing needs
 doing.
