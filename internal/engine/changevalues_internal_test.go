@@ -292,3 +292,35 @@ func TestAnOpaqueEntryLeavesTheBeforesBelowItKnown(t *testing.T) {
 		t.Fatalf("before at 15 = %+v, want the creation's value", pcs[1])
 	}
 }
+
+func TestAnUnreadPairLeavesOnlyTheBeforesItCouldHaveMovedUnknown(t *testing.T) {
+	// The pair read ran out with a pair naming the record unread at seq 24.
+	// Versions that run unbroken past it say it touched nothing the walk owes;
+	// an entry without a version under it cannot say so.
+	w, pcs := cvWalkOf("name", 40, 30)
+	w.pairFloor = 25
+	w.step([]earlierEntry{
+		{seq: 40, ops: cvSet(4, false, map[string]any{"name": "D"})},
+		{seq: 30, ops: cvSet(3, false, map[string]any{"name": "C"})},
+		{seq: 20, ops: cvSet(2, false, map[string]any{"name": "B"})},
+		{seq: 10, ops: cvSet(1, true, map[string]any{"name": "A"})},
+	}, valuesBatch)
+	if pcs[0].Before != "C" || pcs[1].Before != "B" || pcs[0].BeforeUnknown || pcs[1].BeforeUnknown {
+		t.Fatalf("befores = %+v %+v, want C and B, known", pcs[0], pcs[1])
+	}
+
+	w, pcs = cvWalkOf("name", 40, 30)
+	w.pairFloor = 25
+	w.step([]earlierEntry{
+		{seq: 40, ops: cvSet(4, false, map[string]any{"name": "D"})},
+		{seq: 30, ops: cvSet(3, false, map[string]any{"name": "C"})},
+		{seq: 20, ops: cvSet(0, false, map[string]any{"name": "B"})},
+		{seq: 10, ops: cvSet(0, true, map[string]any{"name": "A"})},
+	}, valuesBatch)
+	if pcs[0].Before != "C" || pcs[0].BeforeUnknown {
+		t.Fatalf("before at 40 = %+v, want C: nothing unread lies above 25", pcs[0])
+	}
+	if !pcs[1].BeforeUnknown {
+		t.Fatalf("before at 30 = %+v, want unknown: the pair at 24 may have moved it", pcs[1])
+	}
+}

@@ -252,6 +252,77 @@ func TestChangeValuesWalkBackAcrossAMergeAndItsSplit(t *testing.T) {
 	}
 }
 
+func TestChangeValuesBoundAManyTimesMergedRecordsPairHistory(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	// A budget of sixteen: the pair history below is twenty rows, which an
+	// unbounded pair read spends whole before any walk reads a row.
+	_, ds := newCoreDataset(t, engine.WithValuesBudget(16))
+	importVocabulary(t, ds, "people")
+	const person = "samples.substrate.reamde.dev/people/person"
+	snaps := snapshots{}
+
+	ada := mustPut(t, ds, owner, substrate.PutInput{Kind: person, ID: "ada", Properties: map[string]any{"name": "Ada"}})
+	snaps.take(t, ds, person, ada.ID)
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: person, ID: "grace", Properties: map[string]any{"name": "Grace B. Hopper"}})
+	snaps.take(t, ds, person, winner.ID)
+	mustPut(t, ds, owner, substrate.PutInput{Kind: person, ID: "graceb", Properties: map[string]any{"name": "Grace Brewster Hopper"}})
+	for range 10 {
+		merged, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: person, Winner: winner.ID, Loser: "graceb"})
+		if err != nil {
+			t.Fatalf("merge: %v", err)
+		}
+		snaps.take(t, ds, person, winner.ID)
+		if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: merged.ID}); err != nil {
+			t.Fatalf("split: %v", err)
+		}
+		snaps.take(t, ds, person, winner.ID)
+	}
+	for _, name := range []string{"Grace M. Hopper", "Grace Hopper"} {
+		mustPatch(t, ds, owner, person, winner.ID, substrate.PatchInput{Properties: map[string]any{"name": name}})
+		snaps.take(t, ds, person, winner.ID)
+	}
+	mustPatch(t, ds, owner, person, ada.ID, substrate.PatchInput{Properties: map[string]any{"name": "Ada Lovelace"}})
+	snaps.take(t, ds, person, ada.ID)
+
+	// The newest two rows: the pair read stops at its share, so the walks
+	// still have the rest to read: Grace's previous name one entry back, and
+	// Ada's at her creation, which no pair names.
+	newest, err := ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{Kinds: []string{person}, Values: true}, 2)
+	if err != nil {
+		t.Fatalf("newest: %v", err)
+	}
+	if n := holdToSnapshots(t, newest, snaps); n != 2 {
+		t.Fatalf("checked %d property changes, want the two names", n)
+	}
+
+	// The whole history under the same budget: what the unread pairs leave
+	// unknown reads unknown, and nothing reads stale.
+	whole, err := ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{Kinds: []string{person}, RecordID: winner.ID, Values: true}, 100)
+	if err != nil {
+		t.Fatalf("whole: %v", err)
+	}
+	unknown := 0
+	for _, c := range whole {
+		for _, a := range c.Affected {
+			versions, tracked := snaps[a.ID]
+			if !tracked || a.Version == 0 {
+				continue
+			}
+			for _, pc := range a.Properties {
+				if pc.BeforeUnknown {
+					unknown++
+					continue
+				}
+				if want := versions[a.Version-1][pc.Name]; jsonOf(t, pc.Before) != jsonOf(t, want) {
+					t.Fatalf("seq %d %s.%s: before = %s, the read at version %d says %s", c.Seq, a.ID, pc.Name, jsonOf(t, pc.Before), a.Version-1, jsonOf(t, want))
+				}
+			}
+		}
+	}
+	t.Logf("%d befores read unknown", unknown)
+}
+
 func TestChangeValuesRedactASecretLikeARead(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

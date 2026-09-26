@@ -231,6 +231,11 @@ func ImportIncomplete(ctx context.Context, db dbx) (bool, error) {
 // transaction across a page boundary without writing five hundred entries.
 func WithCatchUpBatch(n int) Option { return func(o *options) { o.catchUpBatch = n } }
 
+// WithValuesBudget sets how many earlier entries one change read's before
+// values may read (changevalues.go), so a test can outrun it, merge and split
+// history included, with a few dozen writes.
+func WithValuesBudget(n int) Option { return func(o *options) { o.valuesBudget = n } }
+
 // AdvisoryKeySQL is the engine's advisory-lock key expression (identity.go),
 // for a test that takes one of the engine's locks by hand: a barrier test that
 // composed the key itself would park on a lock nothing else takes.

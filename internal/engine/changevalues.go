@@ -23,8 +23,9 @@ import (
 // (no value before it), and a before it cannot derive reads BeforeUnknown,
 // never a guess: history written before entries carried values, a gap in the
 // record's version sequence (an effect on the record rode an entry the walk
-// does not find by the record's id), or a previous write further back than
-// the request's budget.
+// does not find by the record's id), a previous write further back than
+// the request's budget, or one behind a merge or split the pair read's share
+// of that budget did not reach and the record's versions cannot rule out.
 
 const (
 	// valuesBatch is how many earlier entries one round reads per record.
@@ -33,6 +34,10 @@ const (
 	// shared by every record's walk: a page of many records costs what a
 	// page of one does. What is still owed when it runs out reads unknown.
 	valuesBudget = 4096
+	// valuesPairShare is the part of the budget the merge and split read may
+	// spend, a quarter: a record merged and split a thousand times must not
+	// leave the walks, which answer every other before, nothing to read.
+	valuesPairShare = 4
 )
 
 // valueAt is one property's value after an entry: present=false is cleared.
@@ -207,7 +212,13 @@ type recordWalk struct {
 	// older effect on the record must have reached, 0 when unknown.
 	below  int64
 	expect int64
-	done   bool
+	// pairFloor is where the record's merge and split history stops being
+	// known: the pair read ran out of its share with a pair naming the record
+	// still unread just under it. Under it only an unbroken run of versions
+	// says no unread pair touched the record (visit). 0 is the whole history
+	// read.
+	pairFloor int64
+	done      bool
 }
 
 func newRecordWalk(ref eref, ty *vocabulary.Kind) *recordWalk {
@@ -277,11 +288,12 @@ func (ds *dataset) deriveValues(ctx context.Context, changes []substrate.Change,
 		w.below = w.requests[0].seq + 1
 		top = max(top, w.below)
 	}
-	spent, err := ds.readPairs(ctx, order, top)
+	budget := ds.svc.valuesBudget
+	spent, err := ds.readPairs(ctx, order, top, max(1, budget/valuesPairShare))
 	if err != nil {
 		return err
 	}
-	return runWalks(order, valuesBudget-spent, func(active []*recordWalk, limit int) ([][]earlierEntry, error) {
+	return runWalks(order, budget-spent, func(active []*recordWalk, limit int) ([][]earlierEntry, error) {
 		return ds.walkRound(ctx, active, limit)
 	})
 }
@@ -356,14 +368,20 @@ func (w *recordWalk) earlierOf(seq int64, recordID, kind string, raw []byte) ear
 // prove the partial index applicable and would walk the changelog.
 var pairOp = `op IN ('` + string(substrate.OpMerge) + `', '` + string(substrate.OpSplit) + `')`
 
-// readPairs gives each walk every merge and split under top that names its
-// record as either side, in one statement for the whole request. The `->>`
-// test is never an index condition under row-level security (0001_init says
-// why), so this scans the repository's merge and split rows through the
-// partial changelog_pair_idx: once per request, where an arm in every walk's
-// round would scan them once per record per round. It returns how many rows
-// it read, which the request's budget pays for.
-func (ds *dataset) readPairs(ctx context.Context, order []*recordWalk, top int64) (int, error) {
+// readPairs gives each walk the merges and splits under top that name its
+// record as either side, newest first and at most limit of them, in one
+// statement for the whole request. The `->>` test is never an index condition
+// under row-level security (0001_init says why), so this scans the
+// repository's merge and split rows through the partial changelog_pair_idx:
+// once per request, where an arm in every walk's round would scan them once
+// per record per round. It returns how many rows it read, which the request's
+// budget pays for.
+//
+// A read that reached its limit sets each walk's pairFloor from the newest
+// pair it left unread that names the walk's record, so only a before that an
+// unread pair could have moved reads unknown; a walk no unread pair names goes
+// on whole.
+func (ds *dataset) readPairs(ctx context.Context, order []*recordWalk, top int64, limit int) (int, error) {
 	byID := map[string][]*recordWalk{}
 	ids := make([]string, 0, len(order))
 	for _, w := range order {
@@ -376,12 +394,13 @@ func (ds *dataset) readPairs(ctx context.Context, order []*recordWalk, top int64
 		SELECT seq, record_id, kind, payload, payload->>'`+payloadWinner+`', payload->>'`+payloadLoser+`'
 		FROM changelog
 		WHERE `+pairOp+` AND seq < $2
-		  AND (payload->>'`+payloadWinner+`' = ANY($1) OR payload->>'`+payloadLoser+`' = ANY($1))`,
-		ids, top)
+		  AND (payload->>'`+payloadWinner+`' = ANY($1) OR payload->>'`+payloadLoser+`' = ANY($1))
+		ORDER BY seq DESC LIMIT $3`,
+		ids, top, limit)
 	if err != nil {
 		return 0, err
 	}
-	n := 0
+	n, oldest := 0, int64(0)
 	for rows.Next() {
 		var (
 			seq            int64
@@ -393,7 +412,7 @@ func (ds *dataset) readPairs(ctx context.Context, order []*recordWalk, top int64
 			_ = rows.Close()
 			return 0, err
 		}
-		n++
+		n, oldest = n+1, seq
 		for _, id := range []sql.NullString{winner, loser} {
 			if !id.Valid {
 				continue
@@ -408,7 +427,50 @@ func (ds *dataset) readPairs(ctx context.Context, order []*recordWalk, top int64
 	if err := rows.Close(); err != nil {
 		return 0, err
 	}
-	return n, rows.Err()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if n < limit {
+		return n, nil
+	}
+	return n, ds.markUnreadPairs(ctx, byID, ids, oldest)
+}
+
+// markUnreadPairs sets pairFloor on every walk whose record a merge or split
+// under below names: the pairs the limited read left. It reads one seq per
+// record and no payload, so its answer is bounded by the page, not the
+// history.
+func (ds *dataset) markUnreadPairs(ctx context.Context, byID map[string][]*recordWalk, ids []string, below int64) error {
+	rows, err := ds.db.QueryContext(ctx, `
+		SELECT id, max(seq) FROM (
+			SELECT seq, unnest(ARRAY[payload->>'`+payloadWinner+`', payload->>'`+payloadLoser+`']) AS id
+			FROM changelog
+			WHERE `+pairOp+` AND seq < $2
+			  AND (payload->>'`+payloadWinner+`' = ANY($1) OR payload->>'`+payloadLoser+`' = ANY($1))
+		) p
+		WHERE id = ANY($1)
+		GROUP BY id`,
+		ids, below)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var (
+			id  string
+			seq int64
+		)
+		if err := rows.Scan(&id, &seq); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		for _, w := range byID[id] {
+			w.pairFloor = seq + 1
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	return rows.Err()
 }
 
 // walkRound reads the next batch of at most limit earlier entries for every
@@ -502,7 +564,12 @@ func (w *recordWalk) visit(e earlierEntry) {
 		rc = composeRecordChange(w.ty, e.ops, w.ref)
 	}
 	if rc.touched {
-		if w.expect > 0 && rc.last > 0 && rc.last != w.expect {
+		gap := w.expect > 0 && rc.last > 0 && rc.last != w.expect
+		// Under the pair floor an unread merge or split may have touched the
+		// record, and only the version this entry reached, meeting the one the
+		// walk expects, says none did.
+		blind := e.seq < w.pairFloor && (w.expect == 0 || rc.last == 0)
+		if gap || blind {
 			// A version the walk never saw: an effect on the record rode an
 			// entry it did not read, newer than this one, so a value found
 			// from here back may be stale for what is owed now. A request at
