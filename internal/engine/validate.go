@@ -821,6 +821,16 @@ func (r *titleResolver) Prop(name string) string {
 	if p, ok := r.ty.Prop(name); ok && p.Sensitive() {
 		return ""
 	}
+	// A state and a temporal slot are declared properties the row keeps
+	// outside Props (splitProps): the states column and the hot columns. A
+	// template reads them where they are stored, in the form a read returns.
+	if _, ok := r.ty.StateProp(name); ok {
+		return r.row.States[name]
+	}
+	if isHotTime(name) || (name == substrate.PropBody && declaresBody(r.ty)) {
+		s, _ := hotValue(r.row, name).(string)
+		return s
+	}
 	if v, ok := r.row.Props[name]; ok {
 		// A reference is a record PATH, which scalarString would render
 		// verbatim — a title reading "substrate.reamde.dev/core/agent/x"
