@@ -237,7 +237,7 @@ func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 	}
 
 	// The echo function answers with its resolved config.
-	out, _, err := ds.CallFunction(ctx, mbEchoFn, map[string]any{})
+	out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{})
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 	if p.refreshes != 1 {
 		t.Fatalf("provider refreshes: %d", p.refreshes)
 	}
-	out, _, err = ds.CallFunction(ctx, mbEchoFn, map[string]any{})
+	out, _, err = ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{})
 	if err != nil {
 		t.Fatalf("call after refresh: %v", err)
 	}

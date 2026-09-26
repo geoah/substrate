@@ -533,7 +533,7 @@ func TestBundleDisableStopsDelivery(t *testing.T) {
 	}
 
 	// Invocation refuses...
-	if _, _, err := ds.CallFunction(ctx, mbEchoFn, map[string]any{}); err == nil ||
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{}); err == nil ||
 		!strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("disabled function call: %v", err)
 	}
@@ -589,7 +589,7 @@ func TestBundleUpgradeRefusesBreakage(t *testing.T) {
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, noEcho); err != nil {
 		t.Fatalf("dropping an unreferenced function: %v", err)
 	}
-	if _, _, err := ds.CallFunction(ctx, mbEchoFn, nil); err == nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, nil); err == nil {
 		t.Fatal("echo survived its removal")
 	}
 }
@@ -659,7 +659,7 @@ func TestBundleUninstallTearsDownAuthority(t *testing.T) {
 		t.Fatalf("mailitem schema row not pruned: %+v %v", row, err)
 	}
 	// The callable is gone, and the trigger row went with it — it cannot fire.
-	if _, _, err := ds.CallFunction(ctx, mbEchoFn, map[string]any{}); err == nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{}); err == nil {
 		t.Fatal("a torn-down bundle's function ran")
 	}
 	if row, err := ds.Get(ctx, "substrate.reamde.dev/core/trigger", "on-mark-mail"); err != nil || row.DeletedAt == nil {
@@ -863,7 +863,7 @@ func TestShadowAccountConfigTraitIsNotAnAccount(t *testing.T) {
 		t.Fatalf("bare trait filter: %v", err)
 	}
 	// The runner injects no shadow records as accounts.
-	out, _, err := ds.CallFunction(ctx, mbEchoFn, map[string]any{})
+	out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{})
 	if err != nil {
 		t.Fatalf("call echo: %v", err)
 	}
@@ -968,7 +968,7 @@ def main(input, host):
 		t.Fatalf("disable: %v", err)
 	}
 	args := map[string]any{"winner": a1.ID, "loser": a2.ID}
-	_, _, err := ds.CallFunction(ctx, toolPackage+"/merger", args)
+	_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, toolPackage+"/merger", args)
 	if err == nil || !strings.Contains(err.Error(), "frozen") {
 		t.Fatalf("a merge effect bypassed the bundle freeze: %v", err)
 	}
@@ -980,7 +980,7 @@ def main(input, host):
 	if err := ds.EnableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	if _, n, err := ds.CallFunction(ctx, toolPackage+"/merger", args); err != nil || n != 1 {
+	if _, n, err := ds.CallFunction(ctx, substrate.ActorAPI, toolPackage+"/merger", args); err != nil || n != 1 {
 		t.Fatalf("merge effect while live: %d %v", n, err)
 	}
 }
@@ -1088,7 +1088,7 @@ func TestDisableDrainsAnAdmittedInvocation(t *testing.T) {
 	}
 	callDone := make(chan callRes, 1)
 	go func() {
-		_, n, err := ds.CallFunction(ctx, waiterFn, map[string]any{})
+		_, n, err := ds.CallFunction(ctx, substrate.ActorAPI, waiterFn, map[string]any{})
 		callDone <- callRes{n, err}
 	}()
 	time.Sleep(1 * time.Second) // the invocation is admitted and polling
@@ -1127,7 +1127,7 @@ func TestDisableDrainsAnAdmittedInvocation(t *testing.T) {
 		t.Fatalf("drained invocation: %d %v", r.effects, r.err)
 	}
 	// And the next admission refuses.
-	if _, _, err := ds.CallFunction(ctx, waiterFn, map[string]any{}); err == nil ||
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, waiterFn, map[string]any{}); err == nil ||
 		!strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("post-disable invocation: %v", err)
 	}

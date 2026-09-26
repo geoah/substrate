@@ -390,11 +390,12 @@ func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, er
 
 // CallFunction is the callable invocation API (`mode: call`): arbitrary
 // input, validated against the manifest's `input:` schema when one is
-// declared; no cursor motion, no run row; effects — the body's and its
-// sub-calls' — applied in one transaction under the FUNCTION's actor. It
-// returns the output (checked against `output:` when declared) and how many
-// effects applied.
-func (ds *dataset) CallFunction(ctx context.Context, name string, args any) (any, int, error) {
+// declared; no cursor motion; effects — the body's and its sub-calls' —
+// applied in one transaction under the FUNCTION's actor. It returns the
+// output (checked against `output:` when declared) and how many effects
+// applied. A function that declares `permissions.network` also writes a call
+// run naming caller, the door the request came through (callrun.go).
+func (ds *dataset) CallFunction(ctx context.Context, caller substrate.Actor, name string, args any) (any, int, error) {
 	// The request's Idempotency-Key first, before the function is resolved,
 	// admitted or its input checked (idempotency.go): a stored outcome
 	// answers a repeat even after the function was disabled, uninstalled or
@@ -414,7 +415,7 @@ func (ds *dataset) CallFunction(ctx context.Context, name string, args any) (any
 	// The key is consumed: the body, its host calls and its effects run
 	// without one.
 	ctx = substrate.WithoutIdempotencyKey(ctx)
-	output, effects, err := ds.callFunctionOnce(ctx, name, args, call)
+	output, effects, err := ds.callFunctionOnce(ctx, caller, name, args, call)
 	if err != nil {
 		// Nothing committed: the reservation goes so the retry runs again.
 		call.release(ctx)
@@ -445,7 +446,7 @@ func callableRefusal(name string) error {
 // the transaction that applies the effects (or in one of its own when there
 // are none), so the stored outcome commits with the effect and never without
 // it.
-func (ds *dataset) callFunctionOnce(ctx context.Context, name string, args any, call *idempotentCall) (any, int, error) {
+func (ds *dataset) callFunctionOnce(ctx context.Context, caller substrate.Actor, name string, args any, call *idempotentCall) (any, int, error) {
 	fn, err := ds.registry().ResolveFunction(name)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: %w", callableRefusal(name), err)
@@ -493,6 +494,16 @@ func (ds *dataset) callFunctionOnce(ctx context.Context, name string, args any, 
 		}
 		downstream = fmt.Sprintf("%s/%s/call/%s", ds.Repository().ID, fn.Identity(), callID)
 	}
+	// A networked function's call is audited from here on: the body is about
+	// to run, and what it sends out leaves no other trace (callrun.go).
+	audit := ds.auditsCall(fn)
+	run := newCallRun(ctx, fn, caller)
+	failed := func(err error) (any, int, error) {
+		if audit {
+			ds.putFailedCallRun(ctx, run, err)
+		}
+		return nil, 0, err
+	}
 	effects, output, err := ds.runCallable(ctx, fn, runner.Input{
 		Mode:           runner.ModeCall,
 		Args:           args,
@@ -502,28 +513,39 @@ func (ds *dataset) callFunctionOnce(ctx context.Context, name string, args any, 
 		// The body ran and faulted (a raise, a bad effect, a failed sub-call).
 		// That is a server-side execution fault, NOT the caller's input failing
 		// the declared schema, which is checked above and stays ErrValidation.
-		return nil, 0, fmt.Errorf("%w: %w", substrate.ErrFunctionFault, err)
+		return failed(fmt.Errorf("%w: %w", substrate.ErrFunctionFault, err))
 	}
 	// A declared Output validates even a nil answer (`any` stays open): the
 	// shape contract holds before any effect commits.
 	if fn.Output != nil {
 		if err := vocabulary.CheckValue(fn.Output, output); err != nil {
-			return nil, 0, fmt.Errorf("%w: output: %w", substrate.ErrValidation, err)
+			return failed(fmt.Errorf("%w: output: %w", substrate.ErrValidation, err))
 		}
 	}
 	outcome := substrate.FunctionCalled{Output: output, Effects: len(effects)}
-	if len(effects) == 0 {
+	if len(effects) == 0 && !audit {
 		return output, 0, call.settle(ctx, outcome)
 	}
+	// An audited call with no effects still commits: its run row. The body
+	// has run, so the request's cancellation no longer applies, as in settle.
+	txCtx := ctx
+	if len(effects) == 0 {
+		txCtx = context.WithoutCancel(ctx)
+	}
 	actor := substrate.Actor(fn.Actor())
-	err = ds.inTx(ctx, actor, false, func(t *txn) error {
+	err = ds.inTx(txCtx, actor, false, func(t *txn) error {
 		if err := t.applyEffects(fn.Caps.Emit, effects); err != nil {
 			return err
+		}
+		if audit {
+			if err := t.putSystemRun(run.succeeded(output, effects), false); err != nil {
+				return err
+			}
 		}
 		return call.settleIn(t, outcome)
 	})
 	if err != nil {
-		return nil, 0, err
+		return failed(err)
 	}
 	return output, len(effects), nil
 }

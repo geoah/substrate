@@ -222,7 +222,7 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, effects, err := ds.CallFunction(ctx, vocabulary.HostFunctionQuery, map[string]any{
+	out, effects, err := ds.CallFunction(ctx, substrate.ActorAPI, vocabulary.HostFunctionQuery, map[string]any{
 		"kind": "samples.substrate.reamde.dev/tasks/task", "id": "t-1",
 	})
 	if err != nil {
@@ -235,7 +235,7 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 		t.Fatalf("the query answer does not hold the record: %v", out)
 	}
 
-	out, _, err = ds.CallFunction(ctx, vocabulary.HostFunctionQuery, map[string]any{
+	out, _, err = ds.CallFunction(ctx, substrate.ActorAPI, vocabulary.HostFunctionQuery, map[string]any{
 		"kind": "samples.substrate.reamde.dev/tasks/task",
 	})
 	if err != nil {
@@ -252,7 +252,7 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 		vocabulary.HostFunctionWrite:   {"op": "delete", "kind": "samples.substrate.reamde.dev/tasks/task", "id": "t-1"},
 		vocabulary.HostFunctionAsk:     {"questions": []any{map[string]any{"id": "q", "prompt": "really?"}}},
 	} {
-		_, _, err := ds.CallFunction(ctx, id, args)
+		_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, id, args)
 		if !errors.Is(err, substrate.ErrForbidden) {
 			t.Fatalf("%s answered a direct call: %v", id, err)
 		}
@@ -263,7 +263,7 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 
 	// The card is enforced on the way in, like every other function's, because it
 	// is an ordinary declared `arguments:` list.
-	if _, _, err := ds.CallFunction(ctx, vocabulary.HostFunctionQuery,
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, vocabulary.HostFunctionQuery,
 		map[string]any{"nonsense": true}); !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("an undeclared argument was admitted: %v", err)
 	}

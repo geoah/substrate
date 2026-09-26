@@ -909,9 +909,28 @@ applied-effects summary. The callable lands twice from the one value —
 `callableRef`, a reference at the function or agent record, which is what
 `filter.referencing` follows to read every run of one callable, and
 `callable`, the deprecated bare id of that record. Parked runs are kept; the
-newest twenty non-parked runs per trigger stay and older ones tombstone. The
-direct invocations — a manual run, a parked retry, a host call, the call API —
-mint nothing.
+newest twenty non-parked runs per trigger stay and older ones tombstone. A
+manual run, a parked retry and a host call mint nothing.
+
+**A direct call of a networked function writes a run row.** A call through
+the call API of a function that declares `permissions.network`, or whose
+`permissions.call` grant reaches one that does at any depth, writes one
+`triggerrun` row with mode `call` and no `trigger`, because what such a body
+sends out (a message, a review) leaves nothing else in the repository
+([decision 0106](decisions/0106-a-direct-call-of-a-networked-function-writes-a-run-row.md)).
+The row names the callable, the `caller` (the request's actor: `api`,
+`console`, `substratectl`), the `principal` (the id of the token that made the
+call), `startedAt` and `finishedAt`, the status, the applied-effects summary,
+`outputBytes`, and `output` itself when it encodes to at most 4096 bytes of
+JSON. A call that settles writes it in the transaction that commits its
+effects and its idempotency key, as `ok`. A call whose body ran and failed
+(a raise, an output outside `output:`, a commit that failed) writes it alone,
+as `failed`, with the error in `reason`. A call refused before its body runs
+(an unknown function, input outside `input:`, a disabled bundle) and the
+replay of a stored `Idempotency-Key` outcome write nothing. Call runs are
+never pruned. A function with no network grant still writes no row: its
+effects in the changelog are its whole trace, attributed to the token behind
+the call.
 
 `substratectl function call <name> --input <json>` invokes one function directly,
 applies its effects under the function's actor, and prints the effect count
