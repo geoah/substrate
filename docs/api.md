@@ -538,7 +538,7 @@ only through its occurrences.
 
 ```http
 GET /api/v1/records
-      ?filter={"implements":"temporal",
+      ?filter={"implements":"substrate.reamde.dev/core/temporal",
                "properties":{"at":{"gte":"2026-07-01T00:00:00Z","lt":"2026-07-08T00:00:00Z"}}}
       &orderBy=at
 
