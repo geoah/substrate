@@ -444,6 +444,7 @@ const suggestedMapping: Shape<SuggestedMapping> = {
 const bundleClosure: Shape<BundleClosure> = {
   kinds: true,
   kindDescriptions: false,
+  kindPurposes: false,
   traits: true,
   traitDescriptions: false,
   functions: true,

@@ -38,6 +38,7 @@
     "functionDescriptions": false,
     "functions": true,
     "kindDescriptions": false,
+    "kindPurposes": false,
     "kinds": true,
     "mappings": true,
     "records": true,

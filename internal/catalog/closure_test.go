@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"reflect"
 	"testing"
 	"testing/fstest"
 )
@@ -65,6 +66,28 @@ func TestClosureCarriesEveryPlaneWithItsProse(t *testing.T) {
 	}
 }
 
+// A kind's declared purpose rides the closure (decision record 0104): before
+// an import there is no stored declaration to read it from, and a reader that
+// sorts what a sample adds into collections and machinery has nothing else to
+// decide by. An undeclared purpose stays absent, because primary is the
+// reader's default and never written for it.
+func TestClosureCarriesEachKindsDeclaredPurpose(t *testing.T) {
+	c, err := Load(SampleRoot(fstest.MapFS{
+		"demo/bundle.yaml": &fstest.MapFile{Data: []byte(demoManifest)},
+	}))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	b, ok := c.ByID("demo.example.com/demo")
+	if !ok {
+		t.Fatal("the hand-written bundle is not in the catalog")
+	}
+	want := map[string]string{"demo.example.com/demo/cursor": "internal"}
+	if !reflect.DeepEqual(b.Closure.KindPurposes, want) {
+		t.Errorf("kind purposes = %v, want %v", b.Closure.KindPurposes, want)
+	}
+}
+
 func sameIDs(got, want []string) bool {
 	if len(got) != len(want) {
 		return false
@@ -97,6 +120,13 @@ metadata:
   id: demo.example.com/demo/note
 data:
   description: a note
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: demo.example.com/demo/cursor
+data:
+  description: where the ingest stopped
+  purpose: internal
 ---
 kind: substrate.reamde.dev/core/function
 metadata:
