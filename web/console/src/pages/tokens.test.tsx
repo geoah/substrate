@@ -119,10 +119,11 @@ describe("Signed in and API tokens", () => {
     const dialog = await screen.findByRole("dialog")
     expect(dialog.textContent).toContain("Sign out ci runner?")
     expect(dialog.textContent).toContain(
-      "Anything using this token stops working"
+      "It stops working straight away and has to sign in again."
     )
+    expect(dialog.textContent).not.toMatch(/token|revok/i)
     expect(deletes()).toHaveLength(0)
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }))
+    fireEvent.click(within(dialog).getByRole("button", { name: "Sign out" }))
     await waitFor(() =>
       expect(
         fetchMock.mock.calls.some(
@@ -144,7 +145,7 @@ describe("Signed in and API tokens", () => {
     )
     const dialog = await screen.findByRole("dialog")
     expect(dialog.textContent).toContain("Sign out this browser?")
-    expect(dialog.textContent).toContain("signs you out of this browser")
+    expect(dialog.textContent).toContain("It will need your password again.")
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }))
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
     expect(deletes()).toHaveLength(0)

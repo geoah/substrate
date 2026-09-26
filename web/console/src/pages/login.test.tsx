@@ -136,7 +136,7 @@ describe("LoginPage", () => {
     )
     render(<LoginPage />)
     signIn()
-    await screen.findByText(/repository, password or code is wrong/i)
+    await screen.findByText(/repository name, password or code is wrong/i)
     expect(getToken()).toBeNull()
     expect(navigate).not.toHaveBeenCalled()
   })

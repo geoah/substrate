@@ -147,7 +147,13 @@ describe("AccountRows", () => {
     expect(
       screen.queryByRole("button", { name: "Replace authenticator…" })
     ).toBeNull()
-    expect(screen.getByText("Second factor: off")).toBeTruthy()
+    expect(
+      screen.getByText(
+        /Off\. This substrate signs you in with a password alone\./
+      )
+    ).toBeTruthy()
+    // the operator's remedy is technical detail
+    expect(screen.queryByText(/substratectl/)).toBeNull()
 
     const card = within(open("Change…", "Change your password"))
     expect(card.queryByLabelText("Current code")).toBeNull()
