@@ -257,3 +257,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0103](0103-an-ambiguous-probe-follows-its-mappings-policy-and-a-probed-value-never-spreads.md) | An ambiguous probe follows its mapping's `onAmbiguous`, and a probed value never spreads to a second target | accepted |
 | [0104](0104-a-break-ships-an-upgrade-note-under-docs-changes.md) | A break ships an upgrade note under docs/changes | proposed |
 | [0105](0105-a-lossy-confirmation-binds-to-what-the-plan-affects.md) | A lossy confirmation binds to what the plan affects | accepted |
+| [0106](0106-a-schedule-trigger-passes-declared-arguments-to-its-function.md) | A schedule trigger passes declared arguments to its function | accepted |
