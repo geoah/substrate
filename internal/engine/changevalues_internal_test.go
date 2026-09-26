@@ -42,7 +42,7 @@ func cvWalk(seq int64, names ...string) (*recordWalk, []*substrate.PropertyChang
 	var out []*substrate.PropertyChange
 	for _, n := range names {
 		pc := &substrate.PropertyChange{Name: n}
-		req.props = append(req.props, pc)
+		req.props = append(req.props, owedBefore{name: n, pc: pc})
 		out = append(out, pc)
 	}
 	w.requests = []valueRequest{req}
@@ -254,7 +254,7 @@ func cvWalkOf(name string, seqs ...int64) (*recordWalk, []*substrate.PropertyCha
 	var out []*substrate.PropertyChange
 	for _, seq := range seqs {
 		pc := &substrate.PropertyChange{Name: name}
-		w.requests = append(w.requests, valueRequest{seq: seq, props: []*substrate.PropertyChange{pc}})
+		w.requests = append(w.requests, valueRequest{seq: seq, props: []owedBefore{{name: name, pc: pc}}})
 		out = append(out, pc)
 	}
 	return w, out
@@ -322,5 +322,28 @@ func TestAnUnreadPairLeavesOnlyTheBeforesItCouldHaveMovedUnknown(t *testing.T) {
 	}
 	if !pcs[1].BeforeUnknown {
 		t.Fatalf("before at 30 = %+v, want unknown: the pair at 24 may have moved it", pcs[1])
+	}
+}
+
+func TestRenamesOfKeepsOnlyAMoveOnTheAddressedRecord(t *testing.T) {
+	moved := map[string]valueAt{
+		"label":        {},
+		"displayLabel": {value: "Acme", present: true},
+		"size":         {value: "big", present: true},
+	}
+	c := &substrate.Change{RecordID: cvRef.ID, Kind: cvRef.Kind, Payload: map[string]any{
+		payloadRenamed: map[string]any{"label": "displayLabel", "size": "dimensions"},
+	}}
+	got := renamesOf(c, cvRef, moved)
+	if len(got) != 1 || got["displayLabel"] != "label" {
+		t.Fatalf("renames = %v, want displayLabel from label only: size was set, not cleared, and dimensions did not move", got)
+	}
+	other := eref{Kind: cvRef.Kind, ID: "t2"}
+	if got := renamesOf(c, other, moved); got != nil {
+		t.Fatalf("renames on a record the entry does not address = %v", got)
+	}
+	plain := &substrate.Change{RecordID: cvRef.ID, Kind: cvRef.Kind}
+	if got := renamesOf(plain, cvRef, moved); got != nil {
+		t.Fatalf("renames on an entry that names none = %v", got)
 	}
 }

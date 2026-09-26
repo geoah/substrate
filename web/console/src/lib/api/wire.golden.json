@@ -286,7 +286,8 @@
     "after": false,
     "before": false,
     "beforeUnknown": false,
-    "name": true
+    "name": true,
+    "renamedFrom": false
   },
   "PropertyMeta": {
     "alternatives": false,
