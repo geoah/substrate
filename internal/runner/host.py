@@ -154,6 +154,7 @@ class HostError(Exception):
 #
 #   host.records.get/list/search   typed, type-scoped reads (committed state)
 #   host.functions.call             function-to-function composition
+#   host.agents.call                run an agent to settlement, its reply back
 #   host.effects.put/patch/delete/  the buffered-effects builder — each APPENDS
 #     link/unlink/merge/split       a staged effect and returns a handle
 #   host.ids.external/url           deterministic, hash-backed, URL-safe ids
@@ -576,9 +577,23 @@ class Functions:
         return self._host.call(function, input)
 
 
+class Agents:
+    """Run an agent to settlement, gated by permissions.agents -> a dict of
+    reply, thread and status. The agent commits its own writes as it runs,
+    under its own actor, so they do not wait for this delivery and do not
+    roll back with it."""
+
+    def __init__(self, host):
+        self._host = host
+
+    def call(self, agent, input=None):
+        return self._host.call(agent, input)
+
+
 class Host:
     """The body's host API: logging plus the capability-scoped reads, and the
-    SDK surface (records/functions/effects/ids/page) namespaced beside them."""
+    SDK surface (records/functions/agents/effects/ids/page) namespaced beside
+    them."""
 
     def __init__(self, inp, req_id, logs):
         self._config = inp.get("config")
@@ -587,6 +602,7 @@ class Host:
         self.effects = Effects()
         self.records = Records(self)
         self.functions = Functions(self)
+        self.agents = Agents(self)
         self.ids = Ids()
         self.page = Page(inp.get("resume"))
 
@@ -646,7 +662,8 @@ class Host:
 
     def call(self, function, input=None):
         """Invoke another function (permissions.call gated) -> its output.
-        Its effects apply in THIS delivery's transaction."""
+        Its effects apply in THIS delivery's transaction. An agent granted
+        under permissions.agents runs the same way (host.agents.call)."""
         return self._call("call", {"function": function, "input": input}).get("output")
 
 

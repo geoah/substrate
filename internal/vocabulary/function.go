@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -150,8 +151,8 @@ type Function struct {
 }
 
 // FunctionCaps is the capability envelope: what the body's effects may address,
-// what its host reads may touch, which functions it may Call, what network it
-// declares, and which identity mutations it is granted.
+// what its host reads may touch, which functions and agents it may Call, what
+// network it declares, and which identity mutations it is granted.
 type FunctionCaps struct {
 	// Emit is the allowlist of full type identities the effects may address.
 	Emit []string
@@ -161,6 +162,10 @@ type FunctionCaps struct {
 	// Call is the allowlist of function identities the body's host Call may
 	// invoke; empty means every sub-call trips.
 	Call []string
+	// Agents is the allowlist of agent identities the body's host Call may
+	// run (record 0106). An identity sits on at most one of Call and Agents,
+	// so the list that holds it is what says which callable a Call means.
+	Agents []string
 	// Network is the declared egress allowlist: each entry is a bare destination,
 	// a `host`, a `host:port` or a CIDR (networkEntryProblem holds the grammar).
 	// Enforcement is all-or-nothing today: a non-empty list grants the body
@@ -651,7 +656,7 @@ var functionDataKeys = map[string]bool{
 	"authority": true, "package": true, "description": true, "runtime": true, "source": true,
 	"timeout": true,
 	// The IO shapes are `data`'s own; the grant is ONE key beside them, holding
-	// the five of functionPermissionKeys.
+	// the six of functionPermissionKeys.
 	"arguments": true, "returns": true, "permissions": true,
 	// The author's OBJECTIVE facts for the policy layer: what class of effect
 	// the body has, and a confirmation floor no policy or judge loosens.
@@ -666,7 +671,7 @@ var deletedFunctionKeys = map[string]string{
 	"on":           "a trigger record (substrate.reamde.dev/core) — the subscription lives on the trigger, the function is a pure callable",
 	"when":         "trigger source.record.when — the guard lives on the trigger record",
 	"coalesce":     "trigger source.record.coalesce — coalescing lives on the trigger record",
-	"capabilities": "permissions: the grant is one object, and its keys are reads, writes, call, network and mutations",
+	"capabilities": "permissions: the grant is one object, and its keys are reads, writes, call, agents, network and mutations",
 	"input":        "arguments — a flat LIST of named arguments ({name, type}), so the tool card is valid by construction",
 	"output":       "returns — the same flat list on the result side",
 	"emit":         "permissions.writes: the grants group under `permissions:`, and the permission to write is named for writing",
@@ -676,11 +681,11 @@ var deletedFunctionKeys = map[string]string{
 	"mutations":    "permissions.mutations: the grants group under `permissions:`",
 }
 
-// functionPermissionKeys is the grant object's five keys. The sorted order of
+// functionPermissionKeys is the grant object's six keys. The sorted order of
 // the set is the order the loader reads them in, so a document with two
 // problems reports the same one on every run.
 var functionPermissionKeys = map[string]bool{
-	"reads": true, "writes": true, "call": true, "network": true, "mutations": true,
+	"reads": true, "writes": true, "call": true, "agents": true, "network": true, "mutations": true,
 }
 
 var functionReadsKeys = map[string]bool{"kinds": true, "budgets": true}
@@ -832,6 +837,17 @@ func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Functi
 			continue
 		}
 		fn.Caps.Call = append(fn.Caps.Call, ident)
+	}
+	for i, ident := range ReferentIDs(mslice(perms, "agents"), CoreKind(DocAgent)) {
+		if !Qualified(ident) || strings.Contains(ident, "*") {
+			l.errf("%s: data.permissions.agents[%d]: %q is not a full agent identity; agents names them, no globs", where, i, ident)
+			continue
+		}
+		if slices.Contains(fn.Caps.Call, ident) {
+			l.errf("%s: data.permissions.agents[%d]: %q is also under data.permissions.call; a host Call names one callable, so grant it under one of the two", where, i, ident)
+			continue
+		}
+		fn.Caps.Agents = append(fn.Caps.Agents, ident)
 	}
 	for i, nv := range mslice(perms, "network") {
 		entry := fmt.Sprint(nv)
@@ -1089,6 +1105,11 @@ func (r *Registry) resolveFunction(f *Function) []string {
 			problems = append(problems, fmt.Sprintf(
 				"%s: data.permissions.call: %q is a host function: the engine runs it under a CALLER's grants and a function body has none to lend, so carry it as an agent tool instead",
 				where, ident))
+		}
+	}
+	for _, ident := range f.Caps.Agents {
+		if _, err := r.ResolveAgent(ident); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: data.permissions.agents: unknown agent %q", where, ident))
 		}
 	}
 	return problems
