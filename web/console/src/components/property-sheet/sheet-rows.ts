@@ -33,6 +33,9 @@ export interface SheetRow {
   filled: boolean
   lock?: RowLock
   meta?: PropertyMeta
+  /** A short note read beside the value (a draft's state: it moves once the
+   * record exists). */
+  hint?: string
 }
 
 /** Whether a stored value says anything: absent, null, "", [] and {} do

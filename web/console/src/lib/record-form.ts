@@ -30,8 +30,9 @@
 
 import type { SubstrateRecord, EnumValue, KindInfo } from "@/lib/api/types"
 import { REFERENCE_KEY, readReference } from "@/lib/api/types"
+import { temporalProperties } from "@/lib/definition"
 import { coerceReferencePath, splitRecordPath } from "@/lib/record-path"
-import type { EditPath as DocumentPath } from "@/lib/record-yaml"
+import type { EditPath as DocumentPath, Problem } from "@/lib/record-yaml"
 import {
   TO_ANY,
   checkKey,
@@ -628,4 +629,112 @@ export function toProperties(
     props[field.name] = submitted.value
   }
   return props
+}
+
+// ── a new record's rows ─────────────────────────────────────────────────────
+
+/** The properties two core traits bind: the repeat rule and the override of
+ * one occurrence. A kind declares them, but they are how a series is kept,
+ * not what a new record is first given. */
+const TRAIT_MACHINERY: Record<string, readonly string[]> = {
+  "substrate.reamde.dev/core/recurring": [
+    "recurrence",
+    "rdates",
+    "exdates",
+    "timezone",
+  ],
+  "substrate.reamde.dev/core/override": ["recurrenceOf", "originalAt"],
+}
+
+function machinery(kind: KindInfo): Set<string> {
+  const traits = (kind.definition as { traits?: unknown }).traits
+  const out = new Set<string>()
+  if (!Array.isArray(traits)) return out
+  for (const trait of traits) {
+    if (typeof trait !== "string") continue
+    for (const name of TRAIT_MACHINERY[trait.split("(")[0].trim()] ?? []) {
+      out.add(name)
+    }
+  }
+  return out
+}
+
+/** The properties a state move stamps: the transition fills them in. */
+function stamped(specs: readonly PropSpec[]): Set<string> {
+  const out = new Set<string>()
+  for (const spec of specs) {
+    for (const t of spec.transitions ?? []) t.stamps.forEach((s) => out.add(s))
+  }
+  return out
+}
+
+/** Where a property sits on a new record: what it must have first, then what
+ * a new record is commonly given (the records it points at, and the times it
+ * is about), then the rest, folded, and last in the fold what is seldom typed
+ * by hand (a series' machinery, a time a move stamps, a pointer at any kind). */
+export type NewRecordBand = "required" | "common" | "rest" | "later"
+
+export function newRecordBands(
+  kind: KindInfo,
+  specs: readonly PropSpec[]
+): Map<string, NewRecordBand> {
+  const bound = machinery(kind)
+  const timeline = new Set(temporalProperties(kind))
+  const byTransition = stamped(specs)
+  const out = new Map<string, NewRecordBand>()
+  for (const spec of specs) {
+    let band: NewRecordBand = "rest"
+    if (spec.required) band = "required"
+    else if (bound.has(spec.name) || byTransition.has(spec.name)) band = "later"
+    else if (spec.kind === "reference") {
+      band = spec.to && spec.to !== TO_ANY ? "common" : "later"
+    } else if (timeline.has(spec.name)) band = "common"
+    else if (
+      (spec.kind === "datetime" || spec.kind === "date") &&
+      !spec.repeated &&
+      !spec.keyed
+    ) {
+      band = "common"
+    }
+    out.set(spec.name, band)
+  }
+  return out
+}
+
+/** A new record's rows in the order they are asked for: the required, then
+ * the common, each in the order given; the rest folded unless `keep` holds
+ * them open (a row somebody filled in, or one with something to say), the
+ * seldom-typed last. */
+export function arrangeNewRecord<T extends { name: string; spec: PropSpec }>(
+  kind: KindInfo,
+  rows: readonly T[],
+  keep: (row: T) => boolean = () => false
+): { shown: T[]; folded: T[] } {
+  const bands = newRecordBands(
+    kind,
+    rows.map((r) => r.spec)
+  )
+  const band = (r: T) => bands.get(r.name) ?? "rest"
+  const rest = [
+    ...rows.filter((r) => band(r) === "rest"),
+    ...rows.filter((r) => band(r) === "later"),
+  ]
+  return {
+    shown: [
+      ...rows.filter((r) => band(r) === "required"),
+      ...rows.filter((r) => band(r) === "common"),
+      ...rest.filter(keep),
+    ],
+    folded: rest.filter((r) => !keep(r)),
+  }
+}
+
+/** A document problem as the row it is about says it: the property's label,
+ * never its key, and no backticks. */
+export function rowProblem(problem: Problem, spec: PropSpec): string {
+  if (problem.message === `\`${spec.name}\` is required.`) {
+    return `${spec.label} is required.`
+  }
+  const said = problem.message.replace(`\`${spec.name}\`: `, "")
+  return said.charAt(0).toUpperCase() + said.slice(1)
 }

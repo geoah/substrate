@@ -1,10 +1,10 @@
 /** The record editor (create + edit a record of any kind), in TWO LENSES over
  * ONE document.
  *
- * - **Form** is the default: one typed control per declared property, composed
- *   from the declaration (`PropertyForm`). An enum is a select, a state offers
- *   its states, a reference picks a record, a secret is write-only, and every
- *   control carries the property's one-liner and a worked example.
+ * - **Form** is the default. A NEW record is the record page with nothing
+ *   saved yet (`CreateSheet`): the property sheet and its editors over a
+ *   draft. An EDIT's form is one typed control per declared property
+ *   (`PropertyForm`).
  * - **YAML** is the expert lens: the whole apply-able envelope in a code editor
  *   that knows the kind (`YamlEditor`, CodeMirror). Completion, diagnostics and
  *   hovers all read the declaration.
@@ -141,15 +141,15 @@ function RecordEditor({
   if (registry.isError || !kindInfo) {
     return (
       <EditorEmpty
-        title="No such kind"
-        description={`This repository has no kind called ${authority}/${name}.`}
+        title="This collection isn’t here"
+        description={`${authority}/${pkg}/${name}`}
       />
     )
   }
   if (mode === "edit" && record.isError) {
     return (
       <EditorEmpty
-        title="The record didn't load"
+        title="Couldn’t load this record"
         description={`${authority}/${name}/${id}: ${record.error.message}`}
       />
     )
@@ -271,8 +271,7 @@ export function RecordEditorForm({
     onSuccess: (saved) => {
       toast.add({
         type: "success",
-        title:
-          mode === "edit" ? `${kind.name} updated.` : `${kind.name} created.`,
+        title: `${displayName(kind)} ${mode === "edit" ? "saved" : "created"}`,
       })
       void queryClient.invalidateQueries()
       void navigate({
@@ -293,10 +292,7 @@ export function RecordEditorForm({
       setServerError(api)
       toast.add({
         type: "error",
-        title:
-          mode === "edit"
-            ? `Saving the ${kind.name} failed`
-            : `Creating the ${kind.name} failed`,
+        title: `Couldn’t save this ${lowerFirst(displayName(kind))}`,
         description: api.message,
       })
     },
@@ -312,7 +308,7 @@ export function RecordEditorForm({
     if (error) {
       toast.add({
         type: "error",
-        title: "Formatting failed",
+        title: "Couldn’t format the YAML",
         description: error,
       })
       return
@@ -360,6 +356,9 @@ export function RecordEditorForm({
               kind={kind}
               kinds={kinds}
               onChange={onChange}
+              seed={seededFrom}
+              problems={liveErrors}
+              attempted={attempted}
               meta={
                 <span className="inline-flex items-center gap-1.5">
                   New in <KindRef kind={kind} />
@@ -390,7 +389,13 @@ export function RecordEditorForm({
             </div>
           </>
         )}
-        {(attempted || lens === "yaml" || serverError) &&
+        {lens === "form" && (
+          <SaveRefusal
+            serverError={serverError}
+            problems={attempted ? liveErrors.filter((p) => !onSheet(p)) : []}
+          />
+        )}
+        {lens === "yaml" &&
           (errorCount > 0 || warnCount > 0 || serverError) && (
             <div className="mt-4 rounded-lg border bg-panel">
               <ProblemsList
@@ -579,7 +584,7 @@ function ProblemsList({
         {clean ? (
           <>
             <CheckCircle2Icon className="size-4 text-primary" />
-            <span>Ready to apply</span>
+            <span>Ready to save</span>
           </>
         ) : (
           <span>
@@ -602,11 +607,8 @@ function ProblemsList({
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3">
           <div className="flex items-center gap-2 text-sm font-medium text-destructive">
             <AlertCircleIcon className="size-4 shrink-0" />
-            The substrate rejected this apply
+            Couldn’t save: {serverError.message}
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {serverError.message}
-          </p>
           {serverError.problems.length > 0 && (
             <ul className="mt-2 flex flex-col gap-1">
               {serverError.problems.map((p, i) => (
@@ -619,17 +621,47 @@ function ProblemsList({
         </div>
       )}
 
-      {clean ? (
-        <p className="text-xs text-muted-foreground">
-          The document parses and satisfies the kind's declaration.
-        </p>
-      ) : (
+      {!clean && (
         <ul className="flex flex-col gap-2">
           {problems.map((p, i) => (
             <ProblemRow key={i} problem={p} onShowLine={onShowLine} />
           ))}
         </ul>
       )}
+    </div>
+  )
+}
+
+/** Whether the new-record sheet names this problem on its own row (or the
+ * heading, or the ID). */
+function onSheet(problem: Problem): boolean {
+  return Boolean(problem.path) && problem.path !== "kind"
+}
+
+/** Why a create did not happen, under the sheet: what the server said, and
+ * whatever the sheet has no row to name. */
+function SaveRefusal({
+  serverError,
+  problems,
+}: {
+  serverError?: ApiError
+  problems: Problem[]
+}) {
+  if (!serverError && !problems.length) return null
+  return (
+    <div
+      role="alert"
+      className="mt-4 flex flex-col gap-1 rounded-md bg-bad-soft px-3 py-2.5 text-[13px] text-destructive"
+    >
+      {serverError && <p>Couldn’t save: {serverError.message}</p>}
+      {serverError?.problems.map((p, i) => (
+        <p key={i} className="text-[12.5px]">
+          {p}
+        </p>
+      ))}
+      {problems.map((p, i) => (
+        <p key={`p${i}`}>{p.message.replace(/`/g, "")}</p>
+      ))}
     </div>
   )
 }

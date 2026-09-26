@@ -2,10 +2,14 @@
  * naming only the properties that moved, asserting the version the page read
  * (`ifVersion`), so an edit made against a stale page is refused rather than
  * silently winning. A state move is the same patch: patch is the one write
- * that may move a state, along a declared transition (engine/write.go). */
+ * that may move a state, along a declared transition (engine/write.go).
+ *
+ * Inside a `SheetDraftContext` the record is not stored yet: the same write
+ * lands in the draft and nothing reaches the server. */
 
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
+import { useSheetDraft } from "./draft"
 import { splitKind } from "@/lib/api/http"
 import { patchRecord, recordWriteReaches } from "@/lib/api/records"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
@@ -36,17 +40,24 @@ export function wroteHere(kind: string, id: string, version: number): boolean {
 
 export function useRecordPatch(record: SubstrateRecord) {
   const client = useQueryClient()
+  const draft = useSheetDraft()
   const { authority, pkg, name } = splitKind(record.kind)
   return useMutation({
-    mutationFn: (properties: Record<string, unknown>) =>
-      patchRecord(authority, pkg, name, record.id, {
+    mutationFn: async (properties: Record<string, unknown>) => {
+      if (draft) {
+        draft.write(properties)
+        return record
+      }
+      return patchRecord(authority, pkg, name, record.id, {
         properties,
         ifVersion: record.version,
-      }),
+      })
+    },
     // Every read that can show the record, not only its page: a collection
     // holds its rows fresh for a while, and a list keyed on the kind (the
     // Agents page's providers) would otherwise go on showing the old values.
     onSuccess: (saved) => {
+      if (draft) return
       if (typeof saved?.version === "number") {
         noteWrite(record.kind, record.id, saved.version)
       }

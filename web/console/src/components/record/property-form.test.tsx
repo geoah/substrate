@@ -4,7 +4,7 @@
  * YAML with no help in it.
  *
  * What the lens owes the declaration: a control per property with its label and
- * one-liner, an enum as a select rather than a free-text guess, a write-only
+ * one-liner, an enum chosen from its values rather than a free-text guess, a write-only
  * secret, a state that says a put may not move it, and every edit landing in
  * the SAME document the YAML lens shows, one key at a time. */
 
@@ -19,7 +19,9 @@ import {
 } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { propertiesOf, templateYAML } from "@/lib/record-yaml"
 import { PropertyForm } from "./property-form"
 
@@ -82,7 +84,11 @@ const record: SubstrateRecord = {
 function renderKindForm(
   kind: KindInfo,
   seed: string,
-  over: { record?: SubstrateRecord; kinds?: KindInfo[] } = {}
+  over: {
+    record?: SubstrateRecord
+    kinds?: KindInfo[]
+    technical?: boolean
+  } = {}
 ) {
   const onChange = vi.fn()
   const client = new QueryClient({
@@ -106,9 +112,24 @@ function renderKindForm(
   }
 
   const view = render(
-    <QueryClientProvider client={client}>
-      <Harness />
-    </QueryClientProvider>
+    <ConsolePreferencesContext.Provider
+      value={{
+        preferences: {
+          collapsed: [],
+          favorites: [],
+          sidebarOpen: true,
+          ...DEFAULT_SETTINGS,
+          technicalDetails: over.technical ?? false,
+        },
+        busy: false,
+        change: () => {},
+        set: () => {},
+      }}
+    >
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>
+    </ConsolePreferencesContext.Provider>
   )
   return { onChange, view }
 }
@@ -125,7 +146,14 @@ function emitted(onChange: { mock: { calls: unknown[][] } }): string {
 // ── the record dropdown, as a caller drives it ──────────────────────────────
 
 function searchBox(): HTMLInputElement {
-  return screen.getByPlaceholderText(/, or type an id$/) as HTMLInputElement
+  return screen.getByPlaceholderText(/^Search /) as HTMLInputElement
+}
+
+/** The values an open choice list offers, in order. */
+function choices(): string[] {
+  return [...document.querySelectorAll("[cmdk-item]")].map(
+    (el) => el.getAttribute("data-value") ?? ""
+  )
 }
 
 /** The record ids the open dropdown is offering, in order. */
@@ -158,15 +186,13 @@ describe("the form lens", () => {
     renderForm(templateYAML(providerKind))
     expect(screen.getByLabelText(/^Name/)).toBeTruthy()
     expect(screen.getByText("the endpoint")).toBeTruthy()
-    // The enum is a select over what the kind admits, not a text box.
-    const wire = screen.getByLabelText("Wire") as HTMLSelectElement
-    expect(wire.tagName).toBe("SELECT")
-    expect([...wire.options].map((o) => o.value)).toEqual([
-      "",
-      "openai",
-      "anthropic",
-      "azure",
-    ])
+    // The enum is chosen from what the kind admits, not typed into a box.
+    const wire = screen.getByLabelText("Wire")
+    expect(wire.tagName).toBe("BUTTON")
+    fireEvent.click(wire)
+    expect(choices()).toEqual(["openai", "anthropic", "azure"])
+    fireEvent.click(screen.getByText("Anthropic"))
+    expect(screen.getByLabelText("Wire").textContent).toContain("Anthropic")
   })
 
   // A worked example in the data voice reads like a stored value; the
@@ -246,15 +272,15 @@ data:
 
   it("freezes a state on an edit, and offers the machine's states on a create", () => {
     renderForm(templateYAML(providerKind))
-    const create = screen.getByLabelText("Status") as HTMLSelectElement
-    expect(create.disabled).toBe(false)
-    expect([...create.options].map((o) => o.value)).toContain("live")
+    fireEvent.click(screen.getByLabelText("Status"))
+    expect(choices()).toContain("live")
     cleanup()
 
     renderForm(templateYAML(providerKind), { record })
-    const edit = screen.getByLabelText("Status") as HTMLSelectElement
-    expect(edit.disabled).toBe(true)
-    expect(screen.getByText(/changes by transition/)).toBeTruthy()
+    expect(screen.getByLabelText("Status").tagName).toBe("OUTPUT")
+    expect(
+      screen.getByText(/changes by moving it on the record’s page/)
+    ).toBeTruthy()
   })
 
   it("edits a repeated object as rows of its declared fields, not as JSON", () => {
@@ -588,7 +614,6 @@ data:
     renderKindForm(agentKind, stamped, {
       record: agentRecord({ version: "v1alpha7", provider: "default" }),
     })
-    expect(screen.getByText("engine-stamped")).toBeTruthy()
     expect(screen.getByText("v1alpha7")).toBeTruthy()
     expect(screen.queryByLabelText(/^Version/)).toBeNull()
   })
@@ -609,6 +634,7 @@ data:
     stubCollections()
     const { onChange } = renderKindForm(agentKind, templateYAML(agentKind), {
       kinds: REGISTRY,
+      technical: true,
     })
     pickTyped(/^Provider/, "not-listed-yet")
     // The PIN completes what was typed: a bare id is the authored short form,
@@ -766,7 +792,7 @@ data:
     // The write still CARRIES it: the loader requires the property, only the
     // asking stops.
     expect(propertiesOf(emitted(onChange))?.authority).toBe("crew.test.dev")
-    expect(screen.getByText("derived")).toBeTruthy()
+    expect(screen.getByText(/Taken from the record id/)).toBeTruthy()
     expect(screen.getByText("crew.test.dev")).toBeTruthy()
   })
 

@@ -11,10 +11,11 @@
  * ends: rows, "No <plural> yet", or what went wrong beside a retry. A spinner
  * that never stops is the failure this is built against.
  *
- * FREE TEXT IS NOT AN AFTERTHOUGHT. A record can be minted between one page and
- * the next, and a model can be told to name one this repository does not hold
- * yet, so whatever is typed is offered at the bottom as its own row. Selecting
- * it inserts the text verbatim. */
+ * FREE TEXT IS NOT AN AFTERTHOUGHT, in technical mode. A record can be minted
+ * between one page and the next, and a model can be told to name one this
+ * repository does not hold yet, so whatever is typed is offered at the bottom
+ * as its own row. Selecting it inserts the text verbatim. Everyday, the list
+ * is a search and nothing else: an id is not a thing a person types. */
 
 import { useState } from "react"
 import { CheckIcon, ChevronsUpDownIcon, PlusIcon } from "lucide-react"
@@ -131,26 +132,39 @@ function ReadState({
   pin,
   kind,
   typed,
+  technical,
 }: {
   read: PickerRecords
   pin: string
   kind?: KindInfo
   typed: string
+  technical: boolean
 }) {
   const plural = pluralOf(pin, kind)
   if (!pin) {
     return (
       <div className="px-3 py-5 text-sm text-muted-foreground">
-        Choose a kind first, and its records are listed here. Or type a whole{" "}
-        <span className="data">{"<kind>/<id>"}</span> path.
+        Pick a collection first, and its records are listed here.
+        {technical && (
+          <>
+            {" "}
+            Or type a whole <span className="data">{"<kind>/<id>"}</span> path.
+          </>
+        )}
       </div>
     )
   }
   if (read.status === "unresolved") {
     return (
       <div className="px-3 py-5 text-sm text-muted-foreground">
-        This repository doesn’t have <span className="data">{pin}</span>, so
-        there is nothing to list. Type an id to name a record anyway.
+        {technical ? (
+          <>
+            This repository doesn’t have <span className="data">{pin}</span>, so
+            there is nothing to list. Type an id to name a record anyway.
+          </>
+        ) : (
+          `There are no ${plural} here yet.`
+        )}
       </div>
     )
   }
@@ -161,7 +175,7 @@ function ReadState({
         className="flex items-center gap-2 px-3 py-6 text-sm text-muted-foreground"
       >
         <Spinner className="size-3.5" />
-        {read.searching ? "Searching" : `Reading ${plural}`}
+        {read.searching ? "Searching" : `Loading ${plural}`}
       </div>
     )
   }
@@ -177,9 +191,11 @@ function ReadState({
             ? "You’re offline. The list reads as soon as you’re back."
             : `The list didn’t load: ${read.error}`}
         </span>
-        <span className="text-xs text-muted-foreground">
-          Try again, or type an id to name a record anyway.
-        </span>
+        {technical && (
+          <span className="text-xs text-muted-foreground">
+            Or type an id to name a record anyway.
+          </span>
+        )}
         <Button
           type="button"
           size="xs"
@@ -277,6 +293,7 @@ export function RecordCombobox({
   // the list leaves out on purpose (one already held, or the record itself)
   // is not offered back through the side door either.
   const freeText =
+    technical &&
     typed &&
     !/\s/.test(typed) &&
     typed !== self &&
@@ -292,13 +309,13 @@ export function RecordCombobox({
           <Button
             id={id}
             type="button"
-            variant="outline"
+            variant={adding ? "ghost" : "outline"}
             size={adding ? "xs" : "default"}
             aria-label={ariaLabel}
             aria-invalid={invalid}
             className={cn(
               "justify-between font-normal",
-              adding ? "self-start" : "w-full",
+              adding ? "self-start text-muted-foreground" : "w-full",
               !adding && !value && "text-muted-foreground"
             )}
           />
@@ -326,13 +343,21 @@ export function RecordCombobox({
             page's own filter decide, so cmdk only moves the highlight. */}
         <Command shouldFilter={false}>
           <CommandInput
-            placeholder={`Search ${plural}, or type an id`}
+            placeholder={
+              technical ? `Search ${plural}, or type an id` : `Search ${plural}`
+            }
             value={query}
             onValueChange={setQuery}
           />
           <CommandList>
             {!options.length && (
-              <ReadState read={read} pin={pin} kind={kind} typed={typed} />
+              <ReadState
+                read={read}
+                pin={pin}
+                kind={kind}
+                typed={typed}
+                technical={technical}
+              />
             )}
             {options.length > 0 && (
               <CommandGroup>

@@ -10,6 +10,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react"
 import { ChevronDownIcon, ChevronRightIcon, LockIcon } from "lucide-react"
 
+import { useSheetDraft } from "./draft"
 import { InlineEditor } from "./inline-editor"
 import { OwnershipChip, OwnershipDetail, type Through } from "./ownership"
 import { DeclaredValue, LooseValue } from "./property-value"
@@ -148,10 +149,15 @@ export function PropertySheet({
   mappings = NO_MAPPINGS,
   moved = NONE_MOVED,
 }: PropertySheetProps) {
-  const { all, filled, empty } = useMemo(
-    () => sheetRows(record, kind, readOnly),
-    [record, kind, readOnly]
-  )
+  const draft = useSheetDraft()
+  // A draft shows what it may write, arranged as a new record asks for it;
+  // its fold holds what is left rather than what is empty.
+  const { all, filled, empty } = useMemo(() => {
+    const rows = sheetRows(record, kind, readOnly)
+    if (!draft) return rows
+    const { shown, folded } = draft.arrange(rows.all)
+    return { all: [...shown, ...folded], filled: shown, empty: folded }
+  }, [record, kind, readOnly, draft])
   const [showEmpty, setShowEmpty] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const [open, setOpen] = useState<string[]>([])
@@ -175,6 +181,7 @@ export function PropertySheet({
     )
 
   const rows = showEmpty ? all : filled
+  const rowErrors = draft ? { ...draft.errors, ...errors } : errors
 
   function setError(name: string, message: string | undefined) {
     setErrors((prev) => {
@@ -308,6 +315,9 @@ export function PropertySheet({
                     )}
                   >
                     <Value row={row} />
+                    {row.hint && (
+                      <span className="text-xs text-faint">{row.hint}</span>
+                    )}
                   </span>
                   {editable && (
                     <span id={`${uid}-${row.name}-edit`} className="sr-only">
@@ -354,12 +364,12 @@ export function PropertySheet({
                 />
               </div>
             )}
-            {errors[row.name] && (
+            {rowErrors[row.name] && (
               <p
                 role="alert"
                 className="col-span-full -mt-0.5 mb-1.5 rounded-md bg-bad-soft px-2.5 py-1.5 text-[12.5px] text-destructive sm:col-start-2 sm:col-end-4"
               >
-                {errors[row.name]}
+                {rowErrors[row.name]}
               </p>
             )}
             {detailOpen && row.meta?.manager && (
@@ -384,13 +394,14 @@ export function PropertySheet({
           {showEmpty ? (
             <>
               <ChevronRightIcon aria-hidden className="size-3.5" />
-              Hide empty
+              {draft ? "Show fewer" : "Hide empty"}
             </>
           ) : (
             <>
               <ChevronDownIcon aria-hidden className="size-3.5" />
               <span className="truncate">
-                {empty.length} empty: {emptyNames.join(", ")}
+                {empty.length} {draft ? "more" : "empty"}:{" "}
+                {emptyNames.join(", ")}
               </span>
             </>
           )}
