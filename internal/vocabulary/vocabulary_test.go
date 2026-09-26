@@ -1529,6 +1529,94 @@ func TestParsePath(t *testing.T) {
 	}
 }
 
+// A mapping's `where` (#581, record 0106) names declared properties of its
+// source kind, each with one condition object of the filter grammar. What
+// the operators mean for a type is the engine's to check, at apply.
+func TestMappingWhere(t *testing.T) {
+	head := `kind: substrate.reamde.dev/core/package
+metadata: {id: x.example.com/x}
+data: {authority: x.example.com, package: x, version: 1}
+---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/person}
+data:
+  authority: x.example.com
+  package: x
+  names: {singular: person}
+  properties:
+    name: {type: string}
+---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/rec}
+data:
+  authority: x.example.com
+  package: x
+  names: {singular: rec}
+  properties:
+    name: {type: string}
+    state: {type: enum, values: [open, closed]}
+    count: {type: int}
+    token: {type: secret}
+    owner:
+      type: reference
+      kind: x.example.com/x/person
+      required: true
+      mustExist: true
+      subject: true
+---
+kind: substrate.reamde.dev/core/recordmapping
+metadata: {id: x.example.com/x/recperson}
+data:
+  authority: x.example.com
+  package: x
+  from: x.example.com/x/rec
+  to: x.example.com/x/person
+  map:
+    name: {path: name}
+`
+	load := func(property, where string) (*vocabulary.Registry, error) {
+		src := head + "  property: " + property + "\n" + where
+		return vocabulary.LoadFS(fstest.MapFS{"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(src)}})
+	}
+
+	reg, err := load("person", "  where:\n    state: {in: [open]}\n    count: {gte: 2}\n")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	m, _ := reg.MappingFor("x.example.com/x/rec", "person")
+	if got := strings.Join(m.WhereOrder, ","); got != "count,state" {
+		t.Fatalf("where order = %q", got)
+	}
+	if c := m.Where["state"]; len(c.In) != 1 || c.In[0] != "open" {
+		t.Fatalf("where.state = %+v", c)
+	}
+	if c := m.Where["count"]; c.Gte != float64(2) {
+		t.Fatalf("where.count = %+v", c)
+	}
+
+	bad := map[string]struct{ property, where string }{
+		"a bare value":         {"person", "  where:\n    state: open\n"},
+		"an unknown operator":  {"person", "  where:\n    state: {is: open}\n"},
+		"an empty condition":   {"person", "  where:\n    state: {}\n"},
+		"not a map":            {"person", "  where: [state]\n"},
+		"an undeclared name":   {"person", "  where:\n    status: {eq: open}\n"},
+		"a sensitive property": {"person", "  where:\n    token: {exists: true}\n"},
+		"the subject slot":     {"person", "  where:\n    person: {exists: true}\n"},
+		// A required slot is filled on every write, so a record outside the
+		// where could not be written at all.
+		"a required slot": {"owner", "  where:\n    state: {eq: open}\n"},
+	}
+	for name, tc := range bad {
+		t.Run(name, func(t *testing.T) {
+			if _, err := load(tc.property, tc.where); err == nil {
+				t.Fatal("expected a load error")
+			} else if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "where") {
+				t.Fatalf("expected a validation error naming where, got %v", err)
+			}
+		})
+	}
+}
+
 // A mapping's rules are loader-enforced: the subject reference's shape, every
 // path against both declared kinds, one mapping per source kind, and the
 // registry-wide bipartite rule.

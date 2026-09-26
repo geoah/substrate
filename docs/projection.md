@@ -222,6 +222,50 @@ already holds stays, so a duplicate that exists is the owner's to settle with
 it
 ([decision record 0103](decisions/0103-an-ambiguous-probe-follows-its-mappings-policy-and-a-probed-value-never-spreads.md)).
 
+### Which sources a mapping covers: `where`
+
+A mapping covers every record of its source kind unless it says otherwise.
+`where` narrows it to the records that meet one condition per property, in the
+[filter grammar](api.md#the-filter-grammar)'s condition objects, all of which
+must hold:
+
+```yaml
+  from: providers.substrate.reamde.dev/github/pullrequest
+  to: samples.substrate.reamde.dev/tasks/task
+  property: task
+  where:
+    state:
+      eq: open
+  map:
+    name:
+      path: title
+```
+
+A condition means exactly what the same entry under `filter.properties`
+means on a list of the source kind, because the engine compiles it with the
+same code. It names a property the source kind declares, never a sensitive
+one and never the mapping's own slot, and a bare value (`state: open`) is
+refused, as the filter refuses one. An operator that does not fit the type
+(`match` on a number, `gt` on a reference) fails the apply that declares it.
+
+A record outside the `where` is treated as a deleted source is:
+
+- **Its own write resolves nothing.** It links no subject, mints none, and is
+  never marked ambiguous. The write that brings it inside resolves it then.
+- **It contributes nothing.** Recompute reads no value from it, so a record
+  that leaves the `where` releases what it projected, and a subject left with
+  no covered source takes the [orphan mark](#when-the-last-source-goes-the-orphan-mark).
+- **Its link stays.** Only merge and split move a subject slot, so the pointer
+  it already holds is kept, `linkedFrom` still lists it, and a record that
+  comes back inside projects onto the same subject instead of minting another.
+- **The subject hop refuses it** when it holds no link, rather than mint a
+  subject for a record the mapping does not cover.
+
+Changing a mapping's `where` recomputes every record of its target kind in
+the apply, so a narrowed mapping releases what it no longer covers at once. A
+record that a widened `where` newly covers resolves on its next write
+([decision record 0106](decisions/0106-a-mapping-where-narrows-its-sources-in-the-filter-grammar.md)).
+
 ### Reading the links back: `linkedFrom`
 
 The link lives on the SOURCE, so nothing among a subject's own properties says

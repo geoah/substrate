@@ -113,6 +113,11 @@ func (t *txn) subjectOf(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapping
 		// Already canonical: subjectTargetOf resolves the stored id.
 		return linked.ID, nil
 	}
+	if ok, err := t.covers(m, srcTy, src); err != nil {
+		return "", err
+	} else if !ok {
+		return "", uncoveredSource(src, m)
+	}
 	// THE HOP DEMANDS A SUBJECT. Somebody's write names this mirror in a slot
 	// pinned at the subject kind, so there has to be a record to point at:
 	// this is the one caller that mints whatever the source carries, and the
@@ -195,6 +200,12 @@ func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) (se
 	// leave it unset: a source that offers nothing mints nothing, and an
 	// ambiguous probe does what the mapping's onAmbiguous says, parking by
 	// default (records 0087 and 0103).
+	// A record the mapping's where does not cover describes no subject: it
+	// resolves nothing and mints nothing, and is resolved again on the write
+	// that brings it inside (mappingwhere.go).
+	if ok, err := t.covers(m, sp.ty, row); err != nil || !ok {
+		return false, false, err
+	}
 	slot, declared := sp.ty.Prop(m.Property)
 	target, parked, err := t.matchOrMint(row, sp.ty, m, declared && slot.Required)
 	if err != nil || target == "" {
@@ -856,7 +867,9 @@ func (t *txn) subjectSourceSites(target eref, mappings []*vocabulary.Mapping) ([
 		return nil, err
 	}
 	_ = rows.Close()
-	return found, nil
+	// A source outside its mapping's where is no source, exactly as a
+	// tombstone is not (mappingwhere.go).
+	return t.coveredSites(found, bySlot)
 }
 
 // sourceActor is the actor a source record's contributions are attributed

@@ -1,9 +1,13 @@
 package vocabulary
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/geoah/substrate/internal/strictjson"
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // A recordmapping is the sixth manifest kind: it says how one source-record
@@ -68,6 +72,13 @@ type Mapping struct {
 	// May be empty.
 	Map      map[string]*MapRule
 	MapOrder []string
+	// Where narrows which records of From the mapping covers: one condition
+	// per declared property of From, in the filter grammar's condition
+	// objects, all of which must hold (#581, record 0106). Empty covers every
+	// record. A record it does not cover resolves no subject and contributes
+	// nothing, the way a tombstoned one does.
+	Where      map[string]substrate.Cond
+	WhereOrder []string
 
 	// Definition is the declaration's own data map, exactly as authored — what
 	// the row stores as its properties.
@@ -188,6 +199,7 @@ func PathProperty(t *Kind, p Path) (*Property, bool, error) {
 var mappingDataKeys = map[string]bool{
 	"authority": true, "package": true, "from": true, "to": true, "property": true,
 	"match": true, "map": true, "description": true, "onAmbiguous": true,
+	"where": true,
 }
 
 var matchRuleKeys = map[string]bool{"from": true, "to": true}
@@ -322,7 +334,52 @@ func (l *loader) parseMapping(d Document) *Mapping {
 		m.MapOrder = append(m.MapOrder, n)
 	}
 	sort.Strings(m.MapOrder)
+	l.parseWhere(where, d.Data, m)
 	return m
+}
+
+// parseWhere reads a mapping's `where:`, a map from a property of the source
+// kind to one condition object of the filter grammar. A bare value is
+// refused, exactly as the filter's `labels` arm refuses one: `{state: open}`
+// would leave the operator to a guess. Whether the operators fit the
+// property's type is the engine's to say, because the engine is what compiles
+// the filter grammar (mapping.go checkMappingWhere).
+func (l *loader) parseWhere(where string, data map[string]any, m *Mapping) {
+	raw, set := data["where"]
+	if !set || raw == nil {
+		return
+	}
+	conds, ok := raw.(map[string]any)
+	if !ok || len(conds) == 0 {
+		l.errf("%s: data.where: a map from a property of %s to a condition, {state: {eq: open}}", where, m.From)
+		return
+	}
+	m.Where = map[string]substrate.Cond{}
+	for name, cv := range conds {
+		cwhere := fmt.Sprintf("%s: data.where.%s", where, name)
+		if !ValidCamel(name) {
+			l.errf("%s: must be %s", cwhere, camelRule)
+			continue
+		}
+		obj, isObj := cv.(map[string]any)
+		if !isObj || len(obj) == 0 {
+			l.errf("%s: a condition is an object of filter operators, {eq: %v}, never a bare value", cwhere, cv)
+			continue
+		}
+		enc, err := json.Marshal(obj)
+		if err != nil {
+			l.errf("%s: %v", cwhere, err)
+			continue
+		}
+		var c substrate.Cond
+		if err := strictjson.DecodeBytes(enc, &c, false); err != nil {
+			l.errf("%s: %v (the filter grammar's operators: eq, in, prefix, gt, gte, lt, lte, contains, exists, match)", cwhere, err)
+			continue
+		}
+		m.Where[name] = c
+		m.WhereOrder = append(m.WhereOrder, name)
+	}
+	sort.Strings(m.WhereOrder)
 }
 
 // resolveMapping validates one mapping once every reference pin is a resolved
@@ -380,6 +437,28 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 		if sp.Cascades() {
 			errf("%s: data.property: the subject reference never cascades — deleting the subject must not collect the records that describe it", where)
 		}
+	}
+	// A where condition names a DECLARED property of the source kind: the
+	// filter's own rule (filterable, indexed and declared are one set). Not a
+	// sensitive one, which the filter refuses as an oracle, and not the
+	// subject slot, whose value the mapping itself writes.
+	for _, name := range m.WhereOrder {
+		cwhere := fmt.Sprintf("%s: data.where.%s", where, name)
+		p, ok := from.Props[name]
+		switch {
+		case !ok || p.Implicit:
+			errf("%s: %s declares no property %q", cwhere, m.From, name)
+		case p.Sensitive():
+			errf("%s: %s.%s is %s-typed and cannot be filtered", cwhere, m.From, name, p.Datatype)
+		case name == m.Property:
+			errf("%s: %s is the subject slot this mapping writes, and a mapping cannot be narrowed by its own output", cwhere, name)
+		}
+	}
+	if len(m.Where) > 0 && declared && sp.Required {
+		// A required slot is filled on every write or the write fails, so a
+		// record the mapping does not cover could never be written at all.
+		errf("%s: data.where: %s.%s is declared required, and a record outside the where would have no subject to fill it: drop required from the slot",
+			where, m.From, m.Property)
 	}
 	// Match probes are identifier lookups: both ends stay in the short-string
 	// family, the only kinds the engine probes by value.
