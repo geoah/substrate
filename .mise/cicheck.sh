@@ -161,7 +161,7 @@ fi
 
 # 23 names, handed over in reverse: the partition sorts, and 23 does not
 # divide by 8, so the shards are uneven by one and the last ones are short.
-# A Fuzz target and an Example are in the list, because engineshard.sh keeps
+# A Fuzz target and an Example are in the list, because dbshard.sh keeps
 # them and they must land in a shard like any Test.
 names="$(printf 'FuzzParse\nExampleOpen\n'; for i in $(seq 21 -1 1); do printf 'Test%02d\n' "$i"; done)"
 sorted="$(printf '%s\n' "$names" | LC_ALL=C sort)"
@@ -195,6 +195,21 @@ printf '%s\n' "$names" | SHARD=0 SHARDS=8 "$shardselect" >/dev/null 2>&1
 printf '%s\n' "$names" | SHARD=30 SHARDS=30 "$shardselect" >/dev/null 2>&1
 [ $? -eq 1 ] || flag "an empty shard (30/30 of 23 names) did not exit 1"
 
+
+# --- the lint jobs cover every linter --------------------------------------
+
+# CI splits `lint` and `fmt:check` across `ci:lint` and `ci:lint:go`. A linter
+# added to the aggregate and to neither job would run on a laptop and never on
+# a pull request.
+missing="$(python3 - <<'PY'
+import tomllib
+t = tomllib.load(open(".mise.toml", "rb"))["tasks"]
+want = set(t["lint"]["depends"]) | set(t["fmt:check"]["depends"])
+have = set(t["ci:lint"]["depends"]) | set(t["ci:lint:go"]["depends"])
+print(" ".join(sorted(want - have)))
+PY
+)"
+[ -z "$missing" ] || flag "in lint or fmt:check but in neither ci:lint nor ci:lint:go: ${missing}"
 
 # --- the commit and title check -----------------------------------------
 

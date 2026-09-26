@@ -138,7 +138,7 @@ run = "go test -count=1 -p 1 -timeout 45m -skip '^TestLive' ./internal/engine/..
 description = "The engine suite alone, or one shard of it: SHARD and SHARDS from the environment"
 # `go test -list` in the script, the cut itself in .mise/shardselect.sh
 # (sorted, round robin), which `lint:ci` holds to disjoint and complete.
-run = ".mise/engineshard.sh"
+run = ".mise/dbshard.sh"
 
 [tasks."test:db:rest"]
 description = "Every database package but the engine and the provider suite: catalog, providertest, testenv, substratectl"
@@ -714,11 +714,32 @@ run = '''
 # here; the workflow needs no edit.
 
 [tasks."ci:lint"]
-description = "CI job `lint` — formatting, the linters, the release config, and the diff guards"
+description = "CI job `lint`: every linter and formatter check but Go's, the release config, and the diff guards"
+# Go's pair is `lint go` (ci:lint:go): golangci-lint typechecks the module, and
+# on one runner beside the rest it made this job 63 seconds. The two lists
+# together are `lint` plus `fmt:check`, which `lint:ci` holds, so a linter
+# added to `lint` and to neither job fails there.
 # The two diff guards ride here because they need a base branch and `lint` does
 # not have one: `kinds:check` holds a changed declaration to a version bump,
 # `frozen:check` holds the files this tree writes once.
-depends = ["fmt:check", "lint", "release:check", "kinds:check", "frozen:check"]
+depends = [
+  "fmt:yaml:check",
+  "lint:yaml",
+  "lint:shell",
+  "lint:python",
+  "lint:docs",
+  "lint:migrations",
+  "lint:sandboxgate",
+  "lint:toolchain",
+  "lint:ci",
+  "release:check",
+  "kinds:check",
+  "frozen:check",
+]
+
+[tasks."ci:lint:go"]
+description = "CI job `lint go`: golangci-lint and the Go formatting check"
+depends = ["lint:go", "fmt:go:check"]
 
 [tasks."ci:cross"]
 description = "CI job `cross` — the cross-compile check, on a runner of its own"
@@ -736,15 +757,9 @@ description = "CI job `changes`: does this PR touch anything a Go test reads? go
 run = ".mise/changescheck.sh"
 
 [tasks."ci:go"]
-description = "CI job `go test`: the short suite, then every database package but the engine"
-# The engine package is the other job (`ci:engine`, sharded), so this one is
-# the short suite and the four small database packages: together they are a
-# few minutes of test time, which is why the short suite rides here rather
-# than on a runner of its own that would spend half its life on setup.
-# internal/providertest is the one that wants more than a database: every
-# case there warms a provider closure's PEP 723 body, so the job caches
-# ~/.cache/uv beside the Go caches (.github/workflows/ci.yml). The provider
-# suite (internal/providere2e) runs in the `providers e2e` job instead.
+description = "CI job `go test`: the short suite, no database"
+# The database packages are the `engine` shards and the two `db` jobs, so this
+# job needs no service container and starts testing as soon as Go is there.
 #
 # SUBSTRATE_TEST_REQUIRE_SANDBOX: internal/sandbox and internal/runner skip
 # their confinement cases where the kernel offers no Landlock or no seccomp, so
@@ -754,10 +769,30 @@ description = "CI job `go test`: the short suite, then every database package bu
 # runs the rest of the suite.
 #
 # `run`, not `depends`: mise gives a dependency task its own environment, so a
-# variable set here would never reach the test task. Sequential for the reason
-# `test` is: the two halves must not share one small machine at once.
+# variable set here would never reach the test task.
 env = { SUBSTRATE_TEST_REQUIRE_SANDBOX = "1" }
-run = ["mise run test:short", "mise run test:db:rest"]
+run = "mise run test:short"
+
+[tasks."ci:db:catalog"]
+description = "CI job `db catalog k/n`: one shard of internal/catalog against the database, SHARD and SHARDS from the environment"
+# The second-slowest database package, so it is sharded the way the engine is.
+env = { PKG = "internal/catalog" }
+run = ".mise/dbshard.sh"
+
+[tasks."ci:db:rest"]
+description = "CI job `db rest`: providertest, testenv and substratectl against the database, without the acceptance drill"
+# internal/providertest warms each provider closure's PEP 723 body through uv,
+# so the job caches ~/.cache/uv beside the Go caches. The acceptance drill is
+# one serial scenario longer than this job's budget, so it is `ci:drill`.
+run = "go test -count=1 -p 1 -timeout 12m -skip '^TestLive|^TestReleaseAcceptanceDrill$' ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/..."
+
+[tasks."ci:drill"]
+description = "CI job `acceptance drill`: internal/testenv's release acceptance drill, alone"
+# Seven stages that read each other's outputs (build, stop, restore under
+# another key, compare, interrupted import, second restore, replaced cursor),
+# so it cannot be cut. It runs on every PR and on main and is not required:
+# the required checks each finish inside a minute and this does not.
+run = "go test -count=1 -timeout 12m -run '^TestReleaseAcceptanceDrill$' ./internal/testenv/"
 
 [tasks."ci:providers"]
 description = "CI job `providers e2e`: the provider suite, alone on its runner"
@@ -797,14 +832,19 @@ description = "CI job `audit` — the vulnerability scans"
 depends = ["audit"]
 
 [tasks."ci:console"]
-description = "CI job `console` — typecheck, lint, format, test, build"
+description = "CI job `console`: typecheck, lint, format, build"
+# The tests are `console test`, a job of their own: all five on one 4 vCPU
+# runner took 67 seconds, the tests alone 63 of them.
 depends = [
   "console:typecheck",
   "console:lint",
   "console:fmt:check",
-  "console:test",
   "console:build",
 ]
+
+[tasks."ci:console:test"]
+description = "CI job `console test`: the console's vitest suite"
+depends = ["console:test"]
 
 [tasks."ci:image"]
 description = "CI job `image builds and boots` — the image builds from a clean tree and serves under compose.yaml"
@@ -821,10 +861,12 @@ description = "Every CI job, locally. This is the whole pipeline."
 # `ci:go` and every `ci:engine` shard together, run once, with the profile.
 depends = [
   "ci:lint",
+  "ci:lint:go",
   "ci:cross",
   "ci:coverage",
   "ci:race",
   "ci:audit",
   "ci:console",
+  "ci:console:test",
   "ci:image",
 ]
