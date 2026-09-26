@@ -38,6 +38,7 @@ import {
   changedInScope,
   dedupeChanges,
   liveChangeReaches,
+  useChangeMarks,
   useLiveInvalidation,
 } from "./use-live-invalidation"
 
@@ -199,15 +200,15 @@ describe("useLiveInvalidation", () => {
     return { client, invalidate, onChange, hook }
   }
 
-  it("watches the scope's kinds and hears one batch per burst", () => {
+  it("watches the scope's kinds and hears one batch per burst", async () => {
     const { invalidate, onChange } = setup({ kinds: [TASK] })
     expect(watch.calls).toHaveLength(1)
     expect(watch.calls[0].filter).toEqual({ kinds: [TASK] })
-    act(() => {
+    await act(async () => {
       watch.calls[0].onRow(row({ recordId: "t1" }))
       watch.calls[0].onRow(row({ seq: 2, recordId: "t2" }))
       watch.calls[0].onRow(row({ seq: 3, recordId: "t1" }))
-      vi.advanceTimersByTime(2000)
+      await vi.advanceTimersByTimeAsync(2000)
     })
     expect(invalidate).toHaveBeenCalledTimes(1)
     expect(onChange).toHaveBeenCalledExactlyOnceWith([
@@ -216,14 +217,14 @@ describe("useLiveInvalidation", () => {
     ])
   })
 
-  it("stays quiet for records outside the scope", () => {
+  it("stays quiet for records outside the scope", async () => {
     const { invalidate, onChange } = setup({
       kinds: [TASK],
       recordIds: ["t1"],
     })
-    act(() => {
+    await act(async () => {
       watch.calls[0].onRow(row({ recordId: "t9" }))
-      vi.advanceTimersByTime(2000)
+      await vi.advanceTimersByTimeAsync(2000)
     })
     expect(invalidate).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
@@ -235,5 +236,28 @@ describe("useLiveInvalidation", () => {
     const { hook } = setup({ kinds: [TASK] })
     hook.unmount()
     expect(watch.calls[0].stopped).toBe(true)
+  })
+})
+
+describe("useChangeMarks", () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+  })
+
+  it("holds a mark, fades it, then drops it", () => {
+    const { result } = renderHook(() => useChangeMarks())
+    act(() => result.current.mark(["t1", "t2"]))
+    expect(result.current.marks.get("t1")).toBe("fresh")
+    act(() => void vi.advanceTimersByTime(1300))
+    expect(result.current.marks.get("t1")).toBe("fading")
+    act(() => result.current.mark(["t1"]))
+    expect(result.current.marks.get("t1")).toBe("fresh")
+    act(() => void vi.advanceTimersByTime(1600))
+    expect(result.current.marks.has("t2")).toBe(false)
+    expect(result.current.marks.get("t1")).toBe("fading")
+    act(() => void vi.advanceTimersByTime(1600))
+    expect(result.current.marks.size).toBe(0)
   })
 })

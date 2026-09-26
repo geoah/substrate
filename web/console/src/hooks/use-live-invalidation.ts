@@ -4,9 +4,9 @@
  * invalidates exactly the cached reads those records reach — the record, its
  * collection's pages and counts, the title reads naming it — so the page
  * re-reads through its ordinary queries. `onChange` then hears which records
- * moved, so a page can mark them. */
+ * moved, once that re-read has landed, so a page can mark them. */
 
-import { useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 
 import { createChangeBatcher } from "@/hooks/use-live-records"
@@ -100,20 +100,83 @@ export function useLiveInvalidation(
     // An empty scope would watch the whole repository.
     if (!kinds.length && !recordIds.length) return
     const watched: LiveScope = { kinds, recordIds }
+    let stopped = false
     const batcher = createChangeBatcher<LiveChange>((batch) => {
       const changed = dedupeChanges(batch)
-      void queryClient.invalidateQueries({
-        predicate: (q) => changed.some((c) => liveChangeReaches(q.queryKey, c)),
-      })
-      onChangeRef.current?.(changed)
+      // The page hears of a change once its re-read has landed, so a mark
+      // it draws lands on the new value, not the old one.
+      void queryClient
+        .invalidateQueries({
+          predicate: (q) =>
+            changed.some((c) => liveChangeReaches(q.queryKey, c)),
+        })
+        .catch(() => undefined)
+        .then(() => {
+          if (!stopped) onChangeRef.current?.(changed)
+        })
     })
     const handle = watchChanges({
       filter: kinds.length ? { kinds } : {},
       onRow: (row) => batcher.push(...changedInScope(row, watched)),
     })
     return () => {
+      stopped = true
       batcher.cancel()
       handle.stop()
     }
   }, [kindsKey, idsKey, queryClient])
+}
+
+/** How long a changed row stays marked, then how long the mark fades. */
+const MARK_HOLD_MS = 1200
+const MARK_FADE_MS = 1500
+
+export type ChangeMark = "fresh" | "fading"
+
+/** Brief marks on records that changed under the reader: `mark(ids)` holds
+ * each one `fresh`, then `fading` while the tint eases out, then drops it.
+ * A record marked again starts over. */
+export function useChangeMarks(): {
+  marks: ReadonlyMap<string, ChangeMark>
+  mark: (ids: string[]) => void
+} {
+  const [marks, setMarks] = useState<ReadonlyMap<string, ChangeMark>>(
+    () => new Map()
+  )
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  useEffect(() => {
+    const pending = timers.current
+    return () => {
+      for (const t of pending.values()) clearTimeout(t)
+      pending.clear()
+    }
+  }, [])
+  const mark = useCallback((ids: string[]) => {
+    if (!ids.length) return
+    const set = (id: string, to: ChangeMark | undefined) =>
+      setMarks((prev) => {
+        const next = new Map(prev)
+        if (to) next.set(id, to)
+        else next.delete(id)
+        return next
+      })
+    for (const id of ids) {
+      clearTimeout(timers.current.get(id))
+      set(id, "fresh")
+      timers.current.set(
+        id,
+        setTimeout(() => {
+          set(id, "fading")
+          timers.current.set(
+            id,
+            setTimeout(() => {
+              timers.current.delete(id)
+              set(id, undefined)
+            }, MARK_FADE_MS)
+          )
+        }, MARK_HOLD_MS)
+      )
+    }
+  }, [])
+  return { marks, mark }
 }
