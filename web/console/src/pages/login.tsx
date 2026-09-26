@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
+import { useDocumentTitle } from "@/hooks/use-document-title"
 import { CODE_DIGITS, login, normalizeCode } from "@/lib/api/auth"
 import { useAuthPolicy } from "@/lib/api/discovery"
 import { saveSession } from "@/lib/api/session"
@@ -65,6 +66,7 @@ type LoginValues = z.infer<ReturnType<typeof loginSchema>>
  * no session beside it, so what the browser keeps is a token like any other
  * client's. */
 export function LoginPage() {
+  useDocumentTitle("Sign in")
   const navigate = useNavigate()
   const search = loginRoute.useSearch()
   const { totpRequired } = useAuthPolicy()

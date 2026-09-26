@@ -1,4 +1,11 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react"
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link, Outlet, useRouterState } from "@tanstack/react-router"
 import { SearchIcon } from "lucide-react"
@@ -255,6 +262,42 @@ export function crumbsFor(pathname: string, technical = false): Crumb[] {
   }
 }
 
+/** The browser tab's words for a page: where the reader is, then what it
+ * sits in ("Test the landing page · Tasks", "Google · Providers",
+ * "Settings"). */
+// eslint-disable-next-line react-refresh/only-export-components -- a pure reading of the crumbs, exported for its test
+export function pageTitle(crumbs: Crumb[], recordTitle?: string): string {
+  const labels = crumbs.map((c) => (c.record && recordTitle) || c.label)
+  const last = labels.at(-1)
+  const parent = labels.at(-2)
+  if (!last) return "Substrate"
+  return parent ? `${last} · ${parent}` : last
+}
+
+/** Names the page in the browser tab, always in everyday words since a tab
+ * is read at a glance, and answers what to announce: the same words, once a
+ * record's title has landed, and only after the reader has moved (the first
+ * page is announced by the browser itself). */
+function usePageTitle(pathname: string): string {
+  const crumbs = useMemo(() => crumbsFor(pathname), [pathname])
+  const record = crumbs.find((c) => c.record)?.record
+  const kinds = useQuery(kindsQueryOptions)
+  const known = Boolean(record && kindByIdentity(kinds.data ?? [], record.kind))
+  const title = useQuery({
+    ...recordTitleQueryOptions(record?.kind ?? "", record?.id ?? ""),
+    enabled: known,
+  })
+  const text = pageTitle(crumbs, title.data || undefined)
+  const settled = !record || (!kinds.isPending && (!known || !title.isPending))
+  useEffect(() => {
+    if (settled) document.title = text
+  }, [settled, text])
+  const [start] = useState(pathname)
+  const [moved, setMoved] = useState(false)
+  if (!moved && pathname !== start) setMoved(true)
+  return moved && settled ? text : ""
+}
+
 /** A record crumb reads as its title; technical mode keeps the id, which is
  * what the reader came to copy. */
 function RecordCrumbLabel({ crumb }: { crumb: Crumb }) {
@@ -379,6 +422,7 @@ function ShellBody() {
   // on the next address.
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const peek = useSidebarPeek()
+  const announcement = usePageTitle(pathname)
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -393,6 +437,9 @@ function ShellBody() {
 
   return (
     <TooltipProvider delay={250}>
+      <div role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </div>
       {peek.collapsed && (
         <div
           aria-hidden

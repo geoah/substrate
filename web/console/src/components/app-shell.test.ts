@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest"
 
-import { crumbsFor } from "./app-shell"
+import { crumbsFor, pageTitle } from "./app-shell"
 
 describe("crumbsFor", () => {
   it("names the fixed pages", () => {
@@ -140,5 +140,30 @@ describe("crumbsFor", () => {
       { label: "a.example.com", to: "/data/a.example.com", mono: true },
       { label: "tasks", mono: true },
     ])
+  })
+})
+
+describe("pageTitle", () => {
+  it("names the page, then what it sits in", () => {
+    expect(pageTitle(crumbsFor("/settings"))).toBe("Settings")
+    expect(
+      pageTitle(crumbsFor("/providers/providers.substrate.reamde.dev/google"))
+    ).toBe("Google · Providers")
+    expect(
+      pageTitle(
+        crumbsFor("/data/a.example.com/tasks/task/t1"),
+        "Test the landing page"
+      )
+    ).toBe("Test the landing page · Tasks")
+    expect(pageTitle(crumbsFor("/data/a.example.com/tasks/task"))).toBe(
+      "Tasks · Your data"
+    )
+  })
+
+  it("reads an untitled record, and a page the shell does not know", () => {
+    expect(pageTitle(crumbsFor("/data/a.example.com/tasks/task/t1"))).toBe(
+      "Untitled task · Tasks"
+    )
+    expect(pageTitle(crumbsFor("/nowhere"))).toBe("Substrate")
   })
 })
