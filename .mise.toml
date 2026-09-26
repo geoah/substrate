@@ -694,9 +694,10 @@ run = ".mise/releasenotes.sh"
 description = "Cut the release for the current tag (CI runs this)"
 # The upgrade notes go above goreleaser's commit list. The header file sits
 # outside the tree because goreleaser refuses a dirty one, and --clean empties
-# dist/.
+# dist/. mise runs an inline script under sh, which has no pipefail; there is
+# no pipe here to need it.
 run = '''
-    set -euo pipefail
+    set -eu
     header="$(mktemp)"
     trap 'rm -f "$header"' EXIT
     .mise/changelog.sh --release "$(git describe --tags --exact-match)" >"$header"
