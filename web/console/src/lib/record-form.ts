@@ -571,7 +571,10 @@ export function validate(
     if (field.control === "secret") {
       const filled = typeof value === "string" && value.length > 0
       if (mode === "create" && !filled) {
-        errors.push({ name: field.name, message: `${field.label} is required.` })
+        errors.push({
+          name: field.name,
+          message: `${field.label} is required.`,
+        })
       }
       continue
     }

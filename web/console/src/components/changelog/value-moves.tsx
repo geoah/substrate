@@ -26,7 +26,7 @@ const TEXT_KINDS = new Set(["string", "text", "markdown", "url", "email"])
 function Raw({ value }: { value: unknown }) {
   const { text, full } = shortText(value)
   return (
-    <span title={full} className="font-mono text-[11.5px] break-all">
+    <span title={full} className="break-words">
       {text}
     </span>
   )

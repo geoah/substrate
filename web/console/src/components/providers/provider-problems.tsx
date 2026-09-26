@@ -68,14 +68,6 @@ export function ProviderProblems({
   )
 }
 
-/** Guard lines and trigger errors are the server's own references; an
- * account's error is a sentence. */
-const MONO_DETAIL: ProviderProblem["code"][] = [
-  "update-blocked",
-  "trigger-broken",
-  "failed-to-load",
-]
-
 function ProblemRow({
   problem,
   entry,
@@ -96,13 +88,7 @@ function ProblemRow({
       <div className="min-w-0 flex-1 basis-64 space-y-0.5">
         <p>{problem.summary}</p>
         {problem.detail?.map((line) => (
-          <p
-            key={line}
-            className={cn(
-              "break-words text-muted-foreground",
-              MONO_DETAIL.includes(problem.code) && "font-mono text-xs"
-            )}
-          >
+          <p key={line} className="break-words text-muted-foreground">
             {line}
           </p>
         ))}
@@ -222,7 +208,8 @@ function RetryParkedButton({ bundleId }: { bundleId: string }) {
     onSuccess: (retried) =>
       toast.add({
         type: "success",
-        title: retried === 1 ? "Tried 1 run again" : `Tried ${retried} runs again`,
+        title:
+          retried === 1 ? "Tried 1 run again" : `Tried ${retried} runs again`,
         description:
           "Each one ran again; any that fails again is parked again.",
       }),

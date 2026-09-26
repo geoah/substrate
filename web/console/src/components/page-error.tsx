@@ -49,7 +49,7 @@ export function PageError({
             substrate runs an older version than the console, updating it
             usually fixes this.
           </EmptyDescription>
-          <p className="font-mono text-xs [overflow-wrap:anywhere] text-faint">
+          <p className="text-xs [overflow-wrap:anywhere] text-faint">
             {messageOf(error)}
           </p>
         </EmptyHeader>

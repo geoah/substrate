@@ -987,7 +987,9 @@ describe("ProviderPage", () => {
       renderPage(<ProviderPage />)
       const callout = await problems()
       expect(
-        within(callout).getByText("2 runs failed and are waiting to be tried again")
+        within(callout).getByText(
+          "2 runs failed and are waiting to be tried again"
+        )
       ).toBeTruthy()
       const retry = within(callout).getByRole("button", { name: "Try again" })
       await waitFor(() =>
@@ -1218,9 +1220,7 @@ describe("ProviderPage", () => {
       fireEvent.click(screen.getByRole("button", { name: "Add again" }))
       const dialog = await screen.findByRole("dialog")
       expect(within(dialog).getByText(/REPLACES/)).toBeTruthy()
-      fireEvent.click(
-        within(dialog).getByRole("button", { name: "Add again" })
-      )
+      fireEvent.click(within(dialog).getByRole("button", { name: "Add again" }))
       await waitFor(() =>
         expect(
           calls("POST").some((c) =>

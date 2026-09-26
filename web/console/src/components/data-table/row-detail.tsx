@@ -111,7 +111,7 @@ export function ChangeDetail({ row }: { row: ChangeRow }) {
   return (
     <DetailGrid>
       <DetailRow label="when">
-        <span className="data" title={row.ts}>
+        <span title={row.ts}>
           {shortDate(row.ts)} {shortTime(row.ts, true)}
         </span>
       </DetailRow>
@@ -124,8 +124,9 @@ export function ChangeDetail({ row }: { row: ChangeRow }) {
         </DetailRow>
       )}
       <DetailRow label="change">
-        <span className="data">
-          {op} <span className="text-muted-foreground">· seq {row.seq}</span>
+        <span>
+          {op}{" "}
+          <span className="data text-muted-foreground">· seq {row.seq}</span>
         </span>
       </DetailRow>
       {properties.length > 0 && (
@@ -189,18 +190,15 @@ export function ChangeDetail({ row }: { row: ChangeRow }) {
             <span className="text-muted-foreground">→</span>
             <span className="data">{tr.callable}</span>
             <span
-              className={cn(
-                "data",
+              className={
                 tr.state === "parked"
                   ? "text-destructive"
                   : "text-muted-foreground"
-              )}
+              }
             >
               {tr.state}
             </span>
-            {tr.error && (
-              <span className="data text-destructive">{tr.error}</span>
-            )}
+            {tr.error && <span className="text-destructive">{tr.error}</span>}
           </span>
         </DetailRow>
       ))}
