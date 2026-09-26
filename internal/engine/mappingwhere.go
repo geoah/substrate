@@ -27,7 +27,7 @@ func (t *txn) covers(m *vocabulary.Mapping, srcTy *vocabulary.Kind, row *erow) (
 	if len(m.Where) == 0 {
 		return true, nil
 	}
-	props, err := json.Marshal(nonNilProps(row.Props))
+	props, err := json.Marshal(whereProps(m, row.Props))
 	if err != nil {
 		return false, err
 	}
@@ -85,11 +85,18 @@ func (t *txn) covers(m *vocabulary.Mapping, srcTy *vocabulary.Kind, row *erow) (
 // selects, so the only columns a where can read.
 var whereColumns = map[string]bool{"title": true, "body": true, "at": true, "ends_at": true, "due_at": true}
 
-func nonNilProps(p map[string]any) map[string]any {
-	if p == nil {
-		return map[string]any{}
+// whereProps is the part of a source row's properties a where reads: only
+// the names it declares. The source's own write asks covers before its
+// secrets are sealed, and the loader refuses a sensitive name in a where, so
+// binding only these keeps every secret value out of the query.
+func whereProps(m *vocabulary.Mapping, props map[string]any) map[string]any {
+	out := make(map[string]any, len(m.WhereOrder))
+	for _, name := range m.WhereOrder {
+		if v, ok := props[name]; ok {
+			out[name] = v
+		}
 	}
-	return p
+	return out
 }
 
 // checkMappingWhere compiles every where in the candidate registry, changed

@@ -343,7 +343,7 @@ func (l *loader) parseMapping(d Document) *Mapping {
 // refused, exactly as the filter's `labels` arm refuses one: `{state: open}`
 // would leave the operator to a guess. Whether the operators fit the
 // property's type is the engine's to say, because the engine is what compiles
-// the filter grammar (mapping.go checkMappingWhere).
+// the filter grammar (engine mappingwhere.go checkMappingWhere).
 func (l *loader) parseWhere(where string, data map[string]any, m *Mapping) {
 	raw, set := data["where"]
 	if !set || raw == nil {

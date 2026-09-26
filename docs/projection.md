@@ -266,6 +266,8 @@ A record outside the `where` is treated as a deleted source is:
 - **Its link stays.** Only merge and split move a subject slot, so the pointer
   it already holds is kept, `linkedFrom` still lists it, and a record that
   comes back inside projects onto the same subject instead of minting another.
+  The kept pointer also spares the subject from `SUBSTRATE_ORPHAN_GRACE`
+  collection, which skips any record a live record points at.
 - **The subject hop refuses it** when it holds no link, rather than mint a
   subject for a record the mapping does not cover.
 
@@ -487,8 +489,8 @@ re-seed left 2,727 of them on one repository
 ([#578](https://github.com/geoah/substrate/issues/578)).
 
 The engine marks those rows. A record is **orphaned** when all three hold:
-something maps onto its kind, no live record links to it through a mapping's
-subject slot (counted over every id it has ever had, so a merge does not hide
+something maps onto its kind, no live record that mapping's `where` covers
+links to it through the mapping's subject slot (counted over every id it has ever had, so a merge does not hide
 a source), and every one of its `property_managers` rows is at the machine
 tier — or it has none at all. A property held above machine is a hand's, and a
 record a hand has written on is not a husk, whether that hand was yours or a

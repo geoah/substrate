@@ -544,7 +544,9 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		// (t.declarations()), so the offers and the values this commit
 		// publishes are the ones the published closure derives; a property no
 		// candidate mapping supplies any more is released first
-		// (recomputeMappingTargets).
+		// (recomputeMappingTargets). Every where compiles first, against the
+		// candidate, so the recompute never reads a source through a where
+		// the filter grammar refuses (checkMappingWhere).
 		if err := t.checkMappingWhere(candidate); err != nil {
 			return err
 		}
