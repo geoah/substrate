@@ -552,7 +552,7 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		// links every live source its where covers whose slot is still
 		// empty, which mints or finds the targets the recompute then reads
 		// (decision record 0107).
-		if err := t.checkMappingWhere(ds.registry(), candidate); err != nil {
+		if err := t.checkMappingWhere(candidate); err != nil {
 			return err
 		}
 		if err := t.linkUnpointedSources(backfilledMappings(ds.registry(), candidate, b.docs)); err != nil {

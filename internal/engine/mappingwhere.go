@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -49,13 +48,31 @@ func (t *txn) covers(m *vocabulary.Mapping, srcTy *vocabulary.Kind, row *erow) (
 		b.arg(row.EndsAt) + `::timestamptz AS ends_at, ` +
 		b.arg(row.DueAt) + `::timestamptz AS due_at`
 	for _, name := range m.WhereOrder {
-		if err := t.ds.condProp(t.ctx, t.tx, b, []*vocabulary.Kind{srcTy}, name, m.Where[name]); err != nil {
+		refuse := func(err error) error {
 			// Every refusal here is the declaration's, whichever helper
 			// raised it, so every one answers as a validation error.
 			if !errors.Is(err, substrate.ErrValidation) {
 				err = fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 			}
-			return false, fmt.Errorf("%s %s: data.where.%s: %w", vocabulary.DocRecordMapping, m.Identity(), name, err)
+			return fmt.Errorf("%s %s: data.where.%s: %w", vocabulary.DocRecordMapping, m.Identity(), name, err)
+		}
+		// The filter grammar reads these names as the record's own column
+		// before any declared property, and the one-row relation has no such
+		// column: a declared `updatedAt` would mean the record's updated_at
+		// here as it does on a list, which the source row cannot answer.
+		if col, _ := columnFor(name); col != "" && !whereColumns[col] {
+			return false, refuse(fmt.Errorf("%w: the filter grammar reads %s as the record's own %s column, not the declared property, and a where cannot read that column",
+				substrate.ErrValidation, name, col))
+		}
+		clauses := len(b.where)
+		if err := t.ds.condProp(t.ctx, t.tx, b, []*vocabulary.Kind{srcTy}, name, m.Where[name]); err != nil {
+			return false, refuse(err)
+		}
+		// A condition that compiles to no clause (`eq: null`, `in: []`, an
+		// empty prefix) would be dropped without a word, and a where of only
+		// such conditions would be no predicate at all.
+		if len(b.where) == clauses {
+			return false, refuse(fmt.Errorf("%w: the condition carries no operator that applies to %s", substrate.ErrValidation, name))
 		}
 	}
 	var ok bool
@@ -64,6 +81,10 @@ func (t *txn) covers(m *vocabulary.Mapping, srcTy *vocabulary.Kind, row *erow) (
 	return ok, err
 }
 
+// whereColumns are the record columns the one-row relation in covers
+// selects, so the only columns a where can read.
+var whereColumns = map[string]bool{"title": true, "body": true, "at": true, "ends_at": true, "due_at": true}
+
 func nonNilProps(p map[string]any) map[string]any {
 	if p == nil {
 		return map[string]any{}
@@ -71,21 +92,15 @@ func nonNilProps(p map[string]any) map[string]any {
 	return p
 }
 
-// checkMappingWhere compiles every where the candidate registry adds or
-// changes, so a condition the filter grammar refuses (an ordering on a
+// checkMappingWhere compiles every where in the candidate registry, changed
+// or not, because whether one compiles also depends on its `from` and on that
+// kind's declaration, so a condition the filter grammar refuses (an ordering on a
 // reference, `match` on a number, a value that is not the property's type)
 // fails the apply that declares it and not every later write of its source
 // kind.
-func (t *txn) checkMappingWhere(live, cand *vocabulary.Registry) error {
-	before := map[string]*vocabulary.Mapping{}
-	for _, m := range live.Mappings() {
-		before[m.Identity()] = m
-	}
+func (t *txn) checkMappingWhere(cand *vocabulary.Registry) error {
 	for _, m := range cand.Mappings() {
 		if len(m.Where) == 0 {
-			continue
-		}
-		if prev, ok := before[m.Identity()]; ok && reflect.DeepEqual(prev.Where, m.Where) {
 			continue
 		}
 		fromTy, ok := cand.ByIdentity(m.From)
