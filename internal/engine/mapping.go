@@ -712,7 +712,10 @@ func (t *txn) recomputeValues(target eref) error {
 		if m, held := managers[name]; held && m.tier != substrate.TierMachine {
 			continue // yield: the offer above is the whole record of it
 		}
-		cands := contributionsFor(name, in.srcs)
+		cands, err := t.throughSubjects(in.ty, name, contributionsFor(name, in.srcs))
+		if err != nil {
+			return err
+		}
 		if tp := in.probed[name]; tp != nil {
 			if cands, err = t.withheldElsewhere(in.row, tp, cands); err != nil {
 				return err
@@ -1062,6 +1065,98 @@ func contributionsFor(name string, srcs []mappedSource) []contribution {
 	return out
 }
 
+// throughSubjects reads each reference a contribution carries the way the
+// target property's pin will store it (#580). A map rule copying a MIRROR
+// reference (`issue.assignee` at `github/user`) onto a slot pinned at the
+// mirror's subject kind (`task.assignee` at `person`) is resolved by the
+// subject hop when recompute writes it (references.go subjectHop), so two
+// mirrors of one person would reach a repeated target as that person twice.
+// Resolving first lets the items that land on one record collapse to one,
+// compared canonically as duplicateRefs compares them.
+//
+// It runs on the VALUE path only. The offers stay a function of the source
+// rows, spelling the mirror as the source wrote it, because nothing
+// recomputes them when a mirror's subject moves (a merge, a delete, a
+// re-link) and a rebuild derives them again from the rows (rebuild.go
+// rederiveOffers). The read compares an offer with the stored value through
+// the mirror's subject instead (query.go comparableReference). It reads the
+// mirror's live subject and never mints; a mirror with no live subject stays
+// as written, and the write's own hop resolves it.
+//
+// Only a reference property's own value is read, a single one or a plain
+// list. A keyed reference target or a reference nested in an object target is
+// left as written.
+func (t *txn) throughSubjects(ty *vocabulary.Kind, name string, cands []contribution) ([]contribution, error) {
+	tp, ok := ty.Props[name]
+	if !ok || tp.Datatype != vocabulary.DatatypeReference || len(cands) == 0 {
+		return cands, nil
+	}
+	reg := t.declarations()
+	resolve := func(item any) (any, error) {
+		kind, id, ok := vocabulary.SplitRecordPath(referencePathOf(item))
+		if !ok {
+			return item, nil
+		}
+		// An unknown kind is left for the write to refuse, in its own words.
+		rt, known := reg.ByIdentity(kind)
+		if !known || referenceAdmits(reg, tp, rt) {
+			return item, nil
+		}
+		hops := hopMappings(reg, tp, rt)
+		if len(hops) != 1 {
+			return item, nil
+		}
+		subject, err := t.subjectTargetOf(eref{Kind: rt.Identity, ID: id}, hops[0].Property)
+		if err != nil || subject.ID == "" {
+			return item, err
+		}
+		out := referenceValueOf(vocabulary.RecordPath(subject.Kind, subject.ID))
+		if m, ok := item.(map[string]any); ok {
+			for k, v := range m {
+				if k != vocabulary.ReferenceValueKey {
+					out[k] = v
+				}
+			}
+		}
+		return out, nil
+	}
+	out := make([]contribution, 0, len(cands))
+	for _, c := range cands {
+		items, isList := c.value.([]any)
+		if !isList {
+			v, err := resolve(c.value)
+			if err != nil {
+				return nil, err
+			}
+			c.value = v
+			out = append(out, c)
+			continue
+		}
+		seen := map[string]bool{}
+		kept := make([]any, 0, len(items))
+		for _, item := range items {
+			v, err := resolve(item)
+			if err != nil {
+				return nil, err
+			}
+			if kind, id, ok := vocabulary.SplitRecordPath(referencePathOf(v)); ok {
+				canon, err := t.canonicalOf(eref{Kind: kind, ID: id})
+				if err != nil {
+					return nil, err
+				}
+				if seen[canon.key()] {
+					continue
+				}
+				seen[canon.key()] = true
+			}
+			kept = append(kept, v)
+		}
+		c.value = kept
+		out = append(out, c)
+	}
+	return out, nil
+}
+
 // selectValue applies the selection to one property's ordered candidates:
 // atomic takes the first candidate whole, union takes the deduped
 // concatenation of every candidate's items, attributed to the first
@@ -1117,7 +1212,10 @@ func selectValue(union bool, cands []contribution) (any, string) {
 // the property for that actor, never the transaction's clock, and its source
 // is that record's path: both are a function of the live records exactly as
 // the value is, so a rebuild, which derives the table again (rebuild.go
-// rederiveOffers), reproduces them.
+// rederiveOffers), reproduces them. For the same reason an offer spells a
+// reference as the source wrote it, a mirror included, and never through the
+// mirror's subject (#580): the subject can move without a write to the source
+// or the target. The read resolves it before comparing (propertyMeta).
 func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool, srcs []mappedSource) error {
 	current := map[offerKey]offer{}
 	for _, name := range props {

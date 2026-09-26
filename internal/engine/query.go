@@ -138,26 +138,54 @@ func (ds *dataset) propertyMeta(ctx context.Context, e *substrate.Record) (map[s
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
+	// The offers are read whole before any is compared: a reference offer
+	// is compared through further reads (comparableReference), which must not
+	// need a second pool connection while this cursor holds the first.
+	type offerRow struct {
+		property, actor, source string
+		raw                     []byte
+		at                      time.Time
+	}
+	var offers []offerRow
 	for rows.Next() {
-		var property, actor, source string
-		var raw []byte
-		var at time.Time
-		if err := rows.Scan(&property, &actor, &raw, &at, &source); err != nil {
+		var o offerRow
+		if err := rows.Scan(&o.property, &o.actor, &o.raw, &o.at, &o.source); err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
+		offers = append(offers, o)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+	for _, o := range offers {
+		property, actor, source, at := o.property, o.actor, o.source, o.at
 		var value any
-		if len(raw) > 0 {
-			_ = json.Unmarshal(raw, &value)
+		if len(o.raw) > 0 {
+			_ = json.Unmarshal(o.raw, &value)
 		}
 		// An offer's stored value bypasses recordOf, so a property that is
 		// sensitive TODAY redacts here too: a stale offer minted before a
 		// re-type must not hand out what the main value hides. Unresolvable
 		// kinds fail closed the same way.
+		stored, compared := e.Properties[property], value
 		if ty, err := ds.resolveType(e.Kind); err != nil || ty == nil {
-			value = Redacted
+			value, compared = Redacted, Redacted
 		} else if p, ok := ty.Prop(property); ok && p.Sensitive() {
-			value = Redacted
+			value, compared = Redacted, Redacted
+		} else if ok && p.Datatype == vocabulary.DatatypeReference {
+			// An offer spells a reference as its source wrote it, a mirror
+			// included; the stored value holds what the pin resolved it to.
+			// Both sides are read through the mirror's subject and the
+			// former-id trail before they are compared (#580).
+			if compared, err = ds.comparableReference(ctx, p, value); err != nil {
+				return nil, err
+			}
+			if stored, err = ds.comparableReference(ctx, p, stored); err != nil {
+				return nil, err
+			}
 		}
 		m := out[property]
 		// The manager's own offer standing behind a machine-held value is
@@ -166,14 +194,14 @@ func (ds *dataset) propertyMeta(ctx context.Context, e *substrate.Record) (map[s
 		// the holding actor's offer backs it as a subset; it is not an
 		// alternative to itself.
 		mine := m.Manager == actor && m.Tier == substrate.TierMachine
-		if mine && offerBacks(e.Properties[property], value, union[property]) {
+		if mine && offerBacks(stored, compared, union[property]) {
 			if source != "" {
 				m.Source = source
 				out[property] = m
 			}
 			continue
 		}
-		if jsonEqual(value, e.Properties[property]) {
+		if jsonEqual(compared, stored) {
 			continue
 		}
 		m.Alternatives = append(m.Alternatives, substrate.PropertyAlternative{
@@ -181,13 +209,79 @@ func (ds *dataset) propertyMeta(ctx context.Context, e *substrate.Record) (map[s
 		})
 		out[property] = m
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
 	if len(out) == 0 {
 		return nil, nil
 	}
-	return out, rows.Err()
+	return out, nil
+}
+
+// comparableReference is a reference value as the read compares it: each item
+// names the canonical record it denotes. An item naming a mirror the pin does
+// not admit, with exactly one mapping onto a kind the pin does admit, is read
+// through the subject that mirror's slot stores, as the subject hop resolves
+// it on a write (references.go subjectHop). A mirror with no subject stored
+// stays as written. Items that land on one record collapse to one, since a
+// repeated reference holds each record once. It reads the stored subject,
+// live or not, so an offer and the value stored from it agree after the
+// subject is merged away or deleted, exactly as the write left them.
+func (ds *dataset) comparableReference(ctx context.Context, p *vocabulary.Property, v any) (any, error) {
+	reg := ds.registry()
+	resolve := func(item any) (any, string, error) {
+		kind, id, ok := vocabulary.SplitRecordPath(referencePathOf(item))
+		if !ok {
+			return item, "", nil
+		}
+		ref := eref{Kind: kind, ID: id}
+		if rt, known := reg.ByIdentity(kind); known && !referenceAdmits(reg, p, rt) {
+			if hops := hopMappings(reg, p, rt); len(hops) == 1 {
+				var subject eref
+				err := ds.db.QueryRowContext(ctx, `
+					SELECT dst_kind, dst FROM refs
+					WHERE src_kind = $1 AND src = $2 AND property = $3 AND path = ''
+					ORDER BY ord LIMIT 1`, kind, id, hops[0].Property).Scan(&subject.Kind, &subject.ID)
+				switch {
+				case err == nil:
+					ref = subject
+				case !errors.Is(err, sql.ErrNoRows):
+					return nil, "", err
+				}
+			}
+		}
+		canon, err := ds.canonicalOf(ctx, ds.db, ref)
+		if err != nil {
+			return nil, "", err
+		}
+		out := referenceValueOf(vocabulary.RecordPath(canon.Kind, canon.ID))
+		if m, ok := item.(map[string]any); ok {
+			for k, x := range m {
+				if k != vocabulary.ReferenceValueKey {
+					out[k] = x
+				}
+			}
+		}
+		return out, canon.key(), nil
+	}
+	items, isList := v.([]any)
+	if !isList {
+		out, _, err := resolve(v)
+		return out, err
+	}
+	seen := map[string]bool{}
+	kept := make([]any, 0, len(items))
+	for _, item := range items {
+		out, key, err := resolve(item)
+		if err != nil {
+			return nil, err
+		}
+		if key != "" {
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+		}
+		kept = append(kept, out)
+	}
+	return kept, nil
 }
 
 // offerBacks says whether an offer stands behind the stored value: it is the

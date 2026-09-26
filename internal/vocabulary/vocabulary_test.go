@@ -1790,6 +1790,76 @@ data:
 		}
 	})
 
+	// A MAP PATH NEVER CROSSES A REFERENCE (#580, record 0106). The relation a
+	// `assignees[].person` path reaches for is copied as the reference itself,
+	// and the target's pin at the subject kind stores the subject through the
+	// hop; the refusal names that spelling rather than calling the reference
+	// "not an object".
+	t.Run("a map path never crosses a reference", func(t *testing.T) {
+		ticketcard := func(rules string) string {
+			return recperson("") + `---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/card}
+data:
+  authority: x.example.com
+  package: x
+  names: {singular: card}
+  properties:
+    owner: {type: reference, kind: x.example.com/x/person}
+    watchers: {type: reference, kind: x.example.com/x/person, repeated: true}
+---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/ticket}
+data:
+  authority: x.example.com
+  package: x
+  names: {singular: ticket}
+  properties:
+    lead: {type: reference, kind: x.example.com/x/rec}
+    assignees: {type: reference, kind: x.example.com/x/rec, repeated: true}
+---
+kind: substrate.reamde.dev/core/recordmapping
+metadata: {id: x.example.com/x/ticketcard}
+data:
+  authority: x.example.com
+  package: x
+  from: x.example.com/x/ticket
+  to: x.example.com/x/card
+  property: card
+  map:
+` + rules
+		}
+		load := func(rules string) error {
+			fsys := fstest.MapFS{"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(ticketcard(rules))}}
+			_, err := vocabulary.LoadFS(fsys)
+			return err
+		}
+		for _, rules := range []string{
+			"    owner: {path: lead}\n",
+			"    owner: {path: assignees, merge: first}\n",
+			"    watchers: {path: assignees}\n",
+		} {
+			if err := load(rules); err != nil {
+				t.Fatalf("%q must load: %v", rules, err)
+			}
+		}
+		// A repeated source onto a single slot needs `merge: first`, and the
+		// suggestion says so.
+		for _, tc := range []struct{ rule, want string }{
+			{`    owner: {path: "assignees[].person"}` + "\n", "map {path: assignees, merge: first} onto"},
+			{`    watchers: {path: "assignees[].person"}` + "\n", "map {path: assignees} onto"},
+			{"    owner: {path: lead.person}\n", "map {path: lead} onto"},
+		} {
+			err := load(tc.rule)
+			if err == nil {
+				t.Fatalf("%q must be refused", tc.rule)
+			}
+			if !strings.Contains(err.Error(), "a path never crosses one") || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("%q: the refusal names the spelling that works (%q), got: %v", tc.rule, tc.want, err)
+			}
+		}
+	})
+
 	// The bipartite rule is the one that survives: a mapping's `to` may not be
 	// another mapping's `from`, so a subject hop is never a chain of them.
 	// Record 84 removed the reference refusal and left this one standing.
