@@ -18,7 +18,7 @@ data:
     invoked by a trigger or called directly. The declaration IS the record
     — a write admits it, the commit activates it, and the dispatcher reads
     the registry this row rebuilds into.
-  version: 16
+  version: 17
   names:
     singular: function
   displayTemplate: "{authority}/{package}/{localName}"
@@ -229,6 +229,13 @@ data:
           kind: substrate.reamde.dev/core/function
           repeated: true
           description: which other functions its code may invoke
+        # A second list rather than a wider `call`: `call` is pinned to the
+        # function kind, so a bare id there means a function (record 0106).
+        agents:
+          type: reference
+          kind: substrate.reamde.dev/core/agent
+          repeated: true
+          description: which agents its code may run, each to settlement
         # Host patterns, never references: an egress allowlist names the
         # internet.
         network:

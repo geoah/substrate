@@ -101,6 +101,26 @@ func (t *trigger) callableActor() string {
 	}
 }
 
+// selfActors is every actor whose writes this trigger never delivers: the
+// callable's own, and for a function the actors of the agents it may run
+// under `permissions.agents` (record 0106). A callee function's effects
+// commit under the caller's actor, but an agent's thread, messages and tool
+// effects commit under the agent's, so without this a function watching a
+// kind its agent writes would wake again on every row the agent wrote. The
+// cost: the function also misses those agents' writes from their other runs.
+func (t *trigger) selfActors(reg *vocabulary.Registry) map[substrate.Actor]bool {
+	self := map[substrate.Actor]bool{substrate.Actor(t.callableActor()): true}
+	if t.Callable == nil {
+		return self
+	}
+	for _, id := range t.Callable.Caps.Agents {
+		if ag, err := reg.ResolveAgent(id); err == nil {
+			self[substrate.Actor(ag.Actor())] = true
+		}
+	}
+	return self
+}
+
 // resolveCallable fills the resolved half from the registry, kind-aware.
 func (t *trigger) resolveCallable(reg *vocabulary.Registry) {
 	switch t.CallableKind {
@@ -567,7 +587,7 @@ func (ds *dataset) validateTriggerRow(reg *vocabulary.Registry, id string, props
 // A warning, never a refusal: the declaration may be mid-edit, and a trigger the
 // engine refused would have to be re-created rather than fixed.
 func (ds *dataset) warnDiscardedOutput(t *trigger, fn *vocabulary.Function) {
-	if len(fn.Caps.Emit) > 0 || len(fn.Caps.Call) > 0 || len(fn.Caps.Network) > 0 {
+	if len(fn.Caps.Emit) > 0 || len(fn.Caps.Call) > 0 || len(fn.Caps.Agents) > 0 || len(fn.Caps.Network) > 0 {
 		return
 	}
 	// The ids are user-authored strings from record rows: logged only after

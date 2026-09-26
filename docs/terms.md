@@ -70,7 +70,7 @@ nothing, there are none.
 | **sync** | The synchronization a provider's function drives on one account, as the core `sync` trait reports it: a state (`never`, `running`, `ok`, `erroring`, `throttled`), a message, the last run, the owner's request for the next one, progress and streams. The body writes it through its effects; the dispatcher stamps a delivery's start, finish and park. Decision record 0085. |
 | **catalog** | The read-only list of the bundle closures built into the binary, each in one of the two tiers. A source to install or import from, never a package. |
 | **callable** | The union of function and agent — what a trigger binds and what dispatch invokes. |
-| **function** | A callable whose body is inline Python, bounded by its declared `permissions`: `reads`, `writes`, `call`, `network` and `mutations`, five grants in one object on the declaration. |
+| **function** | A callable whose body is inline Python, bounded by its declared `permissions`: `reads`, `writes`, `call`, `agents`, `network` and `mutations`, six grants in one object on the declaration. |
 | **agent** | A callable whose body is an LLM loop. Alpha. |
 | **llm/provider** | One place an agent buys completions: a wire, an endpoint and a key, as data. The kind is `provider` in the seeded `substrate.reamde.dev/llm` package, written here with its package because the bare word also names a catalog tier. Alpha. |
 | **wire** | The protocol an `llm/provider`'s adapter speaks — `openai`, `anthropic` or `azure` — never a company: a gateway that speaks OpenAI's wire is an `openai` row. |

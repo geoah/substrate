@@ -279,7 +279,7 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadli
 		if len(changes) == 0 {
 			return ran, nil
 		}
-		matched := matchChanges(tr, changes)
+		matched := matchChanges(tr, tr.selfActors(ds.registry()), changes)
 		if tr.Record.Coalesce {
 			matched = coalesceChanges(matched)
 		}
@@ -331,12 +331,12 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadli
 // writes a run row and a `*` subscription over runs would feed itself, and by
 // the delivery entry, which is the ledger's own bookkeeping (delivery.go).
 // (An agent's thread/message rows carry the agent's actor, so the same
-// exclusion keeps an agent off its own transcript.)
-func matchChanges(tr *trigger, changes []substrate.Change) []substrate.Change {
-	self := substrate.Actor(tr.callableActor())
+// exclusion keeps an agent off its own transcript.) A function's self also
+// covers the agents it may run (trigger.selfActors).
+func matchChanges(tr *trigger, self map[substrate.Actor]bool, changes []substrate.Change) []substrate.Change {
 	var out []substrate.Change
 	for _, ch := range changes {
-		if ch.Actor == self || ch.Kind == typeTriggerRun || ch.Op == substrate.OpDelivery {
+		if self[ch.Actor] || ch.Kind == typeTriggerRun || ch.Op == substrate.OpDelivery {
 			continue
 		}
 		if !tr.Record.matches(ch.Kind, runner.OpOf(ch)) {
@@ -398,6 +398,10 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 	// The claim an agent attempt takes is held through every attempt and
 	// the park, so a retry by hand cannot start a second loop between them.
 	defer settle.release()
+	// An agent the body runs records its thread here, so a failed attempt
+	// after it parks rather than running the agent again (agentThreads).
+	threads := &agentThreads{}
+	ctx = withCallOrigin(ctx, callOrigin{threads: threads})
 	for attempt := range triggerAttempts {
 		settle.attempt = attempt + 1
 		if attempt > 0 {
@@ -417,6 +421,7 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 			return 0, from, rerr
 		}
 		res, err := ds.deliver(ctx, tr, ch, from, depth, resume, settle)
+		err = agentRetryGate(threads, err)
 		if err == nil {
 			if res.skipped {
 				// The guard said no: a skip is a settled attempt — record it
@@ -454,7 +459,7 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 		// (db load) and rides the attempts. A paged drain that already
 		// committed pages (errPagedParked) also parks now: re-running it would
 		// only resume the same chain, so leave it to the parked-failure retry.
-		if runner.Deterministic(err) || errors.Is(err, errPagedParked) {
+		if runner.Deterministic(err) || errors.Is(err, errPagedParked) || errors.Is(err, errAgentThreadOpened) {
 			attempts = attempt + 1
 			break
 		}
@@ -805,6 +810,11 @@ func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change
 		// never sees it.
 		Resume: resume.cursor,
 	}
+	// The change rides the invocation so an agent the body runs stamps it on
+	// its rows, and the causal-depth walk sees through the agent.
+	origin := callOriginOf(ctx)
+	origin.causedBy = ch.Seq
+	ctx = withCallOrigin(ctx, origin)
 	effects, _, more, err := ds.runCallableRaw(ctx, tr.Callable, in)
 	if err != nil {
 		return res, err
@@ -1022,6 +1032,10 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 			return 0, err
 		}
 	}
+	// As in deliverWithRetry: a function body that ran an agent parks on
+	// its first failure after the thread opened (agentThreads).
+	threads := &agentThreads{}
+	fctx := withCallOrigin(ctx, callOrigin{threads: threads})
 	for attempt := range triggerAttempts {
 		if attempt > 0 {
 			select {
@@ -1036,7 +1050,8 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 		if tr.Agent != nil {
 			applied, err = ds.agentFire(ctx, tr, mode, fid, at, envelope, settle)
 		} else {
-			applied, err = ds.functionFire(ctx, tr, mode, fid, at, envelope, settle)
+			applied, err = ds.functionFire(fctx, tr, mode, fid, at, envelope, settle)
+			err = agentRetryGate(threads, err)
 		}
 		if err == nil {
 			return applied, nil
@@ -1078,7 +1093,7 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 			return 0, ctx.Err()
 		}
 		lastErr = err
-		if runner.Deterministic(err) || errors.Is(err, errPagedParked) {
+		if runner.Deterministic(err) || errors.Is(err, errPagedParked) || errors.Is(err, errAgentThreadOpened) {
 			attempts = attempt + 1
 			break
 		}

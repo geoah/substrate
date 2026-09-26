@@ -21,9 +21,10 @@ report `beta`, and `embeddings` is the other `alpha` entry. Read
 server version where an alpha break would cost you.
 
 An `agent` is a callable whose body is an **LLM loop**, run host-side. It has
-one reference and the same four ways in as a [function](functions.md): a
+one reference and the same ways in as a [function](functions.md): a
 trigger delivery (a `callable` whose `kind` is `substrate.reamde.dev/core/agent`), the
-call API, a sub-agent call, and chat. Its actor is
+call API, a sub-agent call, chat, and a function body that names it under
+`permissions.agents` ([running an agent](functions.md#running-an-agent)). Its actor is
 `agent:<authority>:<package>:<name>`, its own machine hand, held apart from a
 function's so an agent and a function of one name in one package are two
 writers; its dispatch stamps the
