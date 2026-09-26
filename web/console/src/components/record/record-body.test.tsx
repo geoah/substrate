@@ -48,11 +48,13 @@ const record = (details?: string): SubstrateRecord => ({
 
 function renderBody(r: SubstrateRecord) {
   const client = new QueryClient()
-  return render(
+  const body = (at: SubstrateRecord) => (
     <QueryClientProvider client={client}>
-      <RecordBody record={r} spec={spec} readOnly={false} />
+      <RecordBody record={at} spec={spec} readOnly={false} />
     </QueryClientProvider>
   )
+  const view = render(body(r))
+  return { ...view, refresh: (at: SubstrateRecord) => view.rerender(body(at)) }
 }
 
 /** Whether an element caps its own width: the body must not. */
@@ -135,5 +137,20 @@ describe("RecordBody", () => {
     expect(document.activeElement).toBe(
       screen.getByRole("button", { name: "Edit Details" })
     )
+  })
+
+  it("keeps the version it began from across a live refresh", async () => {
+    const { refresh } = renderBody(record("Old."))
+    fireEvent.click(screen.getByRole("button", { name: "Edit Details" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "Details" }), {
+      target: { value: "Mine." },
+    })
+    refresh({ ...record("Theirs."), version: 5 })
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0]).toEqual({
+      properties: { details: "Mine." },
+      ifVersion: 4,
+    })
   })
 })

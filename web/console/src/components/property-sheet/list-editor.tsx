@@ -27,7 +27,7 @@ import {
 
 import { listItems, listWrite } from "./sheet-model"
 import { type SheetRow } from "./sheet-rows"
-import { useRecordPatch, writeError } from "./use-record-patch"
+import { useEditBase, useRecordPatch, writeError } from "./use-record-patch"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import type { SubstrateRecord } from "@/lib/api/types"
@@ -65,7 +65,7 @@ export function ListEditor({
   const { field } = row
   const item = elementSpec(field.spec)
   const prose = controlFor(item) === "prose"
-  const patch = useRecordPatch(record)
+  const patch = useRecordPatch(record, useEditBase(record))
   const [items, setItems] = useState<Item[]>(() => {
     const seeded = listItems(row.value).map(make)
     return seeded.length ? seeded : [make("")]

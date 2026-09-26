@@ -174,10 +174,10 @@ function renderSheet(
     defaultOptions: { queries: { retry: false } },
   })
   client.setQueryData(["registry", "kinds"], [task, kind(PERSON, {})])
-  return render(
+  const sheet = (at: SubstrateRecord) => (
     <QueryClientProvider client={client}>
       <PropertySheet
-        record={r}
+        record={at}
         kind={k}
         kinds={[task]}
         readOnly={readOnly}
@@ -185,6 +185,10 @@ function renderSheet(
       />
     </QueryClientProvider>
   )
+  const view = render(sheet(r))
+  /** A live re-read: the page hands the sheet the record as it is now. */
+  const refresh = (at: SubstrateRecord) => view.rerender(sheet(at))
+  return { ...view, refresh }
 }
 
 const row = (name: string) =>
@@ -858,5 +862,120 @@ describe("OwnershipChip", () => {
       within(detail).getByRole("button", { name: "Use my own value" })
     )
     expect(screen.getByRole("textbox", { name: "Location" })).toBeTruthy()
+  })
+})
+
+describe("PropertySheet under a live refresh", () => {
+  // Another tab or an agent moved the record while an editor was open: the
+  // page re-reads it (version 8), and the edit must still assert the version
+  // it began from (7), so the server refuses it instead of it silently
+  // overwriting the other write.
+  const moved = (over: Partial<SubstrateRecord> = {}) =>
+    record({
+      version: 8,
+      properties: { ...record().properties, location: "Porto" },
+      ...over,
+    })
+  const pinned = async () => {
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect((wire.writes[0].body as { ifVersion: number }).ifVersion).toBe(7)
+  }
+
+  it("keeps a text edit's version, and says the conflict", async () => {
+    const { refresh } = renderSheet(record())
+    fireEvent.click(valueOf("location")!)
+    const box = screen.getByRole("textbox", { name: "Location" })
+    fireEvent.change(box, { target: { value: "Madrid" } })
+    wire.refuse = { code: "conflict", message: "version moved" }
+    refresh(moved())
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Location" }), {
+      key: "Enter",
+    })
+    await pinned()
+    expect((await screen.findByRole("alert")).textContent).toMatch(
+      /changed since you opened it/
+    )
+  })
+
+  it("keeps an enum pick's version", async () => {
+    const { refresh } = renderSheet(record())
+    fireEvent.click(valueOf("priority")!)
+    refresh(moved())
+    fireEvent.click(screen.getByRole("option", { name: "Low" }))
+    await pinned()
+  })
+
+  it("keeps a list edit's version", async () => {
+    const tagged = (over: Partial<SubstrateRecord> = {}) =>
+      record({
+        properties: { ...record().properties, tags: ["alpha"] },
+        ...over,
+      })
+    const { refresh } = renderSheet(tagged())
+    fireEvent.click(valueOf("tags")!)
+    fireEvent.change(screen.getByRole("textbox", { name: "Tags 1" }), {
+      target: { value: "beta" },
+    })
+    refresh(tagged({ version: 8 }))
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await pinned()
+  })
+
+  it("keeps a date edit's version", async () => {
+    const dated = (over: Partial<SubstrateRecord> = {}) =>
+      record({
+        properties: { ...record().properties, due: "2026-10-08T10:00:00Z" },
+        ...over,
+      })
+    const { refresh } = renderSheet(dated())
+    fireEvent.click(valueOf("due")!)
+    const grid = await screen.findByRole("grid", { name: "Due" })
+    fireEvent.click(
+      within(grid).getByRole("button", { name: /\b9 October 2026/ })
+    )
+    refresh(dated({ version: 8 }))
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await pinned()
+  })
+
+  it("writes a later edit against the version then on the page", async () => {
+    const { refresh } = renderSheet(record())
+    refresh(moved())
+    fireEvent.click(valueOf("location")!)
+    fireEvent.change(screen.getByRole("textbox", { name: "Location" }), {
+      target: { value: "Madrid" },
+    })
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Location" }), {
+      key: "Enter",
+    })
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect((wire.writes[0].body as { ifVersion: number }).ifVersion).toBe(8)
+  })
+
+  it("keeps the version a source's value was offered at", async () => {
+    const offered = (over: Partial<SubstrateRecord> = {}) =>
+      record({
+        propertyMeta: {
+          location: {
+            manager: "console",
+            tier: "owner",
+            alternatives: [
+              { actor: GOOGLE_SYNC, value: "Lisboa", updatedAt: "" },
+            ],
+          },
+        },
+        ...over,
+      })
+    const { refresh } = renderSheet(offered())
+    fireEvent.click(
+      screen.getByRole("button", { name: "Where Location comes from" })
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Use Google’s" }))
+    const dialog = await screen.findByRole("dialog")
+    refresh(offered({ version: 8 }))
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Use Google’s" })
+    )
+    await pinned()
   })
 })

@@ -260,4 +260,14 @@ describe("useChangeMarks", () => {
     act(() => void vi.advanceTimersByTime(1600))
     expect(result.current.marks.size).toBe(0)
   })
+
+  it("drops a mark whatever re-renders the page in between", () => {
+    const { result, rerender } = renderHook(() => useChangeMarks())
+    act(() => result.current.mark(["t1"]))
+    rerender()
+    act(() => void vi.advanceTimersByTime(500))
+    rerender()
+    act(() => void vi.advanceTimersByTime(3000))
+    expect(result.current.marks.size).toBe(0)
+  })
 })
