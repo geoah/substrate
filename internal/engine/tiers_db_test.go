@@ -420,3 +420,194 @@ func TestMergeCarriesTier(t *testing.T) {
 		t.Fatalf("the restored loser lost its held value: %v", l.Properties["name"])
 	}
 }
+
+// tierImporter is an actor no declaration knows until a test declares it: an
+// import script's name, holding at the owner tier while undeclared (#583).
+const (
+	tierImporter        = substrate.Actor("importer")
+	tierImporterPackage = "importer.test.dev/importer"
+)
+
+// declareImporterAtMachine applies the package that declares tierImporter at
+// `tier: machine`. Applying it again re-declares the actor unchanged.
+func declareImporterAtMachine(t *testing.T, ds *dataset) {
+	t.Helper()
+	if err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
+		Name: "importer", Authority: tierImporterPackage,
+		Manifests: []map[string]any{
+			vocabulary.PackageManifest(tierImporterPackage, 0),
+			actorManifestTier(tierImporterPackage, string(tierImporter), "machine"),
+		},
+	}); err != nil {
+		t.Fatalf("declare the importer at the machine tier: %v", err)
+	}
+}
+
+// tierOrphaned reports whether a profile carries the orphan mark.
+func tierOrphaned(t *testing.T, ds *dataset, id string) bool {
+	t.Helper()
+	marked := true
+	page, err := ds.List(context.Background(), substrate.Query{
+		Filter: substrate.Filter{Kinds: []string{typeTierProfile}, Orphaned: &marked}, First: 100,
+	})
+	if err != nil {
+		t.Fatalf("list orphaned profiles: %v", err)
+	}
+	for _, r := range page.Records {
+		if r.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// A manager row holds at the tier its actor's LIVE declaration gives, where
+// that declaration is the machine tier (#583, record 0106). An importer
+// writing under a name no declaration knows holds at the owner tier, and a
+// sync yields to it; declaring the name at `tier: machine` afterwards
+// releases what it already wrote, in the apply itself, without the owner
+// null-patching each property. The read reports the tier the yield uses.
+func TestDeclaringAnActorAtTheMachineTierReleasesWhatItHolds(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("db test")
+	}
+	ds := newTierDataset(t)
+	ctx := context.Background()
+
+	tierSyncRecord(t, ds, "rec-1", "Synced Name", "ada@example.com")
+	pid := tierProfileOf(t, ds, "rec-1")
+
+	if _, err := ds.Patch(ctx, tierImporter, typeTierProfile, pid, substrate.PatchInput{
+		Properties: map[string]any{"name": "Imported Name"},
+	}); err != nil {
+		t.Fatalf("import patch: %v", err)
+	}
+	tierSyncRecord(t, ds, "rec-1", "Fresher Name", "ada@example.com")
+	p := tierGet(t, ds, pid)
+	if p.Properties["name"] != "Imported Name" {
+		t.Fatalf("a sync overwrote an undeclared actor's owner-tier hold: %v", p.Properties["name"])
+	}
+	wantMeta(t, p, "name", string(tierImporter), substrate.TierOwner)
+
+	declareImporterAtMachine(t, ds)
+	p = tierGet(t, ds, pid)
+	if p.Properties["name"] != "Fresher Name" {
+		t.Fatalf("declaring the importer at the machine tier did not release its hold: %v", p.Properties["name"])
+	}
+	wantMeta(t, p, "name", string(tierSync), substrate.TierMachine)
+}
+
+// Re-declaring an actor at the machine tier reaches a row it already holds
+// even where the value does not move: the stored row still says owner, and
+// the read reports it at the machine tier (#583).
+func TestAStoredOwnerRowOfAMachineActorReadsAsMachine(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("db test")
+	}
+	ds := newTierDataset(t)
+	ctx := context.Background()
+
+	tierSyncRecord(t, ds, "rec-1", "Synced Name", "ada@example.com")
+	pid := tierProfileOf(t, ds, "rec-1")
+	if _, err := ds.Patch(ctx, tierImporter, typeTierProfile, pid, substrate.PatchInput{
+		Properties: map[string]any{"nickname": "ada"},
+	}); err != nil {
+		t.Fatalf("import patch: %v", err)
+	}
+	wantMeta(t, tierGet(t, ds, pid), "nickname", string(tierImporter), substrate.TierOwner)
+
+	declareImporterAtMachine(t, ds)
+	// nickname is mapped by nothing, so no recompute rewrites its row.
+	wantMeta(t, tierGet(t, ds, pid), "nickname", string(tierImporter), substrate.TierMachine)
+}
+
+// The release is recompute's machine-tier rule, not a merge (record 0106): a
+// mapped property the demoted actor wrote that no live source offers is
+// deleted, and a union keeps only its sources' items. What no mapping writes
+// stays. A record only the demoted actor wrote, with no live source, is
+// marked orphaned in the same apply (0092's condition 3, amended).
+func TestDeclaringAnActorAtTheMachineTierDeletesWhatNoSourceOffers(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("db test")
+	}
+	ds := newTierDataset(t)
+	ctx := context.Background()
+
+	lone, err := ds.Put(ctx, tierImporter, substrate.PutInput{
+		Kind:       typeTierProfile,
+		Properties: map[string]any{"name": "Imported Only", "nickname": "io"},
+	})
+	if err != nil {
+		t.Fatalf("import a profile no source describes: %v", err)
+	}
+	if tierOrphaned(t, ds, lone.ID) {
+		t.Fatal("a profile an owner-tier hand wrote is marked before the declaration")
+	}
+
+	tierSyncRecord(t, ds, "rec-1", "Synced Name", "ada@example.com")
+	linked := tierProfileOf(t, ds, "rec-1")
+	if _, err := ds.Patch(ctx, tierImporter, typeTierProfile, linked, substrate.PatchInput{
+		Properties: map[string]any{"emails": []any{"ada@example.com", "ada@work.example"}},
+	}); err != nil {
+		t.Fatalf("import addresses: %v", err)
+	}
+
+	declareImporterAtMachine(t, ds)
+
+	p := tierGet(t, ds, lone.ID)
+	if _, ok := p.Properties["name"]; ok {
+		t.Fatalf("a mapped property no source offers survived the release: %v", p.Properties["name"])
+	}
+	if p.Properties["nickname"] != "io" {
+		t.Fatalf("the release touched an unmapped property: %v", p.Properties["nickname"])
+	}
+	if !tierOrphaned(t, ds, lone.ID) {
+		t.Fatal("a profile only the demoted importer wrote, with no source, is not marked orphaned")
+	}
+
+	emails, _ := tierGet(t, ds, linked).Properties["emails"].([]any)
+	if len(emails) != 1 || emails[0] != "ada@example.com" {
+		t.Fatalf("emails after the release = %v, want only the source's address", emails)
+	}
+}
+
+// A repository whose actor was declared at the machine tier before record
+// 0106 holds rows stored at the owner tier that no transition will reach.
+// Re-applying the package that declares the actor releases them (#583).
+func TestReapplyingAMachineActorsPackageReleasesItsStaleHolds(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("db test")
+	}
+	ds := newTierDataset(t)
+	ctx := context.Background()
+
+	declareImporterAtMachine(t, ds)
+	tierSyncRecord(t, ds, "rec-1", "Synced Name", "ada@example.com")
+	pid := tierProfileOf(t, ds, "rec-1")
+	if _, err := ds.Patch(ctx, tierImporter, typeTierProfile, pid, substrate.PatchInput{
+		Properties: map[string]any{"name": "Imported Name"},
+	}); err != nil {
+		t.Fatalf("import patch: %v", err)
+	}
+	// The state an older binary left: the write admitted at the owner tier
+	// while the actor was undeclared, and the declaration applied since.
+	if _, err := ds.db.ExecContext(ctx,
+		`UPDATE property_managers SET tier = $3 WHERE record_kind = $1 AND record_id = $2 AND actor = $4`,
+		typeTierProfile, pid, string(substrate.TierOwner), string(tierImporter)); err != nil {
+		t.Fatalf("store the pre-0106 owner row: %v", err)
+	}
+	if got := tierGet(t, ds, pid).Properties["name"]; got != "Imported Name" {
+		t.Fatalf("name before the re-apply = %v", got)
+	}
+
+	declareImporterAtMachine(t, ds)
+	p := tierGet(t, ds, pid)
+	if p.Properties["name"] != "Synced Name" {
+		t.Fatalf("re-applying the importer's package did not release its stale hold: %v", p.Properties["name"])
+	}
+	wantMeta(t, p, "name", string(tierSync), substrate.TierMachine)
+}

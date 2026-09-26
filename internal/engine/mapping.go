@@ -1226,10 +1226,19 @@ func sortedOfferKeys(m map[offerKey]offer) []offerKey {
 }
 
 // managerRow is one property's manager as recompute reads it: the actor for
-// attribution, the stored tier for yield.
+// attribution, the tier the row holds at for yield, and the tier the write
+// stored.
 type managerRow struct {
 	actor string
-	tier  substrate.Tier
+	// tier is the tier the row holds at under the transaction's declarations
+	// (heldTierIn): the stored tier unless the actor has since been declared
+	// at the machine tier (record 0106). The yield and the orphan mark read
+	// it.
+	tier substrate.Tier
+	// stored is the tier column as the write recorded it. A kind move copies
+	// it and releaseMachineManaged decides on it, so neither rewrites nor
+	// nulls a row on the strength of a later declaration.
+	stored substrate.Tier
 	// principal is the token id the write stood behind, empty where none did.
 	// A kind move carries it with the manager (move.go), because who wrote a
 	// value is the whole row and not two thirds of it.
@@ -1237,7 +1246,8 @@ type managerRow struct {
 }
 
 // managersOf reads the target's property-manager ledger, property → manager.
-// The tier column is NOT NULL, so the row is the whole answer.
+// The tier column is NOT NULL, so the row and the declarations are the whole
+// answer.
 func (t *txn) managersOf(ref eref) (map[string]managerRow, error) {
 	rows, err := t.query(
 		`SELECT property, actor, tier, coalesce(principal, '') FROM property_managers WHERE record_kind = $1 AND record_id = $2`,
@@ -1252,7 +1262,12 @@ func (t *txn) managersOf(ref eref) (map[string]managerRow, error) {
 		if err := rows.Scan(&property, &actor, &tier, &principal); err != nil {
 			return nil, err
 		}
-		out[property] = managerRow{actor: actor, tier: substrate.Tier(tier), principal: principal}
+		out[property] = managerRow{
+			actor:     actor,
+			tier:      heldTierIn(t.declarations(), actor, substrate.Tier(tier)),
+			stored:    substrate.Tier(tier),
+			principal: principal,
+		}
 	}
 	return out, rows.Err()
 }
@@ -1325,7 +1340,10 @@ func (t *txn) releaseMachineManaged(target eref, props []string) error {
 	}
 	patch := map[string]any{}
 	for _, name := range props {
-		if m, held := managers[name]; !held || m.tier != substrate.TierMachine {
+		// The stored tier: a row an actor wrote above the machine tier is not
+		// recompute's to null here, even once its actor is declared at the
+		// machine tier (record 0106).
+		if m, held := managers[name]; !held || m.stored != substrate.TierMachine {
 			continue
 		}
 		if p, ok := ty.Props[name]; ok && p.Required {

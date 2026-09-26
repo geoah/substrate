@@ -629,7 +629,7 @@ func (t *txn) moveRecord(r movedRow, targets map[string]string, moving map[strin
 				continue
 			}
 		}
-		if err := t.setManagerAs(to, name, substrate.Actor(mr.actor), mr.tier, mr.principal); err != nil {
+		if err := t.setManagerAs(to, name, substrate.Actor(mr.actor), mr.stored, mr.principal); err != nil {
 			return nil, err
 		}
 	}

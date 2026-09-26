@@ -320,6 +320,74 @@ func (t *txn) recomputeMappingTargets(live, cand *vocabulary.Registry) error {
 	return nil
 }
 
+// recomputeDemotedActors is the vocabulary apply's other half of recompute.
+// An actor the candidate declares at the machine tier no longer holds what it
+// wrote above the machine tier (heldTierIn, record 0106), and no source write
+// may ever arrive to let recompute take it back. Every record where such an
+// actor still has a row stored above the machine tier recomputes here,
+// against the candidate, so the values this commit publishes are the ones the
+// published closure yields on.
+//
+// Two sets of actors qualify: one the live declarations did not put at the
+// machine tier (the transition), and one declared at the machine tier by a
+// package this batch touches, whatever its live tier. The second is how a
+// repository whose actor was declared at the machine tier before record 0106
+// releases now: re-applying the package that declares it recomputes what the
+// actor still holds, instead of each record waiting for its next source
+// write. The `tier <> machine` filter keeps a re-apply cheap once the stored
+// rows have moved.
+func (t *txn) recomputeDemotedActors(live, cand *vocabulary.Registry, touched map[string]bool) error {
+	var demoted []string
+	for _, actor := range cand.Actors() {
+		if heldTierIn(cand, actor, substrate.TierOwner) != substrate.TierMachine {
+			continue
+		}
+		pkg, _ := cand.ActorPackage(actor)
+		if tier, ok := live.ActorTier(actor); ok && tier == substrate.TierMachine && !touched[pkg] {
+			continue
+		}
+		demoted = append(demoted, actor)
+	}
+	if len(demoted) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	var refs []eref
+	for _, actor := range demoted {
+		rows, err := t.query(`
+			SELECT DISTINCT record_kind, record_id FROM property_managers
+			WHERE actor = $1 AND tier <> $2 ORDER BY record_kind, record_id`,
+			actor, string(substrate.TierMachine))
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var ref eref
+			if err := rows.Scan(&ref.Kind, &ref.ID); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			if !seen[ref.key()] {
+				seen[ref.key()] = true
+				refs = append(refs, ref)
+			}
+		}
+		_ = rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+	for _, ref := range refs {
+		if len(cand.MappingsTo(ref.Kind)) == 0 {
+			continue
+		}
+		if err := t.recompute(ref); err != nil {
+			return fmt.Errorf("substrate/engine: recompute %s %s after its manager was declared at the machine tier: %w", ref.Kind, ref.ID, err)
+		}
+	}
+	return nil
+}
+
 // mappedProperties is the set of target properties a mapping set writes: the
 // union of every mapping's map keys. A match rule reads a target property to
 // find the subject and writes nothing, so it is not one.

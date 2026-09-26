@@ -548,6 +548,12 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		if err := t.recomputeMappingTargets(ds.registry(), candidate); err != nil {
 			return err
 		}
+		// An actor the batch declares at the machine tier, or re-declares
+		// there in a package it touches, releases what it holds above it the
+		// same way (recomputeDemotedActors).
+		if err := t.recomputeDemotedActors(ds.registry(), candidate, touched); err != nil {
+			return err
+		}
 		final, err := droppedTypeGuards(t, st.droppedTypes)
 		if err != nil {
 			return err
