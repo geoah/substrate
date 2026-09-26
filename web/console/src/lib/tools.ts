@@ -6,7 +6,7 @@
  * label. */
 
 import { CORE_AUTHORITY, CORE_PACKAGE, splitKind } from "@/lib/api/http"
-import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+import type { KindInfo, SubstrateRecord, TriggerStatus } from "@/lib/api/types"
 import {
   PROVIDERS_AUTHORITY,
   actorIdentity,
@@ -993,6 +993,60 @@ export interface ToolRun {
   status: RunStatus
   /** The full reason on a run that had trouble. */
   reason?: string
+  /** What the run was handed, as stored: a trigger run's delivery (the
+   * change or fire it answered); absent on an agent's call, whose arguments
+   * live on the assistant turn `call` names. */
+  input?: Record<string, unknown>
+  /** What it gave back, as stored: a trigger run's outcome, or the tool
+   * message's result and the changes it wrote. */
+  output?: Record<string, unknown>
+  /** An agent's call: the thread and turn whose assistant row carries the
+   * call's arguments, and the call's id there. */
+  call?: { thread: string; turn?: number; id: string }
+}
+
+/** The stored keys of `from` that are set, in the order named. */
+function present(
+  from: Record<string, unknown>,
+  keys: readonly string[]
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const k of keys) {
+    const v = from[k]
+    if (v !== undefined && v !== null && v !== "") out[k] = v
+  }
+  return out
+}
+
+/** A tool result as it was returned: the model's JSON parsed back where it
+ * is JSON, else the text. */
+function resultOf(content: unknown): unknown {
+  if (typeof content !== "string") return content
+  try {
+    return JSON.parse(content) as unknown
+  } catch {
+    return content
+  }
+}
+
+/** One call's arguments off the assistant turn that dispatched it: the
+ * model's JSON parsed back, else the text; undefined when the turn does not
+ * carry the call. */
+export function callArguments(
+  assistant: SubstrateRecord[],
+  callId: string
+): { found: boolean; value?: unknown } {
+  for (const m of assistant) {
+    const calls = m.properties.toolCalls
+    if (!Array.isArray(calls)) continue
+    for (const c of calls) {
+      if (!c || typeof c !== "object") continue
+      const call = c as Record<string, unknown>
+      if (call.id !== callId) continue
+      return { found: true, value: resultOf(call.arguments) }
+    }
+  }
+  return { found: false }
 }
 
 const EFFECT_WORDS: Record<string, string> = {
@@ -1063,6 +1117,8 @@ export function runFromTriggerRun(record: SubstrateRecord): ToolRun {
     tookMs: durationBetween(p.startedAt, p.finishedAt),
     status,
     reason,
+    input: present(p, ["mode", "seq", "record", "fireId", "attempt"]),
+    output: present(p, ["status", "effects", "pages", "reason"]),
   }
 }
 
@@ -1075,6 +1131,7 @@ export function runFromToolMessage(
   const ok = p.ok !== false
   const changes = Array.isArray(p.changes) ? p.changes.length : 0
   const content = typeof p.content === "string" ? p.content : ""
+  const thread = refId(p.thread)
   return {
     key: `msg:${message.id}`,
     at: message.createdAt,
@@ -1087,6 +1144,19 @@ export function runFromToolMessage(
         : "Answered",
     status: ok ? "ok" : "trouble",
     reason: ok ? undefined : content || undefined,
+    output: {
+      ok,
+      ...(content && { result: resultOf(content) }),
+      ...(changes > 0 && { changes: p.changes }),
+    },
+    call:
+      thread && typeof p.toolCallId === "string" && p.toolCallId
+        ? {
+            thread,
+            turn: typeof p.turn === "number" ? p.turn : undefined,
+            id: p.toolCallId,
+          }
+        : undefined,
   }
 }
 
@@ -1168,6 +1238,31 @@ export function isoDurationWords(value: unknown): string | undefined {
       .filter(Boolean)
       .join(" ") || value
   )
+}
+
+// ── trigger progress ────────────────────────────────────────────────────────
+
+/** Where a trigger stands in the changelog, for technical mode: a record
+ * source's cursor against the head and how far behind it is, the last fire
+ * of a schedule or webhook, and what is parked or pending. */
+export function triggerProgress(status: TriggerStatus, now?: number): string[] {
+  const out: string[] = []
+  if (status.kind === "record") {
+    const at = status.cursor ?? status.head
+    const lag = status.lag ?? 0
+    out.push(
+      `cursor #${at} of #${status.head}`,
+      lag > 0 ? `${lag.toLocaleString()} behind` : "caught up"
+    )
+  } else if (status.lastFire) {
+    out.push(`last fired ${agoWords(status.lastFire, now)}`)
+  } else {
+    out.push("not fired yet")
+  }
+  if (status.pending > 0) out.push(`${status.pending} pending`)
+  if (status.parked > 0) out.push(`${status.parked} parked`)
+  if (status.error) out.push(status.error)
+  return out
 }
 
 // ── status ──────────────────────────────────────────────────────────────────

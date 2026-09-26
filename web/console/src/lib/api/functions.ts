@@ -103,6 +103,33 @@ export function toolUsageQueryOptions(names: string[]) {
   })
 }
 
+/** The assistant turn that dispatched a call: its `toolCalls` carry the
+ * arguments the tool message does not. Narrowed to the thread and turn, so
+ * it reads a row or two however long the conversation. */
+export function callTurnQueryOptions(thread: string, turn?: number) {
+  return queryOptions({
+    queryKey: ["records", [MESSAGE_KIND], "call-turn", thread, turn ?? null],
+    queryFn: async ({ signal }) => {
+      const page = await fetchRecordsPage(
+        {
+          kinds: [MESSAGE_KIND],
+          first: 20,
+          filter: {
+            properties: {
+              thread: { eq: thread },
+              role: { eq: "assistant" },
+              ...(turn !== undefined && { turn: { eq: turn } }),
+            },
+          },
+        },
+        signal
+      )
+      return page.records ?? []
+    },
+    staleTime: Infinity,
+  })
+}
+
 /** The agent a tool message's thread belongs to, off the page's `included`. */
 export function messageAgent(
   page: Page | undefined,

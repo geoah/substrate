@@ -5,6 +5,7 @@ import {
   argumentLabel,
   buildCallInput,
   buildTools,
+  callArguments,
   cadenceSummary,
   cadenceWords,
   canTryIt,
@@ -26,6 +27,7 @@ import {
   toolName,
   toolStarts,
   toolStatus,
+  triggerProgress,
   usageNames,
   tookWords,
   type Tool,
@@ -460,6 +462,59 @@ describe("runs and status", () => {
     ).toMatchObject({ status: "trouble", happened: "Stopped: boom" })
   })
 
+  it("keeps a trigger run's delivery and outcome for technical mode", () => {
+    const r = runFromTriggerRun(
+      run({
+        mode: "record",
+        seq: 812,
+        record: "c1",
+        attempt: 1,
+        effects: { put: 2 },
+      })
+    )
+    expect(r.input).toEqual({
+      mode: "record",
+      seq: 812,
+      record: "c1",
+      attempt: 1,
+    })
+    expect(r.output).toEqual({ status: "ok", effects: { put: 2 } })
+  })
+
+  it("keeps an agent call's result and where its arguments are", () => {
+    const r = runFromToolMessage(
+      rec("substrate.reamde.dev/llm/message", "m1", {
+        role: "tool",
+        ok: true,
+        turn: 3,
+        toolCallId: "call_1",
+        content: '{"records":[]}',
+        thread: { ref: "substrate.reamde.dev/llm/thread/t1" },
+        changes: [{ seq: 9, op: "put" }],
+      }),
+      "a/b/c"
+    )
+    expect(r.output).toEqual({
+      ok: true,
+      result: { records: [] },
+      changes: [{ seq: 9, op: "put" }],
+    })
+    expect(r.call).toEqual({ thread: "t1", turn: 3, id: "call_1" })
+    const turn = rec("substrate.reamde.dev/llm/message", "m0", {
+      role: "assistant",
+      toolCalls: [
+        { id: "call_0", name: "query", arguments: "not json" },
+        { id: "call_1", name: "query", arguments: '{"q":"ada"}' },
+      ],
+    })
+    expect(callArguments([turn], "call_1")).toEqual({
+      found: true,
+      value: { q: "ada" },
+    })
+    expect(callArguments([turn], "call_0").value).toBe("not json")
+    expect(callArguments([turn], "call_9")).toEqual({ found: false })
+  })
+
   it("matches an agent's tool messages back to the tool by name and agent", () => {
     const tools = fixture()
     const msg = (name: string, ok = true) =>
@@ -580,5 +635,41 @@ describe("runs and status", () => {
     expect(isoDurationWords("PT5S")).toBe("5 seconds")
     expect(isoDurationWords("PT1M")).toBe("1 minute")
     expect(effectsWords({ delete: 1, merge: 2 })).toBe("2 merged, 1 removed")
+  })
+})
+
+describe("triggerProgress", () => {
+  const base = {
+    id: "t",
+    callable: "x",
+    enabled: true,
+    head: 1240,
+    parked: 0,
+    pending: 0,
+  }
+  it("puts a record source's cursor against the head", () => {
+    expect(
+      triggerProgress({ ...base, kind: "record", cursor: 1234, lag: 6 })
+    ).toEqual(["cursor #1234 of #1240", "6 behind"])
+    expect(
+      triggerProgress({ ...base, kind: "record", cursor: 1240, pending: 2 })
+    ).toEqual(["cursor #1240 of #1240", "caught up", "2 pending"])
+  })
+  it("says when a schedule last fired, and what it parked", () => {
+    const now = Date.parse("2026-09-25T12:00:00Z")
+    expect(
+      triggerProgress(
+        {
+          ...base,
+          kind: "schedule",
+          lastFire: "2026-09-25T10:00:00Z",
+          parked: 1,
+        },
+        now
+      )
+    ).toEqual(["last fired 2 hours ago", "1 parked"])
+    expect(triggerProgress({ ...base, kind: "webhook" })).toEqual([
+      "not fired yet",
+    ])
   })
 })

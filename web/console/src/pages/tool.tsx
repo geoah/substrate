@@ -2,11 +2,17 @@
  * it, what it takes and gives back, a way to run it, and how its recent runs
  * went. Technical mode adds the declaration: runtime, permissions, source. */
 
-import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query"
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import {
   ArrowUpRight,
   Bot,
+  ChevronRight,
   Clock,
   Code,
   Eye,
@@ -21,13 +27,14 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react"
-import type { ReactNode } from "react"
+import { Fragment, useState, type ReactNode } from "react"
 
 import { CodeBlock } from "@/components/code-block"
 import { ActorRef } from "@/components/identity/actor-ref"
 import { IdText } from "@/components/identity/id-text"
 import { PageHeader } from "@/components/identity/page-header"
 import { DocPage } from "@/components/identity/page-layout"
+import { RunIO } from "@/components/tools/run-io"
 import { OriginTag, StatusPill, ToolTile } from "@/components/tools/tool-marks"
 import { TryIt } from "@/components/tools/try-it"
 import {
@@ -41,9 +48,11 @@ import { toast } from "@/components/ui/toast"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { setTriggerEnabled } from "@/lib/api/functions"
 import { LLM_PACKAGE } from "@/lib/api/http"
+import type { TriggerStatus } from "@/lib/api/types"
 import {
   requestSync,
   triggerRunsQueryOptions,
+  triggerStatusesQueryOptions,
   wakeTriggers,
 } from "@/lib/api/sync"
 import {
@@ -66,6 +75,7 @@ import {
   toolStarts,
   toolStatus,
   tookWords,
+  triggerProgress,
   type PermissionWords,
   type StartKind,
   type Tool,
@@ -571,6 +581,13 @@ function RunsTable({
   runs: ToolRun[]
   technical: boolean
 }) {
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
+  const toggle = (key: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(key)) next.add(key)
+      return next
+    })
   const grid =
     "grid grid-cols-[110px_minmax(0,1.2fr)_minmax(0,2fr)_70px_100px] items-center gap-2.5 px-3 max-md:grid-cols-[90px_minmax(0,1fr)_100px]"
   return (
@@ -594,33 +611,63 @@ function RunsTable({
       </div>
       {runs.map((r) => {
         const s = RUN_STATUS[r.status]
+        const expanded = technical && open.has(r.key)
         return (
-          <div
-            role="row"
-            key={r.key}
-            className={cn(grid, "min-h-10 border-t py-2 text-[13px]")}
-          >
-            <span role="cell" className="text-muted-foreground" title={r.at}>
-              {agoWords(r.at)}
-            </span>
-            <span role="cell" className="min-w-0 max-md:hidden">
-              <StartedBy run={r} />
-            </span>
-            <span role="cell" className="min-w-0 break-words" title={r.reason}>
-              {r.happened}
-              {technical && r.trigger && (
-                <span className="mt-0.5 block">
-                  <IdText value={r.trigger} />
-                </span>
-              )}
-            </span>
-            <span role="cell" className="text-muted-foreground max-md:hidden">
-              {tookWords(r.tookMs)}
-            </span>
-            <span role="cell">
-              <StatusPill status={s} />
-            </span>
-          </div>
+          <Fragment key={r.key}>
+            <div
+              role="row"
+              className={cn(grid, "min-h-10 border-t py-2 text-[13px]")}
+            >
+              <span role="cell" className="text-muted-foreground" title={r.at}>
+                {agoWords(r.at)}
+              </span>
+              <span role="cell" className="min-w-0 max-md:hidden">
+                <StartedBy run={r} />
+              </span>
+              <span
+                role="cell"
+                className="min-w-0 break-words"
+                title={r.reason}
+              >
+                {r.happened}
+                {technical && r.trigger && (
+                  <span className="mt-0.5 block">
+                    <IdText value={r.trigger} />
+                  </span>
+                )}
+                {technical && (
+                  <button
+                    type="button"
+                    aria-expanded={expanded}
+                    onClick={() => toggle(r.key)}
+                    className="mt-0.5 flex cursor-pointer items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <ChevronRight
+                      aria-hidden
+                      className={cn(
+                        "size-3 transition-transform",
+                        expanded && "rotate-90"
+                      )}
+                    />
+                    Input and output
+                  </button>
+                )}
+              </span>
+              <span role="cell" className="text-muted-foreground max-md:hidden">
+                {tookWords(r.tookMs)}
+              </span>
+              <span role="cell">
+                <StatusPill status={s} />
+              </span>
+            </div>
+            {expanded && (
+              <div role="row" className="border-t bg-panel px-3 py-3">
+                <div role="cell">
+                  <RunIO run={r} />
+                </div>
+              </div>
+            )}
+          </Fragment>
         )
       })}
     </div>
@@ -628,6 +675,10 @@ function RunsTable({
 }
 
 function Developer({ tool }: { tool: Tool }) {
+  const statuses = useQuery({
+    ...triggerStatusesQueryOptions,
+    enabled: tool.triggers.length > 0,
+  })
   const timeout = isoDurationWords(tool.record.properties.timeout)
   const source = tool.record.properties.source
   return (
@@ -670,7 +721,10 @@ function Developer({ tool }: { tool: Tool }) {
             <SubHead>triggers</SubHead>
             <ul className="flex flex-col gap-1">
               {tool.triggers.map((t) => (
-                <li key={t.id} className="flex items-center gap-2">
+                <li
+                  key={t.id}
+                  className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
+                >
                   <Link
                     to="/data/$authority/$pkg/$name/$id"
                     params={{
@@ -686,6 +740,9 @@ function Developer({ tool }: { tool: Tool }) {
                     />
                   </Link>
                   {!t.enabled && <span className="text-faint">off</span>}
+                  <TriggerProgress
+                    status={statuses.data?.find((s) => s.id === t.id)}
+                  />
                 </li>
               ))}
             </ul>
@@ -704,6 +761,23 @@ function Developer({ tool }: { tool: Tool }) {
         )}
       </div>
     </Section>
+  )
+}
+
+function TriggerProgress({ status }: { status?: TriggerStatus }) {
+  if (!status) return null
+  return (
+    <span
+      data-slot="trigger-progress"
+      className={cn(
+        "tabular-nums",
+        (status.lag ?? 0) > 0 || status.parked > 0 || status.error
+          ? "text-warning"
+          : "text-faint"
+      )}
+    >
+      {triggerProgress(status).join(" · ")}
+    </span>
   )
 }
 
