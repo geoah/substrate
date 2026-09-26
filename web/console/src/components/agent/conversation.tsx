@@ -30,7 +30,13 @@ import { Transcript } from "@/components/agent/transcript"
 import { IdText } from "@/components/identity/id-text"
 import { Button } from "@/components/ui/button"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import { agentName, examplePrompts, providerName } from "@/lib/agent-chat"
+import {
+  agentName,
+  examplePrompts,
+  providerName,
+  tallyWords,
+  threadTally,
+} from "@/lib/agent-chat"
 import {
   streamChat,
   threadMessagesQueryOptions,
@@ -88,6 +94,7 @@ export function Conversation({
   agentId,
   agent,
   thread,
+  threadRecord,
   title,
   onThread,
   draft,
@@ -102,6 +109,9 @@ export function Conversation({
   agent?: SubstrateRecord
   /** The thread being read; empty for a new chat. */
   thread: string
+  /** Its record, once read: technical mode prints its stored status and
+   * tally. */
+  threadRecord?: SubstrateRecord
   title: string
   /** A new chat's run named its thread. */
   onThread: (thread: string) => void
@@ -339,6 +349,11 @@ export function Conversation({
             {technical && current && (
               <IdText value={`${LLM_PACKAGE}/thread/${current}`} copy />
             )}
+            {technical && threadRecord && (
+              <span className="text-faint">
+                {tallyWords(threadTally(threadRecord)).join(" · ")}
+              </span>
+            )}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">{actions}</div>
@@ -384,8 +399,8 @@ export function Conversation({
           )}
           {empty && !current && !agentId && (
             <p className="text-sm text-muted-foreground">
-              There is no agent to chat with yet. Import a package that ships
-              one from Providers.
+              There is no agent to chat with yet. Add a package that ships one
+              from Providers.
             </p>
           )}
           <Transcript

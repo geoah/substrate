@@ -1,33 +1,31 @@
 /** The chats column. Agents come first, one line each, so a long history
  * never buries them: "All agents", every agent you can talk to, and the ones
- * that only work for other agents folded under "Runs on its own". Picking an
- * agent narrows the chats below to that agent's. The chats follow: a search
- * over the loaded chats' titles, Today / Yesterday / Earlier, the most recent
- * few with "Show more". */
+ * that only work for other agents listed under a "Runs on its own" caption.
+ * Picking an agent narrows the chats below to that agent's. The chats follow:
+ * a search over the loaded chats' titles, Today / Yesterday / Earlier, the
+ * most recent few with "Show more". Technical mode adds each thread's stored
+ * status and tally. */
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link } from "@tanstack/react-router"
-import {
-  ChevronDownIcon,
-  MessagesSquareIcon,
-  PlusIcon,
-  SearchIcon,
-} from "lucide-react"
+import { MessagesSquareIcon, PlusIcon, SearchIcon } from "lucide-react"
 
-import { AgentMark } from "@/components/agent/agent-mark"
+import { AgentRef } from "@/components/agent/agent-ref"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import {
   agentName,
   chatCapable,
   groupByDay,
+  sinceWords,
+  tallyWords,
   threadStartedAt,
+  threadTally,
   type ChatRow,
 } from "@/lib/agent-chat"
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "@/lib/api/http"
 import type { SubstrateRecord } from "@/lib/api/types"
-import { relativeTime } from "@/lib/format"
-import { cn } from "@/lib/utils"
 import { CHAT_PAGE, visibleChats } from "./visible-chats"
 
 const AGENT_ROW =
@@ -72,7 +70,7 @@ export function ThreadList({
 }) {
   const [query, setQuery] = useState("")
   const [limit, setLimit] = useState(CHAT_PAGE)
-  const [backgroundOpen, setBackgroundOpen] = useState(false)
+  const [technical] = useTechnicalDetails()
   // The agents list scrolls on its own; the picked agent is kept in view.
   const pickedRow = useRef<HTMLButtonElement>(null)
   useEffect(() => {
@@ -133,56 +131,35 @@ export function ThreadList({
                 type="button"
                 aria-current={a.id === agent}
                 onClick={() => onAgent(a.id)}
-                title={`Chats with ${agentName(a.id)}`}
                 className={AGENT_ROW}
               >
-                <AgentMark id={a.id} size="xs" />
-                <span className="min-w-0 flex-1 truncate">
-                  {agentName(a.id)}
+                <span className="flex min-w-0 flex-1">
+                  <AgentRef id={a.id} agent={a} className="text-inherit" />
                 </span>
                 <Count n={counts.get(a.id) ?? 0} />
               </button>
             ))}
             {background.length > 0 && (
               <>
-                <button
-                  type="button"
-                  aria-expanded={backgroundOpen}
-                  onClick={() => setBackgroundOpen((v) => !v)}
-                  className="flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 pt-2 pb-1 text-left text-[11.5px] font-medium text-faint hover:text-muted-foreground"
-                >
-                  <ChevronDownIcon
-                    aria-hidden
-                    className={cn(
-                      "size-3 shrink-0 transition-transform duration-150",
-                      !backgroundOpen && "-rotate-90"
-                    )}
-                  />
-                  <span className="flex-1">Runs on its own</span>
-                  <span className="font-normal tabular-nums">
-                    {background.length}
-                  </span>
-                </button>
-                {backgroundOpen &&
-                  background.map((a) => (
-                    <Link
-                      key={a.id}
-                      to="/data/$authority/$pkg/$name/$id"
-                      params={{
-                        authority: CORE_AUTHORITY,
-                        pkg: CORE_PACKAGE_NAME,
-                        name: "agent",
-                        id: a.id,
-                      }}
-                      title={`${agentName(a.id)} works for other agents; open its record`}
-                      className={AGENT_ROW}
-                    >
-                      <AgentMark id={a.id} size="xs" />
-                      <span className="min-w-0 flex-1 truncate">
-                        {agentName(a.id)}
-                      </span>
-                    </Link>
-                  ))}
+                <div className={HEADING}>Runs on its own</div>
+                {background.map((a) => (
+                  <Link
+                    key={a.id}
+                    to="/data/$authority/$pkg/$name/$id"
+                    params={{
+                      authority: CORE_AUTHORITY,
+                      pkg: CORE_PACKAGE_NAME,
+                      name: "agent",
+                      id: a.id,
+                    }}
+                    aria-label={`${agentName(a.id)}, works for other agents: open its record`}
+                    className={AGENT_ROW}
+                  >
+                    <span className="flex min-w-0 flex-1">
+                      <AgentRef id={a.id} agent={a} className="text-inherit" />
+                    </span>
+                  </Link>
+                ))}
               </>
             )}
           </>
@@ -268,9 +245,15 @@ export function ThreadList({
                     </span>
                     <span className="truncate text-xs text-faint">
                       {agent
-                        ? relativeTime(threadStartedAt(row.thread))
-                        : `${row.agentId ? agentName(row.agentId) : "An agent"} · ${relativeTime(threadStartedAt(row.thread))}`}
+                        ? sinceWords(threadStartedAt(row.thread))
+                        : `${row.agentId ? agentName(row.agentId) : "An agent"} · ${sinceWords(threadStartedAt(row.thread))}`}
                     </span>
+                    {technical && (
+                      <span className="truncate text-[11.5px] text-faint">
+                        {tallyWords(threadTally(row.thread)).join(" · ") ||
+                          "No tally recorded"}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>

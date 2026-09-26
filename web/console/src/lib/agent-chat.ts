@@ -7,7 +7,11 @@
 
 import { agentName } from "@/lib/actor-identity"
 import { deliveryNoticeOf, type ToolCallView } from "@/lib/api/transcript"
-import { readReference, type SubstrateRecord } from "@/lib/api/types"
+import {
+  readReference,
+  type KindInfo,
+  type SubstrateRecord,
+} from "@/lib/api/types"
 import {
   HOST_FUNCTION_PROPOSE,
   HOST_FUNCTION_QUERY,
@@ -16,8 +20,15 @@ import {
   TOOL_FUNCTION_FIELD,
   valueIdentity,
 } from "@/lib/agent-grants"
+import type { ChangeOp, Decision } from "@/lib/changerequests"
+import { relativeTime } from "@/lib/format"
 import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import { splitRecordPath } from "@/lib/record-path"
+import {
+  propSpecsByName,
+  systemSpecs,
+  type PropSpec,
+} from "@/lib/record-schema"
 import { kindPatternWords, toolName } from "@/lib/tools"
 
 /** The `ask` host function: it writes nothing but a question, so it carries no
@@ -61,6 +72,68 @@ export function chatCapable(agent: SubstrateRecord): boolean {
 export function threadStartedAt(thread: SubstrateRecord): string {
   const declared = thread.properties.startedAt
   return typeof declared === "string" && declared ? declared : thread.createdAt
+}
+
+/** How long ago something in a chat happened. A stamp ahead of the reader's
+ * clock (a skewed host, a seeded row) reads "just now": what already happened
+ * never reads "in 8h". */
+export function sinceWords(iso: string, now = Date.now()): string {
+  const t = Date.parse(iso)
+  if (!Number.isNaN(t) && t > now) return "just now"
+  return relativeTime(iso, now)
+}
+
+/** What a thread's loop recorded about its run: the stored status and the
+ * tally the loop accumulates. Absent numbers stay absent; a thread written
+ * before the tally existed says nothing rather than zero. */
+export interface ThreadTally {
+  status?: string
+  reason?: string
+  turns?: number
+  toolCalls?: number
+  promptTokens?: number
+  completionTokens?: number
+  totalTokens?: number
+  costUSD?: number
+}
+
+export function threadTally(thread: SubstrateRecord): ThreadTally {
+  const p = thread.properties
+  const num = (v: unknown) => (typeof v === "number" ? v : undefined)
+  const str = (v: unknown) => (typeof v === "string" && v ? v : undefined)
+  return {
+    status: str(p.status),
+    reason: str(p.reason),
+    turns: num(p.turns),
+    toolCalls: num(p.toolCalls),
+    promptTokens: num(p.promptTokens),
+    completionTokens: num(p.completionTokens),
+    totalTokens: num(p.totalTokens),
+    costUSD: num(p.costUSD),
+  }
+}
+
+const plural = (n: number, one: string, many: string) =>
+  `${n.toLocaleString()} ${n === 1 ? one : many}`
+
+/** The tally as the technical line prints it: the stored status first, then
+ * turns, tool calls, tokens (in and out where both are known) and cost. */
+export function tallyWords(t: ThreadTally): string[] {
+  const out: string[] = []
+  if (t.status) out.push(t.reason ? `${t.status} (${t.reason})` : t.status)
+  if (t.turns !== undefined) out.push(plural(t.turns, "turn", "turns"))
+  if (t.toolCalls !== undefined) {
+    out.push(plural(t.toolCalls, "tool call", "tool calls"))
+  }
+  if (t.totalTokens !== undefined) {
+    const split =
+      t.promptTokens !== undefined && t.completionTokens !== undefined
+        ? ` (${t.promptTokens.toLocaleString()} in, ${t.completionTokens.toLocaleString()} out)`
+        : ""
+    out.push(`${plural(t.totalTokens, "token", "tokens")}${split}`)
+  }
+  if (t.costUSD !== undefined) out.push(`$${t.costUSD.toFixed(4)}`)
+  return out
 }
 
 export type DayGroup = "Today" | "Yesterday" | "Earlier"
@@ -469,32 +542,31 @@ export function propertyLabel(key: string): string {
   return capitalise(spaced.trim() || key)
 }
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/
+/** A decision in the words the buttons use: Apply and Dismiss. */
+export const DECISION_WORDS: Record<Decision, string> = {
+  proposed: "Suggested",
+  accepted: "Applied",
+  rejected: "Dismissed",
+}
 
-/** A proposed value as words, for anything that is not a reference (the
- * card renders those as records). Dates read as dates, empty as "Empty". */
-export function valueWords(value: unknown): string {
-  if (value === null || value === undefined || value === "") return "Empty"
-  if (typeof value === "boolean") return value ? "Yes" : "No"
-  if (typeof value === "string") {
-    if (ISO_DATE.test(value)) {
-      const t = new Date(value)
-      if (!Number.isNaN(t.getTime())) {
-        return t.toLocaleDateString(undefined, {
-          day: "numeric",
-          month: "short",
-          year:
-            t.getFullYear() === new Date().getFullYear()
-              ? undefined
-              : "numeric",
-        })
-      }
-    }
-    return value.length > 80 ? value.slice(0, 79) + "…" : value
+/** The label each property wears on the record page, keyed by name; a
+ * property the kind never declared falls back to its key in words. */
+export function changeSpecs(kind: KindInfo | undefined): Map<string, PropSpec> {
+  const out = new Map<string, PropSpec>()
+  if (!kind) return out
+  for (const spec of [...systemSpecs(kind), ...propSpecsByName(kind)]) {
+    out.set(spec.name, spec)
   }
-  if (Array.isArray(value)) return value.map(valueWords).join(", ")
-  const text = JSON.stringify(value)
-  return text.length > 80 ? text.slice(0, 79) + "…" : text
+  return out
+}
+
+export function changeLabel(key: string, spec?: PropSpec): string {
+  return spec?.label ?? propertyLabel(key)
+}
+
+/** What the primary button says for each op. */
+export function applyWord(op: ChangeOp): string {
+  return op === "create" ? "Add it" : op === "delete" ? "Delete it" : "Apply"
 }
 
 /** The properties a new record's heading is read from, in the order kinds
@@ -512,4 +584,45 @@ export function proposedHeading(
     }
   }
   return undefined
+}
+
+/** The thread a change request's propose call came from, as its id. */
+export function requestThreadId(request: SubstrateRecord): string | undefined {
+  const path = readReference(request.properties.thread)?.path
+  if (!path) return undefined
+  return path.slice(path.lastIndexOf("/") + 1) || undefined
+}
+
+/** A judge's verdict on a gated change, from the engine's `policy/verdict`
+ * audit annotation, read tolerantly: a verdict or an outcome must be there. */
+export interface JudgeVerdict {
+  verdict?: string
+  confidence?: number
+  outcome?: string
+  rationale?: string
+}
+
+export function judgeVerdictOf(
+  request: SubstrateRecord
+): JudgeVerdict | undefined {
+  const raw = request.annotations?.["policy/verdict"]
+  if (typeof raw !== "object" || raw === null) return undefined
+  const a = raw as Record<string, unknown>
+  const out: JudgeVerdict = {
+    verdict: typeof a.verdict === "string" ? a.verdict : undefined,
+    confidence: typeof a.confidence === "number" ? a.confidence : undefined,
+    outcome: typeof a.outcome === "string" ? a.outcome : undefined,
+    rationale: typeof a.rationale === "string" ? a.rationale : undefined,
+  }
+  if (!out.verdict && !out.outcome) return undefined
+  return out
+}
+
+/** The verdict as one sentence: "A judge said allow (82% sure): …". */
+export function verdictWords(v: JudgeVerdict): string {
+  const sure =
+    typeof v.confidence === "number"
+      ? ` (${Math.round(v.confidence * 100)}% sure)`
+      : ""
+  return `A judge said ${v.verdict ?? v.outcome}${sure}${v.rationale ? `: ${v.rationale}` : ""}`
 }

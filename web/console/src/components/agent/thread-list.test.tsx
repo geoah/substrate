@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /** The chats column: agents sit above the chats, so a long history never
  * buries them; picking one narrows the chats; the chats show the most recent
- * page with "Show more"; the agents that only work for other agents fold
- * away. */
+ * page with "Show more"; the agents that only work for other agents are
+ * listed under their own caption; technical mode prints each thread's tally. */
 
 import {
   createMemoryHistory,
@@ -20,8 +20,10 @@ import {
 } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import type { ChatRow } from "@/lib/agent-chat"
 import type { SubstrateRecord } from "@/lib/api/types"
+import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { ThreadList } from "./thread-list"
 import { CHAT_PAGE, visibleChats } from "./visible-chats"
 
@@ -192,15 +194,105 @@ describe("ThreadList", () => {
     expect(onAgent).toHaveBeenLastCalledWith("")
   })
 
-  it("folds the agents that run on their own", async () => {
+  it("lists the agents that run on their own under a caption", async () => {
     renderList()
     const agents = await screen.findByRole("navigation", { name: "Agents" })
-    expect(within(agents).queryByRole("link", { name: /Judge/ })).toBeNull()
-    fireEvent.click(
-      within(agents).getByRole("button", { name: /Runs on its own/ })
-    )
+    expect(within(agents).getByText("Runs on its own")).toBeTruthy()
+    expect(
+      within(agents).queryByRole("button", { name: /Runs on its own/ })
+    ).toBeNull()
     expect(
       within(agents).getByRole("link", { name: /Judge/ }).getAttribute("href")
     ).toBe(`/data/substrate.reamde.dev/core/agent/${encodeURIComponent(JUDGE)}`)
   })
+
+  it("never dates a chat in the future", async () => {
+    const ahead = new Date(Date.now() + 8 * 3600_000).toISOString()
+    renderList({
+      rows: [
+        {
+          thread: {
+            ...record("tf", { startedAt: ahead }),
+            kind: "substrate.reamde.dev/llm/thread",
+          },
+          title: "Skewed",
+          agentId: HELPER,
+        },
+      ],
+    })
+    const chats = await screen.findByRole("navigation", { name: "Chats" })
+    const chat = within(chats).getByRole("button", { name: /Skewed/ })
+    expect(chat.textContent).toContain("just now")
+    expect(chat.textContent).not.toMatch(/in \d/)
+  })
 })
+
+describe("ThreadList in technical mode", () => {
+  it("prints each thread's stored status and tally", async () => {
+    renderTechnical()
+    const chats = await screen.findByRole("navigation", { name: "Chats" })
+    const chat = within(chats).getByRole("button", { name: /Costed/ })
+    expect(chat.textContent).toContain("ok")
+    expect(chat.textContent).toContain("2 turns")
+    expect(chat.textContent).toContain("1,500 tokens")
+    expect(chat.textContent).toContain("$0.0042")
+  })
+})
+
+function renderTechnical() {
+  const rootRoute = createRootRoute({
+    component: () => (
+      <ConsolePreferencesContext.Provider
+        value={{
+          preferences: {
+            collapsed: [],
+            favorites: [],
+            sidebarOpen: true,
+            ...DEFAULT_SETTINGS,
+            technicalDetails: true,
+          },
+          busy: false,
+          change: () => {},
+          set: () => {},
+        }}
+      >
+        <ThreadList
+          rows={[
+            {
+              thread: {
+                ...record("tc", {
+                  startedAt: "2026-09-20T10:00:00Z",
+                  status: "ok",
+                  turns: 2,
+                  totalTokens: 1500,
+                  costUSD: 0.0042,
+                }),
+                kind: "substrate.reamde.dev/llm/thread",
+              },
+              title: "Costed",
+              agentId: HELPER,
+            },
+          ]}
+          loading={false}
+          agents={[record(HELPER)]}
+          selected=""
+          agent=""
+          onAgent={() => {}}
+          onSelect={() => {}}
+          onNewChat={() => {}}
+        />
+      </ConsolePreferencesContext.Provider>
+    ),
+  })
+  const router = createRouter({
+    routeTree: rootRoute,
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  })
+  render(
+    <RouterProvider
+      router={
+        router as unknown as Parameters<typeof RouterProvider>[0]["router"]
+      }
+    />
+  )
+}

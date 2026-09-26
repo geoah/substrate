@@ -13,16 +13,21 @@ import {
   dayGroup,
   examplePrompts,
   groupByDay,
+  judgeVerdictOf,
   openingMessages,
   propertyLabel,
   proposedHeading,
   providerName,
+  requestThreadId,
   resolveTool,
+  sinceWords,
+  tallyWords,
   threadAgentId,
+  threadTally,
   threadTitle,
   toolRoute,
   toolSummary,
-  valueWords,
+  verdictWords,
 } from "./agent-chat"
 import type { ToolCallView } from "./api/transcript"
 import type { SubstrateRecord } from "./api/types"
@@ -341,19 +346,88 @@ describe("a suggested change, in words", () => {
     expect(propertyLabel("first_name")).toBe("First name")
   })
 
-  it("reads a value", () => {
-    expect(valueWords(null)).toBe("Empty")
-    expect(valueWords(true)).toBe("Yes")
-    expect(valueWords("urgent")).toBe("urgent")
-    expect(valueWords(["a", "b"])).toBe("a, b")
-    expect(valueWords("2026-10-02T09:00:00Z")).not.toContain("T09")
-  })
-
   it("finds what a new record would be called", () => {
     expect(proposedHeading({ name: "Status page", status: "open" })).toEqual({
       key: "name",
       text: "Status page",
     })
     expect(proposedHeading({ status: "open" })).toBeUndefined()
+  })
+})
+
+describe("sinceWords", () => {
+  const now = Date.parse("2026-09-26T12:00:00Z")
+  it("reads a stamp ahead of the clock as just now, never as the future", () => {
+    expect(sinceWords("2026-09-26T20:00:00Z", now)).toBe("just now")
+    expect(sinceWords("2026-09-26T12:00:30Z", now)).toBe("just now")
+  })
+  it("reads the past as ago", () => {
+    expect(sinceWords("2026-09-26T09:00:00Z", now)).toBe("3h ago")
+  })
+})
+
+describe("threadTally", () => {
+  it("reads the stored status and the tally, absent stays absent", () => {
+    const t = threadTally(
+      record({
+        properties: {
+          status: "ok",
+          turns: 3,
+          toolCalls: 1,
+          promptTokens: 1200,
+          completionTokens: 34,
+          totalTokens: 1234,
+          costUSD: 0.01234,
+        },
+      })
+    )
+    expect(tallyWords(t)).toEqual([
+      "ok",
+      "3 turns",
+      "1 tool call",
+      "1,234 tokens (1,200 in, 34 out)",
+      "$0.0123",
+    ])
+    expect(tallyWords(threadTally(record({ properties: {} })))).toEqual([])
+  })
+  it("names why an overbudget run ended", () => {
+    const t = threadTally(
+      record({ properties: { status: "overbudget", reason: "turns" } })
+    )
+    expect(tallyWords(t)).toEqual(["overbudget (turns)"])
+  })
+})
+
+describe("a change request's thread and verdict", () => {
+  it("reads the thread id off the reference", () => {
+    expect(
+      requestThreadId(
+        record({
+          properties: {
+            thread: { ref: "substrate.reamde.dev/llm/thread/th-1" },
+          },
+        })
+      )
+    ).toBe("th-1")
+    expect(requestThreadId(record({}))).toBeUndefined()
+  })
+  it("reads the judge's audit annotation, tolerantly", () => {
+    const v = judgeVerdictOf(
+      record({
+        annotations: {
+          "policy/verdict": {
+            verdict: "allow",
+            confidence: 0.82,
+            rationale: "a routine bump",
+          },
+        },
+      })
+    )
+    expect(v && verdictWords(v)).toBe(
+      "A judge said allow (82% sure): a routine bump"
+    )
+    expect(
+      judgeVerdictOf(record({ annotations: { "policy/verdict": {} } }))
+    ).toBeUndefined()
   })
 })
