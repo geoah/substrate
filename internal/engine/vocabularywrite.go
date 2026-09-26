@@ -1260,8 +1260,12 @@ func (t *txn) projectPackage(reg *vocabulary.Registry, projecting map[string]boo
 		if v, ok := opts.versions[d.key()]; ok && v > 0 {
 			props[propDeclarationVersion] = v
 		}
+		ty, err := t.projectionKind(reg, projecting, d.typ)
+		if err != nil {
+			return fmt.Errorf("substrate/engine: project %s %s: %w", d.short, d.id, err)
+		}
 		if d.short == vocabulary.DocPackage {
-			if err := t.stampDeclaredBy(d, props); err != nil {
+			if err := t.stampDeclaredBy(ty, d, props); err != nil {
 				return err
 			}
 		}
@@ -1269,10 +1273,6 @@ func (t *txn) projectPackage(reg *vocabulary.Registry, projecting map[string]boo
 		if m, ok := opts.meta[d.short+"\x00"+d.id]; ok {
 			in.Labels = m.labels
 			in.Annotations = m.annotations
-		}
-		ty, err := t.projectionKind(reg, projecting, d.typ)
-		if err != nil {
-			return fmt.Errorf("substrate/engine: project %s %s: %w", d.short, d.id, err)
 		}
 		e, err := t.putKind(ty, in)
 		if err != nil {
@@ -1297,8 +1297,14 @@ const propPackageDeclaredBy = "declaredBy"
 // callable that ran). A row that exists keeps what it carries, stamped or not:
 // stamping a package created before the stamp would name whoever touched it
 // next, which is not who declared it. A transaction with no actor stamps
-// nothing rather than refuse the declaration.
-func (t *txn) stampDeclaredBy(d declaration, props map[string]any) error {
+// nothing rather than refuse the declaration, and so does a `package` kind
+// that does not declare the property: a repository still on a core older than
+// the stamp (a boot upgrade's first pass, a fixed pre-upgrade seed) validates
+// the row against that older kind, which would refuse it.
+func (t *txn) stampDeclaredBy(ty *vocabulary.Kind, d declaration, props map[string]any) error {
+	if ty == nil || ty.Props[propPackageDeclaredBy] == nil {
+		return nil
+	}
 	row, err := t.loadRow(eref{Kind: d.typ, ID: d.id}, false)
 	if err != nil {
 		return err
