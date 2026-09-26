@@ -533,7 +533,7 @@ export function DataTable<TData extends RowData>({
                             type="button"
                             aria-expanded={open}
                             aria-label="Toggle row details"
-                            className="flex cursor-pointer items-center"
+                            className="hit-area flex cursor-pointer items-center rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                             onClick={(e) => {
                               e.stopPropagation()
                               toggle(row.id)
