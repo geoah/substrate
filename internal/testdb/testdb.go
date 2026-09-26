@@ -36,6 +36,11 @@ var (
 	pgOnce sync.Once
 	pgDSN  string
 	pgErr  error
+	// shared is the container DSN started, nil when the suite was pointed at
+	// a server. Main stops it when the binary's tests end, so a `go test -p 1`
+	// over several packages holds one container's tmpfs at a time, not one per
+	// package until the whole run exits and the reaper collects them.
+	shared *postgres.PostgresContainer
 	// admin is the one pool every fixture's DDL rides: schemas, clones, the
 	// template, the sweep and the drops. Capped, so a burst of parallel
 	// tests cannot take the cluster's connections for CREATE DATABASE.
@@ -66,27 +71,19 @@ func DSN(t testing.TB) string {
 				}
 			}
 		} else {
-			c, err := postgres.Run(ctx, "pgvector/pgvector:pg16",
-				postgres.WithDatabase("substrate"),
-				postgres.WithUsername("postgres"),
-				postgres.WithPassword("postgres"),
-				// The suite runs t.Parallel, so the connection ceiling is a
-				// function of the MACHINE: one test holds ~4 connections
-				// across its admin, maintenance and scoped pools, and Go runs
-				// GOMAXPROCS of them at once. The stock 100 is comfortable at
-				// 16 cores (measured: ~56) and would not survive 32, and the
-				// failure — "too many clients already" — reads like a leak
-				// rather than a limit, so it is raised here once.
-				testcontainers.WithCmdArgs("-c", "max_connections=500"),
-				DurabilityOff(),
-				testcontainers.WithWaitStrategy(
-					wait.ForLog("database system is ready to accept connections").
-						WithOccurrence(2).WithStartupTimeout(120*time.Second)),
-			)
+			// The suite runs t.Parallel, so the connection ceiling is a
+			// function of the MACHINE: one test holds ~4 connections across
+			// its admin, maintenance and scoped pools, and Go runs GOMAXPROCS
+			// of them at once. The stock 100 is comfortable at 16 cores
+			// (measured: ~56) and would not survive 32, and the failure, "too
+			// many clients already", reads like a leak rather than a limit, so
+			// it is raised here once.
+			c, err := Postgres(ctx, testcontainers.WithCmdArgs("-c", "max_connections=500"))
 			if err != nil {
 				pgErr = err
 				return
 			}
+			shared = c
 			pgDSN, pgErr = containerDSN(ctx, c)
 			if pgErr != nil {
 				return
@@ -116,6 +113,63 @@ func DSN(t testing.TB) string {
 	return pgDSN
 }
 
+// pgImage is the image every test-owned Postgres runs.
+const pgImage = "pgvector/pgvector:pg16"
+
+// dataDir is where the image keeps the cluster. The image declares it a
+// VOLUME, so without a mount of its own Docker backs it with an anonymous
+// volume under /var/lib/docker: on disk.
+const dataDir = "/var/lib/postgresql/data"
+
+// tmpfsSize bounds the cluster's tmpfs. One engine run peaked at 642 MB of
+// data and WAL (2026-09-26, 16 cores), and the mount is RAM, so the default
+// is three times that and SUBSTRATE_TEST_PG_TMPFS_SIZE raises it for a suite
+// that outgrows it. A full mount fails the writing test with "No space left
+// on device", which names the cause.
+func tmpfsSize() string {
+	if v := os.Getenv("SUBSTRATE_TEST_PG_TMPFS_SIZE"); v != "" {
+		return v
+	}
+	return "2g"
+}
+
+// Postgres starts a throwaway Postgres+pgvector container: the cluster on
+// tmpfs, durability off, and gone again if it fails to come up. Every test
+// that starts a container of its own starts it here.
+//
+// The cluster lives on tmpfs because fsync=off only stops Postgres waiting
+// for the disk: every page still reaches it once the kernel writes back, and
+// the engine suite copies a template database eight hundred times. On a host
+// whose root disk is itself network storage, that writeback stalled every
+// process on the machine (2026-09-26).
+//
+// postgres.Run returns the container alongside its error when the container
+// was created and then failed to start or to become ready, which is what a
+// loaded Docker daemon does; left alone it sits in Created or Up until the
+// reaper's session ends, and a killed run's reaper may never end it.
+func Postgres(ctx context.Context, extra ...testcontainers.ContainerCustomizer) (*postgres.PostgresContainer, error) {
+	opts := []testcontainers.ContainerCustomizer{
+		postgres.WithDatabase("substrate"),
+		postgres.WithUsername("postgres"),
+		postgres.WithPassword("postgres"),
+		testcontainers.WithTmpfs(map[string]string{dataDir: "rw,size=" + tmpfsSize()}),
+		DurabilityOff(),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).WithStartupTimeout(120 * time.Second)),
+	}
+	c, err := postgres.Run(ctx, pgImage, append(opts, extra...)...)
+	if err != nil {
+		if c != nil {
+			if terr := testcontainers.TerminateContainer(c); terr != nil {
+				err = fmt.Errorf("%w (and removing the container that failed to start: %w)", err, terr)
+			}
+		}
+		return nil, err
+	}
+	return c, nil
+}
+
 // durabilityGUCs are the settings that make a throwaway Postgres flush
 // nothing. Durability buys a test database nothing and costs most of the run:
 // DROP DATABASE forces a checkpoint, and with fsync on, a checkpoint under 16
@@ -125,8 +179,8 @@ func DSN(t testing.TB) string {
 // takes them from ALTER SYSTEM plus a reload.
 var durabilityGUCs = []string{"fsync=off", "synchronous_commit=off", "full_page_writes=off"}
 
-// DurabilityOff is the container option every test-owned Postgres starts with;
-// a test that starts a container of its own passes it too.
+// DurabilityOff is the command-line half of what Postgres gives every
+// test-owned cluster.
 func DurabilityOff() testcontainers.CustomizeRequestOption {
 	args := make([]string, 0, 2*len(durabilityGUCs))
 	for _, guc := range durabilityGUCs {
@@ -220,12 +274,18 @@ func NewSchema(t testing.TB) string {
 
 // Main runs a test binary that uses this package: the data roots on tmpfs
 // where there is one (TempDirOnTmpfs), m.Run, then every database the run
-// made dropped, then the tmpfs directory removed. A TestMain is
+// made dropped, the shared container stopped, and the tmpfs directory
+// removed. A TestMain is
 // `os.Exit(testdb.Main(m))`, so a package cannot adopt half of it.
 func Main(m *testing.M) int {
 	cleanup := TempDirOnTmpfs()
 	code := m.Run()
 	DropAll()
+	if shared != nil {
+		if err := testcontainers.TerminateContainer(shared); err != nil {
+			fmt.Fprintf(os.Stderr, "testdb: stop the test container: %v\n", err)
+		}
+	}
 	cleanup()
 	return code
 }
