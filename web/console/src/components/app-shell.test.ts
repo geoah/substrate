@@ -89,7 +89,11 @@ describe("crumbsFor", () => {
     ])
     expect(crumbsFor("/tools/a.example.com/notes/stats")).toEqual([
       { label: "Tools", to: "/tools" },
-      { label: "stats" },
+      { label: "Stats" },
+    ])
+    expect(crumbsFor("/tools/a.example.com/notes/savenote")).toEqual([
+      { label: "Tools", to: "/tools" },
+      { label: "Save note" },
     ])
     expect(
       crumbsFor("/tools/providers.substrate.reamde.dev/google/synccontacts")
@@ -110,8 +114,28 @@ describe("crumbsFor", () => {
     ])
   })
 
-  it("keeps an authority and a package page under All data", () => {
+  it("keeps an authority and a package page under All data, in words", () => {
+    expect(crumbsFor("/data/a.example.com")).toEqual([
+      { label: "All data", to: "/data" },
+      { label: "Your data" },
+    ])
     expect(crumbsFor("/data/a.example.com/tasks")).toEqual([
+      { label: "All data", to: "/data" },
+      { label: "Your data", to: "/data/a.example.com" },
+      { label: "Tasks package" },
+    ])
+    expect(crumbsFor("/data/providers.substrate.reamde.dev/google")).toEqual([
+      { label: "All data", to: "/data" },
+      {
+        label: "From providers",
+        to: "/data/providers.substrate.reamde.dev",
+      },
+      { label: "Google", provider: "google" },
+    ])
+  })
+
+  it("spells an authority and a package as themselves in technical mode", () => {
+    expect(crumbsFor("/data/a.example.com/tasks", true)).toEqual([
       { label: "All data", to: "/data" },
       { label: "a.example.com", to: "/data/a.example.com", mono: true },
       { label: "tasks", mono: true },

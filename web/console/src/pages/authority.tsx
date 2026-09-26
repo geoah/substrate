@@ -28,6 +28,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { PROVIDERS_AUTHORITY, providerInfo } from "@/lib/actor-identity"
+import { authorityTitle, packageTitle } from "@/lib/collections"
 import { formatCount, recordCountQueryOptions } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { KindInfo } from "@/lib/api/types"
@@ -217,14 +218,22 @@ export function AuthorityPage() {
   return (
     <TablePage>
       <PageHeader
-        title={authority}
+        title={
+          technical ? (
+            <span className="font-mono">{authority}</span>
+          ) : (
+            authorityTitle(authority)
+          )
+        }
         meta={
           <>
             <span>
               {countWord(technical ? kinds.length : primary)}
               {packages.length > 1 && ` in ${packages.length} packages`}
             </span>
-            <CopyButton value={authority} label="Copy the authority" />
+            {technical && (
+              <CopyButton value={authority} label="Copy the authority" />
+            )}
           </>
         }
         description={
@@ -248,7 +257,7 @@ export function AuthorityPage() {
                 params={{ authority, pkg }}
                 className="underline-offset-[3px] hover:underline"
               >
-                {providers ? providerInfo(pkg).name : pkg}
+                {technical && !providers ? pkg : packageTitle(authority, pkg)}
               </Link>
             </h2>
             {technical && (
@@ -285,21 +294,27 @@ export function PackagePage() {
         title={
           <span className="flex items-center gap-2.5">
             {provider && <ProviderBadge provider={provider} size="md" />}
-            {provider ? provider.name : pkg}
+            {technical && !provider ? (
+              <span className="font-mono">{pkg}</span>
+            ) : (
+              packageTitle(authority, pkg)
+            )}
           </span>
         }
         meta={
           <>
-            <span className="inline-flex items-center gap-1">
-              <span className="font-mono text-[12.5px]">
-                <span className="text-faint">{authority}/</span>
-                <span className="text-foreground">{pkg}</span>
+            {technical && (
+              <span className="inline-flex items-center gap-1">
+                <span className="font-mono text-[12.5px]">
+                  <span className="text-faint">{authority}/</span>
+                  <span className="text-foreground">{pkg}</span>
+                </span>
+                <CopyButton
+                  value={`${authority}/${pkg}`}
+                  label="Copy the package"
+                />
               </span>
-              <CopyButton
-                value={`${authority}/${pkg}`}
-                label="Copy the package"
-              />
-            </span>
+            )}
             <span>{countWord(technical ? kinds.length : primary)}</span>
           </>
         }

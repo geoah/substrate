@@ -28,15 +28,21 @@ import { CR_NAME } from "@/lib/api/changerequests"
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME, joinKind } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { MR_NAME } from "@/lib/api/mergerequests"
-import { collectionSource } from "@/lib/collections"
+import {
+  authorityTitle,
+  collectionSource,
+  packageTitle,
+} from "@/lib/collections"
 import { kindByIdentity } from "@/lib/definition"
 import {
   displayName,
   displayPlural,
   lowerFirst,
+  packageDisplayName,
   untitled,
 } from "@/lib/kind-names"
 import { recordTitleQueryOptions } from "@/lib/reference-titles"
+import { toolName } from "@/lib/tools"
 import { cn } from "@/lib/utils"
 
 export interface Crumb {
@@ -134,19 +140,22 @@ export function crumbsFor(pathname: string, technical = false): Crumb[] {
         { label: "Tools", to: "/tools" },
         technical
           ? { label: rest.join("/"), mono: true }
-          : {
-              // A tool is a function: its plain name is its actor's.
-              label: actorIdentity(`function:${rest.join(":")}`).name,
-            },
+          : { label: toolName(rest.join("/")) },
       ]
     }
     case "providers": {
       if (!rest.length) return [{ label: "Providers" }]
       const [authority, pkg] = rest
-      if (technical || authority !== PROVIDERS_AUTHORITY || !pkg) {
+      if (technical || !pkg) {
         return [
           { label: "Providers", to: "/providers" },
           { label: rest.join("/"), mono: true },
+        ]
+      }
+      if (authority !== PROVIDERS_AUTHORITY) {
+        return [
+          { label: "Providers", to: "/providers" },
+          { label: packageDisplayName(pkg) },
         ]
       }
       const provider = providerInfo(pkg)
@@ -196,14 +205,28 @@ export function crumbsFor(pathname: string, technical = false): Crumb[] {
       if (!pkg) {
         return [
           { label: "All data", to: "/data" },
-          { label: authority, mono: true },
+          technical
+            ? { label: authority, mono: true }
+            : { label: authorityTitle(authority) },
         ]
       }
       if (!name) {
+        if (technical) {
+          return [
+            { label: "All data", to: "/data" },
+            { label: authority, to: `/data/${authority}`, mono: true },
+            { label: pkg, mono: true },
+          ]
+        }
+        const provider =
+          authority === PROVIDERS_AUTHORITY ? providerInfo(pkg).key : undefined
         return [
           { label: "All data", to: "/data" },
-          { label: authority, to: `/data/${authority}`, mono: true },
-          { label: pkg, mono: true },
+          { label: authorityTitle(authority), to: `/data/${authority}` },
+          {
+            label: packageTitle(authority, pkg),
+            ...(provider && { provider }),
+          },
         ]
       }
       const crumbs = collectionCrumbs(

@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest"
 import type { KindInfo } from "@/lib/api/types"
 import {
   collectionGroups,
+  authorityTitle,
   collectionSource,
+  packageTitle,
   groupToggleKey,
   hiddenExamples,
   isGroupOpen,
@@ -87,6 +89,24 @@ describe("group folding", () => {
     expect(isGroupOpen(google, [])).toBe(false)
     expect(isGroupOpen(yours, [groupToggleKey(yours)])).toBe(false)
     expect(isGroupOpen(google, [groupToggleKey(google)])).toBe(true)
+  })
+})
+
+describe("authority and package titles", () => {
+  it("names an authority where its collections sit", () => {
+    expect(authorityTitle("ada.example.com")).toBe("Your data")
+    expect(authorityTitle("providers.substrate.reamde.dev")).toBe(
+      "From providers"
+    )
+    expect(authorityTitle("substrate.reamde.dev")).toBe("Substrate")
+  })
+
+  it("names a package by its word, and a provider by its name", () => {
+    expect(packageTitle("ada.example.com", "tasks")).toBe("Tasks package")
+    expect(packageTitle("substrate.reamde.dev", "llm")).toBe("LLM package")
+    expect(packageTitle("providers.substrate.reamde.dev", "google")).toBe(
+      "Google"
+    )
   })
 })
 
