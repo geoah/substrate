@@ -643,7 +643,7 @@ type Kind struct {
 	// sentence; a kind's gets two (maxKindDescription), still on one line.
 	Description string
 
-	// Label is the kind's declared display label (decision 0108), zero when
+	// Label is the kind's declared display label (decision 0117), zero when
 	// it declared none.
 	Label KindLabel
 

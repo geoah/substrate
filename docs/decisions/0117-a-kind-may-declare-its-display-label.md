@@ -4,7 +4,7 @@ date: 2026-09-26
 decision-makers: George Antoniadis
 ---
 
-# 0108. A kind may declare its display label, singular and plural
+# 0117. A kind may declare its display label, singular and plural
 
 ## Context and Problem Statement
 

@@ -333,7 +333,7 @@ func (a *app) collectionForKind(ctx context.Context, ref string) (collection, er
 
 // firstLabel is the kind's display label from whichever shape carried it: the
 // bare-KindInfo shape's top-level `label`, else the declaration's own `label`
-// block, which is all a record row has (decision 0108). Nil unless both forms
+// block, which is all a record row has (decision 0117). Nil unless both forms
 // are strings, so a malformed block reads as no label.
 func firstLabel(top *substrate.KindLabel, declared any) *substrate.KindLabel {
 	if top != nil && top.Singular != "" && top.Plural != "" {

@@ -223,7 +223,7 @@ data:
   # `deltaOff`). ADDITIVE.
   #
   # 35, #675: `contactgroup` is labelled Contact labels, `calendarseries`
-  # Repeating events and `calendarsync` Sync progress (decision 0108).
+  # Repeating events and `calendarsync` Sync progress (decision 0117).
   # Display text only.
   version: 35
 ---

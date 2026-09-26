@@ -803,7 +803,7 @@ var typeDataKeys = map[string]bool{
 	// 0078): admitting it moves the old kind's live rows and repoints every
 	// live reference at them.
 	"movedFrom": true,
-	// `label` is the kind's display label, both forms (decision 0108): display
+	// `label` is the kind's display label, both forms (decision 0117): display
 	// text only, read by no route, filter or grant.
 	"label": true,
 }

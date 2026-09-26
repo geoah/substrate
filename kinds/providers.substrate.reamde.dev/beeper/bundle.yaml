@@ -144,7 +144,7 @@ data:
   # closed set an enum. A changed declaration shipping the same version
   # reaches no repository, which is why this moves.
   #
-  # 16, #675: `chatsync` is labelled Sync progress (decision 0108). Display
+  # 16, #675: `chatsync` is labelled Sync progress (decision 0117). Display
   # text only.
   version: 16
 ---

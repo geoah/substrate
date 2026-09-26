@@ -5,7 +5,7 @@ import (
 	"unicode/utf8"
 )
 
-// A KIND MAY DECLARE ITS DISPLAY LABEL (decision record 0108). The kind's name
+// A KIND MAY DECLARE ITS DISPLAY LABEL (decision record 0117). The kind's name
 // is an identifier (`conversation`, `contactgroup`), and some names read wrong
 // to a person however a client splits and pluralizes them: Slack calls its
 // conversations channels. `label:` carries the words a client shows instead,

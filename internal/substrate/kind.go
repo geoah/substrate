@@ -22,7 +22,7 @@ type KindInfo struct {
 	Description string `json:"description"`
 	// Label is the kind's declared display label, absent when it declared
 	// none, in which case a client humanizes Name itself. It is display text
-	// only: nothing addresses a kind by it (decision 0108).
+	// only: nothing addresses a kind by it (decision 0117).
 	Label *KindLabel `json:"label,omitempty"`
 	// Definition is the kind's DECLARATION, rendered from the parsed one: the
 	// authored data map (names, properties, traits, indices), which is also

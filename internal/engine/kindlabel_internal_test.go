@@ -9,7 +9,7 @@ import (
 )
 
 // The vocabulary read carries a kind's declared label as its own field, and
-// omits it for a kind that declares none (decision 0108).
+// omits it for a kind that declares none (decision 0117).
 func TestTypeInfoCarriesTheDeclaredLabel(t *testing.T) {
 	fsys := fstest.MapFS{"d.example.com/d/d.yaml": &fstest.MapFile{Data: []byte(`kind: substrate.reamde.dev/core/package
 metadata:

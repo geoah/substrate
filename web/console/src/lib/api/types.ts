@@ -477,7 +477,7 @@ export interface KindInfo {
   /** What the kind is for, as its declaration says it — a sentence or two,
    * read above the collection. Empty when the declaration carries none. */
   description: string
-  /** The kind's declared display label (decision 0108); absent when the
+  /** The kind's declared display label (decision 0117); absent when the
    * declaration carries none, and the console names the kind from `name`. */
   label?: KindLabel
   /** The reconciled declaration — the `data` of the `substrate.reamde.dev/core/kind`

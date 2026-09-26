@@ -32,7 +32,7 @@ data:
 }
 
 // A kind declares its display label, both forms, and the parsed kind carries
-// it structurally (decision 0108). A kind that declares none has the zero
+// it structurally (decision 0117). A kind that declares none has the zero
 // label, and a client humanizes the name.
 func TestKindLabel(t *testing.T) {
 	r := loadFixture(t, labelFixture("  label:\n    singular: Channel\n    plural: Channels\n"))

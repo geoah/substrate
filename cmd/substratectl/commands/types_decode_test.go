@@ -42,7 +42,7 @@ func TestDecodeTypeInfoTypedRow(t *testing.T) {
 
 // A record row carries the kind's label only inside its declaration: the
 // decoder lifts it to KindInfo.Label, so `substratectl kinds -o json` prints a
-// top-level `label` as the vocabulary read does (decision 0108). A kind that
+// top-level `label` as the vocabulary read does (decision 0117). A kind that
 // declares none decodes with no label.
 func TestDecodeTypeInfoCarriesTheDeclaredLabel(t *testing.T) {
 	raw := json.RawMessage(`{

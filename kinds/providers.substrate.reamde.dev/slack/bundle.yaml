@@ -115,7 +115,7 @@ data:
   # share of the run's budget, and only then resumes the backlog.
   #
   # 9, #675: `user` is labelled Members, `conversation` Channels and
-  # `conversationsync` Sync progress (decision 0108). Display text only.
+  # `conversationsync` Sync progress (decision 0117). Display text only.
   version: 9
 ---
 # ---- the bundle document: the install unit --------------------------------

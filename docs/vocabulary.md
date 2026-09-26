@@ -298,7 +298,7 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   The vocabulary read carries it as `label` beside `description`, absent
   when the kind declares none. It is display text: the collection segment is
   still the kind's name, and no route, filter, reference or grant reads it
-  ([decision record 0108](decisions/0108-a-kind-may-declare-its-display-label.md)).
+  ([decision record 0117](decisions/0117-a-kind-may-declare-its-display-label.md)).
 
 Three guardrails worth knowing:
 

@@ -65,7 +65,7 @@ data:
     description:
       type: string
       description: what this kind is for, read above its collection
-    # Display text only (decision record 0108): no route, filter, reference or
+    # Display text only (decision record 0117): no route, filter, reference or
     # grant reads it, and the collection segment stays the kind's name.
     label:
       type: object

@@ -106,7 +106,7 @@ data:
   # pre-guide draft. A changed declaration shipping the same version reaches
   # no repository, so every edit from here bumps this.
   #
-  # 14, #675: `pagesync` is labelled Sync progress (decision 0108). Display
+  # 14, #675: `pagesync` is labelled Sync progress (decision 0117). Display
   # text only.
   version: 14
 ---

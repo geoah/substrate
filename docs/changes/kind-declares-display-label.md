@@ -9,7 +9,7 @@ a client shows a person for one record and for the collection. The kind read
 (`KindInfo`) returns it as `label`, absent when the kind declares none. The
 shipped Slack `conversation` and `user`, Google `contactgroup` and
 `calendarseries`, and the four `*sync` state kinds declare one (decision
-record 0108).
+record 0117).
 
 A client reads the kind list with
 `GET /api/v1/records?filter={"kinds":["substrate.reamde.dev/core/kind"]}` and
