@@ -213,7 +213,10 @@ type BundleUpgradeChange struct {
 	// declaration.
 	From int64 `json:"from,omitempty"`
 	// To is the shipped version; 0 (omitted) when the closure stopped
-	// shipping the declaration and the upgrade would prune it.
+	// shipping the declaration and the upgrade would prune it. Where the
+	// stored version ran ahead of the shipped one (a stamped copy or install,
+	// decision record 0070, issue #642), it is the version the upgrade lands
+	// the declaration at instead: stored+1 for a changed declaration.
 	To int64 `json:"to,omitempty"`
 }
 
@@ -319,6 +322,15 @@ type BundleInstall struct {
 	// apply leave both empty and stamp nothing.
 	Origin        string
 	OriginVersion int64
+	// ShippedVersion is a PROVIDER install's provenance: the shipped
+	// version of the closure's own package. The engine stamps it as the
+	// managed `shippedVersion` on that package row, and the upgrade preview
+	// measures the next shipped closure from it rather than from the stored
+	// version, which the API moves to stored+1 on every change and a hand
+	// apply may have run past the shipped line (issue #642). Zero stamps
+	// nothing: the import door carries OriginVersion instead, and a
+	// verbatim sample install and a hand apply neither.
+	ShippedVersion int64
 	// Confirm is the caller's consent to a lossy conversion plan, or nil. The
 	// install refuses a lossy plan without one and a lossless plan ignores it
 	// (decision 0067).

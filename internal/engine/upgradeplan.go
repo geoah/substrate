@@ -115,6 +115,22 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 			plan.From = copied
 		}
 	}
+	// A provider install's stamp is the same measure (issue
+	// #642): the version the install TOOK. Over a package a hand apply ran
+	// past the shipped line, the install lands at stored+1, above the shipped
+	// number, and a diff against the stored versions would hide every next
+	// shipped closure until one passed them. Without either stamp (a package
+	// installed before the stamp existed, or declared by hand) the stored
+	// version stands.
+	var took int64
+	if stamp.origin == "" {
+		if took, err = stampedVersionOf(bundlePackage, propPackageShippedVersion, stamp.rawShipped); err != nil {
+			return plan, err
+		}
+		if took > 0 {
+			plan.From = took
+		}
+	}
 	var edited *editedCopy
 	if stamp.origin != "" && stamp.digest != "" {
 		current, err := ds.packageClosureDigest(ctx, ds.db, bundlePackage)
@@ -196,10 +212,30 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 			Kind: vocabularyRecordKinds[typ], ID: id, From: s.version,
 		})
 	}
-	plan.Available = len(plan.Changes) > 0
-	if stamp.origin != "" && vocabulary.CompareVersions(plan.To, copied) > 0 {
-		plan.Available = true
+	// A stamp that drives the offer means the stored versions ran ahead of
+	// the shipped ones, so the version diff above sees none of the moves. The
+	// changes are then read by CONTENT, the way the install decides them
+	// (resolveDeclarationVersions), each at the version it would land at.
+	//
+	//
+	// A provider's offer is exactly those changes. A shipped release past its
+	// `shippedVersion` that moves nothing the install would write (a bare
+	// version bump) is not offered: the preview would read `available` with
+	// nothing to show, and taking it would change no declaration. The stamp
+	// stays where it is until a release past it changes something, which is
+	// then offered. A sample copy keeps decision record 0070's rule, offered
+	// whenever the shipped version is past `originVersion`, because the
+	// re-import is also what re-stamps the copy.
+	copyMoved := stamp.origin != "" && vocabulary.CompareVersions(plan.To, copied) > 0
+	installMoved := took > 0 && vocabulary.CompareVersions(plan.To, took) > 0
+	if copyMoved || installMoved {
+		moved, err := ds.contentChanges(ctx, docs, stored)
+		if err != nil {
+			return plan, err
+		}
+		plan.Changes = mergeChanges(plan.Changes, moved)
 	}
+	plan.Available = len(plan.Changes) > 0 || copyMoved
 	if !plan.Available && edited == nil {
 		return plan, nil
 	}
@@ -242,4 +278,77 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 		plan.Blockers = append(plan.Blockers, line)
 	}
 	return plan, nil
+}
+
+// contentChanges is what installing docs would move, decided the way the
+// install decides it: the batch's versions resolved against the stored rows
+// (resolveDeclarationVersions, over the canonical data), and every
+// declaration whose version would change listed with the stored version and
+// the one it lands at. A declaration new here is left to the version diff,
+// which already lists it. It writes nothing and never touches docs.
+//
+// The stored version is read off the rows (stored, storedDeclarations), not
+// off the stored documents: only a kind, a package and an authority carry
+// `version` in their document data, while every row carries it.
+func (ds *dataset) contentChanges(ctx context.Context, docs []vocabulary.Document, stored map[string]storedDeclaration) ([]substrate.BundleUpgradeChange, error) {
+	touched := map[string]bool{}
+	for _, d := range docs {
+		touched[d.DeclaredPackage()] = true
+	}
+	existing, err := ds.vocabularyDocumentRows(ctx, ds.db, touched)
+	if err != nil {
+		return nil, err
+	}
+	b := vocabularyBatch{docs: append([]vocabulary.Document(nil), docs...)}
+	carryRetirements(&b, existing)
+	resolveDeclarationVersions(&b, existing, declarationCanonicalizer(ds.registry()))
+	packageVersion := map[string]int64{}
+	for _, d := range b.docs {
+		if d.Kind == vocabulary.DocPackage {
+			packageVersion[d.ID], _ = vocabulary.VersionValue(d.Data["version"])
+		}
+	}
+	versionOf := func(d vocabulary.Document) int64 {
+		switch d.Kind {
+		case vocabulary.DocKind, vocabulary.DocPackage, vocabulary.DocAuthority:
+			if v, _ := vocabulary.VersionValue(d.Data["version"]); v > 0 {
+				return v
+			}
+		}
+		// Everything else, and a kind with no pin, rides its package.
+		if v := packageVersion[d.DeclaredPackage()]; v > 0 {
+			return v
+		}
+		v, _ := vocabulary.VersionValue(existing[vocabulary.DocPackage+"\x00"+d.DeclaredPackage()].Data["version"])
+		return v
+	}
+	var out []substrate.BundleUpgradeChange
+	for _, d := range b.docs {
+		ident, known := schemaKindRef(d.Kind)
+		row, has := stored[ident+"\x00"+d.ID]
+		if !known || !has {
+			continue
+		}
+		from := row.version
+		if to := versionOf(d); to != from {
+			out = append(out, substrate.BundleUpgradeChange{Kind: d.Kind, ID: d.ID, From: from, To: to})
+		}
+	}
+	return out, nil
+}
+
+// mergeChanges adds the moves the version diff did not list, one per
+// declaration: a declaration both list keeps the version diff's entry.
+func mergeChanges(diffed, moved []substrate.BundleUpgradeChange) []substrate.BundleUpgradeChange {
+	seen := map[string]bool{}
+	for _, c := range diffed {
+		seen[c.Kind+"\x00"+c.ID] = true
+	}
+	for _, c := range moved {
+		if !seen[c.Kind+"\x00"+c.ID] {
+			seen[c.Kind+"\x00"+c.ID] = true
+			diffed = append(diffed, c)
+		}
+	}
+	return diffed
 }
