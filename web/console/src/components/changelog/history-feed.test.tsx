@@ -39,17 +39,21 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const preferences: ConsolePreferencesContextValue = {
-  preferences: {
-    collapsed: [],
-    favorites: [],
-    sidebarOpen: true,
-    ...DEFAULT_SETTINGS,
-    technicalDetails: false,
-  },
-  busy: false,
-  change: () => {},
-  set: () => {},
+function preferences(
+  technicalDetails: boolean
+): ConsolePreferencesContextValue {
+  return {
+    preferences: {
+      collapsed: [],
+      favorites: [],
+      sidebarOpen: true,
+      ...DEFAULT_SETTINGS,
+      technicalDetails,
+    },
+    busy: false,
+    change: () => {},
+    set: () => {},
+  }
 }
 
 const kind = {
@@ -67,7 +71,7 @@ const kind = {
   },
 } as unknown as KindInfo
 
-function renderRow(ui: ReactNode) {
+function renderRow(ui: ReactNode, technical = false) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -75,14 +79,18 @@ function renderRow(ui: ReactNode) {
   const rootRoute = createRootRoute({
     component: () => (
       <QueryClientProvider client={client}>
-        <ConsolePreferencesContext.Provider value={preferences}>
+        <ConsolePreferencesContext.Provider value={preferences(technical)}>
           {ui}
         </ConsolePreferencesContext.Provider>
       </QueryClientProvider>
     ),
   })
   const routeTree = rootRoute.addChildren(
-    ["/data/$authority/$pkg/$name/$id", "/actors/$actorId"].map((path) =>
+    [
+      "/data/$authority/$pkg/$name/$id",
+      "/data/$authority/$pkg/$name",
+      "/actors/$actorId",
+    ].map((path) =>
       createRoute({
         getParentRoute: () => rootRoute,
         path,
@@ -141,5 +149,37 @@ describe("HistoryEntryRow", () => {
     expect(await screen.findByText("Priority")).toBeTruthy()
     expect(document.querySelector("[data-slot=value-move]")).toBeNull()
     expect(screen.queryByText("Urgent")).toBeNull()
+  })
+
+  it("says a provider's update as what it is, and keeps the digest for technical details", async () => {
+    const row: ChangeRow = {
+      seq: 1053,
+      ts: new Date().toISOString(),
+      actor: "bundle:providers.substrate.reamde.dev:google",
+      op: "put",
+      recordId: "providers.substrate.reamde.dev/google",
+      kind: "substrate.reamde.dev/core/package",
+      payload: { properties: ["version", "originDigest"] },
+      affected: [
+        {
+          kind: "substrate.reamde.dev/core/package",
+          id: "providers.substrate.reamde.dev/google",
+          version: 3,
+          properties: [
+            { name: "version", before: 34, after: 35 },
+            { name: "originDigest", before: "82007523", after: "075e3623" },
+          ],
+        },
+      ],
+    }
+    const [entry] = foldHistory([row])
+    renderRow(<HistoryEntryRow entry={entry} today />)
+    expect(
+      await screen.findByText("updated its package to version 35")
+    ).toBeTruthy()
+    expect(document.body.textContent).not.toContain("82007523")
+    cleanup()
+    renderRow(<HistoryEntryRow entry={entry} today />, true)
+    expect(await screen.findByText("originDigest:")).toBeTruthy()
   })
 })

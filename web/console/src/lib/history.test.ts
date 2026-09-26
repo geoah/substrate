@@ -5,12 +5,16 @@ import {
   dayLabel,
   foldHistory,
   groupByDay,
+  historyEntries,
   historyVerb,
   isSystemChange,
   kindsByReference,
+  layoutSummary,
   propertyLabel,
+  systemPhrase,
   viewActors,
 } from "./history"
+import { netMoves } from "./change-values"
 
 let seq = 100
 function row(over: Partial<ChangeRow>): ChangeRow {
@@ -171,5 +175,172 @@ describe("system changes", () => {
     const at = (kind: string) => isSystemChange(row({ kind }), new Map())
     expect(at("substrate.reamde.dev/core/token")).toBe(true)
     expect(at("ada.example.com/gone/thing")).toBe(false)
+  })
+})
+
+describe("systemPhrase", () => {
+  const CORE = "substrate.reamde.dev/core"
+  const GOOGLE = "providers.substrate.reamde.dev/google"
+  const GOOGLE_ACTOR = "bundle:providers.substrate.reamde.dev:google"
+
+  function said(rows: ChangeRow[]) {
+    const [entry] = foldHistory(rows)
+    const moves =
+      entry.records.length === 1
+        ? netMoves(entry.rows, entry.records[0], entry.kind)
+        : undefined
+    return systemPhrase(entry, moves)
+  }
+  function versioned(kind: string, id: string, actor: string): ChangeRow {
+    return row({
+      kind: `${CORE}/${kind}`,
+      recordId: id,
+      actor,
+      payload: { properties: ["version"] },
+      affected: [
+        {
+          kind: `${CORE}/${kind}`,
+          id,
+          version: 3,
+          properties: [{ name: "version", before: 34, after: 35 }],
+        },
+      ],
+    })
+  }
+
+  it("says a provider moving to a new version", () => {
+    expect(said([versioned("package", GOOGLE, GOOGLE_ACTOR)])?.words).toBe(
+      "updated its package to version 35"
+    )
+    expect(said([versioned("bundle", GOOGLE, GOOGLE_ACTOR)])?.words).toBe(
+      "updated to version 35"
+    )
+    expect(said([versioned("package", GOOGLE, "console")])?.words).toBe(
+      "updated the Google package to version 35"
+    )
+  })
+
+  it("says a sample package whose only change is the host's bookkeeping", () => {
+    const phrase = said([
+      row({
+        kind: `${CORE}/package`,
+        recordId: "ada.example.com/notes",
+        actor: "bundle:ada.example.com:notes",
+        payload: { properties: ["originDigest"] },
+        affected: [
+          {
+            kind: `${CORE}/package`,
+            id: "ada.example.com/notes",
+            version: 2,
+            properties: [
+              { name: "originDigest", before: "8200", after: "075e" },
+            ],
+          },
+        ],
+      }),
+    ])
+    expect(phrase).toEqual({ words: "updated its package", complete: true })
+  })
+
+  it("names collections, tools and agents", () => {
+    const kinds = said(
+      ["gmailthread", "contact"].map((n) =>
+        row({
+          kind: `${CORE}/kind`,
+          recordId: `${GOOGLE}/${n}`,
+          actor: GOOGLE_ACTOR,
+        })
+      )
+    )
+    expect(kinds?.words).toBe("updated 2 collections")
+    const one = said([
+      row({ kind: `${CORE}/kind`, recordId: `${GOOGLE}/gmailthread` }),
+    ])
+    expect(one).toMatchObject({
+      words: "updated the",
+      collection: `${GOOGLE}/gmailthread`,
+      tail: "collection",
+    })
+    expect(
+      said([row({ kind: `${CORE}/function`, recordId: `${GOOGLE}/syncgmail` })])
+        ?.words
+    ).toBe("updated the tool Google Gmail sync")
+    expect(
+      said([
+        row({
+          kind: `${CORE}/agent`,
+          recordId: "ada.example.com/notes/titler",
+          payload: { created: true },
+        }),
+      ])?.words
+    ).toBe("added the agent Titler")
+  })
+
+  it("says the console layout by what moved", () => {
+    const phrase = said([
+      row({
+        kind: `${CORE}/consolepreference`,
+        recordId: "navigation",
+        op: "patch",
+        payload: { properties: ["sidebarOpen", "tableWidth", "collapsed"] },
+        affected: [
+          {
+            kind: `${CORE}/consolepreference`,
+            id: "navigation",
+            version: 6,
+            properties: [
+              { name: "sidebarOpen", before: true, after: false },
+              { name: "tableWidth", before: "wide", after: "full" },
+              { name: "collapsed", after: [] },
+            ],
+          },
+        ],
+      }),
+    ])
+    expect(phrase?.words).toBe(
+      "changed your console layout (sidebar closed, table width Full)"
+    )
+    expect(layoutSummary(["density", "sidebarOpen"], undefined)).toBe(
+      "rows, sidebar"
+    )
+  })
+
+  it("says sign-ins and runs", () => {
+    expect(
+      said([
+        row({
+          kind: `${CORE}/token`,
+          actor: "substrate",
+          payload: { created: true },
+        }),
+      ])?.words
+    ).toBe("signed you in")
+    expect(
+      said([row({ kind: `${CORE}/token`, actor: "console", op: "delete" })])
+        ?.words
+    ).toBe("signed out")
+    expect(
+      said(
+        [1, 2, 3].map(() =>
+          row({
+            kind: `${CORE}/triggerrun`,
+            actor: "substrate",
+            payload: { created: true },
+          })
+        )
+      )?.words
+    ).toBe("recorded 3 runs")
+  })
+
+  it("leaves a person's own records to the ordinary sentence", () => {
+    expect(said([row({})])).toBeUndefined()
+  })
+})
+
+describe("historyEntries", () => {
+  it("leaves housekeeping out unless technical details are on", () => {
+    const rows = [row({ op: "gc" }), row({})]
+    expect(historyEntries(rows, false)).toHaveLength(1)
+    expect(historyEntries(rows, true)).toHaveLength(2)
   })
 })
