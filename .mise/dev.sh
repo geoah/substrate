@@ -297,7 +297,7 @@ log_size() {
 }
 
 wait_healthy() {
-	local pid size last quiet=0
+	local pid size last quiet=0 polls=0
 	pid="$(cat "$PIDFILE" 2>/dev/null)"
 	last="$(log_size)"
 	while [ "$quiet" -lt "$QUIET_POLLS" ]; do
@@ -315,6 +315,13 @@ wait_healthy() {
 			quiet=0
 		else
 			quiet=$((quiet + 1))
+		fi
+		# Every 10 s, said on the terminal: a boot that keeps logging is
+		# waited for with no ceiling, so the wait must be visible and the
+		# way to watch it named.
+		polls=$((polls + 1))
+		if [ $((polls % 20)) -eq 0 ]; then
+			echo "dev: still waiting for the server to answer /healthz ($((polls / 2)) s); tail -f ${LOGFILE}"
 		fi
 		sleep 0.5
 	done
