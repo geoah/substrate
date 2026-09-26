@@ -11,14 +11,15 @@
 # cheap to renumber.
 #
 # The rules, for each record this branch adds (a file under docs/decisions/
-# that the base branch's tip does not have):
+# that neither the base branch's tip nor this branch's fork point has):
 #
 # - Its number is taken on the base branch's tip by another record: refused.
 #   main's numbers are final.
 # - Another branch adds a different record with the same number, and added it
 #   first: refused. "Added" is the author date of the commit that added the
-#   file on that branch (a rebase keeps it); a record not yet committed here
-#   was added now. Equal dates fall to the file name, so the two branches
+#   file on that branch (a rebase keeps it). A merge commit that creates or
+#   renumbers the record, as resolving a merge of main often does, counts as
+#   the commit that added it. A record not yet committed here was added now. Equal dates fall to the file name, so the two branches
 #   always agree on who keeps the number.
 #
 # Each refused record is told a different number nobody holds yet. That
@@ -117,14 +118,6 @@ while read -r ref tip_date; do
   others+="${ref} ${tip_date}"$'\n'
 done < <(git for-each-ref --format='%(refname) %(committerdate:unix)' "$namespace")
 
-# In CI a namespace with no other branch is a checkout that did not fetch
-# them (the lint job's fetch-depth: 0 is what does), and passing then checks
-# against main only.
-if [ -z "$others" ] && [ -n "${CI:-}" ]; then
-  echo "decisions:check: ${namespace} holds no branch but the base; refusing to pass without checking" >&2
-  exit 2
-fi
-
 here_base="$(git merge-base HEAD "$base_commit" 2>/dev/null || echo "$base_commit")"
 here_records="$(records "$here_base")"
 
@@ -142,6 +135,15 @@ for path in "$dir"/*.md; do
 done
 [ "${#mine[@]}" -gt 0 ] || exit 0
 
+# In CI a namespace with no other branch is a checkout that did not fetch
+# them (the lint job's fetch-depth: 0 is what does), and passing then checks
+# against main only. Below the exit above: a branch that adds no record has
+# nothing to check, whatever was fetched.
+if [ -z "$others" ] && [ -n "${CI:-}" ]; then
+  echo "decisions:check: ${namespace} holds no branch but the base; refusing to pass without checking" >&2
+  exit 2
+fi
+
 mine_titles=" "
 for file in "${mine[@]}"; do mine_titles+="$(title_of "$file") "; done
 
@@ -149,9 +151,13 @@ now="$(date +%s)"
 
 # added <from> <to-ref> <file>: the author date of the commit in from..to that
 # added the record, empty when none did. --no-renames: a record renumbered on
-# a branch was added, under this number, by the renumbering commit.
+# a branch was added, under this number, by the renumbering commit. -m: git
+# log skips merge commits otherwise, and a merge that renumbers the record
+# while resolving a merge of main is that commit. With the path limit, -m only
+# adds a merge whose copy of the file neither parent has. --no-patch keeps
+# the output to bare dates.
 added() {
-  git log --no-renames --diff-filter=A --format=%at "$1..$2" -- "$dir/$3" 2>/dev/null | tail -n 1
+  git log -m --no-patch --no-renames --diff-filter=A --format=%at "$1..$2" -- "$dir/$3" 2>/dev/null | tail -n 1
 }
 
 # The claims: "<number> <added> <file> <branch>" per record another live
