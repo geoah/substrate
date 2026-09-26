@@ -514,16 +514,37 @@ describe("the upgrade preview helpers", () => {
       ],
     }
     expect(stepLines(plan)).toEqual([
-      "Renames label to displayLabel on 3 records in Providers",
-      "Fills in size with its default on 1 record in Widgets",
-      "Sets attention to quiet on 2 records in Widgets",
-      "Changes status from active to open on 2 records in Widgets; afterwards the two can’t be told apart",
-      "Removes color from 1 record in Widgets; the old values stay in History",
+      "Renames label to displayLabel on 3 records in Providers (substrate.reamde.dev/llm/provider)",
+      "Fills in size with its default on 1 record in Widgets (geoah.example.com/shop/widget)",
+      "Sets attention to quiet on 2 records in Widgets (geoah.example.com/shop/widget)",
+      "Changes status from active to open on 2 records in Widgets (geoah.example.com/shop/widget); afterwards the two can’t be told apart",
+      "Removes color from 1 record in Widgets (geoah.example.com/shop/widget); the old values stay in History",
     ])
     // The dialog lists the lossy steps alone: what the click consents to.
     expect(lossyStepLines(plan)).toEqual([
-      "Changes status from active to open on 2 records in Widgets; afterwards the two can’t be told apart",
-      "Removes color from 1 record in Widgets; the old values stay in History",
+      "Changes status from active to open on 2 records in Widgets (geoah.example.com/shop/widget); afterwards the two can’t be told apart",
+      "Removes color from 1 record in Widgets (geoah.example.com/shop/widget); the old values stay in History",
+    ])
+  })
+
+  it("names both ends of a move in full, since two packages may share a name", () => {
+    expect(
+      stepLines({
+        work: 4,
+        lossy: false,
+        steps: [
+          {
+            step: "move",
+            kind: "geoah.example.com/shop/widget",
+            property: "",
+            from: "geoah.example.com/old/widget",
+            to: "geoah.example.com/shop/widget",
+            records: 4,
+          },
+        ],
+      })
+    ).toEqual([
+      "Moves 4 records from Widgets (geoah.example.com/old/widget) to Widgets (geoah.example.com/shop/widget); every reference follows",
     ])
   })
 

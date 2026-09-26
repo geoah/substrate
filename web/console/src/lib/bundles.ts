@@ -209,12 +209,15 @@ export function upgradableBundleCount(catalog: CatalogItem[]): number {
  * live records it rewrites: the operator sees the rewrite the server will make
  * before it makes it, and a lossy step says so. Empty when nothing moves. */
 export function stepLines(plan: ConversionPlan | undefined): string[] {
+  // The friendly plural alone is ambiguous where two packages name a kind
+  // alike, and these lines are what a lossy update's confirmation lists.
+  const named = (ref: string) => `${displayPlural(ref)} (${ref})`
   return (plan?.steps ?? []).map((s) => {
     const n = `${s.records} ${s.records === 1 ? "record" : "records"}`
-    const where = s.kind ? ` in ${displayPlural(s.kind)}` : ""
+    const where = s.kind ? ` in ${named(s.kind)}` : ""
     switch (s.step) {
       case "move":
-        return `Moves ${n} from ${displayPlural(s.from ?? "")} to ${displayPlural(s.to ?? "")}; every reference follows`
+        return `Moves ${n} from ${named(s.from ?? "")} to ${named(s.to ?? "")}; every reference follows`
       case "rename":
         return `Renames ${s.from} to ${s.to} on ${n}${where}`
       case "backfill":
