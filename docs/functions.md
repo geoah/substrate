@@ -574,12 +574,17 @@ route](api.md#the-filter-grammar) takes: the compact string (`"at"`,
 way a URL does.
 
 A `list` whose `where` bounds `at` on both ends is the records route's
-[window read](api.md#the-window-read): the page carries the rows in the
-window and, merged by slot, the occurrences computed from every series among
-the kinds read, with overrides and `exdates` folded in and `computed: true` on
-each ([decision 0107](decisions/0107-a-function-and-an-agent-list-read-is-the-window-read.md)).
-A body never expands a recurrence rule itself. The window read's rules hold:
-`order` is `at` alone, `offset` is refused, and pages follow `after`.
+[window read](api.md#the-window-read): the page carries the plain events and
+overrides in the window and, merged by slot, the occurrences computed from
+every series among the kinds read, with overrides and `exdates` folded in and
+`computed: true` on each ([decision 0107](decisions/0107-a-function-and-an-agent-list-read-is-the-window-read.md)).
+Series rows are not on the page; read them with a one-sided `at` bound or by
+`ids`. A body never expands a recurrence rule itself. The window read's rules
+hold: `order` is `at` alone and defaults to `at` ascending, `offset` is
+refused, and pages follow `after`. Bounds take the forms a plain list takes
+(RFC 3339, zone-less or date-only, the last two as UTC). A computed row is
+read-only: a patch at its id fails `not found`, and a put at it creates an
+override where the kind binds `override`.
 
 ```python
 page = host.records.list(["providers.substrate.reamde.dev/google/calendarseries"],
@@ -595,7 +600,9 @@ empty, so every `list` and `search` is refused and every `get` answers absent.
 A forbidden kind answers exactly like an absent id, same nil shape and same
 budget charge, so a disallowed `get` is never an existence or kind oracle.
 Calls are charged before they run, `first` and `k` clamp to the remaining row
-budget, and returned rows charge on top.
+budget, and returned rows charge on top. One exception: a window read folds in
+every override that claims a slot, whatever its kind, so an override of a kind
+outside the allowlist still removes its slot from the page (decision 0107).
 
 **Writes are held to the declaration.** The engine stays authoritative for the
 emit ceiling and kind admission, on a staged effect exactly as on a returned

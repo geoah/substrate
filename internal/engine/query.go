@@ -1128,7 +1128,7 @@ func columnValue(col string, v any) (any, error) {
 	case time.Time:
 		return t.UTC(), nil
 	case string:
-		ts, err := parseTime(t)
+		ts, err := substrate.ParseInstant(t)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s: %w", substrate.ErrValidation, col, err)
 		}
@@ -1187,7 +1187,7 @@ func condJSON(b *builder, col, key string, c substrate.Cond, kind vocabulary.Dat
 			case time.Time:
 				return t.UTC(), nil
 			default:
-				ts, err := parseTime(fmt.Sprint(v))
+				ts, err := substrate.ParseInstant(fmt.Sprint(v))
 				if err != nil {
 					return nil, fmt.Errorf("%w: %s: %w", substrate.ErrValidation, key, err)
 				}

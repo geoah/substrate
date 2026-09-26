@@ -96,14 +96,20 @@ func Bounds(f substrate.Filter) (from, to time.Time, ok bool, err error) {
 	return from, to, true, nil
 }
 
+// instantValue reads one bound with the layouts and range check the plain
+// list's `at` filter applies (substrate.ParseInstant), so a date-only or
+// zone-less bound reads as UTC here as it does there.
 func instantValue(v any) (time.Time, error) {
+	if t, ok := v.(time.Time); ok {
+		return t.UTC(), nil
+	}
 	s, ok := v.(string)
 	if !ok {
 		return time.Time{}, errors.New("expected an RFC 3339 instant")
 	}
-	t, err := time.Parse(time.RFC3339Nano, s)
+	t, err := substrate.ParseInstant(s)
 	if err != nil {
-		return time.Time{}, errors.New("expected an RFC 3339 instant")
+		return time.Time{}, err
 	}
 	return t.UTC(), nil
 }

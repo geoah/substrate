@@ -6,9 +6,10 @@ import "time"
 // temporal kinds. It answers with the rows in the window AND the occurrences
 // it computes from every series among them (decision 0039 stores the rule and
 // never expands it into rows; its successor computes the expansion inside
-// this one read instead of a second one). The API layer does the expanding;
-// the engine answers the three halves below inside one snapshot and holds no
-// expander.
+// this one read instead of a second one). internal/window does the expanding
+// for every read surface (the records route, a function's list, an agent's
+// query); the engine's Window answers the three halves below inside one
+// snapshot and holds no expander.
 
 // WindowKey is the position of one item in the window's total order: its
 // slot, then its kind, then its id. A page's cursor names the last item

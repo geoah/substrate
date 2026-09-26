@@ -481,7 +481,7 @@ func hotTime(name string, v any) (*time.Time, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: properties.%s: expected an RFC 3339 instant", substrate.ErrValidation, name)
 	}
-	ts, err := parseTime(s)
+	ts, err := substrate.ParseInstant(s)
 	if err != nil {
 		return nil, fmt.Errorf("%w: properties.%s: %w", substrate.ErrValidation, name, err)
 	}

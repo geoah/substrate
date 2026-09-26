@@ -498,7 +498,7 @@ func parseScheduleSource(raw any) (*scheduleSource, error) {
 	src.Timezone, _ = m["timezone"].(string)
 	if raw, has := m["startsAt"]; has {
 		s, _ := raw.(string)
-		ts, err := parseTime(s)
+		ts, err := substrate.ParseInstant(s)
 		if err != nil {
 			return nil, fmt.Errorf("source.schedule.startsAt: %w", err)
 		}

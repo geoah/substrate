@@ -36,9 +36,15 @@ body free to ask `list` the same question and get the stored rows alone, the
 exact gap 0081 closed for the route. An SDK expander is a second copy of the
 engine's rules, which is the defect being fixed.
 
-0039's confirmation still holds: the engine's storage, fold and `Window`
-read contain no expander. The engine's read surface for bodies and agents
-calls `internal/window`, as the API does.
+This amends 0039's confirmation, which reads "No expander exists in the
+engine": the engine's storage, fold and `Window` read still contain no
+expander, but the engine's read surface for bodies and agents now calls it
+through `internal/window`, as the API does. It also amends 0081, which rejected
+"expand in the engine": the generic query still merges nothing, and the
+expansion stays in `internal/window`, which the engine calls for these two
+read surfaces. A window read's `at` bounds parse through
+`substrate.ParseInstant`, the parser the plain list uses, so date-only and
+zone-less bounds read as UTC on every surface.
 
 ### Consequences
 

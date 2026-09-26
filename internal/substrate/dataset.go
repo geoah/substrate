@@ -64,8 +64,8 @@ type Dataset interface {
 	List(ctx context.Context, q Query) (*Page, error)
 	// Window is the engine's half of a window read (occurrence.go): the rows
 	// after a key, every candidate series and the overrides claiming slots in
-	// the window, read on one snapshot. The API layer expands and merges; the
-	// engine holds no expander.
+	// the window, read on one snapshot. internal/window expands and merges;
+	// the engine holds no expander.
 	Window(ctx context.Context, q WindowQuery) (*WindowPage, error)
 	Search(ctx context.Context, in SearchInput) (SearchResult, error)
 	Changes(ctx context.Context, after int64, f ChangeFilter, limit int) ([]Change, error)

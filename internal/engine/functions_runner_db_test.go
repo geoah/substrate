@@ -431,16 +431,22 @@ func TestTriggerEffectMergeAndSplit(t *testing.T) {
 
 // windowSource lists one day of the timeline kinds, as a schedule surface
 // does, and writes what it saw as `<id>@<at>` for rows and `<id>@<at>*` for
-// computed occurrences.
+// computed occurrences. Mode `window-date` sends the same day as date-only
+// bounds, the form Python's date.isoformat() writes.
 const windowSource = `
 def main(input, host):
     e = input["envelope"]["record"]
-    if e["properties"].get("mode") != "window":
+    mode = e["properties"].get("mode")
+    if mode == "window":
+        at = {"gte": "2026-09-24T00:00:00Z", "lt": "2026-09-25T00:00:00Z"}
+    elif mode == "window-date":
+        at = {"gte": "2026-09-24", "lt": "2026-09-25"}
+    else:
         return {}
     page = host.records.list([
         "window.e2e.example/timeline/series",
         "window.e2e.example/timeline/meeting",
-    ], where={"at": {"gte": "2026-09-24T00:00:00Z", "lt": "2026-09-25T00:00:00Z"}})
+    ], where={"at": at})
     seen = []
     for r in page.get("records") or []:
         seen.append(r["id"] + "@" + r["properties"]["at"] + ("*" if r.get("computed") else ""))
@@ -451,7 +457,7 @@ def main(input, host):
 // A function's list whose filter bounds `at` on both ends is the window read
 // the records route answers (decision 0107): the series' occurrences are
 // computed into the page, BYHOUR slots included, so a body never expands a
-// rule itself.
+// rule itself. Date-only bounds read as UTC midnight, as on a plain list.
 func TestTriggerHostListBoundedOnAtComputesOccurrences(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -478,10 +484,16 @@ func TestTriggerHostListBoundedOnAtComputesOccurrences(t *testing.T) {
 	put(winMeeting, "sync", map[string]any{"name": "Sync", "at": "2026-09-24T13:00:00Z", "endsAt": "2026-09-24T13:30:00Z"})
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"mode": "window"}})
+	wd := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"mode": "window-date"}})
 	process(t, ds)
+	if parked, err := ds.TriggerFailures(ctx, trigID("timeline")); err != nil || len(parked) != 0 {
+		t.Fatalf("the window list parked: %v %v", parked, err)
+	}
 
 	want := "meds_20260924T073000Z@2026-09-24T07:30:00Z*,sync@2026-09-24T13:00:00Z,meds_20260924T193000Z@2026-09-24T19:30:00Z*"
-	if got := mustGet(t, ds, taskType, "t-"+w.ID); got.Title != want {
-		t.Fatalf("the body saw %q, want %q", got.Title, want)
+	for _, id := range []string{w.ID, wd.ID} {
+		if got := mustGet(t, ds, taskType, "t-"+id); got.Title != want {
+			t.Fatalf("the body saw %q, want %q", got.Title, want)
+		}
 	}
 }

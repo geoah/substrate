@@ -204,7 +204,9 @@ entry could name only a function.
   it answers like an absent id, a kind outside it in `filter.kinds` or `kinds`
   is refused by name, an expanded referent outside it is left out, and a list
   that names no kinds lists the allowlist — expanded against the repository's
-  current kinds where the allowlist globs. List and search clamp to the
+  current kinds where the allowlist globs. A window read still folds in every
+  override that claims a slot, whatever its kind, so an override outside the
+  allowlist removes its slot (decision 0107). List and search clamp to the
   remaining row budget; a blown budget is a tool error the model sees.
 - **`substrate.reamde.dev/core/write`** is the direct write: one call is
   `{op, kind, id, input, ifVersion}`, where `op` is `put` (create or update,

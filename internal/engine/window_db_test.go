@@ -14,7 +14,7 @@ import (
 // The window read's engine half (window.go): on one snapshot, the rows after
 // the key in slot order over each kind's OWN slot column, every candidate
 // series whole, and the overrides claiming a slot inside the window whatever
-// their own `at`. The API layer expands; this proves the SQL underneath.
+// their own `at`. internal/window expands; this proves the SQL underneath.
 
 const (
 	winAuthority = "window.e2e.example"
