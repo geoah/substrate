@@ -17,5 +17,8 @@ data:
       fold: case
 ```
 
-A probe without the key is unchanged. A folded probe reads every live row of
-the target kind, so keep it to kinds of people scale.
+A probe without the key is unchanged. Turning the key on for an existing
+mapping makes its probe ambiguous wherever case-variant duplicates already
+exist, so under the default `onAmbiguous: park` new sources park until the
+owner merges those duplicates. The stored side folds under the database's
+locale, so a `C` locale folds only ASCII.

@@ -399,9 +399,8 @@ func probeValues(srcTy *vocabulary.Kind, src *erow, probe vocabulary.MatchRule) 
 // A FOLDED probe (`fold: case`, record 0107) compares the stored value
 // lowercased and trimmed too, because the target holds what its writers
 // wrote: a person named `Ada Example` is found by `ada example` only when
-// both ends are folded. The comparison then runs on an expression no index
-// carries, so a folded probe reads every live row of the target kind in the
-// repository; the exact probe keeps its containment and equality.
+// both ends are folded. The stored side is folded with lower(btrim()) on each
+// live row of the target kind the probe reads.
 func (t *txn) probeCandidates(toIdentity string, tp *vocabulary.Property, values []string, fold bool) ([]string, error) {
 	seen := map[string]bool{}
 	var out []string

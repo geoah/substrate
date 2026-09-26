@@ -131,7 +131,8 @@ the reference (`email`, `emailAddresses`) and probes that.
 value read from an `email` property is lowercased, but the target's value is
 compared as stored, so `Ada Example` and `ada example` are two people. A probe
 that declares `fold: case` lowercases and trims both ends, the target's
-stored value item by item on a repeated property:
+stored value item by item on a repeated property. The stored side is trimmed
+of ASCII spaces only, so a stored value ending in a tab never matches:
 
 ```yaml
   match:
@@ -142,8 +143,8 @@ stored value item by item on a repeated property:
 
 `case` is the only fold. It is opt-in because a probe links records without
 asking, and short strings also carry identifiers whose case is significant.
-A folded probe compares an expression no index carries, so it reads every
-live row of the target kind in the repository
+A folded probe computes `lower(btrim())` on each stored value it reads, and
+Postgres folds that side under the database's locale
 ([decision record 0107](decisions/0107-a-probe-folds-case-only-when-it-declares-fold-case.md)).
 
 `from:` and `to:` are kind references, so a mapping says exactly which two

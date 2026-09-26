@@ -46,10 +46,13 @@ lowercased and the target's is compared as stored.
   existing mapping changes behaviour.
 - Good, because `fold` is one word with one value, so a later fold (accents,
   whitespace runs) is a new value, not a new key.
-- Bad, because a folded probe compares an expression no index carries: it
-  reads every live row of the target kind in the repository, where an exact
-  probe uses the containment or equality index. Fine at people scale; a
-  folded probe over a large kind is slow.
+- Bad, because a folded probe computes `lower(btrim())` on every live row of
+  the target kind it reads. An exact probe reads the same rows today, but an
+  index added later for exact probes (a top-level `props @>` containment, or
+  an expression index) would not serve a folded one.
+- Bad, because Postgres folds the stored side under the database's
+  `LC_CTYPE` while Go folds the source side: under a `C` locale only ASCII
+  folds, so `Émile` and `émile` stay two people.
 - Bad, because an exact `email` probe still misses a target that stores the
   address in mixed case. A mapping that wants both ends folded says
   `fold: case`.
@@ -66,4 +69,4 @@ exact default, and the withholding rule under a fold) and the `fold` cases in
 
 Issue #586. `docs/projection.md` documents the key beside `match`. Revisit if
 an exact `email` probe missing a mixed-case target becomes a reported problem:
-the fix is then to fold every `email` probe, at the same index cost.
+the fix is then to fold every `email` probe.
