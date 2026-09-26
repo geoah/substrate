@@ -27,7 +27,9 @@ svu = "3.4.1"
 # uv is the connector runtime: a Python function body carrying a PEP 723
 # `# /// script` block is executed through `uv run`, which provisions its
 # declared dependencies. The runner shells out to it, so it must be on PATH.
-uv = "0.7.12"
+# Held to the Dockerfile's UV_VERSION by `lint:toolchain`: this is the uv the
+# provider suite is TESTED on, so it is the uv the image ships.
+uv = "0.11.19"
 # The vulnerability scanner. It is CALL-GRAPH based, so it reports only
 # advisories this tree actually reaches — which is what makes it a gate rather
 # than a list of things to triage. Not in mise's registry; the go backend

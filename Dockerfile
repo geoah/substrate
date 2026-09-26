@@ -99,14 +99,45 @@ COPY web/console/dist /web
 
 FROM ${ARTIFACTS} AS artifacts
 
+# ---- uv -----------------------------------------------------------------
+# Astral's static musl release, never Alpine's `uv` package. Alpine's build
+# links a jemalloc configured for 4 KB pages, and on an arm64 kernel with
+# 16 KB pages (the Raspberry Pi 5's) it aborts at start with `<jemalloc>:
+# Unsupported system page size`, so every function body fails to prepare and
+# every delivery parks. Upstream builds its aarch64 binary with
+# JEMALLOC_SYS_WITH_LG_PAGE=16, which runs on 4, 16 and 64 KB pages.
+#
+# UV_VERSION is held to .mise.toml's uv pin by `lint:toolchain`, because the
+# image must run the uv the provider suite is TESTED against. The checksums
+# are the release's own `.sha256` files for that version; a bumped pin with
+# stale checksums fails this stage rather than shipping an unverified binary.
+# It runs on the native build arch and only downloads, so no stage emulates.
+FROM --platform=$BUILDPLATFORM alpine:3.24 AS uv
+ARG TARGETARCH
+ARG UV_VERSION=0.11.19
+ARG UV_SHA256_AMD64=c4c0d0a383413261af5f0f0743e1292f4aafbe907987ed83bd0ac66f0a3d7e20
+ARG UV_SHA256_ARM64=767629b64cdf078c32e42819db28d5ca868b8dc7e3a879967fadc3e4f7f66be3
+RUN set -eu; \
+    case "$TARGETARCH" in \
+      amd64) target=x86_64-unknown-linux-musl; sum="$UV_SHA256_AMD64" ;; \
+      arm64) target=aarch64-unknown-linux-musl; sum="$UV_SHA256_ARM64" ;; \
+      *) echo "no uv release pinned for $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    wget -q -T 60 -O /tmp/uv.tar.gz \
+      "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${target}.tar.gz"; \
+    echo "${sum}  /tmp/uv.tar.gz" | sha256sum -c -; \
+    mkdir /out; \
+    tar -xzf /tmp/uv.tar.gz -C /out --strip-components=1 "uv-${target}/uv" "uv-${target}/uvx"
+
 # ---- runtime ------------------------------------------------------------
 # The shared function runner executes inline bundle code as child processes, so
 # the image must carry the language it runs: python3, the host every function
 # body is exec'd into.
 #
-# uv (the Astral installer/runner, a single static binary) is the connector
-# runtime: a Python function body that carries a PEP 723 `# /// script` block
-# declaring `dependencies` is executed via `uv run`, which provisions a cached
+# uv (the Astral installer/runner, a single static binary, from the uv stage
+# above) is the connector runtime: a Python function body that carries a
+# PEP 723 `# /// script` block declaring `dependencies` is executed via
+# `uv run`, which provisions a cached
 # venv with those deps and runs the body — so a connector can `import
 # googleapiclient` by declaring it inline, with NO pip in the base image and no
 # change to the fast dependency-free python host. uv resolves at provision time
@@ -116,7 +147,11 @@ FROM ${ARTIFACTS} AS artifacts
 # (google-api-python-client, requests, …) via `uv cache` — a documented cache
 # warm, NOT a hard dependency: nothing in the base image imports them.
 FROM alpine:3.24
-RUN apk add --no-cache ca-certificates tzdata python3 uv
+RUN apk add --no-cache ca-certificates tzdata python3
+# The tarball's entries carry the release builder's uid, so the copy sets
+# root as owner: a binary on PATH writable by some other uid is one it can
+# replace.
+COPY --from=uv --chown=0:0 --chmod=0755 /out/uv /out/uvx /usr/local/bin/
 
 # The runner spawns bundle code as child processes, and NONE of it needs root.
 # uv's cache and the python host both write under HOME, so the unprivileged
