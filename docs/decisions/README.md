@@ -284,3 +284,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0123](0123-a-trigger-read-names-its-kinds.md) | A record trigger's changelog read names its kinds | accepted |
 | [0124](0124-a-decision-number-is-checked-against-every-live-branch-before-the-merge.md) | A decision number is checked against every live branch before the merge | accepted |
 | [0125](0125-a-provider-write-is-a-callable-that-writes-no-record.md) | A provider write is a callable that writes no record | accepted |
+| [0126](0126-the-changes-read-summarizes-runs-and-never-ends-a-page-inside-one.md) | The changes read summarizes runs and never ends a page inside one | accepted |
