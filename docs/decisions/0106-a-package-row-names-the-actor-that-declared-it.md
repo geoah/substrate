@@ -29,8 +29,12 @@ too.
 Chosen: the managed `declaredBy` property. The write that creates a `package`
 row (none stored, or only a tombstone) sets it to the transaction's actor; a
 write to a live row leaves it alone, stamped or not, and no document key
-spells it, so the loader refuses a document that tries. The stamp applies only where the `package` kind the row validates against declares `declaredBy`: a repository still on an older core (the first pass of a boot upgrade) creates the row unstamped rather than refusing it. The changelog carries
-the stamp like any other value, so a rebuild and an export keep it. A changelog
+spells it, so the loader refuses a document that tries. The stamp applies
+only where the `package` kind the row validates against declares
+`declaredBy`: a repository whose shipped upgrade a guard withheld, or a server
+seeded from an older tree as the upgrade drills are, creates the row unstamped
+rather than refusing it. The changelog carries the stamp like any other value,
+so a rebuild and an export keep it. A changelog
 lookup on every read costs a scan per package on every listing, and a document
 key would let a client name any actor.
 
@@ -49,8 +53,11 @@ key would let a client name any actor.
 
 ### Confirmation
 
-`TestPackageRecordsTheActorThatDeclaredIt` and
-`TestPackageDocumentCannotWriteDeclaredBy` in `internal/engine`.
+`TestPackageRecordsTheActorThatDeclaredIt`,
+`TestPackageDocumentCannotWriteDeclaredBy` and
+`TestAgentPutOfPackageRecordsTheAgent` in `internal/engine`, and
+`TestBootUpgradeMovesTheLLMRowsOutOfCore` in `internal/testenv` for a server
+seeded on a core without the property.
 
 ## More Information
 
