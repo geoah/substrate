@@ -75,7 +75,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: github
-  version: 23
+  version: 24
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -4886,8 +4886,20 @@ data:
             if lifted:
                 cur["lifted"] = lifted
                 stored = {}
+                # The lifted orgs leave `syncSkipped` in the SAME patch that
+                # drops the watermarks. `_stamp` clears them too, but a
+                # 90-day re-walk rarely fits one bounded drain: a run that
+                # parks before the stamp left the org held, so every later run
+                # probed it again, dropped the watermarks the last run saved
+                # and re-walked from the floor, forever (#649).
+                remaining = _restricted_held(props)
+                for org in lifted:
+                    remaining.pop(org, None)
                 host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid,
-                                   properties={"syncCursors": None})
+                                   properties={
+                                       "syncCursors": None,
+                                       "syncSkipped": ({"restricted": remaining}
+                                                       if remaining else None)})
                 host.log("github: %s: the %s organization(s) approved the app; "
                          "re-walking from the backfill floor"
                          % (aid, ", ".join(lifted)))
