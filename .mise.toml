@@ -684,6 +684,12 @@ description = "Every release's upgrade notes and feat/fix commits, newest first,
 # merge has to keep true, and the tags and docs/changes/ already are the answer.
 run = ".mise/changelog.sh"
 
+[tasks."release:notes"]
+description = "Rewrite the GitHub releases whose upgrade notes differ from docs/changes/: release:notes [--dry-run] [tag...]"
+# The `release-notes` workflow runs it on every push to main that touches
+# docs/changes/; by hand it needs `gh` with write on the repository.
+run = ".mise/releasenotes.sh"
+
 [tasks.release]
 description = "Cut the release for the current tag (CI runs this)"
 # The upgrade notes go above goreleaser's commit list. The header file sits

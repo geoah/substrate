@@ -10,9 +10,10 @@
 #
 #   changelog.sh                   every release, newest first, plus what main
 #                                  holds past the last tag
-#   changelog.sh --release <tag>   that release's notes alone: the header the
-#                                  release job hands goreleaser, empty when it
-#                                  has none
+#   changelog.sh --release <tag>   that release's notes alone, between the
+#                                  markers releasenotes.sh replaces: the header
+#                                  the release job hands goreleaser, empty when
+#                                  it has none
 #
 # docs/changes/README.md is the note format; lint:docs holds it, so this
 # script trusts the frontmatter to be `---`, `type:`, an optional `release:`,
@@ -109,7 +110,10 @@ previous_tag() {
 if [ "${1:-}" = "--release" ]; then
   tag="${2:?changelog: --release needs a tag}"
   previous_tag "$tag" >/dev/null
-  render_notes "$tag" 2
+  notes="$(render_notes "$tag" 2)"
+  # The markers are what .mise/releasenotes.sh finds to replace the block
+  # when a note changes after the release; they render as nothing.
+  [ -n "$notes" ] && printf '<!-- upgrade-notes:start -->\n%s\n<!-- upgrade-notes:end -->\n' "$notes"
   exit 0
 fi
 

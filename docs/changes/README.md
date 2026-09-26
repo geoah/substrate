@@ -9,7 +9,10 @@ every release between the version they run and the one they are moving to.
 Each release's notes are the files ADDED to this directory since the tag
 before it. `mise run changelog` renders them for every release, newest
 first, together with the `feat:` and `fix:` commit subjects, and the release
-job puts the same notes at the top of the GitHub release. A file is never
+job puts the same notes at the top of the GitHub release. A note changed
+after its release reaches the release page through `mise run release:notes`,
+which the `release-notes` workflow runs on every push to main that touches
+this directory. A file is never
 moved or renamed once merged, because the commit that added it is what places
 it in a release; fix a typo in place.
 

@@ -432,8 +432,9 @@ first label.
   [docs/changes/README.md](docs/changes/README.md) gives: a `type:`, one
   heading, one exact example, and for a break or a deprecation a
   `## What to do` an agent can follow literally. The release job puts the
-  notes above the commit list on the GitHub release, and
-  `mise run changelog` renders every release. A `!` without a
+  notes above the commit list on the GitHub release, the `release-notes`
+  workflow (`mise run release:notes`) rewrites a release page whose notes
+  changed later, and `mise run changelog` renders every release. A `!` without a
   `type: breaking` note is refused by `commits:check`; the rest is held by
   the agent review (`.github/workflows/review.yml`, briefed by
   `.github/review.md`), which comments and never blocks. A note is never
