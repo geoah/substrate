@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -138,6 +139,12 @@ func (ds *dataset) queryChanges(ctx context.Context, b *builder, order string, l
 	if err != nil {
 		return nil, err
 	}
+	return collectChanges(rows)
+}
+
+// collectChanges scans changelog rows selected as queryChanges selects them
+// (seq, ts, actor, op, record_id, kind, payload, hash) and closes them.
+func collectChanges(rows *sql.Rows) ([]substrate.Change, error) {
 	defer func() { _ = rows.Close() }()
 	var out []substrate.Change
 	for rows.Next() {
