@@ -312,10 +312,11 @@ function runCallable(
   return undefined
 }
 
-/** How each console layout setting reads inside the parenthesis. */
+/** How each console layout setting reads inside the parenthesis: the
+ * words the Settings page labels it with. */
 const LAYOUT_WORDS: Record<string, string> = {
-  density: "rows",
-  recordWidth: "page width",
+  density: "row height",
+  recordWidth: "record page width",
   tableWidth: "table width",
   theme: "appearance",
   collapsed: "folded sections",

@@ -314,7 +314,7 @@ describe("systemPhrase", () => {
       "changed your console layout (sidebar closed, table width Full)"
     )
     expect(layoutSummary(["density", "sidebarOpen"], undefined)).toBe(
-      "rows, sidebar"
+      "row height, sidebar"
     )
   })
 
