@@ -342,7 +342,7 @@ description = "The CI tasks still set SUBSTRATE_TEST_REQUIRE_SANDBOX, and still 
 run = ".mise/sandboxgatecheck.sh"
 
 [tasks."lint:ci"]
-description = "The CI scripts' own tests: the path gate's verdicts, the shard partition and the commit check"
+description = "The CI scripts' own tests: the path gate's verdicts, the shard partition, the commit check and the decision number check"
 # .mise/changescheck.sh decides whether the database suite runs at all and
 # .mise/shardselect.sh decides which tests each engine shard runs, so a wrong
 # answer from either is a green build that tested nothing, and nothing else
@@ -402,6 +402,14 @@ run = ".mise/kindscheck.sh"
 [tasks."frozen:check"]
 description = "Refuse an edit to a landed migration or an accepted decision record"
 run = ".mise/frozencheck.sh"
+
+# Not in `lint` either: it reads the OTHER branches on origin, so its answer
+# depends on what has been pushed. lint:docs refuses two records with one
+# number in one tree; this refuses a record whose number another live branch
+# added first, before either merges (decision 0109).
+[tasks."decisions:check"]
+description = "Refuse a decision record whose number main or another branch already took"
+run = ".mise/decisionscheck.sh"
 
 # The third diff guard, and the one the `pr` workflow runs rather than `lint`:
 # it reads the PR title as well as the branch, and the title can change
@@ -727,9 +735,10 @@ description = "CI job `lint`: every linter and formatter check but Go's, the rel
 # on one runner beside the rest it made this job 63 seconds. The two lists
 # together are `lint` plus `fmt:check`, which `lint:ci` holds, so a linter
 # added to `lint` and to neither job fails there.
-# The two diff guards ride here because they need a base branch and `lint` does
-# not have one: `kinds:check` holds a changed declaration to a version bump,
-# `frozen:check` holds the files this tree writes once.
+# The three diff guards ride here because they need a base branch and `lint`
+# does not have one: `kinds:check` holds a changed declaration to a version
+# bump, `frozen:check` holds the files this tree writes once, and
+# `decisions:check` holds a decision number against the other branches.
 depends = [
   "fmt:yaml:check",
   "lint:yaml",
@@ -743,6 +752,7 @@ depends = [
   "release:check",
   "kinds:check",
   "frozen:check",
+  "decisions:check",
 ]
 
 [tasks."ci:lint:go"]
