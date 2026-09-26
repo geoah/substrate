@@ -23,6 +23,7 @@ import {
   triggerStatusesQueryOptions,
 } from "@/lib/api/sync"
 import type { RequirementNode } from "@/lib/bundles"
+import { scrollMotion } from "@/lib/motion"
 import type { ProblemFix, ProviderProblem } from "@/lib/providers"
 import { requestTriggers, triggersOnKind, type AccountView } from "@/lib/sync"
 import { cn } from "@/lib/utils"
@@ -169,7 +170,7 @@ function FixButton({
           onClick={() =>
             document
               .getElementById(setupTarget)
-              ?.scrollIntoView?.({ behavior: "smooth", block: "start" })
+              ?.scrollIntoView?.({ behavior: scrollMotion(), block: "start" })
           }
         >
           {setupTarget === "settings" ? "Go to settings" : "Go to set up"}
