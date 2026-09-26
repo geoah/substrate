@@ -394,8 +394,13 @@ every repository gets a pass per tick. The queue takes repositories in order
 of how long ago their last pass started, a repository that has never run
 first, so busy older repositories cannot keep a new one at the back
 ([#639](https://github.com/geoah/substrate/issues/639)). Eight long passes do
-fill every slot, and then a new repository waits for one of them to end. The
-other four loops still walk repositories one after another.
+fill every slot, and then a new repository waits for one of them to end.
+What bounds that wait is the per-trigger budget: inside a pass each trigger
+gets 30 seconds before the pass moves on, plus the one delivery in hand, and
+schedules fire first ([how a pass walks triggers](functions.md#triggers)).
+There is no bound on the pass as a whole, so a repository with many
+backlogged or slow triggers holds its slot for roughly 30 seconds per
+trigger. The other four loops still walk repositories one after another.
 
 ### Collecting orphaned mapping targets
 

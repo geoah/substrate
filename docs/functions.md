@@ -792,6 +792,21 @@ disappeared in that window skips the delivery with its cursor standing still,
 exactly as one that was already gone when the pass loaded
 ([#576](https://github.com/geoah/substrate/issues/576)).
 
+**A pass fires schedules first and gives each trigger a budget.** One
+dispatcher pass over a repository fires every due schedule occurrence before
+any record trigger runs, then walks the record triggers in id order. Each
+trigger gets 30 seconds of the pass: past that it stops after the delivery in
+hand and the pass moves on, and the next pass resumes from its cursor. A
+record trigger with a slow callable and a long backlog therefore takes many
+passes to drain, and a due schedule waits at most one pass, never the backlog
+([#638](https://github.com/geoah/substrate/issues/638)). The budget is per
+trigger and the pass as a whole has none: a trigger can overrun its 30
+seconds by the one delivery in hand, and a repository with many slow
+schedules spends up to 30 seconds on each before its first record trigger
+runs. The cursor still
+moves only past rows that were delivered or matched nothing. A `wake` runs
+without the budget and drains to head.
+
 The `when:` guard is the one place [CEL](https://cel.dev) survives. It is a
 boolean over three read-only bindings, `change`, `record` (null after a
 delete), and `repository`. There is deliberately no clock and no way to fetch
@@ -842,8 +857,8 @@ repository.
   synthesizes one delivery of that record's current state (guard applied,
   source filter not, cursor untouched).
 - `POST …/trigger/{id}/wake` scans now: a webhook fires once with no
-  `request`, a record trigger drains its backlog, a schedule checks its due
-  occurrence.
+  `request`, a record trigger drains its backlog to head (the dispatcher's per-trigger
+  budget does not apply), a schedule checks its due occurrence.
 - `POST /webhooks/{authority}/{trigger}` is the public door: no bearer, the
   request in the envelope, `202` with `{"fire": id}` once the request is
   recorded in the repository's changelog and the fire is handed to the
