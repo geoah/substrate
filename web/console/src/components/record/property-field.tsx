@@ -31,14 +31,13 @@ import { PlusIcon, XIcon } from "lucide-react"
 
 import { fromLocalInput, toLocalInput } from "@/components/property-sheet/dates"
 import { KindGlyph } from "@/components/identity/kind-glyph"
+import { EnumTag } from "@/components/identity/enum-tag"
 import { StateBadge } from "@/components/identity/state-badge"
 import { ReferenceListPicker } from "@/components/record/identity-picker"
-import {
-  PropertyChoice,
-  type Choice,
-} from "@/components/record/property-choice"
+import { PropertyChoice } from "@/components/record/property-choice"
 import { RecordCombobox } from "@/components/record/record-combobox"
 import { Button } from "@/components/ui/button"
+import type { ChoiceOption } from "@/components/ui/choice-list"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -49,8 +48,10 @@ import {
 } from "@/components/ui/field"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useReferenceTitles } from "@/hooks/use-reference-titles"
-import type { EnumValue, KindInfo } from "@/lib/api/types"
+import type { KindInfo } from "@/lib/api/types"
 import { kindByIdentity } from "@/lib/definition"
+import { type EnumProperty } from "@/lib/enum-hue"
+import { enumLabel } from "@/lib/grid-values"
 import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import {
   asBag,
@@ -59,7 +60,6 @@ import {
   asRef,
   asRefs,
   elementField,
-  humanizeName,
   objectFields,
   type FieldBag,
   type FormField,
@@ -71,20 +71,15 @@ import { TO_ANY, elementSpec, formatValue } from "@/lib/record-schema"
 import { stateWord } from "@/lib/state-words"
 import { cn } from "@/lib/utils"
 
-/** The label an enum value reads as: its authored label, else its value
- * humanized. */
-function enumLabel(option: EnumValue): string {
-  return option.label || humanizeName(option.value)
-}
-
-/** An enum's values as choices. A deprecated value is never offered; the one
- * held keeps its row, so the list says what is there. */
-function enumChoices(options: EnumValue[], held: string): Choice[] {
-  return options
+/** An enum's values as choices, each on its tag. A deprecated value is never
+ * offered; the one held keeps its row, so the list says what is there. */
+function enumChoices(prop: EnumProperty, held: string): ChoiceOption[] {
+  return (prop.values ?? [])
     .filter((o) => !o.deprecated || o.value === held)
     .map((o) => ({
       value: o.value,
-      label: enumLabel(o),
+      label: enumLabel(prop, o.value),
+      display: <EnumTag prop={prop} value={o.value} />,
       hint: o.deprecated ? "no longer offered" : undefined,
     }))
 }
@@ -251,7 +246,10 @@ export function PropertyField({
         <PropertyChoice
           id={id}
           label={`Choose ${field.label}`}
-          choices={enumChoices(field.options ?? [], text)}
+          choices={enumChoices(
+            { name: field.name, values: field.options },
+            text
+          )}
           value={text}
           onChange={onChange}
           clearLabel={field.required ? undefined : "Clear"}
@@ -286,8 +284,10 @@ export function PropertyField({
             choices={(field.spec.states ?? []).map((state) => ({
               value: state,
               label: stateWord(state),
-              node: <StateBadge value={state} initial={initial} />,
+              display: <StateBadge value={state} initial={initial} />,
             }))}
+            // A state's badge says its stored value itself in technical mode.
+            showValues={false}
             value={text}
             onChange={onChange}
             invalid={Boolean(error)}
@@ -624,7 +624,7 @@ function ItemList({
               <PropertyChoice
                 id={i === 0 ? id : undefined}
                 label={`${field.label} ${i + 1}`}
-                choices={enumChoices(item.values, value)}
+                choices={enumChoices(item, value)}
                 value={value}
                 onChange={(next) => change(i, next)}
                 invalid={invalid}
@@ -710,7 +710,7 @@ function ReferenceField({
             choices={kinds.map((k) => ({
               value: k.identity,
               label: displayPlural(k),
-              node: (
+              display: (
                 <>
                   <KindGlyph kind={k} size="xs" />
                   {displayPlural(k)}

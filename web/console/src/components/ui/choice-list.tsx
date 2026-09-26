@@ -1,5 +1,6 @@
 /** One keyboard-driven list of choices, for every place a reader picks from a
- * declared set: a filter's states and enum values, a property's value. Each
+ * declared set: a filter's states and enum values, a property's value on the
+ * sheet and in the create form, a state's moves. Each
  * row reads in display words (a state's word, an enum's label) and, with
  * Technical details on, the stored value beside them; the stored value is
  * what the caller hears. Arrow keys move, Enter picks, and a list long
@@ -9,7 +10,7 @@
  * row's end as the reference picker draws it; single marks the chosen row
  * with a check. */
 
-import { useState, type ReactNode } from "react"
+import { useState, type ReactNode, type Ref } from "react"
 import { CheckIcon } from "lucide-react"
 
 import {
@@ -40,6 +41,9 @@ export interface ChoiceOption {
 /** How many choices a list shows before it offers a filter box. */
 export const CHOICE_FILTER_FROM = 8
 
+const ROW =
+  "min-h-[30px] gap-2 rounded-[5px] px-2 text-[13px] data-selected:bg-hover [&>svg:last-child]:hidden"
+
 export function ChoiceList({
   options,
   selected,
@@ -48,6 +52,10 @@ export function ChoiceList({
   label,
   showValues,
   filter,
+  heading,
+  clearLabel,
+  footer,
+  ref,
   className,
 }: {
   options: ChoiceOption[]
@@ -64,12 +72,21 @@ export function ChoiceList({
   showValues?: boolean
   /** Offer the filter box; by default once the list is long. */
   filter?: boolean
+  /** A quiet line above the choices ("Move to"). */
+  heading?: ReactNode
+  /** Offered last while something is chosen; picking it hears `[]`. */
+  clearLabel?: string
+  /** A quiet line under the choices ("Saving"). */
+  footer?: ReactNode
+  /** The list's root, focusable, for a popover's initial focus: the keys
+   * drive the list from there when it has no filter box. */
+  ref?: Ref<HTMLDivElement>
   className?: string
 }) {
   const [technical] = useTechnicalDetails()
   const values = showValues ?? technical
   const chosen = new Set(selected)
-  const searchable = filter ?? options.length > CHOICE_FILTER_FROM
+  const searchable = filter ?? options.length >= CHOICE_FILTER_FROM
   // The highlight opens on what is chosen, so Enter keeps it and one arrow
   // reaches its neighbour.
   const [highlight, setHighlight] = useState(
@@ -90,11 +107,13 @@ export function ChoiceList({
 
   return (
     <Command
+      ref={ref}
+      tabIndex={-1}
       loop
       value={highlight}
       onValueChange={setHighlight}
       data-slot="choice-list"
-      className={cn("rounded-lg! bg-transparent p-0", className)}
+      className={cn("rounded-lg! bg-transparent p-0 outline-none", className)}
     >
       {searchable && <CommandInput placeholder="Filter…" autoFocus />}
       <CommandList
@@ -105,6 +124,9 @@ export function ChoiceList({
         <CommandEmpty className="py-3 text-[13px] text-faint">
           Nothing matches.
         </CommandEmpty>
+        {heading && (
+          <div className="px-2 pt-1 pb-1.5 text-xs text-faint">{heading}</div>
+        )}
         <CommandGroup className="p-0">
           {options.map((option) => {
             const on = chosen.has(option.value)
@@ -116,10 +138,12 @@ export function ChoiceList({
                 disabled={option.disabled}
                 data-chosen={on || undefined}
                 onSelect={() => pick(option.value)}
-                className="h-[30px] gap-2 rounded-[5px] px-2 text-[13px] data-selected:bg-hover [&>svg:last-child]:hidden"
+                className={ROW}
               >
-                <span className="min-w-0 truncate">
-                  {option.display ?? option.label}
+                <span className="flex min-w-0 items-center gap-1.5">
+                  {option.display ?? (
+                    <span className="truncate">{option.label}</span>
+                  )}
                 </span>
                 {values && option.value !== option.label && (
                   <span className="shrink-0 font-mono text-[11px] text-faint">
@@ -155,7 +179,22 @@ export function ChoiceList({
               </CommandItem>
             )
           })}
+          {clearLabel && selected.length > 0 && (
+            <CommandItem
+              value="__clear"
+              keywords={["clear", clearLabel]}
+              onSelect={() => onChange([])}
+              className={cn(ROW, "text-muted-foreground")}
+            >
+              {clearLabel}
+            </CommandItem>
+          )}
         </CommandGroup>
+        {footer && (
+          <div className="flex items-center gap-2 px-2 py-1 text-xs text-faint">
+            {footer}
+          </div>
+        )}
       </CommandList>
     </Command>
   )

@@ -355,7 +355,7 @@ describe("PropertySheet inline edit", () => {
     )
     expect(row("relationship").textContent).toContain("Colleague")
     fireEvent.click(valueOf("relationship")!)
-    expect(names()).toContain("Colleagueno longer offered")
+    expect(names()).toContain("Colleagueno longer offered(chosen)")
   })
 
   it("says the server's refusal under the row", async () => {

@@ -107,7 +107,8 @@ describe("RecordConfigForm", () => {
     fireEvent.click(screen.getByLabelText(/Sync cadence/))
     const byValue = Object.fromEntries(offered())
     // The visible text is the declared name; the stored value stays raw.
-    expect(byValue.daily).toBe("Once a day")
+    // The held one also tells a screen reader it is the one chosen.
+    expect(byValue.daily).toBe("Once a day(chosen)")
     expect(byValue.hourly).toBe("Every hour")
     expect(byValue.off).toBe("Off")
   })
