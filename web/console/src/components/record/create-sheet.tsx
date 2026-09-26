@@ -1,65 +1,68 @@
-/** A new record, laid out like the record it will become: the title as a
- * large input at the top, then the property rows (an icon and a label on the
- * left, the control on the right), the optional ones that start empty folded
- * into "N more", and the prose under a divider. It writes into the same
- * document the YAML lens edits (`useDocumentForm`), so the two stay one. */
+/** A new record is the record page with nothing saved yet: the title as a
+ * large input at the top, the same property sheet with the same editors, and
+ * the body under a divider. Rows read as a new record is filled in: what it
+ * must have, then what it is commonly given (the records it points at, the
+ * times it is about), and the rest folded.
+ *
+ * The sheet edits a DRAFT (`SheetDraftContext`), and the draft is the same
+ * YAML document the technical lens edits: a write lands on one key of it, so
+ * the two lenses stay one document and switching loses nothing.
+ *
+ * Nothing is named wrong before the person has said anything: a row's problem
+ * shows once its value moved from where it started, or once Create is asked
+ * for. */
 
-import { useState, type ReactNode } from "react"
-import { AlertTriangleIcon, ChevronDownIcon } from "lucide-react"
+import { useMemo, useState, type ReactNode } from "react"
+import { AlertTriangleIcon } from "lucide-react"
 
-import { SectionBoundary } from "@/components/page-error"
-import { propertyIcon } from "@/components/property-sheet/sheet-model"
-import { PropertyField } from "@/components/record/property-field"
-import { useDocumentForm } from "@/components/record/use-document-form"
+import {
+  SheetDraftContext,
+  type SheetDraft,
+} from "@/components/property-sheet/draft"
+import { PropertySheet } from "@/components/property-sheet/property-sheet"
+import type { SheetRow } from "@/components/property-sheet/sheet-rows"
+import { RecordBody } from "@/components/record/record-body"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import type { KindInfo } from "@/lib/api/types"
+import { grantHints, AGENT_KIND } from "@/lib/agent-grants"
+import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import {
   AUTHORITY_PROPERTY,
   PACKAGE_PROPERTY,
+  authorityIsDerived,
   declarationIdShape,
+  derivedAuthority,
+  derivedPackage,
+  isDeclarationKind,
+  packageIsDerived,
 } from "@/lib/declarations"
-import { displayPlural, lowerFirst, untitled } from "@/lib/kind-names"
-import { fieldOf, type FormField, type FormValue } from "@/lib/record-form"
-import { bodyProperty, systemSpecs, titleEditor } from "@/lib/record-schema"
-import { cn } from "@/lib/utils"
+import { displayName, lowerFirst, untitled } from "@/lib/kind-names"
+import { arrangeNewRecord, rowProblem } from "@/lib/record-form"
+import {
+  bodyProperty,
+  propSpecsByName,
+  systemSpecs,
+  titleEditor,
+} from "@/lib/record-schema"
+import {
+  deleteIn,
+  parseApplyDoc,
+  propertiesOf,
+  setIn,
+  type Problem,
+} from "@/lib/record-yaml"
 
-/** Whether a control holds anything yet. */
-function holds(value: FormValue | undefined): boolean {
-  if (value === undefined || value === null || value === "") return false
-  if (value === false) return false
-  if (Array.isArray(value)) return value.length > 0
-  if (typeof value === "object") {
-    if ("id" in value && "kind" in value) return Boolean(value.id)
-    return Object.keys(value).length > 0
-  }
-  return true
-}
+const same = (a: unknown, b: unknown) =>
+  JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
-function RowLabel({ field, htmlFor }: { field: FormField; htmlFor: string }) {
-  const [technical] = useTechnicalDetails()
-  const { icon: Icon } = propertyIcon(field.spec)
+/** The one error line under a row or the heading, in the sheet's style. */
+function RowError({ children }: { children: ReactNode }) {
   return (
-    <label
-      htmlFor={htmlFor}
-      title={field.description}
-      className="flex min-h-9 min-w-0 items-center gap-[7px] pr-1.5 pl-0.5 text-[13.5px] text-muted-foreground"
+    <p
+      role="alert"
+      className="mt-1 rounded-md bg-bad-soft px-2.5 py-1.5 text-[12.5px] text-destructive"
     >
-      <Icon aria-hidden className="size-3.5 shrink-0 text-faint" />
-      <span className="truncate">
-        {field.label}
-        {field.required && (
-          <span aria-hidden className="text-destructive">
-            {" "}
-            *
-          </span>
-        )}
-      </span>
-      {technical && field.label !== field.name && (
-        <span className="truncate font-mono text-[11.5px] text-faint">
-          {field.name}
-        </span>
-      )}
-    </label>
+      {children}
+    </p>
   )
 }
 
@@ -69,227 +72,230 @@ export function CreateSheet({
   kinds,
   onChange,
   meta,
+  seed,
+  problems = [],
+  attempted = false,
 }: {
   text: string
+  /** The document the new record started from; absent, the first text this
+   * sheet was handed. A row has been changed when it moved from here. */
+  seed?: string
   kind: KindInfo
   kinds: KindInfo[]
   onChange: (text: string) => void
   /** One quiet line under the title. */
   meta?: ReactNode
+  /** The document's problems, as the create would meet them. */
+  problems?: Problem[]
+  /** Create was asked for: every problem is named, touched or not. */
+  attempted?: boolean
 }) {
   const [technical] = useTechnicalDetails()
-  const form = useDocumentForm({ text, kind, onChange })
-  // Undefined where the kind's template holds no one property the owner
-  // types: the heading is then derived, and a typed `title` would be ignored.
-  const titleName = titleEditor(kind)?.name
+  const properties = propertiesOf(text)
+  const [started] = useState(() => propertiesOf(seed ?? text) ?? {})
+  const declared = isDeclarationKind(kind.identity)
+  const derivesAuthority = authorityIsDerived(kind.identity)
+  const derivesPackage = packageIsDerived(kind.identity)
+  const titleSpec = titleEditor(kind)
   const body = bodyProperty(kind)
-  const titleField = form.fields.find((f) => f.name === titleName)
-  const bodyField = body
-    ? form.fields.find((f) => f.name === body.name)
-    : undefined
-  // A temporal trait binds a hot column the kind may not declare; a new
-  // record may set it like any other property.
-  const [temporal] = useState(() =>
-    systemSpecs(kind)
-      .filter(
-        (s) => s.name !== "title" && !form.fields.some((f) => f.name === s.name)
-      )
-      .map((s) => fieldOf({ ...s, description: undefined }))
-  )
-  const rows = [...form.fields, ...temporal].filter(
-    (f) => f !== titleField && f !== bodyField
-  )
-  // Which rows start open is decided once: a row the person empties again
-  // must not vanish under their cursor.
-  const [initiallyShown] = useState(
-    () =>
-      new Set(
-        rows
-          .filter(
-            (f) =>
-              f.required || f.control === "state" || holds(form.values[f.name])
-          )
-          .map((f) => f.name)
-      )
-  )
-  const [more, setMore] = useState(false)
-  const shown = more ? rows : rows.filter((f) => initiallyShown.has(f.name))
-  const folded = rows.filter((f) => !initiallyShown.has(f.name))
+  const noun = lowerFirst(displayName(kind))
+  const id = idOf(text)
 
-  if (form.properties === undefined) {
+  /** Whether a property moved from where the new record started. */
+  const changed = (name: string) => !same(properties?.[name], started[name])
+  /** Whether a property has been said anything about: it changed, or Create
+   * was asked for. */
+  const asked = (name: string) => attempted || changed(name)
+  const specs = useMemo(
+    () =>
+      new Map(
+        [...systemSpecs(kind), ...propSpecsByName(kind)].map((s) => [s.name, s])
+      ),
+    [kind]
+  )
+  const errors: Record<string, string> = {}
+  let idError: string | undefined
+  for (const problem of problems) {
+    if (problem.severity !== "error" || !problem.path) continue
+    if (problem.path === "metadata.id") {
+      if (attempted || id) idError ??= problem.message.replace(/`/g, "")
+      continue
+    }
+    const spec = specs.get(problem.path)
+    if (!spec || !asked(spec.name) || errors[spec.name]) continue
+    errors[spec.name] = rowProblem(problem, spec)
+  }
+
+  const draft: SheetDraft = {
+    write(props) {
+      let doc = text
+      for (const [name, value] of Object.entries(props)) {
+        const path = ["data", "properties", name]
+        doc = value === null ? deleteIn(doc, path) : setIn(doc, path, value)
+      }
+      onChange(doc)
+    },
+    arrange(rows) {
+      const offered = rows.flatMap((row): SheetRow[] => {
+        if (row.spec.kind === "state") {
+          // A new record starts where the machine starts it; a move is a
+          // transition, and a transition needs a record to move.
+          return [
+            {
+              ...row,
+              field: undefined,
+              hint: `Set by moving it after the ${noun} exists`,
+            },
+          ]
+        }
+        if (!row.field) return []
+        if (derivesAuthority && row.name === AUTHORITY_PROPERTY) return []
+        if (derivesPackage && row.name === PACKAGE_PROPERTY) return []
+        return [row]
+      })
+      return arrangeNewRecord(
+        kind,
+        offered,
+        (row) => Boolean(errors[row.name]) || changed(row.name)
+      )
+    },
+    errors,
+  }
+
+  if (properties === undefined) {
     return (
       <p className="py-4 text-sm text-muted-foreground">
-        This document does not parse yet, so the form cannot read it. Fix the
-        YAML and the fields come back.
+        This YAML doesn’t read as a record yet, so the properties can’t be
+        shown. Fix it in the YAML and they come back.
       </p>
     )
   }
 
-  const titleValue = titleField
-    ? String(form.values[titleField.name] ?? "")
-    : typeof form.properties.title === "string"
-      ? form.properties.title
-      : ""
-  const showId = form.declared || technical
+  const record: SubstrateRecord = {
+    id,
+    kind: kind.identity,
+    properties,
+    labels: {},
+    version: 0,
+    createdAt: "",
+    updatedAt: "",
+  }
+
+  function setRecordId(next: string) {
+    let doc = setIn(text, ["metadata", "id"], next)
+    const authority = derivedAuthority(kind.identity, next)
+    if (derivesAuthority && authority !== undefined) {
+      doc = setIn(doc, ["data", "properties", AUTHORITY_PROPERTY], authority)
+    }
+    const pkg = derivedPackage(kind.identity, next)
+    if (derivesPackage && pkg !== undefined) {
+      doc = setIn(doc, ["data", "properties", PACKAGE_PROPERTY], pkg)
+    }
+    onChange(doc)
+  }
+
+  function setTitle(value: string) {
+    if (!titleSpec) return
+    const path = ["data", "properties", titleSpec.name]
+    onChange(value ? setIn(text, path, value) : deleteIn(text, path))
+  }
+
+  const titleValue = titleSpec ? String(properties[titleSpec.name] ?? "") : ""
+  const hints = kind.identity === AGENT_KIND ? grantHints(properties) : []
+  const elsewhere = Object.keys(properties).filter((name) => !specs.has(name))
+  const showId = declared || technical
 
   return (
-    <div data-slot="create-sheet">
-      {titleName ? (
-        <input
-          aria-label={titleField?.label ?? "Title"}
-          placeholder={untitled(kind)}
-          value={titleValue}
-          autoFocus
-          onChange={(e) =>
-            titleField
-              ? form.commit(titleField, e.target.value)
-              : form.setProperty("title", e.target.value)
-          }
-          className="mt-2.5 mb-1 w-full border-0 bg-transparent text-[32px] leading-[1.15] font-bold tracking-[-0.025em] outline-none placeholder:text-faint"
-        />
-      ) : (
-        <p className="mt-2.5 mb-1 text-[32px] leading-[1.15] font-bold tracking-[-0.025em] text-faint">
-          {untitled(kind)}
-        </p>
-      )}
-      {titleField && form.errors[titleField.name] && titleValue && (
-        <p role="alert" className="text-[12.5px] text-destructive">
-          {form.errors[titleField.name]}
-        </p>
-      )}
+    <SheetDraftContext.Provider value={draft}>
+      <div data-slot="create-sheet">
+        {titleSpec ? (
+          <input
+            aria-label={titleSpec.label}
+            placeholder={untitled(kind)}
+            value={titleValue}
+            autoFocus
+            onChange={(e) => setTitle(e.target.value)}
+            className="mt-2.5 mb-1 w-full border-0 bg-transparent text-[32px] leading-[1.15] font-bold tracking-[-0.025em] outline-none placeholder:text-faint"
+          />
+        ) : (
+          <p className="mt-2.5 mb-1 text-[32px] leading-[1.15] font-bold tracking-[-0.025em] text-faint">
+            {untitled(kind)}
+          </p>
+        )}
+        {titleSpec && errors[titleSpec.name] && (
+          <RowError>{errors[titleSpec.name]}</RowError>
+        )}
 
-      {meta && (
-        <div className="flex flex-wrap items-center gap-x-3.5 text-[12.5px] text-faint">
-          {meta}
-        </div>
-      )}
+        {meta && (
+          <div className="flex flex-wrap items-center gap-x-3.5 text-[12.5px] text-faint">
+            {meta}
+          </div>
+        )}
 
-      {form.hints.length > 0 && (
-        <ul className="mt-3 flex flex-col gap-1.5 rounded-md border border-warning/40 bg-warn-soft p-3">
-          {form.hints.map((hint) => (
-            <li
-              key={hint.function}
-              className="flex items-start gap-2 text-xs text-muted-foreground"
-            >
-              <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
-              <span>{hint.message}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+        {hints.length > 0 && (
+          <ul className="mt-3 flex flex-col gap-1.5 rounded-md border border-warning/40 bg-warn-soft p-3">
+            {hints.map((hint) => (
+              <li
+                key={hint.function}
+                className="flex items-start gap-2 text-xs text-muted-foreground"
+              >
+                <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
+                <span>{hint.message}</span>
+              </li>
+            ))}
+          </ul>
+        )}
 
-      <div className="my-[18px] grid grid-cols-[minmax(96px,120px)_minmax(0,1fr)] gap-x-2 gap-y-1.5 sm:grid-cols-[minmax(120px,170px)_minmax(0,1fr)]">
         {showId && (
-          <>
+          <div className="mt-[18px] grid grid-cols-[minmax(96px,120px)_minmax(0,1fr)] sm:grid-cols-[minmax(120px,170px)_minmax(0,1fr)]">
             <label
               htmlFor="new-record-id"
               className="flex min-h-9 items-center pl-0.5 text-[13.5px] text-muted-foreground"
             >
               ID
-              {form.declared && (
-                <span aria-hidden className="text-destructive">
-                  {" "}
-                  *
-                </span>
-              )}
             </label>
-            <div className="flex min-h-9 flex-col justify-center">
+            <div className="flex min-h-9 min-w-0 flex-col justify-center px-2">
               <input
                 id="new-record-id"
-                value={form.id}
+                value={id}
+                aria-invalid={Boolean(idError)}
                 placeholder={
-                  form.declared
+                  declared
                     ? declarationIdShape(kind.identity)
                     : "Leave empty and one is made for you"
                 }
-                onChange={(e) => form.setRecordId(e.target.value)}
-                className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 font-mono text-[13px] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                onChange={(e) => setRecordId(e.target.value)}
+                className="h-8 w-full rounded-md border border-input bg-transparent px-2 font-mono text-[13px] outline-none placeholder:font-sans focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary-soft"
               />
             </div>
-          </>
+            {idError && (
+              <div className="col-start-2 px-2">
+                <RowError>{idError}</RowError>
+              </div>
+            )}
+          </div>
         )}
-        {shown.map((field) => {
-          const id = `new-${field.name}`
-          return (
-            <div
-              key={field.name}
-              className="contents"
-              data-property={field.name}
-            >
-              {/* One row the console cannot draw fails alone: the rest of
-                  the sheet, and the YAML lens, still create the record. A
-                  change to the document tries it again. */}
-              <SectionBoundary
-                name={field.label}
-                resetKey={text}
-                className="col-span-full px-0.5"
-              >
-                <RowLabel field={field} htmlFor={id} />
-                <div className="flex min-h-9 min-w-0 flex-col justify-center gap-1 py-0.5">
-                  <PropertyField
-                    field={field}
-                    value={form.values[field.name]}
-                    onChange={(next) => form.commit(field, next)}
-                    mode="create"
-                    error={form.errors[field.name]}
-                    kinds={kinds}
-                    idPrefix="new"
-                    bare
-                    derivedNote={
-                      form.derivesAuthority && field.name === AUTHORITY_PROPERTY
-                        ? "Taken from the ID, its first segment."
-                        : form.derivesPackage && field.name === PACKAGE_PROPERTY
-                          ? "Taken from the ID, its second segment."
-                          : undefined
-                    }
-                  />
-                  {field.control === "state" && (
-                    <span className="text-xs text-faint">
-                      New {lowerFirst(displayPlural(kind))} start here.
-                    </span>
-                  )}
-                </div>
-              </SectionBoundary>
-            </div>
-          )
-        })}
-        {folded.length > 0 && !more && (
-          <button
-            type="button"
-            onClick={() => setMore(true)}
-            className="col-span-full flex items-center gap-1.5 px-0.5 py-1.5 text-left text-[13px] text-faint hover:text-muted-foreground"
-          >
-            <ChevronDownIcon aria-hidden className="size-3.5" />
-            <span className="truncate">
-              {folded.length} more: {folded.map((f) => f.label).join(", ")}
-            </span>
-          </button>
+
+        <PropertySheet record={record} kind={kind} kinds={kinds} />
+
+        {body && <RecordBody record={record} spec={body} readOnly={false} />}
+        {body && errors[body.name] && <RowError>{errors[body.name]}</RowError>}
+
+        {technical && elsewhere.length > 0 && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            <span className="font-mono">{elsewhere.join(", ")}</span>{" "}
+            {elsewhere.length === 1 ? "is" : "are"} in the YAML but not
+            declared, so {elsewhere.length === 1 ? "it isn’t" : "they aren’t"}{" "}
+            shown here. {elsewhere.length === 1 ? "It is" : "They are"} saved as
+            written.
+          </p>
         )}
       </div>
-
-      {bodyField && (
-        <>
-          <div className="my-[18px] h-px bg-border" />
-          <textarea
-            aria-label={bodyField.label}
-            placeholder={`Add ${lowerFirst(bodyField.label)}…`}
-            value={String(form.values[bodyField.name] ?? "")}
-            rows={5}
-            onChange={(e) => form.commit(bodyField, e.target.value)}
-            className={cn(
-              "w-full max-w-[68ch] resize-y border-0 bg-transparent p-0 leading-[1.65] outline-none placeholder:text-faint"
-            )}
-          />
-        </>
-      )}
-
-      {technical && form.elsewhere.length > 0 && (
-        <p className="mt-3 text-xs text-muted-foreground">
-          <span className="font-mono">{form.elsewhere.join(", ")}</span>{" "}
-          {form.elsewhere.length === 1 ? "is" : "are"} in the document but not
-          offered here. The YAML edits them, and they are written as they stand.
-        </p>
-      )}
-    </div>
+    </SheetDraftContext.Provider>
   )
+}
+
+function idOf(text: string): string {
+  const id = parseApplyDoc(text).value?.metadata?.id
+  return typeof id === "string" ? id : ""
 }

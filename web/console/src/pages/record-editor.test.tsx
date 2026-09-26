@@ -19,7 +19,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { Toaster } from "@/components/ui/toast"
-import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+import { ApiError, type KindInfo, type SubstrateRecord } from "@/lib/api/types"
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
@@ -165,20 +165,33 @@ describe("the new-record sheet", () => {
   it("opens as the record it will become: a title, rows, and the rest folded", () => {
     renderEditor()
     expect(screen.getByLabelText(/^Title/)).toBeTruthy()
-    expect(screen.getByLabelText(/^Status/)).toBeTruthy()
-    expect(screen.queryByLabelText(/Due at/)).toBeNull()
-    expect(screen.getByLabelText(/^Effort/)).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: /1 more: Due at/ }))
-    expect(screen.getByLabelText(/Due at/)).toBeTruthy()
+    // The time it is about is asked for; the rest folds.
+    expect(screen.getByRole("button", { name: "Edit Due at" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Edit Effort" })).toBeNull()
+    fireEvent.click(
+      screen.getByRole("button", { name: /2 more: Status, Effort/ })
+    )
+    expect(screen.getByRole("button", { name: "Edit Effort" })).toBeTruthy()
     // Nothing is named wrong before the person asks to create.
-    expect(screen.queryByText(/`title` is required/)).toBeNull()
+    expect(screen.queryAllByRole("alert")).toEqual([])
   })
 
   it("names what is missing when asked to create, and creates nothing", () => {
     renderEditor()
     fireEvent.click(screen.getByRole("button", { name: "Create task" }))
-    expect(screen.getByText(/`title` is required/)).toBeTruthy()
+    expect(screen.getByRole("alert").textContent).toBe("Title is required.")
     expect(createRecord).not.toHaveBeenCalled()
+  })
+
+  it("names a problem once the value it is about moved, not before", () => {
+    renderEditor()
+    fireEvent.change(screen.getByLabelText(/^Title/), {
+      target: { value: "hi" },
+    })
+    fireEvent.change(screen.getByLabelText(/^Title/), {
+      target: { value: "" },
+    })
+    expect(screen.getByRole("alert").textContent).toBe("Title is required.")
   })
 
   it("carries an edit between the sheet and the YAML: one document", async () => {
@@ -206,16 +219,15 @@ describe("the new-record sheet", () => {
     fireEvent.change(screen.getByLabelText(/^Title/), {
       target: { value: "hi" },
     })
-    fireEvent.click(screen.getByRole("button", { name: /more:/ }))
-    fireEvent.change(screen.getByLabelText(/Due at/), {
-      target: { value: "yesterday" },
-    })
-    expect(screen.getByText(/expected a timestamp/)).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Write YAML" }))
     const yaml = await yamlLens()
     yaml.replace(yaml.text().replace('dueAt: ""', "dueAt: yesterday"))
     await waitFor(() =>
       expect(screen.getByText(/`dueAt`: expected a timestamp/)).toBeTruthy()
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Use the form" }))
+    expect(screen.getByRole("alert").textContent).toMatch(
+      /^Expected a timestamp/
     )
     fireEvent.click(screen.getByRole("button", { name: "Create task" }))
     expect(createRecord).not.toHaveBeenCalled()
@@ -227,9 +239,16 @@ describe("the new-record sheet", () => {
     fireEvent.change(screen.getByLabelText(/^Title/), {
       target: { value: "hi" },
     })
-    fireEvent.change(screen.getByLabelText(/^Effort/), {
-      target: { value: "3" },
-    })
+    fireEvent.click(screen.getByRole("button", { name: /more:/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Edit Effort" }))
+    const effort = screen.getByLabelText("Effort")
+    fireEvent.change(effort, { target: { value: "3" } })
+    fireEvent.keyDown(effort, { key: "Enter" })
+    await waitFor(() =>
+      expect(
+        document.querySelector("[data-property=effort]")?.textContent
+      ).toContain("3")
+    )
     fireEvent.click(screen.getByRole("button", { name: "Create task" }))
     await waitFor(() => expect(createRecord).toHaveBeenCalled())
     const [authority, pkg, name, input] = createRecord.mock.calls[0]
@@ -242,6 +261,22 @@ describe("the new-record sheet", () => {
       status: "open",
     })
     expect(input.id).toBeUndefined()
+  })
+
+  it("says why the server refused, in words", async () => {
+    createRecord.mockRejectedValue(
+      new ApiError("validation", "project must exist", 422)
+    )
+    renderEditor()
+    fireEvent.change(screen.getByLabelText(/^Title/), {
+      target: { value: "hi" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Create task" }))
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        "Couldn’t save: project must exist"
+      )
+    )
   })
 
   it("formats the document on demand, in the YAML", async () => {

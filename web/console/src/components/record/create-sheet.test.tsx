@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /** The new-record sheet, held to every kind this repository ships: each one
- * opens, and every row it folds away opens too, without a throw. A row the
- * console cannot draw fails alone, in words, and the rest of the sheet stays
- * usable. */
+ * opens, every row it folds away opens too, and every row's editor opens,
+ * without a throw. A new record asks first for what it must have, then for
+ * the records it points at and the times it is about, and folds the rest. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
@@ -18,21 +18,6 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
   useNavigate: () => vi.fn(),
 }))
-
-// One property name no shipped kind declares stands in for a row the console
-// cannot draw.
-const BROKEN = "brokenrow"
-vi.mock("@/components/record/property-field", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("@/components/record/property-field")>()
-  return {
-    ...actual,
-    PropertyField: (props: Parameters<typeof actual.PropertyField>[0]) => {
-      if (props.field.name === BROKEN) throw new Error("a row that cannot draw")
-      return <actual.PropertyField {...props} />
-    },
-  }
-})
 
 import { CreateSheet } from "./create-sheet"
 
@@ -72,8 +57,26 @@ function shipped(): KindInfo[] {
 
 const KINDS = shipped()
 const TASK = "samples.substrate.reamde.dev/tasks/task"
+const PERSON = "samples.substrate.reamde.dev/people/person"
 
-function renderSheet(kind: KindInfo, kinds: KindInfo[] = KINDS) {
+function kindOf(identity: string): KindInfo {
+  const kind = KINDS.find((k) => k.identity === identity)
+  if (!kind) throw new Error(`no shipped kind ${identity}`)
+  return kind
+}
+
+/** The properties the sheet shows, in order. */
+function shownRows(): string[] {
+  return [
+    ...document.querySelectorAll("[data-slot=property-sheet] [data-property]"),
+  ].map((el) => el.getAttribute("data-property") ?? "")
+}
+
+function renderSheet(
+  kind: KindInfo,
+  kinds: KindInfo[] = KINDS,
+  technical = true
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, enabled: false } },
   })
@@ -85,7 +88,7 @@ function renderSheet(kind: KindInfo, kinds: KindInfo[] = KINDS) {
           favorites: [],
           sidebarOpen: true,
           ...DEFAULT_SETTINGS,
-          technicalDetails: true,
+          technicalDetails: technical,
         },
         busy: false,
         change: () => {},
@@ -119,68 +122,72 @@ describe("the create sheet", () => {
   })
 
   it.each(KINDS.map((k) => [k.identity, k] as const))(
-    "%s draws every row, the folded ones too",
+    "%s draws every row, the folded ones too, and opens every editor",
     (_, kind) => {
-      const failed = vi.spyOn(console, "error")
       renderSheet(kind)
       openFold()
       expect(screen.queryByRole("button", { name: /\d+ more:/ })).toBeNull()
-      // A caught row says so in words; none may.
-      expect(screen.queryByText(/couldn’t be shown/)).toBeNull()
-      expect(
-        failed.mock.calls.filter((c) => String(c[0]).endsWith(" failed"))
-      ).toEqual([])
-      failed.mockRestore()
+      // Untouched, nothing is wrong yet.
+      expect(screen.queryAllByRole("alert")).toEqual([])
+      const rows = [...document.querySelectorAll("[data-property]")].map(
+        (el) => el.getAttribute("data-property") ?? ""
+      )
+      for (const name of rows) {
+        const edit = document.querySelector(
+          `[data-property="${name}"] [role=button]`
+        )
+        if (edit) fireEvent.click(edit)
+      }
     }
   )
 
+  it("asks a task for its Assignee, Project and Due at, and folds the rest", () => {
+    renderSheet(kindOf(TASK), KINDS, false)
+    expect(shownRows()).toEqual(["assignee", "project", "dueAt"])
+    // The series' machinery and the time a move stamps fold last.
+    expect(
+      screen.getByRole("button", { name: /\d+ more:/ }).textContent
+    ).toMatch(/^11 more: Status, Priority, URL, Recurrence of, Source,/)
+    expect(screen.queryAllByRole("alert")).toEqual([])
+  })
+
+  it("starts a task where its machine starts it, and says a move comes later", () => {
+    renderSheet(kindOf(TASK), KINDS, false)
+    openFold()
+    const status = document.querySelector("[data-property=status]")
+    expect(status?.textContent).toContain("Open")
+    expect(status?.textContent).toContain(
+      "Set by moving it after the task exists"
+    )
+    expect(screen.queryByRole("button", { name: "Edit Status" })).toBeNull()
+  })
+
   // The task's `source` points at any kind: until one is chosen its picker
   // names no kind, and it must not ask for the plural of nothing.
-  it("opens a task's Assignee, Project and any-kind Source", () => {
-    const task = KINDS.find((k) => k.identity === TASK)
-    if (!task) throw new Error("the tasks sample ships no task kind")
-    renderSheet(task)
+  it("opens a task's any-kind Source on a collection to pick first", () => {
+    renderSheet(kindOf(TASK))
     openFold()
-    expect(screen.getByLabelText(/^Assignee/)).toBeTruthy()
-    expect(screen.getByLabelText(/^Project/)).toBeTruthy()
-    expect(screen.getByLabelText(/^Due at/)).toBeTruthy()
-    // The template's blank lines are "not set", and the write leaves them
-    // out: an untouched row names no problem.
-    expect(screen.queryAllByRole("alert").map((a) => a.textContent)).toEqual([])
-    const source = document.getElementById("new-source")
-    if (!source) throw new Error("the task's Source row is not drawn")
+    fireEvent.click(screen.getByRole("button", { name: "Edit Source" }))
+    expect(screen.getByText("Pick a collection")).toBeTruthy()
+    const source = document.getElementById("sheet-source")
+    if (!source) throw new Error("the task's Source picker is not drawn")
+    expect(source.textContent).toContain("Pick a collection first")
     fireEvent.click(source)
     expect(
       screen.getByPlaceholderText("Search records, or type an id")
     ).toBeTruthy()
-    expect(screen.getByText(/its records are listed here/)).toBeTruthy()
+    expect(
+      screen.getByText(/Pick a collection first, and its records/)
+    ).toBeTruthy()
   })
 
-  it("fails one row alone and keeps the rest of the sheet", () => {
-    const quiet = vi.spyOn(console, "error").mockImplementation(() => {})
-    const kind: KindInfo = {
-      identity: "example.com/things/thing",
-      name: "thing",
-      authority: "example.com",
-      package: "things",
-      version: 1,
-      source: "installed",
-      description: "",
-      definition: {
-        properties: {
-          name: { type: "string" },
-          [BROKEN]: { type: "string", required: true },
-          note: { type: "string", required: true },
-        },
-      },
-    }
-    renderSheet(kind, [kind])
-    quiet.mockRestore()
-    expect(screen.getByRole("alert").textContent).toContain(
-      "couldn’t be shown: a row that cannot draw"
-    )
-    expect(screen.getByLabelText(/^Note/)).toBeTruthy()
+  it("names nothing wrong on a new person before anything is typed", () => {
+    renderSheet(kindOf(PERSON), KINDS, false)
     openFold()
-    expect(screen.getByLabelText(/^Name/)).toBeTruthy()
+    expect(shownRows()).toContain("relationship")
+    expect(screen.queryAllByRole("alert")).toEqual([])
+    // An enum reads in its display words, never its stored values.
+    fireEvent.click(screen.getByRole("button", { name: "Edit Relationship" }))
+    expect(screen.getByText("Public figure")).toBeTruthy()
   })
 })

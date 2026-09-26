@@ -8,13 +8,16 @@ import { describe, expect, it } from "vitest"
 
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import {
+  arrangeNewRecord,
   buildFormFields,
   humanizeName,
   initialValues,
+  newRecordBands,
   parseList,
   toProperties,
   validate,
 } from "./record-form"
+import { propSpecsByName } from "./record-schema"
 
 function typeWith(
   properties: Record<string, Record<string, unknown>>
@@ -620,5 +623,107 @@ describe("link data on a reference", () => {
       { ref: `${ORG}/acme`, role: "CTO", since: "2020-01-01" },
       `${ORG}/umbrella`,
     ])
+  })
+})
+
+describe("a new record's rows", () => {
+  const task: KindInfo = {
+    identity: "example.com/tasks/task",
+    name: "task",
+    authority: "example.com",
+    package: "tasks",
+    version: 1,
+    source: "installed",
+    description: "",
+    definition: {
+      traits: [
+        "substrate.reamde.dev/core/temporal(point: dueAt)",
+        "substrate.reamde.dev/core/recurring",
+        "substrate.reamde.dev/core/override",
+      ],
+      properties: {
+        name: { type: "string", required: true },
+        url: { type: "url" },
+        priority: { type: "enum", values: ["low", "high"] },
+        dueAt: { type: "datetime" },
+        startedOn: { type: "date" },
+        completedAt: { type: "datetime" },
+        exdates: { type: "datetime", repeated: true },
+        recurrence: { type: "recurrence" },
+        recurrenceOf: { type: "reference", kind: "example.com/tasks/task" },
+        originalAt: { type: "datetime" },
+        assignee: { type: "reference", kind: "example.com/people/person" },
+        watchers: {
+          type: "reference",
+          kind: "example.com/people/person",
+          repeated: true,
+        },
+        source: { type: "reference" },
+        status: {
+          type: "state",
+          states: ["open", "done"],
+          initial: "open",
+          transitions: [
+            { from: "open", to: "done", stamps: { completedAt: "now" } },
+          ],
+        },
+      },
+    },
+  }
+  const rows = propSpecsByName(task).map((spec) => ({ name: spec.name, spec }))
+
+  it("asks for what it must have, then what it points at and when", () => {
+    const bands = newRecordBands(
+      task,
+      rows.map((r) => r.spec)
+    )
+    expect(Object.fromEntries(bands)).toEqual({
+      assignee: "common",
+      completedAt: "later",
+      dueAt: "common",
+      exdates: "later",
+      name: "required",
+      originalAt: "later",
+      priority: "rest",
+      recurrence: "later",
+      recurrenceOf: "later",
+      source: "later",
+      startedOn: "common",
+      status: "rest",
+      url: "rest",
+      watchers: "common",
+    })
+  })
+
+  it("shows the required and the common, folds the rest, the seldom-typed last", () => {
+    const { shown, folded } = arrangeNewRecord(task, rows)
+    expect(shown.map((r) => r.name)).toEqual([
+      "name",
+      "assignee",
+      "dueAt",
+      "startedOn",
+      "watchers",
+    ])
+    expect(folded.map((r) => r.name)).toEqual([
+      "priority",
+      "status",
+      "url",
+      "completedAt",
+      "exdates",
+      "originalAt",
+      "recurrence",
+      "recurrenceOf",
+      "source",
+    ])
+  })
+
+  it("keeps a folded row open once it holds something", () => {
+    const { shown, folded } = arrangeNewRecord(
+      task,
+      rows,
+      (r) => r.name === "priority"
+    )
+    expect(shown.map((r) => r.name).at(-1)).toBe("priority")
+    expect(folded.map((r) => r.name)).not.toContain("priority")
   })
 })
