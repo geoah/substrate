@@ -72,9 +72,14 @@ are drawn here:
 Files are `NNNN-kebab-title.md`, four digits. `template.md` is the template
 and `README.md` is this page; everything else in this directory is a record.
 
-The number is the next free one. Numbers are permanent once merged to `main`:
-if two branches take the same number, the one that merges second renumbers
-before merging. There is no contiguity contract. Gaps are legal, so the linter
+The number is the next free one, counting the numbers other branches have
+already taken as well as `main`'s. Numbers are permanent once merged to
+`main`. `mise run decisions:check` refuses a record whose number `main`
+already uses, or that another branch pushed in the last 30 days added first,
+and names the next number nobody holds
+([0109](0109-a-decision-number-is-checked-against-every-live-branch-before-the-merge.md)).
+Run it after `git fetch` and before citing the number anywhere; CI runs it on
+every push. There is no contiguity contract. Gaps are legal, so the linter
 checks the format and uniqueness and nothing more, and nobody should read the
 sequence as a count.
 
@@ -146,6 +151,10 @@ marking a record superseded edits `status:` and `superseded-by:` and trips
 nothing. It reads the diff against the base branch rather than the files, which
 is why it sits beside `kinds:check` in the `lint` job instead of inside
 `lint:docs`.
+
+`mise run decisions:check` holds the rule no single tree can show: a number
+another branch took first. It reads the other branches on `origin`, so it sits
+in the same job for the same reason.
 
 Not held, on purpose: whether the record is under two pages, whether the
 options were seriously considered, and whether Confirmation names a real test.
@@ -267,3 +276,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0115](0115-an-owner-adjusts-a-change-request-on-the-accepting-write.md) | An owner adjusts a change request on the accepting write | accepted |
 | [0116](0116-a-probe-folds-case-only-when-it-declares-fold-case.md) | A probe folds case only when it declares `fold: case` | accepted |
 | [0117](0117-a-kind-may-declare-its-display-label.md) | A kind may declare its display label, singular and plural | accepted |
+| [0109](0109-a-decision-number-is-checked-against-every-live-branch-before-the-merge.md) | A decision number is checked against every live branch before the merge | accepted |
