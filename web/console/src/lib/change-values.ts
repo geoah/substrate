@@ -7,6 +7,7 @@
 import type { ChangeRow, KindInfo, PropertyChange } from "@/lib/api/types"
 import { changedProperties } from "@/lib/changelog"
 import {
+  ownerWritable,
   propSpecsByName,
   REDACTED,
   systemSpecs,
@@ -133,6 +134,40 @@ export function valueSpecs(kind: KindInfo | undefined): Map<string, PropSpec> {
   for (const s of systemSpecs(kind)) out.set(s.name, s)
   for (const s of propSpecsByName(kind)) out.set(s.name, s)
   return out
+}
+
+/** Whether a property is the host's to write rather than a person's: one
+ * the engine manages (a digest, a version) or one a connector or the OAuth
+ * facility alone may set (a cursor, a sync status). */
+export function hostWritten(spec: PropSpec | undefined): boolean {
+  return spec !== undefined && (spec.managed || !ownerWritable(spec))
+}
+
+/** No value to show: absent, null, an empty string or an empty list. */
+export function isBlank(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    value === "" ||
+    (Array.isArray(value) && value.length === 0)
+  )
+}
+
+/** The moves an everyday reader is told about: none the host wrote, and
+ * none with nothing to say (an empty list or value set where there was
+ * none, a list diff that gained and lost nothing). */
+export function readerMoves(
+  moves: readonly ValueMove[],
+  specs: ReadonlyMap<string, PropSpec>
+): ValueMove[] {
+  return moves.filter((m) => {
+    if (hostWritten(specs.get(m.name))) return false
+    if (m.replaced || m.changedBack) return true
+    if (m.added || m.removed) {
+      return (m.added ?? []).length + (m.removed ?? []).length > 0
+    }
+    return !(isBlank(m.after) && !m.beforeUnknown && isBlank(m.before))
+  })
 }
 
 /** Long text is cut to this many characters in a sentence; the whole value

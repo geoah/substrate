@@ -129,10 +129,10 @@ describe("HistoryEntryRow", () => {
   it("says a one-record change in values", async () => {
     const [entry] = foldHistory([patch(true)])
     renderRow(<HistoryEntryRow entry={entry} today />)
-    const move = (await screen.findByText("Priority")).closest(
+    const move = (await screen.findByText("Priority:")).closest(
       "[data-slot=value-move]"
     )
-    expect(move?.textContent).toBe("PriorityHigh→toUrgent")
+    expect(move?.textContent).toBe("Priority:High→toUrgent")
   })
 
   it("falls back to the names against a server that sends none", async () => {
