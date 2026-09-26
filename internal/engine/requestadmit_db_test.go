@@ -483,13 +483,13 @@ def main(input, host):
 	})
 	fn := fnPackage + "/reproposer"
 
-	if _, _, err := ds.CallFunction(ctx, fn, map[string]any{"target": task.ID}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{"target": task.ID}); err != nil {
 		t.Fatalf("first delivery: %v", err)
 	}
 	first := mustGet(t, ds, requestKind, "req-replayed")
 
 	// The replay: the same body, the same staged effect, the same request id.
-	if _, _, err := ds.CallFunction(ctx, fn, map[string]any{"target": task.ID}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{"target": task.ID}); err != nil {
 		t.Fatalf("the replayed delivery parked: %v", err)
 	}
 	again := mustGet(t, ds, requestKind, "req-replayed")

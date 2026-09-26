@@ -35,7 +35,7 @@ func (c *callableFake) key(method string) string {
 	return c.keys[method]
 }
 
-func (c *callableFake) CallFunction(ctx context.Context, _ string, _ any) (any, int, error) {
+func (c *callableFake) CallFunction(ctx context.Context, _ substrate.Actor, _ string, _ any) (any, int, error) {
 	c.saw("CallFunction", substrate.IdempotencyKeyFrom(ctx))
 	return map[string]any{"ok": true}, 0, nil
 }

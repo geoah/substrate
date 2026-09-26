@@ -1197,7 +1197,7 @@ func (d *fakeDataset) ForgetTriggerFailure(_ context.Context, id string, _ int64
 	return noSuch("trigger", id)
 }
 
-func (d *fakeDataset) CallFunction(_ context.Context, name string, _ any) (any, int, error) {
+func (d *fakeDataset) CallFunction(_ context.Context, _ substrate.Actor, name string, _ any) (any, int, error) {
 	return nil, 0, noSuch("function", name)
 }
 
