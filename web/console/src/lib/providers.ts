@@ -12,7 +12,7 @@ import type {
 } from "@/lib/api/types"
 import { FAILED_PREVIEW_BLOCKER } from "@/lib/bundles"
 import { mappedKind } from "@/lib/provenance"
-import { toolName } from "@/lib/tools"
+import { refId, toolName, writeKinds } from "@/lib/tools"
 import type { AccountView, ProviderView, SyncFields } from "@/lib/sync"
 
 // ── the four steps ───────────────────────────────────────────────────────────
@@ -571,6 +571,62 @@ export function toolActivity(
       lastFire = s.lastFire
   }
   return { lastFire, parked }
+}
+
+// ── what a provider did ──────────────────────────────────────────────────────
+
+function colons(id: string): string {
+  return id.split("/").join(":")
+}
+
+/** The actors a provider writes as: its bundle, and each of its functions
+ * (decision 0025 derives both from the declaration ids). */
+export function providerActors(
+  bundleId: string,
+  functionIds: readonly string[]
+): string[] {
+  return [
+    `bundle:${colons(bundleId)}`,
+    ...functionIds
+      .filter((id) => id.startsWith(`${bundleId}/`))
+      .map((id) => `function:${colons(id)}`),
+  ].sort()
+}
+
+/** When a provider last synced one of its kinds: the newest finished run of
+ * any trigger whose function may write the kind. A skipped run (its guard
+ * said no) and a parked one brought nothing in, so neither counts. */
+export function lastSyncOf(
+  kind: string,
+  bundleId: string,
+  functions: readonly SubstrateRecord[],
+  triggers: readonly SubstrateRecord[],
+  runs: readonly SubstrateRecord[]
+): string | undefined {
+  const writers = new Set(
+    functions
+      .filter(
+        (f) => f.id.startsWith(`${bundleId}/`) && writeKinds(f).includes(kind)
+      )
+      .map((f) => f.id)
+  )
+  if (!writers.size) return undefined
+  const fired = new Set(
+    triggers
+      .filter((t) => writers.has(triggerCallable(t) ?? ""))
+      .map((t) => t.id)
+  )
+  let last: string | undefined
+  for (const r of runs) {
+    const p = r.properties
+    if (p.status !== "ok" || !fired.has(refId(p.trigger) ?? "")) continue
+    const at =
+      typeof p.finishedAt === "string" && p.finishedAt
+        ? p.finishedAt
+        : r.updatedAt
+    if (!last || at > last) last = at
+  }
+  return last
 }
 
 // ── what a provider's kinds fill in ──────────────────────────────────────────

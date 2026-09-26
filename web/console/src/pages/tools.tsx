@@ -92,6 +92,7 @@ function ToolCard({
   const { authority, pkg, name } = splitKind(tool.ref)
   const status = toolStatus(tool, model.runsOf(tool)[0], {
     waitingFor: model.waitingFor(tool),
+    usage: model.usageOf(tool),
   })
   const users = [...new Set(tool.uses.map((u) => agentName(u.agent)))]
   return (
@@ -106,7 +107,7 @@ function ToolCard({
         <span className="min-w-0 flex-1 font-semibold break-words">
           {toolName(tool)}
         </span>
-        <StatusPill status={status} />
+        {status && <StatusPill status={status} />}
       </div>
       <p className="line-clamp-3 text-[13px] text-muted-foreground">
         {toolDescription(tool)}

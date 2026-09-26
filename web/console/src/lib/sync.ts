@@ -273,6 +273,47 @@ export const OAUTH2_CLIENT_PROPERTIES: readonly string[] = [
   "clientSecret",
 ]
 
+/** Where a provider's app is made, where "with <Provider>" would misname it:
+ * Google's clients live in its Cloud console, not in Google. */
+const APP_HOME: Readonly<Record<string, string>> = {
+  google: "in Google Cloud",
+}
+
+/** "in Google Cloud", else "with <Provider>": where a person goes to make
+ * the app a provider signs in through. */
+export function appHome(kind: KindInfo, providerName: string): string {
+  return APP_HOME[splitKind(kind.identity).pkg] ?? `with ${providerName}`
+}
+
+/** The help under each credentials control, in the console's words: where
+ * the client ID comes from, and what happens to a secret. The declarations'
+ * own descriptions are developer notes, which technical mode shows instead. */
+export function credentialHelp(
+  kind: KindInfo,
+  providerName: string,
+  oauth: boolean
+): Record<string, string> {
+  const where = appHome(kind, providerName)
+  const declared = (kind.definition.properties ?? {}) as Record<
+    string,
+    { type?: string } | undefined
+  >
+  const out: Record<string, string> = {}
+  for (const [name, p] of Object.entries(declared)) {
+    if (p?.type === "secret") out[name] = "Saved once and never shown again."
+  }
+  if (oauth && declared.clientId)
+    out.clientId = `From the app you created ${where}.`
+  return out
+}
+
+/** An account's label where it opens a sentence: a plain name ("work")
+ * takes a capital, an address or handle stays exactly as it is written. */
+export function labelAtStart(label: string): string {
+  if (!label || /[@./:]/.test(label)) return label
+  return label[0].toUpperCase() + label.slice(1)
+}
+
 // ── the providers list ───────────────────────────────────────────────────────
 
 export interface ProviderView {

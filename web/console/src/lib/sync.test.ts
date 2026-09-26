@@ -8,11 +8,13 @@ import type { BundleStatus, KindInfo, SubstrateRecord } from "@/lib/api/types"
 import {
   accountViewOf,
   countPhrase,
+  credentialHelp,
   cursorText,
   durationText,
   healthOf,
   kindGlobMatches,
   kindHasTrait,
+  labelAtStart,
   providerConfigured,
   providerNextStep,
   providerViews,
@@ -529,5 +531,43 @@ describe("rendering helpers", () => {
     expect(durationText(2500)).toBe("2.5 s")
     expect(durationText(45_000)).toBe("45 s")
     expect(durationText(300_000)).toBe("5 min")
+  })
+})
+
+describe("credentialHelp", () => {
+  const client = (pkg: string) =>
+    kind(`providers.substrate.reamde.dev/${pkg}/config`, [], {
+      clientId: { type: "string", description: "the OAuth client id" },
+      clientSecret: { type: "secret", description: "sealed at rest" },
+      budget: { type: "int", description: "a test seam" },
+    })
+
+  it("says where the client ID comes from and what happens to a secret", () => {
+    expect(credentialHelp(client("google"), "Google", true)).toEqual({
+      clientId: "From the app you created in Google Cloud.",
+      clientSecret: "Saved once and never shown again.",
+    })
+    expect(credentialHelp(client("github"), "GitHub", true).clientId).toBe(
+      "From the app you created with GitHub."
+    )
+  })
+
+  it("helps a token provider's pasted key and nothing else", () => {
+    const token = kind("providers.substrate.reamde.dev/linear/config", [], {
+      apiKey: { type: "secret" },
+      clientId: { type: "string" },
+    })
+    expect(credentialHelp(token, "Linear", false)).toEqual({
+      apiKey: "Saved once and never shown again.",
+    })
+  })
+})
+
+describe("labelAtStart", () => {
+  it("capitalises a plain name and leaves an address as written", () => {
+    expect(labelAtStart("work")).toBe("Work")
+    expect(labelAtStart("george@example.com")).toBe("george@example.com")
+    expect(labelAtStart("octocat.dev")).toBe("octocat.dev")
+    expect(labelAtStart("")).toBe("")
   })
 })

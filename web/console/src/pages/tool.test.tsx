@@ -16,6 +16,8 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { Toaster } from "@/components/ui/toast"
+import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
+import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import type { SubstrateRecord } from "@/lib/api/types"
 
 const params = { authority: "", pkg: "", name: "" }
@@ -152,14 +154,34 @@ function listed(path: string): string[] {
 describe("ToolPage", () => {
   const fetchMock = vi.fn<typeof fetch>()
   let runs: SubstrateRecord[] = []
+  let calls: { count: number; records: SubstrateRecord[] } | undefined
+  let turns: SubstrateRecord[] = []
   let callStatus = 200
 
   beforeEach(() => {
     runs = []
+    calls = undefined
+    turns = []
     callStatus = 200
     fetchMock.mockImplementation(async (url) => {
       const path = String(url)
       if (path.endsWith("/sync/status")) return jsonResponse(200, { items: [] })
+      if (path.endsWith("/core/trigger/status"))
+        return jsonResponse(200, {
+          items: [
+            {
+              id: "google-calendar-on-connect",
+              kind: "record",
+              callable: GCAL,
+              enabled: true,
+              cursor: 1234,
+              head: 1240,
+              lag: 6,
+              parked: 0,
+              pending: 0,
+            },
+          ],
+        })
       if (path.includes("/function/") && path.endsWith("/call"))
         return callStatus === 200
           ? jsonResponse(200, { output: { saved: "n1" }, effects: 1 })
@@ -168,6 +190,36 @@ describe("ToolPage", () => {
       const page = (records: SubstrateRecord[]) =>
         jsonResponse(200, { records, head: 1, generation: "g" })
       if (kinds.includes(FN)) return page(FUNCTIONS)
+      if (kinds.includes("substrate.reamde.dev/llm/message")) {
+        const url = new URL(path, "http://x")
+        const counted = url.searchParams.has("count")
+        if (url.searchParams.get("filter")?.includes('"assistant"'))
+          return page(turns)
+        if (!calls) return page([])
+        return counted
+          ? jsonResponse(200, {
+              records: calls.records.slice(0, 1),
+              count: calls.count,
+              head: 1,
+              generation: "g",
+            })
+          : jsonResponse(200, {
+              records: calls.records,
+              head: 1,
+              generation: "g",
+              included: {
+                "substrate.reamde.dev/llm/thread/t1": rec(
+                  "substrate.reamde.dev/llm/thread",
+                  "t1",
+                  {
+                    agent: {
+                      ref: "substrate.reamde.dev/core/agent/ada.example.com/notes/notekeeper",
+                    },
+                  }
+                ),
+              },
+            })
+      }
       if (kinds.includes("substrate.reamde.dev/core/agent")) return page(AGENTS)
       if (kinds.includes("substrate.reamde.dev/core/trigger"))
         return page(TRIGGERS)
@@ -201,18 +253,33 @@ describe("ToolPage", () => {
     fetchMock.mockReset()
   })
 
-  function renderAt(ref: string) {
+  function renderAt(ref: string, technical = false) {
     const [authority, pkg, name] = ref.split("/")
     Object.assign(params, { authority, pkg, name })
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     })
     return render(
-      <QueryClientProvider client={client}>
-        <Toaster>
-          <ToolPage />
-        </Toaster>
-      </QueryClientProvider>
+      <ConsolePreferencesContext.Provider
+        value={{
+          preferences: {
+            collapsed: [],
+            favorites: [],
+            sidebarOpen: true,
+            ...DEFAULT_SETTINGS,
+            technicalDetails: technical,
+          },
+          busy: false,
+          change: () => {},
+          set: () => {},
+        }}
+      >
+        <QueryClientProvider client={client}>
+          <Toaster>
+            <ToolPage />
+          </Toaster>
+        </QueryClientProvider>
+      </ConsolePreferencesContext.Provider>
     )
   }
 
@@ -252,6 +319,65 @@ describe("ToolPage", () => {
     expect(within(table).getByText("Worked")).toBeTruthy()
   })
 
+  it("shows each run's input and output, and each trigger's cursor, in technical mode", async () => {
+    runs = [
+      {
+        ...RUNS[0],
+        properties: { ...RUNS[0].properties, attempt: 1, fireId: "f-9" },
+      },
+    ]
+    renderAt(GCAL, true)
+    const table = await screen.findByRole("table", { name: "Recent runs" })
+    const toggle = within(table).getByRole("button", {
+      name: "Input and output",
+    })
+    expect(toggle.getAttribute("aria-expanded")).toBe("false")
+    fireEvent.click(toggle)
+    const io = within(table).getByLabelText("Input and output")
+    expect(within(io).getByText("Input")).toBeTruthy()
+    expect(io.textContent).toContain('"fireId": "f-9"')
+    expect(io.textContent).toContain('"put": 14')
+    expect(
+      await screen.findByText("cursor #1234 of #1240 · 6 behind")
+    ).toBeTruthy()
+  })
+
+  it("reads an agent call's arguments off the turn that made it", async () => {
+    const thread = "substrate.reamde.dev/llm/thread/t1"
+    calls = {
+      count: 1,
+      records: [
+        rec("substrate.reamde.dev/llm/message", "m1", {
+          role: "tool",
+          name: "savenote",
+          ok: true,
+          turn: 2,
+          toolCallId: "call_1",
+          content: '{"saved":"n1"}',
+          thread: { ref: thread },
+        }),
+      ],
+    }
+    turns = [
+      rec("substrate.reamde.dev/llm/message", "m0", {
+        role: "assistant",
+        turn: 2,
+        toolCalls: [
+          { id: "call_1", name: "savenote", arguments: '{"text":"hi"}' },
+        ],
+        thread: { ref: thread },
+      }),
+    ]
+    renderAt(SAVE, true)
+    const table = await screen.findByRole("table", { name: "Recent runs" })
+    fireEvent.click(
+      within(table).getByRole("button", { name: "Input and output" })
+    )
+    const io = within(table).getByLabelText("Input and output")
+    await within(io).findByText(/"text": "hi"/)
+    expect(io.textContent).toContain('"saved": "n1"')
+  })
+
   it("offers Try it for an agent's tool and calls it with what was typed", async () => {
     renderAt(SAVE)
     expect(
@@ -286,6 +412,33 @@ describe("ToolPage", () => {
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({
       input: { text: "hello there", words: 2 },
     })
+  })
+
+  it("counts an agent's tool by its calls, where nothing else records a run", async () => {
+    const thread = "substrate.reamde.dev/llm/thread/t1"
+    calls = {
+      count: 12,
+      records: [
+        rec("substrate.reamde.dev/llm/message", "m1", {
+          role: "tool",
+          name: "savenote",
+          ok: true,
+          thread: { ref: thread },
+        }),
+      ],
+    }
+    renderAt(SAVE)
+    expect(await screen.findByText(/^Used 12 times · last /)).toBeTruthy()
+  })
+
+  it("says an agent's tool is not used yet, never that it never ran", async () => {
+    calls = { count: 0, records: [] }
+    renderAt(SAVE)
+    expect(
+      await screen.findByRole("heading", { name: "Save note" })
+    ).toBeTruthy()
+    expect(await screen.findByText("Not used yet")).toBeTruthy()
+    expect(screen.queryByText("Never ran")).toBeNull()
   })
 
   it("says an older substrate cannot run a tool, not the transport's words", async () => {

@@ -6,7 +6,7 @@
  * label. */
 
 import { CORE_AUTHORITY, CORE_PACKAGE, splitKind } from "@/lib/api/http"
-import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+import type { KindInfo, SubstrateRecord, TriggerStatus } from "@/lib/api/types"
 import {
   PROVIDERS_AUTHORITY,
   actorIdentity,
@@ -181,6 +181,12 @@ export function triggerSource(record: SubstrateRecord): TriggerSourceArm {
   if (source.webhook && typeof source.webhook === "object")
     return { arm: "webhook" }
   return { arm: "unknown" }
+}
+
+/** The kinds a function record declares it may write, by reference. */
+export function writeKinds(record: SubstrateRecord): string[] {
+  const perms = (record.properties.permissions ?? {}) as Record<string, unknown>
+  return refIds(perms.writes)
 }
 
 /** Every tool, joined with the agents that list it and the triggers that
@@ -767,7 +773,7 @@ export function permissionWords(
   >
   const reads = (perms.reads ?? {}) as Record<string, unknown>
   const readKinds = refIds(reads.kinds)
-  const writeKinds = refIds(perms.writes)
+  const writes = refIds(perms.writes)
   const mutations = strings(perms.mutations)
   const network = strings(perms.network)
   const calls = refIds(perms.call)
@@ -778,7 +784,7 @@ export function permissionWords(
         return i ? lowerFirst(words) : words
       })
     )
-  let changes: string | null = writeKinds.length ? kindWords(writeKinds) : null
+  let changes: string | null = writes.length ? kindWords(writes) : null
   if (mutations.length) {
     const m = listWords(mutations.map((x) => MUTATION_WORDS[x] ?? x))
     changes = changes ? `${changes}; ${m}` : capitalise(m)
@@ -993,6 +999,60 @@ export interface ToolRun {
   status: RunStatus
   /** The full reason on a run that had trouble. */
   reason?: string
+  /** What the run was handed, as stored: a trigger run's delivery (the
+   * change or fire it answered); absent on an agent's call, whose arguments
+   * live on the assistant turn `call` names. */
+  input?: Record<string, unknown>
+  /** What it gave back, as stored: a trigger run's outcome, or the tool
+   * message's result and the changes it wrote. */
+  output?: Record<string, unknown>
+  /** An agent's call: the thread and turn whose assistant row carries the
+   * call's arguments, and the call's id there. */
+  call?: { thread: string; turn?: number; id: string }
+}
+
+/** The stored keys of `from` that are set, in the order named. */
+function present(
+  from: Record<string, unknown>,
+  keys: readonly string[]
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const k of keys) {
+    const v = from[k]
+    if (v !== undefined && v !== null && v !== "") out[k] = v
+  }
+  return out
+}
+
+/** A tool result as it was returned: the model's JSON parsed back where it
+ * is JSON, else the text. */
+function resultOf(content: unknown): unknown {
+  if (typeof content !== "string") return content
+  try {
+    return JSON.parse(content) as unknown
+  } catch {
+    return content
+  }
+}
+
+/** One call's arguments off the assistant turn that dispatched it: the
+ * model's JSON parsed back, else the text; undefined when the turn does not
+ * carry the call. */
+export function callArguments(
+  assistant: SubstrateRecord[],
+  callId: string
+): { found: boolean; value?: unknown } {
+  for (const m of assistant) {
+    const calls = m.properties.toolCalls
+    if (!Array.isArray(calls)) continue
+    for (const c of calls) {
+      if (!c || typeof c !== "object") continue
+      const call = c as Record<string, unknown>
+      if (call.id !== callId) continue
+      return { found: true, value: resultOf(call.arguments) }
+    }
+  }
+  return { found: false }
 }
 
 const EFFECT_WORDS: Record<string, string> = {
@@ -1063,6 +1123,8 @@ export function runFromTriggerRun(record: SubstrateRecord): ToolRun {
     tookMs: durationBetween(p.startedAt, p.finishedAt),
     status,
     reason,
+    input: present(p, ["mode", "seq", "record", "fireId", "attempt"]),
+    output: present(p, ["status", "effects", "pages", "reason"]),
   }
 }
 
@@ -1075,6 +1137,7 @@ export function runFromToolMessage(
   const ok = p.ok !== false
   const changes = Array.isArray(p.changes) ? p.changes.length : 0
   const content = typeof p.content === "string" ? p.content : ""
+  const thread = refId(p.thread)
   return {
     key: `msg:${message.id}`,
     at: message.createdAt,
@@ -1087,6 +1150,19 @@ export function runFromToolMessage(
         : "Answered",
     status: ok ? "ok" : "trouble",
     reason: ok ? undefined : content || undefined,
+    output: {
+      ok,
+      ...(content && { result: resultOf(content) }),
+      ...(changes > 0 && { changes: p.changes }),
+    },
+    call:
+      thread && typeof p.toolCallId === "string" && p.toolCallId
+        ? {
+            thread,
+            turn: typeof p.turn === "number" ? p.turn : undefined,
+            id: p.toolCallId,
+          }
+        : undefined,
   }
 }
 
@@ -1170,6 +1246,31 @@ export function isoDurationWords(value: unknown): string | undefined {
   )
 }
 
+// ── trigger progress ────────────────────────────────────────────────────────
+
+/** Where a trigger stands in the changelog, for technical mode: a record
+ * source's cursor against the head and how far behind it is, the last fire
+ * of a schedule or webhook, and what is parked or pending. */
+export function triggerProgress(status: TriggerStatus, now?: number): string[] {
+  const out: string[] = []
+  if (status.kind === "record") {
+    const at = status.cursor ?? status.head
+    const lag = status.lag ?? 0
+    out.push(
+      `cursor #${at} of #${status.head}`,
+      lag > 0 ? `${lag.toLocaleString()} behind` : "caught up"
+    )
+  } else if (status.lastFire) {
+    out.push(`last fired ${agoWords(status.lastFire, now)}`)
+  } else {
+    out.push("not fired yet")
+  }
+  if (status.pending > 0) out.push(`${status.pending} pending`)
+  if (status.parked > 0) out.push(`${status.parked} parked`)
+  if (status.error) out.push(status.error)
+  return out
+}
+
 // ── status ──────────────────────────────────────────────────────────────────
 
 export type StatusTone = "ok" | "warn" | "neutral"
@@ -1179,19 +1280,66 @@ export interface ToolStatus {
   label: string
 }
 
+/** How often agents called a tool: the tool messages answering under its
+ * names, counted by the server, and the newest of them. */
+export interface ToolUsage {
+  count: number
+  latest?: ToolRun
+}
+
+/** The names a count of this tool's calls may filter the tool messages by:
+ * every name an agent's model calls it by, provided no agent calls another
+ * tool by any of them. A tool message carries the name alone, so a shared
+ * name would count the other tool's calls as this one's. Undefined when no
+ * agent lists the tool, or a name is shared. */
+export function usageNames(tool: Tool, tools: Tool[]): string[] | undefined {
+  if (!tool.uses.length) return undefined
+  const names = [...new Set(tool.uses.map((u) => u.name))].sort()
+  const shared = tools.some(
+    (other) =>
+      other.ref !== tool.ref && other.uses.some((u) => names.includes(u.name))
+  )
+  return shared ? undefined : names
+}
+
 /** The pill a tool carries: paused, waiting for its provider, the newest
- * run's outcome, or never ran. */
+ * run's outcome, how often agents used it, or never ran. Nothing where no
+ * record would say: a tool no trigger calls and no agent lists runs only
+ * when called directly, which leaves no run behind, and an agent's tool is
+ * silent until its calls are counted. */
 export function toolStatus(
   tool: Tool,
   latest: ToolRun | undefined,
-  opts: { waitingFor?: ProviderInfo; now?: number } = {}
-): ToolStatus {
+  opts: { waitingFor?: ProviderInfo; usage?: ToolUsage; now?: number } = {}
+): ToolStatus | undefined {
   if (isPaused(tool)) return { tone: "warn", label: "Paused" }
   if (latest?.status === "trouble")
     return { tone: "warn", label: "Had trouble" }
+  const { usage } = opts
+  if (usage && !tool.triggers.length) {
+    const newest = [latest, usage.latest]
+      .filter((r): r is ToolRun => Boolean(r))
+      .sort((a, b) => b.at.localeCompare(a.at))[0]
+    if (!usage.count && !newest)
+      return { tone: "neutral", label: "Not used yet" }
+    const times =
+      usage.count === 1 ? "once" : `${usage.count.toLocaleString()} times`
+    if (!usage.count || !newest)
+      return {
+        tone: "ok",
+        label: newest
+          ? `Ran ${agoWords(newest.at, opts.now)}`
+          : `Used ${times}`,
+      }
+    return {
+      tone: "ok",
+      label: `Used ${times} · ${usage.count === 1 ? "" : "last "}${agoWords(newest.at, opts.now)}`,
+    }
+  }
   if (latest)
     return { tone: "ok", label: `Ran ${agoWords(latest.at, opts.now)}` }
   if (opts.waitingFor)
     return { tone: "warn", label: `Waiting for ${opts.waitingFor.name}` }
+  if (!tool.triggers.length) return undefined
   return { tone: "neutral", label: "Never ran" }
 }

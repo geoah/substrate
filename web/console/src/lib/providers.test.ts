@@ -11,6 +11,8 @@ import {
   enumLabel,
   fillsIn,
   firstSentence,
+  lastSyncOf,
+  providerActors,
   providerStanding,
   providerTools,
   recurrenceWords,
@@ -662,5 +664,73 @@ describe("words and ids", () => {
   it("joins a list the way a sentence does", () => {
     expect(andList(["a"])).toBe("a")
     expect(andList(["a", "b", "c"])).toBe("a, b and c")
+  })
+})
+
+describe("what a provider did", () => {
+  const G = "providers.substrate.reamde.dev/google"
+  const KIND = "substrate.reamde.dev/core/kind"
+  const FN = "substrate.reamde.dev/core/function"
+  const fn = (name: string, writes: string[]) =>
+    record(
+      `${G}/${name}`,
+      { permissions: { writes: writes.map((k) => ({ ref: `${KIND}/${k}` })) } },
+      FN
+    )
+  const trigger = (id: string, fnName: string) =>
+    record(
+      id,
+      { callable: { ref: `${FN}/${G}/${fnName}` } },
+      "substrate.reamde.dev/core/trigger"
+    )
+  const run = (trigger: string, status: string, finishedAt: string) =>
+    record(
+      `run-${trigger}-${finishedAt}`,
+      {
+        trigger: { ref: `substrate.reamde.dev/core/trigger/${trigger}` },
+        status,
+        finishedAt,
+      },
+      "substrate.reamde.dev/core/triggerrun"
+    )
+
+  it("names the bundle and its functions as actors", () => {
+    expect(
+      providerActors(G, [
+        `${G}/synccontacts`,
+        "providers.substrate.reamde.dev/github/sync",
+        `${G}/syncgmail`,
+      ])
+    ).toEqual([
+      "bundle:providers.substrate.reamde.dev:google",
+      "function:providers.substrate.reamde.dev:google:synccontacts",
+      "function:providers.substrate.reamde.dev:google:syncgmail",
+    ])
+  })
+
+  it("dates a kind's last sync by the newest finished run of a function that writes it", () => {
+    const functions = [
+      fn("synccontacts", [`${G}/contact`, `${G}/emailaddress`]),
+      fn("syncgmail", [`${G}/gmailthread`, `${G}/emailaddress`]),
+    ]
+    const triggers = [
+      trigger("contacts-hourly", "synccontacts"),
+      trigger("gmail-hourly", "syncgmail"),
+    ]
+    const runs = [
+      run("contacts-hourly", "ok", "2026-09-25T09:00:00Z"),
+      run("contacts-hourly", "parked", "2026-09-25T11:00:00Z"),
+      run("gmail-hourly", "ok", "2026-09-25T10:00:00Z"),
+      run("gmail-hourly", "skipped", "2026-09-25T12:00:00Z"),
+    ]
+    expect(lastSyncOf(`${G}/contact`, G, functions, triggers, runs)).toBe(
+      "2026-09-25T09:00:00Z"
+    )
+    expect(lastSyncOf(`${G}/emailaddress`, G, functions, triggers, runs)).toBe(
+      "2026-09-25T10:00:00Z"
+    )
+    expect(
+      lastSyncOf(`${G}/account`, G, functions, triggers, runs)
+    ).toBeUndefined()
   })
 })

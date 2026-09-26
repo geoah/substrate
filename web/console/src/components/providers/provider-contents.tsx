@@ -2,7 +2,7 @@
  * each with what it is, how many records it holds, and which of your own
  * kinds its records fill in (off the record mappings); the supporting kinds
  * are counted, not listed, and technical mode lists every kind with its
- * purpose. ITS TOOLS: the functions it ships, each with when it runs and how
+ * purpose. A kind a provider's functions write says when it last synced. ITS TOOLS: the functions it ships, each with when it runs and how
  * its last run went, linking to the tool's own page. */
 
 import { useQueries, useQuery } from "@tanstack/react-query"
@@ -19,6 +19,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { recordMappingsListQueryOptions } from "@/lib/api/bundles"
+import {
+  functionsQueryOptions,
+  recentTriggerRunsQueryOptions,
+} from "@/lib/api/functions"
 import { formatCount, recordCountQueryOptions } from "@/lib/api/records"
 import {
   triggerRecordsQueryOptions,
@@ -27,7 +31,12 @@ import {
 import type { CatalogItem, KindInfo } from "@/lib/api/types"
 import { kindPackage, kindPurpose, splitKind } from "@/lib/definition"
 import { relativeTime } from "@/lib/format"
-import { fillsIn, providerTools, toolActivity } from "@/lib/providers"
+import {
+  fillsIn,
+  lastSyncOf,
+  providerTools,
+  toolActivity,
+} from "@/lib/providers"
 import { kindDescription } from "@/lib/kind-copy"
 
 const PURPOSE_WORD = {
@@ -94,6 +103,18 @@ export function BringsIn({
     ...recordMappingsListQueryOptions,
     enabled: installed,
   })
+  // When each collection last synced: off the runs of the functions that
+  // write it. A sample's kinds have none, and an empty collection says
+  // "None yet" alone: a run that brought nothing in is no news.
+  const functions = useQuery({ ...functionsQueryOptions, enabled: installed })
+  const triggers = useQuery({
+    ...triggerRecordsQueryOptions,
+    enabled: installed,
+  })
+  const runs = useQuery({
+    ...recentTriggerRunsQueryOptions,
+    enabled: installed,
+  })
   const lines = kindLines(bundleId, kinds, catalog)
   const primary = lines.filter((l) => l.purpose === "primary")
   const rest = lines.length - primary.length
@@ -123,6 +144,15 @@ export function BringsIn({
         {shown.map((line, i) => {
           const count = counts[i]
           const targets = fillsIn(mappings.data ?? [], line.reference)
+          const synced = installed
+            ? lastSyncOf(
+                line.reference,
+                bundleId,
+                functions.data ?? [],
+                triggers.data ?? [],
+                runs.data ?? []
+              )
+            : undefined
           return (
             <div
               key={line.reference}
@@ -153,22 +183,33 @@ export function BringsIn({
                   </p>
                 ))}
               </div>
-              <div className="flex items-center gap-2 text-muted-foreground tabular-nums sm:justify-end">
-                {technical && (
-                  <Pill tone="neutral" dot={false}>
-                    {PURPOSE_WORD[line.purpose]}
-                  </Pill>
+              <div className="flex flex-col items-end gap-0.5 text-muted-foreground tabular-nums">
+                <div className="flex items-center gap-2">
+                  {technical && (
+                    <Pill tone="neutral" dot={false}>
+                      {PURPOSE_WORD[line.purpose]}
+                    </Pill>
+                  )}
+                  {installed &&
+                    (count?.isPending ? (
+                      <Skeleton className="h-3.5 w-10" />
+                    ) : count?.data ? (
+                      count.data.value === 0 ? (
+                        <span className="text-faint">None yet</span>
+                      ) : (
+                        `${formatCount(count.data)} ${count.data.value === 1 ? "record" : "records"}`
+                      )
+                    ) : null)}
+                </div>
+                {synced && (count?.data?.value ?? 0) > 0 && (
+                  <span
+                    data-slot="last-sync"
+                    className="text-[12px] text-faint"
+                    title={synced}
+                  >
+                    Synced {relativeTime(synced)}
+                  </span>
                 )}
-                {installed &&
-                  (count?.isPending ? (
-                    <Skeleton className="h-3.5 w-10" />
-                  ) : count?.data ? (
-                    count.data.value === 0 ? (
-                      <span className="text-faint">None yet</span>
-                    ) : (
-                      `${formatCount(count.data)} ${count.data.value === 1 ? "record" : "records"}`
-                    )
-                  ) : null)}
               </div>
             </div>
           )
