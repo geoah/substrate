@@ -134,8 +134,17 @@ const KINDS: KindInfo[] = [
     CONFIG,
     ["substrate.reamde.dev/core/oauth2"],
     {
-      clientId: { type: "string", displayName: "Client ID" },
-      clientSecret: { type: "secret", displayName: "Client secret" },
+      clientId: {
+        type: "string",
+        displayName: "Client ID",
+        description:
+          "the Google OAuth client id (from the Google Cloud console)",
+      },
+      clientSecret: {
+        type: "secret",
+        displayName: "Client secret",
+        description: "the Google OAuth client secret, sealed at rest",
+      },
     },
     "internal"
   ),
@@ -531,6 +540,33 @@ describe("ProviderPage", () => {
         within(dialog).getByText("Redirect address to register")
       ).toBeTruthy()
       expect(within(dialog).getByText("not saved yet")).toBeTruthy()
+      // The help is the console's; the declaration's notes are technical.
+      expect(
+        within(dialog).getByText("From the app you created in Google Cloud.")
+      ).toBeTruthy()
+      expect(
+        within(dialog).getByText("Saved once and never shown again.")
+      ).toBeTruthy()
+      expect(within(dialog).queryByText(/sealed at rest/)).toBeNull()
+    })
+
+    it("shows the declaration's notes in the sign-in details in technical mode", async () => {
+      serve({ statuses: [status(MISSING_CLIENT)], accounts: [] })
+      renderPage(<ProviderPage />, true)
+      fireEvent.click(
+        within(await step(/Sign-in details/)).getByRole("button", {
+          name: "Add details",
+        })
+      )
+      const dialog = await screen.findByRole("dialog")
+      expect(
+        within(dialog).getByText(
+          "the Google OAuth client secret, sealed at rest"
+        )
+      ).toBeTruthy()
+      expect(
+        within(dialog).queryByText("Saved once and never shown again.")
+      ).toBeNull()
     })
 
     it("offers to add a provider that is not here as the first step", async () => {

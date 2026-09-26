@@ -24,7 +24,7 @@ import {
   type SetupStep,
   type StepKey,
 } from "@/lib/providers"
-import type { AccountView } from "@/lib/sync"
+import { appHome, labelAtStart, type AccountView } from "@/lib/sync"
 import { cn } from "@/lib/utils"
 
 const TITLES: Record<StepKey, (name: string) => string> = {
@@ -105,7 +105,7 @@ export function SetupSteps({
             <>
               <span>
                 {view.oauth
-                  ? `${name} needs an app of yours to sign in with. Create one in ${name}’s developer settings and paste its client ID and secret here.`
+                  ? `${name} needs an app of yours to sign in with. Create one ${view.configKind ? appHome(view.configKind, name) : `in ${name}’s developer settings`} and paste its client ID and secret here.`
                   : `${name} needs a token of yours to sign in with. Create one in ${name}’s settings and paste it here.`}
               </span>
               {view.oauth && (
@@ -128,7 +128,7 @@ export function SetupSteps({
         if (done) {
           const labels = connected.map((a) => a.label)
           return {
-            text: `${andList(labels.slice(0, 2))}${
+            text: `${labelAtStart(andList(labels.slice(0, 2)))}${
               labels.length > 2 ? ` and ${labels.length - 2} more` : ""
             }, connected.`,
             action: (
@@ -145,7 +145,7 @@ export function SetupSteps({
         if (!now) return { text: "Next, after the sign-in details." }
         if (waiting) {
           return {
-            text: `${waiting.label} is waiting for you to approve it at ${name}.`,
+            text: `${labelAtStart(waiting.label)} is waiting for you to approve it at ${name}.`,
             action: (
               <ConnectButton
                 view={waiting}
@@ -171,7 +171,7 @@ export function SetupSteps({
           return {
             text:
               accounts.length > 1
-                ? `${first.label}: ${choiceSentence(first.record, toggles)}`
+                ? `${labelAtStart(first.label)}: ${choiceSentence(first.record, toggles)}`
                 : choiceSentence(first.record, toggles),
             action: toggles.length ? (
               <Button

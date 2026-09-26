@@ -34,7 +34,7 @@ import { toast } from "@/components/ui/toast"
 import { useOAuthConnect, type OAuthConnect } from "@/hooks/use-oauth-connect"
 import { deleteRecord } from "@/lib/api/sync"
 import { recordPath } from "@/lib/record-path"
-import type { AccountView, ProviderView } from "@/lib/sync"
+import { labelAtStart, type AccountView, type ProviderView } from "@/lib/sync"
 
 /** The confirmation a connect asks: the provider opens in a new tab. The
  * caller owns the connect, so the consent's return is heard after this
@@ -155,7 +155,10 @@ export function AccountMenu({
   const disconnect = useMutation({
     mutationFn: () => deleteRecord(view.record),
     onSuccess: () => {
-      toast.add({ type: "success", title: `${view.label} disconnected.` })
+      toast.add({
+        type: "success",
+        title: `${labelAtStart(view.label)} disconnected.`,
+      })
       setRemoving(false)
       void queryClient.invalidateQueries({ queryKey: ["trait", "records"] })
       void queryClient.invalidateQueries({ queryKey: ["sync"] })
