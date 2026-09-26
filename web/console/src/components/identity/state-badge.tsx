@@ -18,10 +18,15 @@ export function StateBadge({
   value,
   initial,
   variant = "dot",
+  label,
   className,
 }: {
   /** The stored state value. */
   value: string
+  /** The word to show where a surface names this state its own way (a
+   * change request's accepted reads "Applied"); the stored value is still
+   * what technical mode appends. */
+  label?: string
   /** The machine's initial state, which colours a state the words do not
    * know. */
   initial?: string
@@ -31,7 +36,7 @@ export function StateBadge({
 }) {
   const [technical] = useTechnicalDetails()
   const tone = TONES[stateTone(value, initial)]
-  const word = stateWord(value)
+  const word = label ?? stateWord(value)
   return (
     <span
       data-slot="state-badge"

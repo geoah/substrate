@@ -122,9 +122,9 @@ describe("the tool line", () => {
     expect(screen.getByText("better")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Apply" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "Dismiss" })).toBeTruthy()
-    // Edit first is the full review of this very request.
+    // Review is the full review of this very request.
     const link = reviewLink(container)
-    expect(link?.textContent).toContain("Edit first")
+    expect(link?.textContent).toContain("Review")
     expect(JSON.parse(link?.getAttribute("data-params") ?? "{}")).toEqual({
       id: "cr7abc4def6k",
     })
@@ -135,7 +135,7 @@ describe("the tool line", () => {
       ...request,
       properties: { ...request.properties, decision: "accepted" },
     })
-    expect(screen.getByText("Accepted")).toBeTruthy()
+    expect(screen.getByText("Applied")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Apply" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull()
     expect(reviewLink(container)?.textContent).toBe("See the change")
