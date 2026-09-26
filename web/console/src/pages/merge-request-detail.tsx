@@ -270,7 +270,7 @@ function SideBySide({
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="pl-4" style={{ width: 140 }}>
-              field
+              property
             </TableHead>
             {/* the qualifiers carry the direction — twins share a name, so
                 they must not whisper (codex finding, 2026-08-06) */}
@@ -322,7 +322,7 @@ function SideBySide({
                 colSpan={4}
                 className="px-4 text-xs text-muted-foreground"
               >
-                No differences. Every field the pair carries already agrees.
+                No differences. Every property the pair carries already agrees.
               </TableCell>
             </TableRow>
           )}
@@ -342,8 +342,8 @@ function SideBySide({
                     )}
                   />
                   {equal.length === 1
-                    ? "1 identical field"
-                    : `${equal.length} identical fields`}
+                    ? "1 identical property"
+                    : `${equal.length} identical properties`}
                 </button>
               </TableCell>
             </TableRow>
@@ -538,7 +538,7 @@ export function MergeRequestDetailPage() {
         title:
           v === "accepted"
             ? "Merged."
-            : "Rejected. This pair won't be suggested again.",
+            : "Kept apart. This pair won't be suggested again.",
       })
       // A merge touches far more than this request: the pair's records, the
       // changelog, counts, the queue. Drop everything and re-read.
@@ -548,7 +548,7 @@ export function MergeRequestDetailPage() {
       setConfirming(null)
       toast.add({
         type: "error",
-        title: `${v === "accepted" ? "Accepting" : "Rejecting"} the request failed`,
+        title: `${v === "accepted" ? "Combining them" : "Keeping them apart"} didn’t go through`,
         description: error.message,
       })
       // A conflict means it moved under us; the re-read shows the server's
@@ -578,7 +578,7 @@ export function MergeRequestDetailPage() {
               size="sm"
               onClick={() => void mr.refetch()}
             >
-              Retry
+              Try again
             </Button>
           </EmptyContent>
         </Empty>
