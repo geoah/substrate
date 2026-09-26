@@ -1211,6 +1211,11 @@ func (f *fakeSubstrate) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	del := testNow
 	e.DeletedAt = &del
+	if r.URL.Query().Get("purge") == "true" {
+		delete(f.records, id)
+		writeJSON(w, http.StatusOK, e)
+		return
+	}
 	e.Finalizers = []string{"gmail.google.connectors.substrate.reamde.dev/gmail/unsend"}
 	writeJSON(w, http.StatusOK, e)
 }

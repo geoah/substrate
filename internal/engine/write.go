@@ -2616,18 +2616,34 @@ func (ds *dataset) deleteBounded(ctx context.Context, actor substrate.Actor, typ
 		if err != nil {
 			return nil, err
 		}
+		// A declaration leaves through admission, and the vocabulary keeps its
+		// own rows; a purge would go around both.
+		if in.Purge {
+			return nil, fmt.Errorf("%w: purge does not apply to a %s record; delete it without purge",
+				substrate.ErrValidation, ty.Identity)
+		}
 		return ds.deleteVocabularyRecord(ctx, actor, existing, in.IfVersion)
 	}
-	return ds.deleteWith(ctx, actor, eref{Kind: ty.Identity, ID: id}, false, in.IfVersion, ceiling)
+	return ds.deleteWith(ctx, actor, eref{Kind: ty.Identity, ID: id}, false, in.IfVersion, in.Purge, ceiling)
 }
 
-func (ds *dataset) deleteWith(ctx context.Context, actor substrate.Actor, ref eref, internal bool, ifVersion *int64, ceiling *effectCeiling) (*substrate.Record, error) {
+func (ds *dataset) deleteWith(ctx context.Context, actor substrate.Actor, ref eref, internal bool, ifVersion *int64, purge bool, ceiling *effectCeiling) (*substrate.Record, error) {
 	var out *substrate.Record
 	err := ds.inTx(ctx, actor, internal, func(t *txn) error {
 		ceiling.stamp(t)
 		e, err := t.softDeleteIf(ref, ifVersion)
 		out = e
-		return err
+		if err != nil || !purge {
+			return err
+		}
+		// A former id resolves to the merge winner, and a purge cannot be
+		// undone: purging through a loser's id would hard-delete the winner.
+		// Refuse it as a put through a former id is refused, naming the
+		// canonical id, and roll the tombstone back with it.
+		if e.ID != ref.ID {
+			return fmt.Errorf("%w: %s is a former id of %s: purge the canonical id", substrate.ErrConflict, ref.ID, e.ID)
+		}
+		return t.purgeNow(eref{Kind: e.Kind, ID: e.ID}, e.Finalizers)
 	})
 	if err != nil {
 		return nil, err
@@ -2723,6 +2739,29 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 		}
 	}
 	return t.record(row, ty)
+}
+
+// purgeNow collects a record the delete just tombstoned (or found
+// tombstoned), in the delete's transaction and the way gcPass does: what it
+// owns through `onDelete: cascade` is tombstoned for the sweep, then the row
+// and everything hanging off it go. Without it a put at the id restores the
+// tombstone, subject and properties included, until the sweep runs, so a
+// writer could not start a record over (#585, decision 0107). A finalizer is
+// a hold somebody else has to release, so a held record refuses the purge
+// and the caller's transaction rolls the tombstone back with it.
+func (t *txn) purgeNow(ref eref, finalizers []string) error {
+	if len(finalizers) > 0 {
+		return fmt.Errorf("%w: record %s is held by finalizers %v; delete it without purge, wait for them to release, then purge",
+			substrate.ErrConflict, ref.ID, finalizers)
+	}
+	if err := t.cascadeOwned(ref); err != nil {
+		return err
+	}
+	if err := t.hardDelete(ref); err != nil {
+		return err
+	}
+	return t.appendChange(t.actor, substrate.OpGC, ref.ID, ref.Kind,
+		map[string]any{"reason": "purged"})
 }
 
 // --- shared helpers ---

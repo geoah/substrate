@@ -340,9 +340,13 @@ func (c *client) patch(ctx context.Context, pkg, kind, id string, in substrate.P
 	return &e, nil
 }
 
-func (c *client) delete(ctx context.Context, pkg, kind, id string) (*substrate.Record, error) {
+func (c *client) delete(ctx context.Context, pkg, kind, id string, purge bool) (*substrate.Record, error) {
 	var e substrate.Record
-	if err := c.do(ctx, http.MethodDelete, recordPath(pkg, kind, id), nil, nil, &e); err != nil {
+	var q url.Values
+	if purge {
+		q = url.Values{"purge": {"true"}}
+	}
+	if err := c.do(ctx, http.MethodDelete, recordPath(pkg, kind, id), q, nil, &e); err != nil {
 		return nil, err
 	}
 	return &e, nil
