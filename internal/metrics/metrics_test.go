@@ -58,3 +58,38 @@ func TestRegisterDBStatsTakeoverSurvivesTheStaleUnregister(t *testing.T) {
 		t.Fatal("the live pool's unregister left its collector published")
 	}
 }
+
+// The shared pool's reading is published under its name and dropped by its
+// unregister, so an exhausted pool (acquired at the cap, waits climbing) is
+// something a scrape shows.
+func TestPoolStatsArePublishedAndDropped(t *testing.T) {
+	unregister := RegisterPoolStats("test-pool", func() PoolStats {
+		return PoolStats{Max: 4, Total: 4, Acquired: 4, Waits: 7, WaitDuration: 1.5}
+	})
+	value := func() (float64, bool) {
+		families, err := Registry.Gather()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range families {
+			if f.GetName() != "substrate_db_pool_waits_total" {
+				continue
+			}
+			for _, m := range f.GetMetric() {
+				for _, l := range m.GetLabel() {
+					if l.GetName() == "pool" && l.GetValue() == "test-pool" {
+						return m.GetCounter().GetValue(), true
+					}
+				}
+			}
+		}
+		return 0, false
+	}
+	if v, ok := value(); !ok || v != 7 {
+		t.Fatalf("substrate_db_pool_waits_total{pool=test-pool} = %v (published %v), want 7", v, ok)
+	}
+	unregister()
+	if _, ok := value(); ok {
+		t.Fatal("the pool's series outlived its unregister")
+	}
+}

@@ -60,7 +60,7 @@ func (ds *dataset) relaxFloorsOnOwnPackages(ctx context.Context, docs []vocabula
 			if _, held := reg.PackageByName(pkg); !held {
 				continue
 			}
-			stamp, err := ds.packageStamp(ctx, pkg)
+			stamp, err := ds.packageStamp(ctx, ds.db, pkg)
 			if err != nil {
 				return nil, err
 			}

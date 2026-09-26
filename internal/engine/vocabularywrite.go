@@ -247,7 +247,7 @@ func (ds *dataset) PlanVocabularyApplyWith(ctx context.Context, actor substrate.
 	if plan.ConversionPlan, err = st.conversions.wire(q, ds.svc.conversionCeiling, true); err != nil {
 		return plan, err
 	}
-	edited, err := ds.editedCopy(ctx, origin, docs)
+	edited, err := ds.editedCopy(ctx, ds.db, origin, docs)
 	if err != nil {
 		return plan, err
 	}
@@ -475,7 +475,7 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		// A batch naming an origin over a copy edited since its stamp
 		// replaces the edits (convert.go editedCopy, decision record 0070):
 		// the same consent, bound to the edited state.
-		edited, err := ds.editedCopy(ctx, b.origin, b.docs)
+		edited, err := ds.editedCopy(ctx, t.tx, b.origin, b.docs)
 		if err != nil {
 			return err
 		}
@@ -735,7 +735,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	}
 
 	// Current documents of the touched packages, from their record rows.
-	existing, err := ds.vocabularyDocumentRows(ctx, touched)
+	existing, err := ds.vocabularyDocumentRows(ctx, ds.db, touched)
 	if err != nil {
 		return nil, err
 	}
@@ -1693,8 +1693,8 @@ func closureDigest(pkg string, docs []vocabulary.Document) (string, error) {
 // open, so it is the stored side of the import's stamp. It reads that one
 // package's rows (packageDocumentRows): the status computes this on every
 // listing, and the console polls the listing.
-func (ds *dataset) packageClosureDigest(ctx context.Context, pkg string) (string, error) {
-	rows, err := ds.packageDocumentRows(ctx, pkg)
+func (ds *dataset) packageClosureDigest(ctx context.Context, q dbx, pkg string) (string, error) {
+	rows, err := ds.packageDocumentRows(ctx, q, pkg)
 	if err != nil {
 		return "", err
 	}
@@ -1795,8 +1795,8 @@ func rowPackage(typeIdent, id string, authority, pkg *string) string {
 
 // vocabularyDocumentRows reads the touched packages' schema record rows back as
 // loader documents — the store is the source the candidate rebuilds from.
-func (ds *dataset) vocabularyDocumentRows(ctx context.Context, authorities map[string]bool) (map[string]vocabulary.Document, error) {
-	return ds.vocabularyDocumentRowsWhere(ctx, authorities, "")
+func (ds *dataset) vocabularyDocumentRows(ctx context.Context, q dbx, authorities map[string]bool) (map[string]vocabulary.Document, error) {
+	return ds.vocabularyDocumentRowsWhere(ctx, q, authorities, "")
 }
 
 // packageDocumentRows is vocabularyDocumentRows for ONE package, with the
@@ -1805,18 +1805,21 @@ func (ds *dataset) vocabularyDocumentRows(ctx context.Context, authorities map[s
 // so the status reads can fetch one package's rows without decoding every
 // declaration in the repository. The Go-side filter still runs, so the two
 // agree on what a package's document is.
-func (ds *dataset) packageDocumentRows(ctx context.Context, pkg string) (map[string]vocabulary.Document, error) {
+func (ds *dataset) packageDocumentRows(ctx context.Context, q dbx, pkg string) (map[string]vocabulary.Document, error) {
 	authority, name := vocabulary.SplitPackageRef(pkg)
 	n := len(vocabularyKindRefs)
-	return ds.vocabularyDocumentRowsWhere(ctx, map[string]bool{pkg: true},
+	return ds.vocabularyDocumentRowsWhere(ctx, q, map[string]bool{pkg: true},
 		"AND props->>'authority' = $"+strconv.Itoa(n+1)+" AND props->>'package' = $"+strconv.Itoa(n+2),
 		authority, name)
 }
 
 // vocabularyDocumentRowsWhere is the one query behind the two readers above:
 // `where` is appended to the kind and liveness predicate, its placeholders
-// numbered after the kind list, and `extra` are its arguments.
-func (ds *dataset) vocabularyDocumentRowsWhere(ctx context.Context, authorities map[string]bool, where string, extra ...any) (map[string]vocabulary.Document, error) {
+// numbered after the kind list, and `extra` are its arguments. q is the pool
+// or the caller's transaction: a caller inside one reads through it, both
+// to see its own writes and because a second connection taken while the
+// transaction holds one can wait forever on a saturated shared pool.
+func (ds *dataset) vocabularyDocumentRowsWhere(ctx context.Context, q dbx, authorities map[string]bool, where string, extra ...any) (map[string]vocabulary.Document, error) {
 	args := make([]any, 0, len(vocabularyKindRefs)+len(extra))
 	ph := make([]string, 0, len(vocabularyKindRefs))
 	for i, ident := range vocabularyKindRefs {
@@ -1824,7 +1827,7 @@ func (ds *dataset) vocabularyDocumentRowsWhere(ctx context.Context, authorities 
 		ph = append(ph, "$"+strconv.Itoa(i+1))
 	}
 	args = append(args, extra...)
-	rows, err := ds.db.QueryContext(ctx, `
+	rows, err := q.QueryContext(ctx, `
 		SELECT id, kind, props FROM records
 		WHERE kind IN (`+strings.Join(ph, ", ")+`) AND deleted_at IS NULL `+where+`
 		ORDER BY id`, args...)
@@ -2037,7 +2040,7 @@ func cappedQuarantineReason(reason string) string {
 // earlier, for a closure that no longer PARSES (storedPackages): both
 // failures arrive here as quarantine candidates and are marked identically.
 func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
-	built, unparsed, err := ds.storedPackages(ctx, nil)
+	built, unparsed, err := ds.storedPackages(ctx, ds.db, nil)
 	if err != nil {
 		return err
 	}
@@ -2240,7 +2243,14 @@ func (ds *dataset) clearGroupQuarantine(ctx context.Context, authorities []*voca
 // before they are built. The package names under each source, and the
 // documents by docKey.
 func (ds *dataset) storedDocumentsBySource(ctx context.Context, skip func(string) bool) (map[string]vocabulary.Document, map[string]map[string]bool, error) {
-	rows, err := ds.db.QueryContext(ctx, `
+	return ds.storedDocumentsBySourceOn(ctx, ds.db, skip)
+}
+
+// storedDocumentsBySourceOn is storedDocumentsBySource read through q: the
+// pool, or a transaction the caller holds, which must read through it rather
+// than take a second connection from the shared pool.
+func (ds *dataset) storedDocumentsBySourceOn(ctx context.Context, q dbx, skip func(string) bool) (map[string]vocabulary.Document, map[string]map[string]bool, error) {
+	rows, err := q.QueryContext(ctx, `
 		SELECT id, COALESCE(props->>'source', $3) FROM records
 		WHERE kind IN ($1, $2) AND deleted_at IS NULL
 		ORDER BY created_at, id`, kindPackage, kindAuthority, vocabulary.SourceInstalled)
@@ -2278,7 +2288,7 @@ func (ds *dataset) storedDocumentsBySource(ctx context.Context, skip func(string
 	if len(authorities) == 0 {
 		return nil, nil, nil
 	}
-	docs, err := ds.vocabularyDocumentRows(ctx, authorities)
+	docs, err := ds.vocabularyDocumentRows(ctx, q, authorities)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -2287,8 +2297,8 @@ func (ds *dataset) storedDocumentsBySource(ctx context.Context, skip func(string
 
 // storedPackages rebuilds the stored vocabulary as packages, one BuildPackages
 // pass per source, and names the packages that no longer parse.
-func (ds *dataset) storedPackages(ctx context.Context, skip func(string) bool) ([]*vocabulary.Package, []quarantinedPackage, error) {
-	docs, bySource, err := ds.storedDocumentsBySource(ctx, skip)
+func (ds *dataset) storedPackages(ctx context.Context, q dbx, skip func(string) bool) ([]*vocabulary.Package, []quarantinedPackage, error) {
+	docs, bySource, err := ds.storedDocumentsBySourceOn(ctx, q, skip)
 	if err != nil {
 		return nil, nil, err
 	}

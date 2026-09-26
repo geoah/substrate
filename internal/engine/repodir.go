@@ -265,7 +265,7 @@ func (s *service) reconcileRow(ctx context.Context, repo Repository, allowImport
 	if _, err := s.repositoryDir(repo.ID); err != nil {
 		return out, err
 	}
-	db, err := openScoped(s.dsn, repo.scope(), s.appRole)
+	db, err := s.scopedDB(repo.scope())
 	if err != nil {
 		return out, err
 	}
@@ -716,7 +716,7 @@ func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) 
 	if err := ds.importFault(importAfterFirstFold); err != nil {
 		return err
 	}
-	if err := ds.loadDeclarationsForReplay(ctx); err != nil {
+	if err := ds.loadDeclarationsForReplay(ctx, ds.db); err != nil {
 		return err
 	}
 	if err := replay(true); err != nil {
@@ -734,8 +734,8 @@ func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) 
 // markers through a patch, which appends an entry, and an import may not
 // append. A closure that does not admit is left out, which is what the open
 // ladder does too.
-func (ds *dataset) loadDeclarationsForReplay(ctx context.Context) error {
-	built, _, err := ds.storedPackages(ctx, nil)
+func (ds *dataset) loadDeclarationsForReplay(ctx context.Context, q dbx) error {
+	built, _, err := ds.storedPackages(ctx, q, nil)
 	if err != nil {
 		return err
 	}
@@ -876,7 +876,7 @@ func (s *service) stampDialectsFromManifest(ctx context.Context, repo Repository
 	if m.ChangelogDialect == 0 && m.VocabularyDialect == 0 {
 		return nil
 	}
-	db, err := openScoped(s.dsn, repo.scope(), s.appRole)
+	db, err := s.scopedDB(repo.scope())
 	if err != nil {
 		return err
 	}
@@ -1204,6 +1204,42 @@ func (ds *dataset) openDirectory(ctx context.Context) error {
 	return mirrorSealedFromTable(ctx, ds.db, ds.dir)
 }
 
+// ownConnection dials a one-connection pool pinned to the repository, outside
+// the shared pool's cap, for a caller that must not draw a second shared
+// connection while it holds one. The caller closes it.
+func (ds *dataset) ownConnection() (*sql.DB, error) {
+	db, err := openScoped(ds.svc.dsn, ds.scope, ds.svc.appRole)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	return db, nil
+}
+
+// catchUpOnOwnConnection is catchUpBeforePrepare's read of the table, on a
+// connection of its own (ownConnection).
+func (ds *dataset) catchUpOnOwnConnection(ctx context.Context, head int64) (int64, error) {
+	// The slot is taken while this commit holds a shared connection; its
+	// holder is another catch-up, which needs nothing more than the slot
+	// and the connection it dials, so the wait always ends
+	// (scope.go CatchUpConnections).
+	release, err := ds.svc.catchUpConns.take(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer release()
+	db, err := ds.ownConnection()
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = db.Close() }()
+	n, err := appendFromTable(ctx, db, ds.writer, head, ds.svc.catchUpBatch)
+	if err != nil {
+		return n, err
+	}
+	return n, mirrorSealedFromTable(ctx, db, ds.dir)
+}
+
 // directoryErr is the standing refusal after a post-commit step failed.
 func (ds *dataset) directoryErr() error {
 	ds.writerMu.Lock()
@@ -1396,10 +1432,14 @@ func (ds *dataset) catchUpBeforePrepare(t *txn) error {
 	if head > first-1 || ds.commitInDoubt {
 		return nil
 	}
-	n, err := appendFromTable(t.ctx, ds.db, ds.writer, head, ds.svc.catchUpBatch)
-	if err == nil {
-		err = mirrorSealedFromTable(t.ctx, ds.db, ds.dir)
-	}
+	// The catch-up reads what OTHER transactions committed, so it cannot
+	// read through this one (it would see its own uncommitted rows and
+	// sealed writes). Nor may it take a second connection from the shared
+	// pool while this transaction holds one, the changelog lock and
+	// writerMu: on a saturated pool that wait never ends. It dials a
+	// connection of its own instead, outside the pool's cap, on a path
+	// that runs only after another process wrote this repository.
+	n, err := ds.catchUpOnOwnConnection(t.ctx, head)
 	if err == nil && ds.writer.Head() != first-1 {
 		err = fmt.Errorf("%w: the file is at seq %d after the catch-up and this transaction starts at seq %d",
 			ErrChangelogDiverged, ds.writer.Head(), first)

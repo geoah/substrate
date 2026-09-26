@@ -628,6 +628,15 @@ type loadedTrigger struct {
 }
 
 func (ds *dataset) loadTriggers(ctx context.Context) ([]loadedTrigger, error) {
+	// One bundle-lifecycle read serves the whole pass: a blocked bundle's
+	// callables load unresolved, so its triggers skip and cursors stand still.
+	// It runs BEFORE the rows open: a read made while they hold a connection
+	// needs a second one, and under a saturated shared pool every pass
+	// holding one and waiting for another is the whole process stuck.
+	states, err := ds.bundleStates(ctx)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT id, props, created_at, version FROM records
 		WHERE kind = $1 AND deleted_at IS NULL ORDER BY id`, typeTrigger)
@@ -635,12 +644,6 @@ func (ds *dataset) loadTriggers(ctx context.Context) ([]loadedTrigger, error) {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	// One bundle-lifecycle read serves the whole pass: a blocked bundle's
-	// callables load unresolved, so its triggers skip and cursors stand still.
-	states, err := ds.bundleStates(ctx)
-	if err != nil {
-		return nil, err
-	}
 	var out []loadedTrigger
 	for rows.Next() {
 		var id string

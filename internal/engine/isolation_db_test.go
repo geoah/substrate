@@ -414,6 +414,56 @@ func TestRepositoryIsolation(t *testing.T) {
 		}
 	})
 
+	// The engine's own handles share one pool, so one physical connection
+	// serves alpha and then beta. The connector pins it on every checkout
+	// and the pool unpins it on every release: a handle reads its own
+	// repository's row however the connections rotate between the two, and
+	// no idle connection carries either repository's pin.
+	t.Run("the shared pool pins every checkout and unpins every release", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+		handles := map[string]*sql.DB{}
+		for _, id := range []string{repos.alpha, repos.beta} {
+			db, err := engine.SharedScopedDB(repos.svc, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = db.Close() })
+			handles[id] = db
+		}
+		for i := range 50 {
+			for id, db := range handles {
+				var title string
+				if err := db.QueryRowContext(ctx, `SELECT title FROM records WHERE id = 'shared-id'`).Scan(&title); err != nil {
+					t.Fatalf("read %s's task, round %d: %v", id, i, err)
+				}
+				if title != id+" only" {
+					t.Fatalf("%s's handle read %q on round %d", id, title, i)
+				}
+			}
+		}
+		// The unpin runs as the release returns the connection, so the idle
+		// set is read until it settles.
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			pins, err := engine.IdleRepositoryPins(ctx, repos.svc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pinned := false
+			for _, p := range pins {
+				pinned = pinned || p != ""
+			}
+			if !pinned {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("idle shared connections still carry repository pins: %q", pins)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	})
+
 	// A connection that carries no repository at all reads nothing and writes
 	// nothing: the policy's missing_ok current_setting fails closed, and the
 	// column default raises rather than inventing a repository.

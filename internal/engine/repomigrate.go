@@ -19,7 +19,7 @@ package engine
 // A landed migration is never edited: the ledger says which release wrote it
 // and nothing else can (frozen:check, lint:migrations).
 //
-// THREE RULES A MIGRATION IS HELD TO.
+// FOUR RULES A MIGRATION IS HELD TO.
 //
 //   - It writes through the changelog, as ordinary record writes, never into
 //     the fold directly: the changelog is the truth, and a rebuild replays what
@@ -33,6 +33,12 @@ package engine
 //     directory imported into a fresh database carries its changelog and not
 //     the ledger, so every migration runs once more there and must find
 //     nothing to do.
+//   - It reads through its transaction (t), never through the dataset's pool
+//     handle. Every repository shares one connection pool, and a read on it
+//     while the transaction holds a connection is a second acquisition that
+//     can wait forever on a saturated pool. 0001 and 0002 predate the rule and
+//     are frozen, which is why the runner gives the transaction a connection
+//     of its own (runRepositoryMigrations).
 //
 // THE IMPORT PATH IS THE ONE THAT NEEDS THIS MOST. A repository directory
 // restored under a fresh database (repodir.go importRepositoryDir) is folded
@@ -106,14 +112,41 @@ func (ds *dataset) runRepositoryMigrations(ctx context.Context) error {
 		return fmt.Errorf("%w: repository %s has %d pending repository migration(s), %s, and this process opened its directory read-only; open it once with a process that writes",
 			substrate.ErrUnavailable, ds.info.ID, len(pending), strings.Join(names, ", "))
 	}
+	// THE TRANSACTION RUNS ON A CONNECTION OF ITS OWN, outside the shared
+	// repository pool. Landed migrations are frozen (decision 0099,
+	// `mise run frozen:check`), and two of them (0001, 0002) read the
+	// stored declarations through the dataset's pool handle while their
+	// transaction is open. On the shared pool that is a second connection
+	// asked for while the first is held, which waits forever once the pool
+	// is saturated. With the transaction here, that nested read is the only
+	// shared acquisition and nothing it waits on is held by its own caller.
+	// A NEW migration reads through its transaction (t), never the pool.
+	//
+	// The slot comes first, before any connection is held, so a migration
+	// waiting for one holds nothing anybody else waits on; the slot is what
+	// keeps a boot that opens many repositories at once inside the
+	// documented connection bound (scope.go MigrationConnections).
+	release, err := ds.svc.migrationConns.take(ctx)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: repository %s: wait for a repository migration slot: %w", ds.info.ID, err)
+	}
+	defer release()
+	own, err := ds.ownConnection()
+	if err != nil {
+		return fmt.Errorf("substrate/engine: repository %s: open a connection for the repository migrations: %w", ds.info.ID, err)
+	}
+	defer func() { _ = own.Close() }()
 	for _, m := range pending {
 		var did string
-		err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		err := ds.inTxOn(ctx, own, substrate.ActorSystem, true, func(t *txn) error {
 			// The same lock the boot upgrade and every vocabulary apply take:
 			// a migration rewrites declaration rows, and nothing else may
 			// decide against the registry while it does.
 			if err := t.lockKey(registryDepKey(ds)); err != nil {
 				return err
+			}
+			if ds.svc.testMigrationHook != nil {
+				ds.svc.testMigrationHook()
 			}
 			summary, err := m.Run(t)
 			if err != nil {

@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
@@ -46,6 +48,52 @@ func mustDecodeTestCredentialKey(key string) []byte {
 // DataRootOf is the data root a service was opened with, so a test can find
 // a repository's directory (changelogfile.RepoDir) and damage or copy it.
 func DataRootOf(svc substrate.Service) string { return svc.(*service).dataRoot }
+
+// SetRepositoryConnsPerHandle caps what each repository opened from here on
+// may take of the shared pool. At 1, a path that holds a connection and asks
+// its repository for a second waits forever, which is what a saturated
+// shared pool does in production.
+func SetRepositoryConnsPerHandle(svc substrate.Service, n int) { svc.(*service).repoConnsPerHandle = n }
+
+// SetTestMigrationHook runs fn inside every repository migration's
+// transaction, with the migration's own connection held, for the
+// repositories opened from here on.
+func SetTestMigrationHook(svc substrate.Service, fn func()) { svc.(*service).testMigrationHook = fn }
+
+// SharedScopedDB is a raw handle on the service's shared repository pool,
+// pinned to one repository by the same connector every dataset rides.
+func SharedScopedDB(svc substrate.Service, repository string) (*sql.DB, error) {
+	return svc.(*service).scopedDB(Scope{Repository: repository})
+}
+
+// IdleRepositoryPins acquires every idle connection of the shared pool
+// straight from it, bypassing the connector, and reports each one's
+// repository setting. A released connection is unpinned before it is idle,
+// so every value is empty.
+func IdleRepositoryPins(ctx context.Context, svc substrate.Service) ([]string, error) {
+	pool := svc.(*service).repoPool
+	n := int(pool.Stat().IdleConns())
+	var pins []string
+	var held []*pgxpool.Conn
+	defer func() {
+		for _, c := range held {
+			c.Release()
+		}
+	}()
+	for range n {
+		c, err := pool.Acquire(ctx)
+		if err != nil {
+			return pins, err
+		}
+		held = append(held, c)
+		var pin string
+		if err := c.QueryRow(ctx, `SELECT COALESCE(current_setting($1, true), '')`, repositorySetting).Scan(&pin); err != nil {
+			return pins, err
+		}
+		pins = append(pins, pin)
+	}
+	return pins, nil
+}
 
 // migratedTemplate is the database MigratedDSN copies for each test
 // (testdb.Template): Open ran on it once, with no repository, so the copy

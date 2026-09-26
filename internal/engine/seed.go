@@ -277,13 +277,20 @@ type storedDeclaration struct {
 // as version 0, which compares below everything, so it upgrades on the next
 // open rather than sticking.
 func (ds *dataset) storedDeclarations(ctx context.Context) (map[string]storedDeclaration, error) {
+	return ds.storedDeclarationsOn(ctx, ds.db)
+}
+
+// storedDeclarationsOn is storedDeclarations read through q: the pool, or a
+// transaction the caller holds, which must read through it rather than take
+// a second connection from the shared pool.
+func (ds *dataset) storedDeclarationsOn(ctx context.Context, q dbx) (map[string]storedDeclaration, error) {
 	args := make([]any, 0, len(vocabularyKindRefs))
 	ph := make([]string, 0, len(vocabularyKindRefs))
 	for i, ident := range vocabularyKindRefs {
 		args = append(args, ident)
 		ph = append(ph, "$"+strconv.Itoa(i+1))
 	}
-	rows, err := ds.db.QueryContext(ctx, `
+	rows, err := q.QueryContext(ctx, `
 		SELECT kind, id, COALESCE(props->>'version', ''),
 		       props->>'authority', props->>'package'
 		FROM records

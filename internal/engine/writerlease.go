@@ -242,6 +242,16 @@ func (l *writerLease) release(repository string) {
 	// own.
 	if len(l.held) == 0 {
 		l.lost.Store(false)
+		// Unlocked before the session goes: a closed session's locks are
+		// released only once its backend notices the close, so a caller
+		// that hands a repository back and at once sees it claimed by
+		// another process would otherwise race that backend's exit. A
+		// failed unlock changes nothing, as the close ends the session.
+		if l.conn != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), writerLeaseBeatTimeout)
+			_, _ = l.conn.ExecContext(ctx, `SELECT pg_advisory_unlock(`+writerLeaseKeySQL+`)`, repository)
+			cancel()
+		}
 		l.closeConn()
 		return
 	}

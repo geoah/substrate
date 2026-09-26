@@ -132,6 +132,7 @@ func run() error {
 		engine.WithCredentialKey(cfg.CredentialKey),
 		engine.WithBlobStore(blobs),
 		engine.WithConversionCeiling(cfg.ConversionCeiling),
+		engine.WithRepositoryConnections(cfg.RepositoryConnections),
 		engine.WithOrphanCollection(cfg.OrphanGrace),
 	}
 	if cfg.OrphanGrace > 0 {
