@@ -7,6 +7,7 @@ import { Link } from "@tanstack/react-router"
 import { IdText } from "@/components/identity/id-text"
 import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
+import { SectionHead } from "@/components/identity/section-head"
 import { OriginTag, StatusPill, ToolTile } from "@/components/tools/tool-marks"
 import {
   agentName,
@@ -54,15 +55,7 @@ export function ToolsPage() {
       ) : (
         groups.map((g) => (
           <section key={g.key} aria-labelledby={`tools-${g.key}`}>
-            <div className="mt-8 mb-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-              <h2
-                id={`tools-${g.key}`}
-                className="text-[15px] font-semibold tracking-[-0.01em]"
-              >
-                {g.title}
-              </h2>
-              <span className="text-[12.5px] text-faint">{g.hint}</span>
-            </div>
+            <SectionHead id={`tools-${g.key}`} title={g.title} hint={g.hint} />
             <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
               {g.tools.map((t) => (
                 <ToolCard

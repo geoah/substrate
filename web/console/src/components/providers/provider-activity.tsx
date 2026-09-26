@@ -11,7 +11,7 @@ import {
   HistorySentences,
   HistorySkeleton,
 } from "@/components/changelog/history-feed"
-import { SectionHead } from "@/components/providers/provider-marks"
+import { SectionHead } from "@/components/identity/section-head"
 import { Button } from "@/components/ui/button"
 import { useEverydayChanges, useHistoryFeed } from "@/hooks/use-history-feed"
 import { functionsQueryOptions } from "@/lib/api/functions"

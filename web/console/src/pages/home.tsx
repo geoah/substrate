@@ -18,6 +18,7 @@ import { RecentChats } from "@/components/home/recent-chats"
 import { DocPage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
 import { ProviderBadge } from "@/components/identity/provider-badge"
+import { SectionHead } from "@/components/identity/section-head"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
@@ -51,13 +52,8 @@ function Section({
   children: ReactNode
 }) {
   return (
-    <section className="mt-8">
-      <div className="mb-2.5 flex items-center gap-2">
-        <h2 className="text-[15px] font-semibold tracking-[-0.01em]">
-          {title}
-        </h2>
-        {action && <div className="ml-auto">{action}</div>}
-      </div>
+    <section>
+      <SectionHead title={title} actions={action} />
       {children}
     </section>
   )

@@ -1,5 +1,5 @@
 /** The Providers area's small marks: a provider's logo tile, the rounded
- * state pill its card and page wear, and a section heading with its hint.
+ * state pill its card and page wear.
  * Everything a provider page draws that is not an identity component. */
 
 import type { ReactNode } from "react"
@@ -100,33 +100,6 @@ export function ToneText({
   className?: string
 }) {
   return <span className={cn(WORD_TONE[tone], className)}>{children}</span>
-}
-
-/** A section's heading row: the title, a quiet hint beside it, and the
- * section's own actions on the right. */
-export function SectionHead({
-  title,
-  hint,
-  actions,
-  id,
-}: {
-  title: ReactNode
-  hint?: ReactNode
-  actions?: ReactNode
-  id?: string
-}) {
-  return (
-    <div
-      id={id}
-      className="mt-9 mb-3 flex scroll-mt-6 flex-wrap items-baseline gap-x-3 gap-y-1"
-    >
-      <h2 className="text-[15px] font-semibold">{title}</h2>
-      {hint && <span className="text-[12.5px] text-faint">{hint}</span>}
-      {actions && (
-        <div className="ml-auto flex items-center gap-2">{actions}</div>
-      )}
-    </div>
-  )
 }
 
 /** A bordered list of rows, the `.io` shape: one fact per row, hairlines

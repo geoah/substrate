@@ -26,6 +26,7 @@ import { IdText } from "@/components/identity/id-text"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { DocPage } from "@/components/identity/page-layout"
 import { RecordRef } from "@/components/identity/record-ref"
+import { SectionHead } from "@/components/identity/section-head"
 import { StateBadge } from "@/components/identity/state-badge"
 import type { PeekTarget } from "@/components/record-peek"
 import { ReferenceValue } from "@/components/record/reference-value"
@@ -743,14 +744,10 @@ export function MergeRequestDetailPage() {
       {/* the side-by-side */}
       {proposed && (
         <>
-          <div className="mt-8 mb-2.5 flex items-baseline gap-2">
-            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">
-              Side by side
-            </h2>
-            <span className="text-[12.5px] text-faint">
-              what each one holds, and what combining keeps
-            </span>
-          </div>
+          <SectionHead
+            title="Side by side"
+            hint="what each one holds, and what combining keeps"
+          />
           {sidesReady ? (
             <SideBySide
               loser={loserSide.query.data!}

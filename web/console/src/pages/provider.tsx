@@ -43,10 +43,10 @@ import {
   BringsIn,
   ProviderTools,
 } from "@/components/providers/provider-contents"
+import { SectionHead } from "@/components/identity/section-head"
 import {
   Pill,
   ProviderLogo,
-  SectionHead,
   StandingPill,
 } from "@/components/providers/provider-marks"
 import {

@@ -5,11 +5,12 @@
  * on one left-aligned page. Technical mode adds the record's own facts and a
  * Source toggle that shows the YAML envelope or the JSON. */
 
-import { useMemo, useState, type ReactNode } from "react"
+import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { FileQuestionIcon } from "lucide-react"
 
 import { DocPage } from "@/components/identity/page-layout"
+import { SectionHead } from "@/components/identity/section-head"
 import { PropertySheet } from "@/components/property-sheet/property-sheet"
 import { sheetRows } from "@/components/property-sheet/sheet-rows"
 import { ConnectedSection } from "@/components/record/connected"
@@ -47,15 +48,6 @@ import { SYNC_TRAIT_IDENTITY, kindHasTrait } from "@/lib/sync"
 import { recordRoute } from "@/router"
 
 const NO_KINDS: KindInfo[] = []
-
-function SectionHead({ title, hint }: { title: string; hint?: ReactNode }) {
-  return (
-    <div className="mt-8 mb-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-      <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{title}</h2>
-      {hint && <span className="text-[12.5px] text-faint">{hint}</span>}
-    </div>
-  )
-}
 
 export function RecordPage() {
   const { authority, pkg, name, id } = recordRoute.useParams()

@@ -30,6 +30,7 @@ import { ActorRef } from "@/components/identity/actor-ref"
 import { IdText } from "@/components/identity/id-text"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { PageHeader } from "@/components/identity/page-header"
+import { SectionHead } from "@/components/identity/section-head"
 import { DocPage } from "@/components/identity/page-layout"
 import { RecordRef } from "@/components/identity/record-ref"
 import { StateBadge } from "@/components/identity/state-badge"
@@ -96,8 +97,6 @@ import { displayName, lowerFirst } from "@/lib/kind-names"
 import type { PropSpec } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
 import { changeRequestDetailRoute } from "@/router"
-
-const H2 = "mb-2 text-[15px] font-semibold tracking-[-0.01em]"
 
 function Warning({
   tone = "warning",
@@ -616,7 +615,7 @@ function PendingBody({
     const heading = proposedHeading(diff.properties)?.key
     return (
       <>
-        <h2 className={H2}>What it adds</h2>
+        <SectionHead title="What it adds" className="mt-0" />
         <Values
           rows={values.filter((r) => r.key !== heading)}
           specs={specs}
@@ -649,7 +648,7 @@ function PendingBody({
   const noop = op === "patch" && appliesNothing(diff, rows)
   return (
     <>
-      <h2 className={H2}>What changes</h2>
+      <SectionHead title="What changes" className="mt-0" />
       {noop && (
         <p className="mb-3 text-[13px] text-warning">
           The record already has every value suggested here, so applying would
@@ -741,7 +740,7 @@ function AlsoChanges({ diff }: { diff: ProposedDiff }) {
   if (!groups.length) return null
   return (
     <section className="mt-7">
-      <h2 className={H2}>It also changes</h2>
+      <SectionHead title="It also changes" className="mt-0" />
       <div className="flex flex-col gap-3 text-[13px]">
         {groups.map(([name, values]) => (
           <div key={name}>
@@ -775,7 +774,7 @@ function UnreadableFields({ fields }: { fields: UnreadableField[] }) {
   if (!fields.length) return null
   return (
     <section className="mt-7">
-      <h2 className={H2}>What couldn’t be read</h2>
+      <SectionHead title="What couldn’t be read" className="mt-0" />
       <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
         {fields.map((field) => {
           const raw = JSON.stringify(field.raw) ?? String(field.raw)
@@ -872,7 +871,7 @@ function TechnicalDetails({
 
   return (
     <section className="mt-9 rounded-lg border bg-panel p-4">
-      <h2 className={H2}>Technical details</h2>
+      <SectionHead title="Technical details" className="mt-0" />
       <dl className="grid grid-cols-[minmax(90px,130px)_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-[13px]">
         {facts.map(([label, value]) => (
           <div key={label} className="contents">

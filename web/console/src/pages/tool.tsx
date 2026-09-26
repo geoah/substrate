@@ -34,6 +34,7 @@ import { ActorRef } from "@/components/identity/actor-ref"
 import { IdText } from "@/components/identity/id-text"
 import { PageHeader } from "@/components/identity/page-header"
 import { DocPage } from "@/components/identity/page-layout"
+import { SectionHead } from "@/components/identity/section-head"
 import { RunIO } from "@/components/tools/run-io"
 import { OriginTag, StatusPill, ToolTile } from "@/components/tools/tool-marks"
 import { TryIt } from "@/components/tools/try-it"
@@ -391,12 +392,7 @@ function Section({
 }) {
   return (
     <section>
-      <div className="mt-8 mb-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <h2 className="text-[15px] font-semibold tracking-[-0.01em]">
-          {title}
-        </h2>
-        {hint && <span className="text-[12.5px] text-faint">{hint}</span>}
-      </div>
+      <SectionHead title={title} hint={hint} />
       {children}
     </section>
   )

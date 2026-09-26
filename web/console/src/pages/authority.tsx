@@ -18,6 +18,7 @@ import { KindPath } from "@/components/identity/kind-ref"
 import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
 import { ProviderBadge } from "@/components/identity/provider-badge"
+import { SectionHead } from "@/components/identity/section-head"
 import {
   Empty,
   EmptyDescription,
@@ -248,24 +249,28 @@ export function AuthorityPage() {
         empty={!registry.isPending && !kinds.length}
       />
       {packages.map(([pkg, list]) => (
-        <section key={pkg} className="mt-8">
-          <div className="mb-2.5 flex flex-wrap items-baseline gap-x-2.5">
-            <h2 className="flex items-center gap-2 text-[15px] font-semibold">
-              {providers && <ProviderBadge provider={pkg} size="sm" />}
-              <Link
-                to="/data/$authority/$pkg"
-                params={{ authority, pkg }}
-                className="underline-offset-[3px] hover:underline"
-              >
-                {technical && !providers ? pkg : packageTitle(authority, pkg)}
-              </Link>
-            </h2>
-            {technical && (
-              <span className="font-mono text-[12px] text-faint">
-                {authority}/{pkg}
-              </span>
-            )}
-          </div>
+        <section key={pkg}>
+          <SectionHead
+            title={
+              <>
+                {providers && <ProviderBadge provider={pkg} size="sm" />}
+                <Link
+                  to="/data/$authority/$pkg"
+                  params={{ authority, pkg }}
+                  className="underline-offset-[3px] hover:underline"
+                >
+                  {technical && !providers ? pkg : packageTitle(authority, pkg)}
+                </Link>
+              </>
+            }
+            hint={
+              technical && (
+                <span className="font-mono text-[12px]">
+                  {authority}/{pkg}
+                </span>
+              )
+            }
+          />
           <KindsList kinds={list} />
         </section>
       ))}

@@ -10,12 +10,8 @@ import { Link } from "@tanstack/react-router"
 
 import { IdText } from "@/components/identity/id-text"
 import { KindRef } from "@/components/identity/kind-ref"
-import {
-  Pill,
-  RowList,
-  SectionHead,
-  ToneText,
-} from "@/components/providers/provider-marks"
+import { SectionHead } from "@/components/identity/section-head"
+import { Pill, RowList, ToneText } from "@/components/providers/provider-marks"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { recordMappingsListQueryOptions } from "@/lib/api/bundles"
