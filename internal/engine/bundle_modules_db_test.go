@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
-
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 

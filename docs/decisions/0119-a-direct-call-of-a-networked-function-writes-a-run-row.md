@@ -21,6 +21,8 @@ effects.
 - Write a `triggerrun` row with mode `call` and no trigger, for a direct call
   of a function that declares `permissions.network`.
 - The same row for every direct call, networked or not.
+- The same row for every direct call of a function whose declared `effect`
+  class is external or irreversible.
 - A new kind for call runs beside `triggerrun`.
 
 ## Decision Outcome
@@ -37,6 +39,8 @@ call runs with no new code. A function with no network grant reaches
 nothing outside the repository, and its effects already sit in the
 changelog under the token's principal, so a row per call would add a
 changelog entry to every pure read-shaped call and record nothing new.
+`permissions.network` wins over the declared `effect` class because the
+sandbox enforces the network grant, while the author only declares `effect`.
 
 The kind widens to fit (version 18): `trigger` is no longer required, `mode`
 gains `call`, `status` gains `failed`, and four properties hold a call's
@@ -49,7 +53,9 @@ own commit.
 A call that settles writes the row in the transaction that applies its
 effects and settles its `Idempotency-Key`. A call whose body ran and failed
 writes a `failed` row in a transaction of its own, since the body may have
-sent something before it failed. A call refused before the body runs, and a
+sent something before it failed. A runner failure before the body starts
+(provisioning, spawn) also writes a `failed` row: the engine cannot tell it
+apart from a body that failed early. A call refused before the body runs, and a
 replayed idempotent outcome, write nothing: nothing went out. Call runs are
 not pruned; the per-trigger retention keys on a trigger they do not have.
 
@@ -68,13 +74,23 @@ not pruned; the per-trigger retention keys on a trigger they do not have.
   effects' changelog entries, and not at all when it applied none.
 - Bad, because a trigger can never match a call run, so no automation can
   react to one.
+- Bad, because `output` (up to 4096 bytes) stays verbatim in the append-only
+  changelog after the row is deleted. The scrubber removes only injected
+  secrets, so any other sensitive value a provider returns stays too. The row
+  does not hold the call's input, so what was sent is recoverable only when
+  the output echoes it.
+- Bad, because only the call API writes the row. An agent's tool call
+  (`agentLoop.dispatchFunction` through `runCallable`), `RunTrigger` and
+  `RetryTriggerFailure` still run a networked function with no call run.
 
 ### Confirmation
 
 `TestNetworkedCallWritesRunRow` in `internal/engine/functions_call_db_test.go`
 calls a networked function and reads its `ok`, oversized-output and `failed`
-rows. `TestCallModeValidatesAndApplies` holds that a call of a function with
-no network grant writes none.
+rows. `TestNetworkedCallRunRowEdges` holds that a call refused on its input
+writes none, an output outside `returns:` writes a `failed` row, and a keyed
+replay writes no second row. `TestCallModeValidatesAndApplies` holds that a
+call of a function with no network grant writes none.
 
 ## More Information
 
