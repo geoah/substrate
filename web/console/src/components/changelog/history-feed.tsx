@@ -14,6 +14,7 @@ import { Link } from "@tanstack/react-router"
 
 import { ActorRef } from "@/components/identity/actor-ref"
 import { ValueMoves } from "@/components/changelog/value-moves"
+import { CopyButton } from "@/components/identity/copy-button"
 import { KindPath, KindRef } from "@/components/identity/kind-ref"
 import { RecordRef } from "@/components/identity/record-ref"
 import { Button } from "@/components/ui/button"
@@ -133,7 +134,7 @@ export function HistoryEntryRow({
       className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2.5 border-b border-border py-[9px]"
     >
       <div className="min-w-0 leading-[1.6]">
-        <ActorRef actor={entry.actor} />{" "}
+        <ActorRef actor={entry.actor} inlineId={false} />{" "}
         {phrase ? (
           <Phrase phrase={phrase} />
         ) : (
@@ -157,7 +158,23 @@ export function HistoryEntryRow({
               ))}
             {technical && (
               <>
-                <span className="tabular-nums">#{seq}</span>
+                <span className="inline-flex items-center gap-0.5 tabular-nums">
+                  #{seq}
+                  <CopyButton
+                    value={seq.replace("–", "-")}
+                    label={
+                      entry.rows.length > 1
+                        ? "Copy the sequence numbers"
+                        : "Copy the sequence number"
+                    }
+                  />
+                </span>
+                <span className="inline-flex min-w-0 items-center gap-0.5">
+                  <span className="font-mono text-[11px] [overflow-wrap:anywhere]">
+                    {entry.actor}
+                  </span>
+                  <CopyButton value={entry.actor} label="Copy the actor id" />
+                </span>
                 {entry.records.length > 1 && (
                   <KindPath reference={entry.kind} className="text-[11px]" />
                 )}

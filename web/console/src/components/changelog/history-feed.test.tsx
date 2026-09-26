@@ -182,4 +182,17 @@ describe("HistoryEntryRow", () => {
     renderRow(<HistoryEntryRow entry={entry} today />, true)
     expect(await screen.findByText("originDigest:")).toBeTruthy()
   })
+
+  it("puts the sequence number and the actor id after the sentence, each with a copy button", async () => {
+    const [entry] = foldHistory([patch(true)])
+    renderRow(<HistoryEntryRow entry={entry} today />, true)
+    expect(
+      await screen.findByRole("button", { name: "Copy the sequence number" })
+    ).toBeTruthy()
+    expect(
+      screen.getByRole("button", { name: "Copy the actor id" })
+    ).toBeTruthy()
+    // The id reads once, after the sentence, not inside the actor's link.
+    expect(screen.getAllByText("console")).toHaveLength(1)
+  })
 })
