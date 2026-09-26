@@ -4,7 +4,7 @@ date: 2026-09-26
 decision-makers: George Antoniadis (via the issue-583 agent session)
 ---
 
-# 0107. A manager row holds at the machine tier once its actor is declared there
+# 0113. A manager row holds at the machine tier once its actor is declared there
 
 ## Context and Problem Statement
 

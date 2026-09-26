@@ -368,7 +368,7 @@ declaring an actor above machine pins only what it writes next, because a
 machine row may be recompute's credit to that actor. A package's own
 `bundle:` hand keeps its stored tier, and a kind move, a merge and a rename
 copy the stored tier
-([0107](decisions/0107-a-manager-row-holds-at-its-actors-live-machine-tier.md)).
+([0113](decisions/0113-a-manager-row-holds-at-its-actors-live-machine-tier.md)).
 
 Beside the actor and the tier, a manager row records the **principal** of the
 write that set it: the token id the API resolved, where the actor is only
@@ -518,7 +518,7 @@ record a hand has written on is not a husk, whether that hand was yours or a
 function's. Releasing the hold (the null patch above) makes it one again, and
 so does declaring the hand's actor at `tier: machine`: a row holds at its
 actor's live machine tier whatever tier it was stored at
-([0107](decisions/0107-a-manager-row-holds-at-its-actors-live-machine-tier.md)).
+([0113](decisions/0113-a-manager-row-holds-at-its-actors-live-machine-tier.md)).
 
 The mark is derived, like an alternative: nothing writes it into the
 changelog, a re-link clears it on the next recompute, and a

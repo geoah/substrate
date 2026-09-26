@@ -116,7 +116,7 @@ func (ds *dataset) propertyMeta(ctx context.Context, e *substrate.Record) (map[s
 		}
 		m.UpdatedAt = m.UpdatedAt.UTC()
 		// The tier the row holds at, which is what recompute yields on
-		// (record 0107), not a stale reading of it.
+		// (record 0113), not a stale reading of it.
 		m.Tier = heldTierIn(ds.registry(), m.Manager, m.Tier)
 		out[property] = m
 	}

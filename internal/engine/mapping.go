@@ -1264,7 +1264,7 @@ type managerRow struct {
 	actor string
 	// tier is the tier the row holds at under the transaction's declarations
 	// (heldTierIn): the stored tier unless the actor has since been declared
-	// at the machine tier (record 0107). The yield and the orphan mark read
+	// at the machine tier (record 0113). The yield and the orphan mark read
 	// it.
 	tier substrate.Tier
 	// stored is the tier column as the write recorded it. A kind move copies
@@ -1374,7 +1374,7 @@ func (t *txn) releaseMachineManaged(target eref, props []string) error {
 	for _, name := range props {
 		// The stored tier: a row an actor wrote above the machine tier is not
 		// recompute's to null here, even once its actor is declared at the
-		// machine tier (record 0107).
+		// machine tier (record 0113).
 		if m, held := managers[name]; !held || m.stored != substrate.TierMachine {
 			continue
 		}

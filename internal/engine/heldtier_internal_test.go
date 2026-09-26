@@ -8,7 +8,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// heldTierIn's branches (record 0107): only a row stored above the machine
+// heldTierIn's branches (record 0113): only a row stored above the machine
 // tier whose actor a declaration puts AT the machine tier moves, and it moves
 // down. A door name, a package's own bundle hand and a promoted actor keep the
 // tier the write stored.

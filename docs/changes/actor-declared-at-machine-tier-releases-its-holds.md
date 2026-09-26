@@ -55,4 +55,4 @@ GET /api/v1/alice.example.com/people/person/<id>
 ```
 
 Declaring an actor above the machine tier still pins only what it writes
-next. Decision record 0107 has the rule.
+next. Decision record 0113 has the rule.

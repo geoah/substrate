@@ -523,7 +523,7 @@ func (t *txn) applyAnnotation(ref eref, key string, value any) (bool, error) {
 // — the token id the door verified — stood behind it. It is
 // attribution on every direct write, and it is load-bearing:
 // mapping recompute yields to any manager row that holds above the machine
-// tier (heldTierIn, record 0107), which is how a hand edit — the owner's or a
+// tier (heldTierIn, record 0113), which is how a hand edit — the owner's or a
 // function's — survives a sync, visibly. Nothing else reads it to decide who
 // may write — anyone still overwrites anything.
 
@@ -587,7 +587,7 @@ func actorTierIn(reg *vocabulary.Registry, actor substrate.Actor) substrate.Tier
 }
 
 // heldTierIn is the tier a stored manager row holds at against recompute
-// under the declarations in reg (record 0107). A row above the machine tier
+// under the declarations in reg (record 0113). A row above the machine tier
 // whose actor a live declaration now puts AT the machine tier holds at the
 // machine tier, so re-declaring an actor releases what it already wrote
 // instead of only what it writes next. Everything else keeps the tier the

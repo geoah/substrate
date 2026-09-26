@@ -322,7 +322,7 @@ func (t *txn) recomputeMappingTargets(live, cand *vocabulary.Registry) error {
 
 // recomputeDemotedActors is the vocabulary apply's other half of recompute.
 // An actor the candidate declares at the machine tier no longer holds what it
-// wrote above the machine tier (heldTierIn, record 0107), and no source write
+// wrote above the machine tier (heldTierIn, record 0113), and no source write
 // may ever arrive to let recompute take it back. Every record where such an
 // actor still has a row stored above the machine tier recomputes here,
 // against the candidate, so the values this commit publishes are the ones the
@@ -331,7 +331,7 @@ func (t *txn) recomputeMappingTargets(live, cand *vocabulary.Registry) error {
 // Two sets of actors qualify: one the live declarations did not put at the
 // machine tier (the transition), and one declared at the machine tier by a
 // package this batch touches, whatever its live tier. The second is how a
-// repository whose actor was declared at the machine tier before record 0107
+// repository whose actor was declared at the machine tier before record 0113
 // releases now: re-applying the package that declares it recomputes what the
 // actor still holds, instead of each record waiting for its next source
 // write. The `tier <> machine` filter keeps a re-apply cheap once the stored

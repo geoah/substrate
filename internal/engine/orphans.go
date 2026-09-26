@@ -39,7 +39,7 @@ import (
 //     none at all. A row at the bundle or the owner tier is a hand — a
 //     human's or installed code's — and a hand's write is the record's own
 //     content, not a projection of a source that has gone. "Holds" is
-//     heldTierIn's reading (record 0107, amending 0092): a row stored above
+//     heldTierIn's reading (record 0113, amending 0092): a row stored above
 //     the machine tier whose actor a live declaration now puts at the
 //     machine tier holds at the machine tier, so a record only such an actor
 //     wrote is marked like one a machine actor wrote from the start.
@@ -98,7 +98,7 @@ func (t *txn) isOrphan(target eref) (bool, error) {
 	}
 	// Read through managersOf, not a tier column filter: a row stored above
 	// the machine tier whose actor is now declared at it holds at the
-	// machine tier (record 0107), here as in the yield.
+	// machine tier (record 0113), here as in the yield.
 	managers, err := t.managersOf(target)
 	if err != nil {
 		return false, err

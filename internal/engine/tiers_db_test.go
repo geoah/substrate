@@ -462,7 +462,7 @@ func tierOrphaned(t *testing.T, ds *dataset, id string) bool {
 }
 
 // A manager row holds at the tier its actor's LIVE declaration gives, where
-// that declaration is the machine tier (#583, record 0107). An importer
+// that declaration is the machine tier (#583, record 0113). An importer
 // writing under a name no declaration knows holds at the owner tier, and a
 // sync yields to it; declaring the name at `tier: machine` afterwards
 // releases what it already wrote, in the apply itself, without the owner
@@ -523,7 +523,7 @@ func TestAStoredOwnerRowOfAMachineActorReadsAsMachine(t *testing.T) {
 	wantMeta(t, tierGet(t, ds, pid), "nickname", string(tierImporter), substrate.TierMachine)
 }
 
-// The release is recompute's machine-tier rule, not a merge (record 0107): a
+// The release is recompute's machine-tier rule, not a merge (record 0113): a
 // mapped property the demoted actor wrote that no live source offers is
 // deleted, and a union keeps only its sources' items. What no mapping writes
 // stays. A record only the demoted actor wrote, with no live source, is
@@ -575,7 +575,7 @@ func TestDeclaringAnActorAtTheMachineTierDeletesWhatNoSourceOffers(t *testing.T)
 }
 
 // A repository whose actor was declared at the machine tier before record
-// 0107 holds rows stored at the owner tier that no transition will reach.
+// 0113 holds rows stored at the owner tier that no transition will reach.
 // Re-applying the package that declares the actor releases them (#583).
 func TestReapplyingAMachineActorsPackageReleasesItsStaleHolds(t *testing.T) {
 	t.Parallel()
@@ -598,7 +598,7 @@ func TestReapplyingAMachineActorsPackageReleasesItsStaleHolds(t *testing.T) {
 	if _, err := ds.db.ExecContext(ctx,
 		`UPDATE property_managers SET tier = $3 WHERE record_kind = $1 AND record_id = $2 AND actor = $4`,
 		typeTierProfile, pid, string(substrate.TierOwner), string(tierImporter)); err != nil {
-		t.Fatalf("store the pre-0107 owner row: %v", err)
+		t.Fatalf("store the pre-0113 owner row: %v", err)
 	}
 	if got := tierGet(t, ds, pid).Properties["name"]; got != "Imported Name" {
 		t.Fatalf("name before the re-apply = %v", got)
