@@ -224,6 +224,7 @@ export function AgentsPage() {
           agentId={agentId}
           agent={agent}
           thread={threadId}
+          threadRecord={threadRecord}
           title={title}
           onThread={(minted) => {
             setAdopted({ from: conversationKey, to: minted })
