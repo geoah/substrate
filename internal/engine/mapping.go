@@ -1226,7 +1226,9 @@ func sortedOfferKeys(m map[offerKey]offer) []offerKey {
 }
 
 // managerRow is one property's manager as recompute reads it: the actor for
-// attribution, the stored tier for yield.
+// attribution, and for yield the tier the row holds at under the
+// transaction's declarations (heldTierIn), which is the stored tier unless the
+// actor has since been declared at the machine tier.
 type managerRow struct {
 	actor string
 	tier  substrate.Tier
@@ -1237,7 +1239,8 @@ type managerRow struct {
 }
 
 // managersOf reads the target's property-manager ledger, property → manager.
-// The tier column is NOT NULL, so the row is the whole answer.
+// The tier column is NOT NULL, so the row and the declarations are the whole
+// answer.
 func (t *txn) managersOf(ref eref) (map[string]managerRow, error) {
 	rows, err := t.query(
 		`SELECT property, actor, tier, coalesce(principal, '') FROM property_managers WHERE record_kind = $1 AND record_id = $2`,
@@ -1252,7 +1255,9 @@ func (t *txn) managersOf(ref eref) (map[string]managerRow, error) {
 		if err := rows.Scan(&property, &actor, &tier, &principal); err != nil {
 			return nil, err
 		}
-		out[property] = managerRow{actor: actor, tier: substrate.Tier(tier), principal: principal}
+		out[property] = managerRow{
+			actor: actor, tier: heldTierIn(t.declarations(), actor, substrate.Tier(tier)), principal: principal,
+		}
 	}
 	return out, rows.Err()
 }

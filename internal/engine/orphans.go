@@ -91,15 +91,17 @@ func (t *txn) isOrphan(target eref) (bool, error) {
 	if len(mappings) == 0 {
 		return false, nil
 	}
-	var held int
-	if err := t.row(`
-		SELECT count(*) FROM property_managers
-		WHERE record_kind = $1 AND record_id = $2 AND tier <> $3`,
-		target.Kind, target.ID, string(substrate.TierMachine)).Scan(&held); err != nil {
+	// Read through managersOf, not a tier column filter: a row stored above
+	// the machine tier whose actor is now declared at it holds at the
+	// machine tier (record 0106), here as in the yield.
+	managers, err := t.managersOf(target)
+	if err != nil {
 		return false, err
 	}
-	if held > 0 {
-		return false, nil
+	for _, m := range managers {
+		if m.tier != substrate.TierMachine {
+			return false, nil
+		}
 	}
 	sites, err := t.subjectSourceSites(target, mappings)
 	if err != nil {

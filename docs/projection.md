@@ -295,6 +295,18 @@ declaration on every write, never frozen at mint, so re-declaring an actor at
 a different tier changes what already-minted tokens may do from their next
 write onward. Renaming an actor never changes write semantics.
 
+A manager row stores the tier its write was admitted at, and the yield below
+reads that stored tier with one exception: a row whose actor a live
+declaration puts at the machine tier holds at the machine tier, whatever it
+was stored at. Declaring an actor at `tier: machine` therefore releases what
+it already holds, and the apply that declares it recomputes every mapped
+record it holds, so an import written under an undeclared name (the owner
+tier) goes back to following its sources once the name is declared at the
+machine tier. The reverse does not hold: declaring an actor above machine
+pins only what it writes next, because a machine row may be recompute's
+credit to that actor. A package's own `bundle:` hand keeps its stored tier
+([0106](decisions/0106-a-manager-row-holds-at-its-actors-live-machine-tier.md)).
+
 Beside the actor and the tier, a manager row records the **principal** of the
 write that set it: the token id the API resolved, where the actor is only
 what the caller claimed. The manager and tier a read reports are the actor and

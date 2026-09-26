@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -583,6 +584,26 @@ func actorTierIn(reg *vocabulary.Registry, actor substrate.Actor) substrate.Tier
 		return substrate.TierMachine
 	}
 	return substrate.TierOwner
+}
+
+// heldTierIn is the tier a stored manager row holds at against recompute
+// under the declarations in reg (record 0106). A row above the machine tier
+// whose actor a live declaration now puts AT the machine tier holds at the
+// machine tier, so re-declaring an actor releases what it already wrote
+// instead of only what it writes next. Everything else keeps the tier the
+// write recorded: a machine row may be recompute's credit to the actor, so
+// promoting the actor must not freeze it; a door name resolves before any
+// declaration; and a package's bundle hand writes under the dispatch stamp,
+// a tier its declaration does not show.
+func heldTierIn(reg *vocabulary.Registry, actor string, stored substrate.Tier) substrate.Tier {
+	if stored == substrate.TierMachine || substrate.HumanActors[substrate.Actor(actor)] ||
+		strings.HasPrefix(actor, substrate.BundleActorPrefix) {
+		return stored
+	}
+	if tier, ok := reg.ActorTier(actor); ok && tier == substrate.TierMachine {
+		return substrate.TierMachine
+	}
+	return stored
 }
 
 func (t *txn) setManager(ref eref, property string, actor substrate.Actor, tier substrate.Tier) error {
