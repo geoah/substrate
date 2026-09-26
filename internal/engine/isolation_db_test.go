@@ -30,7 +30,7 @@ var repositoryScopedTables = []string{
 	"property_offers", "changelog", "embeddings", "embed_queue", "trigger_cursors",
 	"trigger_failures", "trigger_schedule", "sealed", "oauth_flows",
 	"paged_cursors", "vocabulary_dialect",
-	"changelog_dialect", "import_progress", "idempotency_keys",
+	"changelog_dialect", "import_progress", "idempotency_keys", "search_index",
 }
 
 // pair is two registered users, each with one task written at the SAME

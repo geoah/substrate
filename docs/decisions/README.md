@@ -266,3 +266,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0112](0112-an-owner-adjusts-a-change-request-on-the-accepting-write.md) | An owner adjusts a change request on the accepting write | accepted |
 | [0113](0113-a-kind-may-declare-its-display-label.md) | A kind may declare its display label, singular and plural | accepted |
 | [0114](0114-a-change-row-reads-a-property-rename-as-one-move.md) | A change row reads a property rename as one move | accepted |
+| [0115](0115-search-ranks-by-bm25f-and-a-kinds-purpose.md) | Search ranks by BM25F and a kind's purpose | accepted |

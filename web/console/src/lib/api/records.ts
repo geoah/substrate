@@ -465,12 +465,17 @@ export function formatCount(count: RecordCount): string {
 
 export type SearchMode = "lexical" | "semantic" | "hybrid"
 
-/** `GET /records?q=`: a ranking, not a filter. `kinds` narrows the candidates
- * BEFORE ranking (the only filter arm the ranked read admits); `first` is the
- * hit count. */
+/** `GET /records?q=`: a ranking, not a filter. `kinds` and `purposes` narrow
+ * the candidates BEFORE ranking (the only filter arms the ranked read
+ * admits); `first` is the hit count. */
 export function searchQueryOptions(
   q: string,
-  opts: { mode?: SearchMode; kinds?: string[]; first?: number } = {}
+  opts: {
+    mode?: SearchMode
+    kinds?: string[]
+    purposes?: RecordFilter["purposes"]
+    first?: number
+  } = {}
 ) {
   return queryOptions({
     queryKey: [
@@ -479,6 +484,7 @@ export function searchQueryOptions(
       {
         mode: opts.mode ?? null,
         kinds: opts.kinds ?? null,
+        purposes: opts.purposes ?? null,
         first: opts.first ?? null,
       },
     ],
@@ -486,8 +492,11 @@ export function searchQueryOptions(
     queryFn: ({ signal }) => {
       const params = new URLSearchParams({ q })
       if (opts.mode) params.set("mode", opts.mode)
-      if (opts.kinds?.length)
-        params.set("filter", JSON.stringify({ kinds: opts.kinds }))
+      const filter: RecordFilter = {}
+      if (opts.kinds?.length) filter.kinds = opts.kinds
+      if (opts.purposes?.length) filter.purposes = opts.purposes
+      if (filter.kinds || filter.purposes)
+        params.set("filter", JSON.stringify(filter))
       if (opts.first) params.set("first", String(opts.first))
       return request<RankedPage>(
         "GET",

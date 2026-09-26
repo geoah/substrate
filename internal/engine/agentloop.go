@@ -1181,9 +1181,9 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 		// both ranking arms cap candidates before hydration and a predicate
 		// applied afterwards would not produce the filtered top-k.
 		if arm := rankedFilterArm(q.Filter); arm != "" {
-			return toolError("filter." + arm + " is not supported with q: a ranked read narrows by filter.kinds alone"), false, 0
+			return toolError("filter." + arm + " is not supported with q: a ranked read narrows by filter.kinds and filter.purposes alone"), false, 0
 		}
-		in := substrate.SearchInput{Q: text, K: min(q.First, scope.rows)}
+		in := substrate.SearchInput{Q: text, K: min(q.First, scope.rows), Purposes: q.Filter.Purposes}
 		if m, _ := args["mode"].(string); m != "" {
 			in.Mode = substrate.SearchMode(m)
 		}
@@ -1275,8 +1275,8 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 	return toolJSON(page), true, rows
 }
 
-// rankedFilterArm names the first filter arm set beside `kinds`, or "": the
-// ranked arm admits `kinds` alone.
+// rankedFilterArm names the first filter arm set beside `kinds` and
+// `purposes`, or "": the ranked arm admits those two alone.
 func rankedFilterArm(f substrate.Filter) string {
 	switch {
 	case f.Search != "":

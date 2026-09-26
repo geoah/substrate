@@ -363,7 +363,7 @@ func TestAgentQueryBuiltinByReference(t *testing.T) {
 	if len(reqs) == 0 {
 		t.Fatal("no completion request reached the fake")
 	}
-	if !strings.Contains(toJSONString(t, reqs[0]["tools"]), "Records are always addressed by their full reference") {
+	if !strings.Contains(toJSONString(t, reqs[0]["tools"]), "Records are addressed by their full reference") {
 		t.Fatalf("the query card is not the declaration's: %v", reqs[0]["tools"])
 	}
 }

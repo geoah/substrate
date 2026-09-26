@@ -11,6 +11,7 @@ import {
   listPath,
   patchRecord,
   referencingRows,
+  searchQueryOptions,
   type ReferencingRow,
 } from "./records"
 import type { Page, SubstrateRecord } from "./types"
@@ -610,5 +611,50 @@ describe("the batched title read a record page makes", () => {
     expect(referenceTitlesQueryOptions({ kinds: [], ids: [] }).enabled).toBe(
       false
     )
+  })
+})
+
+describe("searchQueryOptions", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+  beforeEach(() => vi.stubGlobal("fetch", fetchMock))
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+  const ranked = () =>
+    new Response(JSON.stringify({ records: [], scores: {}, pending: 0 }))
+
+  async function searchURL(
+    opts: Parameters<typeof searchQueryOptions>[1]
+  ): Promise<URL> {
+    fetchMock.mockResolvedValueOnce(ranked())
+    const options = searchQueryOptions("ada*", opts)
+    await options.queryFn!({
+      signal: new AbortController().signal,
+    } as never)
+    return new URL(String(fetchMock.mock.calls[0][0]), "http://x")
+  }
+
+  it("sends the kinds and the purposes in one filter", async () => {
+    const url = await searchURL({
+      kinds: ["samples.substrate.reamde.dev/people/person"],
+      purposes: ["primary", "supporting"],
+    })
+    expect(url.searchParams.get("q")).toBe("ada*")
+    expect(JSON.parse(url.searchParams.get("filter")!)).toEqual({
+      kinds: ["samples.substrate.reamde.dev/people/person"],
+      purposes: ["primary", "supporting"],
+    })
+  })
+
+  it("sends no filter when nothing narrows", async () => {
+    const url = await searchURL({})
+    expect(url.searchParams.has("filter")).toBe(false)
+  })
+
+  it("keys the cache on the purposes", () => {
+    const a = searchQueryOptions("ada", { purposes: ["primary"] }).queryKey
+    const b = searchQueryOptions("ada", {}).queryKey
+    expect(a).not.toEqual(b)
   })
 })

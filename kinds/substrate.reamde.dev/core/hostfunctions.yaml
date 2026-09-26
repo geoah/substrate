@@ -40,17 +40,17 @@ data:
   description: >-
     Read records. Pass kind + id for one record; q (+ optional mode, first,
     filter.kinds) to rank by relevance; otherwise filter (+ optional orderBy,
-    first, after, expand) to list. A filter is {search, kinds, ids, implements,
-    properties, labels, deleted, referencing}: properties maps a name to a
-    condition (eq, in, prefix, match, gt, gte, lt, lte, contains, exists),
-    timestamps RFC3339, so a day is properties: {at: {gte: "2026-08-15T00:00:00Z",
+    first, after, expand) to list. A filter is {search, kinds, purposes, ids,
+    implements, properties, labels, deleted, referencing}: properties maps
+    a name to a condition (eq, in, prefix, match, gt, gte, lt, lte, contains,
+    exists), timestamps RFC3339, so a day is properties: {at: {gte: "2026-08-15T00:00:00Z",
     lt: "2026-08-16T00:00:00Z"}}; search is words against the record's indexed
     text, match against one text property, both in q's grammar (words, "a
-    phrase", -excluded, a OR b, prefix*); referencing: {ref: "<kind>/<id>",
-    property?} lists what points AT a record. A list answers {records, cursor,
-    head, generation, included?, matches?}: resend cursor as after for the
-    next page; expand names reference properties whose targets ride in included,
-    keyed by "<kind>/<id>". Records are always addressed by their full reference
+    phrase", -word, a OR b, prefix*); referencing: {ref: "<kind>/<id>", property?}
+    lists what points AT a record. A list answers {records, cursor, head,
+    generation, included?, matches?}: resend cursor as after for the next
+    page; expand names reference properties whose targets ride in included,
+    keyed by "<kind>/<id>". Records are addressed by their full reference
     (kind + id), never a bare id. Read-only.
   runtime: host
   arguments:
@@ -65,9 +65,9 @@ data:
     - name: filter
       type: json
       description: >-
-        the list filter: {search, kinds, ids, implements, properties, labels,
-        deleted, referencing}; properties maps a name to a condition (eq,
-        in, prefix, match, gt, gte, lt, lte, contains, exists)
+        the list filter: {search, kinds, purposes, ids, implements, properties,
+        labels, deleted, referencing}; purposes lists primary, supporting
+        or internal; properties maps a name to a condition
     - name: orderBy
       type: json
       description: 'a list of {property, desc?}; default createdAt descending'
@@ -85,7 +85,7 @@ data:
     - name: q
       type: string
       description: search query; ranks instead of filtering, narrowed by filter.kinds
-        alone, first hits
+        and filter.purposes alone, first hits
     - name: mode
       type: enum
       values:

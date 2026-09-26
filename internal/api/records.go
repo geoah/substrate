@@ -80,9 +80,9 @@ func (h *handler) getRecords(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 			return
 		}
-		if arm := filterArmBeyondKinds(f); arm != "" {
+		if arm := rankedFilterArm(f); arm != "" {
 			writeError(w, http.StatusBadRequest, codeBadRequest,
-				"filter."+arm+" is not supported with q: a ranked read narrows by filter.kinds alone")
+				"filter."+arm+" is not supported with q: a ranked read narrows by filter.kinds and filter.purposes alone")
 			return
 		}
 		kinds, ok := h.resolveKinds(w, r, ds, f.Kinds)
@@ -95,10 +95,11 @@ func (h *handler) getRecords(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		res, err := ds.Search(ctx, substrate.SearchInput{
-			Q:     v.Get("q"),
-			Mode:  substrate.SearchMode(strings.ToLower(v.Get("mode"))),
-			Kinds: kinds,
-			K:     first,
+			Q:        v.Get("q"),
+			Mode:     substrate.SearchMode(strings.ToLower(v.Get("mode"))),
+			Kinds:    kinds,
+			Purposes: f.Purposes,
+			K:        first,
 		})
 		if err != nil {
 			writeSubstrateError(w, err)
@@ -175,9 +176,20 @@ func (h *handler) resolveKinds(w http.ResponseWriter, r *http.Request, ds substr
 }
 
 // filterArmBeyondKinds names the first filter arm set beside `kinds`, or "".
-// The ranked read and the tail admit `kinds` alone, and the arm is named so
-// the refusal says what to drop.
+// The tail admits `kinds` alone, the ranked read `kinds` and `purposes`
+// (rankedFilterArm), and the arm is named so the refusal says what to drop.
 func filterArmBeyondKinds(f substrate.Filter) string {
+	if len(f.Purposes) > 0 {
+		return "purposes"
+	}
+	return rankedFilterArm(f)
+}
+
+// rankedFilterArm names the first filter arm the ranked read does not take,
+// or "". Both of its arms cap candidates before hydration, so only a
+// narrowing that resolves to a kind list ahead of them, `kinds` or
+// `purposes`, can produce the filtered top-k.
+func rankedFilterArm(f substrate.Filter) string {
 	switch {
 	case f.Search != "":
 		return "search"

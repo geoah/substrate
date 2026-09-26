@@ -37,7 +37,7 @@ export const SEARCH_MODE_DETAIL: Record<SearchMode, string> = {
   lexical:
     "Full-text search over every indexed text of a record, ranked by how well the words match.",
   hybrid:
-    "Both arms fused: the word ranking and the embedding similarity, each scaled against its own best hit. Falls back to words alone when no embeddings provider is configured.",
+    "Both arms fused by rank: a record near the top of both the word ranking and the embedding similarity ranks highest. Falls back to words alone when no embeddings provider is configured.",
   semantic:
     "Embedding similarity alone, over the properties that opted into embedding. Spends one embedding call per search.",
 }

@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-25
 decision-makers: George Antoniadis
+amended-by: 0115
 ---
 
 # 0106. A kind declares its purpose
