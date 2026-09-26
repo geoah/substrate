@@ -117,6 +117,13 @@ func (t *txn) proposalDecisionEnvelope(req *erow, verdict string) (map[string]an
 		"decision": verdict,
 		"op":       op,
 	}
+	// An owner who adjusted the values before accepting tells the proposer
+	// what was applied, which is no longer its own diff.
+	if verdict == decisionAccepted {
+		if adj, ok := req.Props[propAdjustedDiff]; ok && adj != nil {
+			env[propAdjustedDiff] = adj
+		}
+	}
 	target, err := t.requestTarget(req)
 	if err != nil {
 		return nil, err

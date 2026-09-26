@@ -326,3 +326,59 @@ func TestFailedDispatchStampsNoChanges(t *testing.T) {
 		t.Fatalf("a refused dispatch stamped changes: %+v", tool["changes"])
 	}
 }
+
+// An owner who adjusted the values tells the proposing thread what applied.
+func TestAdjustedAcceptReportsTheAppliedValues(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: crewPackage + "/widget", ID: "w-adjusted", Properties: map[string]any{"name": "raw"},
+	}); err != nil {
+		t.Fatalf("put widget: %v", err)
+	}
+	fake.script("root",
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-adjusted","diff":{"properties":{"name":"better"}},"rationale":"tidy"}`}}},
+		fakeTurn{content: "proposed."},
+		fakeTurn{content: "noted the adjustment."},
+	)
+	res, err := ds.CallAgent(ctx, crewPackage+"/classifier", "tidy the widget")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	req := onlyPatchRequest(t, ds)
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+		Properties: map[string]any{
+			"decision":     "accepted",
+			"adjustedDiff": map[string]any{"properties": map[string]any{"name": "best"}},
+		},
+		IfVersion: &req.Version,
+	}); err != nil {
+		t.Fatalf("adjusted accept: %v", err)
+	}
+	if got, err := ds.Get(ctx, crewPackage+"/widget", "w-adjusted"); err != nil || got.Properties["name"] != "best" {
+		t.Fatalf("the adjusted diff did not land: %+v %v", got, err)
+	}
+	system := systemMessages(t, ds, res.Thread)
+	if len(system) != 1 {
+		t.Fatalf("system messages: %d, want 1", len(system))
+	}
+	content, _ := system[0]["content"].(string)
+	var env map[string]any
+	if err := json.Unmarshal([]byte(content), &env); err != nil {
+		t.Fatalf("the system message is not an envelope: %q", content)
+	}
+	adj, _ := env["adjustedDiff"].(map[string]any)
+	props, _ := adj["properties"].(map[string]any)
+	if env["decision"] != "accepted" || props["name"] != "best" {
+		t.Fatalf("envelope: %+v", env)
+	}
+	waitUntil(t, "the resume after the adjusted accept", func() bool {
+		for _, m := range threadMessages(t, ds, res.Thread) {
+			if m["role"] == "assistant" && m["content"] == "noted the adjustment." {
+				return true
+			}
+		}
+		return false
+	})
+}
