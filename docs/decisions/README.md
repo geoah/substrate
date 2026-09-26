@@ -261,3 +261,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0107](0107-the-records-list-counts-its-filtered-set-on-request.md) | The records list counts its filtered set on request | accepted |
 | [0108](0108-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md) | A change row carries before and after values on request, derived at read | accepted |
 | [0130](0130-the-console-serves-four-things-and-its-navigation-follows-them.md) | The console serves four things, and its navigation follows them | accepted |
+| [0131](0131-the-console-writes-for-two-readers-behind-one-switch.md) | The console writes for two readers, and one switch tells them apart | accepted |
