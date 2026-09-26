@@ -124,6 +124,14 @@ def main(input, host):
 			"prompt":      "You are slow.",
 			"provider":    "loopllm", "model": "slow",
 		}),
+		// steward writes nothing, and its tool is the curator, whose body
+		// runs the widget-writing editor: the emit-ceiling test.
+		vocabulary.AgentManifest(relayPackage, "steward", map[string]any{
+			"description": "asks the curator for a widget, writing nothing itself",
+			"prompt":      "You are a steward.",
+			"provider":    "loopllm", "model": "steward",
+			"tools": []any{map[string]any{"function": relayPackage + "/curator"}},
+		}),
 		vocabulary.AgentManifest(relayPackage, "loopy", map[string]any{
 			"description": "calls back the function that ran it",
 			"prompt":      "You are loopy.",
@@ -387,6 +395,45 @@ func TestFunctionIsNotDeliveredItsAgentsWrites(t *testing.T) {
 	}
 	if n := len(agentThreadsOf(t, ds, "editor")); n != 1 {
 		t.Fatalf("the curator ran the editor %d times, want once", n)
+	}
+}
+
+// An agent's write ceiling rides through a function tool that runs an
+// agent: steward writes nothing, so the editor its curator tool runs may not
+// write the widget its own permissions allow, and nothing lands.
+func TestFunctionToolRunsAnAgentUnderTheCallersCeiling(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	installRelay(t, ds, fake)
+
+	fake.script("steward",
+		fakeTurn{calls: []fakeCall{{"curator", `{}`}}},
+		fakeTurn{content: "asked"},
+	)
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-smuggled", map[string]any{"name": "smuggled"})}}},
+		fakeTurn{content: "could not"},
+	)
+	if _, err := ds.CallAgent(ctx, relayPackage+"/steward", "make a widget"); err != nil {
+		t.Fatalf("call steward: %v", err)
+	}
+	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-smuggled"); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the editor under steward's empty ceiling wrote a widget: %v", err)
+	}
+	threads := agentThreadsOf(t, ds, "editor")
+	if len(threads) != 1 {
+		t.Fatalf("editor threads %+v, want the curator's one", threads)
+	}
+	var refused bool
+	for _, m := range threadMessages(t, ds, threads[0]["__id"].(string)) {
+		if m["role"] == "tool" && m["ok"] == false &&
+			strings.Contains(m["content"].(string), "effective emit allowlist") {
+			refused = true
+		}
+	}
+	if !refused {
+		t.Fatalf("the editor's write was not refused by the inherited ceiling")
 	}
 }
 

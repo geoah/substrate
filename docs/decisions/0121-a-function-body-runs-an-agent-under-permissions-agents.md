@@ -44,7 +44,14 @@ carries into the agent (an agent sits on it under its record path, so it
 never matches a function of the same name), so the agent's function tools and
 sub-agents cannot call a function already running. The agent runs under its
 own actor and `permissions.writes`, as a callee function runs under its own
-envelope, with no ceiling from the caller. Its writes commit as the loop runs,
+envelope. When the body runs from a delivery or the call API, nothing above it
+narrows those writes. When an agent loop runs the function as a tool, the
+loop's effective emit rides the call into the agent the body runs, as it rides
+into a sub-agent: the nested agent's effective emit is its own writes
+intersected with the calling agent's. Otherwise an agent that may write
+nothing could reach any kind through a tool whose body runs a writing agent,
+since those writes land under the nested agent's actor and never return to the
+caller as effects its own emit check would see. Its writes commit as the loop runs,
 and every row names the delivery's change as its cause, so a loop through the
 changelog still meets the causal-depth cap. The body gets
 `{reply, thread, status}`, the result a sub-agent call hands its parent.
@@ -80,6 +87,8 @@ call.
   staging kind and no trigger.
 - Good, because existing declarations are untouched: `agents` is a new
   optional key.
+- Good, because the emit ceiling holds through a function tool: an agent
+  reaches no kind through a tool's agent that it could not write itself.
 - Bad, because the agent's writes stay when the caller fails afterwards. The
   delivery parks rather than retrying, and a retry of the park by hand runs
   the agent again. A timeout, which would otherwise ride three attempts,
@@ -118,7 +127,9 @@ attempt. It also checks that the delivery is listed in flight while the agent
 runs, that a second pass meanwhile runs no agent, and that a dispatcher
 stopped mid-agent parks the delivery at attempt 1 and does not run the agent
 again, and that a body whose write yields to its own agent's write settles
-as a skip with nothing left in flight.
+as a skip with nothing left in flight. An agent that writes nothing, whose
+tool is a function running a widget-writing agent, gets that agent's write
+refused and no widget lands.
 
 ## More Information
 

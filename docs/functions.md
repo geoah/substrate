@@ -761,6 +761,10 @@ names a function already running is refused as recursion.
 The agent's writes do not wait for the caller. The loop commits its thread,
 its messages and its tools' effects as it runs, under the agent's own actor and
 `permissions.writes`, so a caller that fails afterwards leaves them in place.
+When the body runs as an agent's function tool, the calling agent's effective
+emit caps those writes, as it caps a sub-agent's
+([emit ceiling](agents.md#sub-agents-budgets-and-the-emit-ceiling)): an agent
+that may not write a kind cannot reach it through a tool's agent.
 They are not counted in the caller's effects: a body that only runs an agent
 records `ran = 0` on its run and answers `effects: 0` on the call API. So that
 a retry does not repeat them, a trigger delivery claims itself in the

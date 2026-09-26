@@ -164,6 +164,7 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	inv := &invocation{
 		ds: ds, stack: append(slices.Clone(origin.stack), fn.Identity()),
 		causedBy: origin.causedBy, threads: origin.threads, scrub: newScrubber(),
+		emitCeiling: origin.emitCeiling, ceilinged: origin.ceilinged,
 	}
 	// The runner's `config` field, resolved per invocation (invocationconfig.go):
 	// a bundle function receives its bundle's `inject: functions` inputs,
@@ -237,6 +238,12 @@ type invocation struct {
 	// nil when nobody asked: the caller that set it on the callOrigin reads
 	// it after a failure (agentThreads).
 	threads *agentThreads
+	// emitCeiling is the calling agent loop's effective emit when this root
+	// runs as that agent's function tool; ceilinged tells an empty ceiling
+	// from none. An agent a body under this root runs starts under it, so
+	// a function tool never widens its caller's writes (record 0121).
+	emitCeiling []string
+	ceilinged   bool
 	// effects accumulates the sub-calls' decoded effects, in call order.
 	// They apply in the CALLER's delivery transaction, before the caller's
 	// own — each decoded against ITS function's capability envelope. A
@@ -482,6 +489,10 @@ func (b *callBackend) callAgent(ctx context.Context, ident string, args any) (an
 		// so a tool that names a function already running is refused.
 		callStack: slices.Clone(b.inv.stack),
 		delivery:  key,
+		// An agent loop's function tool passes that loop's effective emit
+		// down, so the agent this body runs writes no kind its calling
+		// agent could not. A delivery or call-API root carries none.
+		emitCeiling: slices.Clone(b.inv.emitCeiling), ceilinged: b.inv.ceilinged,
 	})
 	if err != nil {
 		return nil, b.inv.scrub.err(fmt.Errorf("call %s: %w", ag.Identity(), err))
@@ -496,12 +507,15 @@ func agentStackKey(identity string) string {
 }
 
 // callOrigin is what a function invocation inherits from the chain that
-// started it: the change it answers, the callables already running, and
-// where to record an agent thread the body opens.
+// started it: the change it answers, the callables already running, where
+// to record an agent thread the body opens, and the calling agent's emit
+// ceiling when an agent loop runs the function as a tool.
 type callOrigin struct {
-	causedBy int64
-	stack    []string
-	threads  *agentThreads
+	causedBy    int64
+	stack       []string
+	threads     *agentThreads
+	emitCeiling []string
+	ceilinged   bool
 }
 
 // agentThreads records the first agent thread a function body opened

@@ -1491,7 +1491,12 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 	// attempt: a retried delivery hands an external deduper the SAME key,
 	// so an effectful tool that honors idempotency keys never double-fires.
 	key := fmt.Sprintf("%s/agent/%s/%d", l.in.delivery, l.ag.Identity(), l.toolCalls)
-	fctx := withCallOrigin(ctx, callOrigin{causedBy: l.in.causedBy, stack: l.in.callStack})
+	// The loop's effective emit rides the origin: an agent the function
+	// body runs starts under it, as a sub-agent does (record 0121).
+	fctx := withCallOrigin(ctx, callOrigin{
+		causedBy: l.in.causedBy, stack: l.in.callStack,
+		emitCeiling: l.emit, ceilinged: true,
+	})
 	effects, output, err := l.ds.runCallable(fctx, fn, runner.Input{
 		Mode: runner.ModeCall, Args: input,
 		CausalDepth:    l.in.causalDepth,
