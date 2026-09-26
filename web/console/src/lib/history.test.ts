@@ -276,6 +276,19 @@ describe("systemPhrase", () => {
     ).toBe("added the agent Titler")
   })
 
+  it("says a publisher's name", () => {
+    expect(
+      said([
+        row({
+          kind: `${CORE}/authority`,
+          recordId: "providers.substrate.reamde.dev",
+          actor: GOOGLE_ACTOR,
+          payload: { created: true },
+        }),
+      ])?.words
+    ).toBe("added its publisher name")
+  })
+
   it("says the console layout by what moved", () => {
     const phrase = said([
       row({
@@ -329,7 +342,31 @@ describe("systemPhrase", () => {
           })
         )
       )?.words
-    ).toBe("recorded 3 runs")
+    ).toBe("ran triggers 3 times")
+    const id = "run1"
+    expect(
+      said([
+        row({
+          kind: `${CORE}/triggerrun`,
+          recordId: id,
+          actor: "substrate",
+          payload: { created: true, properties: ["callableRef"] },
+          affected: [
+            {
+              kind: `${CORE}/triggerrun`,
+              id,
+              version: 1,
+              properties: [
+                {
+                  name: "callableRef",
+                  after: { ref: `${CORE}/function/${GOOGLE}/syncgmail` },
+                },
+              ],
+            },
+          ],
+        }),
+      ])?.words
+    ).toBe("ran Google Gmail sync")
   })
 
   it("leaves a person's own records to the ordinary sentence", () => {
@@ -339,8 +376,12 @@ describe("systemPhrase", () => {
 
 describe("historyEntries", () => {
   it("leaves housekeeping out unless technical details are on", () => {
-    const rows = [row({ op: "gc" }), row({})]
+    const rows = [
+      row({ op: "gc" }),
+      row({ op: "delete", kind: "substrate.reamde.dev/core/triggerrun" }),
+      row({}),
+    ]
     expect(historyEntries(rows, false)).toHaveLength(1)
-    expect(historyEntries(rows, true)).toHaveLength(2)
+    expect(historyEntries(rows, true)).toHaveLength(3)
   })
 })

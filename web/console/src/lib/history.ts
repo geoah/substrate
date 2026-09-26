@@ -99,13 +99,21 @@ export function foldHistory(
   return out
 }
 
-/** The sentences a feed shows: housekeeping (collecting what a delete left
- * behind) only with technical details on, then folded. */
+const TRIGGER_RUN = `${CORE_AUTHORITY}/${CORE_PACKAGE_NAME}/triggerrun`
+
+/** Housekeeping rather than a change anybody made: collecting what a delete
+ * left behind, and pruning a trigger's finished runs. */
+export function isHousekeeping(row: ChangeRow): boolean {
+  return row.op === "gc" || (row.op === "delete" && row.kind === TRIGGER_RUN)
+}
+
+/** The sentences a feed shows, housekeeping only with technical details on,
+ * folded. */
 export function historyEntries(
   rows: readonly ChangeRow[],
   technical: boolean
 ): HistoryEntry[] {
-  return foldHistory(technical ? rows : rows.filter((r) => r.op !== "gc"))
+  return foldHistory(technical ? rows : rows.filter((r) => !isHousekeeping(r)))
 }
 
 export interface HistoryDay {
@@ -284,6 +292,26 @@ function newVersion(moves: readonly ValueMove[] | undefined): unknown {
   return moves?.find((m) => m.name === "version")?.after
 }
 
+/** What a trigger run ran, by name: its `callableRef` names the function
+ * or the agent as a core record. */
+function runCallable(
+  moves: readonly ValueMove[] | undefined
+): string | undefined {
+  const ref = moves?.find((m) => m.name === "callableRef")?.after
+  const path =
+    ref && typeof ref === "object" && "ref" in ref ? String(ref.ref) : ""
+  const core = `${CORE_AUTHORITY}/${CORE_PACKAGE_NAME}/`
+  if (!path.startsWith(core)) return undefined
+  const rest = path.slice(core.length)
+  const slash = rest.indexOf("/")
+  const kind = rest.slice(0, slash)
+  const id = rest.slice(slash + 1)
+  if (kind === "function")
+    return actorIdentity(`function:${id.split("/").join(":")}`).name
+  if (kind === "agent") return `the agent ${agentName(id)}`
+  return undefined
+}
+
 /** How each console layout setting reads inside the parenthesis. */
 const LAYOUT_WORDS: Record<string, string> = {
   density: "rows",
@@ -388,6 +416,11 @@ export function systemPhrase(
           : ""
       return { words: `${verb} ${object}${to}`, complete: true }
     }
+    case "authority":
+      return {
+        words: `${verb} ${counted(n, "its publisher name", "publisher names")}`,
+        complete: true,
+      }
     case "kind":
       return one
         ? {
@@ -422,14 +455,25 @@ export function systemPhrase(
         complete: true,
       }
     case "triggerrun": {
-      const runs = counted(n, "a run", "runs")
-      const words =
-        entry.verb === "added"
-          ? `recorded ${runs}`
-          : entry.verb === "deleted"
+      if (entry.verb === "added") {
+        const callable = one ? runCallable(moves) : undefined
+        return {
+          words: callable
+            ? `ran ${callable}`
+            : n === 1
+              ? "ran a trigger"
+              : `ran triggers ${n.toLocaleString()} times`,
+          complete: true,
+        }
+      }
+      const runs = counted(n, "a trigger run", "trigger runs")
+      return {
+        words:
+          entry.verb === "deleted"
             ? `cleared ${counted(n, "a finished run", "finished runs")}`
-            : `${verb} ${runs}`
-      return { words, complete: true }
+            : `${verb} ${runs}`,
+        complete: true,
+      }
     }
     case "token": {
       if (entry.verb !== "added" && entry.verb !== "deleted") return undefined
