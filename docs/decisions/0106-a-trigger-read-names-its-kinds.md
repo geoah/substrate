@@ -27,8 +27,16 @@ asks that a replay cost in proportion to the trigger's kinds.
 
 Chosen: read the changelog by kind. `changesPast` reads the head, then the
 entries of the source's kinds in `(cursor, head]`, ordered by seq, through a
-new `(repository, kind, seq)` index that replaces `(repository, kind)`. A
-short batch covers through the head, so the cursor moves over every entry of
+new `(repository, kind, seq)` index that replaces `(repository, kind)`. The
+read names each kind in its own branch, `kind = $n AND seq > $cursor ORDER
+BY seq LIMIT 200`, and joins the branches with `UNION ALL` under one
+`ORDER BY seq LIMIT 200`, which Postgres runs as a Merge Append of index
+scans. A single `kind = ANY($kinds)` does not bound the read: an array on the
+index's second column cannot return rows in seq order, so on Postgres 16 the
+planner either sorts every remaining entry of the kinds or walks the primary
+key and filters out the entries of other kinds, and a kind above about 1% of
+the changelog gets the second plan. A kind named twice is named once, so no
+entry is read twice. A short batch covers through the head, so the cursor moves over every entry of
 another kind in one step; a full batch covers through its last entry. This
 holds because sequence order is commit-visibility order
 ([changelog.md](../changelog.md)). A package or authority glob is matched in
@@ -43,10 +51,11 @@ estimates are harder to reason about than one distinct-kind probe per kind.
 
 ### Consequences
 
-- Good, because a drain or a replay reads only its kinds' entries, and the
-  cursor still reaches head.
-- Good, because the public change feed's `kind = ANY(...)` read with a seq
-  bound also starts at its seq through the new index.
+- Good, because a batch reads at most 200 entries of each named kind and
+  sorts nothing, under both the custom and the generic plan, so a drain or a
+  replay reads only its kinds' entries, and the cursor still reaches head.
+- Bad, because a source over many kinds (a wide glob) runs one index scan
+  per kind on every batch.
 - Bad, because a glob source pays one index probe per distinct kind in the
   changelog on every batch.
 - Bad, because a `*` source gains nothing: it still reads every entry.
@@ -55,12 +64,16 @@ estimates are harder to reason about than one distinct-kind probe per kind.
 
 ### Confirmation
 
-`internal/engine/triggerread_db_test.go`: a read over a backlog larger than
-one batch returns only the source's kinds for an exact kind, a package glob
-and an authority glob, and covers through the head; the plan of that read
-walks `changelog_kind_seq_idx` and filters out no entry of another kind; a
-replay from seq 0 delivers every matched record and leaves the cursor at
-head.
+`internal/engine/triggerread_db_test.go`: over 1,500 entries of another
+kind, a drain of 250 entries of the read kind (more than one batch) returns
+only the source's kinds, in seq order and each once, for an exact kind, a
+package glob, an authority glob, a kind named twice and a two-kind source,
+and every batch covers through its last entry or the head. The plan of the
+read `changesPast` runs, for one kind and for two, under the custom and the
+generic plan, walks `changelog_kind_seq_idx`, has no Sort node, filters out
+no entry, and reads at most 200 entries in each index scan; the old
+`kind = ANY(...)` read fails all four. A replay from seq 0 delivers every
+matched record and leaves the cursor at head.
 
 ## More Information
 

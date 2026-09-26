@@ -1859,14 +1859,14 @@ func cursorMoved(res sql.Result, err error) error {
 // changesPast reads one batch past a cursor for one record trigger, and
 // returns it with the scan position the read covers. The read is bounded by
 // the trigger's kinds (#637): Postgres returns only entries of a kind the
-// source can match, through changelog_kind_seq_idx, so a trigger over one
-// small kind drains in proportion to that kind's entries and not to the
-// whole changelog. Every other entry past the cursor, up to the head read
-// first, is one the source could never match, so a short batch covers
-// through that head and the caller moves the scan position there; a full
-// batch covers through its last entry. Sequence order is commit-visibility
-// order (docs/changelog.md), so every entry at or under the head is visible
-// to the batch read that follows it.
+// source can match (triggerRead), so a trigger over one small kind drains in
+// proportion to that kind's entries and not to the whole changelog. Every
+// other entry past the cursor, up to the head read first, is one the source
+// could never match, so a short batch covers through that head and the
+// caller moves the scan position there; a full batch covers through its last
+// entry. Sequence order is commit-visibility order (docs/changelog.md), so
+// every entry at or under the head is visible to the batch read that follows
+// it.
 //
 // A `*` source reads every entry, the ledger's own `delivery` entries
 // included; matchChanges drops them, and the public read hides them.
@@ -1886,13 +1886,15 @@ func (ds *dataset) changesPast(ctx context.Context, tr *trigger, after int64) ([
 	if !every && len(kinds) == 0 {
 		return nil, head, nil
 	}
-	b := &builder{}
-	b.add(`seq > ` + b.arg(after))
-	b.add(`seq <= ` + b.arg(head))
-	if !every {
-		b.add(`kind = ANY(` + b.textArray(kinds) + `)`)
+	if every {
+		kinds = nil
 	}
-	changes, err := ds.queryChanges(ctx, b, `seq`, triggerBatch)
+	query, args := triggerRead(kinds, after, head)
+	rows, err := ds.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, after, err
+	}
+	changes, err := collectChanges(rows)
 	if err != nil {
 		return nil, after, err
 	}
@@ -1900,6 +1902,38 @@ func (ds *dataset) changesPast(ctx context.Context, tr *trigger, after int64) ([
 		return changes, changes[len(changes)-1].Seq, nil
 	}
 	return changes, head, nil
+}
+
+// triggerRead builds the dispatcher's batch read of the entries in
+// (after, head], at most triggerBatch of them in seq order. With no kinds it
+// reads every entry. With kinds it reads each kind as its own branch,
+// `kind = $n AND seq > after ORDER BY seq LIMIT batch`, which walks that
+// kind's range of changelog_kind_seq_idx from the cursor in seq order, and
+// joins the branches with UNION ALL under one `ORDER BY seq LIMIT batch`,
+// which Postgres runs as a Merge Append over the branches: no Sort, and at
+// most one batch of entries read from each kind, however dense the kind is in
+// the changelog. A single `kind = ANY(...)` does not give that bound: an
+// array on the index's second column cannot return rows in seq order, so the
+// planner either sorts every remaining entry of the kinds or walks the
+// primary key and filters out every entry of another kind (#637 review).
+func triggerRead(kinds []string, after, head int64) (string, []any) {
+	const cols = `SELECT seq, ts, actor, op, record_id, kind, payload, hash FROM changelog`
+	args := []any{after, head, triggerBatch}
+	if len(kinds) == 0 {
+		return cols + ` WHERE seq > $1 AND seq <= $2 ORDER BY seq LIMIT $3`, args
+	}
+	branch := func(n int) string {
+		return cols + ` WHERE kind = $` + strconv.Itoa(n) + ` AND seq > $1 AND seq <= $2 ORDER BY seq LIMIT $3`
+	}
+	if len(kinds) == 1 {
+		return branch(4), append(args, kinds[0])
+	}
+	parts := make([]string, len(kinds))
+	for i, k := range kinds {
+		args = append(args, k)
+		parts[i] = `(` + branch(len(args)) + `)`
+	}
+	return strings.Join(parts, ` UNION ALL `) + ` ORDER BY seq LIMIT $3`, args
 }
 
 // sourceKinds turns a record source's kind globs into the exact kinds the
@@ -1911,6 +1945,16 @@ func (ds *dataset) changesPast(ctx context.Context, tr *trigger, after int64) ([
 // range in SQL, because a prefix is a contiguous range only under the C
 // collation and the column carries the database's.
 func (ds *dataset) sourceKinds(ctx context.Context, pats []string) (kinds []string, every bool, err error) {
+	// Each kind is named once: triggerRead reads one branch per kind, so a
+	// kind named twice (listed twice, or exact and under a glob) would
+	// deliver its entries twice.
+	seen := map[string]bool{}
+	add := func(k string) {
+		if !seen[k] {
+			seen[k] = true
+			kinds = append(kinds, k)
+		}
+	}
 	var globs []string
 	for _, pat := range pats {
 		switch {
@@ -1919,7 +1963,7 @@ func (ds *dataset) sourceKinds(ctx context.Context, pats []string) (kinds []stri
 		case strings.HasSuffix(pat, "/*"):
 			globs = append(globs, pat)
 		default:
-			kinds = append(kinds, pat)
+			add(pat)
 		}
 	}
 	if len(globs) == 0 {
@@ -1932,7 +1976,7 @@ func (ds *dataset) sourceKinds(ctx context.Context, pats []string) (kinds []stri
 	for _, k := range logged {
 		for _, pat := range globs {
 			if vocabulary.MatchTypeGlob(pat, k) {
-				kinds = append(kinds, k)
+				add(k)
 				break
 			}
 		}
