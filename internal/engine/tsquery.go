@@ -3,15 +3,18 @@ package engine
 import (
 	"fmt"
 	"strings"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// THE SEARCH GRAMMAR. One parser turns what a person typed into the text
-// to_tsquery('english', …) parses, and every door that matches words against
-// a record reads it: the ranked read's lexical arm, the list's `search` arm
-// and a property's `match`. It is websearch_to_tsquery's grammar plus the one
-// thing that function cannot express, a word prefix:
+// THE SEARCH GRAMMAR. One parser turns what a person typed into a tsquery,
+// and every door that matches words against a record reads it: the ranked
+// read's lexical arm, the list's `search` arm and a property's `match`. It is
+// websearch_to_tsquery's grammar plus the one thing that function cannot
+// express, a word prefix:
 //
 //	rack layout        every word, in any order       'rack' & 'layout'
 //	"rack layout"      the words adjacent, in order    'rack' <-> 'layout'
@@ -21,59 +24,207 @@ import (
 //
 // A star anywhere in a word marks it a prefix of its letters: `*lay*` and
 // `lay*` are the same query, because a tsvector holds whole lexemes and can
-// answer "starts with" but never "contains". Every lexeme is single-quoted
-// on the way out, so nothing a person types reaches the tsquery parser as an
-// operator: a typed `geo:*` is the quoted lexeme geo:, not a prefix.
-// Stemming and stop words are the dictionary's, applied by to_tsquery to the
-// quoted text exactly as to_tsvector applied them to the row.
+// answer "starts with" but never "contains".
+//
+// The query is a SQL EXPRESSION of tsquery values, one to_tsquery call per
+// operand joined by the tsquery operators, never one tsquery text, because
+// the operands need two dictionaries. A whole word is stemmed by `english`,
+// exactly as to_tsvector stemmed the row. A prefix is NOT stemmed: the
+// stemmer reads `ans` as a word and cuts it to `an`, so a stemmed `ans*`
+// matched every lexeme starting with `an`. A prefix reads through `simple`
+// (lowercased, nothing cut) and also matches its own stem exactly, so `run*`
+// finds `running` through the stem and `runway` through the prefix.
+//
+// A word carrying a diacritic also matches its folded spelling, and the index
+// holds a folded copy of every such word (searchtext.go), so `José` and
+// `jose` find the same rows.
+//
+// Every lexeme is single-quoted inside its operand, so nothing a person types
+// reaches the tsquery parser as an operator: a typed `geo:*` is the quoted
+// lexeme geo: as a prefix, not a weight label.
 
-// searchQuery renders q in the grammar above, or "" when nothing in it can
-// match: a query of stars, quotes and dashes alone.
-func searchQuery(q string) string {
-	var out []string // the rendered operands and operators, in order
+// searchOperand is one operand as typed: a word or a quoted phrase, optionally
+// negated.
+type searchOperand struct {
+	words   []string // the typed words, stars removed; one for a word
+	phrase  bool
+	negated bool
+	// prefix marks a word typed with a star. A phrase keeps a star per word
+	// in stars instead, because it is one english tsquery.
+	prefix bool
+	stars  []bool
+}
+
+// searchPlan is a parsed query: operands in order, grouped by OR. Each group
+// is a conjunction; the plan is the disjunction of its groups, because & binds
+// tighter than | exactly as in websearch_to_tsquery.
+type searchPlan struct {
+	groups [][]searchOperand
+	hasOr  bool
+}
+
+// empty reports whether nothing in the query can match: stars, quotes and
+// dashes alone.
+func (p searchPlan) empty() bool { return len(p.groups) == 0 }
+
+// parseSearch reads q in the grammar above.
+func parseSearch(q string) searchPlan {
+	var p searchPlan
+	var cur []searchOperand
 	pendingOr := false
-	pushOperand := func(s string) {
-		if len(out) > 0 {
-			if pendingOr {
-				out = append(out, "|")
-			} else {
-				out = append(out, "&")
-			}
-		}
-		pendingOr = false
-		out = append(out, s)
-	}
 	for _, tok := range tokenize(q) {
 		if tok.or {
 			// A leading or doubled OR has no left operand; it is dropped, as
 			// websearch_to_tsquery drops it.
-			pendingOr = len(out) > 0
+			pendingOr = len(cur) > 0 || len(p.groups) > 0
 			continue
 		}
-		var terms []string
+		op := searchOperand{phrase: tok.phrase, negated: tok.negated}
 		for _, w := range tok.words {
-			if t := lexeme(w); t != "" {
-				terms = append(terms, t)
+			star := strings.Contains(w, "*")
+			w = strings.ReplaceAll(w, "*", "")
+			if w == "" {
+				continue
 			}
+			op.words = append(op.words, w)
+			op.stars = append(op.stars, star)
 		}
-		if len(terms) == 0 {
+		if len(op.words) == 0 {
 			continue
 		}
-		operand := strings.Join(terms, " <-> ")
-		if tok.phrase && len(terms) > 1 {
-			operand = "(" + operand + ")"
+		if !op.phrase || len(op.words) == 1 {
+			// A one-word phrase is the word.
+			op.phrase = false
+			op.prefix = op.stars[0]
+			op.words, op.stars = op.words[:1], nil
 		}
-		if tok.negated {
-			operand = "!" + operand
+		if pendingOr && len(cur) > 0 {
+			p.groups = append(p.groups, cur)
+			cur = nil
+			p.hasOr = true
 		}
-		pushOperand(operand)
+		pendingOr = false
+		cur = append(cur, op)
 	}
-	// A trailing OR was never followed by an operand; the join list is whole
-	// without it because the operator is only ever emitted between operands.
-	return strings.Join(out, " ")
+	// A trailing OR was never followed by an operand, so it opened no group.
+	if len(cur) > 0 {
+		p.groups = append(p.groups, cur)
+	}
+	return p
 }
 
-// searchTerm is one operand as typed: a word, or a quoted phrase of words,
+// expr renders the plan as a tsquery-valued SQL expression, binding every
+// lexeme through b. Strict is the grammar as typed. Relaxed is the ranked
+// read's CANDIDATE set: a conjunction with no OR becomes the disjunction of
+// its positive operands, each exclusion still applied, so a query with one
+// word no row holds still finds the rows holding the others. A query that
+// already says OR is its own relaxation: the person wrote the logic.
+func (p searchPlan) expr(b *builder, relaxed bool) string {
+	if relaxed && !p.hasOr && len(p.groups) == 1 {
+		var pos, neg []string
+		for _, op := range p.groups[0] {
+			if op.negated {
+				neg = append(neg, op.sql(b))
+			} else {
+				pos = append(pos, op.sql(b))
+			}
+		}
+		if len(pos) > 0 {
+			return "(" + strings.Join(append([]string{"(" + strings.Join(pos, " || ") + ")"}, neg...), " && ") + ")"
+		}
+	}
+	groups := make([]string, 0, len(p.groups))
+	for _, g := range p.groups {
+		ops := make([]string, 0, len(g))
+		for _, op := range g {
+			ops = append(ops, op.sql(b))
+		}
+		groups = append(groups, "("+strings.Join(ops, " && ")+")")
+	}
+	return "(" + strings.Join(groups, " || ") + ")"
+}
+
+// sql renders one operand. See the header for why a prefix reads through
+// `simple` and a folded spelling rides beside an accented one.
+func (op searchOperand) sql(b *builder) string {
+	var alts []string
+	if op.phrase {
+		for _, words := range spellings(op.words) {
+			parts := make([]string, len(words))
+			for i, w := range words {
+				parts[i] = quoteLexeme(w)
+				if op.stars[i] {
+					parts[i] += ":*"
+				}
+			}
+			alts = append(alts, `to_tsquery('english', `+b.arg(strings.Join(parts, " <-> "))+`)`)
+		}
+	} else {
+		for _, words := range spellings(op.words) {
+			q := quoteLexeme(words[0])
+			alts = append(alts, `to_tsquery('english', `+b.arg(q)+`)`)
+			if op.prefix {
+				alts = append(alts, `to_tsquery('simple', `+b.arg(q+":*")+`)`)
+			}
+		}
+	}
+	s := alts[0]
+	if len(alts) > 1 {
+		s = "(" + strings.Join(alts, " || ") + ")"
+	}
+	if op.negated {
+		s = "(!! " + s + ")"
+	}
+	return s
+}
+
+// spellings is the typed words and, where folding changes any of them, the
+// folded words beside them.
+func spellings(words []string) [][]string {
+	folded := make([]string, len(words))
+	changed := false
+	for i, w := range words {
+		folded[i] = foldDiacritics(w)
+		changed = changed || folded[i] != w
+	}
+	if !changed {
+		return [][]string{words}
+	}
+	return [][]string{words, folded}
+}
+
+// scoreTerm is one positive word the lexical arm scores (bm25.go): the folded
+// word as typed and whether it was a prefix. Exclusions match but never score.
+type scoreTerm struct {
+	word   string
+	prefix bool
+}
+
+// terms lists the plan's scoring words, each once.
+func (p searchPlan) terms() []scoreTerm {
+	seen := map[scoreTerm]bool{}
+	var out []scoreTerm
+	add := func(t scoreTerm) {
+		if !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	for _, g := range p.groups {
+		for _, op := range g {
+			if op.negated {
+				continue
+			}
+			for i, w := range op.words {
+				prefix := op.prefix || (op.phrase && op.stars[i])
+				add(scoreTerm{word: foldDiacritics(w), prefix: prefix})
+			}
+		}
+	}
+	return out
+}
+
+// searchTerm is one token as typed: a word, or a quoted phrase of words,
 // each optionally negated; or the OR keyword.
 type searchTerm struct {
 	words   []string
@@ -128,30 +279,36 @@ func tokenize(q string) []searchTerm {
 	}
 }
 
-// lexeme quotes one typed word for to_tsquery: `'…'` with the quote doubled
-// and the backslash escaped, `:*` appended when the word carried a star. A
-// word that was stars alone is "" and matches nothing.
-func lexeme(word string) string {
-	prefix := strings.Contains(word, "*")
-	word = strings.ReplaceAll(word, "*", "")
-	if word == "" {
-		return ""
-	}
-	quoted := "'" + strings.NewReplacer(`\`, `\\`, `'`, `''`).Replace(word) + "'"
-	if prefix {
-		quoted += ":*"
-	}
-	return quoted
+// quoteLexeme quotes one typed word for to_tsquery: `'…'` with the quote
+// doubled and the backslash escaped.
+func quoteLexeme(word string) string {
+	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `''`).Replace(word) + "'"
 }
 
-// tsqueryText is searchQuery for a door that REFUSES an empty result, naming
-// where the query came from: a search whose every word was a star, a quote or
-// a dash matches nothing and would read as "no results" instead of "no
-// query".
-func tsqueryText(where, q string) (string, error) {
-	tq := searchQuery(q)
-	if tq == "" {
+// foldDiacritics drops the combining marks a decomposition leaves, so `José`
+// reads `Jose` and `Ångström` reads `Angstrom`. A letter with no
+// decomposition (ß, ø, ł) is kept: folding it is a language's rule, not
+// Unicode's.
+func foldDiacritics(s string) string {
+	if isASCII(s) {
+		return s
+	}
+	var out strings.Builder
+	for _, r := range norm.NFD.String(s) {
+		if !unicode.Is(unicode.Mn, r) {
+			out.WriteRune(r)
+		}
+	}
+	return norm.NFC.String(out.String())
+}
+
+// searchExpr parses q for a door that REFUSES an empty result, naming where
+// the query came from: a search whose every word was a star, a quote or a dash
+// matches nothing and would read as "no results" instead of "no query".
+func searchExpr(b *builder, where, q string) (string, error) {
+	p := parseSearch(q)
+	if p.empty() {
 		return "", fmt.Errorf("%w: %s: %q has no word to match", substrate.ErrValidation, where, q)
 	}
-	return tq, nil
+	return p.expr(b, false), nil
 }

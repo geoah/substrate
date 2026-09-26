@@ -24,7 +24,7 @@ nothing, there are none.
 | **property** | A named, typed value on a record, declared by its kind. |
 | **property type** | A named refinement of a base type plus its validations, declared in a package and reusable across its kinds. |
 | **trait** | A contract a kind implements: a set of properties a kind promises to declare, so unrelated kinds can be treated alike. |
-| **purpose** | Why a kind exists, declared on the kind: `primary` (browsed and opened directly), `supporting` (a detail reached from the records it belongs to) or `internal` (machinery); absent reads as `primary`. Clients read it to decide what they list; nothing on the server acts on it. Decision record 0104. |
+| **purpose** | Why a kind exists, declared on the kind: `primary` (browsed and opened directly), `supporting` (a detail reached from the records it belongs to) or `internal` (machinery); absent reads as `primary`. Clients read it to decide what they list, `filter.purposes` narrows a read by it, and search ranks machinery lower. Decision records 0105 and 0108. |
 | **series** | A temporal record with a repeat rule (`recurrence`, or `rdates`) under core's `recurring` trait. Its bound slot is the rule's first occurrence; the substrate stores the rule and never expands it into rows. |
 | **occurrence** | One instant a series' rule names. Computed by the window read, never stored: it is served in the record envelope as `<seriesId>_<slot>` with `computed: true`, and on a kind that binds `override` a put at that id turns it into one. |
 | **override** | A temporal record standing in for one occurrence of a series, moved or edited: it names the series in `recurrenceOf` and the slot it replaces in `originalAt`, under core's `override` trait. iCalendar's `RECURRENCE-ID`. |

@@ -14,14 +14,17 @@ type SearchInput struct {
 	Q     string     `json:"q"`
 	Mode  SearchMode `json:"mode,omitempty"` // default hybrid
 	Kinds []string   `json:"kinds,omitempty"`
-	K     int        `json:"k,omitempty"` // default 20
+	// Purposes narrows to the kinds declaring one of these purposes (decision
+	// records 0105 and 0108), intersected with Kinds where both are set.
+	Purposes []string `json:"purposes,omitempty"`
+	K        int      `json:"k,omitempty"` // default 20
 }
 
 // Hit is one search result with raw per-arm scores so callers can
 // threshold (resolve-before-write needs the cosine, not a rank).
 type Hit struct {
 	Record   *Record `json:"record"`
-	Lexical  float64 `json:"lexical,omitempty"`  // ts_rank, 0 when not ranked
+	Lexical  float64 `json:"lexical,omitempty"`  // BM25F, 0 when not ranked
 	Semantic float64 `json:"semantic,omitempty"` // cosine similarity, 0 when absent
 }
 

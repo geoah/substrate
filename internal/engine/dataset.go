@@ -140,6 +140,9 @@ type dataset struct {
 	// webhook requests runs (webhooks.go resumeWebhooks), so passes that
 	// come faster than a fire settles do not start a second walk.
 	resumingWebhooks atomic.Bool
+	// statsCache holds the collection statistics the lexical arm's BM25F
+	// reads (bm25.go), refreshed after statsTTL.
+	statsCache searchStatsCache
 
 	mu   sync.RWMutex
 	reg  *vocabulary.Registry

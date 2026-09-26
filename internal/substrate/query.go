@@ -44,7 +44,13 @@ type Filter struct {
 	// INTERSECTS with Kinds rather than unioning: every filter arm narrows, so
 	// a list that names its kinds never answers with a row of another. Alone,
 	// it means every implementor.
-	Implements string          `json:"implements,omitempty"`
+	Implements string `json:"implements,omitempty"`
+	// Purposes narrows to the kinds declaring one of these purposes:
+	// `primary`, `supporting` or `internal`, an undeclared purpose reading as
+	// primary (decision records 0105 and 0108). Like Implements it INTERSECTS
+	// with Kinds; alone it means every kind of those purposes. It is resolved
+	// against the registry when the read runs.
+	Purposes   []string        `json:"purposes,omitempty"`
 	IDs        []string        `json:"ids,omitempty"`
 	Properties map[string]Cond `json:"properties,omitempty"`
 	Labels     map[string]Cond `json:"labels,omitempty"`

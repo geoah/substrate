@@ -692,10 +692,13 @@ data:
 An absent `purpose:` reads as `primary`, so a kind a user or an agent declares
 is listed without anyone classifying it; the default is the reader's and is
 never written into the stored declaration. Any other value, or a value that is
-not a word, is refused with the three named. The server stores the key and
-acts on nothing: no read filters by it and no write is refused over it. A
+not a word, is refused with the three named. No write is refused over it. A
 client reads it off the kind's `definition` to decide what its navigation
-lists, and still reaches every kind by its reference. A kind's `purpose:` is
+lists, and still reaches every kind by its reference. On the server,
+[`filter.purposes`](api.md#the-filter-grammar) narrows a list or a ranked read
+to the kinds of the named purposes, and [search](api.md#search) ranks
+`supporting` and `internal` records lower
+([record 0108](decisions/0108-search-ranks-by-bm25f-and-a-kinds-purpose.md)). A kind's `purpose:` is
 not a property named `purpose` — a kind may declare one of those too, under
 `properties:`, and it is an ordinary property.
 

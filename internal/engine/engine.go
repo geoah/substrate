@@ -853,6 +853,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.runRepositoryMigrations,
 		ds.loadStoredVocabulary,
 		ds.upgradeShippedVocabulary,
+		ds.reindexSearch,
 		ds.ensureDefaultProviders,
 		ds.ensureTriggerCursors,
 		ds.settleInterruptedSyncs,
@@ -1034,6 +1035,11 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	// the changelog says which is which.
 	if err := seedDS.inTx(ctx, substrate.ActorSeed, true, func(t *txn) error {
 		if err := t.seedShippedSchema(s.base); err != nil {
+			return err
+		}
+		// Every row a creation writes is indexed under this binary's rules,
+		// so the first open has nothing to re-derive (searchindex.go).
+		if err := t.markSearchIndexed(); err != nil {
 			return err
 		}
 		// The repository's own read-only description of itself. `lifecycle` is

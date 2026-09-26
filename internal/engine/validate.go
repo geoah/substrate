@@ -1159,7 +1159,7 @@ func ftsBands(ty *vocabulary.Kind, row *erow) [3]string {
 	if bp, ok := ty.Props[substrate.PropBody]; ok && bp.FTS && !bp.Sensitive() && row.Body != "" {
 		c = append(c, row.Body)
 	}
-	return [3]string{row.Title, strings.Join(b, " "), strings.Join(c, " ")}
+	return [3]string{searchText(row.Title), searchText(strings.Join(b, " ")), searchText(strings.Join(c, " "))}
 }
 
 // --- projection ---

@@ -62,6 +62,9 @@ import (
 //     interrupted flow is started again.
 //   - vocabulary_dialect, the STORE SHAPE's stamp, about the tables rather
 //     than about their contents.
+//   - search_index, which rule set indexed the rows (searchindex.go). The
+//     replay indexes every row under this binary's rules, which the stored
+//     version already names or the open ladder raised it to.
 //   - repository_migrations, the ledger of the code migrations this
 //     repository has run (repomigrate.go). What a migration wrote is in the
 //     changelog and replays; the ledger says it need not run again.
