@@ -743,7 +743,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	// omits is carried into it, so an unchanged re-apply compares equal and a
 	// retirement is never lifted by omission (decision 0055).
 	carryRetirements(&b, existing)
-	resolveDeclarationVersions(&b, existing)
+	resolveDeclarationVersions(&b, existing, declarationCanonicalizer(current))
 	merged := map[string]vocabulary.Document{}
 	for k, d := range existing {
 		if replaced[d.DeclaredPackage()] {
@@ -907,7 +907,15 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 // Documents are stamped COPY-ON-WRITE: a bundle's closure documents are the
 // catalog's cached maps, shared across repositories, and the resolution must
 // not write into them.
-func resolveDeclarationVersions(b *vocabularyBatch, existing map[string]vocabulary.Document) {
+//
+// "Changed" is decided on both sides' STORED form (canon): a row holds what
+// the write path coerced, a manifest what its author typed, so comparing the
+// two as written called every unchanged bundle and function changed and moved
+// the package, and every kind riding its cascade, on each re-install (#643).
+func resolveDeclarationVersions(b *vocabularyBatch, existing map[string]vocabulary.Document, canon func(vocabulary.Document) map[string]any) {
+	changed := func(d, stored vocabulary.Document) bool {
+		return !declarationDataEqual(canon(d), canon(stored))
+	}
 	storedVersionOf := func(kind, id string) int64 {
 		v, _ := vocabulary.VersionValue(existing[kind+"\x00"+id].Data["version"])
 		return v
@@ -921,7 +929,7 @@ func resolveDeclarationVersions(b *vocabularyBatch, existing map[string]vocabula
 		if d.Kind == vocabulary.DocKind || d.Kind == vocabulary.DocPackage || d.Kind == vocabulary.DocAuthority {
 			continue // each carries a version of its own to move
 		}
-		if stored, has := existing[docKey(d)]; has && !declarationDataEqual(d.Data, stored.Data) {
+		if stored, has := existing[docKey(d)]; has && changed(d, stored) {
 			needsBump[d.DeclaredPackage()] = true
 		}
 	}
@@ -1016,7 +1024,7 @@ func resolveDeclarationVersions(b *vocabularyBatch, existing map[string]vocabula
 			continue // the package's own move carries it (the boot/bundle ride)
 		}
 		v := storedV
-		if !declarationDataEqual(d.Data, stored.Data) {
+		if changed(d, stored) {
 			v = storedV + 1
 		}
 		if v != explicit && v > 0 {
@@ -1037,6 +1045,34 @@ func declarationDataEqual(a, b map[string]any) bool {
 		return false
 	}
 	return bytes.Equal(ja, jb)
+}
+
+// declarationCanonicalizer answers a document's data in the form the write
+// path stores it: coerced against its meta-kind (core's `bundle` for a bundle
+// document, `function` for a function, ...) by coerceProps, the coercion every
+// row write runs. A stored row holds each reference as the `{ref:
+// "<kind>/<id>"}` object and each duration in its normalized spelling, while a
+// manifest authors the bare id and `PT60S`, so only the coerced forms of the
+// two can be compared. The meta-kinds come from reg, the registry the batch
+// is staged over; a document whose meta-kind reg cannot resolve, or whose data
+// the coercion refuses, compares as written, and the loader or the write says
+// why. coerceProps copies, so the catalog's cached maps are never written.
+func declarationCanonicalizer(reg *vocabulary.Registry) func(vocabulary.Document) map[string]any {
+	return func(d vocabulary.Document) map[string]any {
+		ident, ok := schemaKindRef(d.Kind)
+		if !ok || reg == nil {
+			return d.Data
+		}
+		meta, err := reg.Resolve(ident)
+		if err != nil {
+			return d.Data
+		}
+		out, err := coerceProps(meta, minusVersionKey(d.Data))
+		if err != nil {
+			return d.Data
+		}
+		return out
+	}
 }
 
 func minusVersionKey(data map[string]any) map[string]any {

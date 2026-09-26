@@ -396,10 +396,19 @@ func TestAnInstalledProviderIsPromotedByTheCatalogInstall(t *testing.T) {
 	}
 
 	// The same closure through the catalog's provider tier promotes it, package
-	// row and declarations together.
-	if _, _, err := loadCatalog(t).Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+	// row and declarations together. The promotion moves `source` alone, which
+	// is the engine's, so no declaration changed and every version stays
+	// (issue #643).
+	c := loadCatalog(t)
+	b, ok := c.ByID(whoopID)
+	if !ok {
+		t.Fatalf("the shipped catalog no longer carries %s", whoopID)
+	}
+	handApplied := closureVersions(t, ds, b)
+	if _, _, err := c.Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
 		t.Fatalf("install %s over the hand-applied closure: %v", whoopID, err)
 	}
+	assertVersionsKept(t, "the promotion", handApplied, closureVersions(t, ds, b))
 	if got := sourceOf(t, ds, kindPackageRef, whoopID); got != vocabulary.SourcePublished {
 		t.Errorf("package source after the catalog install = %q, want %q", got, vocabulary.SourcePublished)
 	}
@@ -490,4 +499,69 @@ func TestAProviderInstallLeavesTheAuthorityRowOpen(t *testing.T) {
 	if got := sourceOf(t, ds, kindPackageRef, notionID); got != vocabulary.SourcePublished {
 		t.Errorf("notion source after the hand apply = %q, want %q", got, vocabulary.SourcePublished)
 	}
+}
+
+// The other half of the unchanged-closure rule (issue #643): the comparison
+// coerces both sides before it compares, and a coercion that dropped data
+// would make a real change read as none. So a closure that changes ONLY a
+// duration, or ONLY a reference value, still moves the package to stored+1,
+// while the same closure applied unchanged keeps it.
+func TestAChangedDurationOrReferenceMovesThePackage(t *testing.T) {
+	function := func(docs []map[string]any) map[string]any {
+		for _, d := range docs {
+			if d["kind"] == "substrate.reamde.dev/core/function" {
+				return d["data"].(map[string]any)
+			}
+		}
+		t.Fatal("the whoop closure carries no function")
+		return nil
+	}
+	for _, tc := range []struct {
+		name   string
+		change func(fn map[string]any)
+	}{
+		{"duration", func(fn map[string]any) { fn["timeout"] = "PT45S" }},
+		{"reference", func(fn map[string]any) {
+			perms := fn["permissions"].(map[string]any)
+			writes := perms["writes"].([]any)
+			perms["writes"] = writes[:len(writes)-1]
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ds := newDataset(t)
+			ctx := context.Background()
+			if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
+				t.Fatalf("apply the whoop closure: %v", err)
+			}
+			first := packageVersion(t, ds, whoopID)
+			if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
+				t.Fatalf("apply the unchanged closure: %v", err)
+			}
+			if got := packageVersion(t, ds, whoopID); got != first {
+				t.Fatalf("an unchanged apply moved the package %d -> %d", first, got)
+			}
+			docs := whoopClosure(t)
+			tc.change(function(docs))
+			if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+				t.Fatalf("apply the changed closure: %v", err)
+			}
+			if got := packageVersion(t, ds, whoopID); got != first+1 {
+				t.Errorf("a %s change landed the package at %d, want stored+1 = %d", tc.name, got, first+1)
+			}
+		})
+	}
+}
+
+// packageVersion reads one package row's stored version.
+func packageVersion(t *testing.T, ds substrate.Dataset, pkg string) int64 {
+	t.Helper()
+	row, err := ds.Get(context.Background(), kindPackageRef, pkg)
+	if err != nil {
+		t.Fatalf("get package %s: %v", pkg, err)
+	}
+	v, ok := vocabulary.VersionValue(row.Properties["version"])
+	if !ok {
+		t.Fatalf("package %s carries no version: %v", pkg, row.Properties["version"])
+	}
+	return v
 }
