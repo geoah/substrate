@@ -157,7 +157,7 @@ function Field({
         <span className="ml-1.5 font-normal text-faint">optional</span>
       )}
       {technical && (
-        <span className="ml-2 font-mono text-[11px] font-normal text-faint">
+        <span className="ml-2 font-mono text-[11.5px] font-normal text-faint">
           {arg.name}
         </span>
       )}

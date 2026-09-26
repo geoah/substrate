@@ -127,7 +127,7 @@ export function ActorRef({
       </span>
       {identity.cls === "agent" && <span className="text-faint">agent</span>}
       {technical && inlineId && (
-        <span className="font-mono text-[11px] [overflow-wrap:anywhere] text-faint">
+        <span className="font-mono text-[11.5px] [overflow-wrap:anywhere] text-faint">
           {actor}
         </span>
       )}

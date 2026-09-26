@@ -90,7 +90,7 @@ function Row({
           <div className="mt-0.5 text-[12.5px] text-faint">
             before it was combined into this one
             {technical && (
-              <span className="ml-1.5 font-mono text-[11px]">
+              <span className="ml-1.5 font-mono text-[11.5px]">
                 as {row.recordId}
               </span>
             )}
@@ -99,7 +99,9 @@ function Row({
       </div>
       <div className="flex flex-col items-end gap-0.5 text-[12.5px] whitespace-nowrap text-faint tabular-nums">
         <span title={row.ts}>{ago(row.ts)}</span>
-        {technical && <span className="font-mono text-[11px]">#{row.seq}</span>}
+        {technical && (
+          <span className="font-mono text-[11.5px]">#{row.seq}</span>
+        )}
       </div>
     </div>
   )

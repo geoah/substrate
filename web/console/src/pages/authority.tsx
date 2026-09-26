@@ -18,6 +18,7 @@ import { KindPath } from "@/components/identity/kind-ref"
 import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
 import { ProviderBadge } from "@/components/identity/provider-badge"
+import { PurposeTag } from "@/components/identity/purpose-tag"
 import { SectionHead } from "@/components/identity/section-head"
 import {
   Empty,
@@ -106,11 +107,7 @@ function KindsList({ kinds }: { kinds: KindInfo[] }) {
                         >
                           {displayPlural(k)}
                         </Link>
-                        {technical && purpose !== "primary" && (
-                          <span className="shrink-0 rounded-[3px] border border-border-strong px-1 text-[10.5px] font-normal text-faint">
-                            {purpose}
-                          </span>
-                        )}
+                        {technical && <PurposeTag purpose={purpose} />}
                       </span>
                     </td>
                     {technical && (

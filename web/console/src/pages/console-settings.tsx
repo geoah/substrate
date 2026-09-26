@@ -276,7 +276,7 @@ export function ConsoleSettingsPage() {
       </SettingsSection>
       {technical && (
         <div className="mt-2.5 flex flex-col gap-1.5 rounded-lg border border-dashed border-border-strong px-3 py-2.5 text-[12.5px] text-muted-foreground">
-          <div className="flex items-center gap-1.5 text-[11px] tracking-[0.05em] text-faint uppercase">
+          <div className="flex items-center gap-1.5 text-[11.5px] tracking-[0.05em] text-faint uppercase">
             <CodeIcon className="size-3.5" />
             Developer
           </div>

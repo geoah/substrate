@@ -122,7 +122,7 @@ export function ChoiceList({
                   {option.display ?? option.label}
                 </span>
                 {values && option.value !== option.label && (
-                  <span className="shrink-0 font-mono text-[11px] text-faint">
+                  <span className="shrink-0 font-mono text-[11.5px] text-faint">
                     {option.value}
                   </span>
                 )}

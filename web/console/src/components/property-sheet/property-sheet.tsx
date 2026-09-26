@@ -107,7 +107,7 @@ function Label({
           {row.spec.label}
         </span>
         {technical && row.spec.label !== row.name && (
-          <span className="truncate font-mono text-[11px] text-faint">
+          <span className="truncate font-mono text-[11.5px] text-faint">
             {row.name}
           </span>
         )}

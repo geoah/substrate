@@ -128,7 +128,7 @@ export function PropertyChoice({
                 <span className="ml-auto flex items-center gap-1.5 text-xs text-faint">
                   {choice.hint}
                   {technical && choice.value !== choice.label && (
-                    <span className="font-mono text-[11px]">
+                    <span className="font-mono text-[11.5px]">
                       {choice.value}
                     </span>
                   )}

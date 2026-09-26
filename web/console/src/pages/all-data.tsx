@@ -20,6 +20,7 @@ import { KindPath } from "@/components/identity/kind-ref"
 import { TablePage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
 import { ProviderBadge } from "@/components/identity/provider-badge"
+import { PurposeTag } from "@/components/identity/purpose-tag"
 import { SectionHead } from "@/components/identity/section-head"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -93,11 +94,7 @@ function CollectionRow({
         >
           <KindGlyph kind={kind} size="sm" />
           <span className="truncate">{displayPlural(kind)}</span>
-          {technical && purpose !== "primary" && (
-            <span className="shrink-0 rounded-[3px] border border-border-strong px-1 text-[10px] leading-4 font-normal text-faint">
-              {purpose}
-            </span>
-          )}
+          {technical && <PurposeTag purpose={purpose} />}
         </Link>
       </td>
       {technical && (

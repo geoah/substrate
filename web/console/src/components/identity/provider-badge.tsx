@@ -22,8 +22,8 @@ export function ProviderBadge({
       style={{ color: info.color }}
       className={cn(
         "inline-grid shrink-0 place-items-center border border-border-strong bg-background leading-none font-bold",
-        size === "xs" && "size-4 rounded-[4px] text-[9.5px]",
-        size === "sm" && "size-[18px] rounded-[5px] text-[10px]",
+        size === "xs" && "size-4 rounded-[4px] text-[11.5px]",
+        size === "sm" && "size-[18px] rounded-[5px] text-[11.5px]",
         size === "md" && "size-7 rounded-[7px] text-[13px]",
         className
       )}

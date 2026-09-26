@@ -53,7 +53,7 @@ export function StateBadge({
         {word}
       </span>
       {technical && (
-        <span className="font-mono text-[11px] text-faint">{value}</span>
+        <span className="font-mono text-[11.5px] text-faint">{value}</span>
       )}
     </span>
   )

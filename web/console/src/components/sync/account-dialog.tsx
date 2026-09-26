@@ -345,7 +345,7 @@ export function AccountDialog({
 function Step({ n, children }: { n: number; children: React.ReactNode }) {
   return (
     <li className="flex items-start gap-2">
-      <span className="mt-px inline-flex size-4 shrink-0 items-center justify-center rounded-full border text-[0.65rem] font-medium text-foreground">
+      <span className="mt-px inline-flex size-4 shrink-0 items-center justify-center rounded-full border text-[11.5px] font-medium text-foreground">
         {n}
       </span>
       <span>{children}</span>

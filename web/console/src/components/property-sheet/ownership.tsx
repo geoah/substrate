@@ -201,7 +201,7 @@ function Source({ path }: { path: string }) {
   return (
     <>
       <RecordRef kind={target.kind} id={target.id} />
-      {technical && <IdText value={path} copy className="text-[11px]" />}
+      {technical && <IdText value={path} copy className="text-[11.5px]" />}
     </>
   )
 }
@@ -370,7 +370,7 @@ export function OwnershipDetail({
                       </>
                     )}
                     {technical && (
-                      <span className="font-mono text-[11px] [overflow-wrap:anywhere]">
+                      <span className="font-mono text-[11.5px] [overflow-wrap:anywhere]">
                         · {alt.actor}
                       </span>
                     )}

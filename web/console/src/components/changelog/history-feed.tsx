@@ -175,13 +175,13 @@ export function HistoryEntryRow({
                   />
                 </span>
                 <span className="inline-flex min-w-0 items-center gap-0.5">
-                  <span className="font-mono text-[11px] [overflow-wrap:anywhere]">
+                  <span className="font-mono text-[11.5px] [overflow-wrap:anywhere]">
                     {entry.actor}
                   </span>
                   <CopyButton value={entry.actor} label="Copy the actor id" />
                 </span>
                 {entry.records.length > 1 && (
-                  <KindPath reference={entry.kind} className="text-[11px]" />
+                  <KindPath reference={entry.kind} className="text-[11.5px]" />
                 )}
               </>
             )}

@@ -507,7 +507,7 @@ function InputsOutputs({
           <span className="font-medium break-words">
             {argumentLabel(a.name)}
             {technical && (
-              <span className="mt-0.5 block font-mono text-[11px] font-normal text-faint">
+              <span className="mt-0.5 block font-mono text-[11.5px] font-normal text-faint">
                 {a.name}: {argumentTypeWords(a)}
               </span>
             )}
@@ -527,7 +527,7 @@ function InputsOutputs({
             <span>
               {argumentLabel(r.name)}
               {technical && (
-                <span className="mt-0.5 block font-mono text-[11px] font-normal text-faint">
+                <span className="mt-0.5 block font-mono text-[11.5px] font-normal text-faint">
                   {r.name}: {argumentTypeWords(r)}
                 </span>
               )}
@@ -685,7 +685,7 @@ function Developer({ tool }: { tool: Tool }) {
   return (
     <Section title="Developer">
       <div className="flex flex-col gap-3 rounded-[8px] border border-dashed border-border-strong px-3.5 py-3 text-[12.5px] text-muted-foreground">
-        <div className="flex items-center gap-1.5 text-[11px] tracking-[0.05em] text-faint uppercase">
+        <div className="flex items-center gap-1.5 text-[11.5px] tracking-[0.05em] text-faint uppercase">
           <Code className="size-3.5" />
           Developer
         </div>

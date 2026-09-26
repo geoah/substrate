@@ -200,7 +200,7 @@ function Comparison({
             <span className={cn(CELL, "border-t")}>
               <ChangeLabel name={row.key} spec={spec} />
               {technical && (
-                <span className="block font-mono text-[11px] text-faint">
+                <span className="block font-mono text-[11.5px] text-faint">
                   {row.key}
                 </span>
               )}

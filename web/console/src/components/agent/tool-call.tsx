@@ -144,7 +144,7 @@ export function ToolCallCard({
           <CheckIcon aria-label="Done" className="size-3.5 shrink-0 text-ok" />
         )}
         {technical && (
-          <span className="font-mono text-[11px] [overflow-wrap:anywhere] text-faint">
+          <span className="font-mono text-[11.5px] [overflow-wrap:anywhere] text-faint">
             {resolved.function ?? resolved.subagent ?? call.name}
           </span>
         )}

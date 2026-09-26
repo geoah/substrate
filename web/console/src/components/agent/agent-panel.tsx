@@ -147,7 +147,7 @@ export function AgentPanel({
                       toolName(tool.function)
                     )}
                     {technical && (
-                      <span className="block font-mono text-[11px] [overflow-wrap:anywhere] text-faint">
+                      <span className="block font-mono text-[11.5px] [overflow-wrap:anywhere] text-faint">
                         {tool.function}
                       </span>
                     )}
@@ -191,7 +191,7 @@ export function AgentPanel({
               policies.map((policy) => (
                 <span
                   key={policy.id}
-                  className="font-mono text-[11px] [overflow-wrap:anywhere] text-muted-foreground"
+                  className="font-mono text-[11.5px] [overflow-wrap:anywhere] text-muted-foreground"
                 >
                   {policy.id}: {policyWords(policy)}
                 </span>
