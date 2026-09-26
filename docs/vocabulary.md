@@ -95,6 +95,18 @@ auditable in the [changelog](changelog.md):
   ([Bundles](bundles.md)). The shipped catalog is a source, never a
   package, and nothing on the serving path reads it.
 
+**A package row names who declared it.** The write that creates a
+`package` row stamps the managed `declaredBy` property with that write's
+actor: `bundle:core` for a seeded package, `bundle:<authority>:<package>` for
+a catalog install or import, the door (`console`, `substratectl`, `api`) for a
+hand apply, and `function:…` or `agent:…` for a callable. Every later apply,
+upgrade or re-import leaves it alone, so it names the first declarer, and no
+document may write it. A package created before the stamp existed carries none
+([0106](decisions/0106-a-package-row-names-the-actor-that-declared-it.md)).
+The package's record read (`GET
+/api/v1/substrate.reamde.dev/core/package/<authority>%2F<package>`) returns it
+in `properties`.
+
 Install and apply are one path. `POST …/vocabulary/apply` with
 `{"documents": […]}` is the batch verb, the same closure an install applies,
 and where `substratectl apply` routes any vocabulary documents it is given. A generic

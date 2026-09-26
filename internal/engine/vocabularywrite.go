@@ -1260,6 +1260,11 @@ func (t *txn) projectPackage(reg *vocabulary.Registry, projecting map[string]boo
 		if v, ok := opts.versions[d.key()]; ok && v > 0 {
 			props[propDeclarationVersion] = v
 		}
+		if d.short == vocabulary.DocPackage {
+			if err := t.stampDeclaredBy(d, props); err != nil {
+				return err
+			}
+		}
 		in := substrate.PutInput{Kind: d.typ, ID: d.id, Properties: props}
 		if m, ok := opts.meta[d.short+"\x00"+d.id]; ok {
 			in.Labels = m.labels
@@ -1276,6 +1281,32 @@ func (t *txn) projectPackage(reg *vocabulary.Registry, projecting map[string]boo
 		live[d.key()] = true
 		out[d.short+"\x00"+d.id] = e
 	}
+	return nil
+}
+
+// propPackageDeclaredBy is the actor that first declared a package (decision
+// record 0106). `managed` on the core `package` kind and no document key, so
+// no document can write it and `engineOwned` keeps it across every later
+// re-projection.
+const propPackageDeclaredBy = "declaredBy"
+
+// stampDeclaredBy puts the transaction's actor on a package header row the
+// store does not hold live: the write that creates the row is the declaration,
+// and its actor is the engine-derived hand of whoever made it (the door a
+// request came through, the system for a seed, a function or an agent for the
+// callable that ran). A row that exists keeps what it carries, stamped or not:
+// stamping a package created before the stamp would name whoever touched it
+// next, which is not who declared it. A transaction with no actor stamps
+// nothing rather than refuse the declaration.
+func (t *txn) stampDeclaredBy(d declaration, props map[string]any) error {
+	row, err := t.loadRow(eref{Kind: d.typ, ID: d.id}, false)
+	if err != nil {
+		return err
+	}
+	if (row != nil && row.DeletedAt == nil) || t.actor == "" {
+		return nil
+	}
+	props[propPackageDeclaredBy] = string(t.actor)
 	return nil
 }
 
