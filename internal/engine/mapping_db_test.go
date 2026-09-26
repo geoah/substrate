@@ -1110,6 +1110,44 @@ func TestResurrectedSourceRecomputes(t *testing.T) {
 	}
 }
 
+// A purged source is resolved again when it is put back, which is how one
+// identity is re-resolved without touching the subject it pointed at: a plain
+// delete and put restores the old subject, and a write may not re-point it,
+// so before purge the only way out was deleting the subject too (#585). The
+// old subject stays, with whatever else points at it.
+func TestPurgedSourceResolvesItsSubjectAgain(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	installPeopleSources(t, ds)
+
+	src := syncSource(t, ds, slack, typeSlackUser, "s-U1", map[string]any{"realName": "alex"})
+	shell := personOf(t, ds, src)
+	real := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: typePerson, Properties: map[string]any{"name": "Alex", "emails": []any{"alex@example.com"}},
+	})
+
+	// A plain delete and put brings the shell back, whatever the probe finds.
+	if _, err := ds.Delete(ctx, slack, src.Kind, src.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	back := syncSource(t, ds, slack, typeSlackUser, "s-U1", map[string]any{"realName": "alex", "email": "alex@example.com"})
+	if got := personOf(t, ds, back); got != shell {
+		t.Fatalf("a restore should keep the stored subject %s, got %s", shell, got)
+	}
+
+	if _, err := ds.Delete(ctx, slack, src.Kind, src.ID, substrate.DeleteInput{Purge: true}); err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+	again := syncSource(t, ds, slack, typeSlackUser, "s-U1", map[string]any{"realName": "alex", "email": "alex@example.com"})
+	if got := personOf(t, ds, again); got != real.ID {
+		t.Fatalf("the put after a purge points at %s, want the person the probe finds (%s)", got, real.ID)
+	}
+	if got := mustGet(t, ds, typePerson, shell); got.DeletedAt != nil {
+		t.Fatalf("the purge took the old subject with it: %+v", got.DeletedAt)
+	}
+}
+
 // A tombstoned source is not a source. A patch onto it is refused before the
 // write path reaches the mapping, so it mints no subject for a record nobody
 // can see: before #633 the patch landed and, its person gone too, minted a

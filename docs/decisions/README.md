@@ -281,6 +281,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0118](0118-a-mapping-where-narrows-its-sources-in-the-filter-grammar.md) | A mapping's `where` narrows its sources in the filter grammar | accepted |
 | [0119](0119-a-direct-call-of-a-networked-function-writes-a-run-row.md) | A direct call of a networked function writes a run row | proposed |
 | [0120](0120-a-map-rule-reaches-a-mirrors-subject-through-the-targets-pin.md) | A map rule reaches a mirror's subject through the target's pin | accepted |
+| [0122](0122-a-delete-may-purge-so-a-put-starts-the-record-over.md) | A delete may purge, so the next put starts the record over | accepted |
 | [0123](0123-a-trigger-read-names-its-kinds.md) | A record trigger's changelog read names its kinds | accepted |
 | [0124](0124-a-decision-number-is-checked-against-every-live-branch-before-the-merge.md) | A decision number is checked against every live branch before the merge | accepted |
 | [0125](0125-a-provider-write-is-a-callable-that-writes-no-record.md) | A provider write is a callable that writes no record | accepted |
