@@ -384,6 +384,19 @@ orphaned mapping targets where the deployment asked for it
 repositories and opens each one through the same row-level-security-bound pool
 a request uses.
 
+The trigger dispatcher runs each repository's pass in a goroutine of its own,
+at most 8 at once. The cap bounds the function runner processes and the
+transactions the dispatcher has in flight; a pass takes a connection for each
+statement or transaction and none while a function body runs. Every tick
+queues one pass for each repository that has none running or queued, and a
+pass that ends starts the next queued one at once, so while passes are short
+every repository gets a pass per tick. The queue takes repositories in order
+of how long ago their last pass started, a repository that has never run
+first, so busy older repositories cannot keep a new one at the back
+([#639](https://github.com/geoah/substrate/issues/639)). Eight long passes do
+fill every slot, and then a new repository waits for one of them to end. The
+other four loops still walk repositories one after another.
+
 ### Collecting orphaned mapping targets
 
 A record minted from a mapping's source outlives that source: delete the last
