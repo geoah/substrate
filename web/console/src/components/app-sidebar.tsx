@@ -57,6 +57,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { SignOutDialog } from "@/components/ui/confirm-dialog"
 import { Kbd } from "@/components/ui/kbd"
 import {
   Sidebar,
@@ -503,81 +504,96 @@ export function RepositoryMenu() {
   const [technical, setTechnical] = useTechnicalDetails()
   const repository = getRepository() ?? "substrate"
 
+  const [confirming, setConfirming] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
   async function signOut() {
     // Signing out revokes the token record this browser holds; a session IS
     // that record. The local copy is dropped either way, so a refused revoke
     // never strands the reader in a console they cannot use.
+    setSigningOut(true)
     await logout()
     void navigate({ to: "/login", replace: true })
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label={`${repository}: account menu`}
-        className="flex h-9 w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-foreground outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-hover"
-      >
-        <RepositoryMark repository={repository} />
-        <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold">
-          {repository}
-        </span>
-        <ChevronsUpDownIcon className="size-3.5 shrink-0 text-faint-deco" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        className="min-w-56"
-        side="bottom"
-        align={isMobile ? "center" : "start"}
-        sideOffset={4}
-      >
-        <DropdownMenuGroup>
-          <DropdownMenuLabel className="flex flex-col gap-0.5">
-            <span className="text-[11px] font-normal text-faint">
-              Signed in to
-            </span>
-            <span className="truncate text-foreground">{repository}</span>
-          </DropdownMenuLabel>
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem render={<Link to="/settings" />}>
-          <SlidersHorizontalIcon /> Account and settings
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuRadioGroup
-          value={preferences.theme}
-          onValueChange={(value) =>
-            set("theme", value as "light" | "dark" | "system")
-          }
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label={`${repository}: account menu`}
+          className="flex h-9 w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-foreground outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-hover"
         >
-          <DropdownMenuLabel className="text-[11px] font-normal text-faint">
-            Appearance
-          </DropdownMenuLabel>
-          <DropdownMenuRadioItem value="system">
-            <SunMoonIcon /> System
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="light">
-            <SunIcon /> Light
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="dark">
-            <MoonIcon /> Dark
-          </DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-        <DropdownMenuSeparator />
-        {/* The same switch as the sidebar's foot, reachable while the
+          <RepositoryMark repository={repository} />
+          <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold">
+            {repository}
+          </span>
+          <ChevronsUpDownIcon className="size-3.5 shrink-0 text-faint-deco" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          className="min-w-56"
+          side="bottom"
+          align={isMobile ? "center" : "start"}
+          sideOffset={4}
+        >
+          <DropdownMenuGroup>
+            <DropdownMenuLabel className="flex flex-col gap-0.5">
+              <span className="text-[11px] font-normal text-faint">
+                Signed in to
+              </span>
+              <span className="truncate text-foreground">{repository}</span>
+            </DropdownMenuLabel>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem render={<Link to="/settings" />}>
+            <SlidersHorizontalIcon /> Account and settings
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuRadioGroup
+            value={preferences.theme}
+            onValueChange={(value) =>
+              set("theme", value as "light" | "dark" | "system")
+            }
+          >
+            <DropdownMenuLabel className="text-[11px] font-normal text-faint">
+              Appearance
+            </DropdownMenuLabel>
+            <DropdownMenuRadioItem value="system">
+              <SunMoonIcon /> System
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="light">
+              <SunIcon /> Light
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="dark">
+              <MoonIcon /> Dark
+            </DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+          <DropdownMenuSeparator />
+          {/* The same switch as the sidebar's foot, reachable while the
             sidebar is tucked away. */}
-        <DropdownMenuCheckboxItem
-          checked={technical}
-          onCheckedChange={(on) => setTechnical(on)}
-          className="pr-1.5 [&_[data-slot=dropdown-menu-checkbox-item-indicator]]:hidden"
-        >
-          <CodeIcon /> Technical details
-          <SwitchMark checked={technical} className="ml-auto" />
-        </DropdownMenuCheckboxItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onClick={() => void signOut()}>
-          <LogOutIcon /> Sign out
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          <DropdownMenuCheckboxItem
+            checked={technical}
+            onCheckedChange={(on) => setTechnical(on)}
+            className="pr-1.5 [&_[data-slot=dropdown-menu-checkbox-item-indicator]]:hidden"
+          >
+            <CodeIcon /> Technical details
+            <SwitchMark checked={technical} className="ml-auto" />
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={() => setConfirming(true)}
+          >
+            <LogOutIcon /> Sign out…
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {confirming && (
+        <SignOutDialog
+          pending={signingOut}
+          onConfirm={() => void signOut()}
+          onClose={() => setConfirming(false)}
+        />
+      )}
+    </>
   )
 }
 

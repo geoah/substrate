@@ -24,6 +24,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react"
 import {
   afterEach,
@@ -318,6 +319,66 @@ describe("the repository", () => {
       expect(localStorage.getItem("substrate.console.technicalDetails")).toBe(
         "true"
       )
+    )
+  })
+})
+
+describe("signing out from the account menu", () => {
+  beforeEach(() => {
+    saveSession("secret", "ada.example.com", "token-1")
+  })
+
+  it("asks first, in the same words as Settings, and cancelling keeps the session", async () => {
+    renderTree(
+      <SidebarProvider>
+        <AppSidebar onSearch={() => {}} />
+      </SidebarProvider>
+    )
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "ada.example.com: account menu",
+      })
+    )
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Sign out/ }))
+    const dialog = await screen.findByRole("dialog")
+    expect(dialog.textContent).toContain("Sign out?")
+    expect(dialog.textContent).toContain(
+      "This browser will need your password again."
+    )
+    const deletes = () =>
+      vi
+        .mocked(fetch)
+        .mock.calls.filter(([, init]) => init?.method === "DELETE")
+    expect(deletes()).toHaveLength(0)
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    expect(deletes()).toHaveLength(0)
+  })
+
+  it("signs out once confirmed", async () => {
+    renderTree(
+      <SidebarProvider>
+        <AppSidebar onSearch={() => {}} />
+      </SidebarProvider>
+    )
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "ada.example.com: account menu",
+      })
+    )
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Sign out/ }))
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.click(within(dialog).getByRole("button", { name: "Sign out" }))
+    await waitFor(() =>
+      expect(
+        vi
+          .mocked(fetch)
+          .mock.calls.some(
+            ([url, init]) =>
+              String(url).endsWith("/tokens/token-1") &&
+              init?.method === "DELETE"
+          )
+      ).toBe(true)
     )
   })
 })
