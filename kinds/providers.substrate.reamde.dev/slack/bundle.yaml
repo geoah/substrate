@@ -5566,8 +5566,10 @@ data:
 # The one write this bundle makes, and a CALLABLE only: no trigger fires it.
 # It spends the same pasted user token the sync does, taken from the same
 # injected connector input, and sends it to the same pinned origin. It writes
-# no record: the message it posts reaches the mirror through the next sync,
-# as every other message does (decision record 0106).
+# no record: the message it posts reaches the mirror only when the sync reads
+# it back (decision record 0106). A first reply in a thread that had no
+# replies is never read back, because the sync watches only threads it saw
+# with replies (issue #711).
 kind: substrate.reamde.dev/core/function
 metadata:
   id: providers.substrate.reamde.dev/slack/postmessage
@@ -5634,12 +5636,19 @@ data:
     def _pinned(base):
         u = urllib.parse.urlsplit(base)
         host = (u.hostname or "").lower()
-        if u.username or u.password:
+        if u.password or u.username:
             return False
         if host in ("127.0.0.1", "localhost", "::1"):
             return True
         return u.scheme == "https" and (
             host == "slack.com" or host.endswith(".slack.com"))
+
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        # urllib would follow a redirect as a GET to any host and carry the
+        # Authorization header along; refuse it so the token stays pinned.
+        def redirect_request(self, *a, **k):
+            return None
 
 
     def main(input, host):
@@ -5679,8 +5688,9 @@ data:
             headers={"Authorization": "Bearer " + token,
                      "Content-Type": "application/x-www-form-urlencoded",
                      "Accept": "application/json"})
+        opener = urllib.request.build_opener(_NoRedirect)
         try:
-            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+            with opener.open(req, timeout=HTTP_TIMEOUT) as resp:
                 body = json.loads(resp.read().decode("utf-8") or "{}")
         except urllib.error.HTTPError as e:
             if e.code == 429:

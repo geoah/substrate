@@ -5834,7 +5834,9 @@ data:
 # `config.accounts[].token`, exactly as the sync does, and sends it only to
 # https://api.github.com or loopback. The `repo` scope the pull request toggle
 # already asks for is what grants a review write. It writes no record: the
-# review reaches the mirror through the next sync (decision record 0106).
+# review reaches the mirror only when the sync still finds the pull request,
+# and it does not when the owner was only review-requested (GitHub drops a
+# reviewer from that list once they review; issue #710, decision record 0106).
 kind: substrate.reamde.dev/core/function
 metadata:
   id: providers.substrate.reamde.dev/github/submitreview
@@ -5919,7 +5921,7 @@ data:
     def _check_origin(url):
         u = urllib.parse.urlsplit(url)
         host = (u.hostname or "").lower()
-        if u.username or u.password:
+        if u.password or u.username:
             raise RuntimeError("github: the API base embeds credentials")
         if host in LOOPBACK_HOSTS:
             return

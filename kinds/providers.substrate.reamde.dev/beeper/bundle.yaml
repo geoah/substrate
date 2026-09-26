@@ -3414,8 +3414,9 @@ data:
 # The one write this bundle makes, and a CALLABLE only: no trigger fires it.
 # It spends the same pasted token the sync does, taken from the same injected
 # connector input, and sends it only to a private origin, as the sync does.
-# It writes no record: the message it sends reaches the mirror through the
-# next sync, as every other message does (decision record 0106).
+# It writes no record: the message it sends reaches the mirror only when the
+# sync reads its chat back, as every other message does (decision record
+# 0106), so the mirror is not a confirmation of the send.
 kind: substrate.reamde.dev/core/function
 metadata:
   id: providers.substrate.reamde.dev/beeper/sendmessage
@@ -3455,7 +3456,8 @@ data:
       required: true
       description: >-
         Beeper Desktop's id for the message until the network confirms it;
-        the confirmed message reaches the mirror through the next sync
+        the confirmed message reaches the mirror when the sync next reads
+        this chat
   permissions:
     network:
       - localhost
@@ -3485,7 +3487,7 @@ data:
     def _private(base):
         u = urllib.parse.urlsplit(base)
         host = (u.hostname or "").lower()
-        if u.scheme not in ("http", "https") or u.username or u.password:
+        if u.scheme not in ("http", "https") or u.password or u.username:
             return False
         if host in ("localhost", "::1") or host.endswith(".localhost"):
             return True
@@ -3497,6 +3499,13 @@ data:
             return False
         return addr.is_private or addr.is_loopback or addr in ipaddress.ip_network(
             "100.64.0.0/10")
+
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        # urllib would follow a redirect as a GET to any host and carry the
+        # Authorization header along; refuse it so the token stays pinned.
+        def redirect_request(self, *a, **k):
+            return None
 
 
     def main(input, host):
@@ -3533,8 +3542,9 @@ data:
             headers={"Authorization": "Bearer " + token,
                      "Content-Type": "application/json",
                      "Accept": "application/json"})
+        opener = urllib.request.build_opener(_NoRedirect)
         try:
-            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+            with opener.open(req, timeout=HTTP_TIMEOUT) as resp:
                 body = json.loads(resp.read().decode("utf-8") or "{}")
         except urllib.error.HTTPError as e:
             raw = e.read()[:400].decode("utf-8", "replace")

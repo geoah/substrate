@@ -12,8 +12,11 @@ Each is a package its publisher owns, installed under
 provider into the repository. Three also ship one write each, a function
 nothing fires on its own: Slack's `postmessage`, Beeper's `sendmessage` and
 GitHub's `submitreview`. A write sends one request with the credential the
-sync spends and writes no record; what it sent reaches the mirror on the next
-sync ([0106](decisions/0106-a-provider-write-is-a-callable-that-writes-no-record.md)).
+sync spends and writes no record; what it sent reaches the mirror only when
+the sync's own discovery reads it back, which it does not always do (see each
+write below and
+[0106](decisions/0106-a-provider-write-is-a-callable-that-writes-no-record.md)).
+Do not treat the mirror as confirmation that a send happened.
 
 **Five samples**: LLM, notes, the reading list, Firecrawl and Pebble. Each is
 a worked example to read and copy, imported under the repository's own
@@ -541,8 +544,12 @@ injects for the sync, and the `repo` scope that `enabledRepos`,
 `enabledIssues` and `enabledPullRequests` ask for is what grants the write; an
 account granted neither `repo` nor `public_repo` is refused before a request.
 It answers the review's `id`, `state` (`APPROVED` or `COMMENTED`) and `url`,
-and it writes no record: the review reaches the `review` mirror on the next
-sync. A GitHub refusal (`422` for approving your own pull request, `404` for
+and it writes no record: the review reaches the `review` mirror only when
+the sync still finds the pull request. The sync searches `involves:` and
+`review-requested:`, and GitHub stops listing a requested reviewer once they
+review, so an approval by the owner who was only asked to review is never
+read back ([issue #710](https://github.com/geoah/substrate/issues/710)).
+A GitHub refusal (`422` for approving your own pull request, `404` for
 a repository the grant cannot see) fails the call with GitHub's message.
 Redirects are refused rather than followed, so the origin pin holds for the
 one request made.
@@ -1096,8 +1103,9 @@ of the message it answers. It calls `POST /v1/chats/{chatID}/messages` with
 the config's token and the same private-origin rule the sync holds, and
 answers the `chat` and the `pendingMessageId` Beeper Desktop assigns until
 the network confirms the send. It writes no record: the confirmed message
-reaches the `message` mirror on the next sync. A Beeper refusal fails the
-call with Beeper's status and message.
+reaches the `message` mirror when the sync next reads its chat. A Beeper refusal fails the
+call with Beeper's status and message. Redirects are refused rather than
+followed.
 
 ## Slack
 
@@ -1237,7 +1245,13 @@ sync, and answers the `channel` and the new message's `ts`. The pasted token
 needs Slack's `chat:write` user scope; without it Slack answers
 `missing_scope`, and every refusal (`not_in_channel`, `channel_not_found`)
 fails the call with Slack's own error code. It writes no record: the message
-reaches the `message` mirror on the next sync.
+reaches the `message` mirror only when the sync reads it back. A top-level
+post is read on the next sync. A reply is read only if the sync already
+watches its thread, which it does for a parent it saw with replies; a first
+reply to a message that had none is never read
+([issue #711](https://github.com/geoah/substrate/issues/711)).
+Redirects are refused rather than followed, so the origin pin holds for the
+one request made.
 
 ## Firecrawl (sample)
 

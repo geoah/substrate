@@ -45,8 +45,17 @@ caller that holds a mirror row has them, and the function needs no read
 grant and no lookup that could miss.
 
 Writing no record keeps one writer per mirror: the sync is the only hand
-that shapes a `slack/message` or a `github/review`, so a posted object
-reaches the mirror the way every other one does, on the next sync. A second
+that shapes a `slack/message` or a `github/review`. A posted object reaches
+the mirror only when the sync's own discovery reads it back, and two gaps
+are known. The Slack sync never reads a first reply in a thread that had
+none, because `conversations.history` returns no replies and `threadWatch`
+holds only parents already seen with replies
+([issue #711](https://github.com/geoah/substrate/issues/711)). The GitHub
+sync loses a pull request the owner was only asked to review once they
+review it, because GitHub drops them from the requested reviewers and
+`involves:` does not cover reviewers
+([issue #710](https://github.com/geoah/substrate/issues/710)). A caller
+must not treat the mirror as confirmation of a send. A second
 writer would duplicate the sync's mapping and drift from it. An outbox kind
 adds a kind and a trigger for what one call already does; it is the answer
 when a write must be queued, reviewed or retried by the engine, and nothing
@@ -59,7 +68,12 @@ asks for that yet.
 - Good, because the credential never leaves the host's injection: no caller
   passes a token and no function returns one.
 - Bad, because a posted message or review is absent from the mirror until
-  the next sync runs.
+  a sync reads it back, and in the two gaps above no sync does: a caller
+  that waits for the mirror to confirm a send and then retries posts twice.
+- Bad, because the agent loop's policy door and its `confirmation: always`
+  floor act only on the record effects a function returns, and these return
+  none: an agent granted one of these functions as a tool sends without
+  review.
 - Bad, because a retried call posts twice unless the caller sends the call
   API's `Idempotency-Key`: none of the three provider routes takes a key of
   its own.
@@ -79,4 +93,4 @@ the caller, and that an `apiBase` outside the pin is refused unsent.
 
 Reopen when a write must be queued or approved before it is sent, which is
 where the outbox kind fits, or when a caller needs the sent object in the
-mirror before the next sync.
+mirror before a sync reads it back.
