@@ -586,7 +586,7 @@ class Agents:
     def __init__(self, host):
         self._host = host
 
-    def call(self, agent, input=None):
+    def call(self, agent, input):
         return self._host.call(agent, input)
 
 

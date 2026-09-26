@@ -7,6 +7,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -68,6 +69,25 @@ def main(input, host):
 			"source": `
 def main(input, host):
     return {"output": host.agents.call("` + relayPackage + `/slow", "take your time")}
+`,
+		}),
+		vocabulary.FunctionManifest(relayPackage, "flaky", map[string]any{
+			"description": "asks the scribe, then fails",
+			"runtime":     vocabulary.RuntimePython,
+			"permissions": map[string]any{"agents": []any{scribe}},
+			"source": `
+def main(input, host):
+    host.agents.call("` + scribe + `", "note this")
+    raise Exception("failed after the agent ran")
+`,
+		}),
+		vocabulary.FunctionManifest(relayPackage, "curator", map[string]any{
+			"description": "runs the editor, whose write tool creates widgets",
+			"runtime":     vocabulary.RuntimePython,
+			"permissions": map[string]any{"agents": []any{crewPackage + "/editor"}},
+			"source": `
+def main(input, host):
+    return {"output": host.agents.call("` + crewPackage + `/editor", "make a widget")}
 `,
 		}),
 		vocabulary.AgentManifest(relayPackage, "slow", map[string]any{
@@ -240,5 +260,163 @@ func TestAgentsGrantIsResolvedAtLoad(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "permissions.agents") {
 			t.Fatalf("%s: the grant was admitted or refused for another reason: %v", name, err)
 		}
+	}
+}
+
+// An agent's input becomes a committed message and an LLM request, so a
+// body that passes an injected secret to an agent is refused before the
+// agent runs.
+func TestAgentCallRefusesASecretInItsInput(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openAgentDataset(t)
+	const (
+		pkg    = "vaultrelay.test.dev/vaultrelay"
+		cfg    = pkg + "/relayconfig"
+		secret = "sk-relay-supersecret-35"
+	)
+	scribe := crewPackage + "/scribe"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		vocabulary.PackageManifest(pkg, 0),
+		vocabulary.BundleManifest(pkg, map[string]any{
+			"description": "a bundle whose function hands its secret to an agent",
+			"inputs":      map[string]any{"connector": map[string]any{"kind": cfg, "inject": "functions"}},
+			"installs":    []any{cfg, pkg + "/leaker"},
+		}),
+		vocabulary.KindManifest(pkg, map[string]any{"singular": "relayconfig"},
+			map[string]any{"properties": map[string]any{"apiToken": map[string]any{"type": "secret"}}}),
+		vocabulary.FunctionManifest(pkg, "leaker", map[string]any{
+			"description": "passes its injected secret to the scribe",
+			"runtime":     vocabulary.RuntimePython,
+			"permissions": map[string]any{"agents": []any{scribe}},
+			"source": `
+def main(input, host):
+    token = input["config"]["inputs"]["connector"]["properties"]["apiToken"]
+    return {"output": host.agents.call("` + scribe + `", {"token": token})}
+`,
+		}),
+	}); err != nil {
+		t.Fatalf("install the bundle: %v", err)
+	}
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: cfg, Properties: map[string]any{"apiToken": secret},
+	}); err != nil {
+		t.Fatalf("put config: %v", err)
+	}
+	_, _, err := ds.CallFunction(ctx, pkg+"/leaker", nil)
+	// The refusal reaches the body as a host-call error and returns in its
+	// traceback, so it is matched by text.
+	if err == nil || !strings.Contains(err.Error(), errSecretInAgentInput.Error()) {
+		t.Fatalf("a secret passed to an agent: %v", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("the refusal leaked the secret: %v", err)
+	}
+	if n := len(agentThreadsOf(t, ds, "scribe")); n != 0 {
+		t.Fatalf("the scribe ran on a secret: %d threads", n)
+	}
+}
+
+// A function never sees the writes of the agents it runs: without that, a
+// function watching a kind its agent writes wakes again on every such row.
+func TestFunctionIsNotDeliveredItsAgentsWrites(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	installRelay(t, ds, fake)
+
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeTrigger,
+		Properties: map[string]any{
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", relayPackage+"/curator"),
+		},
+	}); err != nil {
+		t.Fatalf("put trigger: %v", err)
+	}
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-by-editor", map[string]any{"name": "made"})}}},
+		fakeTurn{content: "made it"},
+	)
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: crewPackage + "/widget", ID: "w-seed", Properties: map[string]any{"name": "seed"},
+	}); err != nil {
+		t.Fatalf("put widget: %v", err)
+	}
+	for range 2 {
+		if _, err := ds.ProcessTriggers(ctx); err != nil {
+			t.Fatalf("process: %v", err)
+		}
+	}
+	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-by-editor"); err != nil {
+		t.Fatalf("the editor's widget: %v", err)
+	}
+	if n := len(agentThreadsOf(t, ds, "editor")); n != 1 {
+		t.Fatalf("the curator ran the editor %d times, want once", n)
+	}
+}
+
+// A keyed function call whose body ran an agent and then failed keeps its
+// key bound to the agent's thread: the repeat is 409 naming the thread, and
+// the agent does not run twice.
+func TestKeyedFunctionCallBindsToTheAgentThread(t *testing.T) {
+	t.Parallel()
+	ds, fake := openAgentDataset(t)
+	installRelay(t, ds, fake)
+	ctx := substrate.WithIdempotencyKey(context.Background(), "flaky-key-1")
+
+	fake.script("sub", fakeTurn{content: "noted"})
+	if _, _, err := ds.CallFunction(ctx, relayPackage+"/flaky", nil); err == nil {
+		t.Fatal("the flaky body succeeded")
+	}
+	threads := agentThreadsOf(t, ds, "scribe")
+	if len(threads) != 1 {
+		t.Fatalf("the first attempt opened %d scribe threads, want one", len(threads))
+	}
+	_, _, err := ds.CallFunction(ctx, relayPackage+"/flaky", nil)
+	if !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), threads[0]["__id"].(string)) {
+		t.Fatalf("the repeat under the key: %v, want a conflict naming thread %v", err, threads[0]["__id"])
+	}
+	if n := len(agentThreadsOf(t, ds, "scribe")); n != 1 {
+		t.Fatalf("the repeat ran the scribe again: %d threads", n)
+	}
+}
+
+// A delivery whose body ran an agent and then failed parks on that attempt
+// instead of retrying, so the agent's committed writes are not repeated.
+func TestDeliveryParksAfterItsAgentRan(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	installRelay(t, ds, fake)
+
+	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeTrigger,
+		Properties: map[string]any{
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", relayPackage+"/flaky"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("put trigger: %v", err)
+	}
+	fake.script("sub", fakeTurn{content: "noted"})
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: crewPackage + "/widget", ID: "w-flaky", Properties: map[string]any{"name": "raw"},
+	}); err != nil {
+		t.Fatalf("put widget: %v", err)
+	}
+	if _, err := ds.ProcessTriggers(ctx); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	if n := len(agentThreadsOf(t, ds, "scribe")); n != 1 {
+		t.Fatalf("the delivery ran the scribe %d times, want once", n)
+	}
+	failures, err := ds.TriggerFailures(ctx, tr.ID)
+	if err != nil {
+		t.Fatalf("failures: %v", err)
+	}
+	if len(failures) != 1 || failures[0].Attempts != 1 || !strings.Contains(failures[0].LastError, "parks instead of retrying") {
+		t.Fatalf("parked failures %+v, want one after a single attempt", failures)
 	}
 }

@@ -84,9 +84,10 @@ type Spec struct {
 	ReadTypes []string
 	ReadCalls int
 	ReadRows  int
-	// CallTargets is the `permissions.call` allowlist: the function
-	// identities the body's host Call may invoke. Empty means every
-	// sub-call trips.
+	// CallTargets is the host-Call allowlist: the function identities under
+	// `permissions.call` and the agent identities under `permissions.agents`,
+	// joined. The engine tells the two apart. Empty means every sub-call
+	// trips.
 	CallTargets []string
 	// Network is the `permissions.network` declaration. Its CONTENT (the
 	// host patterns) is still only documentation, but its EMPTINESS gates the

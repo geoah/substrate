@@ -47,9 +47,12 @@ import (
 //	parent → child   {"kind": "reply", "reqId": N, "ok": true, "result": {...}} / {"kind": "reply", "reqId": N, "ok": false, "error": "..."}
 //
 // A `call` runs the target function to completion INSIDE the caller's
-// invocation: the parent gates it on `permissions.call`, charges the
-// caller's call budget, runs the target body (its effects accumulate into
-// the CALLER's delivery transaction) and replies with the target's output.
+// invocation: the parent gates it on `permissions.call` and
+// `permissions.agents` together, charges the caller's call budget, runs the
+// target body (its effects accumulate into the CALLER's delivery
+// transaction) and replies with the target's output. A target on
+// `permissions.agents` is an agent instead: the engine runs it to
+// settlement and replies with its result (engine record 0106).
 //
 // One frame per line, JSON. The protocol stream is the child's ORIGINAL
 // stdout, which the host detaches from user code before any body runs: it dups
