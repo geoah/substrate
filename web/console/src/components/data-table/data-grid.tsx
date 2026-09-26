@@ -18,6 +18,8 @@ import { cn } from "@/lib/utils"
 
 /** A column that states neither a width nor a size still needs room. */
 const DEFAULT_PX = 160
+/** The pinned header row's height; the scroll padding clears it. */
+const HEADER_PX = 34
 /** A drag can't crush a column below legibility. */
 const RESIZE_MIN_PX = 60
 
@@ -41,6 +43,7 @@ export function DataGrid<TData extends RowData>({
   empty,
   scrollKey,
   marks,
+  label,
   className,
 }: {
   table: DataTableInstance<TData>
@@ -56,6 +59,8 @@ export function DataGrid<TData extends RowData>({
   /** Rows (by id) that just changed under the reader: tinted while `fresh`,
    * easing back while `fading`. */
   marks?: ReadonlyMap<string, "fresh" | "fading">
+  /** The sheet's accessible name: the collection's display plural. */
+  label: string
   className?: string
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -100,10 +105,20 @@ export function DataGrid<TData extends RowData>({
   const rowH = density === "compact" ? "h-[30px]" : "h-[38px]"
 
   return (
+    // Focusable, so a keyboard alone can scroll the sheet both ways; the
+    // scroll padding keeps a focused cell clear of the pinned header row and
+    // title column, which would otherwise cover it.
     <div
       ref={scrollRef}
+      role="region"
+      aria-label={label}
+      tabIndex={0}
       data-slot="data-grid"
-      className={cn("min-h-0 overflow-auto", className)}
+      className={cn(
+        "min-h-0 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset",
+        className
+      )}
+      style={{ scrollPaddingTop: HEADER_PX, scrollPaddingLeft: widths[0] ?? 0 }}
     >
       <table
         className={cn(
