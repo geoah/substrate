@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-08
 decision-makers: George Antoniadis (via the issue-152 agent session)
+amended-by: 0105
 ---
 
 # 0067. A lossy conversion runs only with a confirmation bound to its preview

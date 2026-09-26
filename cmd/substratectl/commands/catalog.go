@@ -226,8 +226,9 @@ An upgrade that removes values from your records (a property the new closure
 drops while records carry it, an enum value renamed onto one it keeps) is
 refused until it is confirmed. ` + "`substratectl catalog`" + ` shows the plan;
 --allow-data-loss reads it again, prints the steps that remove values with the
-records each touches, and confirms exactly that plan: a write that lands in
-between, or a plan that reads differently, is refused again. The removed
+records each touches, and confirms exactly that plan: a write in between to a
+record the plan rewrites or a declaration it converts, or a plan that reads
+differently, is refused again. Writes elsewhere do not refuse it. The removed
 values stay in the changelog.
 
 Samples take the other door, ` + "`substratectl import`" + `, and land under

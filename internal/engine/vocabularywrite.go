@@ -119,8 +119,8 @@ type vocabularyBatch struct {
 	origin        string
 	originVersion int64
 	// confirm is the caller's consent to a lossy conversion plan, or nil: the
-	// batch refuses a lossy plan without one, or with one for another plan or
-	// an older changelog head (convert.go admitConversion, decision 0067).
+	// batch refuses a lossy plan without one, or with one for another plan
+	// (convert.go admitConversion, decision 0067).
 	confirm *substrate.ConversionConfirm
 	// beforeGuards runs INSIDE the batch transaction, right after the
 	// registry-dependency lock and BEFORE the refuse-breakage guards: a bundle
@@ -244,7 +244,7 @@ func (ds *dataset) PlanVocabularyApplyWith(ctx context.Context, actor substrate.
 	if plan.Blockers, err = st.guards(q); err != nil {
 		return plan, err
 	}
-	if plan.ConversionPlan, err = st.conversions.wire(q); err != nil {
+	if plan.ConversionPlan, err = st.conversions.wire(q, ds.svc.conversionCeiling, true); err != nil {
 		return plan, err
 	}
 	edited, err := ds.editedCopy(ctx, origin, docs)
@@ -468,7 +468,7 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		// holds, so the hash a preview handed out is recomputed over the same
 		// records or refused: the work ceiling, then the confirmation a lossy
 		// plan needs (convert.go, decision 0067).
-		plan, err := st.conversions.wire(t)
+		plan, err := st.conversions.wire(t, ds.svc.conversionCeiling, true)
 		if err != nil {
 			return err
 		}
