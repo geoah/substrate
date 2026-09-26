@@ -37,6 +37,9 @@ function kindFromRecord(item: Record<string, unknown>): KindInfo | undefined {
   const legacy = properties.definition as Record<string, unknown> | undefined
   const definition = legacy ?? properties
   const names = (definition.names ?? {}) as Record<string, unknown>
+  // The display label is set only when the declaration carries both forms as
+  // strings, so a caller can tell "no label declared" from a partial one.
+  const label = definition.label as Record<string, unknown> | undefined
   return {
     identity,
     name: String(names.singular ?? properties.name ?? name),
@@ -50,6 +53,9 @@ function kindFromRecord(item: Record<string, unknown>): KindInfo | undefined {
     // malformed declaration's object into "[object Object]" on the page.
     description:
       typeof definition.description === "string" ? definition.description : "",
+    ...(typeof label?.singular === "string" && typeof label?.plural === "string"
+      ? { label: { singular: label.singular, plural: label.plural } }
+      : {}),
     definition,
   }
 }

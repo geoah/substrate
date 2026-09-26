@@ -62,6 +62,7 @@ func TestKindLabelRefusals(t *testing.T) {
 		"no plural":            {"  label:\n    singular: Channel\n", "data.label.plural is required"},
 		"no singular":          {"  label:\n    plural: Channels\n", "data.label.singular is required"},
 		"an empty form":        {"  label:\n    singular: \"\"\n    plural: Channels\n", "data.label.singular is required"},
+		"a number":             {"  label:\n    singular: 42\n    plural: Channels\n", "data.label.singular: must be a string"},
 		"an unknown key":       {"  label:\n    singular: Channel\n    plural: Channels\n    short: Ch\n", `data.label: unknown key "short"`},
 		"a newline":            {"  label:\n    singular: \"Chan\\nnel\"\n    plural: Channels\n", "data.label.singular: a short single-line caption"},
 		"padding":              {"  label:\n    singular: \" Channel\"\n    plural: Channels\n", "data.label.singular: no leading or trailing whitespace"},
