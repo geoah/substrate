@@ -420,6 +420,97 @@ describe("PropertySheet from the keyboard", () => {
   })
 })
 
+describe("PropertySheet dates", () => {
+  const dated = kind(TASK, {
+    displayTemplate: "{name|title}",
+    properties: {
+      name: { type: "string" },
+      due: { type: "datetime" },
+      birthday: { type: "date" },
+    },
+  })
+  const local = (y: number, m: number, d: number, h = 0, min = 0) =>
+    new Date(y, m, d, h, min).toISOString().replace(".000Z", "Z")
+  const withDates = () =>
+    record({
+      properties: {
+        name: "Plan",
+        due: local(2026, 9, 8, 11, 0),
+        birthday: "1990-03-14",
+      },
+    })
+
+  it("picks a date from the calendar in one click", async () => {
+    renderSheet(withDates(), dated)
+    fireEvent.click(valueOf("birthday")!)
+    const grid = await screen.findByRole("grid", { name: "Birthday" })
+    expect(
+      within(grid).getByRole("button", { name: /14 March 1990/ })
+    ).toBeTruthy()
+    fireEvent.click(within(grid).getByRole("button", { name: /20 March 1990/ }))
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].body).toEqual({
+      properties: { birthday: "1990-03-20" },
+      ifVersion: 7,
+    })
+  })
+
+  it("walks the grid with the arrows and moves month on Page Down", async () => {
+    renderSheet(withDates(), dated)
+    fireEvent.click(valueOf("birthday")!)
+    const grid = await screen.findByRole("grid", { name: "Birthday" })
+    const day = within(grid).getByRole("button", { name: /14 March 1990/ })
+    fireEvent.keyDown(day, { key: "ArrowRight" })
+    expect(
+      within(grid)
+        .getByRole("button", { name: /15 March 1990/ })
+        .getAttribute("tabindex")
+    ).toBe("0")
+    fireEvent.keyDown(grid, { key: "PageDown" })
+    expect(screen.getByText("April 1990")).toBeTruthy()
+  })
+
+  it("sets a day and a typed time, and writes the instant on Save", async () => {
+    renderSheet(withDates(), dated)
+    fireEvent.click(valueOf("due")!)
+    const grid = await screen.findByRole("grid", { name: "Due" })
+    fireEvent.click(
+      within(grid).getByRole("button", { name: /\b9 October 2026/ })
+    )
+    fireEvent.change(screen.getByRole("textbox", { name: "Time" }), {
+      target: { value: "9pm" },
+    })
+    expect(wire.writes).toHaveLength(0)
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].body).toEqual({
+      properties: { due: local(2026, 9, 9, 21, 0) },
+      ifVersion: 7,
+    })
+  })
+
+  it("refuses a time it cannot read, and writes nothing", async () => {
+    renderSheet(withDates(), dated)
+    fireEvent.click(valueOf("due")!)
+    const time = await screen.findByRole("textbox", { name: "Time" })
+    fireEvent.change(time, { target: { value: "noon" } })
+    fireEvent.keyDown(time, { key: "Enter" })
+    expect(screen.getByText("Type a time like 09:30")).toBeTruthy()
+    expect(wire.writes).toHaveLength(0)
+  })
+
+  it("clears an optional date", async () => {
+    renderSheet(withDates(), dated)
+    fireEvent.click(valueOf("birthday")!)
+    fireEvent.click(await screen.findByRole("button", { name: "Clear" }))
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].body).toEqual({
+      properties: { birthday: null },
+      ifVersion: 7,
+    })
+  })
+})
+
 describe("PropertySheet lists", () => {
   const listed = () =>
     record({

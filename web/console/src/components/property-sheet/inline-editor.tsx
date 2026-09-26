@@ -1,5 +1,6 @@
 /** A property edited where it is read. A click on a value opens the editor
- * its datatype earns: a text box, a number, a date and time, a textarea for
+ * its datatype earns: a text box, a number, a calendar for a date (the native
+ * control on a touch device), a textarea for
  * prose, a list to pick from for an enum, the moves a state may make, a
  * record picker for a reference, and for the shapes that need room (lists,
  * objects, maps, JSON) the whole control in a panel under the row. Enter or
@@ -10,6 +11,8 @@ import { useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowRightIcon, CheckIcon } from "lucide-react"
 
+import { prefersNativeDate } from "./calendar"
+import { DatePicker } from "./date-picker"
 import { fromLocalInput, toLocalInput } from "./dates"
 import { ListEditor } from "./list-editor"
 import { editStyle, propertyWrite } from "./sheet-model"
@@ -57,6 +60,10 @@ export function InlineEditor(props: InlineEditorProps) {
   if (control === "state") return <StateMoves {...props} />
   if (control === "select") return <EnumPicker {...props} />
   if (control === "list") return <ListEditor {...props} />
+  // A finger gets the platform's own date control, the better keyboard there.
+  if (control === "datetime" && !prefersNativeDate()) {
+    return <DateEditor {...props} />
+  }
   if (control === "reference" && style === "line") {
     return <ReferencePicker {...props} />
   }
@@ -178,6 +185,25 @@ function LineEditor(props: InlineEditorProps) {
       )}
       {pending && <Spinner className="size-3.5 shrink-0" />}
     </div>
+  )
+}
+
+function DateEditor(props: InlineEditorProps) {
+  const { row, onDone, onError } = props
+  const { save, pending } = useSave(props)
+  return (
+    <DatePicker
+      label={row.field.label}
+      value={row.value}
+      withTime={row.field.spec.kind !== "date"}
+      required={row.field.required}
+      pending={pending}
+      onSave={(next) => void save(next)}
+      onCancel={() => {
+        onError(undefined)
+        onDone()
+      }}
+    />
   )
 }
 
