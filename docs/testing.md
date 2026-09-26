@@ -104,7 +104,7 @@ the comment above is this machine's number, not a promise.
 
 `test:db:engine` is the engine package with `test:db`'s flags, and it is also
 the task CI shards: with `SHARD` and `SHARDS` in the environment it runs one
-slice of the package (`SHARD=3 SHARDS=8 mise run test:db:engine`), which is
+slice of the package (`SHARD=3 SHARDS=16 mise run test:db:engine`), which is
 how a red shard is reproduced by number. `test:db:rest` is every database
 package but the engine and the provider suite (`internal/providere2e`, which
 `test:db:providers` runs on a job of its own); `internal/providertest` is among
@@ -453,87 +453,88 @@ CASES.md holds what only a live server shows.
 ## What CI runs
 
 Every job is one `mise run ci:<job>`, defined once in `.mise.toml` so the
-pipeline is reproducible on a laptop:
+pipeline is reproducible on a laptop. The required checks each finish inside
+a minute on the runner; the rest run on the same pull request and on `main`
+and do not block a merge.
 
-| Job | Task | Is | Runs |
-| --- | ---- | -- | ---- |
-| lint | `ci:lint` | formatting, every linter, the release config, and the two diff guards: the `kinds/` and `samples/` version bump (`kinds:check`) and the write-once files (`frozen:check`) | always |
-| cross compile | `ci:cross` | build and vet for linux and darwin, amd64 and arm64 | always |
-| changes | `ci:changes` | reads the diff against the base branch and answers `go=true` or `go=false`: does any changed file reach a Go test? | always |
-| go test | `ci:go` | the short suite, then every database package but the engine and the provider suite (`test:db:rest`) | when `go=true` |
-| engine 1/8 to 8/8 | `ci:engine` | one shard of the engine package each (`test:db:engine` with `SHARD` and `SHARDS`) | when `go=true` |
-| providers e2e | `ci:providers` | the provider suite (`test:db:providers`): `internal/providere2e` syncs seven provider closures against a `substrated` it starts, over recorded upstreams | when `go=true` |
-| go gate | (in the workflow) | the one check to require: red unless `changes` succeeded and `go test`, every shard and `providers e2e` succeeded or were skipped by its answer | always |
-| coverage | `ci:coverage` | the whole suite, unsharded, with the coverage profile kept as an artifact | push to `main` |
-| race | `ci:race` | the short suite under `-race` | always |
-| audit | `ci:audit` | govulncheck and pnpm audit | always |
-| console | `ci:console` | typecheck, lint, format, test, build | always |
-| image builds | `ci:image` | the image builds from a clean tree | always |
+| Job | Task | Is | Required |
+| --- | ---- | -- | -------- |
+| conventional commits | `commits:check` (in `pr.yml`) | the PR title and every commit subject are conventional commits, and a break adds an [upgrade note](changes/README.md) | yes |
+| lint | `ci:lint` | every linter and formatter check but Go's, the release config, and the two diff guards: the `kinds/` and `samples/` version bump (`kinds:check`) and the write-once files (`frozen:check`) | yes |
+| lint go | `ci:lint:go` | golangci-lint and the Go formatting check | yes |
+| console | `ci:console` | typecheck, lint, format, build | yes |
+| console test | `ci:console:test` | the console's vitest suite | yes |
+| go test | `ci:go` | the short suite, no database | through `go gate` |
+| engine 1/16 to 16/16 | `ci:engine` | one shard of the engine package each (`test:db:engine` with `SHARD` and `SHARDS`) | through `go gate` |
+| db catalog 1/2, 2/2 | `ci:db:catalog` | one shard of `internal/catalog` each | through `go gate` |
+| db rest | `ci:db:rest` | `internal/providertest`, `internal/testenv` without the acceptance drill, and `substratectl` | through `go gate` |
+| go gate | (in the workflow) | red unless `go test`, every shard and every `db` job succeeded | yes |
+| acceptance drill | `ci:drill` | `TestReleaseAcceptanceDrill`: seven stages that read each other's outputs, so it cannot be cut | no |
+| providers e2e | `ci:providers` | the provider suite (`test:db:providers`): `internal/providere2e` syncs seven provider closures against a `substrated` it starts, over recorded upstreams | no |
+| race | `ci:race` | the short suite under `-race` | no |
+| cross compile | `ci:cross` | build and vet for linux and darwin, amd64 and arm64 | no |
+| image builds | `ci:image` | the image builds from a clean tree and boots | no |
+| audit | `ci:audit` | govulncheck and pnpm audit | no |
+| changes | `ci:changes` | answers `go=true` or `go=false` for the non-required Go suites | no |
+| coverage | `ci:coverage` | the whole suite, unsharded, with the coverage profile kept as an artifact | push to `main` only |
 
 CodeQL runs beside them in its own workflow, on a schedule as well as on
 changes, because its queries change even when the code does not.
 
 ### The database suite, cut for the runner
 
-The engine package alone is 380 to 500 seconds on the 4 vCPU runner, and
-under contention it has passed Go's 10 minute default with no test failing.
-CI therefore runs it as eight matrix jobs. `.mise/engineshard.sh` lists the
-package's top-level tests with `go test -list`, sorts the names and gives
-shard `k` every eighth name starting from the `k`th, as one `-run` regex
-anchored at both ends. Every test lands in exactly one shard by construction,
-a new test lands in one without anybody editing a list, and the same tree cuts
-the same way on every machine, so `SHARD=3 SHARDS=8 mise run test:db:engine`
-reruns exactly what shard 3 ran. The shard count is written once, as the
-`shard:` matrix in `.github/workflows/ci.yml`; the job name and `SHARDS` both
-read `strategy.job-total`.
+The engine package alone is 380 to 500 seconds on the 4 vCPU runner, so CI
+runs it as sixteen matrix jobs, and `internal/catalog` as two.
+`.mise/dbshard.sh` reads a package's top-level test names from its
+`_test.go` files, sorts them and gives shard `k` every `n`th name starting
+from the `k`th, as one `-run` regex anchored at both ends. Every test lands in
+exactly one shard by construction, a new test lands in one without anybody
+editing a list, and the same tree cuts the same way on every machine, so
+`SHARD=3 SHARDS=16 mise run test:db:engine` reruns exactly what shard 3 ran.
+The names come from the source rather than `go test -list` because listing
+links the test binary, which was a fifth of a shard. The engine's shard count
+is written once, as the `shard:` matrix in `.github/workflows/ci.yml`; the job
+name and `SHARDS` both read `strategy.job-total`.
 
-The short suite rides in `go test` with the small database packages rather
-than on a runner of its own: together they are a couple of minutes of test
-time, and a job's setup (checkout, toolchain, cache, service container) is
-half of that again. `internal/providertest` needs `uv` on the runner beside
-the database, because every case there warms a provider closure's PEP 723
-body through it; the toolchain pins uv, so `mise` installs it in every job.
+Each job installs only the tools it names in mise-action's `install_args`,
+and `MISE_TASK_RUN_AUTO_INSTALL=false` stops `mise run` installing the rest,
+so a task that needs a tool its job did not name fails and the fix is to name
+it.
 
-`changes` is the path gate. `.mise/changescheck.sh` diffs the merge base with
-the PR's base branch against the tree and answers `go=false` only when every
-changed file matches a pattern nothing a Go test reads: `docs/`,
-`web/console/` (except `wire.golden.json` and `record-schema.ts`, which Go
-tests read), `.github/` other than `ci.yml`, `*.md`, the root linter configs
-and `compose.yaml`. `Dockerfile` and `.goreleaser.yaml`
-count as relevant because `internal/build` reads them. `kinds/` and `samples/`
-are embedded whole, so any file under them counts, and an unmatched file
-counts, because a needless run is cheaper than a red test merged green. The diff is read with `--no-renames`,
-so a Go file moved onto an inert path is seen on both sides, and a base the
-script cannot resolve fails the job rather than answering `false`. `go test`,
-the engine shards and `providers e2e` carry `if: needs.changes.outputs.go == 'true'`. A push
-to `main` answers `true` without diffing, and runs `coverage` besides.
+Each Go job's first step is `.mise/changescheck.sh`, the path gate. It diffs
+the merge base with the PR's base branch against the tree and answers
+`go=false` only when every changed file matches a pattern nothing a Go test
+reads: `docs/`, `web/console/` (except `wire.golden.json` and
+`record-schema.ts`, which Go tests read), `.github/` other than `ci.yml`,
+`*.md`, the root linter configs and `compose.yaml`. `Dockerfile` and
+`.goreleaser.yaml` count as relevant because `internal/build` reads them.
+`kinds/` and `samples/` are embedded whole, so any file under them counts, and
+an unmatched file counts, because a needless run is cheaper than a red test
+merged green. The diff is read with `--no-renames`, so a Go file moved onto an
+inert path is seen on both sides, and a base the script cannot resolve fails
+the job rather than answering `false`. On `false` every later step is skipped
+and the job is green; a push to `main` answers `true` without diffing.
 
-`go gate` is the check to require. GitHub counts a skipped job as passing for
-a required check, the gated jobs are skipped both when `changes` answers
-`false` and when `changes` itself fails, and a skipped matrix is one `engine`
-job rather than eight named shards, so a ruleset naming `go test` or a shard
-would let a PR whose gate crashed merge untested. `go gate` runs after all of
-them with `if: always()` and fails unless `changes` succeeded and `go test`,
-the engine matrix and `providers e2e` each succeeded or were skipped. On a docs-only PR it is
-green with no suite run; on a Go PR it is the suite's verdict.
+`go gate` is the check to require for the Go suite: the shard names are a
+matrix detail, and the gate fails unless `go test`, every shard and every
+`db` job succeeded. A shard runs under `-timeout 12m` inside a 15 minute job,
+so a hang dies by Go's timeout with a goroutine dump rather than by the
+runner's with nothing. The script also refuses to run if a package under the
+one it shards has grown tests of its own, since the shards run only the root
+package and `test:db` runs the tree.
 
-A shard runs under `-timeout 12m` inside a 15 minute job, so a hang dies by
-Go's timeout with a goroutine dump rather than by the runner's with nothing.
-The script also refuses to run if a package under `internal/engine/` has
-grown tests of its own, since the shards run only the root package and
-`test:db` runs the tree.
-
-`mise run lint:ci` (`.mise/cicheck.sh`, part of `lint`) holds both scripts:
+`mise run lint:ci` (`.mise/cicheck.sh`, part of `lint`) holds the CI scripts:
 each path-gate scenario is a throwaway git repository with the verdict it
-must give, including the unresolvable base that must fail, and the shard
-partition (`.mise/shardselect.sh`) is run over a fixed list that the eight
-shards together must reproduce exactly once.
+must give, including the unresolvable base that must fail; the shard
+partition (`.mise/shardselect.sh`) is run over a fixed list that the shards
+together must reproduce exactly once; and `ci:lint` plus `ci:lint:go` must
+cover every task in `lint` and `fmt:check`.
 
 `mise run test` and `test:db` are untouched by the cut: each is still the
 whole suite, sequential, on one machine. `test:coverage` is the same without
-the provider suite, and `mise run ci` runs `ci:coverage` in place of `ci:go`
-and the shards, because it is the same tests once with the profile; it runs
-no `ci:providers`.
+the provider suite, and `mise run ci` runs `ci:coverage` in place of `ci:go`,
+the shards and the drill, because it is the same tests once with the profile;
+it runs no `ci:providers`.
 
 Next: the [built-in kinds](builtin-kinds.md), the vocabulary a repository
 can import.

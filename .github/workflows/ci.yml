@@ -14,37 +14,40 @@
 # release. The comment is what dependabot reads to keep them current, and it is
 # also what proposes the major upgrades none of these are on yet.
 #
-# The database suite is cut for the runner, and gated. `changes` runs first
-# and answers one question through .mise/changescheck.sh: does the diff touch
-# anything a Go test reads? On a docs-only, console-only or linter-config PR
-# the answer is no, and `go test` and the engine shards are skipped by their
-# `if:` (the matrix `if:` is evaluated before it expands, so that run shows
-# one skipped `engine` job, not eight `engine k/8`). A workflow-level `paths:`
-# filter would never create those checks at all and would leave a required
-# one pending forever. A push to main runs everything.
+# Two tiers. The REQUIRED checks (.github/rulesets/main.json: `conventional
+# commits` in pr.yml, `lint`, `lint go`, `console`, `console test`, `go gate`)
+# each finish inside a minute on the runner, so a pull request waits about a
+# minute plus GitHub's own scheduling for its verdict. Everything else runs on
+# the same pull request and on main and is not required: `providers e2e` (nine
+# minutes), `acceptance drill` (one serial scenario), `race`, `cross compile`,
+# `image builds and boots`, `audit`. A required job that grows past a minute is
+# cut (more shards, a split job), not left to slow every merge.
 #
-# `go gate` is the ONE name a ruleset should require for the Go suite. The
-# shard names exist only on a run that needed them, GitHub counts a skipped
-# job as passing for a required check, and `go test` and the shards are
-# skipped both when `changes` said no AND when `changes` itself failed, so
-# requiring any of them would let a PR whose gate crashed merge with no
-# database test run. `go gate` always runs: it fails unless `changes`
-# succeeded and every gated job either succeeded or was skipped by its
-# answer. It is also the one job whose step is written here and not in
-# .mise.toml, because what it reads is GitHub's `needs` results, which have
-# no laptop equivalent; `mise run ci` runs the suite itself instead.
+# The Go jobs gate themselves. Each one's first step is .mise/changescheck.sh:
+# does the diff touch anything a Go test reads? On a docs-only, console-only or
+# linter-config PR the answer is no and every later step is skipped, so the
+# job is green in seconds. Asking in each job rather than in a `changes` job
+# they all wait on saved that job's 14 seconds from every Go job's start; the
+# `changes` job remains for the non-required suites. A workflow-level `paths:`
+# filter would never create the checks at all and would leave a required one
+# pending forever. A push to main answers yes and runs everything.
 #
-# The engine package is 380 to 500 seconds on the runner on its own and has
-# passed Go's 10 minute default under contention, so it runs as a matrix of
-# shards, each `mise run ci:engine` with SHARD and SHARDS from the matrix.
-# .mise/dbshard.sh cuts the package by test name (`go test -list`, sorted,
-# round robin), so every test lands in exactly one shard and a new test lands
-# in one without anybody editing a list. The `shard:` list under `engine` is
-# the ONE place the count is written: `strategy.job-total` feeds SHARDS and the
-# job name. Every other database package runs in `go test` after the short
-# suite. The unsharded suite with its coverage profile is the `coverage` job,
-# which runs on push to main only: a PR never waits on it, and main still
-# keeps the artifact.
+# `go gate` is the ONE name a ruleset requires for the Go suite, because the
+# shard names are a matrix detail. It fails unless `go test`, every `engine`
+# shard and every `db` job succeeded. It is also the one job whose step is
+# written here and not in .mise.toml, because what it reads is GitHub's
+# `needs` results, which have no laptop equivalent; `mise run ci` runs the
+# suite itself instead.
+#
+# The engine package is 380 to 500 seconds on the runner on its own, so it
+# runs as a matrix of shards, each `mise run ci:engine` with SHARD and SHARDS
+# from the matrix; internal/catalog is cut the same way in `db`. .mise/dbshard.sh
+# cuts a package by test name (read from its test files, sorted, round robin),
+# so every test lands in exactly one shard and a new test lands in one without
+# anybody editing a list. The `shard:` list under `engine` is the ONE place
+# that count is written: `strategy.job-total` feeds SHARDS and the job name.
+# The unsharded suite with its coverage profile is the `coverage` job, which
+# runs on push to main only.
 #
 # The actions/cache steps below are the one thing that IS about the machine and
 # so belongs here rather than in .mise.toml: a laptop keeps ~/.cache and
