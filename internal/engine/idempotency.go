@@ -56,7 +56,8 @@ import (
 // dead when the repository opens and is cleared then (clearDeadReservations);
 // the lease is the backstop for a process that lives on.
 //
-// An agent call is the exception to the release. Its tool effects commit one
+// An agent call is the exception to the release, and so is a function call
+// whose body ran an agent (agentThreads). Its tool effects commit one
 // transaction at a time before the thread settles, so once a thread exists
 // the effect may already have run, and a second thread under the key would
 // run it again. The reservation therefore records the thread id in the

@@ -159,7 +159,7 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	}
 	origin := callOriginOf(ctx)
 	if slices.Contains(origin.stack, fn.Identity()) {
-		return nil, nil, nil, fmt.Errorf("call: %s is already on the call stack — recursion is refused", fn.Identity())
+		return nil, nil, nil, fmt.Errorf("call: %s is already on the call stack: recursion is refused", fn.Identity())
 	}
 	inv := &invocation{
 		ds: ds, stack: append(slices.Clone(origin.stack), fn.Identity()),
@@ -445,7 +445,7 @@ func (b *callBackend) callAgent(ctx context.Context, ident string, args any) (an
 		return nil, fmt.Errorf("call: %w", err)
 	}
 	if slices.Contains(b.inv.stack, agentStackKey(ag.Identity())) {
-		return nil, fmt.Errorf("call: agent %s is already on the call stack — recursion is refused", ag.Identity())
+		return nil, fmt.Errorf("call: agent %s is already on the call stack: recursion is refused", ag.Identity())
 	}
 	depth := b.causalDepth + 1
 	if depth >= causalDepthCap {
@@ -508,12 +508,22 @@ type callOrigin struct {
 // (record 0106). An agent commits its thread, messages and tool effects as
 // it runs, so once a thread exists a retry of the body would repeat those
 // writes. A keyed function call binds its Idempotency-Key reservation to the
-// thread, so a repeat is 409 naming the thread, as it is for an agent call;
-// a trigger delivery parks on the first failure after it instead of retrying
+// thread, so a repeat is 409 naming the thread, as it is for an agent call.
+// A trigger delivery claims itself in the thread's transaction
+// (settlement.claim), as an agent trigger does before its loop: the cursor
+// or fire state moves there, a second dispatch of the same delivery finds
+// the claim and runs no agent, a crash leaves the claim in flight for a
+// hand, and the body's final transaction completes the claim rather than
+// acknowledging. A failure after the thread parks at once
 // (errAgentThreadOpened). A nil *agentThreads records nothing.
 type agentThreads struct {
-	call  *idempotentCall
-	first string
+	call *idempotentCall
+	// settle is the delivery the body answers, nil off a trigger delivery.
+	settle *settlement
+	// claimErr is the claim's refusal: another dispatch holds the delivery,
+	// or its cursor already moved. The delivery is declined with it.
+	claimErr error
+	first    string
 }
 
 // bind runs inside the transaction that creates an agent's thread. Only the
@@ -525,7 +535,30 @@ func (a *agentThreads) bind(t *txn, threadID string) error {
 	if err := a.call.attachThread(t, threadID); err != nil {
 		return err
 	}
-	a.first = threadID
+	var claim int64
+	if s := a.settle; s != nil {
+		if s.retire == 0 && s.claimed == 0 {
+			// A hold whose claim transaction rolled back names no claim.
+			s.release()
+		}
+		id, err := s.claim(t)
+		if err != nil {
+			a.claimErr = err
+			return err
+		}
+		claim = id
+	}
+	t.afterCommit = append(t.afterCommit, func() {
+		a.first = threadID
+		if s := a.settle; s != nil {
+			if s.retire == 0 {
+				s.claimed = claim
+			}
+			// A pending webhook request's row now reads as in flight
+			// (claimAgentDelivery).
+			s.pending = nil
+		}
+	})
 	return nil
 }
 
@@ -543,12 +576,29 @@ func (a *agentThreads) opened() string {
 var errAgentThreadOpened = errors.New("the body ran an agent before it failed, so the delivery parks instead of retrying")
 
 // agentRetryGate turns a failed delivery attempt whose body opened an agent
-// thread into a parking error that names the thread.
+// thread into a parking error that names the thread, and one whose agent
+// lost the delivery's claim into that claim's refusal, which declines it.
 func agentRetryGate(threads *agentThreads, err error) error {
-	if err == nil || threads.opened() == "" || errors.Is(err, errAgentThreadOpened) {
+	if err == nil || errors.Is(err, errAgentThreadOpened) {
+		return err
+	}
+	if threads != nil && threads.claimErr != nil && threads.opened() == "" {
+		return threads.claimErr
+	}
+	if threads.opened() == "" {
 		return err
 	}
 	return fmt.Errorf("%w (thread %s): %w", errAgentThreadOpened, threads.opened(), err)
+}
+
+// parkContext is the context a delivery parks on: once an agent thread
+// opened, the park must land even when the dispatcher is stopping, or the
+// next boot redelivers the change and the agent runs again.
+func parkContext(ctx context.Context, threads *agentThreads) context.Context {
+	if threads.opened() != "" {
+		return context.WithoutCancel(ctx)
+	}
+	return ctx
 }
 
 type callOriginKey struct{}

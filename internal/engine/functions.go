@@ -398,7 +398,7 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 	defer settle.release()
 	// An agent the body runs records its thread here, so a failed attempt
 	// after it parks rather than running the agent again (agentThreads).
-	threads := &agentThreads{}
+	threads := &agentThreads{settle: settle}
 	ctx = withCallOrigin(ctx, callOrigin{threads: threads})
 	for attempt := range triggerAttempts {
 		settle.attempt = attempt + 1
@@ -446,8 +446,9 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 		}
 		// Only the DISPATCHER's context ending aborts the pass: a
 		// per-invocation runner timeout is a delivery failure that rides the
-		// retries.
-		if ctx.Err() != nil {
+		// retries. A body whose agent opened a thread parks even then: its
+		// claim already moved the cursor, and the park records why.
+		if ctx.Err() != nil && !errors.Is(err, errAgentThreadOpened) {
 			return 0, from, ctx.Err()
 		}
 		lastErr = err
@@ -462,7 +463,7 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 			break
 		}
 	}
-	if err := ds.parkAndAdvance(ctx, tr, ch, from, attempts, started, settle.sync, lastErr); err != nil {
+	if err := ds.parkAndAdvance(parkContext(ctx, threads), tr, ch, from, attempts, started, settle.sync, lastErr); err != nil {
 		return 0, from, err
 	}
 	return 0, ch.Seq, nil
@@ -501,8 +502,11 @@ func settledResult(advance bool, summary map[string]int, pages int) deliverResul
 // runs the loop, then retires the claim with the run record (complete). A
 // crash between the two leaves the delivery listed under the trigger's
 // parked failures as in flight, retried by hand; nothing redelivers by
-// itself and no effect commits without a recorded delivery state. nil
-// settles nothing: a manual run mints nothing durable.
+// itself and no effect commits without a recorded delivery state. A function
+// body that runs an agent takes the same claim in the agent thread's
+// transaction (agentThreads.bind), and its final transaction then retires
+// the claim instead of acknowledging (settle). nil settles nothing: a manual
+// run mints nothing durable.
 type settlement struct {
 	ds      *dataset
 	trigger string
@@ -551,7 +555,18 @@ func (s *settlement) settle(t *txn, res deliverResult) error {
 	if err := s.ds.settlementFault(t); err != nil {
 		return err
 	}
-	if s.acknowledge != nil {
+	switch {
+	case s.claimed != 0:
+		// A function body that ran an agent claimed the delivery in the
+		// thread's transaction (agentThreads.bind): the acknowledgement
+		// landed there, and the claim retires here.
+		if err := t.lockFailure(s.trigger, s.claimed); err != nil {
+			return err
+		}
+		if err := t.unparkTx(s.trigger, s.claimed); err != nil {
+			return err
+		}
+	case s.acknowledge != nil:
 		if err := s.acknowledge(t); err != nil {
 			return err
 		}
@@ -1032,7 +1047,7 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 	}
 	// As in deliverWithRetry: a function body that ran an agent parks on
 	// its first failure after the thread opened (agentThreads).
-	threads := &agentThreads{}
+	threads := &agentThreads{settle: settle}
 	fctx := withCallOrigin(ctx, callOrigin{threads: threads})
 	for attempt := range triggerAttempts {
 		if attempt > 0 {
@@ -1087,7 +1102,7 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 			// delivery landed, and there is nothing to run again or park.
 			return 0, err
 		}
-		if ctx.Err() != nil {
+		if ctx.Err() != nil && !errors.Is(err, errAgentThreadOpened) {
 			return 0, ctx.Err()
 		}
 		lastErr = err
@@ -1108,6 +1123,9 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 	// into one: the fire read
 	// the body into it (fireEnvelope), and the bytes must not enter the
 	// changelog.
+	// A body whose agent opened a thread parks even when the dispatcher is
+	// stopping (deliverWithRetry).
+	ctx = parkContext(ctx, threads)
 	var payload json.RawMessage
 	if pending != nil {
 		payload = pending.Payload

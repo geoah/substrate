@@ -21,8 +21,8 @@ import (
 // A function is the seventh manifest kind: a pure reusable CALLABLE — a named
 // piece of real code, inline Python source on the manifest (`runtime:`
 // + `source:`) — with a model-facing `description`, optional `arguments:` and
-// `returns:` shapes, and a `permissions:` grant (reads, writes, call, network,
-// mutations). A function has NO subscription:
+// `returns:` shapes, and a `permissions:` grant (reads, writes, call, agents,
+// network, mutations). A function has NO subscription:
 // what fires it is a `trigger` data record (substrate.reamde.dev/core), which
 // owns the cursor, retries, parking and replay. The body executes in the
 // shared runner child process (functions/runner) and returns effects the

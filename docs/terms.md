@@ -106,7 +106,7 @@ nothing, there are none.
 ## Words that mean something narrower than they look
 
 - **capabilities** — only ever the name for a function's security envelope, and
-  no longer a key: the grant is five keys on the declaration itself, and a
+  no longer a key: the grant is six keys on the declaration itself, and a
   document nesting them under `capabilities:` is refused. The substrate does not
   otherwise use the word; what a deployment offers is a *feature*, and what a
   kind promises is a *trait*.

@@ -378,7 +378,7 @@ func TestFunctionArgumentRefusals(t *testing.T) {
 
 // --- the grant: one permissions object ----------------------------------------
 
-// The five grants ride ONE `permissions:` object, declared once and named for
+// The six grants ride ONE `permissions:` object, declared once and named for
 // what it is, and the envelope they parse to is what every gate downstream
 // reads.
 func TestFunctionGrantsRidePermissions(t *testing.T) {

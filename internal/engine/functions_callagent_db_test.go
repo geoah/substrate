@@ -10,6 +10,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -79,6 +80,16 @@ def main(input, host):
 def main(input, host):
     host.agents.call("` + scribe + `", "note this")
     raise Exception("failed after the agent ran")
+`,
+		}),
+		vocabulary.FunctionManifest(relayPackage, "noter", map[string]any{
+			"description": "asks the scribe to note the change",
+			"runtime":     vocabulary.RuntimePython,
+			"permissions": map[string]any{"agents": []any{scribe}},
+			"source": `
+def main(input, host):
+    host.agents.call("` + scribe + `", "note this")
+    return {}
 `,
 		}),
 		vocabulary.FunctionManifest(relayPackage, "curator", map[string]any{
@@ -201,13 +212,14 @@ func TestAgentRunFromADeliveryCarriesItsCause(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	installRelay(t, ds, fake)
 
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
 			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", relayPackage+"/looper"),
 		},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("put trigger: %v", err)
 	}
 	fake.script("loop", fakeTurn{content: "done"})
@@ -226,6 +238,10 @@ func TestAgentRunFromADeliveryCarriesItsCause(t *testing.T) {
 	}
 	if n := threadCountOf(t, ds, relayPackage+"/loopy"); n != 1 {
 		t.Fatalf("the delivery ran loopy %d times, want once", n)
+	}
+	// The claim the agent's thread took retired with the body's effects.
+	if failures, err := ds.TriggerFailures(ctx, tr.ID); err != nil || len(failures) != 0 {
+		t.Fatalf("failures after a settled delivery: %+v, %v", failures, err)
 	}
 	var uncaused int
 	if err := ds.db.QueryRowContext(ctx, `
@@ -418,5 +434,101 @@ func TestDeliveryParksAfterItsAgentRan(t *testing.T) {
 	}
 	if len(failures) != 1 || failures[0].Attempts != 1 || !strings.Contains(failures[0].LastError, "parks instead of retrying") {
 		t.Fatalf("parked failures %+v, want one after a single attempt", failures)
+	}
+}
+
+// A delivery claims itself in the transaction that opens its agent's thread,
+// as an agent trigger does before its loop: while the agent runs, the claim
+// is listed in flight, which is what a crash would leave, and a second pass
+// finds the cursor past the change and runs no agent. A dispatcher that
+// stops meanwhile still parks the delivery, so the next boot does not run
+// the agent again.
+func TestDeliveryClaimsWhenItsAgentOpensAThread(t *testing.T) {
+	t.Parallel()
+	ds, fake := openAgentDataset(t)
+	installRelay(t, ds, fake)
+	ctx := context.Background()
+
+	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeTrigger,
+		Properties: map[string]any{
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", relayPackage+"/noter"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("put trigger: %v", err)
+	}
+	arrived, release := make(chan struct{}), make(chan struct{})
+	fake.script("sub", fakeTurn{content: "noted", arrived: arrived, release: release})
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: crewPackage + "/widget", ID: "w-stop", Properties: map[string]any{"name": "raw"},
+	}); err != nil {
+		t.Fatalf("put widget: %v", err)
+	}
+	pass, stop := context.WithCancel(ctx)
+	defer stop()
+	done := make(chan error, 1)
+	go func() {
+		_, err := ds.ProcessTriggers(pass)
+		done <- err
+	}()
+	<-arrived // the scribe's thread is open and its turn is held
+
+	failures, err := ds.TriggerFailures(ctx, tr.ID)
+	if err != nil {
+		t.Fatalf("failures: %v", err)
+	}
+	if len(failures) != 1 || failures[0].LastError != inFlightError {
+		t.Fatalf("failures while the agent runs %+v, want one in-flight claim", failures)
+	}
+	if _, err := ds.ProcessTriggers(ctx); err != nil {
+		t.Fatalf("a second pass: %v", err)
+	}
+	if n := len(agentThreadsOf(t, ds, "scribe")); n != 1 {
+		t.Fatalf("a second pass ran the scribe again: %d threads", n)
+	}
+
+	stop()
+	close(release)
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("the stopped pass: %v", err)
+	}
+	failures, err = ds.TriggerFailures(ctx, tr.ID)
+	if err != nil {
+		t.Fatalf("failures: %v", err)
+	}
+	if len(failures) != 1 || failures[0].Attempts != 1 || failures[0].LastError == inFlightError ||
+		!strings.Contains(failures[0].LastError, "parks instead of retrying") {
+		t.Fatalf("failures after the stop %+v, want one parked after a single attempt", failures)
+	}
+	if _, err := ds.ProcessTriggers(ctx); err != nil {
+		t.Fatalf("the pass after the stop: %v", err)
+	}
+	waitThreadsSettled(t, ds, "scribe")
+	if n := len(agentThreadsOf(t, ds, "scribe")); n != 1 {
+		t.Fatalf("the change was redelivered after the stop: %d scribe threads", n)
+	}
+}
+
+// waitThreadsSettled waits for every thread of the crew agent to leave
+// `running`, so a loop the test let go does not outlive it.
+func waitThreadsSettled(t *testing.T, ds *dataset, agent string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		running := 0
+		for _, th := range agentThreadsOf(t, ds, agent) {
+			if th["status"] == threadRunning {
+				running++
+			}
+		}
+		if running == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d %s threads still running", running, agent)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

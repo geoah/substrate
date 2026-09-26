@@ -391,9 +391,10 @@ compare-and-set: the second attempt sees the version it already moved and fails
 `conflict`. A blob `PUT` is content addressed by its digest. The trigger
 delivery path carries its own idempotency key, so a redelivered change applies
 once. The exception is a function body that runs an agent: the agent commits
-its writes as it runs, so a delivery that fails after the agent opened a thread
-parks instead of retrying, and a retry of it by hand runs the agent again
-([running an agent](functions.md#running-an-agent)).
+its writes as it runs, so the delivery claims itself when the agent opens its
+thread. A delivery that fails after that parks instead of retrying, one a crash
+interrupted stays listed in flight, and a retry of either by hand runs the
+agent again ([running an agent](functions.md#running-an-agent)).
 
 A retried write is NOT safe on its own when the server assigns the identity or
 the effect. `POST /api/v1/records` mints a random id, so a client that
@@ -441,7 +442,8 @@ The contract, per key:
   claim a dead server left behind is cleared when the repository next opens.
 - A failed attempt stores no outcome. A `422`, a `500 function_failed` or a
   connection lost before the commit leaves no key behind, and the retry runs
-  the operation again.
+  the operation again. The exceptions are an agent call and a function call
+  whose body ran an agent, in the next item.
 - An agent call binds its key to the thread the moment the thread opens,
   because the loop's tool effects commit one by one before the run settles.
   A repeat after the first attempt failed mid-run, or after the server died

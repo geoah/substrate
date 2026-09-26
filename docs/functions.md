@@ -763,8 +763,13 @@ its messages and its tools' effects as it runs, under the agent's own actor and
 `permissions.writes`, so a caller that fails afterwards leaves them in place.
 They are not counted in the caller's effects: a body that only runs an agent
 records `ran = 0` on its run and answers `effects: 0` on the call API. So that
-a retry does not repeat them, a trigger delivery that fails after its body
-opened a thread parks on that attempt instead of retrying, and a call under an
+a retry does not repeat them, a trigger delivery claims itself in the
+transaction that opens the thread, as an agent trigger does before its loop:
+the cursor or fire state moves there, and the delivery is listed under the
+trigger's failures as in flight until the body settles. A second dispatch of
+the change finds the claim and runs no agent, and a crash leaves the claim to
+retry by hand. A delivery that fails after the thread opened parks on that
+attempt, also when the dispatcher is stopping. A call under an
 `Idempotency-Key` binds the key to the first thread, so a repeat is `409
 conflict` naming it ([idempotency](api.md#idempotency-and-retries)). A retry of
 the parked delivery by hand runs the agent again. On a record delivery every row

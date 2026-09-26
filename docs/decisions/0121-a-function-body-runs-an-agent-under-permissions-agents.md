@@ -57,10 +57,18 @@ delivers a function its own writes: a callee function's effects commit under
 the caller's actor and never wake it, but the agent's rows carry the agent's
 actor, and a function watching a kind its agent writes would otherwise wake
 on each of them until the causal-depth cap stopped the chain, fanning out at
-every hop. And a body that opened a thread is not retried on its own: a
-trigger delivery that fails after it parks on that attempt, and a call under
-an `Idempotency-Key` binds the key to the first thread, so a repeat is `409
-conflict` naming it, as for an agent call.
+every hop. And a body that opened a thread is not run again on its own. A
+trigger delivery claims itself in the transaction that creates the thread,
+the claim an agent trigger takes before its loop
+([0064](0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)):
+the cursor or fire state moves there and the delivery is listed as in
+flight. A second dispatch of the same delivery finds the claim and runs no
+agent, a crash before the body settles leaves the claim for a retry by hand,
+and the body's final transaction retires the claim instead of acknowledging.
+A delivery that fails after the thread opened parks on that attempt, even when
+the dispatcher is stopping. A call under an `Idempotency-Key` binds the key to
+the first thread, so a repeat is `409 conflict` naming it, as for an agent
+call.
 
 ### Consequences
 
@@ -72,6 +80,13 @@ conflict` naming it, as for an agent call.
   delivery parks rather than retrying, and a retry of the park by hand runs
   the agent again. A timeout, which would otherwise ride three attempts,
   parks on the first once the agent has run.
+- Bad, because a process killed between the thread's commit and the body's
+  settlement leaves the delivery in flight until someone retries it by hand,
+  as an interrupted agent trigger does; nothing redelivers it.
+- Bad, because two overlapping dispatches of one change both start the body,
+  and the one that loses the claim gets an error from its agent call. Its
+  body may handle that error and return effects, which then fail the cursor's
+  compare-and-swap and roll back.
 - Bad, because a function no longer sees the writes of the agents it grants,
   including those agents' runs on behalf of anyone else.
 - Bad, because the agent's writes are not the caller's effects: a body that
@@ -95,7 +110,10 @@ refused at load. The same file checks that a secret in the input is refused
 before a thread opens, that a function triggered on a kind its agent writes
 runs once, that a keyed call that failed after its agent ran answers the
 repeat with `409` naming the thread, and that such a delivery parks after one
-attempt.
+attempt. It also checks that the delivery is listed in flight while the agent
+runs, that a second pass meanwhile runs no agent, and that a dispatcher
+stopped mid-agent parks the delivery at attempt 1 and does not run the agent
+again.
 
 ## More Information
 
