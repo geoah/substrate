@@ -265,3 +265,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0111](0111-a-function-and-an-agent-list-read-is-the-window-read.md) | A function's and an agent's list read is the window read | accepted |
 | [0115](0115-an-owner-adjusts-a-change-request-on-the-accepting-write.md) | An owner adjusts a change request on the accepting write | accepted |
 | [0116](0116-a-probe-folds-case-only-when-it-declares-fold-case.md) | A probe folds case only when it declares `fold: case` | accepted |
+| [0107](0107-a-manager-row-holds-at-its-actors-live-machine-tier.md) | A manager row holds at the machine tier once its actor is declared there | accepted |
