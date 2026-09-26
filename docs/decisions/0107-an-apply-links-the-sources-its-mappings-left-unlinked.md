@@ -36,7 +36,7 @@ the candidate registry, visits every live source of each mapping it admits,
 redefines or names by document, and decides each one whose slot names no live
 record exactly as that source's own write would: one candidate links, none
 mints, and a source that offers nothing or parks on an ambiguous probe stays
-unlinked ([0087](0087-an-unresolved-source-parks-instead-of-minting.md),
+unlinked, the parked one marked as its own write would mark it ([0087](0087-an-unresolved-source-parks-instead-of-minting.md),
 [0103](0103-an-ambiguous-probe-follows-its-mappings-policy-and-a-probed-value-never-spreads.md)).
 Each link is `writeSubject`, the engine's own write of the slot, credited to
 the mapping ([0096](0096-a-mapping-synthesises-its-subject-slot.md)), so it
@@ -64,11 +64,26 @@ the one part of an apply a reader cannot see land.
   and one probe per unlinked source, inside the apply's transaction, every
   time. A source that offers nothing or stays ambiguous is probed again on each
   such apply.
-- Bad, because the apply's preview (`PlanVocabularyApply`) does not say how
-  many sources the apply will link or how many subjects it will mint.
-- Bad, because the links are written by the apply's actor, so the changelog
-  entries for a provider's rows name the owner who applied the mapping, not
-  the provider. The slot's manager is still the mapping.
+- Bad, because the apply's previews (`PlanVocabularyApply`,
+  `PlanBundleUpgrade`) do not say how many sources the apply will link or how
+  many subjects it will mint, and the links are not counted against
+  `SUBSTRATE_CONVERSION_CEILING`
+  ([0067](0067-a-lossy-conversion-runs-only-with-a-confirmation-bound-to-its-preview.md)).
+- Bad, because the pass runs while the apply holds the exclusive
+  registry-dependency lock, so every write to the repository waits for it.
+- Bad, because a subject the owner deleted comes back sooner. A slot naming a
+  deleted record counts as unlinked, so every apply that names the mapping
+  mints a fresh subject for each live source (with something to offer) whose
+  person or task was deleted. The source's own write already did this; the
+  difference is that a client re-applying its packages on every deploy sees
+  deleted subjects return each release, not at each row's next sync.
+- Bad, because each link bumps the source's `version` and `updated_at`, as a
+  subject hop does, so the linked source becomes the newest writer for its
+  target's `atomic` properties under latest-write-wins.
+- Bad, because the links are written by the apply's actor (the owner, or the
+  sample's bundle actor for a catalog import), not the provider, so the
+  changelog entries for a provider's rows name that actor. The slot's manager
+  is still the mapping.
 
 ### Confirmation
 
@@ -77,12 +92,26 @@ the one part of an apply a reader cannot see land.
 miss mints and projects, a source offering nothing stays unlinked, a re-apply
 mints nothing) and `TestReapplyingAMappingLinksASourceItParked` (an unchanged
 mapping applied again links a source whose ambiguity was settled).
+`internal/engine/mappingambiguous_db_test.go`:
+`TestTheAmbiguityMarkIsDerivedAgain` (a mapping edit that still parks keeps
+the mark; switching to `oldest` links the oldest candidate and clears it).
 
 ## More Information
 
 Amends the consequence of
 [0049](0049-the-owner-of-a-mappings-target-declares-it.md) that rows synced
-before their mapping stay unpointed. Closes
+before their mapping stay unpointed.
+
+Also amends [0103](0103-an-ambiguous-probe-follows-its-mappings-policy-and-a-probed-value-never-spreads.md):
+a parked source's mark and unset slot now stand until its next sync or the
+next apply that names its mapping. That answers 0103's reopen trigger
+("settling an ambiguity should re-resolve the sources waiting on it without
+their next sync") through a re-apply, not automatically on the merge or
+delete. It rewrites `TestTheAmbiguityMarkIsDerivedAgain` from 0103's
+Confirmation to match. [0087](0087-an-unresolved-source-parks-instead-of-minting.md)'s
+"resolved again on the record's next write" gains the same second path.
+
+Closes
 [#584](https://github.com/geoah/substrate/issues/584). The rules are in
 [projection.md](../projection.md#sources-that-exist-before-their-mapping).
 

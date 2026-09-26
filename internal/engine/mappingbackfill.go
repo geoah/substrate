@@ -96,6 +96,12 @@ func (t *txn) unpointedSourceIDs(m *vocabulary.Mapping) ([]string, error) {
 // ambiguous probe, stays unlinked. A slot the source kind declares `required:`
 // keeps its unconditional mint.
 func (t *txn) linkSource(src eref, srcTy *vocabulary.Kind, m *vocabulary.Mapping) error {
+	// The subject kind's lock before the record's, the order identity.go
+	// documents; matchOrMint takes it again, and an advisory lock the
+	// transaction holds is re-entrant.
+	if err := t.lockKey("subject|" + m.To); err != nil {
+		return err
+	}
 	if err := t.lockRecord(src); err != nil {
 		return err
 	}
@@ -108,9 +114,17 @@ func (t *txn) linkSource(src eref, srcTy *vocabulary.Kind, m *vocabulary.Mapping
 		return err
 	}
 	slot, declared := srcTy.Prop(m.Property)
-	target, _, err := t.matchOrMint(row, srcTy, m, declared && slot.Required)
-	if err != nil || target == "" {
+	target, parked, err := t.matchOrMint(row, srcTy, m, declared && slot.Required)
+	if err != nil {
 		return err
+	}
+	if target == "" {
+		// A source this pass finds ambiguous is marked, as its own write
+		// would mark it; one that offers nothing is left as it is.
+		if parked {
+			return t.markAmbiguous(src, true)
+		}
+		return nil
 	}
 	return t.writeSubject(src, m.Property, eref{Kind: m.To, ID: target})
 }
