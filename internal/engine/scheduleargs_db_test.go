@@ -131,4 +131,21 @@ def main(input, host):
 	if again, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", fired.ID); err != nil || again.Version != fired.Version {
 		t.Fatalf("the body ran with arguments its function refuses: %+v (%v)", again, err)
 	}
+
+	// Restoring the signature lets a hand retry deliver the parked occurrence
+	// with the trigger's arguments, and retires the failure.
+	install("string")
+	if n, err := ds.RetryTriggerFailure(ctx, tr.ID, failures[0].ID); err != nil || n != 1 {
+		t.Fatalf("retry ran %d bodies (%v), want 1", n, err)
+	}
+	retried, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "fire-"+failures[0].FireID)
+	if err != nil {
+		t.Fatalf("the retry did not deliver: %v", err)
+	}
+	if got := retried.Properties["name"]; !strings.HasSuffix(got.(string), " weekly") {
+		t.Fatalf("the retry's body read %q, want the trigger's argument", got)
+	}
+	if left, err := ds.TriggerFailures(ctx, tr.ID); err != nil || len(left) != 0 {
+		t.Fatalf("the retried failure did not retire: %+v (%v)", left, err)
+	}
 }

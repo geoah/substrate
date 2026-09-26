@@ -17,7 +17,7 @@ data:
   properties:
     source:
       schedule:
-        recurrence: FREQ=WEEKLY;BYDAY=MO;BYHOUR=6
+        recurrence: FREQ=WEEKLY;BYDAY=MO;BYHOUR=6;BYMINUTE=0;BYSECOND=0
         timezone: Europe/Athens
     arguments:
       period: weekly

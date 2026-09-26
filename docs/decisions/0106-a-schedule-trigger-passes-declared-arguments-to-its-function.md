@@ -52,9 +52,13 @@ turn's user message and declares no arguments to check against.
 - Good, because one function serves many schedules, and the trigger record
   says what each schedule passes.
 - Good, because the value is checked where it is written, so a typo is a
-  `422` on the trigger rather than a parked fire an hour later.
+  `422` on the trigger rather than a parked fire an hour later. This covers
+  argument names and types; `enum` values are not checked yet, on this path
+  or the call API.
 - Bad, because a function re-applied with a narrower signature parks every
-  schedule that passes the old arguments, until each trigger is edited.
+  schedule that passes the old arguments, until each trigger's `arguments`
+  are fixed or dropped (a patch that only disables the trigger is refused
+  too, because every write re-checks the whole record).
 - Bad, because `arguments` is one more property that means something on one
   source arm only; widening it to the other arms is an additive change, but
   each needs its own reason.
