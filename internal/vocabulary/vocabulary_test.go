@@ -1843,13 +1843,19 @@ data:
 				t.Fatalf("%q must load: %v", rules, err)
 			}
 		}
-		for _, path := range []string{`"assignees[].person"`, "lead.person"} {
-			err := load("    owner: {path: " + path + "}\n")
+		// A repeated source onto a single slot needs `merge: first`, and the
+		// suggestion says so.
+		for _, tc := range []struct{ rule, want string }{
+			{`    owner: {path: "assignees[].person"}` + "\n", "map {path: assignees, merge: first} onto"},
+			{`    watchers: {path: "assignees[].person"}` + "\n", "map {path: assignees} onto"},
+			{"    owner: {path: lead.person}\n", "map {path: lead} onto"},
+		} {
+			err := load(tc.rule)
 			if err == nil {
-				t.Fatalf("%s must be refused", path)
+				t.Fatalf("%q must be refused", tc.rule)
 			}
-			if !strings.Contains(err.Error(), "a path never crosses one") || !strings.Contains(err.Error(), "map {path: ") {
-				t.Fatalf("%s: the refusal names the spelling that works, got: %v", path, err)
+			if !strings.Contains(err.Error(), "a path never crosses one") || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("%q: the refusal names the spelling that works (%q), got: %v", tc.rule, tc.want, err)
 			}
 		}
 	})

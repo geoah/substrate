@@ -138,13 +138,15 @@ assignee:
 
 The recompute writes the `github/user` reference into the person-pinned
 `assignee`, and the subject hop stores that user's person. A user with no
-person yet gets one, as any hop does. The offer behind the value names the
-person too, so a read shows no alternative. A repeated source onto a repeated
-target (`assignees` onto a `person[]` slot) resolves each item, and two users
-of one person are one entry. A path never crosses a reference:
-`assignees[].person` is refused, naming this spelling. The value follows the
-user's person when the ISSUE is next written. Moving the user to another
-person (a split) leaves the task on the old one until then.
+person yet gets one, as any hop does. The offer behind the value keeps the
+`github/user` as the issue wrote it, and the read compares it through the
+user's person, so the issue shows as the source and no alternative appears.
+A repeated source onto a repeated target (`assignees` onto a `person[]` slot)
+resolves each item, and two users of one person are one entry. A path never
+crosses a reference: `assignees[].person` is refused, naming this spelling.
+The value follows the user's person when the ISSUE is next written. Moving
+the user to another person (a split) leaves the task on the old one until
+then, and the read lists the issue's offer as an alternative meanwhile.
 
 **A `match` probe reads the source record's own values**, so it needs a value
 and not a pointer: a source that declares its email addresses as references
@@ -381,7 +383,11 @@ live records, so a `repository rebuild` or a restore derives the same
 alternatives, stamps and sources included. The manager carries a `source` too,
 but only where the read can stand behind it: the property is machine-held and
 the manager's own offer backs the stored value (equal to it, or, on a union,
-every item of it among the stored items). A hand edit and a bundle pin name no
+every item of it among the stored items). On a reference property both sides
+are compared through a mirror's stored subject and the former-id trail, so an
+offer naming a `github/user` backs the person the pin stored for it
+([decision record 0106](decisions/0106-a-map-rule-reaches-a-mirrors-subject-through-the-targets-pin.md)).
+A hand edit and a bundle pin name no
 source, because nothing stands behind them but the hand
 ([decision record 0094](decisions/0094-propertymeta-names-the-source-record-behind-each-manager-and-alternative.md)).
 Lists and changes never carry `propertyMeta`; only a single-record read

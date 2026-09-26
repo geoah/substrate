@@ -6,6 +6,7 @@ import (
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -58,14 +59,20 @@ func pmManifest() enginetest.Manifest {
 	}
 }
 
-// A map rule carries a relation whose other end is itself mirrored (#580,
-// record 0106): the ticket's `assignee` at a Slack user lands on the card as
-// the user's PERSON, the offer behind it says the same, and two users of one
-// person are one watcher.
-func TestMappedReferenceLandsOnTheMirrorsSubject(t *testing.T) {
-	t.Parallel()
+// relationFixture installs the tracker beside the people sources, with two
+// Slack users of one person (ada) and a third of another (grace). sync writes
+// ticket T1 naming all three and returns the card it maps onto.
+type relationFixture struct {
+	svc        substrate.Service
+	ds         substrate.Dataset
+	ada, grace string
+	sync       func(heading string) *substrate.Record
+}
+
+func newRelationFixture(t *testing.T) relationFixture {
+	t.Helper()
 	ctx := context.Background()
-	_, ds := newDataset(t)
+	svc, ds := newDataset(t)
 	installPeopleSources(t, ds)
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, pmManifest()); err != nil {
 		t.Fatalf("install the tracker: %v", err)
@@ -94,30 +101,86 @@ func TestMappedReferenceLandsOnTheMirrorsSubject(t *testing.T) {
 		}
 		return mustGet(t, ds, kind, id)
 	}
+	return relationFixture{svc: svc, ds: ds, ada: ada, grace: grace, sync: sync}
+}
 
-	card := sync("ship it")
-	if got, want := refPathValue(card, "owner"), typePerson+"/"+ada; got != want {
-		t.Fatalf("owner = %q, want the user's person %q", got, want)
-	}
-	var watchers []string
-	for _, w := range asList(card.Properties["watchers"]) {
-		watchers = append(watchers, referencePath(w))
-	}
-	if want := []string{typePerson + "/" + ada, typePerson + "/" + grace}; !equalStrings(watchers, want) {
-		t.Fatalf("watchers = %v, want %v: two users of one person are one watcher", watchers, want)
-	}
-	// The offer names the person too. One still spelling the mirror reads as
-	// an alternative the ticket never offered.
+// assertTicketBacksCard: the card's owner and watchers name the ticket as
+// their source and list no alternative. An offer compared as the mirror it
+// spells would read as an alternative the ticket never offered.
+func assertTicketBacksCard(t *testing.T, card *substrate.Record) {
+	t.Helper()
 	for _, name := range []string{"owner", "watchers"} {
 		meta := card.PropertyMeta[name]
 		if meta.Source != typeTicket+"/T1" || len(meta.Alternatives) != 0 {
 			t.Fatalf("%s meta = %+v, want the ticket as the source and no alternative", name, meta)
 		}
 	}
+}
+
+// A map rule carries a relation whose other end is itself mirrored (#580,
+// record 0106): the ticket's `assignee` at a Slack user lands on the card as
+// the user's PERSON, the read backs it with the ticket's offer, and two users
+// of one person are one watcher.
+func TestMappedReferenceLandsOnTheMirrorsSubject(t *testing.T) {
+	t.Parallel()
+	f := newRelationFixture(t)
+
+	card := f.sync("ship it")
+	if got, want := refPathValue(card, "owner"), typePerson+"/"+f.ada; got != want {
+		t.Fatalf("owner = %q, want the user's person %q", got, want)
+	}
+	var watchers []string
+	for _, w := range asList(card.Properties["watchers"]) {
+		watchers = append(watchers, referencePath(w))
+	}
+	if want := []string{typePerson + "/" + f.ada, typePerson + "/" + f.grace}; !equalStrings(watchers, want) {
+		t.Fatalf("watchers = %v, want %v: two users of one person are one watcher", watchers, want)
+	}
+	assertTicketBacksCard(t, card)
 
 	// A re-sync of the same relation writes nothing onto the card.
-	if again := sync("ship it"); again.Version != card.Version {
+	if again := f.sync("ship it"); again.Version != card.Version {
 		t.Fatalf("a re-sync moved the card from v%d to v%d", card.Version, again.Version)
+	}
+}
+
+// The offers behind a mapped mirror reference stay a function of the source
+// rows (record 0106): a merge or a delete of the mirror's person writes
+// neither the ticket nor the card, so a rebuild derives the same offers and
+// the same fold, and the read still backs the card with the ticket.
+func TestMappedReferenceRebuildsAfterItsPersonMoves(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		move func(t *testing.T, f relationFixture)
+	}{
+		{"merge", func(t *testing.T, f relationFixture) {
+			if _, err := f.ds.Merge(context.Background(), owner, substrate.MergeInput{Kind: typePerson, Winner: f.grace, Loser: f.ada}); err != nil {
+				t.Fatalf("merge ada into grace: %v", err)
+			}
+		}},
+		{"delete", func(t *testing.T, f relationFixture) {
+			if _, err := f.ds.Delete(context.Background(), owner, typePerson, f.ada, substrate.DeleteInput{}); err != nil {
+				t.Fatalf("delete ada: %v", err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := newRelationFixture(t)
+			card := f.sync("ship it")
+			tc.move(t, f)
+			assertTicketBacksCard(t, mustGet(t, f.ds, card.Kind, card.ID))
+
+			before := foldOf(t, f.ds)
+			if _, err := f.svc.(rebuilder).RebuildRepository(context.Background(), testdb.Repository(t)); err != nil {
+				t.Fatalf("rebuild: %v", err)
+			}
+			if after := foldOf(t, f.ds); string(before) != string(after) {
+				t.Fatalf("the rebuilt fold is not the fold\n%s", firstDifference(before, after))
+			}
+			assertTicketBacksCard(t, mustGet(t, f.ds, card.Kind, card.ID))
+		})
 	}
 }
 

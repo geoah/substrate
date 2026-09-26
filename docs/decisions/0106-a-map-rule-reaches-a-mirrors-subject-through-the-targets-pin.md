@@ -42,22 +42,36 @@ task holds, whichever mirror a mapping copies into it.
 
 A path that crosses a reference stays refused, and the refusal names the
 spelling that works. The recompute reads each reference contribution through
-the mirror's stored subject before it offers or selects it
-(`internal/engine/mapping.go` `throughSubjects`), so the offer equals the
-stored value and duplicates collapse. It reads and never mints, because a
-rebuild re-derives offers and must append nothing; a mirror with no subject
-yet is left to the write's own hop.
+the mirror's live subject before it selects the value
+(`internal/engine/mapping.go` `throughSubjects`), so duplicates collapse,
+compared canonically. It reads and never mints; a mirror with no subject yet
+is left to the write's own hop.
+
+The offer keeps spelling the mirror as the source wrote it. An offer row is a
+function of the source rows alone, because a rebuild or a restore derives the
+rows again (`rebuild.go` `rederiveOffers`) and nothing rewrites them when a
+mirror's subject moves: a merge, a delete or a re-link of the person writes
+neither the issue nor the task. The read compares an offer with the stored
+value through the mirror's stored subject and the former-id trail
+(`internal/engine/query.go` `comparableReference`), so the value's own source
+backs it and no alternative appears.
 
 ### Consequences
 
 - Good, because a consumer declares the relation in its manifest, with no
   function and no grammar change, against every provider whose mirrors have a
   mapping onto the pinned kind.
-- Good, because the value, its offer and its provenance agree, so a read
-  shows the source and no phantom alternative.
+- Good, because the read shows the issue as the value's source and no
+  phantom alternative, and a merge or a delete of the person keeps it so,
+  before and after a rebuild.
 - Bad, because the value follows the mirror's subject only when the SOURCE is
   next written. A split that moves `github/user` to another person leaves the
-  task on the old person until the issue syncs again.
+  task on the old person until the issue syncs again, and the read lists the
+  issue's offer, now the new person, as an alternative until then. The GitHub
+  sync watermarks on `updatedAt`, so a closed issue may never be written
+  again.
+- Bad, because a read of a reference property with offers costs a lookup per
+  offered item.
 - Bad, because the spelling is implicit: a reader has to know the target's
   pin decides, which is why the loader's refusal and
   [projection.md](../projection.md#record-mappings) both say it.
@@ -65,7 +79,10 @@ yet is left to the write's own hop.
 ### Confirmation
 
 `TestMappedReferenceLandsOnTheMirrorsSubject` (`internal/engine`) holds the
-stored value, the offer, the dedupe and the no-op re-sync.
+stored value, the read's source and absent alternative, the dedupe and the
+no-op re-sync. `TestMappedReferenceRebuildsAfterItsPersonMoves`
+(`internal/engine`) merges, then deletes, the person between the sync and a
+rebuild, and holds the fold and the read equal across the rebuild.
 `TestMappingRules/a_map_path_never_crosses_a_reference` (`internal/vocabulary`)
 holds the refusal and its message.
 
