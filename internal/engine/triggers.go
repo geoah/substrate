@@ -567,7 +567,7 @@ func (ds *dataset) validateTriggerRow(reg *vocabulary.Registry, id string, props
 // A warning, never a refusal: the declaration may be mid-edit, and a trigger the
 // engine refused would have to be re-created rather than fixed.
 func (ds *dataset) warnDiscardedOutput(t *trigger, fn *vocabulary.Function) {
-	if len(fn.Caps.Emit) > 0 || len(fn.Caps.Call) > 0 || len(fn.Caps.Network) > 0 {
+	if len(fn.Caps.Emit) > 0 || len(fn.Caps.Call) > 0 || len(fn.Caps.Agents) > 0 || len(fn.Caps.Network) > 0 {
 		return
 	}
 	// The ids are user-authored strings from record rows: logged only after

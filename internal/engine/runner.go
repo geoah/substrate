@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -108,7 +109,9 @@ func (ds *dataset) runnerSpecIn(fn *vocabulary.Function, reg *vocabulary.Registr
 	spec := runner.Spec{
 		Repository: ds.Repository().ID, Function: fn.Identity(),
 		Runtime: fn.Runtime, Source: fn.Source, TimeoutMs: int(fn.Timeout / time.Millisecond),
-		CallTargets: fn.Caps.Call,
+		// The runner gates the union; the engine reads which list names the
+		// target to tell a function from an agent (callBackend.Call).
+		CallTargets: slices.Concat(fn.Caps.Call, fn.Caps.Agents),
 		// The network declaration reaches the runner so the sandbox can
 		// enforce its EMPTINESS: a body that declared no egress gets no
 		// sockets. Before this it stopped at the manifest.
@@ -153,7 +156,14 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 		return nil, nil, nil, fmt.Errorf("substrate/engine: host function %s reached the runner — the engine is its body, and every caller branches before this",
 			fn.Identity())
 	}
-	inv := &invocation{ds: ds, stack: []string{fn.Identity()}, scrub: newScrubber()}
+	origin := callOriginOf(ctx)
+	if slices.Contains(origin.stack, fn.Identity()) {
+		return nil, nil, nil, fmt.Errorf("call: %s is already on the call stack — recursion is refused", fn.Identity())
+	}
+	inv := &invocation{
+		ds: ds, stack: append(slices.Clone(origin.stack), fn.Identity()),
+		causedBy: origin.causedBy, scrub: newScrubber(),
+	}
 	// The runner's `config` field, resolved per invocation (invocationconfig.go):
 	// a bundle function receives its bundle's `inject: functions` inputs,
 	// each resolved to one record — secrets resolved, keyed by input name —
@@ -212,10 +222,16 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 // sub-call effects and the call ordinal.
 type invocation struct {
 	ds *dataset
-	// stack holds the function identities from the root down, inclusive: a
-	// Call to anything already on it is refused — direct and mutual
-	// recursion both, so a cycle can never exhaust the python host slots.
+	// stack holds the callables from the root down, inclusive: function
+	// identities, and agents under agentStackKey. A Call to anything already
+	// on it is refused — direct and mutual recursion both, so a cycle can
+	// never exhaust the python host slots. It starts from the callOrigin, so
+	// a chain that passes through an agent keeps it.
 	stack []string
+	// causedBy is the change the root invocation answers, 0 off a record
+	// delivery: an agent a body runs stamps it on every row it writes, so
+	// the causal-depth walk still sees the chain.
+	causedBy int64
 	// effects accumulates the sub-calls' decoded effects, in call order.
 	// They apply in the CALLER's delivery transaction, before the caller's
 	// own — each decoded against ITS function's capability envelope. A
@@ -285,6 +301,9 @@ func (b *callBackend) ResolveKind(name string) string {
 // and its output returns to the calling body.
 func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, error) {
 	ds := b.inv.ds
+	if slices.Contains(b.fn.Caps.Agents, ident) {
+		return b.callAgent(ctx, ident, args)
+	}
 	target, err := ds.registry().ResolveFunction(ident)
 	if err != nil {
 		return nil, fmt.Errorf("call: %w", err)
@@ -386,6 +405,82 @@ func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, er
 	// the runner boundary); the root's boundary scrub covers whatever the
 	// caller re-emits.
 	return res.Output, nil
+}
+
+// callAgent runs an agent the body names under `permissions.agents` to
+// settlement and hands the body its reply (record 0106). The gates are a
+// function Call's: the runner already checked the allowlist and charged the
+// call budget, and here the callee's bundle lifecycle, the call stack and
+// the causal-depth cap hold. What differs is where the writes land: the loop
+// commits its thread, its messages and its tools' effects as it runs, under
+// the AGENT's actor and emit, so they do not wait for the caller's delivery
+// transaction and a caller that fails afterwards does not roll them back.
+func (b *callBackend) callAgent(ctx context.Context, ident string, args any) (any, error) {
+	ds := b.inv.ds
+	ag, err := ds.registry().ResolveAgent(ident)
+	if err != nil {
+		return nil, fmt.Errorf("call: %w", err)
+	}
+	if _, _, err := ds.admitCallable(ctx, ag.Package, ag.Identity()); err != nil {
+		return nil, fmt.Errorf("call: %w", err)
+	}
+	if slices.Contains(b.inv.stack, agentStackKey(ag.Identity())) {
+		return nil, fmt.Errorf("call: agent %s is already on the call stack — recursion is refused", ag.Identity())
+	}
+	depth := b.causalDepth + 1
+	if depth >= causalDepthCap {
+		return nil, fmt.Errorf("%w: call to %s at depth %d (cap %d)", errCausalDepth, ag.Identity(), depth, causalDepthCap)
+	}
+	user, err := agentUserContent(args)
+	if err != nil {
+		return nil, fmt.Errorf("call %s: %w", ag.Identity(), err)
+	}
+	b.inv.calls++
+	key := fmt.Sprintf("%s/call/%d/%s", b.key, b.inv.calls, ag.Identity())
+	// The body's runner waits for this call, and its timeout cancels ctx.
+	// The loop's writes must still land when that deadline passes, so the
+	// loop runs uncancelled and takes the deadline as its own instead: it
+	// settles its thread rather than leaving it running under its lease.
+	notAfter, _ := ctx.Deadline()
+	res, err := ds.runAgent(context.WithoutCancel(ctx), ag, agentInvocation{
+		mode: "call", user: user, notAfter: notAfter,
+		causedBy: b.inv.causedBy, causalDepth: depth,
+		// The agent's function tools and sub-agents keep this chain's stack,
+		// so a tool that names a function already running is refused.
+		callStack: slices.Clone(b.inv.stack),
+		delivery:  key,
+	})
+	if err != nil {
+		return nil, b.inv.scrub.err(fmt.Errorf("call %s: %w", ag.Identity(), err))
+	}
+	return map[string]any{"reply": res.Reply, "thread": res.Thread, "status": res.Status}, nil
+}
+
+// agentStackKey is an agent's entry on a call stack: the agent kind's record
+// path, so an agent never matches a function that shares its identity.
+func agentStackKey(identity string) string {
+	return vocabulary.CoreKind(vocabulary.DocAgent) + "/" + identity
+}
+
+// callOrigin is what a function invocation inherits from the chain that
+// started it: the change it answers and the callables already running.
+type callOrigin struct {
+	causedBy int64
+	stack    []string
+}
+
+type callOriginKey struct{}
+
+// withCallOrigin hands runCallable the chain a body runs under: a record
+// delivery's change, or an agent loop's stack and cause for its function
+// tools.
+func withCallOrigin(ctx context.Context, o callOrigin) context.Context {
+	return context.WithValue(ctx, callOriginKey{}, o)
+}
+
+func callOriginOf(ctx context.Context) callOrigin {
+	o, _ := ctx.Value(callOriginKey{}).(callOrigin)
+	return o
 }
 
 // CallFunction is the callable invocation API (`mode: call`): arbitrary

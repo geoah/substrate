@@ -805,6 +805,9 @@ func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change
 		// never sees it.
 		Resume: resume.cursor,
 	}
+	// The change rides the invocation so an agent the body runs stamps it on
+	// its rows, and the causal-depth walk sees through the agent.
+	ctx = withCallOrigin(ctx, callOrigin{causedBy: ch.Seq})
 	effects, _, more, err := ds.runCallableRaw(ctx, tr.Callable, in)
 	if err != nil {
 		return res, err
