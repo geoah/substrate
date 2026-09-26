@@ -125,4 +125,20 @@ describe("ConsolePreferencesProvider", () => {
     expect(screen.getByTestId("state").textContent).toContain("true")
     expect(puts).toHaveLength(0)
   })
+
+  it("closes the sidebar in this window only: nothing reaches the record", async () => {
+    renderProvider()
+    act(() => probe.handle!.change({ type: "sidebar", open: false }))
+    expect(probe.handle!.preferences.sidebarOpen).toBe(false)
+    expect(localStorage.getItem("substrate.console.sidebarOpen")).toBe("false")
+    act(() =>
+      probe.handle!.change({
+        type: "favorite",
+        key: "example.com/a/a",
+        starred: true,
+      })
+    )
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(puts[0]).not.toHaveProperty("sidebarOpen")
+  })
 })

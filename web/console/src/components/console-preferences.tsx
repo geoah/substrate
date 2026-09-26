@@ -16,6 +16,7 @@ import {
   preferencesOf,
   readLocalSettings,
   saveConsoleAction,
+  writeLocalSidebar,
   type ConsoleAction,
   type SettingAction,
 } from "@/lib/console-preferences"
@@ -43,6 +44,12 @@ export function ConsolePreferencesProvider({
 
   const change = useCallback(
     (action: ConsoleAction) => {
+      // The sidebar is this window's alone: nothing to queue or save.
+      if (action.type === "sidebar") {
+        writeLocalSidebar(action.open)
+        setLocal(readLocalSettings())
+        return
+      }
       if (action.type === "set" && action.key === "theme")
         theme?.setTheme(action.value)
       const entry: Pending = { action }
