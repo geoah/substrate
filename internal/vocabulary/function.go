@@ -810,7 +810,7 @@ func (l *loader) parseFunctionBody(where string, data map[string]any, fn *Functi
 // then refuses every effect against. Requiring it taught authors to declare a
 // kind they never write to.
 //
-// ONE object holds all five, because a bare `emit:` beside `returns:` said
+// ONE object holds all six, because a bare `emit:` beside `returns:` said
 // nothing about being a permission and read as the output shape. The
 // `capabilities:` wrapper and the five hoisted spellings are deleted keys
 // (deletedFunctionKeys), so a refusal names `data.permissions.<key>` and there

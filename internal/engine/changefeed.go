@@ -307,13 +307,18 @@ func (ds *dataset) ChangeTriggers(ctx context.Context, changes []substrate.Chang
 	if err != nil {
 		return nil, err
 	}
+	reg := ds.registry()
+	self := make([]map[substrate.Actor]bool, len(live))
+	for i, lt := range live {
+		self[i] = lt.selfActors(reg)
+	}
 	for _, ch := range changes {
 		if ch.Kind == typeTriggerRun {
 			continue
 		}
 		op := runner.OpOf(ch)
-		for _, lt := range live {
-			if ch.Actor == substrate.Actor(lt.callableActor()) || !lt.Record.matches(ch.Kind, op) {
+		for i, lt := range live {
+			if self[i][ch.Actor] || !lt.Record.matches(ch.Kind, op) {
 				continue
 			}
 			ct := substrate.ChangeTrigger{

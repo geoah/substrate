@@ -39,6 +39,13 @@ var errSecretInEffects = errors.New("a returned effect carries an injected secre
 // body reproduces it.
 var errSecretInContinuation = errors.New("a paged continuation cursor carries an injected secret value verbatim — rejected before it could persist")
 
+// errSecretInAgentInput rejects a body's host call to an agent whose input
+// carries an injected secret value verbatim (record 0106). The input becomes
+// the thread's first message: it commits to the changelog and goes to the
+// LLM provider, and redacting it in place would change what the agent is
+// asked. Deterministic by construction: the same body reproduces it.
+var errSecretInAgentInput = errors.New("an agent call's input carries an injected secret value verbatim: rejected before the agent ran")
+
 // scrubMinLen skips degenerate "secrets" whose replacement would shred
 // ordinary text; anything shorter carries no secrecy worth the collateral.
 const scrubMinLen = 4

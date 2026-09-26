@@ -539,7 +539,7 @@ host.records.get(kind, id)                        # the record, or None
 host.records.list(kinds, where=None, first=None, after=None, order=None)
 host.records.search(q, kinds, k=None, mode=None)  # hits, with .pending beside them
 host.functions.call(function, input=None)         # permissions.call gated
-host.agents.call(agent, input=None)               # permissions.agents gated
+host.agents.call(agent, input)                    # permissions.agents gated
 host.effects.put(kind, id, properties=None, if_absent=False, if_version=<int>,
                  on_conflict=None)                # None | "park" | "yield"
 host.effects.patch(kind, id, properties=None, if_version=<int>, on_conflict=None)
@@ -705,7 +705,7 @@ the same 409 a stale `ifVersion` has always produced.
 
 `host.functions.call(function, input)` runs another function to completion
 inside the caller's invocation. The runner refuses a target outside the
-caller's `permissions.call` grant and charges the call budget before executing; the
+caller's `permissions.call` and `permissions.agents` grants and charges the call budget before executing; the
 engine refuses a target already on the call stack (direct and mutual recursion
 both) and one that would exceed the causal-depth cap. The callee gets its own
 fresh read budgets and its own timeout (bounded by the caller's remaining
@@ -723,7 +723,10 @@ it.
 `{"reply": ..., "thread": ..., "status": ...}`
 ([0106](decisions/0106-a-function-body-runs-an-agent-under-permissions-agents.md)).
 `input` becomes the agent's first user message: a string as written, anything
-else as JSON. The gates are a function call's: the runner checks the grant and
+else as JSON. An input that carries a secret injected into the body (its
+bundle config or an account token) verbatim is refused before the agent runs,
+because the message commits to the changelog and goes to the LLM provider.
+The gates are a function call's: the runner checks the grant and
 charges the call budget, and the engine refuses an agent whose bundle is
 disabled, an agent already on the call stack, and a call past the causal-depth
 cap. The call stack carries on into the agent, so a tool of that agent that
@@ -731,9 +734,22 @@ names a function already running is refused as recursion.
 
 The agent's writes do not wait for the caller. The loop commits its thread,
 its messages and its tools' effects as it runs, under the agent's own actor and
-`permissions.writes`, so a caller that fails afterwards leaves them in place,
-and a retried delivery runs the agent again. On a record delivery every row
-the agent writes names the delivery's change as its cause. The agent runs
+`permissions.writes`, so a caller that fails afterwards leaves them in place.
+They are not counted in the caller's effects: a body that only runs an agent
+records `ran = 0` on its run and answers `effects: 0` on the call API. So that
+a retry does not repeat them, a trigger delivery that fails after its body
+opened a thread parks on that attempt instead of retrying, and a call under an
+`Idempotency-Key` binds the key to the first thread, so a repeat is `409
+conflict` naming it ([idempotency](api.md#idempotency-and-retries)). A retry of
+the parked delivery by hand runs the agent again. On a record delivery every row
+the agent writes names the delivery's change as its cause, and the thread's
+first message is attributed to the calling function.
+
+A trigger never delivers a function the writes of the agents it grants, as it
+never delivers a function its own writes. Without that, a function watching a
+kind its agent writes would wake on each row the agent wrote, until the
+causal-depth cap stopped the chain. The cost is that the function also misses
+those agents' writes from their other runs. The agent runs
 inside the caller's `timeout`: its deadline is the earlier of its own
 `budgets.deadlineSeconds` and the caller's, and when that passes it settles its
 thread and the caller fails its timeout. A function's timeout is
@@ -867,11 +883,14 @@ is the function body.
   it, and a trigger never delivers writes carrying its own callable's actor.
   That actor is `function:<authority>:<package>:<name>` (an agent's is
   `agent:<authority>:<package>:<name>`), so two packages declaring a callable of
-  one name are two actors and neither reads as the other's echo. A causal chain deeper
+  one name are two actors and neither reads as the other's echo. A function
+  that grants agents under `permissions.agents` is not delivered those
+  agents' writes either ([running an agent](#running-an-agent)). A causal chain deeper
   than the engine's cap (16) parks instead of spinning.
 - **No wedging.** A delivery that keeps failing is parked (3 attempts with
-  backoff; a deterministic trip like an allowlist or budget violation, or an
-  installation retired by a redeploy mid-delivery, parks on the first) and the trigger's cursor moves on. A false `when` is a skip, not a
+  backoff; a deterministic trip like an allowlist or budget violation, an
+  installation retired by a redeploy mid-delivery, or a failure after the body
+  ran an agent, parks on the first) and the trigger's cursor moves on. A false `when` is a skip, not a
   failure, and so is a guarded write that yielded its version race — a race two
   triggers are designed to have is not an operator's problem
   ([two invocations over one record](#two-invocations-over-one-record)).

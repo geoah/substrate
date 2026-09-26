@@ -162,7 +162,7 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	}
 	inv := &invocation{
 		ds: ds, stack: append(slices.Clone(origin.stack), fn.Identity()),
-		causedBy: origin.causedBy, scrub: newScrubber(),
+		causedBy: origin.causedBy, threads: origin.threads, scrub: newScrubber(),
 	}
 	// The runner's `config` field, resolved per invocation (invocationconfig.go):
 	// a bundle function receives its bundle's `inject: functions` inputs,
@@ -232,6 +232,10 @@ type invocation struct {
 	// delivery: an agent a body runs stamps it on every row it writes, so
 	// the causal-depth walk still sees the chain.
 	causedBy int64
+	// threads records the first agent thread a body under this root opened,
+	// nil when nobody asked: the caller that set it on the callOrigin reads
+	// it after a failure (agentThreads).
+	threads *agentThreads
 	// effects accumulates the sub-calls' decoded effects, in call order.
 	// They apply in the CALLER's delivery transaction, before the caller's
 	// own — each decoded against ITS function's capability envelope. A
@@ -293,9 +297,9 @@ func (b *callBackend) ResolveKind(name string) string {
 	return ty.Identity
 }
 
-// Call runs another function to completion inside this invocation. The
-// runner already gated the caller's `permissions.call` allowlist and
-// charged its call budget; the engine's half gates depth, recursion and the
+// Call runs another function to completion inside this invocation, or an
+// agent the caller names under `permissions.agents` (callAgent). The runner
+// already gated the union of the two allowlists and charged its call budget; the engine's half gates depth, recursion and the
 // callee's declared input/output shapes. The callee's effects accumulate on
 // the shared invocation — they apply in the ROOT delivery's transaction —
 // and its output returns to the calling body.
@@ -431,6 +435,13 @@ func (b *callBackend) callAgent(ctx context.Context, ident string, args any) (an
 	if depth >= causalDepthCap {
 		return nil, fmt.Errorf("%w: call to %s at depth %d (cap %d)", errCausalDepth, ag.Identity(), depth, causalDepthCap)
 	}
+	// The input becomes the thread's first message, which commits to the
+	// changelog and goes to the LLM provider: a surface the scrubber cannot
+	// redact in place without changing what the agent is asked, so a secret
+	// in it refuses the call, as a secret in a returned effect does.
+	if b.inv.scrub.found(args) {
+		return nil, fmt.Errorf("call %s: %w", ag.Identity(), errSecretInAgentInput)
+	}
 	user, err := agentUserContent(args)
 	if err != nil {
 		return nil, fmt.Errorf("call %s: %w", ag.Identity(), err)
@@ -444,7 +455,13 @@ func (b *callBackend) callAgent(ctx context.Context, ident string, args any) (an
 	notAfter, _ := ctx.Deadline()
 	res, err := ds.runAgent(context.WithoutCancel(ctx), ag, agentInvocation{
 		mode: "call", user: user, notAfter: notAfter,
-		causedBy: b.inv.causedBy, causalDepth: depth,
+		// The first message is the calling function's, so the thread says
+		// who asked.
+		userActor: substrate.Actor(b.fn.Actor()),
+		causedBy:  b.inv.causedBy, causalDepth: depth,
+		// The first thread binds the caller's retry state to it: a keyed
+		// call's reservation, a delivery's retries (agentThreads).
+		onThread: b.inv.threads.bind,
 		// The agent's function tools and sub-agents keep this chain's stack,
 		// so a tool that names a function already running is refused.
 		callStack: slices.Clone(b.inv.stack),
@@ -463,10 +480,59 @@ func agentStackKey(identity string) string {
 }
 
 // callOrigin is what a function invocation inherits from the chain that
-// started it: the change it answers and the callables already running.
+// started it: the change it answers, the callables already running, and
+// where to record an agent thread the body opens.
 type callOrigin struct {
 	causedBy int64
 	stack    []string
+	threads  *agentThreads
+}
+
+// agentThreads records the first agent thread a function body opened
+// (record 0106). An agent commits its thread, messages and tool effects as
+// it runs, so once a thread exists a retry of the body would repeat those
+// writes. A keyed function call binds its Idempotency-Key reservation to the
+// thread, so a repeat is 409 naming the thread, as it is for an agent call;
+// a trigger delivery parks on the first failure after it instead of retrying
+// (errAgentThreadOpened). A nil *agentThreads records nothing.
+type agentThreads struct {
+	call  *idempotentCall
+	first string
+}
+
+// bind runs inside the transaction that creates an agent's thread. Only the
+// first thread binds; a later one under the same body finds it set.
+func (a *agentThreads) bind(t *txn, threadID string) error {
+	if a == nil || a.first != "" {
+		return nil
+	}
+	if err := a.call.attachThread(t, threadID); err != nil {
+		return err
+	}
+	a.first = threadID
+	return nil
+}
+
+// opened is the first thread's id, empty when no agent ran.
+func (a *agentThreads) opened() string {
+	if a == nil {
+		return ""
+	}
+	return a.first
+}
+
+// errAgentThreadOpened marks a delivery attempt that failed after its body
+// opened an agent thread: the retry loop parks it at once, because a retry
+// would run the agent and its committed writes again.
+var errAgentThreadOpened = errors.New("the body ran an agent before it failed, so the delivery parks instead of retrying")
+
+// agentRetryGate turns a failed delivery attempt whose body opened an agent
+// thread into a parking error that names the thread.
+func agentRetryGate(threads *agentThreads, err error) error {
+	if err == nil || threads.opened() == "" || errors.Is(err, errAgentThreadOpened) {
+		return err
+	}
+	return fmt.Errorf("%w (thread %s): %w", errAgentThreadOpened, threads.opened(), err)
 }
 
 type callOriginKey struct{}
@@ -509,9 +575,14 @@ func (ds *dataset) CallFunction(ctx context.Context, name string, args any) (any
 	// The key is consumed: the body, its host calls and its effects run
 	// without one.
 	ctx = substrate.WithoutIdempotencyKey(ctx)
+	// An agent the body runs binds the reservation to its thread.
+	ctx = withCallOrigin(ctx, callOrigin{threads: &agentThreads{call: call}})
 	output, effects, err := ds.callFunctionOnce(ctx, name, args, call)
 	if err != nil {
-		// Nothing committed: the reservation goes so the retry runs again.
+		// The body's own effects did not commit. The reservation goes so the
+		// retry runs again, unless an agent the body ran opened a thread:
+		// its writes may have committed, and release leaves a thread-bound
+		// row in place (attachThread).
 		call.release(ctx)
 		return nil, 0, err
 	}
