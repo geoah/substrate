@@ -348,8 +348,8 @@ func sweepResolutions(ctx context.Context, svc substrate.Service) {
 // coalescing to one fire.
 //
 // ONE LANE PER REPOSITORY (#639). The control plane lists repositories oldest
-// first, and a pass can run for as long as its slowest trigger's backlog, so a
-// serial walk left a new repository's first delivery waiting behind every
+// first, and a pass once ran for as long as its slowest trigger's backlog, so
+// a serial walk left a new repository's first delivery waiting behind every
 // older repository's whole drain. Now each tick queues one pass for every
 // repository that has none running or queued, and the queue runs up to
 // triggerDispatchPasses passes at once. A pass that ends starts the next
@@ -357,7 +357,10 @@ func sweepResolutions(ctx context.Context, svc substrate.Service) {
 // return quickly every repository still gets a pass per tick, however many
 // repositories there are. A repository never has two passes running or
 // queued, so its triggers keep their one-at-a-time delivery order and no two
-// passes race one repository's cursors.
+// passes race one repository's cursors. What bounds a slot's hold is the
+// engine's per-trigger budget (triggerPassBudget): a pass runs about the sum
+// of its triggers' budgets, overrunning by at most one delivery per trigger,
+// each bounded by the runner's timeout.
 //
 // THE LONGEST WAIT GOES FIRST. A queue filled in listing order would put the
 // oldest repositories ahead on every tick, and the newest would starve behind
