@@ -334,7 +334,7 @@ description = "The CI tasks still set SUBSTRATE_TEST_REQUIRE_SANDBOX, and still 
 run = ".mise/sandboxgatecheck.sh"
 
 [tasks."lint:ci"]
-description = "The CI scripts' own tests: the path gate's verdicts and the shard partition"
+description = "The CI scripts' own tests: the path gate's verdicts, the shard partition and the commit check"
 # .mise/changescheck.sh decides whether the database suite runs at all and
 # .mise/shardselect.sh decides which tests each engine shard runs, so a wrong
 # answer from either is a green build that tested nothing, and nothing else
@@ -394,6 +394,14 @@ run = ".mise/kindscheck.sh"
 [tasks."frozen:check"]
 description = "Refuse an edit to a landed migration or an accepted decision record"
 run = ".mise/frozencheck.sh"
+
+# The third diff guard, and the one the `pr` workflow runs rather than `lint`:
+# it reads the PR title as well as the branch, and the title can change
+# without a push. Every commit subject is held, not only the title, because
+# main takes rebase merges too and a rebase lands each commit as it is.
+[tasks."commits:check"]
+description = "Refuse a PR title or commit subject that is not a conventional commit, or a break with no upgrade note"
+run = ".mise/commitscheck.sh"
 
 # =============================================================================
 # Audit
@@ -665,9 +673,29 @@ run = "goreleaser check"
 description = "Full release dry run: builds everything, publishes nothing"
 run = "goreleaser release --snapshot --clean --skip=publish"
 
+[tasks."repo:settings"]
+description = "Apply .github/rulesets/main.json and the merge buttons to the GitHub repository (admin only; --dry-run prints)"
+# By hand, never from CI: a token that can rewrite the ruleset can lift it.
+run = ".mise/reposettings.sh"
+
+[tasks.changelog]
+description = "Every release's upgrade notes and feat/fix commits, newest first, from docs/changes/ and git"
+# Printed, never written: a CHANGELOG file in the tree is one more thing a
+# merge has to keep true, and the tags and docs/changes/ already are the answer.
+run = ".mise/changelog.sh"
+
 [tasks.release]
 description = "Cut the release for the current tag (CI runs this)"
-run = "goreleaser release --clean"
+# The upgrade notes go above goreleaser's commit list. The header file sits
+# outside the tree because goreleaser refuses a dirty one, and --clean empties
+# dist/.
+run = '''
+    set -euo pipefail
+    header="$(mktemp)"
+    trap 'rm -f "$header"' EXIT
+    .mise/changelog.sh --release "$(git describe --tags --exact-match)" >"$header"
+    goreleaser release --clean --release-header "$header"
+    '''
 
 # =============================================================================
 # The pipeline

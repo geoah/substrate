@@ -2,6 +2,10 @@
 #
 # The CI scripts' own tests.
 #
+# .mise/commitscheck.sh is the third: it decides whether a pull request's
+# titles can be released, so a wrong pass is a release that never happens or
+# a break that ships without its note. Its scenarios are at the end.
+#
 # Two scripts decide what the database suite runs: .mise/changescheck.sh
 # decides whether it runs at all, and .mise/shardselect.sh decides which tests
 # each engine shard runs. A wrong answer from either is a green build that
@@ -17,6 +21,7 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel)" || exit 2
 changescheck="$PWD/.mise/changescheck.sh"
 shardselect="$PWD/.mise/shardselect.sh"
+commitscheck="$PWD/.mise/commitscheck.sh"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -189,5 +194,63 @@ printf '%s\n' "$names" | SHARD=0 SHARDS=8 "$shardselect" >/dev/null 2>&1
 [ $? -eq 2 ] || flag "SHARD=0 was not refused with exit 2"
 printf '%s\n' "$names" | SHARD=30 SHARDS=30 "$shardselect" >/dev/null 2>&1
 [ $? -eq 1 ] || flag "an empty shard (30/30 of 23 names) did not exit 1"
+
+
+# --- the commit and title check -----------------------------------------
+
+# One repository, main with one commit; each scenario is a branch off it with
+# its commits, the check run with an optional PR title, and the exit status
+# it must give.
+crepo="$tmp/commits"
+git init --quiet --initial-branch=main "$crepo"
+cg() { git -C "$crepo" -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false "$@"; }
+mkdir -p "$crepo/docs/changes"
+printf 'seed\n' >"$crepo/docs/changes/README.md"
+cg add -A && cg commit --quiet -m 'chore: seed'
+
+# commits <name> <expected exit> <title or -> <subject|note:type...>: each
+# `note:<type>` adds a note of that type in its own commit, every other word
+# is an empty commit with that subject.
+commits() {
+  local name="$1" expected="$2" title="$3" item status
+  shift 3
+  cg checkout --quiet -b "$name" main
+  for item in "$@"; do
+    if [[ "$item" == note:* ]]; then
+      printf -- '---\ntype: %s\n---\n\n# n\n' "${item#note:}" >"$crepo/docs/changes/${name}.md"
+      cg add -A && cg commit --quiet -m 'docs: add the note'
+    else
+      cg commit --quiet --allow-empty -m "$item"
+    fi
+  done
+  if [ "$title" = "-" ]; then
+    (cd "$crepo" && env -u PR_TITLE -u GITHUB_BASE_REF -u CI COMMITS_CHECK_BASE=main "$commitscheck" 2>"$tmp/stderr")
+  else
+    (cd "$crepo" && env -u GITHUB_BASE_REF -u CI PR_TITLE="$title" COMMITS_CHECK_BASE=main "$commitscheck" 2>"$tmp/stderr")
+  fi
+  status=$?
+  [ "$status" -eq "$expected" ] ||
+    flag "commits ${name}: exit ${status}, expected ${expected}: $(cat "$tmp/stderr")"
+  cg checkout --quiet main
+}
+
+commits title-and-commits-ok 0 'feat(api): add a thing' 'feat(api): add a thing' 'test: cover it'
+commits scope-list-ok 0 'refactor(cli,api): move it' 'refactor(cli,api): move it'
+commits bad-title 1 'Add a thing' 'feat: add a thing'
+commits unknown-type 1 'perf: faster' 'perf: faster'
+commits bad-commit 1 'fix: it' 'fix: it' 'address review'
+commits laptop-no-title 0 - 'fix: it'
+commits break-in-title-no-note 1 'feat!: drop it' 'feat: drop it'
+commits break-in-commit-no-note 1 'feat: drop it' 'feat(api)!: drop it'
+commits break-with-note 0 'feat!: drop it' 'feat!: drop it' note:breaking
+commits break-with-feature-note 1 'feat!: drop it' 'feat!: drop it' note:feature
+
+# A BREAKING CHANGE footer is a break without a `!`.
+cg checkout --quiet -b footer main
+cg commit --quiet --allow-empty -m 'feat: drop it' -m 'BREAKING CHANGE: it is gone'
+if (cd "$crepo" && env -u GITHUB_BASE_REF -u CI PR_TITLE='feat: drop it' COMMITS_CHECK_BASE=main "$commitscheck" >/dev/null 2>&1); then
+  flag "commits footer: a BREAKING CHANGE footer with no note passed"
+fi
+cg checkout --quiet main
 
 exit "$fail"
