@@ -508,12 +508,13 @@ with its own prefixes (`ok`, `ok (partial: …)`, `ok (capped: …)`,
 `ok (deferred: …)`, `erroring: …`). `syncStreams` is declared because the trait
 contracts it and written by nobody: GitHub is one function over one account.
 
-**What this bundle does not do**: no writeback. Deletes are not reconciled,
-because GitHub's search feed carries no tombstones: a deleted issue stops
-updating and its mirror stands, and a hydration read that 404s is counted as
-`unreachable` on `syncStatus` rather than removing the row. There is no comments
-stream, so a `comment` row exists only where an issue embeds a pinned comment,
-and a pull request carries the diff counts and no commit, file or diff rows.
+**What this bundle does not do**: the sync writes nothing back (`submitreview`
+is the one write). Deletes are not reconciled, because GitHub's search feed
+carries no tombstones: a deleted issue stops updating and its mirror stands,
+and a hydration read that 404s is counted as `unreachable` on `syncStatus`
+rather than removing the row. There is no comments stream, so a `comment` row
+exists only where an issue embeds a pinned comment, and a pull request carries
+the diff counts and no commit, file or diff rows.
 
 **Upgrading from version 12.** Version 21 installs nine more kinds: `team`,
 `milestone`, `label`, `review`, `license`, `codeofconduct`, `issuetype`, `app`
