@@ -732,6 +732,35 @@ describe("OwnershipChip", () => {
     expect(chip.querySelector("[data-slot=provider-badge]")).not.toBeNull()
   })
 
+  it("names the mapping a synced value came through", () => {
+    renderSheet(
+      record({
+        linkedFrom: [
+          {
+            ref: `${CONTACT}/c1`,
+            kind: CONTACT,
+            property: "person",
+            mapping: "ada.example.com/people/googlecontactperson",
+          },
+        ],
+        propertyMeta: {
+          location: {
+            manager: GOOGLE_SYNC,
+            tier: "machine",
+            source: `${CONTACT}/c1`,
+          },
+        },
+      })
+    )
+    fireEvent.click(
+      screen.getByRole("button", { name: "Where Location comes from" })
+    )
+    const detail = document.querySelector(
+      "[data-slot=ownership-detail]"
+    ) as HTMLElement
+    expect(detail.textContent).toContain("Linked throughContact → Task")
+  })
+
   it("marks a value a source disagrees with, and adopts the source's", async () => {
     renderSheet(
       held({

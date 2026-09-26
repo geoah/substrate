@@ -11,7 +11,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react"
 import { ChevronDownIcon, ChevronRightIcon, LockIcon } from "lucide-react"
 
 import { InlineEditor } from "./inline-editor"
-import { OwnershipChip, OwnershipDetail } from "./ownership"
+import { OwnershipChip, OwnershipDetail, type Through } from "./ownership"
 import { DeclaredValue, LooseValue } from "./property-value"
 import { editStyle, isBlockValue, propertyIcon } from "./sheet-model"
 import { ago } from "./dates"
@@ -24,9 +24,17 @@ import {
 } from "@/components/identity/identity-hover-card"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
-import { departsFromDefault, holderOf } from "@/lib/provenance"
+import {
+  departsFromDefault,
+  holderOf,
+  mappingLabel,
+  mappingOfSource,
+} from "@/lib/provenance"
+import { splitRecordPath } from "@/lib/record-path"
 import { typeLabel } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
+
+const NO_MAPPINGS: SubstrateRecord[] = []
 
 const LOCK_WORDS: Record<RowLock, string> = {
   managed: "Set automatically",
@@ -123,6 +131,9 @@ export interface PropertySheetProps {
   /** Show who holds every value, not only the values that depart from the
    * owner's own hand. */
   holders?: boolean
+  /** The recordmapping declarations the record's links name, so a synced
+   * value says which mapping brought it. */
+  mappings?: SubstrateRecord[]
 }
 
 export function PropertySheet({
@@ -131,6 +142,7 @@ export function PropertySheet({
   kinds,
   readOnly = false,
   holders = false,
+  mappings = NO_MAPPINGS,
 }: PropertySheetProps) {
   const { all, filled, empty } = useMemo(
     () => sheetRows(record, kind, readOnly),
@@ -185,6 +197,15 @@ export function PropertySheet({
   }
 
   const emptyNames = empty.map((r) => r.spec.label)
+
+  /** The mapping behind a row's synced value, off the record's own links. */
+  function throughOf(row: SheetRow): Through | undefined {
+    const source = row.meta?.source
+    const id = source && mappingOfSource(record.linkedFrom ?? [], source)
+    if (!source || !id) return undefined
+    const from = splitRecordPath(source)?.kind ?? source
+    return { id, label: mappingLabel(id, mappings, from, record.kind) }
+  }
 
   return (
     <div
@@ -309,6 +330,7 @@ export function PropertySheet({
                     row={row}
                     open={detailOpen}
                     onToggle={() => toggleDetail(row.name)}
+                    through={throughOf(row)}
                   />
                 )}
               </div>
@@ -340,6 +362,7 @@ export function PropertySheet({
                 record={record}
                 readOnly={readOnly}
                 onEdit={row.field ? () => setEditing(row.name) : undefined}
+                through={throughOf(row)}
               />
             )}
           </div>

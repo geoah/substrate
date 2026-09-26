@@ -22,6 +22,7 @@ import {
   type SubstrateRecord,
 } from "@/lib/api/types"
 import { recordTitle } from "@/lib/format"
+import { displayName } from "@/lib/kind-names"
 import { splitRecordPath } from "@/lib/record-path"
 
 // ── sources, grouped by mapping ──────────────────────────────────────────────
@@ -148,6 +149,19 @@ export function mappingOfSource(
   source: string
 ): string | undefined {
   return links.find((l) => l.ref === source)?.mapping
+}
+
+/** A mapping in a reader's words: its declared title, else the two kinds it
+ * joins ("Contact → Person"); its id is for technical mode. */
+export function mappingLabel(
+  mapping: string,
+  mappings: readonly SubstrateRecord[],
+  from: string,
+  to: string
+): string {
+  const decl = mappings.find((m) => m.id === mapping)
+  const title = decl && recordTitle(decl.properties)
+  return title || `${displayName(from)} → ${displayName(to)}`
 }
 
 // ── who holds a value ────────────────────────────────────────────────────────

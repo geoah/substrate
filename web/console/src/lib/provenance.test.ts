@@ -7,6 +7,7 @@ import type { LinkedRecord, SubstrateRecord } from "@/lib/api/types"
 import {
   contributesOf,
   groupSources,
+  mappingLabel,
   mappingOfSource,
   sourceTitles,
   departsFromDefault,
@@ -141,6 +142,22 @@ describe("the source lookups", () => {
   it("name the mapping a source came through", () => {
     expect(mappingOfSource(links, `${BEEPER}/u1`)).toBe(BEEPER_MAPPING)
     expect(mappingOfSource(links, `${GITHUB}/gh1`)).toBeUndefined()
+  })
+})
+
+describe("mappingLabel", () => {
+  const PERSON = "ada.example.com/people/person"
+  it("reads a mapping by its title where it has one", () => {
+    const decl = mapping(BEEPER_MAPPING, "Beeper people", BEEPER, {})
+    expect(mappingLabel(BEEPER_MAPPING, [decl], BEEPER, PERSON)).toBe(
+      "Beeper people"
+    )
+  })
+
+  it("says what it joins where it has none", () => {
+    expect(mappingLabel(GITHUB_MAPPING, [], GITHUB, PERSON)).toBe(
+      "User → Person"
+    )
   })
 })
 

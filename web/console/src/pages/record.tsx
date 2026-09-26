@@ -154,6 +154,7 @@ export function RecordDocument({
             kinds={kinds}
             readOnly={readOnly}
             holders={holders}
+            mappings={mappings.data?.records}
           />
           {body && (
             <RecordBody record={record} spec={body} readOnly={readOnly} />

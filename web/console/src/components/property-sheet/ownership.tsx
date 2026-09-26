@@ -16,6 +16,7 @@ import { DeclaredValue } from "./property-value"
 import { type SheetRow } from "./sheet-rows"
 import { useRecordPatch, writeError } from "./use-record-patch"
 import { ActorMark, ActorRef } from "@/components/identity/actor-ref"
+import { IdText } from "@/components/identity/id-text"
 import { IdentityHoverCard } from "@/components/identity/identity-hover-card"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { RecordRef } from "@/components/identity/record-ref"
@@ -104,8 +105,21 @@ function Holding({ meta }: { meta: PropertyMeta }) {
   )
 }
 
-/** One sentence: who holds it and since when, and what the sources say. */
-function summaryOf(meta: PropertyMeta, spec: PropSpec): string {
+/** The mapping that links a synced value's source here. */
+export interface Through {
+  /** The mapping's id, its reference. */
+  id: string
+  /** In a reader's words. */
+  label: string
+}
+
+/** One sentence: who holds it and since when, through which mapping, and
+ * what the sources say. */
+function summaryOf(
+  meta: PropertyMeta,
+  spec: PropSpec,
+  through?: Through
+): string {
   const holder = holderOf(meta)
   const who =
     holder?.mark === "you"
@@ -117,7 +131,8 @@ function summaryOf(meta: PropertyMeta, spec: PropSpec): string {
   const alts = (meta.alternatives ?? [])
     .map((a) => `${sourceName(a.actor)} says “${plain(a.value, spec)}”`)
     .join(". ")
-  return `${who}${when}.${alts ? ` ${alts}.` : ""}`
+  const via = through ? ` Linked through ${through.label}.` : ""
+  return `${who}${when}.${via}${alts ? ` ${alts}.` : ""}`
 }
 
 /** A value in a sentence. */
@@ -133,10 +148,12 @@ export function OwnershipChip({
   row,
   open,
   onToggle,
+  through,
 }: {
   row: SheetRow
   open: boolean
   onToggle: () => void
+  through?: Through
 }) {
   const meta = row.meta
   if (!meta?.manager) return null
@@ -163,7 +180,7 @@ export function OwnershipChip({
               <TierTag tier={meta.tier} actor={meta.manager} />
             </div>
             <div className="text-muted-foreground">
-              {summaryOf(meta, row.spec)}
+              {summaryOf(meta, row.spec, through)}
             </div>
           </div>
           <div className="border-t bg-panel px-3 py-[7px] text-[11.5px] text-faint">
@@ -193,12 +210,21 @@ function Source({ path }: { path: string }) {
   return (
     <>
       <RecordRef kind={target.kind} id={target.id} />
-      {technical && (
-        <span className="font-mono text-[11px] [overflow-wrap:anywhere] text-faint">
-          {path}
-        </span>
-      )}
+      {technical && <IdText value={path} copy className="text-[11px]" />}
     </>
+  )
+}
+
+/** The mapping a synced value came through: its words, and in technical mode
+ * its id to copy. */
+function ThroughLine({ through }: { through: Through }) {
+  const [technical] = useTechnicalDetails()
+  return (
+    <Line>
+      <span>Linked through</span>
+      <b className="font-medium text-foreground">{through.label}</b>
+      {technical && <IdText value={through.id} copy />}
+    </Line>
   )
 }
 
@@ -225,9 +251,12 @@ export function OwnershipDetail({
   record,
   readOnly,
   onEdit,
+  through,
 }: {
   row: SheetRow
   record: SubstrateRecord
+  /** The mapping behind a synced value. */
+  through?: Through
   /** A provider's own copy: no writes offered. */
   readOnly?: boolean
   /** Opens the row's editor ("Use my own value"). */
@@ -290,6 +319,7 @@ export function OwnershipDetail({
           <Source path={meta.source} />
         </Line>
       )}
+      {through && <ThroughLine through={through} />}
       <div className="text-[12.5px] text-faint">
         {readOnly
           ? "This is a copy of what the provider has. Change it there and it updates here."
