@@ -512,7 +512,7 @@ export function RepositoryMenu() {
         <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold">
           {repository}
         </span>
-        <ChevronsUpDownIcon className="size-3.5 shrink-0 text-faint" />
+        <ChevronsUpDownIcon className="size-3.5 shrink-0 text-faint-deco" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         className="min-w-56"

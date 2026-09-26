@@ -272,7 +272,7 @@ function ShellBreadcrumb() {
           return (
             <Fragment key={`${crumb.label}-${i}`}>
               {i > 0 && (
-                <li aria-hidden className="shrink-0 text-faint">
+                <li aria-hidden className="shrink-0 text-faint-deco">
                   /
                 </li>
               )}
