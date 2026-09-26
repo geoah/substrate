@@ -258,3 +258,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0104](0104-a-break-ships-an-upgrade-note-under-docs-changes.md) | A break ships an upgrade note under docs/changes | proposed |
 | [0105](0105-a-lossy-confirmation-binds-to-what-the-plan-affects.md) | A lossy confirmation binds to what the plan affects | accepted |
 | [0106](0106-the-apply-door-holds-back-a-mapping-whose-provider-is-absent.md) | The apply door holds back a mapping whose provider is absent, on request | accepted |
+| [0107](0107-a-probe-folds-case-only-when-it-declares-fold-case.md) | A probe folds case only when it declares `fold: case` | accepted |

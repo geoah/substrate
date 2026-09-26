@@ -1718,6 +1718,11 @@ data:
 `),
 		"onAmbiguous is a word": recperson(`  onAmbiguous: true
 `),
+		// fold is one word (#586, record 0107): a fold past case is a scoring
+		// problem, not a probe's.
+		"unknown fold": recperson(`  match:
+    - {from: "emails[].value", to: emails, fold: accents}
+`),
 	}
 	for name, src := range bad {
 		t.Run(name, func(t *testing.T) {
@@ -1745,6 +1750,22 @@ data:
 		m, ok := reg.MappingFor("x.example.com/x/rec", "person")
 		if !ok || m.OnAmbiguous != tc.want {
 			t.Fatalf("%q: onAmbiguous = %+v, want %s", tc.rules, m, tc.want)
+		}
+	}
+
+	// fold parses to its word, and an absent one compares exactly.
+	for _, tc := range []struct{ rules, want string }{
+		{"  match:\n    - {from: \"emails[].value\", to: emails}\n", ""},
+		{"  match:\n    - {from: \"emails[].value\", to: emails, fold: case}\n", vocabulary.FoldCase},
+	} {
+		fsys := fstest.MapFS{"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(recperson(tc.rules))}}
+		reg, err := vocabulary.LoadFS(fsys)
+		if err != nil {
+			t.Fatalf("load %q: %v", tc.rules, err)
+		}
+		m, ok := reg.MappingFor("x.example.com/x/rec", "person")
+		if !ok || len(m.Match) != 1 || m.Match[0].Fold != tc.want {
+			t.Fatalf("%q: match = %+v, want fold %q", tc.rules, m, tc.want)
 		}
 	}
 

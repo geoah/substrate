@@ -302,7 +302,7 @@ func (t *txn) matchSubject(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapp
 		if !ok {
 			continue
 		}
-		candidates, err := t.probeCandidates(m.To, tp, values)
+		candidates, err := t.probeCandidates(m.To, tp, values, probe.Fold == vocabulary.FoldCase)
 		if err != nil {
 			return "", nil, err
 		}
@@ -362,7 +362,8 @@ func carriesValue(v any) bool {
 }
 
 // probeValues extracts one probe's identifier values from a source record,
-// normalized: strings trimmed, email values lowercased. The loader keeps
+// normalized: strings trimmed, and lowercased where the source property is an
+// email or the probe declares `fold: case` (record 0107). The loader keeps
 // probes in the short-string family, so everything here is a string.
 func probeValues(srcTy *vocabulary.Kind, src *erow, probe vocabulary.MatchRule) []string {
 	sp, _, err := vocabulary.PathProperty(srcTy, probe.From)
@@ -379,7 +380,7 @@ func probeValues(srcTy *vocabulary.Kind, src *erow, probe vocabulary.MatchRule) 
 	for _, item := range items {
 		s, _ := item.(string)
 		s = strings.TrimSpace(s)
-		if sp.Datatype == vocabulary.DatatypeEmail {
+		if sp.Datatype == vocabulary.DatatypeEmail || probe.Fold == vocabulary.FoldCase {
 			s = strings.ToLower(s)
 		}
 		if s == "" || seen[s] {
@@ -394,13 +395,34 @@ func probeValues(srcTy *vocabulary.Kind, src *erow, probe vocabulary.MatchRule) 
 // probeCandidates lists the distinct live records of the target type whose
 // probe property carries any of the values (repeated: containment; scalar:
 // equality).
-func (t *txn) probeCandidates(toIdentity string, tp *vocabulary.Property, values []string) ([]string, error) {
+//
+// A FOLDED probe (`fold: case`, record 0107) compares the stored value
+// lowercased and trimmed too, because the target holds what its writers
+// wrote: a person named `Ada Example` is found by `ada example` only when
+// both ends are folded. The comparison then runs on an expression no index
+// carries, so a folded probe reads every live row of the target kind in the
+// repository; the exact probe keeps its containment and equality.
+func (t *txn) probeCandidates(toIdentity string, tp *vocabulary.Property, values []string, fold bool) ([]string, error) {
 	seen := map[string]bool{}
 	var out []string
 	for _, v := range values {
 		var rows *sql.Rows
 		var err error
-		if tp.Repeated {
+		switch {
+		case fold && tp.Repeated:
+			rows, err = t.query(`
+				SELECT id FROM records
+				WHERE kind = $1 AND deleted_at IS NULL AND EXISTS (
+					SELECT 1 FROM jsonb_array_elements_text(
+						CASE WHEN jsonb_typeof(props->$2) = 'array' THEN props->$2 END) AS item
+					WHERE lower(btrim(item)) = lower($3))
+				ORDER BY id`, toIdentity, tp.Name, v)
+		case fold:
+			rows, err = t.query(`
+				SELECT id FROM records
+				WHERE kind = $1 AND deleted_at IS NULL AND lower(btrim(props->>$2)) = lower($3)
+				ORDER BY id`, toIdentity, tp.Name, v)
+		case tp.Repeated:
 			needle, merr := json.Marshal([]string{v})
 			if merr != nil {
 				return nil, merr
@@ -409,7 +431,7 @@ func (t *txn) probeCandidates(toIdentity string, tp *vocabulary.Property, values
 				SELECT id FROM records
 				WHERE kind = $1 AND deleted_at IS NULL AND props->$2 @> $3::jsonb
 				ORDER BY id`, toIdentity, tp.Name, needle)
-		} else {
+		default:
 			rows, err = t.query(`
 				SELECT id FROM records
 				WHERE kind = $1 AND deleted_at IS NULL AND props->>$2 = $3
@@ -587,7 +609,15 @@ type mappedInputs struct {
 	unionProp map[string]bool
 	// probed is the target properties some mapping's probe matches on, the
 	// ones withheldElsewhere guards.
-	probed map[string]*vocabulary.Property
+	probed map[string]probedProp
+}
+
+// probedProp is one target property some probe matches on, and whether any
+// probe onto it folds case: a value then collides with another target's in
+// any casing, because that is what the folded probe would find.
+type probedProp struct {
+	tp   *vocabulary.Property
+	fold bool
 }
 
 // mappedInputsOf loads a target's mapped inputs, nil when there is nothing to
@@ -642,11 +672,14 @@ func (t *txn) mappedInputsOf(target eref) (*mappedInputs, error) {
 		// A link-only mapping carries structure and copies nothing.
 		return nil, nil
 	}
-	probed := map[string]*vocabulary.Property{}
+	probed := map[string]probedProp{}
 	for _, m := range mappings {
 		for _, probe := range m.Match {
 			if tp, ok := ty.Props[probe.To]; ok {
-				probed[probe.To] = tp
+				pp := probed[probe.To]
+				pp.tp = tp
+				pp.fold = pp.fold || probe.Fold == vocabulary.FoldCase
+				probed[probe.To] = pp
 			}
 		}
 	}
@@ -713,8 +746,8 @@ func (t *txn) recomputeValues(target eref) error {
 			continue // yield: the offer above is the whole record of it
 		}
 		cands := contributionsFor(name, in.srcs)
-		if tp := in.probed[name]; tp != nil {
-			if cands, err = t.withheldElsewhere(in.row, tp, cands); err != nil {
+		if pp, ok := in.probed[name]; ok {
+			if cands, err = t.withheldElsewhere(in.row, pp.tp, pp.fold, cands); err != nil {
 				return err
 			}
 		}
@@ -926,10 +959,10 @@ func contributionOf(s mappedSource, name string) any {
 //
 // Values compare the way a probe compares them (probeKey), because the
 // question is what the next probe would find.
-func (t *txn) withheldElsewhere(target *erow, tp *vocabulary.Property, cands []contribution) ([]contribution, error) {
+func (t *txn) withheldElsewhere(target *erow, tp *vocabulary.Property, fold bool, cands []contribution) ([]contribution, error) {
 	held := map[string]bool{}
 	for _, item := range asItems(target.Props[tp.Name]) {
-		if key, ok := probeKey(tp, item); ok {
+		if key, ok := probeKey(tp, item, fold); ok {
 			held[key] = true
 		}
 	}
@@ -947,13 +980,13 @@ func (t *txn) withheldElsewhere(target *erow, tp *vocabulary.Property, cands []c
 		}
 		kept := make([]any, 0, len(items))
 		for _, item := range items {
-			key, ok := probeKey(tp, item)
+			key, ok := probeKey(tp, item, fold)
 			if !ok || held[key] {
 				kept = append(kept, item)
 				continue
 			}
 			if !decided[key] {
-				holders, err := t.probeCandidates(target.Kind, tp, []string{key})
+				holders, err := t.probeCandidates(target.Kind, tp, []string{key}, fold)
 				if err != nil {
 					return nil, err
 				}
@@ -983,15 +1016,15 @@ func (t *txn) withheldElsewhere(target *erow, tp *vocabulary.Property, cands []c
 }
 
 // probeKey is one value as a probe looks it up: a trimmed string, lowercased
-// for an email property, and not a probe value at all when it is empty or not
-// a string.
-func probeKey(tp *vocabulary.Property, v any) (string, bool) {
+// for an email property or a folded probe, and not a probe value at all when
+// it is empty or not a string.
+func probeKey(tp *vocabulary.Property, v any, fold bool) (string, bool) {
 	s, ok := v.(string)
 	if !ok {
 		return "", false
 	}
 	s = strings.TrimSpace(s)
-	if tp.Datatype == vocabulary.DatatypeEmail {
+	if tp.Datatype == vocabulary.DatatypeEmail || fold {
 		s = strings.ToLower(s)
 	}
 	return s, s != ""

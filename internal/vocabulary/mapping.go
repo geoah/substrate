@@ -82,7 +82,14 @@ func (m *Mapping) Identity() string { return m.Package + "/" + m.Name }
 type MatchRule struct {
 	From Path
 	To   string
+	// Fold is FoldCase when the probe compares case-insensitively on both
+	// ends (#586, record 0107); empty compares exactly.
+	Fold string
 }
+
+// FoldCase is the one fold a probe may declare: both the source value and the
+// target's stored value are lowercased before they are compared.
+const FoldCase = "case"
 
 // MapRule is one target property's assignment.
 type MapRule struct {
@@ -190,7 +197,7 @@ var mappingDataKeys = map[string]bool{
 	"match": true, "map": true, "description": true, "onAmbiguous": true,
 }
 
-var matchRuleKeys = map[string]bool{"from": true, "to": true}
+var matchRuleKeys = map[string]bool{"from": true, "to": true, "fold": true}
 
 var mapRuleKeys = map[string]bool{"path": true, "merge": true}
 
@@ -283,7 +290,15 @@ func (l *loader) parseMapping(d Document) *Mapping {
 			l.errf("%s.to: %q must be %s", mwhere, to, camelRule)
 			continue
 		}
-		m.Match = append(m.Match, MatchRule{From: from, To: to})
+		fold := ""
+		if raw, set := md["fold"]; set {
+			if v, _ := raw.(string); v != FoldCase {
+				l.errf("%s.fold: %v is not a fold: the one fold is \"case\"", mwhere, raw)
+				continue
+			}
+			fold = FoldCase
+		}
+		m.Match = append(m.Match, MatchRule{From: from, To: to, Fold: fold})
 	}
 	for tname, rv := range mmap(d.Data, "map") {
 		mwhere := fmt.Sprintf("%s: data.map.%s", where, tname)
