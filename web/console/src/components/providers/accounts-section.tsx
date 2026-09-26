@@ -173,7 +173,7 @@ function AccountRow({
               words.tone === "active" && "animate-pulse bg-primary",
               words.tone === "warn" && "bg-warning",
               words.tone === "bad" && "bg-destructive",
-              words.tone === "muted" && "bg-faint"
+              words.tone === "muted" && "bg-faint-deco"
             )}
           />
           <ToneText
