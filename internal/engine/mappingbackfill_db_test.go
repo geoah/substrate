@@ -88,10 +88,19 @@ func TestInstallingAMappingLinksTheSourcesThatAlreadyExist(t *testing.T) {
 		t.Fatalf("person manager = %q, want %q", full.PropertyMeta["person"].Manager, want)
 	}
 
-	// A second apply of the same closure finds nothing to link and mints
-	// nothing.
+	// A second apply of the same closure finds nothing to link, mints
+	// nothing and writes no card.
+	versions := map[string]int64{}
+	for _, id := range []string{"card-ada", "card-grace", "card-empty"} {
+		versions[id] = mustGet(t, ds, typeSlotlessCard, id).Version
+	}
 	if err := enginetest.DeclareMappings(ctx, ds, slotlessMapping()); err != nil {
 		t.Fatalf("re-apply the card mapping: %v", err)
+	}
+	for id, v := range versions {
+		if got := mustGet(t, ds, typeSlotlessCard, id).Version; got != v {
+			t.Fatalf("a re-apply wrote %s: version %d, want %d", id, got, v)
+		}
 	}
 	if n := len(livePersons(t, ds)); n != 2 {
 		t.Fatalf("%d live persons after a re-apply, want 2", n)
@@ -118,6 +127,9 @@ func TestReapplyingAMappingLinksASourceItParked(t *testing.T) {
 	})
 	if got := cardSubject(t, ds, "card-fam"); got != "" {
 		t.Fatalf("an ambiguous probe under park linked %s", got)
+	}
+	if got := ambiguousIDs(t, ds, typeSlotlessCard, true); len(got) != 1 || got[0] != "card-fam" {
+		t.Fatalf("ambiguous sources = %v, want card-fam", got)
 	}
 
 	if _, err := ds.Delete(ctx, owner, typePerson, b.ID, substrate.DeleteInput{}); err != nil {

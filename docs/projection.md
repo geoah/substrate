@@ -212,7 +212,12 @@ substratectl apply -f people.yaml    # the package closure, recordmapping includ
 
 A source that is already linked is not touched, so a second apply links
 nothing new and mints nothing. The cost is one probe per unlinked source, in
-the apply's transaction.
+the apply's transaction, while every other write to the repository waits for
+the apply. Two side effects: a slot naming a **deleted** subject counts as
+unlinked, so each such apply mints a fresh subject for that source, as the
+source's own write would; and a link bumps the source's `version` and
+`updated_at`, so it becomes the newest writer for its target's `atomic`
+properties.
 
 ### When a probe finds several candidates: `onAmbiguous`
 

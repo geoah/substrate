@@ -313,7 +313,7 @@ func TestTheAmbiguityMarkIsDerivedAgain(t *testing.T) {
 	svc, ds := newDataset(t)
 	installVerbatimContacts(t, ds)
 	const addr = "family@example.com"
-	twoAlexes(t, ds, addr)
+	oldest, _ := twoAlexes(t, ds, addr)
 	mustPut(t, ds, book, substrate.PutInput{
 		Kind: typeVerbatimContact, ID: "c1",
 		Properties: map[string]any{"names": gnames("The Family"), "emailAddresses": gaddresses(addr)},
@@ -333,13 +333,27 @@ func TestTheAmbiguityMarkIsDerivedAgain(t *testing.T) {
 		t.Fatalf("ambiguous sources after a rebuild = %v, want c1", got)
 	}
 
+	// A mapping change that still parks c1 re-reads the mark for every
+	// source of the kind, and the apply's backfill (decision record 0106)
+	// probes c1 again and leaves it unlinked.
+	edited := verbatimContactMappingOn("park")
+	edited["data"].(map[string]any)["description"] = "Contacts project onto people."
+	if err := enginetest.DeclareMappings(ctx, ds, edited); err != nil {
+		t.Fatalf("declare the edited mapping: %v", err)
+	}
+	if got := ambiguousIDs(t, ds, typeVerbatimContact, true); len(got) != 1 || got[0] != "c1" {
+		t.Fatalf("ambiguous sources after a mapping edit = %v, want c1 still", got)
+	}
+
 	// Switching the policy is an apply of the mapping, and that apply links
 	// the unlinked sources under the new policy (decision record 0106): c1
 	// takes the oldest Alex and its mark clears in the same transaction.
 	if err := enginetest.DeclareMappings(ctx, ds, verbatimContactMappingOn("oldest")); err != nil {
 		t.Fatalf("declare oldest: %v", err)
 	}
-	personOf(t, ds, mustGet(t, ds, typeVerbatimContact, "c1"))
+	if got := personOf(t, ds, mustGet(t, ds, typeVerbatimContact, "c1")); got != oldest.ID {
+		t.Fatalf("c1 names person %q, want the oldest Alex %q", got, oldest.ID)
+	}
 	if got := ambiguousIDs(t, ds, typeVerbatimContact, true); len(got) != 0 {
 		t.Fatalf("ambiguous sources after the linking apply = %v, want none", got)
 	}
