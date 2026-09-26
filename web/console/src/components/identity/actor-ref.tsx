@@ -34,7 +34,8 @@ export function ActorMark({
   identity,
   size = "sm",
 }: {
-  identity: ActorIdentity
+  /** Who: their class, and the provider behind them when there is one. */
+  identity: Pick<ActorIdentity, "cls" | "provider">
   size?: "xs" | "sm" | "md" | "lg"
 }) {
   if (identity.provider) {

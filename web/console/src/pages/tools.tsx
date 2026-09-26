@@ -7,9 +7,10 @@ import { Link } from "@tanstack/react-router"
 import { IdText } from "@/components/identity/id-text"
 import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
+import { OriginMark } from "@/components/identity/origin-mark"
 import { Pill } from "@/components/identity/pill"
 import { SectionHead } from "@/components/identity/section-head"
-import { OriginTag, ToolTile } from "@/components/tools/tool-marks"
+import { ToolTile } from "@/components/tools/tool-marks"
 import {
   agentName,
   useTools,
@@ -108,7 +109,7 @@ function ToolCard({
       </p>
       {technical && <IdText value={tool.ref} />}
       <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-faint">
-        <OriginTag origin={tool.origin} className="text-xs" />
+        <OriginMark origin={tool.origin} className="text-muted-foreground" />
         <span aria-hidden>·</span>
         <span>
           {users.length

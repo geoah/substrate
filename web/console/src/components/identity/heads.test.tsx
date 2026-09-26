@@ -7,9 +7,11 @@
 import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 
+import { OriginMark } from "./origin-mark"
 import { PageHeader } from "./page-header"
 import { Pill } from "./pill"
 import { SectionHead } from "./section-head"
+import { providerInfo } from "@/lib/actor-identity"
 
 afterEach(cleanup)
 
@@ -124,5 +126,30 @@ describe("Pill", () => {
     expect(
       screen.getByText("Syncing…").querySelector("[aria-hidden]")!.className
     ).toContain("motion-safe:animate-pulse")
+  })
+})
+
+describe("OriginMark", () => {
+  it("marks yours with a person, never a letter, and says Yours", () => {
+    const { container } = render(<OriginMark origin={{ kind: "yours" }} />)
+    expect(screen.getByText("Yours")).toBeTruthy()
+    expect(
+      container
+        .querySelector('[data-slot="actor-mark"]')!
+        .getAttribute("data-actor")
+    ).toBe("you")
+  })
+
+  it("marks a provider's with its badge, and a chip says the name alone", () => {
+    const { container } = render(
+      <OriginMark
+        origin={{ kind: "provider", provider: providerInfo("google") }}
+        short
+      />
+    )
+    expect(screen.getByText("Google")).toBeTruthy()
+    expect(
+      container.querySelector('[data-slot="provider-badge"]')
+    ).not.toBeNull()
   })
 })
