@@ -31,8 +31,17 @@ set -uo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
 
+# The suite runs at a lower CPU priority on a developer's machine, so the
+# processes sharing it (an editor, the agents' own server) stay responsive
+# while sixteen tests and a compile compete for the cores.
+# SUBSTRATE_TEST_DB_NICE=0 turns it off; CI does not use it.
+nice_cmd=()
+if [ "${CI:-}" != "true" ] && [ "${SUBSTRATE_TEST_DB_NICE:-10}" != "0" ] && command -v nice >/dev/null 2>&1; then
+  nice_cmd=(nice -n "${SUBSTRATE_TEST_DB_NICE:-10}")
+fi
+
 run() {
-  "$@" &
+  "${nice_cmd[@]}" "$@" &
   child=$!
   trap 'kill -TERM "$child" 2>/dev/null' TERM INT HUP
   while :; do
