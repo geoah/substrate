@@ -417,7 +417,7 @@ func TestIdempotencyKeyRetryPresentsTheSameDownstreamKey(t *testing.T) {
 	ctx := context.Background()
 	kctx := substrate.WithIdempotencyKey(ctx, "echo-dk")
 	echoed := func(ctx context.Context) string {
-		out, _, err := ds.CallFunction(ctx, crewPackage+"/keyecho", nil)
+		out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, crewPackage+"/keyecho", nil)
 		if err != nil {
 			t.Fatalf("keyecho: %v", err)
 		}

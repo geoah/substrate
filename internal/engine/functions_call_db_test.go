@@ -10,6 +10,8 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -34,7 +36,7 @@ def main(input, host):
 	ctx := context.Background()
 
 	// Valid input, faulting body: the run reached the body and it raised.
-	_, _, err := ds.CallFunction(ctx, fnPackage+"/boom", map[string]any{"title": "ok"})
+	_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/boom", map[string]any{"title": "ok"})
 	if err == nil {
 		t.Fatal("a raising body returned no error")
 	}
@@ -46,7 +48,7 @@ def main(input, host):
 	}
 
 	// Missing the required argument refuses BEFORE the body runs, as validation.
-	_, _, err = ds.CallFunction(ctx, fnPackage+"/boom", map[string]any{})
+	_, _, err = ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/boom", map[string]any{})
 	if !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("missing required input is %v, want ErrValidation", err)
 	}
@@ -80,7 +82,7 @@ func TestCallModeValidatesAndApplies(t *testing.T) {
 
 	// A valid call: input passes the schema, effects apply under the
 	// function's actor, the output comes back shaped.
-	out, effects, err := ds.CallFunction(ctx, fnPackage+"/adder", map[string]any{"title": "from a call"})
+	out, effects, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/adder", map[string]any{"title": "from a call"})
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -95,7 +97,8 @@ func TestCallModeValidatesAndApplies(t *testing.T) {
 	if len(rows) != 1 || rows[0].RecordID != id {
 		t.Fatalf("call attribution: %+v", rows)
 	}
-	// Direct invocations mint nothing on the run ledger.
+	// A direct call of a function without a network grant mints nothing on
+	// the run ledger: its effects are its whole trace (decision record 0106).
 	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{triggerRunType}}, First: 10})
 	if err != nil || len(page.Records) != 0 {
 		t.Fatalf("a call minted run rows: %+v %v", page.Records, err)
@@ -108,9 +111,202 @@ func TestCallModeValidatesAndApplies(t *testing.T) {
 		"undeclared key":   map[string]any{"title": "x", "extra": true},
 		"not an object":    "just a string",
 	} {
-		if _, _, err := ds.CallFunction(ctx, fnPackage+"/adder", args); err == nil {
+		if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/adder", args); err == nil {
 			t.Fatalf("%s: invalid input accepted", name)
 		}
+	}
+}
+
+// networkedFn is sender, a function that declares permissions.network and
+// behaves by its input: {"title": t} writes one task and answers {"sent": t},
+// {"big": n} answers n bytes and writes nothing, {"fail": true} raises.
+func networkedFn() map[string]any {
+	fn := pyFn("sender", map[string]any{}, []any{taskType}, `
+def main(input, host):
+    args = input["args"]
+    if args.get("fail"):
+        raise Exception("the provider refused the send")
+    if "big" in args:
+        return {"output": {"blob": "x" * args["big"]}}
+    tid = "sent-" + args["title"]
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
+                         "id": tid, "properties": {"name": args["title"]}}],
+            "output": {"sent": args["title"]}}
+`)
+	fnPermissions(fn["data"].(map[string]any))["network"] = []any{"api.example.com"}
+	return fn
+}
+
+// callRuns lists the run ledger's call-mode rows, oldest first.
+func callRuns(t *testing.T, ds substrate.Dataset) []*substrate.Record {
+	t.Helper()
+	page, err := ds.List(context.Background(), substrate.Query{
+		Filter:  substrate.Filter{Kinds: []string{triggerRunType}},
+		OrderBy: []substrate.Order{{Property: "createdAt"}},
+		First:   50,
+	})
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	var out []*substrate.Record
+	for _, r := range page.Records {
+		if r.Properties["mode"] == "call" {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// A direct call of a networked function leaves one run row (#645): the
+// callable, the caller, the token, the time, the status and the output, in
+// the commit that applies its effects. A failed body leaves a failed row, and
+// an output past the cap lands as its size alone.
+func TestNetworkedCallWritesRunRow(t *testing.T) {
+	t.Parallel()
+	// relay has no network grant of its own and calls sender, which does.
+	relay := pyFn("relay", map[string]any{}, []any{taskType}, `
+def main(input, host):
+    return {"output": host.call("`+fnPackage+`/sender", input["args"])}
+`)
+	fnPermissions(relay["data"].(map[string]any))["call"] = []any{fnPackage + "/sender"}
+	ds := newFnDataset(t, nil, networkedFn(), relay)
+	ctx := substrate.WithPrincipal(context.Background(), "tok-645")
+	name := fnPackage + "/sender"
+
+	if _, n, err := ds.CallFunction(ctx, substrate.ActorConsole, name, map[string]any{"title": "hello"}); err != nil || n != 1 {
+		t.Fatalf("call: %d %v", n, err)
+	}
+	runs := callRuns(t, ds)
+	if len(runs) != 1 {
+		t.Fatalf("call runs after one call: %d", len(runs))
+	}
+	p := runs[0].Properties
+	want := map[string]any{
+		"status": "ok", "caller": "console", "principal": "tok-645",
+		"callable": name,
+	}
+	for k, v := range want {
+		if p[k] != v {
+			t.Fatalf("run %s = %v, want %v (%+v)", k, p[k], v, p)
+		}
+	}
+	if ref, _ := p["callableRef"].(map[string]any); ref["ref"] != "substrate.reamde.dev/core/function/"+name {
+		t.Fatalf("run callableRef: %+v", p["callableRef"])
+	}
+	if _, ok := p["trigger"]; ok {
+		t.Fatalf("a call run names a trigger: %+v", p)
+	}
+	if out, _ := p["output"].(map[string]any); out["sent"] != "hello" {
+		t.Fatalf("run output: %+v", p["output"])
+	}
+	if eff, _ := p["effects"].(map[string]any); fmt.Sprint(eff["put"]) != "1" {
+		t.Fatalf("run effects: %+v", p["effects"])
+	}
+	if p["startedAt"] == nil || p["finishedAt"] == nil {
+		t.Fatalf("run times: %+v", p)
+	}
+
+	// A large output keeps its size and not its value; no effects, one row.
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, name, map[string]any{"big": 5000}); err != nil {
+		t.Fatalf("big call: %v", err)
+	}
+	// A body that raises: the call fails and its run row says so.
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, name, map[string]any{"fail": true}); !errors.Is(err, substrate.ErrFunctionFault) {
+		t.Fatalf("failing call: %v", err)
+	}
+	// A call of relay reaches the network through sender: one row, relay's.
+	if _, n, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/relay", map[string]any{"title": "via"}); err != nil || n != 1 {
+		t.Fatalf("relay call: %d %v", n, err)
+	}
+	runs = callRuns(t, ds)
+	if len(runs) != 4 {
+		t.Fatalf("call runs after four calls: %d", len(runs))
+	}
+	if got := runs[3].Properties["callable"]; got != fnPackage+"/relay" {
+		t.Fatalf("relay run callable: %v", got)
+	}
+	big, bad := runs[1].Properties, runs[2].Properties
+	if _, kept := big["output"]; kept || big["status"] != "ok" {
+		t.Fatalf("big run: %+v", big)
+	}
+	if n, err := strconv.Atoi(fmt.Sprint(big["outputBytes"])); err != nil || n <= 5000 {
+		t.Fatalf("big run outputBytes: %v", big["outputBytes"])
+	}
+	reason, _ := bad["reason"].(string)
+	if bad["status"] != "failed" || !strings.Contains(reason, "the provider refused the send") {
+		t.Fatalf("failed run: %+v", bad)
+	}
+}
+
+// The edges of a networked call's run row (#645): a call refused on its input
+// never ran and writes none, an output outside `returns:` writes a failed row,
+// and a keyed call replayed under the same Idempotency-Key writes one row.
+func TestNetworkedCallRunRowEdges(t *testing.T) {
+	t.Parallel()
+	shaped := []any{map[string]any{"name": "sent", "type": "string", "required": true}}
+	fn := pyFn("shaped", map[string]any{
+		"arguments": []any{map[string]any{"name": "title", "type": "string", "required": true}},
+		"returns":   shaped,
+	}, []any{taskType}, `
+def main(input, host):
+    title = input["args"]["title"]
+    if title == "wrong":
+        return {"output": {"sent": 5}}
+    return {"output": {"sent": title}}
+`)
+	fnPermissions(fn["data"].(map[string]any))["network"] = []any{"api.example.com"}
+	ds := newFnDataset(t, nil, fn)
+	name := fnPackage + "/shaped"
+
+	if _, _, err := ds.CallFunction(context.Background(), substrate.ActorAPI, name, map[string]any{"title": 5}); err == nil {
+		t.Fatal("a call with input outside `arguments:` ran")
+	}
+	if runs := callRuns(t, ds); len(runs) != 0 {
+		t.Fatalf("a call refused on its input wrote a run row: %+v", runs)
+	}
+
+	if _, _, err := ds.CallFunction(context.Background(), substrate.ActorAPI, name, map[string]any{"title": "wrong"}); err == nil {
+		t.Fatal("an output outside `returns:` passed")
+	}
+	runs := callRuns(t, ds)
+	if len(runs) != 1 || runs[0].Properties["status"] != "failed" {
+		t.Fatalf("an output outside `returns:` left no failed row: %+v", runs)
+	}
+
+	ctx := keyed("call-645-replay")
+	for i := range 2 {
+		out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, name, map[string]any{"title": "once"})
+		if err != nil {
+			t.Fatalf("keyed call %d: %v", i, err)
+		}
+		if got, _ := out.(map[string]any); got["sent"] != "once" {
+			t.Fatalf("keyed call %d output: %+v", i, out)
+		}
+	}
+	if runs := callRuns(t, ds); len(runs) != 2 {
+		t.Fatalf("a replayed keyed call wrote another row: %d call runs, want 2", len(runs))
+	}
+
+	// An output no row stores (a NUL) still settles: the row keeps its size.
+	out, _, err := ds.CallFunction(context.Background(), substrate.ActorAPI, name, map[string]any{"title": "a\x00b"})
+	if err != nil {
+		t.Fatalf("a call whose output carries a NUL failed: %v", err)
+	}
+	if got, _ := out.(map[string]any); got["sent"] != "a\x00b" {
+		t.Fatalf("NUL call output: %+v", out)
+	}
+	runs = callRuns(t, ds)
+	if len(runs) != 3 {
+		t.Fatalf("the NUL call wrote %d call runs in all, want 3", len(runs))
+	}
+	var bare []map[string]any
+	for _, r := range runs {
+		if _, kept := r.Properties["output"]; !kept && r.Properties["status"] == "ok" {
+			bare = append(bare, r.Properties)
+		}
+	}
+	if len(bare) != 1 || bare[0]["outputBytes"] == nil {
+		t.Fatalf("want one ok row with outputBytes and no output (the NUL call's), got %+v", bare)
 	}
 }
 
@@ -238,7 +434,7 @@ def main(input, host):
 	ctx := context.Background()
 
 	for _, mid := range []string{"raiser", "badeffect", "badoutput"} {
-		if _, _, err := ds.CallFunction(ctx, fnPackage+"/catcher", map[string]any{"mid": mid}); err != nil {
+		if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/catcher", map[string]any{"mid": mid}); err != nil {
 			t.Fatalf("%s: the catching caller failed: %v", mid, err)
 		}
 		if _, err := ds.Get(ctx, taskType, "a-"+mid); err != nil {
@@ -282,23 +478,23 @@ def main(input, host):
 	ctx := context.Background()
 
 	// Top level: omitted and explicit-null both refuse, and no effects land.
-	if _, _, err := ds.CallFunction(ctx, fnPackage+"/silent", nil); err == nil ||
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/silent", nil); err == nil ||
 		!strings.Contains(err.Error(), "output") {
 		t.Fatalf("an omitted output passed the declared shape: %v", err)
 	}
 	if _, err := ds.Get(ctx, taskType, "silent-effect"); err == nil {
 		t.Fatal("effects applied under a refused output")
 	}
-	if _, _, err := ds.CallFunction(ctx, fnPackage+"/nuller", nil); err == nil ||
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/nuller", nil); err == nil ||
 		!strings.Contains(err.Error(), "output") {
 		t.Fatalf("an explicit null passed the declared shape: %v", err)
 	}
 	// An undeclared result side stays open.
-	if _, _, err := ds.CallFunction(ctx, fnPackage+"/anyout", nil); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/anyout", nil); err != nil {
 		t.Fatalf("any refused nil: %v", err)
 	}
 	// Nested: the host Call surfaces the same violation to the caller.
-	if _, _, err := ds.CallFunction(ctx, fnPackage+"/nestcaller", nil); err == nil ||
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/nestcaller", nil); err == nil ||
 		!strings.Contains(err.Error(), "output") {
 		t.Fatalf("a nested omitted output passed: %v", err)
 	}
@@ -325,7 +521,7 @@ def main(input, host):
     return {"output": [k1, k2]}
 `)
 	ds := newFnDataset(t, nil, echo, twice)
-	out, _, err := ds.CallFunction(context.Background(), fnPackage+"/twice", nil)
+	out, _, err := ds.CallFunction(context.Background(), substrate.ActorAPI, fnPackage+"/twice", nil)
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}

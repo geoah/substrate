@@ -191,7 +191,7 @@ func TestBundleSettingsInjectIntoFunctionsAndAreScrubbed(t *testing.T) {
 		Kind: settingKind, ID: "loose", Properties: map[string]any{"value": "unowned"},
 	})
 
-	out, _, err := ds.CallFunction(ctx, stReportFn, map[string]any{})
+	out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, stReportFn, map[string]any{})
 	if err != nil {
 		t.Fatalf("call report: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestABundleWithNoSettingsInjectsNoSettingsKey(t *testing.T) {
 	ctx := context.Background()
 	ds := installSettingsBundle(t)
 
-	out, _, err := ds.CallFunction(ctx, stReportFn, map[string]any{})
+	out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, stReportFn, map[string]any{})
 	if err != nil {
 		t.Fatalf("call report: %v", err)
 	}

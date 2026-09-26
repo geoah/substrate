@@ -1271,11 +1271,14 @@ const (
 	runStatusOK      = "ok"
 	runStatusSkipped = "skipped"
 	runStatusParked  = "parked"
+	// runStatusFailed is a call run's alone: the body ran and failed, so
+	// nothing applied. A delivery that fails is retried and parks instead.
+	runStatusFailed = "failed"
 )
 
 // runRecord is one settled delivery attempt, about to become a run record.
 type runRecord struct {
-	trigger string
+	trigger string // empty on a call run, which no trigger fired
 	// callable is the callable's RECORD path, not its id: the run stores it
 	// twice (putRun says why) and one field is what keeps the two agreeing.
 	callable  string
@@ -1289,6 +1292,11 @@ type runRecord struct {
 	errMsg    string
 	effects   map[string]int
 	pages     int // committed pages for a paged (backfill) delivery; >1 only when the body paged
+	// A call run's audit (callrun.go): the door the call came through, the
+	// token behind it, and what it returned.
+	caller    substrate.Actor
+	principal string
+	output    *callOutput
 }
 
 // putRun writes one run record inside the caller's transaction.
@@ -1307,7 +1315,6 @@ func (t *txn) putRun(r runRecord) error {
 		return fmt.Errorf("run callable %q is not a record path", r.callable)
 	}
 	props := map[string]any{
-		"trigger":     vocabulary.RecordPath(typeTrigger, r.trigger),
 		"callable":    callableID,
 		"callableRef": r.callable,
 		"mode":        r.mode,
@@ -1315,6 +1322,21 @@ func (t *txn) putRun(r runRecord) error {
 		"attempt":     r.attempt,
 		"startedAt":   r.startedAt.Format(time.RFC3339Nano),
 		"finishedAt":  t.now.Format(time.RFC3339Nano),
+	}
+	if r.trigger != "" {
+		props["trigger"] = vocabulary.RecordPath(typeTrigger, r.trigger)
+	}
+	if r.caller != "" {
+		props["caller"] = string(r.caller)
+	}
+	if r.principal != "" {
+		props["principal"] = r.principal
+	}
+	if r.output != nil {
+		props["outputBytes"] = r.output.bytes
+		if r.output.kept {
+			props["output"] = r.output.value
+		}
 	}
 	if r.seq > 0 {
 		props["seq"] = r.seq
@@ -2012,7 +2034,7 @@ func (ds *dataset) ReplayTrigger(ctx context.Context, id string, from int64) err
 
 // RunTrigger synthesizes one delivery of a record's current state through a
 // trigger — the record's latest change replayed through the callable, cursor
-// untouched, no run row (direct invocations mint nothing durable). The
+// untouched, no run row (a manual run mints nothing durable). The
 // source filter is deliberately not applied — a manual run is the owner's
 // hand — but the guard still is: manual runs answer "would it fire".
 func (ds *dataset) RunTrigger(ctx context.Context, id, recordKind, recordID string) (int, error) {

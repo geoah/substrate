@@ -406,7 +406,7 @@ The contract, per key:
   its key lasts its own deadline plus a minute of slack (a function call adds
   two minutes for provisioning a PEP 723 body before its timeout starts); a
   claim a dead server left behind is cleared when the repository next opens.
-- A failed attempt stores nothing. A `422`, a `500 function_failed` or a
+- A failed attempt stores no outcome. A `422`, a `500 function_failed` or a
   connection lost before the commit leaves no key behind, and the retry runs
   the operation again.
 - An agent call binds its key to the thread the moment the thread opens,

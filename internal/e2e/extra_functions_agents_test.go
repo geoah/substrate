@@ -42,7 +42,7 @@ func init() {
 		xfCaseFunctionCall)
 	registerCase(510, "FN-02", "A raising function is a failure the caller sees",
 		"A body that raises answers 500 `function_failed` carrying the exception, never a 2xx and never "+
-			"the 422 an input-schema violation would be; the direct call path writes no run record.",
+			"the 422 an input-schema violation would be; a direct call of a function with no network grant writes no run record.",
 		xfCaseFunctionFault)
 	registerCase(520, "FN-03", "The host functions on the direct call API",
 		"`query` reads a record through the call API under the token's own reach, while `propose` and "+
@@ -267,13 +267,13 @@ func xfCaseFunctionFault(c *C) {
 		"the refusal does not carry the body's own exception: %s", fail.Error.Message)
 	c.stepf("a body raising `RuntimeError(\"deliberate\")` answered 500 `function_failed` carrying the exception, not the 422 a bad input would be")
 
-	// The observability side: `CallFunction` (internal/engine/runner.go) is
-	// documented as "no cursor motion, no run row", and a direct call is not a
-	// delivery. There is nothing to read, and this asserts that rather than
-	// skipping it.
+	// The observability side: a direct call is not a delivery, and
+	// `CallFunction` writes a run row only for a function with a network
+	// grant (decision record 0106). This body has none, so there is nothing to
+	// read, and this asserts that rather than skipping it.
 	c.requiref(xfRunsFor(c, xfPkg+"/alwaysfails") == runsBefore,
-		"the direct call wrote a run record; the call API records no delivery")
-	c.stepf("the failed call left NO run record behind: a direct call is not a delivery, and only a trigger delivery writes the run ledger")
+		"the direct call of a function with no network grant wrote a run record")
+	c.stepf("the failed call left NO run record behind: a direct call of a function with no network grant writes nothing to the run ledger")
 }
 
 // --- FN-03 --------------------------------------------------------------
