@@ -338,7 +338,6 @@ function MintForm({ onMinted }: { onMinted: (m: MintedToken) => void }) {
         <FieldLabel htmlFor="expires">Expires</FieldLabel>
         <Input
           id="expires"
-          className="font-mono"
           placeholder="2027-01-31"
           aria-invalid={expiryInvalid}
           value={expiresAt}

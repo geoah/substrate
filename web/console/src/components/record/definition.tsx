@@ -60,7 +60,9 @@ function Section({
     <section className="flex flex-col">
       <h2 className="px-6 pt-4 pb-1 text-xs font-medium text-muted-foreground">
         {title}
-        {count !== undefined && <span className="ml-1.5 data">{count}</span>}
+        {count !== undefined && (
+          <span className="ml-1.5 tabular-nums">{count}</span>
+        )}
       </h2>
       {children}
     </section>

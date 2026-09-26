@@ -26,6 +26,7 @@ import type {
   SuggestedMapping,
 } from "@/lib/api/types"
 import { kindByIdentity, kindPackage, splitKind } from "@/lib/definition"
+import { displayPlural } from "@/lib/kind-names"
 import { kindHasTrait } from "@/lib/sync"
 
 /** One bundle row: the installed status (when the lifecycle knows it) and the
@@ -167,6 +168,14 @@ export function upgradeBlocked(row: Pick<BundleRow, "upgrade">): boolean {
 export const FAILED_PREVIEW_BLOCKER =
   "the upgrade preview failed; see the server log"
 
+/** A blocker line as the reader sees it: the server's fixed failed-preview
+ * line is keyed on verbatim, so it is reworded here, never on the wire. */
+export function blockerWords(line: string): string {
+  return line === FAILED_PREVIEW_BLOCKER
+    ? "The update couldn’t be checked."
+    : line
+}
+
 export function previewFailed(row: Pick<BundleRow, "upgrade">): boolean {
   return row.upgrade?.blockers?.includes(FAILED_PREVIEW_BLOCKER) ?? false
 }
@@ -201,24 +210,23 @@ export function upgradableBundleCount(catalog: CatalogItem[]): number {
  * before it makes it, and a lossy step says so. Empty when nothing moves. */
 export function stepLines(plan: ConversionPlan | undefined): string[] {
   return (plan?.steps ?? []).map((s) => {
-    const n = `${s.records} live ${s.records === 1 ? "record" : "records"}`
+    const n = `${s.records} ${s.records === 1 ? "record" : "records"}`
+    const where = s.kind ? ` in ${displayPlural(s.kind)}` : ""
     switch (s.step) {
       case "move":
-        return `moves ${n} from ${s.from} to ${s.to}, repointing every reference`
+        return `Moves ${n} from ${displayPlural(s.from ?? "")} to ${displayPlural(s.to ?? "")}; every reference follows`
       case "rename":
-        return `renames ${s.from} to ${s.to} on ${s.kind}: ${n} rewritten`
+        return `Renames ${s.from} to ${s.to} on ${n}${where}`
       case "backfill":
-        return `backfills ${s.property} with its default on ${s.kind}: ${n} rewritten`
+        return `Fills in ${s.property} with its default on ${n}${where}`
       case "enter":
-        return `enters ${s.property} at ${s.to} on ${s.kind}: ${n} rewritten`
+        return `Sets ${s.property} to ${s.to} on ${n}${where}`
       case "remap":
-        return `rewrites ${s.property} ${s.from} to ${s.to} on ${s.kind}: ${n} rewritten${
-          s.lossy
-            ? " (lossy: the records holding either value become one set)"
-            : ""
+        return `Changes ${s.property} from ${s.from} to ${s.to} on ${n}${where}${
+          s.lossy ? "; afterwards the two can’t be told apart" : ""
         }`
       default:
-        return `drops ${s.property} on ${s.kind}: its value leaves ${n} (lossy: the values stay in the changelog only)`
+        return `Removes ${s.property} from ${n}${where}; the old values stay in History`
     }
   })
 }
@@ -333,34 +341,6 @@ function andList(names: string[]): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
 }
 
-/** What the row's own button will do about what is missing, in one sentence:
- * the whole requirement closure is taken first, leaves first, and then the
- * bundle itself. A package held below the floor the closure puts under it
- * (`requiresAtLeast`, decision record 0070) is taken AGAIN rather than taken,
- * so it says both versions. Empty string when nothing is missing. */
-export function chainHint(
-  missing: Requirement[],
-  verb: string,
-  name: string
-): string {
-  if (!missing.length) return ""
-  const tooOld = (r: Requirement) =>
-    r.atLeast !== undefined && r.held !== undefined && r.held < r.atLeast
-  const parts: string[] = []
-  const absent = missing.filter((r) => !tooOld(r))
-  if (absent.length) {
-    parts.push(
-      `${verb} all takes ${andList(absent.map((r) => r.package))} first, in that order, then ${name}.`
-    )
-  }
-  for (const r of missing.filter(tooOld)) {
-    parts.push(
-      `${r.package} is here at version ${r.held} and this bundle needs version ${r.atLeast} or later, so it is imported again.`
-    )
-  }
-  return parts.join(" ")
-}
-
 /** One node of the TRANSITIVE requirement closure: a required package, what it
  * requires in turn, and the catalog row that supplies it. The wire's
  * `requires` is direct only, so the chain is walked here: importing a bundle
@@ -458,7 +438,7 @@ export function importPlan(
   if (loops.length) {
     return {
       bundles: [],
-      refusal: `${andList([...new Set(loops)])} require each other, so there is no order to import them in. Nothing is imported.`,
+      refusal: `${andList([...new Set(loops)])} require each other, so there is no order to add them in. Nothing is added.`,
     }
   }
   const missing = missingChain(chain)
@@ -466,7 +446,7 @@ export function importPlan(
   if (absent.length) {
     return {
       bundles: [],
-      refusal: `${andList(absent)} ${absent.length === 1 ? "is" : "are"} not in the catalog, so ${absent.length === 1 ? "it" : "they"} cannot be imported from here. Nothing is imported.`,
+      refusal: `${andList(absent)} ${absent.length === 1 ? "is" : "are"} not in the catalog, so ${absent.length === 1 ? "it" : "they"} cannot be added from here. Nothing is added.`,
     }
   }
   return {
@@ -506,7 +486,7 @@ function packageWord(pkg: string): string {
  * the package rather than merging into it (decision record 0048), so a kind or
  * a property the reader added since is dropped by it. */
 export const REIMPORT_WARNING =
-  "Importing again replaces the package and may remove your changes."
+  "Adding it again replaces the package and may remove your changes."
 
 /** What a SAMPLE's mappings do, in one sentence: which provider's records it
  * links onto which of its own kinds, and what makes one land. A provider
@@ -528,7 +508,7 @@ export function mappingLinksSentence(row: BundleRow): string {
   ])
   return (
     `Links ${sources} records onto ${targets}. ` +
-    `Each link lands when that provider is installed and this sample is imported again.`
+    `Each link lands when that provider is installed and this sample is added again.`
   )
 }
 
@@ -564,9 +544,7 @@ export function importFailureLines(error: unknown): string[] {
   }
   const message = (error as { message?: unknown } | undefined)?.message
   return [
-    typeof message === "string" && message
-      ? message
-      : "The import was refused.",
+    typeof message === "string" && message ? message : "It couldn’t be added.",
   ]
 }
 

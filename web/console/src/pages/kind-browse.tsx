@@ -431,7 +431,7 @@ export function KindBrowsePage() {
       <PageEmpty
         icon={<SearchXIcon />}
         title="This collection didn't load"
-        description="The list of kinds didn't come back, and this page needs it to know what the collection is."
+        description="The list of collections didn’t load, and this page needs it."
       >
         <Button
           variant="outline"
@@ -449,7 +449,7 @@ export function KindBrowsePage() {
       <PageEmpty
         icon={<SearchXIcon />}
         title="No such collection"
-        description={`This repository has no kind called ${authority}/${pkg}/${name}.`}
+        description={`This repository has no collection called ${authority}/${pkg}/${name}.`}
       />
     )
   }

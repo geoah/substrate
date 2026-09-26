@@ -615,7 +615,7 @@ function checkItem(spec: PropSpec, value: unknown): string | undefined {
       const held = value as Record<string, unknown>
       for (const [name, field] of Object.entries(held)) {
         const declared = spec.fields.find((f) => f.name === name)
-        if (!declared) return `\`${name}\` is not a declared field`
+        if (!declared) return `\`${name}\` is not a declared property`
         const problem = checkValue(declared, field)
         if (problem) return underField(name, problem)
       }

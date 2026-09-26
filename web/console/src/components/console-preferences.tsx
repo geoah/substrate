@@ -135,7 +135,7 @@ export function ConsolePreferencesProvider({
                 query.isError ? void query.refetch() : failed && change(failed)
               }
             >
-              Retry
+              Try again
             </button>
           </div>
         )}

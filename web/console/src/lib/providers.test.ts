@@ -316,7 +316,7 @@ describe("providerStanding", () => {
         { id: "google-contacts-scheduled", parked: 0 },
       ],
     })
-    expect(s.line).toBe("3 runs failed and are waiting to be retried")
+    expect(s.line).toBe("3 runs failed and are waiting to be tried again")
     expect(s.problems[0].fixes).toEqual(["retry-parked"])
   })
 
@@ -364,7 +364,7 @@ describe("providerStanding", () => {
       triggers: [{ id: "t", parked: 1 }],
     })
     expect(s.line).toBe(
-      "1 run failed and is waiting to be retried · and 1 more"
+      "1 run failed and is waiting to be tried again · and 1 more"
     )
   })
 

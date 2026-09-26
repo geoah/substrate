@@ -571,7 +571,10 @@ export function validate(
     if (field.control === "secret") {
       const filled = typeof value === "string" && value.length > 0
       if (mode === "create" && !filled) {
-        errors.push({ name: field.name, message: `${field.name} is required.` })
+        errors.push({
+          name: field.name,
+          message: `${field.label} is required.`,
+        })
       }
       continue
     }
@@ -579,7 +582,7 @@ export function validate(
     if (submitted.error) {
       errors.push({
         name: field.name,
-        message: `${field.name}: ${submitted.error}.`,
+        message: `${field.label}: ${submitted.error}.`,
       })
       continue
     }
@@ -588,12 +591,12 @@ export function validate(
     // what the controls hold, and only the declaration knows what is missing.
     const deep = checkValue(field.spec, submitted.value)
     if (deep) {
-      errors.push({ name: field.name, message: `${field.name}: ${deep}.` })
+      errors.push({ name: field.name, message: `${field.label}: ${deep}.` })
       continue
     }
     if (!field.required || field.control === "bool") continue
     if (submitted.value === undefined || submitted.value === null) {
-      errors.push({ name: field.name, message: `${field.name} is required.` })
+      errors.push({ name: field.name, message: `${field.label} is required.` })
     }
   }
   return errors

@@ -93,10 +93,11 @@ function LayoutRows() {
         }
       />
       <SettingRow
-        title="Row height"
+        title="Table rows"
+        description="How tall each row is in a collection’s table and in All data."
         control={
           <Segmented
-            label="Row height"
+            label="Table row height"
             value={density}
             options={DENSITIES}
             onChange={setDensity}

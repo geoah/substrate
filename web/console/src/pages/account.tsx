@@ -83,7 +83,7 @@ export function AccountRows() {
     <>
       <SettingRow
         title={
-          <span className="font-mono text-[13px]">
+          <span className="[overflow-wrap:anywhere]">
             {repository || "unknown"}
           </span>
         }

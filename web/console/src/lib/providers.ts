@@ -329,8 +329,8 @@ export function standingProblems(s: StandingInput): ProviderProblem[] {
       code: "parked",
       summary:
         parked === 1
-          ? "1 run failed and is waiting to be retried"
-          : `${parked} runs failed and are waiting to be retried`,
+          ? "1 run failed and is waiting to be tried again"
+          : `${parked} runs failed and are waiting to be tried again`,
       fixes: ["retry-parked"],
     })
   }

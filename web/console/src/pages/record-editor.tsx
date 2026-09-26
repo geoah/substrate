@@ -262,7 +262,7 @@ export function RecordEditorForm({
       if (parsed.error || !parsed.value) {
         throw new ApiError(
           "validation",
-          parsed.error?.message ?? "The document did not parse.",
+          parsed.error?.message ?? "The YAML didn’t parse.",
           0
         )
       }
@@ -624,7 +624,7 @@ function ProblemsList({
           {serverError.problems.length > 0 && (
             <ul className="mt-2 flex flex-col gap-1">
               {serverError.problems.map((p, i) => (
-                <li key={i} className="data text-xs text-muted-foreground">
+                <li key={i} className="text-xs text-muted-foreground">
                   {p}
                 </li>
               ))}
@@ -703,7 +703,7 @@ function ProblemRow({
           <button
             type="button"
             onClick={onShowLine}
-            className="ml-1.5 data text-muted-foreground underline-offset-4 hover:underline"
+            className="ml-1.5 text-muted-foreground underline-offset-4 hover:underline"
           >
             line {problem.line}
           </button>
@@ -728,9 +728,7 @@ function EditorEmpty({
             <FileQuestionIcon />
           </EmptyMedia>
           <EmptyTitle>{title}</EmptyTitle>
-          <EmptyDescription>
-            <span className="data">{description}</span>
-          </EmptyDescription>
+          <EmptyDescription>{description}</EmptyDescription>
         </EmptyHeader>
       </Empty>
     </div>

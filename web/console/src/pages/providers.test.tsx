@@ -478,7 +478,7 @@ describe("ProvidersPage", () => {
     // Only its own triggers count.
     expect(
       await within(google).findByText(
-        "2 runs failed and are waiting to be retried"
+        "2 runs failed and are waiting to be tried again"
       )
     ).toBeTruthy()
   })

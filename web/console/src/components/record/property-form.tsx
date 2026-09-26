@@ -67,8 +67,8 @@ export function PropertyForm({
   if (properties === undefined) {
     return (
       <div className="p-6 text-sm text-muted-foreground">
-        This document does not parse yet, so the form cannot read it. Fix the
-        YAML and the fields come back.
+        This YAML doesn’t parse yet, so the properties can’t be shown. Fix it
+        and they come back.
       </div>
     )
   }

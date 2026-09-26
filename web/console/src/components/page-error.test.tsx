@@ -29,7 +29,8 @@ describe("PageError", () => {
     const reset = vi.fn()
     render(<PageError error={new Error("kaboom")} reset={reset} />)
     expect(screen.getByText("This page couldn’t be shown")).toBeTruthy()
-    expect(screen.getByText(/kaboom/)).toBeTruthy()
+    // An error message is prose, never the monospace voice of an id.
+    expect(screen.getByText(/kaboom/).className).not.toMatch(/font-mono/)
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
     expect(reset).toHaveBeenCalled()
   })

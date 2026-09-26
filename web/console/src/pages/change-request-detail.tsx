@@ -432,7 +432,7 @@ export function ChangeRequestDetailPage() {
             fits it. Nothing was written.
           </p>
           {technical && (
-            <p className="font-mono text-xs [overflow-wrap:anywhere]">
+            <p className="text-xs [overflow-wrap:anywhere]">
               {conflict.reason}
             </p>
           )}
@@ -445,9 +445,7 @@ export function ChangeRequestDetailPage() {
             applied. Dismiss it, or ask the agent again.
           </p>
           {technical && (
-            <p className="font-mono text-xs">
-              op: {String(request.properties.op)}
-            </p>
+            <p className="text-xs">op: {String(request.properties.op)}</p>
           )}
         </Warning>
       )}
@@ -752,7 +750,7 @@ function AlsoChanges({ diff }: { diff: ProposedDiff }) {
                   <span className="max-w-60 font-mono text-xs [overflow-wrap:anywhere] text-muted-foreground">
                     {key}
                   </span>
-                  <span className="min-w-0 font-mono text-xs [overflow-wrap:anywhere]">
+                  <span className="min-w-0 text-xs [overflow-wrap:anywhere]">
                     {value === null
                       ? "removed"
                       : typeof value === "string"
@@ -826,12 +824,7 @@ function TechnicalDetails({
       <IdText value={`${CORE_PACKAGE}/${CR_NAME}/${request.id}`} copy />,
     ],
     ["Request version", String(request.version)],
-    [
-      "Op",
-      <span className="font-mono text-xs">
-        {op ?? String(request.properties.op)}
-      </span>,
-    ],
+    ["Op", <span>{op ?? String(request.properties.op)}</span>],
   ]
   if (target) {
     facts.push([

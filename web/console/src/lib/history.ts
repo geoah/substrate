@@ -324,7 +324,7 @@ function runCallable(
 /** How each console layout setting reads inside the parenthesis: the
  * words the Settings page labels it with. */
 const LAYOUT_WORDS: Record<string, string> = {
-  density: "row height",
+  density: "table rows",
   recordWidth: "record page width",
   tableWidth: "table width",
   theme: "appearance",

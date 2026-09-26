@@ -302,7 +302,7 @@ data:
 
   it("says so rather than guessing when the document does not parse", () => {
     renderForm("data:\n  properties:\n    a: [1, 2")
-    expect(screen.getByText(/does not parse/)).toBeTruthy()
+    expect(screen.getByText(/doesn’t parse yet/)).toBeTruthy()
     expect(screen.queryByLabelText(/^Name/)).toBeNull()
   })
 })

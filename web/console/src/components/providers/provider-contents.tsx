@@ -5,6 +5,7 @@
  * purpose. A kind a provider's functions write says when it last synced. ITS TOOLS: the functions it ships, each with when it runs and how
  * its last run went, linking to the tool's own page. */
 
+import { useState } from "react"
 import { useQueries, useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 
@@ -35,6 +36,7 @@ import {
   toolActivity,
 } from "@/lib/providers"
 import { kindDescription } from "@/lib/kind-copy"
+import { cn } from "@/lib/utils"
 
 const PURPOSE_WORD = {
   primary: "Collection",
@@ -79,6 +81,38 @@ function lineText(line: KindLine, technical: boolean): string | undefined {
     line.kind ?? line.reference,
     technical,
     line.description
+  )
+}
+
+/** Past this many characters a description likely runs over two lines. The
+ * whole paragraph belongs on the kind's Definition tab, so the list shows two
+ * and a disclosure. */
+const LONG_DESCRIPTION = 140
+
+function TwoLines({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  const long = text.length > LONG_DESCRIPTION
+  return (
+    <>
+      <p
+        className={cn(
+          "mt-0.5 text-muted-foreground",
+          long && !open && "line-clamp-2"
+        )}
+      >
+        {text}
+      </p>
+      {long && (
+        <button
+          type="button"
+          aria-expanded={open}
+          className="cursor-pointer text-[12.5px] text-faint underline-offset-2 hover:text-foreground hover:underline"
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? "less" : "more"}
+        </button>
+      )}
+    </>
   )
 }
 
@@ -158,18 +192,17 @@ export function BringsIn({
             >
               <div className="min-w-0">
                 <KindRef kind={line.kind ?? line.reference} link={installed} />
-                {lineText(line, technical) && (
-                  <p
-                    className={
-                      technical
-                        ? "mt-0.5 text-muted-foreground"
-                        : "mt-0.5 line-clamp-1 text-muted-foreground"
-                    }
-                    title={technical ? undefined : line.description}
-                  >
-                    {lineText(line, technical)}
-                  </p>
-                )}
+                {lineText(line, technical) &&
+                  (technical ? (
+                    <TwoLines text={lineText(line, technical)!} />
+                  ) : (
+                    <p
+                      className="mt-0.5 line-clamp-1 text-muted-foreground"
+                      title={line.description}
+                    >
+                      {lineText(line, technical)}
+                    </p>
+                  ))}
                 {targets.map((t) => (
                   <p
                     key={t}

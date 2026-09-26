@@ -23,6 +23,7 @@ import {
 } from "lucide-react"
 
 import { ImportRefusal } from "@/components/import-refusal"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog, PauseDialog } from "@/components/ui/confirm-dialog"
 import { Spinner } from "@/components/ui/spinner"
@@ -58,6 +59,8 @@ import {
   missingChain,
   needsConfirmation,
   previewFailed,
+  blockerWords,
+  FAILED_PREVIEW_BLOCKER,
   readyMappings,
   REIMPORT_WARNING,
   stepLines,
@@ -70,11 +73,6 @@ import { cn } from "@/lib/utils"
 
 /** The words a row's door is called by: a provider is ADDED (the everyday
  * word for its install), a sample IMPORTED. */
-function doorWords(row: BundleRow) {
-  return row.tier === "sample"
-    ? { verb: "Import", doing: "Importing", done: "imported" }
-    : { verb: "Add", doing: "Adding", done: "added" }
-}
 
 /** Take a row's shipped closure through its own door, with the consent its
  * preview needs: the install verb for a provider, the import verb for a
@@ -134,7 +132,7 @@ export function TakeButton({
 }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const words = doorWords(row)
+  const [technical] = useTechnicalDetails()
   const called = name ?? row.name
   const plan = useMemo(() => importPlan(row, chain), [row, chain])
   // A REF, not state: the dialog's confirm runs the mutation in the same
@@ -181,8 +179,10 @@ export function TakeButton({
             ? row.tier === "sample"
               ? // A sample lands under THIS repository's authority, not the
                 // id the reader clicked (decision record 0048).
-                `${called} imported as ${landed.id}.`
-              : `${called} ${words.done}.`
+                technical
+                ? `${called} added as ${landed.id}.`
+                : `${called} added.`
+              : `${called} added.`
             : `${called} and ${plan.bundles.length - 1} ${
                 plan.bundles.length === 2 ? "package" : "packages"
               } it needs are here.`,
@@ -213,19 +213,18 @@ export function TakeButton({
       const failed = error instanceof ChainFailure ? error : undefined
       toast.add({
         type: "error",
-        title: `${words.doing} ${failed?.bundle ?? called} failed`,
+        title: `Adding ${failed?.bundle ?? called} failed`,
         description: <ImportRefusal error={failed?.cause ?? error} />,
       })
     },
   })
   // "all" is about what the row NEEDS, not what the plan managed to order.
-  const word =
-    label ?? (missingChain(chain).length > 0 ? `${words.verb} all` : words.verb)
+  const word = label ?? (missingChain(chain).length > 0 ? "Add all" : "Add")
   const start = () => {
     if (plan.refusal) {
       toast.add({
         type: "error",
-        title: `${called} cannot be ${words.done} from here`,
+        title: `${called} cannot be added from here`,
         description: plan.refusal,
       })
       return
@@ -254,7 +253,7 @@ export function TakeButton({
         ) : (
           <PlusIcon aria-hidden />
         )}
-        {taking.isPending ? `${words.doing}…` : word}
+        {taking.isPending ? "Adding…" : word}
       </Button>
       {asking && (
         <ConfirmDialog
@@ -263,7 +262,7 @@ export function TakeButton({
             `${asking.map((b) => b.id).join(", ")} ` +
             `${asking.length === 1 ? "is" : "are"} here at a version this cannot use, and ` +
             `${asking.length === 1 ? "it was" : "they were"} edited since ${asking.length === 1 ? "it" : "they"} arrived. ` +
-            `Taking ${asking.length === 1 ? "it" : "them"} again replaces the package instead of merging into it, so those edits go with it. ` +
+            `Adding ${asking.length === 1 ? "it" : "them"} again replaces the package instead of merging into it, so those edits go with it. ` +
             `Your records are untouched.`
           }
           confirm={word}
@@ -427,7 +426,7 @@ export function LossyUpgradeDialog({
     toast.add({
       type: "success",
       title: `Updating ${called} now loses nothing`,
-      description: "Press Update to take it.",
+      description: "Press Update to get it.",
     })
   }, [lossless, onClose, called])
   if (!row || lossless) return null
@@ -445,7 +444,7 @@ export function LossyUpgradeDialog({
       }
       consequence={
         (upgrade?.discardsEdits
-          ? `You edited ${row.id} since you imported it. Updating replaces the package with the shipped one, so your edits go with it. Your records are untouched. `
+          ? `You edited ${row.id} since you added it. Updating replaces the package with the shipped one, so your edits go with it. Your records are untouched. `
           : "") +
         (upgrade?.lossy
           ? `Updating rewrites ${upgrade?.work ?? 0} ${
@@ -490,7 +489,10 @@ export function UpgradeBlockedNote({
   row: BundleRow
   className?: string
 }) {
-  const blockers = row.upgrade?.blockers ?? []
+  // The heading already says a preview failed; its fixed line adds nothing.
+  const blockers = (row.upgrade?.blockers ?? []).filter(
+    (b) => b !== FAILED_PREVIEW_BLOCKER
+  )
   return (
     <div
       role="note"
@@ -510,10 +512,7 @@ export function UpgradeBlockedNote({
             : "An update is waiting. Some of your records still hold something it would drop."}
         </p>
         {blockers.map((b) => (
-          <p
-            key={b}
-            className="font-mono text-xs break-words text-muted-foreground"
-          >
+          <p key={b} className="text-xs break-words text-muted-foreground">
             {b}
           </p>
         ))}
@@ -547,15 +546,12 @@ export function PendingUpgradeNotice({ item }: { item: ShippedUpgrade }) {
           {motion ? ` (version ${motion})` : ""}{" "}
           {refused
             ? "was refused when the server started. Fix what the lines below name, then start the server again."
-            : "lands when the server starts again. Until then this repository runs on the kinds it already stores."}
+            : "lands when the server starts again. Until then everything works as it does now."}
         </p>
         {[...(refused ? blockers : []), ...stepLines(item.upgrade)].map(
           (line) => (
-            <p
-              key={line}
-              className="font-mono text-xs break-words text-muted-foreground"
-            >
-              {line}
+            <p key={line} className="text-xs break-words text-muted-foreground">
+              {blockerWords(line)}
             </p>
           )
         )}
@@ -780,8 +776,8 @@ export function ImportAgainNote({ item }: { item: CatalogItem }) {
         type: "success",
         title:
           ready.length === 1
-            ? `${item.name} imported again: 1 link landed.`
-            : `${item.name} imported again: ${ready.length} links landed.`,
+            ? `${item.name} added again: 1 link landed.`
+            : `${item.name} added again: ${ready.length} links landed.`,
       })
       seedBundleStatus(queryClient, status)
       void queryClient.invalidateQueries()
@@ -790,7 +786,7 @@ export function ImportAgainNote({ item }: { item: CatalogItem }) {
     onError: (error) => {
       toast.add({
         type: "error",
-        title: `Could not import ${item.name} again`,
+        title: `Couldn’t add ${item.name} again`,
         description: <ImportRefusal error={error} />,
       })
     },
@@ -805,7 +801,7 @@ export function ImportAgainNote({ item }: { item: CatalogItem }) {
       <div className="min-w-0 text-[13px]">
         <p className="font-medium">Links waiting</p>
         <p className="text-muted-foreground">
-          {`Import again to land ${what}, now that ${providers} ${
+          {`Add it again to land ${what}, now that ${providers} ${
             ready.length === 1 ? "is" : "are"
           } here. ${REIMPORT_WARNING}`}
         </p>
@@ -817,18 +813,18 @@ export function ImportAgainNote({ item }: { item: CatalogItem }) {
         onClick={() => setConfirming(true)}
       >
         {importing.isPending && <Spinner className="size-3.5" />}
-        Import again
+        Add again
       </Button>
       {confirming && (
         <ConfirmDialog
-          title={`Import ${item.name} again?`}
+          title={`Add ${item.name} again?`}
           consequence={
             `This lands ${what}, now that the provider each one reads is here. ` +
-            `Importing again REPLACES ${item.id} rather than merging into it: a kind or a property you added is dropped by it, ` +
-            `and it is refused outright while your records still hold a shape the shipped package no longer declares. ` +
+            `Adding it again REPLACES ${item.id} rather than merging into it: a collection or a property you added is dropped by it, ` +
+            `and it is refused outright while your records still hold something the shipped package no longer has. ` +
             `Your records are untouched either way.`
           }
-          confirm="Import again"
+          confirm="Add again"
           pending={importing.isPending}
           onConfirm={() => importing.mutate()}
           onClose={() => setConfirming(false)}
