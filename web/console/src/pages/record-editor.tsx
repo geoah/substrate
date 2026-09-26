@@ -141,15 +141,15 @@ function RecordEditor({
   if (registry.isError || !kindInfo) {
     return (
       <EditorEmpty
-        title="No such kind"
-        description={`This repository has no kind called ${authority}/${name}.`}
+        title="This collection isn’t here"
+        description={`${authority}/${pkg}/${name}`}
       />
     )
   }
   if (mode === "edit" && record.isError) {
     return (
       <EditorEmpty
-        title="The record didn't load"
+        title="Couldn’t load this record"
         description={`${authority}/${name}/${id}: ${record.error.message}`}
       />
     )
