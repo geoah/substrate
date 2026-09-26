@@ -152,6 +152,9 @@ output applies back unchanged.
   move a state), `--prop` for properties, `--label` for labels, and `-p` for a
   raw JSON patch, where a null value deletes a key.
 - `delete <kind> <id>` tombstones; hard deletion waits on finalizers.
+  `--purge` collects the record now, so the next `apply` at the id is a fresh
+  record rather than a restore of the tombstone
+  ([api](api.md#the-five-mutations)); a record a finalizer holds refuses it.
 
 A pointer at another record is a property, so `apply` and `patch` write it like
 any other value: `--prop project=infra7` against a pinned declaration, or the

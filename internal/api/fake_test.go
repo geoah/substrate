@@ -695,6 +695,11 @@ func (d *fakeDataset) Delete(ctx context.Context, _ substrate.Actor, typ, id str
 	if err := fakeCAS(e, in.IfVersion); err != nil {
 		return nil, err
 	}
+	// A purge collects the row now, unless a finalizer holds it (the
+	// engine's purgeNow): then nothing changes, the tombstone included.
+	if in.Purge && len(e.Finalizers) > 0 {
+		return nil, fmt.Errorf("%w: record %s is held by finalizers", substrate.ErrConflict, id)
+	}
 	// The tombstone moves the version, as the engine's does (rows.go), so a
 	// retried conditioned delete meets the same conflict here; a delete of a
 	// tombstone is the engine's no-op and moves nothing.
@@ -702,6 +707,9 @@ func (d *fakeDataset) Delete(ctx context.Context, _ substrate.Actor, typ, id str
 		now := time.Unix(10, 0).UTC()
 		e.DeletedAt = &now
 		e.Version++
+	}
+	if in.Purge {
+		delete(d.records, id)
 	}
 	return e, nil
 }

@@ -127,7 +127,7 @@ writes a rule that matches nothing. Here is one act across all four:
 | ----------------------------- | -------------------------------------------------- | -------------------------------- | ----------------------- | --------------------------- |
 | a record comes into existence | `put`, with `created: true` in the payload         | `put`, `patch`                   | `create`                | `create`                    |
 | an existing record changes    | `put`, `patch`, `merge`, `split`                   | `put`, `patch`                   | `patch`                 | `update`                    |
-| a record goes away            | `delete`, and `gc` on the collector's pass         | `delete`                         | `delete`                | `delete`                    |
+| a record goes away            | `delete`, and `gc` on a sweep or a purge           | `delete`                         | `delete`                | `delete`                    |
 
 Merge and split are the two rows the table cannot hold, because each one
 changes two records under one entry. A merge tombstones the loser under the

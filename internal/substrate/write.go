@@ -37,13 +37,22 @@ type PatchInput struct {
 	IfVersion *int64 `json:"ifVersion,omitempty"`
 }
 
-// DeleteInput is a delete's precondition. IfVersion holds the tombstone to the
+// DeleteInput is a delete's options. IfVersion holds the tombstone to the
 // version the caller read: a record edited since fails the whole delete with
 // ErrConflict and stays live, as a put or patch under IfVersion would. Nil
 // checks nothing. A delete addressed through a former id compares the
 // canonical record, because that is the row the tombstone lands on.
+//
+// Purge collects the record now instead of at the sweep: the tombstone lands
+// if the record was live, then the row is hard-deleted as the garbage
+// collector would, so the next put at the id creates a fresh record that
+// resolves its subject again (decision 0107). A record a finalizer holds is
+// refused with ErrConflict and nothing changes. A purge addressed through a
+// former id is refused with ErrConflict naming the canonical id, and a
+// declaration record is refused with ErrValidation.
 type DeleteInput struct {
 	IfVersion *int64 `json:"ifVersion,omitempty"`
+	Purge     bool   `json:"purge,omitempty"`
 }
 
 // MergeInput names the two records a merge joins: identity is the (kind, id)

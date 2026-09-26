@@ -29,7 +29,7 @@ POST   /api/v1/records                            # create; the body names `kind
 GET    /api/v1/{authority}/{package}/{kind}/{id}
 PUT    /api/v1/{authority}/{package}/{kind}/{id}  # upsert at the given id
 PATCH  /api/v1/{authority}/{package}/{kind}/{id}  # patch, including state transitions
-DELETE /api/v1/{authority}/{package}/{kind}/{id}  # soft delete; ?ifVersion= guards it
+DELETE /api/v1/{authority}/{package}/{kind}/{id}  # soft delete; ?ifVersion= guards it, ?purge=true collects it now
 ```
 
 There is no per-kind list route: `/api/v1/{authority}/{package}/{kind}` names
@@ -304,6 +304,34 @@ history, and a reference another record still holds resolves to the new one.
 Ids are stable while a record exists; they are not promised unique across
 time, so a writer that composes an id from a provider's key may delete and
 recreate at will.
+
+`DELETE ?purge=true` runs that purge in the delete itself, so a writer can
+start a record over: the tombstone lands if the record was live, what it owns
+through `onDelete: cascade` is tombstoned for the sweep, the row is
+hard-deleted, and the changelog records a `gc` entry with reason `purged`.
+The next `put` at the id creates a fresh record, and a mapping source
+resolves its subject again through the probes, which is how one identity is
+re-resolved after a mapping's probes improve; the old subject is not deleted
+or re-pointed. On a kind a mapping points at, that `put` is refused like any
+client-supplied create id ([idempotency](#idempotency-and-retries)), so a
+purged subject comes back through `POST` with a new id. `purge` takes `true`
+or `1`, and `false` or `0` is a plain delete; it combines with `ifVersion`.
+A retried purge answers `404 not found`, because the record no longer exists.
+A record a finalizer holds answers `409 conflict` and nothing changes, the
+tombstone included: delete it without `purge`, wait for the finalizers to
+release, then purge. A purge through a merge loser's former id answers `409
+conflict` naming the canonical id, because the former id resolves to the
+winner. A declaration record answers `422 validation`: it leaves through
+admission
+([decision record 0107](decisions/0107-a-delete-may-purge-so-a-put-starts-the-record-over.md)).
+Purging an account runs its whole `onDelete: cascade` inside the request,
+under the repository's write lock, and the mirrors it owns are only
+tombstoned: a sync within the sweep window restores them with their old
+properties and subjects, so purge those mirrors first when they must start
+over too. `purge` is a REST and `substratectl` option only: an agent's
+`write` tool and a function's `delete` effect always delete plainly, because
+a purge cannot be undone. It differs from the bundle lifecycle's `purge`
+([bundles](bundles.md)), which tombstones a bundle's records for the sweep.
 
 A `patch` onto a tombstone is refused `404 not found` and changes nothing:
 a patch edits a record that exists, and a tombstone is gone to every list.
