@@ -6,11 +6,12 @@
 
 import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { Link, useNavigate } from "@tanstack/react-router"
+import { useNavigate } from "@tanstack/react-router"
 import {
   CodeIcon,
+  CopyPlusIcon,
+  LinkIcon,
   MoreHorizontalIcon,
-  PencilIcon,
   Trash2Icon,
   UserRoundIcon,
 } from "lucide-react"
@@ -42,9 +43,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Spinner } from "@/components/ui/spinner"
+import { toast } from "@/components/ui/toast"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { providerOfKind } from "@/lib/actor-identity"
 import { splitKind } from "@/lib/api/http"
+import { createRecord } from "@/lib/api/records"
 import { deleteRecord } from "@/lib/api/sync"
 import type { ChangeRow, KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { recordTitle } from "@/lib/format"
@@ -53,7 +56,20 @@ import { everyValueYours } from "@/lib/provenance"
 import { fieldOf } from "@/lib/record-form"
 import { titleEditor } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
-import { headerFacts } from "./record-model"
+import { duplicateProperties, headerFacts, recordLink } from "./record-model"
+
+async function copyLink(record: SubstrateRecord) {
+  try {
+    await navigator.clipboard.writeText(recordLink(record))
+    toast.add({ type: "success", title: "Link copied" })
+  } catch {
+    toast.add({
+      type: "error",
+      title: "The link couldn’t be copied",
+      description: recordLink(record),
+    })
+  }
+}
 
 function Title({
   record,
@@ -184,6 +200,28 @@ export function RecordHeader({
   const path = `${record.kind}/${record.id}`
   const { authority, pkg, name } = splitKind(record.kind)
   const [deleting, setDeleting] = useState(false)
+  const navigate = useNavigate()
+  const client = useQueryClient()
+  const duplicate = useMutation({
+    mutationFn: () =>
+      createRecord(authority, pkg, name, {
+        properties: duplicateProperties(record, kind),
+      }),
+    onSuccess: async (copy) => {
+      await client.invalidateQueries({ queryKey: ["records"] })
+      toast.add({ type: "success", title: "Duplicated" })
+      void navigate({
+        to: "/data/$authority/$pkg/$name/$id",
+        params: { authority, pkg, name, id: copy.id },
+      })
+    },
+    onError: (e) =>
+      toast.add({
+        type: "error",
+        title: "It couldn’t be duplicated",
+        description: writeError(e),
+      }),
+  })
 
   return (
     <header data-slot="record-header">
@@ -217,38 +255,45 @@ export function RecordHeader({
               <MoreHorizontalIcon />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-52">
+              <DropdownMenuItem onClick={() => void copyLink(record)}>
+                <LinkIcon /> Copy link
+              </DropdownMenuItem>
+              {!provider && (
+                <DropdownMenuItem
+                  disabled={duplicate.isPending}
+                  onClick={() => duplicate.mutate()}
+                >
+                  <CopyPlusIcon /> Duplicate
+                </DropdownMenuItem>
+              )}
               <DropdownMenuCheckboxItem
                 checked={holders}
                 onCheckedChange={(on) => onHolders(on)}
               >
                 <UserRoundIcon /> Who holds each value
               </DropdownMenuCheckboxItem>
-              <DropdownMenuSeparator />
               {technical && (
-                <DropdownMenuItem
-                  render={
-                    <Link
-                      to="/data/$authority/$pkg/$name/$id/edit"
-                      params={{ authority, pkg, name, id: record.id }}
-                    />
-                  }
-                >
-                  <PencilIcon /> Edit YAML
+                <DropdownMenuItem onClick={() => onSource(true)}>
+                  <CodeIcon /> Open in YAML
                 </DropdownMenuItem>
               )}
-              {technical && !provider && <DropdownMenuSeparator />}
-              {!provider && (
-                <DropdownMenuItem
-                  variant="destructive"
-                  onClick={() => setDeleting(true)}
-                >
-                  <Trash2Icon /> Delete
-                </DropdownMenuItem>
-              )}
-              {provider && !technical && (
-                <DropdownMenuItem disabled>
-                  Change it in {provider.name}
-                </DropdownMenuItem>
+              {provider ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem disabled>
+                    Change it in {provider.name}
+                  </DropdownMenuItem>
+                </>
+              ) : (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={() => setDeleting(true)}
+                  >
+                    <Trash2Icon /> Delete
+                  </DropdownMenuItem>
+                </>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
