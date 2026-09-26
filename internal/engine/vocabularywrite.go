@@ -118,6 +118,11 @@ type vocabularyBatch struct {
 	// re-projection preserves them.
 	origin        string
 	originVersion int64
+	// shippedVersion is a provider install's provenance (catalog
+	// Install): the shipped version of the bundle's own package, stamped on
+	// that package row as `shippedVersion` (stampShipped). Zero on every
+	// other batch, which leaves a stamped row's value alone.
+	shippedVersion int64
 	// confirm is the caller's consent to a lossy conversion plan, or nil: the
 	// batch refuses a lossy plan without one, or with one for another plan
 	// (convert.go admitConversion, decision 0067).
@@ -314,11 +319,12 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 		return nil, err
 	}
 	written, err := ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{
-		docs:          docs,
-		published:     opts.Published,
-		origin:        opts.Origin,
-		originVersion: opts.OriginVersion,
-		confirm:       opts.Confirm,
+		docs:           docs,
+		published:      opts.Published,
+		origin:         opts.Origin,
+		originVersion:  opts.OriginVersion,
+		shippedVersion: opts.ShippedVersion,
+		confirm:        opts.Confirm,
 		extra: func(t *txn) error {
 			for _, in := range dataDocs {
 				// A trigger's callable is validated against the candidate here
@@ -488,6 +494,7 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		}
 		got, err := t.projectPackages(candidate, touched, projectOpts{
 			meta: b.meta, prune: true, origin: b.origin, originVersion: b.originVersion,
+			shippedPackage: shippedPackage(b), shippedVersion: b.shippedVersion,
 		})
 		if err != nil {
 			return err
@@ -948,10 +955,16 @@ func resolveDeclarationVersions(b *vocabularyBatch, existing map[string]vocabula
 		stored := storedVersionOf(vocabulary.DocPackage, d.ID)
 		explicit, _ := vocabulary.VersionValue(d.Data["version"])
 		v := explicit
+		// The header is a declaration like any other: its own content (the
+		// description, the retired names) changing moves it to stored+1. Only
+		// the document keys compare; the row's engine-owned properties
+		// (`source`, `actors`, the origin and shipped-version stamps) are not
+		// in the stored document, so a stamp alone never moves it.
+		storedDoc, held := existing[docKey(d)]
 		switch {
 		case explicit > stored:
 			// An explicit move forward is honored as written.
-		case needsBump[d.ID]:
+		case needsBump[d.ID], held && changed(d, storedDoc):
 			v = stored + 1
 		default:
 			v = stored
@@ -1146,6 +1159,10 @@ type projectOpts struct {
 	// declarations this pass projects for it (vocabularyBatch.origin).
 	origin        string
 	originVersion int64
+	// shippedPackage and shippedVersion, when set, stamp the package row
+	// shippedPackage names with `shippedVersion` (stampShipped).
+	shippedPackage string
+	shippedVersion int64
 	// versions, when set, is the version each projected row is stamped with,
 	// keyed as skip keys it, overriding the declaration's own. A repository
 	// migration (repomigrate.go) rewrites rows whose versions the store
@@ -1211,6 +1228,9 @@ func (t *txn) projectPackages(reg *vocabulary.Registry, authorities map[string]b
 	// every declaration of the package has landed.
 	for _, p := range passes {
 		if err := t.stampOrigin(reg, projecting, p.g, p.decls, opts, out); err != nil {
+			return nil, err
+		}
+		if err := t.stampShipped(reg, projecting, p.g, opts, out); err != nil {
 			return nil, err
 		}
 	}
@@ -1641,6 +1661,59 @@ func (t *txn) stampOrigin(reg *vocabulary.Registry, projecting map[string]bool, 
 	}})
 	if err != nil {
 		return fmt.Errorf("substrate/engine: stamp the origin of %s: %w", g.Identity, err)
+	}
+	out[vocabulary.DocPackage+"\x00"+g.Identity] = e
+	return nil
+}
+
+// propPackageShippedVersion is the shipped package version a provider
+// install took, stamped on the package row it landed. Managed on the core
+// `package` kind and no document key, so engineOwned keeps it across every
+// re-projection, and only an install batch writes it.
+const propPackageShippedVersion = "shippedVersion"
+
+// shippedPackage is the package a batch's shipped version belongs to: the one
+// its bundle document owns. Empty when the batch carries no shipped version or
+// no bundle document, which stamps nothing.
+func shippedPackage(b vocabularyBatch) string {
+	if b.shippedVersion <= 0 {
+		return ""
+	}
+	for _, d := range b.docs {
+		if d.Kind == vocabulary.DocBundle {
+			return d.DeclaredPackage()
+		}
+	}
+	return ""
+}
+
+// stampShipped writes the shipped version a catalog install took onto the
+// package row of g, when g is the package opts name. The package's own
+// version stays the API's (a changed closure lands at stored+1, and over a
+// row a hand apply ran past the shipped line that is above the shipped
+// number); the stamp is what the upgrade preview measures the next shipped
+// closure from (PlanBundleUpgrade, issue #642). A re-install whose stamp is
+// unchanged writes nothing: the put suppresses the no-op.
+func (t *txn) stampShipped(reg *vocabulary.Registry, projecting map[string]bool, g *vocabulary.Package, opts projectOpts, out map[string]*substrate.Record) error {
+	if opts.shippedPackage == "" || opts.shippedPackage != g.Identity || opts.shippedVersion <= 0 {
+		return nil
+	}
+	ty, err := t.projectionKind(reg, projecting, kindPackage)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: stamp the shipped version of %s: %w", g.Identity, err)
+	}
+	// A repository whose shipped upgrade was refused still holds a core
+	// `package` kind from before the property: the install lands unstamped
+	// rather than failing, and the preview measures from the stored version
+	// as it did before the stamp existed.
+	if _, declared := ty.Prop(propPackageShippedVersion); !declared {
+		return nil
+	}
+	e, err := t.putKind(ty, substrate.PutInput{Kind: kindPackage, ID: g.Identity, Properties: map[string]any{
+		propPackageShippedVersion: opts.shippedVersion,
+	}})
+	if err != nil {
+		return fmt.Errorf("substrate/engine: stamp the shipped version of %s: %w", g.Identity, err)
 	}
 	out[vocabulary.DocPackage+"\x00"+g.Identity] = e
 	return nil

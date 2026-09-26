@@ -133,7 +133,22 @@ all (a database fault, a closure this repository cannot admit) still leaves
 the entry in the listing, with one fixed blocker line ("the upgrade preview
 failed; see the server log") and no version motion; the error itself goes to
 the server log, never to a repository token. A PROVIDER is previewed as
-shipped. A SAMPLE is previewed as the import door would land it, rehomed onto
+shipped, and measured from the shipped version its last install took: the
+install stamps it on the package row as `shippedVersion`, and the preview
+offers any shipped closure past it. The package's own version is the API's
+and only rises, so an install over a package that hand applies ran past the
+shipped line (stored 35, shipped 33) lands at stored+1 (36), and the stamp
+is what still offers shipped 34. Where the stamp drives the offer, the
+preview's `changes` are read by content, each at the version the install
+lands it at, and the offer is exactly those changes. The package header
+counts like any other declaration: a release that changes its description
+or its retired names is offered, naming the package, and lands it at
+stored+1. A shipped release past the stamp that only bumps the package
+version changes no declaration and is not offered, and the stamp stays until
+a release past it changes something. A package installed before the stamp
+existed is measured from its stored version until its next install, and a
+sample installed verbatim is never stamped, because it stays editable and
+nothing would record its edits. A SAMPLE is previewed as the import door would land it, rehomed onto
 the repository's own authority, and only through the origin stamp its import
 left on the copy
 ([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md)):
@@ -657,8 +672,9 @@ interactive clients (`api`, `console`, `substratectl`) with a 403, before the
 closure is touched: taking bundle code is a person's action.
 
 `POST …/catalog/{id}/install` is the **provider** door. The closure lands
-verbatim, under the authority that publishes it, and the version bump the
-publisher ships is what the upgrade preview above offers.
+verbatim, under the authority that publishes it, with the shipped version it
+took stamped as `shippedVersion` on the package row, and the version bump the
+publisher ships next is what the upgrade preview above offers.
 
 `POST …/catalog/{id}/import` is the **sample** door. The closure is REHOMED
 first: every mention of `samples.substrate.reamde.dev` in the decoded documents
@@ -688,8 +704,8 @@ reads `modified: true`. Versions alone could not say so, because a kind edit
 moves the kind's version and not the package's, and an addition moves nothing.
 `modified` covers declaration data only: labels, annotations and the data
 records a sample ships beside its closure do not flip it.
-The provider door stamps nothing, and neither does a hand `apply -f` unless
-the request names an `origin`: `substratectl apply --as <authority>` sends
+The provider door stamps no origin (only its `shippedVersion`), and neither
+does a hand `apply -f` unless the request names an `origin`: `substratectl apply --as <authority>` sends
 the package the input was authored as when the input carries its package
 document (one package per run; an input carrying several is refused, since
 one request names one origin), and the server records the claim as the import door records its
