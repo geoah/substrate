@@ -261,3 +261,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0107](0107-the-records-list-counts-its-filtered-set-on-request.md) | The records list counts its filtered set on request | accepted |
 | [0108](0108-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md) | A change row carries before and after values on request, derived at read | accepted |
 | [0109](0109-an-allow-outranks-a-gate-only-by-naming-it.md) | An allow outranks a gate only by naming it | proposed |
+| [0110](0110-the-changes-read-summarizes-runs-and-never-ends-a-page-inside-one.md) | The changes read summarizes runs and never ends a page inside one | accepted |

@@ -73,6 +73,71 @@ type ChangePage struct {
 	Generation string      `json:"generation"`
 }
 
+// The verbs a ChangeRun groups by: what a row did to its record, in the
+// words a sentence about it uses. A `put` splits three ways on its payload,
+// because creating a record and changing one are different sentences, and a
+// `patch` reads the same as a `put` that changed an existing record. The
+// rest are the op itself.
+const (
+	RunVerbCreate  = "create"
+	RunVerbRestore = "restore"
+	RunVerbUpdate  = "update"
+	RunVerbDelete  = "delete"
+	RunVerbMerge   = "merge"
+	RunVerbSplit   = "split"
+	RunVerbGC      = "gc"
+)
+
+// RunVerb is the verb a change reads as in a run summary: `create` for a put
+// whose payload carries `created: true`, `restore` for one carrying
+// `restored: true`, `update` for any other put and every patch, and the op
+// itself otherwise.
+func RunVerb(c Change) string {
+	switch c.Op {
+	case OpPut:
+		switch {
+		case c.Payload["created"] == true:
+			return RunVerbCreate
+		case c.Payload["restored"] == true:
+			return RunVerbRestore
+		}
+		return RunVerbUpdate
+	case OpPatch:
+		return RunVerbUpdate
+	default:
+		return string(c.Op)
+	}
+}
+
+// ChangeRun summarizes consecutive rows of the filtered change feed that
+// share an actor, a kind and a verb (RunVerb): how many changes, how many
+// distinct records, and the seq and time range they span. A run is whole: a
+// page never ends inside one, so Count is exact however far below the page's
+// other runs it reaches. RecordID is set when the run touched one record.
+type ChangeRun struct {
+	Actor     Actor     `json:"actor"`
+	Kind      string    `json:"kind"`
+	Verb      string    `json:"verb"`
+	Count     int       `json:"count"`
+	Records   int       `json:"records"`
+	RecordID  string    `json:"recordId,omitempty"`
+	NewestSeq int64     `json:"newestSeq"`
+	OldestSeq int64     `json:"oldestSeq"`
+	NewestTS  time.Time `json:"newestTs"`
+	OldestTS  time.Time `json:"oldestTs"`
+}
+
+// ChangeRunPage is one history page of run summaries, newest first: the
+// `runs=1` form of ChangePage. Cursor is the oldest run's OldestSeq when more
+// rows lie below it, passed as the next `before`; Head and Generation are the
+// same watch handoff.
+type ChangeRunPage struct {
+	Runs       []ChangeRun `json:"runs"`
+	Cursor     int64       `json:"cursor,omitempty"`
+	Head       int64       `json:"head"`
+	Generation string      `json:"generation"`
+}
+
 // AffectedRecord is one record a change moved, as the public event names it.
 // Version is the version the record reached in this entry, the same number a
 // read of the record returns until its next change, so a client whose copy
