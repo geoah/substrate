@@ -253,4 +253,18 @@ if (cd "$crepo" && env -u GITHUB_BASE_REF -u CI PR_TITLE='feat: drop it' COMMITS
 fi
 cg checkout --quiet main
 
+# svu reads the phrase anywhere in a body, so a body that only quotes it in
+# prose still bumps the release; the check must agree. Lowercase is not the
+# phrase to svu, and not to the check.
+cg checkout --quiet -b quoted main
+cg commit --quiet --allow-empty -m 'ci: explain it' -m 'The check refuses a BREAKING CHANGE: footer with no note.'
+if (cd "$crepo" && env -u GITHUB_BASE_REF -u CI PR_TITLE='ci: explain it' COMMITS_CHECK_BASE=main "$commitscheck" >/dev/null 2>&1); then
+  flag "commits quoted: a body quoting 'BREAKING CHANGE:' passed, but svu bumps on it"
+fi
+cg checkout --quiet -b lowercase main
+cg commit --quiet --allow-empty -m 'ci: say it softly' -m 'a breaking change: lowercase is prose'
+(cd "$crepo" && env -u GITHUB_BASE_REF -u CI PR_TITLE='ci: say it softly' COMMITS_CHECK_BASE=main "$commitscheck" >/dev/null 2>&1) ||
+  flag "commits lowercase: a lowercase 'breaking change:' was read as a break, which svu does not"
+cg checkout --quiet main
+
 exit "$fail"

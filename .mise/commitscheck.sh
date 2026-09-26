@@ -10,8 +10,8 @@
 # is a release that does not happen, and a `!` with no note is a release
 # nobody can upgrade to without reading the diff.
 #
-# A break is a `!` before the colon, in the title or in any subject, or a
-# `BREAKING CHANGE:` footer in any commit body. It needs a note under
+# A break is a `!` before the colon, in the title or in any subject, or
+# `BREAKING CHANGE:` anywhere in any commit body (svu's rule, below). It needs a note under
 # docs/changes/ ADDED by this branch whose `type:` is `breaking`; the note's
 # shape is lint:docs's (.mise/docscheck.sh), which holds every note in the
 # tree, not only the new ones.
@@ -69,10 +69,14 @@ while IFS= read -r sha; do
   [[ "$subject" =~ $pattern ]] ||
     flag "commit ${sha:0:12} '${subject}' is not type(scope): subject; a rebase merge would land it as it is"
   [[ "$subject" =~ $breaking ]] && is_break=1
+  # svu, which computes the version, calls a commit breaking when its body
+  # holds `BREAKING CHANGE:` or `BREAKING-CHANGE:` ANYWHERE (its breakingBody
+  # regexp, case-sensitive), so this matches the same text: a footer, or the
+  # phrase quoted in prose, bumps the release either way.
   # A here-string, not a pipe: under pipefail `git log | grep -q` reports 141
   # when grep exits on an early match, and the break would read as absent.
   body="$(git log -1 --format=%b "$sha")"
-  grep -qE '^BREAKING[ -]CHANGE: ' <<<"$body" && is_break=1
+  grep -qE 'BREAKING[ -]CHANGE:' <<<"$body" && is_break=1
 done < <(git rev-list --no-merges "${base_commit}..HEAD")
 
 if [ "$is_break" -eq 1 ]; then
@@ -82,7 +86,7 @@ if [ "$is_break" -eq 1 ]; then
     grep -qE '^type: breaking$' "$path" && noted=1
   done < <(git diff --name-only --diff-filter=A "$base_commit" -- 'docs/changes/*.md')
   [ "$noted" -eq 1 ] ||
-    flag "this branch breaks something (a '!' or a BREAKING CHANGE footer) and adds no docs/changes/*.md with 'type: breaking'; docs/changes/README.md says what the note holds"
+    flag "this branch breaks something (a '!', or 'BREAKING CHANGE:' anywhere in a commit body, which svu bumps on) and adds no docs/changes/*.md with 'type: breaking'; add the note, or reword a body that only quotes the phrase"
 fi
 
 exit "$fail"
