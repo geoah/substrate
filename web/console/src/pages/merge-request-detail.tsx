@@ -21,6 +21,7 @@ import {
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
+import { ChangeLabel } from "@/components/change-request"
 import { ActorRef } from "@/components/identity/actor-ref"
 import { IdText } from "@/components/identity/id-text"
 import { KindGlyph } from "@/components/identity/kind-glyph"
@@ -81,6 +82,8 @@ import {
   type MergeVerdict,
 } from "@/lib/mergerequests"
 import { kindByIdentity } from "@/lib/definition"
+import { changeSpecs } from "@/lib/agent-chat"
+import type { PropSpec } from "@/lib/record-schema"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { CORE_PACKAGE } from "@/lib/api/http"
 import { cn } from "@/lib/utils"
@@ -103,21 +106,24 @@ function refTitle(ref?: PairTarget): string {
 
 const POSTURE_TEXT: Record<
   Exclude<DiffPosture, "equal">,
-  { label: string; explain: string }
+  { label: string; tier: string; explain: string }
 > = {
   choice: {
-    label: "your choice",
+    label: "Kept",
+    tier: "owner",
     explain:
-      "You hold this value on at least one side, so the surviving value stands as it is. If the other one is right, edit the survivor after the merge.",
+      "You set this on at least one side, so the one that stays keeps its value. If the other one is right, change it after combining.",
   },
   recompute: {
-    label: "recompute settles",
+    label: "Combined",
+    tier: "recompute",
     explain:
-      "A machine holds this value. After the merge the survivor works it out again from both records' sources.",
+      "This is kept up to date from elsewhere. After combining, it is worked out again from both records' sources.",
   },
 }
 
 function PostureCell({ posture }: { posture: DiffPosture }) {
+  const [technical] = useTechnicalDetails()
   if (posture === "equal") {
     return <span className="text-xs text-muted-foreground">already agree</span>
   }
@@ -141,6 +147,11 @@ function PostureCell({ posture }: { posture: DiffPosture }) {
         }
       >
         {text.label}
+        {technical && (
+          <span className="ml-1 font-mono text-[11.5px] text-faint">
+            {text.tier}
+          </span>
+        )}
       </TooltipTrigger>
       <TooltipContent className="max-w-72">{text.explain}</TooltipContent>
     </Tooltip>
@@ -195,35 +206,44 @@ function ValueCell({ row, side }: { row: DiffRow; side: "loser" | "winner" }) {
 /** The diff rides the table system's look (owner ruling, 2026-08-06): real
  * table anatomy — fixed columns, bordered rows, muted lowercase headers —
  * though it stays a comparison, not a list, so no column dropdown or pages. */
-function DiffRows({ rows }: { rows: DiffRow[] }) {
+function DiffRows({
+  rows,
+  specs,
+}: {
+  rows: DiffRow[]
+  specs: Map<string, PropSpec>
+}) {
+  const [technical] = useTechnicalDetails()
   return (
     <>
       {rows.map((row) => (
         <TableRow key={row.key} className="hover:bg-muted/30">
           <TableCell className="pl-4 align-top">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    className="block max-w-full cursor-help truncate rounded-[2px] text-left text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                  />
-                }
-              >
-                {row.key}
-              </TooltipTrigger>
-              {row.description ? (
+            {row.description ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      className="block max-w-full cursor-help rounded-[2px] text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    />
+                  }
+                >
+                  <ChangeLabel name={row.key} spec={specs.get(row.key)} />
+                </TooltipTrigger>
                 <TooltipContent className="max-w-72">
                   {row.description}
                 </TooltipContent>
-              ) : (
-                <TooltipContent>
-                  {row.declared
-                    ? "declared property"
-                    : "not declared by the kind"}
-                </TooltipContent>
-              )}
-            </Tooltip>
+              </Tooltip>
+            ) : (
+              <ChangeLabel name={row.key} spec={specs.get(row.key)} />
+            )}
+            {technical && (
+              <span className="block font-mono text-[11.5px] break-all text-faint">
+                {row.key}
+                {!row.declared && " · undeclared"}
+              </span>
+            )}
           </TableCell>
           <TableCell className="align-top">
             <ValueCell row={row} side="loser" />
@@ -253,6 +273,7 @@ function SideBySide({
     () => deriveDiff(winner, loser, type),
     [winner, loser, type]
   )
+  const specs = useMemo(() => changeSpecs(type), [type])
   const open = rows.filter((r) => r.posture !== "equal")
   const equal = rows.filter((r) => r.posture === "equal")
   const [showEqual, setShowEqual] = useState(false)
@@ -308,7 +329,7 @@ function SideBySide({
         </TableHeader>
         <TableBody>
           {open.length > 0 ? (
-            <DiffRows rows={open} />
+            <DiffRows rows={open} specs={specs} />
           ) : (
             <TableRow className="hover:bg-transparent">
               <TableCell
@@ -341,7 +362,7 @@ function SideBySide({
               </TableCell>
             </TableRow>
           )}
-          {showEqual && <DiffRows rows={equal} />}
+          {showEqual && <DiffRows rows={equal} specs={specs} />}
         </TableBody>
       </Table>
     </div>
@@ -412,9 +433,7 @@ function VerdictDialog({
                 everything that points to it move to {winnerTitle}. Values you
                 set are kept.
               </span>
-              <span className="block">
-                A split can take them apart again later.
-              </span>
+              <span className="block">You can separate them again later.</span>
             </>
           ) : (
             <span className="block">
@@ -687,8 +706,7 @@ export function MergeRequestDetailPage() {
         )}
         {conflict && (
           <p className="border-l-2 border-l-warning pl-2 text-xs">
-            <span className="text-warning">Conflict:</span>{" "}
-            <span className="font-mono">{conflict}</span>
+            <span className="text-warning">Conflict:</span> {conflict}
           </p>
         )}
       </div>
