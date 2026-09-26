@@ -55,6 +55,7 @@ import { bundleState, setupCount } from "@/lib/api/bundles"
 import {
   upgradeAvailable,
   upgradeBlocked,
+  blockerWords,
   type BundleRow,
   type RequirementNode,
 } from "@/lib/bundles"
@@ -232,7 +233,7 @@ function OtherPackages({
       <SectionHead
         id="other-packages"
         title="Other packages"
-        hint="Samples you imported and anything applied directly. They are not providers: nothing syncs them."
+        hint="Samples you added and packages added by hand. They are not providers: nothing syncs them."
       />
       {pendingUpgrades.length > 0 && (
         <div className="mb-3 flex flex-col gap-2">
@@ -362,7 +363,7 @@ function OtherPackageRow({
             <TooltipContent className="max-w-96">
               <div className="space-y-1">
                 {(row.upgrade?.blockers ?? []).map((b) => (
-                  <p key={b}>{b}</p>
+                  <p key={b}>{blockerWords(b)}</p>
                 ))}
               </div>
             </TooltipContent>
@@ -375,7 +376,7 @@ function OtherPackageRow({
       </td>
       <td className="px-3 py-2.5 text-right">
         {status.quarantined && row.catalog ? (
-          <TakeButton row={row} chain={chain} name={name} label="Take again" />
+          <TakeButton row={row} chain={chain} name={name} label="Add again" />
         ) : (
           <RemoveBundleButton bundle={status} name={name} variant="ghost" />
         )}

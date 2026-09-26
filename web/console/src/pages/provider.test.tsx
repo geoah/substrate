@@ -1213,13 +1213,13 @@ describe("ProviderPage", () => {
       serve({ statuses: [status(), PEOPLE_STATUS], catalog: [CATALOG, PEOPLE] })
       renderPage(<ProviderPage />)
       expect(await screen.findByText("People", { selector: "h1" })).toBeTruthy()
-      expect(screen.getByText("A sample you imported")).toBeTruthy()
+      expect(screen.getByText("A sample you added")).toBeTruthy()
       expect(screen.queryByText("Set up")).toBeNull()
-      fireEvent.click(screen.getByRole("button", { name: "Import again" }))
+      fireEvent.click(screen.getByRole("button", { name: "Add again" }))
       const dialog = await screen.findByRole("dialog")
       expect(within(dialog).getByText(/REPLACES/)).toBeTruthy()
       fireEvent.click(
-        within(dialog).getByRole("button", { name: "Import again" })
+        within(dialog).getByRole("button", { name: "Add again" })
       )
       await waitFor(() =>
         expect(

@@ -385,10 +385,10 @@ function PackageDoc({
             </Pill>
             <span>
               {row.tier === "sample"
-                ? "A sample you imported"
+                ? "A sample you added"
                 : row.tier === "provider"
                   ? "A provider"
-                  : "Applied directly"}
+                  : "Added by hand"}
             </span>
             {technical && <IdText value={row.id} copy />}
             {technical && status.version !== undefined && (
@@ -432,7 +432,7 @@ function PackageDoc({
                 row={row}
                 chain={data.chains(row)}
                 name={name}
-                label="Take it again"
+                label="Add it again"
               />
             </div>
           )}

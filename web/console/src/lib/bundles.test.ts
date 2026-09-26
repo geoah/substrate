@@ -27,7 +27,6 @@ import {
   previewFailed,
   FAILED_PREVIEW_BLOCKER,
   requirementsOf,
-  chainHint,
   requirementTree,
   missingChain,
   closureRows,
@@ -602,7 +601,7 @@ describe("presentAuthorities — what this repository already holds", () => {
   })
 })
 
-describe("requirementsOf / chainHint: what is taken first", () => {
+describe("requirementsOf: what is taken first", () => {
   const present = new Set([
     "samples.substrate.reamde.dev/people",
     "substrate.reamde.dev/core",
@@ -629,43 +628,6 @@ describe("requirementsOf / chainHint: what is taken first", () => {
 
   it("a closure that declares against nothing is never blocked", () => {
     expect(requirementsOf({ requires: [] }, new Set())).toEqual([])
-    expect(chainHint([], "Import", "tasks")).toBe("")
-  })
-
-  it("says what the one button will take first, in the order it takes them", () => {
-    expect(
-      chainHint(
-        missingRequirements(
-          requirementsOf(
-            { requires: ["samples.substrate.reamde.dev/tasks"] },
-            present
-          )
-        ),
-        "Import",
-        "pebble"
-      )
-    ).toBe(
-      "Import all takes samples.substrate.reamde.dev/tasks first, in that order, then pebble."
-    )
-    expect(
-      chainHint(
-        missingRequirements(
-          requirementsOf(
-            {
-              requires: [
-                "samples.substrate.reamde.dev/people",
-                "samples.substrate.reamde.dev/messaging",
-              ],
-            },
-            present
-          )
-        ),
-        "Install",
-        "google"
-      )
-    ).toBe(
-      "Install all takes samples.substrate.reamde.dev/messaging first, in that order, then google."
-    )
   })
 })
 
@@ -694,9 +656,6 @@ describe("requiresAtLeast: the floor under a requirement (decision record 0070)"
       },
       { package: "ada.example.com/scheduling", present: true, held: 2 },
     ])
-    expect(chainHint(missingRequirements(reqs), "Import", "tasks")).toBe(
-      "ada.example.com/people is here at version 3 and this bundle needs version 4 or later, so it is imported again."
-    )
   })
 
   it("is met at the floor and above it", () => {
@@ -714,18 +673,6 @@ describe("requiresAtLeast: the floor under a requirement (decision record 0070)"
     // No bundle status reports a version for it, so the console cannot say
     // it is too old; the server's admission is the one that refuses.
     expect(requirementsOf(row, present, new Map())[0].present).toBe(true)
-  })
-
-  it("names an absent package and a too-old one in one hint", () => {
-    const reqs = requirementsOf(
-      row,
-      new Set(["ada.example.com/people"]),
-      versions
-    )
-    expect(chainHint(missingRequirements(reqs), "Import", "tasks")).toBe(
-      "Import all takes ada.example.com/scheduling first, in that order, then tasks. " +
-        "ada.example.com/people is here at version 3 and this bundle needs version 4 or later, so it is imported again."
-    )
   })
 
   it("reads the held versions off the installed rows' statuses", () => {
@@ -803,7 +750,7 @@ describe("importFailureLines — the server's refusal, verbatim", () => {
     expect(importFailureLines(new Error("network error"))).toEqual([
       "network error",
     ])
-    expect(importFailureLines(undefined)).toEqual(["The import was refused."])
+    expect(importFailureLines(undefined)).toEqual(["It couldn’t be added."])
   })
 })
 
@@ -1325,7 +1272,7 @@ describe("the requirement chain: what one button has to take", () => {
     const plan = importPlan(one, tree)
     expect(plan.bundles).toEqual([])
     expect(plan.refusal).toBe(
-      "a.example.com/two and a.example.com/one require each other, so there is no order to import them in. Nothing is imported."
+      "a.example.com/two and a.example.com/one require each other, so there is no order to add them in. Nothing is added."
     )
   })
 
@@ -1360,7 +1307,7 @@ describe("the requirement chain: what one button has to take", () => {
     // reader actually asked for is a half-done job.
     expect(plan.bundles).toEqual([])
     expect(plan.refusal).toBe(
-      "s.example.com/nowhere is not in the catalog, so it cannot be imported from here. Nothing is imported."
+      "s.example.com/nowhere is not in the catalog, so it cannot be added from here. Nothing is added."
     )
   })
 })
@@ -1435,7 +1382,7 @@ describe("what a sample's mappings link", () => {
   it("says it in one sentence, with no state word in it", () => {
     expect(mappingLinksSentence(mapped)).toBe(
       "Links github user and linear user records onto person. " +
-        "Each link lands when that provider is installed and this sample is imported again."
+        "Each link lands when that provider is installed and this sample is added again."
     )
   })
 
