@@ -149,3 +149,33 @@ func mapPathString(m map[string]any, keys ...string) (string, bool) {
 	s, ok := cur.(string)
 	return s, ok
 }
+
+// A suggested mapping waits when its source kind is absent from the repository
+// AND from the batch: a provider applied in the same batch is not a wait.
+func TestWaitingMappingsSkipASourceTheBatchDeclares(t *testing.T) {
+	const github = "providers.substrate.reamde.dev/github"
+	absent := func(string) (bool, error) { return false, nil }
+
+	docs := suggestedFixture()
+	got, err := vocabulary.WaitingMappings(docs, absent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "ada.example.com/people/fromforeign" || got[0].Package != github {
+		t.Fatalf("waiting = %+v, want fromforeign waiting on %s", got, github)
+	}
+
+	held := func(kind string) (bool, error) { return kind == github+"/user", nil }
+	if got, _ := vocabulary.WaitingMappings(docs, held); len(got) != 0 {
+		t.Fatalf("a held source still waits: %+v", got)
+	}
+
+	withProvider := append(docs, map[string]any{
+		"kind":     "substrate.reamde.dev/core/kind",
+		"metadata": map[string]any{"id": github + "/user"},
+		"data":     map[string]any{"authority": "providers.substrate.reamde.dev", "package": "github"},
+	})
+	if got, _ := vocabulary.WaitingMappings(withProvider, absent); len(got) != 0 {
+		t.Fatalf("a source the batch declares still waits: %+v", got)
+	}
+}

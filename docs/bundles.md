@@ -762,7 +762,11 @@ refuses a mapping whose source kind is absent or shaped wrong. So **the import
 is conditional**: a suggested mapping (and its `installs:` entry) is admitted
 only where this repository can resolve it, and dropped otherwise. Importing
 `people` onto a repository with no provider lands three kinds and no mapping,
-rather than being refused for vocabulary you never asked for.
+rather than being refused for vocabulary you never asked for. A hand apply of
+the same files takes the same rule with `substratectl apply
+--hold-waiting-mappings` (`holdWaitingMappings` on `POST
+/api/v1/vocabulary/apply`), which holds back only the mappings whose provider
+is absent and reports them as `waiting`.
 
 Every door and every surface says which of four states each mapping is in. The
 state is the MAPPING RECORD's, not the provider's: installing GitHub lands

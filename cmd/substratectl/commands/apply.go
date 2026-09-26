@@ -19,7 +19,7 @@ import (
 func (a *app) applyCommand() *cobra.Command {
 	var files []string
 	var as string
-	var asMine, allowDataLoss bool
+	var asMine, allowDataLoss, holdWaiting bool
 	cmd := &cobra.Command{
 		Use:   "apply -f FILE",
 		Short: "Create or update records from manifests",
@@ -88,7 +88,13 @@ values with the records each touches, and confirms exactly that plan: a write
 in between to a record the plan rewrites or a declaration it converts, or a
 plan that reads differently, is refused again. Writes elsewhere do not refuse
 it.
-The removed values stay in the changelog.`,
+The removed values stay in the changelog.
+
+A recordmapping whose source kind this repository does not have refuses the
+whole schema batch. --hold-waiting-mappings holds each such mapping back
+instead, applies the rest, and prints one line per mapping held with the
+provider package it waits on; apply the same files again once that provider is
+installed.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if len(files) == 0 {
@@ -130,7 +136,8 @@ The removed values stay in the changelog.`,
 			// admitted or none — so the record documents behind them can use
 			// the types they declare.
 			if len(vocabularyDocs) > 0 {
-				if err := a.applySchemaDocuments(cmd.Context(), cl, vocabularyDocs, allowDataLoss, origin); err != nil {
+				opts := vocabularyOptions{origin: origin, holdWaiting: holdWaiting}
+				if err := a.applySchemaDocuments(cmd.Context(), cl, vocabularyDocs, allowDataLoss, opts); err != nil {
 					return err
 				}
 			}
@@ -149,6 +156,7 @@ The removed values stay in the changelog.`,
 	// `--as` alone would be a usage error rather than a default.
 	cmd.Flags().BoolVar(&asMine, "as-mine", false, "rehome the input under this repository's own authority")
 	cmd.Flags().BoolVar(&allowDataLoss, "allow-data-loss", false, "preview the vocabulary change and confirm the plan even where it removes values from stored records")
+	cmd.Flags().BoolVar(&holdWaiting, "hold-waiting-mappings", false, "hold back each recordmapping whose source kind this repository does not have, and apply the rest")
 	return cmd
 }
 
@@ -379,10 +387,11 @@ func isSchemaDocument(node *yaml.Node) bool {
 // is the preview's hash and changelog head, so a bare "yes" is never sent
 // (decision 0067). A plan that loses nothing needs no consent and is applied
 // as it is. `origin` is the package a rehomed input was authored as, or "".
-func (a *app) applySchemaDocuments(ctx context.Context, cl *client, docs []map[string]any, allowDataLoss bool, origin string) error {
+func (a *app) applySchemaDocuments(ctx context.Context, cl *client, docs []map[string]any, allowDataLoss bool, opts vocabularyOptions) error {
+	origin := opts.origin
 	var confirm *substrate.ConversionConfirm
 	if allowDataLoss {
-		plan, err := cl.planVocabulary(ctx, docs, origin)
+		plan, err := cl.planVocabulary(ctx, docs, opts)
 		if err != nil {
 			return err
 		}
@@ -400,12 +409,15 @@ func (a *app) applySchemaDocuments(ctx context.Context, cl *client, docs []map[s
 			confirm = &substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
 		}
 	}
-	ents, err := cl.applyVocabulary(ctx, docs, confirm, origin)
+	applied, err := cl.applyVocabulary(ctx, docs, confirm, opts)
 	if err != nil {
 		return err
 	}
-	for _, e := range ents {
+	for _, e := range applied.Records {
 		fmt.Fprintf(a.out, "%s/%s applied\n", vocabulary.KindName(e.Kind), e.ID)
+	}
+	for _, m := range applied.HeldMappings {
+		fmt.Fprintf(a.out, "%s/%s held: waits on %s (install it, then apply again)\n", vocabulary.DocRecordMapping, m.ID, m.Package)
 	}
 	return nil
 }

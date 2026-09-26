@@ -202,3 +202,88 @@ func TestSchemaApplyEndpoint(t *testing.T) {
 	})
 	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
 }
+
+// `holdWaitingMappings` holds back a mapping whose source kind neither the
+// repository nor the batch declares, prunes its `installs:` entry, commits the
+// rest, and names what it held and the package it waits on (decision record
+// 0106). A mapping whose source is present rides the batch. Without the flag
+// the batch reaches the dataset whole, where the loader refuses it.
+func TestSchemaApplyHoldsWaitingMappings(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+	const owner = "geoah.example.com/crm"
+	const slackUser = "providers.substrate.reamde.dev/slack/user"
+	mapping := func(name, from string) map[string]any {
+		return map[string]any{
+			"kind":     corePackage + "/recordmapping",
+			"metadata": map[string]any{"id": owner + "/" + name},
+			"data": map[string]any{
+				"authority": "geoah.example.com", "package": "crm",
+				"from": from, "to": owner + "/contact", "property": "contact",
+			},
+		}
+	}
+	docs := []map[string]any{
+		{
+			"kind":     corePackage + "/bundle",
+			"metadata": map[string]any{"id": owner},
+			"data": map[string]any{
+				"authority": "geoah.example.com", "package": "crm",
+				"installs": []any{owner + "/contact", owner + "/slackcontact", owner + "/taskcontact"},
+			},
+		},
+		{
+			"kind":     corePackage + "/kind",
+			"metadata": map[string]any{"id": owner + "/contact"},
+			"data":     map[string]any{"authority": "geoah.example.com", "package": "crm"},
+		},
+		mapping("slackcontact", slackUser),
+		mapping("taskcontact", "samples.substrate.reamde.dev/tasks/task"),
+	}
+
+	rec := env.do(t, http.MethodPost, "/api/v1/vocabulary/apply", tok, map[string]any{
+		"documents": docs, "holdWaitingMappings": true,
+	})
+	wantStatus(t, rec, http.StatusOK)
+	out := decodeJSON[vocabularyApplyResponse](t, rec)
+	want := substrate.SuggestedMapping{
+		ID: owner + "/slackcontact", From: slackUser, To: owner + "/contact",
+		Package: "providers.substrate.reamde.dev/slack", State: substrate.SuggestedMappingWaiting,
+	}
+	if len(out.HeldMappings) != 1 || out.HeldMappings[0].ID != want.ID || out.HeldMappings[0].Package != want.Package ||
+		out.HeldMappings[0].From != want.From || out.HeldMappings[0].To != want.To || out.HeldMappings[0].State != want.State {
+		t.Fatalf("heldMappings = %+v, want [%+v]", out.HeldMappings, want)
+	}
+	var ids []string
+	for _, d := range ds.lastVocabularyDocs {
+		meta, _ := d["metadata"].(map[string]any)
+		ids = append(ids, fmt.Sprint(meta["id"]))
+		if id := meta["id"]; id == owner {
+			data, _ := d["data"].(map[string]any)
+			if got := fmt.Sprint(data["installs"]); got != fmt.Sprint([]any{owner + "/contact", owner + "/taskcontact"}) {
+				t.Fatalf("the bundle's installs were not pruned: %s", got)
+			}
+		}
+	}
+	if fmt.Sprint(ids) != fmt.Sprint([]string{owner, owner + "/contact", owner + "/taskcontact"}) {
+		t.Fatalf("the dataset saw %v", ids)
+	}
+
+	// The plan takes the same flag, so its preview is of the same batch.
+	rec = env.do(t, http.MethodPost, "/api/v1/vocabulary/plan", tok, map[string]any{
+		"documents": docs, "holdWaitingMappings": true,
+	})
+	wantStatus(t, rec, http.StatusOK)
+	if len(ds.lastVocabularyDocs) != 3 {
+		t.Fatalf("the plan saw %d documents, want the 3 the apply commits", len(ds.lastVocabularyDocs))
+	}
+
+	// Without the flag the whole batch reaches the dataset, and nothing is
+	// reported held.
+	rec = env.do(t, http.MethodPost, "/api/v1/vocabulary/apply", tok, map[string]any{"documents": docs})
+	wantStatus(t, rec, http.StatusOK)
+	if out := decodeJSON[vocabularyApplyResponse](t, rec); len(out.HeldMappings) != 0 || len(ds.lastVocabularyDocs) != 4 {
+		t.Fatalf("an apply without the flag held %+v and passed %d documents", out.HeldMappings, len(ds.lastVocabularyDocs))
+	}
+}

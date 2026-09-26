@@ -130,3 +130,32 @@ func prunedInstalls(d map[string]any, drop map[string]bool) map[string]any {
 	out["data"] = newData
 	return out
 }
+
+// WaitingMappings lists the suggested mappings in docs whose source kind is
+// neither declared by a kind document in the same docs nor held by the
+// repository (`has`), in document order: the ones the apply door holds back
+// when the caller asks it to (decision record 0106). A source the batch itself
+// declares resolves against the batch's own closure, so a provider and a
+// mapping onto it may arrive together.
+func WaitingMappings(docs []map[string]any, has func(kind string) (bool, error)) ([]SuggestedMapping, error) {
+	declared := map[string]bool{}
+	for _, d := range docs {
+		if KindName(mstr(d, "kind")) == DocKind {
+			declared[mstr(mmap(d, "metadata"), "id")] = true
+		}
+	}
+	var out []SuggestedMapping
+	for _, sm := range SuggestedMappings(docs) {
+		if declared[sm.From] {
+			continue
+		}
+		ok, err := has(sm.From)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			out = append(out, sm)
+		}
+	}
+	return out, nil
+}

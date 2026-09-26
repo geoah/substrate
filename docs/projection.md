@@ -27,7 +27,9 @@ when the mapping is installed, so a mapping naming a provider that is absent
 fails on that document. That is why a sample's shipped mappings are
 conditional: the catalog's install and import verbs drop the ones whose
 provider this repository does not hold rather than refuse the whole import
-([suggested mappings](bundles.md#suggested-mappings)).
+([suggested mappings](bundles.md#suggested-mappings)). The apply door does the
+same when the request asks it to, with `holdWaitingMappings`
+([how the vocabulary reaches a repository](vocabulary.md#how-the-vocabulary-reaches-a-repository)).
 
 **One mapping per (source kind, subject property), and one per (source kind,
 target kind).** The first is the record's rule: one mirror kind reaches two
