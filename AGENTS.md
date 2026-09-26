@@ -151,6 +151,26 @@ clean. A `*_db_test.go` failure that looks arbitrary usually is; confirm it
 alone before believing it. The full engine suite (`mise run test:db:engine`)
 takes about 106 s on 16 cores (docs/testing.md says where the time goes).
 
+**One full database suite per machine at a time, never one per worktree.**
+A full `test:db*` run uses the whole machine: sixteen parallel tests, a
+Postgres container, hundreds of template clones. On 2026-09-26 a workflow ran
+it in about twelve worktrees at once on one VM; load reached 50 on 16 vCPUs,
+and the processes the agents themselves run in blocked on the disk. So:
+
+- While working in a worktree, run the tests for what you changed with
+  `-run`: `go test -count=1 -run '^TestX$|^TestY$' ./internal/engine/`.
+- Run the full suite once, at the end, from one tree. An orchestrator that
+  fans work out over several worktrees runs the full suites itself, one after
+  another, or leaves them to CI; the agents it starts never do.
+- `test:db`, `test:db:engine`, `test:db:rest` and `test:db:providers` wait for
+  a machine-wide slot (`.mise/dblock.sh`, one slot unless
+  `SUBSTRATE_TEST_DB_SLOTS` says more) and print `dblock: waiting for a
+  database test slot` while another run holds it. That line means queued, not
+  hung. The lock is a backstop for this rule, not a license to start ten.
+- A killed run's containers go with the next run (every test container is
+  labeled with its owner process, and a run removes the ones whose owner is
+  gone); `mise run test:clean` does it by hand.
+
 **`mise run test:llm` is the live suite** — the wire adapters and one whole
 agent chain against the REAL OpenAI and Anthropic APIs. It runs when
 `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are in the environment, which on a dev
