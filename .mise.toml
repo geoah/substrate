@@ -138,7 +138,7 @@ run = "go test -count=1 -p 1 -timeout 45m -skip '^TestLive' ./internal/engine/..
 description = "The engine suite alone, or one shard of it: SHARD and SHARDS from the environment"
 # `go test -list` in the script, the cut itself in .mise/shardselect.sh
 # (sorted, round robin), which `lint:ci` holds to disjoint and complete.
-run = ".mise/engineshard.sh"
+run = ".mise/dbshard.sh"
 
 [tasks."test:db:rest"]
 description = "Every database package but the engine and the provider suite: catalog, providertest, testenv, substratectl"
@@ -753,15 +753,25 @@ env = { SUBSTRATE_TEST_REQUIRE_SANDBOX = "1" }
 run = "mise run test:short"
 
 [tasks."ci:db:catalog"]
-description = "CI job `db catalog`: internal/catalog against the database"
-# Half of test:db:rest's time on its own, so it is a job of its own.
-run = "go test -count=1 -p 1 -timeout 12m -skip '^TestLive' ./internal/catalog/..."
+description = "CI job `db catalog k/n`: one shard of internal/catalog against the database, SHARD and SHARDS from the environment"
+# The second-slowest database package, so it is sharded the way the engine is.
+env = { PKG = "internal/catalog" }
+run = ".mise/dbshard.sh"
 
 [tasks."ci:db:rest"]
-description = "CI job `db rest`: providertest, testenv and substratectl against the database"
+description = "CI job `db rest`: providertest, testenv and substratectl against the database, without the acceptance drill"
 # internal/providertest warms each provider closure's PEP 723 body through uv,
-# so the job caches ~/.cache/uv beside the Go caches.
-run = "go test -count=1 -p 1 -timeout 12m -skip '^TestLive' ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/..."
+# so the job caches ~/.cache/uv beside the Go caches. The acceptance drill is
+# one serial scenario longer than this job's budget, so it is `ci:drill`.
+run = "go test -count=1 -p 1 -timeout 12m -skip '^TestLive|^TestReleaseAcceptanceDrill$' ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/..."
+
+[tasks."ci:drill"]
+description = "CI job `acceptance drill`: internal/testenv's release acceptance drill, alone"
+# Seven stages that read each other's outputs (build, stop, restore under
+# another key, compare, interrupted import, second restore, replaced cursor),
+# so it cannot be cut. It runs on every PR and on main and is not required:
+# the required checks each finish inside a minute and this does not.
+run = "go test -count=1 -timeout 12m -run '^TestReleaseAcceptanceDrill$' ./internal/testenv/"
 
 [tasks."ci:providers"]
 description = "CI job `providers e2e`: the provider suite, alone on its runner"
@@ -801,14 +811,19 @@ description = "CI job `audit` — the vulnerability scans"
 depends = ["audit"]
 
 [tasks."ci:console"]
-description = "CI job `console` — typecheck, lint, format, test, build"
+description = "CI job `console`: typecheck, lint, format, build"
+# The tests are `console test`, a job of their own: all five on one 4 vCPU
+# runner took 67 seconds, the tests alone 63 of them.
 depends = [
   "console:typecheck",
   "console:lint",
   "console:fmt:check",
-  "console:test",
   "console:build",
 ]
+
+[tasks."ci:console:test"]
+description = "CI job `console test`: the console's vitest suite"
+depends = ["console:test"]
 
 [tasks."ci:image"]
 description = "CI job `image builds and boots` — the image builds from a clean tree and serves under compose.yaml"
@@ -830,5 +845,6 @@ depends = [
   "ci:race",
   "ci:audit",
   "ci:console",
+  "ci:console:test",
   "ci:image",
 ]

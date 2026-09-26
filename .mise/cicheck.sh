@@ -161,7 +161,7 @@ fi
 
 # 23 names, handed over in reverse: the partition sorts, and 23 does not
 # divide by 8, so the shards are uneven by one and the last ones are short.
-# A Fuzz target and an Example are in the list, because engineshard.sh keeps
+# A Fuzz target and an Example are in the list, because dbshard.sh keeps
 # them and they must land in a shard like any Test.
 names="$(printf 'FuzzParse\nExampleOpen\n'; for i in $(seq 21 -1 1); do printf 'Test%02d\n' "$i"; done)"
 sorted="$(printf '%s\n' "$names" | LC_ALL=C sort)"

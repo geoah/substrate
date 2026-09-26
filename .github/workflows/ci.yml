@@ -37,7 +37,7 @@
 # The engine package is 380 to 500 seconds on the runner on its own and has
 # passed Go's 10 minute default under contention, so it runs as a matrix of
 # shards, each `mise run ci:engine` with SHARD and SHARDS from the matrix.
-# .mise/engineshard.sh cuts the package by test name (`go test -list`, sorted,
+# .mise/dbshard.sh cuts the package by test name (`go test -list`, sorted,
 # round robin), so every test lands in exactly one shard and a new test lands
 # in one without anybody editing a list. The `shard:` list under `engine` is
 # the ONE place the count is written: `strategy.job-total` feeds SHARDS and the
@@ -77,6 +77,13 @@ concurrency:
 
 permissions:
   contents: read
+
+# Each job installs only the tools it names in `install_args`. mise would
+# otherwise install every other pinned tool the moment a task runs (govulncheck
+# built from source in a database job was most of that job's minute), so a task
+# that needs a tool its job did not name fails, and the fix is to name it.
+env:
+  MISE_TASK_RUN_AUTO_INSTALL: "false"
 
 jobs:
   lint:
@@ -179,7 +186,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [catalog, rest]
+        include:
+          - part: catalog 1/2
+            task: "ci:db:catalog"
+            shard: 1
+            shards: 2
+          - part: catalog 2/2
+            task: "ci:db:catalog"
+            shard: 2
+            shards: 2
+          - part: rest
+            task: "ci:db:rest"
+            shard: 1
+            shards: 1
     # The database suites start their own pgvector container through
     # testcontainers when they have to, which is right on a laptop. On a runner
     # it is fragile — the container has died mid-suite, and every remaining case
@@ -208,6 +227,8 @@ jobs:
     env:
       SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
       SUBSTRATE_TEST_DATABASE_DISPOSABLE: "true"
+      SHARD: ${{ matrix.shard }}
+      SHARDS: ${{ matrix.shards }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
@@ -236,7 +257,7 @@ jobs:
             ${{ runner.os }}-uv-${{ hashFiles('.mise.toml', 'kinds/providers.substrate.reamde.dev/*/bundle.yaml')
             }}
           restore-keys: ${{ runner.os }}-uv-
-      - run: mise run ci:db:${{ matrix.part }}
+      - run: mise run ${{ matrix.task }}
 
   engine:
     name: engine ${{ matrix.shard }}/${{ strategy.job-total }}
@@ -249,7 +270,7 @@ jobs:
       # would have said which other tests failed.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     # The same service container as `go test`, for the same reason; one per
     # shard, because a shard is a runner of its own.
     services:
@@ -332,6 +353,47 @@ jobs:
             }}
           restore-keys: ${{ runner.os }}-uv-
       - run: mise run ci:providers
+
+  # Not in `go gate`: one serial scenario past the required budget (ci:drill).
+  drill:
+    name: acceptance drill
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    # Seven provider closures, each installed into its own repository on a
+    # substrated this job builds and starts, connected through the mock
+    # upstream over the recordings under internal/providere2e/fixtures, synced
+    # and asserted by the provider's scenario. About twelve minutes on a
+    # laptop; the runner is slower and the first run also warms uv.
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: substrate
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d substrate" --health-interval
+          5s --health-timeout 5s --health-retries 20 --tmpfs /var/lib/postgresql/data:rw,size=3g
+    env:
+      SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
+      SUBSTRATE_TEST_DATABASE_DISPOSABLE: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          experimental: true
+          version: 2026.9.2
+          install_args: go
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-drill-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-go-drill-
+      - run: mise run ci:drill
 
   gate:
     name: go gate
@@ -478,6 +540,30 @@ jobs:
       # shared 10 GB cache budget competing for eviction against the Go caches
       # above, which save 51s and 77s. Re-measure before adding one back.
       - run: mise run ci:console
+
+  # Builds the image from source and BOOTS it under compose.yaml, with fresh
+  # volumes and a throwaway Postgres. The release ships the same runtime stage
+  # (the Dockerfile's ARTIFACTS switch), so this is the boot a published image
+  # gets before anybody pulls it.
+  console-test:
+    name: console test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          experimental: true
+          version: 2026.9.2
+          install_args: node pnpm
+      # NO pnpm store cache here, deliberately — it was measured and it does not
+      # pay. `pnpm install --frozen-lockfile` on a cold store is 4.5s (593
+      # packages, a runner's network is very fast); restoring the 84 MB store
+      # costs 2.9s and cuts the install to 1.8s. That is 4.7s against 4.5s, so
+      # the cache is a wash at best, and it would spend 84 MB of the repo's
+      # shared 10 GB cache budget competing for eviction against the Go caches
+      # above, which save 51s and 77s. Re-measure before adding one back.
+      - run: mise run ci:console:test
 
   # Builds the image from source and BOOTS it under compose.yaml, with fresh
   # volumes and a throwaway Postgres. The release ships the same runtime stage
