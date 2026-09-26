@@ -257,7 +257,7 @@ export function tierLabel(tier: Tier | undefined, actor?: string): string {
 export function tierExplanation(tier: Tier | undefined): string {
   switch (tier) {
     case "owner":
-      return "You set this. Syncs keep their own version but never change yours."
+      return "Syncs keep their own version but never change yours."
     case "machine":
       return "Kept up to date by a provider. If you edit it, your version sticks."
     case "bundle":
