@@ -266,3 +266,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0113](0113-a-manager-row-holds-at-its-actors-live-machine-tier.md) | A manager row holds at the machine tier once its actor is declared there | accepted |
 | [0115](0115-an-owner-adjusts-a-change-request-on-the-accepting-write.md) | An owner adjusts a change request on the accepting write | accepted |
 | [0116](0116-a-probe-folds-case-only-when-it-declares-fold-case.md) | A probe folds case only when it declares `fold: case` | accepted |
+| [0117](0117-a-kind-may-declare-its-display-label.md) | A kind may declare its display label, singular and plural | accepted |

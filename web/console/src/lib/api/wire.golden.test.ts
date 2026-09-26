@@ -62,6 +62,7 @@ import type {
   FunctionCalled,
   InputStatus,
   KindInfo,
+  KindLabel,
   LinkedRecord,
   MintedToken,
   OAuthStarted,
@@ -233,7 +234,13 @@ const kindInfo: Shape<KindInfo> = {
   version: true,
   source: true,
   description: true,
+  label: false,
   definition: true,
+}
+
+const kindLabel: Shape<KindLabel> = {
+  singular: true,
+  plural: true,
 }
 
 const change: Shape<Change> = {
@@ -621,6 +628,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   Cond: cond,
   RecordFilter: recordFilter,
   KindInfo: kindInfo,
+  KindLabel: kindLabel,
   Change: change,
   AffectedRecord: affectedRecord,
   ChangeTrigger: changeTrigger,

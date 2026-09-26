@@ -71,6 +71,20 @@ describe("normalizeKinds", () => {
     expect(k?.description).toBe("Something to do.")
   })
 
+  it("reads the display label off the declaration, and adds none when absent", () => {
+    const [labelled, bare] = normalizeKinds({
+      records: [
+        {
+          id: "slack.com/slack/conversation",
+          properties: { label: { singular: "Channel", plural: "Channels" } },
+        },
+        { id: "slack.com/slack/message", properties: {} },
+      ],
+    })
+    expect(labelled?.label).toEqual({ singular: "Channel", plural: "Channels" })
+    expect(bare).not.toHaveProperty("label")
+  })
+
   it("accepts a bare KindInfo list as the same registry", () => {
     const flat = [kindInfo({})]
     expect(normalizeKinds(flat)).toEqual(flat)
