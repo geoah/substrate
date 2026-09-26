@@ -42,6 +42,7 @@ import { displayPlural, lowerFirst } from "@/lib/kind-names"
 import {
   SEARCH_GRAMMAR,
   SEARCH_MODE_DESCRIPTION,
+  SEARCH_MODE_DETAIL,
   SEARCH_MODE_LABEL,
   SEARCH_MODES,
   loadSearchMode,
@@ -127,6 +128,7 @@ export function SearchPage() {
           </div>
           <p className="max-w-prose text-[12.5px] text-faint">
             {SEARCH_MODE_DESCRIPTION[mode]}
+            {technical && ` ${SEARCH_MODE_DETAIL[mode]}`}
           </p>
         </div>
       </div>
@@ -279,7 +281,7 @@ function KindPicker({
         <span className="truncate">
           {value ? displayPlural(value) : "everything"}
         </span>
-        <ChevronsUpDownIcon className="size-3.5 shrink-0 text-faint" />
+        <ChevronsUpDownIcon className="size-3.5 shrink-0 text-faint-deco" />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-96 p-1">
         <Command>

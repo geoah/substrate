@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest"
 
-import { crumbsFor } from "./app-shell"
+import { crumbsFor, pageTitle } from "./app-shell"
 
 describe("crumbsFor", () => {
   it("names the fixed pages", () => {
@@ -89,7 +89,11 @@ describe("crumbsFor", () => {
     ])
     expect(crumbsFor("/tools/a.example.com/notes/stats")).toEqual([
       { label: "Tools", to: "/tools" },
-      { label: "stats" },
+      { label: "Stats" },
+    ])
+    expect(crumbsFor("/tools/a.example.com/notes/savenote")).toEqual([
+      { label: "Tools", to: "/tools" },
+      { label: "Save note" },
     ])
     expect(
       crumbsFor("/tools/providers.substrate.reamde.dev/google/synccontacts")
@@ -110,11 +114,56 @@ describe("crumbsFor", () => {
     ])
   })
 
-  it("keeps an authority and a package page under All data", () => {
+  it("keeps an authority and a package page under All data, in words", () => {
+    expect(crumbsFor("/data/a.example.com")).toEqual([
+      { label: "All data", to: "/data" },
+      { label: "Your data" },
+    ])
     expect(crumbsFor("/data/a.example.com/tasks")).toEqual([
+      { label: "All data", to: "/data" },
+      { label: "Your data", to: "/data/a.example.com" },
+      { label: "Tasks package" },
+    ])
+    expect(crumbsFor("/data/providers.substrate.reamde.dev/google")).toEqual([
+      { label: "All data", to: "/data" },
+      {
+        label: "From providers",
+        to: "/data/providers.substrate.reamde.dev",
+      },
+      { label: "Google", provider: "google" },
+    ])
+  })
+
+  it("spells an authority and a package as themselves in technical mode", () => {
+    expect(crumbsFor("/data/a.example.com/tasks", true)).toEqual([
       { label: "All data", to: "/data" },
       { label: "a.example.com", to: "/data/a.example.com", mono: true },
       { label: "tasks", mono: true },
     ])
+  })
+})
+
+describe("pageTitle", () => {
+  it("names the page, then what it sits in", () => {
+    expect(pageTitle(crumbsFor("/settings"))).toBe("Settings")
+    expect(
+      pageTitle(crumbsFor("/providers/providers.substrate.reamde.dev/google"))
+    ).toBe("Google · Providers")
+    expect(
+      pageTitle(
+        crumbsFor("/data/a.example.com/tasks/task/t1"),
+        "Test the landing page"
+      )
+    ).toBe("Test the landing page · Tasks")
+    expect(pageTitle(crumbsFor("/data/a.example.com/tasks/task"))).toBe(
+      "Tasks · Your data"
+    )
+  })
+
+  it("reads an untitled record, and a page the shell does not know", () => {
+    expect(pageTitle(crumbsFor("/data/a.example.com/tasks/task/t1"))).toBe(
+      "Untitled task · Tasks"
+    )
+    expect(pageTitle(crumbsFor("/nowhere"))).toBe("Substrate")
   })
 })

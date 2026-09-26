@@ -1,17 +1,28 @@
-import { Fragment, useEffect, useState } from "react"
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link, Outlet, useRouterState } from "@tanstack/react-router"
 import { SearchIcon } from "lucide-react"
 
 import { NavigationProvider } from "@/components/console-preferences"
-import { AppSidebar } from "@/components/app-sidebar"
+import { AppSidebar, type SidebarPeek } from "@/components/app-sidebar"
 import { CommandMenu } from "@/components/command-menu"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { SectionBoundary } from "@/components/page-error"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
-import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
+import {
+  SidebarInset,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import {
@@ -24,15 +35,21 @@ import { CR_NAME } from "@/lib/api/changerequests"
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME, joinKind } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { MR_NAME } from "@/lib/api/mergerequests"
-import { collectionSource } from "@/lib/collections"
+import {
+  authorityTitle,
+  collectionSource,
+  packageTitle,
+} from "@/lib/collections"
 import { kindByIdentity } from "@/lib/definition"
 import {
   displayName,
   displayPlural,
   lowerFirst,
+  packageDisplayName,
   untitled,
 } from "@/lib/kind-names"
 import { recordTitleQueryOptions } from "@/lib/reference-titles"
+import { toolName } from "@/lib/tools"
 import { cn } from "@/lib/utils"
 
 export interface Crumb {
@@ -130,19 +147,22 @@ export function crumbsFor(pathname: string, technical = false): Crumb[] {
         { label: "Tools", to: "/tools" },
         technical
           ? { label: rest.join("/"), mono: true }
-          : {
-              // A tool is a function: its plain name is its actor's.
-              label: actorIdentity(`function:${rest.join(":")}`).name,
-            },
+          : { label: toolName(rest.join("/")) },
       ]
     }
     case "providers": {
       if (!rest.length) return [{ label: "Providers" }]
       const [authority, pkg] = rest
-      if (technical || authority !== PROVIDERS_AUTHORITY || !pkg) {
+      if (technical || !pkg) {
         return [
           { label: "Providers", to: "/providers" },
           { label: rest.join("/"), mono: true },
+        ]
+      }
+      if (authority !== PROVIDERS_AUTHORITY) {
+        return [
+          { label: "Providers", to: "/providers" },
+          { label: packageDisplayName(pkg) },
         ]
       }
       const provider = providerInfo(pkg)
@@ -192,14 +212,28 @@ export function crumbsFor(pathname: string, technical = false): Crumb[] {
       if (!pkg) {
         return [
           { label: "All data", to: "/data" },
-          { label: authority, mono: true },
+          technical
+            ? { label: authority, mono: true }
+            : { label: authorityTitle(authority) },
         ]
       }
       if (!name) {
+        if (technical) {
+          return [
+            { label: "All data", to: "/data" },
+            { label: authority, to: `/data/${authority}`, mono: true },
+            { label: pkg, mono: true },
+          ]
+        }
+        const provider =
+          authority === PROVIDERS_AUTHORITY ? providerInfo(pkg).key : undefined
         return [
           { label: "All data", to: "/data" },
-          { label: authority, to: `/data/${authority}`, mono: true },
-          { label: pkg, mono: true },
+          { label: authorityTitle(authority), to: `/data/${authority}` },
+          {
+            label: packageTitle(authority, pkg),
+            ...(provider && { provider }),
+          },
         ]
       }
       const crumbs = collectionCrumbs(
@@ -226,6 +260,42 @@ export function crumbsFor(pathname: string, technical = false): Crumb[] {
     default:
       return []
   }
+}
+
+/** The browser tab's words for a page: where the reader is, then what it
+ * sits in ("Test the landing page · Tasks", "Google · Providers",
+ * "Settings"). */
+// eslint-disable-next-line react-refresh/only-export-components -- a pure reading of the crumbs, exported for its test
+export function pageTitle(crumbs: Crumb[], recordTitle?: string): string {
+  const labels = crumbs.map((c) => (c.record && recordTitle) || c.label)
+  const last = labels.at(-1)
+  const parent = labels.at(-2)
+  if (!last) return "Substrate"
+  return parent ? `${last} · ${parent}` : last
+}
+
+/** Names the page in the browser tab, always in everyday words since a tab
+ * is read at a glance, and answers what to announce: the same words, once a
+ * record's title has landed, and only after the reader has moved (the first
+ * page is announced by the browser itself). */
+function usePageTitle(pathname: string): string {
+  const crumbs = useMemo(() => crumbsFor(pathname), [pathname])
+  const record = crumbs.find((c) => c.record)?.record
+  const kinds = useQuery(kindsQueryOptions)
+  const known = Boolean(record && kindByIdentity(kinds.data ?? [], record.kind))
+  const title = useQuery({
+    ...recordTitleQueryOptions(record?.kind ?? "", record?.id ?? ""),
+    enabled: known,
+  })
+  const text = pageTitle(crumbs, title.data || undefined)
+  const settled = !record || (!kinds.isPending && (!known || !title.isPending))
+  useEffect(() => {
+    if (settled) document.title = text
+  }, [settled, text])
+  const [start] = useState(pathname)
+  const [moved, setMoved] = useState(false)
+  if (!moved && pathname !== start) setMoved(true)
+  return moved && settled ? text : ""
 }
 
 /** A record crumb reads as its title; technical mode keeps the id, which is
@@ -272,7 +342,7 @@ function ShellBreadcrumb() {
           return (
             <Fragment key={`${crumb.label}-${i}`}>
               {i > 0 && (
-                <li aria-hidden className="shrink-0 text-faint">
+                <li aria-hidden className="shrink-0 text-faint-deco">
                   /
                 </li>
               )}
@@ -304,11 +374,55 @@ function ShellBreadcrumb() {
   )
 }
 
+/** How long the peeked sidebar waits after the pointer leaves, so a pointer
+ * that overshoots its edge does not snap it shut. */
+const PEEK_HIDE_MS = 300
+
+/** The collapsed sidebar's peek: shown while the pointer is on the page's
+ * left edge, the toggle or the sidebar itself, or while focus is inside it.
+ * Only a collapsed desktop sidebar peeks; the phone has its own sheet. */
+// eslint-disable-next-line react-refresh/only-export-components -- the shell's own hook, exported for its test
+export function useSidebarPeek(): SidebarPeek & {
+  collapsed: boolean
+  reset: () => void
+} {
+  const { open, isMobile } = useSidebar()
+  const collapsed = !open && !isMobile
+  const [peek, setPeek] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
+  const show = useCallback(() => {
+    clearTimeout(timer.current)
+    // Hovering the toggle of an OPEN sidebar must not arm a peek that the
+    // click collapsing it would then show.
+    if (collapsed) setPeek(true)
+  }, [collapsed])
+  const hide = useCallback(() => {
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => setPeek(false), PEEK_HIDE_MS)
+  }, [])
+  const reset = useCallback(() => {
+    clearTimeout(timer.current)
+    setPeek(false)
+  }, [])
+  return { open: peek && collapsed, collapsed, show, hide, reset }
+}
+
 export function AppShell() {
+  return (
+    <NavigationProvider>
+      <ShellBody />
+    </NavigationProvider>
+  )
+}
+
+function ShellBody() {
   const [commandOpen, setCommandOpen] = useState(false)
   // The shell outlives every page, so a part of it that failed tries again
   // on the next address.
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const peek = useSidebarPeek()
+  const announcement = usePageTitle(pathname)
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -322,45 +436,60 @@ export function AppShell() {
   }, [])
 
   return (
-    <NavigationProvider>
-      <TooltipProvider delay={250}>
-        <SectionBoundary name="The sidebar" resetKey={pathname}>
-          <AppSidebar onSearch={() => setCommandOpen(true)} />
-        </SectionBoundary>
-        <SidebarInset className="flex h-svh min-w-0 flex-col overflow-hidden">
-          <header className="flex h-11 shrink-0 items-center gap-2 px-3 md:px-4">
-            <SidebarTrigger className="-ml-1 text-muted-foreground" />
-            <SectionBoundary name="Where you are" resetKey={pathname}>
-              <ShellBreadcrumb />
-            </SectionBoundary>
-            <Button
-              variant="outline"
-              size="sm"
-              className="hidden h-7 w-48 shrink-0 justify-start gap-2 px-2 font-normal text-faint sm:inline-flex"
-              onClick={() => setCommandOpen(true)}
-            >
-              <SearchIcon className="size-3.5" />
-              <span>Search…</span>
-              <Kbd className="ml-auto">⌘K</Kbd>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Search"
-              className="sm:hidden"
-              onClick={() => setCommandOpen(true)}
-            >
-              <SearchIcon />
-            </Button>
-          </header>
-          <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-            <Outlet />
-          </div>
-        </SidebarInset>
-        <SectionBoundary name="Search" resetKey={pathname}>
-          <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
-        </SectionBoundary>
-      </TooltipProvider>
-    </NavigationProvider>
+    <TooltipProvider delay={250}>
+      <div role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </div>
+      {peek.collapsed && (
+        <div
+          aria-hidden
+          data-slot="sidebar-peek-edge"
+          className="fixed inset-y-0 left-0 z-20 w-3"
+          onMouseEnter={peek.show}
+          onMouseLeave={peek.hide}
+        />
+      )}
+      <SectionBoundary name="The sidebar" resetKey={pathname}>
+        <AppSidebar onSearch={() => setCommandOpen(true)} peek={peek} />
+      </SectionBoundary>
+      <SidebarInset className="flex h-svh min-w-0 flex-col overflow-hidden">
+        <header className="flex h-11 shrink-0 items-center gap-2 px-3 md:px-4">
+          <SidebarTrigger
+            className="-ml-1 text-muted-foreground"
+            onMouseEnter={peek.show}
+            onMouseLeave={peek.hide}
+            onClick={peek.reset}
+          />
+          <SectionBoundary name="Where you are" resetKey={pathname}>
+            <ShellBreadcrumb />
+          </SectionBoundary>
+          <Button
+            variant="outline"
+            size="sm"
+            className="hidden h-7 w-48 shrink-0 justify-start gap-2 px-2 font-normal text-faint sm:inline-flex"
+            onClick={() => setCommandOpen(true)}
+          >
+            <SearchIcon className="size-3.5" />
+            <span>Search…</span>
+            <Kbd className="ml-auto">⌘K</Kbd>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Search"
+            className="sm:hidden"
+            onClick={() => setCommandOpen(true)}
+          >
+            <SearchIcon />
+          </Button>
+        </header>
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+          <Outlet />
+        </div>
+      </SidebarInset>
+      <SectionBoundary name="Search" resetKey={pathname}>
+        <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
+      </SectionBoundary>
+    </TooltipProvider>
   )
 }

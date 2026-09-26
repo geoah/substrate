@@ -24,13 +24,22 @@ export const SEARCH_MODE_LABEL: Record<SearchMode, string> = {
   semantic: "Meaning",
 }
 
+/** What each arm does, in the reader's words. */
 export const SEARCH_MODE_DESCRIPTION: Record<SearchMode, string> = {
+  lexical: "Matches the words you typed. Instant.",
+  hybrid:
+    "Also finds records that mean the same thing, when a model is set up.",
+  semantic: "Only by meaning. Needs a model, and each search calls it.",
+}
+
+/** How each arm ranks, for technical mode. */
+export const SEARCH_MODE_DETAIL: Record<SearchMode, string> = {
   lexical:
-    "Full-text search over every indexed text of a record, ranked by how well the words match. Free, instant, and it works on every repository.",
+    "Full-text search over every indexed text of a record, ranked by how well the words match.",
   hybrid:
     "Both arms fused: the word ranking and the embedding similarity, each scaled against its own best hit. Falls back to words alone when no embeddings provider is configured.",
   semantic:
-    "Embedding similarity alone, over the properties that opted into embedding. Needs an embeddings provider and spends one embedding call per search.",
+    "Embedding similarity alone, over the properties that opted into embedding. Spends one embedding call per search.",
 }
 
 export function isSearchMode(v: unknown): v is SearchMode {

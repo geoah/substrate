@@ -43,10 +43,11 @@ import {
 
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { ProviderBadge } from "@/components/identity/provider-badge"
-import { ToggleSwitch } from "@/components/nav/toggle-switch"
+import { SwitchMark, ToggleSwitch } from "@/components/nav/toggle-switch"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
@@ -85,7 +86,8 @@ import {
   isGroupOpen,
   type CollectionGroup,
 } from "@/lib/collections"
-import { kindPurpose } from "@/lib/definition"
+import { kindByIdentity, kindPurpose } from "@/lib/definition"
+import { kindDescription } from "@/lib/kind-copy"
 import { displayPlural } from "@/lib/kind-names"
 import { cn } from "@/lib/utils"
 
@@ -159,7 +161,7 @@ function StarButton({ identity }: { identity: string }) {
     <button
       type="button"
       disabled={busy}
-      aria-label={`${starred ? "Unstar" : "Star"} ${identity}`}
+      aria-label={`${starred ? "Unstar" : "Star"} ${displayPlural(identity)}`}
       aria-pressed={starred}
       title={starred ? "Remove from favorites" : "Add to favorites"}
       className={cn(
@@ -176,7 +178,9 @@ function StarButton({ identity }: { identity: string }) {
 }
 
 /** One collection in a group. Everyday: glyph and display plural. Technical:
- * the reference's own name, tagged when it is not a primary collection. */
+ * the reference's own name, tagged when it is not a primary collection. The
+ * tooltip is what the collection holds; its reference is on the collection
+ * page and in every hover card. */
 function KindRow({ kind, technical }: { kind: KindInfo; technical: boolean }) {
   const params = useParams({ strict: false })
   const close = useCloseOnPhone()
@@ -191,7 +195,7 @@ function KindRow({ kind, technical }: { kind: KindInfo; technical: boolean }) {
         params={{ authority, pkg, name }}
         onClick={close}
         aria-current={active ? "page" : undefined}
-        title={kind.identity}
+        title={kindDescription(kind, technical)}
         className={cn(ROW, "pr-2 pl-3.5", active && ACTIVE)}
       >
         <KindGlyph kind={kind} size="xs" />
@@ -374,6 +378,7 @@ function CollectionGroups() {
 export function Favorites() {
   const { preferences, busy, change } = useSidebarPreferences()
   const [technical] = useTechnicalDetails()
+  const registry = useQuery(kindsQueryOptions)
   const params = useParams({ strict: false })
   const close = useCloseOnPhone()
   if (preferences.favorites.length === 0) return null
@@ -384,6 +389,8 @@ export function Favorites() {
       </div>
       {preferences.favorites.map((identity, index) => {
         const parts = splitKind(identity)
+        const plural = displayPlural(identity)
+        const declared = kindByIdentity(registry.data ?? [], identity)
         const active =
           params.authority === parts.authority &&
           params.pkg === parts.pkg &&
@@ -394,14 +401,15 @@ export function Favorites() {
               to="/data/$authority/$pkg/$name"
               params={parts}
               onClick={close}
-              aria-label={identity}
-              title={identity}
+              title={
+                declared ? kindDescription(declared, technical) : undefined
+              }
               aria-current={active ? "page" : undefined}
               className={cn(ROW, active && ACTIVE)}
             >
               <KindGlyph kind={identity} size="xs" />
               <span className="min-w-0 truncate">
-                {technical ? parts.name : displayPlural(identity)}
+                {technical ? parts.name : plural}
               </span>
             </Link>
             <div className="absolute top-1/2 right-1 flex -translate-y-1/2 rounded bg-sidebar opacity-0 group-hover/fav:opacity-100 focus-within:opacity-100">
@@ -409,7 +417,7 @@ export function Favorites() {
                 type="button"
                 className="grid size-6 cursor-pointer place-items-center rounded text-faint hover:text-foreground disabled:opacity-30"
                 disabled={busy || index === 0}
-                aria-label={`Move ${identity} up`}
+                aria-label={`Move ${plural} up`}
                 onClick={() =>
                   change({ type: "move", key: identity, direction: -1 })
                 }
@@ -420,7 +428,7 @@ export function Favorites() {
                 type="button"
                 className="grid size-6 cursor-pointer place-items-center rounded text-faint hover:text-foreground disabled:opacity-30"
                 disabled={busy || index === preferences.favorites.length - 1}
-                aria-label={`Move ${identity} down`}
+                aria-label={`Move ${plural} down`}
                 onClick={() =>
                   change({ type: "move", key: identity, direction: 1 })
                 }
@@ -431,7 +439,7 @@ export function Favorites() {
                 type="button"
                 className="grid size-6 cursor-pointer place-items-center rounded text-primary"
                 disabled={busy}
-                aria-label={`Unstar ${identity}`}
+                aria-label={`Unstar ${plural}`}
                 onClick={() =>
                   change({ type: "favorite", key: identity, starred: false })
                 }
@@ -492,6 +500,7 @@ export function RepositoryMenu() {
   const { isMobile } = useSidebar()
   const navigate = useNavigate()
   const { preferences, set } = useConsolePreferences()
+  const [technical, setTechnical] = useTechnicalDetails()
   const repository = getRepository() ?? "substrate"
 
   async function signOut() {
@@ -512,7 +521,7 @@ export function RepositoryMenu() {
         <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold">
           {repository}
         </span>
-        <ChevronsUpDownIcon className="size-3.5 shrink-0 text-faint" />
+        <ChevronsUpDownIcon className="size-3.5 shrink-0 text-faint-deco" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         className="min-w-56"
@@ -540,7 +549,7 @@ export function RepositoryMenu() {
           }
         >
           <DropdownMenuLabel className="text-[11px] font-normal text-faint">
-            Theme
+            Appearance
           </DropdownMenuLabel>
           <DropdownMenuRadioItem value="system">
             <SunMoonIcon /> System
@@ -553,6 +562,17 @@ export function RepositoryMenu() {
           </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
+        {/* The same switch as the sidebar's foot, reachable while the
+            sidebar is tucked away. */}
+        <DropdownMenuCheckboxItem
+          checked={technical}
+          onCheckedChange={(on) => setTechnical(on)}
+          className="pr-1.5 [&_[data-slot=dropdown-menu-checkbox-item-indicator]]:hidden"
+        >
+          <CodeIcon /> Technical details
+          <SwitchMark checked={technical} className="ml-auto" />
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={() => void signOut()}>
           <LogOutIcon /> Sign out
         </DropdownMenuItem>
@@ -561,9 +581,38 @@ export function RepositoryMenu() {
   )
 }
 
-export function AppSidebar({ onSearch }: { onSearch: () => void }) {
+/** A collapsed sidebar shown over the page while the pointer or the focus is
+ * on it, without opening it for good. */
+export interface SidebarPeek {
+  open: boolean
+  show: () => void
+  hide: () => void
+}
+
+export function AppSidebar({
+  onSearch,
+  peek,
+}: {
+  onSearch: () => void
+  peek?: SidebarPeek
+}) {
   return (
-    <Sidebar collapsible="offcanvas">
+    <Sidebar
+      collapsible="offcanvas"
+      data-peek={peek?.open || undefined}
+      className={cn(
+        peek?.open && "left-0! z-30 border-border-strong shadow-card"
+      )}
+      onMouseEnter={peek?.show}
+      onMouseLeave={peek?.hide}
+      onFocus={peek?.show}
+      onBlur={(event) => {
+        // A menu the sidebar opened is portaled out of it, so only focus that
+        // lands on the page itself hides the peek.
+        const next = event.relatedTarget
+        if (!next || next.closest("[data-slot=sidebar-inset]")) peek?.hide()
+      }}
+    >
       <SidebarHeader className="gap-1 px-3 pt-3 pb-2">
         <RepositoryMenu />
         <button

@@ -35,7 +35,10 @@
   --color-panel: var(--panel);
   --color-hover: var(--hover);
   --color-selection: var(--selection);
-  --color-faint: var(--faint);
+  /* `text-faint` is overwhelmingly text that names or counts something, so it
+     takes the tone that reads; icons and separators take `faint-deco`. */
+  --color-faint: var(--faint-text);
+  --color-faint-deco: var(--faint);
   --color-border-strong: var(--border-strong);
   --color-primary-text: var(--primary-text);
   --color-primary-soft: var(--primary-soft);
@@ -103,6 +106,7 @@
   --muted: #f5f4f1;
   --muted-foreground: #5d5c56;
   --faint: #9a9892;
+  --faint-text: #7d7b74;
   --accent: rgba(55, 53, 47, 0.055);
   --accent-foreground: #252420;
   --panel: #fbfaf8;
@@ -110,10 +114,12 @@
   --selection: rgba(47, 107, 219, 0.09);
   --destructive: #c94a3d;
   --bad-soft: #fbe9e6;
-  /* Transient trouble is amber, never the red of "action required". */
-  --warning: #b7791f;
+  /* Transient trouble is amber, never the red of "action required". Both
+     inks are a step darker than the guide's so a pill's word reads on its
+     soft fill at 12px. */
+  --warning: #94600f;
   --warn-soft: #fbf1de;
-  --ok: #2f8f5b;
+  --ok: #256f46;
   --ok-soft: #e6f4ec;
   --border: #ecebe7;
   --border-strong: #dedcd6;
@@ -171,6 +177,7 @@
   --muted: #222222;
   --muted-foreground: #a9a8a3;
   --faint: #74736e;
+  --faint-text: #8a8983;
   --accent: rgba(255, 255, 255, 0.055);
   --accent-foreground: #e8e7e3;
   --panel: #1d1d1d;

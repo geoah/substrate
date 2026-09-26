@@ -2,6 +2,34 @@
 
 import { cn } from "@/lib/utils"
 
+/** The switch's look alone, for a control that carries the state itself (a
+ * menu's checkbox item). */
+export function SwitchMark({
+  checked,
+  className,
+}: {
+  checked: boolean
+  className?: string
+}) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "relative block h-[18px] w-[30px] shrink-0 rounded-full transition-colors",
+        checked ? "bg-primary" : "bg-border-strong",
+        className
+      )}
+    >
+      <span
+        className={cn(
+          "absolute top-[2px] size-[14px] rounded-full bg-background shadow-[0_1px_2px_rgba(0,0,0,0.2)] transition-[left] duration-150",
+          checked ? "left-[14px]" : "left-[2px]"
+        )}
+      />
+    </span>
+  )
+}
+
 export function ToggleSwitch({
   checked,
   onChange,
@@ -25,18 +53,11 @@ export function ToggleSwitch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative h-[18px] w-[30px] shrink-0 cursor-pointer rounded-full border-0 p-0 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-50",
-        checked ? "bg-primary" : "bg-border-strong",
+        "shrink-0 cursor-pointer rounded-full border-0 p-0 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-50",
         className
       )}
     >
-      <span
-        aria-hidden
-        className={cn(
-          "absolute top-[2px] size-[14px] rounded-full bg-background shadow-[0_1px_2px_rgba(0,0,0,0.2)] transition-[left] duration-150",
-          checked ? "left-[14px]" : "left-[2px]"
-        )}
-      />
+      <SwitchMark checked={checked} />
     </button>
   )
 }

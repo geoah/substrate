@@ -71,7 +71,6 @@ describe("console preferences", () => {
         properties: {
           collapsed: ["example.com"],
           favorites: [],
-          sidebarOpen: true,
         },
         ifVersion: 0,
       }
@@ -96,7 +95,6 @@ describe("console preferences", () => {
       properties: {
         collapsed: ["example.com"],
         favorites: ["example.com/tasks/task"],
-        sidebarOpen: true,
       },
       ifVersion: 2,
     })
@@ -105,7 +103,7 @@ describe("console preferences", () => {
   it("does not overwrite preferences when the read fails", async () => {
     wire.mockRejectedValueOnce(new ApiError("internal", "unavailable", 503))
     await expect(
-      saveConsoleAction({ type: "sidebar", open: false })
+      saveConsoleAction({ type: "collapse", key: "a", collapsed: true })
     ).rejects.toThrow("unavailable")
     expect(wire).toHaveBeenCalledTimes(1)
   })
@@ -194,7 +192,6 @@ describe("display settings", () => {
       properties: {
         collapsed: [],
         favorites: ["a"],
-        sidebarOpen: true,
         recordWidth: "narrow",
       },
       ifVersion: 4,
@@ -210,6 +207,30 @@ describe("display settings", () => {
       new Set()
     )
     expect(store.get("theme")).toBe("light")
+  })
+
+  it("keeps the sidebar in this browser and never writes it to the record", async () => {
+    const saved = await saveConsoleAction(
+      { type: "sidebar", open: false },
+      declaredSettings([preferenceKind("technicalDetails")])
+    )
+    expect(saved).toBeNull()
+    expect(wire).not.toHaveBeenCalled()
+    expect(readLocalSettings().sidebarOpen).toBe(false)
+    expect(preferencesOf(null, readLocalSettings()).sidebarOpen).toBe(false)
+  })
+
+  it("ignores a sidebar state an older console stored on the record", () => {
+    const record = {
+      id: "navigation",
+      kind: "substrate.reamde.dev/core/consolepreference",
+      version: 2,
+      properties: { sidebarOpen: false },
+    } as never
+    expect(preferencesOf(record).sidebarOpen).toBe(true)
+    expect(preferencesOf(record, { sidebarOpen: false }).sidebarOpen).toBe(
+      false
+    )
   })
 
   it("ignores a value outside the setting's range", () => {

@@ -82,6 +82,13 @@ export function tokenWords(
   return { title: t.label, description: `${since}${expires}` }
 }
 
+/** A token as a sentence names it: "command line", "another browser", or
+ * the label it was minted with, as written. */
+function signedInAs(t: TokenInfo): string {
+  const title = tokenWords(t, false).title
+  return title === t.label ? title : title.toLowerCase()
+}
+
 /** Signing a token out, confirmed first: it cannot be undone, and signing
  * out THIS browser ends the session the console is running on. */
 function useSignOut() {
@@ -102,7 +109,7 @@ function useSignOut() {
       }
       toast.add({
         type: "success",
-        title: `Signed out ${tokenWords(t, false).title.toLowerCase()}.`,
+        title: `Signed out ${signedInAs(t)}.`,
       })
       void queryClient.invalidateQueries({ queryKey: TOKENS_KEY })
     },
@@ -126,12 +133,12 @@ function useSignOut() {
           <DialogTitle>
             {pending.id === currentId
               ? "Sign out this browser?"
-              : `Sign out ${pending.label}?`}
+              : `Sign out ${signedInAs(pending)}?`}
           </DialogTitle>
           <DialogDescription>
             {pending.id === currentId
-              ? "This is the token this browser is signed in with. Revoking it signs you out of this browser."
-              : "Anything using this token stops working straight away. A revoked token cannot be restored."}
+              ? "It will need your password again."
+              : "It stops working straight away and has to sign in again."}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -148,7 +155,7 @@ function useSignOut() {
             onClick={() => revoke.mutate(pending)}
           >
             {revoke.isPending && <Spinner />}
-            {pending.id === currentId ? "Sign out" : "Revoke"}
+            Sign out
           </Button>
         </DialogFooter>
       </DialogContent>

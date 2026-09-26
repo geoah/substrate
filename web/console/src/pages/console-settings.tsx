@@ -287,8 +287,8 @@ export function ConsoleSettingsPage() {
             </span>
             , beside the sidebar state it keeps (
             <span className="font-mono">collapsed</span>,{" "}
-            <span className="font-mono">favorites</span>,{" "}
-            <span className="font-mono">sidebarOpen</span>).
+            <span className="font-mono">favorites</span>). Whether the sidebar
+            is open stays in this browser.
           </div>
         </div>
       )}

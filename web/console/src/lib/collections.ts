@@ -5,11 +5,16 @@
  * Home all read this one grouping, so a kind sits in the same place on every
  * surface. */
 
-import { providerOfKind, type ProviderInfo } from "@/lib/actor-identity"
+import {
+  PROVIDERS_AUTHORITY,
+  providerInfo,
+  providerOfKind,
+  type ProviderInfo,
+} from "@/lib/actor-identity"
 import { CORE_AUTHORITY, splitKind } from "@/lib/api/http"
 import type { KindInfo } from "@/lib/api/types"
 import { kindPurpose } from "@/lib/definition"
-import { displayPlural, lowerFirst } from "@/lib/kind-names"
+import { displayPlural, lowerFirst, packageDisplayName } from "@/lib/kind-names"
 
 export type CollectionGroupKind = "yours" | "provider" | "system"
 
@@ -151,6 +156,20 @@ export function collectionSource(kind: string): string {
   return splitKind(kind).authority === CORE_AUTHORITY
     ? "Substrate"
     : "Your data"
+}
+
+/** An authority as its page and crumb name it, in `collectionSource`'s
+ * words: "Your data", "From providers", "Substrate". */
+export function authorityTitle(authority: string): string {
+  if (authority === PROVIDERS_AUTHORITY) return "From providers"
+  return authority === CORE_AUTHORITY ? "Substrate" : "Your data"
+}
+
+/** A package as its page and crumb name it: a provider by its own name
+ * ("Google"), any other package by its word ("Tasks package"). */
+export function packageTitle(authority: string, pkg: string): string {
+  if (authority === PROVIDERS_AUTHORITY) return providerInfo(pkg).name
+  return `${packageDisplayName(pkg)} package`
 }
 
 /** Provider groups start folded; every other group starts open. The stored

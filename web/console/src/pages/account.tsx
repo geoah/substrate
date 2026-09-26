@@ -35,6 +35,7 @@ import {
   totpChange,
   totpEnroll,
 } from "@/lib/api/auth"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useAuthPolicy } from "@/lib/api/discovery"
 import { getRepository } from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
@@ -73,6 +74,7 @@ async function copy(value: string) {
 export function AccountRows() {
   const repository = getRepository() ?? ""
   const { totpRequired } = useAuthPolicy()
+  const [technical] = useTechnicalDetails()
   const [open, setOpen] = useState<"password" | "totp" | null>(null)
   const toggle = (which: "password" | "totp") =>
     setOpen((o) => (o === which ? null : which))
@@ -135,14 +137,19 @@ export function AccountRows() {
         </SettingRow>
       ) : (
         <SettingRow
-          title="Second factor: off"
+          title="Second factor"
           description={
             <>
-              This substrate asks for no code, so your password is all you need
-              to sign in. It is a setting for local development. If you
-              registered while it was off, nobody holds a secret for you; the
-              operator issues one with{" "}
-              <code className="font-mono">substratectl user reset</code>.
+              Off. This substrate signs you in with a password alone.
+              {technical && (
+                <>
+                  {" "}
+                  It is a setting for local development. If you registered while
+                  it was off, nobody holds a secret for you; the operator issues
+                  one with{" "}
+                  <code className="font-mono">substratectl user reset</code>.
+                </>
+              )}
             </>
           }
         />

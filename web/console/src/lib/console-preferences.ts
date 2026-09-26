@@ -1,8 +1,13 @@
 /** The console's per-repository preferences: navigation (collapsed groups,
- * favorites, the sidebar) and display (layout widths, density, technical
- * details, theme). They live on ONE record,
+ * favorites) and display (layout widths, density, technical details, theme).
+ * They live on ONE record,
  * `substrate.reamde.dev/core/consolepreference/navigation`, so every session
  * of the repository shares them.
+ *
+ * Whether the sidebar is open is the exception: it is a fact about one window
+ * (a laptop tucks it away, a desktop monitor keeps it), so it lives in this
+ * browser's localStorage only and is never written to the record, and a
+ * value an older console stored there is ignored.
  *
  * A repository whose stored `consolepreference` kind predates a setting
  * REFUSES the undeclared property, so a setting is written to the record only
@@ -61,7 +66,7 @@ const NAME = "consolepreference"
 const ID = "navigation"
 
 /** Declared by every version of the kind, so always written. */
-const NAVIGATION_KEYS = ["collapsed", "favorites", "sidebarOpen"] as const
+const NAVIGATION_KEYS = ["collapsed", "favorites"] as const
 
 export const DEFAULT_SETTINGS: DisplaySettings = {
   recordWidth: "wide",
@@ -114,10 +119,18 @@ function decode(raw: string | null): unknown {
   }
 }
 
-export function readLocalSettings(): Partial<DisplaySettings> {
+/** What this browser keeps: every display setting it has seen, and the
+ * sidebar, which only it keeps. */
+export type LocalPreferences = Partial<DisplaySettings> & {
+  sidebarOpen?: boolean
+}
+
+const SIDEBAR_KEY = "substrate.console.sidebarOpen"
+
+export function readLocalSettings(): LocalPreferences {
   const store = storage()
-  const out: Partial<Record<SettingKey, unknown>> = {}
-  if (!store) return out as Partial<DisplaySettings>
+  const out: Partial<Record<SettingKey | "sidebarOpen", unknown>> = {}
+  if (!store) return out as LocalPreferences
   for (const key of SETTING_KEYS) {
     let value: unknown
     try {
@@ -127,7 +140,21 @@ export function readLocalSettings(): Partial<DisplaySettings> {
     }
     if (valid(key, value)) out[key] = value
   }
-  return out as Partial<DisplaySettings>
+  try {
+    const open = decode(store.getItem(SIDEBAR_KEY))
+    if (typeof open === "boolean") out.sidebarOpen = open
+  } catch {
+    // An unreadable store opens the sidebar.
+  }
+  return out as LocalPreferences
+}
+
+export function writeLocalSidebar(open: boolean): void {
+  try {
+    storage()?.setItem(SIDEBAR_KEY, JSON.stringify(open))
+  } catch {
+    // A full or refused storage loses a convenience, never the page.
+  }
 }
 
 export function writeLocalSetting(action: SettingAction): void {
@@ -156,7 +183,7 @@ const strings = (value: unknown): string[] =>
  * browser's, then to the default. */
 export function preferencesOf(
   record?: SubstrateRecord | null,
-  local: Partial<DisplaySettings> = {}
+  local: LocalPreferences = {}
 ): ConsolePreferences {
   const properties = record?.properties ?? {}
   const settings = { ...DEFAULT_SETTINGS }
@@ -169,7 +196,7 @@ export function preferencesOf(
   return {
     collapsed: strings(properties.collapsed),
     favorites: strings(properties.favorites),
-    sidebarOpen: properties.sidebarOpen !== false,
+    sidebarOpen: local.sidebarOpen !== false,
     ...settings,
   }
 }
@@ -235,8 +262,9 @@ export function consolePreferencesOptions() {
   })
 }
 
-/** Apply one action where it lives. A setting the stored kind does not
- * declare stays in this browser and answers null; everything else is a
+/** Apply one action where it lives. The sidebar, and a setting the stored
+ * kind does not declare, stay in this browser and answer null; everything
+ * else is a
  * read-modify-CAS on the record, which keeps another session's unrelated
  * edits, retried on a conflict against fresh state. A written setting is
  * mirrored into localStorage too, so a browser that has not read the record
@@ -245,6 +273,10 @@ export async function saveConsoleAction(
   action: ConsoleAction,
   declared: ReadonlySet<SettingKey> = new Set()
 ): Promise<SubstrateRecord | null> {
+  if (action.type === "sidebar") {
+    writeLocalSidebar(action.open)
+    return null
+  }
   if (action.type === "set") {
     writeLocalSetting(action)
     if (!declared.has(action.key)) return null
