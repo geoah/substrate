@@ -1179,19 +1179,66 @@ export interface ToolStatus {
   label: string
 }
 
+/** How often agents called a tool: the tool messages answering under its
+ * names, counted by the server, and the newest of them. */
+export interface ToolUsage {
+  count: number
+  latest?: ToolRun
+}
+
+/** The names a count of this tool's calls may filter the tool messages by:
+ * every name an agent's model calls it by, provided no agent calls another
+ * tool by any of them. A tool message carries the name alone, so a shared
+ * name would count the other tool's calls as this one's. Undefined when no
+ * agent lists the tool, or a name is shared. */
+export function usageNames(tool: Tool, tools: Tool[]): string[] | undefined {
+  if (!tool.uses.length) return undefined
+  const names = [...new Set(tool.uses.map((u) => u.name))].sort()
+  const shared = tools.some(
+    (other) =>
+      other.ref !== tool.ref && other.uses.some((u) => names.includes(u.name))
+  )
+  return shared ? undefined : names
+}
+
 /** The pill a tool carries: paused, waiting for its provider, the newest
- * run's outcome, or never ran. */
+ * run's outcome, how often agents used it, or never ran. Nothing where no
+ * record would say: a tool no trigger calls and no agent lists runs only
+ * when called directly, which leaves no run behind, and an agent's tool is
+ * silent until its calls are counted. */
 export function toolStatus(
   tool: Tool,
   latest: ToolRun | undefined,
-  opts: { waitingFor?: ProviderInfo; now?: number } = {}
-): ToolStatus {
+  opts: { waitingFor?: ProviderInfo; usage?: ToolUsage; now?: number } = {}
+): ToolStatus | undefined {
   if (isPaused(tool)) return { tone: "warn", label: "Paused" }
   if (latest?.status === "trouble")
     return { tone: "warn", label: "Had trouble" }
+  const { usage } = opts
+  if (usage && !tool.triggers.length) {
+    const newest = [latest, usage.latest]
+      .filter((r): r is ToolRun => Boolean(r))
+      .sort((a, b) => b.at.localeCompare(a.at))[0]
+    if (!usage.count && !newest)
+      return { tone: "neutral", label: "Not used yet" }
+    const times =
+      usage.count === 1 ? "once" : `${usage.count.toLocaleString()} times`
+    if (!usage.count || !newest)
+      return {
+        tone: "ok",
+        label: newest
+          ? `Ran ${agoWords(newest.at, opts.now)}`
+          : `Used ${times}`,
+      }
+    return {
+      tone: "ok",
+      label: `Used ${times} · ${usage.count === 1 ? "" : "last "}${agoWords(newest.at, opts.now)}`,
+    }
+  }
   if (latest)
     return { tone: "ok", label: `Ran ${agoWords(latest.at, opts.now)}` }
   if (opts.waitingFor)
     return { tone: "warn", label: `Waiting for ${opts.waitingFor.name}` }
+  if (!tool.triggers.length) return undefined
   return { tone: "neutral", label: "Never ran" }
 }

@@ -26,6 +26,7 @@ import {
   toolName,
   toolStarts,
   toolStatus,
+  usageNames,
   tookWords,
   type Tool,
 } from "./tools"
@@ -492,7 +493,7 @@ describe("runs and status", () => {
       tone: "ok",
       label: "Ran 5 min ago",
     })
-    expect(toolStatus(gcal, { ...ok, status: "trouble" }, { now }).label).toBe(
+    expect(toolStatus(gcal, { ...ok, status: "trouble" }, { now })?.label).toBe(
       "Had trouble"
     )
     expect(
@@ -500,13 +501,74 @@ describe("runs and status", () => {
         waitingFor: { key: "google", name: "Google", letter: "G", color: "" },
       })
     ).toEqual({ tone: "warn", label: "Waiting for Google" })
-    expect(toolStatus(gcal, undefined).label).toBe("Never ran")
+    expect(toolStatus(gcal, undefined)?.label).toBe("Never ran")
     const paused = {
       ...gcal,
       triggers: gcal.triggers.map((t) => ({ ...t, enabled: false })),
     }
     expect(isPaused(paused)).toBe(true)
-    expect(toolStatus(paused, ok).label).toBe("Paused")
+    expect(toolStatus(paused, ok)?.label).toBe("Paused")
+  })
+
+  it("carries no pill where nothing records a tool's runs", () => {
+    const tools = fixture()
+    // No trigger calls it and no agent lists it: a direct call leaves no run.
+    expect(toolStatus(byRef(tools, IDLE), undefined)).toBeUndefined()
+    expect(toolStatus(byRef(tools, WRITE), undefined)).toBeUndefined()
+    // An agent's tool: silent until its calls are counted.
+    expect(toolStatus(byRef(tools, QUERY), undefined)).toBeUndefined()
+  })
+
+  it("counts an agent's tool by its calls", () => {
+    const tools = fixture()
+    const query = byRef(tools, QUERY)
+    const now = Date.parse("2026-09-25T12:00:00Z")
+    const latest = runFromToolMessage(
+      rec("substrate.reamde.dev/llm/message", "m1", { role: "tool", ok: true }),
+      "ada.example.com/llm/substrate"
+    )
+    expect(
+      toolStatus(query, latest, { usage: { count: 40, latest }, now })
+    ).toEqual({ tone: "ok", label: "Used 40 times · last 2 hours ago" })
+    expect(
+      toolStatus(query, latest, { usage: { count: 1, latest }, now })?.label
+    ).toBe("Used once · 2 hours ago")
+    expect(toolStatus(query, undefined, { usage: { count: 0 } })).toEqual({
+      tone: "neutral",
+      label: "Not used yet",
+    })
+    expect(
+      toolStatus(
+        query,
+        { ...latest, status: "trouble" },
+        {
+          usage: { count: 3, latest },
+        }
+      )?.label
+    ).toBe("Had trouble")
+  })
+
+  it("counts calls by name only where no other tool answers to it", () => {
+    const tools = fixture()
+    expect(usageNames(byRef(tools, QUERY), tools)).toEqual(["query"])
+    expect(usageNames(byRef(tools, STATS), tools)).toEqual(["count"])
+    expect(usageNames(byRef(tools, IDLE), tools)).toBeUndefined()
+    const clash = buildTools(
+      [fn(QUERY, { runtime: "host" }), fn(STATS)],
+      [
+        agent("a/b/one", [
+          { function: { ref: `substrate.reamde.dev/core/function/${QUERY}` } },
+        ]),
+        agent("a/b/two", [
+          {
+            function: { ref: `substrate.reamde.dev/core/function/${STATS}` },
+            name: "query",
+          },
+        ]),
+      ],
+      []
+    )
+    expect(usageNames(byRef(clash, QUERY), clash)).toBeUndefined()
   })
 
   it("says durations and effects in words", () => {

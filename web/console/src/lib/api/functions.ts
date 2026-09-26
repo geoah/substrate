@@ -76,6 +76,33 @@ export function toolMessagesQueryOptions(names: string[], first = 50) {
   })
 }
 
+/** How many tool messages answer under any of `names`, counted by the
+ * server (`count=1`), with the newest one and its thread: one row, however
+ * often the tool was called. `count` is absent from a server that predates
+ * the parameter. */
+export function toolUsageQueryOptions(names: string[]) {
+  const sorted = [...new Set(names)].sort()
+  return queryOptions({
+    queryKey: ["records", [MESSAGE_KIND], "tool-usage", sorted],
+    queryFn: ({ signal }): Promise<Page> =>
+      fetchRecordsPage(
+        {
+          kinds: [MESSAGE_KIND],
+          first: 1,
+          count: true,
+          orderBy: "createdAt:desc",
+          filter: {
+            properties: { role: { eq: "tool" }, name: { in: sorted } },
+          },
+          expand: ["thread"],
+        },
+        signal
+      ),
+    enabled: sorted.length > 0,
+    staleTime: 15_000,
+  })
+}
+
 /** The agent a tool message's thread belongs to, off the page's `included`. */
 export function messageAgent(
   page: Page | undefined,

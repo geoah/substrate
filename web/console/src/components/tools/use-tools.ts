@@ -3,7 +3,7 @@
  * agent's tool calls) and, for a provider's sync, whether the provider is
  * set up yet. */
 
-import { useQuery } from "@tanstack/react-query"
+import { useQueries, useQuery } from "@tanstack/react-query"
 import { useMemo } from "react"
 
 import { agentsQueryOptions } from "@/lib/api/agents"
@@ -12,6 +12,7 @@ import {
   messageAgent,
   recentTriggerRunsQueryOptions,
   toolMessagesQueryOptions,
+  toolUsageQueryOptions,
 } from "@/lib/api/functions"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { repositoryQueryOptions } from "@/lib/api/repository"
@@ -26,13 +27,16 @@ import {
   buildTools,
   kindLabeler,
   refId,
+  runFromToolMessage,
   runFromTriggerRun,
   sortRuns,
   toolMessageRuns,
+  usageNames,
   watchedKinds,
   type KindLabeler,
   type Tool,
   type ToolRun,
+  type ToolUsage,
 } from "@/lib/tools"
 
 /** `*`, `<authority>/*`, `<authority>/<package>/*`, or the exact reference. */
@@ -52,12 +56,16 @@ export interface ToolsModel {
   /** The provider a sync is waiting on: none of the records its change
    * triggers watch exists yet. */
   waitingFor: (tool: Tool) => ProviderInfo | undefined
+  /** How often agents called it, where that can be counted. */
+  usageOf: (tool: Tool) => ToolUsage | undefined
   /** The connected records (accounts) a sync's change triggers watch. */
   accountsOf: (tool: Tool) => SyncStatus[]
   agentsById: Map<string, SubstrateRecord>
 }
 
-export function useTools(): ToolsModel {
+/** `only`: the one tool a page is about, so its calls are the only ones
+ * counted; every tool otherwise. */
+export function useTools(only?: string): ToolsModel {
   const functions = useQuery(functionsQueryOptions)
   const agents = useQuery(agentsQueryOptions())
   const triggers = useQuery(triggerRecordsQueryOptions)
@@ -84,6 +92,32 @@ export function useTools(): ToolsModel {
   const messages = useQuery(toolMessagesQueryOptions(names))
 
   const label = useMemo(() => kindLabeler(kinds.data), [kinds.data])
+
+  const counted = useMemo(
+    () =>
+      tools
+        .filter((t) => !only || t.ref === only)
+        .flatMap((t) => {
+          const names = usageNames(t, tools)
+          return names ? [{ ref: t.ref, names }] : []
+        }),
+    [tools, only]
+  )
+  const usageReads = useQueries({
+    queries: counted.map((c) => toolUsageQueryOptions(c.names)),
+  })
+  const usage = new Map<string, ToolUsage>()
+  counted.forEach((c, i) => {
+    const page = usageReads[i]?.data
+    if (typeof page?.count !== "number") return
+    const newest = page.records?.[0]
+    usage.set(c.ref, {
+      count: page.count,
+      latest: newest
+        ? runFromToolMessage(newest, messageAgent(page, newest) ?? "")
+        : undefined,
+    })
+  })
 
   const runsByTrigger = useMemo(() => {
     const out = new Map<string, ToolRun[]>()
@@ -119,6 +153,7 @@ export function useTools(): ToolsModel {
         : []
       return sortRuns([...fromTriggers, ...fromAgents])
     },
+    usageOf: (tool) => usage.get(tool.ref),
     waitingFor: (tool) => {
       if (tool.origin.kind !== "provider" || !syncs.data) return undefined
       const watched = watchedKinds(tool)

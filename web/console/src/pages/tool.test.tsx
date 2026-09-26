@@ -152,10 +152,12 @@ function listed(path: string): string[] {
 describe("ToolPage", () => {
   const fetchMock = vi.fn<typeof fetch>()
   let runs: SubstrateRecord[] = []
+  let calls: { count: number; records: SubstrateRecord[] } | undefined
   let callStatus = 200
 
   beforeEach(() => {
     runs = []
+    calls = undefined
     callStatus = 200
     fetchMock.mockImplementation(async (url) => {
       const path = String(url)
@@ -168,6 +170,18 @@ describe("ToolPage", () => {
       const page = (records: SubstrateRecord[]) =>
         jsonResponse(200, { records, head: 1, generation: "g" })
       if (kinds.includes(FN)) return page(FUNCTIONS)
+      if (kinds.includes("substrate.reamde.dev/llm/message")) {
+        const counted = new URL(path, "http://x").searchParams.has("count")
+        if (!calls) return page([])
+        return counted
+          ? jsonResponse(200, {
+              records: calls.records.slice(0, 1),
+              count: calls.count,
+              head: 1,
+              generation: "g",
+            })
+          : page(calls.records)
+      }
       if (kinds.includes("substrate.reamde.dev/core/agent")) return page(AGENTS)
       if (kinds.includes("substrate.reamde.dev/core/trigger"))
         return page(TRIGGERS)
@@ -286,6 +300,33 @@ describe("ToolPage", () => {
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({
       input: { text: "hello there", words: 2 },
     })
+  })
+
+  it("counts an agent's tool by its calls, where nothing else records a run", async () => {
+    const thread = "substrate.reamde.dev/llm/thread/t1"
+    calls = {
+      count: 12,
+      records: [
+        rec("substrate.reamde.dev/llm/message", "m1", {
+          role: "tool",
+          name: "savenote",
+          ok: true,
+          thread: { ref: thread },
+        }),
+      ],
+    }
+    renderAt(SAVE)
+    expect(await screen.findByText(/^Used 12 times · last /)).toBeTruthy()
+  })
+
+  it("says an agent's tool is not used yet, never that it never ran", async () => {
+    calls = { count: 0, records: [] }
+    renderAt(SAVE)
+    expect(
+      await screen.findByRole("heading", { name: "Save note" })
+    ).toBeTruthy()
+    expect(await screen.findByText("Not used yet")).toBeTruthy()
+    expect(screen.queryByText("Never ran")).toBeNull()
   })
 
   it("says an older substrate cannot run a tool, not the transport's words", async () => {

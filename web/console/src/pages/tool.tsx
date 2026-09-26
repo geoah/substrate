@@ -77,7 +77,7 @@ import { toolRoute } from "@/router"
 export function ToolPage() {
   const { authority, pkg, name } = toolRoute.useParams()
   const ref = `${authority}/${pkg}/${name}`
-  const model = useTools()
+  const model = useTools(ref)
   const [technical] = useTechnicalDetails()
   const tool = model.tools.find((t) => t.ref === ref)
 
@@ -137,7 +137,8 @@ function ToolDoc({
   const runsPending = triggerRuns.some((q) => q.isPending)
   const waitingFor = model.waitingFor(tool)
   const paused = isPaused(tool)
-  const status = toolStatus(tool, runs[0], { waitingFor })
+  const usage = model.usageOf(tool)
+  const status = toolStatus(tool, runs[0], { waitingFor, usage })
   const sync = isSync(tool)
   const accounts = model.accountsOf(tool)
 
@@ -238,7 +239,7 @@ function ToolDoc({
         meta={
           <>
             <OriginTag origin={tool.origin} />
-            <StatusPill status={status} />
+            {status && <StatusPill status={status} />}
             {technical && <IdText value={tool.ref} copy />}
           </>
         }
