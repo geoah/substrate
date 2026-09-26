@@ -881,6 +881,31 @@ describe("ProviderPage", () => {
       expect(screen.getByText("Supporting")).toBeTruthy()
     })
 
+    it("cuts a long description to two lines behind more in technical mode", async () => {
+      const contact = KINDS.find((k) => k.identity === CONTACT)!
+      const before = contact.description
+      contact.description =
+        "One contact from Google. The sync writes its names, emails and phones, " +
+        "and each stream keeps its own cursor on the account, except the groups, " +
+        "which keep theirs on a state row of their own."
+      try {
+        renderPage(<ProviderPage />, true)
+        const text = await screen.findByText(/One contact from Google/)
+        expect(text.className).toContain("line-clamp-2")
+        const more = screen.getByRole("button", { name: "more" })
+        expect(more.getAttribute("aria-expanded")).toBe("false")
+        fireEvent.click(more)
+        expect(text.className).not.toContain("line-clamp-2")
+        expect(
+          screen
+            .getByRole("button", { name: "less" })
+            .getAttribute("aria-expanded")
+        ).toBe("true")
+      } finally {
+        contact.description = before
+      }
+    })
+
     it("says when each collection last synced", async () => {
       renderPage(<ProviderPage />)
       const row = (await screen.findByText("Also fills in your")).closest(
