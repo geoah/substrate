@@ -43,6 +43,9 @@ WHAT IT ASSERTS, and why each one is worth a run:
                   `erroring` with the cause, and the next run recovers
    16. backlog    with a `replies` backlog bigger than a run's budget, a new
                   message in a mirrored channel lands within that one run
+   17. write      `postmessage` posts through the config's token: the form it
+                  sends, its output, no record written, Slack's refusal
+                  surfaced, and an apiBase off slack.com refused unsent
 
 Run against `raw/slack` (MODE=seed) two families of check relax, and only
 two; both are commented "SEED:" at the site and described in
@@ -1805,7 +1808,95 @@ def main():
             ok(not pending(drained), "the backlog did not drain afterwards: %r"
                % drained.get("syncStatus"))
             faults([])
+
+    section("17. postmessage posts through the pasted token")
+    postmessage()
     return finish()
+
+
+POST_FN = P + "/postmessage"
+POST_ROUTE = "/api/chat.postMessage"
+
+
+def postmessage():
+    """#644. The bundle's one write: a callable, fired by nobody but its
+    caller, that spends the config's token on `chat.postMessage` and writes
+    no record. The recording names the conversation and the thread parent,
+    so the call is built from it and checked against the mirror first."""
+    if not MOCK or SEED:
+        seed_note("postmessage is driven against the mock only")
+        return
+    from writecall import Writes, error_text, form
+    rec = load("POST_api_chat.postMessage.json") or {}
+    channel = rec.get("channel")
+    parent = (rec.get("message") or {}).get("thread_ts")
+    if not ok(channel and parent, "the postMessage recording names no channel "
+                                  "and thread parent"):
+        return
+    convs = {props(r).get("conversationId"): rid(r) for r in records(CONV)}
+    ok(channel in convs, "the recording's conversation %s is not mirrored" % channel)
+    ok(any(props(m).get("ts") == parent
+           and ref_id(props(m).get("channel")) == convs.get(channel)
+           for m in records(MESSAGE)),
+       "the thread parent %s is not a mirrored message in %s" % (parent, channel))
+    w = Writes(SERVER, TOKEN, MOCK)
+    w.reset()
+
+    text = "On it, thanks."
+    st, reply = w.call(POST_FN, {"channel": channel, "text": text,
+                                 "threadTs": parent})
+    ok(st == 200, "a threaded reply answered %s: %s" % (st, error_text(reply)[:300]))
+    out = (reply or {}).get("output") or {} if st == 200 else {}
+    ok(out == {"channel": channel, "ts": rec.get("ts")},
+       "the reply's output is %r, want the recording's channel and ts" % out)
+    ok((reply or {}).get("effects") == 0,
+       "postmessage wrote %r records; it writes none" % (reply or {}).get("effects"))
+    sent = w.requests("POST", POST_ROUTE)
+    ok(len(sent) == 1, "%d chat.postMessage requests reached Slack, want 1" % len(sent))
+    if sent:
+        ok(form(sent[0]) == {"channel": channel, "text": text, "thread_ts": parent},
+           "the form sent was %r" % form(sent[0]))
+        ok(str(sent[0].get("auth") or "").startswith("Bearer xoxp-"),
+           "the token rode the Authorization header (%r)" % sent[0].get("auth"))
+        ok("token" not in form(sent[0]), "the token was sent in the form")
+
+    st, reply = w.call(POST_FN, {"channel": channel,
+                                 "text": "Posted to the channel."})
+    ok(st == 200, "a top-level post answered %s: %s" % (st, error_text(reply)[:300]))
+    sent = w.requests("POST", POST_ROUTE)
+    ok(len(sent) == 2 and "thread_ts" not in form(sent[-1]),
+       "a post with no threadTs sent a thread_ts (%r)" % (sent[-1:] or None))
+
+    w.faults([{"match": "POST " + POST_ROUTE, "status": [200],
+               "body": {"ok": False, "error": "not_in_channel"}}])
+    st, reply = w.call(POST_FN, {"channel": channel, "text": text})
+    ok(st >= 400 and "not_in_channel" in error_text(reply),
+       "Slack's refusal did not reach the caller: %s %s"
+       % (st, error_text(reply)[:300]))
+    w.faults([])
+
+    before = len(w.requests("POST", POST_ROUTE))
+    st, reply = w.call(POST_FN, {"channel": channel})
+    ok(400 <= st < 500, "a call with no text answered %s, want a 4xx" % st)
+    ok(len(w.requests("POST", POST_ROUTE)) == before,
+       "a call with no text still reached Slack")
+
+    # The origin pin: an apiBase off slack.com refuses before any request.
+    # The value it had is put back, not cleared: a scenario-only run reaches
+    # the mock through it.
+    cfg = "/api/v1/%s/default" % os.environ.get("CONFIG_KIND", P + "/config")
+    had = props(api("GET", cfg)[1] or {}).get("apiBase")
+    st, _ = api("PATCH", cfg, {"properties": {"apiBase": "https://slack.example.com"}})
+    if ok(st < 400, "could not point apiBase off Slack: %s" % st):
+        st, reply = w.call(POST_FN, {"channel": channel, "text": text})
+        ok(st >= 400 and "not a pinned origin" in error_text(reply),
+           "an apiBase off slack.com did not refuse: %s %s"
+           % (st, error_text(reply)[:200]))
+        ok(len(w.requests("POST", POST_ROUTE)) == before,
+           "the refused call still reached the mock")
+        api("PATCH", cfg, {"properties": {"apiBase": had}})
+    note("postmessage: %d calls reached the mock"
+         % len(w.requests("POST", POST_ROUTE)))
 
 
 def finish():

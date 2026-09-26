@@ -9,7 +9,11 @@ five vocabulary samples (`people`, `tasks`, `calendar`, `messaging` and
 **Seven providers**: Google, GitHub, Linear, WHOOP, Notion, Beeper and Slack.
 Each is a package its publisher owns, installed under
 `providers.substrate.reamde.dev` and upgraded there. Every one syncs from the
-provider into the repository, and none writes back.
+provider into the repository. Three also ship one write each, a function
+nothing fires on its own: Slack's `postmessage`, Beeper's `sendmessage` and
+GitHub's `submitreview`. A write sends one request with the credential the
+sync spends and writes no record; what it sent reaches the mirror on the next
+sync ([0106](decisions/0106-a-provider-write-is-a-callable-that-writes-no-record.md)).
 
 **Five samples**: LLM, notes, the reading list, Firecrawl and Pebble. Each is
 a worked example to read and copy, imported under the repository's own
@@ -54,12 +58,12 @@ thing, and the Records column counts them.
 | Bundle     | Tier     | Auth           | Kinds | Functions | Records | Agents |
 | ------------- | -------- | -------------- | ----- | --------- | ------- | ------ |
 | Google        | Provider | OAuth          | 14    | 4         | 12      | 0      |
-| GitHub        | Provider | OAuth          | 15    | 1         | 3       | 0      |
+| GitHub        | Provider | OAuth          | 15    | 2         | 3       | 0      |
 | Linear        | Provider | API key        | 13    | 1         | 3       | 0      |
 | WHOOP         | Provider | OAuth          | 7     | 1         | 3       | 0      |
 | Notion        | Provider | Internal token | 8     | 1         | 3       | 0      |
-| Beeper        | Provider | Pasted token   | 9     | 1         | 3       | 0      |
-| Slack         | Provider | User token     | 9     | 1         | 3       | 0      |
+| Beeper        | Provider | Pasted token   | 9     | 2         | 3       | 0      |
+| Slack         | Provider | User token     | 9     | 2         | 3       | 0      |
 | LLM           | Sample   | Key, per row   | 1     | 0         | 3       | 6      |
 | Notes         | Sample   | none           | 1     | 2         | 0       | 2      |
 | Firecrawl     | Sample   | API key        | 1     | 2         | 2       | 0      |
@@ -394,8 +398,8 @@ are mentioned in, comment on or are review-requested on, with the reviews on
 those pull requests. The host runs the flow against the endpoints the bundle
 document carries and derives the scope union from the account's toggles:
 `enabledUser` asks for `read:user`, and `enabledRepos`, `enabledIssues` and
-`enabledPullRequests` each ask for `read:user` and `repo`. Read only: nothing in
-this closure writes back to GitHub.
+`enabledPullRequests` each ask for `read:user` and `repo`. The sync never
+writes to GitHub; `submitreview` is the one write.
 
 - **Kinds (15)**: `config` (the OAuth app, `oauth2`, named by the bundle's
   `client` input) and `account` (the Connection, `accountconfig` and the core
@@ -407,11 +411,14 @@ this closure writes back to GitHub.
   item was performed via), `comment` (today only an issue's pinned comment mints
   one), `issue`, `pullrequest` (keyed on its pull id, carrying its issue id
   beside it) and `review`.
-- **Functions (1)**: `githubsync`. One invocation works one stage and
+- **Functions (2)**: `githubsync`. One invocation works one stage and
   checkpoints: one search or listing page (100 items), or up to 400 hydration
   entries, stopping once 40 seconds of its 60-second deadline are spent. It
   writes only this package's own kinds, and it refuses to send the access token
-  anywhere but `https://api.github.com` or a loopback host.
+  anywhere but `https://api.github.com` or a loopback host. `submitreview`
+  submits one review on a pull request, `approve` or `comment`, through
+  `POST /repos/{owner}/{repo}/pulls/{number}/reviews`; see
+  [writing to GitHub](#writing-to-github).
 - **Triggers (3)**: `github-on-connect` fires `githubsync` the first time an
   account is `connected` with a toggle on and no `lastSyncedAt`;
   `github-scheduled` fires it hourly and the body syncs the accounts due by
@@ -522,6 +529,29 @@ GitHub's `title` is `issueTitle` on `issue` and `pullRequestTitle` on
 `pullrequest` (`title` is reserved on every record), and `pullrequest` carries
 both `pullRequestId` and `issueId`. The function's `permissions.network` adds
 `127.0.0.1` and `localhost`, and `triggers.yaml` adds `github-on-request`.
+
+### Writing to GitHub
+
+`submitreview` reviews one pull request as the connected user. It takes
+`repository` (`owner/name`, a mirrored repository's `fullName`), `number`,
+`event` (`approve` or `comment`), `body` (required for `comment`) and an
+optional `account`, the `github/account` id whose token to spend, which may be
+left out when one account carries a token. The token is the one the host
+injects for the sync, and the `repo` scope that `enabledRepos`,
+`enabledIssues` and `enabledPullRequests` ask for is what grants the write; an
+account granted neither `repo` nor `public_repo` is refused before a request.
+It answers the review's `id`, `state` (`APPROVED` or `COMMENTED`) and `url`,
+and it writes no record: the review reaches the `review` mirror on the next
+sync. A GitHub refusal (`422` for approving your own pull request, `404` for
+a repository the grant cannot see) fails the call with GitHub's message.
+Redirects are refused rather than followed, so the origin pin holds for the
+one request made.
+
+```bash
+curl -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/function/providers.substrate.reamde.dev%2Fgithub%2Fsubmitreview/call" \
+  -H "Authorization: Bearer $SUBSTRATE_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"input": {"repository": "octo-org/octo-repo", "number": 42, "event": "approve"}}'
+```
 
 ## Linear
 
@@ -938,8 +968,8 @@ machine's Beeper inbox: the networks it bridges, the logins on them, the
 people, the chats and the messages in them. It authenticates with a token
 pasted onto a `config` record and declares no `oauth2` block, because Beeper
 Desktop serves its own OAuth flow on loopback and the host facility has no
-browser to send anywhere. Read only: eight GET routes, nothing written back to
-Beeper, and no media.
+browser to send anywhere. The sync reads only: eight GET routes and no media.
+`sendmessage` is the one write.
 
 - **Kinds (9)**: `config`, `account`, and the mirrors `bridge` (one network
   this Beeper can run), `chataccount` (one login on one bridged network),
@@ -952,6 +982,8 @@ Beeper, and no media.
   `info`, `accounts`, `bridges`, `labels`, `contacts`, `chats`, `whole` (the
   authoritative `GET /v1/chats/{id}` read, with `maxParticipantCount=-1`, which
   is the only one that returns every participant) and `messages`.
+  `sendmessage` sends one text message to a chat, optionally as a reply; see
+  [writing to Beeper](#writing-to-beeper).
 - **Triggers (3)**: `beeper-messages-on-connect` fires when an account carries
   `enabledMessages` and no `lastSyncedAt`; `beeper-messages-scheduled` fires
   every 15 minutes and walks the enabled account when it is due;
@@ -967,8 +999,9 @@ Beeper, and no media.
 
 Setting it up takes two records and no scopes. Paste the token Beeper Desktop
 hands out onto a `config` record: it is a secret, redacted on read-back and
-injected only into `messagessync`. Beeper Desktop mints one token for
-everything it serves, and this bundle calls no write route with it. The
+injected into this bundle's two functions. Beeper Desktop mints one token for
+everything it serves, and `sendmessage` is the only function that calls a
+write route with it. The
 config's `apiBase` is the Beeper Desktop origin, `http://localhost:23373` by
 default; the function's `permissions.network` lists `localhost` and
 `127.0.0.1`, and the body refuses any origin that is not private (loopback, an
@@ -1028,8 +1061,8 @@ addresses one Beeper Desktop: the lexicographically first account with
 `enabledMessages` on is the one that walks, and every other one is stamped
 `ignored: duplicate account`.
 
-It never writes to Beeper. It sends no message, adds no reaction, archives
-nothing and marks nothing read. It fetches no media: an attachment is mirrored
+The sync never writes to Beeper. It sends no message, adds no reaction,
+archives nothing and marks nothing read. It fetches no media: an attachment is mirrored
 as metadata (`mimeType`, `fileName`, `fileSize`, `duration`, pixel `size` and
 the `transcription` of a voice note, where Beeper made one), and its `srcUrl`
 and its `mxc://` handle are never opened. It calls no search route, so a chat
@@ -1054,6 +1087,18 @@ the one Beeper Desktop hands out. The account carries a `user` reference to
 the identity the token turned out to belong to, and each chat's cursors moved
 off the account onto `chatsync`.
 
+### Writing to Beeper
+
+`sendmessage` sends one text message to a chat as the owner, on whatever
+network the chat is bridged to. It takes `chat` (the Matrix room id, a
+mirrored chat's `chatId`), `text`, and an optional `replyTo`, the `messageId`
+of the message it answers. It calls `POST /v1/chats/{chatID}/messages` with
+the config's token and the same private-origin rule the sync holds, and
+answers the `chat` and the `pendingMessageId` Beeper Desktop assigns until
+the network confirms the send. It writes no record: the confirmed message
+reaches the `message` mirror on the next sync. A Beeper refusal fails the
+call with Beeper's status and message.
+
 ## Slack
 
 Package `providers.substrate.reamde.dev/slack`. A provider that mirrors one
@@ -1063,7 +1108,8 @@ files they share and the bots that post. It is authorized by a pasted Slack
 user token on the `config` record rather than OAuth, and the bundle document
 declares no `oauth2:` block: the host's consent URL emits `scope=`, which
 Slack reads as the bot scope set, and a bot token sees neither DMs nor group
-chats. Read only, it never posts, reacts or joins.
+chats. The sync never posts, reacts or joins; `postmessage` is the one
+write.
 
 - **Kinds (9)**: `config`, `account`, the mirrors `team`, `user`,
   `conversation`, `message`, `file` and `bot`, and `conversationsync`, the
@@ -1073,7 +1119,9 @@ chats. Read only, it never posts, reacts or joins.
   to the next invocation. Its phases run in this order: `auth.test`,
   `team.info`, `users.list`, `conversations.list`, `conversations.info`,
   `conversations.history`, `conversations.replies`, `users.info`,
-  `files.info`, `bots.info`, `conversations.members`.
+  `files.info`, `bots.info`, `conversations.members`. `postmessage` posts one
+  message, at the top level or in a thread; see
+  [writing to Slack](#writing-to-slack).
 - **Triggers (3)**: `slack-messages-on-connect` fires on an account whose
   `enabledMessages` is true and which carries no `lastSyncedAt`;
   `slack-messages-scheduled` fires every 15 minutes and takes the account
@@ -1170,7 +1218,7 @@ conversation's failure is that conversation's: the Slack error
 (`not_in_channel`, `channel_not_found`) lands on its
 `conversationsync.historyStatus` and the queue moves on.
 
-Nothing is written back. The sync spends the token on reads only, and a file's
+The sync writes nothing back. It spends the token on reads only, and a file's
 bytes are never fetched: the `file` row holds what `files.info` returns and
 the URLs Slack sends. A conversation the token's user is not a member of is
 mirrored as a `conversation` row, but its history is not walked, and neither
@@ -1178,6 +1226,18 @@ is an archived one's. Rosters are walked only with `enabledMembers` on and
 only for channels, never for DMs or group DMs. A file re-shared into a new
 channel after its row was filled in is not read again, so its `shares` and
 `channels` age.
+
+### Writing to Slack
+
+`postmessage` posts one message as the token's user. It takes `channel` (a
+mirrored conversation's `conversationId`), `text`, and an optional `threadTs`,
+the `ts` of the thread's parent, to reply in that thread. It calls
+`chat.postMessage` with the config's token, under the same origin pin as the
+sync, and answers the `channel` and the new message's `ts`. The pasted token
+needs Slack's `chat:write` user scope; without it Slack answers
+`missing_scope`, and every refusal (`not_in_channel`, `channel_not_found`)
+fails the call with Slack's own error code. It writes no record: the message
+reaches the `message` mirror on the next sync.
 
 ## Firecrawl (sample)
 

@@ -5,9 +5,10 @@
 # serves that inbox over a LOCAL HTTP API: the Beeper Client API v5.0.0,
 # discovered at `GET /v1/info` and described, in OpenAPI, at `GET /v1/spec`.
 # This bundle mirrors that API's own object model — the bridges, the chat
-# accounts, the people, the chats and the messages in them. It reads; it never
-# sends, reacts, edits, archives or marks read, and it never fetches a byte of
-# media.
+# accounts, the people, the chats and the messages in them. The sync reads; it
+# never sends, reacts, edits, archives or marks read, and it never fetches a
+# byte of media. The one write is `sendmessage`, a callable nothing fires on
+# its own (decision record 0106).
 #
 # BEEPER IS MATRIX, AND THE API IS NOT A HOMESERVER. Every identity here is a
 # Matrix one — a chat id IS a room id (`!FQsel…:beeper.local`), a person IS an
@@ -125,6 +126,8 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: beeper
+  # 16, #644: the `sendmessage` function, the bundle's first write to Beeper.
+  #
   # 13 — T-084, the core `sync` trait: the account kind binds
   # `[accountconfig, sync]` and declares the trait's twelve properties with
   # their writers, and the sync body writes them beside the legacy
@@ -143,7 +146,7 @@ data:
   # with no raw, no derived property, every relation a reference and every
   # closed set an enum. A changed declaration shipping the same version
   # reaches no repository, which is why this moves.
-  version: 15
+  version: 16
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -157,8 +160,8 @@ data:
   package: beeper
   description: >-
     Keeps a copy of your Beeper inbox — every network it bridges, the people
-    in it, your chats and their messages. It takes a token Beeper Desktop
-    hands out, it reads only, and it downloads no media.
+    in it, your chats and their messages. It sends only when sendmessage is
+    called, and downloads no media.
   inputs:
     connector:
       kind: providers.substrate.reamde.dev/beeper/config
@@ -175,6 +178,7 @@ data:
     - providers.substrate.reamde.dev/beeper/message
     - providers.substrate.reamde.dev/beeper/chatsync
     - providers.substrate.reamde.dev/beeper/messagessync
+    - providers.substrate.reamde.dev/beeper/sendmessage
 ---
 # ---- the config type: the `connector` input's kind -------------------------
 # NOT oauth2, and deliberately no client id or secret: a kind wearing the
@@ -3405,3 +3409,144 @@ data:
             elif kind == "contacts":
                 cursor["contacts"].append(ident)
         return {"more": host.page.more(cursor)}
+---
+# ---- function: sendmessage -------------------------------------------------
+# The one write this bundle makes, and a CALLABLE only: no trigger fires it.
+# It spends the same pasted token the sync does, taken from the same injected
+# connector input, and sends it only to a private origin, as the sync does.
+# It writes no record: the message it sends reaches the mirror through the
+# next sync, as every other message does (decision record 0106).
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/beeper/sendmessage
+data:
+  authority: providers.substrate.reamde.dev
+  package: beeper
+  description: >-
+    Send a text message to one Beeper chat as the owner, on whatever network
+    the chat is bridged to, optionally as a reply to one message in it. Returns
+    the chat id and the pending message id Beeper Desktop assigns until the
+    network confirms the send.
+  runtime: python
+  timeout: PT30S
+  arguments:
+    - name: chat
+      type: string
+      required: true
+      description: >-
+        the chat's id, a Matrix room id (!…:beeper.local), the chatId of a
+        mirrored beeper/chat
+    - name: text
+      type: string
+      required: true
+      description: the message text
+    - name: replyTo
+      type: string
+      description: >-
+        the id of the message to reply to, the messageId of a mirrored beeper/message
+        in the same chat; leave it out for a plain message
+  returns:
+    - name: chat
+      type: string
+      required: true
+      description: the chat id Beeper sent to
+    - name: pendingMessageId
+      type: string
+      required: true
+      description: >-
+        Beeper Desktop's id for the message until the network confirms it;
+        the confirmed message reaches the mirror through the next sync
+  permissions:
+    network:
+      - localhost
+      - 127.0.0.1
+  source: |
+    """Send one Beeper message with the pasted Beeper Desktop token.
+
+    The token arrives on the connector input
+    (config.inputs.connector.properties.accessToken) and leaves this body only
+    toward a PRIVATE origin (loopback, RFC 1918, the CGNAT range a tailnet
+    hands out, or a .ts.net name), the same rule the sync holds. One call,
+    `POST /v1/chats/{chatID}/messages`, with a JSON body of `text` and, for a
+    reply, `replyToMessageID`. A refusal fails the call with Beeper's status
+    and message.
+    """
+    import ipaddress
+    import json
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    DEFAULT_API = "http://localhost:23373"
+    SEALED_PREFIX = "substrate:sealsecret:v1:"
+    HTTP_TIMEOUT = 20
+
+
+    def _private(base):
+        u = urllib.parse.urlsplit(base)
+        host = (u.hostname or "").lower()
+        if u.scheme not in ("http", "https") or u.username or u.password:
+            return False
+        if host in ("localhost", "::1") or host.endswith(".localhost"):
+            return True
+        if host.endswith(".ts.net"):
+            return True
+        try:
+            addr = ipaddress.ip_address(host)
+        except ValueError:
+            return False
+        return addr.is_private or addr.is_loopback or addr in ipaddress.ip_network(
+            "100.64.0.0/10")
+
+
+    def main(input, host):
+        args = input.get("args") or {}
+        chat = str(args.get("chat") or "").strip()
+        text = str(args.get("text") or "")
+        reply = str(args.get("replyTo") or "").strip()
+        if not chat:
+            raise ValueError("beeper: chat is required")
+        if not text.strip():
+            raise ValueError("beeper: text is empty")
+
+        cfg = input.get("config") or {}
+        conf = (((cfg.get("inputs") or {}).get("connector") or {})
+                .get("properties")) or {}
+        token = conf.get("accessToken") or ""
+        base = (conf.get("apiBase") or DEFAULT_API).rstrip("/")
+        if not token:
+            raise RuntimeError("beeper: the config record carries no accessToken")
+        if token.startswith(SEALED_PREFIX):
+            raise RuntimeError("beeper: accessToken arrived sealed; paste it on "
+                               "the config, not the account")
+        if not _private(base):
+            raise RuntimeError(
+                "beeper: apiBase %r is not a private origin (loopback, RFC 1918, "
+                "CGNAT or a .ts.net name); refusing to send the token" % base)
+
+        payload = {"text": text}
+        if reply:
+            payload["replyToMessageID"] = reply
+        req = urllib.request.Request(
+            base + "/v1/chats/" + urllib.parse.quote(chat, safe="") + "/messages",
+            data=json.dumps(payload).encode("utf-8"), method="POST",
+            headers={"Authorization": "Bearer " + token,
+                     "Content-Type": "application/json",
+                     "Accept": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+                body = json.loads(resp.read().decode("utf-8") or "{}")
+        except urllib.error.HTTPError as e:
+            raw = e.read()[:400].decode("utf-8", "replace")
+            try:
+                err = json.loads(raw)
+                detail = err.get("message") or err.get("code") or raw
+            except ValueError:
+                detail = raw
+            raise RuntimeError("beeper: sending to %s failed: HTTP %d %s"
+                               % (chat, e.code, str(detail)[:200]))
+        pending = str(body.get("pendingMessageID") or "")
+        if not pending:
+            raise RuntimeError("beeper: the send answered no pendingMessageID")
+        return {"output": {"chat": body.get("chatID") or chat,
+                           "pendingMessageId": pending}}

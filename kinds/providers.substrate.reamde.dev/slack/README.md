@@ -3,11 +3,12 @@
 Package `providers.substrate.reamde.dev/slack`: a provider that mirrors one
 Slack workspace as Slack's own object model, its people, channels, group DMs,
 1:1 DMs, the messages in them and the files they share. It takes a pasted
-Slack user token (`xoxp-…`) on the `config` record rather than OAuth. It
-reads; it never posts, reacts or joins.
+Slack user token (`xoxp-…`) on the `config` record rather than OAuth. The
+sync reads; it never posts, reacts or joins. `postmessage` is the one write:
+a function a caller invokes, which posts one message with the same token.
 
 `bundle.yaml` is the closure (the config and account kinds, the six mirrors,
-the connector's own cursor kind and the sync function) and `triggers.yaml` is
+the connector's own cursor kind, the sync function and `postmessage`) and `triggers.yaml` is
 the delivery wiring. They are the contract; this file is not.
 
 ## Kinds

@@ -42,6 +42,10 @@ WHAT IT PROVES
   9. a run that starts with a parked backlog drains it and then WALKS THE
      SEARCHES in the same run (T-077, production 2026-09-20: every re-drive
      answered `resuming 27 parked hydration entries` and nothing else).
+ 10. `submitreview` approves and comments through the account's token: the
+     body it sends, its output, no record written, GitHub's refusal
+     surfaced, bad arguments refused unsent, and an apiBase off
+     api.github.com refused unsent (#644).
 """
 
 import json
@@ -1294,6 +1298,12 @@ def main():
         if runner_mock:
             repoint(api, ckind, runner_mock)
 
+    print("--> submitreview approves and comments through the account's token")
+    if mode == "e2e" and runner_mock:
+        submitreview(api, server, token, runner_mock, recdir, ckind, aid)
+    else:
+        print("    skip  submitreview is driven against the mock only")
+
     print()
     summary = ", ".join("%s %d" % (k, got[k]) for k in sorted(got) if got[k])
     if mode == "seed":
@@ -1305,6 +1315,104 @@ def main():
         return 1
     print("PASS  " + summary)
     return 0
+
+
+REVIEW_FN = AUTHORITY + "/submitreview"
+
+
+def submitreview(api, server, token, mock_url, recdir, ckind, aid):
+    """#644. The bundle's one write: a callable, fired by nobody but its
+    caller, that spends the account's host-resolved token on
+    `POST /repos/{owner}/{repo}/pulls/{number}/reviews` and writes no record.
+    The recording names the pull request; the first answer is an approval,
+    the second a comment."""
+    from writecall import Writes, body_json, error_text
+
+    recs = _recs(recdir, "POST_repos_*_pulls_*_reviews.json")
+    if not recs:
+        ok(False, "no submitreview recording")
+        return
+    answers = json.loads(recs[0].read_text()).get("__responses") or []
+    m = re.search(r"/repos/([^/]+/[^/]+)/pulls/(\d+)$",
+                  str((answers[:1] or [{}])[0].get("pull_request_url") or ""))
+    if not (len(answers) >= 2 and m):
+        ok(False, "the submitreview recording needs two answers naming the "
+                  "pull request (%s)" % recs[0].name)
+        return
+    repo, number = m.group(1), int(m.group(2))
+    route = "/repos/%s/pulls/%d/reviews" % (repo, number)
+    ok(any(props(r).get("number") == number
+           and str(props(r).get("htmlUrl") or "").endswith(
+               "/%s/pull/%d" % (repo, number))
+           for r in all_records(api, KINDS["pullrequest"])),
+       "the recording's pull request %s#%d is mirrored" % (repo, number))
+    w = Writes(server, token, mock_url)
+    w.reset()
+
+    st, reply = w.call(REVIEW_FN, {"repository": repo, "number": number,
+                                   "event": "approve"})
+    out = (reply or {}).get("output") or {} if st == 200 else {}
+    ok(st == 200 and out == {"id": answers[0]["id"], "state": "APPROVED",
+                             "url": answers[0]["html_url"]},
+       "an approval answered %s with %s" % (st, error_text(reply)[:300]))
+    ok((reply or {}).get("effects") == 0,
+       "submitreview wrote %r records; it writes none"
+       % (reply or {}).get("effects"))
+    sent = w.requests("POST", route)
+    ok(len(sent) == 1 and body_json(sent[0]) == {"event": "APPROVE"},
+       "the approval sent %r" % [s.get("body") for s in sent])
+    ok(bool(sent) and str(sent[0].get("auth") or "").startswith("Bearer mock-access-"),
+       "the account's host-resolved token rode the Authorization header (%r)"
+       % (sent[0].get("auth") if sent else None))
+
+    text = "The checklist reads well; one question on the rollback plan."
+    st, reply = w.call(REVIEW_FN, {"repository": repo, "number": number,
+                                   "event": "comment", "body": text,
+                                   "account": aid})
+    out = (reply or {}).get("output") or {} if st == 200 else {}
+    ok(st == 200 and out.get("state") == "COMMENTED"
+       and out.get("id") == answers[1]["id"],
+       "a comment review answered %s with %s" % (st, error_text(reply)[:300]))
+    sent = w.requests("POST", route)
+    ok(len(sent) == 2 and body_json(sent[-1]) == {"event": "COMMENT", "body": text},
+       "the comment review sent %r" % [s.get("body") for s in sent[1:]])
+
+    w.faults([{"match": "POST " + route, "status": [422],
+               "body": {"message": "Unprocessable Entity",
+                        "errors": ["Can not approve your own pull request"]}}])
+    st, reply = w.call(REVIEW_FN, {"repository": repo, "number": number,
+                                   "event": "approve"})
+    ok(st >= 400 and "Can not approve your own pull request" in error_text(reply),
+       "GitHub's refusal did not reach the caller: %s %s"
+       % (st, error_text(reply)[:300]))
+    w.faults([])
+
+    before = len(w.requests("POST", route))
+    for why, args in (
+            ("a comment with no body",
+             {"repository": repo, "number": number, "event": "comment"}),
+            ("an account that does not exist",
+             {"repository": repo, "number": number, "event": "approve",
+              "account": "no-such-account"}),
+            ("an event outside the enum",
+             {"repository": repo, "number": number, "event": "APPROVE"})):
+        st, reply = w.call(REVIEW_FN, args)
+        ok(st >= 400, "%s answered %s, want a refusal" % (why, st))
+    ok(len(w.requests("POST", route)) == before,
+       "a refused call still reached GitHub")
+
+    # The origin pin: an apiBase off api.github.com refuses before any request.
+    repoint(api, ckind, "https://api.example.com")
+    try:
+        st, reply = w.call(REVIEW_FN, {"repository": repo, "number": number,
+                                       "event": "approve"})
+        ok(st >= 400 and "refusing to send credentials" in error_text(reply),
+           "an apiBase off api.github.com did not refuse: %s %s"
+           % (st, error_text(reply)[:200]))
+    finally:
+        repoint(api, ckind, mock_url)
+    ok(len(w.requests("POST", route)) == before,
+       "the refused call still reached the mock")
 
 
 if __name__ == "__main__":
