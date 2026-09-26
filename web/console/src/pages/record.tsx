@@ -6,8 +6,7 @@
 
 import { useMemo, useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Link } from "@tanstack/react-router"
-import { FileQuestionIcon, PencilIcon } from "lucide-react"
+import { FileQuestionIcon } from "lucide-react"
 
 import { DocPage } from "@/components/identity/page-layout"
 import { PropertySheet } from "@/components/property-sheet/property-sheet"
@@ -20,7 +19,7 @@ import { RecordHeader } from "@/components/record/record-header"
 import { hasMerges } from "@/components/record/record-model"
 import { MergedSection, SourcesSection } from "@/components/record/sources"
 import { useRecordChanges } from "@/components/record/use-record-changes"
-import { YamlView } from "@/components/record/yaml-view"
+import { SourceView } from "@/components/record/source-view"
 import { SyncRail } from "@/components/sync/sync-rail"
 import { Button } from "@/components/ui/button"
 import {
@@ -34,7 +33,6 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { providerOfKind } from "@/lib/actor-identity"
-import { splitKind } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import {
   recordMappingsQueryOptions,
@@ -43,9 +41,7 @@ import {
 import { ApiError, type KindInfo, type SubstrateRecord } from "@/lib/api/types"
 import { kindByCollection } from "@/lib/definition"
 import { displayName, lowerFirst } from "@/lib/kind-names"
-import { linkTargetsOf, manifestYAML } from "@/lib/manifest"
 import { SYNC_TRAIT_IDENTITY, kindHasTrait } from "@/lib/sync"
-import { keyDocsOf } from "@/lib/yaml-annotations"
 import { recordRoute } from "@/router"
 
 const NO_KINDS: KindInfo[] = []
@@ -199,47 +195,6 @@ export function RecordDocument({
         </>
       )}
     </DocPage>
-  )
-}
-
-/** The envelope as YAML, its references linked, and the way to edit it. */
-function SourceView({
-  record,
-  kind,
-  kinds,
-}: {
-  record: SubstrateRecord
-  kind?: KindInfo
-  kinds: KindInfo[]
-}) {
-  const docs = useMemo(() => keyDocsOf(kind), [kind])
-  const yaml = useMemo(() => manifestYAML(record), [record])
-  const targets = useMemo(() => linkTargetsOf(record, kinds), [record, kinds])
-  const { authority, pkg, name } = splitKind(record.kind)
-  return (
-    <div data-slot="record-source" className="mt-[18px] flex flex-col gap-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[12.5px] text-faint">
-          The record as its YAML envelope. A linked reference opens its record.
-        </span>
-        <Button
-          variant="outline"
-          size="sm"
-          render={
-            <Link
-              to="/data/$authority/$pkg/$name/$id/edit"
-              params={{ authority, pkg, name, id: record.id }}
-            />
-          }
-        >
-          <PencilIcon />
-          Edit YAML
-        </Button>
-      </div>
-      <div className="overflow-hidden rounded-lg border bg-panel">
-        <YamlView source={yaml} docs={docs} targets={targets} />
-      </div>
-    </div>
   )
 }
 

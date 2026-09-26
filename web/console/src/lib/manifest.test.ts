@@ -74,6 +74,23 @@ describe("manifestOf", () => {
     expect(before).not.toHaveProperty("kindVersion")
   })
 
+  it("carries the source records that fill it in under status.linkedFrom", () => {
+    const linkedFrom = [
+      {
+        ref: "providers.substrate.reamde.dev/google/contact/c1",
+        kind: "providers.substrate.reamde.dev/google/contact",
+        property: "person",
+        mapping: "ada.example.com/people/googlecontactperson",
+      },
+    ]
+    const status = manifestOf({ ...record, linkedFrom }).status as Record<
+      string,
+      unknown
+    >
+    expect(status.linkedFrom).toBe(linkedFrom)
+    expect(manifestOf(record).status).not.toHaveProperty("linkedFrom")
+  })
+
   it("omits empty labels and an empty data block rather than printing {}", () => {
     const bare = manifestOf({ ...record, properties: {}, labels: {} })
     const metadata = bare.metadata as Record<string, unknown>
@@ -214,6 +231,25 @@ describe("linkTargetsOf", () => {
     expect(t.ids["samples.substrate.reamde.dev/people/organization/org1"]).toBe(
       "/data/samples.substrate.reamde.dev/people/organization/org1"
     )
+  })
+
+  it("links each source record the record is linked from", () => {
+    const contact = "samples.substrate.reamde.dev/people/organization"
+    const t = linkTargetsOf(
+      {
+        ...record,
+        linkedFrom: [
+          {
+            ref: `${contact}/o9`,
+            kind: contact,
+            property: "person",
+            mapping: "ada.example.com/people/m",
+          },
+        ],
+      },
+      registry
+    )
+    expect(t.ids[`${contact}/o9`]).toBe(`/data/${contact}/o9`)
   })
 
   it("does not link a reference whose kind is not in the registry", () => {
