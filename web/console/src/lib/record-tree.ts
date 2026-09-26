@@ -15,10 +15,11 @@
  *
  * A FILTERED tree (a filter or a search is set) nests the matches rather than
  * the collection. The page is the matches, every level's read carries the same
- * filter, and a match stands at the top level unless its parent matches too,
- * in which case it sits under that parent instead (`matchedRoots`), so every
- * match is drawn exactly once. A top-level match whose parent does not match
- * carries that parent as its context, so where it lives is not lost. Rows open
+ * filter, and a match stands at the top level unless its parent matches too
+ * and is on the page, in which case it sits under that parent instead
+ * (`matchedRoots`), so every match on the page is drawn exactly once. A
+ * top-level match whose parent is not drawn here carries that parent as its
+ * context, so where it lives is not lost. Rows open
  * by themselves there, because a match hidden behind a closed parent is a
  * match the reader asked for and cannot see. */
 
@@ -263,10 +264,11 @@ export interface MatchedRoots {
   context: Map<string, string>
 }
 
-/** The filtered tree's top level. A match whose parent matches is left out:
- * it is drawn under that parent, whose own level read carries the filter. A
- * match naming a parent that does not match (or that does not exist) stands
- * at the top level, with the parent as its context. `matchingParents` are the
+/** The filtered tree's top level. A match whose parent matches and is on the
+ * page is left out: it is drawn under that parent, whose own level read
+ * carries the filter. A match naming a parent that does not match, that does
+ * not exist, or that matches on another page stands at the top level, with the
+ * parent as its context. `matchingParents` are the
  * parent records the matching-parents read returned; a pointer written
  * before a merge names one by a former id, so former ids count too. */
 export function matchedRoots(
@@ -311,7 +313,13 @@ export function matchedRoots(
       roots.push(record)
       continue
     }
-    if (matching.has(parentId) && leaderOf(record) !== record.id) continue
+    // Every match on the page is drawn, on top or under a parent on the page,
+    // so a matching parent on the page holds its match. One on another page
+    // draws nothing here, and the match would vanish from the page it is on.
+    const parent = matching.get(parentId)
+    if (parent && onPage.has(parent.id) && leaderOf(record) !== record.id) {
+      continue
+    }
     roots.push(record)
     const held = readReference(record.properties[property])
     if (held) context.set(record.id, held.path)

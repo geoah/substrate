@@ -18,9 +18,9 @@
  * parent, and each opens onto the records naming it
  * (`hooks/use-record-tree.ts`). `?nest=false` draws the same rows flat.
  * A filter or a search keeps the tree but nests the MATCHES: the page is every
- * match, a match sits under its parent when that parent matches too, and one
- * whose parent does not match stands at the top level saying which record it
- * is in (lib/record-tree.ts, `matchedRoots`). */
+ * match, a match sits under its parent when that parent matches too and is on
+ * the page, and any other stands at the top level saying which record it is
+ * in (lib/record-tree.ts, `matchedRoots`). */
 
 import { useEffect, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"

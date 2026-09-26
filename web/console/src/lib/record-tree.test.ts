@@ -365,8 +365,36 @@ describe("the filtered tree", () => {
 
   it("counts a parent matched under a former id", () => {
     const merged = { ...record("eng2"), formerIds: ["engineering"] }
-    const out = matchedRoots([platform], "parent", [merged])
-    expect(out.roots).toEqual([])
+    const out = matchedRoots([platform, merged], "parent", [merged])
+    expect(ids(out.roots)).toEqual(["eng2"])
+  })
+
+  it("stands a match on top when its matching parent is on another page", () => {
+    // Every match's parent matches, but none of those parents is on this
+    // page, so nothing here would draw the matches under them.
+    const page2 = [infra, platform]
+    const offPage = record("elsewhere", "engineering")
+    const out = matchedRoots([infra, offPage], "parent", [
+      platform,
+      engineering,
+    ])
+    expect(ids(out.roots)).toEqual(["infra", "elsewhere"])
+    expect([...out.context]).toEqual([
+      ["infra", "acme.example.com/people/team/platform"],
+      ["elsewhere", "acme.example.com/people/team/engineering"],
+    ])
+    const drawn = resolveTree({
+      roots: out.roots,
+      property: "parent",
+      expanded: new Set(),
+      openByDefault: true,
+      lookup: () => ({ records: [], complete: true }),
+    })
+    expect(ids(drawn.rows)).toEqual(["infra", "elsewhere"])
+    // A matching parent on the page still holds its match under it.
+    expect(
+      ids(matchedRoots(page2, "parent", [platform, engineering]).roots)
+    ).toEqual(["platform"])
   })
 
   it("stands every match on top when no parent matched", () => {
