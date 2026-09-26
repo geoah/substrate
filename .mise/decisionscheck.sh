@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # A decision record's number, held against every other branch before the
-# merge (decision 0106, issue #587).
+# merge (decision 0109, issue #587).
 #
 # lint:docs refuses two records with one number, but only inside one tree, so
 # two branches off the same base that each take the next free number are both
