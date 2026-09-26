@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest"
 
 import type { ChangeRow, PropertyChange } from "@/lib/api/types"
-import { netMoves, rowValues, shortText, VALUE_CHARS } from "./change-values"
+import type { PropSpec } from "@/lib/record-schema"
+import {
+  hostWritten,
+  netMoves,
+  readerMoves,
+  rowValues,
+  shortText,
+  VALUE_CHARS,
+  type ValueMove,
+} from "./change-values"
 
 const TASK = "samples.substrate.reamde.dev/tasks/task"
 
@@ -165,5 +174,55 @@ describe("shortText", () => {
     expect(full).toBe(long)
     expect(shortText("two\nlines").text).toBe("two lines")
     expect(shortText({ a: 1 }).text).toBe('{"a":1}')
+  })
+})
+
+describe("readerMoves", () => {
+  const spec = (name: string, extra: Partial<PropSpec> = {}): PropSpec => ({
+    name,
+    label: name,
+    kind: "string",
+    required: false,
+    repeated: false,
+    keyed: false,
+    managed: false,
+    ...extra,
+  })
+  const specs = new Map<string, PropSpec>([
+    ["originDigest", spec("originDigest", { managed: true })],
+    ["gmailHistoryId", spec("gmailHistoryId", { writer: "connector" })],
+    ["name", spec("name", { writer: "owner" })],
+  ])
+  const move = (m: Partial<ValueMove> & { name: string }): ValueMove => ({
+    beforeUnknown: false,
+    ...m,
+  })
+
+  it("names what the host writes", () => {
+    expect(hostWritten(specs.get("originDigest"))).toBe(true)
+    expect(hostWritten(specs.get("gmailHistoryId"))).toBe(true)
+    expect(hostWritten(specs.get("name"))).toBe(false)
+    expect(hostWritten(undefined)).toBe(false)
+  })
+
+  it("keeps a person's moves and drops the host's and the empty ones", () => {
+    const out = readerMoves(
+      [
+        move({ name: "originDigest", before: "a", after: "b" }),
+        move({ name: "gmailHistoryId", after: "12" }),
+        move({ name: "name", before: "Ada", after: "Grace" }),
+        move({ name: "collapsed", after: [] }),
+        move({
+          name: "tags",
+          before: ["a"],
+          after: ["a"],
+          added: [],
+          removed: [],
+        }),
+        move({ name: "notes", beforeUnknown: true }),
+      ],
+      specs
+    )
+    expect(out.map((m) => m.name)).toEqual(["name", "notes"])
   })
 })

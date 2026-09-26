@@ -1,10 +1,12 @@
 /** History as sentences: "<Actor> changed <Record>", runs folded into
  * "<Actor> added 14 tasks", grouped under the day they happened. Shared by
- * the History page, the actor page and Home's recent changes. Technical mode
- * adds each entry's changelog sequence numbers and property keys; the actor's
- * raw id rides `ActorRef`. A change to one record says its values ("Priority
- * High → Urgent") where the server sends them, and the property names where
- * it does not. */
+ * the History page, the actor page and Home's recent changes. The
+ * substrate's own records read as what they are to a person ("Google updated
+ * its package to version 35"). Technical mode adds a line after the sentence
+ * with each entry's changelog sequence numbers, the raw actor id and the
+ * property keys, the first two with copy buttons. A change to one record
+ * says its values ("Priority: High → Urgent") where the server sends them,
+ * and the property names where it does not. */
 
 import { useMemo, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -12,7 +14,8 @@ import { Link } from "@tanstack/react-router"
 
 import { ActorRef } from "@/components/identity/actor-ref"
 import { ValueMoves } from "@/components/changelog/value-moves"
-import { KindPath } from "@/components/identity/kind-ref"
+import { CopyButton } from "@/components/identity/copy-button"
+import { KindPath, KindRef } from "@/components/identity/kind-ref"
 import { RecordRef } from "@/components/identity/record-ref"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -22,13 +25,15 @@ import type { WatchStatus } from "@/lib/api/changes"
 import { splitKind } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { ChangeRow } from "@/lib/api/types"
-import { netMoves, valueSpecs } from "@/lib/change-values"
+import { hostWritten, netMoves, valueSpecs } from "@/lib/change-values"
 import { relativeTime, shortTime } from "@/lib/format"
 import {
-  foldHistory,
   groupByDay,
+  historyEntries,
   propertyLabel,
+  systemPhrase,
   type HistoryEntry,
+  type SystemPhrase,
 } from "@/lib/history"
 import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import { cn } from "@/lib/utils"
@@ -38,7 +43,9 @@ function collectionLink(kind: string) {
   return { authority, pkg, name }
 }
 
-/** The object of the sentence: the one record, or "14 tasks" for a run. */
+/** The object of the sentence: the one record, or "14 tasks" for a run. A
+ * run the loaded page may cut short goes on in older rows, so it is said
+ * without a count ("added tasks") rather than with one that may be wrong. */
 function EntryObject({
   entry,
   openEnded,
@@ -51,10 +58,13 @@ function EntryObject({
   }
   const count = entry.records.length
   const words =
-    count === 1 ? displayName(entry.kind) : displayPlural(entry.kind)
+    count === 1 && !openEnded
+      ? displayName(entry.kind)
+      : displayPlural(entry.kind)
   const { authority, pkg, name } = collectionLink(entry.kind)
-  // A run cut by the page may go on in older rows: its count is a floor.
-  const label = `${count}${openEnded ? "+" : ""} ${lowerFirst(words)}`
+  const label = openEnded
+    ? lowerFirst(words)
+    : `${count.toLocaleString()} ${lowerFirst(words)}`
   if (!authority || !pkg || !name) return <span>{label}</span>
   return (
     <Link
@@ -67,10 +77,25 @@ function EntryObject({
   )
 }
 
-function seqLabel(entry: HistoryEntry): string {
+function Phrase({ phrase }: { phrase: SystemPhrase }) {
+  return (
+    <>
+      <span>{phrase.words}</span>
+      {phrase.collection && (
+        <>
+          {" "}
+          <KindRef kind={phrase.collection} />
+        </>
+      )}
+      {phrase.tail && <span> {phrase.tail}</span>}
+    </>
+  )
+}
+
+function seqRange(entry: HistoryEntry): string {
   const newest = entry.rows[0].seq
   const oldest = entry.rows[entry.rows.length - 1].seq
-  return newest === oldest ? `#${newest}` : `#${oldest}–${newest}`
+  return newest === oldest ? `${newest}` : `${oldest}–${newest}`
 }
 
 export function HistoryEntryRow({
@@ -91,38 +116,70 @@ export function HistoryEntryRow({
   // One record's run says its net change in values; a run over many records,
   // or rows from a server that sends names alone, says the names.
   const moves =
-    changed && entry.records.length === 1
+    entry.records.length === 1
       ? netMoves(entry.rows, entry.records[0], entry.kind)
       : undefined
+  const phrase = systemPhrase(entry, moves)
   const specs = useMemo(
     () => valueSpecs(registry.data?.find((k) => k.identity === entry.kind)),
     [registry.data, entry.kind]
   )
+  const quiet = phrase?.complete && !technical
+  const showMoves = changed && moves && moves.length > 0 && !quiet
+  const names =
+    changed && !moves && !quiet
+      ? technical
+        ? entry.properties
+        : entry.properties.filter((p) => !hostWritten(specs.get(p)))
+      : []
+  const seq = seqRange(entry)
   return (
     <div
       data-slot="history-entry"
       className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2.5 border-b border-border py-[9px]"
     >
       <div className="min-w-0 leading-[1.6]">
-        <ActorRef actor={entry.actor} /> <span>{entry.verb}</span>{" "}
-        <EntryObject entry={entry} openEnded={openEnded} />
-        {moves && moves.length > 0 && (
+        <ActorRef actor={entry.actor} inlineId={false} />{" "}
+        {phrase ? (
+          <Phrase phrase={phrase} />
+        ) : (
+          <>
+            <span>{entry.verb}</span>{" "}
+            <EntryObject entry={entry} openEnded={openEnded} />
+          </>
+        )}
+        {showMoves && (
           <ValueMoves moves={moves} specs={specs} className="mt-1" />
         )}
-        {((changed && !moves) || technical) && (
+        {(names.length > 0 || technical) && (
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px] text-faint">
-            {changed &&
-              !moves &&
+            {names.length > 0 &&
               (technical ? (
                 <span className="font-mono text-[11.5px]">
-                  {entry.properties.join(", ")}
+                  {names.join(", ")}
                 </span>
               ) : (
-                <span>{entry.properties.map(propertyLabel).join(" · ")}</span>
+                <span>{names.map(propertyLabel).join(" · ")}</span>
               ))}
             {technical && (
               <>
-                <span className="tabular-nums">{seqLabel(entry)}</span>
+                <span className="inline-flex items-center gap-0.5 tabular-nums">
+                  #{seq}
+                  <CopyButton
+                    value={seq.replace("–", "-")}
+                    label={
+                      entry.rows.length > 1
+                        ? "Copy the sequence numbers"
+                        : "Copy the sequence number"
+                    }
+                  />
+                </span>
+                <span className="inline-flex min-w-0 items-center gap-0.5">
+                  <span className="font-mono text-[11px] [overflow-wrap:anywhere]">
+                    {entry.actor}
+                  </span>
+                  <CopyButton value={entry.actor} label="Copy the actor id" />
+                </span>
                 {entry.records.length > 1 && (
                   <KindPath reference={entry.kind} className="text-[11px]" />
                 )}
@@ -157,11 +214,7 @@ export function HistorySentences({
 }) {
   const [technical] = useTechnicalDetails()
   const { days, oldest } = useMemo(() => {
-    // Collecting what a delete left behind is housekeeping, not a change a
-    // person made; it reads only with technical details on.
-    const entries = foldHistory(
-      technical ? rows : rows.filter((r) => r.op !== "gc")
-    )
+    const entries = historyEntries(rows, technical)
     const oldest = more ? entries[entries.length - 1]?.key : undefined
     return {
       oldest,

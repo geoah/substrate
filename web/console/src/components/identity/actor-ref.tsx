@@ -65,6 +65,7 @@ export function ActorMark({
 export function ActorRef({
   actor,
   link = "actor",
+  inlineId = true,
   className,
 }: {
   /** The actor string as stored (`console`, `agent:<authority>:<pkg>:<name>`,
@@ -73,6 +74,9 @@ export function ActorRef({
   /** Where a click goes: the actor view, the actor's declaration record
    * (falling back to the actor view), or nowhere. */
   link?: "actor" | "record" | false
+  /** Technical mode shows the raw actor string beside the name; a surface
+   * that shows it elsewhere, with a copy button, turns this off. */
+  inlineId?: boolean
   className?: string
 }) {
   const [technical] = useTechnicalDetails()
@@ -121,7 +125,7 @@ export function ActorRef({
         {identity.name}
       </span>
       {identity.cls === "agent" && <span className="text-faint">agent</span>}
-      {technical && (
+      {technical && inlineId && (
         <span className="font-mono text-[11px] [overflow-wrap:anywhere] text-faint">
           {actor}
         </span>

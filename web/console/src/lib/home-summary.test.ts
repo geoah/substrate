@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import type { BundleStatus } from "@/lib/api/types"
+import type { BundleStatus, KindInfo } from "@/lib/api/types"
+import { collectionGroups } from "@/lib/collections"
 import {
   dataSummary,
+  homeSections,
   namesSummary,
   providersSummary,
   providerState,
@@ -64,5 +66,48 @@ describe("dataSummary and namesSummary", () => {
     expect(dataSummary(1, 0)).toEqual({ big: "1 collection", sub: "all yours" })
     expect(namesSummary(["a", "b", "c"])).toBe("a, b and c")
     expect(namesSummary(["a", "b", "c", "d", "e"])).toBe("a, b and 3 more")
+  })
+})
+
+function kind(identity: string): KindInfo {
+  const [authority, pkg, name] = identity.split("/")
+  return { identity, authority, package: pkg, name } as unknown as KindInfo
+}
+
+describe("homeSections", () => {
+  const HOME = "ada.example.com"
+  const yours = ["task", "project", "person", "note"].map((n) =>
+    kind(`${HOME}/things/${n}`)
+  )
+  const google = ["calendarevent", "contact", "gmailthread"].map((n) =>
+    kind(`providers.substrate.reamde.dev/google/${n}`)
+  )
+
+  it("groups yours first, then each provider under its own heading", () => {
+    const sections = homeSections(
+      collectionGroups([...yours, ...google], HOME),
+      () => true
+    )
+    expect(sections.map((s) => s.label)).toEqual(["Your data", "From Google"])
+    expect(sections[1].provider?.key).toBe("google")
+    expect(sections[1].kinds).toHaveLength(3)
+  })
+
+  it("leads with the collections that hold something", () => {
+    const sections = homeSections(
+      collectionGroups(yours, HOME),
+      (k) => k.name === "task"
+    )
+    expect(sections[0].kinds[0].name).toBe("task")
+  })
+
+  it("keeps to the cap, yours taking their share first", () => {
+    const sections = homeSections(
+      collectionGroups([...yours, ...google], HOME),
+      () => true,
+      5,
+      4
+    )
+    expect(sections.map((s) => s.kinds.length)).toEqual([4, 1])
   })
 })

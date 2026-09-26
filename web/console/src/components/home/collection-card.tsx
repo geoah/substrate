@@ -1,5 +1,6 @@
-/** A collection as a card: its glyph and display plural, how many records it
- * holds, and where it comes from. The whole card opens the collection. */
+/** A collection as a card: its glyph and display plural and how many
+ * records it holds. Where it comes from is the heading it sits under. The
+ * whole card opens the collection. */
 
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
@@ -8,7 +9,6 @@ import { KindGlyph } from "@/components/identity/kind-glyph"
 import { KindPath } from "@/components/identity/kind-ref"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import { providerOfKind } from "@/lib/actor-identity"
 import { splitKind } from "@/lib/api/http"
 import { formatCount, recordCountQueryOptions } from "@/lib/api/records"
 import type { KindInfo } from "@/lib/api/types"
@@ -18,7 +18,6 @@ export function CollectionCard({ kind }: { kind: KindInfo }) {
   const [technical] = useTechnicalDetails()
   const { authority, pkg, name } = splitKind(kind.identity)
   const count = useQuery(recordCountQueryOptions(authority, pkg, name))
-  const provider = providerOfKind(kind.identity)
   return (
     <Link
       to="/data/$authority/$pkg/$name"
@@ -32,20 +31,15 @@ export function CollectionCard({ kind }: { kind: KindInfo }) {
       {technical && (
         <KindPath reference={kind.identity} className="text-[11.5px]" />
       )}
-      <span className="flex items-baseline justify-between gap-2">
-        {count.data ? (
-          <span className="text-[22px] font-semibold tracking-[-0.02em] tabular-nums">
-            {formatCount(count.data)}
-          </span>
-        ) : count.isError ? (
-          <span className="text-[22px] font-semibold text-faint">—</span>
-        ) : (
-          <Skeleton className="h-7 w-10" />
-        )}
-        <span className="truncate text-[12.5px] text-faint">
-          {provider ? `from ${provider.name}` : "yours"}
+      {count.data ? (
+        <span className="text-[22px] font-semibold tracking-[-0.02em] tabular-nums">
+          {formatCount(count.data)}
         </span>
-      </span>
+      ) : count.isError ? (
+        <span className="text-[22px] font-semibold text-faint">—</span>
+      ) : (
+        <Skeleton className="h-7 w-10" />
+      )}
     </Link>
   )
 }

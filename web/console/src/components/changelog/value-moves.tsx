@@ -1,15 +1,22 @@
-/** A change's values in words: "Priority  High → Urgent", "Emails  +
- * grace@example.com", "Notes  cleared". Each value renders as the property
- * sheet renders it (a reference its RecordRef, a state its StateBadge, an
- * enum its label, a date the day a person would say), long text cut to one
- * line with the whole of it in the hover. Technical mode shows the property
- * keys and the raw values instead. */
+/** A change's values in words: "Priority: High → Urgent", "Density: set to
+ * Comfortable", "Emails: added grace@example.com", "Notes: cleared". Each
+ * value renders as the property sheet renders it (a reference its RecordRef,
+ * a state its StateBadge, an enum its label, a date the day a person would
+ * say), long text cut to one line with the whole of it in the hover.
+ * Everyday mode leaves out what the host writes (digests, cursors, sync
+ * bookkeeping) and moves with nothing to say; technical mode shows every
+ * move, by its property key and its raw values. */
 
 import type { ReactNode } from "react"
 
 import { DeclaredValue } from "@/components/property-sheet/property-value"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import { shortText, type ValueMove } from "@/lib/change-values"
+import {
+  isBlank,
+  readerMoves,
+  shortText,
+  type ValueMove,
+} from "@/lib/change-values"
 import { elementSpec, humanizeName, type PropSpec } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
 
@@ -72,29 +79,35 @@ function Old({ children }: { children: ReactNode }) {
   )
 }
 
-function Item({
-  sign,
-  value,
+function Word({ children }: { children: ReactNode }) {
+  return <span className="text-muted-foreground">{children}</span>
+}
+
+/** A list's items, comma-separated, each drawn as the sheet draws it. */
+function Items({
+  values,
   spec,
+  old = false,
 }: {
-  sign: "+" | "−"
-  value: unknown
+  values: readonly unknown[]
   spec?: PropSpec
+  old?: boolean
 }) {
   const item = spec && elementSpec(spec)
   return (
-    <span className="inline-flex items-center gap-1">
-      <span aria-hidden className={sign === "+" ? "text-ok" : "text-faint"}>
-        {sign}
-      </span>
-      <span className="sr-only">{sign === "+" ? "added" : "removed"}</span>
-      {sign === "+" ? (
-        <ChangeValue value={value} spec={item} />
-      ) : (
-        <Old>
-          <ChangeValue value={value} spec={item} />
-        </Old>
-      )}
+    <span className="inline-flex flex-wrap items-center gap-x-1">
+      {values.map((v, i) => (
+        <span key={i} className="inline-flex items-center">
+          {old ? (
+            <Old>
+              <ChangeValue value={v} spec={item} />
+            </Old>
+          ) : (
+            <ChangeValue value={v} spec={item} />
+          )}
+          {i < values.length - 1 && <span className="text-faint">,</span>}
+        </span>
+      ))}
     </span>
   )
 }
@@ -102,40 +115,52 @@ function Item({
 function Move({ move, spec }: { move: ValueMove; spec?: PropSpec }) {
   const [technical] = useTechnicalDetails()
   const label = technical ? move.name : (spec?.label ?? humanizeName(move.name))
-  const has = (v: unknown) => v !== undefined
   let body: ReactNode
   if (move.replaced) {
-    body = <span className="text-faint">replaced</span>
+    body = <Word>replaced</Word>
   } else if (move.changedBack) {
-    body = <span className="text-faint">changed and changed back</span>
+    body = <Word>changed and changed back</Word>
   } else if (move.added || move.removed) {
+    const added = move.added ?? []
+    const removed = move.removed ?? []
     body = (
       <>
-        {(move.added ?? []).map((v, i) => (
-          <Item key={`a${i}`} sign="+" value={v} spec={spec} />
-        ))}
-        {(move.removed ?? []).map((v, i) => (
-          <Item key={`r${i}`} sign="−" value={v} spec={spec} />
-        ))}
+        {added.length > 0 && (
+          <>
+            <Word>added</Word>
+            <Items values={added} spec={spec} />
+          </>
+        )}
+        {added.length > 0 && removed.length > 0 && (
+          <span aria-hidden className="text-faint">
+            ·
+          </span>
+        )}
+        {removed.length > 0 && (
+          <>
+            <Word>removed</Word>
+            <Items values={removed} spec={spec} old />
+          </>
+        )}
       </>
     )
-  } else if (!has(move.after)) {
-    body = move.beforeUnknown ? (
-      <span className="text-faint">cleared</span>
-    ) : (
-      <Item sign="−" value={move.before} spec={spec} />
-    )
-  } else if (move.beforeUnknown || !has(move.before)) {
-    body = move.beforeUnknown ? (
+  } else if (isBlank(move.after)) {
+    body = (
       <>
-        <span aria-hidden className="text-faint">
-          →
-        </span>
-        <span className="sr-only">now</span>
+        <Word>cleared</Word>
+        {!move.beforeUnknown && !isBlank(move.before) && (
+          <Old>
+            <ChangeValue value={move.before} spec={spec} />
+          </Old>
+        )}
+      </>
+    )
+  } else if (move.beforeUnknown || isBlank(move.before)) {
+    body = (
+      <>
+        <Word>set to</Word>
         <ChangeValue value={move.after} spec={spec} />
       </>
-    ) : (
-      <Item sign="+" value={move.after} spec={spec} />
     )
   } else {
     body = (
@@ -162,7 +187,7 @@ function Move({ move, spec }: { move: ValueMove; spec?: PropSpec }) {
           technical && "font-mono text-[11.5px]"
         )}
       >
-        {label}
+        {label}:
       </span>
       {body}
     </span>
@@ -179,7 +204,9 @@ export function ValueMoves({
   specs: ReadonlyMap<string, PropSpec>
   className?: string
 }) {
-  if (!moves.length) return null
+  const [technical] = useTechnicalDetails()
+  const shown = technical ? moves : readerMoves(moves, specs)
+  if (!shown.length) return null
   return (
     <div
       data-slot="value-moves"
@@ -188,7 +215,7 @@ export function ValueMoves({
         className
       )}
     >
-      {moves.map((m) => (
+      {shown.map((m) => (
         <Move key={m.name} move={m} spec={specs.get(m.name)} />
       ))}
     </div>
