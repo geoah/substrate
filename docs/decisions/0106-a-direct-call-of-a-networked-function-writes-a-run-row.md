@@ -45,7 +45,8 @@ sandbox enforces the network grant, while the author only declares `effect`.
 The kind widens to fit (version 18): `trigger` is no longer required, `mode`
 gains `call`, `status` gains `failed`, and four properties hold a call's
 audit: `caller` (the request's actor), `principal` (the token id), `output`
-(kept whole when its JSON is at most 4096 bytes) and `outputBytes`. The
+(kept whole when its JSON is at most 4096 bytes and it carries no NUL,
+which no row stores) and `outputBytes`. The
 output is never truncated, because a cut JSON value is not the value, and
 past the cap only its size lands, so a large answer cannot fail the call's
 own commit.
@@ -54,8 +55,9 @@ A call that settles writes the row in the transaction that applies its
 effects and settles its `Idempotency-Key`. A call whose body ran and failed
 writes a `failed` row in a transaction of its own, since the body may have
 sent something before it failed. A runner failure before the body starts
-(provisioning, spawn) also writes a `failed` row: the engine cannot tell it
-apart from a body that failed early. A call refused before the body runs, and a
+(provisioning, spawn), or a config that does not resolve (an input with no
+record, a failed OAuth refresh), also writes a `failed` row: the engine cannot
+tell it apart from a body that failed early. A call refused before the body runs, and a
 replayed idempotent outcome, write nothing: nothing went out. Call runs are
 not pruned; the per-trigger retention keys on a trigger they do not have.
 

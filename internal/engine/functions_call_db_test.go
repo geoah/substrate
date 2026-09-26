@@ -286,6 +286,28 @@ def main(input, host):
 	if runs := callRuns(t, ds); len(runs) != 2 {
 		t.Fatalf("a replayed keyed call wrote another row: %d call runs, want 2", len(runs))
 	}
+
+	// An output no row stores (a NUL) still settles: the row keeps its size.
+	out, _, err := ds.CallFunction(context.Background(), substrate.ActorAPI, name, map[string]any{"title": "a\x00b"})
+	if err != nil {
+		t.Fatalf("a call whose output carries a NUL failed: %v", err)
+	}
+	if got, _ := out.(map[string]any); got["sent"] != "a\x00b" {
+		t.Fatalf("NUL call output: %+v", out)
+	}
+	runs = callRuns(t, ds)
+	if len(runs) != 3 {
+		t.Fatalf("the NUL call wrote %d call runs in all, want 3", len(runs))
+	}
+	var bare []map[string]any
+	for _, r := range runs {
+		if _, kept := r.Properties["output"]; !kept && r.Properties["status"] == "ok" {
+			bare = append(bare, r.Properties)
+		}
+	}
+	if len(bare) != 1 || bare[0]["outputBytes"] == nil {
+		t.Fatalf("want one ok row with outputBytes and no output (the NUL call's), got %+v", bare)
+	}
 }
 
 func TestHostCallGatingAndCallerTransaction(t *testing.T) {

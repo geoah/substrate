@@ -922,12 +922,12 @@ The row names the callable, the `caller` (the request's actor: `api`,
 `console`, `substratectl`), the `principal` (the id of the token that made the
 call), `startedAt` and `finishedAt`, the status, the applied-effects summary,
 `outputBytes`, and `output` itself when it encodes to at most 4096 bytes of
-JSON. A call that settles writes it in the transaction that commits its
+JSON and carries no NUL (U+0000), which no row stores. A call that settles writes it in the transaction that commits its
 effects and its idempotency key, as `ok`. A call whose body ran and failed
-(a raise, an output outside `output:`, a commit that failed) writes it alone,
+(a raise, an output outside `returns:`, a commit that failed) writes it alone,
 as `failed`, with the error in `reason`; so does a runner that failed before
 the body started (provisioning, spawn). A call refused before its body runs
-(an unknown function, input outside `input:`, a disabled bundle) and the
+(an unknown function, input outside `arguments:`, a disabled bundle) and the
 replay of a stored `Idempotency-Key` outcome write nothing. Call runs are
 never pruned. A function with no network grant still writes no row: its
 effects in the changelog are its whole trace, attributed to the token behind

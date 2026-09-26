@@ -11,7 +11,7 @@ does, now writes one `substrate.reamde.dev/core/triggerrun` row with
 `callableRef`, the `caller`, the `principal` (the token id), `startedAt`,
 `finishedAt`, `status` (`ok`, or `failed` when the body ran and failed), the
 applied `effects`, `outputBytes`, and `output` when it is at most 4096 bytes
-of JSON. Call runs are never pruned.
+of JSON and carries no NUL (U+0000). Call runs are never pruned.
 
 A client that lists `triggerrun` rows and assumed `trigger` is always set
 must allow for its absence. To read every direct call of one function:
