@@ -9,6 +9,7 @@ import type { ReactNode } from "react"
 
 import { friendlyCalendarDay, friendlyDateTime } from "./dates"
 import { repeatedLayout } from "./sheet-model"
+import { EmptyValue } from "@/components/identity/empty-value"
 import { EnumTag } from "@/components/identity/enum-tag"
 import { RecordRef } from "@/components/identity/record-ref"
 import { StateBadge } from "@/components/identity/state-badge"
@@ -25,8 +26,8 @@ function isBag(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-export function Empty({ children = "Empty" }: { children?: ReactNode }) {
-  return <span className="text-faint">{children}</span>
+export function Empty({ children }: { children?: ReactNode }) {
+  return <EmptyValue>{children}</EmptyValue>
 }
 
 function JsonBlock({ value }: { value: unknown }) {

@@ -21,6 +21,7 @@ import {
 
 import type { DataTableColumn } from "@/components/data-table/data-table"
 import { GridColumnHeader } from "@/components/data-table/data-grid-header"
+import { EmptyValue } from "@/components/identity/empty-value"
 import { EnumTag } from "@/components/identity/enum-tag"
 import { propertyIcon } from "@/components/data-table/property-icon"
 import {
@@ -159,10 +160,6 @@ function rank(prop: DeclaredProperty): number {
 
 // ── cells ───────────────────────────────────────────────────────────────────
 
-function Empty() {
-  return <span className="text-faint">—</span>
-}
-
 /** The first of several values, and how many more there are. */
 function FirstOf({
   count,
@@ -200,7 +197,7 @@ function ReferenceCell({
 }) {
   const held = listOf(value)
   const first = readReference(held[0])
-  if (!first) return <Empty />
+  if (!first) return <EmptyValue />
   const target = splitRecordPath(first.path)
   if (!target) {
     return <span className="truncate text-muted-foreground">{first.path}</span>
@@ -256,7 +253,7 @@ function propertyCell(
   record: SubstrateRecord | undefined,
   ctx: CellContext
 ): React.ReactNode {
-  if (isEmptyValue(value)) return <Empty />
+  if (isEmptyValue(value)) return <EmptyValue />
   if (prop.kind === "reference") {
     return <ReferenceCell value={value} kinds={ctx.kinds} titles={ctx.titles} />
   }
@@ -553,7 +550,7 @@ export function buildColumns(
       ),
       cell: ({ getValue, row }) => {
         const value = getValue()
-        if (typeof value !== "string" || !value) return <Empty />
+        if (typeof value !== "string" || !value) return <EmptyValue />
         const record = row?.original
         const done =
           doneState && record

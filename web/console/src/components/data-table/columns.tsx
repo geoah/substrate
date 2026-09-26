@@ -15,6 +15,7 @@ import { ChangeActor } from "@/components/change-actor"
 import { ActorChip } from "@/components/actor-chip"
 import type { DataTableColumn } from "@/components/data-table/data-table"
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
+import { EmptyValue } from "@/components/identity/empty-value"
 import type { ChangeRow, KindInfo } from "@/lib/api/types"
 import { relativeTime, shortDate, shortTime, tableDateTime } from "@/lib/format"
 import { splitKind, kindByIdentity } from "@/lib/definition"
@@ -70,7 +71,7 @@ export function timeColumn<T extends RowData>(opts: {
     ),
     cell: ({ row }) => {
       const iso = opts.iso(row.original)
-      if (!iso) return <span className="text-muted-foreground">—</span>
+      if (!iso) return <EmptyValue />
       return (
         // hover shows the wire ISO verbatim — one convention everywhere
         <span
@@ -113,7 +114,7 @@ export function actorColumn<T extends RowData>(opts: {
     ),
     cell: ({ row }) => {
       const actor = opts.actor(row.original)
-      if (!actor) return <span className="text-muted-foreground">—</span>
+      if (!actor) return <EmptyValue />
       return (
         <span className="flex min-w-0 items-center">
           <ActorChip actor={actor} />
@@ -321,7 +322,7 @@ export function changeSummaryColumn(): DataTableColumn<ChangeRow> {
     ),
     cell: ({ row }) => {
       const text = changeSummary(row.original)
-      if (!text) return <span className="text-muted-foreground">—</span>
+      if (!text) return <EmptyValue />
       return (
         <span
           className="block truncate data text-muted-foreground"

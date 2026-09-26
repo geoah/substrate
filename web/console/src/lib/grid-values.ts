@@ -8,6 +8,9 @@ import type { DeclaredProperty } from "@/lib/definition"
 import { displayPlural, lowerFirst } from "@/lib/kind-names"
 import { stateTone } from "@/lib/state-words"
 
+/** The mark an absent value reads as, in the grid and on the sheet alike. */
+export const EMPTY_VALUE = "—"
+
 /** Words a label keeps in capitals. */
 const ACRONYMS: Record<string, string> = {
   url: "URL",
