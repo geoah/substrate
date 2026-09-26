@@ -41,6 +41,8 @@ WHAT IT ASSERTS, and why each one is worth a run:
                   `ok` with every stream acked against the request that drove
                   it, an injected 429 is `throttled`, an injected 401 is
                   `erroring` with the cause, and the next run recovers
+   16. backlog    with a `replies` backlog bigger than a run's budget, a new
+                  message in a mirrored channel lands within that one run
 
 Run against `raw/slack` (MODE=seed) two families of check relax, and only
 two; both are commented "SEED:" at the site and described in
@@ -532,6 +534,54 @@ def faults(rules):
         api("POST", MOCK + "/__mock/faults", {"rules": rules})
     else:
         api("DELETE", MOCK + "/__mock/faults")
+
+
+def _instant(v):
+    import datetime as dt
+    try:
+        return dt.datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def run_once(seconds=240):
+    """Fire ONE run and wait for it to settle, without driving another.
+
+    `wait_for_sync` re-fires while work is pending, which is right for
+    draining and wrong for a check about what a single bounded run did. The
+    run is recognised by the dispatcher's `lastSyncStartedAt` falling after
+    the request, so a delivery still queued from an earlier drive is not
+    mistaken for it."""
+    import datetime as dt
+    asked = dt.datetime.now(dt.timezone.utc)
+    sync_now()
+    deadline = time.time() + seconds
+    p = {}
+    while time.time() < deadline:
+        p = props(api("GET", "/api/v1/%s/%s" % (ACCOUNT_KIND, ACCOUNT_ID))[1] or {})
+        started = _instant(p.get("lastSyncStartedAt"))
+        synced = _instant(p.get("lastSyncedAt"))
+        if started and synced and started > asked and p.get("syncState") != "running" \
+                and synced >= started.replace(microsecond=0):
+            return p
+        time.sleep(2)
+    return p
+
+
+def settle(quiet=20, seconds=240):
+    """Wait until no run has stamped the account for `quiet` seconds, so a
+    delivery an earlier drive left queued cannot land inside a check."""
+    deadline = time.time() + seconds
+    last, since = None, time.time()
+    while time.time() < deadline:
+        p = props(api("GET", "/api/v1/%s/%s" % (ACCOUNT_KIND, ACCOUNT_ID))[1] or {})
+        mark = (p.get("lastSyncedAt"), p.get("syncState"))
+        if mark != last:
+            last, since = mark, time.time()
+        elif p.get("syncState") != "running" and time.time() - since >= quiet:
+            return p
+        time.sleep(2)
+    return p
 
 
 def wait_for_state(want, seconds=90):
@@ -1674,6 +1724,87 @@ def main():
         ok(back.get("syncError"),
            "syncError was cleared by a later success — it is the LAST error, "
            "and syncState is what says the run is over")
+
+    # --------------------------------------------------------------- 16
+    section("16. new history lands while a backlog drains")
+    # substrate#650. A bounded run resumes its phase, and a walk past
+    # `history` used to reach it again only after the whole backlog drained:
+    # 11,912 queued threads and files held new messages back for days. The
+    # mock builds the backlog: one injected history page names THREADS thread
+    # parents, more than two runs' call budget (300 each) can walk, and every
+    # conversations.replies call answers an empty page. The run after that
+    # meets a new message in the same channel. On the unfixed body that run
+    # spends its whole budget in `replies` and never asks for history.
+    if MOCK and not SEED:
+        THREADS = 1000
+        base = settle()
+        conv_cid = {rid(r): props(r).get("conversationId") for r in records(CONV)}
+        cursors16 = {conv_cid.get(ref_id(props(s).get("conversation"))):
+                     props(s).get("latestTs") for s in records(SYNC)}
+        target = sorted(c for c, ts in cursors16.items() if c and ts)
+        ok(not pending(base), "the account still had work pending before the "
+                              "backlog was built: %r" % base.get("syncStatus"))
+        ok(target, "no conversation has a stored latestTs to pull new history from")
+        if target:
+            cid = target[0]
+            start = float(cursors16[cid]) + 10
+            parents = []
+            for i in range(THREADS):
+                ts = "%.6f" % (start + i * 0.001)
+                parents.append({"type": "message", "user": owner, "ts": ts,
+                                "text": "backlog thread %d" % i, "thread_ts": ts,
+                                "reply_count": 1,
+                                "latest_reply": "%.6f" % (start + i * 0.001 + 0.0005)})
+            new_ts = "%.6f" % (start + THREADS)
+            text = "posted while the replies backlog drains"
+            replies = {"match": "GET /api/conversations.replies",
+                       "status": [200] * (THREADS + 200),
+                       "body": {"ok": True, "has_more": False, "messages": []}}
+
+            def history(messages):
+                return {"match": "GET /api/conversations.history",
+                        "contains": "channel=" + cid, "status": [200],
+                        "body": {"ok": True, "has_more": False,
+                                 "messages": messages}}
+
+            # Run one: a new walk takes the parents and stops in `replies`.
+            faults([history(parents), replies])
+            one = run_once()
+            first = one.get("streamCursors") or {}
+            ok(first.get("phase") == "replies"
+               and len(first.get("threads") or []) > 300,
+               "the first run did not leave a replies backlog bigger than one "
+               "run (phase %r, %d threads), so this proves nothing"
+               % (first.get("phase"), len(first.get("threads") or [])))
+            # Run two: resumes the backlog, with a new message waiting.
+            faults([history([{"type": "message", "user": owner, "text": text,
+                              "ts": new_ts}]), replies])
+            two = run_once()
+            left = two.get("streamCursors") or {}
+            ok(left.get("phase") == "replies" and left.get("threads"),
+               "the second run did not stop in the backlog (phase %r, %d "
+               "threads left), so this proves nothing"
+               % (left.get("phase"), len(left.get("threads") or [])))
+            ok(len(left.get("threads") or []) < len(first.get("threads") or []),
+               "the second run spent nothing on the backlog: %d threads before, "
+               "%d after" % (len(first.get("threads") or []),
+                             len(left.get("threads") or [])))
+            conv_row = {v: k for k, v in conv_cid.items()}.get(cid)
+            landed = [r for r in records(MESSAGE)
+                      if props(r).get("ts") == new_ts
+                      and ref_id(props(r).get("channel")) == conv_row]
+            ok(landed, "the message posted at %s in %s is not in the mirror "
+                       "after one run with a replies backlog (%s)"
+               % (new_ts, cid, two.get("syncStatus")))
+            note("backlog: %d threads after run one, %d after run two; new "
+                 "message %s" % (len(first.get("threads") or []),
+                                 len(left.get("threads") or []),
+                                 "landed" if landed else "MISSING"))
+            faults([replies])
+            drained = wait_for_sync(two.get("lastSyncedAt"), seconds=600)
+            ok(not pending(drained), "the backlog did not drain afterwards: %r"
+               % drained.get("syncStatus"))
+            faults([])
     return finish()
 
 
