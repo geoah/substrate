@@ -1,6 +1,7 @@
 /** "Add a collection": three ways to start one. Ask an agent to make it,
  * start from a sample (imported under the repository's own authority, the
- * packages it needs first), or declare the kind yourself in YAML. */
+ * packages it needs first; only samples that add a collection, see
+ * `collectionSamples`), or declare the kind yourself in YAML. */
 
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -14,6 +15,7 @@ import {
 } from "lucide-react"
 
 import { CopyButton } from "@/components/identity/copy-button"
+import { KindGlyph } from "@/components/identity/kind-glyph"
 import { TakeButton } from "@/components/providers/bundle-actions"
 import { Button } from "@/components/ui/button"
 import {
@@ -36,13 +38,13 @@ import {
   missingChain,
   presentPackages,
   requirementTree,
-  upgradeAvailable,
-  upgradeBlocked,
-  type BundleRow,
   type RequirementNode,
 } from "@/lib/bundles"
+import { joinWords } from "@/lib/agent-chat"
+import type { KindInfo } from "@/lib/api/types"
 import { cn } from "@/lib/utils"
-import { packageDisplayName } from "@/lib/kind-names"
+import { displayPlural, packageDisplayName } from "@/lib/kind-names"
+import { collectionSamples, type SampleCollection } from "./sample-collections"
 
 // eslint-disable-next-line react-refresh/only-export-components -- the URL's word for each way, shared with the page that opens it
 export const ADD_WAYS = ["agent", "sample", "yaml"] as const
@@ -59,7 +61,7 @@ const WAYS: { value: Way; icon: LucideIcon; title: string; line: string }[] = [
     value: "sample",
     icon: LayersIcon,
     title: "Start from a sample",
-    line: "Tasks, people, notes: ready-made collections to copy.",
+    line: "Tasks, people, calendars: ready-made collections to add.",
   },
   {
     value: "yaml",
@@ -164,14 +166,6 @@ function AskAnAgent({ onDone }: { onDone: () => void }) {
   )
 }
 
-type SampleState = "add" | "upgrade" | "added"
-
-function sampleState(row: BundleRow): SampleState {
-  if (!row.installed) return "add"
-  if (upgradeAvailable(row) && !upgradeBlocked(row)) return "upgrade"
-  return "added"
-}
-
 function Samples() {
   const statuses = useQuery(bundleStatusesQueryOptions)
   const catalog = useQuery(catalogQueryOptions)
@@ -191,9 +185,10 @@ function Samples() {
       rows.map((row) => [row.id, requirementTree(row, byId, present, versions)])
     )
   }, [rows, registry.data])
-  const samples = rows
-    .filter((r) => r.tier === "sample")
-    .sort((a, b) => a.name.localeCompare(b.name))
+  const samples = useMemo(
+    () => collectionSamples(rows, registry.data ?? []),
+    [rows, registry.data]
+  )
 
   if (catalog.isPending || statuses.isPending || registry.isPending) {
     return (
@@ -213,62 +208,80 @@ function Samples() {
   }
   if (!samples.length) {
     return (
-      <p className="text-muted-foreground">This substrate ships no samples.</p>
+      <p className="text-muted-foreground">
+        There are no sample collections to add.
+      </p>
     )
   }
   return (
     <ul className="max-h-80 overflow-y-auto rounded-[10px] border border-border">
-      {samples.map((row) => (
-        <SampleRow key={row.id} row={row} chain={chains.get(row.id) ?? []} />
+      {samples.map((sample) => (
+        <SampleRow
+          key={sample.row.id}
+          sample={sample}
+          registry={registry.data ?? []}
+          chain={chains.get(sample.row.id) ?? []}
+        />
       ))}
     </ul>
   )
 }
 
+/** A sample by what it adds: the collections that will show up, each with
+ * its glyph. An added one says so; updating it is the package page's job. */
 function SampleRow({
-  row,
+  sample: { row, kinds },
+  registry,
   chain,
 }: {
-  row: BundleRow
+  sample: SampleCollection
+  registry: readonly KindInfo[]
   chain: RequirementNode[]
 }) {
-  const state = sampleState(row)
   const missing = missingChain(chain)
   const name = packageDisplayName(row.name)
+  const shown = kinds.map(
+    (k) => registry.find((entry) => entry.identity === k) ?? k
+  )
   return (
     <li className="border-b border-border px-3.5 py-3 last:border-b-0">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="font-medium">{name}</div>
-          {row.catalog?.description && (
-            <p className="mt-0.5 text-[12.5px] text-faint">
-              {row.catalog.description}
-            </p>
-          )}
-          {state === "add" && missing.length > 0 && (
-            <p className="mt-1 text-[12.5px] text-muted-foreground">
+          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-muted-foreground">
+            {shown.map((k) => (
+              <span
+                key={typeof k === "string" ? k : k.identity}
+                className="inline-flex items-center gap-1.5"
+              >
+                <KindGlyph kind={k} size="xs" />
+                {displayPlural(k)}
+              </span>
+            ))}
+          </p>
+          {!row.installed && missing.length > 0 && (
+            <p className="mt-1 text-[12.5px] text-faint">
               Adds{" "}
-              {missing
-                .map((m) => packageDisplayName(m.row?.name ?? m.package))
-                .join(", ")}{" "}
+              {joinWords(
+                missing.map((m) => packageDisplayName(m.row?.name ?? m.package))
+              )}{" "}
               first, which it needs.
             </p>
           )}
         </div>
-        {state === "added" ? (
+        {row.installed ? (
           <span className="inline-flex shrink-0 items-center gap-1 pt-0.5 text-[12.5px] text-ok">
             <CheckIcon className="size-3.5" />
             Added
           </span>
         ) : (
-          // The providers' own door: the whole missing chain leaves first,
-          // and a copy that would be replaced is confirmed before it is.
+          // The providers' own door: the whole missing chain lands first.
           <TakeButton
             row={row}
             chain={chain}
             name={name}
-            label={state === "upgrade" ? "Upgrade" : "Add"}
-            variant={state === "add" ? "default" : "outline"}
+            label="Add"
+            variant="default"
           />
         )}
       </div>
