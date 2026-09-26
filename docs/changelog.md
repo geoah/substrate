@@ -138,7 +138,7 @@ record) reads as one change, not a removal and an addition: the entry names
 the new property with `"renamedFrom"` set to the old name, `before` is the
 value the record held under the old name and `after` the value under the new
 one, and the old name carries no change of its own
-([decision 0109](decisions/0109-a-change-row-reads-a-property-rename-as-one-move.md)).
+([decision 0114](decisions/0114-a-change-row-reads-a-property-rename-as-one-move.md)).
 The pairing reads the entry's own `payload.renamed`, so every rename already
 written reads this way.
 

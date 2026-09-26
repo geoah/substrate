@@ -73,7 +73,7 @@ func holdToSnapshots(t *testing.T, changes []substrate.Change, snaps snapshots) 
 			got := map[string]bool{}
 			for _, pc := range a.Properties {
 				got[pc.Name] = true
-				// A paired rename (decision 0109) reads its before under the
+				// A paired rename (decision 0114) reads its before under the
 				// old name, and stands for the old name's clear too.
 				from := pc.Name
 				if pc.RenamedFrom != "" {
@@ -455,7 +455,7 @@ func TestChangeValuesKeepAFormerSecretRedacted(t *testing.T) {
 }
 
 // A vocabulary apply's rename is one change under the new name, paired to
-// the old one, never a removal and an addition (decision 0109).
+// the old one, never a removal and an addition (decision 0114).
 func TestChangeValuesPairARenameAsOneMove(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

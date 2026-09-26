@@ -4,7 +4,7 @@ date: 2026-09-26
 decision-makers: George Antoniadis
 ---
 
-# 0109. A change row reads a property rename as one move
+# 0114. A change row reads a property rename as one move
 
 ## Context and Problem Statement
 

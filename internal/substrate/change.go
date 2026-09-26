@@ -103,7 +103,7 @@ type AffectedRecord struct {
 // the entry is a vocabulary apply moving the record's value to Name (a
 // declaration's `renamedFrom`): the one change is the move, Before is the
 // value the record held under the old name, and the old name has no change
-// of its own (decision 0109).
+// of its own (decision 0114).
 type PropertyChange struct {
 	Name          string `json:"name"`
 	RenamedFrom   string `json:"renamedFrom,omitempty"`

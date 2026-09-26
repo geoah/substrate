@@ -312,7 +312,7 @@ export interface AffectedRecord {
  * a sensitive property reads `<redacted>` on both sides. `beforeUnknown`
  * marks a before the server could not derive, which is not "there was none".
  * `renamedFrom` is the old name where the entry moved the value to `name`
- * under a declaration's rename (decision 0109); `before` is then the value
+ * under a declaration's rename (decision 0114); `before` is then the value
  * the old name held, and the old name has no entry of its own. */
 export interface PropertyChange {
   name: string
