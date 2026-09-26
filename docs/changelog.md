@@ -164,6 +164,10 @@ Each column answers a different question.
   used. A `put` that created the row is a `create`, a `put` over a live row is
   an `update`, and every op that is neither a create nor a delete is an
   `update`.
+- **A run summary's `verb` says what a sentence about the row would**
+  ([run summaries](#run-summaries)): the trigger's `create` and `update`, plus
+  `restore` for a `put` that brought a tombstone back, and `delete`, `merge`,
+  `split` and `gc` kept apart, because each reads as a different sentence.
 
 The request's `create` is not the changelog's `put`: accepting one mints the
 record when the id is free and conflicts when a record that does not match the
@@ -360,6 +364,41 @@ This is the other half of the list-to-watch handoff: a list response carries
 the changelog `head` seq at its snapshot and the `generation` it belongs to, so
 listing and then opening `watch?from={head}&generation={generation}`
 misses nothing and double-sees nothing.
+
+### Run summaries
+
+`runs=1` turns the history page into run summaries: consecutive rows of the
+filtered feed that share an actor, a kind and a verb, each with its count, so
+a client says "added 60 tasks" from one read
+([0106](decisions/0106-the-changes-read-summarizes-runs-and-never-ends-a-page-inside-one.md)).
+The verb is `create` for a `put` whose payload carries `created: true`,
+`restore` for one carrying `restored: true`, `update` for any other `put` and
+every `patch`, and the op itself for `delete`, `merge`, `split` and `gc`.
+Every filter above applies first, so a row the filter drops never breaks a
+run.
+
+```
+GET /api/v1/changes?runs=1&first=2
+
+{"runs": [
+  {"actor": "api", "kind": "samples.substrate.reamde.dev/tasks/task", "verb": "update",
+   "count": 3, "records": 1, "recordId": "kq3v9x2m41pf",
+   "newestSeq": 4190, "oldestSeq": 4188, "newestTs": "…", "oldestTs": "…"},
+  {"actor": "console", "kind": "samples.substrate.reamde.dev/tasks/task", "verb": "create",
+   "count": 60, "records": 60,
+   "newestSeq": 4187, "oldestSeq": 4128, "newestTs": "…", "oldestTs": "…"}],
+ "cursor": 4128, "head": 4190, "generation": "7f3a0c2e9b1d4e6f"}
+```
+
+`first` counts runs (default 50, at most 500), and a page never ends inside
+one: the server reads each run to the row that breaks it, so the oldest run's
+`count` is exact. `records` is the distinct record ids the run touched, and
+`recordId` is set when that is one. `cursor` is the oldest run's `oldestSeq`
+when more rows lie below, passed as the next `before` with the `generation`,
+and absent at the bottom. A run's time span is `newestTs` to `oldestTs`; the
+server does not split a run by time. `runs` takes no `watch` and no `from`,
+and a value other than `1` is a `bad_request`. The read costs what its runs
+hold: a run of 50,000 rows is 50,000 rows read.
 
 ## Frames and the horizon
 
