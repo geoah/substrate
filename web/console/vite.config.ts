@@ -2,7 +2,7 @@
 import path from "node:path"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
-import { defineConfig } from "vite"
+import { defineConfig, searchForWorkspaceRoot } from "vite"
 
 // The console speaks same-origin paths only, because the server serves it at
 // `/` with its own API beside it. Dev serves the console from vite instead, so
@@ -30,6 +30,16 @@ export default defineConfig({
     },
   },
   server: {
+    // The shipped declarations are the fixtures a rendering suite holds every
+    // kind to; a jsdom suite loads them through the same checked file access
+    // the dev server uses, so the two directories are named beside the root.
+    fs: {
+      allow: [
+        searchForWorkspaceRoot(process.cwd()),
+        path.resolve(import.meta.dirname, "../../kinds"),
+        path.resolve(import.meta.dirname, "../../samples"),
+      ],
+    },
     proxy: {
       "/api": proxyTarget,
       "/healthz": proxyTarget,

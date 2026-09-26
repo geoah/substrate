@@ -119,6 +119,12 @@ function OptionRow({
   )
 }
 
+/** What the offered records are called in a sentence. An any-kind reference
+ * with no kind chosen yet has no pin, and its records are just records. */
+function pluralOf(pin: string, kind?: KindInfo): string {
+  return pin ? lowerFirst(displayPlural(kind ?? pin)) : "records"
+}
+
 /** Where the read stands, in words, when there are no rows to show. */
 function ReadState({
   read,
@@ -131,7 +137,15 @@ function ReadState({
   kind?: KindInfo
   typed: string
 }) {
-  const plural = lowerFirst(displayPlural(kind ?? pin))
+  const plural = pluralOf(pin, kind)
+  if (!pin) {
+    return (
+      <div className="px-3 py-5 text-sm text-muted-foreground">
+        Choose a kind first, and its records are listed here. Or type a whole{" "}
+        <span className="data">{"<kind>/<id>"}</span> path.
+      </div>
+    )
+  }
   if (read.status === "unresolved") {
     return (
       <div className="px-3 py-5 text-sm text-muted-foreground">
@@ -248,7 +262,7 @@ export function RecordCombobox({
     exclude,
   })
   const options = read.options
-  const plural = lowerFirst(displayPlural(kind ?? pin))
+  const plural = pluralOf(pin, kind)
 
   function choose(next: string) {
     onSelect(next)

@@ -238,6 +238,9 @@ export function displayName(kind: KindInfo | string): string {
  * ("Codes of conduct"). */
 export function displayPlural(kind: KindInfo | string): string {
   const parts = words(kind)
+  // An empty reference names no kind (an any-kind reference before one is
+  // chosen): there is no word to take the plural.
+  if (parts.length === 0) return ""
   const of = parts.indexOf("of")
   const at = of > 0 ? of - 1 : parts.length - 1
   parts[at] = pluralWord(parts[at])

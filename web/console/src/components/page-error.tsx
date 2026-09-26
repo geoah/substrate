@@ -23,6 +23,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
+import { cn } from "@/lib/utils"
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -73,6 +74,8 @@ interface SectionBoundaryProps {
   /** A change clears a caught failure, so the section tries again (the
    * address, for a part of the shell that outlives every page). */
   resetKey?: unknown
+  /** Where the note sits in its parent's layout (a grid row's span). */
+  className?: string
   children: ReactNode
 }
 
@@ -107,7 +110,13 @@ export class SectionBoundary extends Component<
   render() {
     if (this.state.error === undefined) return this.props.children
     return (
-      <p role="alert" className="px-3 py-2 text-[12.5px] text-muted-foreground">
+      <p
+        role="alert"
+        className={cn(
+          "px-3 py-2 text-[12.5px] text-muted-foreground",
+          this.props.className
+        )}
+      >
         {this.props.name} couldn’t be shown: {messageOf(this.state.error)}
       </p>
     )

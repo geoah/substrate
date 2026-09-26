@@ -111,6 +111,13 @@ describe("kind display names", () => {
     expect(displayPlural("frobnicator")).toBe("Frobnicators")
   })
 
+  // An unpinned reference with no kind chosen yet names no kind at all; a
+  // picker that asks for its plural must get nothing, not a throw.
+  it("names no kind as nothing", () => {
+    expect(displayName("")).toBe("")
+    expect(displayPlural("")).toBe("")
+  })
+
   it("pluralises one word by its ending", () => {
     expect(pluralWord("key")).toBe("keys")
     expect(pluralWord("policy")).toBe("policies")

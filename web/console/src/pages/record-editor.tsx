@@ -42,6 +42,7 @@ import {
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { KindRef } from "@/components/identity/kind-ref"
 import { DocPage } from "@/components/identity/page-layout"
+import { SectionBoundary } from "@/components/page-error"
 import { CreateSheet } from "@/components/record/create-sheet"
 import { PropertyForm } from "@/components/record/property-form"
 
@@ -353,17 +354,19 @@ export function RecordEditorForm({
           </div>
         </div>
         {lens === "form" ? (
-          <CreateSheet
-            text={text}
-            kind={kind}
-            kinds={kinds}
-            onChange={onChange}
-            meta={
-              <span className="inline-flex items-center gap-1.5">
-                New in <KindRef kind={kind} />
-              </span>
-            }
-          />
+          <SectionBoundary name="The form" resetKey={text}>
+            <CreateSheet
+              text={text}
+              kind={kind}
+              kinds={kinds}
+              onChange={onChange}
+              meta={
+                <span className="inline-flex items-center gap-1.5">
+                  New in <KindRef kind={kind} />
+                </span>
+              }
+            />
+          </SectionBoundary>
         ) : (
           <>
             <h1 className="mt-2.5 mb-3 text-[26px] leading-tight font-[650] tracking-[-0.02em]">

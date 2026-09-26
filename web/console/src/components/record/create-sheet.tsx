@@ -7,6 +7,7 @@
 import { useState, type ReactNode } from "react"
 import { AlertTriangleIcon, ChevronDownIcon } from "lucide-react"
 
+import { SectionBoundary } from "@/components/page-error"
 import { propertyIcon } from "@/components/property-sheet/sheet-model"
 import { PropertyField } from "@/components/record/property-field"
 import { useDocumentForm } from "@/components/record/use-document-form"
@@ -215,31 +216,40 @@ export function CreateSheet({
               className="contents"
               data-property={field.name}
             >
-              <RowLabel field={field} htmlFor={id} />
-              <div className="flex min-h-9 min-w-0 flex-col justify-center gap-1 py-0.5">
-                <PropertyField
-                  field={field}
-                  value={form.values[field.name]}
-                  onChange={(next) => form.commit(field, next)}
-                  mode="create"
-                  error={form.errors[field.name]}
-                  kinds={kinds}
-                  idPrefix="new"
-                  bare
-                  derivedNote={
-                    form.derivesAuthority && field.name === AUTHORITY_PROPERTY
-                      ? "Taken from the ID, its first segment."
-                      : form.derivesPackage && field.name === PACKAGE_PROPERTY
-                        ? "Taken from the ID, its second segment."
-                        : undefined
-                  }
-                />
-                {field.control === "state" && (
-                  <span className="text-xs text-faint">
-                    New {lowerFirst(displayPlural(kind))} start here.
-                  </span>
-                )}
-              </div>
+              {/* One row the console cannot draw fails alone: the rest of
+                  the sheet, and the YAML lens, still create the record. A
+                  change to the document tries it again. */}
+              <SectionBoundary
+                name={field.label}
+                resetKey={text}
+                className="col-span-full px-0.5"
+              >
+                <RowLabel field={field} htmlFor={id} />
+                <div className="flex min-h-9 min-w-0 flex-col justify-center gap-1 py-0.5">
+                  <PropertyField
+                    field={field}
+                    value={form.values[field.name]}
+                    onChange={(next) => form.commit(field, next)}
+                    mode="create"
+                    error={form.errors[field.name]}
+                    kinds={kinds}
+                    idPrefix="new"
+                    bare
+                    derivedNote={
+                      form.derivesAuthority && field.name === AUTHORITY_PROPERTY
+                        ? "Taken from the ID, its first segment."
+                        : form.derivesPackage && field.name === PACKAGE_PROPERTY
+                          ? "Taken from the ID, its second segment."
+                          : undefined
+                    }
+                  />
+                  {field.control === "state" && (
+                    <span className="text-xs text-faint">
+                      New {lowerFirst(displayPlural(kind))} start here.
+                    </span>
+                  )}
+                </div>
+              </SectionBoundary>
             </div>
           )
         })}

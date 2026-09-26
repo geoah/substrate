@@ -33,6 +33,7 @@ import {
 } from "@/lib/record-form"
 import { checkValue, emptyContainer, systemSpecs } from "@/lib/record-schema"
 import {
+  blankIsUnset,
   canSetIn,
   deleteIn,
   hasIn,
@@ -82,9 +83,12 @@ export function useDocumentForm({
     // What the CONTROL holds may not be a value yet; what the DOCUMENT holds
     // may not satisfy the declaration (an object missing a required field).
     // Both belong on the control, and the first one wins.
+    // A blank template line on a datatype whose empty string is no value is
+    // "not set", left out of the write, so it is not checked as one.
+    const held = properties?.[field.name]
     const problem =
       toFieldValue(field, values[field.name]).error ??
-      checkValue(field.spec, properties?.[field.name])
+      checkValue(field.spec, blankIsUnset(field.spec, held) ? undefined : held)
     if (problem) errors[field.name] = problem
   }
 
