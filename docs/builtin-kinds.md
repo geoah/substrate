@@ -116,7 +116,7 @@ console-editable and changelog-visible like anything else
 | Kind      | What it is                                                                                                             |
 | --------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `trigger` | One binding of a source (a record subscription, a schedule, or a public webhook endpoint) to one callable, owning the delivery cursor. |
-| `triggerrun` | One trigger delivery attempt, written after it settles: the delivery ledger's row. Parked runs stay until retried away; the rest are pruned to the newest few per trigger. |
+| `triggerrun` | One trigger delivery attempt, written after it settles: the delivery ledger's row. Parked runs stay until retried away; the rest are pruned to the newest few per trigger. A direct call of a networked function writes one too, with mode `call` and no trigger, never pruned. |
 
 The ten [declarable kinds](vocabulary.md#the-declarable-kinds) (`authority`,
 `package`, `kind`, `propertytype`, `trait`, `recordmapping`, `function`,

@@ -746,7 +746,7 @@ func TestTriggerManualRunLeavesCursorAlone(t *testing.T) {
 	if st := statusOf(t, ds, trigID("mirror")); st.Lag == 0 {
 		t.Fatalf("manual run moved the cursor: %+v", st)
 	}
-	// Direct invocations mint nothing on the run ledger.
+	// A manual run mints nothing on the run ledger.
 	if runs := runRowsOf(t, ds, trigID("mirror"), "ok"); len(runs) != 0 {
 		t.Fatalf("manual run minted run rows: %+v", runs)
 	}

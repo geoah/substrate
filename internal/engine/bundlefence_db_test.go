@@ -324,7 +324,7 @@ func TestHostCallRefusesADisabledBundlesFunction(t *testing.T) {
 	if err := ds.DisableBundle(ctx, tbPackage); err != nil {
 		t.Fatalf("disable tool bundle: %v", err)
 	}
-	_, _, err := ds.CallFunction(ctx, callerFn, map[string]any{})
+	_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, callerFn, map[string]any{})
 	if err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("cross-bundle call into a disabled bundle: %v", err)
 	}
