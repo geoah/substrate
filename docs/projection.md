@@ -216,8 +216,9 @@ the provider first, its sync, then the mapping, so without this every mirror
 synced before the mapping kept an empty slot until the provider wrote that row
 again. In the same transaction as the declaration, every live source whose
 slot names no live record is decided exactly as its own write would decide it:
-one candidate links, none mints, and a source that offers nothing or parks on
-an ambiguous probe stays unlinked. Each link is an ordinary write of the
+one candidate links, none mints, and a source that offers nothing, parks on
+an ambiguous probe, or falls outside the mapping's
+[`where`](#which-sources-a-mapping-covers-where) stays unlinked. Each link is an ordinary write of the
 source's slot, credited to the mapping, so it is in the changelog and a
 rebuild replays it.
 
@@ -279,6 +280,63 @@ already holds stays, so a duplicate that exists is the owner's to settle with
 [alternative](#reading-provenance-propertymeta) the owner may adopt by writing
 it
 ([decision record 0103](decisions/0103-an-ambiguous-probe-follows-its-mappings-policy-and-a-probed-value-never-spreads.md)).
+
+### Which sources a mapping covers: `where`
+
+A mapping covers every record of its source kind unless it says otherwise.
+`where` narrows it to the records that meet one condition per property, in the
+[filter grammar](api.md#the-filter-grammar)'s condition objects, all of which
+must hold:
+
+```yaml
+  from: providers.substrate.reamde.dev/github/pullrequest
+  to: samples.substrate.reamde.dev/tasks/task
+  property: task
+  where:
+    state:
+      eq: open
+  map:
+    name:
+      path: title
+```
+
+A condition means exactly what the same entry under `filter.properties`
+means on a list of the source kind, because the engine compiles it with the
+same code. It names a property the source kind declares, never a sensitive
+one and never the mapping's own slot, and a bare value (`state: open`) is
+refused, as the filter refuses one. An operator that does not fit the type
+(`match` on a number, `gt` on a reference) fails the apply that declares it.
+
+Two things a list accepts are refused in a `where`. A declared property named
+`createdAt`, `updatedAt`, `deletedAt`, `id` or `version` is refused, because
+the filter grammar reads that name as the record's own column, which a
+`where` cannot read. A condition that tests nothing (`eq: null`, `in: []`, an
+empty `prefix`) is refused rather than dropped. Every apply compiles every
+`where` again, so a change to the source kind that breaks one (a retyped
+property it names) fails that apply.
+
+A record outside the `where` is treated as a deleted source is:
+
+- **Its own write resolves nothing.** It links no subject, mints none, and is
+  never marked ambiguous. The write that brings it inside resolves it then,
+  and so does the apply that [links existing sources](#sources-that-exist-before-their-mapping).
+- **It contributes nothing.** Recompute reads no value from it, so a record
+  that leaves the `where` releases what it projected, and a subject left with
+  no covered source takes the [orphan mark](#when-the-last-source-goes-the-orphan-mark).
+- **Its link stays.** Only merge and split move a subject slot, so the pointer
+  it already holds is kept, `linkedFrom` still lists it, and a record that
+  comes back inside projects onto the same subject instead of minting another.
+  The kept pointer also spares the subject from `SUBSTRATE_ORPHAN_GRACE`
+  collection, which skips any record a live record points at.
+- **The subject hop refuses it** when it holds no link, rather than mint a
+  subject for a record the mapping does not cover.
+
+Changing a mapping's `where` recomputes every record of its target kind in
+the apply, so a narrowed mapping releases what it no longer covers at once. A
+widened `where` is a changed mapping too, so the same apply links every
+unlinked record it newly covers
+([decision record 0107](decisions/0107-an-apply-links-the-sources-its-mappings-left-unlinked.md),
+[decision record 0118](decisions/0118-a-mapping-where-narrows-its-sources-in-the-filter-grammar.md)).
 
 ### Reading the links back: `linkedFrom`
 
@@ -510,9 +568,10 @@ re-seed left 2,727 of them on one repository
 ([#578](https://github.com/geoah/substrate/issues/578)).
 
 The engine marks those rows. A record is **orphaned** when all three hold:
-something maps onto its kind, no live record links to it through a mapping's
-subject slot (counted over every id it has ever had, so a merge does not hide
-a source), and every one of its `property_managers` rows holds at the machine
+something maps onto its kind, no live record that mapping's `where` covers
+links to it through the mapping's subject slot (counted over every id it has
+ever had, so a merge does not hide a source), and every one of its
+`property_managers` rows holds at the machine
 tier — or it has none at all. A property held above machine is a hand's, and a
 record a hand has written on is not a husk, whether that hand was yours or a
 function's. Releasing the hold (the null patch above) makes it one again, and
