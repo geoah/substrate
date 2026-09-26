@@ -807,6 +807,17 @@ runs. The cursor still
 moves only past rows that were delivered or matched nothing. A `wake` runs
 without the budget and drains to head.
 
+**A record trigger reads only the kinds it names.** The dispatcher's
+changelog read asks Postgres for the entries of the source's kinds past the
+cursor, and moves the cursor over every other entry in one step, so a
+trigger's drain, and a `replay` from seq 0, cost in proportion to its kinds'
+entries and not to the whole changelog
+([#637](https://github.com/geoah/substrate/issues/637),
+[decision 0106](decisions/0106-a-trigger-read-names-its-kinds.md)). A
+package or authority glob matches against the kinds the changelog holds at
+each read, so a kind whose first entry lands mid-drain is read too. A `*`
+source still reads every entry.
+
 The `when:` guard is the one place [CEL](https://cel.dev) survives. It is a
 boolean over three read-only bindings, `change`, `record` (null after a
 delete), and `repository`. There is deliberately no clock and no way to fetch

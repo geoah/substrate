@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/geoah/substrate/internal/metrics"
@@ -272,12 +273,9 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadli
 	}
 	ran := 0
 	for {
-		changes, err := ds.changesPast(ctx, cursor)
+		changes, scanned, err := ds.changesPast(ctx, tr, cursor)
 		if err != nil {
 			return ran, err
-		}
-		if len(changes) == 0 {
-			return ran, nil
 		}
 		matched := matchChanges(tr, changes)
 		if tr.Record.Coalesce {
@@ -302,26 +300,26 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadli
 			}
 			cursor = next
 		}
-		// Trailing rows the source skipped move the SCAN position, the one
-		// cursor motion outside the ledger (delivery.go): a crash or a
-		// restore before this line only re-reads rows that do not match.
-		last := changes[len(changes)-1].Seq
-		if last > cursor {
-			if err := ds.advanceCursor(ctx, tr, cursor, last); err != nil {
+		// Trailing rows the source skipped, the ones the read filtered out
+		// by kind included, move the SCAN position, the one cursor motion
+		// outside the ledger (delivery.go): a crash or a restore before this
+		// line only re-reads rows that do not match.
+		if scanned > cursor {
+			if err := ds.advanceCursor(ctx, tr, cursor, scanned); err != nil {
 				if errors.Is(err, errCursorMoved) {
 					return ran, nil
 				}
 				return ran, err
 			}
-			cursor = last
+			cursor = scanned
 		}
-		if deadline.spent() {
+		if len(changes) == 0 || deadline.spent() {
 			return ran, nil
 		}
 		// Loop until a read comes back empty rather than on a short batch:
 		// the deliveries above appended the callable's own writes (and their
 		// run rows) past the batch end, and the drain owes the cursor those
-		// rows too — they are self- and type-excluded, so this terminates.
+		// rows too. They are self- and type-excluded, so this terminates.
 	}
 }
 
@@ -1858,13 +1856,116 @@ func cursorMoved(res sql.Result, err error) error {
 	return nil
 }
 
-// changesPast reads one raw batch past a cursor: every entry, the ledger's
-// own `delivery` entries included, so the scan position moves past them and
-// lag reads zero; matchChanges drops them. The public read hides them.
-func (ds *dataset) changesPast(ctx context.Context, after int64) ([]substrate.Change, error) {
+// changesPast reads one batch past a cursor for one record trigger, and
+// returns it with the scan position the read covers. The read is bounded by
+// the trigger's kinds (#637): Postgres returns only entries of a kind the
+// source can match, through changelog_kind_seq_idx, so a trigger over one
+// small kind drains in proportion to that kind's entries and not to the
+// whole changelog. Every other entry past the cursor, up to the head read
+// first, is one the source could never match, so a short batch covers
+// through that head and the caller moves the scan position there; a full
+// batch covers through its last entry. Sequence order is commit-visibility
+// order (docs/changelog.md), so every entry at or under the head is visible
+// to the batch read that follows it.
+//
+// A `*` source reads every entry, the ledger's own `delivery` entries
+// included; matchChanges drops them, and the public read hides them.
+func (ds *dataset) changesPast(ctx context.Context, tr *trigger, after int64) ([]substrate.Change, int64, error) {
+	var head int64
+	if err := ds.db.QueryRowContext(ctx,
+		`SELECT COALESCE(max(seq), 0) FROM changelog`).Scan(&head); err != nil {
+		return nil, after, err
+	}
+	if head <= after {
+		return nil, after, nil
+	}
+	kinds, every, err := ds.sourceKinds(ctx, tr.Record.Kinds)
+	if err != nil {
+		return nil, after, err
+	}
+	if !every && len(kinds) == 0 {
+		return nil, head, nil
+	}
 	b := &builder{}
 	b.add(`seq > ` + b.arg(after))
-	return ds.queryChanges(ctx, b, `seq`, triggerBatch)
+	b.add(`seq <= ` + b.arg(head))
+	if !every {
+		b.add(`kind = ANY(` + b.textArray(kinds) + `)`)
+	}
+	changes, err := ds.queryChanges(ctx, b, `seq`, triggerBatch)
+	if err != nil {
+		return nil, after, err
+	}
+	if len(changes) == triggerBatch {
+		return changes, changes[len(changes)-1].Seq, nil
+	}
+	return changes, head, nil
+}
+
+// sourceKinds turns a record source's kind globs into the exact kinds the
+// dispatcher's read names. every is true for a `*` source, which reads the
+// whole changelog. A package or authority glob matches against the kinds the
+// changelog holds, read at the moment of the batch, so a kind whose first
+// entry landed mid-drain is still read; the globs are matched in Go
+// (vocabulary.MatchTypeGlob, the matcher matchChanges uses) rather than as a
+// range in SQL, because a prefix is a contiguous range only under the C
+// collation and the column carries the database's.
+func (ds *dataset) sourceKinds(ctx context.Context, pats []string) (kinds []string, every bool, err error) {
+	var globs []string
+	for _, pat := range pats {
+		switch {
+		case pat == "*":
+			return nil, true, nil
+		case strings.HasSuffix(pat, "/*"):
+			globs = append(globs, pat)
+		default:
+			kinds = append(kinds, pat)
+		}
+	}
+	if len(globs) == 0 {
+		return kinds, false, nil
+	}
+	logged, err := ds.changelogKinds(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, k := range logged {
+		for _, pat := range globs {
+			if vocabulary.MatchTypeGlob(pat, k) {
+				kinds = append(kinds, k)
+				break
+			}
+		}
+	}
+	return kinds, false, nil
+}
+
+// changelogKinds lists the distinct kinds the changelog holds. A recursive
+// skip scan: each step is one probe of changelog_kind_seq_idx for the next
+// kind above the last, so the read costs one probe per distinct kind and not
+// one row per entry.
+func (ds *dataset) changelogKinds(ctx context.Context) ([]string, error) {
+	rows, err := ds.db.QueryContext(ctx, `
+		WITH RECURSIVE k(kind) AS (
+			(SELECT kind FROM changelog ORDER BY kind LIMIT 1)
+			UNION ALL
+			SELECT (SELECT c.kind FROM changelog c WHERE c.kind > k.kind ORDER BY c.kind LIMIT 1)
+			FROM k WHERE k.kind IS NOT NULL
+		)
+		SELECT kind FROM k WHERE kind IS NOT NULL`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
 }
 
 // causalDepth walks caused_by from a change to the direct write that started
