@@ -151,7 +151,7 @@ func TestFunctionBodyRunsAnAgent(t *testing.T) {
 	installRelay(t, ds, fake)
 
 	fake.script("sub", fakeTurn{content: "the scribe's answer"})
-	out, _, err := ds.CallFunction(ctx, relayPackage+"/asker", map[string]any{"q": "what is a widget?"})
+	out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, relayPackage+"/asker", map[string]any{"q": "what is a widget?"})
 	if err != nil {
 		t.Fatalf("call asker: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestFunctionBodyRunsAnAgent(t *testing.T) {
 	}
 
 	// Without the grant the runner refuses before the agent runs.
-	if _, _, err := ds.CallFunction(ctx, relayPackage+"/sneak", nil); err == nil ||
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, relayPackage+"/sneak", nil); err == nil ||
 		!strings.Contains(err.Error(), "call allowlist") {
 		t.Fatalf("an ungranted agent call: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestAgentToolCallingItsRunnerIsRecursion(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"looper", `{}`}}},
 		fakeTurn{content: "gave up"},
 	)
-	out, _, err := ds.CallFunction(ctx, relayPackage+"/looper", nil)
+	out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, relayPackage+"/looper", nil)
 	if err != nil {
 		t.Fatalf("call looper: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestAgentRunSettlesAtTheCallersDeadline(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
 	fake.script("slow", fakeTurn{content: "too late", release: release})
-	if _, _, err := ds.CallFunction(ctx, relayPackage+"/hasty", nil); err == nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, relayPackage+"/hasty", nil); err == nil {
 		t.Fatal("a body whose agent outlived its timeout succeeded")
 	}
 	var status string
@@ -345,7 +345,7 @@ def main(input, host):
 	}); err != nil {
 		t.Fatalf("put config: %v", err)
 	}
-	_, _, err := ds.CallFunction(ctx, pkg+"/leaker", nil)
+	_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, pkg+"/leaker", nil)
 	// The refusal reaches the body as a host-call error and returns in its
 	// traceback, so it is matched by text.
 	if err == nil || !strings.Contains(err.Error(), errSecretInAgentInput.Error()) {
@@ -447,14 +447,14 @@ func TestKeyedFunctionCallBindsToTheAgentThread(t *testing.T) {
 	ctx := substrate.WithIdempotencyKey(context.Background(), "flaky-key-1")
 
 	fake.script("sub", fakeTurn{content: "noted"})
-	if _, _, err := ds.CallFunction(ctx, relayPackage+"/flaky", nil); err == nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, relayPackage+"/flaky", nil); err == nil {
 		t.Fatal("the flaky body succeeded")
 	}
 	threads := agentThreadsOf(t, ds, "scribe")
 	if len(threads) != 1 {
 		t.Fatalf("the first attempt opened %d scribe threads, want one", len(threads))
 	}
-	_, _, err := ds.CallFunction(ctx, relayPackage+"/flaky", nil)
+	_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, relayPackage+"/flaky", nil)
 	if !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), threads[0]["__id"].(string)) {
 		t.Fatalf("the repeat under the key: %v, want a conflict naming thread %v", err, threads[0]["__id"])
 	}
