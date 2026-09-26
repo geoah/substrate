@@ -44,6 +44,10 @@ type fakeSubstrate struct {
 	// resolver can route triggers.yaml.
 	extraTypes []map[string]any
 
+	// heldMappings is what the vocabulary apply reports held back when the
+	// request carries `holdWaitingMappings`.
+	heldMappings []substrate.SuggestedMapping
+
 	// authStatus, when non-zero, makes the door (register, login, the
 	// credential changes, mint) fail with it.
 	authStatus int
@@ -439,7 +443,11 @@ func (f *fakeSubstrate) handleVocabularyApply(w http.ResponseWriter, r *http.Req
 		kind, _ := d["kind"].(string)
 		ents = append(ents, &substrate.Record{ID: id, Kind: kind, Version: 1})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"records": ents})
+	out := map[string]any{"records": ents}
+	if _, hold := f.lastBody["holdWaitingMappings"]; hold && len(f.heldMappings) > 0 {
+		out["heldMappings"] = f.heldMappings
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleCatalog serves the seeded catalog listing, the shape the API answers:

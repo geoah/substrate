@@ -355,40 +355,56 @@ func (c *client) delete(ctx context.Context, pkg, kind, id string) (*substrate.R
 // changelog head. An origin, when given, is the package a rehomed input was
 // authored as, which the server stamps on the landed copy (decision record
 // 0070).
-func (c *client) applyVocabulary(ctx context.Context, docs []map[string]any, confirm *substrate.ConversionConfirm, origin string) ([]*substrate.Record, error) {
-	var out struct {
-		Records []*substrate.Record `json:"records"`
-	}
-	body := vocabularyBody(docs, origin)
+func (c *client) applyVocabulary(ctx context.Context, docs []map[string]any, confirm *substrate.ConversionConfirm, opts vocabularyOptions) (*vocabularyApplied, error) {
+	var out vocabularyApplied
+	body := vocabularyBody(docs, opts)
 	if confirm != nil {
 		body["confirm"] = confirm
 	}
 	if err := c.do(ctx, http.MethodPost, pathVocabulary, nil, body, &out); err != nil {
 		return nil, err
 	}
-	return out.Records, nil
+	return &out, nil
+}
+
+// vocabularyApplied is the apply's answer: the records it wrote, and the
+// mappings it held back as waiting when the request asked it to.
+type vocabularyApplied struct {
+	Records      []*substrate.Record          `json:"records"`
+	HeldMappings []substrate.SuggestedMapping `json:"heldMappings"`
+}
+
+// vocabularyOptions are the two vocabulary verbs' shared request options: the
+// origin a rehomed input claims, and whether a mapping whose source kind is
+// absent is held back instead of refusing the batch (decision record 0106).
+type vocabularyOptions struct {
+	origin      string
+	holdWaiting bool
 }
 
 // planVocabulary asks what applying the batch would refuse and rewrite,
 // without applying it: the conversion steps with their counts, whether the
 // plan is lossy or replaces an edited copy, and the hash and changelog head a
-// confirmation names. The origin rides along so the preview hashes as the
+// confirmation names. The options ride along so the preview hashes as the
 // apply will.
-func (c *client) planVocabulary(ctx context.Context, docs []map[string]any, origin string) (*substrate.VocabularyPlan, error) {
+func (c *client) planVocabulary(ctx context.Context, docs []map[string]any, opts vocabularyOptions) (*substrate.VocabularyPlan, error) {
 	var out substrate.VocabularyPlan
-	if err := c.do(ctx, http.MethodPost, pathVocabularyPlan, nil, vocabularyBody(docs, origin), &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, pathVocabularyPlan, nil, vocabularyBody(docs, opts), &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
 // vocabularyBody is the two vocabulary verbs' shared request: the documents,
-// and the origin only when there is one, so a plain apply is the body it
-// always was.
-func vocabularyBody(docs []map[string]any, origin string) map[string]any {
+// and each option only when it is set, so a plain apply is the body it always
+// was.
+func vocabularyBody(docs []map[string]any, opts vocabularyOptions) map[string]any {
 	body := map[string]any{"documents": docs}
-	if origin != "" {
-		body["origin"] = origin
+	if opts.origin != "" {
+		body["origin"] = opts.origin
+	}
+	if opts.holdWaiting {
+		body["holdWaitingMappings"] = true
 	}
 	return body
 }
