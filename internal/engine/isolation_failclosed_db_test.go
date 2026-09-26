@@ -11,11 +11,6 @@ import (
 	"database/sql"
 	"net/url"
 	"testing"
-	"time"
-
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/geoah/substrate/internal/testdb"
 )
@@ -101,14 +96,7 @@ func TestOpenFailsClosedWithoutSafeRoles(t *testing.T) {
 		t.Skip("integration test in -short mode")
 	}
 	ctx := context.Background()
-	c, err := postgres.Run(ctx, "pgvector/pgvector:pg16",
-		postgres.WithDatabase("substrate"),
-		postgres.WithUsername("postgres"),
-		postgres.WithPassword("postgres"),
-		testdb.DurabilityOff(),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).WithStartupTimeout(120*time.Second)))
+	c, err := testdb.Postgres(ctx)
 	if err != nil {
 		t.Fatalf("start a dedicated container: %v", err)
 	}
