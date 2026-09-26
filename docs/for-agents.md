@@ -58,8 +58,9 @@ unique per kind, never per repository.
 
    The record's `properties` carry the whole declaration. Read `properties`
    (each declared property with its `type`, and for a `state` property its
-   `states` and `transitions`), `traits`, `displayTemplate`, `names.singular`
-   and `version` ([vocabulary as records](vocabulary.md)).
+   `states` and `transitions`), `traits`, `displayTemplate`, `names.singular`,
+   `label` (the words to show a person, where the kind declares them) and
+   `version` ([vocabulary as records](vocabulary.md)).
 
 3. **Read the traits list literally.** A binding such as
    `temporal(point: dueAt)` gives the kind a `dueAt` property that is written

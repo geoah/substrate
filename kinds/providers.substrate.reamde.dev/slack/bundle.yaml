@@ -113,7 +113,10 @@ data:
   # 8, #650: a run that resumes a walk already past `history` first pulls
   # new history for every conversation from its stored cursor, inside a
   # share of the run's budget, and only then resumes the backlog.
-  version: 8
+  #
+  # 9, #675: `user` is labelled Members, `conversation` Channels and
+  # `conversationsync` Sync progress (decision 0106). Display text only.
+  version: 9
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -615,6 +618,9 @@ data:
     (ok, response_metadata) is dropped; everything else is here.
   names:
     singular: user
+  label:
+    singular: Member
+    plural: Members
   displayTemplate: "{profile.displayName|realName|name}"
   properties:
     # identity
@@ -1069,6 +1075,9 @@ data:
     where the account's user is a member.
   names:
     singular: conversation
+  label:
+    singular: Channel
+    plural: Channels
   traits:
     - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{name|conversationId}"
@@ -2721,6 +2730,9 @@ data:
     page of history never bumps the mirrored row.
   names:
     singular: conversationsync
+  label:
+    singular: Sync progress
+    plural: Sync progress
   displayTemplate: "{conversation.name}"
   properties:
     conversation:

@@ -421,6 +421,37 @@ func TestProjectionStoresTheAuthoredDeclaration(t *testing.T) {
 	}
 }
 
+// A DECLARED LABEL REACHES BOTH READS (decision 0106): the kind's row carries
+// it as the `label` property the meta-kind declares, and KindInfo carries it as
+// its own field.
+func TestADeclaredKindLabelIsStoredAndRead(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+
+	doc := swTypeDoc("conversation", map[string]any{"name": map[string]any{"type": "string"}})
+	doc["data"].(map[string]any)["label"] = map[string]any{"singular": "Channel", "plural": "Channels"}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(swPackage, 0),
+		doc,
+	}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	row := mustGet(t, ds, "substrate.reamde.dev/core/kind", swPackage+"/conversation")
+	label, _ := row.Properties["label"].(map[string]any)
+	if label["singular"] != "Channel" || label["plural"] != "Channels" {
+		t.Fatalf("the stored label = %#v", row.Properties["label"])
+	}
+	info, err := ds.KindByRef(ctx, swPackage+"/conversation")
+	if err != nil {
+		t.Fatalf("read the kind: %v", err)
+	}
+	if info.Label == nil || *info.Label != (substrate.KindLabel{Singular: "Channel", Plural: "Channels"}) {
+		t.Fatalf("KindInfo.Label = %+v", info.Label)
+	}
+}
+
 // KindInfo.Definition IS THE AUTHORED DECLARATION, and it reads the same before
 // and after a restart. A kind that pins no version of its own has the authority's
 // stamped onto its row; the row is what a reopen rebuilds the registry from, so a

@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-17
 decision-makers: George Antoniadis
-amended-by: 0079
+amended-by: 0079, 0106
 ---
 
 # 0033. The path grammar carries no separators; a record's URL is its reference

@@ -449,6 +449,13 @@ export function parseEnumValues(raw: unknown): EnumValue[] | undefined {
  * `identity` is the kind REFERENCE `<authority>/<package>/<name>`, always in
  * full (records 0098, 0101). There is no `sourceYAML` on the wire (record
  * 61) — the parsed `definition` IS the document. */
+/** What a client calls one record of a kind and what it calls the
+ * collection, as the kind's `label:` declares them. */
+export interface KindLabel {
+  singular: string
+  plural: string
+}
+
 export interface KindInfo {
   /** The kind REFERENCE, `<authority>/<package>/<name>` in full; the wire
    * carries no bare `<name>` (records 0098, 0101). */
@@ -470,6 +477,9 @@ export interface KindInfo {
   /** What the kind is for, as its declaration says it — a sentence or two,
    * read above the collection. Empty when the declaration carries none. */
   description: string
+  /** The kind's declared display label (decision 0106); absent when the
+   * declaration carries none, and the console names the kind from `name`. */
+  label?: KindLabel
   /** The reconciled declaration — the `data` of the `substrate.reamde.dev/core/kind`
    * manifest that declares it (`authority`, `package`, `names`,
    * `properties`, …), key order lost to jsonb. */

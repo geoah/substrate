@@ -143,7 +143,10 @@ data:
   # with no raw, no derived property, every relation a reference and every
   # closed set an enum. A changed declaration shipping the same version
   # reaches no repository, which is why this moves.
-  version: 15
+  #
+  # 16, #675: `chatsync` is labelled Sync progress (decision 0106). Display
+  # text only.
+  version: 16
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -1616,6 +1619,9 @@ data:
     row.
   names:
     singular: chatsync
+  label:
+    singular: Sync progress
+    plural: Sync progress
   displayTemplate: "{chat.chatTitle}"
   properties:
     # identity

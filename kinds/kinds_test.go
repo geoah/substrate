@@ -710,3 +710,51 @@ func rootNames(t *testing.T, fsys fs.FS) []string {
 	}
 	return names
 }
+
+// THE SHIPPED KINDS WHOSE NAMES READ WRONG DECLARE A LABEL (#675, decision
+// 0106). Each of these reads as its humanized name in a client that splits
+// and pluralizes it ("Conversations", "Calendar series"), and a person calls
+// it something else; the label is what every client shows instead.
+func TestShippedKindsDeclareTheirDisplayLabels(t *testing.T) {
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		t.Fatalf("load the shipped catalog: %v", err)
+	}
+	byPackage := map[string]*catalog.Bundle{}
+	for _, b := range cat.Bundles() {
+		byPackage[b.ID] = b
+	}
+	reg, err := vocabulary.LoadFS(kinds.Seed())
+	if err != nil {
+		t.Fatalf("load the seed: %v", err)
+	}
+	done := map[string]bool{}
+	for _, b := range cat.Bundles() {
+		if b.Tier != substrate.TierProvider {
+			continue
+		}
+		if err := installClosure(reg, byPackage, b, done); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const p = "providers.substrate.reamde.dev/"
+	for id, want := range map[string]vocabulary.KindLabel{
+		p + "slack/conversation":     {Singular: "Channel", Plural: "Channels"},
+		p + "slack/user":             {Singular: "Member", Plural: "Members"},
+		p + "slack/conversationsync": {Singular: "Sync progress", Plural: "Sync progress"},
+		p + "google/contactgroup":    {Singular: "Contact label", Plural: "Contact labels"},
+		p + "google/calendarseries":  {Singular: "Repeating event", Plural: "Repeating events"},
+		p + "google/calendarsync":    {Singular: "Sync progress", Plural: "Sync progress"},
+		p + "notion/pagesync":        {Singular: "Sync progress", Plural: "Sync progress"},
+		p + "beeper/chatsync":        {Singular: "Sync progress", Plural: "Sync progress"},
+	} {
+		k, ok := reg.ByIdentity(id)
+		if !ok {
+			t.Errorf("%s: not in the installed registry", id)
+			continue
+		}
+		if k.Label != want {
+			t.Errorf("%s: label = %+v, want %+v", id, k.Label, want)
+		}
+	}
+}

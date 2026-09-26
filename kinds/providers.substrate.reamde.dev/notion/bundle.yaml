@@ -105,7 +105,10 @@ data:
   # the first cut, written to the v4 guide rather than migrated from a
   # pre-guide draft. A changed declaration shipping the same version reaches
   # no repository, so every edit from here bumps this.
-  version: 13
+  #
+  # 14, #675: `pagesync` is labelled Sync progress (decision 0106). Display
+  # text only.
+  version: 14
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -1904,6 +1907,9 @@ data:
     never bumps the mirrored row.
   names:
     singular: pagesync
+  label:
+    singular: Sync progress
+    plural: Sync progress
   displayTemplate: "{page.titlePlainText}"
   properties:
     page:

@@ -225,10 +225,15 @@
     "definition": true,
     "description": true,
     "identity": true,
+    "label": false,
     "name": true,
     "package": true,
     "source": true,
     "version": true
+  },
+  "KindLabel": {
+    "plural": true,
+    "singular": true
   },
   "LinkedRecord": {
     "kind": true,

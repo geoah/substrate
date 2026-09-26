@@ -20,6 +20,10 @@ type KindInfo struct {
 	// Description is what the kind is for, as its declaration says it: the
 	// line a reader gets above the collection, empty when undeclared.
 	Description string `json:"description"`
+	// Label is the kind's declared display label, absent when it declared
+	// none, in which case a client humanizes Name itself. It is display text
+	// only: nothing addresses a kind by it (decision 0106).
+	Label *KindLabel `json:"label,omitempty"`
 	// Definition is the kind's DECLARATION, rendered from the parsed one: the
 	// authored data map (names, properties, traits, indices), which is also
 	// what the declaration's row stores as its properties. It is not a stored
@@ -27,4 +31,11 @@ type KindInfo struct {
 	// survives here because a client reading a kind's shape is reading the same
 	// map it always was.
 	Definition map[string]any `json:"definition"`
+}
+
+// KindLabel is what a client calls one record of a kind and what it calls
+// the collection, as the kind's `label:` declares them. Both are always set.
+type KindLabel struct {
+	Singular string `json:"singular"`
+	Plural   string `json:"plural"`
 }
