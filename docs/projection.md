@@ -299,12 +299,17 @@ A manager row stores the tier its write was admitted at, and the yield below
 reads that stored tier with one exception: a row whose actor a live
 declaration puts at the machine tier holds at the machine tier, whatever it
 was stored at. Declaring an actor at `tier: machine` therefore releases what
-it already holds, and the apply that declares it recomputes every mapped
-record it holds, so an import written under an undeclared name (the owner
-tier) goes back to following its sources once the name is declared at the
-machine tier. The reverse does not hold: declaring an actor above machine
-pins only what it writes next, because a machine row may be recompute's
-credit to that actor. A package's own `bundle:` hand keeps its stored tier
+it already holds: the apply that declares it, and every later apply of the
+package that declares it, recomputes every mapped record it holds above
+machine. An import written under an undeclared name (the owner tier) goes
+back to following its sources, and the release is recompute's ordinary rule:
+a mapped property no live source offers is deleted, and a union keeps only
+its sources' items. An import that must outlive its sources is a source kind
+([Contributing a value](#contributing-a-value)). The reverse does not hold:
+declaring an actor above machine pins only what it writes next, because a
+machine row may be recompute's credit to that actor. A package's own
+`bundle:` hand keeps its stored tier, and a kind move, a merge and a rename
+copy the stored tier
 ([0106](decisions/0106-a-manager-row-holds-at-its-actors-live-machine-tier.md)).
 
 Beside the actor and the tier, a manager row records the **principal** of the
@@ -449,10 +454,13 @@ re-seed left 2,727 of them on one repository
 The engine marks those rows. A record is **orphaned** when all three hold:
 something maps onto its kind, no live record links to it through a mapping's
 subject slot (counted over every id it has ever had, so a merge does not hide
-a source), and every one of its `property_managers` rows is at the machine
+a source), and every one of its `property_managers` rows holds at the machine
 tier — or it has none at all. A property held above machine is a hand's, and a
 record a hand has written on is not a husk, whether that hand was yours or a
-function's. Releasing the hold (the null patch above) makes it one again.
+function's. Releasing the hold (the null patch above) makes it one again, and
+so does declaring the hand's actor at `tier: machine`: a row holds at its
+actor's live machine tier whatever tier it was stored at
+([0106](decisions/0106-a-manager-row-holds-at-its-actors-live-machine-tier.md)).
 
 The mark is derived, like an alternative: nothing writes it into the
 changelog, a re-link clears it on the next recompute, and a

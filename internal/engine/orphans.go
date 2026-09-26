@@ -35,10 +35,14 @@ import (
 //     source synced before its subject won a merge still names the loser
 //     (subjectSourceSites).
 //  3. NOTHING ABOVE THE MACHINE TIER HOLDS A PROPERTY. Every
-//     property_managers row on the record is `machine`, or there are none at
-//     all. A row at the bundle or the owner tier is a hand — a human's or
-//     installed code's — and a hand's write is the record's own content, not
-//     a projection of a source that has gone.
+//     property_managers row on the record holds at `machine`, or there are
+//     none at all. A row at the bundle or the owner tier is a hand — a
+//     human's or installed code's — and a hand's write is the record's own
+//     content, not a projection of a source that has gone. "Holds" is
+//     heldTierIn's reading (record 0106, amending 0092): a row stored above
+//     the machine tier whose actor a live declaration now puts at the
+//     machine tier holds at the machine tier, so a record only such an actor
+//     wrote is marked like one a machine actor wrote from the start.
 //
 // Condition 3 is the judgement call, and it is deliberately the strict
 // reading. The other candidate was "nothing above machine that a LIVE bundle
@@ -80,8 +84,9 @@ func (t *txn) syncOrphaned(target eref) error {
 }
 
 // isOrphan answers the three conditions above, cheapest first: the registry
-// decides whether the kind can orphan at all, one indexed read decides
-// whether a hand holds anything, and only then is the source join run.
+// decides whether the kind can orphan at all, the record's manager rows read
+// through heldTierIn decide whether a hand holds anything, and only then is
+// the source join run.
 func (t *txn) isOrphan(target eref) (bool, error) {
 	row, err := t.loadRow(target, false)
 	if err != nil || row == nil || row.DeletedAt != nil {

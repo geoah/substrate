@@ -522,10 +522,10 @@ func (t *txn) applyAnnotation(ref eref, key string, value any) (bool, error) {
 // at which TIER that write stood, and which PRINCIPAL
 // — the token id the door verified — stood behind it. It is
 // attribution on every direct write, and it is load-bearing:
-// mapping recompute yields to any manager row above the machine tier, which
-// is how a hand edit — the owner's or a function's — survives a sync,
-// visibly. Nothing else reads it to decide who may write — anyone still
-// overwrites anything.
+// mapping recompute yields to any manager row that holds above the machine
+// tier (heldTierIn, record 0106), which is how a hand edit — the owner's or a
+// function's — survives a sync, visibly. Nothing else reads it to decide who
+// may write — anyone still overwrites anything.
 
 // actorTier resolves an actor's manager tier from DATA, never from the
 // actor's spelling: the three human DOORS — api, console, substratectl — are

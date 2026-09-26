@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-16
 decision-makers: George Antoniadis
+amended-by: 0106
 ---
 
 # 0092. An orphaned mapping target is marked always and collected only on request
