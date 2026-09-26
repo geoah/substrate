@@ -386,7 +386,8 @@ describe("ToolPage", () => {
     expect(screen.getByText("Yours")).toBeTruthy()
     expect(screen.getByText("By an agent")).toBeTruthy()
     const usedBy = screen.getByText("Notekeeper").closest("a")
-    expect(usedBy?.getAttribute("data-to")).toBe("/agents/$id")
+    // The agent reads as an agent does everywhere, and opens a new chat.
+    expect(usedBy?.getAttribute("data-to")).toBe("/agents")
     expect(screen.getByText("The note body")).toBeTruthy()
 
     const form = screen.getByRole("form", { name: "Try it" })
