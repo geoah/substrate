@@ -265,3 +265,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0111](0111-a-package-row-names-the-actor-that-declared-it.md) | A package row names the actor that declared it | accepted |
 | [0112](0112-an-owner-adjusts-a-change-request-on-the-accepting-write.md) | An owner adjusts a change request on the accepting write | accepted |
 | [0113](0113-a-kind-may-declare-its-display-label.md) | A kind may declare its display label, singular and plural | accepted |
+| [0114](0114-a-change-row-reads-a-property-rename-as-one-move.md) | A change row reads a property rename as one move | accepted |

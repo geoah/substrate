@@ -93,6 +93,64 @@ describe("netMoves", () => {
     ])
   })
 
+  it("says a rename that kept its value as the rename, never replaced", () => {
+    expect(
+      netMoves([
+        row(2, [
+          {
+            name: "dimensions",
+            renamedFrom: "size",
+            before: "bigger",
+            after: "bigger",
+          },
+        ]),
+      ])
+    ).toEqual([
+      {
+        name: "dimensions",
+        renamedFrom: "size",
+        before: "bigger",
+        after: "bigger",
+        beforeUnknown: false,
+      },
+    ])
+    const sealed = { before: "<redacted>", after: "<redacted>" }
+    expect(
+      netMoves([row(2, [{ name: "apiKey", renamedFrom: "token", ...sealed }])])
+    ).toEqual([
+      {
+        name: "apiKey",
+        renamedFrom: "token",
+        ...sealed,
+        beforeUnknown: false,
+      },
+    ])
+  })
+
+  it("carries a run's moves under the old name across a rename", () => {
+    expect(
+      netMoves([
+        row(3, [
+          {
+            name: "dimensions",
+            renamedFrom: "size",
+            before: "bigger",
+            after: "bigger",
+          },
+        ]),
+        row(2, [{ name: "size", before: "small", after: "bigger" }]),
+      ])
+    ).toEqual([
+      {
+        name: "dimensions",
+        renamedFrom: "size",
+        before: "small",
+        after: "bigger",
+        beforeUnknown: false,
+      },
+    ])
+  })
+
   it("says a value moved and moved back across a run", () => {
     expect(
       netMoves([
