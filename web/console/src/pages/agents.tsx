@@ -23,6 +23,7 @@ import { parseAsString, useQueryStates } from "nuqs"
 import { AgentPanel } from "@/components/agent/agent-panel"
 import { Conversation } from "@/components/agent/conversation"
 import { ThreadList } from "@/components/agent/thread-list"
+import { AddSampleDialog } from "@/components/samples/add-sample-dialog"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import {
@@ -71,6 +72,7 @@ export function AgentsPage() {
   const [panelOpen, setPanelOpen] = useState(true)
   const [panelSheet, setPanelSheet] = useState(false)
   const [chatsSheet, setChatsSheet] = useState(false)
+  const [adding, setAdding] = useState(false)
   // The draft outlives switching the new chat's agent, which remounts the
   // conversation; `?prompt=` seeds it once.
   const [draft, setDraft] = useState(search.prompt)
@@ -197,6 +199,10 @@ export function AgentsPage() {
       onAgent={pickAgent}
       onSelect={openThread}
       onNewChat={startChat}
+      onAddAgents={() => {
+        setChatsSheet(false)
+        setAdding(true)
+      }}
     />
   )
   const panel = agent ? (
@@ -278,6 +284,7 @@ export function AgentsPage() {
         </aside>
       )}
 
+      <AddSampleDialog plane="agents" open={adding} onOpenChange={setAdding} />
       <Sheet open={chatsSheet && !roomy} onOpenChange={setChatsSheet}>
         <SheetContent side="left" className="w-[280px] gap-0 p-0">
           <SheetTitle className="sr-only">Chats</SheetTitle>

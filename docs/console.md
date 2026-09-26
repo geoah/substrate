@@ -385,7 +385,9 @@ panel on the right.
 - **The chats column** has **New chat**, a search over the chats' titles,
   every conversation under Today, Yesterday and Earlier, and the agents
   themselves: one you can talk to starts a chat, and one that only works for
-  other agents says so.
+  other agents says so. **Add agents** lists the shipped samples that bring
+  agents, each with **Add**, the same import as
+  [Add a collection](#add-a-collection)'s samples.
 - **The conversation** is a thread, and a thread is a run. It is rebuilt from
   the `llm/message` records the loop wrote, not from the browser's memory, so a
   reload shows the same conversation; while a run streams, the same turns fill
@@ -430,6 +432,9 @@ as cards: **Tools your agents use**, **Syncs** (the functions your providers'
 triggers run), **Other tools** that nothing uses yet, and, in everyday mode,
 **Built in**, the substrate's own host functions, which technical mode files
 with the rest. Each card says what the tool is for and when it runs.
+**Add tools** lists the shipped samples that bring functions (Firecrawl,
+Notes and the rest), each by the tools it adds and with **Add**, the same
+import as [Add a collection](#add-a-collection)'s samples.
 
 A tool is a [function](functions.md), and its page is at
 `/tools/{authority}/{package}/{name}`, the function's reference segment by

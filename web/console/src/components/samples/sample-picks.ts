@@ -1,5 +1,8 @@
-/** Which samples "Add a collection" offers, and what each one shows: a
- * sample that declares at least one primary kind, whatever else it ships.
+/** Which samples each "Add …" entry offers, and what each one shows. "Add a
+ * collection" offers a sample that declares at least one primary kind; "Add
+ * tools" one that ships functions; Agents one that ships agents. A sample can
+ * be all three (notes brings a collection, its tools and the agents that use
+ * them).
  *
  * A kind's purpose is the held declaration's where it declares one, else the
  * shipped closure's (`kindPurposes`), else primary: a sample not yet taken
@@ -56,6 +59,21 @@ export function collectionSamples(
       }))
       .sort((a, b) => Number(b.lead) - Number(a.lead) || a.i - b.i)
       .map(({ k }) => k)
+    if (members.length) out.push({ row, members })
+  }
+  return byName(out)
+}
+
+/** The samples that ship tools or agents: `plane` names which list of the
+ * closure counts. */
+export function callableSamples(
+  rows: readonly BundleRow[],
+  plane: "functions" | "agents"
+): SamplePick[] {
+  const out: SamplePick[] = []
+  for (const row of rows) {
+    if (row.tier !== "sample") continue
+    const members = listed(row.catalog?.closure[plane])
     if (members.length) out.push({ row, members })
   }
   return byName(out)

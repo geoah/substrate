@@ -194,6 +194,14 @@ describe("ThreadList", () => {
     expect(onAgent).toHaveBeenLastCalledWith("")
   })
 
+  it("offers the samples that bring agents from the agents heading", async () => {
+    const onAddAgents = vi.fn()
+    renderList({ onAddAgents })
+    const agents = await screen.findByRole("navigation", { name: "Agents" })
+    fireEvent.click(within(agents).getByRole("button", { name: "Add agents" }))
+    expect(onAddAgents).toHaveBeenCalledOnce()
+  })
+
   it("lists the agents that run on their own under a caption", async () => {
     renderList()
     const agents = await screen.findByRole("navigation", { name: "Agents" })

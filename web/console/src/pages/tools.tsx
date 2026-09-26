@@ -2,17 +2,21 @@
  * the tools your agents use, the syncs your providers run, anything nobody
  * uses yet, and (in everyday mode) the ones built into substrate. */
 
+import { useState } from "react"
 import { Link } from "@tanstack/react-router"
+import { PlusIcon } from "lucide-react"
 
 import { IdText } from "@/components/identity/id-text"
 import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
+import { AddSampleDialog } from "@/components/samples/add-sample-dialog"
 import { OriginTag, StatusPill, ToolTile } from "@/components/tools/tool-marks"
 import {
   agentName,
   useTools,
   type ToolsModel,
 } from "@/components/tools/use-tools"
+import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { splitKind } from "@/lib/api/http"
@@ -30,11 +34,18 @@ export function ToolsPage() {
   const model = useTools()
   const [technical] = useTechnicalDetails()
   const groups = groupTools(model.tools, technical)
+  const [adding, setAdding] = useState(false)
   return (
     <TablePage className="pb-16">
       <PageHeader
         title="Tools"
         description="Everything that can act on your data besides you. Each one says exactly what it can see, what it can change and when it runs."
+        actions={
+          <Button variant="outline" onClick={() => setAdding(true)}>
+            <PlusIcon />
+            Add tools
+          </Button>
+        }
       />
       {model.isPending ? (
         <div className="mt-8 grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
@@ -76,6 +87,11 @@ export function ToolsPage() {
           </section>
         ))
       )}
+      <AddSampleDialog
+        plane="functions"
+        open={adding}
+        onOpenChange={setAdding}
+      />
     </TablePage>
   )
 }

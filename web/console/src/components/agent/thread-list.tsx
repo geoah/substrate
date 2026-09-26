@@ -53,6 +53,7 @@ export function ThreadList({
   onAgent,
   onSelect,
   onNewChat,
+  onAddAgents,
 }: {
   rows: ChatRow[]
   loading: boolean
@@ -67,6 +68,8 @@ export function ThreadList({
   onSelect: (thread: string) => void
   /** Starts a new chat, with one agent or with the current one. */
   onNewChat: (agent?: string) => void
+  /** Offers the shipped samples that bring agents. */
+  onAddAgents?: () => void
 }) {
   const [query, setQuery] = useState("")
   const [limit, setLimit] = useState(CHAT_PAGE)
@@ -102,7 +105,19 @@ export function ThreadList({
         aria-label="Agents"
         className="max-h-[45%] shrink-0 overflow-y-auto border-b px-2 pt-1 pb-2"
       >
-        <div className={HEADING}>Agents</div>
+        <div className="flex items-center justify-between gap-2">
+          <div className={HEADING}>Agents</div>
+          {onAddAgents && (
+            <button
+              type="button"
+              onClick={onAddAgents}
+              className="mt-2 inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[12px] text-muted-foreground hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+            >
+              <PlusIcon className="size-3.5" />
+              Add agents
+            </button>
+          )}
+        </div>
         {loading && agents.length === 0 ? (
           <div className="flex flex-col gap-1.5 px-2 py-1">
             {Array.from({ length: 3 }, (_, i) => (

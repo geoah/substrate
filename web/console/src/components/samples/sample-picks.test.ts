@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { collectionSamples } from "./sample-picks"
+import { callableSamples, collectionSamples } from "./sample-picks"
 import type { BundleClosure, CatalogItem, KindInfo } from "@/lib/api/types"
 import type { BundleRow } from "@/lib/bundles"
 
@@ -145,5 +145,39 @@ describe("collectionSamples", () => {
       []
     )
     expect(out.map((s) => s.row.package)).toEqual(["calendar", "tasks"])
+  })
+})
+
+describe("callableSamples", () => {
+  const rows = [
+    sample("notes", {
+      kinds: [`${HOME}/notes/note`],
+      functions: [`${HOME}/notes/savenote`],
+      agents: [`${HOME}/notes/titler`],
+    }),
+    sample("firecrawl", { functions: [`${HOME}/firecrawl/scrapepage`] }),
+    sample("llm", { agents: [`${HOME}/llm/substrate`] }),
+    sample("people", { kinds: [`${HOME}/people/person`] }),
+  ]
+
+  it("offers the samples that ship tools, by name, with their tools", () => {
+    const out = callableSamples(rows, "functions")
+    expect(out.map((s) => s.row.package)).toEqual(["firecrawl", "notes"])
+    expect(out[1].members).toEqual([`${HOME}/notes/savenote`])
+  })
+
+  it("offers the samples that ship agents", () => {
+    expect(callableSamples(rows, "agents").map((s) => s.row.package)).toEqual([
+      "llm",
+      "notes",
+    ])
+  })
+
+  it("leaves providers out", () => {
+    const provider: BundleRow = {
+      ...sample("google", { functions: ["providers.example/google/sync"] }),
+      tier: "provider",
+    }
+    expect(callableSamples([provider], "functions")).toEqual([])
   })
 })
