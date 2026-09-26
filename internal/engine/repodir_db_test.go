@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -1721,4 +1722,113 @@ func TestACommitInDoubtLatchesUntilTheBootCatchesUp(t *testing.T) {
 	if _, err := ds2.Get(ctx, taskKind, "doubt"); err != nil {
 		t.Fatalf("the committed write is not readable after the boot: %v", err)
 	}
+}
+
+// A boot import of a long history takes minutes and its batches and fold
+// passes log nothing until it is done, so the boot check says how many
+// directories it will import and each import says it has begun, before the
+// work: whoever is waiting on the listener learns why it is late (issue 568).
+func TestABootImportSaysWhatItImportsBeforeTheWork(t *testing.T) {
+	t.Parallel()
+	svc, ds, _ := newDatasetWithDSN(t)
+	writeSomeHistory(t, ds)
+	head := maxSeq(t, ds)
+	id := repositoryIDOf(t, ds)
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+
+	root2 := copyRepositoryDir(t, root, id)
+	dsn2 := engine.MigratedDSN(t)
+	var logs lockedLog
+	svc2, err := engine.OpenForTest(t, context.Background(), dsn2,
+		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithDataRoot(root2),
+		engine.WithCredentialKey(engine.TestCredentialKey),
+		engine.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = svc2.Close()
+	out := logs.String()
+	started := `msg="substrate: boot check started" repositories=0 directoriesToImport=1`
+	importing := `msg="substrate: importing the repository directory" repository=` + id +
+		` rows=` + strconv.FormatInt(head, 10)
+	checked := `msg="substrate: repository directory checked" repository=` + id + ` action=imported`
+	at := func(line string) int {
+		i := strings.Index(out, line)
+		if i < 0 {
+			t.Fatalf("the boot log lacks %s\n%s", line, out)
+		}
+		return i
+	}
+	if s, i, c := at(started), at(importing), at(checked); s >= i || i >= c {
+		t.Fatalf("want the boot check line, then the import line, then the outcome\n%s", out)
+	}
+}
+
+// A boot import cut short by its context (the server's first SIGTERM or
+// SIGINT) logs the repository it stopped on, the `interrupted` action and the
+// cause, so the next boot's "resuming an interrupted import" has a reason
+// above it; and that next boot finishes the import (issue 568).
+func TestACanceledBootImportLogsWhereItStoppedAndResumes(t *testing.T) {
+	t.Parallel()
+	svc, ds, _ := newDatasetWithDSN(t)
+	writeSomeHistory(t, ds)
+	before := foldOf(t, ds)
+	id := repositoryIDOf(t, ds)
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+
+	root2 := copyRepositoryDir(t, root, id)
+	dsn2 := engine.MigratedDSN(t)
+	var logs lockedLog
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	_, err := engine.OpenForTest(t, ctx, dsn2,
+		engine.WithKindsDir(engine.SeedKindsDir),
+		engine.WithDataRoot(root2),
+		engine.WithCredentialKey(engine.TestCredentialKey),
+		engine.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))),
+		engine.WithTestImportFault(7, func(stage string) error {
+			if stage == engine.ImportAfterBatch {
+				cancel(errors.New("signal terminated"))
+			}
+			return nil
+		}))
+	if err == nil {
+		t.Fatal("a boot whose context was canceled mid-import opened")
+	}
+	want := `msg="substrate: boot check interrupted; the next boot resumes it" repository=` + id +
+		` action=interrupted cause="signal terminated"`
+	if out := logs.String(); !strings.Contains(out, want) {
+		t.Fatalf("the boot log lacks %s\n%s", want, out)
+	}
+
+	svc2 := mustReopen(t, dsn2, root2)
+	ds2, err := svc2.Dataset(context.Background(), testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open after the canceled import: %v", err)
+	}
+	if after := foldOf(t, ds2); string(after) != string(before) {
+		t.Fatalf("the resumed fold is not the original\n%s", firstDifference(before, after))
+	}
+}
+
+// lockedLog is a log sink the test reads while the service's own goroutines
+// may still write to it.
+type lockedLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedLog) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedLog) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }

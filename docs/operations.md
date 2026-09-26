@@ -788,6 +788,14 @@ a read-only open refuses with `the import of the repository directory has not
 completed`, and `repository verify` reports the unfinished import as a finding
 while the files and the rows still verify.
 
+A boot import of a long history takes minutes. The boot check logs
+`boot check started` with the number of directories it will import, each
+import logs `importing the repository directory` before its rows, and the
+server logs `still booting` every 10 s until its listener is up. A SIGTERM
+or SIGINT during the boot ends it with `action=interrupted`, the repository
+it stopped on and the signal, so the next boot's `resuming an interrupted
+import` has its cause in the log above it.
+
 A boot that refuses a directory names what it refused: a bad `sum`, a sidecar
 that does not match, or a DEK this host's `SUBSTRATE_CREDENTIAL_KEY` does not
 open. Move that directory out of the root, or restore it from an older copy,
