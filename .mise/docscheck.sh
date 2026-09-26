@@ -256,8 +256,9 @@ for path in docs/decisions/*; do
     continue
   fi
   number="${file%%-*}"
-  # Numbers are permanent once merged, so two branches that took the same one
-  # have to be caught here: the second to merge renumbers.
+  # Numbers are permanent once merged. decisions:check catches two branches
+  # that took the same one before either merges; this is the backstop for a
+  # collision that reached one tree anyway.
   case "$decision_numbers" in
   *"|${number}|"*) flag "docs/decisions: ${number} numbers two records" ;;
   *) decision_numbers="${decision_numbers}|${number}|" ;;

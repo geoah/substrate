@@ -78,8 +78,9 @@ already taken as well as `main`'s. Numbers are permanent once merged to
 already uses, or that another branch pushed in the last 30 days added first,
 and names the next number nobody holds
 ([0109](0109-a-decision-number-is-checked-against-every-live-branch-before-the-merge.md)).
-Run it after `git fetch` and before citing the number anywhere; CI runs it on
-every push. There is no contiguity contract. Gaps are legal, so the linter
+Run it after `git fetch` and before citing the number anywhere. CI runs it on
+pull requests and on `main`, so a pushed branch without a pull request counts
+as a claim for others but is not checked itself. There is no contiguity contract. Gaps are legal, so the linter
 checks the format and uniqueness and nothing more, and nobody should read the
 sequence as a count.
 

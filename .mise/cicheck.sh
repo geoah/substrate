@@ -329,12 +329,24 @@ dg add -A
 GIT_AUTHOR_DATE="@$((t0 - 60 * day)) +0000" GIT_COMMITTER_DATE="@$((t0 - 60 * day)) +0000" dg commit --quiet -m abandoned
 dg checkout --quiet main
 record fresh-seven main 0007-fresh.md $((t0 + day))
+# A branch adding two records main already numbers, in one commit.
+dg checkout --quiet -b double main
+printf -- '---\nstatus: proposed\n---\n' >"$drepo/docs/decisions/0001-also-one.md"
+printf -- '---\nstatus: proposed\n---\n' >"$drepo/docs/decisions/0002-also-two.md"
+dg add -A
+GIT_AUTHOR_DATE="@$t0 +0000" dg commit --quiet -m double
+dg checkout --quiet main
+# A branch that adds nothing, forked before main renamed 0001: its tree still
+# has 0001-one.md, which it did not add.
+dg branch before-rename main
+dg mv docs/decisions/0001-one.md docs/decisions/0001-uno.md
+dg commit --quiet -m 'rename 0001'
 
 # decisions <branch> <expected exit> [expected text]: the check on <branch>.
 decisions() {
   local name="$1" expected="$2" want="${3:-}" status
   dg checkout --quiet "$name"
-  (cd "$drepo" && env -u CI -u GITHUB_BASE_REF -u GITHUB_HEAD_REF \
+  (cd "$drepo" && env -u CI -u GITHUB_BASE_REF -u GITHUB_HEAD_REF -u GITHUB_REF_NAME \
     DECISIONS_CHECK_BASE=main DECISIONS_CHECK_REFS=refs/heads "$decisionscheck" 2>"$tmp/stderr")
   status=$?
   [ "$status" -eq "$expected" ] ||
@@ -352,11 +364,13 @@ decisions stacked 0
 decisions taken-on-main 1 "0002 is 0002-two.md on main, and main's number is final"
 decisions after-merge 0
 decisions fresh-seven 0
+decisions double 1 'renumber to 0009'
+decisions before-rename 0
 
 # A record not yet committed is added now, so it loses to every branch.
 dg checkout --quiet -b uncommitted main
 printf -- '---\nstatus: proposed\n---\n' >"$drepo/docs/decisions/0004-mine.md"
-(cd "$drepo" && env -u CI -u GITHUB_BASE_REF -u GITHUB_HEAD_REF \
+(cd "$drepo" && env -u CI -u GITHUB_BASE_REF -u GITHUB_HEAD_REF -u GITHUB_REF_NAME \
   DECISIONS_CHECK_BASE=main DECISIONS_CHECK_REFS=refs/heads "$decisionscheck" 2>"$tmp/stderr") &&
   flag "decisions uncommitted: an untracked 0004 passed beside stacked's 0004"
 grep -qF '0004 is already 0004-stacked.md on stacked' "$tmp/stderr" ||
@@ -367,5 +381,30 @@ dg checkout --quiet main
 # A base that names no commit is a failure, never a pass.
 (cd "$drepo" && env -u CI DECISIONS_CHECK_BASE=definitely-not-a-commit "$decisionscheck" >/dev/null 2>&1)
 [ $? -eq 2 ] || flag "decisions: an unresolvable base was not refused with exit 2"
+
+# In CI, a namespace with no branch but the base is a checkout that fetched
+# none, never a pass.
+(cd "$drepo" && env -u GITHUB_BASE_REF -u GITHUB_HEAD_REF -u GITHUB_REF_NAME CI=true \
+  DECISIONS_CHECK_BASE=main DECISIONS_CHECK_REFS=refs/nothing "$decisionscheck" >/dev/null 2>&1)
+[ $? -eq 2 ] || flag "decisions: an empty namespace in CI was not refused with exit 2"
+
+# A base whose record names are over 64 KiB, more than a pipe holds: a record
+# on main must still read as on main. `printf | grep -q` under pipefail
+# failed this every time, refusing main's own records against themselves.
+brepo="$tmp/decisions-big"
+git init --quiet --initial-branch=main "$brepo"
+bg() { git -C "$brepo" -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false "$@"; }
+mkdir -p "$brepo/docs/decisions"
+long="$(printf 'a%.0s' {1..230})"
+for i in $(seq 1 300); do
+  : >"$brepo/docs/decisions/$(printf '%04d' "$i")-r${i}-${long}.md"
+done
+bg add -A && bg commit --quiet -m base
+bg checkout --quiet -b adds-one main
+: >"$brepo/docs/decisions/0301-new.md"
+bg add -A && bg commit --quiet -m adds-one
+(cd "$brepo" && env -u CI -u GITHUB_BASE_REF -u GITHUB_HEAD_REF -u GITHUB_REF_NAME \
+  DECISIONS_CHECK_BASE=main DECISIONS_CHECK_REFS=refs/heads "$decisionscheck" 2>"$tmp/stderr") ||
+  flag "decisions big base: a non-colliding record was refused: $(head -c 400 "$tmp/stderr")"
 
 exit "$fail"
