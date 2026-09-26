@@ -90,7 +90,10 @@ function TypeCell({ prop }: { prop: DeclaredProperty }) {
     <Tooltip>
       <TooltipTrigger
         render={
-          <span className="block cursor-help truncate data text-muted-foreground underline decoration-dotted decoration-from-font underline-offset-4" />
+          <button
+            type="button"
+            className="block max-w-full cursor-help truncate rounded-[2px] text-left data text-muted-foreground underline decoration-dotted decoration-from-font underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          />
         }
       >
         {label}

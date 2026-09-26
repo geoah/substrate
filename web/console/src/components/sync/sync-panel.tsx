@@ -7,6 +7,7 @@
  * the account detail and the record page all render it off the same fields
  * (lib/sync.ts syncFieldsOf). */
 
+import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   LoaderCircleIcon,
@@ -17,6 +18,7 @@ import {
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { PauseDialog } from "@/components/ui/confirm-dialog"
 import { Spinner } from "@/components/ui/spinner"
 import { toast } from "@/components/ui/toast"
 import { requestSync, setSyncPaused, wakeTriggers } from "@/lib/api/sync"
@@ -392,50 +394,68 @@ export function SyncNowButton({
   )
 }
 
-/** Pause or Resume: the trait's `syncPaused`, the owner's other hand. */
+/** Pause or Resume: the trait's `syncPaused`, the owner's other hand. A
+ * pause asks first; a resume picks up where it left off. */
 export function PauseButton({
   record,
+  name,
   paused,
   disabled,
   className,
 }: {
   record: Pick<SubstrateRecord, "kind" | "id">
+  /** The account, as the reader knows it: "george@example.com". */
+  name: string
   paused: boolean
   disabled?: boolean
   className?: string
 }) {
   const refresh = useRefreshSync()
+  const [confirming, setConfirming] = useState(false)
   const pause = useMutation({
     mutationFn: () => setSyncPaused(record, !paused),
     onSuccess: () => {
+      setConfirming(false)
       toast.add({
         type: "success",
         title: paused ? "Sync resumed" : "Sync paused",
       })
       refresh()
     },
-    onError: (error) =>
+    onError: (error) => {
+      setConfirming(false)
       toast.add({
         type: "error",
         title: paused ? "Resume failed" : "Pause failed",
         description: error.message,
-      }),
+      })
+    },
   })
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className={cn("h-7 gap-1 px-2 text-xs", className)}
-      disabled={disabled || pause.isPending}
-      onClick={() => pause.mutate()}
-    >
-      {paused ? (
-        <PlayIcon className="size-3" />
-      ) : (
-        <PauseIcon className="size-3" />
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        className={cn("h-7 gap-1 px-2 text-xs", className)}
+        disabled={disabled || pause.isPending}
+        onClick={() => (paused ? pause.mutate() : setConfirming(true))}
+      >
+        {paused ? (
+          <PlayIcon className="size-3" />
+        ) : (
+          <PauseIcon className="size-3" />
+        )}
+        {paused ? "Resume" : "Pause"}
+      </Button>
+      {confirming && (
+        <PauseDialog
+          name={`the sync for ${name}`}
+          pending={pause.isPending}
+          onConfirm={() => pause.mutate()}
+          onClose={() => setConfirming(false)}
+        />
       )}
-      {paused ? "Resume" : "Pause"}
-    </Button>
+    </>
   )
 }
 
@@ -443,11 +463,14 @@ export function PauseButton({
  * record page's toolbar. */
 export function SyncActions({
   record,
+  name,
   paused,
   requestTriggerIds,
   disabled,
 }: {
   record: Pick<SubstrateRecord, "kind" | "id">
+  /** The account, as the reader knows it. */
+  name: string
   paused: boolean
   requestTriggerIds: string[]
   disabled?: boolean
@@ -463,6 +486,7 @@ export function SyncActions({
       />
       <PauseButton
         record={record}
+        name={name}
         paused={paused}
         disabled={disabled}
         className="h-8 text-sm"

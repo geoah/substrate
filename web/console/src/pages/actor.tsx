@@ -17,11 +17,13 @@ import { CopyButton } from "@/components/identity/copy-button"
 import { DocPage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
 import { RecordRef } from "@/components/identity/record-ref"
+import { Segmented } from "@/components/ui/segmented"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useHistoryFeed } from "@/hooks/use-history-feed"
 import { actorIdentity } from "@/lib/actor-identity"
 import { actorMirrorsQueryOptions, resolveActor } from "@/lib/api/actors"
 import { CORE_PACKAGE } from "@/lib/api/http"
+import { HISTORY_LAYOUTS } from "@/lib/history"
 import { actorRoute } from "@/router"
 import { cn } from "@/lib/utils"
 
@@ -90,28 +92,14 @@ export function ActorPage() {
             <div className="flex items-center gap-3">
               {!table && <LiveStatus status={feed.status} />}
               {technical && (
-                <div
-                  role="group"
-                  aria-label="Layout"
-                  className="inline-flex gap-0.5 rounded-[7px] border border-border-strong p-0.5"
-                >
-                  {(["sentences", "table"] as const).map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      aria-pressed={layout === value}
-                      onClick={() =>
-                        void setLayout(value === "sentences" ? null : value)
-                      }
-                      className={cn(
-                        "cursor-pointer rounded-[5px] px-2.5 py-1 text-[12.5px] text-muted-foreground",
-                        layout === value && "bg-foreground text-background"
-                      )}
-                    >
-                      {value === "table" ? "Table view" : "Sentences"}
-                    </button>
-                  ))}
-                </div>
+                <Segmented
+                  label="Layout"
+                  value={layout}
+                  options={HISTORY_LAYOUTS}
+                  onChange={(value) =>
+                    void setLayout(value === "sentences" ? null : value)
+                  }
+                />
               )}
             </div>
           }

@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button"
 import { splitKind } from "@/lib/api/http"
 import { triggerRecordsQueryOptions } from "@/lib/api/sync"
 import type { SubstrateRecord } from "@/lib/api/types"
+import { recordTitle } from "@/lib/format"
+import { untitled } from "@/lib/kind-names"
 import { requestTriggers, syncFieldsOf, triggersOnKind } from "@/lib/sync"
 
 export function SyncRail({ record }: { record: SubstrateRecord }) {
@@ -38,6 +40,7 @@ export function SyncRail({ record }: { record: SubstrateRecord }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <SyncActions
           record={record}
+          name={recordTitle(record.properties) || untitled(record.kind)}
           paused={fields.paused}
           requestTriggerIds={requestIds}
         />

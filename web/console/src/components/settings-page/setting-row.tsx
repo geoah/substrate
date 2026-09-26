@@ -1,9 +1,10 @@
 /** The pieces a settings page is made of: a titled section holding a box of
  * rows, each row a title and a sentence on the left and its control on the
- * right, and a segmented picker for a few named choices. */
+ * right, and a width picker drawn as pages. */
 
 import type { ReactNode } from "react"
 
+import { radioKeys, radioTabIndex } from "@/components/ui/segmented"
 import { cn } from "@/lib/utils"
 
 export function SettingsSection({
@@ -71,45 +72,6 @@ export function SettingRow({
   )
 }
 
-export function Segmented<T extends string>({
-  value,
-  options,
-  onChange,
-  label,
-  disabled,
-}: {
-  value: T
-  options: readonly { value: T; label: string }[]
-  onChange: (value: T) => void
-  label: string
-  disabled?: boolean
-}) {
-  return (
-    <div
-      role="radiogroup"
-      aria-label={label}
-      className="inline-flex gap-0.5 rounded-[7px] border border-border-strong p-0.5"
-    >
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          role="radio"
-          aria-checked={value === o.value}
-          disabled={disabled}
-          onClick={() => onChange(o.value)}
-          className={cn(
-            "cursor-pointer rounded-[5px] px-2.5 py-1 text-[12.5px] text-muted-foreground disabled:cursor-default",
-            value === o.value && "bg-foreground text-background"
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
 /** A width choice drawn as a page: the bar is as wide as the page would be. */
 export function WidthPicker<T extends string>({
   value,
@@ -124,14 +86,21 @@ export function WidthPicker<T extends string>({
   label: string
   disabled?: boolean
 }) {
+  const values = options.map((o) => o.value)
   return (
-    <div role="radiogroup" aria-label={label} className="flex gap-2">
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="flex gap-2"
+      onKeyDown={disabled ? undefined : radioKeys(values, value, onChange)}
+    >
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
           role="radio"
           aria-checked={value === o.value}
+          tabIndex={radioTabIndex(values, value, o.value)}
           aria-label={o.label}
           disabled={disabled}
           onClick={() => onChange(o.value)}

@@ -38,14 +38,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
   Empty,
   EmptyContent,
@@ -61,7 +54,6 @@ import {
   FieldLabel,
 } from "@/components/ui/field"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/toast"
 import {
@@ -128,9 +120,10 @@ function PostureCell({ posture }: { posture: DiffPosture }) {
     <Tooltip>
       <TooltipTrigger
         render={
-          <span
+          <button
+            type="button"
             className={cn(
-              "inline-flex w-fit items-center text-xs whitespace-nowrap",
+              "inline-flex w-fit cursor-help items-center text-xs whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
               posture === "choice"
                 ? "rounded-sm border border-warning/60 px-1.5 py-0.5 text-warning"
                 : "pt-0.5 text-muted-foreground"
@@ -211,7 +204,10 @@ function DiffRows({ rows, kinds }: { rows: DiffRow[]; kinds: KindInfo[] }) {
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <span className="block truncate text-muted-foreground" />
+                  <button
+                    type="button"
+                    className="block max-w-full cursor-help truncate rounded-[2px] text-left text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  />
                 }
               >
                 {row.key}
@@ -386,91 +382,76 @@ function VerdictDialog({
   const approving = verdict === "accepted"
 
   return (
-    <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <form
-          className="contents"
-          onSubmit={form.handleSubmit((values) => onConfirm(values.note))}
-        >
-          <DialogHeader>
-            <DialogTitle>
-              {approving
-                ? `Combine ${loserTitle} into ${winnerTitle}?`
-                : "Keep these two apart?"}
-            </DialogTitle>
-            <DialogDescription className="space-y-2">
-              {/* who is who, unambiguously — twins share a name, ids differ
-                  (codex finding, 2026-08-06) */}
-              <span className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 rounded-sm border bg-muted/40 px-2.5 py-1.5 text-xs">
-                <span>goes into</span>
-                <span className="min-w-0 truncate text-foreground">
-                  {loserTitle}{" "}
-                  <span className="font-mono text-muted-foreground">
-                    {loser?.id}
-                  </span>
-                </span>
-                <span>stays</span>
-                <span className="min-w-0 truncate text-foreground">
-                  {winnerTitle}{" "}
-                  <span className="font-mono text-muted-foreground">
-                    {winner?.id}
-                  </span>
-                </span>
+    <ConfirmDialog
+      title={
+        approving
+          ? `Combine ${loserTitle} into ${winnerTitle}?`
+          : "Keep these two apart?"
+      }
+      consequence={
+        <span className="block space-y-2">
+          {/* who is who, unambiguously — twins share a name, ids differ
+              (codex finding, 2026-08-06) */}
+          <span className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 rounded-sm border bg-muted/40 px-2.5 py-1.5 text-xs">
+            <span>goes into</span>
+            <span className="min-w-0 truncate text-foreground">
+              {loserTitle}{" "}
+              <span className="font-mono text-muted-foreground">
+                {loser?.id}
               </span>
-              {approving ? (
-                <>
-                  <span className="block">
-                    {loserTitle} stops being a record of its own: its history
-                    and everything that points to it move to {winnerTitle}.
-                    Values you set are kept.
-                  </span>
-                  <span className="block">
-                    A split can take them apart again later.
-                  </span>
-                </>
-              ) : (
-                <span className="block">
-                  Both are left as they are, and this pair won’t be suggested
-                  again.
-                </span>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <Field data-invalid={!!form.formState.errors.note || undefined}>
-            <FieldLabel htmlFor="verdict-note">Note (optional)</FieldLabel>
-            <Textarea
-              id="verdict-note"
-              rows={2}
-              placeholder={
-                approving
-                  ? "why these are the same…"
-                  : "why these are not the same…"
-              }
-              aria-invalid={!!form.formState.errors.note}
-              {...form.register("note")}
-            />
-            <FieldDescription>
-              Saved with your decision on this request.
-            </FieldDescription>
-            <FieldError errors={[form.formState.errors.note]} />
-          </Field>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={onClose}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={busy}>
-              {busy && <Spinner className="size-3.5" />}
-              {approving ? "Combine" : "Keep apart"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+            </span>
+            <span>stays</span>
+            <span className="min-w-0 truncate text-foreground">
+              {winnerTitle}{" "}
+              <span className="font-mono text-muted-foreground">
+                {winner?.id}
+              </span>
+            </span>
+          </span>
+          {approving ? (
+            <>
+              <span className="block">
+                {loserTitle} stops being a record of its own: its history and
+                everything that points to it move to {winnerTitle}. Values you
+                set are kept.
+              </span>
+              <span className="block">
+                A split can take them apart again later.
+              </span>
+            </>
+          ) : (
+            <span className="block">
+              Both are left as they are, and this pair won’t be suggested again.
+            </span>
+          )}
+        </span>
+      }
+      confirm={approving ? "Combine" : "Keep apart"}
+      pending={busy}
+      onConfirm={() =>
+        void form.handleSubmit((values) => onConfirm(values.note))()
+      }
+      onClose={onClose}
+    >
+      <Field data-invalid={!!form.formState.errors.note || undefined}>
+        <FieldLabel htmlFor="verdict-note">Note (optional)</FieldLabel>
+        <Textarea
+          id="verdict-note"
+          rows={2}
+          placeholder={
+            approving
+              ? "why these are the same…"
+              : "why these are not the same…"
+          }
+          aria-invalid={!!form.formState.errors.note}
+          {...form.register("note")}
+        />
+        <FieldDescription>
+          Saved with your decision on this request.
+        </FieldDescription>
+        <FieldError errors={[form.formState.errors.note]} />
+      </Field>
+    </ConfirmDialog>
   )
 }
 

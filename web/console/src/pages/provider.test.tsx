@@ -733,10 +733,16 @@ describe("ProviderPage", () => {
       )
     })
 
-    it("Pause patches syncPaused", async () => {
+    it("Pause asks first, then patches syncPaused", async () => {
       renderPage(<ProviderPage />)
       const work = await row("george@example.com")
       fireEvent.click(within(work).getByRole("button", { name: "Pause" }))
+      const dialog = await screen.findByRole("dialog")
+      expect(dialog.textContent).toContain(
+        "Pause the sync for george@example.com?"
+      )
+      expect(calls("PATCH").length).toBe(0)
+      fireEvent.click(within(dialog).getByRole("button", { name: "Pause" }))
       await waitFor(() => expect(calls("PATCH").length).toBe(1))
       expect(calls("PATCH")[0].body).toEqual({
         properties: { syncPaused: true },
@@ -1045,7 +1051,7 @@ describe("ProviderPage", () => {
       ) as HTMLElement
       fireEvent.click(within(header).getByRole("button", { name: "Pause" }))
       const dialog = await screen.findByRole("dialog")
-      expect(within(dialog).getByText(/stops syncing/)).toBeTruthy()
+      expect(within(dialog).getByText(/won’t run on its own/)).toBeTruthy()
       fireEvent.click(within(dialog).getByRole("button", { name: "Pause" }))
       await waitFor(() => expect(calls("PATCH").length).toBe(1))
       expect(calls("PATCH")[0]).toEqual({

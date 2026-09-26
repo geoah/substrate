@@ -117,6 +117,11 @@ function renderPage(searchParams: string) {
 }
 
 describe("AgentsPage", () => {
+  it("leaves the one main landmark to the shell", () => {
+    renderPage("?agent=helper")
+    expect(screen.queryByRole("main")).toBeNull()
+  })
+
   it("narrows the chats to the addressed agent and starts New chat with it", async () => {
     const onUrlUpdate = renderPage("?agent=helper")
     expect(screen.getByTestId("narrowed").textContent).toBe("helper")

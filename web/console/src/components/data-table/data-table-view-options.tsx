@@ -151,7 +151,7 @@ export function DataTableViewOptions<TData extends RowData>({
                     type="button"
                     aria-label={`Move ${label} up`}
                     disabled={i === 0}
-                    className="cursor-pointer rounded-sm p-0.5 text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                    className="cursor-pointer rounded-sm p-[5px] text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
                     onClick={() => move(column.id, -1)}
                   >
                     <ChevronUpIcon className="size-3.5" />
@@ -160,7 +160,7 @@ export function DataTableViewOptions<TData extends RowData>({
                     type="button"
                     aria-label={`Move ${label} down`}
                     disabled={i === listed.length - 1}
-                    className="cursor-pointer rounded-sm p-0.5 text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                    className="cursor-pointer rounded-sm p-[5px] text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
                     onClick={() => move(column.id, 1)}
                   >
                     <ChevronDownIcon className="size-3.5" />

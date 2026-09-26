@@ -61,6 +61,7 @@ import {
   pushLive,
   type LiveFeed,
 } from "@/lib/changelog"
+import { scrollMotion } from "@/lib/motion"
 
 // ── live buffer wiring ──────────────────────────────────────────────────────
 
@@ -265,7 +266,7 @@ export function ChangelogTable({
 
   function flushToTop() {
     setPage(1)
-    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })
+    scrollRef.current?.scrollTo({ top: 0, behavior: scrollMotion() })
     pausedRef.current = false
     dispatch({ kind: "flush" })
   }

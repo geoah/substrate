@@ -3,7 +3,7 @@
  * margin, no offset) and covering a sliver above itself, so a scrolled row
  * never shows between the header and the scroller's edge. */
 
-import { cleanup, render, renderHook } from "@testing-library/react"
+import { cleanup, render, renderHook, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { DataGrid } from "./data-grid"
@@ -30,7 +30,9 @@ describe("the pinned header", () => {
         getRowId: (r) => r.id,
       })
     )
-    const { container } = render(<DataGrid table={result.current} />)
+    const { container } = render(
+      <DataGrid table={result.current} label="Tasks" />
+    )
     const scroller = container.querySelector("[data-slot=data-grid]")!
     expect(scroller.className).not.toMatch(/\b(p|pt|py)-/)
     const table = scroller.querySelector("table")!
@@ -41,6 +43,23 @@ describe("the pinned header", () => {
       expect(th.className).toMatch(/\bbg-background\b/)
       expect(th.className).toContain("0_-2px_0_var(--background)")
     }
+  })
+})
+
+describe("the sheet from the keyboard", () => {
+  it("is a named, focusable region that scrolls a focused cell clear of the pinned column", () => {
+    const { result } = renderHook(() =>
+      useDataTable({
+        columns,
+        data: [{ id: "a", name: "A" }],
+        getRowId: (r) => r.id,
+      })
+    )
+    render(<DataGrid table={result.current} label="Tasks" />)
+    const region = screen.getByRole("region", { name: "Tasks" })
+    expect(region.tabIndex).toBe(0)
+    expect(region.style.scrollPaddingTop).toBe("34px")
+    expect(parseFloat(region.style.scrollPaddingLeft)).toBeGreaterThan(0)
   })
 })
 
@@ -59,6 +78,7 @@ describe("changed rows", () => {
     )
     const { container } = render(
       <DataGrid
+        label="Tasks"
         table={result.current}
         marks={
           new Map([

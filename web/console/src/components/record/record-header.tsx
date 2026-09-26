@@ -27,14 +27,7 @@ import { KindGlyph } from "@/components/identity/kind-glyph"
 import { KindPath, KindRef } from "@/components/identity/kind-ref"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -43,7 +36,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Spinner } from "@/components/ui/spinner"
 import { toast } from "@/components/ui/toast"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { providerOfKind } from "@/lib/actor-identity"
@@ -378,42 +370,15 @@ function DeleteDialog({
     },
   })
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => !open && !remove.isPending && onClose()}
-    >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Delete “{title}”?</DialogTitle>
-          <DialogDescription>
-            It’s removed from {displayPlural(kind ?? record.kind)}, and anything
-            that points to it will point to nothing. Records set to go with it
-            are removed too. You can’t undo this here.
-          </DialogDescription>
-        </DialogHeader>
-        {remove.isError && (
-          <p role="alert" className="text-sm text-destructive">
-            {writeError(remove.error)}
-          </p>
-        )}
-        <DialogFooter>
-          <Button
-            variant="outline"
-            disabled={remove.isPending}
-            onClick={onClose}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            disabled={remove.isPending}
-            onClick={() => remove.mutate()}
-          >
-            {remove.isPending && <Spinner className="size-3.5" />}
-            Delete
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      title={`Delete “${title}”?`}
+      consequence={`It’s removed from ${displayPlural(kind ?? record.kind)}, and anything that points to it will point to nothing. Records set to go with it are removed too. You can’t undo this here.`}
+      confirm="Delete"
+      destructive
+      pending={remove.isPending}
+      error={remove.isError ? writeError(remove.error) : undefined}
+      onConfirm={() => remove.mutate()}
+      onClose={onClose}
+    />
   )
 }

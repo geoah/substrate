@@ -18,12 +18,18 @@ import {
 import { functionsQueryOptions } from "@/components/home/overview-cards"
 import { DocPage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
+import { Segmented } from "@/components/ui/segmented"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useEverydayChanges, useHistoryFeed } from "@/hooks/use-history-feed"
 import { actorMirrorsQueryOptions, actorNames } from "@/lib/api/actors"
 import { agentsQueryOptions } from "@/lib/api/agents"
 import { bundleStatusesQueryOptions } from "@/lib/api/bundles"
-import { HISTORY_VIEWS, viewActors, type HistoryView } from "@/lib/history"
+import {
+  HISTORY_LAYOUTS,
+  HISTORY_VIEWS,
+  viewActors,
+  type HistoryView,
+} from "@/lib/history"
 import { cn } from "@/lib/utils"
 
 const VIEW_VALUES = HISTORY_VIEWS.map((v) => v.value)
@@ -109,55 +115,30 @@ export function HistoryPage() {
             <div className="flex items-center gap-3">
               {!table && !nobody && <LiveStatus status={feed.status} />}
               {technical && (
-                <div
-                  role="group"
-                  aria-label="Layout"
-                  className="inline-flex gap-0.5 rounded-[7px] border border-border-strong p-0.5"
-                >
-                  {(["sentences", "table"] as const).map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      aria-pressed={layout === value}
-                      onClick={() =>
-                        void setLayout(value === "sentences" ? null : value)
-                      }
-                      className={cn(
-                        "cursor-pointer rounded-[5px] px-2.5 py-1 text-[12.5px] text-muted-foreground",
-                        layout === value && "bg-foreground text-background"
-                      )}
-                    >
-                      {value === "table" ? "Table view" : "Sentences"}
-                    </button>
-                  ))}
-                </div>
+                <Segmented
+                  label="Layout"
+                  value={layout}
+                  options={HISTORY_LAYOUTS}
+                  onChange={(value) =>
+                    void setLayout(value === "sentences" ? null : value)
+                  }
+                />
               )}
             </div>
           }
         />
         {!table && (
           <>
-            <div
-              role="group"
-              aria-label="Whose changes"
-              className="mt-[18px] flex flex-wrap gap-0.5 border-b border-border pb-2.5"
-            >
-              {HISTORY_VIEWS.map((v) => (
-                <button
-                  key={v.value}
-                  type="button"
-                  aria-pressed={view === v.value}
-                  onClick={() =>
-                    void setView(v.value === "everything" ? null : v.value)
-                  }
-                  className={cn(
-                    "cursor-pointer rounded-md px-2 py-1 text-[13px] text-muted-foreground hover:text-foreground",
-                    view === v.value && "bg-hover font-medium text-foreground"
-                  )}
-                >
-                  {v.label}
-                </button>
-              ))}
+            <div className="mt-[18px] flex flex-wrap gap-0.5 border-b border-border pb-2.5">
+              <Segmented
+                look="plain"
+                label="Whose changes"
+                value={view}
+                options={HISTORY_VIEWS}
+                onChange={(value) =>
+                  void setView(value === "everything" ? null : value)
+                }
+              />
               {!technical && (
                 <SystemChangesNote
                   className="ml-auto self-center"

@@ -746,6 +746,7 @@ export function KindBrowsePage() {
               empty={emptyState}
               scrollKey={page}
               marks={marks}
+              label={displayPlural(kindInfo)}
               className={cn(
                 "flex-1 border-b border-border",
                 refetching && "opacity-60 transition-opacity",

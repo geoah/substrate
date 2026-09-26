@@ -14,6 +14,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -217,14 +218,15 @@ describe("ProposalCard", () => {
     const button = await screen.findByRole("button", { name: "Delete it" })
     expect(screen.getByText(/History keeps what it was/)).toBeTruthy()
     fireEvent.click(button)
-    // Armed, not sent.
-    expect(await screen.findByText("Press again to delete it.")).toBeTruthy()
+    // Asked, not sent.
+    const dialog = await screen.findByRole("dialog")
+    expect(dialog.textContent).toContain("Delete this record?")
     expect(
       fetchMock.mock.calls.some(
         ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
       )
     ).toBe(false)
-    fireEvent.click(screen.getByRole("button", { name: "Yes, delete it" }))
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete it" }))
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
         ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"

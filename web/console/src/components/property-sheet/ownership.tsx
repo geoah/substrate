@@ -21,15 +21,7 @@ import { IdentityHoverCard } from "@/components/identity/identity-hover-card"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { RecordRef } from "@/components/identity/record-ref"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Spinner } from "@/components/ui/spinner"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { actorIdentity } from "@/lib/actor-identity"
 import type {
@@ -438,84 +430,55 @@ export function OwnershipDetail({
       ) : null}
 
       {pending && (
-        <Dialog
-          open
-          onOpenChange={(open) => {
-            if (!open && !patch.isPending) {
-              setPending(null)
-              setFailed(undefined)
-            }
-          }}
-        >
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>
-                {pending.kind === "use"
-                  ? `Use ${sourceName(pending.alternative.actor)}’s ${lowerFirst(row.spec.label)}?`
-                  : `Follow ${pending.follow} for ${lowerFirst(row.spec.label)}?`}
-              </DialogTitle>
-              <DialogDescription>
-                {pending.kind === "use" ? (
-                  <>
-                    “{plain(pending.alternative.value, row.spec)}” replaces the
-                    current value and becomes yours. Later changes from{" "}
-                    {sourceName(pending.alternative.actor)} show up here as
-                    another version but won’t replace it, until you choose to
-                    follow it again.
-                  </>
-                ) : (
-                  <>
-                    Your value is removed. {row.spec.label} takes what{" "}
-                    {pending.follow} has now, and changes whenever it changes
-                    there.
-                  </>
-                )}
-              </DialogDescription>
-            </DialogHeader>
-            {failed && (
-              <p role="alert" className="text-sm text-destructive">
-                {failed}
-              </p>
-            )}
-            <DialogFooter>
-              <Button
-                variant="outline"
-                disabled={patch.isPending}
-                onClick={() => {
+        <ConfirmDialog
+          title={
+            pending.kind === "use"
+              ? `Use ${sourceName(pending.alternative.actor)}’s ${lowerFirst(row.spec.label)}?`
+              : `Follow ${pending.follow} for ${lowerFirst(row.spec.label)}?`
+          }
+          consequence={
+            pending.kind === "use" ? (
+              <>
+                “{plain(pending.alternative.value, row.spec)}” replaces the
+                current value and becomes yours. Later changes from{" "}
+                {sourceName(pending.alternative.actor)} show up here as another
+                version but won’t replace it, until you choose to follow it
+                again.
+              </>
+            ) : (
+              <>
+                Your value is removed. {row.spec.label} takes what{" "}
+                {pending.follow} has now, and changes whenever it changes there.
+              </>
+            )
+          }
+          confirm={
+            pending.kind === "use"
+              ? `Use ${sourceName(pending.alternative.actor)}’s`
+              : `Follow ${pending.follow}`
+          }
+          pending={patch.isPending}
+          error={failed}
+          onConfirm={() =>
+            patch.mutate(
+              {
+                [row.name]:
+                  pending.kind === "use" ? pending.alternative.value : null,
+              },
+              {
+                onSuccess: () => {
                   setPending(null)
                   setFailed(undefined)
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                disabled={patch.isPending}
-                onClick={() =>
-                  patch.mutate(
-                    {
-                      [row.name]:
-                        pending.kind === "use"
-                          ? pending.alternative.value
-                          : null,
-                    },
-                    {
-                      onSuccess: () => {
-                        setPending(null)
-                        setFailed(undefined)
-                      },
-                      onError: (error) => setFailed(writeError(error)),
-                    }
-                  )
-                }
-              >
-                {patch.isPending && <Spinner className="size-3.5" />}
-                {pending.kind === "use"
-                  ? `Use ${sourceName(pending.alternative.actor)}’s`
-                  : `Follow ${pending.follow}`}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+                },
+                onError: (error) => setFailed(writeError(error)),
+              }
+            )
+          }
+          onClose={() => {
+            setPending(null)
+            setFailed(undefined)
+          }}
+        />
       )}
     </div>
   )

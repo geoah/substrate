@@ -44,13 +44,13 @@ describe("SourceView", () => {
     expect(view.textContent).toContain("linkedFrom")
     expect(view.textContent).toContain("googlecontactperson")
     expect(
-      screen.getByRole("button", { name: "YAML" }).getAttribute("aria-pressed")
+      screen.getByRole("radio", { name: "YAML" }).getAttribute("aria-checked")
     ).toBe("true")
   })
 
   it("switches to the JSON the API serves, with a copy button", () => {
     render(<SourceView record={record} kinds={[]} />)
-    fireEvent.click(screen.getByRole("button", { name: "JSON" }))
+    fireEvent.click(screen.getByRole("radio", { name: "JSON" }))
     const view = document.querySelector("[data-slot=record-source]")!
     expect(view.textContent).toContain('"id": "grace"')
     expect(view.textContent).toContain('"linkedFrom": [')

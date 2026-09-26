@@ -244,6 +244,42 @@
   }
 }
 
+/* A small control's hit area grown to 24px (WCAG 2.5.8) without growing
+   what it draws: an invisible square centred on it takes the pointer. Needs
+   a free ::after and no clipping ancestor within 12px. */
+@utility hit-area {
+  position: relative;
+  &::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 24px);
+    height: max(100%, 24px);
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* A reader who asks for less motion gets none: popovers, dialogs, toasts and
+   eased rows appear in place. A spinner still turns, because it is the only
+   sign that something is running. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+  }
+  *:not(.animate-spin),
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
+  }
+}
+
 /* The copyable-identifier voice: ids, references, YAML, URLs — the things a
    reader would copy. Never times, verbs, statuses or counts. */
 @utility data {

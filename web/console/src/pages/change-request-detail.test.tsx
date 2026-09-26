@@ -14,6 +14,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react"
 import type { ReactElement, ReactNode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -361,10 +362,10 @@ describe("ChangeRequestDetailPage", () => {
     expect(screen.getByText(/History keeps what it was/)).toBeTruthy()
     // What the record holds now, once it is read.
     expect(await screen.findByText("goes away")).toBeTruthy()
-    // A second press, never one.
+    // Asked first, never one press.
     fireEvent.click(screen.getByRole("button", { name: "Delete it" }))
-    expect(await screen.findByText("Press again to delete it.")).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: "Yes, delete it" }))
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete it" }))
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
         ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"

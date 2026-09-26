@@ -19,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { radioKeys, radioTabIndex } from "@/components/ui/segmented"
 import { Textarea } from "@/components/ui/textarea"
 import type { KindInfo } from "@/lib/api/types"
 import type { BundleRow } from "@/lib/bundles"
@@ -77,6 +78,11 @@ export function AddCollectionDialog({
           role="radiogroup"
           aria-label="How to start"
           className="grid gap-2 sm:grid-cols-3"
+          onKeyDown={radioKeys<Way | null>(
+            ADD_WAYS,
+            way,
+            (w) => w && setWay(w)
+          )}
         >
           {WAYS.map((w) => (
             <button
@@ -84,6 +90,7 @@ export function AddCollectionDialog({
               type="button"
               role="radio"
               aria-checked={way === w.value}
+              tabIndex={radioTabIndex<Way | null>(ADD_WAYS, way, w.value)}
               onClick={() => setWay(w.value)}
               className={cn(
                 "flex cursor-pointer flex-col items-start gap-1.5 rounded-[10px] border border-border-strong bg-background p-3 text-left transition-shadow outline-none focus-visible:border-ring",

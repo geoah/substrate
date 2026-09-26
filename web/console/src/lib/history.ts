@@ -183,6 +183,15 @@ export const HISTORY_VIEWS: readonly { value: HistoryView; label: string }[] = [
   { value: "providers", label: "By providers" },
 ]
 
+/** The two ways a technical reader can lay the feed out. */
+export const HISTORY_LAYOUTS: readonly {
+  value: "sentences" | "table"
+  label: string
+}[] = [
+  { value: "sentences", label: "Sentences" },
+  { value: "table", label: "Table view" },
+]
+
 /** What the views filter on: the actor names the repository knows, and the
  * declaration ids (`<authority>/<package>/<name>`, a bundle's
  * `<authority>/<package>`) the agent, function and bundle actors are

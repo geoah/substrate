@@ -94,10 +94,11 @@ function LineView({
             <Tooltip key={i}>
               <TooltipTrigger
                 render={
-                  <span
+                  <button
+                    type="button"
                     style={{ color: token.color }}
                     className={cn(
-                      "cursor-help underline decoration-dotted decoration-from-font underline-offset-4",
+                      "cursor-help rounded-[2px] underline decoration-dotted decoration-from-font underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
                       token.italic && "italic"
                     )}
                   />

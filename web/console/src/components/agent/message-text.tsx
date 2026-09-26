@@ -75,7 +75,7 @@ export function MessageText({ text }: { text: string }) {
                     className={
                       block.ordered
                         ? undefined
-                        : "relative pl-3.5 before:absolute before:top-[0.7em] before:left-0.5 before:size-[5px] before:rounded-full before:bg-faint"
+                        : "relative pl-3.5 before:absolute before:top-[0.7em] before:left-0.5 before:size-[5px] before:rounded-full before:bg-faint-deco"
                     }
                   >
                     <Runs runs={item} />

@@ -100,7 +100,7 @@ export function TreeToggle({
       aria-expanded={node.open}
       aria-label={`${node.open ? "Hide" : "Show"} ${noun}`}
       title={title}
-      className="inline-grid size-[18px] shrink-0 cursor-pointer place-items-center rounded-[4px] text-faint outline-none hover:bg-border-strong hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+      className="hit-area inline-grid size-[18px] shrink-0 cursor-pointer place-items-center rounded-[4px] text-faint outline-none hover:bg-border-strong hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
       onClick={(e) => {
         e.stopPropagation()
         onToggle()

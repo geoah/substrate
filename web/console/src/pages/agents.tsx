@@ -224,7 +224,7 @@ export function AgentsPage() {
       }}
     >
       {roomy && <aside className="min-h-0 border-r">{list}</aside>}
-      <main className="min-h-0 min-w-0">
+      <div className="min-h-0 min-w-0">
         <Conversation
           key={conversationKey}
           agentId={agentId}
@@ -274,7 +274,7 @@ export function AgentsPage() {
             </>
           }
         />
-      </main>
+      </div>
       {showPanel && (
         <aside
           aria-label="About this agent"

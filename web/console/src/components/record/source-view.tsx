@@ -10,10 +10,10 @@ import { YamlView } from "./yaml-view"
 import { CodeBlock } from "@/components/code-block"
 import { CopyButton } from "@/components/identity/copy-button"
 import { Button } from "@/components/ui/button"
+import { Segmented } from "@/components/ui/segmented"
 import { splitKind } from "@/lib/api/http"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { linkTargetsOf, manifestYAML } from "@/lib/manifest"
-import { cn } from "@/lib/utils"
 import { keyDocsOf } from "@/lib/yaml-annotations"
 
 export function SourceView({
@@ -34,26 +34,15 @@ export function SourceView({
   return (
     <div data-slot="record-source" className="mt-[18px] flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <div
-          role="group"
-          aria-label="Show the record as"
-          className="inline-flex rounded-md border p-0.5"
-        >
-          {(["yaml", "json"] as const).map((l) => (
-            <button
-              key={l}
-              type="button"
-              aria-pressed={lens === l}
-              onClick={() => setLens(l)}
-              className={cn(
-                "rounded-[4px] px-2 py-0.5 text-[12.5px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-                lens === l && "bg-selection text-primary-text"
-              )}
-            >
-              {l.toUpperCase()}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label="Show the record as"
+          value={lens}
+          options={[
+            { value: "yaml", label: "YAML" },
+            { value: "json", label: "JSON" },
+          ]}
+          onChange={setLens}
+        />
         <span className="text-[12.5px] text-faint">
           {lens === "yaml"
             ? "The record as its YAML envelope. A linked reference opens its record."
