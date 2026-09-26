@@ -736,15 +736,9 @@ description = "CI job `changes`: does this PR touch anything a Go test reads? go
 run = ".mise/changescheck.sh"
 
 [tasks."ci:go"]
-description = "CI job `go test`: the short suite, then every database package but the engine"
-# The engine package is the other job (`ci:engine`, sharded), so this one is
-# the short suite and the four small database packages: together they are a
-# few minutes of test time, which is why the short suite rides here rather
-# than on a runner of its own that would spend half its life on setup.
-# internal/providertest is the one that wants more than a database: every
-# case there warms a provider closure's PEP 723 body, so the job caches
-# ~/.cache/uv beside the Go caches (.github/workflows/ci.yml). The provider
-# suite (internal/providere2e) runs in the `providers e2e` job instead.
+description = "CI job `go test`: the short suite, no database"
+# The database packages are the `engine` shards and the two `db` jobs, so this
+# job needs no service container and starts testing as soon as Go is there.
 #
 # SUBSTRATE_TEST_REQUIRE_SANDBOX: internal/sandbox and internal/runner skip
 # their confinement cases where the kernel offers no Landlock or no seccomp, so
@@ -754,10 +748,20 @@ description = "CI job `go test`: the short suite, then every database package bu
 # runs the rest of the suite.
 #
 # `run`, not `depends`: mise gives a dependency task its own environment, so a
-# variable set here would never reach the test task. Sequential for the reason
-# `test` is: the two halves must not share one small machine at once.
+# variable set here would never reach the test task.
 env = { SUBSTRATE_TEST_REQUIRE_SANDBOX = "1" }
-run = ["mise run test:short", "mise run test:db:rest"]
+run = "mise run test:short"
+
+[tasks."ci:db:catalog"]
+description = "CI job `db catalog`: internal/catalog against the database"
+# Half of test:db:rest's time on its own, so it is a job of its own.
+run = "go test -count=1 -p 1 -timeout 12m -skip '^TestLive' ./internal/catalog/..."
+
+[tasks."ci:db:rest"]
+description = "CI job `db rest`: providertest, testenv and substratectl against the database"
+# internal/providertest warms each provider closure's PEP 723 body through uv,
+# so the job caches ~/.cache/uv beside the Go caches.
+run = "go test -count=1 -p 1 -timeout 12m -skip '^TestLive' ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/..."
 
 [tasks."ci:providers"]
 description = "CI job `providers e2e`: the provider suite, alone on its runner"

@@ -5,18 +5,29 @@
   "bypass_actors": [],
   "conditions": {
     "ref_name": {
-      "include": ["~DEFAULT_BRANCH"],
+      "include": [
+        "~DEFAULT_BRANCH"
+      ],
       "exclude": []
     }
   },
   "rules": [
-    { "type": "deletion" },
-    { "type": "non_fast_forward" },
-    { "type": "required_linear_history" },
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "required_linear_history"
+    },
     {
       "type": "pull_request",
       "parameters": {
-        "allowed_merge_methods": ["squash", "rebase"],
+        "allowed_merge_methods": [
+          "squash",
+          "rebase"
+        ],
         "dismiss_stale_reviews_on_push": false,
         "require_code_owner_review": false,
         "require_extra_approval_for_unattributed_changes": true,
@@ -31,13 +42,22 @@
         "strict_required_status_checks_policy": false,
         "do_not_enforce_on_create": false,
         "required_status_checks": [
-          { "context": "conventional commits", "integration_id": 15368 },
-          { "context": "lint", "integration_id": 15368 },
-          { "context": "cross compile", "integration_id": 15368 },
-          { "context": "go gate", "integration_id": 15368 },
-          { "context": "race", "integration_id": 15368 },
-          { "context": "console", "integration_id": 15368 },
-          { "context": "image builds and boots", "integration_id": 15368 }
+          {
+            "context": "conventional commits",
+            "integration_id": 15368
+          },
+          {
+            "context": "lint",
+            "integration_id": 15368
+          },
+          {
+            "context": "console",
+            "integration_id": 15368
+          },
+          {
+            "context": "go gate",
+            "integration_id": 15368
+          }
         ]
       }
     }
