@@ -302,7 +302,7 @@ func (st *shippedUpgradeStage) guards(q sqlReader, ceiling int64) ([]string, sub
 	}
 	st.conversions.moves, st.conversions.grantPatches = planned, grants
 	lines = append(lines, moveLines...)
-	plan, err := st.conversions.wire(q)
+	plan, err := st.conversions.wire(q, ceiling, false)
 	if err != nil {
 		return nil, plan, err
 	}

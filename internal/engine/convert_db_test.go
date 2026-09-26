@@ -64,6 +64,23 @@ func wantLossyRefusal(t *testing.T, ds substrate.Dataset, err error, before *sub
 	}
 }
 
+// wantStaleRefusal asserts a confirmation refused as a conflict, the way a
+// client re-previews on, carrying every fragment, and that it touched nothing.
+func wantStaleRefusal(t *testing.T, ds substrate.Dataset, err error, before *substrate.Record, fragments ...string) {
+	t.Helper()
+	if !errors.Is(err, substrate.ErrConflict) || errors.Is(err, substrate.ErrLossyConversion) {
+		t.Fatalf("a confirmation for another plan must refuse as a conflict alone, got: %v", err)
+	}
+	for _, f := range fragments {
+		if !strings.Contains(err.Error(), f) {
+			t.Fatalf("the refusal must say %q, got: %v", f, err)
+		}
+	}
+	if got := mustGet(t, ds, before.Kind, before.ID); got.Version != before.Version {
+		t.Fatalf("a refused confirmation touched the record: %+v", got)
+	}
+}
+
 // cvEntries counts the changelog entries after head whose payload carries the
 // given step key.
 func cvEntries(t *testing.T, dsn string, head int64, key string) int {
@@ -408,9 +425,9 @@ func TestRemapRecomputesTheSubjectsOfAMappedSource(t *testing.T) {
 
 // A remap onto a value the stored declaration still admits makes the records
 // holding either spelling one set: a lossy plan (decision 0067). It runs only
-// with a confirmation naming the plan the preview showed, at the changelog
-// head it showed it: without one it refuses under the named error, after an
-// intervening write it refuses as stale, for another plan's hash it refuses
+// with a confirmation naming the plan the preview showed: without one it
+// refuses under the named error, after a write to a record the plan rewrites
+// it refuses as stale, for another plan's hash it refuses
 // again, and with the previewed pair it lands and the distinction leaves the
 // fold while the changelog keeps the old value.
 func TestLossyPlanRunsOnlyWithAConfirmationBoundToItsPreview(t *testing.T) {
@@ -452,14 +469,12 @@ func TestLossyPlanRunsOnlyWithAConfirmationBoundToItsPreview(t *testing.T) {
 		t.Fatalf("step = %+v", s)
 	}
 
-	// A write since the preview moves the head, and the confirmation is stale
-	// whether or not the write touched what the plan counts.
-	mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"status": "open"}})
+	// A write since the preview to a record the remap rewrites moves the
+	// hash, and the confirmation is stale.
+	held = mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, ID: held.ID, Properties: map[string]any{"status": "active", "title": "held"}})
 	stale := substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
 	_, err = ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &stale})
-	if !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), "the changelog moved since the plan was previewed") {
-		t.Fatalf("a confirmation after an intervening write must refuse as stale, got: %v", err)
-	}
+	wantStaleRefusal(t, ds, err, held, "the confirmation is for another plan", "was written since the preview")
 
 	// Previewed again, confirmed for another plan: refused, naming both.
 	if plan, err = ds.PlanVocabularyApply(ctx, owner, docs); err != nil {
@@ -467,7 +482,7 @@ func TestLossyPlanRunsOnlyWithAConfirmationBoundToItsPreview(t *testing.T) {
 	}
 	other := substrate.ConversionConfirm{PlanHash: "0000", ChangelogSeq: plan.ChangelogSeq}
 	_, err = ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &other})
-	wantLossyRefusal(t, ds, err, held, "the confirmation is for another plan", plan.PlanHash)
+	wantStaleRefusal(t, ds, err, held, "the confirmation is for another plan", plan.PlanHash)
 
 	// The previewed pair lands the plan: both records read `open`, the one
 	// that moved appended one entry, and the changelog still holds `active`.
@@ -490,6 +505,196 @@ func TestLossyPlanRunsOnlyWithAConfirmationBoundToItsPreview(t *testing.T) {
 		t.Fatalf("the old value must stay in the changelog (rows=%d, err=%v)", kept, err)
 	}
 	cvReplays(t, svc, ds)
+}
+
+const (
+	cvOtherPackage = "convert.example.substrate.reamde.dev/other"
+	cvGadget       = cvOtherPackage + "/gadget"
+)
+
+// cvBoundFixture installs a widget kind with an enum `status` and a string
+// `label`, one widget at each status, and an unrelated gadget kind in its own
+// package, and previews the lossy remap of `active` onto `open`. It answers
+// the records, the lossy batch and its preview.
+func cvBoundFixture(t *testing.T, ds substrate.Dataset) (held, clean *substrate.Record, docs []map[string]any, plan substrate.VocabularyPlan) {
+	t.Helper()
+	ctx := context.Background()
+	if err := cvApply(t, ds, map[string]any{
+		"status": map[string]any{"type": "enum", "values": []any{"open", "active"}},
+		"label":  map[string]any{"type": "string"},
+	}); err != nil {
+		t.Fatalf("install the package: %v", err)
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(cvOtherPackage, 0),
+		vocabulary.KindManifest(cvOtherPackage, map[string]any{"singular": "gadget"},
+			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
+	}); err != nil {
+		t.Fatalf("install the unrelated package: %v", err)
+	}
+	held = mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"status": "active", "label": "a"}})
+	clean = mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"status": "open", "label": "b"}})
+	docs = cvDocs(map[string]any{
+		"status": map[string]any{"type": "enum", "values": []any{
+			map[string]any{"value": "open", "renamedFrom": "active"},
+		}},
+		"label": map[string]any{"type": "string"},
+	})
+	plan, err := ds.PlanVocabularyApply(ctx, owner, docs)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if !plan.Lossy || len(plan.Steps) != 1 || plan.Steps[0].Records != 1 {
+		t.Fatalf("plan = %+v", plan)
+	}
+	return held, clean, docs, plan
+}
+
+// A confirmation binds to what the conversion affects, not to the repository
+// head (issue #641): writes to an unrelated kind, and to a widget the remap
+// does not rewrite, move the head between the preview and the confirmation,
+// and the previewed pair still lands the plan.
+func TestLossyConfirmationSurvivesWritesThePlanDoesNotTouch(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	held, clean, docs, plan := cvBoundFixture(t, ds)
+
+	mustPut(t, ds, owner, substrate.PutInput{Kind: cvGadget, Properties: map[string]any{"name": "g1"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, ID: clean.ID, Properties: map[string]any{"status": "open", "label": "b2"}})
+	if head := maxSeq(t, ds); head <= plan.ChangelogSeq {
+		t.Fatalf("the writes did not move the head (%d, previewed at %d)", head, plan.ChangelogSeq)
+	}
+
+	confirm := substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
+	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm}); err != nil {
+		t.Fatalf("a confirmation must survive writes the plan does not touch: %v", err)
+	}
+	if got := mustGet(t, ds, cvWidget, held.ID); got.Properties["status"] != "open" {
+		t.Fatalf("the collapse did not land: %+v", got)
+	}
+}
+
+// The same confirmation is refused when what the plan affects moved: a write
+// to a record the remap rewrites (its counts unchanged), or a change to the
+// stored declaration of the kind it converts (its steps unchanged). Each
+// refusal touches nothing, and a fresh preview's pair lands.
+func TestLossyConfirmationRefusesAfterWhatThePlanTouchesMoved(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	held, _, docs, plan := cvBoundFixture(t, ds)
+	confirm := substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
+
+	// A record the remap rewrites is written: the count stays 1, the
+	// confirmation is refused.
+	held = mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, ID: held.ID, Properties: map[string]any{"status": "active", "label": "a2"}})
+	_, err := ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm})
+	wantStaleRefusal(t, ds, err, held, "the confirmation is for another plan")
+
+	// Previewed again: the steps read the same, the hash does not.
+	again, err := ds.PlanVocabularyApply(ctx, owner, docs)
+	if err != nil {
+		t.Fatalf("plan again: %v", err)
+	}
+	if len(again.Steps) != 1 || again.Steps[0] != plan.Steps[0] || again.PlanHash == plan.PlanHash {
+		t.Fatalf("the re-preview must list the same step under a new hash: %+v, was %+v", again, plan)
+	}
+
+	// The widget's stored declaration changes (an optional property no record
+	// carries, so the plan's steps do not): the confirmation is refused.
+	if err := cvApply(t, ds, map[string]any{
+		"status": map[string]any{"type": "enum", "values": []any{"open", "active"}},
+		"label":  map[string]any{"type": "string"},
+		"note":   map[string]any{"type": "string"},
+	}); err != nil {
+		t.Fatalf("widen the declaration: %v", err)
+	}
+	confirm = substrate.ConversionConfirm{PlanHash: again.PlanHash, ChangelogSeq: again.ChangelogSeq}
+	_, err = ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm})
+	wantStaleRefusal(t, ds, err, held, "the confirmation is for another plan")
+
+	// A confirmation naming a head this repository has not reached was not
+	// previewed here.
+	third, err := ds.PlanVocabularyApply(ctx, owner, docs)
+	if err != nil {
+		t.Fatalf("plan a third time: %v", err)
+	}
+	ahead := substrate.ConversionConfirm{PlanHash: third.PlanHash, ChangelogSeq: maxSeq(t, ds) + 1}
+	_, err = ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &ahead})
+	if !errors.Is(err, substrate.ErrConflict) {
+		t.Fatalf("a confirmation past the head must refuse as a conflict, got: %v", err)
+	}
+
+	confirm = substrate.ConversionConfirm{PlanHash: third.PlanHash, ChangelogSeq: third.ChangelogSeq}
+	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm}); err != nil {
+		t.Fatalf("the fresh preview's pair must land: %v", err)
+	}
+	if got := mustGet(t, ds, cvWidget, held.ID); got.Properties["status"] != "open" {
+		t.Fatalf("the collapse did not land: %+v", got)
+	}
+}
+
+// A new record holding the value a remap rewrites, created after the
+// preview, is a row the plan now rewrites: the confirmation is refused as a
+// conflict and names the cause.
+func TestLossyConfirmationRefusesAfterANewRecordHoldsTheSourceValue(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	held, _, docs, plan := cvBoundFixture(t, ds)
+
+	mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"status": "active", "label": "new"}})
+	confirm := substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
+	_, err := ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm})
+	wantStaleRefusal(t, ds, err, held, "the confirmation is for another plan", "was written since the preview")
+}
+
+// A null step is lossy by itself, and its confirmation binds the records it
+// clears: a write to a widget that carries no value for the dropped property
+// leaves the confirmation standing, and a write to one that carries it (the
+// count unchanged) refuses it.
+func TestLossyNullConfirmationBindsTheRecordsItClears(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	if err := cvApply(t, ds, map[string]any{
+		"name": map[string]any{"type": "string"},
+		"mood": map[string]any{"type": "string"},
+	}); err != nil {
+		t.Fatalf("install the package: %v", err)
+	}
+	full := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"name": "a", "mood": "cheerful"}})
+	bare := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"name": "b"}})
+	docs := cvDocs(map[string]any{"name": map[string]any{"type": "string"}})
+	plan, err := ds.PlanVocabularyApply(ctx, owner, docs)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if !plan.Lossy || len(plan.Steps) != 1 || plan.Steps[0].Step != substrate.StepNull || plan.Steps[0].Records != 1 {
+		t.Fatalf("plan = %+v", plan)
+	}
+
+	// The record the null clears is written, its value changed and the count
+	// the same: refused.
+	full = mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, ID: full.ID, Properties: map[string]any{"name": "a", "mood": "grumpy"}})
+	confirm := substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
+	_, err = ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm})
+	wantStaleRefusal(t, ds, err, full, "the confirmation is for another plan", "was written since the preview")
+
+	// Previewed again, then a record the null does not clear is written: the
+	// confirmation stands and the value leaves the fold.
+	if plan, err = ds.PlanVocabularyApply(ctx, owner, docs); err != nil {
+		t.Fatalf("plan again: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, ID: bare.ID, Properties: map[string]any{"name": "b2"}})
+	confirm = substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
+	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm}); err != nil {
+		t.Fatalf("a write to a record the null does not clear must leave the confirmation standing: %v", err)
+	}
+	if got := mustGet(t, ds, cvWidget, full.ID); got.Properties["mood"] != nil {
+		t.Fatalf("the null did not land: %+v", got.Properties)
+	}
 }
 
 // A remap onto a value the declaration keeps collapses nothing while no live
@@ -618,7 +823,7 @@ func TestBackfillOfARenamedPropertyCountsUnderTheOldName(t *testing.T) {
 	}
 	other := substrate.ConversionConfirm{PlanHash: "0000", ChangelogSeq: plan.ChangelogSeq}
 	_, err = ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &other})
-	wantLossyRefusal(t, ds, err, a, "the confirmation is for another plan")
+	wantStaleRefusal(t, ds, err, a, "the confirmation is for another plan")
 	confirm := substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
 	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm}); err != nil {
 		t.Fatalf("the door must recount the plan the preview hashed: %v", err)

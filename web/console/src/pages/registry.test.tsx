@@ -1189,7 +1189,7 @@ describe("RegistryPage", () => {
           .length
       await waitFor(() => expect(catalogReads()).toBeGreaterThanOrEqual(2))
       expect(
-        within(lossDialog()).getByText(/Records changed since this plan/)
+        within(lossDialog()).getByText(/was written since it\s+was read/)
       ).toBeTruthy()
       await within(lossDialog()).findByText(
         /drops middleName on .*4 live records/,
@@ -1389,7 +1389,7 @@ describe("RegistryPage", () => {
         name: /Upgrade linear and remove values/,
       })
       expect(
-        within(next).queryByText(/Records changed since this plan/)
+        within(next).queryByText(/was written since it\s+was read/)
       ).toBeNull()
     })
 

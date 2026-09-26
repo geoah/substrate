@@ -220,8 +220,9 @@ function TakeButton({
       let landed: BundleStatus | undefined
       for (const bundle of plan.bundles) {
         // RE-READ THE PREVIEW, one bundle at a time. A confirmation names one
-        // plan at one changelog head, and the step before this one moved the
-        // head, so the token the list was read with is refused (engine
+        // plan, hashed over the records it rewrites and the declarations it
+        // converts, and the step before this one may have written either, so
+        // the token the list was read with can be refused (engine
         // convert.go). A fresh read is also the only way to see that this
         // step has BECOME lossy since the page loaded.
         let fresh: CatalogItem
@@ -514,11 +515,12 @@ function takeAgain(
 
 /** The consent to an upgrade that loses something (decisions 0067 and 0070),
  * rendered by the section for the row the reader clicked, so it outlives the
- * table's re-render. It reads the row's CURRENT preview: after a `409`
- * (records changed since the preview was read, so the server no longer counts
- * that plan) the catalog is read again, the dialog stays open, says so, and
- * its next click confirms the fresh `planHash` and `changelogSeq`, never the
- * stale pair again. */
+ * table's re-render. It reads the row's CURRENT preview: after a `409` (a
+ * record the plan rewrites or a declaration it converts changed since the
+ * preview was read, so the server no longer counts that plan) the catalog is
+ * read again, the dialog stays open, says so, and its next click confirms the
+ * fresh `planHash` and `changelogSeq`, never the stale pair again. Writes to
+ * other records do not refuse it. */
 function LossyUpgradeDialog({
   row,
   onClose,
@@ -555,10 +557,10 @@ function LossyUpgradeDialog({
       refetchBundleStateSoon(queryClient)
     },
     onError: (error) => {
-      // A 409 says records changed since the preview; a 403 `lossy` at the
-      // same head says the plan itself reads differently now (the server
-      // changed under the same records). Either way the consent named a
-      // plan the server no longer counts: read the preview again.
+      // A 409 says a record the plan rewrites or a declaration it converts
+      // changed since the preview, so the consent names a plan the server
+      // no longer counts; a 403 `lossy` says the confirmation was missing.
+      // Either way: read the preview again.
       if (
         error instanceof ApiError &&
         (error.status === 409 || error.code === "lossy")
@@ -617,13 +619,14 @@ function LossyUpgradeDialog({
                   } and removes some values from them. ` +
                   `The removed values stay in the changelog. `
                 : "") +
-              `This confirms exactly the plan below. If anything is written before it lands, the plan is read again.`}
+              `This confirms exactly the plan below. If a record or declaration it changes is written before it lands, the plan is read again.`}
           </DialogDescription>
         </DialogHeader>
         {stale && (
           <p role="status" className="text-sm text-warning">
-            Records changed since this plan was read, so the upgrade was
-            refused. Check the plan below and confirm it again.
+            A record or declaration this plan changes was written since it was
+            read, so the upgrade was refused. Check the plan below and confirm
+            it again.
           </p>
         )}
         <ul className="space-y-1 text-sm">

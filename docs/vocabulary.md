@@ -517,9 +517,15 @@ counts, is **lossy**
 without writing: every step with the live records it touches, `work`, `lossy`,
 a `planHash` and the `changelogSeq` it was counted at. The apply then takes
 `confirm: {planHash, changelogSeq}` beside `documents`; without it a lossy
-batch is refused with the `lossy` code, and a confirmation is refused after
-any write since the preview (`conflict`) or for a plan that recounts to
-another hash. A lossless plan (renames, backfills, state entries, remaps onto
+batch is refused with the `lossy` code. The hash covers the steps and their
+counts, the id and version of every record a step rewrites, and the stored
+declaration of every kind a step converts, so a confirmation is refused
+(`conflict`, preview again) when the plan recounts to another hash: another batch, or a write since the
+preview to a record the plan rewrites or to a declaration it converts. A write
+to any other record, the same kind's included, leaves it standing
+([decision 0105](decisions/0105-a-lossy-confirmation-binds-to-what-the-plan-affects.md)).
+The `changelogSeq` dates the preview, and one past the head is refused
+(`conflict`). A lossless plan (renames, backfills, state entries, remaps onto
 new values) runs unconfirmed. `substratectl apply --allow-data-loss` previews first,
 prints the steps and confirms exactly that hash; the console's Registry asks
 before a lossy upgrade. The boot upgrade of the shipped tree has nobody to

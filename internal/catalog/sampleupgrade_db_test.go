@@ -164,15 +164,15 @@ func TestSampleReimportOverAnEditedCopyNeedsTheConfirmationItPreviewed(t *testin
 		t.Fatal("the refused re-import dropped the edit")
 	}
 
-	// A confirmation for another head, or for another plan, is refused the
-	// way a lossy plan's is (decision 0067).
-	stale := &substrate.ConversionConfirm{PlanHash: up.PlanHash, ChangelogSeq: up.ChangelogSeq - 1}
-	if _, _, err := c.ImportConfirmed(ctx, substrate.ActorAPI, tasksSampleID, ds, stale); !errors.Is(err, substrate.ErrConflict) {
-		t.Errorf("a confirmation at another head: err = %v, want ErrConflict", err)
+	// A confirmation past the head, or for another plan, is refused the way
+	// a lossy plan's is (decision 0067, issue #641).
+	ahead := &substrate.ConversionConfirm{PlanHash: up.PlanHash, ChangelogSeq: up.ChangelogSeq + 1}
+	if _, _, err := c.ImportConfirmed(ctx, substrate.ActorAPI, tasksSampleID, ds, ahead); !errors.Is(err, substrate.ErrConflict) {
+		t.Errorf("a confirmation past the head: err = %v, want ErrConflict", err)
 	}
 	wrong := &substrate.ConversionConfirm{PlanHash: "cafe", ChangelogSeq: up.ChangelogSeq}
-	if _, _, err := c.ImportConfirmed(ctx, substrate.ActorAPI, tasksSampleID, ds, wrong); !errors.Is(err, substrate.ErrLossyConversion) {
-		t.Errorf("a confirmation for another plan: err = %v, want ErrLossyConversion", err)
+	if _, _, err := c.ImportConfirmed(ctx, substrate.ActorAPI, tasksSampleID, ds, wrong); !errors.Is(err, substrate.ErrConflict) {
+		t.Errorf("a confirmation for another plan: err = %v, want ErrConflict", err)
 	}
 
 	// The confirmation the preview handed out lands the re-import, and the
@@ -218,7 +218,8 @@ func TestSampleReimportOverAnEditedCopyNeedsTheConfirmationItPreviewed(t *testin
 	if up.From != b.Version || up.To != movedVersion {
 		t.Errorf("motion reads %d -> %d, want %d -> %d (from the version the copy was taken at)", up.From, up.To, b.Version, movedVersion)
 	}
-	// An edit after the preview refuses the confirmation: the head moved.
+	// An edit after the preview refuses the confirmation: the edited state
+	// the hash binds moved.
 	editKind(t, ds, homeAuthority+"/tasks/task", "later")
 	confirm = &substrate.ConversionConfirm{PlanHash: up.PlanHash, ChangelogSeq: up.ChangelogSeq}
 	if _, _, err := moved.ImportConfirmed(ctx, substrate.ActorAPI, tasksSampleID, ds, confirm); !errors.Is(err, substrate.ErrConflict) {

@@ -85,7 +85,9 @@ records still carry, an enum value renamed onto one the declaration keeps) is
 refused until it is confirmed. --allow-data-loss previews the plan first
 (` + "`POST /api/v1/vocabulary/plan`" + `), prints the steps that remove
 values with the records each touches, and confirms exactly that plan: a write
-that lands in between, or a plan that reads differently, is refused again.
+in between to a record the plan rewrites or a declaration it converts, or a
+plan that reads differently, is refused again. Writes elsewhere do not refuse
+it.
 The removed values stay in the changelog.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
