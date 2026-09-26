@@ -16,6 +16,7 @@ import { CollectionCard } from "@/components/home/collection-card"
 import { OverviewCards } from "@/components/home/overview-cards"
 import { DocPage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
+import { ProviderBadge } from "@/components/identity/provider-badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useEverydayChanges, useHistoryFeed } from "@/hooks/use-history-feed"
@@ -24,9 +25,10 @@ import { recordCountQueryOptions } from "@/lib/api/records"
 import { repositoryQueryOptions } from "@/lib/api/repository"
 import { getRepository } from "@/lib/api/session"
 import { collectionGroups } from "@/lib/collections"
+import { homeSections } from "@/lib/home-summary"
 
 /** The collections Home shows before "All data" takes over: yours first,
- * then what providers bring in. */
+ * then what providers bring in, each group under its own heading. */
 const SHOWN_COLLECTIONS = 9
 const SHOWN_YOURS = 6
 /** The newest changes Home shows, as folded sentences, and the rows read to
@@ -79,19 +81,15 @@ export function HomePage() {
       recordCountQueryOptions(k.authority, k.package, k.name)
     ),
   })
-  const held = (i: number) => ((counts[i]?.data?.value ?? 0) > 0 ? 0 : 1)
-  const yours = yourKinds
-    .map((k, i) => ({ k, i }))
-    .sort((a, b) => held(a.i) - held(b.i) || a.i - b.i)
-    .map(({ k }) => k)
-  const provided = (groups ?? [])
-    .filter((g) => g.type === "provider")
-    .flatMap((g) => g.primary)
-  const shownYours = yours.slice(
-    0,
-    Math.max(SHOWN_YOURS, SHOWN_COLLECTIONS - provided.length)
+  const heldBy = new Map(
+    yourKinds.map((k, i) => [k.identity, (counts[i]?.data?.value ?? 0) > 0])
   )
-  const collections = [...shownYours, ...provided].slice(0, SHOWN_COLLECTIONS)
+  const sections = homeSections(
+    groups ?? [],
+    (k) => heldBy.get(k.identity) ?? false,
+    SHOWN_COLLECTIONS,
+    SHOWN_YOURS
+  )
   const keep = useEverydayChanges()
   const recent = useHistoryFeed(
     {},
@@ -138,16 +136,30 @@ export function HomePage() {
               Try again
             </button>
           </p>
-        ) : collections.length === 0 ? (
+        ) : sections.length === 0 ? (
           <p className="text-muted-foreground">
             Nothing here yet. Add a collection from{" "}
             <Link to="/data">All data</Link>, or a provider from{" "}
             <Link to="/providers">Providers</Link>.
           </p>
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2.5">
-            {collections.slice(0, SHOWN_COLLECTIONS).map((k) => (
-              <CollectionCard key={k.identity} kind={k} />
+          <div className="flex flex-col gap-4">
+            {sections.map((section) => (
+              <section key={section.id} aria-label={section.label}>
+                {sections.length > 1 && (
+                  <h3 className="mb-2 flex items-center gap-1.5 text-[12.5px] font-semibold text-muted-foreground">
+                    {section.provider && (
+                      <ProviderBadge provider={section.provider} size="xs" />
+                    )}
+                    {section.label}
+                  </h3>
+                )}
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2.5">
+                  {section.kinds.map((k) => (
+                    <CollectionCard key={k.identity} kind={k} />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         )}
