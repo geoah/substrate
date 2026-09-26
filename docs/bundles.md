@@ -632,6 +632,11 @@ envelope, each flagged `installed` for this repository;
 unknown id is a 404 `not_found`. The id is a package identity, so it carries a
 `/` and a URL percent-encodes it once:
 `…/catalog/samples.substrate.reamde.dev%2Ftasks`.
+The closure names every kind, trait, function, agent, mapping and shipped
+record, each declaration's description beside it, and in `kindPurposes` each
+kind's declared [`purpose`](decisions/0104-a-kind-declares-its-purpose.md)
+(absent where the kind declares none, which reads as `primary`), so a client
+can tell a sample's collections from its machinery before taking it.
 
 ### The two doors
 

@@ -3,20 +3,14 @@
  * packages it needs first; only samples that add a collection, see
  * `collectionSamples`), or declare the kind yourself in YAML. */
 
-import { useMemo, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
-import {
-  BotIcon,
-  CheckIcon,
-  CodeIcon,
-  LayersIcon,
-  type LucideIcon,
-} from "lucide-react"
+import { BotIcon, CodeIcon, LayersIcon, type LucideIcon } from "lucide-react"
 
 import { CopyButton } from "@/components/identity/copy-button"
 import { KindGlyph } from "@/components/identity/kind-glyph"
-import { TakeButton } from "@/components/providers/bundle-actions"
+import { SampleList } from "@/components/samples/sample-list"
+import { collectionSamples } from "@/components/samples/sample-picks"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -25,26 +19,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
-import { bundleStatusesQueryOptions } from "@/lib/api/bundles"
-import { catalogQueryOptions } from "@/lib/api/catalog"
-import { kindsQueryOptions } from "@/lib/api/kinds"
-import { repositoryQueryOptions } from "@/lib/api/repository"
-import { getRepository } from "@/lib/api/session"
-import {
-  heldVersions,
-  mergeBundles,
-  missingChain,
-  presentPackages,
-  requirementTree,
-  type RequirementNode,
-} from "@/lib/bundles"
-import { joinWords } from "@/lib/agent-chat"
 import type { KindInfo } from "@/lib/api/types"
+import type { BundleRow } from "@/lib/bundles"
 import { cn } from "@/lib/utils"
-import { displayPlural, packageDisplayName } from "@/lib/kind-names"
-import { collectionSamples, type SampleCollection } from "./sample-collections"
+import { displayPlural } from "@/lib/kind-names"
 
 // eslint-disable-next-line react-refresh/only-export-components -- the URL's word for each way, shared with the page that opens it
 export const ADD_WAYS = ["agent", "sample", "yaml"] as const
@@ -166,126 +145,26 @@ function AskAnAgent({ onDone }: { onDone: () => void }) {
   )
 }
 
-function Samples() {
-  const statuses = useQuery(bundleStatusesQueryOptions)
-  const catalog = useQuery(catalogQueryOptions)
-  const repository = useQuery(repositoryQueryOptions)
-  const registry = useQuery(kindsQueryOptions)
-  const home = repository.data?.authority ?? getRepository() ?? ""
-
-  const rows = useMemo(
-    () => mergeBundles(statuses.data ?? [], catalog.data ?? [], home),
-    [statuses.data, catalog.data, home]
-  )
-  const chains = useMemo(() => {
-    const present = presentPackages(rows, registry.data ?? [])
-    const versions = heldVersions(rows)
-    const byId = new Map(rows.map((row) => [row.id, row]))
-    return new Map(
-      rows.map((row) => [row.id, requirementTree(row, byId, present, versions)])
-    )
-  }, [rows, registry.data])
-  const samples = useMemo(
-    () => collectionSamples(rows, registry.data ?? []),
-    [rows, registry.data]
-  )
-
-  if (catalog.isPending || statuses.isPending || registry.isPending) {
-    return (
-      <div className="flex flex-col gap-2">
-        {Array.from({ length: 4 }, (_, i) => (
-          <Skeleton key={i} className="h-12 w-full" />
-        ))}
-      </div>
-    )
-  }
-  if (catalog.isError) {
-    return (
-      <p className="text-muted-foreground">
-        The samples didn’t load: {catalog.error.message}
-      </p>
-    )
-  }
-  if (!samples.length) {
-    return (
-      <p className="text-muted-foreground">
-        There are no sample collections to add.
-      </p>
-    )
-  }
-  return (
-    <ul className="max-h-80 overflow-y-auto rounded-[10px] border border-border">
-      {samples.map((sample) => (
-        <SampleRow
-          key={sample.row.id}
-          sample={sample}
-          registry={registry.data ?? []}
-          chain={chains.get(sample.row.id) ?? []}
-        />
-      ))}
-    </ul>
-  )
+function pickCollections(rows: BundleRow[], registry: KindInfo[]) {
+  return collectionSamples(rows, registry)
 }
 
-/** A sample by what it adds: the collections that will show up, each with
- * its glyph. An added one says so; updating it is the package page's job. */
-function SampleRow({
-  sample: { row, kinds },
-  registry,
-  chain,
-}: {
-  sample: SampleCollection
-  registry: readonly KindInfo[]
-  chain: RequirementNode[]
-}) {
-  const missing = missingChain(chain)
-  const name = packageDisplayName(row.name)
-  const shown = kinds.map(
-    (k) => registry.find((entry) => entry.identity === k) ?? k
-  )
+/** A sample by the collections that will show up, each with its glyph. */
+function Samples() {
   return (
-    <li className="border-b border-border px-3.5 py-3 last:border-b-0">
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="font-medium">{name}</div>
-          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-muted-foreground">
-            {shown.map((k) => (
-              <span
-                key={typeof k === "string" ? k : k.identity}
-                className="inline-flex items-center gap-1.5"
-              >
-                <KindGlyph kind={k} size="xs" />
-                {displayPlural(k)}
-              </span>
-            ))}
-          </p>
-          {!row.installed && missing.length > 0 && (
-            <p className="mt-1 text-[12.5px] text-faint">
-              Adds{" "}
-              {joinWords(
-                missing.map((m) => packageDisplayName(m.row?.name ?? m.package))
-              )}{" "}
-              first, which it needs.
-            </p>
-          )}
-        </div>
-        {row.installed ? (
-          <span className="inline-flex shrink-0 items-center gap-1 pt-0.5 text-[12.5px] text-ok">
-            <CheckIcon className="size-3.5" />
-            Added
-          </span>
-        ) : (
-          // The providers' own door: the whole missing chain lands first.
-          <TakeButton
-            row={row}
-            chain={chain}
-            name={name}
-            label="Add"
-            variant="default"
-          />
-        )}
-      </div>
-    </li>
+    <SampleList
+      pick={pickCollections}
+      empty="There are no sample collections to add."
+      member={(k, registry) => {
+        const held = registry.find((entry) => entry.identity === k) ?? k
+        return (
+          <>
+            <KindGlyph kind={held} size="xs" />
+            {displayPlural(held)}
+          </>
+        )
+      }}
+    />
   )
 }
 

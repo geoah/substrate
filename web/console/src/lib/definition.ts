@@ -27,16 +27,25 @@ export type KindPurpose = "primary" | "supporting" | "internal"
 
 const PURPOSES: readonly KindPurpose[] = ["primary", "supporting", "internal"]
 
-/** The declaration's `purpose`, absent reading `primary`. Every kind the
- * substrate's own authority publishes is machinery whatever it declares. */
-export function kindPurpose(k: KindInfo | string): KindPurpose {
+/** The declaration's `purpose`, absent reading `primary`. `shipped` is the
+ * purpose the catalog says the shipped declaration carries: it stands in for
+ * a kind not held here, and for one held from a copy taken before it declared
+ * any. Every kind the substrate's own authority publishes is machinery
+ * whatever it declares. */
+export function kindPurpose(
+  k: KindInfo | string,
+  shipped?: string
+): KindPurpose {
   const authority = typeof k === "string" ? splitKind(k).authority : k.authority
   if (authority === CORE_AUTHORITY) return "internal"
-  if (typeof k === "string") return "primary"
-  const declared = k.definition?.purpose
-  return PURPOSES.includes(declared as KindPurpose)
-    ? (declared as KindPurpose)
-    : "primary"
+  const declared = typeof k === "string" ? undefined : k.definition?.purpose
+  return asPurpose(declared) ?? asPurpose(shipped) ?? "primary"
+}
+
+function asPurpose(value: unknown): KindPurpose | undefined {
+  return PURPOSES.includes(value as KindPurpose)
+    ? (value as KindPurpose)
+    : undefined
 }
 
 export interface DeclaredProperty {

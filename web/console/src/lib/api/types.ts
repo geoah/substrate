@@ -679,6 +679,10 @@ export interface BundleClosure {
    * kinds ARE before an install has put them in the registry. Absent for a
    * kind that declares none, and from an older server whole. */
   kindDescriptions?: Record<string, string>
+  /** Each kind's declared `purpose` (decision record 0104), keyed the same
+   * way. Absent for a kind that declares none, which reads as primary, and
+   * from an older server whole. */
+  kindPurposes?: Record<string, string>
   /** The contracts the closure declares, and what each one is. A package can
    * ship traits and nothing else, so these are the whole of what it adds. */
   traits: string[] | null

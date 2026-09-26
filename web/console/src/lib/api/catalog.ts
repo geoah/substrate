@@ -151,6 +151,7 @@ export function landedCatalog(item: CatalogItem, home: string): CatalogItem {
       triggers: closure.triggers ?? null,
       triggerCallables: rekey(closure.triggerCallables, (k) => k, rehome),
       kindDescriptions: rekey(closure.kindDescriptions, rehome),
+      kindPurposes: rekey(closure.kindPurposes, rehome),
       traitDescriptions: rekey(closure.traitDescriptions, rehome),
       functionDescriptions: rekey(closure.functionDescriptions, rehome),
       agentDescriptions: rekey(closure.agentDescriptions, rehome),

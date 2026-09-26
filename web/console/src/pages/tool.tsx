@@ -29,6 +29,7 @@ import {
 } from "lucide-react"
 import { Fragment, useState, type ReactNode } from "react"
 
+import { AgentRef } from "@/components/agent/agent-ref"
 import { CodeBlock } from "@/components/code-block"
 import { ActorRef } from "@/components/identity/actor-ref"
 import { IdText } from "@/components/identity/id-text"
@@ -334,14 +335,12 @@ function ToolDoc({
         <Section title="Used by">
           <div className="flex flex-wrap gap-2">
             {[...new Set(tool.uses.map((u) => u.agent))].map((agent) => (
-              <Link
+              <AgentRef
                 key={agent}
-                to="/agents/$id"
-                params={{ id: agent }}
-                className="inline-flex items-center rounded-full border px-2.5 py-1 text-[13px] no-underline hover:border-border-strong hover:bg-panel"
-              >
-                <ActorRef actor={agentActor(agent)} link={false} />
-              </Link>
+                id={agent}
+                link
+                className="rounded-full border px-2.5 py-1 text-[13px] hover:border-border-strong hover:bg-panel"
+              />
             ))}
           </div>
         </Section>

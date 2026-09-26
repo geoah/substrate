@@ -154,7 +154,7 @@ export function actorIdentity(actor: string): ActorIdentity {
     return {
       actor,
       cls: "bundle",
-      name: provider ? provider.name : `${pkg} bundle`,
+      name: provider ? provider.name : packageDisplayName(pkg),
       provider,
       description: provider
         ? "A provider you added."
