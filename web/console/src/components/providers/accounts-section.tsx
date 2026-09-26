@@ -221,6 +221,7 @@ function AccountRow({
               />
               <PauseButton
                 record={account.record}
+                name={account.label}
                 paused={account.sync.paused}
               />
             </>

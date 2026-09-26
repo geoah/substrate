@@ -11,6 +11,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -307,6 +308,27 @@ describe("ToolPage", () => {
     expect(await screen.findByText("It hasn’t run yet.")).toBeTruthy()
     // The declaration is technical: no source in everyday mode.
     expect(screen.queryByText(/def main/)).toBeNull()
+  })
+
+  it("pauses only after asking, then turns every trigger off", async () => {
+    renderAt(GCAL)
+    await screen.findByRole("heading", { name: "Google Calendar sync" })
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(dialog.textContent).toContain("Pause Google Calendar sync?")
+    expect(dialog.textContent).toContain("won’t run on its own")
+    const patches = () =>
+      fetchMock.mock.calls.filter(
+        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+      )
+    expect(patches()).toHaveLength(0)
+    fireEvent.click(within(dialog).getByRole("button", { name: "Pause" }))
+    await waitFor(() => expect(patches().length).toBeGreaterThan(0))
+    for (const [, init] of patches()) {
+      expect(JSON.parse((init as RequestInit).body as string)).toMatchObject({
+        properties: { enabled: false },
+      })
+    }
   })
 
   it("lists the runs a trigger recorded, newest first, in words", async () => {

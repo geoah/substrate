@@ -43,6 +43,7 @@ import {
   type ToolsModel,
 } from "@/components/tools/use-tools"
 import { Button } from "@/components/ui/button"
+import { PauseDialog } from "@/components/ui/confirm-dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "@/components/ui/toast"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
@@ -158,11 +159,13 @@ function ToolDoc({
     void queryClient.invalidateQueries({ queryKey: ["sync"] })
   }
 
+  const [pausing, setPausing] = useState(false)
   const pause = useMutation({
     mutationFn: async (enabled: boolean) => {
       for (const t of tool.triggers) await setTriggerEnabled(t.id, enabled)
     },
     onSuccess: (_, enabled) => {
+      setPausing(false)
       refresh()
       toast.add({
         type: "success",
@@ -171,12 +174,14 @@ function ToolDoc({
           : `${toolName(tool)} is paused.`,
       })
     },
-    onError: (err) =>
+    onError: (err) => {
+      setPausing(false)
       toast.add({
         type: "error",
         title: "Couldn’t change it.",
         description: (err as Error).message,
-      }),
+      })
+    },
   })
 
   const syncNow = useMutation({
@@ -206,7 +211,7 @@ function ToolDoc({
           variant="outline"
           size="sm"
           disabled={pause.isPending}
-          onClick={() => pause.mutate(paused)}
+          onClick={() => (paused ? pause.mutate(true) : setPausing(true))}
         >
           {paused ? (
             <Play className="size-3.5" />
@@ -215,6 +220,14 @@ function ToolDoc({
           )}
           {paused ? "Resume" : "Pause"}
         </Button>
+        {pausing && (
+          <PauseDialog
+            name={toolName(tool)}
+            pending={pause.isPending}
+            onConfirm={() => pause.mutate(false)}
+            onClose={() => setPausing(false)}
+          />
+        )}
         {sync && (
           <Button
             size="sm"
