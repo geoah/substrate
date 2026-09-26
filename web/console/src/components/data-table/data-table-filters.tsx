@@ -16,6 +16,7 @@
 import { useState } from "react"
 import { ListFilterIcon, XIcon } from "lucide-react"
 
+import { EnumTag } from "@/components/identity/enum-tag"
 import { StateBadge } from "@/components/identity/state-badge"
 import { Button } from "@/components/ui/button"
 import { ChoiceList, type ChoiceOption } from "@/components/ui/choice-list"
@@ -54,7 +55,6 @@ import {
   type DeclaredProperty,
 } from "@/lib/definition"
 import { cn } from "@/lib/utils"
-import { EnumTag } from "./enum-tag"
 import { propertyIcon } from "./property-icon"
 import { ReferenceFilterLabel, ReferencePicker } from "./reference-picker"
 

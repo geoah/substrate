@@ -21,7 +21,7 @@ import {
 
 import type { DataTableColumn } from "@/components/data-table/data-table"
 import { GridColumnHeader } from "@/components/data-table/data-grid-header"
-import { EnumTag } from "@/components/data-table/enum-tag"
+import { EnumTag } from "@/components/identity/enum-tag"
 import { propertyIcon } from "@/components/data-table/property-icon"
 import {
   INDENT_PX,

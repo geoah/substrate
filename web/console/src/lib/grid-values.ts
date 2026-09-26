@@ -43,7 +43,10 @@ function capitalise(text: string): string {
 
 /** An enum value's words: its authored label, else the value split like a
  * key ("publicfigure" stays one word; `inProgress` → "In progress"). */
-export function enumLabel(prop: DeclaredProperty, value: string): string {
+export function enumLabel(
+  prop: Pick<DeclaredProperty, "values">,
+  value: string
+): string {
   const authored = prop.values?.find((v) => v.value === value)?.label
   return authored || propertyLabel(value)
 }
