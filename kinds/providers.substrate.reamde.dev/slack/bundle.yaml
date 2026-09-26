@@ -116,7 +116,12 @@ data:
   #
   # 9, #675: `user` is labelled Members, `conversation` Channels and
   # `conversationsync` Sync progress (decision 0117). Display text only.
-  version: 9
+  #
+  # 10: the on-demand trigger fires while `syncRequestedAt` differs from
+  # `syncRequestedAck`. Its `syncRequestedAt > lastSyncedAt` guard compared
+  # the two instants as strings and dropped a request stamped in the same
+  # second as the last run.
+  version: 10
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the

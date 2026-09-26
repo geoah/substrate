@@ -355,12 +355,15 @@ def account_row():
 
 
 def resync(label, timeout=240):
-    """Ask for a sync now — the same `syncRequestedAt` door the console's
-    button uses — and wait for the account's own stamp to move past it."""
+    """Ask for a sync now (the same `syncRequestedAt` door the console's
+    button uses) and wait for the run that serves it.
+
+    SERVED is `syncRequestedAck` equal to the request, and the stamp moved.
+    `lastSyncedAt > before` compared two instants as strings, which gets the
+    order wrong inside one second, and the whole-second request this used to
+    send was one generation with any other request in that second."""
     before = props(account_row()).get("lastSyncedAt") or ""
-    stamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + ".000000Z"
-    st, body = api("PATCH", "/api/v1/%s/%s" % (ACCOUNT_KIND, ACCOUNT_ID),
-                   {"properties": {"syncRequestedAt": stamp}})
+    st, body = request_sync()
     if st >= 400:
         problems.append((_section, "%s: syncRequestedAt refused: HTTP %s %s"
                          % (label, st, json.dumps(body)[:200])))
@@ -370,8 +373,9 @@ def resync(label, timeout=240):
         time.sleep(4)
         p = props(account_row())
         after = p.get("lastSyncedAt") or ""
-        if after and after > before and not str(p.get("syncStatus") or "") \
-                .startswith("erroring"):
+        served = p.get("syncRequestedAck") == p.get("syncRequestedAt")
+        if after and after != before and served and p.get("syncState") != "running" \
+                and not str(p.get("syncStatus") or "").startswith("erroring"):
             if "pending" not in str(p.get("syncStatus") or ""):
                 note("%s: %s" % (label, p.get("syncStatus")))
                 return True
@@ -396,13 +400,13 @@ def faults(rules):
 
 
 def request_sync():
-    """Stamp `syncRequestedAt` and return it — the same door the console's
-    Sync now button uses. SUB-SECOND, because the on-demand guard is
-    `syncRequestedAt > lastSyncedAt` and the body stamps sub-second too."""
+    """Stamp `syncRequestedAt`, the same door the console's Sync now button
+    uses, and return the PATCH's status and body. SUB-SECOND, so two requests
+    inside one second are two requests: the on-demand guard fires while
+    `syncRequestedAt` differs from `syncRequestedAck`."""
     stamp = _dt.datetime.now(_dt.timezone.utc).isoformat()
-    api("PATCH", "/api/v1/%s/%s" % (ACCOUNT_KIND, ACCOUNT_ID),
-        {"properties": {"syncRequestedAt": stamp}})
-    return stamp
+    return api("PATCH", "/api/v1/%s/%s" % (ACCOUNT_KIND, ACCOUNT_ID),
+               {"properties": {"syncRequestedAt": stamp}})
 
 
 def wait_for_state(want, seconds=120):

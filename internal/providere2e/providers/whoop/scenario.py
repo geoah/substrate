@@ -200,7 +200,9 @@ def force_sync(api, kind, aid, timeout=300):
     deadline = time.time() + timeout
     while time.time() < deadline:
         p = account(api, kind, aid)
-        if (p.get("lastSyncedAt") or "") > before:
+        # MOVED, not "greater": instants compared as strings misorder inside
+        # one second, and nothing but a new run moves the stamp.
+        if (p.get("lastSyncedAt") or "") != before:
             return p
         time.sleep(2)
     raise SystemExit("the requested sync never stamped the account (last: %s)"

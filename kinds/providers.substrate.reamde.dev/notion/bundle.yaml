@@ -108,7 +108,12 @@ data:
   #
   # 14, #675: `pagesync` is labelled Sync progress (decision 0117). Display
   # text only.
-  version: 14
+  #
+  # 15: the on-request trigger fires while `syncRequestedAt` differs from
+  # `syncRequestedAck`. Its `syncRequestedAt > lastSyncedAt` guard compared
+  # the two instants as strings and could drop a request stamped in the same
+  # second as the last run.
+  version: 15
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -2215,9 +2220,10 @@ data:
 
 
     def _now():
-        # SUB-SECOND, deliberately. A whole-second stamp is not greater than a
-        # `syncRequestedAt` landing in the same second, and the on-request guard
-        # closes for good (`docs/provider-practices.md` §4).
+        # SUB-SECOND, so two runs inside one second stamp distinct instants. The
+        # stamp no longer gates Sync now: the on-request guard compares
+        # `syncRequestedAt` with `syncRequestedAck` (triggers.yaml), because a
+        # string comparison against `lastSyncedAt` dropped same-second requests.
         return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
