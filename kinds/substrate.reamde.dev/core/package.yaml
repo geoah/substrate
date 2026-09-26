@@ -5,7 +5,7 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  version: 19
+  version: 20
   description: >-
     One package whose kinds this repository holds: the group a declaration
     is versioned, owned and quarantined in. The row says who may write under
@@ -64,6 +64,15 @@ data:
       managed: true
       description: builtin for seeded packages, published for an installed
         provider, installed for the rest
+    # Who declared the package (decision record 0106): the actor of the
+    # transaction that CREATED the row, stamped by the engine and never by a
+    # document. A later apply, upgrade or re-import leaves it in place, so it
+    # names the first declarer. Absent on a package created before the stamp.
+    declaredBy:
+      type: string
+      managed: true
+      description: the actor that first declared this package, stamped by
+        the engine when the row is created
     # Issue 010 runtime state, owned by repository-open: set when a stored
     # closure no longer admits under the current binary — the package is left
     # out of the live registry and the repository opens without it. Re-applying
