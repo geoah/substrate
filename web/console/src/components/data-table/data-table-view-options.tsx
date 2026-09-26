@@ -4,8 +4,10 @@
  * localStorage. Reordering is explicit up/down (keyboard-honest, no drag
  * machinery); Reset returns the surface's own defaults and clears the store. */
 
+import { useState } from "react"
 import {
   ChevronDownIcon,
+  ChevronRightIcon,
   ChevronUpIcon,
   Columns3Icon,
   Settings2Icon,
@@ -43,6 +45,14 @@ export function DataTableViewOptions<TData extends RowData>({
   const naturalIds = table.options.meta?.naturalIds ?? order
   const defaultHidden = table.options.meta?.defaultHidden ?? []
   const emptyHidden = table.options.meta?.emptyHidden ?? []
+  // The columns with nothing in them wait under one disclosure at the end,
+  // so the list leads with the ones that hold something.
+  const listed = columns.filter((c) => !emptyHidden.includes(c.id))
+  const empties = columns.filter((c) => emptyHidden.includes(c.id))
+  const [showEmpties, setShowEmpties] = useState(false)
+  const hiddenCount = columns.filter(
+    (c) => c.getCanHide() && !c.getIsVisible()
+  ).length
   const dirty =
     order.some((id, i) => id !== naturalIds[i]) ||
     columns.some(
@@ -82,13 +92,18 @@ export function DataTableViewOptions<TData extends RowData>({
           <Button
             variant={compact || toolbar ? "ghost" : "outline"}
             size="sm"
-            aria-label="Configure columns"
+            aria-label={
+              hiddenCount
+                ? `Configure columns, ${hiddenCount} hidden`
+                : "Configure columns"
+            }
             title="Columns"
             className={cn(
               "h-8 gap-1.5 font-normal",
               compact || toolbar
-                ? "w-8 px-0 text-muted-foreground"
-                : "text-muted-foreground"
+                ? "min-w-8 px-0 text-muted-foreground"
+                : "text-muted-foreground",
+              toolbar && hiddenCount > 0 && "px-2"
             )}
           />
         }
@@ -99,13 +114,21 @@ export function DataTableViewOptions<TData extends RowData>({
           <Settings2Icon className="size-3.5" />
         )}
         {!compact && !toolbar && "Columns"}
+        {toolbar && hiddenCount > 0 && (
+          <span
+            data-slot="hidden-count"
+            className="rounded-full bg-hover px-1.5 text-[11.5px] leading-[18px] tabular-nums"
+          >
+            {hiddenCount} hidden
+          </span>
+        )}
       </PopoverTrigger>
       <PopoverContent align="end" className="w-56 p-1">
         <div className="flex flex-col">
           <span className="px-2 pt-1 pb-1.5 text-xs text-muted-foreground">
             Show, hide and reorder columns
           </span>
-          {columns.map((column, i) => {
+          {listed.map((column, i) => {
             const visible = column.getIsVisible()
             const label = column.columnDef.meta?.label ?? column.id
             return (
@@ -122,9 +145,6 @@ export function DataTableViewOptions<TData extends RowData>({
                     onChange={(e) => column.toggleVisibility(e.target.checked)}
                   />
                   <span className="truncate">{label}</span>
-                  {emptyHidden.includes(column.id) && (
-                    <span className="shrink-0 text-xs text-faint">empty</span>
-                  )}
                 </label>
                 <span className="flex shrink-0 items-center">
                   <button
@@ -139,7 +159,7 @@ export function DataTableViewOptions<TData extends RowData>({
                   <button
                     type="button"
                     aria-label={`Move ${label} down`}
-                    disabled={i === columns.length - 1}
+                    disabled={i === listed.length - 1}
                     className="cursor-pointer rounded-sm p-0.5 text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
                     onClick={() => move(column.id, 1)}
                   >
@@ -149,17 +169,55 @@ export function DataTableViewOptions<TData extends RowData>({
               </div>
             )
           })}
-          {emptyHidden.length > 0 && table.options.meta?.showEmptyColumns && (
+          {empties.length > 0 && (
             <>
               <div className="mx-1 my-1 border-b" />
               <button
                 type="button"
-                className="cursor-pointer rounded-sm px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                onClick={table.options.meta.showEmptyColumns}
+                aria-expanded={showEmpties}
+                className="flex h-7 cursor-pointer items-center gap-1.5 rounded-sm px-2 text-left text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                onClick={() => setShowEmpties((v) => !v)}
               >
-                Show {emptyHidden.length} empty{" "}
-                {emptyHidden.length === 1 ? "column" : "columns"}
+                {showEmpties ? (
+                  <ChevronDownIcon aria-hidden className="size-3.5" />
+                ) : (
+                  <ChevronRightIcon aria-hidden className="size-3.5" />
+                )}
+                {empties.length} empty
               </button>
+              {showEmpties && (
+                <div role="group" aria-label="Empty columns">
+                  {empties.map((column) => {
+                    const label = column.columnDef.meta?.label ?? column.id
+                    return (
+                      <label
+                        key={column.id}
+                        className="flex h-7 cursor-pointer items-center gap-2 rounded-sm px-2 text-sm text-muted-foreground hover:bg-muted/50"
+                      >
+                        <input
+                          type="checkbox"
+                          className="accent-primary"
+                          checked={false}
+                          onChange={(e) =>
+                            column.toggleVisibility(e.target.checked)
+                          }
+                        />
+                        <span className="truncate">{label}</span>
+                      </label>
+                    )
+                  })}
+                  {empties.length > 1 &&
+                    table.options.meta?.showEmptyColumns && (
+                      <button
+                        type="button"
+                        className="cursor-pointer rounded-sm px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                        onClick={table.options.meta.showEmptyColumns}
+                      >
+                        Show all {empties.length}
+                      </button>
+                    )}
+                </div>
+              )}
             </>
           )}
           {dirty && (
