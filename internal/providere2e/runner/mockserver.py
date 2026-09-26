@@ -94,7 +94,9 @@ INTROSPECTION
 
     GET /__mock/requests      every request served, with the file it hit —
                               a scenario asserts the sync's query windows
-                              against this instead of guessing
+                              against this instead of guessing. A request
+                              that carried a body logs it under `body`, as
+                              text, so a scenario asserts what a write sent
     GET /__mock/recordings    what is on disk
     GET /__mock/misses        the 404s, i.e. the recordings still to capture
     DELETE /__mock/requests   reset the log between phases of a scenario
@@ -292,6 +294,18 @@ MATCH_WORDS = ["exact", "~relaxed", "~fallback", "~relaxed+fallback", "~no-query
 # ------------------------------------------------------------------ the server
 
 
+BODY_LOG_MAX = 4096
+
+
+def _logged_body(body: bytes) -> dict:
+    """The request body as the log keeps it: text, capped, and absent when
+    the request carried none. A recording's name already says which body it
+    answered only as a hash; the log is where a scenario reads what was sent."""
+    if not body:
+        return {}
+    return {"body": body[:BODY_LOG_MAX].decode("utf-8", "replace")}
+
+
 def _rule_matches(rule: dict, method: str, path: str, query: str,
                   body: bytes) -> bool:
     """`"<METHOD> <glob>"` or `"<glob>"` against the path, plus an optional
@@ -467,6 +481,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.mock.requests.append({
                     "method": self.command, "path": path, "query": query,
                     "match": "fault", "status": status, "rule": rule,
+                    **_logged_body(body),
                 })
             self.note("fault", rule, status)
             return self.respond(status, out, headers)
@@ -493,12 +508,14 @@ class Handler(BaseHTTPRequestHandler):
                     "method": self.command, "path": path, "query": query,
                     "file": name, "match": verdict, "status": status,
                     "auth": (self.headers.get("Authorization") or "")[:24],
+                    **_logged_body(body),
                 })
             self.note(verdict, name, status)
             return self.respond(status, out, headers)
 
         miss = {"method": self.command, "path": path, "query": query,
-                "looked_for": names, "dir": str(self.mock.dir)}
+                "looked_for": names, "dir": str(self.mock.dir),
+                **_logged_body(body)}
         with self.mock.lock:
             self.mock.misses.append(miss)
             self.mock.requests.append({**miss, "match": "miss", "status": 404})
