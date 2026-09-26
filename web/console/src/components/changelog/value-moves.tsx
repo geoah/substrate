@@ -1,5 +1,6 @@
 /** A change's values in words: "Priority: High → Urgent", "Density: set to
- * Comfortable", "Emails: added grace@example.com", "Notes: cleared". Each
+ * Comfortable", "Emails: added grace@example.com", "Notes: cleared",
+ * "Display label: renamed from Label". Each
  * value renders as the property sheet renders it (a reference its RecordRef,
  * a state its StateBadge, an enum its label, a date the day a person would
  * say), long text cut to one line with the whole of it in the hover.
@@ -14,6 +15,7 @@ import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import {
   isBlank,
   readerMoves,
+  same,
   shortText,
   type ValueMove,
 } from "@/lib/change-values"
@@ -115,8 +117,18 @@ function Items({
 function Move({ move, spec }: { move: ValueMove; spec?: PropSpec }) {
   const [technical] = useTechnicalDetails()
   const label = technical ? move.name : (spec?.label ?? humanizeName(move.name))
+  const renamed = move.renamedFrom !== undefined && (
+    <>
+      <Word>renamed from</Word>
+      <span className={cn(technical && "font-mono text-[11.5px]")}>
+        {technical ? move.renamedFrom : humanizeName(move.renamedFrom!)}
+      </span>
+    </>
+  )
   let body: ReactNode
-  if (move.replaced) {
+  if (renamed && !move.beforeUnknown && same(move.before, move.after)) {
+    body = null
+  } else if (move.replaced) {
     body = <Word>replaced</Word>
   } else if (move.changedBack) {
     body = <Word>changed and changed back</Word>
@@ -189,6 +201,12 @@ function Move({ move, spec }: { move: ValueMove; spec?: PropSpec }) {
       >
         {label}:
       </span>
+      {renamed}
+      {renamed && body && (
+        <span aria-hidden className="text-faint">
+          ,
+        </span>
+      )}
       {body}
     </span>
   )

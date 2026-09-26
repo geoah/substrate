@@ -20,7 +20,8 @@ that changed no value (issue #676).
 ## Considered Options
 
 - Pair at read from the rename entry's own `payload.renamed` (old name to
-  new), which convert.go already writes on every rewrite entry.
+  new), which convert.go already writes on a rewrite entry that moved a
+  renamed value on its record.
 - Add a new stored field to the rename entry naming the pairs.
 - Leave the pair to the client: the payload is on the row, and the console
   could fold the two changes itself.
@@ -57,7 +58,9 @@ old name.
 (internal/engine/changevalues_db_test.go) hold the paired row, its before and
 its redaction; `TestRenamesOfKeepsOnlyAMoveOnTheAddressedRecord`
 (changevalues_internal_test.go) holds which pairs are taken.
-`wire.golden.json` pins `PropertyChange.renamedFrom`.
+`wire.golden.json` pins `PropertyChange.renamedFrom`. The console says the
+move as "Display label: renamed from Label" (change-values.test.ts and
+value-moves.test.tsx in web/console).
 
 ## More Information
 
