@@ -12,6 +12,7 @@ import { Link } from "@tanstack/react-router"
 import { friendlyDay } from "@/components/property-sheet/dates"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { KindPath, KindRef } from "@/components/identity/kind-ref"
+import { IdText } from "@/components/identity/id-text"
 import { RecordRef } from "@/components/identity/record-ref"
 import { StateBadge } from "@/components/identity/state-badge"
 import { Button } from "@/components/ui/button"
@@ -206,12 +207,11 @@ function Group({
               )}
             </span>
             {technical && (
-              <span
-                title={recordPath(row.record.kind, row.record.id)}
-                className="max-w-[40%] min-w-0 truncate font-mono text-[11px] text-faint"
-              >
-                {recordPath(row.record.kind, row.record.id)}
-              </span>
+              <IdText
+                value={recordPath(row.record.kind, row.record.id)}
+                copy
+                className="max-w-[40%]"
+              />
             )}
             {(typeof state === "string" || typeof when === "string") && (
               <span className="flex shrink-0 items-center gap-3 text-[12.5px] whitespace-nowrap text-faint">
