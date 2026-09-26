@@ -81,10 +81,12 @@ function Title({
   const spec = titleEditor(kind)
   const name = spec?.name ?? ""
   const editable = !readOnly && spec !== undefined
-  const [editing, setEditing] = useState(false)
+  // The version the edit began from, held while it is open (useEditBase).
+  const [base, setBase] = useState<number>()
+  const editing = base !== undefined
   const [text, setText] = useState("")
   const [error, setError] = useState<string>()
-  const patch = useRecordPatch(record)
+  const patch = useRecordPatch(record, base)
   const busy = useRef(false)
   const button = useRef<HTMLButtonElement>(null)
   useFocusReturn(editing, button)
@@ -103,7 +105,7 @@ function Title({
         await patch.mutateAsync({ [name]: next || null })
       }
       setError(undefined)
-      setEditing(false)
+      setBase(undefined)
     } catch (e) {
       setError(writeError(e))
     } finally {
@@ -129,7 +131,7 @@ function Title({
               void save()
             } else if (e.key === "Escape") {
               busy.current = true
-              setEditing(false)
+              setBase(undefined)
               setError(undefined)
               setTimeout(() => (busy.current = false))
             }
@@ -158,7 +160,7 @@ function Title({
           onClick={() => {
             const stored = record.properties[name]
             setText(typeof stored === "string" ? stored : title)
-            setEditing(true)
+            setBase(record.version)
           }}
           className="-mx-1 w-[calc(100%+0.5rem)] cursor-text rounded-md px-1 text-left outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
         >

@@ -7,6 +7,7 @@
  * Inside a `SheetDraftContext` the record is not stored yet: the same write
  * lands in the draft and nothing reaches the server. */
 
+import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { useSheetDraft } from "./draft"
@@ -38,7 +39,21 @@ export function wroteHere(kind: string, id: string, version: number): boolean {
   return written.includes(`${kind}/${id}@${version}`)
 }
 
-export function useRecordPatch(record: SubstrateRecord) {
+/** The version an editor opened on, held for as long as it stays open. The
+ * record page re-reads a record that moves under the reader, so the record
+ * an open editor is handed can be newer than the one its draft began from;
+ * writing that draft against the newer version would silently overwrite the
+ * other write, where asserting the one it began from is refused as a
+ * conflict. For an editor that mounts when editing begins. */
+export function useEditBase(record: SubstrateRecord): number {
+  const [base] = useState(record.version)
+  return base
+}
+
+/** `base`: the version the edit began from (see useEditBase); without one, a
+ * write asserts the version on the page now, which is right only for a
+ * one-gesture write that shows no draft (a checkbox). */
+export function useRecordPatch(record: SubstrateRecord, base?: number) {
   const client = useQueryClient()
   const draft = useSheetDraft()
   const { authority, pkg, name } = splitKind(record.kind)
@@ -50,7 +65,7 @@ export function useRecordPatch(record: SubstrateRecord) {
       }
       return patchRecord(authority, pkg, name, record.id, {
         properties,
-        ifVersion: record.version,
+        ifVersion: base ?? record.version,
       })
     },
     // Every read that can show the record, not only its page: a collection

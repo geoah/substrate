@@ -38,11 +38,13 @@ export function RecordBody({
 }) {
   const stored = record.properties[spec.name]
   const text = typeof stored === "string" ? stored : ""
-  const [editing, setEditing] = useState(false)
+  // The version the edit began from, held while it is open (useEditBase).
+  const [base, setBase] = useState<number>()
+  const editing = base !== undefined
   const [draft, setDraft] = useState("")
   const [error, setError] = useState<string>()
   const [saved, setSaved] = useState(false)
-  const patch = useRecordPatch(record)
+  const patch = useRecordPatch(record, base)
   const busy = useRef(false)
   const editor = useRef<HTMLDivElement>(null)
   const reader = useRef<HTMLDivElement>(null)
@@ -65,7 +67,7 @@ export function RecordBody({
         await patch.mutateAsync({ [spec.name]: draft.trim() ? draft : null })
       }
       setError(undefined)
-      setEditing(false)
+      setBase(undefined)
       setSaved(changed)
     } catch (e) {
       setError(writeError(e))
@@ -76,7 +78,7 @@ export function RecordBody({
 
   function cancel() {
     busy.current = true
-    setEditing(false)
+    setBase(undefined)
     setError(undefined)
     setTimeout(() => (busy.current = false))
   }
@@ -146,7 +148,7 @@ export function RecordBody({
               ? undefined
               : () => {
                   setDraft(text)
-                  setEditing(true)
+                  setBase(record.version)
                 }
           }
           onKeyDown={(e) => {
@@ -157,7 +159,7 @@ export function RecordBody({
             ) {
               e.preventDefault()
               setDraft(text)
-              setEditing(true)
+              setBase(record.version)
             }
           }}
           className={cn(

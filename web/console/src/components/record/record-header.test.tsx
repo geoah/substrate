@@ -110,13 +110,13 @@ function renderHeader(
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
-  return render(
+  const header = (at: SubstrateRecord) => (
     <ConsolePreferencesContext.Provider
       value={preferences(opts.technical ?? false)}
     >
       <QueryClientProvider client={client}>
         <RecordHeader
-          record={r}
+          record={at}
           kind={task}
           rows={[]}
           source={false}
@@ -127,6 +127,11 @@ function renderHeader(
       </QueryClientProvider>
     </ConsolePreferencesContext.Provider>
   )
+  const view = render(header(r))
+  return {
+    ...view,
+    refresh: (at: SubstrateRecord) => view.rerender(header(at)),
+  }
 }
 
 beforeEach(() => {
@@ -213,5 +218,22 @@ describe("RecordHeader title", () => {
     expect(document.activeElement).toBe(
       screen.getByRole("button", { name: /^Plan\s*, edit$/ })
     )
+  })
+
+  it("keeps the version it began from across a live refresh", async () => {
+    const { refresh } = renderHeader(rec())
+    fireEvent.click(screen.getByRole("button", { name: /^Plan\s*, edit$/ }))
+    fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
+      target: { value: "Plan B" },
+    })
+    refresh(rec({ version: 4 }))
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Name" }), {
+      key: "Enter",
+    })
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].body).toEqual({
+      properties: { name: "Plan B" },
+      ifVersion: 3,
+    })
   })
 })

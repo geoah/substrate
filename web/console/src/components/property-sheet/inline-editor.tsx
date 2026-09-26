@@ -23,7 +23,7 @@ import { fromLocalInput, toLocalInput } from "./dates"
 import { ListEditor } from "./list-editor"
 import { editStyle, propertyWrite } from "./sheet-model"
 import { type SheetRow } from "./sheet-rows"
-import { useRecordPatch, writeError } from "./use-record-patch"
+import { useEditBase, useRecordPatch, writeError } from "./use-record-patch"
 import { EnumTag } from "@/components/identity/enum-tag"
 import { StateBadge } from "@/components/identity/state-badge"
 import { PropertyField } from "@/components/record/property-field"
@@ -76,7 +76,7 @@ export function InlineEditor(props: InlineEditorProps) {
 
 /** Saves one write and reports how it went. */
 function useSave({ row, record, onDone, onError }: InlineEditorProps) {
-  const patch = useRecordPatch(record)
+  const patch = useRecordPatch(record, useEditBase(record))
   async function save(next: FormValue) {
     const write = propertyWrite(row.field, row.value, next)
     if (write.error) {

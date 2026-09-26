@@ -223,9 +223,12 @@ function SubHead({ children }: { children: ReactNode }) {
   )
 }
 
-type Pending =
+/** A write awaiting its confirmation, and the version the reader chose it
+ * on: a re-read while the dialog is open must not carry it past a change. */
+type Pending = { base: number } & (
   | { kind: "use"; alternative: PropertyAlternative }
   | { kind: "release"; follow: string }
+)
 
 export function OwnershipDetail({
   row,
@@ -249,7 +252,7 @@ export function OwnershipDetail({
   const alts = meta.alternatives ?? []
   const union = unionMembers(row.value, meta)
   const [pending, setPending] = useState<Pending | null>(null)
-  const patch = useRecordPatch(record)
+  const patch = useRecordPatch(record, pending?.base)
   const [failed, setFailed] = useState<string>()
   const who = holder?.label ?? "Someone"
 
@@ -372,7 +375,11 @@ export function OwnershipDetail({
                         size="sm"
                         variant="outline"
                         onClick={() =>
-                          setPending({ kind: "use", alternative: alt })
+                          setPending({
+                            kind: "use",
+                            alternative: alt,
+                            base: record.version,
+                          })
                         }
                       >
                         Use {name}’s
@@ -394,7 +401,13 @@ export function OwnershipDetail({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setPending({ kind: "release", follow })}
+              onClick={() =>
+                setPending({
+                  kind: "release",
+                  follow,
+                  base: record.version,
+                })
+              }
             >
               <Undo2Icon />
               Stop overriding · follow {follow}
