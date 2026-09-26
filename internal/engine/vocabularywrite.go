@@ -1260,14 +1260,19 @@ func (t *txn) projectPackage(reg *vocabulary.Registry, projecting map[string]boo
 		if v, ok := opts.versions[d.key()]; ok && v > 0 {
 			props[propDeclarationVersion] = v
 		}
+		ty, err := t.projectionKind(reg, projecting, d.typ)
+		if err != nil {
+			return fmt.Errorf("substrate/engine: project %s %s: %w", d.short, d.id, err)
+		}
+		if d.short == vocabulary.DocPackage {
+			if err := t.stampDeclaredBy(ty, d, props); err != nil {
+				return err
+			}
+		}
 		in := substrate.PutInput{Kind: d.typ, ID: d.id, Properties: props}
 		if m, ok := opts.meta[d.short+"\x00"+d.id]; ok {
 			in.Labels = m.labels
 			in.Annotations = m.annotations
-		}
-		ty, err := t.projectionKind(reg, projecting, d.typ)
-		if err != nil {
-			return fmt.Errorf("substrate/engine: project %s %s: %w", d.short, d.id, err)
 		}
 		e, err := t.putKind(ty, in)
 		if err != nil {
@@ -1276,6 +1281,38 @@ func (t *txn) projectPackage(reg *vocabulary.Registry, projecting map[string]boo
 		live[d.key()] = true
 		out[d.short+"\x00"+d.id] = e
 	}
+	return nil
+}
+
+// propPackageDeclaredBy is the actor that first declared a package (decision
+// record 0106). `managed` on the core `package` kind and no document key, so
+// no document can write it and `engineOwned` keeps it across every later
+// re-projection.
+const propPackageDeclaredBy = "declaredBy"
+
+// stampDeclaredBy puts the transaction's actor on a package header row the
+// store does not hold live: the write that creates the row is the declaration,
+// and its actor is the engine-derived hand of whoever made it (the door a
+// request came through, the system for a seed, a function or an agent for the
+// callable that ran). A row that exists keeps what it carries, stamped or not:
+// stamping a package created before the stamp would name whoever touched it
+// next, which is not who declared it. A transaction with no actor stamps
+// nothing rather than refuse the declaration, and so does a `package` kind
+// that does not declare the property: a repository whose shipped upgrade a
+// guard withheld, or a server seeded from an older tree as the upgrade drills
+// are, validates the row against that older kind, which would refuse it.
+func (t *txn) stampDeclaredBy(ty *vocabulary.Kind, d declaration, props map[string]any) error {
+	if ty == nil || ty.Props[propPackageDeclaredBy] == nil {
+		return nil
+	}
+	row, err := t.loadRow(eref{Kind: d.typ, ID: d.id}, false)
+	if err != nil {
+		return err
+	}
+	if (row != nil && row.DeletedAt == nil) || t.actor == "" {
+		return nil
+	}
+	props[propPackageDeclaredBy] = string(t.actor)
 	return nil
 }
 
