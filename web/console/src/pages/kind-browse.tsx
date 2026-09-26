@@ -98,7 +98,7 @@ import {
   saveBrowsePrefs,
   toRecordFilter,
 } from "@/lib/filters"
-import { emptyColumnIds, propertyLabel } from "@/lib/grid-values"
+import { emptyColumnIds, propertyLabel, titleBacking } from "@/lib/grid-values"
 import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import { nestingProperty, rootsFilter } from "@/lib/record-tree"
 import { titlesFromIncluded } from "@/lib/reference-titles"
@@ -126,9 +126,13 @@ const tabParser = parseAsStringLiteral(TABS)
 const GUTTER = "px-4 md:px-8"
 const GUTTER_MX = "mx-4 md:mx-8"
 
-function parseSort(sort: string): SortingState {
+function parseSort(sort: string, backing?: string): SortingState {
   const [property, dir] = sort.split(":")
-  return property ? [{ id: columnIdOf(property), desc: dir !== "asc" }] : []
+  if (!property) return []
+  // The property the title is has no column of its own: the title's carries
+  // its sort.
+  const id = property === backing ? "title" : columnIdOf(property)
+  return [{ id, desc: dir !== "asc" }]
 }
 
 /** What a nested row's children are called: "subtasks" for tasks, "nested
@@ -386,7 +390,8 @@ export function KindBrowsePage() {
     [records.data, columns, rows]
   )
 
-  const sorting = useMemo(() => parseSort(sort), [sort])
+  const backing = kindInfo ? titleBacking(kindInfo) : undefined
+  const sorting = useMemo(() => parseSort(sort, backing), [sort, backing])
   function onSortingChange(updater: Updater<SortingState>) {
     const next = typeof updater === "function" ? updater(sorting) : updater
     const first = next[0]

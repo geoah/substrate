@@ -14,6 +14,7 @@ import {
   isEmptyValue,
   propertyLabel,
   subtaskCounts,
+  titleBacking,
   titleProperties,
 } from "./grid-values"
 
@@ -118,6 +119,29 @@ function kind(definition: Record<string, unknown>): KindInfo {
     definition,
   }
 }
+
+describe("titleBacking", () => {
+  it("is the property a single-slot title is, its first choice", () => {
+    expect(titleBacking(kind({ displayTemplate: "{name}" }))).toBe("name")
+    expect(
+      titleBacking(kind({ displayTemplate: "{displayName|localName}" }))
+    ).toBe("displayName")
+  })
+
+  it("is none for a composed title, a path, or the title itself", () => {
+    expect(
+      titleBacking(kind({ displayTemplate: "{state} #{localName}" }))
+    ).toBeUndefined()
+    expect(
+      titleBacking(kind({ displayTemplate: "{user.name}" }))
+    ).toBeUndefined()
+    expect(titleBacking(kind({ displayTemplate: "{title}" }))).toBeUndefined()
+    expect(
+      titleBacking(kind({ displayTemplate: "Slack connection" }))
+    ).toBeUndefined()
+    expect(titleBacking(kind({}))).toBeUndefined()
+  })
+})
 
 describe("titleProperties", () => {
   it("names what the display template reads", () => {

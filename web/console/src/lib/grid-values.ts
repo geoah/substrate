@@ -179,6 +179,22 @@ export function titleProperties(kind: KindInfo): string[] {
   return [...out]
 }
 
+/** The one property a kind's title IS, when its `displayTemplate` is a
+ * single slot whose first choice is a plain property (`{name}`,
+ * `{displayName|localName}` → the first). The title column is that property,
+ * so it earns no column and no sort of its own. A composed title
+ * (`{state} #{localName}`) is made of properties, and is none of them. */
+export function titleBacking(kind: KindInfo): string | undefined {
+  const template = kind.definition?.displayTemplate
+  if (typeof template !== "string") return undefined
+  const slot = /^\s*\{([^{}]*)\}\s*$/.exec(template)
+  const first = slot?.[1].split("|")[0].trim()
+  if (!first || first === "title" || !/^[A-Za-z][A-Za-z0-9_]*$/.test(first)) {
+    return undefined
+  }
+  return first
+}
+
 /** The columns with nothing in them on the loaded rows, among `ids`. */
 export function emptyColumnIds(
   ids: readonly string[],

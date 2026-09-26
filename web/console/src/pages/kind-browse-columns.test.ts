@@ -239,9 +239,19 @@ describe("the opening columns", () => {
       "dueAt",
       "prop:owner",
       "prop:priority",
-      "prop:name",
       "updatedAt",
     ])
+  })
+
+  it("folds the property the title is into the title column", () => {
+    const columns = buildColumns(RICH, [RICH])
+    expect(columns.map((c) => c.id)).not.toContain("prop:name")
+    expect(columns[0].meta?.label).toBe("Name")
+    const summary = {
+      ...RICH,
+      definition: { ...RICH.definition, displayTemplate: "{summary}" },
+    }
+    expect(buildColumns(summary, [summary])[0].meta?.label).toBe("Summary")
   })
 
   it("adds the record id in technical mode", () => {
@@ -252,7 +262,16 @@ describe("the opening columns", () => {
     ).toContain("id")
   })
 
-  it("hides the properties the title is made of", () => {
-    expect(defaultHiddenColumns(RICH)).toEqual([propertyColumnId("name")])
+  it("hides the properties a composed title is made of", () => {
+    // The one the title IS has no column; a fallback still opens hidden.
+    expect(defaultHiddenColumns(RICH)).toEqual([])
+    const composed = {
+      ...RICH,
+      definition: { ...RICH.definition, displayTemplate: "{status} #{name}" },
+    }
+    expect(defaultHiddenColumns(composed)).toEqual([
+      propertyColumnId("status"),
+      propertyColumnId("name"),
+    ])
   })
 })
