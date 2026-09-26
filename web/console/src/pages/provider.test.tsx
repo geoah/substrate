@@ -987,9 +987,9 @@ describe("ProviderPage", () => {
       renderPage(<ProviderPage />)
       const callout = await problems()
       expect(
-        within(callout).getByText("2 runs failed and are waiting to be retried")
+        within(callout).getByText("2 runs failed and are waiting to be tried again")
       ).toBeTruthy()
-      const retry = within(callout).getByRole("button", { name: "Retry" })
+      const retry = within(callout).getByRole("button", { name: "Try again" })
       await waitFor(() =>
         expect((retry as HTMLButtonElement).disabled).toBe(false)
       )

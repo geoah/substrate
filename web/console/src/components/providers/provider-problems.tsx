@@ -222,14 +222,14 @@ function RetryParkedButton({ bundleId }: { bundleId: string }) {
     onSuccess: (retried) =>
       toast.add({
         type: "success",
-        title: retried === 1 ? "Retried 1 run" : `Retried ${retried} runs`,
+        title: retried === 1 ? "Tried 1 run again" : `Tried ${retried} runs again`,
         description:
           "Each one ran again; any that fails again is parked again.",
       }),
     onError: (error) =>
       toast.add({
         type: "error",
-        title: "Retry failed",
+        title: "Couldn’t try again",
         description: error.message,
       }),
     onSettled: () =>
@@ -247,7 +247,7 @@ function RetryParkedButton({ bundleId }: { bundleId: string }) {
       ) : (
         <RotateCcwIcon className="size-3.5" />
       )}
-      Retry
+      Try again
     </Button>
   )
 }

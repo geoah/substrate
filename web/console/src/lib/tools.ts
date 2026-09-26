@@ -1104,7 +1104,7 @@ export function runFromTriggerRun(record: SubstrateRecord): ToolRun {
   if (status === "trouble") {
     happened = reason
       ? `Stopped: ${reason.split("\n")[0]}`
-      : "Stopped after retrying"
+      : "Stopped after several tries"
   } else if (status === "skipped") {
     happened = "Nothing to do"
   } else {

@@ -292,7 +292,7 @@ function ParkedList({
     onSuccess: (r) => {
       toast.add({
         type: "success",
-        title: "Retried",
+        title: "Tried again",
         description: r.ran > 0 ? `${r.ran} ran.` : "Nothing ran.",
       })
       refresh()
@@ -300,7 +300,7 @@ function ParkedList({
     onError: (e) =>
       toast.add({
         type: "error",
-        title: "Retry failed",
+        title: "Couldn’t try again",
         description: e.message,
       }),
   })
@@ -349,7 +349,7 @@ function ParkedList({
               onClick={() => retry.mutate({ trigger: f.trigger, id: f.id })}
             >
               <RotateCcwIcon />
-              Retry
+              Try again
             </Button>
           </li>
         ))}

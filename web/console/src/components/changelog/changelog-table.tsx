@@ -335,7 +335,7 @@ export function ChangelogTable({
       {error ? (
         <ChangelogEmpty
           icon={<SearchXIcon />}
-          title="The changelog didn't load"
+          title="History didn’t load"
           description={error.message}
         >
           <Button
@@ -343,7 +343,7 @@ export function ChangelogTable({
             size="sm"
             onClick={() => void (history.isError ? history : seek).refetch()}
           >
-            Retry
+            Try again
           </Button>
         </ChangelogEmpty>
       ) : (
@@ -383,7 +383,7 @@ export function ChangelogTable({
                 <ChangelogEmpty
                   icon={<InboxIcon />}
                   title="No changes"
-                  description="Nothing in the changelog matches these filters."
+                  description="Nothing in History matches these filters."
                 />
               }
             />
