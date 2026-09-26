@@ -22,7 +22,7 @@
  * the page, and any other stands at the top level saying which record it is
  * in (lib/record-tree.ts, `matchedRoots`). */
 
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import type { SortingState, Updater } from "@tanstack/react-table"
@@ -51,7 +51,8 @@ import { RowTreeProvider } from "@/components/data-table/data-table-tree"
 import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 import { CopyButton } from "@/components/identity/copy-button"
 import { KindGlyph } from "@/components/identity/kind-glyph"
-import { KindRef } from "@/components/identity/kind-ref"
+import { IdentityHoverCard } from "@/components/identity/identity-hover-card"
+import { KindCard, KindPath } from "@/components/identity/kind-ref"
 import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
 import { ProviderBadge } from "@/components/identity/provider-badge"
@@ -72,6 +73,10 @@ import {
   useLayoutWidths,
   useTechnicalDetails,
 } from "@/hooks/use-console-preferences"
+import {
+  useChangeMarks,
+  useLiveInvalidation,
+} from "@/hooks/use-live-invalidation"
 import { useRecordTree } from "@/hooks/use-record-tree"
 import { providerOfKind } from "@/lib/actor-identity"
 import {
@@ -211,6 +216,22 @@ export function KindBrowsePage() {
   const kindInfo = registry.data
     ? kindByCollection(registry.data, authority, pkg, name)
     : undefined
+
+  // Records an agent, a sync or another tab writes re-read here as they
+  // land, and the rows they moved carry a brief mark.
+  const { marks, mark } = useChangeMarks()
+  const [announcement, setAnnouncement] = useState("")
+  useLiveInvalidation(
+    { kinds: kindInfo ? [kindInfo.identity] : [] },
+    (changed) => {
+      const live = changed.filter((c) => !c.deleted)
+      mark(live.map((c) => c.id))
+      if (kindInfo && live.length)
+        setAnnouncement(
+          `${live.length} ${lowerFirst(live.length === 1 ? displayName(kindInfo) : displayPlural(kindInfo))} updated`
+        )
+    }
+  )
 
   const filters = useMemo(() => decodeFilters(filterTokens), [filterTokens])
   const filterFields = useMemo(
@@ -431,42 +452,66 @@ export function KindBrowsePage() {
   const loadingPage = records.isPending || tree.loading
   const refetching = records.isPlaceholderData && records.isFetching
 
+  // Everyday, the head is what the collection is to the reader: its mark,
+  // its name, what it holds and who keeps it. The kind reference is a
+  // technical fact: on the line with the switch on, in the hover card always.
+  // The whole collection's size, where the page knows it exactly.
+  const kindCount = hasFilters
+    ? undefined
+    : nestingRoots
+      ? collectionCount.data && !collectionCount.data.capped
+        ? collectionCount.data.value
+        : undefined
+      : totalCapped
+        ? undefined
+        : total
+  const providerNote = provider && (
+    <span className="inline-flex items-center gap-1.5">
+      <ProviderBadge provider={provider.key} size="xs" />
+      Read-only copies, kept up to date by {provider.name}
+    </span>
+  )
   const header = (
     <div className={cn("shrink-0 pt-6", GUTTER)}>
       <PageHeader
         title={
-          <span className="flex items-center gap-2.5">
+          <IdentityHoverCard
+            trigger={<span />}
+            className="inline-flex items-center gap-2.5"
+            card={(open) =>
+              open && <KindCard kind={kindInfo} count={kindCount} />
+            }
+          >
             <KindGlyph kind={kindInfo} size="md" />
             {plural}
-          </span>
+          </IdentityHoverCard>
         }
         meta={
-          <>
-            <span className="inline-flex min-w-0 items-center gap-1">
-              <KindRef kind={kindInfo} mode="reference" link={false} />
-              <CopyButton
-                value={kindInfo.identity}
-                label="Copy the kind reference"
-              />
-            </span>
-            {provider && (
-              <span className="inline-flex items-center gap-1.5">
-                <ProviderBadge provider={provider.key} size="xs" />
-                read-only copies, kept up to date by {provider.name}
+          technical ? (
+            <>
+              <span className="inline-flex min-w-0 items-center gap-1">
+                <KindPath reference={kindInfo.identity} />
+                <CopyButton
+                  value={kindInfo.identity}
+                  label="Copy the kind reference"
+                />
               </span>
-            )}
-            {technical && tab !== "definition" && (
-              <Button
-                variant="ghost"
-                size="xs"
-                className="-my-1 h-[22px] gap-1 px-1.5 font-normal text-faint"
-                onClick={() => void setTab("definition")}
-              >
-                <CodeIcon className="size-3.5" />
-                Definition
-              </Button>
-            )}
-          </>
+              {providerNote}
+              {tab !== "definition" && (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="-my-1 h-[22px] gap-1 px-1.5 font-normal text-faint"
+                  onClick={() => void setTab("definition")}
+                >
+                  <CodeIcon className="size-3.5" />
+                  Definition
+                </Button>
+              )}
+            </>
+          ) : (
+            providerNote
+          )
         }
         description={kindDescription(kindInfo, technical)}
         actions={
@@ -624,6 +669,7 @@ export function KindBrowsePage() {
           filters={filters}
           kinds={registry.data ?? []}
           labelOf={technical ? undefined : propertyLabel}
+          words
           onChange={(next) => {
             const tokens = next.map(encodeFilter)
             void setFilterTokens(tokens.length ? tokens : null)
@@ -682,6 +728,7 @@ export function KindBrowsePage() {
               loading={loadingPage}
               empty={emptyState}
               scrollKey={page}
+              marks={marks}
               className={cn(
                 "flex-1 border-b border-border",
                 refetching && "opacity-60 transition-opacity",
@@ -689,6 +736,9 @@ export function KindBrowsePage() {
               )}
             />
           </RowTreeProvider>
+          <p aria-live="polite" className="sr-only">
+            {announcement}
+          </p>
           <DataTablePagination
             className={cn("pt-2.5 pb-3", GUTTER)}
             page={page}

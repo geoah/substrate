@@ -2,7 +2,8 @@
 /** A linked page of a collection stays that page: opening a nested collection
  * at `?page=2` before the registry has loaded must not fall back to page one
  * when the kind's metadata arrives and the view turns into a tree. Only a
- * reader's own change to the view renumbers it. */
+ * reader's own change to the view renumbers it. The head names the
+ * collection for a reader and keeps the kind reference for technical mode. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, cleanup, render, waitFor } from "@testing-library/react"
@@ -10,10 +11,17 @@ import { NuqsTestingAdapter, type UrlUpdateEvent } from "nuqs/adapters/testing"
 import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import type { KindInfo } from "@/lib/api/types"
+import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
+}))
+
+vi.mock("@/lib/api/changes", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api/changes")>()),
+  watchChanges: () => ({ stop: () => {} }),
 }))
 
 vi.mock("@/router", () => ({
@@ -114,5 +122,59 @@ describe("KindBrowsePage", () => {
 
     expect(updates.map((u) => u.searchParams.get("page"))).not.toContain(null)
     expect(offsets).not.toContain(0)
+  })
+})
+
+describe("the collection head", () => {
+  async function renderHead(technical: boolean) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const view = render(
+      <ConsolePreferencesContext.Provider
+        value={{
+          preferences: {
+            collapsed: [],
+            favorites: [],
+            sidebarOpen: true,
+            ...DEFAULT_SETTINGS,
+            technicalDetails: technical,
+          },
+          busy: false,
+          change: () => {},
+          set: () => {},
+        }}
+      >
+        <QueryClientProvider client={client}>
+          <NuqsTestingAdapter>
+            <KindBrowsePage />
+          </NuqsTestingAdapter>
+        </QueryClientProvider>
+      </ConsolePreferencesContext.Provider>
+    )
+    await waitFor(async () => {
+      await act(async () => resolveRegistry([team]))
+      expect(view.container.querySelector("[data-slot=page-header]")).not.toBe(
+        null
+      )
+    })
+    return view.container.querySelector("[data-slot=page-header]")!
+  }
+
+  it("names the collection without its reference for everyday readers", async () => {
+    const head = await renderHead(false)
+    expect(head.textContent).toContain("Teams")
+    expect(head.textContent).not.toContain("acme.example.com")
+    expect(head.querySelector("[aria-label='Copy the kind reference']")).toBe(
+      null
+    )
+  })
+
+  it("shows the reference and its copy button in technical mode", async () => {
+    const head = await renderHead(true)
+    expect(head.textContent).toContain("acme.example.com/people/team")
+    expect(
+      head.querySelector("[aria-label='Copy the kind reference']")
+    ).not.toBe(null)
   })
 })

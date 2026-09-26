@@ -21,6 +21,7 @@ import {
 
 import type { DataTableColumn } from "@/components/data-table/data-table"
 import { GridColumnHeader } from "@/components/data-table/data-grid-header"
+import { EnumTag } from "@/components/data-table/enum-tag"
 import { propertyIcon } from "@/components/data-table/property-icon"
 import {
   INDENT_PX,
@@ -42,7 +43,6 @@ import { cellValue, recordTitle } from "@/lib/format"
 import {
   doneStateProperty,
   dueTone,
-  enumLabel,
   friendlyDate,
   friendlyDay,
   isDoneState,
@@ -52,7 +52,6 @@ import {
   subtaskCounts,
   titleProperties,
 } from "@/lib/grid-values"
-import { HUE_CLASSES, hashHue, type KindHue } from "@/lib/kind-glyph"
 import { untitled } from "@/lib/kind-names"
 import { splitRecordPath } from "@/lib/record-path"
 import type { ReferenceTitles } from "@/lib/reference-titles"
@@ -216,42 +215,6 @@ function ReferenceCell({
         link={Boolean(kindByIdentity(kinds, target.kind))}
       />
     </FirstOf>
-  )
-}
-
-const QUIET_ENUMS = new Set(["none", "unknown", "other"])
-
-/** A ladder (priority, severity) climbs from quiet to loud with its declared
- * order; any other enum takes a stable hue per value. */
-const LADDER = /priority|severity|urgency|importance/i
-const LADDER_HUES: KindHue[] = ["gray", "blue", "yellow", "orange", "red"]
-
-function enumHue(prop: DeclaredProperty, value: string): KindHue {
-  if (LADDER.test(prop.name) && prop.values?.length) {
-    const loud = prop.values.filter((v) => !QUIET_ENUMS.has(v.value))
-    const at = loud.findIndex((v) => v.value === value)
-    if (at >= 0) {
-      const step = LADDER_HUES.length - loud.length + at
-      return LADDER_HUES[Math.max(1, Math.min(LADDER_HUES.length - 1, step))]
-    }
-  }
-  return hashHue(value)
-}
-
-function EnumTag({ prop, value }: { prop: DeclaredProperty; value: string }) {
-  const label = enumLabel(prop, value)
-  if (QUIET_ENUMS.has(value)) {
-    return <span className="text-muted-foreground">{label}</span>
-  }
-  return (
-    <span
-      className={cn(
-        "inline-block max-w-full truncate rounded-[4px] px-[7px] align-middle text-[0.93em] leading-5",
-        HUE_CLASSES[enumHue(prop, value)].tile
-      )}
-    >
-      {label}
-    </span>
   )
 }
 

@@ -12,7 +12,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 
 import { DataTableFilters } from "./data-table-filters"
 import {
@@ -357,5 +357,109 @@ describe("a reference field", () => {
         decodeURIComponent(String(input)).includes('"search":"zed*"')
       )
     ).toBe(true)
+  })
+})
+
+/** States, enum values and yes-or-no are picked from one ChoiceList in the
+ * words the grid shows them in, and the applied control says those words
+ * ("Status | Suggested"), never the stored value. A bar whose "states" only
+ * borrow the shape (History's kinds and actors) keeps its stored values. */
+describe("a declared set", () => {
+  const setFields: DeclaredProperty[] = [
+    {
+      name: "status",
+      kind: "state",
+      repeated: false,
+      states: ["proposed", "open", "done", "abandoned"],
+      initial: "proposed",
+    },
+    {
+      name: "priority",
+      kind: "enum",
+      repeated: false,
+      values: [
+        { value: "low", label: "" },
+        { value: "high", label: "Urgent" },
+      ],
+    },
+    { name: "flagged", kind: "bool", repeated: false },
+  ]
+
+  function mount(
+    filters: ActiveFilter[],
+    { technical = false, words = true } = {}
+  ) {
+    const onChange = vi.fn()
+    render(
+      <ConsolePreferencesContext.Provider value={preferences(technical)}>
+        <DataTableFilters
+          fields={setFields}
+          filters={filters}
+          onChange={onChange}
+          labelOf={(name) => name[0].toUpperCase() + name.slice(1)}
+          words={words}
+        />
+      </ConsolePreferencesContext.Provider>
+    )
+    return onChange
+  }
+  const items = () =>
+    [...document.querySelectorAll("[data-slot=command-item]")].map(
+      (r) => r.textContent
+    )
+
+  beforeAll(() => {
+    Element.prototype.scrollIntoView ??= () => {}
+  })
+
+  it("lists a state's words and applies picks as its stored values", async () => {
+    const onChange = mount([])
+    fireEvent.click(screen.getByRole("button", { name: /Add filter/ }))
+    fireEvent.click(await screen.findByText("Status"))
+    expect(items()).toEqual(["Suggested", "Open", "Done", "Dropped"])
+    fireEvent.click(screen.getByText("Suggested"))
+    expect(onChange).toHaveBeenLastCalledWith([
+      { field: "status", op: "eq", value: "proposed" },
+    ])
+  })
+
+  it("says the words in the applied control", () => {
+    mount([
+      { field: "status", op: "eq", value: "proposed,open" },
+      { field: "priority", op: "eq", value: "high" },
+      { field: "flagged", op: "eq", value: "true" },
+    ])
+    expect(screen.getByTitle("Suggested, Open")).toBeTruthy()
+    expect(screen.getByTitle("Urgent")).toBeTruthy()
+    expect(screen.getByTitle("Yes")).toBeTruthy()
+  })
+
+  it("lists an enum's labels as tags instead of a text box, several at once", async () => {
+    const onChange = mount([{ field: "priority", op: "eq", value: "low" }])
+    fireEvent.click(screen.getByTitle("Low"))
+    expect(await screen.findByRole("listbox")).toBeTruthy()
+    expect(screen.queryByPlaceholderText(/Priority is/)).toBeNull()
+    expect(items()).toEqual(["Low(chosen)", "Urgent"])
+    fireEvent.click(screen.getByText("Urgent"))
+    expect(onChange).toHaveBeenLastCalledWith([
+      { field: "priority", op: "eq", value: "low,high" },
+    ])
+  })
+
+  it("shows the stored value beside the words in technical mode", async () => {
+    mount([], { technical: true })
+    fireEvent.click(screen.getByRole("button", { name: /Add filter/ }))
+    fireEvent.click(await screen.findByText("Priority"))
+    expect(items()).toEqual(["Lowlow", "Urgenthigh"])
+  })
+
+  it("keeps stored values on a bar that borrows the state shape", async () => {
+    mount([{ field: "status", op: "eq", value: "proposed" }], {
+      words: false,
+    })
+    expect(screen.getByTitle("proposed")).toBeTruthy()
+    fireEvent.click(screen.getByTitle("proposed"))
+    await screen.findByRole("listbox")
+    expect(items()).toEqual(["proposed(chosen)", "open", "done", "abandoned"])
   })
 })
