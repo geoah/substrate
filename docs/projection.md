@@ -636,4 +636,27 @@ state. It never says "version conflict", which is the caller's own `ifVersion`
 losing, and it is never the `422 validation` of a malformed decision, so a
 client can branch on the answer.
 
+**The owner may adjust the values before accepting.** The accepting write may
+carry `adjustedDiff` beside `decision: accepted`, and the accept applies it
+instead of `diff` ([0106](decisions/0106-an-owner-adjusts-a-change-request-on-the-accepting-write.md)).
+It takes the same two shapes as `diff`, is admitted the same way (every
+property declared and writable, stored in the wrapper form), and is then held
+to the same re-validation: the target's version and the no-op check. It
+replaces `diff` whole, so name every value to apply: a proposed property it
+omits is not applied. The version it checks is the `ifVersion` inside
+`adjustedDiff` where it carries one, which lets the owner accept against the
+target version they reviewed; otherwise it is the request's `targetVersion`,
+and an `ifVersion` inside the proposed `diff` is not used. `diff` keeps what was proposed, so the request records both what the
+proposer asked for and what the owner applied, and the proposing thread's
+`proposalDecision` message carries `adjustedDiff` too. It is written on that one write
+only: a proposal, a rejection or a later write that carries it is refused, it
+is frozen once written, a delete request has no values to adjust, and only the
+owner's hand adjusts (installed code and the policy judge answer `403`).
+
+```http
+PATCH /api/v1/substrate.reamde.dev/core/recordpatchrequest/r41c
+{"ifVersion": 1, "properties": {"decision": "accepted",
+  "adjustedDiff": {"properties": {"priority": "urgent", "dueAt": "2026-10-01T17:00:00Z"}}}}
+```
+
 Next: [the API](api.md), the surface every one of these operations rides.

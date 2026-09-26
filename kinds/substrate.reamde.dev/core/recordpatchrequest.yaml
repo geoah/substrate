@@ -12,7 +12,7 @@ data:
     record, create one, or delete one. A learner or an app writes it, accepting
     the decision applies it, and the envelope is frozen once proposed so nobody
     can swap what was reviewed.
-  version: 16
+  version: 17
   names:
     singular: recordpatchrequest
   displayTemplate: "{decision}: {target|targetId}"
@@ -73,6 +73,14 @@ data:
       description: the proposed change, applied whole when the decision is
         accepted — property values under `properties`, a link to another record
         among them
+    # The owner's adjustment, written on the accepting write alone and frozen
+    # with the decision (decision 0106). `diff` stays what the proposer sent,
+    # so the request holds both what was proposed and what was applied.
+    adjustedDiff:
+      type: json
+      description: the owner's adjusted values, written with the accept and
+        applied instead of `diff`, which keeps what was proposed. Same shape
+        and admission as `diff`; never on a delete
     # delete only: the target version the proposer read. A patch carries its
     # own inside `diff.ifVersion`; a delete has no diff, so the precondition
     # sits here. Frozen with the envelope. Absent, the accept deletes whatever
