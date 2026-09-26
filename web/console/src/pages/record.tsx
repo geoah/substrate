@@ -122,6 +122,7 @@ export function RecordDocument({
 }) {
   const [technical] = useTechnicalDetails()
   const [source, setSource] = useState(false)
+  const [holders, setHolders] = useState(false)
   const readOnly = Boolean(providerOfKind(record.kind))
   const { rows } = useRecordChanges(record)
   const mappingIds = useMemo(
@@ -144,6 +145,8 @@ export function RecordDocument({
         rows={rows}
         source={technical && source}
         onSource={setSource}
+        holders={holders}
+        onHolders={setHolders}
       />
       {technical && source ? (
         <SourceView record={record} kind={kind} kinds={kinds} />
@@ -154,6 +157,7 @@ export function RecordDocument({
             kind={kind}
             kinds={kinds}
             readOnly={readOnly}
+            holders={holders}
           />
           {body && (
             <RecordBody record={record} spec={body} readOnly={readOnly} />

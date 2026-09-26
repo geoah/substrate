@@ -164,14 +164,25 @@ const record = (over: Partial<SubstrateRecord> = {}): SubstrateRecord => ({
   ...over,
 })
 
-function renderSheet(r: SubstrateRecord, k: KindInfo = task, readOnly = false) {
+function renderSheet(
+  r: SubstrateRecord,
+  k: KindInfo = task,
+  readOnly = false,
+  holders = false
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   client.setQueryData(["registry", "kinds"], [task, kind(PERSON, {})])
   return render(
     <QueryClientProvider client={client}>
-      <PropertySheet record={r} kind={k} kinds={[task]} readOnly={readOnly} />
+      <PropertySheet
+        record={r}
+        kind={k}
+        kinds={[task]}
+        readOnly={readOnly}
+        holders={holders}
+      />
     </QueryClientProvider>
   )
 }
@@ -551,15 +562,25 @@ describe("OwnershipChip", () => {
   const held = (meta: SubstrateRecord["propertyMeta"]) =>
     record({ propertyMeta: meta })
 
-  it("says You for the owner's own value", () => {
+  it("stays quiet on the owner's own value, the page's default", () => {
     renderSheet(held({ location: { manager: "console", tier: "owner" } }))
+    expect(row("location").querySelector("[data-slot=owner-chip]")).toBeNull()
+  })
+
+  it("says You on every row when asked who holds each value", () => {
+    renderSheet(
+      held({ location: { manager: "console", tier: "owner" } }),
+      task,
+      false,
+      true
+    )
     const chip = row("location").querySelector("[data-slot=owner-chip]")!
     expect(chip.getAttribute("data-holder")).toBe("you")
     expect(chip.textContent).toBe("You")
   })
 
   it("sits in its own column, never inside the value it describes", () => {
-    renderSheet(record())
+    renderSheet(record(), task, false, true)
     const cell = row("location").querySelector("[data-slot=provenance]")!
     expect(cell.querySelector("[data-slot=owner-chip]")).not.toBeNull()
     expect(

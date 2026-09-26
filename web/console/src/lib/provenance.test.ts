@@ -9,7 +9,9 @@ import {
   groupSources,
   mappingOfSource,
   sourceTitles,
+  departsFromDefault,
   differsLabel,
+  everyValueYours,
   holderOf,
   tierLabel,
   unionMembers,
@@ -211,5 +213,81 @@ describe("unionMembers", () => {
   it("says nothing for a scalar or when no source offers a list", () => {
     expect(unionMembers("x", { alternatives: [] })).toEqual([])
     expect(unionMembers(["x"], {})).toEqual([])
+  })
+})
+
+describe("departsFromDefault", () => {
+  it("is quiet for the owner's own value", () => {
+    expect(departsFromDefault({ manager: "console", tier: "owner" })).toBe(
+      false
+    )
+    expect(departsFromDefault(undefined)).toBe(false)
+  })
+
+  it("speaks for a provider, an agent, or a source that differs", () => {
+    expect(
+      departsFromDefault({
+        manager: "function:providers.substrate.reamde.dev:google:sync",
+        tier: "machine",
+      })
+    ).toBe(true)
+    expect(
+      departsFromDefault({ manager: "agent:ada.example.com:llm:scribe" })
+    ).toBe(true)
+    expect(
+      departsFromDefault({
+        manager: "console",
+        tier: "owner",
+        alternatives: [{ actor: "x.example.com", value: 1, updatedAt: "" }],
+      })
+    ).toBe(true)
+  })
+})
+
+describe("everyValueYours", () => {
+  const rec = (
+    properties: Record<string, unknown>,
+    propertyMeta: SubstrateRecord["propertyMeta"]
+  ): SubstrateRecord => ({
+    id: "r",
+    kind: "ada.example.com/tasks/task",
+    properties,
+    labels: {},
+    version: 1,
+    createdAt: "",
+    updatedAt: "",
+    propertyMeta,
+  })
+
+  it("holds when every filled value is the owner's own", () => {
+    expect(
+      everyValueYours(
+        rec(
+          { name: "A", note: "" },
+          {
+            name: { manager: "console", tier: "owner" },
+            note: { manager: "agent:ada.example.com:llm:scribe" },
+          }
+        )
+      )
+    ).toBe(true)
+  })
+
+  it("fails on one value somebody else holds", () => {
+    expect(
+      everyValueYours(
+        rec(
+          { name: "A", note: "B" },
+          {
+            name: { manager: "console", tier: "owner" },
+            note: { manager: "agent:ada.example.com:llm:scribe" },
+          }
+        )
+      )
+    ).toBe(false)
+  })
+
+  it("claims nothing for a record that says nothing of its holders", () => {
+    expect(everyValueYours(rec({ name: "A" }, undefined))).toBe(false)
   })
 })

@@ -1,8 +1,11 @@
 /** A record's properties as a sheet: the label (an icon for its datatype and
  * its display label; the key too in technical mode) on the left, the value on
  * the right, 36px rows, and read and edit the same row. A click on a value
- * edits it in place; the chip at the row's end says who holds it and opens
- * where it came from. Empty properties fold into one line that expands. */
+ * edits it in place. A chip at the row's end says who holds the value only
+ * where that departs from the page's default (the owner's own hand), or on
+ * every row when the reader asks who holds each value; it opens where the
+ * value came from, as does the label's hover card. Empty properties fold
+ * into one line that expands. */
 
 import { useMemo, useState } from "react"
 import { ChevronDownIcon, ChevronRightIcon, LockIcon } from "lucide-react"
@@ -11,6 +14,7 @@ import { InlineEditor } from "./inline-editor"
 import { OwnershipChip, OwnershipDetail } from "./ownership"
 import { DeclaredValue, LooseValue } from "./property-value"
 import { editStyle, isBlockValue, propertyIcon } from "./sheet-model"
+import { ago } from "./dates"
 import { sheetRows, type RowLock, type SheetRow } from "./sheet-rows"
 import { useRecordPatch, writeError } from "./use-record-patch"
 import {
@@ -19,6 +23,7 @@ import {
 } from "@/components/identity/identity-hover-card"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+import { departsFromDefault, holderOf } from "@/lib/provenance"
 import { typeLabel } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
 
@@ -29,9 +34,17 @@ const LOCK_WORDS: Record<RowLock, string> = {
   undeclared: "Not part of this collection’s shape, so it isn’t edited here",
 }
 
-function Label({ row }: { row: SheetRow }) {
+function Label({
+  row,
+  onDetails,
+}: {
+  row: SheetRow
+  /** Opens where the value came from, when the row has a holder. */
+  onDetails?: () => void
+}) {
   const [technical] = useTechnicalDetails()
   const { icon: Icon } = propertyIcon(row.spec)
+  const holder = row.filled && row.meta ? holderOf(row.meta) : undefined
   return (
     <IdentityHoverCard
       trigger={<div />}
@@ -44,6 +57,30 @@ function Label({ row }: { row: SheetRow }) {
             { label: "Holds", value: typeLabel(row.spec) },
             ...(row.lock
               ? [{ label: "Editing", value: LOCK_WORDS[row.lock] }]
+              : []),
+            ...(holder
+              ? [
+                  {
+                    label: "Held by",
+                    value: (
+                      <span className="inline-flex flex-wrap items-center gap-x-1.5">
+                        {holder.label}
+                        {row.meta?.updatedAt
+                          ? ` · ${ago(row.meta.updatedAt)}`
+                          : ""}
+                        {onDetails && (
+                          <button
+                            type="button"
+                            onClick={onDetails}
+                            className="text-primary-text underline-offset-2 hover:underline"
+                          >
+                            Details
+                          </button>
+                        )}
+                      </span>
+                    ),
+                  },
+                ]
               : []),
           ]}
           reference={row.name}
@@ -77,6 +114,9 @@ export interface PropertySheetProps {
   kinds: KindInfo[]
   /** A provider's own copy: nothing is edited here. */
   readOnly?: boolean
+  /** Show who holds every value, not only the values that depart from the
+   * owner's own hand. */
+  holders?: boolean
 }
 
 export function PropertySheet({
@@ -84,6 +124,7 @@ export function PropertySheet({
   kind,
   kinds,
   readOnly = false,
+  holders = false,
 }: PropertySheetProps) {
   const { all, filled, empty } = useMemo(
     () => sheetRows(record, kind, readOnly),
@@ -94,6 +135,10 @@ export function PropertySheet({
   const [open, setOpen] = useState<string[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const toggle = useRecordPatch(record)
+  const toggleDetail = (name: string) =>
+    setOpen((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
+    )
 
   const rows = showEmpty ? all : filled
 
@@ -139,7 +184,12 @@ export function PropertySheet({
         const locked = Boolean(
           row.lock && row.lock !== "provider" && row.filled
         )
-        const chip = Boolean(row.filled && !isEditing && row.meta?.manager)
+        const chip = Boolean(
+          row.filled &&
+          !isEditing &&
+          row.meta?.manager &&
+          (holders || departsFromDefault(row.meta))
+        )
         const provenance = !isEditing && (locked || chip)
         return (
           <div
@@ -148,7 +198,12 @@ export function PropertySheet({
             data-property={row.name}
             data-filled={row.filled}
           >
-            <Label row={row} />
+            <Label
+              row={row}
+              onDetails={
+                row.meta?.manager ? () => toggleDetail(row.name) : undefined
+              }
+            />
             <div
               role={row.field && !isEditing ? "button" : undefined}
               tabIndex={row.field && !isEditing ? 0 : undefined}
@@ -219,13 +274,7 @@ export function PropertySheet({
                   <OwnershipChip
                     row={row}
                     open={detailOpen}
-                    onToggle={() =>
-                      setOpen((prev) =>
-                        prev.includes(row.name)
-                          ? prev.filter((n) => n !== row.name)
-                          : [...prev, row.name]
-                      )
-                    }
+                    onToggle={() => toggleDetail(row.name)}
                   />
                 )}
               </div>

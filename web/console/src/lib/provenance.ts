@@ -174,6 +174,36 @@ export function holderOf(meta: PropertyMeta): Holder | undefined {
   return { identity, mark: "actor", label: identity.name }
 }
 
+/** Whether a value's holding is worth a chip on its row. The record page
+ * states the default once, in its meta line (the owner's own hand), so a row
+ * speaks only where it departs from that: a provider, an agent or a tool
+ * holds it, or a live source offers something else. */
+export function departsFromDefault(meta: PropertyMeta | undefined): boolean {
+  if (!meta?.manager) return false
+  if ((meta.alternatives ?? []).length) return true
+  return holderOf(meta)?.mark !== "you"
+}
+
+function holds(value: unknown): boolean {
+  if (value === undefined || value === null || value === "") return false
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === "object") return Object.keys(value).length > 0
+  return true
+}
+
+/** Whether every value the record holds is the owner's own, no source
+ * disagreeing: the one sentence that replaces a "You" chip on every row. A
+ * record whose holders the server never stamped claims nothing. */
+export function everyValueYours(record: SubstrateRecord): boolean {
+  let seen = false
+  for (const [name, meta] of Object.entries(record.propertyMeta ?? {})) {
+    if (!meta.manager || !holds(record.properties[name])) continue
+    if (departsFromDefault(meta)) return false
+    seen = true
+  }
+  return seen
+}
+
 /** A source's name in a sentence: its provider where it has one ("Google"),
  * else the actor's plain name. */
 export function sourceName(actor: string): string {

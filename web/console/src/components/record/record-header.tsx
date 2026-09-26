@@ -12,6 +12,7 @@ import {
   MoreHorizontalIcon,
   PencilIcon,
   Trash2Icon,
+  UserRoundIcon,
 } from "lucide-react"
 
 import { ago } from "@/components/property-sheet/dates"
@@ -34,6 +35,7 @@ import {
 } from "@/components/ui/dialog"
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -47,6 +49,7 @@ import { deleteRecord } from "@/lib/api/sync"
 import type { ChangeRow, KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { recordTitle } from "@/lib/format"
 import { displayPlural, untitled } from "@/lib/kind-names"
+import { everyValueYours } from "@/lib/provenance"
 import { fieldOf } from "@/lib/record-form"
 import { titleEditor } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
@@ -161,6 +164,8 @@ export function RecordHeader({
   rows,
   source,
   onSource,
+  holders,
+  onHolders,
 }: {
   record: SubstrateRecord
   kind?: KindInfo
@@ -169,6 +174,9 @@ export function RecordHeader({
   /** Whether the YAML source is showing (technical mode). */
   source: boolean
   onSource: (on: boolean) => void
+  /** Whether the sheet names who holds every value. */
+  holders: boolean
+  onHolders: (on: boolean) => void
 }) {
   const [technical] = useTechnicalDetails()
   const provider = providerOfKind(record.kind)
@@ -208,7 +216,14 @@ export function RecordHeader({
             >
               <MoreHorizontalIcon />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-44">
+            <DropdownMenuContent align="end" className="min-w-52">
+              <DropdownMenuCheckboxItem
+                checked={holders}
+                onCheckedChange={(on) => onHolders(on)}
+              >
+                <UserRoundIcon /> Who holds each value
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
               {technical && (
                 <DropdownMenuItem
                   render={
@@ -262,6 +277,9 @@ export function RecordHeader({
                 Changed {ago(record.updatedAt)}
                 {facts.changedBy ? ` by ${facts.changedBy}` : ""}
               </span>
+            )}
+            {!provider && everyValueYours(record) && (
+              <span data-slot="all-yours">Every value is yours</span>
             )}
           </>
         )}
