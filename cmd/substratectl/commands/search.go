@@ -29,8 +29,9 @@ func (a *app) searchCommand() *cobra.Command {
 
 --mode picks the arm: lexical (full text), semantic (embeddings) or hybrid,
 the default, which fuses both. --kinds narrows the ranking to the kinds named,
-each qualified or bare and resolved the way "get" resolves one; without it
-every kind is a candidate. --limit caps the hits.
+each in full as <authority>/<package>/<name>; a bare name is refused with the
+full spellings the repository declares under it. Without it every kind is a
+candidate. --limit caps the hits.
 
 The table prints one hit per line with its raw per-arm scores: ts_rank for
 the lexical arm, cosine similarity for the semantic one, "-" where an arm
@@ -93,7 +94,7 @@ is still embedding: non-zero means the ranking covers a partial index.`,
 	}
 	f := cmd.Flags()
 	f.StringVarP(&output, "output", "o", "", "output format: table|yaml|json")
-	f.StringSliceVar(&kinds, "kinds", nil, "only these kinds (comma-separated; qualified or bare)")
+	f.StringSliceVar(&kinds, "kinds", nil, "only these kinds (comma-separated, each <authority>/<package>/<name>)")
 	f.StringVar(&mode, "mode", "", "hybrid (default), lexical or semantic")
 	f.IntVar(&limit, "limit", 0, "maximum hits to return")
 	return cmd

@@ -81,6 +81,36 @@ func TestIfVersionInt64Fidelity(t *testing.T) {
 	}
 }
 
+// syncStart runs in its own transaction after the envelope was read, so the
+// record may be deleted or collected in between. Either way the stamp is
+// skipped, not a delivery error, and the tombstone is left as it was (#633).
+func TestSyncStartSkipsADeletedRecord(t *testing.T) {
+	t.Parallel()
+	ds := newRaceDataset(t)
+	ctx := context.Background()
+	w := racePut(t, ds, map[string]any{"name": "a"})
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, raceWidget, w.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	gone, err := ds.Get(ctx, raceWidget, w.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	stamp := &syncStamp{ref: eref{Kind: raceWidget, ID: w.ID}, actor: raceActor, started: nowUTC()}
+	if err := ds.syncStart(ctx, stamp, 0); err != nil {
+		t.Fatalf("sync start on a tombstone: %v", err)
+	}
+	if got, err := ds.Get(ctx, raceWidget, w.ID); err != nil || got.Version != gone.Version || got.DeletedAt == nil {
+		t.Fatalf("sync start wrote the tombstone: %+v %v", got, err)
+	}
+	if _, err := ds.RunGC(ctx); err != nil {
+		t.Fatalf("gc: %v", err)
+	}
+	if err := ds.syncStart(ctx, stamp, 0); err != nil {
+		t.Fatalf("sync start on a collected record: %v", err)
+	}
+}
+
 func TestEffectIfAbsentMintsSerialize(t *testing.T) {
 	t.Parallel()
 	// Two concurrent ifAbsent mints of one absent id. SELECT

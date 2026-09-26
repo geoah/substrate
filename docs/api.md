@@ -306,6 +306,11 @@ Ids are stable while a record exists; they are not promised unique across
 time, so a writer that composes an id from a provider's key may delete and
 recreate at will.
 
+A `patch` onto a tombstone is refused `404 not found` and changes nothing:
+a patch edits a record that exists, and a tombstone is gone to every list.
+The one patch a tombstone takes releases finalizers (`removeFinalizers` and
+nothing else), which is how a teardown lets the collector take it.
+
 A `put` addressed to a former id (the loser of a merge) is refused `409
 conflict` naming the canonical id: a supplied id is the writer's own key, not
 an address to resolve. Reads, `patch` and `delete` through a former id resolve
@@ -539,7 +544,7 @@ only through its occurrences.
 
 ```http
 GET /api/v1/records
-      ?filter={"implements":"temporal",
+      ?filter={"implements":"substrate.reamde.dev/core/temporal",
                "properties":{"at":{"gte":"2026-07-01T00:00:00Z","lt":"2026-07-08T00:00:00Z"}}}
       &orderBy=at
 
@@ -643,7 +648,7 @@ on the ranked read, which has no keyset at all.
 
 `count=1` asks the list for the size of the whole set its filter admits, and
 the page answers it as `count` beside the rows
-([decision 0105](decisions/0105-the-records-list-counts-its-filtered-set-on-request.md)):
+([decision 0106](decisions/0106-the-records-list-counts-its-filtered-set-on-request.md)):
 
 ```http
 GET /api/v1/records?filter={"kinds":["samples.substrate.reamde.dev/tasks/task"],

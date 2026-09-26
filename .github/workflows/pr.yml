@@ -1,0 +1,40 @@
+# What a pull request's titles promise the release: `mise run commits:check`
+# over the PR title and every commit on the branch.
+#
+# Its own workflow, not a ci job, because the title changes without a push.
+# ci runs on opened, synchronize and reopened, so a retitle would leave its
+# verdict standing on the old title; this one also runs on `edited`, and a
+# rerun costs one checkout and a script.
+#
+# The title reaches the script through env, never through `${{ }}` in the
+# run line: it is text anybody opening a pull request writes, and an
+# interpolated expression is a shell injection.
+name: pr
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  commits:
+    name: conventional commits
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Full history: the check walks every commit between the merge base and
+      # the head.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # No toolchain: the check is bash and git, and installing mise's tools
+      # was 26 of this job's 35 seconds.
+      - run: .mise/commitscheck.sh
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}

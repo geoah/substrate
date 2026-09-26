@@ -212,6 +212,16 @@ data:
   # one requested sync per account clears what a repository already holds.
   # Behaviour only; no declaration moved.
   #
+  # 34: EVERY DUE ACCOUNT GETS A SHARE OF A SCHEDULED RUN (#651). `syncgmail`
+  # and `syncdrive` counted one invocation budget across the whole queue, so
+  # the first account's backfill spent it and the next was never stamped. The
+  # invocation cap is now per account and the chain's clock is split evenly
+  # over the accounts still queued. A gmail walk resumed from
+  # `gmailBackfillResume` now runs the `history` delta first, so new mail
+  # lands while a backfill is held; the delta's position is three new
+  # optional fields on that object (`deltaHistoryId`, `deltaToken`,
+  # `deltaOff`). ADDITIVE.
+  #
   # 35 — every kind's description opens with one plain sentence
   # saying what a record is to a person.
   version: 35
@@ -974,6 +984,19 @@ data:
           type: string
           description: the phase the parked hydrates return to once they are
             fetched — `backfill`, `history` or `finish`
+        deltaHistoryId:
+          type: string
+          description: where the history delta a resumed walk runs first starts
+            next run; absent until one has run, when the walk's own `historyId`
+            is the start
+        deltaToken:
+          type: string
+          description: the `history.list` page token that delta resumes at
+            when the budget cut it short
+        deltaOff:
+          type: bool
+          description: whether that delta's start was too old to serve, so
+            the walk runs without one until it completes
     gmailLastSyncedAt:
       type: datetime
       writer: connector
@@ -7636,6 +7659,12 @@ data:
     # page one, forever. 20 list pages x (1 list + 4 hydrates) is ~100
     # invocations and would never finish; ~12 leaves the resume state
     # committed well inside the deadline, and every run makes real progress.
+    #
+    # PER ACCOUNT. A scheduled fire walks every due account in one chain, and a
+    # count shared across them let the first (a long backfill) spend all of it,
+    # so the next met `_spent` at `plan` and went unstamped on every run (#651).
+    # The clock below stays the chain's; each account gets an even share of what
+    # is left of it when its walk begins (`_share_begin`).
     MAX_CALLS = 12
     # AND THE SAME BOUND IN SECONDS. The invocation count alone was not a bound
     # at all: `_spent` is consulted at a LIST boundary, and the hydrates between
@@ -9434,10 +9463,31 @@ data:
         return (held / 1000.0) if held > 0 else float(DRAIN_SECONDS)
 
 
+    def _share_begin(cur):
+        """Fix THIS account's share of the chain's clock, once, as its walk begins.
+
+        The chain's remaining seconds split evenly over the accounts still in the
+        queue, this one included: a later account is never left only what an
+        earlier one did not spend, and whatever an account leaves unspent flows
+        to the ones behind it, because each share is taken from what is left.
+        `_fresh` drops the two fields, so the next account takes its own.
+        """
+        if not cur.get("shareStartTs"):
+            now = _clock()
+            left = _drain_seconds(cur) - (now - float(cur.get("startedAt") or now))
+            cur["shareStartTs"] = now
+            cur["shareSeconds"] = max(0.0, left) / max(1, len(cur.get("queue") or ()))
+        return cur
+
+
     def _out_of_time(cur):
-        """Has this chain spent its wall-clock budget?"""
+        """Has this chain, or this account's share of it, spent its clock?"""
+        now = _clock()
         began = float(cur.get("startedAt") or 0)
-        return bool(began) and (_clock() - began) >= _drain_seconds(cur)
+        if began and (now - began) >= _drain_seconds(cur):
+            return True
+        mine = float(cur.get("shareStartTs") or 0)
+        return bool(mine) and (now - mine) >= float(cur.get("shareSeconds") or 0)
 
 
     def _erroring(batch, acct, reason, retry_at=""):
@@ -9509,8 +9559,10 @@ data:
 
 
     def _spent(cur, reserve=0):
-        # The engine's drain deadline is CUMULATIVE over the whole chain, so
-        # both counters ride across accounts rather than resetting per account.
+        # The invocation count is THIS ACCOUNT's (`acctCalls`, reset by `_fresh`),
+        # so one account's backfill cannot spend the next account's run (#651).
+        # The clock is the chain's and this account's share of it, because the
+        # engine's drain deadline is cumulative over the whole chain.
         # `reserve` is what the caller still owes AFTER this call: a list page
         # owes four hydrates and a stamp, and a page listed with no budget to
         # hydrate it is a page the sweep would read as deleted.
@@ -9519,7 +9571,7 @@ data:
         # on calls, not on time, and twelve invocations of twenty-five hydrates
         # each is minutes against the real API — which is why every scheduled
         # fire parked. Whichever bound is reached first stops the chain.
-        return int(cur.get("calls") or 0) + reserve >= MAX_CALLS or _out_of_time(cur)
+        return int(cur.get("acctCalls") or 0) + reserve >= MAX_CALLS or _out_of_time(cur)
 
 
     def _resume(**fields):
@@ -9732,23 +9784,12 @@ data:
                  % (aid, len(live), ", %d retracted" % dropped if dropped else ""))
 
 
-    def _plan_account(host, aid, props, base, token, cur):
-        # The WATERMARK (F5), one quota unit: the run-start historyId, read
-        # before a single message is, stamped only on completion.
-        profile = _get(base, token, "/gmail/v1/users/me/profile")
-        cur["runHistoryId"] = str(profile.get("historyId") or "")
-        anchor = str(props.get("gmailBackfillAnchorAt") or "")
-        if not anchor:
-            anchor = _iso(_now())
-            cur["anchor"] = anchor
-        held = props.get("gmailBackfillResume") or {}
-        if isinstance(held, str):
-            try:
-                held = _json.loads(held)
-            except ValueError:
-                held = {}
-        if not isinstance(held, dict):
-            held = {}
+    def _resume_walk(cur, held):
+        """Restore the walk an earlier run held, onto this run's cursor.
+
+        The delta a resumed walk runs first (`deltaHistoryId`, `deltaToken`,
+        `deltaOff`) rides on `deltaState` until the walk completes.
+        """
         if held.get("pending"):
             # An earlier fire stopped between two hydrate batches: fetch exactly
             # the ids it listed and never reached, and only then carry on where it
@@ -9767,8 +9808,7 @@ data:
                         "maxHistoryId": held.get("maxHistoryId") or "",
                         "runHistoryId": (held.get("historyId")
                                          or cur["runHistoryId"])})
-            return cur
-        if held.get("pageToken"):
+        elif held.get("pageToken"):
             # An earlier run hit a per-run cap: resume ITS walk, under ITS
             # window and generation — and under ITS watermark. The historyId
             # must NOT advance to this run's: a backfill walks newest-first,
@@ -9790,6 +9830,80 @@ data:
                         "maxHistoryId": held.get("maxHistoryId") or "",
                         "runHistoryId": (held.get("historyId")
                                          or cur["runHistoryId"])})
+        cur["deltaState"] = _resume(deltaHistoryId=held.get("deltaHistoryId") or "",
+                                    deltaToken=held.get("deltaToken") or "",
+                                    deltaOff=bool(held.get("deltaOff")) or None)
+        return cur
+
+
+    def _end_delta(cur):
+        """Close the history delta a resumed walk runs first, and put the walk back.
+
+        What the delta read up to is where the next one starts: this run's
+        profile read when it drained, or its own start and the page it stopped
+        at when the budget cut it short. The delta's unfetched ids join the
+        walk's, so a hand-back parks both.
+        """
+        d = cur.pop("delta")
+        walk = d.get("walk") or {}
+        token = d.get("token") or (cur.get("pageToken")
+                                   if cur.get("back") == "history" else "")
+        if d.get("off"):
+            state = {"deltaOff": True}
+        elif token:
+            state = {"deltaHistoryId": d.get("since") or "", "deltaToken": token}
+        else:
+            state = {"deltaHistoryId": d.get("to") or d.get("since") or ""}
+        cur["deltaState"] = _resume(**state)
+        owed = [str(m) for m in (cur.get("pending") or []) if m]
+        pending = owed + [str(m) for m in (walk.get("pending") or [])
+                          if m and str(m) not in owed]
+        walked = walk.get("phase") or "backfill"
+        cur.update({"pending": pending, "pageToken": walk.get("pageToken") or "",
+                    "phase": "hydrate" if pending else walked,
+                    "back": (walk.get("back") or "finish") if walked == "hydrate"
+                    else "backfill"})
+        return cur
+
+
+    def _plan_account(host, aid, props, base, token, cur):
+        # The WATERMARK (F5), one quota unit: the run-start historyId, read
+        # before a single message is, stamped only on completion.
+        profile = _get(base, token, "/gmail/v1/users/me/profile")
+        cur["runHistoryId"] = str(profile.get("historyId") or "")
+        anchor = str(props.get("gmailBackfillAnchorAt") or "")
+        if not anchor:
+            anchor = _iso(_now())
+            cur["anchor"] = anchor
+        held = props.get("gmailBackfillResume") or {}
+        if isinstance(held, str):
+            try:
+                held = _json.loads(held)
+            except ValueError:
+                held = {}
+        if not isinstance(held, dict):
+            held = {}
+        if held.get("pageToken") or (held.get("pending")
+                                     and held.get("back") != "history"):
+            _resume_walk(cur, held)
+            # NEW MAIL FIRST. A resumed walk reads OLDER mail only: what arrived
+            # since it began sits in front of its page token, and the watermark is
+            # held back until it completes, so an account in a week-long backfill
+            # mirrored no new mail for that week (#651). The history delta runs
+            # first, from where the previous one stopped (or the walk's own
+            # start), and the walk carries on behind it (`_end_delta`).
+            since = str(held.get("deltaHistoryId") or held.get("historyId") or "")
+            if since and not held.get("deltaOff"):
+                cur["delta"] = {"since": since,
+                                "to": str(profile.get("historyId") or ""),
+                                "walk": {k: cur.get(k) for k in
+                                         ("phase", "pending", "back", "pageToken")}}
+                cur.update({"phase": "history", "historyId": since,
+                            "pageToken": str(held.get("deltaToken") or ""),
+                            "pending": [], "back": "finish"})
+            return cur
+        if held.get("pending"):
+            _resume_walk(cur, held)
             return cur
         if held.get("historyToken") and held.get("historyId"):
             cur.update({"phase": "history", "historyId": str(held["historyId"]),
@@ -9924,6 +10038,16 @@ data:
                 # is a request bug and a 403 a scope problem; neither may
                 # silently become a full re-read.
                 raise
+            elif cur.get("delta"):
+                # The delta ahead of a resumed walk is too old to serve. It is
+                # not a reason to restart the walk: the delta is off until the
+                # walk completes, whose stamp is the watermark the next reads.
+                host.log("google-gmail: historyId too old for the delta ahead of "
+                         "%s's held walk: the walk carries on without it" % aid)
+                cur["delta"]["off"] = True
+                cur.update({"pending": [], "pageToken": "", "back": "finish"})
+                _end_delta(cur)
+                return {"more": host.page.more(cur)}
             else:
                 host.log("google-gmail: historyId too old for %s — windowed full "
                          "re-read" % aid)
@@ -9986,7 +10110,13 @@ data:
         cur["pending"] = pending
         next_page = resp.get("nextPageToken") or ""
         if next_page and _spent(cur, CALL_RESERVE):
-            _hold_history(host, aid, cur, next_page)
+            if cur.get("delta"):
+                # The delta's next page rides on the held walk's resume, which
+                # `_hold_history` would overwrite.
+                cur["delta"]["token"] = next_page
+                cur["back"] = "finish"
+            else:
+                _hold_history(host, aid, cur, next_page)
             next_page = ""
         else:
             cur["back"] = "history" if next_page else "finish"
@@ -10202,6 +10332,11 @@ data:
         skipped = int(cur.get("skipped") or 0)
         status = "ok" if skipped == 0 else "ok (%d skipped)" % skipped
         resume = cur.get("resume") or {}
+        if resume.get("pageToken") or (resume.get("pending")
+                                       and resume.get("back") != "history"):
+            # The delta's position rides with the walk it runs ahead of and
+            # ends with it: a completed walk stamps `gmailHistoryId` itself.
+            resume = dict(resume, **(cur.get("deltaState") or {}))
         owed = bool(resume.get("pageToken") or resume.get("historyToken")
                     or resume.get("sweep") or resume.get("pending"))
         # What the next fire picks up, as a COUNT: the messages parked mid-page
@@ -10281,9 +10416,11 @@ data:
         # One invocation, counted. Everything that can outrun the engine's
         # cumulative drain deadline reads this counter.
         cur["calls"] = int(cur.get("calls") or 0) + 1
+        cur["acctCalls"] = int(cur.get("acctCalls") or 0) + 1
         # THE CHAIN'S CLOCK, started on the first invocation that walks and
-        # carried by every rebuilt cursor after it.
+        # carried by every rebuilt cursor after it, then this account's share.
         _chain_begin(cur)
+        _share_begin(cur)
         # WHEN THIS ACCOUNT'S WALK BEGAN, once per account and by the door every
         # resumed cursor comes through, so a walk spanning six invocations
         # reports its own duration rather than its last page's.
@@ -10291,7 +10428,7 @@ data:
         phase = cur.get("phase") or "plan"
         if phase == "plan":
             if _spent(cur, CALL_RESERVE):
-                # A later account in the queue, with the chain's budget already
+                # A later account in the queue, with the chain's clock already
                 # spent. It is NOT stamped — nothing was read — so `_due` still
                 # holds and the next scheduled run starts here.
                 host.log("google-gmail: the drain's invocation budget is spent "
@@ -10304,8 +10441,14 @@ data:
             if not (cur.get("resume") or {}).get("sweep"):
                 _sync_labels(host, batch, aid, base, token)
             phase = cur["phase"]
+        if phase == "finish" and cur.get("delta"):
+            # The delta ahead of a held walk drained: the walk carries on here.
+            _end_delta(cur)
+            phase = cur["phase"]
         if phase == "hydrate":
             if cur.get("pending") and _out_of_time(cur):
+                if cur.get("delta"):
+                    _end_delta(cur)
                 # OUT OF TIME BETWEEN TWO HYDRATE BATCHES. The invocation counter
                 # never saw this coming — it is checked at a list boundary — and
                 # continuing here is what walked the chain past the engine's
@@ -15921,6 +16064,10 @@ data:
     # keeps asking for one more page is cut off with nothing persisted. A
     # listing page owes an export batch or two and the stamp; twelve leaves the
     # resume state committed well inside the deadline.
+    #
+    # PER ACCOUNT, as in the gmail stream (#651): a count shared across a
+    # scheduled queue let the first account's cold walk starve every account
+    # behind it. The clock stays the chain's, split evenly (`_share_begin`).
     MAX_CALLS = 12
     # AND THE SAME BOUND IN SECONDS, checked at the top of every continuation:
     # the count alone is not a bound at all when eight exports against the real
@@ -16604,9 +16751,26 @@ data:
         return (held / 1000.0) if held > 0 else float(DRAIN_SECONDS)
 
 
+    def _share_begin(cur):
+        """Fix THIS account's share of the chain's clock as its walk begins: the
+        remaining seconds split evenly over the accounts still queued, this one
+        included. `_fresh` drops the two fields, so the next account takes its
+        own share of whatever is left."""
+        if not cur.get("shareStartTs"):
+            now = _clock()
+            left = _drain_seconds(cur) - (now - float(cur.get("startedAt") or now))
+            cur["shareStartTs"] = now
+            cur["shareSeconds"] = max(0.0, left) / max(1, len(cur.get("queue") or ()))
+        return cur
+
+
     def _out_of_time(cur):
+        now = _clock()
         began = float(cur.get("startedAt") or 0)
-        return bool(began) and (_clock() - began) >= _drain_seconds(cur)
+        if began and (now - began) >= _drain_seconds(cur):
+            return True
+        mine = float(cur.get("shareStartTs") or 0)
+        return bool(mine) and (now - mine) >= float(cur.get("shareSeconds") or 0)
 
 
     def _erroring(batch, acct, reason, retry_at="", reconsent=False):
@@ -16651,10 +16815,11 @@ data:
 
 
     def _spent(cur, reserve=0):
-        # Both counters ride across accounts: the engine's drain deadline is
-        # CUMULATIVE over the whole chain. Whichever bound is reached first
-        # stops it.
-        return int(cur.get("calls") or 0) + reserve >= MAX_CALLS or _out_of_time(cur)
+        # The invocation count is THIS ACCOUNT's (`acctCalls`, reset by `_fresh`);
+        # the clock is the chain's and this account's share of it, because the
+        # engine's drain deadline is cumulative over the whole chain. Whichever
+        # bound is reached first stops it.
+        return int(cur.get("acctCalls") or 0) + reserve >= MAX_CALLS or _out_of_time(cur)
 
 
     def _resume(**fields):
@@ -17156,7 +17321,9 @@ data:
 
     def _drain(host, batch, aid, acct, props, base, token, cur):
         cur["calls"] = int(cur.get("calls") or 0) + 1
+        cur["acctCalls"] = int(cur.get("acctCalls") or 0) + 1
         _chain_begin(cur)
+        _share_begin(cur)
         _trait_begin(cur)
         notes = _Notes(cur)
         phase = cur.get("phase") or "plan"

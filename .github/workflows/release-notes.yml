@@ -1,0 +1,49 @@
+# The GitHub releases' upgrade notes, held to docs/changes/ on main.
+#
+# The release job writes a release's notes once. A note fixed after that, or
+# written late with a `release:` key, reaches its release page only through
+# `mise run release:notes`, which rewrites the block between the notes'
+# markers and leaves goreleaser's commit list alone. It edits only pages
+# whose block differs, so a run with nothing to do writes nothing.
+#
+# A note added with an unreleased change is placed at no tag yet and is
+# skipped here; the release job's header carries it when the tag lands.
+name: release-notes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/changes/**
+      - .mise/changelog.sh
+      - .mise/releasenotes.sh
+  workflow_dispatch:
+
+concurrency:
+  group: release-notes
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: sync release notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # To edit release bodies. Nothing else here writes.
+      contents: write
+    steps:
+      # Full history and every tag: a note's release is the first tag that
+      # contains the commit that added it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          experimental: true
+          version: 2026.9.2
+      - run: mise run release:notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

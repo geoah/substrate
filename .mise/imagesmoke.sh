@@ -17,6 +17,8 @@
 #   the data root's repositories/ directory exists and that uid owns it
 #   the credential key compose's entrypoint mints landed in /keys
 #   GET /.well-known/substrate/server.json names a version
+#   uv runs, and is a static binary: Alpine's dynamically linked package
+#   aborts in jemalloc on 16 KB page kernels (arm64, the Raspberry Pi 5)
 #
 # Usage: .mise/imagesmoke.sh <image ref>
 #   `mise run ci:image` builds $IMAGE:ci and runs this over it;
@@ -104,8 +106,31 @@ owner="$("${compose[@]}" exec -T substrate stat -c %u /var/lib/substrate/reposit
 "${compose[@]}" exec -T substrate test -s /keys/credential.key ||
   fail "the entrypoint minted no credential key into /keys"
 
+# The uv on PATH, the one the runner execs, must be the release the
+# Dockerfile pins, and static. The upstream release is static-pie: musl's ldd
+# lists only the loader, with no `=>` line. Alpine's package links
+# libc.musl, libgcc_s and libbz2, and names itself `alpine-linux-musl` in
+# its version string. ldd failing is a failure here, not a pass, because a
+# check that cannot run proves nothing.
+uv_pin="$(sed -n 's/^ARG UV_VERSION=\([^[:space:]]*\).*/\1/p' Dockerfile | head -1)"
+[ -n "$uv_pin" ] || fail "the Dockerfile declares no ARG UV_VERSION= to hold the image's uv to"
+uv_path="$("${compose[@]}" exec -T substrate sh -c 'command -v uv')" ||
+  fail "no uv on the image's PATH"
+uv_version="$("${compose[@]}" exec -T substrate "$uv_path" --version)" ||
+  fail "${uv_path} does not run in the image"
+case "$uv_version" in
+*alpine*) fail "the image ships Alpine's uv (${uv_version}) at ${uv_path}, not the upstream release" ;;
+"uv ${uv_pin}" | "uv ${uv_pin} "*) ;;
+*) fail "${uv_path} reports ${uv_version}, but the Dockerfile pins UV_VERSION ${uv_pin}" ;;
+esac
+uv_libs="$("${compose[@]}" exec -T substrate ldd "$uv_path" 2>&1)" ||
+  fail "ldd could not read ${uv_path}: ${uv_libs}"
+case "$uv_libs" in
+*"=>"*) fail "${uv_path} links shared libraries, so it is not the static upstream release: ${uv_libs}" ;;
+esac
+
 doc="$(curl -fsS "${base}/.well-known/substrate/server.json")"
 version="$(printf '%s' "$doc" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
 [ -n "$version" ] || fail "server.json names no version: ${doc}"
 
-echo "image:smoke: ${image} boots as uid 65532, owns its data root, minted a key, reports ${version}"
+echo "image:smoke: ${image} boots as uid 65532, owns its data root, minted a key, reports ${version}, runs a static ${uv_version} at ${uv_path}"

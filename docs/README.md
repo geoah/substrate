@@ -60,6 +60,8 @@ API call that completes a task.
 - [The web console](console.md)
 - [Running one locally](running-locally.md)
 - [Running a substrate](operations.md)
+- [Upgrade notes](changes/README.md): what each release changes that a
+  client, an agent or an operator has to act on, and how to write one
 - [Testing](testing.md) — every suite, which to reach for, and how to give the
   live one keys
 - [Built-in kinds](builtin-kinds.md) — reference

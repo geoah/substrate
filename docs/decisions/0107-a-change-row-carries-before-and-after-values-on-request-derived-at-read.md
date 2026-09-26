@@ -4,7 +4,7 @@ date: 2026-09-26
 decision-makers: George Antoniadis
 ---
 
-# 0106. A change row carries before and after values on request, derived at read
+# 0107. A change row carries before and after values on request, derived at read
 
 ## Context and Problem Statement
 

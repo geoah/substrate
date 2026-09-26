@@ -28,8 +28,8 @@ type effect struct {
 	Action string
 	Type   string // full identity, already checked against emit
 	ID     string
-	// IfAbsent makes a put create-only: any existing row — live or
-	// tombstoned — is a no-op.
+	// IfAbsent makes a put create-only: a live row is a no-op, and a
+	// tombstone counts as absent, so the put restores it.
 	IfAbsent bool
 	// IfVersion, when set, is an optimistic-concurrency precondition on a put
 	// or patch: the write applies only if the addressed record's stored version
@@ -407,10 +407,12 @@ func (t *txn) applyEffect(ef effect) error {
 			if err != nil {
 				return err
 			}
-			if row != nil {
-				// Create-only: the record exists (live or tombstoned), so the
-				// mint is a no-op — re-mention and replay never reset state
-				// owned by later stages.
+			if row != nil && row.DeletedAt == nil {
+				// Create-only: the record is live, so the mint is a no-op,
+				// and re-mention and replay never reset state owned by later
+				// stages. A TOMBSTONE counts as absent: the put restores it,
+				// so the patch every provider sends after its mint lands on a
+				// live row instead of being refused (#633).
 				return nil
 			}
 		}

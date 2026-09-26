@@ -223,6 +223,49 @@ func TestTriggerEffectPutIfAbsent(t *testing.T) {
 	}
 }
 
+// Every provider writes a mirror as an ifAbsent put and then a patch. A put
+// ifAbsent onto a TOMBSTONE restores it, so the patch that follows lands on a
+// live row: a re-sync after a delete or a purge writes the mirror back instead
+// of parking on a patch the tombstone refuses (#633).
+const mintThenPatchSource = `
+def main(input, host):
+    env = input["envelope"]
+    tid = "m-" + env["change"]["id"]
+    return {"effects": [
+        {"action": "put", "ifAbsent": True, "kind": "samples.substrate.reamde.dev/tasks/task",
+         "id": tid, "properties": {"name": "pending"}},
+        {"action": "patch", "kind": "samples.substrate.reamde.dev/tasks/task",
+         "id": tid, "properties": {"name": env["record"]["properties"]["name"]}},
+    ]}
+`
+
+func TestTriggerEffectIfAbsentPutRestoresATombstoneForItsPatch(t *testing.T) {
+	t.Parallel()
+	ds := newFnDataset(t,
+		[]enginetest.Trigger{trigOn("mirror", map[string]any{"kinds": []any{widgetType}})},
+		pyFn("mirror", map[string]any{}, []any{taskType}, mintThenPatchSource))
+	ctx := context.Background()
+
+	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "first"}})
+	process(t, ds)
+	if got := mustGet(t, ds, taskType, "m-"+w.ID); got.Title != "first" {
+		t.Fatalf("mirrored title: %q", got.Title)
+	}
+	if _, err := ds.Delete(ctx, owner, taskType, "m-"+w.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the mirror: %v", err)
+	}
+
+	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{"name": "second"}})
+	process(t, ds)
+	if parked, err := ds.TriggerFailures(ctx, trigID("mirror")); err != nil || len(parked) != 0 {
+		t.Fatalf("the re-sync parked: %v %v", parked, err)
+	}
+	got := mustGet(t, ds, taskType, "m-"+w.ID)
+	if got.DeletedAt != nil || got.Title != "second" {
+		t.Fatalf("mirror after the re-sync: title %q deletedAt %v", got.Title, got.DeletedAt)
+	}
+}
+
 func TestTriggerEffectResolvesFormerID(t *testing.T) {
 	t.Parallel()
 	// The deterministic-id parking trap: after the owner merges the task a

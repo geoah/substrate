@@ -634,7 +634,7 @@ unknown id is a 404 `not_found`. The id is a package identity, so it carries a
 `…/catalog/samples.substrate.reamde.dev%2Ftasks`.
 The closure names every kind, trait, function, agent, mapping and shipped
 record, each declaration's description beside it, and in `kindPurposes` each
-kind's declared [`purpose`](decisions/0104-a-kind-declares-its-purpose.md)
+kind's declared [`purpose`](decisions/0105-a-kind-declares-its-purpose.md)
 (absent where the kind declares none, which reads as `primary`), so a client
 can tell a sample's collections from its machinery before taking it.
 
@@ -645,7 +645,11 @@ each applies the entry's closure exactly the way `substratectl apply -f
 bundle.yaml -f triggers.yaml` does: the declarations through the batch
 [admission](vocabulary.md#admission), the delivery wiring as ordinary records,
 both committing as one repository transaction. Each is idempotent, so a
-second call changes nothing. Both are refused for any actor outside the three
+second call changes nothing: a declaration counts as changed only when its
+coerced form differs from its stored row (a reference compared as the `{ref:
+…}` object the row holds, a duration in its normalized spelling), so taking an
+unchanged closure again writes no changelog entry and keeps every version.
+Both are refused for any actor outside the three
 interactive clients (`api`, `console`, `substratectl`) with a 403, before the
 closure is touched: taking bundle code is a person's action.
 

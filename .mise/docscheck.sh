@@ -163,6 +163,50 @@ for path in docs/*.md; do
     flag "docs/README.md does not link ${page}"
 done
 
+# --- the upgrade notes --------------------------------------------------
+#
+# docs/changes/ is what `mise run changelog` and the release job render, and
+# both read a note's frontmatter and heading mechanically, so a note that
+# drifts from the shape docs/changes/README.md gives is a release whose notes
+# silently lose it. Like the decision records, the notes are NOT in `files`:
+# a note describes the release it shipped in, in that release's words.
+for path in docs/changes/*.md; do
+  [ -e "$path" ] || continue
+  note="$(basename "$path")"
+  [ "$note" = "README.md" ] && continue
+  [[ "$note" =~ ^[a-z0-9]+(-[a-z0-9]+)*\.md$ ]] ||
+    flag "docs/changes/${note} is not a lowercase kebab-case name ending in .md"
+  # The frontmatter is `---`, `type: <value>`, an optional
+  # `release: <tag>`, then `---`. The release key is for a note written
+  # after its release, so the tag it names must exist.
+  type_line="$(sed -n '2p' "$path")"
+  third="$(sed -n '3p' "$path")"
+  close=3
+  if [[ "$third" == release:* ]]; then
+    close=4
+    tag="${third#release: }"
+    if ! [[ "$third" =~ ^release:\ v[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+      ! git rev-parse --quiet --verify "refs/tags/${tag}" >/dev/null; then
+      flag "docs/changes/${note} names '${third}'; the release key is 'release: vX.Y.Z' and that tag must exist"
+    fi
+  fi
+  if [ "$(sed -n '1p' "$path")" != "---" ] || [ "$(sed -n "${close}p" "$path")" != "---" ] ||
+    ! [[ "$type_line" =~ ^type:\ (breaking|deprecated|feature|fix)$ ]]; then
+    flag "docs/changes/${note} does not open with a frontmatter of 'type:' (breaking, deprecated, feature or fix) and an optional 'release:' (got: $(sed -n "1,${close}p" "$path" | tr '\n' '|'))"
+    continue
+  fi
+  # Outside code fences only: a shell comment in an example is not a heading.
+  headings="$(awk '/^```/ { fence = !fence; next } !fence && /^# / { n++ } END { print n + 0 }' "$path")"
+  [ "$headings" = "1" ] ||
+    flag "docs/changes/${note} has ${headings} '# ' headings; a note has exactly one"
+  case "$type_line" in
+  "type: breaking" | "type: deprecated")
+    grep -qxF '## What to do' "$path" ||
+      flag "docs/changes/${note} is ${type_line#type: } and has no '## What to do' section"
+    ;;
+  esac
+done
+
 # --- the decision records -----------------------------------------------
 #
 # docs/decisions/ is contributor-facing history: one record is one choice made

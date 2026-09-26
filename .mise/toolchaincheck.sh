@@ -14,6 +14,8 @@
 #   node    .mise.toml against the console build stage
 #   go      .mise.toml against every golang stage the Dockerfile declares
 #   pnpm    .mise.toml against web/console/package.json's packageManager
+#   uv      .mise.toml against the Dockerfile's UV_VERSION, exactly, and no
+#           uv from apk
 #   alpine  one runtime base, because the file has one runtime stage
 #
 # A tag is compared as a PREFIX of the pin, because the tag spells only as much
@@ -97,6 +99,40 @@ if [ -z "$package_manager" ]; then
   flag "web/console/package.json declares no pnpm packageManager"
 elif [ "$pnpm_pin" != "$package_manager" ]; then
   flag "web/console/package.json activates pnpm ${package_manager}, but .mise.toml pins ${pnpm_pin}"
+fi
+
+# --- uv, the runtime every function body with dependencies prepares on ----
+#
+# The image downloads Astral's static release at UV_VERSION, so the pin is a
+# full version and compared whole, not as a tag prefix. Alpine's `uv` package
+# is refused by name: its jemalloc aborts on 16 KB page kernels (arm64, the
+# Raspberry Pi 5), and it floats with the base image instead of the pin.
+uv_pin="$(mise_pin uv)"
+uv_image="$(sed -n 's/^ARG UV_VERSION=\([^[:space:]]*\).*/\1/p' "${dockerfiles[@]}" | sort -u)"
+if [ -z "$uv_pin" ]; then
+  flag "no uv pin in .mise.toml's [tools]; nothing to hold the image's uv to"
+elif [ -z "$uv_image" ]; then
+  flag "no ARG UV_VERSION= in ${dockerfiles[*]}; the image's uv is unpinned"
+elif [ "$uv_image" != "$uv_pin" ]; then
+  flag "the Dockerfile downloads uv $(printf '%s' "$uv_image" | tr '\n' ' '), but .mise.toml pins uv ${uv_pin}"
+fi
+# One instruction per record: comment lines dropped, backslash continuations
+# joined, so a `uv` on any line of a multi-line `RUN apk add \` is seen. Then
+# each command of it (split on &&, || ; and |) that runs `apk add` is
+# searched for `uv` as a whole package argument.
+apk_uv="$(awk '
+  /^[[:space:]]*#/ { next }
+  { line = line " " $0 }
+  /\\[[:space:]]*$/ { sub(/\\[[:space:]]*$/, "", line); next }
+  {
+    n = split(line, cmds, /&&|\|\||;|\|/)
+    for (i = 1; i <= n; i++)
+      if (cmds[i] ~ /apk[[:space:]]+add/ && cmds[i] ~ /(^|[[:space:]])uv([[:space:]]|$)/) print FILENAME
+    line = ""
+  }
+' "${dockerfiles[@]}")"
+if [ -n "$apk_uv" ]; then
+  flag "the Dockerfile installs uv from apk; take the pinned upstream release (the uv stage)"
 fi
 
 # --- alpine, which nothing outside the Dockerfile pins --------------------

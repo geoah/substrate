@@ -52,6 +52,26 @@ func (t *txn) subjectTargetOf(src eref, property string) (eref, error) {
 	return t.liveCanonical(stored)
 }
 
+// storedSubjectOf is the subject hop through a TOMBSTONED source: the
+// canonical record its subject slot stores, whether that record is live or a
+// tombstone itself. A tombstone with no subject stored has nothing to resolve
+// to, and the reference is refused naming it.
+func (t *txn) storedSubjectOf(src eref, srcTy *vocabulary.Kind, m *vocabulary.Mapping) (eref, error) {
+	var stored eref
+	err := t.row(`
+		SELECT r.dst_kind, r.dst FROM refs r
+		WHERE r.src_kind = $1 AND r.src = $2 AND r.property = $3 AND r.path = ''
+		ORDER BY r.ord LIMIT 1`, src.Kind, src.ID, m.Property).Scan(&stored.Kind, &stored.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return eref{}, fmt.Errorf("reference names %s, which is deleted and describes no %s",
+			vocabulary.RecordPath(srcTy.Identity, src.ID), m.To)
+	}
+	if err != nil {
+		return eref{}, err
+	}
+	return t.canonicalOf(stored)
+}
+
 // liveCanonical resolves a stored destination through the former-id trail and
 // reports the canonical record when it is live, the zero eref when it is a
 // tombstone or absent. A plain tombstone with no trail behind it resolves to

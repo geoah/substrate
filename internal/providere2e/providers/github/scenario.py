@@ -1206,8 +1206,47 @@ def main():
         # The org approves the app. The next run's probe (`GET /repos/{o}/{r}`
         # for the remembered repository) answers, the search watermarks are
         # dropped, and the window the refusal hid is re-walked from the
-        # backfill floor — which is the only way the skipped items can ever
+        # backfill floor, which is the only way the skipped items can ever
         # land, since they sit behind the watermark.
+        #
+        # The healing run DIES before its stamp here: a 500 on the first pull
+        # request search, after the issue search has drained and saved its
+        # watermark. Production's 90-day re-walk never fitted one bounded
+        # drain, and while only `_stamp` cleared `syncSkipped` every later run
+        # probed the org again, dropped the saved watermarks and re-walked
+        # from the floor, parking every fire (#649).
+        def _q(e):
+            qs = urllib.parse.parse_qs(str(e.get("query") or ""))
+            return (qs.get("q") or [""])[0]
+
+        def _log():
+            st, log, _ = api.call("GET", api_base + "/__mock/requests")
+            return (log or {}).get("requests") or [] if isinstance(log, dict) else []
+
+        mock.set_faults([{"match": "GET /search/issues*", "contains": "type%3Apr",
+                          "status": [500]}])
+        api.call("DELETE", api_base + "/__mock/requests")
+        cut = force_sync(api, akind, aid)
+        ok(str(cut.get("syncStatus") or "").startswith("erroring"),
+           "#649: a 500 on the pull request search stops the healing run "
+           "before its stamp (%s)" % str(cut.get("syncStatus"))[:80])
+        reqs = _log()
+        paths = [str(e.get("path") or "") for e in reqs]
+        probe = [i for i, pth in enumerate(paths)
+                 if pth.startswith("/repos/%s/" % org)]
+        searches = [i for i, pth in enumerate(paths) if pth == "/search/issues"]
+        ok(bool(probe) and bool(searches) and probe[0] < searches[0],
+           "the probe was ONE read of the remembered repository, before any "
+           "search (%d org reads, first at %s; first search at %s)"
+           % (len(probe), probe[:1], searches[:1]))
+        ok(not ((cut.get("syncSkipped") or {}).get("restricted") or {}).get(org),
+           "#649: the run that found the lift cleared the org from syncSkipped, "
+           "though it never reached its stamp (%s)"
+           % json.dumps(cut.get("syncSkipped")))
+        ok(set(cut.get("syncCursors") or {}) == {"issues"},
+           "and kept the watermark the drained issue search saved (%s)"
+           % sorted(cut.get("syncCursors") or {}))
+
         mock.set_faults([])
         api.call("DELETE", api_base + "/__mock/requests")
         healed = force_sync(api, akind, aid)
@@ -1217,32 +1256,27 @@ def main():
         ok((healed.get("syncErrorAt") or "") <= (healed.get("lastSyncedAt") or ""),
            "syncError is the LAST error, not a live one: syncErrorAt is "
            "older than the run that just finished ok")
-        ok("restriction lifted" in str(healed.get("syncStatus") or "")
-           and org in str(healed.get("syncStatus") or ""),
-           "T-077: the probe found the org approved the app and the status "
-           "says the window was re-walked (%s)"
+        ok("restriction lifted" not in str(healed.get("syncStatus") or ""),
+           "#649: the next run did not find the lift a second time (%s)"
            % str(healed.get("syncStatus"))[:120])
         ok(not ((healed.get("syncSkipped") or {}).get("restricted") or {}),
            "and syncSkipped is cleared (%s)" % json.dumps(healed.get("syncSkipped")))
-        st, log, _ = api.call("GET", api_base + "/__mock/requests")
-        reqs = (log or {}).get("requests") or [] if isinstance(log, dict) else []
-        paths = [str(e.get("path") or "") for e in reqs]
-        probe = [i for i, pth in enumerate(paths)
-                 if pth.startswith("/repos/%s/" % org)]
-        searches = [i for i, pth in enumerate(paths) if pth == "/search/issues"]
-        ok(bool(probe) and bool(searches) and probe[0] < searches[0],
-           "the probe was ONE read of the remembered repository, before any "
-           "search (%d org reads, first at %s; first search at %s)"
-           % (len(probe), probe[:1], searches[:1]))
-        def _q(e):
-            qs = urllib.parse.parse_qs(str(e.get("query") or ""))
-            return (qs.get("q") or [""])[0]
-        cold = [e for e in reqs if str(e.get("path") or "") == "/search/issues"
-                and "updated:" not in _q(e)]
-        ok(len(cold) == len(searches) and searches,
-           "every search of the healing run was COLD — no `updated:>=` floor, "
-           "the stored watermarks were dropped (%d of %d)"
-           % (len(cold), len(searches)))
+        reqs = _log()
+        by_stage = {"issues": [], "pulls": []}
+        for e in reqs:
+            if str(e.get("path") or "") != "/search/issues":
+                continue
+            q = _q(e)
+            if q.startswith("type:issue involves:"):
+                by_stage["issues"].append(q)
+            elif q.startswith("type:pr involves:"):
+                by_stage["pulls"].append(q)
+        ok(by_stage["issues"] and all("updated:" in q for q in by_stage["issues"]),
+           "#649: the issue search RESUMED from its saved watermark (%s)"
+           % by_stage["issues"][:1])
+        ok(by_stage["pulls"] and not any("updated:" in q for q in by_stage["pulls"]),
+           "and the pull request search, which never drained, walked COLD "
+           "from the backfill floor (%s)" % by_stage["pulls"][:1])
         ok(bool([e for e in reqs if str(e.get("path") or "").startswith(
             "/repos/%s/" % org) and "/pulls/" in str(e.get("path") or "")]),
            "and the org's pull requests were hydrated at last")

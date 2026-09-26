@@ -89,7 +89,7 @@ type AffectedRecord struct {
 	// name order, as a read of the record renders the values: a sensitive
 	// property reads Redacted on both sides. Present only on a read that asked
 	// for values (ChangeFilter.Values) and only where the record's kind is
-	// declared; an entry that moved no property carries none (decision 0106).
+	// declared; an entry that moved no property carries none (decision 0107).
 	Properties []PropertyChange `json:"properties,omitempty"`
 }
 

@@ -25,7 +25,8 @@ import (
 // schedule-sourced trigger owns a fire state instead: due RRULE occurrences
 // (oldest first, a bounded number per pass, stable fire ids) enter the same
 // delivery path with mode `schedule` and no changelog row underneath. Serial
-// per trigger; a failed delivery retries and then parks-and-advances, so one
+// per trigger, schedules before record sources, each trigger bounded per pass
+// by triggerPassBudget; a failed delivery retries and then parks-and-advances, so one
 // poisoned record never wedges a trigger's lag. Every settled delivery
 // attempt writes one `run` record (ok / skipped / parked) under the system
 // actor, in the transaction that commits the effects and the cursor motion
@@ -36,7 +37,8 @@ import (
 // restore folds them back.
 
 const (
-	// triggerBatch bounds one changelog read; the loop drains to head.
+	// triggerBatch bounds one changelog read; the loop drains to head or to
+	// the trigger's pass budget, whichever comes first.
 	triggerBatch = 200
 	// causalDepthCap parks a delivery whose triggering change sits at the end
 	// of a caused_by chain this deep — host sub-Calls increment the same
@@ -60,6 +62,34 @@ var triggerRetryBackoff = []time.Duration{25 * time.Millisecond, 100 * time.Mill
 // every occurrence it missed, but over passes rather than in one burst at
 // startup; nothing is coalesced away. A var, so a test can lower it.
 var scheduleDrainPerPass = 10
+
+// triggerPassBudget bounds the wall-clock one dispatcher pass spends on one
+// trigger: past it the trigger stops at the delivery in hand and the pass
+// moves on, and the next pass resumes from the cursor (or fire state) that
+// delivery left. Without it a record trigger drained to head inside one pass,
+// so an enricher at seconds per delivery on a 54k-row lag held every other
+// trigger and every schedule for hours (#638). Thirty seconds keeps a lone
+// backlogged trigger delivering for most of the time (between two of its
+// repository's passes lies at most the rest of a 5 s tick, plus any wait for
+// one of substrated's dispatcher slots) while a repository with a handful of
+// backlogged triggers still reaches its schedules within minutes. The bound
+// is per trigger, not per pass: a pass runs about the sum of its triggers'
+// budgets, each overrun by at most the one delivery in hand. A constant,
+// like the dispatcher's other intervals, and a var only so a test can lower
+// it.
+var triggerPassBudget = 30 * time.Second
+
+// passDeadline is the moment a trigger's share of one pass ends; the zero
+// value is no bound, which is what a wake by hand runs under.
+type passDeadline time.Time
+
+// newPassDeadline starts one trigger's budget now.
+func newPassDeadline() passDeadline { return passDeadline(time.Now().Add(triggerPassBudget)) }
+
+// spent reports whether the budget is used up.
+func (d passDeadline) spent() bool {
+	return !time.Time(d).IsZero() && !time.Now().Before(time.Time(d))
+}
 
 // The paged-checkpoint drain budget. A body that keeps
 // returning `more` must be bounded on every axis, and the bound must span the
@@ -158,10 +188,13 @@ func declinedDelivery(err error) bool {
 	return errors.Is(err, errClaimedElsewhere) || errors.Is(err, errConflictYield)
 }
 
-// ProcessTriggers runs one dispatcher pass: every enabled trigger drains its
-// backlog (record sources) or fires its due occurrence (schedule sources).
-// It returns the number of deliveries that applied effects. Only
-// infrastructure errors surface; eval and effect errors park.
+// ProcessTriggers runs one dispatcher pass: every enabled schedule trigger
+// fires its due occurrences, and then every enabled record trigger drains its
+// backlog, each for at most triggerPassBudget. Schedules go first so a due
+// occurrence never waits behind a record trigger's backlog, and the budget
+// bounds the pass so the next pass (and its schedules) comes round. It
+// returns the number of deliveries that applied effects. Only infrastructure
+// errors surface; eval and effect errors park.
 func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 	// The whole pass is one observation, whatever it drained or fired.
 	start := time.Now()
@@ -180,8 +213,7 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	total := 0
-	var errs []error
+	var schedules, records []loadedTrigger
 	for _, lt := range triggers {
 		if lt.Err != nil {
 			ds.svc.log.Warn("substrate: trigger row does not parse — it is skipped, its cursor stands still",
@@ -196,15 +228,24 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 				"trigger", lt.ID, "callable", lt.CallableID)
 			continue
 		}
-		var n int
-		var perr error
 		switch {
-		case lt.Record != nil:
-			n, perr = ds.processRecordTrigger(ctx, lt.trigger)
 		case lt.Schedule != nil:
-			n, perr = ds.processScheduleTrigger(ctx, lt)
+			schedules = append(schedules, lt)
+		case lt.Record != nil:
+			records = append(records, lt)
 		case lt.Webhook:
 			// Webhook triggers deliver on wake only.
+		}
+	}
+	total := 0
+	var errs []error
+	for _, lt := range append(schedules, records...) {
+		var n int
+		var perr error
+		if lt.Schedule != nil {
+			n, perr = ds.processScheduleTrigger(ctx, lt, newPassDeadline())
+		} else {
+			n, perr = ds.processRecordTrigger(ctx, lt.trigger, newPassDeadline())
 		}
 		total += n
 		if n > 0 {
@@ -219,7 +260,12 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 
 // --- record-sourced delivery ---------------------------------------------------
 
-func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger) (int, error) {
+// processRecordTrigger delivers a record trigger's backlog from its cursor
+// until a changelog read comes back empty or the deadline is spent. A spent
+// deadline stops the drain between deliveries, never inside one, and before
+// the scan position moves past a matched row still owed, so the cursor only
+// ever stands past rows that were delivered or matched nothing.
+func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadline passDeadline) (int, error) {
 	cursor, err := ds.ensureCursor(ctx, tr.ID)
 	if err != nil {
 		return 0, err
@@ -237,7 +283,10 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger) (int, 
 		if tr.Record.Coalesce {
 			matched = coalesceChanges(matched)
 		}
-		for _, ch := range matched {
+		for i, ch := range matched {
+			if i > 0 && deadline.spent() {
+				return ran, nil
+			}
 			n, next, err := ds.deliverWithRetry(ctx, tr, ch, cursor)
 			ran += n
 			if errors.Is(err, errCursorMoved) {
@@ -265,6 +314,9 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger) (int, 
 				return ran, err
 			}
 			cursor = last
+		}
+		if deadline.spent() {
+			return ran, nil
 		}
 		// Loop until a read comes back empty rather than on a short batch:
 		// the deliveries above appended the callable's own writes (and their
@@ -888,9 +940,10 @@ func (ds *dataset) recordSkipAndAdvance(ctx context.Context, tr *trigger, ch sub
 
 // processScheduleTrigger fires the occurrences due since the last one the
 // trigger acknowledged, oldest first and at most scheduleDrainPerPass of
-// them: each fire advances the fire state to its occurrence, so a pass that
-// stops early (an error, a lost swap) leaves the rest due for the next.
-func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger) (int, error) {
+// them, stopping early once the deadline is spent: each fire advances the
+// fire state to its occurrence, so a pass that stops early (an error, a lost
+// swap, the budget) leaves the rest due for the next.
+func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger, deadline passDeadline) (int, error) {
 	lastFire, err := ds.ensureScheduleState(ctx, lt.ID)
 	if err != nil {
 		return 0, err
@@ -900,7 +953,10 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger)
 		return 0, err
 	}
 	ran := 0
-	for _, at := range due {
+	for i, at := range due {
+		if i > 0 && deadline.spent() {
+			return ran, nil
+		}
 		n, err := ds.deliverFire(ctx, lt.trigger, runner.ModeSchedule, fireID(at), at, &lastFire, nil, nil)
 		ran += n
 		if errors.Is(err, errCallableGone) {
@@ -1986,7 +2042,8 @@ func (ds *dataset) RunTrigger(ctx context.Context, id, recordKind, recordID stri
 // WakeTrigger runs a trigger's scan NOW: a webhook trigger delivers one
 // fire, an record trigger drains its backlog, a schedule trigger checks its
 // due occurrence. The webhook fire id is minted per wake — one POST, one
-// delivery attempt.
+// delivery attempt. A wake is somebody's hand, so it runs without the
+// dispatcher's per-trigger budget: a record trigger drains to head.
 func (ds *dataset) WakeTrigger(ctx context.Context, id string) (int, error) {
 	tr, createdAt, err := ds.triggerByID(ctx, id)
 	if err != nil {
@@ -2006,9 +2063,9 @@ func (ds *dataset) WakeTrigger(ctx context.Context, id string) (int, error) {
 		}
 		return ds.deliverFire(ctx, tr, runner.ModeWebhook, "wake-"+wid, nowUTC(), nil, nil, nil)
 	case tr.Record != nil:
-		return ds.processRecordTrigger(ctx, tr)
+		return ds.processRecordTrigger(ctx, tr, passDeadline{})
 	case tr.Schedule != nil:
-		return ds.processScheduleTrigger(ctx, loadedTrigger{trigger: tr, CreatedAt: createdAt})
+		return ds.processScheduleTrigger(ctx, loadedTrigger{trigger: tr, CreatedAt: createdAt}, passDeadline{})
 	}
 	return 0, nil
 }

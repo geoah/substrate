@@ -667,7 +667,7 @@ and the marker is what makes the deprecated half tellable from the live one. A
 both stop offering a value and refuse to submit without it.
 
 **`purpose:` says why a kind exists**
-([record 0104](decisions/0104-a-kind-declares-its-purpose.md)). It sits on the
+([record 0105](decisions/0105-a-kind-declares-its-purpose.md)). It sits on the
 kind, beside `names:`, and takes one of three values:
 
 ```yaml

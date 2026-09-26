@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -40,6 +41,13 @@ const (
 	embedBatch       = 64
 	triggersInterval = 5 * time.Second
 	oauthInterval    = time.Minute
+	// triggerDispatchPasses caps the repository passes the dispatcher runs at
+	// once. A pass takes a connection per statement or transaction and none
+	// while a function body runs, but each pass has a runner process or a
+	// transaction in flight most of the time, so a host with hundreds of
+	// repositories must not run hundreds of passes side by side. Eight bounds
+	// the dispatcher to eight runner processes and eight transactions.
+	triggerDispatchPasses = 8
 )
 
 func main() {
@@ -182,7 +190,9 @@ func run() error {
 	start("gc sweep", gcInterval, func(ctx context.Context) { sweepGC(ctx, svc) })
 	start("oauth maintenance", oauthInterval, func(ctx context.Context) { maintainOAuth(ctx, svc) })
 	start("resolution sweep", resumeInterval, func(ctx context.Context) { sweepResolutions(ctx, svc) })
-	start("trigger dispatch", triggersInterval, func(ctx context.Context) { dispatchTriggers(ctx, svc) })
+	// The dispatcher's per-repository passes outlive the tick that started
+	// them, so they are counted on the same barrier as the loops.
+	start("trigger dispatch", triggersInterval, newTriggerDispatcher(svc, &loops).dispatch)
 	// The drain runs unconditionally: whether a repository embeds is its own
 	// row's answer, given fresh on every pass, so a provider written after
 	// boot starts draining without a restart.
@@ -331,21 +341,144 @@ func sweepResolutions(ctx context.Context, svc substrate.Service) {
 	}
 }
 
-// dispatchTriggers runs one dispatcher pass per repository: each enabled trigger
-// drains its changelog backlog to head (record sources) or fires its due
-// occurrence (schedule sources), serially. The pass cadence is the schedule
-// ticker: due RRULE occurrences are computed here, missed passes coalescing
-// to one fire.
-func dispatchTriggers(ctx context.Context, svc substrate.Service) {
-	for _, ds := range repositoryDatasets(ctx, svc) {
-		n, err := ds.ProcessTriggers(ctx)
+// triggerDispatcher runs each repository's dispatcher pass in a goroutine of
+// its own: every enabled trigger drains its changelog backlog (record sources)
+// or fires its due occurrence (schedule sources). The pass cadence is the
+// schedule ticker: due RRULE occurrences are computed there, missed passes
+// coalescing to one fire.
+//
+// ONE LANE PER REPOSITORY (#639). The control plane lists repositories oldest
+// first, and a pass once ran for as long as its slowest trigger's backlog, so
+// a serial walk left a new repository's first delivery waiting behind every
+// older repository's whole drain. Now each tick queues one pass for every
+// repository that has none running or queued, and the queue runs up to
+// triggerDispatchPasses passes at once. A pass that ends starts the next
+// queued one at once rather than on the next tick, so with passes that
+// return quickly every repository still gets a pass per tick, however many
+// repositories there are. A repository never has two passes running or
+// queued, so its triggers keep their one-at-a-time delivery order and no two
+// passes race one repository's cursors. What bounds a slot's hold is the
+// engine's per-trigger budget (triggerPassBudget): a pass runs about the sum
+// of its triggers' budgets, overrunning by at most one delivery per trigger,
+// each bounded by the runner's timeout.
+//
+// THE LONGEST WAIT GOES FIRST. A queue filled in listing order would put the
+// oldest repositories ahead on every tick, and the newest would starve behind
+// busy ones exactly as it did under the serial walk. So each tick queues its
+// repositories by when their last pass started, one that never ran first, and
+// the queue keeps what earlier ticks put in it ahead of them.
+type triggerDispatcher struct {
+	svc substrate.Service
+	// passes counts the goroutines, and is the shutdown barrier's own group:
+	// svc.Close must not run under a pass still in flight.
+	passes *sync.WaitGroup
+
+	mu sync.Mutex
+	// claimed holds every repository with a pass running or queued.
+	claimed map[string]bool
+	queue   []string
+	running int
+	// started is the turn each repository's last pass started on; a
+	// repository missing from it has never run. turn is a counter rather than
+	// a clock so two starts never tie.
+	started map[string]uint64
+	turn    uint64
+}
+
+func newTriggerDispatcher(svc substrate.Service, passes *sync.WaitGroup) *triggerDispatcher {
+	return &triggerDispatcher{svc: svc, passes: passes, claimed: map[string]bool{}, started: map[string]uint64{}}
+}
+
+// dispatch is one tick: a pass queued for every repository with none running
+// or queued, longest waiting first, and the queue started up to the cap.
+func (d *triggerDispatcher) dispatch(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
+	repos, err := d.svc.Repositories(ctx)
+	if err != nil {
+		// No listing is not an empty listing: the turn records stay.
+		slog.Error("list repositories", "error", err)
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	listed := make(map[string]bool, len(repos))
+	var eligible []string
+	for _, r := range repos {
+		// Checked against listed too, so a repository the listing names twice
+		// is queued once: one pass per repository is this type's rule to
+		// hold, not the listing's.
+		if !d.claimed[r.ID] && !listed[r.ID] {
+			eligible = append(eligible, r.ID)
+		}
+		listed[r.ID] = true
+	}
+	// A repository that left the listing takes its turn record with it.
+	for id := range d.started {
+		if !listed[id] {
+			delete(d.started, id)
+		}
+	}
+	// Stable, so repositories that never ran keep the listing's order.
+	sort.SliceStable(eligible, func(i, j int) bool { return d.started[eligible[i]] < d.started[eligible[j]] })
+	for _, id := range eligible {
+		d.claimed[id] = true
+		d.queue = append(d.queue, id)
+	}
+	d.startLocked(ctx)
+}
+
+// startLocked starts queued passes until the cap is reached or the queue is
+// empty. The caller holds d.mu. A canceled context starts nothing: the
+// process is shutting down and the queue is abandoned with it.
+func (d *triggerDispatcher) startLocked(ctx context.Context) {
+	for d.running < triggerDispatchPasses && len(d.queue) > 0 && ctx.Err() == nil {
+		id := d.queue[0]
+		d.queue = d.queue[1:]
+		d.running++
+		d.turn++
+		d.started[id] = d.turn
+		d.passes.Add(1)
+		go d.run(ctx, id)
+	}
+}
+
+// run is one repository's pass in its slot. Releasing the slot starts the
+// next queued pass before the barrier's Done, so the WaitGroup never reaches
+// zero with a pass about to start.
+func (d *triggerDispatcher) run(ctx context.Context, id string) {
+	defer d.passes.Done()
+	defer func() {
+		d.mu.Lock()
+		d.running--
+		delete(d.claimed, id)
+		d.startLocked(ctx)
+		d.mu.Unlock()
+	}()
+	// The loop's recover does not reach this goroutine, so the pass carries
+	// its own.
+	pass(ctx, "trigger dispatch", func(ctx context.Context) {
+		// Opened in the slot, so a first open's ladder counts against the cap
+		// like the pass it precedes.
+		ds, err := d.svc.Dataset(ctx, id)
 		if err != nil {
-			slog.Error("trigger dispatch", "repository", ds.Repository().ID, "error", err)
-			continue
+			slog.Error("open repository", "repository", id, "error", err)
+			return
 		}
-		if n > 0 {
-			slog.Info("trigger dispatch", "repository", ds.Repository().ID, "ran", n)
-		}
+		dispatchRepository(ctx, ds)
+	})
+}
+
+// dispatchRepository runs one repository's dispatcher pass and logs it.
+func dispatchRepository(ctx context.Context, ds substrate.Dataset) {
+	n, err := ds.ProcessTriggers(ctx)
+	if err != nil {
+		slog.Error("trigger dispatch", "repository", ds.Repository().ID, "error", err)
+		return
+	}
+	if n > 0 {
+		slog.Info("trigger dispatch", "repository", ds.Repository().ID, "ran", n)
 	}
 }
 

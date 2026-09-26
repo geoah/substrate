@@ -155,8 +155,9 @@ type Dataset interface {
 	ForgetTriggerFailure(ctx context.Context, id string, failureID int64) error
 	CallFunction(ctx context.Context, name string, args any) (any, int, error)
 	// ProcessTriggers is the dispatcher pass the service loop drives: each
-	// enabled trigger drains its changelog backlog to head or fires its due
-	// occurrence. Nothing reachable from the network calls it.
+	// enabled schedule trigger fires its due occurrences, then each enabled
+	// record trigger drains its changelog backlog, every trigger for at most a
+	// bounded share of the pass. Nothing reachable from the network calls it.
 	ProcessTriggers(ctx context.Context) (int, error)
 
 	// --- agents ---
