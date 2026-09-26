@@ -807,6 +807,9 @@ var typeDataKeys = map[string]bool{
 	// (decision 0106): validated and stored, read by clients deciding what
 	// to list, and acted on by nothing server-side.
 	"purpose": true,
+	// `label` is the kind's display label, both forms (decision 0113): display
+	// text only, read by no route, filter or grant.
+	"label": true,
 }
 
 // namesKeys is the `names` block's key set: the kind's own name and nothing
@@ -859,6 +862,7 @@ func (l *loader) parseType(doc Document) *Kind {
 		t.Version = v
 	}
 	t.DisplayTemplate = mstr(d, "displayTemplate")
+	t.Label = l.parseKindLabel(where, d)
 
 	// properties, state machines among them
 	for pname, pdef := range mmap(d, "properties") {

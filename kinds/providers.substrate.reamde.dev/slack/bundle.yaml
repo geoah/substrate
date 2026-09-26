@@ -116,7 +116,10 @@ data:
   #
   # 9 — every kind's description opens with one plain sentence
   # saying what a record is to a person.
-  version: 9
+  #
+  # 10, #675: `user` is labelled Members, `conversation` Channels and
+  # `conversationsync` Sync progress (decision 0113). Display text only.
+  version: 10
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -625,6 +628,9 @@ data:
   purpose: supporting
   names:
     singular: user
+  label:
+    singular: Member
+    plural: Members
   displayTemplate: "{profile.displayName|realName|name}"
   properties:
     # identity
@@ -1079,6 +1085,9 @@ data:
     is walked only where the account's user is a member.
   names:
     singular: conversation
+  label:
+    singular: Channel
+    plural: Channels
   traits:
     - substrate.reamde.dev/core/temporal(point)
   displayTemplate: "{name|conversationId}"
@@ -2738,6 +2747,9 @@ data:
   purpose: internal
   names:
     singular: conversationsync
+  label:
+    singular: Sync progress
+    plural: Sync progress
   displayTemplate: "{conversation.name}"
   properties:
     conversation:

@@ -108,7 +108,10 @@ data:
   #
   # 15 — every kind's description opens with one plain sentence
   # saying what a record is to a person.
-  version: 15
+  #
+  # 16, #675: `pagesync` is labelled Sync progress (decision 0113). Display
+  # text only.
+  version: 16
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -1917,6 +1920,9 @@ data:
   purpose: internal
   names:
     singular: pagesync
+  label:
+    singular: Sync progress
+    plural: Sync progress
   displayTemplate: "{page.titlePlainText}"
   properties:
     page:

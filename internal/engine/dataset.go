@@ -277,12 +277,16 @@ func (ds *dataset) KindByRef(ctx context.Context, ref string) (substrate.KindInf
 // not a document key at all.
 func typeInfo(t *vocabulary.Kind) substrate.KindInfo {
 	authority, pkg := vocabulary.SplitPackageRef(t.Package)
-	return substrate.KindInfo{
+	info := substrate.KindInfo{
 		Identity: t.Identity, Name: t.Name,
 		Authority: authority, Package: pkg, Version: t.Version,
 		Source: t.Source, Description: t.Description,
 		Definition: withMappedProperties(t, authoredKindData(t.Definition)),
 	}
+	if !t.Label.Empty() {
+		info.Label = &substrate.KindLabel{Singular: t.Label.Singular, Plural: t.Label.Plural}
+	}
+	return info
 }
 
 // withMappedProperties merges a kind's MAPPING-OWNED properties into the

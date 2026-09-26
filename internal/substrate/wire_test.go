@@ -63,6 +63,7 @@ var wireTypes = map[string]any{
 	"Cond":         Cond{},
 	"RecordFilter": Filter{},
 	"KindInfo":     KindInfo{},
+	"KindLabel":    KindLabel{},
 
 	// The change feed: the entry, the trigger stance decorating a row, the
 	// row, and the history page. The row and the page are what /changes and

@@ -224,7 +224,11 @@ data:
   #
   # 35 — every kind's description opens with one plain sentence
   # saying what a record is to a person.
-  version: 35
+  #
+  # 36, #675: `contactgroup` is labelled Contact labels, `calendarseries`
+  # Repeating events and `calendarsync` Sync progress (decision 0113).
+  # Display text only.
+  version: 36
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -6687,6 +6691,9 @@ data:
   purpose: supporting
   names:
     singular: contactgroup
+  label:
+    singular: Contact label
+    plural: Contact labels
   displayTemplate: "{formattedName|name}"
   properties:
     # --- identity -----------------------------------------------------------
@@ -10846,6 +10853,9 @@ data:
   purpose: internal
   names:
     singular: calendarsync
+  label:
+    singular: Sync progress
+    plural: Sync progress
   displayTemplate: "sync state"
   properties:
     # --- identity -----------------------------------------------------------
@@ -10917,6 +10927,9 @@ data:
   purpose: supporting
   names:
     singular: calendarseries
+  label:
+    singular: Repeating event
+    plural: Repeating events
   traits:
     - substrate.reamde.dev/core/temporal(range)
     - substrate.reamde.dev/core/recurring
