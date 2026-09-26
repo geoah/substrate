@@ -143,7 +143,10 @@ output applies back unchanged.
   input first: every mention of the one authority its declarations are
   written under becomes the one named, which is `import` (below) run
   client-side over files on disk. An input declaring under two authorities is
-  refused naming both.
+  refused naming both. `--hold-waiting-mappings` holds back each suggested
+  mapping whose source kind this repository does not have, applies the rest,
+  and prints one line per mapping held; apply the same files again once the
+  provider is installed ([vocabulary](vocabulary.md#how-the-vocabulary-reaches-a-repository)).
 - `patch <kind> <id>` edits in place: `--state status=done` for
   [transitions](data-model.md#validation-and-state-machines) (apply cannot
   move a state), `--prop` for properties, `--label` for labels, and `-p` for a

@@ -26,10 +26,12 @@ type vocabularyApplyRequest struct {
 	// row as the import door records its own. Absent, the apply stamps
 	// nothing.
 	Origin string `json:"origin,omitempty"`
-	// HoldWaitingMappings asks the door to hold back each mapping whose
-	// source kind neither the repository nor the batch declares, and commit
-	// the rest, the way the catalog's install and import doors drop a
-	// suggested mapping whose provider is absent (decision record 0106).
+	// HoldWaitingMappings asks the door to hold back each suggested mapping
+	// (onto the declaring package's own kind from another package's kind)
+	// whose source kind neither the repository nor the batch declares, and
+	// commit the rest, the way the catalog's install and import doors drop a
+	// `waiting` mapping (decision record 0106). A mapping the catalog would
+	// call `blocked` is not held.
 	// Absent, such a mapping refuses the whole batch.
 	HoldWaitingMappings bool `json:"holdWaitingMappings,omitempty"`
 }
@@ -144,9 +146,15 @@ func (h *handler) planVocabulary(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)
-	docs, _, err := holdWaitingMappings(ctx, ds, req.Documents, req.HoldWaitingMappings)
+	docs, held, err := holdWaitingMappings(ctx, ds, req.Documents, req.HoldWaitingMappings)
 	if err != nil {
 		writeSubstrateError(w, err)
+		return
+	}
+	if len(docs) == 0 && len(held) > 0 {
+		// Every document was a held mapping: the apply commits nothing, so
+		// the plan is the empty one, which needs no confirmation.
+		writeJSON(w, http.StatusOK, substrate.VocabularyPlan{})
 		return
 	}
 	plan, err := ds.PlanVocabularyApplyWith(ctx, ActorFrom(ctx), docs, substrate.VocabularyApply{Origin: req.Origin})

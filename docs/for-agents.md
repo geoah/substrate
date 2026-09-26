@@ -215,6 +215,9 @@ kind ([vocabulary as records](vocabulary.md)):
   derived.
 - A bundle document replaces its authority whole: a batch that carries one
   must carry the entire closure, or what it omits is pruned.
+- A mapping from a provider's kind that is not installed refuses the whole
+  batch. Send `"holdWaitingMappings": true` to hold such mappings back and
+  apply the rest; the response lists them in `heldMappings`.
 
 ## When the server upgrades
 

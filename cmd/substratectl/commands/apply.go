@@ -90,11 +90,12 @@ plan that reads differently, is refused again. Writes elsewhere do not refuse
 it.
 The removed values stay in the changelog.
 
-A recordmapping whose source kind this repository does not have refuses the
-whole schema batch. --hold-waiting-mappings holds each such mapping back
-instead, applies the rest, and prints one line per mapping held with the
-provider package it waits on; apply the same files again once that provider is
-installed.`,
+A recordmapping onto one of the package's own kinds from a kind this
+repository does not have refuses the whole vocabulary batch.
+--hold-waiting-mappings holds each such mapping back instead, applies the
+rest, and prints one line per mapping held with the source kind it waits on;
+apply the same files again once that kind's provider is installed. A mapping
+whose source kind is present but does not fit it still refuses the batch.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if len(files) == 0 {
@@ -156,7 +157,7 @@ installed.`,
 	// `--as` alone would be a usage error rather than a default.
 	cmd.Flags().BoolVar(&asMine, "as-mine", false, "rehome the input under this repository's own authority")
 	cmd.Flags().BoolVar(&allowDataLoss, "allow-data-loss", false, "preview the vocabulary change and confirm the plan even where it removes values from stored records")
-	cmd.Flags().BoolVar(&holdWaiting, "hold-waiting-mappings", false, "hold back each recordmapping whose source kind this repository does not have, and apply the rest")
+	cmd.Flags().BoolVar(&holdWaiting, "hold-waiting-mappings", false, "hold back each suggested recordmapping whose source kind this repository does not have, and apply the rest")
 	return cmd
 }
 
@@ -386,7 +387,8 @@ func isSchemaDocument(node *yaml.Node) bool {
 // what goes and confirms that plan and no other: the consent the server takes
 // is the preview's hash and changelog head, so a bare "yes" is never sent
 // (decision 0067). A plan that loses nothing needs no consent and is applied
-// as it is. `origin` is the package a rehomed input was authored as, or "".
+// as it is. `opts.origin` is the package a rehomed input was authored as, or
+// "", and `opts.holdWaiting` asks the door to hold back waiting mappings.
 func (a *app) applySchemaDocuments(ctx context.Context, cl *client, docs []map[string]any, allowDataLoss bool, opts vocabularyOptions) error {
 	origin := opts.origin
 	var confirm *substrate.ConversionConfirm
@@ -417,7 +419,7 @@ func (a *app) applySchemaDocuments(ctx context.Context, cl *client, docs []map[s
 		fmt.Fprintf(a.out, "%s/%s applied\n", vocabulary.KindName(e.Kind), e.ID)
 	}
 	for _, m := range applied.HeldMappings {
-		fmt.Fprintf(a.out, "%s/%s held: waits on %s (install it, then apply again)\n", vocabulary.DocRecordMapping, m.ID, m.Package)
+		fmt.Fprintf(a.out, "%s/%s held: waits on %s from %s (install it, then apply again)\n", vocabulary.DocRecordMapping, m.ID, m.From, m.Package)
 	}
 	return nil
 }

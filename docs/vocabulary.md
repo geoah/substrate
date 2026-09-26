@@ -109,7 +109,8 @@ moves its package's forward instead, so nobody bumps by hand.
 asks to hold it.** A `recordmapping` resolves its `from` kind at admission, so
 one mapping onto a provider this repository does not have takes the whole batch
 down. With `"holdWaitingMappings": true` in the body (`substratectl apply
---hold-waiting-mappings`), the door holds back each mapping whose source kind
+--hold-waiting-mappings`), the door holds back each suggested mapping (onto the
+declaring package's own kind from another package's kind) whose source kind
 neither the repository nor the batch declares, prunes its `installs:` entry,
 commits the rest, and names what it held
 ([decision 0106](decisions/0106-the-apply-door-holds-back-a-mapping-whose-provider-is-absent.md)):
@@ -128,10 +129,11 @@ POST /api/v1/vocabulary/apply
 ```
 
 Nothing is stored for a held mapping: it lands on the first apply of the same
-documents after its provider is installed. Only an ABSENT source is held. A
-mapping whose source kind is present and does not fit it still refuses the
-batch, naming the problem. `POST …/vocabulary/plan` takes the same key, so the
-preview is of the batch the apply commits.
+documents after its provider is installed. Only an ABSENT source is held: a
+mapping whose source kind is present and does not fit it (`blocked` in the
+catalog, which drops it) still refuses the batch, naming the problem. `POST
+…/vocabulary/plan` takes the same key, so the preview is of the batch the apply
+commits; the plan response does not list the held mappings.
 
 **The package chokepoint** decides who may write a declaration, which is what
 a package is for. Shipped vocabulary, a package whose stored rows say

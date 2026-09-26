@@ -11,8 +11,8 @@ import (
 
 // --hold-waiting-mappings asks the apply door to hold back a mapping whose
 // source kind is absent (decision record 0106), and the CLI prints each one it
-// held with the package it waits on. Without the flag the request carries no
-// such key.
+// held with the source kind it waits on and that kind's package. Without the
+// flag the request carries no such key.
 func TestApplyHoldWaitingMappings(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
@@ -45,7 +45,7 @@ data:
 	if got := string(h.fake.lastBody["holdWaitingMappings"]); got != "true" {
 		t.Fatalf("holdWaitingMappings = %q, want true", got)
 	}
-	want := "recordmapping/ada.example.com/people/slackuserperson held: waits on providers.substrate.reamde.dev/slack"
+	want := "recordmapping/ada.example.com/people/slackuserperson held: waits on providers.substrate.reamde.dev/slack/user from providers.substrate.reamde.dev/slack"
 	if !strings.Contains(stdout, want) {
 		t.Fatalf("stdout = %q, want a line %q", stdout, want)
 	}

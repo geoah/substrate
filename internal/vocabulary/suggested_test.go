@@ -179,3 +179,18 @@ func TestWaitingMappingsSkipASourceTheBatchDeclares(t *testing.T) {
 		t.Fatalf("a source the batch declares still waits: %+v", got)
 	}
 }
+
+// A suggested mapping with no `metadata.id` is not listed as waiting: an empty
+// id in the drop set would prune every id-less mapping in the batch, and the
+// loader refuses each of those by name instead.
+func TestWaitingMappingsSkipAMappingWithNoID(t *testing.T) {
+	docs := suggestedFixture()
+	docs[1]["metadata"] = map[string]any{}
+	got, err := vocabulary.WaitingMappings(docs, func(string) (bool, error) { return false, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("waiting = %+v, want none: the id-less mapping is the loader's to refuse", got)
+	}
+}

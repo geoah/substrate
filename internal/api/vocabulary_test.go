@@ -286,4 +286,24 @@ func TestSchemaApplyHoldsWaitingMappings(t *testing.T) {
 	if out := decodeJSON[vocabularyApplyResponse](t, rec); len(out.HeldMappings) != 0 || len(ds.lastVocabularyDocs) != 4 {
 		t.Fatalf("an apply without the flag held %+v and passed %d documents", out.HeldMappings, len(ds.lastVocabularyDocs))
 	}
+
+	// A batch of nothing but waiting mappings commits nothing: the apply
+	// answers what it held and never reaches the dataset, and the plan is the
+	// empty one, so `--allow-data-loss` previews it without a refusal.
+	ds.lastVocabularyDocs = nil
+	onlyWaiting := []map[string]any{mapping("slackcontact", slackUser)}
+	rec = env.do(t, http.MethodPost, "/api/v1/vocabulary/apply", tok, map[string]any{
+		"documents": onlyWaiting, "holdWaitingMappings": true,
+	})
+	wantStatus(t, rec, http.StatusOK)
+	if out := decodeJSON[vocabularyApplyResponse](t, rec); len(out.HeldMappings) != 1 || len(out.Records) != 0 || ds.lastVocabularyDocs != nil {
+		t.Fatalf("an all-waiting apply answered %+v and passed %d documents", out, len(ds.lastVocabularyDocs))
+	}
+	rec = env.do(t, http.MethodPost, "/api/v1/vocabulary/plan", tok, map[string]any{
+		"documents": onlyWaiting, "holdWaitingMappings": true,
+	})
+	wantStatus(t, rec, http.StatusOK)
+	if plan := decodeJSON[substrate.VocabularyPlan](t, rec); plan.Lossy || len(plan.Steps) != 0 || ds.lastVocabularyDocs != nil {
+		t.Fatalf("an all-waiting plan answered %+v and passed %d documents", plan, len(ds.lastVocabularyDocs))
+	}
 }
