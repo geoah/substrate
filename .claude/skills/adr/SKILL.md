@@ -41,7 +41,14 @@ holds" is a complete answer to a design question.
 ## 3. Write it
 
 Copy `docs/decisions/template.md` to `docs/decisions/NNNN-kebab-title.md`,
-taking the next free number, and fill it in:
+taking the next free number, and check it against the other branches before
+it goes into a commit message, which is its first citation:
+
+```bash
+git fetch && mise run decisions:check
+```
+
+If it refuses the number, take the one it names. Then fill the record in:
 
 - Outcome first. Name the chosen option in the first sentence of Decision
   Outcome, then say why it beat the others.

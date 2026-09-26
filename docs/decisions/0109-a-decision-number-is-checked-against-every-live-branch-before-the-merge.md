@@ -48,8 +48,13 @@ refusal names the next number nobody holds.
   while nothing has cited it yet.
 - Good, because it runs on the refs a full-history checkout already has: no
   new file, no network call beyond the fetch.
-- Bad, because the check only sees pushed branches. Two branches pushed
-  minutes apart can both be green until the later one's CI runs again.
+- Bad, because the check only sees pushed branches. When two branches are
+  pushed minutes apart, the later-pushed one's CI sees the earlier one, but
+  the earlier-pushed one stays green until its CI runs again, even when the
+  later one has the older author date and keeps the number.
+- Bad, because an amended or rebased commit keeps its author date, so a
+  record renumbered that way can displace one that took the new number
+  meanwhile. The refusal says to renumber in a new commit.
 - Bad, because the verdict can change without the tree changing: another
   branch pushed later with an earlier author date turns a green branch red
   on its next run.
@@ -58,8 +63,10 @@ refusal names the next number nobody holds.
 
 `.mise/decisionscheck.sh`, held by its scenarios in `.mise/cicheck.sh`
 (`mise run lint:ci`): a later branch, a number taken on `main`, a stacked
-branch, a merged-and-renumbered branch, an abandoned branch, an uncommitted
-record, and an unresolvable base.
+branch, a merged-and-renumbered branch, an abandoned branch, two refusals in
+one run told different numbers, a record main renamed after the fork, an
+uncommitted record, a base whose record names are over 64 KiB, an
+unresolvable base, and a CI checkout that fetched no other branch.
 
 ## More Information
 
