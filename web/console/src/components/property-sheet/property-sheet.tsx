@@ -35,6 +35,7 @@ import { typeLabel } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
 
 const NO_MAPPINGS: SubstrateRecord[] = []
+const NONE_MOVED: ReadonlySet<string> = new Set()
 
 const LOCK_WORDS: Record<RowLock, string> = {
   managed: "Set automatically",
@@ -134,6 +135,8 @@ export interface PropertySheetProps {
   /** The recordmapping declarations the record's links name, so a synced
    * value says which mapping brought it. */
   mappings?: SubstrateRecord[]
+  /** Properties that just changed under the reader: marked briefly. */
+  moved?: ReadonlySet<string>
 }
 
 export function PropertySheet({
@@ -143,6 +146,7 @@ export function PropertySheet({
   readOnly = false,
   holders = false,
   mappings = NO_MAPPINGS,
+  moved = NONE_MOVED,
 }: PropertySheetProps) {
   const { all, filled, empty } = useMemo(
     () => sheetRows(record, kind, readOnly),
@@ -237,6 +241,7 @@ export function PropertySheet({
             className="contents"
             data-property={row.name}
             data-filled={row.filled}
+            data-moved={moved.has(row.name) || undefined}
           >
             <Label
               row={row}
@@ -270,7 +275,8 @@ export function PropertySheet({
                 }
               }}
               className={cn(
-                "relative flex min-h-9 min-w-0 flex-wrap items-center gap-1.5 rounded-md px-2 py-[3px] text-sm outline-none",
+                "relative flex min-h-9 min-w-0 flex-wrap items-center gap-1.5 rounded-md px-2 py-[3px] text-sm transition-colors duration-700 outline-none",
+                moved.has(row.name) && "bg-primary-soft",
                 !provenance && "sm:col-span-2",
                 row.field &&
                   !isEditing &&

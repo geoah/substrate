@@ -18,6 +18,22 @@ export function writeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/** The versions this console wrote, so a page that watches the change feed
+ * tells its own edit from one made under the reader. Bounded: only the
+ * latest few matter, since a page compares the version it just re-read. */
+const written: string[] = []
+const WRITTEN_KEEP = 50
+
+export function noteWrite(kind: string, id: string, version: number) {
+  written.push(`${kind}/${id}@${version}`)
+  if (written.length > WRITTEN_KEEP) written.shift()
+}
+
+/** Whether this console wrote `version` of the record. */
+export function wroteHere(kind: string, id: string, version: number): boolean {
+  return written.includes(`${kind}/${id}@${version}`)
+}
+
 export function useRecordPatch(record: SubstrateRecord) {
   const client = useQueryClient()
   const { authority, pkg, name } = splitKind(record.kind)
@@ -30,10 +46,14 @@ export function useRecordPatch(record: SubstrateRecord) {
     // Every read that can show the record, not only its page: a collection
     // holds its rows fresh for a while, and a list keyed on the kind (the
     // Agents page's providers) would otherwise go on showing the old values.
-    onSuccess: () =>
-      client.invalidateQueries({
+    onSuccess: (saved) => {
+      if (typeof saved?.version === "number") {
+        noteWrite(record.kind, record.id, saved.version)
+      }
+      return client.invalidateQueries({
         predicate: (q) =>
           recordWriteReaches(q.queryKey, record.kind, record.id),
-      }),
+      })
+    },
   })
 }

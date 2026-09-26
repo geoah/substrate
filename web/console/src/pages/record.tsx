@@ -1,8 +1,9 @@
-/** One record, read like a document: its head, its properties as a sheet
- * that edits in place, its prose, what it is connected to, where it comes
- * from, what was merged into it and its history, top to bottom on one
- * left-aligned page. Technical mode adds the record's own facts and a
- * Source toggle that shows the YAML envelope. */
+/** One record, read like a document and kept live off the change feed: its
+ * head, its properties as a sheet that edits in place (a value that changes
+ * under the reader is marked briefly), its prose, what it is connected to,
+ * where it comes from, what was merged into it and its history, top to bottom
+ * on one left-aligned page. Technical mode adds the record's own facts and a
+ * Source toggle that shows the YAML envelope or the JSON. */
 
 import { useMemo, useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -18,6 +19,7 @@ import { RecordDetails } from "@/components/record/record-details"
 import { RecordHeader } from "@/components/record/record-header"
 import { hasMerges } from "@/components/record/record-model"
 import { MergedSection, SourcesSection } from "@/components/record/sources"
+import { useLiveRecord } from "@/components/record/use-live-record"
 import { useRecordChanges } from "@/components/record/use-record-changes"
 import { SourceView } from "@/components/record/source-view"
 import { SyncRail } from "@/components/sync/sync-rail"
@@ -121,6 +123,7 @@ export function RecordDocument({
   const [holders, setHolders] = useState(false)
   const readOnly = Boolean(providerOfKind(record.kind))
   const { rows } = useRecordChanges(record)
+  const moved = useLiveRecord(record)
   const mappingIds = useMemo(
     () => (record.linkedFrom ?? []).map((l) => l.mapping),
     [record.linkedFrom]
@@ -155,9 +158,15 @@ export function RecordDocument({
             readOnly={readOnly}
             holders={holders}
             mappings={mappings.data?.records}
+            moved={moved}
           />
           {body && (
-            <RecordBody record={record} spec={body} readOnly={readOnly} />
+            <RecordBody
+              record={record}
+              spec={body}
+              readOnly={readOnly}
+              moved={moved.has(body.name)}
+            />
           )}
           {syncable && (
             <>

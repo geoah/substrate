@@ -28,10 +28,13 @@ export function RecordBody({
   record,
   spec,
   readOnly,
+  moved = false,
 }: {
   record: SubstrateRecord
   spec: PropSpec
   readOnly: boolean
+  /** It just changed under the reader: marked briefly. */
+  moved?: boolean
 }) {
   const stored = record.properties[spec.name]
   const text = typeof stored === "string" ? stored : ""
@@ -158,7 +161,8 @@ export function RecordBody({
             }
           }}
           className={cn(
-            "-mx-2 rounded-md px-2 py-1 leading-[1.65] outline-none",
+            "-mx-2 rounded-md px-2 py-1 leading-[1.65] transition-colors duration-700 outline-none",
+            moved && "bg-primary-soft",
             !readOnly &&
               "cursor-text hover:bg-hover focus-visible:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
           )}
