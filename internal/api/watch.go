@@ -60,6 +60,19 @@ func (h *handler) getChanges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
+	if q.Has("runs") {
+		// Run summaries are a history read: they walk backward from `before`
+		// and have no forward or streaming form.
+		switch {
+		case q.Get("runs") != "1":
+			writeError(w, http.StatusBadRequest, codeBadRequest, "runs: the only value is 1")
+		case q.Has("watch") || q.Has("from"):
+			writeError(w, http.StatusBadRequest, codeBadRequest, "runs: a history read, paged with before; it takes neither watch nor from")
+		default:
+			h.getChangeRuns(w, r, ds, f)
+		}
+		return
+	}
 	if q.Get("watch") == "1" {
 		h.streamChanges(w, r, ds, f, true)
 		return
