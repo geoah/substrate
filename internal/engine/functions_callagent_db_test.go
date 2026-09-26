@@ -1,6 +1,6 @@
 package engine
 
-// A function body runs an agent (record 0106): the grant is
+// A function body runs an agent (record 0121): the grant is
 // `permissions.agents`, the body reads the agent's reply, the agent's rows
 // carry the delivery's cause, and a chain that loops back through the agent
 // is refused as recursion.
@@ -99,6 +99,24 @@ def main(input, host):
 			"source": `
 def main(input, host):
     return {"output": host.agents.call("` + crewPackage + `/editor", "make a widget")}
+`,
+		}),
+		vocabulary.FunctionManifest(relayPackage, "yielder", map[string]any{
+			"description": "runs the editor, then patches the widget under the version it read",
+			"runtime":     vocabulary.RuntimePython,
+			"permissions": map[string]any{
+				"agents": []any{crewPackage + "/editor"},
+				"writes": []any{crewPackage + "/widget"},
+			},
+			"source": `
+def main(input, host):
+    rec = input["envelope"]["record"]
+    version = host.version(rec)
+    host.agents.call("` + crewPackage + `/editor", "rename the widget")
+    host.effects.patch("` + crewPackage + `/widget", rec["id"],
+                       properties={"name": "stale"},
+                       if_version=version, on_conflict="yield")
+    return {}
 `,
 		}),
 		vocabulary.AgentManifest(relayPackage, "slow", map[string]any{
@@ -508,6 +526,69 @@ func TestDeliveryClaimsWhenItsAgentOpensAThread(t *testing.T) {
 	waitThreadsSettled(t, ds, "scribe")
 	if n := len(agentThreadsOf(t, ds, "scribe")); n != 1 {
 		t.Fatalf("the change was redelivered after the stop: %d scribe threads", n)
+	}
+}
+
+// A body whose agent claimed the delivery and whose guarded write then
+// yields its version race settles as a skip (decision 0093): the skip
+// retires the claim, so nothing stays listed in flight, and the agent's
+// write stands.
+func TestDeliveryYieldAfterItsAgentRanSettlesAsSkip(t *testing.T) {
+	t.Parallel()
+	ds, fake := openAgentDataset(t)
+	installRelay(t, ds, fake)
+	ctx := context.Background()
+
+	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeTrigger,
+		Properties: map[string]any{
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", relayPackage+"/yielder"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("put trigger: %v", err)
+	}
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "patch", crewPackage+"/widget", "w-yield", map[string]any{"name": "bumped"})}}},
+		fakeTurn{content: "renamed"},
+	)
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: crewPackage + "/widget", ID: "w-yield", Properties: map[string]any{"name": "raw"},
+	}); err != nil {
+		t.Fatalf("put widget: %v", err)
+	}
+	for range 2 {
+		if _, err := ds.ProcessTriggers(ctx); err != nil {
+			t.Fatalf("process: %v", err)
+		}
+	}
+	if n := len(agentThreadsOf(t, ds, "editor")); n != 1 {
+		t.Fatalf("the yielder ran the editor %d times, want once", n)
+	}
+	w, err := ds.Get(ctx, crewPackage+"/widget", "w-yield")
+	if err != nil {
+		t.Fatalf("get widget: %v", err)
+	}
+	if got := w.Properties["name"]; got != "bumped" {
+		t.Fatalf("widget name %v, want the editor's write to stand", got)
+	}
+	failures, err := ds.TriggerFailures(ctx, tr.ID)
+	if err != nil {
+		t.Fatalf("failures: %v", err)
+	}
+	if len(failures) != 0 {
+		t.Fatalf("failures after the yield %+v, want none", failures)
+	}
+	var reason string
+	if err := ds.db.QueryRowContext(ctx, `
+		SELECT props->>'reason' FROM records WHERE kind = $1 AND deleted_at IS NULL
+		  AND `+referencePathSQL("props", "trigger")+` = $2 AND props->>'status' = 'skipped'`,
+		typeTriggerRun, vocabulary.RecordPath(typeTrigger, tr.ID)).Scan(&reason); err != nil {
+		t.Fatalf("the skipped run record: %v", err)
+	}
+	if !strings.Contains(reason, "yielded its version race") {
+		t.Fatalf("skipped run reason %q, want the yield", reason)
 	}
 }
 

@@ -110,7 +110,7 @@ func (t *trigger) callableActor() string {
 
 // selfActors is every actor whose writes this trigger never delivers: the
 // callable's own, and for a function the actors of the agents it may run
-// under `permissions.agents` (record 0106). A callee function's effects
+// under `permissions.agents` (record 0121). A callee function's effects
 // commit under the caller's actor, but an agent's thread, messages and tool
 // effects commit under the agent's, so without this a function watching a
 // kind its agent writes would wake again on every row the agent wrote. The

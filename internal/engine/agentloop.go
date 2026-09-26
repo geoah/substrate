@@ -106,7 +106,7 @@ type agentInvocation struct {
 	// callStack is the host-Call stack of the function chain that ran this
 	// agent, empty on every other entry; runAgent adds the agent itself. The
 	// loop's function tools start from it, so a body that runs an agent
-	// whose tool calls that body back is refused as recursion (record 0106).
+	// whose tool calls that body back is refused as recursion (record 0121).
 	callStack []string
 	// notAfter, when set, is the calling body's own deadline: the loop's
 	// deadline is the earlier of it and the agent's budget, so the loop

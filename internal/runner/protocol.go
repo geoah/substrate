@@ -52,7 +52,7 @@ import (
 // target body (its effects accumulate into the CALLER's delivery
 // transaction) and replies with the target's output. A target on
 // `permissions.agents` is an agent instead: the engine runs it to
-// settlement and replies with its result (engine record 0106).
+// settlement and replies with its result (engine record 0121).
 //
 // One frame per line, JSON. The protocol stream is the child's ORIGINAL
 // stdout, which the host detaches from user code before any body runs: it dups

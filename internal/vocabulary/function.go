@@ -163,7 +163,7 @@ type FunctionCaps struct {
 	// invoke; empty means every sub-call trips.
 	Call []string
 	// Agents is the allowlist of agent identities the body's host Call may
-	// run (record 0106). An identity sits on at most one of Call and Agents,
+	// run (record 0121). An identity sits on at most one of Call and Agents,
 	// so the list that holds it is what says which callable a Call means.
 	Agents []string
 	// Network is the declared egress allowlist: each entry is a bare destination,

@@ -747,7 +747,7 @@ it.
 `host.agents.call(agent, input)` runs an agent the body names under
 `permissions.agents` to settlement and returns
 `{"reply": ..., "thread": ..., "status": ...}`
-([0106](decisions/0106-a-function-body-runs-an-agent-under-permissions-agents.md)).
+([0121](decisions/0121-a-function-body-runs-an-agent-under-permissions-agents.md)).
 `input` becomes the agent's first user message: a string as written, anything
 else as JSON. An input that carries a secret injected into the body (its
 bundle config or an account token) verbatim is refused before the agent runs,
@@ -768,8 +768,10 @@ transaction that opens the thread, as an agent trigger does before its loop:
 the cursor or fire state moves there, and the delivery is listed under the
 trigger's failures as in flight until the body settles. A second dispatch of
 the change finds the claim and runs no agent, and a crash leaves the claim to
-retry by hand. A delivery that fails after the thread opened parks on that
-attempt, also when the dispatcher is stopping. A call under an
+retry by hand. A guarded write that yields its version race after the thread
+opened settles as a skip, and the skip retires the claim. A delivery that fails
+after the thread opened parks on that attempt, also when the dispatcher is
+stopping. A call under an
 `Idempotency-Key` binds the key to the first thread, so a repeat is `409
 conflict` naming it ([idempotency](api.md#idempotency-and-retries)). A retry of
 the parked delivery by hand runs the agent again. On a record delivery every row

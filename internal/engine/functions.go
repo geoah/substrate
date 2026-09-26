@@ -419,6 +419,7 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 			return 0, from, rerr
 		}
 		res, err := ds.deliver(ctx, tr, ch, from, depth, resume, settle)
+		cause := err
 		err = agentRetryGate(threads, err)
 		if err == nil {
 			if res.skipped {
@@ -433,6 +434,20 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 		}
 		if errors.Is(err, errCursorMoved) || errors.Is(err, errCallableGone) {
 			return 0, from, err
+		}
+		if declinedDelivery(err) && threads.opened() != "" {
+			// The body lost a race it declared it could lose after its agent
+			// claimed the delivery (agentThreads.bind): the cursor moved with
+			// the claim, so the skip retires the claim instead.
+			if err := ds.skipClaimed(parkContext(ctx, threads), settle, runRecord{
+				trigger: tr.ID, callable: tr.callablePath(), mode: runner.ModeRecord,
+				seq: ch.Seq, recordID: ch.RecordID, status: runStatusSkipped,
+				attempt: settle.attempt, startedAt: started,
+				errMsg: fmt.Sprintf("%v (agent thread %s)", cause, threads.opened()),
+			}); err != nil {
+				return 0, from, err
+			}
+			return 0, ch.Seq, nil
 		}
 		if declinedDelivery(err) {
 			// Another dispatch holds this delivery, or this one lost a race it
@@ -593,6 +608,26 @@ func (s *settlement) settle(t *txn, res deliverResult) error {
 		return t.syncSettleOK(s.sync)
 	}
 	return nil
+}
+
+// retireClaim retires the claim a function body's agent took
+// (agentThreads.bind) without the completion's run record: the claimed
+// failure a dispatch wrote, or the admitted webhook request's row that
+// bind rewrote as in flight. The caller writes the run.
+func (s *settlement) retireClaim(t *txn) error {
+	id := s.claimed
+	if id == 0 {
+		id = s.retire
+	}
+	if id != 0 {
+		if err := t.lockFailure(s.trigger, id); err != nil {
+			return err
+		}
+		if err := t.unparkTx(s.trigger, id); err != nil {
+			return err
+		}
+	}
+	return t.settleDelivery(s.trigger)
 }
 
 // claim is the agent path's first transaction, before the loop: the
@@ -959,6 +994,23 @@ func (ds *dataset) recordSkipAndAdvance(ctx context.Context, tr *trigger, ch sub
 	})
 }
 
+// skipClaimed settles a declined attempt whose body's agent had already
+// claimed the delivery (agentThreads.bind): a guarded write that yielded its
+// version race after the thread opened. The claim moved the cursor or fire
+// state, so the skip retires the claim and writes the skipped run in one
+// transaction, and nothing is left in flight (decision 0093, record 0121).
+func (ds *dataset) skipClaimed(ctx context.Context, s *settlement, run runRecord) error {
+	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		if err := s.retireClaim(t); err != nil {
+			return err
+		}
+		if err := t.putRun(run); err != nil {
+			return err
+		}
+		return t.pruneRuns(s.trigger)
+	})
+}
+
 // --- schedule-sourced delivery ----------------------------------------------------
 
 // processScheduleTrigger fires the occurrences due since the last one the
@@ -1059,15 +1111,26 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 		}
 		settle.attempt = attempt + 1
 		var applied int
-		var err error
+		var err, cause error
 		if tr.Agent != nil {
 			applied, err = ds.agentFire(ctx, tr, mode, fid, at, envelope, settle)
 		} else {
 			applied, err = ds.functionFire(fctx, tr, mode, fid, at, envelope, settle)
+			cause = err
 			err = agentRetryGate(threads, err)
 		}
 		if err == nil {
 			return applied, nil
+		}
+		if declinedDelivery(err) && threads.opened() != "" {
+			// As in deliverWithRetry: the agent's claim already moved the
+			// fire state (or rewrote the admitted request as in flight), so
+			// the skip retires the claim.
+			return 0, ds.skipClaimed(parkContext(ctx, threads), settle, runRecord{
+				trigger: tr.ID, callable: tr.callablePath(), mode: mode, fireID: fid,
+				status: runStatusSkipped, attempt: settle.attempt, startedAt: started,
+				errMsg: fmt.Sprintf("%v (agent thread %s)", cause, threads.opened()),
+			})
 		}
 		if declinedDelivery(err) {
 			// Another dispatch holds this fire, or this one lost a guarded

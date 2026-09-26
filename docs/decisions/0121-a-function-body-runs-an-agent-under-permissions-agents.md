@@ -4,7 +4,7 @@ date: 2026-09-26
 decision-makers: George Antoniadis (via the issue-635 agent session)
 ---
 
-# 0106. A function body runs an agent under `permissions.agents`
+# 0121. A function body runs an agent under `permissions.agents`
 
 ## Context and Problem Statement
 
@@ -65,6 +65,10 @@ the cursor or fire state moves there and the delivery is listed as in
 flight. A second dispatch of the same delivery finds the claim and runs no
 agent, a crash before the body settles leaves the claim for a retry by hand,
 and the body's final transaction retires the claim instead of acknowledging.
+A guarded write that yields its version race after the thread opened still
+settles as a skip
+([0093](0093-a-guarded-write-may-declare-that-losing-is-normal.md)): the skip
+retires the claim, since the claim already moved the cursor or fire state.
 A delivery that fails after the thread opened parks on that attempt, even when
 the dispatcher is stopping. A call under an `Idempotency-Key` binds the key to
 the first thread, so a repeat is `409 conflict` naming it, as for an agent
@@ -113,7 +117,8 @@ repeat with `409` naming the thread, and that such a delivery parks after one
 attempt. It also checks that the delivery is listed in flight while the agent
 runs, that a second pass meanwhile runs no agent, and that a dispatcher
 stopped mid-agent parks the delivery at attempt 1 and does not run the agent
-again.
+again, and that a body whose write yields to its own agent's write settles
+as a skip with nothing left in flight.
 
 ## More Information
 

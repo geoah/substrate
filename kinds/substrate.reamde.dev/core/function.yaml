@@ -230,7 +230,7 @@ data:
           repeated: true
           description: which other functions its code may invoke
         # A second list rather than a wider `call`: `call` is pinned to the
-        # function kind, so a bare id there means a function (record 0106).
+        # function kind, so a bare id there means a function (record 0121).
         agents:
           type: reference
           kind: substrate.reamde.dev/core/agent

@@ -40,7 +40,7 @@ var errSecretInEffects = errors.New("a returned effect carries an injected secre
 var errSecretInContinuation = errors.New("a paged continuation cursor carries an injected secret value verbatim — rejected before it could persist")
 
 // errSecretInAgentInput rejects a body's host call to an agent whose input
-// carries an injected secret value verbatim (record 0106). The input becomes
+// carries an injected secret value verbatim (record 0121). The input becomes
 // the thread's first message: it commits to the changelog and goes to the
 // LLM provider, and redacting it in place would change what the agent is
 // asked. Deterministic by construction: the same body reproduces it.

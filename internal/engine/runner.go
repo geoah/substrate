@@ -428,7 +428,7 @@ func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, er
 }
 
 // callAgent runs an agent the body names under `permissions.agents` to
-// settlement and hands the body its reply (record 0106). The gates are a
+// settlement and hands the body its reply (record 0121). The gates are a
 // function Call's: the runner already checked the allowlist and charged the
 // call budget, and here the callee's bundle lifecycle, the call stack and
 // the causal-depth cap hold. What differs is where the writes land: the loop
@@ -505,7 +505,7 @@ type callOrigin struct {
 }
 
 // agentThreads records the first agent thread a function body opened
-// (record 0106). An agent commits its thread, messages and tool effects as
+// (record 0121). An agent commits its thread, messages and tool effects as
 // it runs, so once a thread exists a retry of the body would repeat those
 // writes. A keyed function call binds its Idempotency-Key reservation to the
 // thread, so a repeat is 409 naming the thread, as it is for an agent call.
