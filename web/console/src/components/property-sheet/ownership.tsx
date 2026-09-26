@@ -19,6 +19,7 @@ import { ActorMark, ActorRef } from "@/components/identity/actor-ref"
 import { IdText } from "@/components/identity/id-text"
 import { IdentityHoverCard } from "@/components/identity/identity-hover-card"
 import { OriginMark } from "@/components/identity/origin-mark"
+import { Pill } from "@/components/identity/pill"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { RecordRef } from "@/components/identity/record-ref"
 import { Button } from "@/components/ui/button"
@@ -181,12 +182,9 @@ export function OwnershipChip({
       }
     >
       {differs && (
-        <span
-          data-slot="differs"
-          className="rounded-full bg-warn-soft px-[7px] text-[11.5px] font-medium whitespace-nowrap text-warning"
-        >
+        <Pill tone="warn" dot={false}>
           {differs}
-        </span>
+        </Pill>
       )}
       <Holding meta={meta} />
     </IdentityHoverCard>
