@@ -42,6 +42,7 @@ import { displayPlural, lowerFirst } from "@/lib/kind-names"
 import {
   SEARCH_GRAMMAR,
   SEARCH_MODE_DESCRIPTION,
+  SEARCH_MODE_DETAIL,
   SEARCH_MODE_LABEL,
   SEARCH_MODES,
   loadSearchMode,
@@ -127,6 +128,7 @@ export function SearchPage() {
           </div>
           <p className="max-w-prose text-[12.5px] text-faint">
             {SEARCH_MODE_DESCRIPTION[mode]}
+            {technical && ` ${SEARCH_MODE_DETAIL[mode]}`}
           </p>
         </div>
       </div>
