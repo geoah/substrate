@@ -69,6 +69,8 @@ vi.mock("@/lib/api/http", async (importOriginal) => {
   }
 })
 
+import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
+import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { RecordCombobox } from "./record-combobox"
 
 const ORG = "ada.example.com/people/organization"
@@ -127,24 +129,40 @@ const HOST_FUNCTIONS = [
 ]
 
 function open(
-  over: Partial<React.ComponentProps<typeof RecordCombobox>> = {}
+  over: Partial<React.ComponentProps<typeof RecordCombobox>> = {},
+  technical = false
 ): { onSelect: ReturnType<typeof vi.fn> } {
   const onSelect = vi.fn()
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   render(
-    <QueryClientProvider client={client}>
-      <RecordCombobox
-        id="pick"
-        pin={ORG}
-        kinds={KINDS}
-        value=""
-        onSelect={onSelect}
-        ariaLabel="Member of"
-        {...over}
-      />
-    </QueryClientProvider>
+    <ConsolePreferencesContext.Provider
+      value={{
+        preferences: {
+          collapsed: [],
+          favorites: [],
+          sidebarOpen: true,
+          ...DEFAULT_SETTINGS,
+          technicalDetails: technical,
+        },
+        busy: false,
+        change: () => {},
+        set: () => {},
+      }}
+    >
+      <QueryClientProvider client={client}>
+        <RecordCombobox
+          id="pick"
+          pin={ORG}
+          kinds={KINDS}
+          value=""
+          onSelect={onSelect}
+          ariaLabel="Member of"
+          {...over}
+        />
+      </QueryClientProvider>
+    </ConsolePreferencesContext.Provider>
   )
   fireEvent.click(screen.getByLabelText(over.ariaLabel ?? "Member of"))
   return { onSelect }
@@ -233,8 +251,17 @@ describe("the record dropdown", () => {
     await waitFor(() => expect(showing()).toEqual(["crew.test.dev/summarize"]))
   })
 
+  it("searches, and only searches, in everyday words", async () => {
+    open()
+    await screen.findByText("Acme Robotics")
+    expect(search().placeholder).toBe("Search organizations")
+    fireEvent.change(search(), { target: { value: "not-yet" } })
+    expect(screen.queryByText(/^Use/)).toBeNull()
+  })
+
   it("offers whatever is typed, because a record can be minted at any time", async () => {
-    const { onSelect } = open()
+    const { onSelect } = open({}, true)
+    expect(search().placeholder).toBe("Search organizations, or type an id")
     await screen.findByText("Acme Robotics")
     fireEvent.change(search(), { target: { value: "not-yet" } })
     fireEvent.click(screen.getByText(/^Use/))
@@ -275,9 +302,9 @@ describe("the record dropdown", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     wire.answer = () => "hang"
     open()
-    expect(screen.getByText(/Reading/)).toBeTruthy()
+    expect(screen.getByText(/Loading organizations/)).toBeTruthy()
     await act(() => vi.advanceTimersByTimeAsync(20_000))
-    expect(screen.queryByText(/Reading/)).toBeNull()
+    expect(screen.queryByText(/Loading/)).toBeNull()
     expect(screen.getByText(/took too long/)).toBeTruthy()
     wire.answer = () => ({ records: ORGS })
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
@@ -288,12 +315,12 @@ describe("the record dropdown", () => {
     onlineManager.setOnline(false)
     open()
     expect(await screen.findByText(/offline/i)).toBeTruthy()
-    expect(screen.queryByText(/Reading/)).toBeNull()
+    expect(screen.queryByText(/Loading/)).toBeNull()
   })
 
   it("says what went wrong, offers a retry, and leaves typing open", async () => {
     wire.answer = () => new Error("network error")
-    const { onSelect } = open()
+    const { onSelect } = open({}, true)
     expect(await screen.findByText(/network error/)).toBeTruthy()
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy()
     fireEvent.change(search(), { target: { value: "typed-anyway" } })
@@ -302,9 +329,14 @@ describe("the record dropdown", () => {
   })
 
   it("says so when the pin names a kind this repository does not declare", () => {
-    open({ pin: "gone.example.com/people/organization" })
+    open({ pin: "gone.example.com/people/organization" }, true)
     expect(screen.getByText(/doesn’t have/)).toBeTruthy()
     expect(wire.reads).toHaveLength(0)
+    cleanup()
+    open({ pin: "gone.example.com/people/organization" })
+    expect(
+      screen.getByText("There are no organizations here yet.")
+    ).toBeTruthy()
   })
 
   it("reads as an ADD where a repeated picker grows its list", () => {
