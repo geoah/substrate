@@ -587,6 +587,12 @@ export interface PutInput {
  * would seal an empty credential over a live one. */
 const EMPTY_IS_A_VALUE = new Set(["string", "text", "markdown"])
 
+/** Whether a value is a blank template line that means "not set": the write
+ * leaves it out, so nothing checks it as a value either. */
+export function blankIsUnset(spec: PropSpec, value: unknown): boolean {
+  return value === "" && !EMPTY_IS_A_VALUE.has(spec.kind)
+}
+
 /** Drop the properties a blank template line left behind, so a create that
  * filled in three of eleven properties does not carry eight empty strings into
  * a 422. An explicit `null` survives: that is the delete marker. */
@@ -599,7 +605,7 @@ function pruneBlanks(
   const out: Record<string, unknown> = {}
   for (const [name, value] of Object.entries(props)) {
     const spec = specs.get(name)
-    if (value === "" && spec && !EMPTY_IS_A_VALUE.has(spec.kind)) continue
+    if (spec && blankIsUnset(spec, value)) continue
     out[name] = value
   }
   return out

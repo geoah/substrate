@@ -5,39 +5,39 @@
  * as text: nothing on the page said whether the id, the title or the whole
  * path was wanted (owner report, 2026-09-23). A pointer names a record or it
  * does not, so its editor is the collection itself: every record as a row
- * with the title a reader recognises and the id the filter carries, a search
- * on top, and a checkbox per row, because several referents on one property
- * are one `in` filter, "any of". That is the wire's only several-values form
+ * marked the way a record is everywhere (the kind's glyph and the title; the
+ * id the filter carries only with technical details on), a search on top,
+ * and a check per row, because several referents on one property are one
+ * `in` filter, "any of". That is the wire's only several-values form
  * on one property (query.go condReference reads eq, contains and in on a
  * pointer alike), so there is no "all of" to offer.
  *
  * The rows are one page of the collection (`useRecordOptions`), the whole
- * collection for the registry-shaped kinds a pin usually names. A collection
- * that outran the page is searched server-side as the reader types, so a
- * person past the first two hundred is still a few keystrokes away, and a
- * chosen record the page does not carry keeps its row and its title through
- * the same batched read by id every pill uses. */
+ * collection for the registry-shaped kinds a pin usually names. Typing
+ * filters that page at once and asks the server's search as well, so a person
+ * past the first two hundred is still a few keystrokes away (`pickerRows`
+ * merges the two), and a chosen record the page does not carry keeps its row
+ * and its title through the same batched read by id every pill uses. */
 
 import { useEffect, useState } from "react"
 import { CheckIcon } from "lucide-react"
 
+import { KindGlyph } from "@/components/identity/kind-glyph"
 import {
   Command,
-  CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
 import { Spinner } from "@/components/ui/spinner"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useReferenceTitles } from "@/hooks/use-reference-titles"
 import type { KindInfo } from "@/lib/api/types"
-import {
-  useRecordOptions,
-  useRecordSearch,
-  type RecordOption,
-} from "@/lib/identities"
+import { useRecordOptions, useRecordSearch } from "@/lib/identities"
+import { displayPlural, lowerFirst, untitled } from "@/lib/kind-names"
 import { recordPath } from "@/lib/record-path"
+import { pickerRows } from "./picker-rows"
 import { cn } from "@/lib/utils"
 
 /** How long typing settles before the server is asked. Each keystroke into a
@@ -85,8 +85,12 @@ export function ReferenceFilterLabel({
   kinds: KindInfo[]
   ids: string[]
 }) {
+  const [technical] = useTechnicalDetails()
   const titles = useChosenTitles(target, kinds, ids)
-  const text = ids.map((id) => titles.get(id) ?? id).join(", ")
+  // A record whose title is not known reads by its id only where ids are
+  // shown at all.
+  const fallback = (id: string) => (technical ? id : untitled(target))
+  const text = ids.map((id) => titles.get(id) ?? fallback(id)).join(", ")
   return (
     <span className="max-w-72 truncate" title={text}>
       {ids.map((id, i) => {
@@ -94,7 +98,13 @@ export function ReferenceFilterLabel({
         return (
           <span key={id}>
             {i > 0 && ", "}
-            <span className={cn(!title && "data")}>{title ?? id}</span>
+            <span
+              className={cn(
+                !title && (technical ? "data" : "text-muted-foreground")
+              )}
+            >
+              {title ?? fallback(id)}
+            </span>
           </span>
         )
       })}
@@ -115,33 +125,30 @@ export function ReferencePicker({
   selected: string[]
   onChange: (ids: string[]) => void
 }) {
+  const [technical] = useTechnicalDetails()
   const [query, setQuery] = useState("")
   const typed = useDebounced(query.trim(), SEARCH_DEBOUNCE_MS)
   const page = useRecordOptions(target.identity, kinds)
-  // The page is the whole collection unless it was capped; only then does
-  // typing ask the server, and only then is cmdk's own filtering stood down,
-  // so a stemmed or prefixed server match is not hidden for lacking the
-  // literal letters.
-  const searching = page.capped && typed.length > 0
+  // Typing always asks the server too, so a record past the first page is a
+  // few keystrokes away; the page in hand answers at once meanwhile, and the
+  // list is filtered here rather than by cmdk, which would hide a stemmed or
+  // prefixed server match for lacking the literal letters.
+  const searching = typed.length > 0
   const found = useRecordSearch(target.identity, kinds, typed, searching)
   const titles = useChosenTitles(target, kinds, selected)
-  const offered = searching ? found : page
-
   const chosen = new Set(selected)
-  const byId = new Map(offered.options.map((o) => [o.value, o]))
-  // The chosen rows lead, whatever the list below them shows: unchecking one
-  // must stay one click away while a search shows something else.
-  const rows: RecordOption[] = [
-    ...selected.map(
-      (id) =>
-        byId.get(id) ?? {
-          value: id,
-          title: titles.get(id) ?? "",
-          description: "",
-        }
-    ),
-    ...offered.options.filter((o) => !chosen.has(o.value)),
-  ]
+  const rows = pickerRows(
+    selected,
+    titles,
+    page.options,
+    searching ? found.options : [],
+    query
+  )
+  const plural = lowerFirst(displayPlural(target))
+  // A refused search is said on its own line: the page's own matches still
+  // stand, and an empty list is not "Nothing matches" when the server was
+  // never heard from.
+  const searchError = searching && !found.loading ? found.error : undefined
 
   function toggle(id: string) {
     onChange(
@@ -150,67 +157,104 @@ export function ReferencePicker({
   }
 
   return (
-    <Command shouldFilter={!searching}>
+    <Command shouldFilter={false}>
       <CommandInput
-        placeholder={`Search ${target.name}…`}
+        placeholder={`Search ${plural}…`}
         value={query}
         onValueChange={setQuery}
       />
       <CommandList>
-        {offered.loading ? (
+        {page.loading ? (
           <div className="flex items-center gap-2 px-3 py-6 text-sm text-muted-foreground">
             <Spinner className="size-3.5" />
-            Reading the collection
+            Loading {plural}
           </div>
-        ) : offered.error ? (
-          <div className="px-3 py-6 text-sm text-destructive">
-            {offered.error}
+        ) : page.error ? (
+          <div className="px-3 py-6 text-sm text-destructive">{page.error}</div>
+        ) : rows.length === 0 && !searchError ? (
+          <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+            {searching && found.loading ? (
+              <span className="inline-flex items-center gap-2">
+                <Spinner className="size-3.5" />
+                Searching
+              </span>
+            ) : page.options.length || searching ? (
+              "Nothing matches."
+            ) : (
+              `No ${plural} yet.`
+            )}
           </div>
-        ) : (
-          <CommandEmpty className="text-muted-foreground">
-            {page.options.length || searching
-              ? "Nothing matches."
-              : `There are no ${target.name} records yet.`}
-          </CommandEmpty>
-        )}
+        ) : null}
         {rows.length > 0 && (
           <CommandGroup>
             {rows.map((row) => {
               const on = chosen.has(row.value)
               return (
-                // The title and the id are both searched, so either finds the
-                // row. [&>svg:last-child]:hidden drops CommandItem's built-in
-                // trailing check slot: the checkbox on the left is the state.
+                // The row reads as a record mark: the kind's glyph and the
+                // title, the id under it only with technical details on. The
+                // check on the right is the state; [&>svg:last-child]:hidden
+                // drops CommandItem's own trailing slot, which never shows
+                // for a multi-select.
                 <CommandItem
                   key={row.value}
-                  value={`${row.value} ${row.title}`}
+                  value={row.value}
                   onSelect={() => toggle(row.value)}
-                  className="[&>svg:last-child]:hidden"
+                  data-checked={on || undefined}
+                  className="gap-2 [&>svg:last-child]:hidden"
                 >
-                  <span
-                    className={cn(
-                      "flex size-4 shrink-0 items-center justify-center rounded-sm border",
-                      on
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "opacity-50"
-                    )}
-                  >
-                    {on && <CheckIcon className="size-3" />}
-                  </span>
-                  <span className="flex min-w-0 flex-col">
-                    <span className={cn("truncate", !row.title && "data")}>
-                      {row.title || row.value}
+                  <KindGlyph kind={target} size="xs" />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span
+                      className={cn(
+                        "truncate",
+                        !row.title && "text-muted-foreground"
+                      )}
+                    >
+                      {row.title || untitled(target)}
                     </span>
-                    {row.title && (
-                      <span className="truncate data text-xs text-muted-foreground">
+                    {technical && (
+                      <span className="truncate font-mono text-[11.5px] text-muted-foreground">
                         {row.value}
                       </span>
                     )}
                   </span>
+                  <span
+                    aria-hidden
+                    data-slot="picker-check"
+                    className={cn(
+                      "flex size-4 shrink-0 items-center justify-center rounded-[4px] border",
+                      on
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border-strong bg-background"
+                    )}
+                  >
+                    {on && <CheckIcon className="size-3" strokeWidth={3} />}
+                  </span>
+                  {on && <span className="sr-only">(chosen)</span>}
                 </CommandItem>
               )
             })}
           </CommandGroup>
+        )}
+        {searchError && (
+          <div
+            role="alert"
+            className={cn(
+              "px-3 text-xs text-destructive",
+              rows.length > 0 ? "border-t py-2" : "py-6 text-center"
+            )}
+          >
+            The search didn’t finish: {searchError}{" "}
+            <button type="button" className="underline" onClick={found.retry}>
+              Try again
+            </button>
+          </div>
+        )}
+        {searching && found.loading && rows.length > 0 && (
+          <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground">
+            <Spinner className="size-3" />
+            Searching all {plural}
+          </div>
         )}
       </CommandList>
       {page.capped && !searching && (

@@ -8,7 +8,11 @@ import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 
 import {
   childrenFilter,
+  hasToggles,
+  matchedRoots,
+  matchingParentsFilter,
   nestingProperty,
+  parentIdsOf,
   parentIdOf,
   resolveTree,
   rootsFilter,
@@ -160,6 +164,11 @@ describe("resolveTree", () => {
     })
     expect(out.nodes.get("engineering")?.children).toBe("some")
     expect(out.nodes.get("design")?.children).toBe("none")
+    // A closed parent still knows its children, which its badge counts.
+    expect(
+      out.nodes.get("engineering")?.childRecords?.map((r) => r.id)
+    ).toEqual(["platform", "product"])
+    expect(out.nodes.get("design")?.childRecords).toBeUndefined()
     expect(ids(out.rows)).toEqual(["engineering", "design"])
   })
 
@@ -304,5 +313,179 @@ describe("resolveTree", () => {
     })
     expect(ids(out.rows)).toEqual(["root", "a", "b"])
     expect(out.wanted).toEqual([["root"], ["a"], ["b"]])
+  })
+})
+
+/** A filtered tree nests the MATCHES: the page is every match, a match whose
+ * parent matches too sits under it (and nowhere else), and one whose parent
+ * does not match stands at the top level carrying that parent as context. */
+describe("the filtered tree", () => {
+  const ids = (rows: SubstrateRecord[]) => rows.map((r) => r.id)
+  // engineering > platform > infra, and design; say the filter matched
+  // engineering, platform, infra and a design child, but not design.
+  const engineering = record("engineering")
+  const platform = record("platform", "engineering")
+  const infra = record("infra", "platform")
+  const research = record("research", "design")
+  const page = [infra, research, engineering, platform]
+
+  it("asks about each parent the page names, once, and never a self-pointer", () => {
+    expect(
+      parentIdsOf([...page, record("loop", "loop"), infra], "parent")
+    ).toEqual(["platform", "design", "engineering"])
+    expect(
+      matchingParentsFilter({ search: "ops" }, ["platform", "design"])
+    ).toEqual({ search: "ops", ids: ["platform", "design"] })
+  })
+
+  it("keeps a match whose parent matches off the top level, and gives the rest their context", () => {
+    const out = matchedRoots(page, "parent", [platform, engineering])
+    // infra sits under platform, platform under engineering: only the
+    // match with no parent and the one whose parent missed stay on top.
+    expect(ids(out.roots)).toEqual(["research", "engineering"])
+    expect([...out.context]).toEqual([
+      ["research", "acme.example.com/people/team/design"],
+    ])
+  })
+
+  it("draws one member of a parent cycle on top, so every match is drawn once", () => {
+    const a = record("a", "b")
+    const b = record("b", "a")
+    const c = record("c", "a")
+    const out = matchedRoots([b, c, a], "parent", [a, b])
+    // a leads the cycle; b sits under a, c under a too.
+    expect(ids(out.roots)).toEqual(["a"])
+    const x = record("x", "z")
+    const y = record("y", "x")
+    const z = record("z", "y")
+    expect(ids(matchedRoots([z, y, x], "parent", [x, y, z]).roots)).toEqual([
+      "x",
+    ])
+  })
+
+  it("counts a parent matched under a former id", () => {
+    const merged = { ...record("eng2"), formerIds: ["engineering"] }
+    const out = matchedRoots([platform, merged], "parent", [merged])
+    expect(ids(out.roots)).toEqual(["eng2"])
+  })
+
+  it("stands a match on top when its matching parent is on another page", () => {
+    // Every match's parent matches, but none of those parents is on this
+    // page, so nothing here would draw the matches under them.
+    const page2 = [infra, platform]
+    const offPage = record("elsewhere", "engineering")
+    const out = matchedRoots([infra, offPage], "parent", [
+      platform,
+      engineering,
+    ])
+    expect(ids(out.roots)).toEqual(["infra", "elsewhere"])
+    expect([...out.context]).toEqual([
+      ["infra", "acme.example.com/people/team/platform"],
+      ["elsewhere", "acme.example.com/people/team/engineering"],
+    ])
+    const drawn = resolveTree({
+      roots: out.roots,
+      property: "parent",
+      expanded: new Set(),
+      openByDefault: true,
+      lookup: () => ({ records: [], complete: true }),
+    })
+    expect(ids(drawn.rows)).toEqual(["infra", "elsewhere"])
+    // A matching parent on the page still holds its match under it.
+    expect(
+      ids(matchedRoots(page2, "parent", [platform, engineering]).roots)
+    ).toEqual(["platform"])
+  })
+
+  it("stands every match on top when no parent matched", () => {
+    const out = matchedRoots(page, "parent", [])
+    expect(ids(out.roots)).toEqual(ids(page))
+    expect(out.context.size).toBe(3)
+  })
+
+  it("opens rows by themselves, and a toggle closes one", () => {
+    const lookup = (parents: readonly string[]) => {
+      const key = parents.join(",")
+      if (key === "research,engineering")
+        return { records: [platform], complete: true }
+      if (key === "platform") return { records: [infra], complete: true }
+      return { records: [], complete: true }
+    }
+    const open = resolveTree({
+      roots: [research, engineering],
+      property: "parent",
+      expanded: new Set(),
+      lookup,
+      openByDefault: true,
+    })
+    expect(ids(open.rows)).toEqual([
+      "research",
+      "engineering",
+      "platform",
+      "infra",
+    ])
+    expect(open.nodes.get("infra")?.depth).toBe(2)
+    // A leaf is never open, whatever the default.
+    expect(open.nodes.get("research")?.open).toBe(false)
+
+    const closed = resolveTree({
+      roots: [research, engineering],
+      property: "parent",
+      expanded: new Set(["platform"]),
+      lookup,
+      openByDefault: true,
+    })
+    expect(ids(closed.rows)).toEqual(["research", "engineering", "platform"])
+  })
+
+  it("leaves a row whose level was cut short closed until it is asked", () => {
+    const out = resolveTree({
+      roots: [engineering],
+      property: "parent",
+      expanded: new Set(),
+      lookup: () => ({ records: [platform], complete: false }),
+      openByDefault: true,
+    })
+    expect(out.nodes.get("engineering")).toMatchObject({
+      children: "unknown",
+      open: false,
+    })
+    expect(out.wanted).toEqual([["engineering"]])
+  })
+})
+
+/** The chevron's column is reserved on every row when any row can open, and
+ * on none when nothing can: a tree with nothing to open is a flat table. */
+describe("hasToggles", () => {
+  const node = (children: "pending" | "unknown" | "none" | "some") => ({
+    id: children,
+    depth: 0,
+    children,
+    open: false,
+    loading: false,
+    truncated: false,
+  })
+  it("is off while nothing is known and when every row is a leaf", () => {
+    expect(hasToggles(new Map())).toBe(false)
+    expect(hasToggles(new Map([["a", node("pending")]]))).toBe(false)
+    expect(
+      hasToggles(
+        new Map([
+          ["a", node("none")],
+          ["b", node("none")],
+        ])
+      )
+    ).toBe(false)
+  })
+  it("is on as soon as one row has children, or may have", () => {
+    expect(
+      hasToggles(
+        new Map([
+          ["a", node("none")],
+          ["b", node("some")],
+        ])
+      )
+    ).toBe(true)
+    expect(hasToggles(new Map([["a", node("unknown")]]))).toBe(true)
   })
 })

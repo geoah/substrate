@@ -196,7 +196,7 @@ of `open`, anywhere" is one query over every kind that declares one.
 **The trait endpoint.** `GET
 /api/v1/substrate.reamde.dev/core/trait/{id}/implementors` lists the kinds
 that bind a trait; their records are the `implements` filter above, which is
-what the console's connections view over `accountconfig` accounts is.
+how the console lists every provider's `accountconfig` accounts.
 
 ## Where traits do work beyond queries
 
@@ -229,7 +229,8 @@ opt into twice:
   record under the callable's own actor; a record whose owner set
   `syncPaused` has its deliveries skipped; and `GET /api/v1/sync/status`
   lists the record joined with the record triggers on its kind, which the
-  console's Connections page and `substratectl sync status` read. The body
+  Accounts on the console's provider pages and `substratectl sync status`
+  read. The body
   owns the rest through its effects: `syncMessage`, `lastSyncedAt`,
   `syncProgress` (`{phase, done, total, pending}`), `syncStreams` (a map of
   stream name to `{cursor, lastAt, pending, state, message, requestedAck}`)

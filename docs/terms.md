@@ -24,6 +24,7 @@ nothing, there are none.
 | **property** | A named, typed value on a record, declared by its kind. |
 | **property type** | A named refinement of a base type plus its validations, declared in a package and reusable across its kinds. |
 | **trait** | A contract a kind implements: a set of properties a kind promises to declare, so unrelated kinds can be treated alike. |
+| **purpose** | Why a kind exists, declared on the kind: `primary` (browsed and opened directly), `supporting` (a detail reached from the records it belongs to) or `internal` (machinery); absent reads as `primary`. Clients read it to decide what they list; nothing on the server acts on it. Decision record 0106. |
 | **series** | A temporal record with a repeat rule (`recurrence`, or `rdates`) under core's `recurring` trait. Its bound slot is the rule's first occurrence; the substrate stores the rule and never expands it into rows. |
 | **occurrence** | One instant a series' rule names. Computed by the window read, never stored: it is served in the record envelope as `<seriesId>_<slot>` with `computed: true`, and on a kind that binds `override` a put at that id turns it into one. |
 | **override** | A temporal record standing in for one occurrence of a series, moved or edited: it names the series in `recurrenceOf` and the slot it replaces in `originalAt`, under core's `override` trait. iCalendar's `RECURRENCE-ID`. |
@@ -66,7 +67,7 @@ nothing, there are none.
 | **input** | A bundle's named configuration need: it names a kind, and the engine resolves ONE record per input — the bound record, else the record whose id is `default`, else the sole live record, else nothing, surfaced per input on the bundle's status. No cardinality is enforced on the kind. |
 | **setting** | A bundle's configuration as an ordinary record, a core `setting` or `secret` at `<bundle id>/<name>`, shipped in the closure and filled in by the user. Ownership is the id prefix alone; a bundle's functions read them as `config.settings.<name>`. Decision record 0076. |
 | **bind** | The explicit step of input resolution: a reference on the bundle's own record row, named for the input, pointing it at a chosen record. `POST /api/v1/substrate.reamde.dev/core/bundle/{id}/bind`; an empty record unbinds. |
-| **account** | One configured connection to a provider: a record of an `accountconfig`-trait kind. The console groups these under **Connections**. |
+| **account** | One configured connection to a provider: a record of an `accountconfig`-trait kind. The console lists them under **Accounts** on each provider's page. |
 | **sync** | The synchronization a provider's function drives on one account, as the core `sync` trait reports it: a state (`never`, `running`, `ok`, `erroring`, `throttled`), a message, the last run, the owner's request for the next one, progress and streams. The body writes it through its effects; the dispatcher stamps a delivery's start, finish and park. Decision record 0085. |
 | **catalog** | The read-only list of the bundle closures built into the binary, each in one of the two tiers. A source to install or import from, never a package. |
 | **callable** | The union of function and agent — what a trigger binds and what dispatch invokes. |

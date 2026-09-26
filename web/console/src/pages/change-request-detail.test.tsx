@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 /** The review page's contract, the parts a pure test cannot hold: a patch
- * shows the target's live value beside the proposed one, a create previews the
- * record it would mint, a delete says out loud that it deletes, and the accept
- * PATCH carries the REQUEST's version as `ifVersion` (the write path refuses a
- * decision without it, so a page that forgot it would offer a button that never
- * works). The stale-target and conflict paths are here too, because they are
- * what a reviewer needs to see before pressing anything. */
+ * shows what the record holds now beside what it would hold if applied, in the
+ * record page's labels; a create shows what it would add; a delete says out
+ * loud that it deletes and asks for a second press; the Apply PATCH carries
+ * the REQUEST's version as `ifVersion` (the write path refuses a decision
+ * without it). Everyday copy by default; the op, the versions, the policy,
+ * the thread, a judge's verdict and the raw diff behind Technical details. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -14,12 +14,14 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react"
 import type { ReactElement, ReactNode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { Toaster } from "@/components/ui/toast"
+import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 
 const params = { id: "cr-1" }
 
@@ -49,6 +51,7 @@ import { ChangeRequestDetailPage } from "./change-request-detail"
 const TASK_KIND = "samples.substrate.reamde.dev/tasks/task"
 const REQUEST_PATH = "/api/v1/substrate.reamde.dev/core/recordpatchrequest/cr-1"
 const TARGET_PATH = "/api/v1/samples.substrate.reamde.dev/tasks/task/task-1"
+const THREAD_PATH = "/api/v1/substrate.reamde.dev/llm/thread/th-1"
 
 const KINDS: KindInfo[] = [
   {
@@ -60,7 +63,10 @@ const KINDS: KindInfo[] = [
     source: "installed",
     description: "",
     definition: {
-      properties: { summary: { type: "string", description: "what it is" } },
+      properties: {
+        summary: { type: "string", description: "what it is" },
+        note: { type: "string" },
+      },
     },
   },
 ]
@@ -111,14 +117,39 @@ const target: SubstrateRecord = {
   },
 }
 
-function renderPage(ui: ReactElement) {
+const thread: SubstrateRecord = {
+  id: "th-1",
+  kind: "substrate.reamde.dev/llm/thread",
+  properties: {
+    agent: { ref: "substrate.reamde.dev/core/agent/crew.test.dev/crew/scribe" },
+  },
+  labels: {},
+  version: 1,
+  createdAt: "2026-08-14T00:00:00Z",
+  updatedAt: "2026-08-14T00:00:00Z",
+}
+
+function renderPage(ui: ReactElement, technical = false) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   return render(
-    <QueryClientProvider client={client}>
-      <Toaster>{ui}</Toaster>
-    </QueryClientProvider>
+    <ConsolePreferencesContext.Provider
+      value={{
+        preferences: {
+          collapsed: [],
+          favorites: [],
+          sidebarOpen: true,
+          ...DEFAULT_SETTINGS,
+          technicalDetails: technical,
+        },
+        busy: false,
+        change: () => {},
+        set: () => {},
+      }}
+    >
+      <QueryClientProvider client={client}>{ui}</QueryClientProvider>
+    </ConsolePreferencesContext.Provider>
   )
 }
 
@@ -151,6 +182,7 @@ describe("ChangeRequestDetailPage", () => {
           ? (opts.patch?.() ?? jsonResponse(200, cr))
           : jsonResponse(200, cr)
       }
+      if (path === THREAD_PATH) return jsonResponse(200, thread)
       if (path === TARGET_PATH) {
         return opts.target
           ? jsonResponse(200, opts.target)
@@ -171,33 +203,49 @@ describe("ChangeRequestDetailPage", () => {
     fetchMock.mockReset()
   })
 
-  it("shows a patch field by field, with what the accept does to each row", async () => {
+  it("puts what the record holds now beside what it would hold if applied", async () => {
     serve(patchRequest, { target })
     renderPage(<ChangeRequestDetailPage />)
 
     await screen.findByText("The title moved in the source.")
-    expect(screen.getByText("patch")).toBeTruthy()
-    // The before column waits on the live target read.
+    // The Now column waits on the live target read.
     expect(await screen.findByText("Old summary")).toBeTruthy()
+    expect(screen.getByText("Now")).toBeTruthy()
+    expect(screen.getByText("If applied")).toBeTruthy()
+    // The record page's labels, never the keys or the op.
+    expect(screen.getByText("Summary")).toBeTruthy()
+    expect(screen.queryByText("patch")).toBeNull()
+    expect(screen.queryByText("summary")).toBeNull()
     expect(screen.getByText("New summary")).toBeTruthy()
-    // The null in the diff deletes the key, and the row says so.
-    expect(screen.getByText("removed")).toBeTruthy()
-    expect(screen.getByText("removes")).toBeTruthy()
-    expect(screen.getByText("overwrites")).toBeTruthy()
-    // Whose value the accept overwrites.
-    expect(screen.getByText("owner")).toBeTruthy()
+    // The null in the diff empties the property, and the row says so.
+    expect(screen.getByText("goes away")).toBeTruthy()
+    expect(screen.getByText("Cleared")).toBeTruthy()
   })
 
-  it("accepts with the REQUEST's version as ifVersion", async () => {
+  it("names the agent whose chat suggested it, with a way back to the chat", async () => {
+    serve(
+      request({
+        ...patchRequest,
+        properties: {
+          ...patchRequest.properties,
+          thread: { ref: "substrate.reamde.dev/llm/thread/th-1" },
+        },
+      }),
+      { target }
+    )
+    renderPage(<ChangeRequestDetailPage />)
+    expect(await screen.findByText("Scribe")).toBeTruthy()
+    expect(screen.getByText(/Suggested by/)).toBeTruthy()
+    const chat = screen.getByText("Open the chat")
+    expect(chat.getAttribute("data-to")).toBe("/agents")
+  })
+
+  it("applies with the REQUEST's version as ifVersion, in one press", async () => {
     serve(patchRequest, { target })
     renderPage(<ChangeRequestDetailPage />)
-    await screen.findByText("The title moved in the source.")
+    await screen.findByText("Old summary")
 
-    fireEvent.click(screen.getByRole("button", { name: /Accept/ }))
-    const confirm = await screen.findByRole("button", {
-      name: "Accept and apply",
-    })
-    fireEvent.click(confirm)
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }))
 
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
@@ -211,7 +259,23 @@ describe("ChangeRequestDetailPage", () => {
     })
   })
 
-  it("says the request moved when the decision comes back a conflict", async () => {
+  it("dismisses without asking", async () => {
+    serve(patchRequest, { target })
+    renderPage(<ChangeRequestDetailPage />)
+    await screen.findByText("Old summary")
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }))
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+      )
+      expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({
+        properties: { decision: "rejected" },
+        ifVersion: 4,
+      })
+    })
+  })
+
+  it("says the suggestion moved when the decision comes back a conflict", async () => {
     serve(patchRequest, {
       target,
       patch: () =>
@@ -220,23 +284,17 @@ describe("ChangeRequestDetailPage", () => {
         }),
     })
     renderPage(<ChangeRequestDetailPage />)
-    await screen.findByText("The title moved in the source.")
-
-    fireEvent.click(screen.getByRole("button", { name: /Accept/ }))
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Accept and apply" })
-    )
-
-    await screen.findByText(
-      "The request changed or the change was refused, so nothing was applied"
-    )
+    await screen.findByText("Old summary")
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }))
+    await screen.findByText(/Nothing was applied: the suggestion or the record/)
   })
 
   it("warns when the target has moved past the stamped targetVersion", async () => {
     serve(patchRequest, { target: { ...target, version: 9 } })
     renderPage(<ChangeRequestDetailPage />)
-    await screen.findByText(/The target has moved/)
-    expect(screen.getByText(/the version stamped on the request/)).toBeTruthy()
+    await screen.findByText(/The record changed after this was suggested/)
+    // The versions are technical.
+    expect(screen.queryByText(/targetVersion/)).toBeNull()
   })
 
   it("surfaces the substrate/conflict annotation a refused apply left", async () => {
@@ -249,8 +307,8 @@ describe("ChangeRequestDetailPage", () => {
       }),
       { target }
     )
-    renderPage(<ChangeRequestDetailPage />)
-    await screen.findByText("This change was not applied.")
+    renderPage(<ChangeRequestDetailPage />, true)
+    await screen.findByText("This change couldn’t be applied.")
     expect(screen.getByText("applyDiff on cr-1: stale")).toBeTruthy()
   })
 
@@ -275,16 +333,16 @@ describe("ChangeRequestDetailPage", () => {
     )
     renderPage(<ChangeRequestDetailPage />)
 
-    await screen.findByText(/Accepting creates/)
-    expect(screen.getByText("create")).toBeTruthy()
-    expect(screen.getByText("Write it down")).toBeTruthy()
+    await screen.findByText("What it adds")
+    expect(screen.getByText("New task: Write it down")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Add it" })).toBeTruthy()
     // A pointer is a proposed value like any other, on its own property row.
-    expect(screen.getByText("assignee")).toBeTruthy()
+    expect(screen.getByText("Assignee")).toBeTruthy()
     expect(
       screen.getByText("samples.substrate.reamde.dev/people/person/p1")
     ).toBeTruthy()
-    // Nothing exists yet, so there is no before column to compare with.
-    expect(screen.queryByText("the accept")).toBeNull()
+    // Nothing exists yet, so there is no Now column to compare with.
+    expect(screen.queryByText("Now")).toBeNull()
   })
 
   it("is unmistakable about a delete, and summarizes what would go", async () => {
@@ -300,11 +358,20 @@ describe("ChangeRequestDetailPage", () => {
     )
     renderPage(<ChangeRequestDetailPage />)
 
-    await screen.findByText(/Accepting deletes/)
-    expect(screen.getByText("delete")).toBeTruthy()
-    expect(screen.getByText(/The record stops answering reads/)).toBeTruthy()
-    // The summary of the record the accept would take away, once it is read.
+    await screen.findByText(/Applying deletes/)
+    expect(screen.getByText(/History keeps what it was/)).toBeTruthy()
+    // What the record holds now, once it is read.
     expect(await screen.findByText("goes away")).toBeTruthy()
+    // Asked first, never one press.
+    fireEvent.click(screen.getByRole("button", { name: "Delete it" }))
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete it" }))
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+      )
+      expect(patch).toBeTruthy()
+    })
   })
 
   it("renders a decided request read-only, with the decision and the decider", async () => {
@@ -328,18 +395,21 @@ describe("ChangeRequestDetailPage", () => {
     )
     renderPage(<ChangeRequestDetailPage />)
 
-    await screen.findByText(/Nothing was applied/)
-    expect(screen.getByText("rejected")).toBeTruthy()
-    expect(screen.getByText("console")).toBeTruthy()
-    expect(screen.queryByRole("button", { name: /Accept/ })).toBeNull()
-    expect(screen.queryByRole("button", { name: /Reject/ })).toBeNull()
+    await screen.findByText(/Nothing was changed/)
+    // The badge and the sentence both say Dismissed.
+    expect(screen.getAllByText("Dismissed").length).toBeGreaterThan(0)
+    expect(screen.getByText("You")).toBeTruthy()
+    expect(screen.getByText("What was suggested")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Apply" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull()
   })
 
   it("refuses to guess at an op it does not know", async () => {
     serve(request({ properties: { op: "merge" } }))
     renderPage(<ChangeRequestDetailPage />)
-    await screen.findByText(/names an op the console does not know/)
-    expect(screen.getByText("unknown op")).toBeTruthy()
+    await screen.findByText(/can’t tell what applying this would do/)
+    expect(screen.getByText("A change the console can’t read")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Apply" })).toBeNull()
   })
 
   it("renders a finalizer-only patch as work, not as 'applies nothing'", async () => {
@@ -358,13 +428,13 @@ describe("ChangeRequestDetailPage", () => {
     )
     renderPage(<ChangeRequestDetailPage />)
 
-    await screen.findByText("finalizers it adds")
+    await screen.findByText("Finalizers it adds")
     expect(screen.getByText("owner/hold")).toBeTruthy()
-    expect(screen.getByText("finalizers it removes")).toBeTruthy()
+    expect(screen.getByText("Finalizers it removes")).toBeTruthy()
     expect(screen.getByText("app/lock")).toBeTruthy()
     // No property is named, and that is not the same as applying nothing.
-    expect(await screen.findByText(/No property is named/)).toBeTruthy()
-    expect(screen.queryByText(/applies nothing/)).toBeNull()
+    expect(await screen.findByText(/It changes no property/)).toBeTruthy()
+    expect(screen.queryByText(/would do nothing/)).toBeNull()
   })
 
   it("compares against the diff's own ifVersion, which overrides the stamp", async () => {
@@ -383,13 +453,11 @@ describe("ChangeRequestDetailPage", () => {
       // ifVersion (7) does not: the accept checks 7, so the page must warn.
       { target }
     )
-    renderPage(<ChangeRequestDetailPage />)
+    renderPage(<ChangeRequestDetailPage />, true)
 
-    await screen.findByText(/The target has moved/)
-    expect(screen.getByText(/the version the change itself names/)).toBeTruthy()
-    expect(
-      screen.getByText("the version this change was written for")
-    ).toBeTruthy()
+    await screen.findByText(/The record changed after this was suggested/)
+    expect(screen.getByText(/the diff’s own ifVersion/)).toBeTruthy()
+    expect(screen.getByText("Diff ifVersion")).toBeTruthy()
   })
 
   it("names `edges` as a key the decoder refuses, on either op", async () => {
@@ -410,7 +478,7 @@ describe("ChangeRequestDetailPage", () => {
     )
     renderPage(<ChangeRequestDetailPage />)
 
-    await screen.findByText(/names keys the substrate refuses/)
+    await screen.findByText(/carries parts that can’t be applied/)
     expect(screen.getByText("edges")).toBeTruthy()
   })
 
@@ -427,14 +495,12 @@ describe("ChangeRequestDetailPage", () => {
     )
     renderPage(<ChangeRequestDetailPage />)
 
-    await screen.findByText(/stored in a shape the substrate\s+refuses/)
+    await screen.findByText(/Part of this suggestion is stored in a shape/)
     // The raw value, kept verbatim beside the key it was stored under.
-    expect(
-      screen.getByText("stored values the substrate cannot read")
-    ).toBeTruthy()
+    expect(screen.getByText("What couldn’t be read")).toBeTruthy()
     expect(screen.getByText("properties")).toBeTruthy()
     expect(screen.getByText("[]")).toBeTruthy()
-    expect(screen.queryByText(/names nothing at all/)).toBeNull()
+    expect(screen.queryByText(/changes nothing/)).toBeNull()
   })
 
   it("renders a reference value in the diff as the referent's pill", async () => {
@@ -459,8 +525,12 @@ describe("ChangeRequestDetailPage", () => {
     renderPage(<ChangeRequestDetailPage />)
 
     // The pill, routed at the referent, not the literal `{"ref":"…"}` text.
-    const pill = await screen.findByText("task-42")
-    expect(pill.closest("a")?.getAttribute("data-params")).toBe(
+    const pill = await waitFor(() => {
+      const link = document.querySelector('a[data-params*="task-42"]')
+      if (!link) throw new Error("no pill for task-42")
+      return link
+    })
+    expect(pill.getAttribute("data-params")).toBe(
       JSON.stringify({
         authority: "samples.substrate.reamde.dev",
         pkg: "tasks",
@@ -469,16 +539,52 @@ describe("ChangeRequestDetailPage", () => {
       })
     )
     // The link data the reference carries beside it stays visible.
-    expect(screen.getByText("note: waits on it")).toBeTruthy()
+    expect(screen.getByText("Note: waits on it")).toBeTruthy()
     expect(screen.queryByText(/\{"ref"/)).toBeNull()
-    // An object that is not a reference is still summarized as its keys.
-    expect(screen.getByText("{shape, n}")).toBeTruthy()
+    // An object that is not a reference reads as its JSON.
+    expect(screen.getByText(/"shape": "opaque"/)).toBeTruthy()
   })
 
   it("names the diff keys the substrate's strict decode would refuse", async () => {
     serve(request({ properties: { diff: { saved: true } } }), { target })
     renderPage(<ChangeRequestDetailPage />)
-    await screen.findByText(/names keys the substrate refuses/)
+    await screen.findByText(/carries parts that can’t be applied/)
     expect(screen.getByText("saved")).toBeTruthy()
+  })
+
+  it("puts the ids, the policy, the thread, the verdict and the diff behind the switch", async () => {
+    const gated = request({
+      ...patchRequest,
+      properties: {
+        ...patchRequest.properties,
+        policy: { ref: "substrate.reamde.dev/core/recordpatchpolicy/gate-1" },
+        policyRevision: 2,
+        thread: { ref: "substrate.reamde.dev/llm/thread/th-1" },
+      },
+      annotations: {
+        "policy/verdict": { verdict: "ask", confidence: 0.7 },
+      },
+    })
+    serve(gated, { target })
+    const { unmount } = renderPage(<ChangeRequestDetailPage />)
+    await screen.findByText("Old summary")
+    expect(screen.queryByText("Technical details")).toBeNull()
+    expect(screen.queryByText(/recordpatchpolicy/)).toBeNull()
+    unmount()
+
+    renderPage(<ChangeRequestDetailPage />, true)
+    await screen.findByText("Technical details")
+    expect(
+      screen.getByText("substrate.reamde.dev/core/recordpatchrequest/cr-1")
+    ).toBeTruthy()
+    expect(
+      screen.getByText("substrate.reamde.dev/core/recordpatchpolicy/gate-1")
+    ).toBeTruthy()
+    expect(screen.getByText("at revision 2")).toBeTruthy()
+    expect(
+      screen.getByText("substrate.reamde.dev/llm/thread/th-1")
+    ).toBeTruthy()
+    expect(screen.getByText("A judge said ask (70% sure)")).toBeTruthy()
+    expect(screen.getByText(/"New summary"/)).toBeTruthy()
   })
 })

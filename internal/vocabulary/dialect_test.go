@@ -366,12 +366,13 @@ func TestDerivedTokenYieldsToADeclaredProperty(t *testing.T) {
 		t.Fatalf("a declared property must win, got %q", got)
 	}
 	// Declared and EMPTY: the token still yields, so the segment renders
-	// nothing. The alternative is a title that looks filled and is not.
+	// nothing, and the separator joining it goes with it. The alternative is
+	// a title that looks filled and is not.
 	got = tmpl.Render(testResolver{
 		declares: []string{vocabulary.DerivedLocalName},
 		derived:  derived,
 	})
-	if got != "/people.example.com/people/person" {
+	if got != "people.example.com/people/person" {
 		t.Fatalf("a declared-but-empty property must not fall back, got %q", got)
 	}
 	// An alternative list still moves on, which is how a template asks for the

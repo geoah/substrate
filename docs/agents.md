@@ -503,8 +503,8 @@ demo agents run once that row is keyed. Those that carry `tools:` or
 `subagents:` name `reasoningEffort: minimal` on their own `params`, the
 weakest value their `gpt-5` model accepts; the rows themselves set no
 reasoning default, because the accepted set belongs to the model and one row
-serves several. The LLM example (**Registry →
-Samples**) is the same closure creation already imported, and it ships the
+serves several. The LLM sample (**All data → Add a collection → Start from
+a sample**) is the same closure creation already imported, and it ships the
 same three rows so a later import onto a repository born before the seed
 still has them. Key one, or write another row yourself as the document
 below. There are no `cheap`/`mid`/`strong` rows: a tier was a model id hiding
@@ -513,9 +513,9 @@ behind a name, and the model is the agent's own word now.
 ### Registering a provider
 
 A provider is a record, so adding one is a write: `apply -f`, or the console at
-**Data → `substrate.reamde.dev/llm` → `provider` → New**. (The Agents page
-does not list providers: an agent names one by id, and that pointer reads on
-the agent's own record.) All four below are ordinary data documents,
+`/data/substrate.reamde.dev/llm/provider/new` (with Technical details on, the
+sidebar lists the collection under **Substrate**). The Agents page does not
+list providers: an agent names one by id, and its panel shows which. All four below are ordinary data documents,
 `data.properties`, never a declaration.
 
 ```yaml

@@ -379,6 +379,17 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	if q.Offset > 0 && q.After != "" {
 		return nil, fmt.Errorf("%w: offset and after are alternatives: a cursor seeks to a position and an offset skips a count, so a page cannot do both", substrate.ErrValidation)
 	}
+	// The count reads the filter's predicate BEFORE a seek is added to it, so
+	// it is the size of the filtered set and not of what is left past the
+	// cursor, and it reads inside this snapshot so it agrees with the page.
+	var count *int64
+	if q.Count {
+		n, err := countSQL(ctx, tx, b)
+		if err != nil {
+			return nil, err
+		}
+		count = &n
+	}
 	if q.After != "" {
 		tok, err := decodeKeyset(q.After)
 		if err != nil {
@@ -427,7 +438,7 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 
 	// Records starts non-nil so an empty page serializes `[]`, the array the
 	// wire promises, never `null`.
-	page := &substrate.Page{Records: []*substrate.Record{}, Generation: ds.historyGeneration()}
+	page := &substrate.Page{Records: []*substrate.Record{}, Generation: ds.historyGeneration(), Count: count}
 	if carriedHead != 0 {
 		page.Head = carriedHead
 	} else {
@@ -516,6 +527,24 @@ func listSQL(where string, keyCols []string, order, limitArg, offsetArg string) 
 		sql += ` OFFSET ` + offsetArg
 	}
 	return sql
+}
+
+// countSQL counts the rows the builder's predicate admits. It is the list's
+// own WHERE over the same table, so what the list excludes (tombstones, a
+// merged-away loser, another kind) the count excludes, and the indexes that
+// serve the list's predicate serve this; there is no ORDER BY and no row is
+// read out. Its cost is still a scan of every matching row, which Postgres
+// has no cheaper way to answer exactly.
+func countSQL(ctx context.Context, x dbx, b *builder) (int64, error) {
+	where := "TRUE"
+	if len(b.where) > 0 {
+		where = strings.Join(b.where, " AND ")
+	}
+	var n int64
+	if err := x.QueryRowContext(ctx, `SELECT count(*) FROM records WHERE `+where, b.args...).Scan(&n); err != nil {
+		return 0, fmt.Errorf("substrate/engine: count: %w", err)
+	}
+	return n, nil
 }
 
 // buildFilter renders the filter's predicates into b and returns the kinds
@@ -1476,5 +1505,5 @@ func (ds *dataset) Changes(ctx context.Context, after int64, f substrate.ChangeF
 	if err := ds.buildChangeFilter(b, f); err != nil {
 		return nil, err
 	}
-	return ds.queryChanges(ctx, b, `seq`, limit)
+	return ds.queryChanges(ctx, b, `seq`, limit, f.Values)
 }

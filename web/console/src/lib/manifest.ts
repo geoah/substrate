@@ -5,8 +5,9 @@
  * `kind` is the record's kind REFERENCE — one key names the authority, the
  * package and the name. `metadata` carries the id and the two authored key/value blocks
  * (`labels`, `annotations`); `data` is everything authored (`properties`);
- * `status` is server-owned — version, stamps, and the §7.1 property
- * provenance (`status.properties`: manager + offers). A pointer at another
+ * `status` is server-owned — version, stamps, the §7.1 property
+ * provenance (`status.properties`: manager + offers) and the source records
+ * mappings link here (`status.linkedFrom`). A pointer at another
  * record is a `reference` property, so it rides inside `properties` as the
  * referent's `<kind>/<id>` path. */
 
@@ -52,6 +53,9 @@ export function manifestOf(record: SubstrateRecord): Record<string, unknown> {
   if (record.propertyMeta && Object.keys(record.propertyMeta).length) {
     status.properties = record.propertyMeta
   }
+  // The source records a mapping links here: server-owned like the rest of
+  // status, so the document stays apply-able.
+  if (record.linkedFrom?.length) status.linkedFrom = record.linkedFrom
 
   const doc: Record<string, unknown> = { kind: record.kind, metadata }
   if (Object.keys(data).length) doc.data = data
@@ -169,6 +173,12 @@ export function linkTargetsOf(
         if (href) ids[held.path] = `${href}/${target.id}`
       }
     }
+  }
+
+  for (const link of record.linkedFrom ?? []) {
+    const target = splitRecordPath(link.ref)
+    const href = target && hrefFor(target.kind)
+    if (href) ids[link.ref] = `${href}/${target.id}`
   }
 
   addFor(record.kind)

@@ -3,6 +3,7 @@
     "deleted": false,
     "id": true,
     "kind": true,
+    "properties": false,
     "version": false
   },
   "AgentEvent": {
@@ -37,6 +38,7 @@
     "functionDescriptions": false,
     "functions": true,
     "kindDescriptions": false,
+    "kindPurposes": false,
     "kinds": true,
     "mappings": true,
     "records": true,
@@ -261,6 +263,7 @@
     "items": true
   },
   "Page": {
+    "count": false,
     "cursor": false,
     "generation": true,
     "head": true,
@@ -278,6 +281,12 @@
     "source": false,
     "updatedAt": true,
     "value": true
+  },
+  "PropertyChange": {
+    "after": false,
+    "before": false,
+    "beforeUnknown": false,
+    "name": true
   },
   "PropertyMeta": {
     "alternatives": false,

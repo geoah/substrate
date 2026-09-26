@@ -5,317 +5,575 @@ substrate itself at `/`, talking to the same public surface as every other
 client. It reads the whole repository and writes through the same public verbs,
 so nothing it does needs an endpoint no other client has.
 
-Signing in is the same exchange [substratectl](substratectl.md) makes: the repository, the password,
-and the current 6-digit code ([users and tokens](auth.md)). The console then
-holds a token exactly like a script does: a session is its
-[token record](auth.md#tokens), which is why logging out revokes it. A
-substrate that is open for registration
+Signing in is the same exchange [substratectl](substratectl.md) makes: the
+repository, the password, and the current 6-digit code where the deployment
+asks for one ([users and tokens](auth.md)). The console then holds a token
+exactly like a script does: a session is its [token record](auth.md#tokens),
+which is why signing out revokes it. A substrate that is open for registration
 also serves a registration page at `/register`, with the invite code as its
 first field where the substrate reads one.
 
-Six destinations (Overview, Changelog, Registry, Connections, Settings and
-Agents), with the account behind the session menu, and **Search** one
-keystroke away: ⌘K opens the palette, which jumps to a page or a kind, or
-hands what you typed to the [Search page](#search) as a records query.
-**Settings** lists every bundle that ships a `setting` or `secret` record,
-one row each, and `/settings/{id}` is that bundle's form; the same records
-are on the bundle's own Registry page.
+## What it is for
 
-## Overview and data
+The console is built around four things, and Home opens on one card for each:
 
-The home page is an **Overview**: recent activity, anything waiting on you, and
-a count per kind that doubles as the way in. Following one opens that kind's
-collection at `/data/{authority}/{package}/{kind}`: a data address is the kind
-reference, segment for segment.
+- **Your data**: the collections you keep, and the copies your providers
+  bring in. A collection is every record of one kind.
+- **Providers**: the services that bring data in and keep it up to date.
+- **Agents**: the assistants that work on your data, in a chat.
+- **Tools**: everything that can act on your data besides you, each saying
+  what it may see and change and when it runs.
 
-A kind opens on two tabs — its **Records**, a filterable and pageable
-collection, and its **Definition**, the declaration rendered as the manifest it
-is. From the records tab you can create one, and from a record you can edit it:
-either way the editor is the same surface, and it goes out as the ordinary
-`put`.
+Everything else (History, Search, Settings) serves those four.
 
-The records tab narrows two ways, and both travel in the URL so a view can be
-shared. **Filters** are one control per property, offered only for the
-properties the server will filter. Typing into a text property (`string`,
-`text`, `markdown`) is a full-text `match` on that property's own words, in
-the [search grammar](api.md#the-search-grammar): every word must appear,
-`lay*` is a word prefix, `"a phrase"` keeps words together, `-word` excludes,
-`a OR b` takes either, and a leading `=` asks for the exact value instead. An
-email, URL or phone takes the exact value, or a trailing `*` for starts-with;
-a state or an enum offers its values; a comma means any of. A reference
-pinned to a kind (`assignee`, at `person`) offers that collection to pick
-from, by title, with a search on top; several picked records mean any of
-them, which is the wire's `in`. A reference pinned to no kind takes the
-record's whole `<kind>/<id>` path as text. The **search box**
+## Navigation
+
+The sidebar holds, top to bottom: the repository name, a search button that
+opens ⌘K, the five places (**Home**, **All data**, **Agents**, **Tools**,
+**Providers**, with the number of providers added beside the last),
+**Favorites**, the collections, and at the foot **History**, **Settings**, the
+**Technical details** switch and the account menu (Account and settings, the
+theme, and Sign out).
+
+The collections are sorted by where they come from, and every surface that
+lists collections (the sidebar, ⌘K, All data, Home) uses the same sections:
+
+- **Your data**: the repository's own authority first, then every other
+  authority that is neither a provider nor the substrate's own. This is what
+  you create and change.
+- **From _Provider_**: one section per provider (**From Google**, **From
+  GitHub**), holding the copies that provider keeps up to date.
+- **Substrate**: the kinds under `substrate.reamde.dev`, the substrate's own
+  machinery, listed only with Technical details on.
+
+What a section lists is decided by each kind's declared
+[`purpose`](vocabulary.md#the-reserved-keys)
+([0106](decisions/0106-a-kind-declares-its-purpose.md)): `primary` is a thing
+you browse and open directly, `supporting` is a detail of another kind,
+reached from the records it belongs to, and `internal` is machinery. A kind
+that declares none reads as `primary`, so a kind you or an agent declares is
+listed without anyone classifying it, and every kind under
+`substrate.reamde.dev` reads as `internal`. In everyday mode a section lists
+its primary collections only. A section heading folds its section away and
+remembers it; provider sections start folded, the others open. Hovering a
+collection shows a star that adds it to **Favorites**, above the sections,
+where up and down controls reorder it.
+
+**⌘K** (Ctrl-K elsewhere) jumps to a page or a collection, or hands what you
+typed to the [Search page](#search) as a records query. It lists collections
+the way the sidebar does: primary ones in everyday mode, every kind with its
+purpose labelled with Technical details on.
+
+The header above every page is a breadcrumb that reads as where the page sits:
+`Your data / Tasks` or `From Google / Contacts` for a collection, then the
+record's title; with Technical details on it spells the kind reference segment
+by segment and ends in the record id.
+
+### Technical details
+
+The **Technical details** switch, at the foot of the sidebar and on the
+Settings page, is one setting for the whole console. Off, the console speaks
+in everyday words. On, it adds what a developer or an agent author needs,
+without taking anything away:
+
+- every kind, supporting and internal ones included, and the **Substrate**
+  section; the sidebar becomes the authority → package → kind tree, each kind
+  by its own name and tagged with its purpose when that is not `primary`;
+- full kind references, record ids and actor ids beside the names, with a
+  copy button, and the declaration's own description of a kind instead of the
+  one-line summary;
+- property keys beside their labels, a kind's **Definition**, a record's
+  **Record** section and its YAML source;
+- History's system changes, sequence numbers and table view;
+- the substrate's own host functions filed among the other tools, and each
+  tool's runtime, permissions, source and triggers;
+- on Providers, every other package the repository holds, bundle ids and
+  versions, which record each declared input uses, and each account's
+  connection details;
+- on Search, each hit's raw per-arm scores;
+- on Settings, the **Developer** section.
+
+### Display names
+
+A collection is labelled by a display name the console builds from the kind's
+name: the lowercase compound word is split into known words, acronyms and
+brands keep their capitals, and the last word takes the plural (`person` reads
+**People**, `calendareventseries` **Calendar event series**, `apikey` **API
+keys**). A name that does not split cleanly into known words reads as itself,
+capitalised. A record with no title reads **Untitled _person_**, never its id.
+
+Display names are labels only. The console never sends one to the API and
+never lets one stand where a kind is identified: the identifier is always the
+full reference `{authority}/{package}/{name}`
+([0101](decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md)),
+which is what every address, every copy button and every technical-mode label
+carries.
+
+### Layout preferences
+
+The console's preferences live on one record,
+`substrate.reamde.dev/core/consolepreference/navigation`, so every browser
+signed in to the repository looks the same. It carries the sidebar's state
+(`collapsed`, `favorites`, `sidebarOpen`) and the layout settings
+(`recordWidth`, `tableWidth`, `density`, `technicalDetails`, `theme`), each
+optional, so an absent one is the console's own default. A change is a
+read-modify-write under `ifVersion`, retried against fresh state after a
+conflict, so two sessions changing different settings keep both.
+
+A repository whose stored `consolepreference` kind predates a setting refuses
+the undeclared property, so the console writes a setting to the record only
+when the stored declaration names it; otherwise the setting stays in this
+browser's `localStorage`. A read takes the record first, then `localStorage`,
+then the default, and every written setting is mirrored into `localStorage` as
+well, so the sign-in page already starts from it.
+
+A few conveniences are per browser by design and live only in
+`localStorage`: a collection's last filters, sort and nesting, its columns,
+and the Search page's ranking choice.
+
+## Home
+
+**Home** (`/`) is what the substrate holds and what just happened: the four
+cards (how many collections and providers, the agents by name, how many tools
+and how many of them came from your providers), up to nine **Collections**
+with their record counts (yours first, those holding something leading, then
+what providers bring in), and **Recent changes** in [History](#history)'s
+sentences. Nothing on Home asks you to act.
+
+## All data
+
+**All data** (`/data`) is every collection, in the sidebar's sections, one
+table each: the collection, what it holds and how many records. **Your data**
+is yours to change; a **From _Provider_** section holds copies that provider
+keeps up to date. In everyday mode a section lists its primary collections and
+says how many supporting ones it leaves out and where they are reached from;
+with Technical details on it lists every kind with its full reference and its
+purpose, the **Substrate** section included.
+
+The two segments above a kind each have a page too: `/data/{authority}`
+tables every kind that authority publishes, package by package, and
+`/data/{authority}/{package}` tables one package's kinds.
+
+### Add a collection
+
+**Add a collection** offers three ways to start one, and `?add=agent`,
+`?add=sample` or `?add=yaml` opens it on that way, so another page can link
+straight to it:
+
+- **Ask an agent**: say what you want to keep, and the console opens
+  [Agents](#agents) with that as your first message.
+- **Start from a sample**: the shipped [samples](bundles-catalog.md) that
+  declare at least one primary kind (tasks, people, notes and the rest), each
+  by the collections it adds and with **Add**. A kind's
+  [purpose](decisions/0106-a-kind-declares-its-purpose.md) is read from the
+  catalog's closure until the repository holds the kind, so a sample whose
+  kinds are all supporting or internal is not offered as a collection. Adding
+  one imports it under the repository's own authority
+  ([0048](decisions/0048-providers-are-published-samples-are-copied.md)),
+  taking first any package it requires that the repository does not hold, and
+  says so beforehand. A sample already taken reads **Added**; its package
+  page offers the update when the binary ships it at a newer version than the
+  copy was taken at, and where the copy was edited since, the confirmation
+  says the edits are replaced
+  ([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md)).
+- **Write it yourself**: a kind is a YAML document naming its properties,
+  applied from the command line; the dialog gives the two `substratectl`
+  commands, one to print an existing kind to start from and one to apply
+  yours. A new kind shows up as soon as it lands.
+
+## A collection
+
+A collection lives at `/data/{authority}/{package}/{kind}`: a data address is
+the kind reference, segment for segment. The header carries the display name,
+the full reference with a copy button, and the everyday description; a
+provider's collection says its records are read-only copies kept up to date by
+that provider, and has no **New** button. With Technical details on,
+**Definition** (`?tab=definition`) shows the declaration.
+
+The records are a grid that fills the page, with a pinned header row and a
+pinned title column. The columns come from the declaration: the title first,
+then the states, the time stamps the kind's temporal trait binds, the
+references (each read as the referent's title, fetched beside the page with
+`expand`), the enums and the other short values; paragraphs and blobs never
+earn a column, and the last change closes the row. A column that holds nothing
+on the rows loaded opens hidden, and the footer says how many are. **Columns**
+shows, hides and reorders them, per collection, and Reset returns the
+collection's own defaults. **Sort** (or a header click) picks the order; the
+default is newest change first.
+
+The grid narrows two ways, and both travel in the URL (`?filter=`,
+`?search=`) so a view can be shared. **Filters** are one control per
+property, offered only for the properties the server will filter. Typing into
+a text property (`string`, `text`, `markdown`) is a full-text `match` on that
+property's own words, in the [search grammar](api.md#the-search-grammar):
+every word must appear, `lay*` is a word prefix, `"a phrase"` keeps words
+together, `-word` excludes, `a OR b` takes either, and a leading `=` asks for
+the exact value instead. An email, URL or phone takes the exact value, or a
+trailing `*` for starts-with; a state or an enum offers its values; a comma
+means any of. A reference pinned to a kind (`assignee`, at `person`) offers
+that collection to pick from, by title, with a search on top; several picked
+records mean any of them, which is the wire's `in`. A reference pinned to no
+kind takes the record's whole `<kind>/<id>` path as text. The **search box**
 beside the filters is the same grammar against every text the kind indexes at
 once (the filter's `search` arm), composed with the filters and the sort, so
-the table stays a table: the rows that match, in the order you chose, paged
-like any other list.
+the grid stays a grid: the rows that match, in the order you chose, paged like
+any other list.
 
-A kind that declares a single reference at itself (a team's `parent` pinned at
-`team`, a thread's `parent` thread) opens as a tree. The rows are the records
-that name no parent, and each opens in place onto the records that name it,
-one level per read, in the order the table sorts by. **Nest by parent** in the
-toolbar is on by default and remembered per kind; off, the same rows are a
-flat list. While a filter or a search is set the table is flat regardless, so
-a match is shown wherever it sits.
+Opening a collection at its bare address restores the filters, sort and
+nesting you last used there; an address that names them always wins, so a
+shared view stays exact. A search is never restored: it is the question of the
+moment, not the shape of the view.
 
-Collapsed authorities and packages, the desktop sidebar state, and favorite
-kinds are saved in the repository's `core/consolepreference` record. Stars add
-kinds to **Favorites** above Data; up and down controls reorder them. Updates
-use version preconditions and retry against fresh state after a conflict.
+A kind that declares a single-valued reference at itself (a team's `parent`
+pinned at `team`, a thread's `parent` thread) opens as a tree, by `parent`
+where it declares one and otherwise by its first such reference. The rows are
+the records that name no parent, and each opens in place onto the records that
+name it, one level per read, in the order the grid sorts by. The nesting
+switch in the toolbar is on by default and remembered per collection; off
+(`?nest=false`), the same rows are a flat list. While a filter or a search is
+set the grid is flat regardless, so a match is shown wherever it sits.
 
-## Search
+A page is fifty rows, and `?page=` makes one linkable. The footer shows the
+range and the total from a bounded count, marked `+` where the count stopped
+at its ceiling; **Next** follows the page's own cursor rather than that count,
+so a collection past the ceiling still pages to its end. Under a tree the
+footer counts the collection and its top level both.
 
-`/search` is the [ranked read](api.md#search) as a page: a query in the
-[search grammar](api.md#the-search-grammar), the kind to narrow to (or every
-kind), and the hits best first, each with the full kind reference and id and
-its raw per-arm score labelled — `words` is the lexical rank, `meaning` the
-embedding similarity. How to rank is the reader's choice and it sticks:
-**Words** (the default: full-text over every indexed text, free, and it
-answers on every repository), **Words + meaning** (the fused hybrid ranking,
-which falls back to words alone where no embeddings provider is configured)
-or **Meaning** alone (embedding similarity over the properties that opted in,
-which needs a provider and spends an embedding call per search). A search the
-server refuses — a mode with no provider behind it, a query with no word in it
-— shows the server's own problem, verbatim. When the semantic index is still
-being built, the page says how many values are pending beside the ranking.
+## A record
+
+A record lives at `/data/{authority}/{package}/{kind}/{id}` and reads like a
+document, top to bottom on one page. The head is the kind's glyph, the title
+(edited in place where the kind titles itself from a property you write), and
+one line saying what it is and who added and last changed it; with Technical
+details on, the line is its full reference with a copy button. The **⋯** menu
+holds **Delete**, which asks first. A provider's copy is read-only here
+throughout, and says to change it at the provider.
+
+**The properties** are a sheet: one row per property, its label (and
+its key, with Technical details on) on the left and its value on the right,
+with empty properties folded into one line that expands. Clicking a value
+edits it in place, with the control its datatype earns: a text box, a number,
+a date and time, a textarea for prose, a list to pick from for an enum, the
+moves a state may make, a record picker for a reference, and, for the shapes
+that need room (lists, objects, maps, JSON), the whole control in a panel under
+the row. Enter or leaving the box saves, Esc cancels. A save is a `patch`
+naming only that property and carrying the version the page read (`ifVersion`),
+so an edit against a stale page is refused and says to reload rather than
+silently winning; a state move is the same patch along a declared transition.
+A row that is not yours to edit says why: the engine stamps it, the host keeps
+it (a declared `writer:` other than the owner), the whole record is a
+provider's copy, or the kind never declared it. The record's prose, where the
+kind has a body property, reads under the sheet and edits in place the same
+way.
+
+**Who holds each value** is a chip at the end of its row, read off the
+record's [`propertyMeta`](projection.md#reading-provenance-propertymeta):
+**You**, or the provider's badge and name, and an amber **_Provider_ differs**
+where a live source offers something else. Opening it says who holds the value
+at which [tier](terms.md#truth-and-derivation) and what that means for it
+(**Yours**, **Synced**, **Set by provider** or **Set by an agent**), the
+source record it came from, and every other version a live source offers, with
+who offers it and when. **Use _Provider_'s** writes that value, which makes you
+its holder at the owner tier; **Stop overriding** patches the property to
+null, so projection refills it from the live sources and it follows them
+again; **Use my own value** opens the editor. Both writes ask first and name
+the consequence.
+
+Under the properties, in order:
+
+- **Sync**, on a record of any kind binding the core `sync` trait (a
+  provider's account): the trait rendered whole, with **Sync now** and
+  **Pause**, and a link to the account on its provider's page.
+- **Connected to**: the records that point here, read through the
+  [`referencing`](api.md#who-points-at-a-record-referencing) filter arm and
+  grouped by the kind they are and the property they point through ("Tasks
+  with this as their Assignee"), a group whose kind has a done-like state
+  saying how much of it is done; then what this record points to. The slots a
+  provider's copies point through are left to the next section. In everyday
+  mode the substrate's machinery is left out except the merge and change
+  requests that name the record, which open their review pages.
+- **Where it comes from**: the provider copies that fill this record in, read
+  from [`linkedFrom`](projection.md#reading-the-links-back-linkedfrom) and
+  grouped by the mapping that links them ("Google contact fills in Name,
+  Emails"), each copy with when it last filled anything in. A record nothing
+  maps onto says only you have added to it.
+- **Merged**, where anything was: each record combined into this one, when,
+  and whether you confirmed it through a merge request; with Technical details
+  on, the `recordmerge`, the request and the former id.
+- **History**: this record's own slice of [the changelog](changelog.md) as
+  sentences, newest first: who did what, and what each change did to the
+  values ("Priority: High → Urgent", "Emails: + grace@example.com"), each
+  value shown as the sheet shows it, long text cut to a line with the whole in
+  the hover. It reads the feed with
+  [`values=1`](changelog.md#values-on-request); against a server that predates
+  it, a row names the properties it touched instead. A merged record's history under its former
+  ids is stitched in, and where the retained changelog does not reach the
+  creation, the last row says so from the record's own `createdAt`.
+- **Record**, with Technical details on: the full reference, the kind and the
+  version it was written under, the id and any former ids, and who created and
+  last changed it, raw actor ids included.
+
+With Technical details on, the **source** button in the head swaps the page
+for the record's [envelope](data-model.md#the-envelope) as YAML, every kind
+reference and record reference a link, and **Edit YAML** opens the editor.
 
 ## The record editor
 
-Creating and editing a record are two **lenses over one document**, and the
-document is the apply-able [envelope](data-model.md#the-envelope).
+**New** on a collection opens `/data/{authority}/{package}/{kind}/new`, laid
+out like the record it will become: the title as a large input, then the
+property rows, the optional ones folded into one line, and the prose under a
+divider. **Edit YAML** on a record opens `…/{id}/edit`. Both are two **lenses
+over one document**, and the document is the apply-able envelope.
 
-- **Form**, the default, is composed from the declaration: one control per
-  declared property, carrying its description and a worked example. An enum is
-  a dropdown of what the kind admits, a `state` offers its machine's states, a
-  `reference` picks a record of the kind it points at, a `secret` is write-only
-  (a read serves `<redacted>`, and leaving the field blank keeps the sealed
-  value), and a `json` property gets a JSON editor. Host-managed properties
-  (a declared `writer:` that is not the owner) are never offered.
+- **Form** is composed from the declaration: one control per declared
+  property, carrying its description and a worked example. An enum is a
+  dropdown of what the kind admits, a `state` offers its machine's states, a
+  `reference` picks a record of the kind it points at, a `secret` is
+  write-only (a read serves `<redacted>`, and leaving the field blank keeps the
+  sealed value), and a `json` property gets a JSON editor. Host-managed
+  properties (a declared `writer:` that is not the owner) are never offered.
 - **YAML** is the expert lens: the whole envelope in a code editor that knows
   the kind. **Completion** offers what may be written where the cursor is (the
   envelope's keys, the declared properties with their datatype and one-liner
   and never one already written, an enum's admitted values, a state machine's
-  states, the kinds a reference may name), **diagnostics** underline a refused value on
-  the line it sits on and mark it in the gutter, and **hovering** a property
-  line shows what the kind says about it. There is a formatter, and the tint
-  is the manifest view's own colours.
+  states, the kinds a reference may name), **diagnostics** underline a refused
+  value on the line it sits on and mark it in the gutter, and **hovering** a
+  property line shows what the kind says about it. **Format** reformats the
+  document.
 
-Both lenses edit the same text, so switching loses nothing and a hand-written
+A new record opens on the form, and **Write YAML** (with Technical details on)
+switches lens; the edit page opens on YAML, with **Form** beside it. Both
+lenses edit the same text, so switching loses nothing and a hand-written
 comment survives being edited on the form. Everything is checked against the
-declaration **as you type** — the datatypes, required properties, unknown keys,
-the shape of a reference value, and the two rules that belong to the write rather than
-the value: a `put` may not move a state (that transition is a `patch`), and the
-id in the document is not a rename. Problems key to their line, the gutter
-marks them, and Save is barred while an error stands.
+declaration **as you type** — the datatypes, required properties, unknown
+keys, the shape of a reference value, and the two rules that belong to the
+write rather than the value: a `put` may not move a state (that transition is
+a `patch`), and the id in the document is not a rename. Problems key to their
+line, the gutter marks them, and Save is barred while an error stands. A
+create goes out as `POST`, an edit as the ordinary `put`, and a refusal from
+the server is shown in place.
 
-A record opens on five tabs:
+## Merge and change requests
 
-- **Properties**: the declared properties rendered by type, the read view the
-  editor opens from, using the same labels and descriptions with bordered
-  values.
-- **Manifest**: the [envelope](data-model.md#the-envelope), with every kind
-  reference and every record reference rendered as a link you can follow.
-  Under it, marked **derived**, a footer lists the records that map onto this
-  one by mapping, with a way to the Provenance tab: the link lives on the
-  source rows' subject slots, so the envelope cannot carry it, and a reader
-  who looks for "where did this come from" here is not left thinking there
-  is nothing.
-- **Graph**: incoming references and outgoing references, and only those.
-  Groups show the full kind reference and a labelled reference property, and
-  a member expands in place into its own graph. A mirror's mapping-owned slot
-  is one more incoming reference here; which of them are sources is the next
-  tab's question.
-- **Activity**: this record's own slice of [the changelog](changelog.md), with the
-  full actor on every row. Mapping writes distinguish value sources, the engine
-  committing the write, and the initiating actor when recorded. Expanded changes
-  show the raw payload immediately.
-- **Provenance**: what the record is made of, in two sections. **Sources**
-  groups [`linkedFrom`](projection.md#reading-the-links-back-linkedfrom) by
-  the mapping that brought each record: the mapping's title as a link to its
-  declaration, the source kind as a link to that collection, the count, and
-  which properties its `map` rules contribute, then the members as the
-  standard record pill, one per record, sorted by title, ten at a time. A
-  record merged away into this one sits under **Merged** with the
-  `recordmerge` that joined it and the request that proposed it. **Properties**
-  is the ledger: one row per property with its stored value, its manager as
-  the thing it is (a mapping's function reads as "sync of *kind*", linked to
-  the function, with the full actor on hover), the **source record** the
-  value came from as a pill
-  ([`propertyMeta.source`](projection.md#reading-provenance-propertymeta)),
-  and the [tier](terms.md#truth-and-derivation) as a chip that says what it
-  means for this value; beneath it, every alternative a live source offers as
-  a row of its own — value, actor, source record, when. **Use this** on an
-  alternative writes it, which makes you the manager at the owner tier; the
-  row then reads *held by you* and offers **Release**, which patches the
-  property to null so projection refills it from the sources. Both ask
-  first and name the consequence: a held value ignores fresher source values
-  until released. Manager and tier are explained on hover in the words of
-  [the terms](terms.md#truth-and-derivation).
-
-A merged-away record says so and points at its canonical winner; a tombstoned
-one says so too. The two segments above a kind each have a page of their own:
-`/data/{authority}` tables every kind that authority publishes, package by
-package, and `/data/{authority}/{package}` tables the one package's kinds.
-
-## Changelog
-
-[The changelog](changelog.md), newest first, one row per committed change, expanded
-in place to its payload and the records it moved. Filters cover authority, kind, actor, op, a time range and free text, and the
-same view tails live. It is the audit trail and the debugging surface in one,
-because there is only one changelog.
-
-## Merge requests
-
-A proposed [merge](projection.md#merge-requests) is an ordinary record, so the
-queue is its collection — `substrate.reamde.dev/core/recordmergerequest` in
-the data nav, with the pending pile also on the overview. Opening one shows the
-matcher's evidence, a field-by-field comparison of the two records, and accept
-or reject. Accepting is an ordinary state transition, and performing the merge
-is what that transition does.
-
-## Change requests
+A proposed [merge](projection.md#merge-requests) is an ordinary
+`substrate.reamde.dev/core/recordmergerequest` record, and one opens at
+`/merge-requests/{id}`: the matcher's evidence, a field-by-field comparison of
+the two records that says what the merge will do to each row, and accept or
+reject, each behind a confirmation, with an optional note. Accepting is an
+ordinary state transition, and performing the merge is what that transition
+does.
 
 A [gated](agents.md#the-policy-door) agent write lands as a
-`substrate.reamde.dev/core/recordpatchrequest` instead of applying, and its
-queue is that collection in the data nav, with the pending pile also on the
-overview. Opening one at `/change-requests/{id}` shows the proposed create,
-patch or delete and its rationale, and accept or reject; accepting is the state
-transition that applies the change.
+`substrate.reamde.dev/core/recordpatchrequest` instead of applying, and one
+opens at `/change-requests/{id}`: the rationale and who proposed it, then what
+accepting would do — a patch field by field against the target's live values,
+a create as the record it would make, a delete as the record it would remove —
+and accept or reject. Accepting is the state transition that applies the
+change; a refused apply comes back on the request rather than as a
+half-applied change.
 
-## Registry
-
-The [catalog](bundles-catalog.md): every bundle the binary ships, in the two
-tier sections
-([0048](decisions/0048-providers-are-published-samples-are-copied.md)), taken
-and untaken together, with a quarantine badge on one that needs re-installing.
-**Providers** are the packages a publisher owns (Google, GitHub, Linear,
-WHOOP, Notion, Beeper, Slack) and their row's button is *Install*, under the
-authority that publishes them; the upgrade offer lands here. **Samples** are
-the vocabulary to copy (`people`, `tasks`, `calendar`, `scheduling`,
-`messaging`, `notes`, `readinglist`, `pebble`, `firecrawl` and `llm`) and
-their button is *Import*, with the row
-previewing the identity it will land under (`ada.example.com/tasks`) before it
-is pressed. A held copy is offered *Upgrade* too, through the import door,
-when the binary ships the sample at a newer version than the copy was taken
-at; where the copy was edited since, the dialog says the edits are replaced
-before it sends the preview's confirmation
-([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md)).
-A requirement the repository holds below the closure's `requiresAtLeast`
-floor disables the button, naming both versions. A bundle applied outside
-the shipped catalog has no tier and is listed on its own.
-Taking one reports where it landed (`tasks imported as ada.example.com/tasks`)
-and, when the closure ships an empty required setting, opens the bundle page
-at its setup form. An installed bundle carries its
-lifecycle verbs — disable, enable, uninstall, and the purge that a refused
-uninstall points you at — and its connections: one row per configured provider
-account, where the [OAuth consent flow](bundles.md#the-oauth-facility)
-starts and where a connection's token status is visible.
-
-## Connections
-
-**Connections** is the operations surface over every provider account
-([Connections](bundles.md#connections)): one page, read from the native
-`accountconfig` records the provider bundles ship and the core `sync` trait
-they bind ([0085](decisions/0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md)),
-and every read an existing route. It has two halves.
-
-**Providers** lists every installed bundle whose closure declares an account
-kind, plus every bundle the catalog calls a provider, with its lifecycle
-badge and the two numbered steps a person takes on it. Step 1,
-*Credentials*: whether the provider's client credentials are set (the
-`oauth2`-trait client, or a token provider's config; "credentials missing" is
-what the Registry row's setup step means), and the *Set up* or *Edit* door to
-the credentials dialog, which says what to create with the provider, shows
-the OAuth callback URL to register as that client's redirect URI, puts the
-client id and secret ahead of the bundle's own extras, and whose secret
-fields are write-only and say `set` or `not set` beside their names, never a
-value. Step 2, *Accounts*: the accounts counted by token status, and *Add
-account*. Under the steps one sentence says what to do next, with the button
-that does it: enable the bundle in the Registry, set up the credentials, add
-an account, connect the account that is waiting, or nothing more.
-
-*Add account* opens one dialog that asks only what the owner decides, read
-off the account kind's declaration. **What to sync** is one toggle per
-stream, and on an OAuth provider each is a permission the consent asks for;
-**Settings** is the sync frequency, the backfill depth and whatever else the
-kind leaves to the owner. The dialog never shows a property another hand
-writes, because the declaration marks them: the OAuth facility's
-`writer: oauth` properties, the connector's `writer: connector` cursors,
-resume state and identity references, and the `sync` trait's two owner hands,
-whose controls are the Sync now and Pause buttons. An account with nothing
-turned on is refused. On an OAuth provider whose credentials are set the one
-button is *Create and connect*: it creates the record and opens the
-provider's consent in a new tab in the same press, and the row reads
-`connected` when the approval returns. While the credentials are missing the
-dialog says so and offers the credentials form instead; on a token provider
-the button is *Create*, and the first sync starts on its own.
-
-**Accounts** is one row per account across all
-providers: a health dot (broken when the grant or the sync is erroring,
-attention when pending, paused or throttled, idle when connected and never
-synced), the provider, the account by its `email` or `displayName`, the
-token status with the granted scopes on hover, the sync state chip with the
-sync's own message in full, the last run as relative time, the cadence, the
-backfill depth, and the parked and lagging deliveries of the triggers on its
-kind. The row's verbs are the four a Connection takes: **Connect** or
-**Reconnect**, on an OAuth provider only, starts the
-[OAuth consent](bundles.md#the-oauth-facility) and opens the URL it mints at
-click time; **Sync now** stamps `syncRequestedAt` and wakes the on-request
-triggers; **Pause** and **Resume** flip `syncPaused`; **Edit** changes what
-the account syncs through the same dialog *Add account* opens; **Disconnect**
-deletes the record. The page follows the [change feed](changelog.md) for the
-account kinds and the run ledger, so a sync's state moves without a reload.
-
-Opening a row is the **account detail**: the trait rendered whole (state,
-message, last run and its duration, the request and whether it was served, a
-progress bar from `syncProgress`, one row per stream from `syncStreams`, the
-last error), the record's other properties with cursors and queues shown as
-counts rather than their bytes, the record triggers on the kind with cursor,
-head, lag, last fire, parked and pending from `…/trigger/status` and a
-*Wake* and *Run* each, the newest `triggerrun` rows of those triggers with
-status and error text, the parked deliveries with a *Retry* each, and the
-bundle's mirror kinds with their live row counts. The same renderer is a
-**Sync** tab on the record page of any kind binding the trait.
+Both queues are their collections, under **Substrate** with Technical details
+on. A request is also reached from the records it names (their **Connected
+to**), and a change request from the agent's thread, as a card.
 
 ## Agents
 
-**Agents** lists the declared [agents](agents.md) with the provider and model
-each resolves, and opens a chat against one.
+**Agents** (`/agents`) is a chat over your [agents](agents.md): every
+conversation on the left, the one being read in the middle, and the agent's
+panel on the right.
 
-A chat is a thread, and a thread is a run. The left rail is this agent's
-threads, newest first, selected through `?thread=` so a conversation is
-linkable; **New** opens an empty one. The transcript is rebuilt from the
-`llm/message` records the loop wrote, not from the browser's memory, so a
-reload shows the same conversation — and every tool call is a card that says
-whether it is running, settled or failed and expands to the request it sent
-and the response it got, both as formatted JSON. While a run streams, the same
-cards fill in live and are replaced by the stored rows when it settles.
+- **The chats column** has **New chat**, a search over the chats' titles,
+  every conversation under Today, Yesterday and Earlier, and the agents
+  themselves: one you can talk to starts a chat, and one that only works for
+  other agents says so. **Add agents** lists the shipped samples that bring
+  agents, each with **Add**, the same import as
+  [Add a collection](#add-a-collection)'s samples.
+- **The conversation** is a thread, and a thread is a run. It is rebuilt from
+  the `llm/message` records the loop wrote, not from the browser's memory, so a
+  reload shows the same conversation; while a run streams, the same turns fill
+  in live and are replaced by the stored rows when it settles. Your messages
+  are bubbles; the agent's consecutive turns read as one reply, each tool call
+  as one line saying what it did and whether it worked, opening onto what came
+  back (with Technical details on, the function and the request and response
+  verbatim). A thread a trigger started opens with the record whose change
+  started it.
+- **Suggested changes** are cards inside the thread, not a queue somewhere
+  else: each reads the change request's live state, says what it would change
+  as before and after, and offers **Apply** (**Add it**, **Delete it**),
+  **Dismiss**, **Edit first** (the review page) and, on a write the
+  [policy door](agents.md#the-policy-door) held, **Always allow this**, which
+  writes a narrow `recordpatchpolicy` allowing exactly this agent, this kind
+  and this verb before applying. Deciding writes a message into the thread and
+  resumes the agent. Questions the agent asks are cards too, answered in
+  place.
+- **The panel** says what the agent can see, change and ask, which tools it
+  uses, its model and its provider, and links **Edit agent** to its record;
+  with Technical details on it adds the system prompt, each tool's reference,
+  the grants and the budgets.
 
-The [`llm/provider`](agents.md#providers) rows are **not** on this page: an agent
-names a provider by id, and that pointer reads on the agent's own record.
-They live under Data → `substrate.reamde.dev/llm` → `provider`, and
+The address names what is open: `?thread=<id>` opens one conversation,
+`?agent=<id>` opens a new chat with that agent, and `?prompt=<text>` fills a
+new chat's message box, which is how other pages hand over a question. A bare
+`/agents` opens the most recent conversation, or a new chat when there is
+none; the old per-agent address `/agents/{id}` redirects to `?agent=`, keeping
+a `?thread=` it carried.
+
+The [`llm/provider`](agents.md#providers) rows are not on this page: an agent
+names one by id, its panel shows which, and a provider without a key says so
+where the conversation would otherwise fail. The rows are the
+`substrate.reamde.dev/llm/provider` collection, and
 [registering one](agents.md#registering-a-provider) is an ordinary record
 write.
 
-[Triggers](functions.md#triggers) have no section of their own: they are
-ordinary records, so `substrate.reamde.dev/core/trigger` in the data nav is
-the list, and one trigger's record page is the trigger.
+## Tools
 
-## Account
+**Tools** (`/tools`) lists everything that can act on your data besides you,
+as cards: **Tools your agents use**, **Syncs** (the functions your providers'
+triggers run), **Other tools** that nothing uses yet, and, in everyday mode,
+**Built in**, the substrate's own host functions, which technical mode files
+with the rest. Each card says what the tool is for and when it runs.
+**Add tools** lists the shipped samples that bring functions (Firecrawl,
+Notes and the rest), each by the tools it adds and with **Add**, the same
+import as [Add a collection](#add-a-collection)'s samples.
 
-Behind the session menu, beside logging out:
+A tool is a [function](functions.md), and its page is at
+`/tools/{authority}/{package}/{name}`, the function's reference segment by
+segment. It says what the tool is allowed to do (can see, can change, the
+internet, can ask), when it runs (its triggers in words: a schedule, a change
+to a kind, a webhook), which agents use it, what it takes and gives back, and
+its **Recent runs**, each with when, what happened and whether it worked. A
+tool a trigger runs has **Pause** and **Resume**, and a sync **Sync now**.
+**Try it** is a form built from the declared arguments that runs the tool
+once, now, through the call API and shows what it gave back; it is offered
+where a direct call can run it, which a sync (started with Sync now) and a
+host function that writes (bounded by a calling agent's grant) cannot. With
+Technical details on, **Developer** adds the runtime, what the model reads,
+the permissions, the source and the triggers.
 
-- **Account** shows who you are, and holds the two credential changes: change
-  your password, and replace your authenticator. Both ask for your current
-  password and code in the form, because
+[Triggers](functions.md#triggers) have no page of their own: they are
+ordinary records, so `substrate.reamde.dev/core/trigger` is their collection,
+and one trigger's record page is the trigger.
+
+## Providers
+
+**Providers** (`/providers`) is every service that can bring data in, one card
+each: the shipped catalog's [providers](bundles-catalog.md) joined with what
+this repository holds of them. A card says in one pill where the provider
+stands (**On**, **Set up**, **Needs attention**, **Paused**) or offers
+**Add**, and one line says what is true right now. With Technical details on,
+**Other packages** lists every other bundle the repository holds (imported
+samples, the seeded `llm` package, anything applied directly) with its
+version, state, update and removal, and states any pending upgrade of the
+seeded packages.
+
+A provider's page, `/providers/{authority}/{package}` (a provider is a bundle,
+and a bundle's id is its package), is where it is set up and where you come
+back to it:
+
+- **Set up** is four numbered steps: add it, give it sign-in details, connect
+  your account, choose what to bring in. A done step says what is true; the
+  current one is highlighted with its one action. **Sign-in details** asks for
+  what to create with the provider (an OAuth client's id and secret, or a
+  token provider's key), shows the OAuth callback URL to register as that
+  client's redirect URI, and says which secrets are set without ever showing
+  one. **Connect your account** opens the account dialog, which asks only what
+  the owner decides, read off the account kind's declaration: what to bring
+  in, one toggle per stream, and the sync's schedule and depth. On an OAuth
+  provider its one button is **Create and connect**: it creates the account
+  and opens the provider's [consent](bundles.md#the-oauth-facility) in a new
+  tab, and the account reads connected when the approval returns.
+- **Accounts**: one row per account, with how its sync is doing in plain
+  words, when it last synced and how often it does, and the verbs an account
+  takes: **Connect** or **Reconnect**, **Sync now**, **Pause**, change what it
+  brings in, and **Disconnect**. `?account=<id>` scrolls to one and highlights
+  it.
+- **What it adds**: what it brings in (its primary kinds, each with what it
+  is, how many records it holds and which of your own kinds its records fill
+  in through a mapping, with the supporting kinds counted) and its tools, each
+  with when it runs and how its last run went.
+- **Settings**: its `setting` and `secret` records as one form
+  ([Settings](bundles.md#settings)), a secret write-only, and anything else it
+  still needs, in the server's words.
+- With Technical details on, **Connection details** for each account (the
+  core `sync` trait whole; the record triggers on its kind with cursor, lag,
+  last fire, parked and pending, and **Wake** and **Run**; the newest
+  `triggerrun` rows; the parked deliveries, each with **Retry**) and **Needs
+  these packages**.
+
+**Pause** and **Remove** sit in the header, each confirmed in plain words.
+Remove walks the lifecycle the server enforces: pause, delete what it brought
+in, then remove its declarations. An upgrade the binary ships is offered as
+**Update**, confirmed first where the preview is lossy, and stated instead of
+offered where the server would refuse it, with the guard lines that say what
+to migrate. The same page serves any other package the repository holds, such
+as an imported sample, without the setup steps and accounts.
+
+The old addresses land here: `/registry` and `/connections` open Providers,
+`/registry/{bundle id}` that bundle's page (a shipped sample's opens All
+data), `/connections/{authority}/{package}/{kind}/{id}` its provider's page at
+that account, and `/settings/{bundle id}` that page's Settings.
+
+## History
+
+**History** (`/history`) is [the changelog](changelog.md) as sentences, newest
+first, grouped by day, following new changes live. A change to one record
+says its values, a run of changes to it their net effect, and a run across
+many records the properties they touched. Four views narrow it by
+who made the change: **Everything**, **By you**, **By agents** and **By
+providers**, each an actor filter the change feed applies server-side.
+
+In everyday mode, changes to internal kinds (trigger runs, tokens,
+preferences) are system changes and are hidden; a line says how many, and
+**Show** brings them back (`?system=true`). With Technical details on they
+are shown, each sentence carries its sequence number and raw actor id, and
+**Table view** is the full changelog table: filters for authority, kind,
+actor, op, a time range and free text, all in the URL, and the same live
+tail. An actor opens at `/actors/{id}`: who it is, and History narrowed to
+it. The old address `/changelog` redirects here with its filters.
+
+## Search
+
+`/search` is the [ranked read](api.md#search) as a page: a query in the
+[search grammar](api.md#the-search-grammar), a collection to narrow to (or
+every one), and the hits best first, each with its collection. How to rank is
+the reader's choice and it sticks: **Words** (the default: full-text over
+every indexed text, free, and it answers on every repository), **Words +
+meaning** (the fused hybrid ranking, which falls back to words alone where no
+embeddings provider is configured) or **Meaning** alone (embedding similarity
+over the properties that opted in, which needs a provider and spends an
+embedding call per search). With Technical details on, each hit adds its full
+reference and its raw per-arm score, labelled: `words` is the lexical rank,
+`meaning` the embedding similarity. A search the server refuses — a mode with
+no provider behind it, a query with no word in it — shows the server's own
+problem, verbatim. When the semantic index is still being built, the page says
+how many values are pending.
+
+## Settings
+
+**Settings** (`/settings`):
+
+- **Layout**: record page width (narrow, wide, full; it also sizes tool and
+  provider pages), table width (wide, full), row height (comfortable,
+  compact), Technical details, and appearance (system, light, dark), saved as
+  [layout preferences](#layout-preferences).
+- **Account**: the repository name you sign in with, and the two credential
+  changes: change your password, and replace your authenticator where the
+  second factor is on. Both ask for your current password (and code) in the
+  form, because
   [the password-factor rule](auth.md#the-credential-and-the-password-factor-rule)
   refuses a bearer token here.
-- **Tokens** lists every token in the repository — label, created, expiry —
-  and mints and revokes them. It is also the sessions page: every
-  browser and every script that holds access is one of these rows, and
-  revoking one is deleting it.
+- **Signed in**: this browser first, then every other browser and script
+  holding a token, newest first, each one **Sign out…** away. A session is a
+  token record, and signing one out deletes it.
+- **Your data**: **Download everything**, the recovery export of the
+  repository as of now ([backups](operations.md#backups)).
+- **Developer**, with Technical details on: the system kinds under
+  `substrate.reamde.dev`, **API tokens** (label, created, expiry; mint one for
+  a script or a device, each with full access, and revoke), and what this
+  server says about itself at `/.well-known/substrate/server.json`: its
+  version, its API endpoint and its features.
+
+The old addresses `/account` and `/account/tokens` redirect here.
 
 Next: [running one locally](running-locally.md), the substrate on your own
 machine.

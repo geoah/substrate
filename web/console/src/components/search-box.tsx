@@ -65,7 +65,6 @@ export function SearchBox({
       <InputGroupInput
         aria-label={label}
         placeholder={placeholder ?? label}
-        className="data"
         autoFocus={autoFocus}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}

@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
-/** The gated card's three server paths, each pinned to the kind-name segment
- * (decision 0033): the thread read that names the proposer, the live-target
- * read behind the before → after preview, and the standing rule the
- * accept-and-allow flow mints. The mock answers ONLY at those paths, so a
- * component that routed by anything else would render neither side. */
+/** The suggestion card's server paths, each pinned to the kind-name segment
+ * (decision 0033): the live-target read behind the before → after words and
+ * the decision patch Apply and Dismiss send. The mock answers ONLY at those
+ * paths, so a component that routed by anything else would render neither
+ * side. The card offers no standing rule: an allow cannot outrank the gate
+ * that held the write, so "Always allow this" stays out until the engine can
+ * say an exception. A delete takes a second press. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -12,6 +14,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -39,10 +42,7 @@ import { ProposalCard } from "./proposal-card"
 
 const TASK_KIND = "samples.substrate.reamde.dev/tasks/task"
 const REQUEST_PATH = "/api/v1/substrate.reamde.dev/core/recordpatchrequest/cr-1"
-const THREAD_PATH = "/api/v1/substrate.reamde.dev/llm/thread/th-1"
 const TARGET_PATH = "/api/v1/samples.substrate.reamde.dev/tasks/task/task-1"
-const POLICY_PATH =
-  "/api/v1/substrate.reamde.dev/core/recordpatchpolicy/allow-cr-1"
 
 const KINDS: KindInfo[] = [
   {
@@ -53,7 +53,18 @@ const KINDS: KindInfo[] = [
     version: 1,
     source: "installed",
     description: "",
-    definition: { properties: { summary: { type: "string" } } },
+    definition: {
+      properties: {
+        summary: { type: "string" },
+        priority: {
+          type: "enum",
+          values: [
+            { value: "high", label: "High" },
+            { value: "urgent", label: "Urgent" },
+          ],
+        },
+      },
+    },
   },
 ]
 
@@ -77,23 +88,19 @@ const gatedRequest = record({
   properties: {
     rationale: "The summary moved in the source.",
     target: { ref: `${TASK_KIND}/task-1` },
-    diff: { properties: { summary: "New summary" } },
-    policy: "substrate.reamde.dev/core/recordpatchpolicy/gate-1",
-    thread: "substrate.reamde.dev/llm/thread/th-1",
+    diff: { properties: { summary: "New summary", priority: "urgent" } },
+    // Served shape: a reference reads back as `{ref}`, which is what marks
+    // the request as held by a policy.
+    policy: { ref: "substrate.reamde.dev/core/recordpatchpolicy/gate-1" },
+    thread: { ref: "substrate.reamde.dev/llm/thread/th-1" },
   },
-})
-
-const thread = record({
-  id: "th-1",
-  kind: "substrate.reamde.dev/llm/thread",
-  properties: { agent: "substrate.reamde.dev/core/agent/scribe" },
 })
 
 const target = record({
   id: "task-1",
   kind: TASK_KIND,
   version: 3,
-  properties: { summary: "Old summary" },
+  properties: { summary: "Old summary", priority: "high" },
 })
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -136,10 +143,9 @@ describe("ProposalCard", () => {
         return jsonResponse(200, { kinds: KINDS })
       }
       if (path === REQUEST_PATH) return jsonResponse(200, gatedRequest)
-      if (path === THREAD_PATH) return jsonResponse(200, thread)
       if (path === TARGET_PATH) return jsonResponse(200, target)
-      if (path === POLICY_PATH && method === "PUT") {
-        return jsonResponse(200, record({ id: "allow-cr-1" }))
+      if (path === REQUEST_PATH && method === "PATCH") {
+        return jsonResponse(200, gatedRequest)
       }
       return jsonResponse(404, {
         error: { code: "not_found", message: `no route for ${path}` },
@@ -153,46 +159,113 @@ describe("ProposalCard", () => {
     fetchMock.mockReset()
   })
 
-  it("reads the thread and the live target at their kind-name paths", async () => {
+  it("says the change in the record page's words, reading the live target", async () => {
     renderCard()
 
-    // The preview's before column is the live target read.
+    // Before → after, the before being the live target read.
     expect(await screen.findByText("Old summary")).toBeTruthy()
     expect(screen.getByText("New summary")).toBeTruthy()
-    // The remedy button exists only once the thread named the proposer.
-    await screen.findByRole("button", { name: "Accept + always allow" })
-    const got = fetchMock.mock.calls.map(([url]) => String(url))
-    expect(got).toContain(THREAD_PATH)
-    expect(got).toContain(TARGET_PATH)
+    expect(screen.getByText("Summary")).toBeTruthy()
+    // An enum reads by its authored label, never the stored word.
+    expect(await screen.findByText("Urgent")).toBeTruthy()
+    expect(screen.getByText("High")).toBeTruthy()
+    expect(screen.queryByText("urgent")).toBeNull()
+    expect(screen.getByText("The summary moved in the source.")).toBeTruthy()
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toContain(
+      TARGET_PATH
+    )
+    // Review opens the page; the standing rule is not offered.
+    expect(
+      screen.getByText("Review").closest('a[data-to="/change-requests/$id"]')
+    ).toBeTruthy()
+    expect(screen.queryByText("Edit first")).toBeNull()
+    expect(screen.queryByText("Always allow this")).toBeNull()
   })
 
-  it("mints the standing rule at the recordpatchpolicy segment", async () => {
+  it("applies and dismisses with the CAS'd decision patch", async () => {
     renderCard()
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Accept + always allow" })
-    )
-    // The rule shown is the rule minted: this proposer, this kind, no wildcard.
-    expect(await screen.findByText(/"scribe"/)).toBeTruthy()
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Save the rule and accept" })
-    )
-
+    fireEvent.click(await screen.findByRole("button", { name: "Dismiss" }))
     await waitFor(() => {
-      const put = fetchMock.mock.calls.find(
-        ([, init]) => (init as RequestInit | undefined)?.method === "PUT"
-      )
-      expect(put).toBeTruthy()
-      expect(String(put![0])).toBe(POLICY_PATH)
       const patch = fetchMock.mock.calls.find(
         ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
       )
-      expect(patch).toBeTruthy()
       expect(String(patch![0])).toBe(REQUEST_PATH)
+      expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({
+        properties: { decision: "rejected" },
+        ifVersion: 4,
+      })
+    })
+  })
+
+  it("deletes only on a second press, saying what it costs", async () => {
+    const deleting = {
+      ...gatedRequest,
+      properties: {
+        op: "delete",
+        target: { ref: `${TASK_KIND}/task-1` },
+        rationale: "A duplicate.",
+      },
+    }
+    fetchMock.mockImplementation(async (url) => {
+      const path = String(url)
+      if (listedKinds(path).includes("substrate.reamde.dev/core/kind")) {
+        return jsonResponse(200, { kinds: KINDS })
+      }
+      if (path === REQUEST_PATH) return jsonResponse(200, deleting)
+      return jsonResponse(404, { error: { code: "not_found", message: "" } })
+    })
+    renderCard()
+    const button = await screen.findByRole("button", { name: "Delete it" })
+    expect(screen.getByText(/History keeps what it was/)).toBeTruthy()
+    fireEvent.click(button)
+    // Asked, not sent.
+    const dialog = await screen.findByRole("dialog")
+    expect(dialog.textContent).toContain("Delete this record?")
+    expect(
+      fetchMock.mock.calls.some(
+        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+      )
+    ).toBe(false)
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete it" }))
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+      )
       expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({
         properties: { decision: "accepted" },
         ifVersion: 4,
       })
     })
+  })
+
+  it("names a new record by the values a create proposes", async () => {
+    fetchMock.mockImplementation(async (url) => {
+      if (String(url) === REQUEST_PATH) {
+        return jsonResponse(
+          200,
+          record({
+            id: "cr-1",
+            kind: "substrate.reamde.dev/core/recordpatchrequest",
+            properties: {
+              op: "create",
+              targetKind: TASK_KIND,
+              targetId: "statuspage",
+              diff: {
+                properties: {
+                  summary: "Own the status page",
+                  priority: "high",
+                },
+              },
+            },
+          })
+        )
+      }
+      return jsonResponse(404, { error: { code: "not_found", message: "" } })
+    })
+    renderCard()
+    expect(await screen.findByText("New task")).toBeTruthy()
+    expect(screen.getByText("Own the status page")).toBeTruthy()
+    expect(screen.getByText("Priority")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Add it" })).toBeTruthy()
   })
 })

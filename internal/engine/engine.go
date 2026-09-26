@@ -65,6 +65,11 @@ type options struct {
 	// (appendFromTable); rebuildBatch when not positive. Only a test sets it
 	// (export_test.go), to put a transaction across a page boundary.
 	catchUpBatch int
+	// valuesBudget is how many earlier entries one change read's before
+	// values may read (changevalues.go); valuesBudget when not positive. Only
+	// a test sets it (export_test.go), to outrun it without thousands of
+	// writes.
+	valuesBudget int
 	blobs        blobbytes.Backend
 	log          *slog.Logger
 	// insecureAllowSuperuser downgrades the fail-closed role check to a warning
@@ -315,6 +320,8 @@ type service struct {
 	orphanGrace time.Duration
 	// catchUpBatch is the page size of the table-to-file catch-up.
 	catchUpBatch int
+	// valuesBudget is what one change read's before values may read.
+	valuesBudget int
 	// blobs is where blob bytes live (WithBlobStore); the fs backend under
 	// the data root by default.
 	blobs blobbytes.Backend
@@ -435,6 +442,9 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if o.catchUpBatch <= 0 {
 		o.catchUpBatch = rebuildBatch
 	}
+	if o.valuesBudget <= 0 {
+		o.valuesBudget = valuesBudget
+	}
 	if !o.conversionCeilingSet {
 		o.conversionCeiling = DefaultConversionCeiling
 	}
@@ -476,6 +486,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		dataRoot:     o.dataRoot,
 		segmentBytes: o.segmentBytes,
 		catchUpBatch: o.catchUpBatch,
+		valuesBudget: o.valuesBudget,
 		blobs:        o.blobs,
 
 		conversionCeiling: o.conversionCeiling,

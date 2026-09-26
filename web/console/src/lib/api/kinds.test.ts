@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { buildKindNav, normalizeKinds } from "./kinds"
+import { buildKindNav, isMachineryAuthority, normalizeKinds } from "./kinds"
 import type { KindInfo } from "./types"
 
 function kindInfo(overrides: Partial<KindInfo>): KindInfo {
@@ -10,7 +10,7 @@ function kindInfo(overrides: Partial<KindInfo>): KindInfo {
     authority: "samples.substrate.reamde.dev",
     package: "people",
     version: 0,
-    source: "builtin",
+    source: "installed",
     description: "",
     definition: {},
     ...overrides,
@@ -28,7 +28,7 @@ describe("normalizeKinds", () => {
             name: "person",
             authority: "samples.substrate.reamde.dev",
             package: "people",
-            source: "builtin",
+            source: "installed",
             definition: {
               authority: "samples.substrate.reamde.dev",
               package: "people",
@@ -46,7 +46,7 @@ describe("normalizeKinds", () => {
         authority: "samples.substrate.reamde.dev",
         package: "people",
         version: 0,
-        source: "builtin",
+        source: "installed",
         description: "One human, one record.",
         definition: {
           authority: "samples.substrate.reamde.dev",
@@ -142,14 +142,14 @@ describe("buildKindNav", () => {
       name: "contact",
       authority: "providers.substrate.reamde.dev",
       package: "google",
-      source: "installed",
+      source: "published",
     }),
     kindInfo({
       identity: "providers.substrate.reamde.dev/google/syncrun",
       name: "syncrun",
       authority: "providers.substrate.reamde.dev",
       package: "google",
-      source: "installed",
+      source: "published",
     }),
   ]
 
@@ -181,13 +181,14 @@ describe("buildKindNav", () => {
         name: "beeperuser",
         authority: "providers.substrate.reamde.dev",
         package: "beeper",
-        source: "installed",
+        source: "published",
       }),
       kindInfo({
         identity: "substrate.reamde.dev/core/kind",
         name: "kind",
         authority: "substrate.reamde.dev",
         package: "core",
+        source: "builtin",
       }),
     ])
     expect(nav.authorities.map((a) => a.authority)).toEqual([
@@ -229,5 +230,46 @@ describe("buildKindNav", () => {
       "substrate.reamde.dev",
       "providers.substrate.reamde.dev",
     ])
+  })
+})
+
+describe("isMachineryAuthority", () => {
+  it("reads the core authority as machinery", () => {
+    expect(
+      isMachineryAuthority("substrate.reamde.dev", [
+        kindInfo({ authority: "substrate.reamde.dev", source: "builtin" }),
+      ])
+    ).toBe(true)
+  })
+
+  it("reads an installed provider (every kind published) as machinery", () => {
+    expect(
+      isMachineryAuthority("providers.substrate.reamde.dev", [
+        kindInfo({
+          authority: "providers.substrate.reamde.dev",
+          source: "published",
+        }),
+      ])
+    ).toBe(true)
+  })
+
+  // The server writes `installed` for the repository's own kinds and for an
+  // imported sample: that is the user's data, never machinery.
+  it("reads the repository's own installed authority as NOT machinery", () => {
+    expect(
+      isMachineryAuthority("alice.example.com", [
+        kindInfo({
+          identity: "alice.example.com/tasks/task",
+          authority: "alice.example.com",
+          package: "tasks",
+          name: "task",
+          source: "installed",
+        }),
+      ])
+    ).toBe(false)
+  })
+
+  it("reads an authority with no kinds as NOT machinery", () => {
+    expect(isMachineryAuthority("alice.example.com", [])).toBe(false)
   })
 })

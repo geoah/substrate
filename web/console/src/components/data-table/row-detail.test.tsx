@@ -74,9 +74,7 @@ describe("ChangeDetail", () => {
 
   it("attributes the write to its actor", () => {
     render(<ChangeDetail row={ROW} />)
-    expect(
-      screen.getByTitle("providers.substrate.reamde.dev/github")
-    ).toBeTruthy()
+    expect(screen.getByText("GitHub")).toBeTruthy()
   })
 
   it("keeps the raw payload expanded", () => {
@@ -100,11 +98,14 @@ describe("ChangeDetail", () => {
         }}
       />
     )
-    expect(screen.getAllByText(source).length).toBeGreaterThan(0)
-    expect(screen.getByText(initiator)).toBeTruthy()
+    // Plain names on the line; each raw actor rides its hover card.
+    expect(screen.getAllByText("Google Contacts sync").length).toBeGreaterThan(
+      0
+    )
+    expect(screen.getByText("promotecontact")).toBeTruthy()
     expect(screen.getByText("Mapping recomputation by the engine")).toBeTruthy()
     expect(screen.getByText("committed by")).toBeTruthy()
-    expect(screen.getByText("Engine (substrate)")).toBeTruthy()
+    expect(screen.getByText("Substrate")).toBeTruthy()
   })
 
   it("renders a row that names no records without a records section", () => {

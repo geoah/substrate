@@ -14,7 +14,7 @@ The catalog it comes from has **two doors**, one per tier
 | --------------- | ---------------------------------------------------------------------- |
 | **provider**    | a package a publisher owns (`providers.substrate.reamde.dev/google`). It INSTALLS under the authority that publishes it, and the publisher ships each change with a version bump the upgrade preview offers |
 | **sample**      | a package the user copies (`samples/`). It IMPORTS under the repository's own authority (`samples.substrate.reamde.dev/tasks/task` lands as `ada.example.com/tasks/task`) and is the repository's afterwards: writable, and offered an upgrade through the origin stamp its import left |
-| **account**     | one configured connection to a provider: a record of an `accountconfig`-trait kind. The console lists these under **Connections** |
+| **account**     | one configured connection to a provider: a record of an `accountconfig`-trait kind. The console lists these under **Accounts** on each provider's page |
 
 ## What a bundle ships
 
@@ -171,9 +171,8 @@ what a write since the preview to a record the plan rewrites or a declaration
 it converts produces: preview again. A write anywhere else moves the
 changelog head and leaves the confirmation standing ([decision
 0105](decisions/0105-a-lossy-confirmation-binds-to-what-the-plan-affects.md));
-a `changelogSeq` past the head is refused with `conflict` too. The console's Registry counts
-upgrades on the sidebar badge, offers Upgrade where nothing blocks, asks
-first (listing the lossy steps) where the preview is lossy, and states the
+a `changelogSeq` past the head is refused with `conflict` too. The console's Providers page offers
+**Update** where nothing blocks, asks first (listing the lossy steps) where the preview is lossy, and states the
 guard lines where something blocks; `substratectl install <provider>
 --allow-data-loss` reads the preview, prints the steps and confirms exactly
 that hash. The old values stay in the changelog either way; a lossy step
@@ -197,8 +196,8 @@ binary, so the stored declarations stay old until the server starts again.
 The boot upgrade has nobody to confirm a lossy plan, so it never runs a lossy
 step: a shipped change whose plan is lossy here is refused, and the step is
 among the `blockers` with its count, cleared by rewriting the records it
-names. The Registry states both above its sections (the guard lines, or
-"lands when the server starts again"), and `substratectl catalog` prints
+names. The console's Providers page states both with Technical details on
+(the guard lines, or "lands when the server starts again"), and `substratectl catalog` prints
 every package's motion with `blocked` or, for core, `lands at restart`, and
 the steps each upgrade would run beneath.
 
@@ -384,9 +383,9 @@ posts the outcome back to the console that opened it and closes. Success posts
 account's path; failure posts the same shape with
 `ok: false` and a `correlation` id, the only thing a failure ever reflects,
 joined against the server log — no provider detail reaches the browser. With no
-opener, the page falls back to a redirect to the console's registry
-(`/registry?connected=<kind>/<id>`, the path percent-encoded, or
-`?error=<correlation>` on failure). `substratectl bundle connect
+opener, the page falls back to a redirect to the console's old registry
+address (`/registry?connected=<kind>/<id>`, the path percent-encoded, or
+`?error=<correlation>` on failure), which the console sends on to Providers. `substratectl bundle connect
 <authority>/<package>/<kind>/<id>` is the same start endpoint from the command
 line.
 
@@ -438,8 +437,8 @@ Every setting and secret under a bundle's prefix reaches its functions as
 `config.settings.<name>`, the secret in plaintext inside the runner boundary
 and held there by the invocation scrubber, exactly as an input's secret is
 ([Functions](functions.md#the-sdk)). A `required` one whose value is still
-empty is a setup item on the bundle's status, coded `setting`, so the registry
-badge and the bundle page count it. Purging a bundle removes its settings;
+empty is a setup item on the bundle's status, coded `setting`, so the
+console's provider page asks for it. Purging a bundle removes its settings;
 uninstall leaves them, as it leaves every record.
 
 ## Connections
@@ -468,10 +467,9 @@ data:
       - https://www.googleapis.com/auth/contacts.readonly
 ```
 
-The **Connections** view in the console is a cross-bundle operational
-surface over every such account, one row per account, read from the native
-`accountconfig` records that provider bundles ship. It pages every
-implementor of the `accountconfig` trait, which is a plain query
+The console lists these under **Accounts** on each provider's page, one row
+per account, read from the native `accountconfig` records that provider
+bundles ship. It pages every implementor of the `accountconfig` trait, which is a plain query
 (`GET /api/v1/records?filter={"implements": "accountconfig"}`, with
 `…/trait/{id}/implementors` for the kinds themselves), because implementing a
 trait is queryable.
@@ -554,8 +552,9 @@ example, `coalesce: true` so one request is one delivery per stream.
 **Reading it.** `GET /api/v1/sync/status` lists every binding record's
 sync properties joined with the status of the record triggers on its kind
 (cursor, head, lag, parked, pending), one row per account;
-`substratectl sync status` prints the same, and the console's Connections
-page renders it, with a Sync tab on the record page of any binding kind.
+`substratectl sync status` prints the same, and the console renders it on
+each provider's page, with a Sync section on the record page of any binding
+kind.
 
 **Migrating a bundle.** Bind the trait, declare the twelve properties with
 their writers, add the `syncStreams`/`syncState`/`syncMessage`/`syncRequestedAck`
@@ -640,6 +639,11 @@ envelope, each flagged `installed` for this repository;
 unknown id is a 404 `not_found`. The id is a package identity, so it carries a
 `/` and a URL percent-encodes it once:
 `…/catalog/samples.substrate.reamde.dev%2Ftasks`.
+The closure names every kind, trait, function, agent, mapping and shipped
+record, each declaration's description beside it, and in `kindPurposes` each
+kind's declared [`purpose`](decisions/0106-a-kind-declares-its-purpose.md)
+(absent where the kind declares none, which reads as `primary`), so a client
+can tell a sample's collections from its machinery before taking it.
 
 ### The two doors
 
@@ -711,7 +715,7 @@ carries `confirm: {planHash, changelogSeq}` from that preview; the hash binds
 the edited state, so one more edit refuses it as one more write to a record
 the plan rewrites does. A
 confirmed re-import re-stamps the copy, and it reads pristine again. The
-console's Registry offers Upgrade on a moved sample through the import door,
+console offers Upgrade on a moved sample through the import door,
 asks first where the copy was edited, and sends the confirmation on Import
 again too; `substratectl import <sample> --allow-data-loss` reads the preview,
 says what goes and confirms exactly that plan. A hand `apply --as` over an
@@ -732,7 +736,7 @@ importing the bundle instead rehomes its requirements with it.
 repository.** A provider ships mirror kinds in its own shape and writes nothing
 else: no `requires:`, no reference pinned at a sample kind, no core row. So the
 console can install any of the seven from a repository that has imported nothing,
-and the Registry's Install button is never disabled for a missing requirement.
+and the console's Add button is never disabled for a missing requirement.
 
 What reaches a `person`, an `emailmessage` or a `task` is the mapping the
 repository declares, from a mirror onto a kind of its own. A mapping onto a
@@ -790,8 +794,8 @@ carries
 ([0048](decisions/0048-providers-are-published-samples-are-copied.md)): a kind
 or a property you added since is dropped by it, or the narrowing guard refuses
 it while live records hold the old shape. Every surface that offers the
-re-import says so: the console's Registry puts an **Import again** action on a
-held sample whose mapping is `ready` and states the replacement in the
+re-import says so: the console puts an **Import again** action on the page
+of a held sample whose mapping is `ready` and states the replacement in the
 confirmation, and `substratectl import` prints the same warning beside each
 line.
 

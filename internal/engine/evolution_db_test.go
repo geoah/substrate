@@ -318,7 +318,10 @@ func TestSchemaEvolutionReservedKeysRoundTrip(t *testing.T) {
 			vocabulary.PackageManifest(evoPackage, 0),
 			vocabulary.KindManifest(evoPackage,
 				map[string]any{"singular": "gizmo"},
-				map[string]any{"properties": props}),
+				// A kind's purpose (record 0106) is a kind-level key, so its row
+				// property is core/kind's own `purpose` enum, not a property of
+				// the kind it describes.
+				map[string]any{"properties": props, "purpose": vocabulary.PurposeSupporting}),
 		})
 		return err
 	}
@@ -331,6 +334,9 @@ func TestSchemaEvolutionReservedKeysRoundTrip(t *testing.T) {
 		ty, err := ds.Get(ctx, "substrate.reamde.dev/core/kind", evoPackage+"/gizmo")
 		if err != nil {
 			t.Fatalf("%s: read stored type: %v", when, err)
+		}
+		if got, _ := ty.Properties["purpose"].(string); got != vocabulary.PurposeSupporting {
+			t.Errorf("%s: stored purpose = %v", when, ty.Properties["purpose"])
 		}
 		stored, _ := ty.Properties["properties"].(map[string]any)
 		serial, _ := stored["serial"].(map[string]any)

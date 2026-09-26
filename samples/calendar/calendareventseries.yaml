@@ -7,11 +7,12 @@ data:
   authority: samples.substrate.reamde.dev
   package: calendar
   description: >-
-    The recurring DEFINITION behind repeating events: its RRULE, the dates
-    that rule skips and the first occurrence it counts from. The substrate
-    stores the rule and never expands it into rows; a records read that bounds
-    `at` computes its occurrences beside the calendarevents that override
-    them.
+    An event that repeats, such as a weekly meeting. The recurring DEFINITION
+    behind repeating events: its RRULE, the dates that rule skips and the
+    first occurrence it counts from. The substrate stores the rule and never
+    expands it into rows; a records read that bounds `at` computes its occurrences
+    beside the calendarevents that override them.
+  purpose: supporting
   names:
     singular: calendareventseries
   displayTemplate: "{summary}"

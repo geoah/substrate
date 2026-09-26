@@ -6,9 +6,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: messaging
   description: >-
-    One mail thread: its subject, the account it synced through, and everyone
-    on it. Messages point here, so the thread is what a reader lists and the
-    messages are what they open.
+    An email conversation. One mail thread: its subject, the account it synced
+    through, and everyone on it. Messages point here, so the thread is what
+    a reader lists and the messages are what they open.
   names:
     singular: emailthread
   displayTemplate: "{subject}"

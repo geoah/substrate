@@ -31,7 +31,8 @@ data:
     One rule for agent writes: which kinds, ops and agents it speaks for,
     and whether their writes land, gate into recordpatchrequests, or refuse.
     The most restrictive matching policy wins; no match means the write lands.
-  version: 15
+  version: 16
+  purpose: internal
   names:
     singular: recordpatchpolicy
   displayTemplate: "{action}: {localName}"

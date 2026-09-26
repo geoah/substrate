@@ -1,4 +1,4 @@
-import { ActorChip } from "@/components/actor-chip"
+import { ActorRef } from "@/components/identity/actor-ref"
 import type { ChangeRow } from "@/lib/api/types"
 import { changeSources } from "@/lib/changelog"
 
@@ -6,11 +6,11 @@ export function ChangeActor({ row }: { row: ChangeRow }) {
   const sources = changeSources(row)
   const initiated = row.payload?.triggeredBy
   const mapped = row.payload?.mechanism === "mapping" || sources.length > 0
-  if (row.actor !== "substrate") return <ActorChip actor={row.actor} />
+  if (row.actor !== "substrate") return <ActorRef actor={row.actor} />
   if (!mapped)
     return (
       <div className="space-y-1">
-        <ActorChip actor={row.actor} />
+        <ActorRef actor={row.actor} />
         <p className="text-xs text-muted-foreground">
           System write; cause not recorded.
         </p>
@@ -20,7 +20,7 @@ export function ChangeActor({ row }: { row: ChangeRow }) {
   return (
     <div className="flex min-w-0 flex-col items-start gap-2 py-1">
       {sources.map((actor) => (
-        <ActorChip key={actor} actor={actor} />
+        <ActorRef key={actor} actor={actor} />
       ))}
       <span className="text-xs text-muted-foreground">
         {sameSource
@@ -30,7 +30,7 @@ export function ChangeActor({ row }: { row: ChangeRow }) {
       {typeof initiated === "string" && !sameSource && (
         <div className="flex min-w-0 flex-col gap-1">
           <span className="text-xs text-muted-foreground">Triggered by</span>
-          <ActorChip actor={initiated} />
+          <ActorRef actor={initiated} />
         </div>
       )}
     </div>

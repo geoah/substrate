@@ -1,20 +1,25 @@
 /** Authority page (`/data/:authority`) and package page
- * (`/data/:authority/:package`): the kinds under one authority, or under one of
- * its packages, at a glance on THE table system — package, name, description
- * where the declaration carries one, live record count (a bounded keyset-walk
- * count, capped collections read as N+), each row a door into that kind's
- * browse. Reached from the breadcrumb's authority and package segments. Bounded
- * registry data (a handful of rows), so no pagination seam. */
+ * (`/data/:authority/:package`): the collections one authority publishes,
+ * grouped by package, or the collections of one package — each a row with
+ * its glyph and plural, what it holds and how many records it has, and a door
+ * into its collection. Everyday mode lists the primary collections and says
+ * how many supporting ones it leaves out; technical mode lists every kind
+ * with its full reference and its purpose. Bounded registry data, so no
+ * paging. */
 
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
-import type { DataTableColumn } from "@/components/data-table/data-table"
 import { FileCode2Icon } from "lucide-react"
 
-import { DataTable, useDataTable } from "@/components/data-table/data-table"
-import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
-import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
+import { CopyButton } from "@/components/identity/copy-button"
+import { KindGlyph } from "@/components/identity/kind-glyph"
+import { KindPath } from "@/components/identity/kind-ref"
+import { PageHeader } from "@/components/identity/page-header"
+import { TablePage } from "@/components/identity/page-layout"
+import { ProviderBadge } from "@/components/identity/provider-badge"
+import { PurposeTag } from "@/components/identity/purpose-tag"
+import { SectionHead } from "@/components/identity/section-head"
 import {
   Empty,
   EmptyDescription,
@@ -23,206 +28,170 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
-import { recordCountQueryOptions, formatCount } from "@/lib/api/records"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { PROVIDERS_AUTHORITY, providerInfo } from "@/lib/actor-identity"
+import { authorityTitle, packageTitle } from "@/lib/collections"
+import { formatCount, recordCountQueryOptions } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { KindInfo } from "@/lib/api/types"
+import { kindPurpose } from "@/lib/definition"
+import { hiddenKindsNote } from "@/lib/grid-values"
+import { displayPlural } from "@/lib/kind-names"
 import { authorityRoute, packageRoute } from "@/router"
-
-/** The one-liner a kind carries: its reconciled `definition.description` when
- * one exists. There is no `sourceYAML` on the wire (record 61) — the parsed
- * declaration IS the document — so a kind that declares no description simply
- * has an empty cell. */
-function kindDescription(k: KindInfo): string | undefined {
-  const declared = k.definition?.description
-  return typeof declared === "string" && declared.trim()
-    ? declared.trim()
-    : undefined
-}
+import { kindDescription } from "@/lib/kind-copy"
 
 function CountCell({ kind }: { kind: KindInfo }) {
   const count = useQuery(
     recordCountQueryOptions(kind.authority, kind.package, kind.name)
   )
-  if (count.isPending) {
-    return <Skeleton className="ml-auto h-3.5 w-10" />
-  }
-  if (count.isError) {
-    return <span className="block text-right text-muted-foreground">—</span>
-  }
+  if (count.isPending) return <Skeleton className="ml-auto h-3.5 w-8" />
+  if (count.isError) return <span className="text-faint">—</span>
+  return <span className="tabular-nums">{formatCount(count.data)}</span>
+}
+
+function KindsList({ kinds }: { kinds: KindInfo[] }) {
+  const [technical] = useTechnicalDetails()
+  const navigate = useNavigate()
+  const shown = technical
+    ? kinds
+    : kinds.filter((k) => kindPurpose(k) === "primary")
+  const hidden = kinds.filter((k) => !shown.includes(k))
   return (
-    <span className="block text-right data">{formatCount(count.data)}</span>
+    <>
+      {shown.length > 0 && (
+        <div className="overflow-x-auto rounded-[10px] border border-border">
+          <table className="w-full min-w-[560px] table-fixed border-separate border-spacing-0 text-sm">
+            <colgroup>
+              <col className="w-[240px]" />
+              {technical && <col className="w-[340px]" />}
+              <col />
+              <col className="w-[90px]" />
+            </colgroup>
+            <thead>
+              <tr className="[&>th]:h-[34px] [&>th]:border-b [&>th]:border-border [&>th]:px-2.5 [&>th]:text-left [&>th]:text-[12.5px] [&>th]:font-medium [&>th]:text-faint [&>th+th]:border-l">
+                <th scope="col">Collection</th>
+                {technical && <th scope="col">Reference</th>}
+                <th scope="col">What it holds</th>
+                <th scope="col" className="text-right!">
+                  Records
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((k) => {
+                const params = {
+                  authority: k.authority,
+                  pkg: k.package,
+                  name: k.name,
+                }
+                const purpose = kindPurpose(k)
+                return (
+                  <tr
+                    key={k.identity}
+                    className="cursor-pointer [&:hover>td]:bg-[color-mix(in_oklab,var(--background)_96%,var(--foreground))] [&:last-child>td]:border-b-0 [&>td]:h-[38px] [&>td]:overflow-hidden [&>td]:border-b [&>td]:border-border [&>td]:px-2.5 [&>td]:whitespace-nowrap [&>td+td]:border-l"
+                    onClick={() =>
+                      void navigate({
+                        to: "/data/$authority/$pkg/$name",
+                        params,
+                      })
+                    }
+                  >
+                    <td className="font-medium">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <KindGlyph kind={k} size="sm" />
+                        <Link
+                          to="/data/$authority/$pkg/$name"
+                          params={params}
+                          className="truncate underline-offset-[3px] hover:underline hover:decoration-border-strong"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {displayPlural(k)}
+                        </Link>
+                        {technical && <PurposeTag purpose={purpose} />}
+                      </span>
+                    </td>
+                    {technical && (
+                      <td>
+                        <span className="block truncate">
+                          <KindPath reference={k.identity} />
+                        </span>
+                      </td>
+                    )}
+                    <td className="text-muted-foreground">
+                      <span
+                        className="block truncate"
+                        title={k.description || undefined}
+                      >
+                        {kindDescription(k, technical) || (
+                          <span className="text-faint">—</span>
+                        )}
+                      </span>
+                    </td>
+                    <td className="text-right">
+                      <CountCell kind={k} />
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {hidden.length > 0 && (
+        <p className="mx-0.5 mt-2 max-w-[80ch] text-[12.5px] text-faint">
+          {hiddenKindsNote(hidden)}
+        </p>
+      )}
+    </>
   )
 }
 
-function buildColumns(): DataTableColumn<KindInfo>[] {
-  return [
-    {
-      id: "package",
-      accessorFn: (k) => k.package,
-      enableSorting: false,
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="package" />
-      ),
-      cell: ({ row }) => (
-        <span className="block truncate data">{row.original.package}</span>
-      ),
-      meta: { label: "package", width: 140 },
-    },
-    {
-      id: "kind",
-      accessorFn: (k) => k.name,
-      enableSorting: false,
-      enableHiding: false,
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="kind" />
-      ),
-      cell: ({ row }) => (
-        <Link
-          to="/data/$authority/$pkg/$name"
-          params={{
-            authority: row.original.authority,
-            pkg: row.original.package,
-            name: row.original.name,
-          }}
-          className="block truncate data underline-offset-4 hover:underline"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {row.original.name}
-        </Link>
-      ),
-      meta: { label: "kind", width: 180 },
-    },
-    {
-      id: "description",
-      accessorFn: (k) => kindDescription(k),
-      enableSorting: false,
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="description" />
-      ),
-      cell: ({ row }) => {
-        const text = kindDescription(row.original)
-        if (!text) return null
-        return (
-          // the truncated remainder stays readable on hover (sweep finding,
-          // 2026-08-06); truncation only at the column boundary
-          <span className="block truncate text-muted-foreground" title={text}>
-            {text}
-          </span>
-        )
-      },
-      meta: { label: "description", size: { min: 240, weight: 2 } },
-    },
-    {
-      id: "records",
-      enableSorting: false,
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="records" align="right" />
-      ),
-      cell: ({ row }) => <CountCell kind={row.original} />,
-      meta: {
-        label: "records",
-        width: 100,
-        headerClassName: "text-right",
-        cellClassName: "text-right",
-      },
-    },
-  ]
-}
-
-/** The kinds table both data-root pages render: one heading, one table, one
- * empty state. `scope` is what the reader asked for and what the empty state
- * names; `title` is the heading. */
-function KindsTable({
-  scope,
-  kinds,
-  prefsKey,
+function PageState({
   pending,
   error,
+  empty,
 }: {
-  scope: string
-  kinds: KindInfo[]
-  prefsKey: string
   pending: boolean
   error?: Error | null
+  empty: boolean
 }) {
-  const navigate = useNavigate()
-  const columns = useMemo(() => buildColumns(), [])
-  const table = useDataTable({
-    columns,
-    data: kinds,
-    getRowId: (k) => k.identity,
-    prefsKey,
-  })
-
   if (pending) {
     return (
-      <div className="flex flex-col gap-3 px-6 pt-5">
-        <Skeleton className="h-6 w-56" />
-        <Skeleton className="mt-1 h-3.5 w-40" />
-        <div className="mt-3 flex flex-col gap-2">
-          {Array.from({ length: 5 }, (_, i) => (
-            <Skeleton key={i} className="h-8 w-full" />
-          ))}
-        </div>
+      <div className="mt-6 flex flex-col gap-2">
+        {Array.from({ length: 5 }, (_, i) => (
+          <Skeleton key={i} className="h-9 w-full" />
+        ))}
       </div>
     )
   }
-
-  if (error || !kinds.length) {
-    return (
-      <div className="flex flex-1 p-6">
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <FileCode2Icon />
-            </EmptyMedia>
-            <EmptyTitle>
-              {error ? "Kinds didn't load" : "No kinds here"}
-            </EmptyTitle>
-            <EmptyDescription>
-              {error ? (
-                error.message
-              ) : (
-                <>
-                  <span className="data">{scope}</span> declares no kinds.
-                </>
-              )}
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      </div>
-    )
-  }
-
+  if (!error && !empty) return null
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-end justify-between gap-3 px-6 pt-5 pb-2">
-        <div>
-          <h1 className="data text-lg font-semibold">{scope}</h1>
-          <p className="text-xs text-muted-foreground">
-            {kinds.length} {kinds.length === 1 ? "kind" : "kinds"}
-          </p>
-        </div>
-        <DataTableViewOptions table={table} />
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto">
-        <DataTable
-          table={table}
-          onRowClick={(k) =>
-            void navigate({
-              to: "/data/$authority/$pkg/$name",
-              params: { authority: k.authority, pkg: k.package, name: k.name },
-            })
-          }
-        />
-      </div>
-    </div>
+    <Empty className="mt-6">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <FileCode2Icon />
+        </EmptyMedia>
+        <EmptyTitle>
+          {error ? "These collections didn't load" : "Nothing here"}
+        </EmptyTitle>
+        <EmptyDescription>
+          {error
+            ? `${error.message}. Reload the page to try again.`
+            : "Nothing in your substrate is published here."}
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   )
 }
 
-/** Every kind one authority publishes, across its packages. */
+function countWord(n: number): string {
+  return `${n} ${n === 1 ? "collection" : "collections"}`
+}
+
+/** Every collection one authority publishes, a section per package. */
 export function AuthorityPage() {
   const { authority } = authorityRoute.useParams()
+  const [technical] = useTechnicalDetails()
   const registry = useQuery(kindsQueryOptions)
   const kinds = useMemo(
     () =>
@@ -230,40 +199,143 @@ export function AuthorityPage() {
         .filter((k) => k.authority === authority)
         .sort(
           (a, b) =>
-            a.package.localeCompare(b.package) || a.name.localeCompare(b.name)
+            a.package.localeCompare(b.package) ||
+            displayPlural(a).localeCompare(displayPlural(b))
         ),
     [registry.data, authority]
   )
+  const packages = useMemo(() => {
+    const out = new Map<string, KindInfo[]>()
+    for (const k of kinds) {
+      out.set(k.package, [...(out.get(k.package) ?? []), k])
+    }
+    return [...out.entries()]
+  }, [kinds])
+  const primary = kinds.filter((k) => kindPurpose(k) === "primary").length
+  const providers = authority === PROVIDERS_AUTHORITY
   return (
-    <KindsTable
-      scope={authority}
-      kinds={kinds}
-      prefsKey="authority-kinds"
-      pending={registry.isPending}
-      error={registry.isError ? registry.error : null}
-    />
+    <TablePage>
+      <PageHeader
+        title={
+          technical ? (
+            <span className="font-mono">{authority}</span>
+          ) : (
+            authorityTitle(authority)
+          )
+        }
+        meta={
+          <>
+            <span>
+              {countWord(technical ? kinds.length : primary)}
+              {packages.length > 1 && ` in ${packages.length} packages`}
+            </span>
+            {technical && (
+              <CopyButton value={authority} label="Copy the authority" />
+            )}
+          </>
+        }
+        description={
+          providers
+            ? "Collections providers publish. Their records are copies, kept up to date by each provider."
+            : "The collections published under this name."
+        }
+      />
+      <PageState
+        pending={registry.isPending}
+        error={registry.isError ? registry.error : null}
+        empty={!registry.isPending && !kinds.length}
+      />
+      {packages.map(([pkg, list]) => (
+        <section key={pkg}>
+          <SectionHead
+            title={
+              <>
+                {providers && <ProviderBadge provider={pkg} size="sm" />}
+                <Link
+                  to="/data/$authority/$pkg"
+                  params={{ authority, pkg }}
+                  className="underline-offset-[3px] hover:underline"
+                >
+                  {technical && !providers ? pkg : packageTitle(authority, pkg)}
+                </Link>
+              </>
+            }
+            hint={
+              technical && (
+                <span className="font-mono text-[12px]">
+                  {authority}/{pkg}
+                </span>
+              )
+            }
+          />
+          <KindsList kinds={list} />
+        </section>
+      ))}
+    </TablePage>
   )
 }
 
-/** The kinds of ONE package, the group a declaration is versioned and
+/** The collections of ONE package, the group a declaration is versioned and
  * quarantined in (decision 0047). */
 export function PackagePage() {
   const { authority, pkg } = packageRoute.useParams()
+  const [technical] = useTechnicalDetails()
   const registry = useQuery(kindsQueryOptions)
   const kinds = useMemo(
     () =>
       (registry.data ?? [])
         .filter((k) => k.authority === authority && k.package === pkg)
-        .sort((a, b) => a.name.localeCompare(b.name)),
+        .sort((a, b) => displayPlural(a).localeCompare(displayPlural(b))),
     [registry.data, authority, pkg]
   )
+  const primary = kinds.filter((k) => kindPurpose(k) === "primary").length
+  const provider = authority === PROVIDERS_AUTHORITY ? providerInfo(pkg) : null
   return (
-    <KindsTable
-      scope={`${authority}/${pkg}`}
-      kinds={kinds}
-      prefsKey="package-kinds"
-      pending={registry.isPending}
-      error={registry.isError ? registry.error : null}
-    />
+    <TablePage>
+      <PageHeader
+        title={
+          <span className="flex items-center gap-2.5">
+            {provider && <ProviderBadge provider={provider} size="md" />}
+            {technical && !provider ? (
+              <span className="font-mono">{pkg}</span>
+            ) : (
+              packageTitle(authority, pkg)
+            )}
+          </span>
+        }
+        meta={
+          <>
+            {technical && (
+              <span className="inline-flex items-center gap-1">
+                <span className="font-mono text-[12.5px]">
+                  <span className="text-faint">{authority}/</span>
+                  <span className="text-foreground">{pkg}</span>
+                </span>
+                <CopyButton
+                  value={`${authority}/${pkg}`}
+                  label="Copy the package"
+                />
+              </span>
+            )}
+            <span>{countWord(technical ? kinds.length : primary)}</span>
+          </>
+        }
+        description={
+          provider
+            ? `Read-only copies, kept up to date by ${provider.name}.`
+            : undefined
+        }
+      />
+      <PageState
+        pending={registry.isPending}
+        error={registry.isError ? registry.error : null}
+        empty={!registry.isPending && !kinds.length}
+      />
+      {kinds.length > 0 && (
+        <div className="mt-6">
+          <KindsList kinds={kinds} />
+        </div>
+      )}
+    </TablePage>
   )
 }

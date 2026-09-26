@@ -1,5 +1,5 @@
 /** Record reads and writes: keyset-paged lists off the one records route
- * (server-side filter/sort), a bounded size probe, the ranked read, single-
+ * (server-side filter/sort), a filtered set's size, the ranked read, single-
  * record reads (the only wire surface carrying `propertyMeta`), the reverse
  * read (what points at a record), and the change feed filtered to one record.
  *
@@ -74,6 +74,9 @@ export interface ListParams {
   /** Reference properties whose referents the page carries in `included`,
    * one hop. Each must be declared by a kind the scope admits. */
   expand?: string[]
+  /** Ask for the size of the whole filtered set beside the page
+   * (`count=1`); the page answers it as `count`. */
+  count?: boolean
 }
 
 /** The kinds a list's scope names, as the filter spells them. */
@@ -114,6 +117,7 @@ export function listPath(p: ListParams): string {
   if (filter) q.set("filter", JSON.stringify(filter))
   if (p.orderBy) q.set("orderBy", p.orderBy)
   if (p.expand?.length) q.set("expand", p.expand.join(","))
+  if (p.count) q.set("count", "1")
   return `${RECORDS_PATH}?${q}`
 }
 
@@ -161,6 +165,7 @@ export function recordsQueryOptions(p: ListParams) {
         filter: listFilter(p) ?? null,
         orderBy: p.orderBy ?? null,
         expand: p.expand ?? null,
+        count: p.count ?? false,
       },
     ],
     queryFn: ({ signal }) => fetchRecordsPage(p, signal),
@@ -281,10 +286,10 @@ export function mergeRequestsForQueryOptions(ref: string, enabled = true) {
 
 // ── size ──────────────────────────────────────────────────────────────────
 
-/** A collection size. The server has no count route, so a size is a BOUNDED
- * keyset walk: `value` is what was counted, and `capped` is true when the
- * collection outran the walk's ceiling (render it as `value+`, and never as
- * the last page of a numbered bar — it is a floor). */
+/** A collection size: `value` is what was counted, and `capped` is true
+ * when the collection outran a fallback walk's ceiling (render it as
+ * `value+`, and never as the last page of a numbered bar — it is a floor). A
+ * server that answers `count` is never capped. */
 export interface RecordCount {
   value: number
   capped: boolean
@@ -297,8 +302,112 @@ const COUNT_PAGE = 500
  * every realistic collection, an honest `N+` for the pathological one. */
 const COUNT_MAX_PAGES = 20
 
-/** Count a collection by walking the opaque cursor, bounded by the ceiling. */
+/** The probe's ceiling: past this many rows a size answers `capped`. */
+const PROBE_MAX = 1 << 17
+
+/** Count a collection without reading it.
+ *
+ * The list answers the size of its filtered set when asked (`count=1`,
+ * decision 0107): one read of one row, and the number is exact. A server
+ * that predates the parameter refuses it by name (`400`: the list refuses
+ * every parameter it does not know), and a window read refuses it too, since
+ * computed occurrences are not rows; either way, and on a `200` that carries
+ * no `count`, the size falls back to what the wire offered before. That is
+ * detected from the answer, never from a version.
+ *
+ * The fallback asks for ONE row at an `offset`: a row there means the
+ * collection is longer than the offset. Doubling offsets bracket the size,
+ * and a bisection narrows it, so a 10,000-row collection costs ~30 one-row
+ * reads. Offsets are refused on a window read (decision 0084), so a refusal
+ * falls back again to the bounded keyset walk. A write landing mid-probe can
+ * skew a glance by a row; these surfaces glance, they do not audit. */
 export async function countRecords(
+  authority: string,
+  pkg: string,
+  name: string,
+  filter: RecordFilter | undefined,
+  signal?: AbortSignal
+): Promise<RecordCount> {
+  const scope = { authority, package: pkg, name, filter }
+  let first: Page | undefined
+  try {
+    first = await request<Page>(
+      "GET",
+      listPath({ ...scope, first: 1, count: true }),
+      undefined,
+      { signal }
+    )
+  } catch (err) {
+    // A refusal of the request's shape is the older server (or the window
+    // read) saying no to `count`; anything else is the read's own failure.
+    if (
+      !(err instanceof ApiError) ||
+      (err.status !== 400 && err.status !== 422)
+    )
+      throw err
+  }
+  if (typeof first?.count === "number")
+    return { value: first.count, capped: false }
+  return probeCount(scope, first, signal)
+}
+
+/** Count by one-row offset probes. `atZero` is a first-row read already in
+ * hand (the count request's own page), so it is not asked twice. */
+async function probeCount(
+  scope: {
+    authority: string
+    package: string
+    name: string
+    filter: RecordFilter | undefined
+  },
+  atZero: Page | undefined,
+  signal?: AbortSignal
+): Promise<RecordCount> {
+  const has = async (offset: number): Promise<boolean> => {
+    if (offset === 0 && atZero) return (atZero.records?.length ?? 0) > 0
+    const res = await request<Page>(
+      "GET",
+      listPath({ ...scope, first: 1, offset }),
+      undefined,
+      { signal }
+    )
+    return (res.records?.length ?? 0) > 0
+  }
+  try {
+    // One probe at a time: a caller may budget one connection per count
+    // (api/overview.ts), so doubling runs in sequence, not in parallel.
+    if (!(await has(0))) return { value: 0, capped: false }
+    let last = 0
+    let next = 1
+    while (await has(next)) {
+      if (next >= PROBE_MAX) return { value: PROBE_MAX, capped: true }
+      last = next
+      next *= 2
+    }
+    // A row exists at `last` and none at `next`: the size is the first empty
+    // offset in (last, next].
+    let lo = last + 1
+    let hi = next
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2)
+      if (await has(mid)) lo = mid + 1
+      else hi = mid
+    }
+    return { value: lo, capped: false }
+  } catch (err) {
+    if (signal?.aborted) throw err
+    return walkCount(
+      scope.authority,
+      scope.package,
+      scope.name,
+      scope.filter,
+      signal
+    )
+  }
+}
+
+/** Count a collection by walking the opaque cursor, bounded by the ceiling. */
+async function walkCount(
   authority: string,
   pkg: string,
   name: string,
@@ -410,6 +519,55 @@ export function recordQueryOptions(
         { signal }
       ),
   })
+}
+
+// ── what a write makes stale ────────────────────────────────────────────────
+
+/** Whether a cached read can show a record one write just changed: the
+ * record itself and its history, any read that names its kind anywhere in its
+ * key (a collection, a count, a trait's read, the Agents page's providers), a
+ * list or a ranking over every kind, the batched title reads that name the
+ * record, and the reverse reads, since a moved pointer moves who is pointed
+ * at. Everything else keeps its cache: another kind's list is not this
+ * record's business. */
+export function recordWriteReaches(
+  queryKey: readonly unknown[],
+  kind: string,
+  id: string
+): boolean {
+  const [head, second, third] = queryKey
+  switch (head) {
+    case "record":
+      return (
+        joinKind(String(second), String(third), String(queryKey[3])) === kind &&
+        queryKey[4] === id
+      )
+    case "reference-titles":
+      return (
+        Array.isArray(second) &&
+        second.includes(kind) &&
+        Array.isArray(third) &&
+        third.includes(id)
+      )
+    case "referencing":
+      return true
+    case "records":
+      if (Array.isArray(second) && second.length === 0) return true
+      break
+    case "records-search":
+      if ((third as { kinds?: unknown } | undefined)?.kinds == null) return true
+      break
+  }
+  return mentions(queryKey, kind)
+}
+
+function mentions(value: unknown, kind: string): boolean {
+  if (typeof value === "string")
+    return value === kind || value.startsWith(`${kind}/`)
+  if (Array.isArray(value)) return value.some((v) => mentions(v, kind))
+  if (value && typeof value === "object")
+    return Object.values(value).some((v) => mentions(v, kind))
+  return false
 }
 
 // ── writes (bundle config + account records, integrations flow) ─────────────
@@ -615,7 +773,7 @@ async function fetchRecordHistory(
       before,
       generation,
       first: FORMER_SLICE_PAGE,
-      filter: { recordId, recordKind },
+      filter: { recordId, recordKind, values: true },
       signal,
     })
     rows.push(...res.changes)
@@ -662,7 +820,7 @@ export function recordChangesInfiniteOptions(
         before: pageParam.before > 0 ? pageParam.before : undefined,
         generation: pageParam.generation,
         first,
-        filter: { recordId, recordKind },
+        filter: { recordId, recordKind, values: true },
         signal,
       }),
     initialPageParam: { before: 0 } as HistoryPosition,

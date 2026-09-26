@@ -248,6 +248,9 @@ export interface Page<T = SubstrateRecord> {
   /** On a window read (`at` bounded on both ends): each series the expansion
    * could not read, named; the page stands without it. */
   problems?: OccurrenceProblem[]
+  /** The size of the whole filtered set, when the read asked `count=1`;
+   * absent otherwise, and from a server that predates the parameter. */
+  count?: number
 }
 
 /** A ranked read's answer (`substrate.RankedPage`, `GET /records?q=`): the
@@ -298,6 +301,21 @@ export interface AffectedRecord {
   id: string
   version?: number
   deleted?: boolean
+  /** What the entry did to each property, before and after, in name order.
+   * Only on a read that asked (`values=1`, decision 0108) from a server that
+   * knows it; absent otherwise, so its absence is never "nothing changed". */
+  properties?: PropertyChange[]
+}
+
+/** One property an entry moved (`substrate.PropertyChange`). `before` is
+ * absent where the record held no value, `after` where the entry cleared it;
+ * a sensitive property reads `<redacted>` on both sides. `beforeUnknown`
+ * marks a before the server could not derive, which is not "there was none". */
+export interface PropertyChange {
+  name: string
+  before?: unknown
+  after?: unknown
+  beforeUnknown?: boolean
 }
 
 /** One changelog entry as the server serializes it (`substrate.Change`). */
@@ -417,6 +435,9 @@ export interface ReferenceSite {
 export interface EnumValue {
   value: string
   label: string
+  /** The add-and-deprecate marker: still admitted and still held by records
+   * that carry it, never offered by a picker. */
+  deprecated?: boolean
 }
 
 /** Parse a property's raw `values` (the enum admitted set) into `EnumValue[]`.
@@ -436,6 +457,7 @@ export function parseEnumValues(raw: unknown): EnumValue[] | undefined {
         out.push({
           value: rec.value,
           label: typeof rec.label === "string" ? rec.label : "",
+          ...(rec.deprecated === true ? { deprecated: true } : {}),
         })
       }
     }
@@ -657,6 +679,10 @@ export interface BundleClosure {
    * kinds ARE before an install has put them in the registry. Absent for a
    * kind that declares none, and from an older server whole. */
   kindDescriptions?: Record<string, string>
+  /** Each kind's declared `purpose` (decision record 0106), keyed the same
+   * way. Absent for a kind that declares none, which reads as primary, and
+   * from an older server whole. */
+  kindPurposes?: Record<string, string>
   /** The contracts the closure declares, and what each one is. A package can
    * ship traits and nothing else, so these are the whole of what it adds. */
   traits: string[] | null

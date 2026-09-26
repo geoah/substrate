@@ -17,6 +17,8 @@
 
 import type { Cond, RecordFilter } from "@/lib/api/types"
 import type { DeclaredProperty } from "@/lib/definition"
+import { enumLabel } from "@/lib/grid-values"
+import { stateWord } from "@/lib/state-words"
 
 export type FilterOp = "eq" | "contains" | "prefix" | "match"
 
@@ -189,6 +191,56 @@ export function displayValue(f: ActiveFilter, prop?: DeclaredProperty): string {
   if (f.op === "prefix") return `${f.value}*`
   if (f.op !== "match" && canMatch(prop)) return `=${f.value}`
   return f.value
+}
+
+// ── picked values ───────────────────────────────────────────────────────────
+
+/** Whether a field's values are a declared set the reader picks from rather
+ * than types: a state machine's states, an enum's values, a yes or no. */
+export function isChoiceField(prop?: DeclaredProperty): boolean {
+  if (!prop) return false
+  if (prop.kind === "state") return Boolean(prop.states?.length)
+  if (prop.kind === "enum") return Boolean(prop.values?.length)
+  return prop.kind === "bool"
+}
+
+/** Whether a picked filter may hold several values at once. A scalar folds
+ * them to `in`, "any of"; a repeated value is matched item-wise by
+ * `contains`, which holds one. */
+export function picksMany(prop?: DeclaredProperty): boolean {
+  return isChoiceField(prop) && prop?.kind !== "bool" && !prop?.repeated
+}
+
+/** One picked value in the words the grid shows it in: a state's word, an
+ * enum's label, Yes or No. `words` is off for a bar whose "states" are not a
+ * record's (the History bar's kinds and actors), which keeps them stored. */
+export function choiceWord(
+  value: string,
+  prop: DeclaredProperty | undefined,
+  words: boolean
+): string {
+  if (prop?.kind === "bool")
+    return value === "true" ? "Yes" : value === "false" ? "No" : value
+  if (prop?.kind === "enum") return enumLabel(prop, value)
+  if (prop?.kind === "state" && words) return stateWord(value)
+  return value
+}
+
+/** What an applied control says after its field: the picked values in
+ * words for a declared set, else the value as the editor takes it. */
+export function filterValueText(
+  f: ActiveFilter,
+  prop: DeclaredProperty | undefined,
+  words: boolean
+): string {
+  if (isChoiceField(prop) && f.op !== "match" && f.op !== "prefix")
+    return f.value
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean)
+      .map((v) => choiceWord(v, prop, words))
+      .join(", ")
+  return displayValue(f, prop).replaceAll(",", ", ")
 }
 
 // ── per-type persistence (localStorage) ─────────────────────────────────────

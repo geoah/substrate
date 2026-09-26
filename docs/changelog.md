@@ -94,12 +94,58 @@ version.
 What the event promises: a client that fetches each affected record as the
 stream names it, and drops the ones the stream says are deleted, holds a
 current copy of the repository, and a copy already at the named version or
-past it need not fetch. What it does not promise: the values a change wrote,
-or a record's history. A property value is read off the record, never off the
-stream, and a past version cannot be reconstructed from public rows
+past it need not fetch. What it does not promise: a record's history. A
+record's current value is read off the record, never off the stream, and a
+past version cannot be reconstructed from public rows
 ([decision 0061](decisions/0061-a-change-event-names-the-affected-records-and-clients-fetch-them.md)).
 The [trigger envelope](functions.md#triggers) makes the same promise in the
 same way: it ships the record's current state beside the change.
+
+### Values, on request
+
+A read that passes `values=1` gets, on each affected record, what the entry
+did to each property it moved, before and after, in name order:
+
+```json
+{"kind": "samples.substrate.reamde.dev/tasks/task", "id": "kq3v9x2m41pf", "version": 4,
+ "properties": [
+   {"name": "description", "before": "Numbers from finance first."},
+   {"name": "priority", "before": "high", "after": "urgent"},
+   {"name": "url", "after": "https://tracker.example.com/1"}]}
+```
+
+`before` is absent where the record held no value (a property the entry
+added, or any property of a creation), and `after` is absent where the entry
+cleared it. The values are the ones a read of the record renders, under the
+same names: the declared properties, `title` where the kind does not render
+it from a template, a declared `body`, the instants, and each state. A
+sensitive property reads `<redacted>` on both sides, exactly as a record read
+renders it, and a kind the repository no longer declares carries no values.
+
+The redaction fails closed, because the history outlives the declaration it
+was written under and only the current one is consulted. A property value is
+shown only where the kind declares that name now (or declares it as a
+property's `renamedFrom`), with a datatype that is not sensitive, and the
+value is not shaped like what a secret or a digest stores. So a secret that
+was renamed, dropped or retyped, or whose kind was redeclared, still reads
+`<redacted>` in every entry that sealed it, and so does any property the kind
+no longer declares at all.
+A delete, a tombstone or a purge moves no property, so its record carries
+none.
+
+Nothing is stored for this: `after` is the entry's own effect, and `before`
+is derived by walking the record's earlier entries newest first (its own, and
+any merge or split naming it) to the last one that set or cleared the
+property, stopping at the record's creation. The walk checks the record's
+versions run unbroken. Where it cannot answer (a gap in them, an entry written
+before entries held values, a history with no creation, or a previous write
+further back than the read's budget of 4096 earlier entries, which every
+record on the page shares) the property carries `"beforeUnknown": true` and
+no `before`, which is not the same as "there was none"
+([decision 0108](decisions/0108-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md)).
+The walk costs a read per record on the page, so a client that does not ask
+pays nothing and gets the same rows without `properties`. Every mode of
+`/changes` honours it: the history page, the forward read and the watch.
 
 Two guarantees consumers may lean on:
 
@@ -328,7 +374,8 @@ the same way in watch and history modes alike. Every filter parameter is plural
 and takes a repeated parameter or a comma-separated list: `kinds`, `ops`,
 `actors`, and their negations `excludeKinds`, `excludeOps`, `excludeActors`.
 `q` matches free text across the row's kind, actor, record id and payload
-text. Scoping the feed to one record takes **both** `recordId` and
+text. `values=1` narrows nothing: it adds each record's
+[before and after values](#values-on-request) to the rows. Scoping the feed to one record takes **both** `recordId` and
 `recordKind`, because an id alone names no record; either one without the
 other is a `bad_request`. The scope also returns a `merge` or `split` entry
 whose payload names the id as `winner` or `loser`. Such a row's own `recordId`
@@ -400,8 +447,8 @@ horizon, and the horizon is where policy lives.
   never shows.
 - **Watchers**: the stream above, and `substratectl watch` is that stream in a
   terminal ([substratectl](substratectl.md)). Providers reconcile from it.
-- **The console's events page** is the same feed, paged backward through
-  history and filtered ([web console](console.md)).
+- **The console's History page** is the same feed, paged backward through
+  history and filtered ([web console](console.md#history)).
 - **`rebuild`** replays it from the segment files, which is what makes the
   fold disposable and the repository directory the thing you back up
   ([running a substrate](operations.md#backups)).

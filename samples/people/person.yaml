@@ -11,11 +11,11 @@ data:
   authority: samples.substrate.reamde.dev
   package: people
   description: >-
-    One human, one record: every reference in every package that means "a
-    person" lands here. What one source holds about them — a Google contact,
-    a GitHub user — is that bundle's own record pointing here, so a person
-    carries many provider identities and stays one row.
-  version: 5
+    Someone you know. One human, one record: every reference in every package
+    that means "a person" lands here. What one source holds about them — a
+    Google contact, a GitHub user — is that bundle's own record pointing here,
+    so a person carries many provider identities and stays one row.
+  version: 6
   names:
     singular: person
   # what a human recognizes first is the friendly name; the full name is the

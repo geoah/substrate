@@ -15,7 +15,7 @@ import type {
   SyncStream,
   TriggerStatus,
 } from "@/lib/api/types"
-import { splitKind } from "@/lib/api/http"
+import { CORE_PACKAGE, splitKind } from "@/lib/api/http"
 import { kindPackage } from "@/lib/definition"
 
 /** The trait's five words, in the order a legend lists them. */
@@ -199,8 +199,10 @@ export interface AccountView {
   health: Health
 }
 
-/** A kind carries a trait when its reconciled declaration lists it — by bare
- * name (the shipped spelling) or by full identity. */
+/** A kind carries a trait when its reconciled declaration lists it, by
+ * its full identity (every stored declaration names it in full, decision
+ * 0101) or by the bare shipped spelling an older declaration kept. A bare
+ * `trait` argument names the core trait of that name. */
 export function kindHasTrait(
   kind: KindInfo | undefined,
   trait: string
@@ -208,7 +210,8 @@ export function kindHasTrait(
   const traits = (kind?.definition as { traits?: unknown } | undefined)?.traits
   if (!Array.isArray(traits)) return false
   const bare = trait.slice(trait.lastIndexOf("/") + 1)
-  return traits.some((t) => t === trait || t === bare)
+  const full = trait.includes("/") ? trait : `${CORE_PACKAGE}/${trait}`
+  return traits.some((t) => t === full || t === bare)
 }
 
 export function accountViewOf(
@@ -269,6 +272,47 @@ export const OAUTH2_CLIENT_PROPERTIES: readonly string[] = [
   "clientId",
   "clientSecret",
 ]
+
+/** Where a provider's app is made, where "with <Provider>" would misname it:
+ * Google's clients live in its Cloud console, not in Google. */
+const APP_HOME: Readonly<Record<string, string>> = {
+  google: "in Google Cloud",
+}
+
+/** "in Google Cloud", else "with <Provider>": where a person goes to make
+ * the app a provider signs in through. */
+export function appHome(kind: KindInfo, providerName: string): string {
+  return APP_HOME[splitKind(kind.identity).pkg] ?? `with ${providerName}`
+}
+
+/** The help under each credentials control, in the console's words: where
+ * the client ID comes from, and what happens to a secret. The declarations'
+ * own descriptions are developer notes, which technical mode shows instead. */
+export function credentialHelp(
+  kind: KindInfo,
+  providerName: string,
+  oauth: boolean
+): Record<string, string> {
+  const where = appHome(kind, providerName)
+  const declared = (kind.definition.properties ?? {}) as Record<
+    string,
+    { type?: string } | undefined
+  >
+  const out: Record<string, string> = {}
+  for (const [name, p] of Object.entries(declared)) {
+    if (p?.type === "secret") out[name] = "Saved once and never shown again."
+  }
+  if (oauth && declared.clientId)
+    out.clientId = `From the app you created ${where}.`
+  return out
+}
+
+/** An account's label where it opens a sentence: a plain name ("work")
+ * takes a capital, an address or handle stays exactly as it is written. */
+export function labelAtStart(label: string): string {
+  if (!label || /[@./:]/.test(label)) return label
+  return label[0].toUpperCase() + label.slice(1)
+}
 
 // ── the providers list ───────────────────────────────────────────────────────
 

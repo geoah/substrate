@@ -21,6 +21,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
+import { useDocumentTitle } from "@/hooks/use-document-title"
 import {
   CODE_DIGITS,
   normalizeCode,
@@ -143,6 +144,7 @@ function repositoryAuthority(name: string, host: string): string {
  * Where the substrate verifies no second factor there IS no step two: the one
  * form commits, and the seed is minted server-side and enrolled nowhere. */
 export function RegisterPage() {
+  useDocumentTitle("Register")
   const { inviteRequired, totpRequired } = useAuthPolicy()
   const navigate = useNavigate()
   const [inviteCode, setInviteCode] = useState("")
@@ -320,11 +322,9 @@ export function RegisterPage() {
             <CardHeader>
               <CardTitle>Register</CardTitle>
               <CardDescription>
-                {inviteRequired
-                  ? "An invite code creates your repository, seeded with the shipped kinds."
-                  : "Registering creates your repository, seeded with the shipped kinds."}{" "}
+                Choose the name your data lives under, and a password.
                 {totpRequired &&
-                  `It takes the repository name, a password and a ${CODE_DIGITS}-digit code.`}
+                  ` Then a ${CODE_DIGITS}-digit code from your authenticator app.`}
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-6">
@@ -356,7 +356,7 @@ export function RegisterPage() {
                         autoFocus
                       />
                       <FieldDescription>
-                        The code the operator configured on this substrate.
+                        The code you were given to join this substrate.
                       </FieldDescription>
                     </Field>
                   )}
@@ -374,13 +374,12 @@ export function RegisterPage() {
                       disabled={enrollment !== null}
                     />
                     <FieldDescription>
-                      Any hostname you control, such as ada.example.com. It is
-                      the name you sign in with, and where every kind you
-                      declare lives.
+                      The name you sign in with, and the address of your data,
+                      such as ada.example.com.
                       {authority
-                        ? ` A plain name lands as ${authority}.`
+                        ? ` A plain name becomes ${authority}.`
                         : ""}{" "}
-                      You cannot change it later.
+                      You can’t change it later.
                     </FieldDescription>
                   </Field>
                   <Field>
@@ -396,8 +395,8 @@ export function RegisterPage() {
                     <FieldDescription>
                       At least {MIN_PASSWORD} characters.{" "}
                       {totpRequired
-                        ? "If you lose both factors, only the operator can reset you."
-                        : "If you lose it, only the operator can reset you."}
+                        ? "If you lose both, only whoever runs this substrate can reset them."
+                        : "If you lose it, only whoever runs this substrate can reset it."}
                     </FieldDescription>
                   </Field>
                   <Field

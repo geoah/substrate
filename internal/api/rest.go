@@ -209,7 +209,7 @@ var (
 	// changeParams is the cross-collection changefeed: the two modes' cursors
 	// plus the change filter, whose list-valued keys are all PLURAL.
 	changeParams = []string{
-		"watch", "from", "generation", "before", "first",
+		"watch", "from", "generation", "before", "first", "values",
 		"recordId", "recordKind", "q",
 		"kinds", "excludeKinds", "actors", "excludeActors", "ops", "excludeOps",
 	}
@@ -284,7 +284,7 @@ func parseFirst(r *http.Request) (int, error) {
 // or JSON, both through substrate.ParseOrderBy, which the runner's list host
 // call shares), first with either continuation (after, the keyset cursor, or
 // offset, the numbered-page skip), expand (comma-separated reference
-// properties) and the heavy-data opt-in.
+// properties), the heavy-data opt-in and the count.
 func parseQuery(r *http.Request) (substrate.Query, error) {
 	v := r.URL.Query()
 	var q substrate.Query
@@ -315,6 +315,14 @@ func parseQuery(r *http.Request) (substrate.Query, error) {
 		q.Offset = n
 	}
 	q.WithAnnotations = v.Get("withAnnotations") == "1"
+	// `count=1` is the one spelling: a `count=true` read as "no count" would
+	// answer a page without the number the caller is about to render.
+	if v.Has("count") {
+		if v.Get("count") != "1" {
+			return q, errors.New("count: 1 asks for the size of the filtered set; no other value is accepted")
+		}
+		q.Count = true
+	}
 	if raw := v.Get("expand"); raw != "" {
 		for _, name := range strings.Split(raw, ",") {
 			if name = strings.TrimSpace(name); name != "" {

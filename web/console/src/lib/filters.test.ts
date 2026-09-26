@@ -4,13 +4,17 @@ import { beforeEach, describe, expect, it } from "vitest"
 import {
   canMatch,
   canPrefix,
+  choiceWord,
   decodeFilter,
   decodeFilters,
   displayValue,
   encodeFilter,
+  filterValueText,
+  isChoiceField,
   loadBrowsePrefs,
   opFor,
   parseValueInput,
+  picksMany,
   saveBrowsePrefs,
   splitReferenceIds,
   toRecordFilter,
@@ -378,5 +382,70 @@ describe("a reference filter", () => {
   it("reads its ids back out of the comma-joined value, in order", () => {
     expect(splitReferenceIds("grace, ada,,")).toEqual(["grace", "ada"])
     expect(splitReferenceIds("")).toEqual([])
+  })
+})
+
+describe("picked values", () => {
+  const status: DeclaredProperty = {
+    name: "status",
+    kind: "state",
+    repeated: false,
+    states: ["proposed", "open"],
+  }
+  const priority: DeclaredProperty = {
+    name: "priority",
+    kind: "enum",
+    repeated: false,
+    values: [
+      { value: "high", label: "Urgent" },
+      { value: "inProgress", label: "" },
+    ],
+  }
+  const tags: DeclaredProperty = { ...priority, name: "tags", repeated: true }
+  const flag: DeclaredProperty = { name: "flag", kind: "bool", repeated: false }
+  const note: DeclaredProperty = {
+    name: "note",
+    kind: "string",
+    repeated: false,
+  }
+
+  it("knows a declared set from typed text", () => {
+    expect([status, priority, flag, note].map(isChoiceField)).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ])
+    expect(isChoiceField({ ...status, states: [] })).toBe(false)
+  })
+
+  it("picks several only where the wire folds them to any of", () => {
+    expect([status, priority, tags, flag].map(picksMany)).toEqual([
+      true,
+      true,
+      false,
+      false,
+    ])
+  })
+
+  it("says each value in the grid's words", () => {
+    expect(choiceWord("proposed", status, true)).toBe("Suggested")
+    expect(choiceWord("proposed", status, false)).toBe("proposed")
+    expect(choiceWord("high", priority, true)).toBe("Urgent")
+    expect(choiceWord("inProgress", priority, true)).toBe("In progress")
+    expect(choiceWord("false", flag, true)).toBe("No")
+  })
+
+  it("reads an applied control in words, typed text as typed", () => {
+    expect(
+      filterValueText(
+        { field: "status", op: "eq", value: "proposed,open" },
+        status,
+        true
+      )
+    ).toBe("Suggested, Open")
+    expect(
+      filterValueText({ field: "note", op: "eq", value: "a,b" }, note, true)
+    ).toBe("=a, b")
   })
 })

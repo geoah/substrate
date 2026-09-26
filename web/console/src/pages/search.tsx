@@ -1,16 +1,21 @@
 /** /search: the ranked read (`GET /records?q=`) as a page. A query in the
- * search grammar, the ARM to rank by (words, words + meaning, meaning — the
- * reader's choice, and it sticks), an optional kind to narrow the candidates,
- * and the hits in rank order with each one's raw per-arm score beside it.
- * The query, arm and kind live in the URL, so a search is shareable and the
- * back button returns to it. */
+ * search grammar, what to rank by (words, words + meaning, meaning; the
+ * reader's choice, and it sticks), an optional collection to narrow the
+ * candidates, and the hits in rank order. Technical mode adds each hit's raw
+ * per-arm scores and full reference. The query, the arm and the collection
+ * live in the URL, so a search is shareable and the back button returns to
+ * it. */
 
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Link } from "@tanstack/react-router"
-import { CheckIcon, ChevronsUpDownIcon, SearchXIcon } from "lucide-react"
+import { CheckIcon, ChevronsUpDownIcon } from "lucide-react"
 import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs"
 
+import { KindGlyph } from "@/components/identity/kind-glyph"
+import { KindPath, KindRef } from "@/components/identity/kind-ref"
+import { DocPage } from "@/components/identity/page-layout"
+import { PageHeader } from "@/components/identity/page-header"
+import { RecordRef } from "@/components/identity/record-ref"
 import { SearchBox } from "@/components/search-box"
 import { Button } from "@/components/ui/button"
 import {
@@ -22,28 +27,23 @@ import {
   CommandList,
 } from "@/components/ui/command"
 import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty"
-import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { splitKind } from "@/lib/api/http"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { searchQueryOptions } from "@/lib/api/records"
 import type { KindInfo, Scores, SubstrateRecord } from "@/lib/api/types"
+import { collectionGroups } from "@/lib/collections"
 import { recordTitle } from "@/lib/format"
+import { displayPlural, lowerFirst } from "@/lib/kind-names"
 import {
   SEARCH_GRAMMAR,
   SEARCH_MODE_DESCRIPTION,
+  SEARCH_MODE_DETAIL,
   SEARCH_MODE_LABEL,
   SEARCH_MODES,
   loadSearchMode,
@@ -56,6 +56,7 @@ import { cn } from "@/lib/utils"
 const HITS = 50
 
 export function SearchPage() {
+  const [technical] = useTechnicalDetails()
   const [q, setQ] = useQueryState("q", parseAsString.withDefault(""))
   // The URL names the arm when it says; otherwise the stored preference.
   const [modeParam, setModeParam] = useQueryState(
@@ -66,13 +67,7 @@ export function SearchPage() {
   const mode: SearchMode = modeParam ?? loadSearchMode()
 
   const registry = useQuery(kindsQueryOptions)
-  const kinds = useMemo(
-    () =>
-      [...(registry.data ?? [])].sort((a, b) =>
-        a.identity.localeCompare(b.identity)
-      ),
-    [registry.data]
-  )
+  const kinds = useMemo(() => registry.data ?? [], [registry.data])
   const narrowed = kinds.find((k) => k.identity === kind)
 
   const words = q.trim()
@@ -85,20 +80,18 @@ export function SearchPage() {
   )
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 px-6 pt-5 pb-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Search</h1>
-        <p className="text-xs text-muted-foreground">
-          Every record in this repository, ranked against your words.
-        </p>
-      </div>
+    <DocPage className="pb-20">
+      <PageHeader
+        title="Search"
+        description="Every record you keep, ranked against your words."
+      />
 
-      <div className="flex shrink-0 flex-col gap-3 border-b px-6 pb-4">
+      <div className="mt-5 flex flex-col gap-3 border-b border-border pb-4">
         <div className="flex flex-wrap items-center gap-2">
           <SearchBox
             className="w-full max-w-xl"
-            label="Search records"
-            placeholder="Search records…"
+            label="Search your records"
+            placeholder="Search your records…"
             autoFocus
             value={q}
             onChange={(next) => void setQ(next || null)}
@@ -109,82 +102,64 @@ export function SearchPage() {
             onChange={(next) => void setKind(next?.identity ?? null)}
           />
         </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <Tabs
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <Segmented
+            label="Rank by"
             value={mode}
-            onValueChange={(next) => {
-              const m = next as SearchMode
+            options={SEARCH_MODES.map((m) => ({
+              value: m,
+              label: SEARCH_MODE_LABEL[m],
+            }))}
+            onChange={(m) => {
               saveSearchMode(m)
               void setModeParam(m)
             }}
-          >
-            <TabsList aria-label="Rank by">
-              {SEARCH_MODES.map((m) => (
-                <TabsTrigger key={m} value={m}>
-                  {SEARCH_MODE_LABEL[m]}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-          <p className="max-w-prose text-xs text-muted-foreground">
+          />
+          <p className="max-w-prose text-[12.5px] text-faint">
             {SEARCH_MODE_DESCRIPTION[mode]}
+            {technical && ` ${SEARCH_MODE_DETAIL[mode]}`}
           </p>
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-6 py-4">
+      <div className="pt-4">
         {!words ? (
           <GrammarEmpty />
         ) : results.isError ? (
-          <Empty className="py-16">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <SearchXIcon />
-              </EmptyMedia>
-              <EmptyTitle>This search was refused</EmptyTitle>
-              {/* the server's problem, verbatim: it names the arm, the
-                  provider row or the word that was missing */}
-              <EmptyDescription>{results.error.message}</EmptyDescription>
-            </EmptyHeader>
-            <EmptyContent>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void results.refetch()}
-              >
-                Retry
-              </Button>
-            </EmptyContent>
-          </Empty>
+          <div className="flex flex-col items-start gap-2 py-8">
+            <p className="font-medium">This search was refused</p>
+            {/* the server's problem, verbatim: it names the arm, the
+                provider row or the word that was missing */}
+            <p className="text-muted-foreground">{results.error.message}</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void results.refetch()}
+            >
+              Try again
+            </Button>
+          </div>
         ) : results.isPending ? (
-          <ul className="flex flex-col gap-2" aria-busy>
+          <ul className="flex flex-col" aria-busy>
             {Array.from({ length: 6 }, (_, i) => (
-              <li key={i} className="rounded-lg border px-4 py-3">
+              <li key={i} className="border-b border-border py-3">
                 <Skeleton className="h-4 w-2/5" />
-                <Skeleton className="mt-2 h-3 w-3/5" />
+                <Skeleton className="mt-2 h-3 w-1/5" />
               </li>
             ))}
           </ul>
         ) : results.data.records.length === 0 ? (
-          <Empty className="py-16">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <SearchXIcon />
-              </EmptyMedia>
-              <EmptyTitle>Nothing matches</EmptyTitle>
-              <EmptyDescription>
-                No record{narrowed ? ` of ${narrowed.name}` : ""} ranks against{" "}
-                <span className="data">{words}</span> by{" "}
-                {SEARCH_MODE_LABEL[mode].toLowerCase()}.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          <p className="py-8 text-muted-foreground">
+            Nothing{" "}
+            {narrowed ? `in ${lowerFirst(displayPlural(narrowed))} ` : ""}
+            matches “{words}” by {SEARCH_MODE_LABEL[mode].toLowerCase()}.
+          </p>
         ) : (
           <>
-            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2 text-xs text-muted-foreground">
+            <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2 text-[12.5px] text-faint">
               <span>
-                {results.data.records.length} hit
-                {results.data.records.length === 1 ? "" : "s"}
+                {results.data.records.length}{" "}
+                {results.data.records.length === 1 ? "match" : "matches"}
                 {results.data.records.length === HITS
                   ? " (the most one search shows)"
                   : ""}
@@ -192,91 +167,81 @@ export function SearchPage() {
               </span>
               {results.data.pending > 0 && (
                 <span>
-                  {results.data.pending} values are still being embedded, so the
-                  meaning arm ranked a partial index.
+                  {results.data.pending} values are still being read for
+                  meaning, so meaning ranked part of your data.
                 </span>
               )}
             </div>
-            <ol className="flex flex-col gap-2">
+            <ol className="flex flex-col">
               {results.data.records.map((record) => (
                 <Hit
                   key={`${record.kind}/${record.id}`}
                   record={record}
                   scores={results.data.scores[`${record.kind}/${record.id}`]}
-                  kindInfo={kinds.find((k) => k.identity === record.kind)}
+                  technical={technical}
                 />
               ))}
             </ol>
           </>
         )}
       </div>
-    </div>
+    </DocPage>
   )
 }
 
-/** One hit: the record's title (its id when it has none), the full kind
- * reference and id wrapped rather than shortened, and each arm's raw score
- * under its own label. The row is the link to the record. */
+/** One hit: the record, the collection it sits in, and in technical mode its
+ * full reference and each arm's raw score under its own label. */
 function Hit({
   record,
   scores,
-  kindInfo,
+  technical,
 }: {
   record: SubstrateRecord
   scores: Scores | undefined
-  kindInfo: KindInfo | undefined
+  technical: boolean
 }) {
-  const { authority, pkg, name } = splitKind(record.kind)
   const title = recordTitle(record.properties ?? {})
-  const body = (
-    <>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <span className={cn("font-medium", !title && "data")}>
-          {title || record.id}
-        </span>
-        <dl className="flex gap-4 text-xs text-muted-foreground">
-          {scores?.lexical !== undefined && (
-            <div className="flex gap-1">
-              <dt>words</dt>
-              <dd className="data">{scores.lexical.toFixed(3)}</dd>
-            </div>
-          )}
-          {scores?.semantic !== undefined && (
-            <div className="flex gap-1">
-              <dt>meaning</dt>
-              <dd className="data">{scores.semantic.toFixed(3)}</dd>
-            </div>
-          )}
-        </dl>
-      </div>
-      <div className="mt-1 flex flex-wrap items-baseline gap-x-2 text-xs text-muted-foreground">
-        {kindInfo && <span>{kindInfo.name}</span>}
-        <span className="data break-all">
-          {record.kind}/{record.id}
-        </span>
-      </div>
-    </>
-  )
-  const row =
-    "block rounded-lg border px-4 py-3 no-underline transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-  if (!authority || !pkg || !name) {
-    return <li className={row}>{body}</li>
-  }
   return (
-    <li>
-      <Link
-        to="/data/$authority/$pkg/$name/$id"
-        params={{ authority, pkg, name, id: record.id }}
-        className={row}
-      >
-        {body}
-      </Link>
+    <li className="flex flex-col gap-1 border-b border-border py-2.5">
+      <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <RecordRef
+          kind={record.kind}
+          id={record.id}
+          title={title || undefined}
+          className="font-medium"
+        />
+        {technical && (
+          <dl className="flex gap-4 text-xs text-faint">
+            {scores?.lexical !== undefined && (
+              <div className="flex gap-1">
+                <dt>words</dt>
+                <dd className="tabular-nums">{scores.lexical.toFixed(3)}</dd>
+              </div>
+            )}
+            {scores?.semantic !== undefined && (
+              <div className="flex gap-1">
+                <dt>meaning</dt>
+                <dd className="tabular-nums">{scores.semantic.toFixed(3)}</dd>
+              </div>
+            )}
+          </dl>
+        )}
+      </div>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 text-[12.5px] text-faint">
+        <span>in</span>
+        <KindRef kind={record.kind} className="text-muted-foreground" />
+        {technical && (
+          <span className="font-mono text-[11.5px] [overflow-wrap:anywhere]">
+            {record.kind}/{record.id}
+          </span>
+        )}
+      </div>
     </li>
   )
 }
 
-/** Narrow the candidates to one kind, or none: the ranked read's one filter
- * arm, `filter.kinds`. */
+/** Narrow the candidates to one collection, or none: the ranked read's one
+ * filter arm, `filter.kinds`. */
 function KindPicker({
   kinds,
   value,
@@ -286,6 +251,8 @@ function KindPicker({
   value: KindInfo | undefined
   onChange: (next: KindInfo | undefined) => void
 }) {
+  const [technical] = useTechnicalDetails()
+  const groups = useMemo(() => collectionGroups(kinds), [kinds])
   return (
     <Popover>
       <PopoverTrigger
@@ -294,24 +261,25 @@ function KindPicker({
             variant="outline"
             size="sm"
             className="h-8 max-w-72 gap-1.5 font-normal"
-            aria-label="Kinds to search"
+            aria-label="Collections to search"
           />
         }
       >
-        <span className="text-muted-foreground">in</span>
-        <span className={cn("truncate", value && "data")}>
-          {value ? value.identity : "all kinds"}
+        <span className="text-faint">in</span>
+        {value && <KindGlyph kind={value} size="xs" />}
+        <span className="truncate">
+          {value ? displayPlural(value) : "everything"}
         </span>
-        <ChevronsUpDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <ChevronsUpDownIcon className="size-3.5 shrink-0 text-faint-deco" />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-96 p-1">
         <Command>
-          <CommandInput placeholder="Narrow to a kind…" />
+          <CommandInput placeholder="Narrow to a collection…" />
           <CommandList>
-            <CommandEmpty>No kind by that name.</CommandEmpty>
+            <CommandEmpty>No collection by that name.</CommandEmpty>
             <CommandGroup>
               <CommandItem
-                value="all kinds"
+                value="everything"
                 onSelect={() => onChange(undefined)}
                 className="[&>svg:last-child]:hidden"
               >
@@ -323,30 +291,38 @@ function KindPicker({
                 >
                   <CheckIcon className="size-3" />
                 </span>
-                all kinds
+                everything
               </CommandItem>
-              {kinds.map((k) => (
-                <CommandItem
-                  key={k.identity}
-                  value={`${k.name} ${k.identity}`}
-                  onSelect={() => onChange(k)}
-                  className="[&>svg:last-child]:hidden"
-                >
-                  <span
-                    className={cn(
-                      "flex size-4 items-center justify-center",
-                      value?.identity !== k.identity && "opacity-0"
-                    )}
-                  >
-                    <CheckIcon className="size-3" />
-                  </span>
-                  <span>{k.name}</span>
-                  <span className="ml-auto text-right data text-xs text-muted-foreground">
-                    {k.authority}/{k.package}
-                  </span>
-                </CommandItem>
-              ))}
             </CommandGroup>
+            {groups.map((g) => (
+              <CommandGroup key={g.id} heading={g.label}>
+                {[...g.primary, ...g.hidden].map((k) => (
+                  <CommandItem
+                    key={k.identity}
+                    value={`${displayPlural(k)} ${g.label} ${k.identity}`}
+                    onSelect={() => onChange(k)}
+                    className="[&>svg:last-child]:hidden"
+                  >
+                    <span
+                      className={cn(
+                        "flex size-4 items-center justify-center",
+                        value?.identity !== k.identity && "opacity-0"
+                      )}
+                    >
+                      <CheckIcon className="size-3" />
+                    </span>
+                    <KindGlyph kind={k} size="xs" />
+                    <span className="truncate">{displayPlural(k)}</span>
+                    {technical && (
+                      <KindPath
+                        reference={k.identity}
+                        className="ml-auto min-w-0 truncate text-[11.5px]"
+                      />
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ))}
           </CommandList>
         </Command>
       </PopoverContent>
@@ -357,16 +333,16 @@ function KindPicker({
 /** Before a query: the grammar, one line per form. */
 function GrammarEmpty() {
   return (
-    <div className="mx-auto max-w-xl py-10">
-      <p className="text-sm text-muted-foreground">
-        Type words to search every record's indexed text: titles, names,
-        descriptions and every other string property a kind declares. Every word
-        must appear, in any form of the word and any case.
+    <div className="max-w-xl py-6">
+      <p className="text-muted-foreground">
+        Type words to search every record’s text: titles, names, descriptions
+        and every other text a collection keeps. Every word must appear, in any
+        form of the word and any case.
       </p>
-      <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
+      <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5">
         {SEARCH_GRAMMAR.map((g) => (
           <div key={g.example} className="contents">
-            <dt className="data">{g.example}</dt>
+            <dt className="font-mono text-[12.5px]">{g.example}</dt>
             <dd className="text-muted-foreground">{g.means}</dd>
           </div>
         ))}

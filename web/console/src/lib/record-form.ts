@@ -29,9 +29,10 @@
  *   sends `null` to delete the key; a merely-blank field is left untouched. */
 
 import type { SubstrateRecord, EnumValue, KindInfo } from "@/lib/api/types"
-import { readReference } from "@/lib/api/types"
+import { REFERENCE_KEY, readReference } from "@/lib/api/types"
+import { temporalProperties } from "@/lib/definition"
 import { coerceReferencePath, splitRecordPath } from "@/lib/record-path"
-import type { EditPath as DocumentPath } from "@/lib/record-yaml"
+import type { EditPath as DocumentPath, Problem } from "@/lib/record-yaml"
 import {
   TO_ANY,
   checkKey,
@@ -104,7 +105,8 @@ export interface FormField {
   spec: PropSpec
 }
 
-function fieldOf(spec: PropSpec): FormField {
+/** One property as a form field: the control its declaration earns. */
+export function fieldOf(spec: PropSpec): FormField {
   const control = controlFor(spec)
   return {
     name: spec.name,
@@ -154,10 +156,15 @@ export type FormValue =
   | KeyedRow[]
 export type FormValues = Record<string, FormValue>
 
-/** A pointer as the FORM holds it: two halves, one value. */
+/** A pointer as the FORM holds it: two halves, one value, and the link data
+ * a stored reference carries beside its pointer (the reference's declared
+ * `properties:`, decision 0044). The link rides along untouched, so adding,
+ * removing or reordering pointers never erases what the others hold; a
+ * pointer picked fresh has none. */
 export interface RefValue {
   kind: string
   id: string
+  link?: Record<string, unknown>
 }
 
 /** Which shape a value is in is the CONTROL's business, never a guess at the
@@ -358,12 +365,12 @@ export function toFieldValue(field: FormField, value: FormValue): FieldValue {
     return refValue(asRef(value))
   }
   if (field.control === "referenceList") {
-    const out: string[] = []
+    const out: unknown[] = []
     for (const ref of asRefs(value)) {
       const submitted = refValue(ref)
       if (submitted.error) return submitted
       if (submitted.value === undefined) continue
-      out.push(submitted.value as string)
+      out.push(submitted.value)
     }
     return out.length ? { value: out } : {}
   }
@@ -385,7 +392,11 @@ function refValue(ref: RefValue): FieldValue {
   // The write path's own decision, mirrored once: whether this is a path, a
   // short form the pin completes, or a value that reads two ways and is
   // refused naming both.
-  return coerceReferencePath(ref.kind.trim(), id)
+  const path = coerceReferencePath(ref.kind.trim(), id)
+  if (path.error || !ref.link || !Object.keys(ref.link).length) return path
+  // Link data is written in the stored shape: the pointer under `ref`, the
+  // link properties beside it.
+  return { value: { [REFERENCE_KEY]: path.value, ...ref.link } }
 }
 
 /** One pointer, seeded from its stored value. A served reference is the object
@@ -397,7 +408,10 @@ function seedRef(field: FormField, stored: unknown): RefValue {
   const pinned = field.spec.to && field.spec.to !== TO_ANY ? field.spec.to : ""
   const held = readReference(stored)
   if (!held) return { kind: pinned, id: "" }
-  return splitRecordPath(held.path) ?? { kind: pinned, id: held.path }
+  const pointer = splitRecordPath(held.path) ?? { kind: pinned, id: held.path }
+  return Object.keys(held.properties).length
+    ? { ...pointer, link: held.properties }
+    : pointer
 }
 
 /** One object row, coerced field by field. A field that fails its datatype
@@ -557,7 +571,10 @@ export function validate(
     if (field.control === "secret") {
       const filled = typeof value === "string" && value.length > 0
       if (mode === "create" && !filled) {
-        errors.push({ name: field.name, message: `${field.name} is required.` })
+        errors.push({
+          name: field.name,
+          message: `${field.label} is required.`,
+        })
       }
       continue
     }
@@ -565,7 +582,7 @@ export function validate(
     if (submitted.error) {
       errors.push({
         name: field.name,
-        message: `${field.name}: ${submitted.error}.`,
+        message: `${field.label}: ${submitted.error}.`,
       })
       continue
     }
@@ -574,12 +591,12 @@ export function validate(
     // what the controls hold, and only the declaration knows what is missing.
     const deep = checkValue(field.spec, submitted.value)
     if (deep) {
-      errors.push({ name: field.name, message: `${field.name}: ${deep}.` })
+      errors.push({ name: field.name, message: `${field.label}: ${deep}.` })
       continue
     }
     if (!field.required || field.control === "bool") continue
     if (submitted.value === undefined || submitted.value === null) {
-      errors.push({ name: field.name, message: `${field.name} is required.` })
+      errors.push({ name: field.name, message: `${field.label} is required.` })
     }
   }
   return errors
@@ -615,4 +632,112 @@ export function toProperties(
     props[field.name] = submitted.value
   }
   return props
+}
+
+// ── a new record's rows ─────────────────────────────────────────────────────
+
+/** The properties two core traits bind: the repeat rule and the override of
+ * one occurrence. A kind declares them, but they are how a series is kept,
+ * not what a new record is first given. */
+const TRAIT_MACHINERY: Record<string, readonly string[]> = {
+  "substrate.reamde.dev/core/recurring": [
+    "recurrence",
+    "rdates",
+    "exdates",
+    "timezone",
+  ],
+  "substrate.reamde.dev/core/override": ["recurrenceOf", "originalAt"],
+}
+
+function machinery(kind: KindInfo): Set<string> {
+  const traits = (kind.definition as { traits?: unknown }).traits
+  const out = new Set<string>()
+  if (!Array.isArray(traits)) return out
+  for (const trait of traits) {
+    if (typeof trait !== "string") continue
+    for (const name of TRAIT_MACHINERY[trait.split("(")[0].trim()] ?? []) {
+      out.add(name)
+    }
+  }
+  return out
+}
+
+/** The properties a state move stamps: the transition fills them in. */
+function stamped(specs: readonly PropSpec[]): Set<string> {
+  const out = new Set<string>()
+  for (const spec of specs) {
+    for (const t of spec.transitions ?? []) t.stamps.forEach((s) => out.add(s))
+  }
+  return out
+}
+
+/** Where a property sits on a new record: what it must have first, then what
+ * a new record is commonly given (the records it points at, and the times it
+ * is about), then the rest, folded, and last in the fold what is seldom typed
+ * by hand (a series' machinery, a time a move stamps, a pointer at any kind). */
+export type NewRecordBand = "required" | "common" | "rest" | "later"
+
+export function newRecordBands(
+  kind: KindInfo,
+  specs: readonly PropSpec[]
+): Map<string, NewRecordBand> {
+  const bound = machinery(kind)
+  const timeline = new Set(temporalProperties(kind))
+  const byTransition = stamped(specs)
+  const out = new Map<string, NewRecordBand>()
+  for (const spec of specs) {
+    let band: NewRecordBand = "rest"
+    if (spec.required) band = "required"
+    else if (bound.has(spec.name) || byTransition.has(spec.name)) band = "later"
+    else if (spec.kind === "reference") {
+      band = spec.to && spec.to !== TO_ANY ? "common" : "later"
+    } else if (timeline.has(spec.name)) band = "common"
+    else if (
+      (spec.kind === "datetime" || spec.kind === "date") &&
+      !spec.repeated &&
+      !spec.keyed
+    ) {
+      band = "common"
+    }
+    out.set(spec.name, band)
+  }
+  return out
+}
+
+/** A new record's rows in the order they are asked for: the required, then
+ * the common, each in the order given; the rest folded unless `keep` holds
+ * them open (a row somebody filled in, or one with something to say), the
+ * seldom-typed last. */
+export function arrangeNewRecord<T extends { name: string; spec: PropSpec }>(
+  kind: KindInfo,
+  rows: readonly T[],
+  keep: (row: T) => boolean = () => false
+): { shown: T[]; folded: T[] } {
+  const bands = newRecordBands(
+    kind,
+    rows.map((r) => r.spec)
+  )
+  const band = (r: T) => bands.get(r.name) ?? "rest"
+  const rest = [
+    ...rows.filter((r) => band(r) === "rest"),
+    ...rows.filter((r) => band(r) === "later"),
+  ]
+  return {
+    shown: [
+      ...rows.filter((r) => band(r) === "required"),
+      ...rows.filter((r) => band(r) === "common"),
+      ...rest.filter(keep),
+    ],
+    folded: rest.filter((r) => !keep(r)),
+  }
+}
+
+/** A document problem as the row it is about says it: the property's label,
+ * never its key, and no backticks. */
+export function rowProblem(problem: Problem, spec: PropSpec): string {
+  if (problem.message === `\`${spec.name}\` is required.`) {
+    return `${spec.label} is required.`
+  }
+  const said = problem.message.replace(`\`${spec.name}\`: `, "")
+  return said.charAt(0).toUpperCase() + said.slice(1)
 }

@@ -1,4 +1,17 @@
-import { useMemo } from "react"
+/** The sidebar: the repository at the top (the one account menu: settings,
+ * theme, sign out), the search that opens ⌘K, the five places (Home, All
+ * data, Agents, Tools, Providers), then the collections grouped the way a
+ * person meets them ("Your data", one "From <Provider>" per provider) and, at
+ * the foot, History, Settings and the Technical details switch. The
+ * repository's name appears once: a second chip for it is a second door to
+ * the same menu.
+ *
+ * Everyday mode lists each group's primary collections by display plural.
+ * Technical mode lists the authority / package tree with each kind's own
+ * name, can show the supporting and internal kinds too, and adds the
+ * substrate's own machinery as a last group. */
+
+import { useMemo, useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
   Link,
@@ -7,556 +20,647 @@ import {
   useRouterState,
 } from "@tanstack/react-router"
 import {
-  ActivityIcon,
-  ArrowUpIcon,
   ArrowDownIcon,
-  StarIcon,
+  ArrowUpIcon,
   BotIcon,
-  ChevronRightIcon,
+  ChevronDownIcon,
   ChevronsUpDownIcon,
-  FileCode2Icon,
+  CodeIcon,
+  DatabaseIcon,
+  HistoryIcon,
   HomeIcon,
-  KeyRoundIcon,
-  LayersIcon,
   LogOutIcon,
   MoonIcon,
-  PackageIcon,
-  PlugZapIcon,
+  PlugIcon,
+  SearchIcon,
   SlidersHorizontalIcon,
+  StarIcon,
   SunIcon,
   SunMoonIcon,
-  UserRoundIcon,
+  WrenchIcon,
+  type LucideIcon,
 } from "lucide-react"
 
-import { useSidebarPreferences } from "@/hooks/use-sidebar-preferences"
-import { splitKind } from "@/lib/api/http"
-import { useTheme } from "@/components/theme-provider"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { KindGlyph } from "@/components/identity/kind-glyph"
+import { ProviderBadge } from "@/components/identity/provider-badge"
+import { PurposeTag } from "@/components/identity/purpose-tag"
+import { SwitchMark, ToggleSwitch } from "@/components/nav/toggle-switch"
 import { Button } from "@/components/ui/button"
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
-import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { SignOutDialog } from "@/components/ui/confirm-dialog"
+import { Kbd } from "@/components/ui/kbd"
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
-  SidebarMenu,
-  SidebarMenuAction,
-  SidebarMenuBadge,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarMenuSkeleton,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
-  SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar"
+import { Skeleton } from "@/components/ui/skeleton"
+import {
+  useConsolePreferences,
+  useSidebarPreferences,
+  useTechnicalDetails,
+} from "@/hooks/use-console-preferences"
+import { PROVIDERS_AUTHORITY } from "@/lib/actor-identity"
 import { logout } from "@/lib/api/auth"
 import { bundleStatusesQueryOptions } from "@/lib/api/bundles"
-import { catalogQueryOptions } from "@/lib/api/catalog"
-import {
-  buildKindNav,
-  kindsQueryOptions,
-  type AuthorityNav,
-  type PackageNav,
-} from "@/lib/api/kinds"
+import { splitKind } from "@/lib/api/http"
+import { kindsQueryOptions } from "@/lib/api/kinds"
+import { formatCount, recordCountQueryOptions } from "@/lib/api/records"
+import { repositoryQueryOptions } from "@/lib/api/repository"
 import { getRepository } from "@/lib/api/session"
-import { settingSetupCount, upgradableBundleCount } from "@/lib/bundles"
+import type { KindInfo } from "@/lib/api/types"
+import {
+  collectionGroups,
+  groupToggleKey,
+  isGroupOpen,
+  type CollectionGroup,
+} from "@/lib/collections"
+import { kindByIdentity, kindPurpose } from "@/lib/definition"
+import { kindDescription } from "@/lib/kind-copy"
+import { displayPlural } from "@/lib/kind-names"
+import { cn } from "@/lib/utils"
 
-const consoleItems = [
-  { title: "Overview", to: "/", icon: HomeIcon },
-  { title: "Changelog", to: "/changelog", icon: ActivityIcon },
-  { title: "Registry", to: "/registry", icon: PackageIcon },
-  { title: "Connections", to: "/connections", icon: PlugZapIcon },
-  { title: "Settings", to: "/settings", icon: SlidersHorizontalIcon },
-  { title: "Agents", to: "/agents", icon: BotIcon },
-] as const
+const ROW =
+  "flex h-[30px] w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-[13.5px] whitespace-nowrap text-muted-foreground no-underline outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+const ACTIVE = "bg-hover font-medium text-foreground"
 
-/** The Registry row's number: imported bundles whose shipped closure moved
- * past what this repository stores, from the same catalog read the Registry
- * page makes (shared cache, no second endpoint). Nothing to upgrade renders
- * nothing: a permanent zero is noise, not a signal. */
-function RegistryUpgradeBadge() {
-  const catalog = useQuery(catalogQueryOptions)
-  const count = useMemo(
-    () => upgradableBundleCount(catalog.data ?? []),
-    [catalog.data]
-  )
-  if (count <= 0) return null
-  return (
-    <SidebarMenuBadge variant="count">
-      <span className="sr-only">
-        {count === 1
-          ? "1 bundle upgrade available"
-          : `${count} bundle upgrades available`}
-      </span>
-      <span aria-hidden>{count}</span>
-    </SidebarMenuBadge>
-  )
+/** Closes the phone sheet once a row is followed. */
+function useCloseOnPhone(): () => void {
+  const { isMobile, setOpenMobile } = useSidebar()
+  return () => {
+    if (isMobile) setOpenMobile(false)
+  }
 }
 
-/** The Settings row's number: the required settings and secrets still empty
- * across the bundles this repository holds, counted off the bundle statuses
- * the Registry page already reads (shared cache, no second endpoint). Nothing
- * to fill in renders nothing. */
-export function SettingsSetupBadge() {
-  const statuses = useQuery(bundleStatusesQueryOptions)
-  const count = useMemo(
-    () => settingSetupCount(statuses.data ?? []),
-    [statuses.data]
-  )
-  if (count <= 0) return null
-  return (
-    <SidebarMenuBadge variant="count">
-      <span className="sr-only">
-        {count === 1 ? "1 setting to fill in" : `${count} settings to fill in`}
-      </span>
-      <span aria-hidden>{count}</span>
-    </SidebarMenuBadge>
-  )
-}
+type Place =
+  "/" | "/data" | "/agents" | "/tools" | "/providers" | "/history" | "/settings"
 
-/* Rule 1 (GUIDE §5): sub rows hover full-width, exactly like top-level rows —
- * the default inset/border of SidebarMenuSub is removed and depth is carried
- * by padding alone. */
-const fullWidthSub = "mx-0 translate-x-0 border-l-0 px-0 pb-1.5"
-
-function KindLinks({ nav, className }: { nav: PackageNav; className: string }) {
-  const params = useParams({ strict: false })
-  const { preferences, busy, change } = useSidebarPreferences()
+function NavRow({
+  to,
+  icon: Icon,
+  label,
+  extra,
+}: {
+  to: Place
+  icon: LucideIcon
+  label: string
+  extra?: ReactNode
+}) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const close = useCloseOnPhone()
+  // All data is the index of /data; a collection under it lights its own row.
+  const active =
+    to === "/" || to === "/data"
+      ? pathname === to
+      : pathname === to || pathname.startsWith(`${to}/`)
   return (
-    <>
-      {nav.kinds.map((k) => (
-        <SidebarMenuSubItem key={k.identity}>
-          <SidebarMenuSubButton
-            isActive={
-              params.authority === nav.authority &&
-              params.pkg === nav.package &&
-              params.name === k.name
-            }
-            className={`${className} pr-9`}
-            render={
-              <Link
-                to="/data/$authority/$pkg/$name"
-                params={{
-                  authority: nav.authority,
-                  pkg: nav.package,
-                  name: k.name,
-                }}
-              />
-            }
-          >
-            <span>{k.name}</span>
-          </SidebarMenuSubButton>
-          <button
-            type="button"
-            disabled={busy}
-            aria-label={`${preferences.favorites.includes(k.identity) ? "Unstar" : "Star"} ${k.identity}`}
-            aria-pressed={preferences.favorites.includes(k.identity)}
-            title="Favorite kind"
-            className="absolute top-1 right-2 rounded p-1 text-muted-foreground hover:text-primary disabled:opacity-50"
-            onClick={() =>
-              change({
-                type: "favorite",
-                key: k.identity,
-                starred: !preferences.favorites.includes(k.identity),
-              })
-            }
-          >
-            <StarIcon
-              className={`size-3.5 ${preferences.favorites.includes(k.identity) ? "fill-primary text-primary" : ""}`}
-            />
-          </button>
-        </SidebarMenuSubItem>
-      ))}
-    </>
-  )
-}
-
-/** One package's kinds, collapsible under its authority: the package's own
- * word links to its page (the authority's kinds table, filtered to this
- * package), the chevron alone opens and closes its kinds. Open by default, so
- * the tree reads the same as before a reader touches it. */
-export function PackageGroup({ nav }: { nav: PackageNav }) {
-  const params = useParams({ strict: false })
-  const label = nav.package || "local"
-  const { preferences, busy, change } = useSidebarPreferences()
-  return (
-    <Collapsible
-      open={!preferences.collapsed.includes(nav.identity)}
-      onOpenChange={(open) =>
-        change({ type: "collapse", key: nav.identity, collapsed: !open })
-      }
-      className="group/package"
-      render={<SidebarMenuSubItem />}
+    <Link
+      to={to}
+      onClick={close}
+      aria-current={active ? "page" : undefined}
+      className={cn(ROW, active && ACTIVE)}
     >
-      <SidebarMenuSubButton
-        isActive={
-          params.authority === nav.authority &&
-          params.pkg === nav.package &&
-          !params.name
-        }
-        className="pr-8 pl-12 text-sidebar-foreground/70"
-        render={
-          <Link
-            to="/data/$authority/$pkg"
-            params={{ authority: nav.authority, pkg: nav.package }}
-          />
-        }
-      >
-        <span className="truncate font-medium">{label}</span>
-      </SidebarMenuSubButton>
-      <CollapsibleTrigger
-        render={
-          <SidebarMenuAction
-            className="top-1.5 cursor-pointer"
-            disabled={busy}
-            aria-label={`Toggle the kinds in ${label}`}
-          />
-        }
-      >
-        <ChevronRightIcon className="transition-transform duration-200 group-data-open/package:rotate-90" />
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <SidebarMenuSub className={fullWidthSub}>
-          <KindLinks nav={nav} className="pl-16" />
-        </SidebarMenuSub>
-      </CollapsibleContent>
-    </Collapsible>
+      <Icon className="size-4 shrink-0" strokeWidth={1.8} />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {extra}
+    </Link>
   )
 }
 
-/** One authority's packages, collapsible. The label navigates to the
- * authority's own kinds table and the chevron alone collapses the row, so
- * reaching the page and folding the tree are two targets, not one. In v1
- * authorities replace the old group concept, and every kind carries an
- * authority and a package (decisions 0042 and 0047); the `"local"` fallback is
- * defensive against a malformed row with no authority. */
-export function AuthorityGroup({ nav }: { nav: AuthorityNav }) {
-  const params = useParams({ strict: false })
-  const label = nav.authority || "local"
-  const { preferences, busy, change } = useSidebarPreferences()
+/** A kind's record count, only when a page already counted it: the sidebar
+ * never starts a count walk of its own. */
+function CachedCount({ kind }: { kind: KindInfo }) {
+  const { authority, pkg, name } = splitKind(kind.identity)
+  const count = useQuery({
+    ...recordCountQueryOptions(authority, pkg, name),
+    enabled: false,
+  })
+  if (!count.data?.value) return null
   return (
-    <Collapsible
-      open={!preferences.collapsed.includes(nav.authority)}
-      onOpenChange={(open) =>
-        change({ type: "collapse", key: nav.authority, collapsed: !open })
-      }
-      className="group/collapsible"
-      render={<SidebarMenuItem />}
-    >
-      <SidebarMenuButton
-        tooltip={label}
-        isActive={params.authority === nav.authority && !params.pkg}
-        render={
-          <Link to="/data/$authority" params={{ authority: nav.authority }} />
-        }
-      >
-        <FileCode2Icon />
-        <span className="truncate">{label}</span>
-      </SidebarMenuButton>
-      <CollapsibleTrigger
-        render={
-          <SidebarMenuAction
-            className="cursor-pointer"
-            disabled={busy}
-            aria-label={`Toggle the packages in ${label}`}
-          />
-        }
-      >
-        <ChevronRightIcon className="transition-transform duration-200 group-data-open/collapsible:rotate-90" />
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <SidebarMenuSub className={fullWidthSub}>
-          {nav.packages.map((p) => (
-            <PackageGroup key={p.identity} nav={p} />
-          ))}
-        </SidebarMenuSub>
-      </CollapsibleContent>
-    </Collapsible>
+    <span className="ml-auto shrink-0 text-[11.5px] text-faint tabular-nums">
+      {formatCount(count.data)}
+    </span>
   )
 }
 
-function DataGroups() {
+function StarButton({ identity }: { identity: string }) {
+  const { preferences, busy, change } = useSidebarPreferences()
+  const starred = preferences.favorites.includes(identity)
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      aria-label={`${starred ? "Unstar" : "Star"} ${displayPlural(identity)}`}
+      aria-pressed={starred}
+      title={starred ? "Remove from favorites" : "Add to favorites"}
+      className={cn(
+        "absolute top-1/2 right-1 grid size-6 -translate-y-1/2 cursor-pointer place-items-center rounded bg-sidebar text-faint opacity-0 group-hover/kind:opacity-100 hover:text-foreground focus-visible:opacity-100 disabled:opacity-0",
+        starred && "text-primary"
+      )}
+      onClick={() =>
+        change({ type: "favorite", key: identity, starred: !starred })
+      }
+    >
+      <StarIcon className={cn("size-3.5", starred && "fill-current")} />
+    </button>
+  )
+}
+
+/** One collection in a group. Everyday: glyph and display plural. Technical:
+ * the reference's own name, tagged when it is not a primary collection. The
+ * tooltip is what the collection holds; its reference is on the collection
+ * page and in every hover card. */
+function KindRow({ kind, technical }: { kind: KindInfo; technical: boolean }) {
+  const params = useParams({ strict: false })
+  const close = useCloseOnPhone()
+  const { authority, pkg, name } = splitKind(kind.identity)
+  const active =
+    params.authority === authority && params.pkg === pkg && params.name === name
+  const purpose = kindPurpose(kind)
+  return (
+    <div className="group/kind relative">
+      <Link
+        to="/data/$authority/$pkg/$name"
+        params={{ authority, pkg, name }}
+        onClick={close}
+        aria-current={active ? "page" : undefined}
+        title={kindDescription(kind, technical)}
+        className={cn(ROW, "pr-2 pl-3.5", active && ACTIVE)}
+      >
+        <KindGlyph kind={kind} size="xs" />
+        <span
+          className={cn(
+            "min-w-0 truncate",
+            purpose !== "primary" && !active && "text-faint"
+          )}
+        >
+          {technical ? name : displayPlural(kind)}
+        </span>
+        {technical && <PurposeTag purpose={purpose} />}
+        <CachedCount kind={kind} />
+      </Link>
+      <StarButton identity={kind.identity} />
+    </div>
+  )
+}
+
+/** One group: a folding heading and its collections. */
+export function CollectionGroupNav({ group }: { group: CollectionGroup }) {
+  const [technical] = useTechnicalDetails()
+  const { preferences, busy, change } = useSidebarPreferences()
+  const params = useParams({ strict: false })
+  const close = useCloseOnPhone()
+  const [showAll, setShowAll] = useState(false)
+  const open = isGroupOpen(group, preferences.collapsed)
+  const key = groupToggleKey(group)
+  const visible = (k: KindInfo) => showAll || kindPurpose(k) === "primary"
+  return (
+    <div data-slot="collection-group" data-group={group.id}>
+      <button
+        type="button"
+        disabled={busy}
+        aria-expanded={open}
+        onClick={() =>
+          change({
+            type: "collapse",
+            key,
+            collapsed: !preferences.collapsed.includes(key),
+          })
+        }
+        className="flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 pt-3.5 pb-1 text-left text-[11.5px] font-medium text-faint hover:text-muted-foreground disabled:cursor-default"
+      >
+        <ChevronDownIcon
+          aria-hidden
+          className={cn(
+            "size-3 shrink-0 transition-transform duration-150",
+            !open && "-rotate-90"
+          )}
+        />
+        {group.provider && (
+          <ProviderBadge provider={group.provider} size="xs" />
+        )}
+        <span className="truncate">{group.label}</span>
+        {!open && (
+          <span className="ml-auto font-normal tabular-nums">
+            {technical ? group.kinds.length : group.primary.length}
+          </span>
+        )}
+      </button>
+      {open &&
+        (technical ? (
+          <>
+            {group.authorities
+              .filter((a) => a.packages.some((p) => p.kinds.some(visible)))
+              .map((a) => (
+                <div key={a.authority}>
+                  <Link
+                    to="/data/$authority"
+                    params={{ authority: a.authority }}
+                    onClick={close}
+                    className={cn(
+                      "block truncate rounded-md px-2 pt-2.5 pb-0.5 font-mono text-[11.5px] text-faint no-underline hover:text-foreground",
+                      params.authority === a.authority &&
+                        !params.pkg &&
+                        "text-foreground"
+                    )}
+                  >
+                    {a.authority}
+                  </Link>
+                  {a.packages
+                    .filter((p) => p.kinds.some(visible))
+                    .map((p) => (
+                      <div key={p.identity}>
+                        <Link
+                          to="/data/$authority/$pkg"
+                          params={{ authority: p.authority, pkg: p.package }}
+                          onClick={close}
+                          className={cn(
+                            "flex items-center gap-1.5 rounded-md py-1 pr-2 pl-2.5 text-[11.5px] text-faint no-underline before:h-px before:w-1.5 before:bg-border-strong hover:text-foreground",
+                            params.authority === p.authority &&
+                              params.pkg === p.package &&
+                              !params.name &&
+                              "text-foreground"
+                          )}
+                        >
+                          {p.package}
+                        </Link>
+                        {p.kinds.filter(visible).map((k) => (
+                          <KindRow key={k.identity} kind={k} technical />
+                        ))}
+                      </div>
+                    ))}
+                </div>
+              ))}
+            {group.hidden.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowAll((v) => !v)}
+                className="w-full cursor-pointer rounded-md py-1 pr-2 pl-[30px] text-left text-xs text-faint hover:text-muted-foreground"
+              >
+                {showAll ? "Hide" : "Show"} {group.hidden.length} supporting and
+                internal
+              </button>
+            )}
+          </>
+        ) : (
+          group.primary.map((k) => (
+            <KindRow key={k.identity} kind={k} technical={false} />
+          ))
+        ))}
+    </div>
+  )
+}
+
+function CollectionGroups() {
+  const [technical] = useTechnicalDetails()
   const registry = useQuery(kindsQueryOptions)
-  const nav = useMemo(
-    () => (registry.data ? buildKindNav(registry.data) : undefined),
-    [registry.data]
+  const repository = useQuery(repositoryQueryOptions)
+  const groups = useMemo(
+    () =>
+      collectionGroups(
+        registry.data ?? [],
+        repository.data?.authority ?? getRepository() ?? ""
+      ),
+    [registry.data, repository.data]
   )
 
   if (registry.isPending) {
     return (
-      <SidebarMenu>
+      <div className="flex flex-col gap-2 px-2 pt-4">
         {Array.from({ length: 4 }, (_, i) => (
-          <SidebarMenuItem key={i}>
-            <SidebarMenuSkeleton showIcon />
-          </SidebarMenuItem>
+          <Skeleton key={i} className="h-5 w-full" />
         ))}
-      </SidebarMenu>
+      </div>
     )
   }
-
-  if (registry.isError || !nav) {
+  if (registry.isError) {
     return (
-      <div className="flex flex-col items-start gap-1 px-2 py-1 text-xs text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden">
-        <span>The type registry didn't load.</span>
+      <div className="flex flex-col items-start gap-1.5 px-2 pt-4 text-xs text-faint">
+        <span>Your collections didn’t load.</span>
         <Button
           variant="outline"
-          size="sm"
-          className="h-6 px-2 text-xs"
+          size="xs"
           onClick={() => void registry.refetch()}
         >
-          Retry
+          Try again
         </Button>
       </div>
     )
   }
-
   return (
-    <SidebarMenu>
-      {nav.authorities.map((a) => (
-        <AuthorityGroup key={a.authority} nav={a} />
-      ))}
-    </SidebarMenu>
+    <>
+      {groups
+        .filter((g) =>
+          technical ? true : g.type !== "system" && g.primary.length > 0
+        )
+        .map((g) => (
+          <CollectionGroupNav key={g.id} group={g} />
+        ))}
+    </>
   )
 }
 
 export function Favorites() {
   const { preferences, busy, change } = useSidebarPreferences()
+  const [technical] = useTechnicalDetails()
+  const registry = useQuery(kindsQueryOptions)
+  const params = useParams({ strict: false })
+  const close = useCloseOnPhone()
+  if (preferences.favorites.length === 0) return null
   return (
-    <SidebarGroup>
-      <SidebarGroupLabel>Favorites</SidebarGroupLabel>
-      <SidebarGroupContent>
-        {preferences.favorites.length === 0 && (
-          <p className="px-2 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-            Star a kind in Data to keep it here.
-          </p>
-        )}
-        <SidebarMenu>
-          {preferences.favorites.map((identity, index) => {
-            const parts = splitKind(identity)
-            return (
-              <SidebarMenuItem key={identity}>
-                <SidebarMenuButton
-                  className="h-auto min-h-9 pr-20"
-                  aria-label={identity}
-                  tooltip={identity}
-                  render={
-                    <Link to="/data/$authority/$pkg/$name" params={parts} />
-                  }
-                >
-                  <StarIcon
-                    aria-hidden
-                    className="size-4 shrink-0 text-primary"
-                  />
-                  <span className="flex min-w-0 flex-col gap-0.5">
-                    <span className="font-medium">{parts.name}</span>
-                    <span className="text-xs break-all whitespace-normal text-muted-foreground">
-                      {parts.authority}/{parts.pkg}
-                    </span>
-                  </span>
-                </SidebarMenuButton>
-                <div className="absolute top-2 right-1 flex group-data-[collapsible=icon]:hidden">
-                  <button
-                    type="button"
-                    className="rounded p-1 hover:bg-accent disabled:opacity-30"
-                    disabled={busy || index === 0}
-                    aria-label={`Move ${identity} up`}
-                    onClick={() =>
-                      change({ type: "move", key: identity, direction: -1 })
-                    }
-                  >
-                    <ArrowUpIcon className="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded p-1 hover:bg-accent disabled:opacity-30"
-                    disabled={
-                      busy || index === preferences.favorites.length - 1
-                    }
-                    aria-label={`Move ${identity} down`}
-                    onClick={() =>
-                      change({ type: "move", key: identity, direction: 1 })
-                    }
-                  >
-                    <ArrowDownIcon className="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded p-1 text-primary hover:bg-accent"
-                    disabled={busy}
-                    aria-label={`Unstar ${identity}`}
-                    onClick={() =>
-                      change({
-                        type: "favorite",
-                        key: identity,
-                        starred: false,
-                      })
-                    }
-                  >
-                    <StarIcon className="size-3.5 fill-current" />
-                  </button>
-                </div>
-              </SidebarMenuItem>
-            )
-          })}
-        </SidebarMenu>
-      </SidebarGroupContent>
-    </SidebarGroup>
+    <div data-slot="favorites">
+      <div className="px-2 pt-3.5 pb-1 text-[11.5px] font-medium text-faint">
+        Favorites
+      </div>
+      {preferences.favorites.map((identity, index) => {
+        const parts = splitKind(identity)
+        const plural = displayPlural(identity)
+        const declared = kindByIdentity(registry.data ?? [], identity)
+        const active =
+          params.authority === parts.authority &&
+          params.pkg === parts.pkg &&
+          params.name === parts.name
+        return (
+          <div key={identity} className="group/fav relative">
+            <Link
+              to="/data/$authority/$pkg/$name"
+              params={parts}
+              onClick={close}
+              title={
+                declared ? kindDescription(declared, technical) : undefined
+              }
+              aria-current={active ? "page" : undefined}
+              className={cn(ROW, active && ACTIVE)}
+            >
+              <KindGlyph kind={identity} size="xs" />
+              <span className="min-w-0 truncate">
+                {technical ? parts.name : plural}
+              </span>
+            </Link>
+            <div className="absolute top-1/2 right-1 flex -translate-y-1/2 rounded bg-sidebar opacity-0 group-hover/fav:opacity-100 focus-within:opacity-100">
+              <button
+                type="button"
+                className="grid size-6 cursor-pointer place-items-center rounded text-faint hover:text-foreground disabled:opacity-30"
+                disabled={busy || index === 0}
+                aria-label={`Move ${plural} up`}
+                onClick={() =>
+                  change({ type: "move", key: identity, direction: -1 })
+                }
+              >
+                <ArrowUpIcon className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                className="grid size-6 cursor-pointer place-items-center rounded text-faint hover:text-foreground disabled:opacity-30"
+                disabled={busy || index === preferences.favorites.length - 1}
+                aria-label={`Move ${plural} down`}
+                onClick={() =>
+                  change({ type: "move", key: identity, direction: 1 })
+                }
+              >
+                <ArrowDownIcon className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                className="grid size-6 cursor-pointer place-items-center rounded text-primary"
+                disabled={busy}
+                aria-label={`Unstar ${plural}`}
+                onClick={() =>
+                  change({ type: "favorite", key: identity, starred: false })
+                }
+              >
+                <StarIcon className="size-3.5 fill-current" />
+              </button>
+            </div>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
-function ActorFooter() {
+/** How many providers this repository has added, beside the Providers row. */
+function ProviderCount() {
+  const statuses = useQuery(bundleStatusesQueryOptions)
+  const count = (statuses.data ?? []).filter(
+    (b) => b.authority === PROVIDERS_AUTHORITY
+  ).length
+  if (!count) return null
+  return (
+    <span className="ml-auto text-[11.5px] text-faint tabular-nums">
+      {count}
+    </span>
+  )
+}
+
+function RepositoryMark({ repository }: { repository: string }) {
+  return (
+    <span
+      aria-hidden
+      className="grid size-[22px] shrink-0 place-items-center rounded-md bg-foreground text-xs font-bold text-background"
+    >
+      {(repository[0] ?? "s").toUpperCase()}
+    </span>
+  )
+}
+
+export function TechnicalSwitchRow() {
+  const [technical, setTechnical] = useTechnicalDetails()
+  return (
+    <div className="flex items-center gap-2 px-2 py-1.5 text-[12.5px] text-muted-foreground">
+      <CodeIcon className="size-4 shrink-0" strokeWidth={1.8} />
+      <span className="flex-1">Technical details</span>
+      <ToggleSwitch
+        checked={technical}
+        onChange={setTechnical}
+        label="Show technical details"
+      />
+    </div>
+  )
+}
+
+/** The repository's name and the menu behind it. It is the only place the
+ * sidebar names the repository. */
+export function RepositoryMenu() {
   const { isMobile } = useSidebar()
   const navigate = useNavigate()
-  const { theme, setTheme } = useTheme()
-  const repository = getRepository()
+  const { preferences, set } = useConsolePreferences()
+  const [technical, setTechnical] = useTechnicalDetails()
+  const repository = getRepository() ?? "substrate"
 
-  async function logOut() {
-    // Logging out revokes the token record this browser holds — a session IS
-    // that record. The local drop happens either way, so a refused revoke
+  const [confirming, setConfirming] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
+  async function signOut() {
+    // Signing out revokes the token record this browser holds; a session IS
+    // that record. The local copy is dropped either way, so a refused revoke
     // never strands the reader in a console they cannot use.
+    setSigningOut(true)
     await logout()
     void navigate({ to: "/login", replace: true })
   }
 
   return (
-    <SidebarMenu>
-      <SidebarMenuItem>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={<SidebarMenuButton className="aria-expanded:bg-muted" />}
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label={`${repository}: account menu`}
+          className="flex h-9 w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-foreground outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-hover"
+        >
+          <RepositoryMark repository={repository} />
+          <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold">
+            {repository}
+          </span>
+          <ChevronsUpDownIcon className="size-3.5 shrink-0 text-faint-deco" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          className="min-w-56"
+          side="bottom"
+          align={isMobile ? "center" : "start"}
+          sideOffset={4}
+        >
+          <DropdownMenuGroup>
+            <DropdownMenuLabel className="flex flex-col gap-0.5">
+              <span className="text-[11.5px] font-normal text-faint">
+                Signed in to
+              </span>
+              <span className="truncate text-foreground">{repository}</span>
+            </DropdownMenuLabel>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem render={<Link to="/settings" />}>
+            <SlidersHorizontalIcon /> Account and settings
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuRadioGroup
+            value={preferences.theme}
+            onValueChange={(value) =>
+              set("theme", value as "light" | "dark" | "system")
+            }
           >
-            <Avatar className="size-5 rounded-md">
-              <AvatarFallback className="rounded-md">
-                <KeyRoundIcon className="size-3" />
-              </AvatarFallback>
-            </Avatar>
-            <span className="truncate font-medium">
-              {repository ?? "Signed in"}
-            </span>
-            <ChevronsUpDownIcon className="ml-auto size-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            className="min-w-44"
-            side={isMobile ? "bottom" : "right"}
-            align="end"
-            sideOffset={4}
+            <DropdownMenuLabel className="text-[11.5px] font-normal text-faint">
+              Appearance
+            </DropdownMenuLabel>
+            <DropdownMenuRadioItem value="system">
+              <SunMoonIcon /> System
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="light">
+              <SunIcon /> Light
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="dark">
+              <MoonIcon /> Dark
+            </DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+          <DropdownMenuSeparator />
+          {/* The same switch as the sidebar's foot, reachable while the
+            sidebar is tucked away. */}
+          <DropdownMenuCheckboxItem
+            checked={technical}
+            onCheckedChange={(on) => setTechnical(on)}
+            className="pr-1.5 [&_[data-slot=dropdown-menu-checkbox-item-indicator]]:hidden"
           >
-            <DropdownMenuItem render={<Link to="/account" />}>
-              <UserRoundIcon /> Account
-            </DropdownMenuItem>
-            <DropdownMenuItem render={<Link to="/account/tokens" />}>
-              <KeyRoundIcon /> Tokens
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuRadioGroup
-              value={theme}
-              onValueChange={(value) =>
-                setTheme(value as "light" | "dark" | "system")
-              }
-            >
-              <DropdownMenuRadioItem value="light">
-                <SunIcon /> Light
-              </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="dark">
-                <MoonIcon /> Dark
-              </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="system">
-                <SunMoonIcon /> System
-              </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              variant="destructive"
-              onClick={() => void logOut()}
-            >
-              <LogOutIcon /> Log out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </SidebarMenuItem>
-    </SidebarMenu>
+            <CodeIcon /> Technical details
+            <SwitchMark checked={technical} className="ml-auto" />
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={() => setConfirming(true)}
+          >
+            <LogOutIcon /> Sign out…
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {confirming && (
+        <SignOutDialog
+          pending={signingOut}
+          onConfirm={() => void signOut()}
+          onClose={() => setConfirming(false)}
+        />
+      )}
+    </>
   )
 }
 
-export function AppSidebar() {
-  const pathname = useRouterState({ select: (s) => s.location.pathname })
+/** A collapsed sidebar shown over the page while the pointer or the focus is
+ * on it, without opening it for good. */
+export interface SidebarPeek {
+  open: boolean
+  show: () => void
+  hide: () => void
+}
 
+export function AppSidebar({
+  onSearch,
+  peek,
+}: {
+  onSearch: () => void
+  peek?: SidebarPeek
+}) {
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" render={<Link to="/" />}>
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <LayersIcon className="size-4" />
-              </div>
-              <div className="grid flex-1 text-left leading-tight">
-                <span className="truncate font-semibold">Substrate</span>
-                <span className="truncate text-xs text-sidebar-foreground/70">
-                  console
-                </span>
-              </div>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+    <Sidebar
+      collapsible="offcanvas"
+      data-peek={peek?.open || undefined}
+      className={cn(
+        peek?.open && "left-0! z-30 border-border-strong shadow-card"
+      )}
+      onMouseEnter={peek?.show}
+      onMouseLeave={peek?.hide}
+      onFocus={peek?.show}
+      onBlur={(event) => {
+        // A menu the sidebar opened is portaled out of it, so only focus that
+        // lands on the page itself hides the peek.
+        const next = event.relatedTarget
+        if (!next || next.closest("[data-slot=sidebar-inset]")) peek?.hide()
+      }}
+    >
+      <SidebarHeader className="gap-1 px-3 pt-3 pb-2">
+        <RepositoryMenu />
+        <button
+          type="button"
+          onClick={onSearch}
+          className="mt-1 flex cursor-pointer items-center gap-2 rounded-md border border-border-strong bg-background px-2 py-1.5 text-left text-[13px] text-faint hover:text-muted-foreground"
+        >
+          <SearchIcon className="size-4 shrink-0" strokeWidth={1.8} />
+          <span className="flex-1 truncate">Search or jump to…</span>
+          <Kbd>⌘K</Kbd>
+        </button>
       </SidebarHeader>
-      <SidebarContent className="pb-2">
-        <SidebarGroup>
-          <SidebarGroupLabel>Console</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {consoleItems.map((item) => (
-                <SidebarMenuItem key={item.to}>
-                  <SidebarMenuButton
-                    tooltip={item.title}
-                    isActive={
-                      item.to === "/"
-                        ? pathname === "/"
-                        : pathname === item.to ||
-                          pathname.startsWith(`${item.to}/`)
-                    }
-                    render={<Link to={item.to} />}
-                  >
-                    <item.icon />
-                    <span>{item.title}</span>
-                  </SidebarMenuButton>
-                  {item.to === "/registry" && <RegistryUpgradeBadge />}
-                  {item.to === "/settings" && <SettingsSetupBadge />}
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+      <SidebarContent className="gap-0 px-2 pb-3">
+        <nav aria-label="Places" className="flex flex-col">
+          <NavRow to="/" icon={HomeIcon} label="Home" />
+          <NavRow to="/data" icon={DatabaseIcon} label="All data" />
+          <NavRow to="/agents" icon={BotIcon} label="Agents" />
+          <NavRow to="/tools" icon={WrenchIcon} label="Tools" />
+          <NavRow
+            to="/providers"
+            icon={PlugIcon}
+            label="Providers"
+            extra={<ProviderCount />}
+          />
+        </nav>
         <Favorites />
-        <SidebarGroup>
-          <SidebarGroupLabel>Data</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <DataGroups />
-          </SidebarGroupContent>
-        </SidebarGroup>
+        <nav aria-label="Collections" className="flex flex-col">
+          <CollectionGroups />
+        </nav>
       </SidebarContent>
-      <SidebarFooter className="border-t border-sidebar-border">
-        <ActorFooter />
+      <SidebarFooter className="gap-0 border-t border-sidebar-border p-2">
+        <NavRow to="/history" icon={HistoryIcon} label="History" />
+        <NavRow to="/settings" icon={SlidersHorizontalIcon} label="Settings" />
+        <TechnicalSwitchRow />
       </SidebarFooter>
-      <SidebarRail />
     </Sidebar>
   )
 }

@@ -11,6 +11,7 @@ import {
   propertyTypeLabel,
   kindByCollection,
   kindByIdentity,
+  kindPurpose,
   splitKind,
   stateProperties,
   temporalProperties,
@@ -137,6 +138,23 @@ describe("temporalProperties", () => {
       })
     ).toEqual(["at"])
     expect(temporalProperties({ ...event, definition: {} })).toEqual([])
+  })
+
+  // Every shipped declaration names core's trait in full (decision 0101);
+  // matching only the bare spelling dropped a task's `dueAt` everywhere.
+  it("reads core's fully qualified temporal trait the same as the bare one", () => {
+    const traits = (t: string) =>
+      temporalProperties({ ...event, definition: { traits: [t] } })
+    expect(traits("substrate.reamde.dev/core/temporal(point: dueAt)")).toEqual([
+      "dueAt",
+    ])
+    expect(traits("substrate.reamde.dev/core/temporal(point)")).toEqual(["at"])
+    expect(traits("substrate.reamde.dev/core/temporal(range)")).toEqual([
+      "at",
+      "endsAt",
+    ])
+    // Another package's `temporal` is not core's.
+    expect(traits("ada.example.com/tasks/temporal(point: dueAt)")).toEqual([])
   })
 })
 
@@ -337,5 +355,40 @@ describe("the reference properties a page may expand", () => {
 
   it("reads the live person kind's own pointer", () => {
     expect(expandableReferences(person)).toEqual(["memberOf"])
+  })
+})
+
+describe("kindPurpose", () => {
+  const withPurpose = (purpose: unknown, authority = "example.com") => ({
+    ...person,
+    identity: `${authority}/things/thing`,
+    authority,
+    definition: { ...person.definition, purpose },
+  })
+
+  it("reads the declared purpose, absent being primary", () => {
+    expect(kindPurpose(person)).toBe("primary")
+    expect(kindPurpose(withPurpose("supporting"))).toBe("supporting")
+    expect(kindPurpose(withPurpose("internal"))).toBe("internal")
+    expect(kindPurpose(withPurpose("decorative"))).toBe("primary")
+  })
+
+  it("falls back to the shipped purpose where the held one declares none", () => {
+    expect(kindPurpose(person, "supporting")).toBe("supporting")
+    expect(kindPurpose("example.com/things/thing", "internal")).toBe("internal")
+    expect(kindPurpose(withPurpose("primary"), "supporting")).toBe("primary")
+    expect(kindPurpose("example.com/things/thing", "decorative")).toBe(
+      "primary"
+    )
+  })
+
+  it("treats every kind of the substrate's own authority as internal", () => {
+    expect(kindPurpose(withPurpose("primary", "substrate.reamde.dev"))).toBe(
+      "internal"
+    )
+    expect(kindPurpose("substrate.reamde.dev/llm/thread")).toBe("internal")
+    expect(kindPurpose("samples.substrate.reamde.dev/tasks/task")).toBe(
+      "primary"
+    )
   })
 })

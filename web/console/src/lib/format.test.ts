@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest"
 
 import {
   cellValue,
+  cleanTitle,
+  recordTitle,
   referenceCell,
   referenceID,
   referenceObjects,
@@ -130,5 +132,23 @@ describe("referenceObjects", () => {
     ).toBeUndefined()
     expect(referenceObjects([])).toBeUndefined()
     expect(referenceObjects(null)).toBeUndefined()
+  })
+})
+
+describe("cleanTitle", () => {
+  it("drops the separator an empty template token left at an edge", () => {
+    expect(cleanTitle(": Grace Hopper + Grace B. Hopper")).toBe(
+      "Grace Hopper + Grace B. Hopper"
+    )
+    expect(cleanTitle("proposed: Grace Hopper +")).toBe(
+      "proposed: Grace Hopper"
+    )
+    expect(recordTitle({ title: ": target-1" })).toBe("target-1")
+  })
+
+  it("leaves a title that only looks like one alone", () => {
+    expect(cleanTitle("C++")).toBe("C++")
+    expect(cleanTitle("Q3: plan")).toBe("Q3: plan")
+    expect(cleanTitle("-5 degrees")).toBe("-5 degrees")
   })
 })

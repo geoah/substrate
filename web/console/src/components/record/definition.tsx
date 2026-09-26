@@ -18,7 +18,7 @@ import { FileQuestionIcon } from "lucide-react"
 import { DataTable, useDataTable } from "@/components/data-table/data-table"
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
 import { YamlView } from "@/components/record/yaml-view"
-import { Badge } from "@/components/ui/badge"
+import { Pill } from "@/components/identity/pill"
 import {
   Empty,
   EmptyDescription,
@@ -60,7 +60,9 @@ function Section({
     <section className="flex flex-col">
       <h2 className="px-6 pt-4 pb-1 text-xs font-medium text-muted-foreground">
         {title}
-        {count !== undefined && <span className="ml-1.5 data">{count}</span>}
+        {count !== undefined && (
+          <span className="ml-1.5 tabular-nums">{count}</span>
+        )}
       </h2>
       {children}
     </section>
@@ -90,7 +92,10 @@ function TypeCell({ prop }: { prop: DeclaredProperty }) {
     <Tooltip>
       <TooltipTrigger
         render={
-          <span className="block cursor-help truncate data text-muted-foreground underline decoration-dotted decoration-from-font underline-offset-4" />
+          <button
+            type="button"
+            className="block max-w-full cursor-help truncate rounded-[2px] text-left data text-muted-foreground underline decoration-dotted decoration-from-font underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          />
         }
       >
         {label}
@@ -136,9 +141,9 @@ function propertyColumns(): DataTableColumn<DeclaredProperty>[] {
       ),
       cell: ({ row }) =>
         row.original.required ? (
-          <Badge variant="secondary" className="px-1.5 font-normal">
+          <Pill tone="neutral" dot={false}>
             required
-          </Badge>
+          </Pill>
         ) : (
           <Muted>—</Muted>
         ),
@@ -224,13 +229,9 @@ function HoldsCell({ reference }: { reference: DeclaredProperty }) {
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-1">
       {holds.map((held) => (
-        <Badge
-          key={held}
-          variant="secondary"
-          className="px-1.5 data font-normal"
-        >
+        <Pill key={held} tone="neutral" dot={false}>
           {held}
-        </Badge>
+        </Pill>
       ))}
     </span>
   )

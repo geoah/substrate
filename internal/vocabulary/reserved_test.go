@@ -190,6 +190,63 @@ func TestDeprecatedReserved(t *testing.T) {
 	})
 }
 
+// --- purpose -----------------------------------------------------------------
+
+// A kind's `purpose:` (decision record 0106) is not inert like the markers
+// above: clients read it to decide what to list. It is advisory all the same,
+// so the loader's whole job is the closed value set and leaving the authored
+// document alone.
+func TestPurposeReserved(t *testing.T) {
+	for _, want := range []string{vocabulary.PurposePrimary, vocabulary.PurposeSupporting, vocabulary.PurposeInternal} {
+		t.Run(want+" is admitted and parsed", func(t *testing.T) {
+			ty := loadThing(t, "  purpose: "+want+"\n")
+			if ty.Purpose != want || ty.PurposeOrPrimary() != want {
+				t.Fatalf("Purpose = %q, PurposeOrPrimary = %q, want %q", ty.Purpose, ty.PurposeOrPrimary(), want)
+			}
+			if got, _ := ty.Definition["purpose"].(string); got != want {
+				t.Fatalf("definition purpose = %v, want %q", ty.Definition["purpose"], want)
+			}
+		})
+	}
+
+	t.Run("absent reads as primary and is never written", func(t *testing.T) {
+		ty := loadThing(t, "")
+		if ty.Purpose != "" {
+			t.Fatalf("Purpose = %q, want empty", ty.Purpose)
+		}
+		if got := ty.PurposeOrPrimary(); got != vocabulary.PurposePrimary {
+			t.Fatalf("PurposeOrPrimary = %q, want %q", got, vocabulary.PurposePrimary)
+		}
+		if _, written := ty.Definition["purpose"]; written {
+			t.Fatalf("the default was written into the definition: %v", ty.Definition["purpose"])
+		}
+	})
+
+	t.Run("a property named purpose is a property", func(t *testing.T) {
+		ty := loadThing(t, `  properties:
+    purpose: {type: string}
+`)
+		if ty.Purpose != "" || ty.PurposeOrPrimary() != vocabulary.PurposePrimary {
+			t.Fatalf("a property was read as the kind's purpose: %q", ty.Purpose)
+		}
+		if _, ok := ty.Props["purpose"]; !ok {
+			t.Fatal("the purpose property did not parse")
+		}
+	})
+
+	t.Run("any other value is an error that names the three", func(t *testing.T) {
+		loadThingErr(t, "  purpose: other\n", `"other" is not a purpose — "primary", "supporting" or "internal"`)
+		loadThingErr(t, "  purpose: Primary\n", `"Primary" is not a purpose`)
+		loadThingErr(t, "  purpose: \"\"\n", `"" is not a purpose`)
+	})
+
+	t.Run("a non-string is an error that names the three", func(t *testing.T) {
+		loadThingErr(t, "  purpose: 3\n", `data.purpose: must be one of "primary", "supporting" or "internal"`)
+		loadThingErr(t, "  purpose: [primary]\n", `data.purpose: must be one of "primary", "supporting" or "internal"`)
+		loadThingErr(t, "  purpose: true\n", `data.purpose: must be one of "primary", "supporting" or "internal"`)
+	})
+}
+
 // --- a reference's properties block -----------------------------------------
 
 func TestReferencePropertiesBlock(t *testing.T) {

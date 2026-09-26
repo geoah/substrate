@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   changesInfiniteOptions,
   changesSearch,
+  fetchChangesPage,
   parseWatchLine,
+  resetValuesSupport,
   seekBoundary,
   type SeekProbe,
 } from "./changes"
@@ -176,5 +178,66 @@ describe("parseWatchLine", () => {
     expect(parseWatchLine("   ")).toBeNull()
     expect(parseWatchLine("not json")).toBeNull()
     expect(parseWatchLine('"just a string"')).toBeNull()
+  })
+})
+
+describe("values", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+  beforeEach(() => {
+    resetValuesSupport()
+    vi.stubGlobal("fetch", fetchMock)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+  const page: ChangePage = { changes: [], head: 0, generation: "g" }
+
+  it("asks with values=1 and keeps it out of the facets it does not narrow", () => {
+    expect(changesSearch({ values: true }).get("values")).toBe("1")
+    expect(changesSearch({}).has("values")).toBe(false)
+  })
+
+  it("retries without values against a server that refuses the parameter, and remembers", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: "bad_request",
+              message: 'unknown query parameter "values"',
+            },
+          }),
+          { status: 400 }
+        )
+      )
+      .mockImplementation(() =>
+        Promise.resolve(new Response(JSON.stringify(page), { status: 200 }))
+      )
+    const got = await fetchChangesPage({ filter: { values: true } })
+    expect(got).toEqual(page)
+    const urls = fetchMock.mock.calls.map(([url]) => String(url))
+    expect(urls[0]).toContain("values=1")
+    expect(urls[1]).not.toContain("values")
+    await fetchChangesPage({ filter: { values: true } })
+    expect(String(fetchMock.mock.calls[2][0])).not.toContain("values")
+  })
+
+  it("does not swallow any other refusal", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "bad_request",
+            message: "recordId requires recordKind",
+          },
+        }),
+        { status: 400 }
+      )
+    )
+    await expect(
+      fetchChangesPage({ filter: { values: true } })
+    ).rejects.toThrow("recordId")
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

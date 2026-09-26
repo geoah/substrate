@@ -105,7 +105,10 @@ data:
   # the first cut, written to the v4 guide rather than migrated from a
   # pre-guide draft. A changed declaration shipping the same version reaches
   # no repository, so every edit from here bumps this.
-  version: 13
+  #
+  # 15 — every kind's description opens with one plain sentence
+  # saying what a record is to a person.
+  version: 15
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -150,10 +153,12 @@ data:
   authority: providers.substrate.reamde.dev
   package: notion
   description: >-
-    The Notion integration token this bundle spends and the API origin it
-    may be sent to. The bundle's connector input resolves one record of this
-    kind; the token is sealed against read-back and the origin is pinned,
-    so an owner edit cannot become an exfiltration channel.
+    The access token and address your Notion workspace connects through. The
+    Notion integration token this bundle spends and the API origin it may
+    be sent to. The bundle's connector input resolves one record of this kind;
+    the token is sealed against read-back and the origin is pinned, so an
+    owner edit cannot become an exfiltration channel.
+  purpose: internal
   names:
     singular: config
   displayTemplate: Notion connection
@@ -193,10 +198,12 @@ data:
   authority: providers.substrate.reamde.dev
   package: notion
   description: >-
-    One connected Notion workspace: the owner's sync toggles, the integration
-    user the token turned out to be, and the connector's own per-stream progress.
-    The accountconfig trait's OAuth hands are declared but stay dormant, since
-    no OAuth flow ever runs for this bundle.
+    Your Notion workspace, connected here. One connected Notion workspace:
+    the owner's sync toggles, the integration user the token turned out to
+    be, and the connector's own per-stream progress. The accountconfig trait's
+    OAuth hands are declared but stay dormant, since no OAuth flow ever runs
+    for this bundle.
+  purpose: internal
   names:
     singular: account
   # `sync` is the core trait the Connections page, `GET /api/v1/sync/status`
@@ -459,11 +466,13 @@ data:
   authority: providers.substrate.reamde.dev
   package: notion
   description: >-
-    One Notion user — a person or a bot — as GET /v1/users returns it (2025-09-03).
-    A bot carries the workspace it belongs to. The response envelope (request_id,
-    and a list's object/results/next_cursor/has_more) is the one omitted class;
+    Someone in your Notion workspace: a person or a bot. One Notion user —
+    a person or a bot — as GET /v1/users returns it (2025-09-03). A bot carries
+    the workspace it belongs to. The response envelope (request_id, and a
+    list's object/results/next_cursor/has_more) is the one omitted class;
     Notion publishes no hypermedia. No instant of its own, so no temporal
     trait.
+  purpose: supporting
   names:
     singular: user
   displayTemplate: "{name|userId}"
@@ -596,11 +605,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: notion
   description: >-
-    One Notion database — the container its data sources hang off — as GET
-    /v1/databases/{id} returns it (2025-09-03); search never returns one,
-    so this row exists only because a data source named it. `at` is `created_time`;
-    `createdBy` and `lastEditedBy` are declared and not yet seen. The response
-    envelope (request_id) is the one omitted class.
+    A Notion database. One Notion database — the container its data sources
+    hang off — as GET /v1/databases/{id} returns it (2025-09-03); search never
+    returns one, so this row exists only because a data source named it. `at`
+    is `created_time`; `createdBy` and `lastEditedBy` are declared and not
+    yet seen. The response envelope (request_id) is the one omitted class.
   names:
     singular: database
   traits:
@@ -871,11 +880,13 @@ data:
   authority: providers.substrate.reamde.dev
   package: notion
   description: >-
-    One Notion data source — a database's schema and the set its rows belong
-    to — as /v1/search returns it (2025-09-03); byte-identical to GET /v1/data_sources/{id}
-    in every pair observed, so this bundle never makes that call and an omitted
-    property is left absent rather than nulled. `at` is `created_time`; the
-    response envelope (request_id) is omitted.
+    A table inside a Notion database, with the columns its rows share. A Notion
+    data source (a database's schema and the set its rows belong to) as /v1/search
+    returns it (2025-09-03); byte-identical to GET /v1/data_sources/{id} in
+    every pair observed, so that call is never made and an omitted property
+    is left absent rather than nulled. `at` is `created_time`; the envelope
+    (request_id) is omitted.
+  purpose: supporting
   names:
     singular: datasource
   traits:
@@ -1192,12 +1203,12 @@ data:
   authority: providers.substrate.reamde.dev
   package: notion
   description: >-
-    One Notion page — which is also how Notion models a row of a data source;
-    `parent.type` says which — as /v1/search returns it (2025-09-03). Search
-    is byte-identical to GET /v1/pages/{id} in every pair observed, so this
-    bundle never makes that call and an omitted property is left absent rather
-    than nulled. `at` is `created_time`; the response envelope (request_id)
-    is omitted.
+    A page in Notion, or a row in a Notion database. A Notion page (also how
+    Notion models a row of a data source; `parent.type` says which) as /v1/search
+    returns it (2025-09-03). Search is byte-identical to GET /v1/pages/{id}
+    in every pair observed, so that call is never made and an omitted property
+    is left absent rather than nulled. `at` is `created_time`; the envelope
+    (request_id) is omitted.
   names:
     singular: page
   traits:
@@ -1458,12 +1469,12 @@ data:
   authority: providers.substrate.reamde.dev
   package: notion
   description: >-
-    One Notion block — a paragraph, heading, quote, table row or any of the
-    other 30 types — as GET /v1/blocks/{id}/children returns it (2025-09-03).
-    One kind carrying the union of every type's payload: declared objects
+    One piece of a Notion page, such as a paragraph. A Notion block (a paragraph,
+    heading, quote, table row or any of the other 30 types) as GET /v1/blocks/{id}/children
+    returns it (2025-09-03): the union of every type's payload, declared objects
     where the shape allows, `json` where it holds rich text or is empty. `at`
-    is `created_time`; the response envelope (request_id and the list wrapper)
-    is the one omitted class.
+    is `created_time`; the envelope (request_id and the list wrapper) is omitted.
+  purpose: supporting
   names:
     singular: block
   traits:
@@ -1898,10 +1909,12 @@ data:
   authority: providers.substrate.reamde.dev
   package: notion
   description: >-
-    Where this connector's block walk of one page got to: the children cursor,
-    when it last ran, the page edit it ran against and what Notion last said
-    about it. Connector-written state, kept off the page so a page of blocks
-    never bumps the mirrored row.
+    How far copying one Notion page has got. Where this connector's block
+    walk of one page got to: the children cursor, when it last ran, the page
+    edit it ran against and what Notion last said about it. Connector-written
+    state, kept off the page so a page of blocks never bumps the mirrored
+    row.
+  purpose: internal
   names:
     singular: pagesync
   displayTemplate: "{page.titlePlainText}"

@@ -6,11 +6,12 @@ data:
   authority: samples.substrate.reamde.dev
   package: messaging
   description: >-
-    One message in a conversation, inbound or outbound. A synced message is
-    created `received` and never moves; anything you mean to send starts as
-    a `draft` and walks the send path, so composing and delivery are one record
-    rather than two systems.
-  version: 6
+    A message in a chat, sent or received. One message in a conversation,
+    inbound or outbound. A synced message is created `received` and never
+    moves; anything you mean to send starts as a `draft` and walks the send
+    path, so composing and delivery are one record rather than two systems.
+  version: 8
+  purpose: supporting
   names:
     singular: conversationmessage
   traits:

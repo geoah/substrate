@@ -21,10 +21,16 @@ import {
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { ActorChip } from "@/components/actor-chip"
-import { RecordPeek, type PeekTarget } from "@/components/record-peek"
-import { ReferenceValue } from "@/components/record/reference-value"
-import { StateBadge } from "@/components/state-badge"
+import { ChangeLabel } from "@/components/change-request"
+import { ActorRef } from "@/components/identity/actor-ref"
+import { IdText } from "@/components/identity/id-text"
+import { KindGlyph } from "@/components/identity/kind-glyph"
+import { PageHeader } from "@/components/identity/page-header"
+import { DocPage } from "@/components/identity/page-layout"
+import { RecordRef } from "@/components/identity/record-ref"
+import { SectionHead } from "@/components/identity/section-head"
+import { StateBadge } from "@/components/identity/state-badge"
+import { ReferenceValue } from "@/components/identity/reference-value"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -34,14 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
   Empty,
   EmptyContent,
@@ -56,9 +55,7 @@ import {
   FieldError,
   FieldLabel,
 } from "@/components/ui/field"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/toast"
 import {
@@ -85,11 +82,23 @@ import {
   type MergeVerdict,
 } from "@/lib/mergerequests"
 import { kindByIdentity } from "@/lib/definition"
+import { changeSpecs } from "@/lib/agent-chat"
+import type { PropSpec } from "@/lib/record-schema"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { CORE_PACKAGE } from "@/lib/api/http"
 import { cn } from "@/lib/utils"
 import { EvidenceChips } from "@/components/merge-request"
 import { mergeRequestDetailRoute } from "@/router"
 
-function refTitle(ref?: PeekTarget): string {
+/** One side of the pair: its kind reference and id, and the title the
+ * request carries for it. */
+interface PairTarget {
+  id: string
+  kind: string
+  title?: string
+}
+
+function refTitle(ref?: PairTarget): string {
   return ref?.title || ref?.id || "unknown"
 }
 
@@ -97,21 +106,24 @@ function refTitle(ref?: PeekTarget): string {
 
 const POSTURE_TEXT: Record<
   Exclude<DiffPosture, "equal">,
-  { label: string; explain: string }
+  { label: string; tier: string; explain: string }
 > = {
   choice: {
-    label: "your choice",
+    label: "Kept",
+    tier: "owner",
     explain:
-      "You hold this value on at least one side, so the surviving value stands as it is. If the other one is right, edit the survivor after the merge.",
+      "You set this on at least one side, so the one that stays keeps its value. If the other one is right, change it after combining.",
   },
   recompute: {
-    label: "recompute settles",
+    label: "Combined",
+    tier: "recompute",
     explain:
-      "A machine holds this value. After the merge the survivor works it out again from both records' sources.",
+      "This is kept up to date from elsewhere. After combining, it is worked out again from both records' sources.",
   },
 }
 
 function PostureCell({ posture }: { posture: DiffPosture }) {
+  const [technical] = useTechnicalDetails()
   if (posture === "equal") {
     return <span className="text-xs text-muted-foreground">already agree</span>
   }
@@ -123,9 +135,10 @@ function PostureCell({ posture }: { posture: DiffPosture }) {
     <Tooltip>
       <TooltipTrigger
         render={
-          <span
+          <button
+            type="button"
             className={cn(
-              "inline-flex w-fit items-center text-xs whitespace-nowrap",
+              "inline-flex w-fit cursor-help items-center text-xs whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
               posture === "choice"
                 ? "rounded-sm border border-warning/60 px-1.5 py-0.5 text-warning"
                 : "pt-0.5 text-muted-foreground"
@@ -134,6 +147,11 @@ function PostureCell({ posture }: { posture: DiffPosture }) {
         }
       >
         {text.label}
+        {technical && (
+          <span className="ml-1 font-mono text-[11.5px] text-faint">
+            {text.tier}
+          </span>
+        )}
       </TooltipTrigger>
       <TooltipContent className="max-w-72">{text.explain}</TooltipContent>
     </Tooltip>
@@ -142,16 +160,7 @@ function PostureCell({ posture }: { posture: DiffPosture }) {
 
 // ── side-by-side ────────────────────────────────────────────────────────────
 
-function ValueCell({
-  row,
-  side,
-  kinds,
-}: {
-  row: DiffRow
-  side: "loser" | "winner"
-  /** The registry, so a reference value renders as its referent's pill. */
-  kinds: KindInfo[]
-}) {
+function ValueCell({ row, side }: { row: DiffRow; side: "loser" | "winner" }) {
   const value = side === "loser" ? row.loser : row.winner
   const manager = side === "loser" ? row.loserManager : row.winnerManager
 
@@ -163,9 +172,9 @@ function ValueCell({
     return (
       <span className="flex min-w-0 flex-col items-start gap-1">
         {references.map((one, at) => (
-          <ReferenceValue key={at} value={one} kinds={kinds} />
+          <ReferenceValue key={at} value={one} />
         ))}
-        {manager && row.posture !== "equal" && <ActorChip actor={manager} />}
+        {manager && row.posture !== "equal" && <ActorRef actor={manager} />}
       </span>
     )
   }
@@ -177,19 +186,19 @@ function ValueCell({
     <span className="flex min-w-0 flex-col items-start gap-1">
       {text ? (
         <span className="flex w-full min-w-0 items-baseline gap-1.5">
-          <span className="min-w-0 truncate data" title={text}>
+          <span className="min-w-0 truncate" title={text}>
             {text}
           </span>
           {count > 0 && (
-            <span className="shrink-0 data text-xs text-muted-foreground">
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
               ×{count}
             </span>
           )}
         </span>
       ) : (
-        <span className="data text-muted-foreground">—</span>
+        <span className="text-faint">—</span>
       )}
-      {manager && row.posture !== "equal" && <ActorChip actor={manager} />}
+      {manager && row.posture !== "equal" && <ActorRef actor={manager} />}
     </span>
   )
 }
@@ -197,38 +206,50 @@ function ValueCell({
 /** The diff rides the table system's look (owner ruling, 2026-08-06): real
  * table anatomy — fixed columns, bordered rows, muted lowercase headers —
  * though it stays a comparison, not a list, so no column dropdown or pages. */
-function DiffRows({ rows, kinds }: { rows: DiffRow[]; kinds: KindInfo[] }) {
+function DiffRows({
+  rows,
+  specs,
+}: {
+  rows: DiffRow[]
+  specs: Map<string, PropSpec>
+}) {
+  const [technical] = useTechnicalDetails()
   return (
     <>
       {rows.map((row) => (
         <TableRow key={row.key} className="hover:bg-muted/30">
           <TableCell className="pl-4 align-top">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <span className="block truncate data text-muted-foreground" />
-                }
-              >
-                {row.key}
-              </TooltipTrigger>
-              {row.description ? (
+            {row.description ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      className="block max-w-full cursor-help rounded-[2px] text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    />
+                  }
+                >
+                  <ChangeLabel name={row.key} spec={specs.get(row.key)} />
+                </TooltipTrigger>
                 <TooltipContent className="max-w-72">
                   {row.description}
                 </TooltipContent>
-              ) : (
-                <TooltipContent>
-                  {row.declared
-                    ? "declared property"
-                    : "not declared by the kind"}
-                </TooltipContent>
-              )}
-            </Tooltip>
+              </Tooltip>
+            ) : (
+              <ChangeLabel name={row.key} spec={specs.get(row.key)} />
+            )}
+            {technical && (
+              <span className="block font-mono text-[11.5px] break-all text-faint">
+                {row.key}
+                {!row.declared && " · undeclared"}
+              </span>
+            )}
           </TableCell>
           <TableCell className="align-top">
-            <ValueCell row={row} side="loser" kinds={kinds} />
+            <ValueCell row={row} side="loser" />
           </TableCell>
           <TableCell className="align-top">
-            <ValueCell row={row} side="winner" kinds={kinds} />
+            <ValueCell row={row} side="winner" />
           </TableCell>
           <TableCell className="pr-4 align-top">
             <PostureCell posture={row.posture} />
@@ -243,29 +264,27 @@ function SideBySide({
   loser,
   winner,
   type,
-  kinds,
 }: {
   loser: SubstrateRecord
   winner: SubstrateRecord
   type?: KindInfo
-  /** The registry, so a reference value renders as its referent's pill. */
-  kinds: KindInfo[]
 }) {
   const rows = useMemo(
     () => deriveDiff(winner, loser, type),
     [winner, loser, type]
   )
+  const specs = useMemo(() => changeSpecs(type), [type])
   const open = rows.filter((r) => r.posture !== "equal")
   const equal = rows.filter((r) => r.posture === "equal")
   const [showEqual, setShowEqual] = useState(false)
 
   return (
-    <div className="mx-6 mb-4 overflow-x-auto rounded-md border">
+    <div className="mb-4 overflow-x-auto rounded-md border">
       <Table className="table-fixed [&_td]:py-2.5" style={{ minWidth: 640 }}>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="pl-4" style={{ width: 140 }}>
-              field
+              property
             </TableHead>
             {/* the qualifiers carry the direction — twins share a name, so
                 they must not whisper (codex finding, 2026-08-06) */}
@@ -277,12 +296,12 @@ function SideBySide({
                     kind: loser.kind,
                     title: String(loser.properties.title ?? ""),
                   })}{" "}
-                  <span className="data font-normal text-muted-foreground">
+                  <span className="font-mono text-xs font-normal text-faint">
                     {loser.id}
                   </span>
                 </span>
-                <span className="text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">
-                  merges away
+                <span className="text-xs font-normal text-faint">
+                  goes into the other
                 </span>
               </span>
             </TableHead>
@@ -294,12 +313,12 @@ function SideBySide({
                     kind: winner.kind,
                     title: String(winner.properties.title ?? ""),
                   })}{" "}
-                  <span className="data font-normal text-muted-foreground">
+                  <span className="font-mono text-xs font-normal text-faint">
                     {winner.id}
                   </span>
                 </span>
-                <span className="text-[0.65rem] font-medium tracking-wide text-primary uppercase">
-                  survives
+                <span className="text-xs font-normal text-primary-text">
+                  stays
                 </span>
               </span>
             </TableHead>
@@ -310,14 +329,14 @@ function SideBySide({
         </TableHeader>
         <TableBody>
           {open.length > 0 ? (
-            <DiffRows rows={open} kinds={kinds} />
+            <DiffRows rows={open} specs={specs} />
           ) : (
             <TableRow className="hover:bg-transparent">
               <TableCell
                 colSpan={4}
                 className="px-4 text-xs text-muted-foreground"
               >
-                No differences. Every field the pair carries already agrees.
+                No differences. Every property the pair carries already agrees.
               </TableCell>
             </TableRow>
           )}
@@ -337,13 +356,13 @@ function SideBySide({
                     )}
                   />
                   {equal.length === 1
-                    ? "1 identical field"
-                    : `${equal.length} identical fields`}
+                    ? "1 identical property"
+                    : `${equal.length} identical properties`}
                 </button>
               </TableCell>
             </TableRow>
           )}
-          {showEqual && <DiffRows rows={equal} kinds={kinds} />}
+          {showEqual && <DiffRows rows={equal} specs={specs} />}
         </TableBody>
       </Table>
     </div>
@@ -366,8 +385,8 @@ function VerdictDialog({
   onClose,
 }: {
   verdict: MergeVerdict
-  loser?: PeekTarget
-  winner?: PeekTarget
+  loser?: PairTarget
+  winner?: PairTarget
   busy: boolean
   onConfirm: (note?: string) => void
   onClose: () => void
@@ -381,93 +400,74 @@ function VerdictDialog({
   const approving = verdict === "accepted"
 
   return (
-    <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <form
-          className="contents"
-          onSubmit={form.handleSubmit((values) => onConfirm(values.note))}
-        >
-          <DialogHeader>
-            <DialogTitle>
-              {approving
-                ? `Merge ${loserTitle} into ${winnerTitle}?`
-                : "Reject this suggestion?"}
-            </DialogTitle>
-            <DialogDescription className="space-y-2">
-              {/* who is who, unambiguously — twins share a name, ids differ
-                  (codex finding, 2026-08-06) */}
-              <span className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 rounded-sm border bg-muted/40 px-2.5 py-1.5 text-xs">
-                <span>merges away</span>
-                <span className="min-w-0 truncate text-foreground">
-                  {loserTitle}{" "}
-                  <span className="data text-muted-foreground">
-                    {loser?.id}
-                  </span>
-                </span>
-                <span>survives</span>
-                <span className="min-w-0 truncate text-foreground">
-                  {winnerTitle}{" "}
-                  <span className="data text-muted-foreground">
-                    {winner?.id}
-                  </span>
-                </span>
+    <ConfirmDialog
+      title={
+        approving
+          ? `Combine ${loserTitle} into ${winnerTitle}?`
+          : "Keep these two apart?"
+      }
+      consequence={
+        <span className="block space-y-2">
+          {/* who is who, unambiguously — twins share a name, ids differ
+              (codex finding, 2026-08-06) */}
+          <span className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 rounded-sm border bg-muted/40 px-2.5 py-1.5 text-xs">
+            <span>goes into</span>
+            <span className="min-w-0 truncate text-foreground">
+              {loserTitle}{" "}
+              <span className="font-mono text-muted-foreground">
+                {loser?.id}
               </span>
-              {approving ? (
-                <>
-                  <span className="block">
-                    The merged-away record stops answering reads, but every
-                    reference to it still resolves through the survivor. Values
-                    you hold are left alone.
-                  </span>
-                  <span className="block">
-                    This can be undone. A{" "}
-                    <span className="data">recordsplit</span> takes the merge
-                    apart later.
-                  </span>
-                </>
-              ) : (
-                <span className="block">
-                  Both records are left as they are. This pair will not be
-                  suggested again.
-                </span>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <Field data-invalid={!!form.formState.errors.note || undefined}>
-            <FieldLabel htmlFor="verdict-note">Note (optional)</FieldLabel>
-            <Textarea
-              id="verdict-note"
-              rows={2}
-              placeholder={
-                approving
-                  ? "why these are the same…"
-                  : "why these are not the same…"
-              }
-              aria-invalid={!!form.formState.errors.note}
-              {...form.register("note")}
-            />
-            <FieldDescription>
-              Saved with your decision on this request.
-            </FieldDescription>
-            <FieldError errors={[form.formState.errors.note]} />
-          </Field>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={onClose}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={busy}>
-              {busy && <Spinner className="size-3.5" />}
-              {approving ? "Accept and merge" : "Reject"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+            </span>
+            <span>stays</span>
+            <span className="min-w-0 truncate text-foreground">
+              {winnerTitle}{" "}
+              <span className="font-mono text-muted-foreground">
+                {winner?.id}
+              </span>
+            </span>
+          </span>
+          {approving ? (
+            <>
+              <span className="block">
+                {loserTitle} stops being a record of its own: its history and
+                everything that points to it move to {winnerTitle}. Values you
+                set are kept.
+              </span>
+              <span className="block">You can separate them again later.</span>
+            </>
+          ) : (
+            <span className="block">
+              Both are left as they are, and this pair won’t be suggested again.
+            </span>
+          )}
+        </span>
+      }
+      confirm={approving ? "Combine" : "Keep apart"}
+      pending={busy}
+      onConfirm={() =>
+        void form.handleSubmit((values) => onConfirm(values.note))()
+      }
+      onClose={onClose}
+    >
+      <Field data-invalid={!!form.formState.errors.note || undefined}>
+        <FieldLabel htmlFor="verdict-note">Note (optional)</FieldLabel>
+        <Textarea
+          id="verdict-note"
+          rows={2}
+          placeholder={
+            approving
+              ? "why these are the same…"
+              : "why these are not the same…"
+          }
+          aria-invalid={!!form.formState.errors.note}
+          {...form.register("note")}
+        />
+        <FieldDescription>
+          Saved with your decision on this request.
+        </FieldDescription>
+        <FieldError errors={[form.formState.errors.note]} />
+      </Field>
+    </ConfirmDialog>
   )
 }
 
@@ -484,7 +484,7 @@ function conflictAnnotation(mr: SubstrateRecord): string | undefined {
 }
 
 function useSideQuery(
-  ref: PeekTarget | undefined,
+  ref: PairTarget | undefined,
   types: KindInfo[],
   enabled: boolean
 ) {
@@ -523,6 +523,7 @@ export function MergeRequestDetailPage() {
   const loserSide = useSideQuery(loserRef, types, proposed)
 
   const [confirming, setConfirming] = useState<MergeVerdict | null>(null)
+  const [technicalMode] = useTechnicalDetails()
 
   const verdict = useMutation({
     mutationFn: ({ v, note }: { v: MergeVerdict; note?: string }) =>
@@ -534,7 +535,7 @@ export function MergeRequestDetailPage() {
         title:
           v === "accepted"
             ? "Merged."
-            : "Rejected. This pair won't be suggested again.",
+            : "Kept apart. This pair won't be suggested again.",
       })
       // A merge touches far more than this request: the pair's records, the
       // changelog, counts, the queue. Drop everything and re-read.
@@ -544,7 +545,7 @@ export function MergeRequestDetailPage() {
       setConfirming(null)
       toast.add({
         type: "error",
-        title: `${v === "accepted" ? "Accepting" : "Rejecting"} the request failed`,
+        title: `${v === "accepted" ? "Combining them" : "Keeping them apart"} didn’t go through`,
         description: error.message,
       })
       // A conflict means it moved under us; the re-read shows the server's
@@ -574,7 +575,7 @@ export function MergeRequestDetailPage() {
               size="sm"
               onClick={() => void mr.refetch()}
             >
-              Retry
+              Try again
             </Button>
           </EmptyContent>
         </Empty>
@@ -596,6 +597,7 @@ export function MergeRequestDetailPage() {
   const proposer = request.propertyMeta?.rationale?.manager
   const decider = request.propertyMeta?.decidedAt?.manager
   const note = verdictNote(request)
+  const technical = technicalMode
   const conflict = conflictAnnotation(request)
 
   const sidesReady = proposed && winnerSide.query.data && loserSide.query.data
@@ -607,23 +609,22 @@ export function MergeRequestDetailPage() {
     (Boolean(winnerRef && !winnerSide.type) ||
       Boolean(loserRef && !loserSide.type))
 
+  const pairKind = winnerRef?.kind ?? loserRef?.kind
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-start justify-between gap-3 px-6 pt-5 pb-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight break-words">
-            {loserTitle} <span className="text-muted-foreground">→</span>{" "}
-            {winnerTitle}
-          </h1>
-          <p className="data text-xs text-muted-foreground">
-            substrate.reamde.dev/core/recordmergerequests/{request.id}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2 pt-0.5">
-          {decision && (
-            <StateBadge value={decision} initial={DECISION_INITIAL} />
-          )}
-          {proposed && (
+    <DocPage>
+      <PageHeader
+        size="record"
+        glyph={
+          pairKind ? (
+            <KindGlyph kind={pairKind} size="lg" />
+          ) : (
+            <span className="grid size-10 place-items-center rounded-[10px] bg-hover text-muted-foreground">
+              <GitMergeIcon className="size-5" />
+            </span>
+          )
+        }
+        actions={
+          proposed && (
             <>
               <Button
                 variant="outline"
@@ -632,7 +633,7 @@ export function MergeRequestDetailPage() {
                 onClick={() => setConfirming("rejected")}
               >
                 <XIcon className="size-3.5" />
-                Reject
+                Keep them apart
               </Button>
               <Button
                 size="sm"
@@ -640,121 +641,137 @@ export function MergeRequestDetailPage() {
                 onClick={() => setConfirming("accepted")}
               >
                 <CheckIcon className="size-3.5" />
-                Accept
+                Combine them
               </Button>
             </>
-          )}
-        </div>
-      </div>
-
-      <ScrollArea className="min-h-0 flex-1">
-        {/* the matcher's case */}
-        <div className="mx-6 mb-4 flex flex-col gap-2 rounded-md border bg-muted/40 px-4 py-3 text-sm">
-          {rationale && <p>{rationale}</p>}
-          <EvidenceChips mr={request} />
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
+          )
+        }
+        title={proposed ? "Are these the same?" : "Suggested as the same"}
+        meta={
+          <>
+            {decision && (
+              <StateBadge value={decision} initial={DECISION_INITIAL} />
+            )}
             {proposer && (
               <span className="flex items-center gap-1.5">
-                proposed by <ActorChip actor={proposer} />
+                Suggested by <ActorRef actor={proposer} />
               </span>
             )}
-            <span className="data" title={request.createdAt}>
+            <span title={request.createdAt}>
               {relativeTime(request.createdAt)}
             </span>
             {decidedAt && (
               <span className="flex items-center gap-1.5">
-                decided{" "}
-                <span className="data" title={decidedAt}>
-                  {relativeTime(decidedAt)}
-                </span>
+                Decided <span title={decidedAt}>{relativeTime(decidedAt)}</span>
                 {decider && (
                   <>
-                    by <ActorChip actor={decider} />
+                    by <ActorRef actor={decider} />
                   </>
                 )}
               </span>
             )}
-          </div>
-          {note && (
-            <p className="text-xs">
-              <span className="text-muted-foreground">note:</span> {note}
+            {technical && (
+              <IdText
+                value={`${CORE_PACKAGE}/recordmergerequest/${request.id}`}
+                copy
+              />
+            )}
+          </>
+        }
+      />
+
+      {/* the pair */}
+      <div className="mt-5 flex flex-wrap items-center gap-2 text-[15px]">
+        {loserRef ? (
+          <RecordRef kind={loserRef.kind} id={loserRef.id} />
+        ) : (
+          loserTitle
+        )}
+        <span className="text-faint">and</span>
+        {winnerRef ? (
+          <RecordRef kind={winnerRef.kind} id={winnerRef.id} />
+        ) : (
+          winnerTitle
+        )}
+      </div>
+
+      {/* the matcher's case */}
+      <div className="mt-4 flex flex-col gap-2 rounded-lg border bg-panel px-4 py-3 text-[13px]">
+        {rationale && <p>{rationale}</p>}
+        <EvidenceChips mr={request} />
+        {note && (
+          <p className="text-xs">
+            <span className="text-faint">Note:</span> {note}
+          </p>
+        )}
+        {conflict && (
+          <p className="border-l-2 border-l-warning pl-2 text-xs">
+            <span className="text-warning">Conflict:</span> {conflict}
+          </p>
+        )}
+      </div>
+
+      {/* the resolved record */}
+      {!proposed && (
+        <div className="mt-4 flex items-start gap-3 rounded-lg border px-4 py-3 text-[13px]">
+          <GitMergeIcon className="mt-0.5 size-4 shrink-0 text-faint" />
+          {decision === "accepted" ? (
+            <p>
+              Combined.{" "}
+              {winnerRef ? (
+                <RecordRef kind={winnerRef.kind} id={winnerRef.id} />
+              ) : (
+                winnerTitle
+              )}{" "}
+              carries both histories now.
             </p>
-          )}
-          {conflict && (
-            <p className="border-l-2 border-l-warning pl-2 text-xs">
-              <span className="text-warning">conflict:</span>{" "}
-              <span className="data">{conflict}</span>
+          ) : (
+            <p>
+              Kept apart. You won’t be asked about{" "}
+              {loserRef ? (
+                <RecordRef kind={loserRef.kind} id={loserRef.id} />
+              ) : (
+                loserTitle
+              )}{" "}
+              and{" "}
+              {winnerRef ? (
+                <RecordRef kind={winnerRef.kind} id={winnerRef.id} />
+              ) : (
+                winnerTitle
+              )}{" "}
+              again.
             </p>
           )}
         </div>
+      )}
 
-        {/* the resolved record */}
-        {!proposed && (
-          <div className="mx-6 mb-4 flex items-start gap-3 rounded-md border px-4 py-3 text-sm">
-            <GitMergeIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            {decision === "accepted" ? (
-              <p>
-                Merged. The survivor{" "}
-                <span className="data">
-                  {winnerRef ? (
-                    <RecordPeek target={winnerRef} types={types} />
-                  ) : (
-                    winnerTitle
-                  )}
-                </span>{" "}
-                carries both histories now.{" "}
-                <span className="data">recordsplit</span> takes the merge apart
-                if it was wrong.
-              </p>
-            ) : (
-              <p>
-                Rejected. The pair stays separate, and you will not be asked
-                about{" "}
-                <span className="data">
-                  {loserRef ? (
-                    <RecordPeek target={loserRef} types={types} />
-                  ) : (
-                    loserTitle
-                  )}
-                </span>{" "}
-                and{" "}
-                <span className="data">
-                  {winnerRef ? (
-                    <RecordPeek target={winnerRef} types={types} />
-                  ) : (
-                    winnerTitle
-                  )}
-                </span>{" "}
-                again.
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* the side-by-side */}
-        {proposed &&
-          (sidesReady ? (
+      {/* the side-by-side */}
+      {proposed && (
+        <>
+          <SectionHead
+            title="Side by side"
+            hint="what each one holds, and what combining keeps"
+          />
+          {sidesReady ? (
             <SideBySide
               loser={loserSide.query.data!}
               winner={winnerSide.query.data!}
               type={winnerSide.type}
-              kinds={types}
             />
           ) : sideError ? (
-            <div className="mx-6 mb-4 rounded-md border px-4 py-3 text-sm text-muted-foreground">
-              One side of the pair didn't load: {sideError.message}
+            <div className="rounded-lg border px-4 py-3 text-[13px] text-muted-foreground">
+              One of the two didn’t load: {sideError.message}
             </div>
           ) : sideTypeMissing ? (
-            <div className="mx-6 mb-4 rounded-md border px-4 py-3 text-sm text-muted-foreground">
-              This repository does not have the pair's kind, so the two records
-              cannot be shown side by side. You can still accept or reject.
+            <div className="rounded-lg border px-4 py-3 text-[13px] text-muted-foreground">
+              This repository doesn’t have their collection, so the two can’t be
+              shown side by side. You can still decide.
             </div>
           ) : (
-            <div className="mx-6 mb-4 flex flex-col gap-2">
-              <Skeleton className="h-24 w-full rounded-md" />
-            </div>
-          ))}
-      </ScrollArea>
+            <Skeleton className="h-24 w-full rounded-lg" />
+          )}
+        </>
+      )}
 
       {confirming && (
         <VerdictDialog
@@ -766,22 +783,19 @@ export function MergeRequestDetailPage() {
           onClose={() => setConfirming(null)}
         />
       )}
-    </div>
+    </DocPage>
   )
 }
 
 /** Mirrors the final layout: header, evidence band, diff grid. */
 function DetailSkeleton() {
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 px-6 pt-5 pb-3">
-        <Skeleton className="h-6 w-72" />
-        <Skeleton className="mt-1.5 h-3.5 w-80" />
-      </div>
-      <div className="flex flex-col gap-3 px-6">
-        <Skeleton className="h-20 w-full rounded-md" />
-        <Skeleton className="h-48 w-full rounded-md" />
-      </div>
-    </div>
+    <DocPage>
+      <Skeleton className="size-10 rounded-[10px]" />
+      <Skeleton className="mt-3 h-7 w-72" />
+      <Skeleton className="mt-2 h-3.5 w-80" />
+      <Skeleton className="mt-5 h-20 w-full rounded-lg" />
+      <Skeleton className="mt-4 h-48 w-full rounded-lg" />
+    </DocPage>
   )
 }

@@ -1,31 +1,63 @@
-/* eslint-disable react-refresh/only-export-components -- a columns.tsx is a
- * factory of cell renderers, not a page module; nothing here hot-reloads on
- * its own (the official DataTable pattern's columns file has this shape). */
+/* eslint-disable react-refresh/only-export-components -- a columns module is
+ * a factory of cell renderers, not a page module; nothing here hot-reloads on
+ * its own. */
 
-/** The per-kind column factory (the official pattern's `columns.tsx`, made
- * schema-driven because ONE generic table covers every kind): `title` +
- * temporal always, declared properties after in schema casing with record-56
- * descriptions on the headers, `updated` on the right. Rule 6: the first and last columns carry the page gutter. */
+/** The per-kind column factory. ONE grid covers every kind, so the columns
+ * come from the declaration: the title first (glyph, title, the Open button),
+ * then the states, the stamps the kind's temporal trait binds, its references,
+ * its enums and the rest of its short values; paragraphs and blobs never earn
+ * a column. The last change closes the row. Headers speak everyday labels
+ * (the property key in technical mode) with the declared description one
+ * hover away. */
+
+import { Link } from "@tanstack/react-router"
+import {
+  CalendarIcon,
+  ClockIcon,
+  HashIcon,
+  Maximize2Icon,
+  TypeIcon,
+} from "lucide-react"
 
 import type { DataTableColumn } from "@/components/data-table/data-table"
-
-import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
-import { TreeCell } from "@/components/data-table/data-table-tree"
-import { ReferenceCell } from "@/components/record/reference-value"
-import { StateBadge } from "@/components/state-badge"
-import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
-import { type ReferenceTitles } from "@/lib/reference-titles"
+import { GridColumnHeader } from "@/components/data-table/data-grid-header"
+import { EmptyValue } from "@/components/identity/empty-value"
+import { EnumTag } from "@/components/identity/enum-tag"
+import { propertyIcon } from "@/components/data-table/property-icon"
 import {
-  cellValue,
-  recordTitle,
-  relativeTime,
-  tableDateTime,
-} from "@/lib/format"
+  INDENT_PX,
+  TreeToggle,
+  useRowTreeNode,
+} from "@/components/data-table/data-table-tree"
+import { KindGlyph } from "@/components/identity/kind-glyph"
+import { RecordRef } from "@/components/identity/record-ref"
+import { StateBadge } from "@/components/identity/state-badge"
+import { readReference } from "@/lib/api/types"
+import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import {
   columnProperties,
+  kindByIdentity,
   temporalProperties,
   type DeclaredProperty,
 } from "@/lib/definition"
+import { cellValue, recordTitle } from "@/lib/format"
+import {
+  doneStateProperty,
+  dueTone,
+  friendlyDate,
+  friendlyDay,
+  isDoneState,
+  isDueColumn,
+  isEmptyValue,
+  propertyLabel,
+  subtaskCounts,
+  titleBacking,
+  titleProperties,
+} from "@/lib/grid-values"
+import { untitled } from "@/lib/kind-names"
+import { splitRecordPath } from "@/lib/record-path"
+import type { ReferenceTitles } from "@/lib/reference-titles"
+import { cn } from "@/lib/utils"
 
 /** Wire names the engine reserves as hot/system columns (recordColumns in
  * engine/query.go). A DECLARED property sharing one of these names cannot be
@@ -65,102 +97,10 @@ export function columnIdOf(property: string): string {
     : propertyColumnId(property)
 }
 
-function Muted({ children }: { children: React.ReactNode }) {
-  return <span className="text-muted-foreground">{children}</span>
-}
-
-function propertyCell(
-  prop: DeclaredProperty,
-  value: unknown,
-  kinds: KindInfo[],
-  titles?: ReferenceTitles
-) {
-  if (value === undefined || value === null) return <Muted>—</Muted>
-  if (prop.kind === "state") {
-    return <StateBadge value={String(value)} initial={prop.initial} />
-  }
-  if (prop.kind === "bool") {
-    return <span className="data">{String(value)}</span>
-  }
-  // Declared datetimes read local like the hot columns; hover keeps the wire
-  // ISO. A bare `date` kind stays verbatim — it has no instant to localize.
-  if (prop.kind === "datetime" && typeof value === "string") {
-    return (
-      <span className="data text-muted-foreground" title={value}>
-        {tableDateTime(value)}
-      </span>
-    )
-  }
-  // A reference's stored value is the referent's whole path; the column already
-  // says which kind it points at, so the cell is the referent's pill — a link,
-  // not the `{ref}` a flattened object reads as.
-  if (prop.kind === "reference") {
-    // A repeated reference holding nothing is an empty array, which is a value
-    // the early guard above does not catch.
-    if (Array.isArray(value) && !value.length) return <Muted>—</Muted>
-    return <ReferenceCell value={value} kinds={kinds} titles={titles} />
-  }
-  const text = cellValue(value)
-  if (!text) return <Muted>—</Muted>
-  // The cell uses its column's whole width; truncation happens only at the
-  // column boundary, full value on hover (owner ruling, 2026-08-06 — no
-  // arbitrary max-w clamps).
-  return (
-    <span className="block truncate data text-foreground/80" title={text}>
-      {text}
-    </span>
-  )
-}
-
-/** THE kind → size table (owner-approved column-sizing fix, 2026-08-06).
- * Content-hugging kinds get a fixed px; everything prose-ish declares
- * `{min, max?, weight}` and shares the container proportionally
- * (lib/column-widths.ts) instead of every property flat-rating 150px:
- *
- *   state              fixed 120   (badge hugs its longest state)
- *   bool               fixed 80    (true/false)
- *   datetime / date    fixed 150   (`Aug 6, 01:10` never grows)
- *   int / float        min 90  max 140  weight 0.5
- *   email / url / phone min 160 max 280 weight 1
- *   string (+ custom)  min 160 max 420 weight 1.5
- *   text / markdown    min 200 max 480 weight 2 (excluded from columns
- *                      today — LONG_KINDS — but the vocabulary is complete)
- */
-type PropertySizing = Pick<
-  NonNullable<DataTableColumn<SubstrateRecord>["meta"]>,
-  "width" | "size"
->
-
-function propertySizing(prop: DeclaredProperty): PropertySizing {
-  if (prop.kind === "state") return { width: 120 }
-  if (prop.kind === "bool") return { width: 80 }
-  if (prop.kind === "datetime" || prop.kind === "date") return { width: 150 }
-  if (prop.kind === "int" || prop.kind === "float" || prop.kind === "decimal") {
-    return { size: { min: 90, max: 140, weight: 0.5 } }
-  }
-  if (prop.kind === "email" || prop.kind === "url" || prop.kind === "phone") {
-    return { size: { min: 160, max: 280, weight: 1 } }
-  }
-  if (prop.kind === "text" || prop.kind === "markdown") {
-    return { size: { min: 200, max: 480, weight: 2 } }
-  }
-  // string, and authority-local datatypes treated as strings.
-  return { size: { min: 160, max: 420, weight: 1.5 } }
-}
-
-/** The columns a kind opens WITHOUT, by kind reference. A declaration-driven
- * table gives every declared property a column, which is right for a kind
- * nobody here knows and wrong for the few core kinds whose declaration is
- * mostly machinery: `core/function` declares its own authority and package
- * (both already in the title now that a function titles itself with its full
- * reference), its version, its body, its argument list, and two policy enums
- * almost nothing sets. The default is the readable subset; the Columns menu
- * still has the rest, and a saved preference wins over this map entirely
- * (`useDataTable` reads `prefs.hidden` first).
- *
- * A kind is listed only where the SHIPPED declaration is known here, because
- * hiding a property of a kind this console did not ship would be guessing at
- * somebody else's vocabulary. */
+/** The columns a kind opens WITHOUT, by kind reference: the few core kinds
+ * whose declaration is mostly machinery. A kind is listed only where the
+ * SHIPPED declaration is known here, because hiding a property of a kind this
+ * console did not ship would be guessing at somebody else's vocabulary. */
 const DEFAULT_HIDDEN: Record<string, string[]> = {
   "substrate.reamde.dev/core/function": [
     "authority",
@@ -175,10 +115,316 @@ const DEFAULT_HIDDEN: Record<string, string[]> = {
   ],
 }
 
-/** The column ids a kind's table hides until the reader asks for them. Empty
- * for every kind not in the map, which is almost all of them. */
+/** The column ids a kind's grid hides until the reader asks for them: the
+ * machinery above, and the properties the title is made of, which the title
+ * column already shows. The one the title IS has no column to hide. A saved
+ * preference wins over this entirely. */
 export function defaultHiddenColumns(kind: KindInfo): string[] {
-  return (DEFAULT_HIDDEN[kind.identity] ?? []).map(propertyColumnId)
+  const backing = titleBacking(kind)
+  return [
+    ...(DEFAULT_HIDDEN[kind.identity] ?? []),
+    ...titleProperties(kind).filter((name) => name !== backing),
+  ].map(propertyColumnId)
+}
+
+// ── widths and icons ────────────────────────────────────────────────────────
+
+const WIDTHS: Record<string, number> = {
+  state: 130,
+  enum: 140,
+  bool: 90,
+  datetime: 120,
+  date: 120,
+  int: 100,
+  float: 100,
+  decimal: 100,
+  email: 240,
+  url: 220,
+  phone: 170,
+  timezone: 160,
+  recurrence: 160,
+}
+
+function widthOf(prop: DeclaredProperty): number {
+  if (prop.kind === "reference") return prop.repeated ? 220 : 190
+  return WIDTHS[prop.kind] ?? 180
+}
+
+const NUMERIC = new Set(["int", "float", "decimal"])
+
+/** The order columns open in: what a record is (its state), when it is, what
+ * it points at, how it is sorted, then everything else. */
+function rank(prop: DeclaredProperty): number {
+  if (prop.kind === "state") return 0
+  if (prop.kind === "reference") return 2
+  if (prop.kind === "enum") return 3
+  return 4
+}
+
+// ── cells ───────────────────────────────────────────────────────────────────
+
+/** The first of several values, and how many more there are. */
+function FirstOf({
+  count,
+  children,
+  title,
+}: {
+  count: number
+  children: React.ReactNode
+  title?: string
+}) {
+  return (
+    <span className="flex min-w-0 items-center" title={title}>
+      <span className="min-w-0 truncate">{children}</span>
+      {count > 1 && (
+        <span className="ml-1 shrink-0 text-xs text-faint">+{count - 1}</span>
+      )}
+    </span>
+  )
+}
+
+function listOf(value: unknown): unknown[] {
+  return (Array.isArray(value) ? value : [value]).filter(
+    (v) => !isEmptyValue(v)
+  )
+}
+
+function ReferenceCell({
+  value,
+  kinds,
+  titles,
+}: {
+  value: unknown
+  kinds: KindInfo[]
+  titles?: ReferenceTitles
+}) {
+  const held = listOf(value)
+  const first = readReference(held[0])
+  if (!first) return <EmptyValue />
+  const target = splitRecordPath(first.path)
+  if (!target) {
+    return <span className="truncate text-muted-foreground">{first.path}</span>
+  }
+  return (
+    <FirstOf count={held.length}>
+      <RecordRef
+        kind={target.kind}
+        id={target.id}
+        title={titles?.get(first.path)}
+        // A kind nobody here declares has no page to open.
+        link={Boolean(kindByIdentity(kinds, target.kind))}
+      />
+    </FirstOf>
+  )
+}
+
+const DUE_CLASSES = {
+  done: "text-faint",
+  overdue: "text-destructive",
+  soon: "text-warning",
+}
+
+function DateCell({
+  value,
+  day,
+  time,
+  due,
+  done,
+}: {
+  value: string
+  /** A bare calendar day (`date`), not an instant. */
+  day?: boolean
+  time?: boolean
+  /** Colour it as a deadline. */
+  due?: boolean
+  done?: boolean
+}) {
+  const tone = due ? dueTone(value, undefined, done) : undefined
+  return (
+    <span
+      className={cn("truncate", tone ? DUE_CLASSES[tone] : undefined)}
+      title={value}
+    >
+      {day ? friendlyDay(value) : friendlyDate(value, undefined, { time })}
+    </span>
+  )
+}
+
+function propertyCell(
+  prop: DeclaredProperty,
+  value: unknown,
+  record: SubstrateRecord | undefined,
+  ctx: CellContext
+): React.ReactNode {
+  if (isEmptyValue(value)) return <EmptyValue />
+  if (prop.kind === "reference") {
+    return <ReferenceCell value={value} kinds={ctx.kinds} titles={ctx.titles} />
+  }
+  const values = listOf(value)
+  const first = values[0]
+  if (prop.kind === "state") {
+    return <StateBadge value={String(first)} initial={prop.initial} />
+  }
+  if (prop.kind === "enum") {
+    return (
+      <FirstOf count={values.length}>
+        <EnumTag prop={prop} value={String(first)} />
+      </FirstOf>
+    )
+  }
+  if (prop.kind === "bool") {
+    return <span className="text-muted-foreground">{first ? "Yes" : "No"}</span>
+  }
+  if (
+    (prop.kind === "datetime" || prop.kind === "date") &&
+    typeof first === "string"
+  ) {
+    const done =
+      ctx.doneState && record
+        ? isDoneState(
+            record.properties[ctx.doneState.name],
+            ctx.doneState.initial
+          )
+        : false
+    return (
+      <FirstOf count={values.length}>
+        <DateCell
+          value={first}
+          day={prop.kind === "date"}
+          due={isDueColumn(prop.name)}
+          done={done}
+        />
+      </FirstOf>
+    )
+  }
+  if (NUMERIC.has(prop.kind)) {
+    return <span className="tabular-nums">{cellValue(value)}</span>
+  }
+  if (prop.keyed) {
+    const text = cellValue(value)
+    return (
+      <span className="block truncate" title={text}>
+        {text}
+      </span>
+    )
+  }
+  const text = cellValue(first)
+  return (
+    <FirstOf count={values.length} title={values.map(cellValue).join(", ")}>
+      {text}
+    </FirstOf>
+  )
+}
+
+interface CellContext {
+  kinds: KindInfo[]
+  titles?: ReferenceTitles
+  doneState?: DeclaredProperty
+}
+
+/** The title cell: the tree's indent and chevron where the grid nests, the
+ * kind's glyph, the title (the link to the record), the children's badge, the
+ * parent a filtered match belongs to, and the Open button a hovered row shows.
+ * The button takes its room from the title rather than covering it, so a long
+ * title truncates before it. */
+function TitleCell({
+  kind,
+  record,
+  doneState,
+  noun,
+  titles,
+}: {
+  kind: KindInfo
+  record: SubstrateRecord
+  doneState?: DeclaredProperty
+  noun: string
+  titles?: ReferenceTitles
+}) {
+  const tree = useRowTreeNode(record.id)
+  const title = recordTitle(record.properties)
+  const params = {
+    authority: kind.authority,
+    pkg: kind.package,
+    name: kind.name,
+    id: record.id,
+  }
+  const children = tree?.node.childRecords
+  const counts = children?.length
+    ? subtaskCounts(children, doneState)
+    : undefined
+  const context = tree?.context ? splitRecordPath(tree.context) : undefined
+  return (
+    <span
+      className="flex min-w-0 items-center gap-1.5"
+      style={tree ? { paddingLeft: tree.node.depth * INDENT_PX } : undefined}
+    >
+      {tree && (
+        <TreeToggle
+          node={tree.node}
+          onToggle={tree.toggle}
+          gutter={tree.gutter}
+          noun={noun}
+        />
+      )}
+      <KindGlyph kind={kind} size="xs" />
+      <Link
+        to="/data/$authority/$pkg/$name/$id"
+        params={params}
+        title={title || undefined}
+        className={cn(
+          "min-w-0 truncate underline-offset-[3px] outline-none hover:underline hover:decoration-border-strong focus-visible:underline",
+          !title && "text-muted-foreground"
+        )}
+      >
+        {title || untitled(kind)}
+      </Link>
+      {counts && (
+        <span
+          className="shrink-0 rounded-full border border-border-strong px-1.5 text-[11.5px] leading-[18px] font-normal whitespace-nowrap text-faint"
+          title={
+            counts.done !== undefined
+              ? `${counts.done} of ${counts.total} done`
+              : `${counts.total} under this`
+          }
+        >
+          {counts.done !== undefined
+            ? `${counts.done}/${counts.total}`
+            : counts.total}
+        </span>
+      )}
+      {context && tree?.context && (
+        <span
+          data-slot="tree-context"
+          className="flex max-w-[40%] min-w-0 shrink-0 items-center gap-1 text-[12px] font-normal whitespace-nowrap text-faint"
+        >
+          in
+          <RecordRef
+            kind={context.kind}
+            id={context.id}
+            title={titles?.get(tree.context)}
+            className="min-w-0 text-muted-foreground [&_[data-slot=kind-glyph]]:hidden"
+          />
+        </span>
+      )}
+      <Link
+        to="/data/$authority/$pkg/$name/$id"
+        params={params}
+        aria-label={`Open ${title || untitled(kind)}`}
+        tabIndex={-1}
+        className="ml-auto hidden h-[22px] shrink-0 items-center gap-1 rounded-[5px] border border-border-strong bg-background px-[7px] text-[11.5px] font-medium text-muted-foreground no-underline shadow-[0_1px_2px_rgba(0,0,0,.06)] group-hover/row:inline-flex hover:text-foreground"
+      >
+        <Maximize2Icon aria-hidden className="size-3" />
+        Open
+      </Link>
+    </span>
+  )
+}
+
+export interface BuildColumnsOptions {
+  /** Headers show property keys and the reference mode shows everything. */
+  technical?: boolean
+  /** What a nested row's children are called ("subtasks"). */
+  childNoun?: string
 }
 
 export function buildColumns(
@@ -187,111 +433,188 @@ export function buildColumns(
    * one nobody installed. */
   kinds: KindInfo[],
   /** Record path → the referent's title, off the page's `included` sidecar
-   * (`expand=`). A reference stores a path and nothing else, so without this
-   * every reference column reads as a record id; absent — the read could not
-   * expand — the pill falls back to the id, which is what it always showed. */
-  titles?: ReferenceTitles
+   * (`expand=`). Absent, each reference reads its own title (batched). */
+  titles?: ReferenceTitles,
+  opts: BuildColumnsOptions = {}
 ): DataTableColumn<SubstrateRecord>[] {
+  const technical = opts.technical ?? false
+  // The property the title IS is folded into the title column, which reads
+  // under its label, so Sort and Columns never list it twice.
+  const backing = titleBacking(kind)
+  const titleLabel = technical
+    ? "title"
+    : backing
+      ? propertyLabel(backing)
+      : "Name"
+  const declared = columnProperties(kind).filter((p) => p.name !== backing)
+  const doneState = doneStateProperty(declared)
+  const ctx: CellContext = { kinds, titles, doneState }
+  const labelOf = (name: string) => (technical ? name : propertyLabel(name))
   const columns: DataTableColumn<SubstrateRecord>[] = []
 
-  // title — always first, always sortable, never hidden (the row's identity).
   columns.push({
     id: "title",
     accessorFn: (e) => recordTitle(e.properties),
     enableHiding: false,
     header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="title" />
+      <GridColumnHeader
+        column={column}
+        label={titleLabel}
+        icon={TypeIcon}
+        mono={technical}
+      />
     ),
-    // The identity cell is where a tree draws its indent and chevron
-    // (TreeCell); in a flat table it is the plain cell.
-    cell: ({ row }) => {
-      const title = recordTitle(row.original.properties)
-      return (
-        <TreeCell id={row.original.id}>
-          {title ? (
-            <span className="block truncate font-medium" title={title}>
-              {title}
-            </span>
-          ) : (
-            <span
-              className="block truncate data text-muted-foreground"
-              title={row.original.id}
-            >
-              {row.original.id}
-            </span>
-          )}
-        </TreeCell>
-      )
-    },
-    // the row's identity earns the biggest share, but capped — a title
-    // column must not balloon across a wide screen while data truncates.
-    meta: { label: "title", size: { min: 180, max: 460, weight: 2 } },
+    cell: ({ row }) => (
+      <TitleCell
+        kind={kind}
+        record={row.original}
+        doneState={doneState}
+        noun={opts.childNoun ?? "rows"}
+        titles={titles}
+      />
+    ),
+    meta: { label: titleLabel, width: 300 },
   })
 
-  // temporal — the trait-bound hot columns, right after title.
-  for (const name of temporalProperties(kind)) {
+  if (technical) {
     columns.push({
-      id: name,
-      accessorFn: (e) => e.properties[name],
+      id: "id",
+      accessorFn: (e) => e.id,
+      enableSorting: false,
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title={name} />
+        <GridColumnHeader column={column} label="id" icon={HashIcon} mono />
       ),
-      cell: ({ getValue }) => {
-        const value = getValue()
-        // local-timezone stamp; the title carries the wire ISO verbatim.
-        return typeof value === "string" ? (
-          <span className="data text-muted-foreground" title={value}>
-            {tableDateTime(value)}
-          </span>
-        ) : (
-          <Muted>—</Muted>
-        )
-      },
-      meta: { label: name, width: 150 },
+      cell: ({ row }) => (
+        <span
+          className="block truncate font-mono text-[12px] text-muted-foreground"
+          title={row.original.id}
+        >
+          {row.original.id}
+        </span>
+      ),
+      meta: { label: "id", width: 150 },
     })
   }
 
-  // declared properties, schema casing, description tooltips on headers,
-  // widths by declared kind (the table above).
-  for (const prop of columnProperties(kind)) {
-    columns.push({
+  const ordered = [...declared].sort((a, b) => rank(a) - rank(b))
+  const states = ordered.filter((p) => rank(p) === 0)
+  const rest = ordered.filter((p) => rank(p) > 0)
+
+  const propertyColumn = (
+    prop: DeclaredProperty
+  ): DataTableColumn<SubstrateRecord> => {
+    const numeric = NUMERIC.has(prop.kind)
+    return {
       id: propertyColumnId(prop.name),
       accessorFn: (e) => e.properties[prop.name],
       enableSorting: !prop.repeated && !RESERVED_SORT_NAMES.has(prop.name),
       header: ({ column }) => (
-        <DataTableColumnHeader
+        <GridColumnHeader
           column={column}
-          title={prop.name}
+          label={labelOf(prop.name)}
+          icon={propertyIcon(prop)}
           description={prop.description}
+          mono={technical}
+          align={numeric ? "right" : "left"}
         />
       ),
-      cell: ({ getValue }) => propertyCell(prop, getValue(), kinds, titles),
-      meta: { label: prop.name, ...propertySizing(prop) },
+      cell: ({ getValue, row }) =>
+        propertyCell(prop, getValue(), row?.original, ctx),
+      meta: {
+        label: labelOf(prop.name),
+        width: widthOf(prop),
+        ...(numeric ? { cellClassName: "text-right" } : {}),
+      },
+    }
+  }
+
+  columns.push(...states.map(propertyColumn))
+
+  // The stamps the kind's temporal trait binds are system columns: sortable
+  // by their own name, described by the declaration when it declares them.
+  const all = new Map(
+    // columnProperties drops the temporal names; the declaration still
+    // describes them.
+    Object.entries(
+      (kind.definition?.properties ?? {}) as Record<
+        string,
+        { description?: unknown }
+      >
+    )
+  )
+  for (const name of temporalProperties(kind)) {
+    const description = all.get(name)?.description
+    const withTime = !isDueColumn(name)
+    columns.push({
+      id: name,
+      accessorFn: (e) => e.properties[name],
+      header: ({ column }) => (
+        <GridColumnHeader
+          column={column}
+          label={labelOf(name)}
+          icon={CalendarIcon}
+          description={
+            typeof description === "string" ? description : undefined
+          }
+          mono={technical}
+        />
+      ),
+      cell: ({ getValue, row }) => {
+        const value = getValue()
+        if (typeof value !== "string" || !value) return <EmptyValue />
+        const record = row?.original
+        const done =
+          doneState && record
+            ? isDoneState(record.properties[doneState.name], doneState.initial)
+            : false
+        return (
+          <DateCell
+            value={value}
+            time={withTime}
+            due={isDueColumn(name)}
+            done={done}
+          />
+        )
+      },
+      meta: { label: labelOf(name), width: withTime ? 150 : 120 },
     })
   }
 
-  // updated — always last, right-aligned.
+  columns.push(...rest.map(propertyColumn))
+
   columns.push({
     id: "updatedAt",
     accessorFn: (e) => e.updatedAt,
     header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="updated" align="right" />
+      <GridColumnHeader
+        column={column}
+        label={technical ? "updatedAt" : "Updated"}
+        icon={ClockIcon}
+        mono={technical}
+      />
     ),
     cell: ({ row }) => (
       <span
-        className="block truncate data text-muted-foreground"
+        className="truncate text-muted-foreground"
         title={row.original.updatedAt}
       >
-        {relativeTime(row.original.updatedAt)}
+        {friendlyDate(row.original.updatedAt)}
       </span>
     ),
-    meta: {
-      label: "updated",
-      width: 120,
-      headerClassName: "text-right",
-      cellClassName: "text-right",
-    },
+    meta: { label: technical ? "updatedAt" : "Updated", width: 120 },
   })
 
   return columns
+}
+
+/** How a column's value reads for the empty-column test: a declared
+ * property's value, or a system column's. */
+export function columnValue(
+  record: SubstrateRecord,
+  columnId: string
+): unknown {
+  if (columnId === "title") return recordTitle(record.properties)
+  if (columnId === "updatedAt") return record.updatedAt
+  if (columnId === "id") return record.id
+  return record.properties[sortPropertyOf(columnId)]
 }

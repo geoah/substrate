@@ -860,6 +860,10 @@ func (d *fakeDataset) List(_ context.Context, q substrate.Query) (*substrate.Pag
 		out = append(out, e)
 	}
 	page.Records = out
+	if q.Count {
+		n := int64(len(out))
+		page.Count = &n
+	}
 	// Expand: one hop, the referents the page's rows point at through the
 	// named properties, keyed by record path; a dangling pointer has no entry.
 	for _, name := range q.Expand {
@@ -943,7 +947,7 @@ func (d *fakeDataset) Changes(_ context.Context, after int64, f substrate.Change
 		if c.Seq <= after || !matchesChange(c, f) {
 			continue
 		}
-		out = append(out, c)
+		out = append(out, valuesAsAsked(c, f))
 		if limit > 0 && len(out) >= limit {
 			break
 		}
@@ -1001,6 +1005,21 @@ func matchesChange(c substrate.Change, f substrate.ChangeFilter) bool {
 	return true
 }
 
+// valuesAsAsked is the engine's opt-in: a committed change keeps its
+// records' before and after values only for a read that asked for them.
+func valuesAsAsked(c substrate.Change, f substrate.ChangeFilter) substrate.Change {
+	if f.Values || len(c.Affected) == 0 {
+		return c
+	}
+	affected := make([]substrate.AffectedRecord, len(c.Affected))
+	for i, a := range c.Affected {
+		a.Properties = nil
+		affected[i] = a
+	}
+	c.Affected = affected
+	return c
+}
+
 // namesRecord is the record scope the engine implements: the row's own id,
 // or a merge or split entry whose payload names the id as winner or loser.
 func namesRecord(c substrate.Change, id string) bool {
@@ -1028,7 +1047,7 @@ func (d *fakeDataset) ChangesBefore(_ context.Context, before int64, f substrate
 		if (before > 0 && c.Seq >= before) || !matchesChange(c, f) {
 			continue
 		}
-		out = append(out, c)
+		out = append(out, valuesAsAsked(c, f))
 		if limit > 0 && len(out) >= limit {
 			break
 		}

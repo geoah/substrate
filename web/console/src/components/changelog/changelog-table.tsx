@@ -61,6 +61,7 @@ import {
   pushLive,
   type LiveFeed,
 } from "@/lib/changelog"
+import { scrollMotion } from "@/lib/motion"
 
 // ── live buffer wiring ──────────────────────────────────────────────────────
 
@@ -265,7 +266,7 @@ export function ChangelogTable({
 
   function flushToTop() {
     setPage(1)
-    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })
+    scrollRef.current?.scrollTo({ top: 0, behavior: scrollMotion() })
     pausedRef.current = false
     dispatch({ kind: "flush" })
   }
@@ -334,7 +335,7 @@ export function ChangelogTable({
       {error ? (
         <ChangelogEmpty
           icon={<SearchXIcon />}
-          title="The changelog didn't load"
+          title="History didn’t load"
           description={error.message}
         >
           <Button
@@ -342,7 +343,7 @@ export function ChangelogTable({
             size="sm"
             onClick={() => void (history.isError ? history : seek).refetch()}
           >
-            Retry
+            Try again
           </Button>
         </ChangelogEmpty>
       ) : (
@@ -382,7 +383,7 @@ export function ChangelogTable({
                 <ChangelogEmpty
                   icon={<InboxIcon />}
                   title="No changes"
-                  description="Nothing in the changelog matches these filters."
+                  description="Nothing in History matches these filters."
                 />
               }
             />

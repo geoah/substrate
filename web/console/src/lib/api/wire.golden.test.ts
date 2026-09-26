@@ -70,6 +70,7 @@ import type {
   Page,
   ProblemDetail,
   PropertyAlternative,
+  PropertyChange,
   PropertyMeta,
   PutInput,
   RankedPage,
@@ -254,6 +255,15 @@ const affectedRecord: Shape<AffectedRecord> = {
   id: true,
   version: false,
   deleted: false,
+  properties: false,
+}
+
+/** One property's before and after on an affected record (decision 0108). */
+const propertyChange: Shape<PropertyChange> = {
+  name: true,
+  before: false,
+  after: false,
+  beforeUnknown: false,
 }
 
 const changeTrigger: Shape<ChangeTrigger> = {
@@ -286,6 +296,7 @@ const page: Shape<Page<unknown>> = {
   included: false,
   matches: false,
   problems: false,
+  count: false,
 }
 
 /** The ranked read's envelope, and one hit's per-arm scores. */
@@ -433,6 +444,7 @@ const suggestedMapping: Shape<SuggestedMapping> = {
 const bundleClosure: Shape<BundleClosure> = {
   kinds: true,
   kindDescriptions: false,
+  kindPurposes: false,
   traits: true,
   traitDescriptions: false,
   functions: true,
@@ -623,6 +635,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   KindInfo: kindInfo,
   Change: change,
   AffectedRecord: affectedRecord,
+  PropertyChange: propertyChange,
   ChangeTrigger: changeTrigger,
   ChangeRow: changeRow,
   ChangePage: changePage,
@@ -697,6 +710,7 @@ const notOnTheWire: Record<string, string> = {
   DecisionNotice: "a view the console folds from llm/message records",
   InteractionNotice: "a view the console folds from llm/message records",
   DeliveryNotice: "a view the console folds from llm/message records",
+  LiveOverlay: "the chat stream's events folded client-side, never serialized",
   // actors.ts
   ActorMirrors: "client-side actor resolution state",
   ResolvedActor: "client-side actor resolution state",
@@ -712,8 +726,6 @@ const notOnTheWire: Record<string, string> = {
   WatchLine:
     "the union of the three ndjson frame shapes (a ChangeRow, `{bookmark, generation}`, `{error}`), keyed by which field is present",
   WatchHandle: "a client handle over the stream, never serialized",
-  // overview.ts
-  KindCount: "a dashboard tally the console computes",
   // records.ts
   ListParams: "the list read's query parameters, never a JSON body",
   RecordCount: "a bounded walk's tally the console computes",

@@ -1,16 +1,22 @@
-/** The pure half of the Provenance tab: sources fold by mapping, dedupe by
+/** The pure half of the record page's provenance: sources fold by mapping, dedupe by
  * record and sort by title; an actor string reads as the thing it is. */
 
 import { describe, expect, it } from "vitest"
 
 import type { LinkedRecord, SubstrateRecord } from "@/lib/api/types"
 import {
-  actorWords,
   contributesOf,
   groupSources,
+  mappingLabel,
   mappingOfSource,
   sourceTitles,
-  tierWords,
+  departsFromDefault,
+  differsLabel,
+  everyValueYours,
+  holderOf,
+  tierExplanation,
+  tierLabel,
+  unionMembers,
 } from "./provenance"
 
 const BEEPER = "providers.substrate.reamde.dev/beeper/user"
@@ -140,68 +146,174 @@ describe("the source lookups", () => {
   })
 })
 
-describe("actorWords", () => {
-  it("reads a function actor as the sync of the kind its value came from", () => {
-    const words = actorWords(
-      "function:providers.substrate.reamde.dev:beeper:beepersync",
-      BEEPER
+describe("mappingLabel", () => {
+  const PERSON = "ada.example.com/people/person"
+  it("reads a mapping by its title where it has one", () => {
+    const decl = mapping(BEEPER_MAPPING, "Beeper people", BEEPER, {})
+    expect(mappingLabel(BEEPER_MAPPING, [decl], BEEPER, PERSON)).toBe(
+      "Beeper people"
     )
-    expect(words.kind).toBe("function")
-    expect(words.label).toBe("sync of user")
-    expect(words.actor).toBe(
-      "function:providers.substrate.reamde.dev:beeper:beepersync"
+  })
+
+  it("says what it joins where it has none", () => {
+    expect(mappingLabel(GITHUB_MAPPING, [], GITHUB, PERSON)).toBe(
+      "User → Person"
     )
-    expect(words.record).toEqual({
-      kind: "substrate.reamde.dev/core/function",
-      id: "providers.substrate.reamde.dev/beeper/beepersync",
-    })
-  })
-  it("names the function itself when no source is known", () => {
-    expect(
-      actorWords("function:providers.substrate.reamde.dev:beeper:beepersync")
-        .label
-    ).toBe("function beepersync")
-  })
-  it("reads agents, bundles and the engine", () => {
-    expect(actorWords("agent:ada.example.com:llm:triage")).toMatchObject({
-      kind: "agent",
-      label: "agent triage",
-      record: {
-        kind: "substrate.reamde.dev/core/agent",
-        id: "ada.example.com/llm/triage",
-      },
-    })
-    expect(
-      actorWords("bundle:providers.substrate.reamde.dev:github")
-    ).toMatchObject({
-      kind: "bundle",
-      label: "bundle github",
-      record: {
-        kind: "substrate.reamde.dev/core/bundle",
-        id: "providers.substrate.reamde.dev/github",
-      },
-    })
-    expect(actorWords("substrate")).toMatchObject({
-      kind: "engine",
-      label: "Engine",
-    })
-  })
-  it("leaves a name a request asserted as it is", () => {
-    expect(actorWords("console")).toEqual({
-      kind: "plain",
-      label: "console",
-      actor: "console",
-    })
-    // The retired connector spelling has no record either.
-    expect(actorWords("connector:slack").kind).toBe("plain")
   })
 })
 
-describe("tierWords", () => {
-  it("says what each tier means for the value", () => {
-    expect(tierWords("owner").label).toBe("held by you")
-    expect(tierWords("bundle").label).toBe("pinned by a bundle")
-    expect(tierWords("machine").label).toBe("follows sources")
-    expect(tierWords(undefined).label).toBe("no tier")
+const GOOGLE_SYNC =
+  "function:providers.substrate.reamde.dev:google:synccontacts"
+const LINEAR_SYNC = "function:providers.substrate.reamde.dev:linear:linearsync"
+
+describe("holderOf", () => {
+  it("names the owner's hand You, a provider by its name, anything else by its own", () => {
+    expect(holderOf({ manager: "console", tier: "owner" })).toMatchObject({
+      mark: "you",
+      label: "You",
+    })
+    expect(holderOf({ manager: GOOGLE_SYNC, tier: "machine" })).toMatchObject({
+      mark: "provider",
+      label: "Google",
+    })
+    expect(
+      holderOf({ manager: "agent:ada.localhost:llm:substrate", tier: "bundle" })
+    ).toMatchObject({ mark: "actor", label: "Substrate" })
+    expect(holderOf({})).toBeUndefined()
+  })
+})
+
+describe("differsLabel", () => {
+  const alt = (actor: string) => ({ actor, value: "x", updatedAt: "" })
+  it("names the one provider that disagrees, or counts several", () => {
+    expect(differsLabel({})).toBeUndefined()
+    expect(differsLabel({ alternatives: [alt(GOOGLE_SYNC)] })).toBe(
+      "Google differs"
+    )
+    expect(
+      differsLabel({ alternatives: [alt(GOOGLE_SYNC), alt(LINEAR_SYNC)] })
+    ).toBe("2 sources differ")
+  })
+})
+
+describe("tierLabel", () => {
+  it("says each tier in the reader's words", () => {
+    expect(tierLabel("owner")).toBe("Yours")
+    expect(tierLabel("machine")).toBe("Synced")
+    expect(tierLabel("bundle", GOOGLE_SYNC)).toBe("Set by provider")
+    expect(tierLabel("bundle", "agent:ada.localhost:llm:substrate")).toBe(
+      "Set by an agent"
+    )
+  })
+})
+
+describe("tierExplanation", () => {
+  // The detail's head already says "You set this"; the sentence under it
+  // says what that means, not the same words again.
+  it("never repeats who set an owner's value", () => {
+    expect(tierExplanation("owner")).not.toMatch(/you set this/i)
+  })
+})
+
+describe("unionMembers", () => {
+  it("names the sources whose offer carries each item", () => {
+    const members = unionMembers(["a@example.com", "b@example.com"], {
+      manager: GOOGLE_SYNC,
+      tier: "machine",
+      source: `${BEEPER}/u1`,
+      alternatives: [
+        {
+          actor: LINEAR_SYNC,
+          value: ["b@example.com"],
+          updatedAt: "",
+          source: `${GITHUB}/gh1`,
+        },
+      ],
+    })
+    expect(members).toEqual([
+      { item: "a@example.com", sources: [`${BEEPER}/u1`] },
+      { item: "b@example.com", sources: [`${BEEPER}/u1`, `${GITHUB}/gh1`] },
+    ])
+  })
+
+  it("says nothing for a scalar or when no source offers a list", () => {
+    expect(unionMembers("x", { alternatives: [] })).toEqual([])
+    expect(unionMembers(["x"], {})).toEqual([])
+  })
+})
+
+describe("departsFromDefault", () => {
+  it("is quiet for the owner's own value", () => {
+    expect(departsFromDefault({ manager: "console", tier: "owner" })).toBe(
+      false
+    )
+    expect(departsFromDefault(undefined)).toBe(false)
+  })
+
+  it("speaks for a provider, an agent, or a source that differs", () => {
+    expect(
+      departsFromDefault({
+        manager: "function:providers.substrate.reamde.dev:google:sync",
+        tier: "machine",
+      })
+    ).toBe(true)
+    expect(
+      departsFromDefault({ manager: "agent:ada.example.com:llm:scribe" })
+    ).toBe(true)
+    expect(
+      departsFromDefault({
+        manager: "console",
+        tier: "owner",
+        alternatives: [{ actor: "x.example.com", value: 1, updatedAt: "" }],
+      })
+    ).toBe(true)
+  })
+})
+
+describe("everyValueYours", () => {
+  const rec = (
+    properties: Record<string, unknown>,
+    propertyMeta: SubstrateRecord["propertyMeta"]
+  ): SubstrateRecord => ({
+    id: "r",
+    kind: "ada.example.com/tasks/task",
+    properties,
+    labels: {},
+    version: 1,
+    createdAt: "",
+    updatedAt: "",
+    propertyMeta,
+  })
+
+  it("holds when every filled value is the owner's own", () => {
+    expect(
+      everyValueYours(
+        rec(
+          { name: "A", note: "" },
+          {
+            name: { manager: "console", tier: "owner" },
+            note: { manager: "agent:ada.example.com:llm:scribe" },
+          }
+        )
+      )
+    ).toBe(true)
+  })
+
+  it("fails on one value somebody else holds", () => {
+    expect(
+      everyValueYours(
+        rec(
+          { name: "A", note: "B" },
+          {
+            name: { manager: "console", tier: "owner" },
+            note: { manager: "agent:ada.example.com:llm:scribe" },
+          }
+        )
+      )
+    ).toBe(false)
+  })
+
+  it("claims nothing for a record that says nothing of its holders", () => {
+    expect(everyValueYours(rec({ name: "A" }, undefined))).toBe(false)
   })
 })

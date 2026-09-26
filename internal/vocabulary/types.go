@@ -102,6 +102,22 @@ const ToAny = "any"
 // purged.
 const OnDeleteCascade = "cascade"
 
+// The three declared `purpose:` values (decision record 0106): why a kind
+// exists, which is what a client reads to decide what it lists. Nothing
+// server-side acts on the value, so a client that never reads it loses
+// nothing but a shorter list.
+const (
+	// PurposePrimary is a thing a person browses and opens directly. An
+	// absent `purpose:` reads as this, so a kind nobody classified is shown.
+	PurposePrimary = "primary"
+	// PurposeSupporting is a detail of another kind, reached from the
+	// records it belongs to.
+	PurposeSupporting = "supporting"
+	// PurposeInternal is machinery: accounts, sync state, configuration and
+	// the vocabulary itself.
+	PurposeInternal = "internal"
+)
+
 var builtinKinds = map[Datatype]bool{
 	DatatypeString: true, DatatypeText: true, DatatypeMarkdown: true, DatatypeInt: true,
 	DatatypeFloat: true, DatatypeDecimal: true, DatatypeBool: true, DatatypeDatetime: true, DatatypeDate: true,
@@ -672,6 +688,12 @@ type Kind struct {
 	// an incompatible move.
 	MovedFrom string
 
+	// Purpose is the kind's declared `purpose:` (decision record 0106), empty
+	// where the declaration says nothing. Read it through PurposeOrPrimary:
+	// the default is the reader's, never written into Definition, so the
+	// stored declaration stays exactly what its author wrote.
+	Purpose string
+
 	// HotColumns lists the hot properties this type's capabilities bind, in
 	// {"at","endsAt","dueAt"} terms.
 	HotColumns map[string]bool
@@ -685,6 +707,16 @@ type Kind struct {
 func (t *Kind) Prop(name string) (*Property, bool) {
 	p, ok := t.Props[name]
 	return p, ok
+}
+
+// PurposeOrPrimary is the kind's purpose with the absent value read as
+// PurposePrimary, so a kind a user or an agent declares without one is
+// listed rather than hidden.
+func (t *Kind) PurposeOrPrimary() string {
+	if t.Purpose == "" {
+		return PurposePrimary
+	}
+	return t.Purpose
 }
 
 // UsesHot reports whether a capability binds the given hot property.

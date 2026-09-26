@@ -22,7 +22,7 @@ segments and the id, which is exactly its
 [decision 0079](decisions/0079-graphql-is-removed-and-the-records-read-is-one-route.md)):
 
 ```http
-GET    /api/v1/records?filter&orderBy&first&after|offset&expand&withAnnotations  # the list
+GET    /api/v1/records?filter&orderBy&first&after|offset&expand&withAnnotations&count  # the list
 GET    /api/v1/records?q&mode&filter&first                                  # the ranked read
 GET    /api/v1/records?watch=1&filter&from&generation                       # the tail
 POST   /api/v1/records                            # create; the body names `kind`, the server assigns the id
@@ -65,7 +65,7 @@ learn, not one uniform grammar.
 
 | Mode | Selected by | Parameters | Filter arms | Answer |
 | --- | --- | --- | --- | --- |
-| **list** | neither `q` nor `watch=1` | `filter`, `orderBy`, `first`, `after` or `offset`, `expand`, `withAnnotations` | all of them | `{records, cursor?, head, generation, included?, matches?}` |
+| **list** | neither `q` nor `watch=1` | `filter`, `orderBy`, `first`, `after` or `offset`, `expand`, `withAnnotations`, `count` | all of them | `{records, cursor?, head, generation, included?, matches?, count?}` |
 | **ranked** | `q` | `q`, `mode`, `filter`, `first` | `kinds` alone | `{records, scores, pending}` |
 | **watch** | `watch=1` | `watch`, `filter`, `from`, `generation` | `kinds` alone | the ndjson tail |
 
@@ -74,7 +74,7 @@ A kind named in `filter.kinds` that this repository never declared is
 
 **The list** is the general read: distinct records across any set of kinds,
 filtered, ordered, keyset-paged ([pagination](#pagination)), with two optional
-sidecars. `withAnnotations=1` adds each row's `annotations`, off by default
+sidecars and an optional [count](#counting-the-filtered-set). `withAnnotations=1` adds each row's `annotations`, off by default
 so a list of a heavily annotated record stays small. `expand` follows
 references one hop:
 
@@ -118,7 +118,8 @@ the same ndjson frames `GET /api/v1/changes?watch=1` does, opened with a
 bookmark and resumable from one. The change filter has no property arms, so
 under `watch=1` the `filter` admits `kinds` alone and every other arm is
 refused by name; `/changes` keeps its own richer change filter (`ops`,
-`actors`, their exclusions, `recordId`+`recordKind`, `q`).
+`actors`, their exclusions, `recordId`+`recordKind`, `q`) and alone takes
+`values=1`, each property's [before and after](changelog.md#values-on-request).
 
 ### Who points at a record: `referencing`
 
@@ -642,6 +643,42 @@ that jumped to a page can hand off to a stable walk from there. `offset` is
 refused on the [window read](#the-window-read) (`400 bad_request`), which
 merges computed occurrences into the page and so has no row count to skip, and
 on the ranked read, which has no keyset at all.
+
+### Counting the filtered set
+
+`count=1` asks the list for the size of the whole set its filter admits, and
+the page answers it as `count` beside the rows
+([decision 0107](decisions/0107-the-records-list-counts-its-filtered-set-on-request.md)):
+
+```http
+GET /api/v1/records?filter={"kinds":["samples.substrate.reamde.dev/tasks/task"],
+                             "properties":{"status":{"eq":"open"}}}&first=1&count=1
+→ {"records": [...], "cursor": "eyJv…", "head": 4211, "generation": "7f3a0c2e9b1d4e6f", "count": 312}
+```
+
+The count is the filter's, not the page's: `first`, `after` and `offset`
+do not move it, so every page of one walk answers the same number unless a
+write lands between them. It honors every arm the list does (`kinds`,
+`implements`, `properties`, `labels`, `search`, `ids`, `referencing`,
+`deleted`, `orphaned`, `ambiguous`) and excludes exactly what the list
+excludes, a tombstone and a merged-away loser included. It is read in the
+page's own snapshot, so the rows and the number agree. Zero is a count and is
+answered; a list that did not ask carries no `count` at all. `1` is the only
+value: any other is `400 bad_request` naming it, because a `count=true` read
+as "no" would answer a page without the number its caller is about to render.
+A reader that wants the number alone asks `first=1`.
+
+**It costs a scan of every matching row.** The count runs the list's own
+predicate as one `SELECT count(*)` with no ordering and no row read out, so
+it is served by the same indexes the list is, and the engine caps nothing.
+Postgres has no cheaper exact count: a count over a million matching rows
+visits a million index entries or rows. That is why it is opt-in, paid only
+by the reader who asks.
+
+`count` is refused on the [window read](#the-window-read) (`400
+bad_request`): its page merges computed occurrences, which are not rows, so a
+count of the stored rows would disagree with the page beside it. The ranked
+read and the tail refuse it with every other parameter they do not honor.
 
 Two continuation styles exist, and the parameter name says which you are
 holding. The changelog uses real sequence numbers, `from` forward and `before`

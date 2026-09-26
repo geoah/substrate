@@ -76,6 +76,20 @@ describe("the columns a kind opens without", () => {
   })
 })
 
+describe("the temporal columns", () => {
+  it("opens a column for the hot column core's qualified trait binds", () => {
+    const task: KindInfo = {
+      ...kind("ada.example.com/tasks/task"),
+      source: "installed",
+      definition: {
+        traits: ["substrate.reamde.dev/core/temporal(point: dueAt)"],
+        properties: {},
+      },
+    }
+    expect(buildColumns(task, [task]).map((c) => c.id)).toContain("dueAt")
+  })
+})
+
 // ── reference columns read as names ────────────────────────────────────────
 
 /** A reference stores the referent's PATH and nothing else, so a cell built
@@ -156,16 +170,16 @@ describe("a reference column", () => {
 
   // The expansion is a sidecar: a page that could not carry it (the server
   // refused the expand and the read degraded) still has rows, and the pill
-  // falls back to the id it always showed.
-  it("falls back to the id when no title came back", () => {
+  // names the referent by its kind, never by its bare id.
+  it("names the referent by its kind when no title came back", () => {
     const { container } = renderCell(propertyColumnId("assignee"), {
       ref: "ada.example.com/people/person/p1",
     })
-    expect(container.textContent).toBe("p1")
+    expect(container.textContent).toBe("Untitled person")
     expect(container.querySelector("a")).not.toBeNull()
   })
 
-  it("titles each referent of a repeated reference", () => {
+  it("shows the first referent of a repeated reference and how many more", () => {
     const { container } = renderCell(
       propertyColumnId("watchers"),
       [
@@ -179,22 +193,85 @@ describe("a reference column", () => {
     )
     expect(
       [...container.querySelectorAll("a")].map((a) => a.textContent)
-    ).toEqual(["Ada Lovelace", "Grace Hopper"])
+    ).toEqual(["Ada Lovelace"])
+    expect(container.textContent).toContain("+1")
   })
 
   // A reference may name a kind nobody installed. There is no page to link
-  // to, the batch never asks about it, and the path reads as inert text.
-  it("stays inert text for a kind the registry does not have", () => {
+  // to, the batch never asks about it, and it reads by its kind, never its id.
+  it("stays unlinked for a kind the registry does not have", () => {
     const { container } = renderCell(propertyColumnId("assignee"), {
       ref: "ada.example.com/crm/lead/7",
     })
     expect(container.querySelector("a")).toBeNull()
-    expect(container.textContent).toBe("ada.example.com/crm/lead/7")
+    expect(container.textContent).toBe("Untitled lead")
   })
 })
 
 describe("what the page asks the list to expand", () => {
   it("names every reference the kind declares, and nothing else", () => {
     expect(expandableReferences(TASK)).toEqual(["assignee", "watchers"])
+  })
+})
+
+describe("the opening columns", () => {
+  const RICH: KindInfo = {
+    ...kind("ada.example.com/tasks/task"),
+    source: "installed",
+    definition: {
+      displayTemplate: "{name|title}",
+      traits: ["substrate.reamde.dev/core/temporal(point: dueAt)"],
+      properties: {
+        name: { type: "string" },
+        notes: { type: "markdown" },
+        priority: { type: "enum", values: ["low", "high"] },
+        owner: { type: "reference", kind: "ada.example.com/people/person" },
+        status: { type: "state", states: ["open", "done"], initial: "open" },
+        dueAt: { type: "datetime" },
+      },
+    },
+  }
+
+  it("leads with the title, then state, time, references and enums", () => {
+    expect(buildColumns(RICH, [RICH]).map((c) => c.id)).toEqual([
+      "title",
+      "prop:status",
+      "dueAt",
+      "prop:owner",
+      "prop:priority",
+      "updatedAt",
+    ])
+  })
+
+  it("folds the property the title is into the title column", () => {
+    const columns = buildColumns(RICH, [RICH])
+    expect(columns.map((c) => c.id)).not.toContain("prop:name")
+    expect(columns[0].meta?.label).toBe("Name")
+    const summary = {
+      ...RICH,
+      definition: { ...RICH.definition, displayTemplate: "{summary}" },
+    }
+    expect(buildColumns(summary, [summary])[0].meta?.label).toBe("Summary")
+  })
+
+  it("adds the record id in technical mode", () => {
+    expect(
+      buildColumns(RICH, [RICH], undefined, { technical: true }).map(
+        (c) => c.id
+      )
+    ).toContain("id")
+  })
+
+  it("hides the properties a composed title is made of", () => {
+    // The one the title IS has no column; a fallback still opens hidden.
+    expect(defaultHiddenColumns(RICH)).toEqual([])
+    const composed = {
+      ...RICH,
+      definition: { ...RICH.definition, displayTemplate: "{status} #{name}" },
+    }
+    expect(defaultHiddenColumns(composed)).toEqual([
+      propertyColumnId("status"),
+      propertyColumnId("name"),
+    ])
   })
 })

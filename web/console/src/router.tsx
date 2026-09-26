@@ -9,30 +9,45 @@ import {
 } from "@tanstack/react-router"
 
 import { AppShell } from "@/components/app-shell"
+import { PageError } from "@/components/page-error"
 import { hasSession } from "@/lib/api/session"
-import { AccountPage } from "@/pages/account"
 import { ActorPage } from "@/pages/actor"
-import { AgentChatPage } from "@/pages/agent-chat"
 import { AgentsPage } from "@/pages/agents"
-import { ChangelogPage } from "@/pages/changelog"
-import { BundleDetailPage } from "@/pages/bundle-detail"
 import { AuthorityPage, PackagePage } from "@/pages/authority"
 import { ChangeRequestDetailPage } from "@/pages/change-request-detail"
-import { ConnectionDetailPage } from "@/pages/connection-detail"
-import { ConnectionsPage } from "@/pages/connections"
 import { HomePage } from "@/pages/home"
 import { LoginPage } from "@/pages/login"
 import { MergeRequestDetailPage } from "@/pages/merge-request-detail"
 import { RecordPage } from "@/pages/record"
 import { RecordEditPage, RecordNewPage } from "@/pages/record-editor"
 import { RegisterPage } from "@/pages/register"
-import { RegistryPage } from "@/pages/registry"
 import { SearchPage } from "@/pages/search"
-import { BundleSettingsPage, SettingsPage } from "@/pages/settings"
-import { TokensPage } from "@/pages/tokens"
 import { KindBrowsePage } from "@/pages/kind-browse"
+import { AllDataPage } from "@/pages/all-data"
+import { HistoryPage } from "@/pages/history"
+import { ToolsPage } from "@/pages/tools"
+import { ToolPage } from "@/pages/tool"
+import { ProvidersPage } from "@/pages/providers"
+import {
+  oauthReturnRedirect,
+  oauthReturnSearch,
+  type OAuthReturnSearch,
+} from "@/lib/oauth-return"
+import { ProviderPage } from "@/pages/provider"
+import { ConsoleSettingsPage } from "@/pages/console-settings"
 
 const rootRoute = createRootRoute()
+
+/** The authority the shipped samples are published under: an old Registry
+ * address naming one is a sample to add from All data. */
+const SAMPLES_AUTHORITY = "samples.substrate.reamde.dev"
+
+/** A bundle id, `<authority>/<package>`, as the provider route's params. */
+function bundleTarget(id: string): { authority: string; pkg: string } | null {
+  const at = id.lastIndexOf("/")
+  if (at <= 0 || at === id.length - 1) return null
+  return { authority: id.slice(0, at), pkg: id.slice(at + 1) }
+}
 
 export const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -80,16 +95,28 @@ export const homeRoute = createRoute({
   component: HomePage,
 })
 
+// The changelog is History now; an old link lands there with its facets.
 export const changelogRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/changelog",
-  component: ChangelogPage,
+  beforeLoad: ({ location }) => {
+    throw redirect({ to: "/history", search: location.search, replace: true })
+  },
 })
 
+// The Registry, Connections and bundle Settings pages became Providers; their
+// old addresses still land somewhere true.
+// It is also where the substrate's OAuth return page falls back to
+// (`?connected=` / `?error=`), so the result travels on with the redirect.
 export const registryRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/registry",
-  component: RegistryPage,
+  beforeLoad: ({ location }) => {
+    throw redirect({
+      ...oauthReturnRedirect(location.search as Record<string, unknown>),
+      replace: true,
+    })
+  },
 })
 
 // The ranked read as a page. The page reads its state through nuqs; the
@@ -110,39 +137,62 @@ export const searchRoute = createRoute({
   component: SearchPage,
 })
 
+// A shipped sample is added from All data now; anything else the old page
+// showed (a provider, a package this repository holds) has a Providers page.
 export const bundleDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/registry/$id",
-  component: BundleDetailPage,
+  beforeLoad: ({ params }) => {
+    const target = bundleTarget(params.id)
+    if (!target || target.authority === SAMPLES_AUTHORITY) {
+      throw redirect({ to: "/data" })
+    }
+    throw redirect({ to: "/providers/$authority/$pkg", params: target })
+  },
 })
 
 export const connectionsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/connections",
-  component: ConnectionsPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/providers" })
+  },
 })
 
-// One Connection is one account record, so its address is the record's own
-// kind reference plus the id, the way a data address is (decision 0047).
+// An account's kind lives in its provider's package, so the kind's authority
+// and package ARE the provider's bundle id.
 export const connectionDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/connections/$authority/$pkg/$name/$id",
-  component: ConnectionDetailPage,
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/providers/$authority/$pkg",
+      params: { authority: params.authority, pkg: params.pkg },
+      search: { account: params.id },
+    })
+  },
 })
 
 export const settingsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/settings",
-  component: SettingsPage,
+  component: ConsoleSettingsPage,
 })
 
-// The settings list is the index; one bundle's form is the page under it, and
-// the `$id` is the bundle id (`<authority>/<package>`), the same prefix its
-// setting records carry.
+// A bundle's settings live on its Providers page; the `$id` is the bundle id
+// (`<authority>/<package>`), the same prefix its setting records carry.
 export const bundleSettingsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/settings/$id",
-  component: BundleSettingsPage,
+  beforeLoad: ({ params }) => {
+    const target = bundleTarget(params.id)
+    if (!target) throw redirect({ to: "/providers" })
+    throw redirect({
+      to: "/providers/$authority/$pkg",
+      params: target,
+      hash: "settings",
+    })
+  },
 })
 
 export const agentsRoute = createRoute({
@@ -151,10 +201,21 @@ export const agentsRoute = createRoute({
   component: AgentsPage,
 })
 
+// The old per-agent address: the chat app opens a new chat with that agent,
+// and a `?thread=` it carried opens that conversation instead.
 export const agentChatRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/agents/$id",
-  component: AgentChatPage,
+  beforeLoad: ({ params, search }) => {
+    const thread = (search as Record<string, unknown>).thread
+    throw redirect({
+      to: "/agents",
+      search: (typeof thread === "string" && thread
+        ? { thread }
+        : { agent: params.id }) as never,
+      replace: true,
+    })
+  },
 })
 
 export const mergeRequestDetailRoute = createRoute({
@@ -219,19 +280,74 @@ export const actorRoute = createRoute({
   component: ActorPage,
 })
 
+// The account and its tokens live in Settings now. NOT "/tokens" for either:
+// the API door answers `GET /tokens`, so a browser loading that path would get
+// JSON, not the SPA.
 export const tokensRoute = createRoute({
   getParentRoute: () => shellRoute,
-  // NOT "/tokens": the API door answers `GET /tokens`, so a browser loading or
-  // refreshing that path would get JSON, not the SPA. The console route nests
-  // under /account, which the door does not serve.
   path: "/account/tokens",
-  component: TokensPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/settings", replace: true })
+  },
 })
 
 export const accountRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/account",
-  component: AccountPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/settings", replace: true })
+  },
+})
+
+export const allDataRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/data",
+  component: AllDataPage,
+})
+
+export const historyRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/history",
+  component: HistoryPage,
+})
+
+export const toolsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/tools",
+  component: ToolsPage,
+})
+
+// A tool is a function record, addressed by its reference segment for segment,
+// the way a data address is (decision 0047).
+export const toolRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/tools/$authority/$pkg/$name",
+  component: ToolPage,
+})
+
+export const providersRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/providers",
+  validateSearch: (search: Record<string, unknown>): OAuthReturnSearch =>
+    oauthReturnSearch(search),
+  component: ProvidersPage,
+})
+
+// A provider is a bundle, and a bundle's id is its package: authority, package.
+// `account` names one of its accounts to scroll to and highlight.
+export const providerRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/providers/$authority/$pkg",
+  validateSearch: (
+    search: Record<string, unknown>
+  ): OAuthReturnSearch & { account?: string } => ({
+    account:
+      typeof search.account === "string" && search.account
+        ? search.account
+        : undefined,
+    ...oauthReturnSearch(search),
+  }),
+  component: ProviderPage,
 })
 
 const routeTree = rootRoute.addChildren([
@@ -260,12 +376,21 @@ const routeTree = rootRoute.addChildren([
     actorRoute,
     tokensRoute,
     accountRoute,
+    allDataRoute,
+    historyRoute,
+    toolsRoute,
+    toolRoute,
+    providersRoute,
+    providerRoute,
   ]),
 ])
 
 export const router = createRouter({
   routeTree,
   defaultPreload: "intent",
+  // Every route catches its own render failure, so a page that fails keeps
+  // the shell and its sidebar around it.
+  defaultErrorComponent: PageError,
   // Record ids carry `@` (calendar/email-derived ids); leaving it raw in the
   // URL keeps the address bar honest to the id the API stores.
   pathParamsAllowedCharacters: ["@"],

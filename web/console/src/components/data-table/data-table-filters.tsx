@@ -7,12 +7,19 @@
  * A reference is filtered by PICKING its referents: the bar is handed the
  * registry so a pin resolves to the collection to offer, and the control
  * reads the chosen records' titles. A bar handed none (the changelog's) keeps
- * the text box. */
+ * the text box.
+ *
+ * Everyday, a property is its icon and its label; its datatype and a
+ * reference's target kind are technical details, shown under the label only
+ * with the switch on. */
 
 import { useState } from "react"
-import { CheckIcon, ListFilterIcon, XIcon } from "lucide-react"
+import { ListFilterIcon, XIcon } from "lucide-react"
 
+import { EnumTag } from "@/components/identity/enum-tag"
+import { StateBadge } from "@/components/identity/state-badge"
 import { Button } from "@/components/ui/button"
+import { ChoiceList, type ChoiceOption } from "@/components/ui/choice-list"
 import {
   Command,
   CommandEmpty,
@@ -22,6 +29,7 @@ import {
   CommandList,
 } from "@/components/ui/command"
 import { Input } from "@/components/ui/input"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import {
   Popover,
   PopoverContent,
@@ -31,8 +39,12 @@ import type { KindInfo } from "@/lib/api/types"
 import {
   canMatch,
   canPrefix,
+  choiceWord,
   displayValue,
+  filterValueText,
+  isChoiceField,
   opFor,
+  picksMany,
   parseValueInput,
   splitReferenceIds,
   type ActiveFilter,
@@ -43,6 +55,7 @@ import {
   type DeclaredProperty,
 } from "@/lib/definition"
 import { cn } from "@/lib/utils"
+import { propertyIcon } from "./property-icon"
 import { ReferenceFilterLabel, ReferencePicker } from "./reference-picker"
 
 interface DataTableFiltersProps {
@@ -52,6 +65,13 @@ interface DataTableFiltersProps {
   /** The registry, which resolves a reference field's pin to the collection
    * its picker offers. Absent, a reference field takes text. */
   kinds?: KindInfo[]
+  /** How a field is named on screen; its key by default. */
+  labelOf?: (name: string) => string
+  /** The fields are a kind's own properties: states read as their words
+   * ("Suggested"), not their stored values. Off for a bar whose facets only
+   * borrow the state shape (History's kinds and actors). */
+  words?: boolean
+  className?: string
 }
 
 /** The kind a reference field's picker offers: the one its pin names. A pin
@@ -67,19 +87,53 @@ function referenceTarget(
   return kindByIdentity(kinds, field.to)
 }
 
-/** The value step, shaped by the declared kind: states and booleans facet
- * (toggle membership, applied live), a pinned reference offers its referents
- * the same way; everything else takes text on Enter. */
+/** A declared set as the value step lists it: the words the grid shows
+ * (a state's badge, an enum's tag), in declaration order. A deprecated enum
+ * value is still listed, since records may hold it. */
+function choiceOptions(
+  field: DeclaredProperty,
+  words: boolean
+): ChoiceOption[] {
+  if (field.kind === "bool")
+    return ["true", "false"].map((v) => ({
+      value: v,
+      label: choiceWord(v, field, words),
+    }))
+  if (field.kind === "enum")
+    return (field.values ?? []).map((v) => ({
+      value: v.value,
+      label: choiceWord(v.value, field, words),
+      display: <EnumTag prop={field} value={v.value} />,
+      hint: v.deprecated ? "no longer offered" : undefined,
+    }))
+  return (field.states ?? []).map((state) => ({
+    value: state,
+    label: choiceWord(state, field, words),
+    display: words ? (
+      <StateBadge value={state} initial={field.initial} />
+    ) : undefined,
+  }))
+}
+
+/** The value step, shaped by the declared kind: a declared set (states,
+ * enum values, yes or no) is a ChoiceList — several at once apply live, one
+ * closes — a pinned reference offers its referents the same way; everything
+ * else takes text on Enter. */
 function ValueEditor({
   field,
+  label,
   value,
+  words,
   target,
   kinds,
   onApply,
   onCommit,
 }: {
   field: DeclaredProperty
+  /** How the field is named on screen. */
+  label: string
   value: string
+  words: boolean
   /** A reference field's resolved referent kind; the picker wants it. */
   target?: KindInfo
   kinds?: KindInfo[]
@@ -101,69 +155,21 @@ function ValueEditor({
     )
   }
 
-  if (field.kind === "state" && field.states?.length) {
-    const selected = new Set(
-      value
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-    )
+  if (isChoiceField(field)) {
+    const many = picksMany(field)
     return (
-      <Command>
-        {/* A short machine reads at a glance; a long facet (the changelog's
-            type list) earns the search line. */}
-        {field.states.length > 8 && (
-          <CommandInput placeholder={`Filter ${field.name}…`} />
-        )}
-        <CommandList>
-          <CommandEmpty>No match.</CommandEmpty>
-          <CommandGroup>
-            {field.states.map((state) => {
-              const on = selected.has(state)
-              return (
-                <CommandItem
-                  key={state}
-                  value={state}
-                  onSelect={() => {
-                    const next = new Set(selected)
-                    if (on) next.delete(state)
-                    else next.add(state)
-                    onApply([...next].join(","))
-                  }}
-                >
-                  <span
-                    className={cn(
-                      "flex size-4 items-center justify-center rounded-sm border",
-                      on
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "opacity-50"
-                    )}
-                  >
-                    {on && <CheckIcon className="size-3" />}
-                  </span>
-                  <span className="data">{state}</span>
-                </CommandItem>
-              )
-            })}
-          </CommandGroup>
-        </CommandList>
-      </Command>
-    )
-  }
-
-  if (field.kind === "bool") {
-    return (
-      <Command>
-        <CommandList>
-          <CommandGroup>
-            {["true", "false"].map((v) => (
-              <CommandItem key={v} value={v} onSelect={() => onCommit(v)}>
-                <span className="data">{v}</span>
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        </CommandList>
-      </Command>
+      <ChoiceList
+        label={label}
+        options={choiceOptions(field, words)}
+        selected={splitReferenceIds(value)}
+        multiple={many}
+        // A state's badge says its stored value itself in technical mode.
+        showValues={field.kind === "state" && words ? false : undefined}
+        onChange={(next) => {
+          if (many) onApply(next.join(","))
+          else if (next[0]) onCommit(next[0])
+        }}
+      />
     )
   }
 
@@ -180,14 +186,14 @@ function ValueEditor({
         autoFocus
         placeholder={
           pointer
-            ? `${field.name} points at…`
+            ? `${label} points at…`
             : matches
-              ? `${field.name} mentions…`
+              ? `${label} mentions…`
               : field.repeated
-                ? `${field.name} contains…`
-                : `${field.name} is…`
+                ? `${label} contains…`
+                : `${label} is…`
         }
-        className="h-8 data"
+        className="h-8"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
@@ -227,15 +233,19 @@ function ValueEditor({
 function ActiveFilterControl({
   filter,
   field,
+  words,
   target,
   kinds,
+  label,
   onChange,
   onRemove,
 }: {
   filter: ActiveFilter
   field: DeclaredProperty | undefined
+  words: boolean
   target?: KindInfo
   kinds?: KindInfo[]
+  label: string
   onChange: (next: ActiveFilter) => void
   onRemove: () => void
 }) {
@@ -246,17 +256,17 @@ function ActiveFilterControl({
           but the × is a REAL sibling button: nested inside the trigger it
           sat under the Button's [&_svg]:pointer-events-none and could never
           be clicked (owner redline, 2026-08-06). */}
-      <div className="flex h-8 items-stretch overflow-hidden rounded-lg border border-border bg-background bg-clip-padding dark:border-input dark:bg-input/30">
+      <div className="flex h-7 items-stretch overflow-hidden rounded-md border border-border-strong bg-background text-[12.5px]">
         <PopoverTrigger
           render={
             <Button
               variant="ghost"
               size="sm"
-              className="h-full gap-1.5 rounded-none pr-1.5 font-normal"
+              className="h-full gap-2 rounded-none px-2 text-[12.5px] font-normal"
             />
           }
         >
-          <span className="text-muted-foreground">{filter.field}</span>
+          <span className="text-muted-foreground">{label}</span>
           {/* an explicit rule, not Separator: the field | value seam must be
               visible inside the control (codex finding, 2026-08-05) */}
           <span aria-hidden className="h-4 w-px shrink-0 bg-border" />
@@ -271,18 +281,18 @@ function ActiveFilterControl({
             />
           ) : (
             <span
-              className="max-w-72 truncate data"
-              title={displayValue(filter, field).replaceAll(",", ", ")}
+              className="max-w-72 truncate"
+              title={filterValueText(filter, field, words)}
             >
-              {displayValue(filter, field).replaceAll(",", ", ")}
+              {filterValueText(filter, field, words)}
             </span>
           )}
         </PopoverTrigger>
         <Button
           variant="ghost"
           size="sm"
-          aria-label={`Remove ${filter.field} filter`}
-          className="h-full w-6 rounded-none px-0 text-muted-foreground hover:text-foreground"
+          aria-label={`Remove ${label} filter`}
+          className="h-full w-7 rounded-none border-l border-border px-0 text-faint hover:text-foreground"
           onClick={onRemove}
         >
           <XIcon className="size-3.5" />
@@ -290,12 +300,17 @@ function ActiveFilterControl({
       </div>
       <PopoverContent
         align="start"
-        className={cn("p-1", target ? "w-80" : "w-56")}
+        className={cn(
+          isChoiceField(field) ? "p-0" : "p-1",
+          target ? "w-80" : "w-56"
+        )}
       >
         {field ? (
           <ValueEditor
             field={field}
+            label={label}
             value={displayValue(filter, field)}
+            words={words}
             target={target}
             kinds={kinds}
             onApply={(value) => {
@@ -329,7 +344,11 @@ export function DataTableFilters({
   filters,
   onChange,
   kinds,
+  labelOf = (name) => name,
+  words = false,
+  className,
 }: DataTableFiltersProps) {
+  const [technical] = useTechnicalDetails()
   const [addOpen, setAddOpen] = useState(false)
   const [pending, setPending] = useState<DeclaredProperty | null>(null)
   const pendingTarget = referenceTarget(pending ?? undefined, kinds)
@@ -353,7 +372,12 @@ export function DataTableFilters({
   }
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 px-6 py-2.5">
+    <div
+      className={cn(
+        "flex shrink-0 flex-wrap items-center gap-2 px-6 py-2.5",
+        className
+      )}
+    >
       {filters.map((filter, i) => {
         const field = fields.find((f) => f.name === filter.field)
         return (
@@ -361,8 +385,10 @@ export function DataTableFilters({
             key={`${filter.field}-${i}`}
             filter={filter}
             field={field}
+            words={words}
             target={referenceTarget(field, kinds)}
             kinds={kinds}
+            label={labelOf(filter.field)}
             onChange={(next) => upsert(next, i)}
             onRemove={() => onChange(filters.filter((_, j) => j !== i))}
           />
@@ -378,22 +404,28 @@ export function DataTableFilters({
         <PopoverTrigger
           render={
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="h-8 gap-1.5 border-dashed font-normal text-muted-foreground"
+              className="h-7 gap-1.5 text-[12.5px] font-normal text-muted-foreground"
             />
           }
         >
-          <ListFilterIcon className="size-3.5" /> Add filter
+          <ListFilterIcon className="size-3.5" />
+          Add filter
         </PopoverTrigger>
         <PopoverContent
           align="start"
-          className={cn("p-1", pendingTarget ? "w-80" : "w-64")}
+          className={cn(
+            pending && isChoiceField(pending) ? "p-0" : "p-1",
+            pendingTarget || technical ? "w-80" : "w-64"
+          )}
         >
           {pending ? (
             <ValueEditor
               field={pending}
+              label={labelOf(pending.name)}
               value={filters.find((f) => f.field === pending.name)?.value ?? ""}
+              words={words}
               target={pendingTarget}
               kinds={kinds}
               onApply={(value) => {
@@ -417,22 +449,38 @@ export function DataTableFilters({
               <CommandList>
                 <CommandEmpty>No property can be filtered here.</CommandEmpty>
                 <CommandGroup>
-                  {fields.map((field) => (
-                    // [&>svg:last-child]:hidden drops CommandItem's built-in
-                    // trailing check slot: its reserved width shoved the kind
-                    // text off the right edge (owner redline, 2026-08-06).
-                    <CommandItem
-                      key={field.name}
-                      value={field.name}
-                      onSelect={() => setPending(field)}
-                      className="[&>svg:last-child]:hidden"
-                    >
-                      <span>{field.name}</span>
-                      <span className="ml-auto text-right text-xs text-muted-foreground">
-                        {propertyTypeLabel(field)}
-                      </span>
-                    </CommandItem>
-                  ))}
+                  {fields.map((field) => {
+                    const Icon = propertyIcon(field)
+                    const label = labelOf(field.name)
+                    return (
+                      // [&>svg:last-child]:hidden drops CommandItem's built-in
+                      // trailing check slot: its reserved width shoved the
+                      // text off the right edge (owner redline, 2026-08-06).
+                      // The label and the key are both searched.
+                      <CommandItem
+                        key={field.name}
+                        value={`${label} ${field.name}`}
+                        onSelect={() => setPending(field)}
+                        className="items-start [&>svg:last-child]:hidden"
+                      >
+                        <Icon
+                          aria-hidden
+                          className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+                        />
+                        <span className="flex min-w-0 flex-col">
+                          <span className="truncate">{label}</span>
+                          {technical && (
+                            <span
+                              className="truncate font-mono text-[11.5px] text-muted-foreground"
+                              title={propertyTypeLabel(field)}
+                            >
+                              {propertyTypeLabel(field)}
+                            </span>
+                          )}
+                        </span>
+                      </CommandItem>
+                    )
+                  })}
                 </CommandGroup>
               </CommandList>
             </Command>
@@ -443,7 +491,7 @@ export function DataTableFilters({
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 font-normal text-muted-foreground"
+          className="h-7 text-[12.5px] font-normal text-muted-foreground"
           onClick={() => onChange([])}
         >
           Clear all

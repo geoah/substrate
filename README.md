@@ -334,7 +334,8 @@ three keyless rows (`openai`, `anthropic`, `gemini`) beside the LLM sample's
 agents, so the row `assistant` names already exists. That sample is a
 **bundle**, the install unit: a closure like `chores.yaml`, installed and
 removed as one thing. Its files are under [samples/llm](samples/llm), and
-the console's Registry page installs the rest of the catalog the same way.
+the console adds the rest of the catalog the same way: a provider from its
+Providers page, a sample from All data's **Add a collection**.
 
 Put a key on the row `assistant` names. It is an ordinary record write, and
 `apiKey` is secret-typed, so it reads back redacted ever after:
@@ -359,12 +360,12 @@ calendar, messaging and more): [docs/bundles.md](docs/bundles.md) is the
 model, [docs/bundles-catalog.md](docs/bundles-catalog.md) what ships
 today.
 
-To connect one, your Google mail and calendar say, install it from the
-console's Registry and open **Connections**. The provider's card walks you
-through it: set up its credentials (an OAuth client you create with the
-provider; the card shows the callback URL to give it), press *Add account*
-and choose what to sync, and *Create and connect* opens the provider for
-you to approve. The first sync starts when you come back.
+To connect one, your Google mail and calendar say, open it on the console's
+**Providers** page. Its page walks you through four steps: add it, give it
+sign-in details (an OAuth client you create with the provider; the page shows
+the callback URL to give it), connect your account and choose what to bring
+in, where *Create and connect* opens the provider for you to approve. The
+first sync starts when you come back.
 
 ## Configuration
 
@@ -388,7 +389,7 @@ Toolchain is [mise](https://mise.jdx.dev): `mise install` once, then:
 ```bash
 mise run dev            # Postgres in a container + the server on :8080
 mise run dev:wipe       # drop this tree's database; the next start is fresh
-mise run console:dev    # the console on :5173, proxying /api to :8080
+mise run console:dev    # the console on :5173, proxying the API and auth door to :8080
 mise run test           # the Go suite (Docker needed for the engine half)
 mise run ci             # every CI job, locally
 mise tasks              # everything else

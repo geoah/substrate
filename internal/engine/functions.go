@@ -1864,7 +1864,7 @@ func cursorMoved(res sql.Result, err error) error {
 func (ds *dataset) changesPast(ctx context.Context, after int64) ([]substrate.Change, error) {
 	b := &builder{}
 	b.add(`seq > ` + b.arg(after))
-	return ds.queryChanges(ctx, b, `seq`, triggerBatch)
+	return ds.queryChanges(ctx, b, `seq`, triggerBatch, false)
 }
 
 // causalDepth walks caused_by from a change to the direct write that started
