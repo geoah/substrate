@@ -411,7 +411,7 @@ run = ".mise/frozencheck.sh"
 description = "Refuse a decision record whose number main or another branch already took"
 run = ".mise/decisionscheck.sh"
 
-# The third diff guard, and the one the `pr` workflow runs rather than `lint`:
+# The fourth diff guard, and the one the `pr` workflow runs rather than `lint`:
 # it reads the PR title as well as the branch, and the title can change
 # without a push. Every commit subject is held, not only the title, because
 # main takes rebase merges too and a rebase lands each commit as it is.

@@ -342,11 +342,13 @@ dg branch before-rename main
 dg mv docs/decisions/0001-one.md docs/decisions/0001-uno.md
 dg commit --quiet -m 'rename 0001'
 
-# decisions <branch> <expected exit> [expected text]: the check on <branch>.
+# decisions <branch> <expected exit> [expected text]: the check on <branch>
+# of the repository in $check_repo.
+check_repo="$drepo"
 decisions() {
   local name="$1" expected="$2" want="${3:-}" status
-  dg checkout --quiet "$name"
-  (cd "$drepo" && env -u CI -u GITHUB_BASE_REF -u GITHUB_HEAD_REF -u GITHUB_REF_NAME \
+  git -C "$check_repo" checkout --quiet "$name"
+  (cd "$check_repo" && env -u CI -u GITHUB_BASE_REF -u GITHUB_HEAD_REF -u GITHUB_REF_NAME \
     DECISIONS_CHECK_BASE=main DECISIONS_CHECK_REFS=refs/heads "$decisionscheck" 2>"$tmp/stderr")
   status=$?
   [ "$status" -eq "$expected" ] ||
@@ -354,7 +356,7 @@ decisions() {
   if [ -n "$want" ] && ! grep -qF "$want" "$tmp/stderr"; then
     flag "decisions ${name}: expected '${want}' in: $(cat "$tmp/stderr")"
   fi
-  dg checkout --quiet main
+  git -C "$check_repo" checkout --quiet main
 }
 
 decisions main 0
@@ -383,10 +385,16 @@ dg checkout --quiet main
 [ $? -eq 2 ] || flag "decisions: an unresolvable base was not refused with exit 2"
 
 # In CI, a namespace with no branch but the base is a checkout that fetched
-# none, never a pass.
+# none, never a pass for a branch that adds a record. A branch that adds none
+# has nothing to check and passes.
+dg checkout --quiet first
 (cd "$drepo" && env -u GITHUB_BASE_REF -u GITHUB_HEAD_REF -u GITHUB_REF_NAME CI=true \
   DECISIONS_CHECK_BASE=main DECISIONS_CHECK_REFS=refs/nothing "$decisionscheck" >/dev/null 2>&1)
 [ $? -eq 2 ] || flag "decisions: an empty namespace in CI was not refused with exit 2"
+dg checkout --quiet main
+(cd "$drepo" && env -u GITHUB_BASE_REF -u GITHUB_HEAD_REF -u GITHUB_REF_NAME CI=true \
+  DECISIONS_CHECK_BASE=main DECISIONS_CHECK_REFS=refs/nothing "$decisionscheck" >/dev/null 2>&1) ||
+  flag "decisions: an empty namespace in CI refused a branch that adds no record"
 
 # A base whose record names are over 64 KiB, more than a pipe holds: a record
 # on main must still read as on main. `printf | grep -q` under pipefail
@@ -406,5 +414,48 @@ bg add -A && bg commit --quiet -m adds-one
 (cd "$brepo" && env -u CI -u GITHUB_BASE_REF -u GITHUB_HEAD_REF -u GITHUB_REF_NAME \
   DECISIONS_CHECK_BASE=main DECISIONS_CHECK_REFS=refs/heads "$decisionscheck" 2>"$tmp/stderr") ||
   flag "decisions big base: a non-colliding record was refused: $(head -c 400 "$tmp/stderr")"
+
+# A record created in a merge commit, as renumbering while resolving a merge
+# of main does: git log skips merges unless told otherwise, and the record
+# then had no date here and no claim elsewhere, so a later branch kept its
+# number. Its own repository, so the scenarios above keep their numbers.
+mrepo="$tmp/decisions-merge"
+git init --quiet --initial-branch=main "$mrepo"
+mg() { git -C "$mrepo" -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false "$@"; }
+mkdir -p "$mrepo/docs/decisions"
+printf -- '---\nstatus: accepted\n---\n' >"$mrepo/docs/decisions/0001-one.md"
+printf -- '---\nstatus: accepted\n---\n' >"$mrepo/docs/decisions/0002-two.md"
+mg add -A && mg commit --quiet -m base
+mt0=$(($(date +%s) - 5 * day))
+mg checkout --quiet -b merge-made main
+: >"$mrepo/work.txt"
+mg add -A
+GIT_AUTHOR_DATE="@$mt0 +0000" mg commit --quiet -m work
+mg checkout --quiet main
+: >"$mrepo/main.txt"
+mg add -A && mg commit --quiet -m 'main moves'
+mg checkout --quiet merge-made
+mg merge --quiet --no-commit --no-ff main >/dev/null 2>&1
+printf -- '---\nstatus: proposed\n---\n' >"$mrepo/docs/decisions/0003-merged-in.md"
+mg add -A
+GIT_AUTHOR_DATE="@$((mt0 + day)) +0000" mg commit --quiet --no-edit
+mg checkout --quiet -b later main
+printf -- '---\nstatus: proposed\n---\n' >"$mrepo/docs/decisions/0003-later.md"
+mg add -A
+GIT_AUTHOR_DATE="@$((mt0 + 2 * day)) +0000" mg commit --quiet -m later
+# Two branches adding 0004 at one author date: the file name decides, so both
+# agree that 0004-aaa keeps it.
+for name in aaa bbb; do
+  mg checkout --quiet -b "tie-${name}" main
+  printf -- '---\nstatus: proposed\n---\n' >"$mrepo/docs/decisions/0004-${name}.md"
+  mg add -A
+  GIT_AUTHOR_DATE="@$mt0 +0000" mg commit --quiet -m "tie ${name}"
+done
+mg checkout --quiet main
+check_repo="$mrepo"
+decisions merge-made 0
+decisions later 1 '0003 is already 0003-merged-in.md on merge-made, added first'
+decisions tie-aaa 0
+decisions tie-bbb 1 '0004 is already 0004-aaa.md on tie-aaa, added first'
 
 exit "$fail"

@@ -37,7 +37,8 @@ parallel agent branches would skip or race on. Dropping numbers rewrites how
 A record a branch adds is refused when the base branch's tip already uses its
 number, or when another branch added a different record with that number
 first. "First" is the author date of the commit that added the file, which a
-rebase keeps; ties fall to the file name, so both branches agree. A branch
+rebase keeps; a merge commit that creates or renumbers the record counts as
+that commit. Ties fall to the file name, so both branches agree. A branch
 whose tip is older than 30 days holds nothing, and a record whose title is on
 `main` or in this tree under another number has merged or been renumbered. The
 refusal names the next number nobody holds.
@@ -65,7 +66,8 @@ refusal names the next number nobody holds.
 (`mise run lint:ci`): a later branch, a number taken on `main`, a stacked
 branch, a merged-and-renumbered branch, an abandoned branch, two refusals in
 one run told different numbers, a record main renamed after the fork, an
-uncommitted record, a base whose record names are over 64 KiB, an
+uncommitted record, a base whose record names are over 64 KiB, a record
+created in a merge commit, two records added at one author date, an
 unresolvable base, and a CI checkout that fetched no other branch.
 
 ## More Information
