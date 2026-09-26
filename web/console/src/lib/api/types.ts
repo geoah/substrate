@@ -386,8 +386,9 @@ export interface Cond {
 
 /** The filter grammar (`substrate.Filter`, `?filter=` as URL-encoded JSON on
  * `GET /records`). `kinds` names the kinds a list reads — one for a
- * collection, several for a cross-kind read, none for every kind; the ranked
- * read and the tail admit `kinds` alone. `implements` intersects with it;
+ * collection, several for a cross-kind read, none for every kind; the tail
+ * admits `kinds` alone and the ranked read `kinds` and `purposes`.
+ * `implements` and `purposes` intersect with it;
  * `deleted` absent means live records only; `orphaned` picks the mapping
  * targets the engine marked (sources all gone, nothing above the machine
  * tier holding a property); `ambiguous` picks the mapping sources a probe
@@ -400,6 +401,9 @@ export interface RecordFilter {
   search?: string
   kinds?: string[]
   implements?: string
+  /** The kinds declaring one of these purposes, an undeclared purpose
+   * reading as `primary`. */
+  purposes?: ("primary" | "supporting" | "internal")[]
   ids?: string[]
   properties?: Record<string, Cond>
   labels?: Record<string, Cond>

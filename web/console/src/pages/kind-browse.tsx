@@ -104,6 +104,7 @@ import {
   propertyLabel,
   titleBacking,
 } from "@/lib/grid-values"
+import { typeaheadQuery } from "@/lib/identities"
 import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import { nestingProperty, rootsFilter } from "@/lib/record-tree"
 import { titlesFromIncluded } from "@/lib/reference-titles"
@@ -249,7 +250,9 @@ export function KindBrowsePage() {
   )
   const recordFilter = useMemo(() => {
     const base = toRecordFilter(filters, filterFields)
-    const words = search.trim()
+    // A word typed into the box matches as it is typed, the start of a longer
+    // word included.
+    const words = typeaheadQuery(search)
     return words ? { ...base, search: words } : base
   }, [filters, filterFields, search])
 

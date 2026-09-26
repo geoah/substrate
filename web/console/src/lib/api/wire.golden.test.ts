@@ -217,6 +217,7 @@ const recordFilter: Shape<RecordFilter> = {
   search: false,
   kinds: false,
   implements: false,
+  purposes: false,
   ids: false,
   properties: false,
   labels: false,
