@@ -221,7 +221,11 @@ data:
   # lands while a backfill is held; the delta's position is three new
   # optional fields on that object (`deltaHistoryId`, `deltaToken`,
   # `deltaOff`). ADDITIVE.
-  version: 34
+  #
+  # 35, #675: `contactgroup` is labelled Contact labels, `calendarseries`
+  # Repeating events and `calendarsync` Sync progress (decision 0106).
+  # Display text only.
+  version: 35
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -6677,6 +6681,9 @@ data:
     no hypermedia, no instant, no trait.
   names:
     singular: contactgroup
+  label:
+    singular: Contact label
+    plural: Contact labels
   displayTemplate: "{formattedName|name}"
   properties:
     # --- identity -----------------------------------------------------------
@@ -10828,6 +10835,9 @@ data:
     no trait: it has no instant of its own.
   names:
     singular: calendarsync
+  label:
+    singular: Sync progress
+    plural: Sync progress
   displayTemplate: "sync state"
   properties:
     # --- identity -----------------------------------------------------------
@@ -10898,6 +10908,9 @@ data:
     and nothing else. No sibling call.
   names:
     singular: calendarseries
+  label:
+    singular: Repeating event
+    plural: Repeating events
   traits:
     - substrate.reamde.dev/core/temporal(range)
     - substrate.reamde.dev/core/recurring

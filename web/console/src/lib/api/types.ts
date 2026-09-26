@@ -443,6 +443,13 @@ export function parseEnumValues(raw: unknown): EnumValue[] | undefined {
   return out.length ? out : undefined
 }
 
+/** What a client calls one record of a kind and what it calls the
+ * collection, as the kind's `label:` declares them. */
+export interface KindLabel {
+  singular: string
+  plural: string
+}
+
 /** KindInfo — the projection of one declared kind (iface.go). Replaces v0
  * `TypeInfo`: `authority` is what published the kind (empty for a
  * repository-local one), `package` is the package's own word beside it, and
@@ -470,6 +477,9 @@ export interface KindInfo {
   /** What the kind is for, as its declaration says it — a sentence or two,
    * read above the collection. Empty when the declaration carries none. */
   description: string
+  /** The kind's declared display label (decision 0106); absent when the
+   * declaration carries none, and the console names the kind from `name`. */
+  label?: KindLabel
   /** The reconciled declaration — the `data` of the `substrate.reamde.dev/core/kind`
    * manifest that declares it (`authority`, `package`, `names`,
    * `properties`, …), key order lost to jsonb. */

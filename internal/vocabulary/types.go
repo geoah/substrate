@@ -643,6 +643,10 @@ type Kind struct {
 	// sentence; a kind's gets two (maxKindDescription), still on one line.
 	Description string
 
+	// Label is the kind's declared display label (decision 0106), zero when
+	// it declared none.
+	Label KindLabel
+
 	DisplayTemplate string
 	Template        *Template
 

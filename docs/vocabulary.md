@@ -238,6 +238,24 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
 - **Enum values are an ordered list**, each entry either a bare value
   (`values: [off, hourly, daily]`) or a `{value, label}` mapping. Declaration
   order is render order, and validation reads the value alone.
+- **A kind may declare its display label**, both forms, for a kind whose
+  name reads wrong to a person (`conversation` is what Slack calls a
+  channel). `label:` is a mapping of `singular` and `plural`, both required
+  when the block is present, each a trimmed single-line caption of at most 80
+  characters:
+
+  ```yaml
+  names:
+    singular: conversation
+  label:
+    singular: Channel
+    plural: Channels
+  ```
+
+  The vocabulary read carries it as `label` beside `description`, absent
+  when the kind declares none. It is display text: the collection segment is
+  still the kind's name, and no route, filter, reference or grant reads it
+  ([decision record 0106](decisions/0106-a-kind-may-declare-its-display-label.md)).
 
 Three guardrails worth knowing:
 

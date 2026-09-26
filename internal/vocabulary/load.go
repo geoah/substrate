@@ -803,6 +803,9 @@ var typeDataKeys = map[string]bool{
 	// 0078): admitting it moves the old kind's live rows and repoints every
 	// live reference at them.
 	"movedFrom": true,
+	// `label` is the kind's display label, both forms (decision 0106): display
+	// text only, read by no route, filter or grant.
+	"label": true,
 }
 
 // namesKeys is the `names` block's key set: the kind's own name and nothing
@@ -855,6 +858,7 @@ func (l *loader) parseType(doc Document) *Kind {
 		t.Version = v
 	}
 	t.DisplayTemplate = mstr(d, "displayTemplate")
+	t.Label = l.parseKindLabel(where, d)
 
 	// properties, state machines among them
 	for pname, pdef := range mmap(d, "properties") {

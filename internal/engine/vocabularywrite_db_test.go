@@ -421,6 +421,67 @@ func TestProjectionStoresTheAuthoredDeclaration(t *testing.T) {
 	}
 }
 
+// A DECLARED LABEL REACHES BOTH READS (decision 0106): the kind's row carries
+// it as the `label` property the meta-kind declares, and KindInfo carries it as
+// its own field, before and after a reopen rebuilds the registry from the row.
+func TestADeclaredKindLabelIsStoredAndRead(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	var svc substrate.Service
+	open := func(create bool) substrate.Dataset {
+		var err error
+		svc, err = engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(engine.SeedKindsDir))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		opened := svc
+		t.Cleanup(func() { _ = opened.Close() })
+		if create {
+			if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+				t.Fatalf("create repository: %v", err)
+			}
+		}
+		ds, err := svc.Dataset(ctx, testdb.Repository(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ds
+	}
+	want := substrate.KindLabel{Singular: "Channel", Plural: "Channels"}
+	readLabel := func(ds substrate.Dataset, when string) {
+		t.Helper()
+		info, err := ds.KindByRef(ctx, swPackage+"/conversation")
+		if err != nil {
+			t.Fatalf("%s: read the kind: %v", when, err)
+		}
+		if info.Label == nil || *info.Label != want {
+			t.Fatalf("%s: KindInfo.Label = %+v", when, info.Label)
+		}
+	}
+
+	ds := open(true)
+	doc := swTypeDoc("conversation", map[string]any{"name": map[string]any{"type": "string"}})
+	doc["data"].(map[string]any)["label"] = map[string]any{"singular": "Channel", "plural": "Channels"}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(swPackage, 0),
+		doc,
+	}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	row := mustGet(t, ds, "substrate.reamde.dev/core/kind", swPackage+"/conversation")
+	label, _ := row.Properties["label"].(map[string]any)
+	if label["singular"] != "Channel" || label["plural"] != "Channels" {
+		t.Fatalf("the stored label = %#v", row.Properties["label"])
+	}
+	readLabel(ds, "after apply")
+
+	// The reopen rebuilds the registry from the stored row.
+	_ = svc.Close()
+	readLabel(open(false), "after reopen")
+}
+
 // KindInfo.Definition IS THE AUTHORED DECLARATION, and it reads the same before
 // and after a restart. A kind that pins no version of its own has the authority's
 // stamped onto its row; the row is what a reopen rebuilds the registry from, so a

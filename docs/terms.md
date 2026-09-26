@@ -7,7 +7,8 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 **type** → kind, **capability** → trait,
 **schema** → vocabulary, **log** → changelog, **extension** → bundle,
 **relationship** and **edge** → reference, **plural** → the kind's name, the
-third segment of its reference (decision 0033), **incoming** → the
+third segment of its reference (decision 0033), as an address; a plural
+display form is the kind's declared `label` (decision 0106), **incoming** → the
 `referencing` filter arm (decision 0079), **username** → the repository name,
 which is its authority (decision 0074), **tenant** and **identity** →
 nothing, there are none.
