@@ -19,7 +19,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: firecrawl
-  version: 9
+  version: 10
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -61,6 +61,7 @@ data:
     capped, with the scrape metadata beside it. The id is a hash of the URL,
     so scraping the same page again updates one document instead of minting
     a second.
+  purpose: supporting
   names:
     singular: webdocument
   properties:
