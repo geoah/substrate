@@ -60,14 +60,18 @@ func (ds *dataset) auditsCall(fn *vocabulary.Function) bool {
 }
 
 // newCallRun opens the call run for one direct call of fn, before its body
-// runs. The caller and the principal come from the request.
+// runs. The caller and the principal come from the request. The caller is
+// the raw `X-Substrate-Actor` header, which may carry bytes that are not
+// UTF-8 (Go's server accepts obs-text, and Python's http.client sends
+// Latin-1), so it is cleaned: a caller no row stores must not fail a call
+// whose body already ran.
 func newCallRun(ctx context.Context, fn *vocabulary.Function, caller substrate.Actor) runRecord {
 	return runRecord{
 		callable:  vocabulary.RecordPath(kindFunction, fn.Identity()),
 		mode:      runner.ModeCall,
 		attempt:   1,
 		startedAt: nowUTC(),
-		caller:    caller,
+		caller:    substrate.Actor(storableString(string(caller))),
 		principal: substrate.PrincipalFrom(ctx),
 	}
 }
@@ -100,7 +104,7 @@ func summarizeOutput(output any) *callOutput {
 // row is logged, never returned: the caller is owed the call's own error.
 func (ds *dataset) putFailedCallRun(ctx context.Context, r runRecord, cause error) {
 	r.status = runStatusFailed
-	r.errMsg = storableReason(cause.Error())
+	r.errMsg = storableString(cause.Error())
 	ctx = context.WithoutCancel(ctx)
 	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		return t.putSystemRun(r, false)
@@ -110,9 +114,10 @@ func (ds *dataset) putFailedCallRun(ctx context.Context, r runRecord, cause erro
 	}
 }
 
-// storableReason makes a failure message storable: a NUL or a byte that is
-// not UTF-8 in a body's exception text would fail the row, and the audit of
-// a call whose body ran must not be dropped over its message.
-func storableReason(msg string) string {
+// storableString makes a string storable in a run row: a NUL or a byte that
+// is not UTF-8 (in a body's exception text, or in the caller's actor header)
+// would fail the row, and the audit of a call whose body ran must not be
+// dropped over it.
+func storableString(msg string) string {
 	return strings.ToValidUTF8(strings.ReplaceAll(msg, "\x00", "\uFFFD"), "\uFFFD")
 }

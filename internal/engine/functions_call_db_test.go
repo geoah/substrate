@@ -308,6 +308,25 @@ def main(input, host):
 	if len(bare) != 1 || bare[0]["outputBytes"] == nil {
 		t.Fatalf("want one ok row with outputBytes and no output (the NUL call's), got %+v", bare)
 	}
+
+	// A caller that is not UTF-8 (a raw `X-Substrate-Actor` byte) still
+	// settles: the row stores the caller cleaned.
+	if _, _, err := ds.CallFunction(context.Background(), substrate.Actor("\xff"), name, map[string]any{"title": "latin"}); err != nil {
+		t.Fatalf("a call whose caller is not UTF-8 failed: %v", err)
+	}
+	runs = callRuns(t, ds)
+	if len(runs) != 4 {
+		t.Fatalf("the non-UTF-8 caller's call wrote %d call runs in all, want 4", len(runs))
+	}
+	var latin []map[string]any
+	for _, r := range runs {
+		if r.Properties["caller"] == "\uFFFD" {
+			latin = append(latin, r.Properties)
+		}
+	}
+	if len(latin) != 1 || latin[0]["status"] != "ok" {
+		t.Fatalf("want one ok row with the caller cleaned to U+FFFD, got %+v", latin)
+	}
 }
 
 func TestHostCallGatingAndCallerTransaction(t *testing.T) {
