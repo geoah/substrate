@@ -14,9 +14,11 @@
  * with the switch on. */
 
 import { useState } from "react"
-import { CheckIcon, ListFilterIcon, XIcon } from "lucide-react"
+import { ListFilterIcon, XIcon } from "lucide-react"
 
+import { StateBadge } from "@/components/identity/state-badge"
 import { Button } from "@/components/ui/button"
+import { ChoiceList, type ChoiceOption } from "@/components/ui/choice-list"
 import {
   Command,
   CommandEmpty,
@@ -36,8 +38,12 @@ import type { KindInfo } from "@/lib/api/types"
 import {
   canMatch,
   canPrefix,
+  choiceWord,
   displayValue,
+  filterValueText,
+  isChoiceField,
   opFor,
+  picksMany,
   parseValueInput,
   splitReferenceIds,
   type ActiveFilter,
@@ -48,6 +54,7 @@ import {
   type DeclaredProperty,
 } from "@/lib/definition"
 import { cn } from "@/lib/utils"
+import { EnumTag } from "./enum-tag"
 import { propertyIcon } from "./property-icon"
 import { ReferenceFilterLabel, ReferencePicker } from "./reference-picker"
 
@@ -60,6 +67,10 @@ interface DataTableFiltersProps {
   kinds?: KindInfo[]
   /** How a field is named on screen; its key by default. */
   labelOf?: (name: string) => string
+  /** The fields are a kind's own properties: states read as their words
+   * ("Suggested"), not their stored values. Off for a bar whose facets only
+   * borrow the state shape (History's kinds and actors). */
+  words?: boolean
   className?: string
 }
 
@@ -76,13 +87,43 @@ function referenceTarget(
   return kindByIdentity(kinds, field.to)
 }
 
-/** The value step, shaped by the declared kind: states and booleans facet
- * (toggle membership, applied live), a pinned reference offers its referents
- * the same way; everything else takes text on Enter. */
+/** A declared set as the value step lists it: the words the grid shows
+ * (a state's badge, an enum's tag), in declaration order. A deprecated enum
+ * value is still listed, since records may hold it. */
+function choiceOptions(
+  field: DeclaredProperty,
+  words: boolean
+): ChoiceOption[] {
+  if (field.kind === "bool")
+    return ["true", "false"].map((v) => ({
+      value: v,
+      label: choiceWord(v, field, words),
+    }))
+  if (field.kind === "enum")
+    return (field.values ?? []).map((v) => ({
+      value: v.value,
+      label: choiceWord(v.value, field, words),
+      display: <EnumTag prop={field} value={v.value} />,
+      hint: v.deprecated ? "no longer offered" : undefined,
+    }))
+  return (field.states ?? []).map((state) => ({
+    value: state,
+    label: choiceWord(state, field, words),
+    display: words ? (
+      <StateBadge value={state} initial={field.initial} />
+    ) : undefined,
+  }))
+}
+
+/** The value step, shaped by the declared kind: a declared set (states,
+ * enum values, yes or no) is a ChoiceList — several at once apply live, one
+ * closes — a pinned reference offers its referents the same way; everything
+ * else takes text on Enter. */
 function ValueEditor({
   field,
   label,
   value,
+  words,
   target,
   kinds,
   onApply,
@@ -92,6 +133,7 @@ function ValueEditor({
   /** How the field is named on screen. */
   label: string
   value: string
+  words: boolean
   /** A reference field's resolved referent kind; the picker wants it. */
   target?: KindInfo
   kinds?: KindInfo[]
@@ -113,69 +155,21 @@ function ValueEditor({
     )
   }
 
-  if (field.kind === "state" && field.states?.length) {
-    const selected = new Set(
-      value
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-    )
+  if (isChoiceField(field)) {
+    const many = picksMany(field)
     return (
-      <Command>
-        {/* A short machine reads at a glance; a long facet (the changelog's
-            type list) earns the search line. */}
-        {field.states.length > 8 && (
-          <CommandInput placeholder={`Filter ${label}…`} />
-        )}
-        <CommandList>
-          <CommandEmpty>No match.</CommandEmpty>
-          <CommandGroup>
-            {field.states.map((state) => {
-              const on = selected.has(state)
-              return (
-                <CommandItem
-                  key={state}
-                  value={state}
-                  onSelect={() => {
-                    const next = new Set(selected)
-                    if (on) next.delete(state)
-                    else next.add(state)
-                    onApply([...next].join(","))
-                  }}
-                >
-                  <span
-                    className={cn(
-                      "flex size-4 items-center justify-center rounded-sm border",
-                      on
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "opacity-50"
-                    )}
-                  >
-                    {on && <CheckIcon className="size-3" />}
-                  </span>
-                  <span>{state}</span>
-                </CommandItem>
-              )
-            })}
-          </CommandGroup>
-        </CommandList>
-      </Command>
-    )
-  }
-
-  if (field.kind === "bool") {
-    return (
-      <Command>
-        <CommandList>
-          <CommandGroup>
-            {["true", "false"].map((v) => (
-              <CommandItem key={v} value={v} onSelect={() => onCommit(v)}>
-                <span>{v}</span>
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        </CommandList>
-      </Command>
+      <ChoiceList
+        label={label}
+        options={choiceOptions(field, words)}
+        selected={splitReferenceIds(value)}
+        multiple={many}
+        // A state's badge says its stored value itself in technical mode.
+        showValues={field.kind === "state" && words ? false : undefined}
+        onChange={(next) => {
+          if (many) onApply(next.join(","))
+          else if (next[0]) onCommit(next[0])
+        }}
+      />
     )
   }
 
@@ -239,6 +233,7 @@ function ValueEditor({
 function ActiveFilterControl({
   filter,
   field,
+  words,
   target,
   kinds,
   label,
@@ -247,6 +242,7 @@ function ActiveFilterControl({
 }: {
   filter: ActiveFilter
   field: DeclaredProperty | undefined
+  words: boolean
   target?: KindInfo
   kinds?: KindInfo[]
   label: string
@@ -286,9 +282,9 @@ function ActiveFilterControl({
           ) : (
             <span
               className="max-w-72 truncate"
-              title={displayValue(filter, field).replaceAll(",", ", ")}
+              title={filterValueText(filter, field, words)}
             >
-              {displayValue(filter, field).replaceAll(",", ", ")}
+              {filterValueText(filter, field, words)}
             </span>
           )}
         </PopoverTrigger>
@@ -304,13 +300,17 @@ function ActiveFilterControl({
       </div>
       <PopoverContent
         align="start"
-        className={cn("p-1", target ? "w-80" : "w-56")}
+        className={cn(
+          isChoiceField(field) ? "p-0" : "p-1",
+          target ? "w-80" : "w-56"
+        )}
       >
         {field ? (
           <ValueEditor
             field={field}
             label={label}
             value={displayValue(filter, field)}
+            words={words}
             target={target}
             kinds={kinds}
             onApply={(value) => {
@@ -345,6 +345,7 @@ export function DataTableFilters({
   onChange,
   kinds,
   labelOf = (name) => name,
+  words = false,
   className,
 }: DataTableFiltersProps) {
   const [technical] = useTechnicalDetails()
@@ -384,6 +385,7 @@ export function DataTableFilters({
             key={`${filter.field}-${i}`}
             filter={filter}
             field={field}
+            words={words}
             target={referenceTarget(field, kinds)}
             kinds={kinds}
             label={labelOf(filter.field)}
@@ -413,13 +415,17 @@ export function DataTableFilters({
         </PopoverTrigger>
         <PopoverContent
           align="start"
-          className={cn("p-1", pendingTarget || technical ? "w-80" : "w-64")}
+          className={cn(
+            pending && isChoiceField(pending) ? "p-0" : "p-1",
+            pendingTarget || technical ? "w-80" : "w-64"
+          )}
         >
           {pending ? (
             <ValueEditor
               field={pending}
               label={labelOf(pending.name)}
               value={filters.find((f) => f.field === pending.name)?.value ?? ""}
+              words={words}
               target={pendingTarget}
               kinds={kinds}
               onApply={(value) => {

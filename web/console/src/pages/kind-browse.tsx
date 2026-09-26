@@ -669,6 +669,7 @@ export function KindBrowsePage() {
           filters={filters}
           kinds={registry.data ?? []}
           labelOf={technical ? undefined : propertyLabel}
+          words
           onChange={(next) => {
             const tokens = next.map(encodeFilter)
             void setFilterTokens(tokens.length ? tokens : null)
