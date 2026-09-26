@@ -100,11 +100,7 @@ repository with this binary's dialects, which an older server then refuses.
 				return err
 			}
 			defer func() { _ = svc.Close() }()
-			sn, ok := svc.(engine.Snapshotter)
-			if !ok {
-				return seamMissing("SnapshotRepository")
-			}
-			report, err := sn.SnapshotRepository(cmd.Context(), args[0], dest)
+			report, err := svc.SnapshotRepository(cmd.Context(), args[0], dest)
 			if err != nil {
 				return lockHint(err)
 			}
@@ -488,11 +484,7 @@ which is why it is the backup unit.`,
 				return err
 			}
 			defer func() { _ = svc.Close() }()
-			r, ok := svc.(engine.Rebuilder)
-			if !ok {
-				return seamMissing("RebuildRepository")
-			}
-			report, err := r.RebuildRepository(cmd.Context(), args[0])
+			report, err := svc.RebuildRepository(cmd.Context(), args[0])
 			if err != nil {
 				return lockHint(err)
 			}
@@ -549,11 +541,7 @@ Exits nonzero when anything does not verify.`,
 				return err
 			}
 			defer func() { _ = svc.Close() }()
-			v, ok := svc.(engine.Verifier)
-			if !ok {
-				return seamMissing("VerifyRepository")
-			}
-			report, err := v.VerifyRepository(cmd.Context(), args[0])
+			report, err := svc.VerifyRepository(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}

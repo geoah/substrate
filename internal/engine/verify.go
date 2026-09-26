@@ -83,14 +83,6 @@ type RecoveryPoint struct {
 	TakenAt  time.Time `json:"takenAt"`
 }
 
-// Verifier is the operator hat's verification seam, off substrate.Service
-// like Resetter (auth.go) and asserted here for the same reason.
-type Verifier interface {
-	VerifyRepository(ctx context.Context, repository string) (VerifyReport, error)
-}
-
-var _ Verifier = (*service)(nil)
-
 // VerifyRepository walks one repository's changelog files and table. Findings
 // land in the report, not in the error: the error is for "could not verify"
 // (no such user, no connection), never for "verified and found damage".

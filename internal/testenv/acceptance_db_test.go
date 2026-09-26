@@ -1124,7 +1124,7 @@ func (d *drill) stopAndSnapshot(t *testing.T) {
 	}
 	defer func() { _ = operator.Close() }()
 	d.snapRoot = d.tb(t).TempDir()
-	report, err := operator.(engine.Snapshotter).SnapshotRepository(ctx, drillAuthority, d.snapRoot)
+	report, err := operator.(engine.Operator).SnapshotRepository(ctx, drillAuthority, d.snapRoot)
 	if err != nil {
 		t.Fatalf("snapshot %s: %v", drillAuthority, err)
 	}
@@ -1146,7 +1146,7 @@ func (d *drill) stopAndSnapshot(t *testing.T) {
 		t.Errorf("the copy holds no bytes for %s: %v", d.blobDigest, err)
 	}
 
-	secondReport, err := operator.(engine.Snapshotter).SnapshotRepository(ctx, secondAuthority, d.snapRoot)
+	secondReport, err := operator.(engine.Operator).SnapshotRepository(ctx, secondAuthority, d.snapRoot)
 	if err != nil {
 		t.Fatalf("snapshot %s: %v", secondAuthority, err)
 	}
@@ -1221,7 +1221,7 @@ func (d *drill) restore(t *testing.T) {
 	if len(repos) != 1 || repos[0].ID != drillAuthority {
 		t.Fatalf("the restored database holds %+v, want the one imported repository", repos)
 	}
-	verified, err := e.Service.(engine.Verifier).VerifyRepository(ctx, drillAuthority)
+	verified, err := e.Service.(engine.Operator).VerifyRepository(ctx, drillAuthority)
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
@@ -1563,7 +1563,7 @@ func (d *drill) interruptedImport(t *testing.T) {
 		if _, err := ro.Dataset(ctx, drillAuthority); !errors.Is(err, engine.ErrImportIncomplete) {
 			t.Errorf("a read-only open after boot %d = %v, want ErrImportIncomplete", i+1, err)
 		}
-		report, err := ro.(engine.Verifier).VerifyRepository(ctx, drillAuthority)
+		report, err := ro.(engine.Operator).VerifyRepository(ctx, drillAuthority)
 		if err != nil {
 			t.Fatalf("verify after boot %d: %v", i+1, err)
 		}
@@ -1601,7 +1601,7 @@ func (d *drill) interruptedImport(t *testing.T) {
 	if head.Generation == d.source.gen {
 		t.Errorf("the resumed import kept the source's history generation %q", head.Generation)
 	}
-	report, err := svc.(engine.Verifier).VerifyRepository(ctx, drillAuthority)
+	report, err := svc.(engine.Operator).VerifyRepository(ctx, drillAuthority)
 	if err != nil || !report.OK || report.Head != d.snapHead || report.SealedOpened != sealedValues || len(report.Findings) != 0 {
 		t.Errorf("the resumed repository does not verify: %+v %v", report, err)
 	}

@@ -4,8 +4,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
-	"github.com/geoah/substrate/internal/engine"
 )
 
 func (a *app) repositoryRotateGenerationCommand() *cobra.Command {
@@ -33,11 +31,7 @@ two disagreeing.`,
 				return err
 			}
 			defer func() { _ = svc.Close() }()
-			r, ok := svc.(engine.GenerationRotator)
-			if !ok {
-				return seamMissing("RotateHistoryGeneration")
-			}
-			report, err := r.RotateHistoryGeneration(cmd.Context(), args[0])
+			report, err := svc.RotateHistoryGeneration(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}

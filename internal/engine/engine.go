@@ -373,6 +373,24 @@ type service struct {
 // runs the shared schema's DDL. It provisions nothing: a repository exists
 // once its control-plane row does.
 func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, error) {
+	s, err := open(ctx, dsn, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// OpenOperator opens the engine the way Open does and returns it with the
+// operator hat's methods (operator.go). Only substratectl calls it.
+func OpenOperator(ctx context.Context, dsn string, opts ...Option) (Operator, error) {
+	s, err := open(ctx, dsn, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	o := options{log: slog.Default(), now: nowUTC}
 	for _, fn := range opts {
 		fn(&o)
