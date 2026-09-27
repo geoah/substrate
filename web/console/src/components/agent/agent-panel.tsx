@@ -7,6 +7,7 @@ import { Link } from "@tanstack/react-router"
 import { BotIcon, PencilIcon, WrenchIcon } from "lucide-react"
 
 import { AgentManifest } from "@/components/agent/agent-manifest"
+import { AllowRules } from "@/components/agent/always-allow"
 import { AgentMark } from "@/components/agent/agent-mark"
 import { IdText } from "@/components/identity/id-text"
 import { Button } from "@/components/ui/button"
@@ -21,6 +22,7 @@ import {
   providerName,
   toolRoute,
 } from "@/lib/agent-chat"
+import { standingAllows } from "@/lib/agent-rules"
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME, LLM_PACKAGE } from "@/lib/api/http"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { toolName } from "@/lib/tools"
@@ -79,6 +81,7 @@ export function AgentPanel({
   const tools = agentTools(agent)
   const subagents = agentSubagents(agent)
   const sees = canSee(agent)
+  const allowed = standingAllows(policies, agent.id)
 
   return (
     <div className="flex flex-col gap-5 p-4">
@@ -110,6 +113,11 @@ export function AgentPanel({
       <Section label="Can change">
         <p>{canChange(agent)}</p>
       </Section>
+      {allowed.length > 0 && (
+        <Section label="Always allowed">
+          <AllowRules agent={agent.id} rules={allowed} />
+        </Section>
+      )}
       {subagents.length > 0 && (
         <Section label="Can ask">
           <ul className="flex flex-col gap-1.5">
