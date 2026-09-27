@@ -43,9 +43,11 @@ const KINDS = [
 ]
 
 const searches: string[] = []
+const filters: (string | null)[] = []
 
 beforeEach(() => {
   searches.length = 0
+  filters.length = 0
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string) => {
@@ -53,6 +55,7 @@ beforeEach(() => {
       const q = url.searchParams.get("q")
       if (q) {
         searches.push(q)
+        filters.push(url.searchParams.get("filter"))
         return Response.json({
           records: [
             {
@@ -171,6 +174,21 @@ describe("CommandMenu", () => {
     // "lisb" is not in "Drive files", however its letters are spread
     await type("lisb")
     await waitFor(() => expect(headings()).not.toContain("Collections"))
+  })
+
+  it("searches what you keep and its details, not the substrate's machinery", async () => {
+    renderMenu()
+    await type("lisb")
+    await screen.findByText("Prepare travel for Lisbon")
+    expect(filters.map((f) => f && JSON.parse(f))).toEqual([
+      { purposes: ["primary", "supporting"] },
+    ])
+    // the switch that widens it is technical mode's
+    expect(
+      screen.queryByRole("switch", {
+        name: "Include the substrate’s own records",
+      })
+    ).toBeNull()
   })
 
   it("keeps the door to the Search page last", async () => {

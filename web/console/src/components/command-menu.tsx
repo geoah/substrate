@@ -1,6 +1,7 @@
 /** ⌘K: jump to a record, a collection or a page, or hand what was typed to
  * the Search page. Typing runs the ranked read (words, five hits) after a
- * short pause, and the records it finds come first; collections and pages
+ * short pause over what a person keeps and its details (technical mode can
+ * include the substrate's own records), and the records it finds come first; collections and pages
  * match when every word typed starts a word of their name. With nothing
  * typed it lists the pages and the collections, grouped the way the sidebar
  * groups them, and every kind is reachable, the supporting and internal ones
@@ -24,6 +25,7 @@ import { KindGlyph } from "@/components/identity/kind-glyph"
 import { KindPath } from "@/components/identity/kind-ref"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { RecordRef } from "@/components/identity/record-ref"
+import { ToggleSwitch } from "@/components/nav/toggle-switch"
 import {
   Command,
   CommandDialog,
@@ -43,6 +45,7 @@ import { matchesWordPrefixes, typeAheadQuery } from "@/lib/command-match"
 import { kindPurpose } from "@/lib/definition"
 import { recordTitle } from "@/lib/format"
 import { displayPlural } from "@/lib/kind-names"
+import { INCLUDE_SYSTEM_LABEL, searchPurposes } from "@/lib/search"
 
 const pages = [
   { title: "Home", to: "/", icon: HomeIcon },
@@ -83,10 +86,15 @@ export function CommandMenu({
     [registry.data]
   )
   const [typed, setTyped] = useState("")
+  const [includeSystem, setIncludeSystem] = useState(false)
   const query = typed.trim()
   const asked = typeAheadQuery(useDebounced(typed, DEBOUNCE_MS))
   const records = useQuery({
-    ...searchQueryOptions(asked, { mode: "lexical", first: HITS }),
+    ...searchQueryOptions(asked, {
+      mode: "lexical",
+      purposes: searchPurposes({ technical, includeSystem }),
+      first: HITS,
+    }),
     enabled: open && asked.length > 0,
     placeholderData: keepPreviousData,
   })
@@ -198,6 +206,16 @@ export function CommandMenu({
           value={typed}
           onValueChange={setTyped}
         />
+        {technical && (
+          <label className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-[12.5px] text-muted-foreground">
+            <ToggleSwitch
+              checked={includeSystem}
+              onChange={setIncludeSystem}
+              label={INCLUDE_SYSTEM_LABEL}
+            />
+            {INCLUDE_SYSTEM_LABEL}
+          </label>
+        )}
         <CommandList>
           {query ? (
             <>
@@ -249,7 +267,15 @@ export function CommandMenu({
                   onSelect={() =>
                     go(
                       () =>
-                        void navigate({ to: "/search", search: { q: query } })
+                        void navigate({
+                          to: "/search",
+                          search: {
+                            q: query,
+                            ...(technical && includeSystem
+                              ? { system: true }
+                              : {}),
+                          },
+                        })
                     )
                   }
                 >
