@@ -352,7 +352,6 @@ export function Conversation({
       : ""
   const name = agentId ? agentName(agentId) : "an agent"
 
-
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <header className="flex shrink-0 items-center gap-2.5 border-b px-4 py-3 md:px-6">
