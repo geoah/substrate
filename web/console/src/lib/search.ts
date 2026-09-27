@@ -6,6 +6,7 @@
  * so a reader who wants the fused ranking picks it once. */
 
 import type { SearchMode } from "@/lib/api/records"
+import type { RecordFilter } from "@/lib/api/types"
 
 export type { SearchMode }
 
@@ -76,3 +77,28 @@ export const SEARCH_GRAMMAR: readonly { example: string; means: string }[] = [
   { example: "-lunch", means: "without this word" },
   { example: "rack OR lunch", means: "either word" },
 ]
+
+/** Everyday search, on the Search page and in ⌘K: what a person keeps and
+ * its details (`filter.purposes`, decision 0115). The substrate's own
+ * machinery (accounts, sync state, the vocabulary) is left out, as it is in
+ * the sidebar. */
+export const EVERYDAY_PURPOSES: NonNullable<RecordFilter["purposes"]> = [
+  "primary",
+  "supporting",
+]
+
+/** The technical-mode choice that widens a search to every purpose. */
+export const INCLUDE_SYSTEM_LABEL = "Include the substrate’s own records"
+
+/** The purposes a search sends; `undefined` asks for every purpose. A
+ * collection picked by name is its own scope, whatever its purpose, and the
+ * substrate's own records are searched only on request, in technical mode. */
+export function searchPurposes(opts: {
+  narrowed?: boolean
+  technical: boolean
+  includeSystem: boolean
+}): RecordFilter["purposes"] {
+  if (opts.narrowed) return undefined
+  if (opts.technical && opts.includeSystem) return undefined
+  return EVERYDAY_PURPOSES
+}

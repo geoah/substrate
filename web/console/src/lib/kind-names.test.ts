@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 
 import type { KindInfo } from "@/lib/api/types"
 import {
@@ -6,6 +6,7 @@ import {
   displayPlural,
   lowerFirst,
   packageDisplayName,
+  rememberKindLabels,
   pluralWord,
   splitWords,
   untitled,
@@ -103,6 +104,40 @@ describe("kind display names", () => {
       definition: { names: { singular: "calendarevent" } },
     } satisfies KindInfo
     expect(displayName(kind)).toBe("Calendar event")
+  })
+
+  describe("a declared label", () => {
+    const channel = {
+      identity: "providers.substrate.reamde.dev/slack/conversation",
+      name: "conversation",
+      authority: "providers.substrate.reamde.dev",
+      package: "slack",
+      version: 1,
+      source: "published",
+      description: "",
+      label: { singular: "Channel", plural: "Channels" },
+      definition: { names: { singular: "conversation" } },
+    } satisfies KindInfo
+    afterEach(() => rememberKindLabels([]))
+
+    it("wins over the words of the name on a registry entry", () => {
+      expect(displayName(channel)).toBe("Channel")
+      expect(displayPlural(channel)).toBe("Channels")
+      expect(untitled(channel)).toBe("Untitled channel")
+    })
+
+    it("names a bare reference once the registry has been read", () => {
+      expect(displayPlural(channel.identity)).toBe("Conversations")
+      rememberKindLabels([channel])
+      expect(displayPlural(channel.identity)).toBe("Channels")
+      expect(displayName(channel.identity)).toBe("Channel")
+    })
+
+    it("is forgotten when the next registry read no longer declares it", () => {
+      rememberKindLabels([channel])
+      rememberKindLabels([{ ...channel, label: undefined }])
+      expect(displayPlural(channel.identity)).toBe("Conversations")
+    })
   })
 
   it("keeps a name it cannot split whole", () => {

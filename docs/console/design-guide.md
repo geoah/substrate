@@ -91,9 +91,10 @@ The sidebar, top to bottom:
 What a group lists is decided by each kind's declared `purpose`
 ([0106](../decisions/0106-a-kind-declares-its-purpose.md)): everyday mode
 lists `primary` kinds by display plural; technical mode lists the authority,
-package and kind tree by each kind's own name, supporting and internal kinds
-tagged. Every kind under `substrate.reamde.dev` reads as internal. A row tips
-its description, never its raw reference. Collapsed, the sidebar peeks as an
+package and kind tree, each kind by its display plural with its own name in
+faint mono beside it, supporting and internal kinds tagged. Every kind under
+`substrate.reamde.dev` reads as internal. A row opens the kind's hover card
+beside the sidebar. Collapsed, the sidebar peeks as an
 overlay while the pointer rests at the page's left side or on the toggle.
 
 The breadcrumb above every page reads where the page sits ("Your data /
@@ -163,7 +164,7 @@ console adds its own beside them.
 | `--primary-text` / `--primary-soft` | `#2358bf` / `#eaf1fd` | `#8ab2f6` / 16% accent | accent words on their soft fill |
 | `--ok` / `--ok-soft` | `#256f46` / `#e6f4ec` | `#5bc08a` / 14% | done, working |
 | `--warning` / `--warn-soft` | `#94600f` / `#fbf1de` | `#e0a84a` / 14% | waiting, transient trouble |
-| `--destructive` / `--bad-soft` | `#c94a3d` / `#fbe9e6` | `#ea7a6d` / 14% | failed, destructive actions |
+| `--destructive` / `--bad-soft` | `#b94033` / `#fbe9e6` | `#ea7a6d` / 14% | failed, destructive actions |
 
 **Why two faints.** Paper's quietness comes from its palette, and the faint
 grey carries much of it. At `#9a9892` it reads about 2.9:1 on white and 2.7:1
@@ -177,8 +178,11 @@ for; `--faint` keeps its old value for decoration, under the `faint-deco`
 utilities. The review proposed `#7d7b74`; the build went one step darker so
 the sidebar clears the bar too. The light ok and warning inks are one step
 darker than the prototype's for the same reason: a pill's word on its soft
-fill at 12px. The destructive ink on its soft fill (about 4.0:1) and the
-yellow kind hue's ink (about 3.5:1) were left as they are.
+fill at 12px. So are the destructive ink (about 4.0:1 on its soft fill
+before) and the gray, orange, yellow, green and teal kind hues' inks (the
+yellow was about 3.5:1), because an enum value is its words on its hue:
+every ink now clears 4.5:1 on its own fill in both modes, and
+`src/index-css.test.ts` holds it.
 
 ### Kind hues
 
@@ -187,12 +191,12 @@ Ten hues, each a tile background and a glyph ink, used by `KindGlyph`,
 
 | Hue | Light bg / fg | Dark bg / fg |
 | --- | --- | --- |
-| gray | `#efeeeb` / `#6f6d67` | `#2c2c2a` / `#b3b1ab` |
+| gray | `#efeeeb` / `#6c6a65` | `#2c2c2a` / `#b3b1ab` |
 | brown | `#f3eae3` / `#8a5a3b` | `#352a22` / `#d2a17e` |
-| orange | `#fcebdd` / `#c2621d` | `#3a2717` / `#f09a5a` |
-| yellow | `#fbf1d2` / `#a07a12` | `#352e17` / `#e3c15a` |
-| green | `#e3f2e8` / `#2e7d4f` | `#1b3024` / `#6fcb93` |
-| teal | `#ddf1f0` / `#1f7a77` | `#163130` / `#5ecfc9` |
+| orange | `#fcebdd` / `#a55319` | `#3a2717` / `#f09a5a` |
+| yellow | `#fbf1d2` / `#87670f` | `#352e17` / `#e3c15a` |
+| green | `#e3f2e8` / `#2c774b` | `#1b3024` / `#6fcb93` |
+| teal | `#ddf1f0` / `#1e7673` | `#163130` / `#5ecfc9` |
 | blue | `#e3edfb` / `#2f63c0` | `#1b2a42` / `#86aef3` |
 | purple | `#eee8fa` / `#6b4bb8` | `#2a2340` / `#b7a0f0` |
 | pink | `#fbe7f0` / `#b03a72` | `#3a1f2c` / `#f08dba` |
@@ -280,8 +284,10 @@ technical mode; a function is labelled a **tool**. The dead words in
 [terms](../terms.md) never appear in UI copy: `relationship` is a sample
 property's name, which is data and fine, and nowhere else.
 
-A kind's **display name** is built by `lib/kind-names.ts` from its lowercase
-compound name: the name is split into known words (the fewest-words split, the
+A kind's **display name** is the `label:` its declaration carries, where it
+declares one ("Channels", "Repeating events",
+[0113](../decisions/0113-a-kind-may-declare-its-display-label.md)); otherwise
+`lib/kind-names.ts` builds it from its lowercase compound name: the name is split into known words (the fewest-words split, the
 longer first word winning a tie), acronyms and brands keep their capitals
 ("API keys", "Gmail threads", "WHOOP"), the first word is capitalised, and the
 last word takes the plural ("People", "Calendar event series", "Codes of

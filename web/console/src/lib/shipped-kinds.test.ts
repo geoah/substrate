@@ -8,7 +8,9 @@ import { parseAllDocuments } from "yaml"
 import { describe, expect, it } from "vitest"
 
 import { everydayDescription, firstSentence, plainSentence } from "./kind-copy"
-import { displayName, splitWords } from "./kind-names"
+import type { KindInfo, KindLabel } from "@/lib/api/types"
+
+import { displayName, displayPlural, splitWords } from "./kind-names"
 
 const files = import.meta.glob<string>(
   ["../../../../kinds/**/*.yaml", "../../../../samples/**/*.yaml"],
@@ -19,6 +21,7 @@ interface Shipped {
   identity: string
   singular: string
   description: string
+  label?: KindLabel
 }
 
 function shipped(): Shipped[] {
@@ -28,13 +31,18 @@ function shipped(): Shipped[] {
       const d = doc.toJS() as {
         kind?: string
         metadata?: { id?: string }
-        data?: { description?: string; names?: { singular?: string } }
+        data?: {
+          description?: string
+          names?: { singular?: string }
+          label?: KindLabel
+        }
       } | null
       if (d?.kind !== "substrate.reamde.dev/core/kind") continue
       out.push({
         identity: d.metadata?.id ?? "",
         singular: d.data?.names?.singular ?? "",
         description: d.data?.description ?? "",
+        label: d.data?.label,
       })
     }
   }
@@ -58,6 +66,25 @@ describe("shipped kinds", () => {
       expect(splitWords(singular), displayName(singular)).toBeDefined()
     }
   )
+
+  it.each(
+    KINDS.filter((k) => k.label).map((k) => [k.identity, k.singular, k.label!])
+  )("%s reads as its declared label", (identity, singular, label) => {
+    const [authority, pkg, name] = identity.split("/")
+    const entry: KindInfo = {
+      identity,
+      name,
+      authority,
+      package: pkg,
+      version: 1,
+      source: "published",
+      description: "",
+      label,
+      definition: { names: { singular } },
+    }
+    expect(displayName(entry)).toBe(label.singular)
+    expect(displayPlural(entry)).toBe(label.plural)
+  })
 
   // Core is the substrate's own machinery and its descriptions are written
   // for the people building on it; every other shipped kind opens with a line

@@ -1,8 +1,8 @@
 /** Authority page (`/data/:authority`) and package page
  * (`/data/:authority/:package`): the collections one authority publishes,
- * grouped by package, or the collections of one package — each a row with
- * its glyph and plural, what it holds and how many records it has, and a door
- * into its collection. Everyday mode lists the primary collections and says
+ * grouped by package, or one package read as an app (its collections, its
+ * tools, the agent that made it) — each collection a row with its glyph and
+ * plural, what it holds and how many records it has, and a door into it. Everyday mode lists the primary collections and says
  * how many supporting ones it leaves out; technical mode lists every kind
  * with its full reference and its purpose. Bounded registry data, so no
  * paging. */
@@ -10,16 +10,22 @@
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
-import { FileCode2Icon } from "lucide-react"
+import { FileCode2Icon, MessageSquareIcon } from "lucide-react"
+
+import { AgentCard } from "@/components/agent/agent-ref"
 
 import { CopyButton } from "@/components/identity/copy-button"
+import { IdText } from "@/components/identity/id-text"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { KindPath } from "@/components/identity/kind-ref"
+import { OriginMark } from "@/components/identity/origin-mark"
 import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { PurposeTag } from "@/components/identity/purpose-tag"
 import { SectionHead } from "@/components/identity/section-head"
+import { ToolTile } from "@/components/tools/tool-marks"
+import { Button } from "@/components/ui/button"
 import {
   Empty,
   EmptyDescription,
@@ -29,7 +35,13 @@ import {
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import { PROVIDERS_AUTHORITY, providerInfo } from "@/lib/actor-identity"
+import {
+  PROVIDERS_AUTHORITY,
+  actorIdentity,
+  providerInfo,
+} from "@/lib/actor-identity"
+import { functionsQueryOptions } from "@/lib/api/functions"
+import { splitKind } from "@/lib/api/http"
 import { authorityTitle, packageTitle } from "@/lib/collections"
 import { formatCount, recordCountQueryOptions } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
@@ -37,8 +49,10 @@ import type { KindInfo } from "@/lib/api/types"
 import { kindPurpose } from "@/lib/definition"
 import { hiddenKindsNote } from "@/lib/grid-values"
 import { displayPlural } from "@/lib/kind-names"
-import { authorityRoute, packageRoute } from "@/router"
 import { kindDescription } from "@/lib/kind-copy"
+import { packageAgent, packagesQueryOptions } from "@/lib/packages"
+import { buildTools, toolDescription, toolName, type Tool } from "@/lib/tools"
+import { authorityRoute, packageRoute } from "@/router"
 
 function CountCell({ kind }: { kind: KindInfo }) {
   const count = useQuery(
@@ -188,6 +202,30 @@ function countWord(n: number): string {
   return `${n} ${n === 1 ? "collection" : "collections"}`
 }
 
+/** A package section's quiet line: the agent that made it, and in technical
+ * mode its id. */
+function PackageHint({
+  id,
+  agent,
+  technical,
+}: {
+  id: string
+  agent?: string
+  technical: boolean
+}) {
+  if (!agent && !technical) return null
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-3">
+      {agent && (
+        <OriginMark
+          origin={{ kind: "actor", identity: actorIdentity(agent) }}
+        />
+      )}
+      {technical && <span className="font-mono text-[12px]">{id}</span>}
+    </span>
+  )
+}
+
 /** Every collection one authority publishes, a section per package. */
 export function AuthorityPage() {
   const { authority } = authorityRoute.useParams()
@@ -211,6 +249,7 @@ export function AuthorityPage() {
     }
     return [...out.entries()]
   }, [kinds])
+  const declared = useQuery(packagesQueryOptions)
   const primary = kinds.filter((k) => kindPurpose(k) === "primary").length
   const providers = authority === PROVIDERS_AUTHORITY
   return (
@@ -261,11 +300,11 @@ export function AuthorityPage() {
               </>
             }
             hint={
-              technical && (
-                <span className="font-mono text-[12px]">
-                  {authority}/{pkg}
-                </span>
-              )
+              <PackageHint
+                id={`${authority}/${pkg}`}
+                agent={packageAgent(declared.data, `${authority}/${pkg}`)}
+                technical={technical}
+              />
             }
           />
           <KindsList kinds={list} />
@@ -275,12 +314,16 @@ export function AuthorityPage() {
   )
 }
 
-/** The collections of ONE package, the group a declaration is versioned and
- * quarantined in (decision 0047). */
+/** One package, read as the app it is: its collections, the tools it ships
+ * and, where an agent declared it (decision 0111), the agent that made it. A
+ * package is the group a declaration is versioned and quarantined in
+ * (decision 0047); an agent's package is what a person asked it to build. */
 export function PackagePage() {
   const { authority, pkg } = packageRoute.useParams()
   const [technical] = useTechnicalDetails()
   const registry = useQuery(kindsQueryOptions)
+  const packages = useQuery(packagesQueryOptions)
+  const functions = useQuery(functionsQueryOptions)
   const kinds = useMemo(
     () =>
       (registry.data ?? [])
@@ -288,8 +331,22 @@ export function PackagePage() {
         .sort((a, b) => displayPlural(a).localeCompare(displayPlural(b))),
     [registry.data, authority, pkg]
   )
+  const tools = useMemo(
+    () =>
+      buildTools(
+        (functions.data ?? []).filter((f) => {
+          const ref = splitKind(f.id)
+          return ref.authority === authority && ref.pkg === pkg
+        }),
+        [],
+        []
+      ),
+    [functions.data, authority, pkg]
+  )
   const primary = kinds.filter((k) => kindPurpose(k) === "primary").length
   const provider = authority === PROVIDERS_AUTHORITY ? providerInfo(pkg) : null
+  const agent = packageAgent(packages.data, `${authority}/${pkg}`)
+  const agentId = agent ? actorIdentity(agent).record?.id : undefined
   return (
     <TablePage>
       <PageHeader
@@ -318,24 +375,95 @@ export function PackagePage() {
               </span>
             )}
             <span>{countWord(technical ? kinds.length : primary)}</span>
+            {tools.length > 0 && (
+              <span>
+                {tools.length} {tools.length === 1 ? "tool" : "tools"}
+              </span>
+            )}
+            {agent && (
+              <OriginMark
+                origin={{ kind: "actor", identity: actorIdentity(agent) }}
+              />
+            )}
           </>
         }
         description={
           provider
             ? `Read-only copies, kept up to date by ${provider.name}.`
-            : undefined
+            : agent
+              ? `What ${actorIdentity(agent).name} set up for you: the collections it keeps and the tools it works with.`
+              : undefined
         }
       />
       <PageState
         pending={registry.isPending}
         error={registry.isError ? registry.error : null}
-        empty={!registry.isPending && !kinds.length}
+        empty={!registry.isPending && !kinds.length && !tools.length}
       />
       {kinds.length > 0 && (
-        <div className="mt-6">
+        <section>
+          <SectionHead title="Collections" />
           <KindsList kinds={kinds} />
-        </div>
+        </section>
+      )}
+      {tools.length > 0 && (
+        <section>
+          <SectionHead
+            title="Tools"
+            hint="what this package can do to your data"
+          />
+          <ul className="flex flex-col overflow-hidden rounded-[10px] border border-border">
+            {tools.map((t) => (
+              <PackageTool key={t.ref} tool={t} technical={technical} />
+            ))}
+          </ul>
+        </section>
+      )}
+      {agentId && (
+        <section>
+          <SectionHead title="Made by" />
+          <div className="flex max-w-md flex-col overflow-hidden rounded-[10px] border border-border">
+            <AgentCard id={agentId} />
+            <div className="border-t border-border px-3 py-2">
+              <Button
+                variant="outline"
+                size="sm"
+                render={
+                  <Link to="/agents" search={{ agent: agentId } as never} />
+                }
+              >
+                <MessageSquareIcon />
+                Ask {actorIdentity(agent!).name}
+              </Button>
+            </div>
+          </div>
+        </section>
       )}
     </TablePage>
+  )
+}
+
+/** One tool a package ships: its tile and name (the link to its page), what
+ * it does, and in technical mode its reference. */
+function PackageTool({ tool, technical }: { tool: Tool; technical: boolean }) {
+  return (
+    <li className="flex min-w-0 items-start gap-2.5 border-b border-border px-3 py-2.5 last:border-b-0">
+      <ToolTile tool={tool.ref} />
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <Link
+          to="/tools/$authority/$pkg/$name"
+          params={{ authority: tool.authority, pkg: tool.pkg, name: tool.name }}
+          className="font-medium text-foreground underline-offset-[3px] hover:underline"
+        >
+          {toolName(tool)}
+        </Link>
+        {toolDescription(tool) && (
+          <span className="text-[13px] text-muted-foreground">
+            {toolDescription(tool)}
+          </span>
+        )}
+        {technical && <IdText value={tool.ref} />}
+      </div>
+    </li>
   )
 }

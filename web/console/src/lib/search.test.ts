@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it } from "vitest"
 
 import {
   DEFAULT_SEARCH_MODE,
+  EVERYDAY_PURPOSES,
+  searchPurposes,
   SEARCH_MODE_DESCRIPTION,
   SEARCH_MODE_DETAIL,
   SEARCH_MODES,
@@ -48,5 +50,31 @@ describe("the mode blurbs", () => {
     expect(SEARCH_MODE_DESCRIPTION.lexical).toBe(
       "Matches the words you typed. Instant."
     )
+  })
+})
+
+describe("what a search reaches", () => {
+  it("is what you keep and its details, in both modes, by default", () => {
+    expect(EVERYDAY_PURPOSES).toEqual(["primary", "supporting"])
+    for (const technical of [false, true]) {
+      expect(searchPurposes({ technical, includeSystem: false })).toEqual(
+        EVERYDAY_PURPOSES
+      )
+    }
+  })
+
+  it("adds the substrate's own records only on request in technical mode", () => {
+    expect(
+      searchPurposes({ technical: true, includeSystem: true })
+    ).toBeUndefined()
+    expect(searchPurposes({ technical: false, includeSystem: true })).toEqual(
+      EVERYDAY_PURPOSES
+    )
+  })
+
+  it("searches a collection picked by name whatever its purpose", () => {
+    expect(
+      searchPurposes({ narrowed: true, technical: false, includeSystem: false })
+    ).toBeUndefined()
   })
 })

@@ -4,19 +4,27 @@
  * reference is known, the title is read (batched with every other mark on the
  * page). Links to the record; a click never reaches the row around it. */
 
-import { useQuery } from "@tanstack/react-query"
+import { useQueries, useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 
-import { IdentityCard, IdentityHoverCard } from "./identity-hover-card"
+import {
+  IdentityCard,
+  IdentityHoverCard,
+  type IdentityFact,
+} from "./identity-hover-card"
 import { KindGlyph } from "./kind-glyph"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useHasQueryClient } from "@/hooks/use-has-query-client"
 import { providerOfKind } from "@/lib/actor-identity"
 import { splitKind } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { recordQueryOptions } from "@/lib/api/records"
+import { readReference } from "@/lib/api/types"
 import { columnProperties, kindByIdentity } from "@/lib/definition"
 import { cellValue, recordTitle, referenceCell } from "@/lib/format"
 import { displayName, displayPlural, untitled } from "@/lib/kind-names"
+import { splitRecordPath } from "@/lib/record-path"
+import { humanizeName, propSpecs } from "@/lib/record-schema"
 import { recordTitleQueryOptions } from "@/lib/reference-titles"
 import { cn } from "@/lib/utils"
 
@@ -113,7 +121,14 @@ function RecordRefView({
   )
 }
 
-function RecordCard(props: { kind: string; id: string; title?: string }) {
+/** The record's hover card body: its title, its collection, up to three
+ * property values under their declared labels (a reference as its referent's
+ * title) and the full reference. Property keys show in technical mode. */
+export function RecordCard(props: {
+  kind: string
+  id: string
+  title?: string
+}) {
   const client = useHasQueryClient()
   const { authority, pkg, name } = splitKind(props.kind)
   return client && authority && pkg && name ? (
@@ -126,6 +141,39 @@ function RecordCard(props: { kind: string; id: string; title?: string }) {
 /** Datatypes whose values are paragraphs or blobs, never a fact line. */
 const NOT_A_FACT = new Set(["text", "markdown", "json", "secret", "object"])
 
+/** How many facts the card shows: enough to tell two records apart. */
+const FACTS = 3
+
+/** A reference value in a fact: the referents' titles, read through the
+ * batched title read every other mark on the page shares, never their ids. */
+function ReferenceTitles({ value }: { value: unknown }) {
+  const paths = (Array.isArray(value) ? value : [value]).flatMap((one) => {
+    const held = readReference(one)
+    const parts = held ? splitRecordPath(held.path) : undefined
+    return parts ? [parts] : []
+  })
+  const first = paths.slice(0, 2)
+  // A kind the repository never declared refuses the whole batched read.
+  const kinds = useQuery(kindsQueryOptions)
+  const titles = useQueries({
+    queries: first.map((p) => ({
+      ...recordTitleQueryOptions(p.kind, p.id),
+      enabled: Boolean(kindByIdentity(kinds.data ?? [], p.kind)),
+    })),
+  })
+  const words = first.map(
+    (p, i) =>
+      titles[i]?.data || (titles[i]?.isFetching ? "…" : untitled(p.kind))
+  )
+  const more = paths.length - first.length
+  return (
+    <>
+      {words.join(", ")}
+      {more > 0 && ` and ${more} more`}
+    </>
+  )
+}
+
 function LiveRecordCard({
   kind,
   id,
@@ -135,6 +183,7 @@ function LiveRecordCard({
   id: string
   title?: string
 }) {
+  const [technical] = useTechnicalDetails()
   const { authority, pkg, name } = splitKind(kind)
   const kinds = useQuery(kindsQueryOptions)
   const declared = kindByIdentity(kinds.data ?? [], kind)
@@ -142,17 +191,24 @@ function LiveRecordCard({
     ...recordQueryOptions(authority, pkg, name, id),
     enabled: Boolean(declared),
   })
-  const facts: Array<{ label: string; value: string }> = []
+  const facts: IdentityFact[] = []
   if (declared && record.data) {
+    const labels = new Map(propSpecs(declared).map((p) => [p.name, p.label]))
     for (const prop of columnProperties(declared)) {
       if (NOT_A_FACT.has(prop.kind)) continue
       const value = record.data.properties[prop.name]
       if (value === undefined || value === null) continue
-      const text =
-        prop.kind === "reference" ? referenceCell(value) : cellValue(value)
-      if (!text) continue
-      facts.push({ label: prop.name, value: text })
-      if (facts.length === 3) break
+      const label = labels.get(prop.name) ?? humanizeName(prop.name)
+      const detail = technical ? prop.name : undefined
+      if (prop.kind === "reference") {
+        if (!referenceCell(value)) continue
+        facts.push({ label, detail, value: <ReferenceTitles value={value} /> })
+      } else {
+        const text = cellValue(value)
+        if (!text) continue
+        facts.push({ label, detail, value: text })
+      }
+      if (facts.length === FACTS) break
     }
   }
   return (
@@ -176,7 +232,7 @@ function RecordCardView({
   kind: string
   id: string
   title?: string
-  facts?: Array<{ label: string; value: string }>
+  facts?: IdentityFact[]
   loading?: boolean
 }) {
   const provider = providerOfKind(kind)

@@ -74,6 +74,44 @@ describe("the columns a kind opens without", () => {
   it("hides nothing on a kind it does not ship", () => {
     expect(defaultHiddenColumns(kind("ada.example.com/tasks/task"))).toEqual([])
   })
+
+  // A provider's copy carries the provider's bookkeeping (sync cursors,
+  // statuses) beside what a person reads; a column stays one click away in
+  // Columns, but the grid opens on the person's values (review T4).
+  it("hides a provider collection's bookkeeping and anything deprecated", () => {
+    const contact = {
+      ...kind("providers.substrate.reamde.dev/google/contact"),
+      source: "published",
+      definition: {
+        properties: {
+          name: { type: "string" },
+          notes: { type: "string", writer: "owner" },
+          syncToken: { type: "string", writer: "connector" },
+          accessToken: { type: "secret", writer: "oauth" },
+          nickname: { type: "string", deprecated: true },
+        },
+      },
+    } satisfies KindInfo
+    const hidden = defaultHiddenColumns(contact)
+    expect(hidden).toContain(propertyColumnId("syncToken"))
+    expect(hidden).toContain(propertyColumnId("accessToken"))
+    expect(hidden).toContain(propertyColumnId("nickname"))
+    expect(hidden).not.toContain(propertyColumnId("name"))
+    expect(hidden).not.toContain(propertyColumnId("notes"))
+  })
+
+  it("hides a deprecated property of any kind, but not what a writer role keeps", () => {
+    const task = {
+      ...kind("ada.example.com/tasks/task"),
+      definition: {
+        properties: {
+          estimate: { type: "int", deprecated: true },
+          checkedBy: { type: "string", writer: "agent" },
+        },
+      },
+    } satisfies KindInfo
+    expect(defaultHiddenColumns(task)).toEqual([propertyColumnId("estimate")])
+  })
 })
 
 describe("the temporal columns", () => {

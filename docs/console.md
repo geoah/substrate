@@ -64,17 +64,22 @@ that declares none reads as `primary`, so a kind you or an agent declares is
 listed without anyone classifying it, and every kind under
 `substrate.reamde.dev` reads as `internal`. In everyday mode a section lists
 its primary collections only. A section heading folds its section away and
-remembers it; provider sections start folded, the others open. Hovering a
-collection shows a star that adds it to **Favorites**, above the sections,
-where up and down controls reorder it.
+remembers it; provider sections start folded, the others open. Resting on a
+collection opens its card beside the sidebar: what it holds, where it comes
+from ("Made by _agent_" for an agent's app), how many records it has and its
+reference. Hovering a collection also shows a star that adds it to
+**Favorites**, above the sections, where up and down controls reorder it.
 
 **⌘K** (Ctrl-K elsewhere) jumps to a record, a collection or a page, or hands
 what you typed to the [Search page](#search) as a records query. Typing runs
 the ranked read (words, five hits) after a short pause and lists the records
-it finds first; collections and pages match when every word typed starts a
-word of their name. It lists collections
-the way the sidebar does: primary ones in everyday mode, every kind with its
-purpose labelled with Technical details on.
+it finds first; like the Search page it reaches what you keep and its
+details (`filter.purposes` `primary` and `supporting`), and with Technical
+details on a switch, **Include the substrate's own records**, widens it to
+every purpose and travels to the Search page with the query. Collections and
+pages match when every word typed starts a word of their name. It lists
+collections the way the sidebar does: primary ones in everyday mode, every
+kind with its purpose labelled with Technical details on.
 
 The header above every page is a breadcrumb that reads as where the page sits:
 `Your data / Tasks` or `From Google / Contacts` for a collection, then the
@@ -91,7 +96,8 @@ agent author needs, without taking anything away:
 
 - every kind, supporting and internal ones included, and the **Substrate**
   section; the sidebar becomes the authority → package → kind tree, each kind
-  by its own name and tagged with its purpose when that is not `primary`;
+  by its label with its own name in faint mono beside it, and tagged with its
+  purpose when that is not `primary`;
 - full kind references, record ids and actor ids beside the names, with a
   copy button, and the declaration's own description of a kind instead of the
   one-line summary;
@@ -103,15 +109,20 @@ agent author needs, without taking anything away:
 - on Providers, every other package the repository holds, bundle ids and
   versions, which record each declared input uses, and each account's
   connection details;
-- on Search, each hit's raw per-arm scores;
+- on Search, each hit's raw per-arm scores, and on Search and ⌘K the switch
+  that includes the substrate's own records;
 - on Settings, the **Developer** section.
 
 ### Display names
 
-A collection is labelled by a display name the console builds from the kind's
-name (`person` reads **People**, `calendareventseries` **Calendar event
-series**, `apikey` **API keys**; [how](console/design-guide.md#words)). A
-record with no title reads **Untitled _person_**, never its id.
+A collection is labelled by the display label its kind declares
+([0113](decisions/0113-a-kind-may-declare-its-display-label.md)): Slack's
+`conversation` reads **Channels**, Google's `calendarseries` **Repeating
+events**. A kind that declares none is named from its name (`person` reads
+**People**, `calendareventseries` **Calendar event series**, `apikey` **API
+keys**; [how](console/design-guide.md#words)). The registry read remembers the
+labels, so a surface that holds only a reference names the kind the same way.
+A record with no title reads **Untitled _person_**, never its id.
 
 Display names are labels only. The console never sends one to the API and
 never lets one stand where a kind is identified: the identifier is always the
@@ -151,8 +162,9 @@ and nesting, its columns, and the Search page's ranking choice.
 **Home** (`/`) is what the substrate holds and what just happened: the four
 cards (how many collections and providers, the agents by name, how many tools
 and how many of them came from your providers), up to nine **Collections**
-with their record counts (yours first, those holding something leading, then
-what providers bring in), and **Recent changes** in [History](#history)'s
+with their record counts and where each comes from ("Yours", "From Google",
+"Made by _agent_" where an agent declared its package; yours first, those
+holding something leading, then what providers bring in), and **Recent changes** in [History](#history)'s
 sentences. Nothing on Home asks you to act.
 
 ## All data
@@ -163,11 +175,18 @@ is yours to change; a **From _Provider_** section holds copies that provider
 keeps up to date. In everyday mode a section lists its primary collections and
 says how many supporting ones it leaves out and where they are reached from;
 with Technical details on it lists every kind with its full reference and its
-purpose, the **Substrate** section included.
+purpose, the **Substrate** section included. A section holding a package an
+agent declared adds a **Made by** column.
 
 The two segments above a kind each have a page too: `/data/{authority}`
-tables every kind that authority publishes, package by package, and
-`/data/{authority}/{package}` tables one package's kinds.
+tables every kind that authority publishes, package by package, each package
+naming the agent that made it where one did, and
+`/data/{authority}/{package}` reads one package as the app it is: its
+**Collections**, the **Tools** it ships, and, where an agent declared it,
+**Made by** with that agent's card and a way to ask it. Who declared a
+package is the `package` row's `declaredBy`, stamped by the engine
+([0111](decisions/0111-a-package-row-names-the-actor-that-declared-it.md));
+a package created before the stamp names no one.
 
 ### Add a collection
 
@@ -212,7 +231,11 @@ references (each read as the referent's title, fetched beside the page with
 `expand`), the enums and the other short values; paragraphs and blobs never
 earn a column, and the last change closes the row. A column that holds nothing
 on the rows loaded opens hidden, and the **Columns** button says how many
-are. **Columns**
+are. So does a property the kind marks `deprecated`, and on a provider's
+collection every property a writer role other than the owner keeps (sync
+cursors, statuses, tokens). The title is the row's one link to the record; a
+parent row's chip reads "1 / 3" beside a ring and says "1 of 3 subtasks
+done". **Columns**
 shows, hides and reorders them, per collection, and Reset returns the
 collection's own defaults. **Sort** (or a header click) picks the order; the
 default is newest change first.
@@ -571,10 +594,12 @@ it. The old address `/changelog` redirects here with its filters.
 [search grammar](api.md#the-search-grammar), a collection to narrow to (or
 every one), and the hits best first, each with its collection. Each typed
 word also matches as the start of a longer one (`ans` finds `Ansel`), and the
-server ranks the word itself above its completions. In everyday mode the page
-searches what you keep and its details (`filter.purposes` `primary` and
-`supporting`); machinery is found with Technical details on, or by picking its
-collection. How to rank is
+server ranks the word itself above its completions. The page searches what
+you keep and its details (`filter.purposes` `primary` and `supporting`,
+[0115](decisions/0115-search-ranks-by-bm25f-and-a-kinds-purpose.md)); with
+Technical details on, **Include the substrate's own records** searches every
+purpose (`?system=true`), and picking a collection searches it whatever its
+purpose. How to rank is
 the reader's choice and it sticks: **Words** (the default: full-text over
 every indexed text, free, and it answers on every repository), **Words +
 meaning** (the fused hybrid ranking, which falls back to words alone where no

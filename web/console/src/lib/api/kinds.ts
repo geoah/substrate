@@ -12,6 +12,8 @@
 
 import { queryOptions } from "@tanstack/react-query"
 
+import { rememberKindLabels } from "@/lib/kind-names"
+
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME, request, splitKind } from "./http"
 import { listPath } from "./records"
 import type { KindInfo, Page } from "./types"
@@ -99,6 +101,7 @@ export async function fetchKinds(signal?: AbortSignal): Promise<KindInfo[]> {
     out.push(...normalizeKinds(page))
     after = page.cursor
   } while (after)
+  rememberKindLabels(out)
   return out
 }
 

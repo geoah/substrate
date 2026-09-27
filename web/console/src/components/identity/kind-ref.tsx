@@ -8,7 +8,9 @@ import { Link } from "@tanstack/react-router"
 
 import { IdentityCard, IdentityHoverCard } from "./identity-hover-card"
 import { KindGlyph } from "./kind-glyph"
+import { OriginMark } from "./origin-mark"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { useKindOrigin } from "@/hooks/use-kind-origin"
 import { useHasQueryClient } from "@/hooks/use-has-query-client"
 import { splitKind } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
@@ -17,6 +19,7 @@ import { kindPurpose, type KindPurpose } from "@/lib/definition"
 import { displayPlural } from "@/lib/kind-names"
 import { cn } from "@/lib/utils"
 import { kindDescription } from "@/lib/kind-copy"
+import { originOfKind, type Origin } from "@/lib/origin"
 
 const PURPOSE_WORDS: Record<KindPurpose, string> = {
   primary: "A collection",
@@ -111,7 +114,8 @@ export function KindRef({
 }
 
 /** The kind's hover card body, for a trigger that is not a `KindRef` (a
- * collection's own heading). */
+ * collection's own heading, a sidebar row): what it holds, where it comes
+ * from ("Made by Notekeeper"), how many records, how it is listed. */
 export function KindCard({
   kind,
   count,
@@ -142,15 +146,18 @@ function RegistryKindCard({
     typeof kind === "string"
       ? (kinds.data?.find((k) => k.identity === kind) ?? kind)
       : kind
-  return <KindCardView kind={resolved} count={count} />
+  const origin = useKindOrigin(typeof kind === "string" ? kind : kind.identity)
+  return <KindCardView kind={resolved} count={count} origin={origin} />
 }
 
 function KindCardView({
   kind,
   count,
+  origin,
 }: {
   kind: KindInfo | string
   count?: number
+  origin?: Origin
 }) {
   const [technical] = useTechnicalDetails()
   const reference = typeof kind === "string" ? kind : kind.identity
@@ -169,6 +176,7 @@ function KindCardView({
     <IdentityCard
       mark={<KindGlyph kind={kind} size="sm" />}
       title={displayPlural(kind)}
+      sub={<OriginMark origin={origin ?? originOfKind(reference)} />}
       description={kindDescription(kind, technical)}
       facts={facts}
       reference={reference}

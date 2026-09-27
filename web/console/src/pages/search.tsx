@@ -1,21 +1,28 @@
 /** /search: the ranked read (`GET /records?q=`) as a page. A query in the
  * search grammar, what to rank by (words, words + meaning, meaning; the
  * reader's choice, and it sticks), an optional collection to narrow the
- * candidates, and the hits in rank order. Technical mode adds each hit's raw
- * per-arm scores and full reference. The query, the arm and the collection
- * live in the URL, so a search is shareable and the back button returns to
- * it. */
+ * candidates, and the hits in rank order. Everyday search reaches what a
+ * person keeps and its details; technical mode adds each hit's raw per-arm
+ * scores and full reference, and a switch that includes the substrate's own
+ * records. The query, the arm, the collection and that switch live in the
+ * URL, so a search is shareable and the back button returns to it. */
 
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { CheckIcon, ChevronsUpDownIcon } from "lucide-react"
-import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs"
+import {
+  parseAsBoolean,
+  parseAsString,
+  parseAsStringLiteral,
+  useQueryState,
+} from "nuqs"
 
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { KindPath, KindRef } from "@/components/identity/kind-ref"
 import { DocPage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
 import { RecordRef } from "@/components/identity/record-ref"
+import { ToggleSwitch } from "@/components/nav/toggle-switch"
 import { SearchBox } from "@/components/search-box"
 import { Button } from "@/components/ui/button"
 import {
@@ -36,17 +43,13 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { searchQueryOptions } from "@/lib/api/records"
-import type {
-  KindInfo,
-  RecordFilter,
-  Scores,
-  SubstrateRecord,
-} from "@/lib/api/types"
+import type { KindInfo, Scores, SubstrateRecord } from "@/lib/api/types"
 import { collectionGroups } from "@/lib/collections"
 import { recordTitle } from "@/lib/format"
 import { typeaheadQuery } from "@/lib/identities"
 import { displayPlural, lowerFirst } from "@/lib/kind-names"
 import {
+  INCLUDE_SYSTEM_LABEL,
   SEARCH_GRAMMAR,
   SEARCH_MODE_DESCRIPTION,
   SEARCH_MODE_DETAIL,
@@ -54,15 +57,13 @@ import {
   SEARCH_MODES,
   loadSearchMode,
   saveSearchMode,
+  searchPurposes,
   type SearchMode,
 } from "@/lib/search"
 import { cn } from "@/lib/utils"
 
 /** How many hits one search asks for. A ranking has no next page. */
 const HITS = 50
-
-/** The purposes everyday mode searches: machinery is left out. */
-const EVERYDAY_PURPOSES: RecordFilter["purposes"] = ["primary", "supporting"]
 
 export function SearchPage() {
   const [technical] = useTechnicalDetails()
@@ -73,6 +74,11 @@ export function SearchPage() {
     parseAsStringLiteral(SEARCH_MODES)
   )
   const [kind, setKind] = useQueryState("kind", parseAsString.withDefault(""))
+  // In the URL, so a technical search of the machinery can be shared.
+  const [includeSystem, setIncludeSystem] = useQueryState(
+    "system",
+    parseAsBoolean.withDefault(false)
+  )
   const mode: SearchMode = modeParam ?? loadSearchMode()
 
   const registry = useQuery(kindsQueryOptions)
@@ -82,14 +88,16 @@ export function SearchPage() {
   const words = q.trim()
   // What is typed is searched as it is typed: every plain word also matches
   // as the start of a longer one, and the server ranks the word itself above
-  // its completions. Everyday mode searches what a person keeps and what
-  // belongs to it; machinery (accounts, sync state, the vocabulary) is the
-  // technical view's, as it is in the sidebar.
+  // its completions.
   const results = useQuery(
     searchQueryOptions(typeaheadQuery(words), {
       mode,
       kinds: narrowed ? [narrowed.identity] : undefined,
-      purposes: technical || narrowed ? undefined : EVERYDAY_PURPOSES,
+      purposes: searchPurposes({
+        narrowed: Boolean(narrowed),
+        technical,
+        includeSystem,
+      }),
       first: HITS,
     })
   )
@@ -116,6 +124,16 @@ export function SearchPage() {
             value={narrowed}
             onChange={(next) => void setKind(next?.identity ?? null)}
           />
+          {technical && !narrowed && (
+            <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
+              <ToggleSwitch
+                checked={includeSystem}
+                onChange={(on) => void setIncludeSystem(on || null)}
+                label={INCLUDE_SYSTEM_LABEL}
+              />
+              {INCLUDE_SYSTEM_LABEL}
+            </label>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
           <Segmented
