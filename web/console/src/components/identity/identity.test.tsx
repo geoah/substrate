@@ -16,15 +16,20 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { ActorRef } from "./actor-ref"
-import { KindRef } from "./kind-ref"
-import { RecordRef } from "./record-ref"
+import { KindCard, KindRef } from "./kind-ref"
+import { RecordCard, RecordRef } from "./record-ref"
 import { ReferenceValue } from "./reference-value"
 import { StateBadge } from "./state-badge"
 import {
   ConsolePreferencesContext,
   type ConsolePreferencesContextValue,
 } from "@/hooks/use-console-preferences"
+import { kindsQueryOptions } from "@/lib/api/kinds"
+import { recordQueryOptions } from "@/lib/api/records"
+import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
+import { packageRows, packagesQueryOptions } from "@/lib/packages"
+import { recordTitleQueryOptions } from "@/lib/reference-titles"
 
 afterEach(() => {
   cleanup()
@@ -228,6 +233,116 @@ describe("KindRef", () => {
   it("shows the full reference in reference mode", async () => {
     renderWith(<KindRef kind={PERSON} mode="reference" />)
     expect((await screen.findByRole("link")).textContent).toBe(PERSON)
+  })
+})
+
+const ORG = "samples.substrate.reamde.dev/people/organization"
+
+function kindInfo(identity: string, definition: Record<string, unknown>) {
+  const [authority, pkg, name] = identity.split("/")
+  return {
+    identity,
+    name,
+    authority,
+    package: pkg,
+    version: 1,
+    source: "installed",
+    description: "",
+    definition: { names: { singular: name }, ...definition },
+  } satisfies KindInfo
+}
+
+/** A client holding the registry, one person and their organization's
+ * title, so the cards read without a network. */
+function seeded(): QueryClient {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  client.setQueryData(kindsQueryOptions.queryKey, [
+    kindInfo(PERSON, {
+      properties: {
+        name: { type: "string" },
+        memberOf: {
+          type: "reference",
+          kind: ORG,
+          displayName: "Works at",
+        },
+      },
+      displayTemplate: "{name}",
+    }),
+    kindInfo(ORG, { properties: { name: { type: "string" } } }),
+  ])
+  client.setQueryData(
+    recordQueryOptions(
+      "samples.substrate.reamde.dev",
+      "people",
+      "person",
+      "linus"
+    ).queryKey,
+    {
+      kind: PERSON,
+      id: "linus",
+      properties: {
+        name: "Linus Pauling",
+        memberOf: { ref: `${ORG}/globex` },
+      },
+    } as unknown as SubstrateRecord
+  )
+  client.setQueryData(recordTitleQueryOptions(ORG, "globex").queryKey, "Globex")
+  return client
+}
+
+describe("RecordCard", () => {
+  it("names each value by its declared label and a reference by its title", async () => {
+    renderWith(<RecordCard kind={PERSON} id="linus" />, { client: seeded() })
+    expect(await screen.findByText("Works at")).toBeTruthy()
+    expect(screen.getByText("Globex")).toBeTruthy()
+    expect(screen.queryByText("memberOf")).toBeNull()
+    expect(screen.queryByText("globex")).toBeNull()
+    expect(
+      screen.getByRole("button", { name: "Copy the reference" })
+    ).toBeTruthy()
+  })
+
+  it("adds each property's key in technical mode", async () => {
+    renderWith(<RecordCard kind={PERSON} id="linus" />, {
+      client: seeded(),
+      technical: true,
+    })
+    expect(await screen.findByText("Works at")).toBeTruthy()
+    expect(screen.getByText("memberOf")).toBeTruthy()
+  })
+})
+
+describe("KindCard", () => {
+  it("says an agent's collection is made by that agent", async () => {
+    const client = seeded()
+    client.setQueryData(
+      packagesQueryOptions.queryKey,
+      packageRows({
+        records: [
+          {
+            kind: "substrate.reamde.dev/core/package",
+            id: "samples.substrate.reamde.dev/people",
+            properties: {
+              declaredBy: "agent:ada.example.com:llm:notekeeper",
+            },
+          } as unknown as SubstrateRecord,
+        ],
+      })
+    )
+    renderWith(<KindCard kind={PERSON} />, { client })
+    expect(await screen.findByText("Made by Notekeeper")).toBeTruthy()
+  })
+
+  it("says a collection with no agent behind it is yours", async () => {
+    const client = seeded()
+    client.setQueryData(
+      packagesQueryOptions.queryKey,
+      packageRows({ records: [] })
+    )
+    renderWith(<KindCard kind={PERSON} />, { client })
+    expect(await screen.findByText("Yours")).toBeTruthy()
   })
 })
 

@@ -12,7 +12,8 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { cn } from "@/lib/utils"
+
+import { CopyButton } from "./copy-button"
 
 export const HOVER_OPEN_DELAY = 500
 
@@ -23,6 +24,7 @@ export function IdentityHoverCard({
   card,
   delay = HOVER_OPEN_DELAY,
   label,
+  side = "bottom",
 }: {
   /** The element the mark renders as: a router `Link`, a `button`, a
    * `span`. */
@@ -36,6 +38,9 @@ export function IdentityHoverCard({
   delay?: number
   /** The trigger's accessible name, where its text alone does not say it. */
   label?: string
+  /** Where the card opens: under the mark, or beside it where a card below
+   * would cover the next row the reader is heading for (the sidebar). */
+  side?: "bottom" | "right"
 }) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
@@ -56,6 +61,7 @@ export function IdentityHoverCard({
       </HoverCardTrigger>
       <HoverCardContent
         align="start"
+        side={side}
         className="w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-[10px] border border-border-strong bg-background p-0 text-[12.5px] leading-[1.45] shadow-card ring-0"
       >
         {typeof card === "function" ? card(open) : card}
@@ -66,6 +72,9 @@ export function IdentityHoverCard({
 
 export interface IdentityFact {
   label: string
+  /** A quiet second line under the label: a property's key, in technical
+   * mode. */
+  detail?: string
   value: ReactNode
 }
 
@@ -85,7 +94,7 @@ export function IdentityCard({
   sub?: ReactNode
   description?: ReactNode
   facts?: IdentityFact[]
-  /** The full reference, in the mono footer. */
+  /** The full reference, in the mono footer, with a button that copies it. */
   reference?: string
   /** Facts are on their way. */
   loading?: boolean
@@ -112,19 +121,29 @@ export function IdentityCard({
         <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-2 gap-y-1 border-t px-3 pt-2 pb-2.5">
           {facts.map((fact) => (
             <div key={fact.label} className="contents">
-              <dt className="truncate text-faint">{fact.label}</dt>
+              <dt className="min-w-0 text-faint">
+                <span className="block truncate">{fact.label}</span>
+                {fact.detail && (
+                  <span className="block truncate font-mono text-[11.5px]">
+                    {fact.detail}
+                  </span>
+                )}
+              </dt>
               <dd className="break-words text-foreground">{fact.value}</dd>
             </div>
           ))}
         </dl>
       ) : null}
       {reference && (
-        <div
-          className={cn(
-            "border-t bg-panel px-3 py-[7px] font-mono text-[11.5px] break-all text-faint"
-          )}
-        >
-          {reference}
+        <div className="flex items-start gap-2 border-t bg-panel px-3 py-[7px]">
+          <span className="min-w-0 flex-1 font-mono text-[11.5px] break-all text-faint">
+            {reference}
+          </span>
+          <CopyButton
+            value={reference}
+            label="Copy the reference"
+            className="-my-0.5"
+          />
         </div>
       )}
     </div>
