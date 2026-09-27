@@ -83,6 +83,31 @@ export function conversationsQueryOptions(first = CHAT_LIST_WINDOW) {
   })
 }
 
+/** How many of one agent's runs its page reads. */
+export const AGENT_RUNS_WINDOW = 50
+
+/** One agent's runs, newest first: every thread it ran, whatever started it
+ * (a chat, a trigger, another agent, a judgement). */
+export function agentRunsQueryOptions(agentId: string) {
+  return queryOptions({
+    ...recordsQueryOptions({
+      authority: CORE_AUTHORITY,
+      package: LLM_PACKAGE_NAME,
+      name: "thread",
+      first: AGENT_RUNS_WINDOW,
+      filter: {
+        properties: {
+          agent: {
+            eq: `${CORE_AUTHORITY}/${CORE_PACKAGE_NAME}/agent/${agentId}`,
+          },
+        },
+      },
+      orderBy: "startedAt:desc",
+    }),
+    enabled: Boolean(agentId),
+  })
+}
+
 /** The user messages of a set of threads, oldest turn first, so the first
  * one per thread is what opened it (`openingMessages` reads it). One read for
  * the whole list: `thread` is a reference whose declaration pins the kind, so

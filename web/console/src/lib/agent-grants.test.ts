@@ -14,8 +14,11 @@ import {
   HOST_FUNCTION_QUERY,
   HOST_FUNCTION_WRITE,
   RECORD_PATCH_REQUEST_KIND,
+  grantEditProblem,
   grantHints,
+  grantKindsOf,
   hostToolsOf,
+  permissionsWith,
 } from "./agent-grants"
 
 const WIDGET = "crew.test.dev/widget"
@@ -275,5 +278,60 @@ describe("grantHints", () => {
       HOST_FUNCTION_QUERY,
       HOST_FUNCTION_WRITE,
     ])
+  })
+})
+
+describe("editing the grants", () => {
+  const KIND = "substrate.reamde.dev/core/kind/"
+  const TASK = "samples.substrate.reamde.dev/tasks/task"
+  const PERSON = "samples.substrate.reamde.dev/people/person"
+  const tool = (fn: string) => ({
+    function: { ref: `substrate.reamde.dev/core/function/${fn}` },
+  })
+  const agent = {
+    tools: [tool(HOST_FUNCTION_QUERY), tool(HOST_FUNCTION_PROPOSE)],
+    permissions: {
+      reads: { kinds: [{ ref: `${KIND}${TASK}` }], budgets: { rows: 50 } },
+      writes: [
+        { ref: `${KIND}${TASK}` },
+        { ref: `${KIND}${RECORD_PATCH_REQUEST_KIND}` },
+      ],
+    },
+  }
+
+  it("reads each grant's kinds, leaving propose's own grant out", () => {
+    expect(grantKindsOf(agent, "reads")).toEqual([TASK])
+    expect(grantKindsOf(agent, "writes")).toEqual([TASK])
+    expect(grantKindsOf({}, "reads")).toEqual([])
+  })
+
+  it("sets one grant and carries everything else through", () => {
+    expect(permissionsWith(agent, "reads", [TASK, PERSON])).toEqual({
+      reads: {
+        kinds: [`${KIND}${TASK}`, `${KIND}${PERSON}`],
+        budgets: { rows: 50 },
+      },
+      writes: agent.permissions.writes,
+    })
+    expect(permissionsWith(agent, "writes", [PERSON]).writes).toEqual([
+      `${KIND}${PERSON}`,
+      `${KIND}${RECORD_PATCH_REQUEST_KIND}`,
+    ])
+    // An empty read grant is no grant at all.
+    expect(permissionsWith(agent, "reads", []).reads).toBeUndefined()
+  })
+
+  it("holds back an edit that would break a tool the agent holds", () => {
+    expect(grantEditProblem(agent, "reads", [])).toMatch(/needs to see/)
+    expect(grantEditProblem(agent, "reads", [PERSON])).toBeUndefined()
+    // propose keeps its own grant, so emptying the picked kinds is fine.
+    expect(grantEditProblem(agent, "writes", [])).toBeUndefined()
+    const writer = {
+      tools: [tool(HOST_FUNCTION_WRITE)],
+      permissions: { writes: [{ ref: `${KIND}${TASK}` }] },
+    }
+    expect(grantEditProblem(writer, "writes", [])).toMatch(
+      /needs to be able to change/
+    )
   })
 })

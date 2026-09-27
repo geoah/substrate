@@ -177,3 +177,87 @@ export function grantHints(
   }
   return hints
 }
+
+// ── editing the grants ──────────────────────────────────────────────────────
+
+/** The two grants the console edits: what an agent may see and change. */
+export type GrantSide = "reads" | "writes"
+
+/** The kinds (identities or globs) one grant names, in order. On `writes`
+ * the change-request kind is left out: it is `propose`'s own grant, not a
+ * collection the person picks, and an edit carries it through untouched. */
+export function grantKindsOf(
+  properties: Record<string, unknown>,
+  side: GrantSide
+): string[] {
+  const permissions = permissionsOf(properties)
+  if (side === "writes") {
+    return identitiesOf(permissions.writes).filter(
+      (k) => k !== RECORD_PATCH_REQUEST_KIND
+    )
+  }
+  const reads = permissions.reads
+  if (!reads || typeof reads !== "object" || Array.isArray(reads)) return []
+  return identitiesOf((reads as Record<string, unknown>).kinds)
+}
+
+/** One grant entry as the write path takes it: the kind record's flat path,
+ * which the pin would complete from the identity anyway. */
+function grantEntry(identity: string): string {
+  return `${KIND_KIND}/${identity}`
+}
+
+/** The whole `permissions` object after one grant is set to `kinds`: the
+ * other grant, read budgets and anything else it holds ride along. An empty
+ * read grant is no grant (its `kinds` is required where it appears), so it
+ * leaves `reads` out; the change-request kind stays on `writes` wherever it
+ * was. */
+export function permissionsWith(
+  properties: Record<string, unknown>,
+  side: GrantSide,
+  kinds: string[]
+): Record<string, unknown> {
+  const permissions = { ...permissionsOf(properties) }
+  if (side === "reads") {
+    const held = permissions.reads
+    const reads =
+      held && typeof held === "object" && !Array.isArray(held)
+        ? (held as Record<string, unknown>)
+        : {}
+    if (kinds.length === 0) delete permissions.reads
+    else permissions.reads = { ...reads, kinds: kinds.map(grantEntry) }
+    return permissions
+  }
+  const proposes = identitiesOf(permissions.writes).includes(
+    RECORD_PATCH_REQUEST_KIND
+  )
+  const writes = [
+    ...kinds.filter((k) => k !== RECORD_PATCH_REQUEST_KIND),
+    ...(proposes ? [RECORD_PATCH_REQUEST_KIND] : []),
+  ]
+  if (writes.length === 0) delete permissions.writes
+  else permissions.writes = writes.map(grantEntry)
+  return permissions
+}
+
+/** Why a grant edit would break a tool the agent holds, in everyday words,
+ * or undefined when it would not: the loader refuses an agent whose tools'
+ * grants are unmet, so the console holds the edit back instead. */
+export function grantEditProblem(
+  properties: Record<string, unknown>,
+  side: GrantSide,
+  kinds: string[]
+): string | undefined {
+  const before = new Set(grantHints(properties).map((h) => h.function))
+  const after = grantHints({
+    ...properties,
+    [PERMISSIONS_PROPERTY]: permissionsWith(properties, side, kinds),
+  }).filter((h) => !before.has(h.function))
+  if (after.some((h) => h.function === HOST_FUNCTION_QUERY)) {
+    return "It looks things up, so it needs to see at least one collection."
+  }
+  if (after.some((h) => h.function === HOST_FUNCTION_WRITE)) {
+    return "It makes changes, so it needs to be able to change at least one collection."
+  }
+  return undefined
+}

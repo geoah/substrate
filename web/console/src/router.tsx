@@ -12,6 +12,7 @@ import { AppShell } from "@/components/app-shell"
 import { PageError } from "@/components/page-error"
 import { hasSession } from "@/lib/api/session"
 import { ActorPage } from "@/pages/actor"
+import { AgentPage } from "@/pages/agent"
 import { AgentsPage } from "@/pages/agents"
 import { AuthorityPage, PackagePage } from "@/pages/authority"
 import { ChangeRequestDetailPage } from "@/pages/change-request-detail"
@@ -201,21 +202,22 @@ export const agentsRoute = createRoute({
   component: AgentsPage,
 })
 
-// The old per-agent address: the chat app opens a new chat with that agent,
-// and a `?thread=` it carried opens that conversation instead.
-export const agentChatRoute = createRoute({
+// One agent's page. The old per-agent chat address carried `?thread=`, and
+// that still opens the conversation in the chat app.
+export const agentRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/agents/$id",
-  beforeLoad: ({ params, search }) => {
+  beforeLoad: ({ search }) => {
     const thread = (search as Record<string, unknown>).thread
-    throw redirect({
-      to: "/agents",
-      search: (typeof thread === "string" && thread
-        ? { thread }
-        : { agent: params.id }) as never,
-      replace: true,
-    })
+    if (typeof thread === "string" && thread) {
+      throw redirect({
+        to: "/agents",
+        search: { thread } as never,
+        replace: true,
+      })
+    }
   },
+  component: AgentPage,
 })
 
 export const mergeRequestDetailRoute = createRoute({
@@ -364,7 +366,7 @@ const routeTree = rootRoute.addChildren([
     settingsRoute,
     bundleSettingsRoute,
     agentsRoute,
-    agentChatRoute,
+    agentRoute,
     mergeRequestDetailRoute,
     changeRequestDetailRoute,
     authorityRoute,

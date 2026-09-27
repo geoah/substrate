@@ -27,6 +27,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import {
   actorIdentity,
+  agentName,
   providerInfo,
   providerOfKind,
   PROVIDERS_AUTHORITY,
@@ -139,7 +140,7 @@ export function crumbsFor(pathname: string, technical = false): Crumb[] {
         { label: "Agents", to: "/agents" },
         technical
           ? { label: rest.join("/"), mono: true }
-          : { label: rest.join("/") },
+          : { label: agentName(rest.join("/")) },
       ]
     case "tools": {
       if (!rest.length) return [{ label: "Tools" }]
