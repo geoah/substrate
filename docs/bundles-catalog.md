@@ -416,7 +416,9 @@ writes to GitHub; `submitreview` is the one write.
   beside it) and `review`.
 - **Functions (2)**: `githubsync`. One invocation works one stage and
   checkpoints: one search or listing page (100 items), or up to 400 hydration
-  entries, stopping once 40 seconds of its 60-second deadline are spent. It
+  entries, stopping once 40 seconds of its 60-second deadline are spent. A
+  drain stops itself after 75 seconds, inside the engine's two-minute drain
+  deadline, and saves where it got to for the next run. It
   writes only this package's own kinds, and it refuses to send the access token
   anywhere but `https://api.github.com` or a loopback host. `submitreview`
   submits one review on a pull request, `approve` or `comment`, through
@@ -486,6 +488,15 @@ durable because the engine bounds a drain at 512 invocations and two minutes;
 `syncProgress` reports `{phase, done, total, pending}` at every checkpoint, so a
 console watching a long drain sees the number fall. A run that starts with a
 backlog drains the backlog first and then walks the searches in the same run.
+A walk that does not fit one drain stops after 75 seconds of it, because the
+engine parks a drain that runs past two minutes and drops its last page. The
+stop stamps the account and writes `syncWalk`: the stages the walk still owes,
+the search position it stopped at (a search past its first page resumes from
+the newest `updated_at` it mirrored) and the run start its watermarks will
+carry. An account holding `syncWalk` is due on the next hourly tick whatever
+its `syncFrequency` says; that run drains the backlog, resumes the walk there,
+and clears `syncWalk` when the walk completes. A pull request's `url` is its
+own `/pulls/{n}` address from the search hit and the pull read alike.
 
 **A restricted organization is a counted skip.** An organization that has not
 approved the OAuth app, or whose SAML session the token has not authorised,

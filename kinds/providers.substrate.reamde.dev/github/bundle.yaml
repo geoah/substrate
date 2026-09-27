@@ -86,7 +86,12 @@ data:
   #
   # 28: the account declares `tokenError` and `tokenErrorAt`, the reason
   # and time the OAuth facility last failed to refresh its token. ADDITIVE.
-  version: 28
+  #
+  # 29: `githubsync` stops itself inside the engine's drain deadline and
+  # saves an unfinished walk on `account.syncWalk`, which the next run
+  # resumes; a pull request's `url` is its own REST address on every
+  # payload.
+  version: 29
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -407,6 +412,18 @@ data:
       # walks any search.
       description: the hydration work still to do, per queue — the backlog
         a bounded drain leaves behind
+    syncWalk:
+      type: json
+      writer: connector
+      displayName: Unfinished walk
+      # Where a walk that ran out of drain time stopped: the stages it still
+      # owes, the stage, page, `updated:>=` floor and repository partition it
+      # stopped at, the run start its watermarks will be stamped with, and
+      # the repositories it has identified. The next run resumes the walk
+      # here instead of re-walking every search from its floor. Cleared when
+      # the walk completes. Version 29.
+      description: the stage and search position an unfinished walk resumes
+        at on the next run
     syncSkipped:
       type: json
       writer: connector
@@ -2753,6 +2770,17 @@ data:
     them, stamped `ok`, and never searched at all; the mirror stayed at two
     issues while every re-drive returned in one line.
 
+    A run stops itself inside the engine's drain deadline (version 29). The
+    engine parks a chain whose middle page arrives more than two minutes after
+    its first, and drops that page's effects, so a walk that did not fit one
+    chain lost its last page and began again at every search's floor on the
+    next run: production parked every hourly fire at `pullsFetch` from
+    2026-09-22 on. Once `DRAIN_SECONDS` of chain time are spent, the page in
+    hand is the last one: it stamps the account and saves the unfinished walk
+    on `account.syncWalk` (the stages still owed, the search position, the
+    run start), and the next run drains the backlog and then resumes the walk
+    there. An account holding a saved walk is due whatever its cadence says.
+
     Every stamp also writes the core `sync` trait (substrate decision 0085)
     beside the legacy strings: `syncState` / `syncMessage`, `syncProgress` over
     the hydration backlog, `syncError` / `syncErrorAt` on a failure, a rate
@@ -2800,6 +2828,14 @@ data:
     # searches every round and never moved.
     HYDRATE_BATCH = 400
     MAX_HYDRATE = 400
+    # The CHAIN's budget, measured from the first invocation of the drain. The
+    # engine parks a chain whose middle page arrives past its two-minute drain
+    # deadline (internal/engine/functions.go, `drainDeadline`) and drops that
+    # page, while a FINAL page always commits. So once this much chain time is
+    # spent the page in hand ends the chain and saves the walk (`_stop`), and
+    # a page that starts late gets only what is left of it. 45 seconds of
+    # headroom covers one request's 20-second timeout past the check.
+    DRAIN_SECONDS = 75
     # The hydration QUEUES, in the order their stages drain them.
     QUEUES = ("repos", "licenses", "pulls", "reviews", "issues", "graph", "users")
     HYDRATION_STAGES = ("reposFetch", "licensesFetch", "pullsFetch", "reviewsFetch",
@@ -2860,6 +2896,11 @@ data:
         freq = (props.get("syncFrequency") or "daily").lower()
         if freq == "off":
             return False
+        # Unfinished work outranks the cadence: a run that stopped on the
+        # drain budget stamped `lastSyncedAt`, and a daily account would
+        # otherwise wait a day between bites of one walk.
+        if _resumable(props):
+            return True
         last = props.get("lastSyncedAt")
         if not last:
             return True
@@ -2869,6 +2910,34 @@ data:
             return True
         hours = 1 if freq == "hourly" else 24
         return _dt.datetime.now(_dt.timezone.utc) - seen >= _dt.timedelta(hours=hours)
+
+
+    def _resumable(props):
+        """Did the last run stop on the drain budget with its walk unfinished?
+
+        `syncWalk` is the marker: every stop writes it and only a walk that
+        ran to the end clears it. A backlog alone is not, because a finished
+        walk can leave one no stage of it drains again (a pull request read
+        queues its repository's licence after `licensesFetch` has run, and
+        `users` fills whether or not `enabledUser` is on), and a daily
+        account holding that would sync every hour."""
+        held = props.get("syncWalk")
+        return isinstance(held, dict) and bool(held.get("stages"))
+
+
+    def _walk_of(props):
+        """`account.syncWalk` when it still owes a search, else None: a walk
+        left with only hydration stages is resumed by the backlog, and the
+        run then walks afresh from the stored watermarks."""
+        held = props.get("syncWalk")
+        if not isinstance(held, dict):
+            return None
+        stages = held.get("stages")
+        if not isinstance(stages, list) or not stages:
+            return None
+        if not any(st in SEARCH_STAGES for st in stages):
+            return None
+        return held
 
 
     def _pending_of(props):
@@ -2940,12 +3009,16 @@ data:
         return bool(props.get("enabledUser"))
 
 
-    def _fresh(queue, sched=False):
+    def _fresh(queue, sched=False, chain=""):
         # `sched` and `startedAt` ride the cursor because a bounded drain resumes
         # through `host.page.resume()` with no envelope: only the FIRST invocation
         # can tell a schedule fire from a record-sourced delivery, and the
         # duration the trait reports is measured from that first one.
+        # `startedAt` restarts per account; `chainStart` is the drain's own and
+        # is handed on to the next account in the queue, because the engine's
+        # deadline counts the whole chain.
         return {"queue": queue, "stages": [], "stage": "user", "page": 1,
+                "chainStart": chain or _now(), "boundary": "", "walkAt": None,
                 "login": "", "runStart": "", "floors": {}, "cursors": {},
                 "pfloor": "", "prepo": "", "partial": [], "stalled": [],
                 "missing": [], "deferred": {}, "saved": None, "savedCursors": None,
@@ -2989,9 +3062,13 @@ data:
 
         LIMIT = 40.0            # seconds of the PT60S the stages may use
 
-        def __init__(self):
+        def __init__(self, chain_left=None):
             self.start = _dt.datetime.now(_dt.timezone.utc)
             self.calls = 0
+            # A page that starts late in the chain gets what is left of the
+            # chain's budget, not a fresh 40 seconds.
+            self.limit = self.LIMIT if chain_left is None \
+                else max(0.0, min(self.LIMIT, chain_left))
 
         def spend(self):
             self.calls += 1
@@ -3000,7 +3077,20 @@ data:
             return (_dt.datetime.now(_dt.timezone.utc) - self.start).total_seconds()
 
         def spent(self):
-            return self.elapsed() >= self.LIMIT
+            return self.elapsed() >= self.limit
+
+
+    def _chain_left(cur):
+        """Seconds of `DRAIN_SECONDS` this drain has left. A cursor without
+        `chainStart` (one a version before 29 parked) falls back to the
+        account's `startedAt`, and one without either counts as spent."""
+        started = cur.get("chainStart") or cur.get("startedAt") or ""
+        try:
+            t = _dt.datetime.fromisoformat(str(started).replace("Z", "+00:00"))
+        except ValueError:
+            return 0.0
+        age = (_dt.datetime.now(_dt.timezone.utc) - t).total_seconds()
+        return DRAIN_SECONDS - age
 
 
     def _note_missing(cur, what):
@@ -4345,6 +4435,17 @@ data:
         pr = it.get("pull_request")
         if isinstance(pr, dict) and "merged_at" in pr and "merged_at" not in it:
             _take(props, pr, "merged_at", "mergedAt")
+        # `url` is the pull request's OWN address. A search hit is the Issue
+        # representation, whose top-level `url` is `/repos/{o}/{r}/issues/{n}`;
+        # the pull's is under `pull_request`. Taking the top-level one wrote
+        # `/issues/{n}` at every search and `/pulls/{n}` at every hydrate, a
+        # real change twice per walk that fired every trigger on the kind.
+        if "/pulls/" not in str(it.get("url") or ""):
+            own_url = pr.get("url") if isinstance(pr, dict) else None
+            if own_url:
+                props["url"] = own_url
+            else:
+                props.pop("url", None)
         if "requested_reviewers" in it:
             props["requestedReviewers"] = sink.user_refs(
                 it.get("requested_reviewers")) or None
@@ -4563,11 +4664,16 @@ data:
         return out
 
 
-    def _stamp(host, acct, aid, cur, error):
+    def _stamp(host, acct, aid, cur, error, walk=None):
         # The connector stamp — the writer: connector properties. EVERY path
         # writes syncStatus, and lastSyncedAt marks the attempt finished either
         # way: it anchors the cadence AND drops the on-connect trigger's guard, so
         # an erroring stamp can never re-fire the first backfill in a loop.
+        #
+        # `walk` is the unfinished walk a run stopped on the drain budget saves
+        # (`_stop`); a run that walked to the end passes none, which clears
+        # `syncWalk`. The erroring path leaves `syncWalk` alone, as it leaves
+        # `syncPending`, so the next run resumes where the last good stop was.
         now = _now()
         patch = {"lastSyncedAt": now}
         if error is not None:
@@ -4613,10 +4719,14 @@ data:
             if cur.get("lifted"):
                 notes.append("restriction lifted: %s — re-walked from the "
                              "backfill floor" % ", ".join(sorted(cur["lifted"])))
+            if walk:
+                notes.append("stopped on the drain budget: %s next run"
+                             % _resume_phrase(walk))
             status = ("ok" if not notes
                       else "ok (" + "; ".join(notes) + ")")[:400]
             patch["syncStatus"] = status
             patch["syncPending"] = pending or None
+            patch["syncWalk"] = walk or None
             if cur.get("restricted") or cur.get("lifted"):
                 patch["syncSkipped"] = _skipped_after(props, cur, now)
             # The trait's message is the SAME sentence, without the legacy
@@ -4641,33 +4751,112 @@ data:
         host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid, properties=patch)
 
 
+    def _entry(cur, nxt, walking):
+        """Where stage `nxt` starts: its own floor, or the position a stopped
+        run saved for it (`walkAt`, version 29), spent on first use. Only the
+        WALK spends it: a backlog prefix stage of the same name is not the
+        stage the position was saved in."""
+        at = cur.get("walkAt") or {}
+        if walking and at.get("stage") == nxt:
+            return {"page": int(at.get("page") or 1), "pfloor": at.get("pfloor") or "",
+                    "prepo": at.get("prepo") or "", "boundary": "", "walkAt": None}
+        pfloor = ""
+        if nxt in SEARCH_STAGES:
+            pfloor = _minus_overlap((cur.get("floors") or {}).get(nxt) or "")
+        return {"page": 1, "pfloor": pfloor, "prepo": "", "boundary": ""}
+
+
     def _advance(host, acct, aid, cur, queue):
         order = list(cur.get("stages") or ["user"])
         stage = cur.get("stage") or "user"
         i = order.index(stage) if stage in order else len(order) - 1
         if i + 1 < len(order):
             nxt = order[i + 1]
-            pfloor = ""
-            if nxt in SEARCH_STAGES:
-                pfloor = _minus_overlap((cur.get("floors") or {}).get(nxt) or "")
-            return _more(host, cur, stage=nxt, page=1, pfloor=pfloor, prepo="")
+            return _more(host, cur, stage=nxt,
+                         **_entry(cur, nxt, not cur.get("walk")))
         walk = list(cur.get("walk") or [])
         if walk:
             # The backlog is drained; the ordinary walk follows IN THIS RUN
             # (version 21). The stage list is replaced, so every stage name is
             # still unique within the order `_advance` indexes.
             nxt = walk[0]
-            pfloor = ""
-            if nxt in SEARCH_STAGES:
-                pfloor = _minus_overlap((cur.get("floors") or {}).get(nxt) or "")
             host.log("github: %s backlog drained; walking %s" % (aid, ", ".join(walk)))
-            return _more(host, cur, stages=walk, walk=[], stage=nxt, page=1,
-                         pfloor=pfloor, prepo="")
+            return _more(host, cur, stages=walk, walk=[], stage=nxt,
+                         **_entry(cur, nxt, True))
         _stamp(host, acct, aid, cur, error=None)
         rest = queue[1:]
         if rest:
-            return {"more": host.page.more(_fresh(rest, cur.get("sched")))}
+            return {"more": host.page.more(
+                _fresh(rest, cur.get("sched"), cur.get("chainStart")))}
         return {"output": {"account": aid}}
+
+
+    def _walk_checkpoint(cur):
+        """The unfinished walk to save on `account.syncWalk`.
+
+        A run still in its backlog prefix owes the whole walk (`walk`), from
+        the position a restored checkpoint gave it (`walkAt`, empty when the
+        walk has not begun); a run in the walk owes the rest of the stage list
+        from the stage in hand. Only a rest that still names a search is
+        RESUMED (`_walk_of`): the hydration stages work off `syncPending`,
+        which every batch checkpoints already.
+        """
+        walk = list(cur.get("walk") or [])
+        order = list(cur.get("stages") or [])
+        stage = cur.get("stage") or ""
+        if walk:
+            rest, at = walk, dict(cur.get("walkAt") or {})
+        elif stage == "user" or stage not in order:
+            rest, at = [st for st in order if st != "user"], {}
+        else:
+            rest = order[order.index(stage):]
+            at = {"stage": stage, "page": int(cur.get("page") or 1),
+                  "pfloor": cur.get("pfloor") or "", "prepo": cur.get("prepo") or ""}
+            # A search resumed by page NUMBER would skip whatever moved to the
+            # end of the ascending list while it waited (an item updated since
+            # shifts every later one up a slot), so a page past the first
+            # becomes a window from the newest `updated_at` already mirrored.
+            # A tie wider than a page has no newer boundary and keeps the page,
+            # and so does a repository partition, whose `updated:` floor is the
+            # tie every later partition still needs.
+            boundary = cur.get("boundary") or ""
+            if stage in SEARCH_STAGES and at["page"] > 1 and not at["prepo"] \
+                    and boundary > at["pfloor"]:
+                at.update(page=1, pfloor=boundary)
+        if not rest:
+            return None
+        return {"stages": rest, "at": at, "login": cur.get("login") or "",
+                "runStart": cur.get("runStart") or "",
+                "floors": dict(cur.get("floors") or {}),
+                "partial": list(cur.get("partial") or []),
+                "stalled": list(cur.get("stalled") or []),
+                "repoIds": dict(cur.get("repoIds") or {})}
+
+
+    def _resume_phrase(walk):
+        """What the next run picks up: the walk at a search, or the backlog."""
+        if not walk:
+            return "the backlog resumes"
+        if not any(st in SEARCH_STAGES for st in walk.get("stages") or []):
+            return "the backlog resumes, then a fresh walk"
+        return "the walk resumes at %s" % (
+            (walk.get("at") or {}).get("stage") or walk["stages"][0])
+
+
+    def _stop(host, acct, aid, cur):
+        """End the drain on its budget: stamp the account and save the walk.
+
+        The page this returns is the chain's LAST, and the engine commits a
+        last page whatever the clock says. An account whose run has not begun
+        (the next one in the queue) is left untouched and stays due.
+        """
+        if not cur.get("stages"):
+            return {"output": {"account": aid, "stopped": True}}
+        walk = _walk_checkpoint(cur)
+        host.log("github: %s: drain budget spent at %s; %s next run" % (
+            aid, cur.get("stage") or "?", _resume_phrase(walk)))
+        _stamp(host, acct, aid, cur, error=None, walk=walk)
+        return {"output": {"account": aid, "stopped": True}}
 
 
     def _enqueue(cur, key, item, stalled_name=""):
@@ -4878,7 +5067,7 @@ data:
     def _sync_account(host, api, acct, aid, props, token, cur, queue):
         stage = cur.get("stage") or "user"
         page = int(cur.get("page") or 1)
-        budget = _Budget()
+        budget = _Budget(_chain_left(cur))
 
         def fetch(path, allow_404=False):
             # An org this run has already been refused by is not asked again per
@@ -4943,17 +5132,47 @@ data:
                 remaining = _restricted_held(props)
                 for org in lifted:
                     remaining.pop(org, None)
+                # A saved walk goes too: its position sits past the window
+                # the refusal hid.
                 host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid,
                                    properties={
                                        "syncCursors": None,
+                                       "syncWalk": None,
                                        "syncSkipped": ({"restricted": remaining}
                                                        if remaining else None)})
                 host.log("github: %s: the %s organization(s) approved the app; "
                          "re-walking from the backfill floor"
                          % (aid, ", ".join(lifted)))
+            # THE SAVED WALK (version 29). A run that stopped on the drain
+            # budget left the stages it still owed and the position it stopped
+            # at; this run takes the walk up there, under the run start and
+            # floors the walk began with, so its watermarks cover everything
+            # that changed while it waited. A stage the owner has switched off
+            # since is dropped; one switched on joins the next walk.
+            saved = None if lifted else _walk_of(props)
+            if saved and (saved.get("login") or login) != login:
+                saved = None
+            walk_at, carried = None, {}
+            if saved:
+                rest = [st for st in saved["stages"] if st in walk]
+                if any(st in SEARCH_STAGES for st in rest):
+                    walk = ["user"] + rest
+                    run_start = saved.get("runStart") or run_start
+                    at = dict(saved.get("at") or {})
+                    walk_at = at if at.get("stage") in rest else None
+                    carried = {k: saved[k] for k in ("partial", "stalled")
+                               if isinstance(saved.get(k), list)}
+                    if isinstance(saved.get("repoIds"), dict):
+                        carried["repoIds"] = dict(saved["repoIds"])
+                    host.log("github: %s resuming the walk at %s"
+                             % (aid, (walk_at or {}).get("stage") or rest[0]))
+                else:
+                    saved = None
+            saved_floors = (saved or {}).get("floors") or {}
             # The floors are the WALK's, computed here whether or not this run
             # starts with a backlog: the walk follows the backlog in the same run.
-            floors = {s: stored.get(s) or _backfill_since(props, run_start)
+            floors = {s: saved_floors.get(s) or stored.get(s)
+                      or _backfill_since(props, run_start)
                       for s in walk if s in SEARCH_STAGES}
             cursors = {s: v for s, v in stored.items() if s in SEARCH_STAGES}
             # Pick the backlog up where the last drain put it down. The first
@@ -4966,8 +5185,8 @@ data:
             stages = _backlog_stages(props) if held else walk
             cur.update(login=login, runStart=run_start, stages=stages,
                        walk=[st for st in walk if st != "user"] if held else [],
-                       floors=floors, cursors=cursors,
-                       ack=props.get("syncRequestedAt") or "")
+                       floors=floors, cursors=cursors, walkAt=walk_at,
+                       ack=props.get("syncRequestedAt") or "", **carried)
             if held:
                 cur["deferred"] = {}
                 for key, rows in held.items():
@@ -5308,10 +5527,11 @@ data:
             cur["cursors"] = cursors
         if len(items) == PAGE_SIZE:
             if page < MAX_SEARCH_PAGES:
-                return _more(host, cur, page=page + 1)
+                return _more(host, cur, page=page + 1,
+                             boundary=max(boundary or "", cur.get("boundary") or ""))
             # The 1,000-result ceiling. Partition by updated-range first.
             if boundary and boundary > pfloor:
-                return _more(host, cur, page=1, pfloor=boundary)
+                return _more(host, cur, page=1, pfloor=boundary, boundary="")
             # The boundary did NOT move: more than 1,000 hits share one second,
             # and no `updated:` window can enumerate them. Partition by a second,
             # disjoint dimension — the repository — over the repositories this
@@ -5324,7 +5544,7 @@ data:
                 note = "%s: tie at %s, partitioning by repository" % (stage, pfloor)
                 if note not in (cur.get("stalled") or []):
                     cur["stalled"] = list(cur.get("stalled") or []) + [note]
-                return _more(host, cur, page=1, prepo=todo[0])
+                return _more(host, cur, page=1, prepo=todo[0], boundary="")
             note = "%s: %d+ results share %s and cannot be enumerated" % (
                 stage, MAX_SEARCH_PAGES * PAGE_SIZE, pfloor or "the window")
             if note not in (cur.get("stalled") or []):
@@ -5342,7 +5562,7 @@ data:
             repos = sorted((cur.get("repoIds") or {}))
             todo = [r for r in repos if r > part]
             if todo:
-                return _more(host, cur, page=1, prepo=todo[0])
+                return _more(host, cur, page=1, prepo=todo[0], boundary="")
             cur["prepo"] = ""
         # Drained: the stage's new watermark is the RUN-START time — never the
         # local completion clock, and never past work this run dropped (`_stamp`
@@ -5392,6 +5612,10 @@ data:
             else:
                 queue = [aid for aid, a in accounts.items()
                          if _wants(a) and _due(a.get("properties") or {})]
+                # An account resuming a stopped walk can spend the whole drain,
+                # so it goes after the accounts that owe only their cadence.
+                queue.sort(key=lambda aid: _resumable(
+                    accounts[aid].get("properties") or {}))
             cur = _fresh(queue, sched)
 
         queue = list(cur.get("queue") or [])
@@ -5399,7 +5623,7 @@ data:
             acct = accounts.get(queue[0])
             if acct is None or not _wants(acct):
                 queue = queue[1:]
-                cur = _fresh(queue, cur.get("sched"))
+                cur = _fresh(queue, cur.get("sched"), cur.get("chainStart"))
                 continue
             props = acct.get("properties") or {}
             terr = acct.get("tokenError")
@@ -5419,7 +5643,7 @@ data:
                                         "syncError": str(terr)[:400],
                                         "syncErrorAt": _now()})
                 queue = queue[1:]
-                cur = _fresh(queue, cur.get("sched"))
+                cur = _fresh(queue, cur.get("sched"), cur.get("chainStart"))
                 continue
             break
         if not queue:
@@ -5438,16 +5662,32 @@ data:
         acct = accounts[aid]
         props = acct.get("properties") or {}
         cur["queue"] = queue
+        # THE DRAIN BUDGET, checked on both sides of the page (version 29). A
+        # chain already past it does no work; a page that ran past it ends the
+        # chain instead of handing the engine a middle page it would park.
+        if _chain_left(cur) <= 0:
+            return _stop(host, acct, aid, cur)
         try:
-            return _sync_account(host, api, acct, aid, props, acct["token"], cur, queue)
+            res = _sync_account(host, api, acct, aid, props, acct["token"], cur, queue)
         except Exception as e:  # noqa: BLE001 — per-account isolation
             msg = _err_msg(e)
             host.log("github: account %s failed: %s" % (aid, msg))
             _stamp(host, acct, aid, cur, error=msg)
             rest = queue[1:]
             if rest:
-                return {"more": host.page.more(_fresh(rest, cur.get("sched")))}
-            return {"output": {"account": aid, "error": msg}}
+                res = {"more": host.page.more(
+                    _fresh(rest, cur.get("sched"), cur.get("chainStart")))}
+            else:
+                res = {"output": {"account": aid, "error": msg}}
+        nxt = (res.get("more") or {}).get("cursor") if isinstance(res, dict) else None
+        if isinstance(nxt, dict) and _chain_left(nxt) <= 0:
+            # `host.page.more` hands back `{"cursor": <copy>}`, and the copy is
+            # where the walk stands after this page.
+            nq = list(nxt.get("queue") or [])
+            if nq and nq[0] == aid:
+                return _stop(host, acct, aid, nxt)
+            return {"output": {"account": aid, "stopped": True}}
+        return res
 ---
 # ---- mirror: one license ----------------------------------------------------
 # GitHub's license has its own `/licenses/{key}` endpoint and rides on every
