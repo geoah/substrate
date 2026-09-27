@@ -1,0 +1,166 @@
+/** A record named inside prose: an inline atom that reads as the record's
+ * mark (glyph and live title) and is stored as a plain Markdown link whose
+ * target is `ref:<kind>/<id>`, the same record path a reference property
+ * stores. Any Markdown reader shows the link text; the console parses the
+ * scheme back into the mark. The link is prose, not a reference property: the
+ * substrate does not index it and the referent's history does not see it. */
+
+import { Node, mergeAttributes, type Editor } from "@tiptap/core"
+import { ReactNodeViewRenderer } from "@tiptap/react"
+
+import { RecordLinkView } from "./record-link-view"
+import { recordPath, splitRecordPath } from "@/lib/record-path"
+
+export const REF_SCHEME = "ref:"
+
+export interface RecordLinkAttrs {
+  kind: string
+  id: string
+  /** The title when the link was written: the link text other readers see. */
+  title: string
+}
+
+/** `[text](ref:<kind>/<id>)`, the text with `\`, `[` and `]` escaped. */
+const LINK = /^\[((?:\\.|[^\\\]])*)\]\(ref:([^)\s]+)\)/
+const LINK_START = /\[(?:\\.|[^\\\]])*\]\(ref:/
+
+/** The Markdown a record link is stored as. */
+export function recordLinkMarkdown({ kind, id, title }: RecordLinkAttrs) {
+  const text = (title || id).replace(/[\\[\]]/g, (c) => `\\${c}`)
+  return `[${text}](${REF_SCHEME}${recordPath(kind, id)})`
+}
+
+/** The record a `ref:` link target names, or `undefined` for any other URL. */
+export function parseRecordHref(
+  href: string
+): { kind: string; id: string } | undefined {
+  if (!href.startsWith(REF_SCHEME)) return undefined
+  return splitRecordPath(href.slice(REF_SCHEME.length))
+}
+
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    recordLink: {
+      /** Insert a record link, and a space after it, at the selection. */
+      insertRecordLink: (attrs: RecordLinkAttrs) => ReturnType
+    }
+  }
+  interface Storage {
+    recordLink: {
+      /** The kind the next record picker is narrowed to. */
+      kind?: string
+    }
+  }
+}
+
+export const RecordLink = Node.create({
+  name: "recordLink",
+  group: "inline",
+  inline: true,
+  atom: true,
+  selectable: true,
+
+  addAttributes() {
+    return {
+      kind: { default: "" },
+      id: { default: "" },
+      title: { default: "" },
+    }
+  },
+
+  parseHTML() {
+    return [
+      {
+        tag: "a[data-record-link]",
+        getAttrs: (el) => {
+          const hit = parseRecordHref(el.getAttribute("href") ?? "")
+          return hit ? { ...hit, title: el.textContent ?? "" } : false
+        },
+      },
+    ]
+  },
+
+  renderHTML({ node, HTMLAttributes }) {
+    const { kind, id, title } = node.attrs as RecordLinkAttrs
+    return [
+      "a",
+      mergeAttributes(HTMLAttributes, {
+        "data-record-link": "",
+        href: `${REF_SCHEME}${recordPath(kind, id)}`,
+      }),
+      title || id,
+    ]
+  },
+
+  renderText({ node }) {
+    const { id, title } = node.attrs as RecordLinkAttrs
+    return title || id
+  },
+
+  markdownTokenizer: {
+    name: "recordLink",
+    level: "inline",
+    start: (src) => src.search(LINK_START),
+    tokenize(src) {
+      const match = LINK.exec(src)
+      const hit = match && splitRecordPath(match[2])
+      if (!match || !hit) return undefined
+      return {
+        type: "recordLink",
+        raw: match[0],
+        text: match[1].replace(/\\(.)/g, "$1"),
+        kind: hit.kind,
+        id: hit.id,
+      }
+    },
+  },
+
+  parseMarkdown: (token) => ({
+    type: "recordLink",
+    attrs: {
+      kind: token.kind as string,
+      id: token.id as string,
+      title: token.text ?? "",
+    },
+  }),
+
+  renderMarkdown: (node) =>
+    recordLinkMarkdown((node.attrs ?? {}) as RecordLinkAttrs),
+
+  addStorage() {
+    return { kind: undefined as string | undefined }
+  },
+
+  addCommands() {
+    return {
+      insertRecordLink:
+        (attrs) =>
+        ({ commands }) =>
+          commands.insertContent([
+            { type: this.name, attrs },
+            { type: "text", text: " " },
+          ]),
+    }
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(RecordLinkView, { as: "span" })
+  },
+})
+
+/** Open the record picker at the cursor, narrowed to one kind or not. The
+ * picker is the `@` suggestion, so opening it is typing its trigger. */
+export function openRecordPicker(editor: Editor, kind?: string) {
+  editor.storage.recordLink.kind = kind
+  const { $from } = editor.state.selection
+  const before = $from.parent.textBetween(
+    Math.max(0, $from.parentOffset - 1),
+    $from.parentOffset
+  )
+  // The trigger needs a space or the line's start before it.
+  editor
+    .chain()
+    .focus()
+    .insertContent(before && !/\s/.test(before) ? " @" : "@")
+    .run()
+}

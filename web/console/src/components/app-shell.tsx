@@ -427,6 +427,9 @@ function ShellBody() {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      // A surface that claims ⌘K for itself (the Markdown editor's record
+      // picker) has already handled it.
+      if (event.defaultPrevented) return
       if (event.key === "k" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault()
         setCommandOpen((open) => !open)
