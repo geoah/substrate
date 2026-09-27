@@ -23,6 +23,7 @@ import { readReference } from "@/lib/api/types"
 import { columnProperties, kindByIdentity } from "@/lib/definition"
 import { cellValue, recordTitle, referenceCell } from "@/lib/format"
 import { displayName, displayPlural, untitled } from "@/lib/kind-names"
+import { isRecordId, kindPatternGrant, kindPointer } from "@/lib/kind-pointer"
 import { splitRecordPath } from "@/lib/record-path"
 import { humanizeName, propSpecs } from "@/lib/record-schema"
 import { recordTitleQueryOptions } from "@/lib/reference-titles"
@@ -150,21 +151,28 @@ function ReferenceTitles({ value }: { value: unknown }) {
   const paths = (Array.isArray(value) ? value : [value]).flatMap((one) => {
     const held = readReference(one)
     const parts = held ? splitRecordPath(held.path) : undefined
-    return parts ? [parts] : []
+    return parts && held ? [{ ...parts, pointer: kindPointer(held.path) }] : []
   })
   const first = paths.slice(0, 2)
-  // A kind the repository never declared refuses the whole batched read.
+  // A kind the repository never declared refuses the whole batched read, and
+  // a kind or a grant's glob names itself, so neither is read as a record.
   const kinds = useQuery(kindsQueryOptions)
   const titles = useQueries({
     queries: first.map((p) => ({
       ...recordTitleQueryOptions(p.kind, p.id),
-      enabled: Boolean(kindByIdentity(kinds.data ?? [], p.kind)),
+      enabled:
+        !p.pointer &&
+        isRecordId(p.id) &&
+        Boolean(kindByIdentity(kinds.data ?? [], p.kind)),
     })),
   })
-  const words = first.map(
-    (p, i) =>
-      titles[i]?.data || (titles[i]?.isFetching ? "…" : untitled(p.kind))
-  )
+  const words = first.map((p, i) => {
+    if (p.pointer?.shape === "pattern") {
+      return kindPatternGrant(p.pointer.pattern)
+    }
+    if (p.pointer?.shape === "kind") return p.pointer.kind
+    return titles[i]?.data || (titles[i]?.isFetching ? "…" : untitled(p.kind))
+  })
   const more = paths.length - first.length
   return (
     <>
