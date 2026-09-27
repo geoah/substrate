@@ -1516,13 +1516,26 @@ function settingsPage(){
 /* ================= render + events ================= */
 const app=document.getElementById("app"), hc=document.getElementById("hc");
 function curPageKey(){ if(S.page==="record"){ const e=Object.entries(REC_PAGE).find(([,id])=>id===S.rec); return e?e[0]:""; } if(S.page==="collection") return S.kind==="gcontact"?"big":S.kind==="task"?"collection":""; if(S.page==="tools") return S.toolView==="page"?"tool-page":"tools"; return S.page; }
+// The page's markup by name. A switch, so a restored or hashed S.page is only
+// ever compared: a name that is not a page (an inherited "constructor") never
+// selects a function, and falls back to Home.
+function pageHtml(page){
+  switch(page){
+    case "data": return dataPage();
+    case "collection": return collection();
+    case "record": return record();
+    case "new": return newRecord();
+    case "agents": return agentsPage();
+    case "tools": return S.toolView==="page"?toolPage():toolsList();
+    case "providers": return providersPage();
+    case "history": return historyPage();
+    case "settings": return settingsPage();
+    default: return home();
+  }
+}
 function render(){
   app.className=`app a${S.density==="compact"?" compact":""}`;
-  // A Map, not an object: a restored or hashed S.page naming anything but a
-  // page (an inherited "constructor") finds nothing and falls back to Home.
-  const pages = new Map([["home",home],["data",dataPage],["collection",collection],["record",record],["new",newRecord],["agents",agentsPage],["tools",()=>S.toolView==="page"?toolPage():toolsList()],["providers",providersPage],["history",historyPage],["settings",settingsPage]]);
-  const pg = pages.get(S.page) || home;
-  app.innerHTML=sidebar()+`<main class="main">${pg()}</main>`;
+  app.innerHTML=sidebar()+`<main class="main">${pageHtml(S.page)}</main>`;
   document.getElementById("dirNote").innerHTML=`<b>Paper.</b> Record, tool and provider pages start at the left edge; tables use the full width (both are settings, saved in your substrate). The sidebar lists only main collections; <b>Technical details</b> (${S.tech?"on":"off"}) shows the supporting and internal ones, references, ids and change numbers.`;
   seg("techSeg",[["off","Everyday"],["on","Technical"]],S.tech?"on":"off",v=>{S.tech=v==="on";});
   seg("pageSeg",PAGES,curPageKey(),v=>{S.editing=null;S.srcView=false;S.dialog=null;
