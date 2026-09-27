@@ -11,13 +11,7 @@
  * hover away. */
 
 import { Link } from "@tanstack/react-router"
-import {
-  CalendarIcon,
-  ClockIcon,
-  HashIcon,
-  Maximize2Icon,
-  TypeIcon,
-} from "lucide-react"
+import { CalendarIcon, ClockIcon, HashIcon, TypeIcon } from "lucide-react"
 
 import type { DataTableColumn } from "@/components/data-table/data-table"
 import { GridColumnHeader } from "@/components/data-table/data-grid-header"
@@ -349,10 +343,8 @@ interface CellContext {
 }
 
 /** The title cell: the tree's indent and chevron where the grid nests, the
- * kind's glyph, the title (the link to the record), the children's badge, the
- * parent a filtered match belongs to, and the Open button a hovered row shows.
- * The button takes its room from the title rather than covering it, so a long
- * title truncates before it. */
+ * kind's glyph, the title (the one link to the record, and the row's keyboard
+ * target), the children's chip and the parent a filtered match belongs to. */
 function TitleCell({
   kind,
   record,
@@ -404,20 +396,7 @@ function TitleCell({
       >
         {title || untitled(kind)}
       </Link>
-      {counts && (
-        <span
-          className="shrink-0 rounded-full border border-border-strong px-1.5 text-[11.5px] leading-[18px] font-normal whitespace-nowrap text-faint"
-          title={
-            counts.done !== undefined
-              ? `${counts.done} of ${counts.total} done`
-              : `${counts.total} under this`
-          }
-        >
-          {counts.done !== undefined
-            ? `${counts.done}/${counts.total}`
-            : counts.total}
-        </span>
-      )}
+      {counts && <SubtaskCount counts={counts} noun={noun} />}
       {context && tree?.context && (
         <span
           data-slot="tree-context"
@@ -432,17 +411,63 @@ function TitleCell({
           />
         </span>
       )}
-      <Link
-        to="/data/$authority/$pkg/$name/$id"
-        params={params}
-        aria-label={`Open ${title || untitled(kind)}`}
-        tabIndex={-1}
-        className="ml-auto hidden h-[22px] shrink-0 items-center gap-1 rounded-[5px] border border-border-strong bg-background px-[7px] text-[11.5px] font-medium text-muted-foreground no-underline shadow-[0_1px_2px_rgba(0,0,0,.06)] group-hover/row:inline-flex hover:text-foreground"
-      >
-        <Maximize2Icon aria-hidden className="size-3" />
-        Open
-      </Link>
     </span>
+  )
+}
+
+/** A parent row's chip: "1 / 3" with a ring filling as its children finish,
+ * and the words "1 of 3 subtasks done" for a screen reader and the pointer.
+ * Without a done state it counts ("3 subtasks"). */
+function SubtaskCount({
+  counts,
+  noun,
+}: {
+  counts: { total: number; done?: number }
+  noun: string
+}) {
+  const { total, done } = counts
+  const words =
+    done !== undefined ? `${done} of ${total} ${noun} done` : `${total} ${noun}`
+  return (
+    <span
+      data-slot="subtask-count"
+      title={words}
+      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border-strong px-1.5 text-[11.5px] leading-[18px] font-normal whitespace-nowrap text-faint tabular-nums"
+    >
+      {done !== undefined && <ProgressRing part={done / total} />}
+      <span aria-hidden>
+        {done !== undefined ? `${done} / ${total}` : total}
+      </span>
+      <span className="sr-only">{words}</span>
+    </span>
+  )
+}
+
+/** A 10px ring, filled clockwise to `part` of the way round. */
+function ProgressRing({ part }: { part: number }) {
+  const r = 4
+  const round = 2 * Math.PI * r
+  return (
+    <svg aria-hidden viewBox="0 0 10 10" className="size-2.5 -rotate-90">
+      <circle
+        cx="5"
+        cy="5"
+        r={r}
+        fill="none"
+        strokeWidth="1.6"
+        className="stroke-border-strong"
+      />
+      <circle
+        cx="5"
+        cy="5"
+        r={r}
+        fill="none"
+        strokeWidth="1.6"
+        strokeDasharray={round}
+        strokeDashoffset={round * (1 - Math.min(1, Math.max(0, part)))}
+        className="stroke-ok"
+      />
+    </svg>
   )
 }
 
