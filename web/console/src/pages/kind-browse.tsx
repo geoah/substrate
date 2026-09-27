@@ -20,7 +20,15 @@
  * A filter or a search keeps the tree but nests the MATCHES: the page is every
  * match, a match sits under its parent when that parent matches too and is on
  * the page, and any other stands at the top level saying which record it is
- * in (lib/record-tree.ts, `matchedRoots`). */
+ * in (lib/record-tree.ts, `matchedRoots`).
+ *
+ * GROUPED (`?group=`), the wire orders by the grouped property first and the
+ * grid heads each run of rows (lib/grouping.ts); under a tree a subtree stays
+ * in its top-level row's group.
+ *
+ * SAVED VIEWS sit on a strip above the toolbar: All, each view saved for this
+ * collection, and Save view (lib/saved-views.ts). They live on the console
+ * preference record, beside the favorites the header's star edits. */
 
 import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -32,6 +40,7 @@ import {
   ListTreeIcon,
   PlusIcon,
   SearchXIcon,
+  StarIcon,
 } from "lucide-react"
 import {
   parseAsArrayOf,
@@ -42,13 +51,15 @@ import {
   useQueryState,
 } from "nuqs"
 
-import { DataGrid } from "@/components/data-table/data-grid"
+import { DataGrid, type GridGroups } from "@/components/data-table/data-grid"
 import { DataGridSort } from "@/components/data-table/data-grid-sort"
 import { useDataTable } from "@/components/data-table/data-table"
 import { DataTableFilters } from "@/components/data-table/data-table-filters"
 import { DataTablePagination } from "@/components/data-table/data-table-pagination"
 import { RowTreeProvider } from "@/components/data-table/data-table-tree"
 import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
+import { GroupByMenu, GroupHead } from "@/components/data-table/group-by"
+import { ViewTabs } from "@/components/data-table/view-tabs"
 import { CopyButton } from "@/components/identity/copy-button"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { IdentityHoverCard } from "@/components/identity/identity-hover-card"
@@ -69,10 +80,12 @@ import {
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
+  useConsolePreferences,
   useDensity,
   useLayoutWidths,
   useTechnicalDetails,
 } from "@/hooks/use-console-preferences"
+import { useGroupCounts } from "@/hooks/use-group-counts"
 import {
   useChangeMarks,
   useLiveInvalidation,
@@ -85,7 +98,7 @@ import {
   recordsQueryOptions,
 } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
-import type { KindInfo } from "@/lib/api/types"
+import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import {
   expandableReferences,
   filterableProperties,
@@ -104,10 +117,27 @@ import {
   propertyLabel,
   titleBacking,
 } from "@/lib/grid-values"
+import {
+  groupKeyOf,
+  groupRunNote,
+  groupWords,
+  groupableProperties,
+  groupedOrderBy,
+  treeGroupKeys,
+} from "@/lib/grouping"
 import { typeaheadQuery } from "@/lib/identities"
 import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import { nestingProperty, rootsFilter } from "@/lib/record-tree"
 import { titlesFromIncluded } from "@/lib/reference-titles"
+import {
+  isAllView,
+  newViewId,
+  viewFromState,
+  viewMatches,
+  viewsOf,
+  type SavedView,
+  type ViewState,
+} from "@/lib/saved-views"
 import { cn } from "@/lib/utils"
 import {
   buildColumns,
@@ -121,6 +151,7 @@ import { kindDescription } from "@/lib/kind-copy"
 
 const PAGE_SIZE = 50
 const DEFAULT_SORT = "updatedAt:desc"
+const NO_KEYS: ReadonlySet<string> = new Set()
 
 /** The views, in bar order; the records lead and are the default. */
 const TABS = ["records", "definition"] as const
@@ -183,6 +214,10 @@ export function KindBrowsePage() {
     "nest",
     parseAsBoolean.withDefault(true)
   )
+  // The grouping: in the URL so a grouped view is shareable, and in the
+  // stored prefs beside the rest of the view's shape.
+  const [group, setGroup] = useQueryState("group", parseAsString)
+  const { preferences, busy: preferencesBusy, change } = useConsolePreferences()
 
   // A BARE url restores the last-used view from localStorage, one dimension
   // at a time; an explicit ?filter=/?sort= always wins (shareable views stay
@@ -205,6 +240,10 @@ export function KindBrowsePage() {
       void setNest(false, { history: "replace" })
       restored = true
     }
+    if (!params.has("group") && stored.group) {
+      void setGroup(stored.group, { history: "replace" })
+      restored = true
+    }
     // A restored view is another view, numbered from its own first page.
     if (restored && params.has("page")) {
       void setPageParam(null, { history: "replace" })
@@ -213,12 +252,18 @@ export function KindBrowsePage() {
   }, [authority, pkg, name])
 
   /** Write-through: the store always mirrors the view the handlers just set. */
-  function persist(next: { filter?: string[]; sort?: string; nest?: boolean }) {
+  function persist(next: {
+    filter?: string[]
+    sort?: string
+    nest?: boolean
+    group?: string | null
+  }) {
     saveBrowsePrefs(`${authority}/${pkg}`, name, {
       filter: next.filter ?? filterTokens,
       sort:
         (next.sort ?? sort) === DEFAULT_SORT ? undefined : (next.sort ?? sort),
       nest: (next.nest ?? nest) ? undefined : false,
+      group: (next.group === undefined ? group : next.group) ?? undefined,
     })
   }
 
@@ -262,6 +307,18 @@ export function KindBrowsePage() {
   )
   const hasFilters = filters.length > 0 || search.trim().length > 0
   const nesting = nestProperty !== undefined && nest
+  // What the collection may be grouped by; nested, not by the reference the
+  // tree already draws.
+  const groupOptions = useMemo(
+    () =>
+      kindInfo
+        ? groupableProperties(kindInfo).filter(
+            (p) => !(nesting && p.name === nestProperty?.name)
+          )
+        : [],
+    [kindInfo, nesting, nestProperty]
+  )
+  const groupProperty = groupOptions.find((p) => p.name === group)
   // Unfiltered, the page is the top level and the footer pages it; filtered,
   // the page is the matches (the tree hook sorts out which stand on top).
   const nestingRoots = nesting && !hasFilters
@@ -299,7 +356,8 @@ export function KindBrowsePage() {
     first: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
     filter: listFilter,
-    orderBy: sort,
+    // Grouped, the group comes first, so a page is whole runs of groups.
+    orderBy: groupedOrderBy(sort, groupProperty?.name),
     expand,
   })
   const records = useQuery({ ...listOptions, enabled: Boolean(kindInfo) })
@@ -319,6 +377,27 @@ export function KindBrowsePage() {
     () => titlesFromIncluded({ ...records.data?.included, ...tree.included }),
     [records.data, tree.included]
   )
+
+  // Each row's group: its own value, or under a tree its top-level row's.
+  const groupKeys = useMemo(() => {
+    if (!groupProperty) return undefined
+    const keyOf = (r: SubstrateRecord) =>
+      groupKeyOf(r.properties, groupProperty)
+    return tree.active
+      ? treeGroupKeys(rows, (id) => tree.nodes.get(id)?.depth, keyOf)
+      : new Map(rows.map((r) => [r.id, keyOf(r)]))
+  }, [groupProperty, rows, tree.active, tree.nodes])
+  const groupCounts = useGroupCounts(
+    { authority, pkg, name },
+    recordFilter,
+    groupProperty,
+    groupKeys ? [...groupKeys.values()] : []
+  )
+  // Folded groups, forgotten when the grouping changes.
+  const [folded, setFolded] = useState<{ group?: string; keys: Set<string> }>({
+    keys: new Set(),
+  })
+  const collapsed = folded.group === groupProperty?.name ? folded.keys : NO_KEYS
   const pageCursor = records.data?.cursor
   // A single page with nothing behind it IS the exact count, for free. Any
   // larger collection pays the bounded count walk, which the footer's numbers
@@ -422,6 +501,84 @@ export function KindBrowsePage() {
     autoHidden: emptyIds,
   })
 
+  const views = kindInfo
+    ? viewsOf(preferences.views ?? [], kindInfo.identity)
+    : []
+  const viewState: ViewState = {
+    filter: filterTokens,
+    sort,
+    nest: nestProperty ? nest : true,
+    group: groupProperty?.name,
+    columns: table.state.columnOrder,
+    hidden: table.options.meta?.readerHidden ?? [],
+  }
+  const matchedView = views.find((v) => viewMatches(v, viewState, DEFAULT_SORT))
+  const activeView = matchedView
+    ? matchedView.id
+    : isAllView(viewState, DEFAULT_SORT)
+      ? "all"
+      : null
+
+  // The view picked last on this collection, so a view the reader has since
+  // changed can take those changes or drop them.
+  const [picked, setPicked] = useState<{ collection: string; id: string }>()
+  const editedView =
+    activeView === null &&
+    picked &&
+    picked.collection === kindInfo?.identity &&
+    views.some((v) => v.id === picked.id)
+      ? picked.id
+      : null
+
+  function saveView(viewName: string) {
+    if (!kindInfo) return
+    const view = viewFromState(
+      {
+        id: newViewId(preferences.views ?? []),
+        collection: kindInfo.identity,
+        name: viewName,
+      },
+      viewState,
+      DEFAULT_SORT
+    )
+    change({ type: "view", view })
+    setPicked({ collection: kindInfo.identity, id: view.id })
+  }
+
+  function changeGroup(next: string | null) {
+    void setGroup(next)
+    resetPages()
+    persist({ group: next })
+  }
+
+  /** Show a saved view, or with none the collection as it opens. The columns
+   * change only where the view names them; a search is the question of the
+   * moment and is cleared. */
+  function pickView(view: SavedView | null) {
+    setPicked(
+      view && kindInfo
+        ? { collection: kindInfo.identity, id: view.id }
+        : undefined
+    )
+    const filter = view?.filter ?? []
+    const nextSort = view?.sort ?? DEFAULT_SORT
+    const nextNest = view?.nest ?? true
+    const nextGroup = view?.group ?? null
+    void setFilterTokens(filter.length ? filter : null)
+    void setSort(nextSort === DEFAULT_SORT ? null : nextSort)
+    void setNest(nextNest ? null : false)
+    void setGroup(nextGroup)
+    void setSearch(null)
+    void setPageParam(null)
+    if (view?.columns || view?.hidden) {
+      table.options.meta?.applyColumns?.({
+        order: view.columns,
+        hidden: view.hidden,
+      })
+    }
+    persist({ filter, sort: nextSort, nest: nextNest, group: nextGroup })
+  }
+
   // Only the REGISTRY gates the whole page — it names the collection and it
   // is what the Definition view reads. Records pending or failing is the
   // grid's business alone.
@@ -459,6 +616,7 @@ export function KindBrowsePage() {
 
   const plural = displayPlural(kindInfo)
   const singular = displayName(kindInfo)
+  const starred = preferences.favorites.includes(kindInfo.identity)
   const provider = providerOfKind(kindInfo.identity)
   const showTabs = tab === "definition"
   const loadingPage = records.isPending || tree.loading
@@ -527,21 +685,51 @@ export function KindBrowsePage() {
         }
         description={kindDescription(kindInfo, technical)}
         actions={
-          provider ? undefined : (
+          <>
             <Button
-              size="sm"
-              className="gap-1.5"
-              render={
-                <Link
-                  to="/data/$authority/$pkg/$name/new"
-                  params={{ authority, pkg, name }}
-                />
+              variant="ghost"
+              size="icon"
+              disabled={preferencesBusy}
+              aria-pressed={starred}
+              aria-label={
+                starred
+                  ? `Remove ${plural} from favorites`
+                  : `Add ${plural} to favorites`
+              }
+              title={starred ? "Remove from favorites" : "Add to favorites"}
+              className={cn(
+                "text-muted-foreground",
+                starred && "text-primary hover:text-primary"
+              )}
+              onClick={() =>
+                change({
+                  type: "favorite",
+                  key: kindInfo.identity,
+                  starred: !starred,
+                })
               }
             >
-              <PlusIcon className="size-3.5" />
-              New {singular.charAt(0).toLowerCase() + singular.slice(1)}
+              <StarIcon
+                aria-hidden
+                className={cn("size-4", starred && "fill-current")}
+              />
             </Button>
-          )
+            {!provider && (
+              <Button
+                size="sm"
+                className="gap-1.5"
+                render={
+                  <Link
+                    to="/data/$authority/$pkg/$name/new"
+                    params={{ authority, pkg, name }}
+                  />
+                }
+              >
+                <PlusIcon className="size-3.5" />
+                New {singular.charAt(0).toLowerCase() + singular.slice(1)}
+              </Button>
+            )}
+          </>
         }
       />
     </div>
@@ -643,14 +831,79 @@ export function KindBrowsePage() {
       <span className="text-muted-foreground tabular-nums">{summaryText}</span>
     ) : undefined
 
+  const labelOfProperty = (prop: string) =>
+    technical ? prop : propertyLabel(prop)
+  const gridGroups: GridGroups<SubstrateRecord> | undefined =
+    groupProperty && groupKeys
+      ? {
+          keyOf: (row) => groupKeys.get(row.id) ?? "",
+          head: (key, at) => (
+            <GroupHead
+              prop={groupProperty}
+              groupKey={key}
+              label={propertyLabel(groupProperty.name)}
+              count={groupCounts.get(key)}
+              // Under a tree a run also holds open subtrees, so its rows are
+              // not the group's; only a flat page can say it runs on.
+              note={
+                tree.active
+                  ? undefined
+                  : groupRunNote(
+                      at,
+                      groupCounts.get(key),
+                      page,
+                      Boolean(pageCursor)
+                    )
+              }
+              kinds={registry.data ?? []}
+              titles={referenceTitles}
+            />
+          ),
+          label: (key) =>
+            groupWords(
+              groupProperty,
+              key,
+              propertyLabel(groupProperty.name),
+              referenceTitles
+            ),
+          collapsed,
+          onToggle: (key) =>
+            setFolded((prev) => {
+              const keys = new Set(
+                prev.group === groupProperty.name ? prev.keys : []
+              )
+              if (keys.has(key)) keys.delete(key)
+              else keys.add(key)
+              return { group: groupProperty.name, keys }
+            }),
+        }
+      : undefined
+
   return (
     <TablePage className="flex min-h-0 flex-1 flex-col px-0 py-0 md:px-0">
       {header}
-      {tabBar}
+      <ViewTabs
+        className={cn("mt-3", GUTTER_MX)}
+        views={views}
+        active={activeView}
+        edited={editedView}
+        busy={preferencesBusy}
+        onPick={pickView}
+        onSave={saveView}
+        onRename={(view, viewName) =>
+          change({ type: "view", view: { ...view, name: viewName } })
+        }
+        onReplace={(view) =>
+          change({
+            type: "view",
+            view: viewFromState(view, viewState, DEFAULT_SORT),
+          })
+        }
+        onDelete={(view) => change({ type: "forget-view", id: view.id })}
+      />
       <div
         className={cn(
           "flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border py-2.5",
-          showTabs ? "mt-0" : "mt-3.5",
           GUTTER_MX
         )}
       >
@@ -683,6 +936,13 @@ export function KindBrowsePage() {
             )}
           </button>
         )}
+        <GroupByMenu
+          options={groupOptions}
+          value={groupProperty?.name}
+          labelOf={labelOfProperty}
+          technical={technical}
+          onChange={changeGroup}
+        />
         <DataTableFilters
           className="gap-1.5 px-0 py-0"
           fields={filterFields}
@@ -749,6 +1009,7 @@ export function KindBrowsePage() {
               empty={emptyState}
               scrollKey={page}
               marks={marks}
+              groups={gridGroups}
               label={displayPlural(kindInfo)}
               className={cn(
                 "flex-1 border-b border-border",
