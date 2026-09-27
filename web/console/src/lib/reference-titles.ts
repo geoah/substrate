@@ -13,9 +13,8 @@
  *   - a batched list read over the paths one record holds, because a
  *     single-record `GET` does not expand.
  *
- * Both land here, as one map, so `RecordPill` has one thing to be handed and
- * a surface that knows no titles simply hands nothing and falls back to the
- * id, which is what every surface did before. */
+ * Both land here, as one map, so `RecordRef` has one thing to be handed; a
+ * surface that knows no titles hands nothing and the mark reads its own. */
 
 import { queryOptions } from "@tanstack/react-query"
 
