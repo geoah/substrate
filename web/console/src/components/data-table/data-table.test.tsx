@@ -298,3 +298,51 @@ describe("DataTableColumnHeader descriptions", () => {
     expect(screen.getAllByRole("button", { name: /Due/ })).toHaveLength(1)
   })
 })
+
+describe("the sorted column's header cell", () => {
+  it("carries aria-sort in step with the sorting state", () => {
+    const { result } = renderHook(() =>
+      useDataTable({
+        columns: COLUMNS,
+        data: DATA,
+        sorting: [{ id: "b", desc: false }],
+      })
+    )
+    render(<DataTable table={result.current} />)
+    expect(
+      screen
+        .getAllByRole("columnheader")
+        .map((th) => th.getAttribute("aria-sort"))
+    ).toEqual([null, "ascending", null])
+  })
+})
+
+describe("columns taken whole", () => {
+  it("applies a view's order and hidden set at once and reports the reader's hidden columns", () => {
+    const { result } = renderHook(() =>
+      useDataTable({
+        columns: COLUMNS,
+        data: DATA,
+        prefsKey: "t",
+        defaultHidden: ["c"],
+      })
+    )
+    expect(result.current.options.meta?.readerHidden).toEqual(["c"])
+    act(() =>
+      result.current.options.meta?.applyColumns?.({
+        order: ["c", "a", "b"],
+        hidden: ["b"],
+      })
+    )
+    expect(result.current.getVisibleLeafColumns().map((c) => c.id)).toEqual([
+      "c",
+      "a",
+    ])
+    expect(result.current.options.meta?.readerHidden).toEqual(["b"])
+    act(() => result.current.options.meta?.applyColumns?.({}))
+    expect(result.current.getVisibleLeafColumns().map((c) => c.id)).toEqual([
+      "c",
+      "a",
+    ])
+  })
+})

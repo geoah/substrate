@@ -1,5 +1,5 @@
 /** The console's per-repository preferences: navigation (collapsed groups,
- * favorites) and display (layout widths, density, technical details, theme).
+ * favorites, each collection's saved views) and display (layout widths, density, technical details, theme).
  * They live on ONE record,
  * `substrate.reamde.dev/core/consolepreference/navigation`, so every session
  * of the repository shares them.
@@ -25,6 +25,7 @@ import {
 import { getRepository } from "@/lib/api/session"
 import { putRecord } from "@/lib/api/records"
 import { ApiError, type KindInfo, type SubstrateRecord } from "@/lib/api/types"
+import { viewsFrom, type SavedView } from "@/lib/saved-views"
 
 export type RecordWidth = "narrow" | "wide" | "full"
 export type TableWidth = "wide" | "full"
@@ -35,6 +36,9 @@ export interface NavigationPreferences {
   collapsed: string[]
   favorites: string[]
   sidebarOpen: boolean
+  /** Every collection's saved views (`lib/saved-views.ts`). Optional so a
+   * hand-built preferences value (a test's, the sign-in page's) needs none. */
+  views?: SavedView[]
 }
 
 export interface DisplaySettings {
@@ -54,6 +58,9 @@ export type NavigationAction =
   | { type: "favorite"; key: string; starred: boolean }
   | { type: "move"; key: string; direction: -1 | 1 }
   | { type: "sidebar"; open: boolean }
+  /** Save a view: replace the one with its id, or add it at the end. */
+  | { type: "view"; view: SavedView }
+  | { type: "forget-view"; id: string }
 
 export type SettingAction = {
   [K in SettingKey]: { type: "set"; key: K; value: DisplaySettings[K] }
@@ -67,6 +74,10 @@ const ID = "navigation"
 
 /** Declared by every version of the kind, so always written. */
 const NAVIGATION_KEYS = ["collapsed", "favorites"] as const
+
+/** A property of the record the stored declaration may or may not name: the
+ * display settings, and the saved views (version 3 of the kind). */
+export type StoredKey = SettingKey | "views"
 
 export const DEFAULT_SETTINGS: DisplaySettings = {
   recordWidth: "wide",
@@ -119,13 +130,16 @@ function decode(raw: string | null): unknown {
   }
 }
 
-/** What this browser keeps: every display setting it has seen, and the
- * sidebar, which only it keeps. */
+/** What this browser keeps: every display setting it has seen, the
+ * sidebar, which only it keeps, and the saved views where the stored kind
+ * cannot hold them. */
 export type LocalPreferences = Partial<DisplaySettings> & {
   sidebarOpen?: boolean
+  views?: SavedView[]
 }
 
 const SIDEBAR_KEY = "substrate.console.sidebarOpen"
+const VIEWS_KEY = "substrate.console.views"
 
 export function readLocalSettings(): LocalPreferences {
   const store = storage()
@@ -146,7 +160,22 @@ export function readLocalSettings(): LocalPreferences {
   } catch {
     // An unreadable store opens the sidebar.
   }
-  return out as LocalPreferences
+  const local = out as LocalPreferences
+  try {
+    const views = decode(store.getItem(VIEWS_KEY))
+    if (Array.isArray(views)) local.views = viewsFrom(views)
+  } catch {
+    // An unreadable store has no views.
+  }
+  return local
+}
+
+function writeLocalViews(views: SavedView[]): void {
+  try {
+    storage()?.setItem(VIEWS_KEY, JSON.stringify(views))
+  } catch {
+    // A full or refused storage loses a convenience, never the page.
+  }
 }
 
 export function writeLocalSidebar(open: boolean): void {
@@ -197,6 +226,11 @@ export function preferencesOf(
     collapsed: strings(properties.collapsed),
     favorites: strings(properties.favorites),
     sidebarOpen: local.sidebarOpen !== false,
+    // The record's once it holds any; until then this browser's, which the
+    // first save onto a record that declares them carries across.
+    views: Array.isArray(properties.views)
+      ? viewsFrom(properties.views)
+      : (local.views ?? []),
     ...settings,
   }
 }
@@ -210,6 +244,19 @@ export function applyConsoleAction(
     return { ...prefs, [action.key]: action.value }
   }
   if (action.type === "sidebar") return { ...prefs, sidebarOpen: action.open }
+  if (action.type === "view") {
+    const views = [...(prefs.views ?? [])]
+    const at = views.findIndex((v) => v.id === action.view.id)
+    if (at >= 0) views[at] = action.view
+    else views.push(action.view)
+    return { ...prefs, views }
+  }
+  if (action.type === "forget-view") {
+    return {
+      ...prefs,
+      views: (prefs.views ?? []).filter((v) => v.id !== action.id),
+    }
+  }
   if (action.type === "move") {
     const favorites = [...prefs.favorites]
     const from = favorites.indexOf(action.key)
@@ -227,14 +274,15 @@ export function applyConsoleAction(
   return { ...prefs, [field]: values }
 }
 
-/** The display settings the STORED preference kind declares: only those may
- * be written to the record. */
-export function declaredSettings(kinds: readonly KindInfo[]): Set<SettingKey> {
+/** The display settings and views the STORED preference kind declares:
+ * only those may be written to the record. */
+export function declaredSettings(kinds: readonly KindInfo[]): Set<StoredKey> {
   const kind = kinds.find((k) => k.identity === CONSOLE_PREFERENCE_KIND)
   const properties = kind?.definition?.properties
-  const out = new Set<SettingKey>()
+  const out = new Set<StoredKey>()
   if (!properties || typeof properties !== "object") return out
-  for (const key of SETTING_KEYS) if (key in properties) out.add(key)
+  for (const key of [...SETTING_KEYS, "views" as const])
+    if (key in properties) out.add(key)
   return out
 }
 
@@ -262,16 +310,16 @@ export function consolePreferencesOptions() {
   })
 }
 
-/** Apply one action where it lives. The sidebar, and a setting the stored
- * kind does not declare, stay in this browser and answer null; everything
- * else is a
+/** Apply one action where it lives. The sidebar, and a setting or a view
+ * the stored kind does not declare, stay in this browser and answer null;
+ * everything else is a
  * read-modify-CAS on the record, which keeps another session's unrelated
  * edits, retried on a conflict against fresh state. A written setting is
  * mirrored into localStorage too, so a browser that has not read the record
  * yet (the sign-in page) still starts from it. */
 export async function saveConsoleAction(
   action: ConsoleAction,
-  declared: ReadonlySet<SettingKey> = new Set()
+  declared: ReadonlySet<StoredKey> = new Set()
 ): Promise<SubstrateRecord | null> {
   if (action.type === "sidebar") {
     writeLocalSidebar(action.open)
@@ -281,9 +329,20 @@ export async function saveConsoleAction(
     writeLocalSetting(action)
     if (!declared.has(action.key)) return null
   }
+  if (
+    (action.type === "view" || action.type === "forget-view") &&
+    !declared.has("views")
+  ) {
+    const local = readLocalSettings()
+    writeLocalViews(
+      applyConsoleAction(preferencesOf(null, local), action).views ?? []
+    )
+    return null
+  }
   const keys: string[] = [
     ...NAVIGATION_KEYS,
     ...SETTING_KEYS.filter((k) => declared.has(k)),
+    ...(declared.has("views") ? ["views"] : []),
   ]
   for (let attempt = 0; attempt < 3; attempt++) {
     const record = await readPreferences()

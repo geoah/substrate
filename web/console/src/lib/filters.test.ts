@@ -330,6 +330,13 @@ describe("browse prefs persistence", () => {
     expect(loadBrowsePrefs("g", "t")).toEqual({ filter: ["a~eq~b"] })
   })
 
+  it("remembers the grouping", () => {
+    saveBrowsePrefs("g", "t", { group: "priority" })
+    expect(loadBrowsePrefs("g", "t")).toEqual({ group: "priority" })
+    saveBrowsePrefs("g", "t", { group: undefined })
+    expect(loadBrowsePrefs("g", "t")).toBeNull()
+  })
+
   it("survives garbage in the store", () => {
     localStorage.setItem("substrate.browse.g/t", "{not json")
     expect(loadBrowsePrefs("g", "t")).toBeNull()

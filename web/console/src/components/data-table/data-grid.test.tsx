@@ -3,7 +3,13 @@
  * margin, no offset) and covering a sliver above itself, so a scrolled row
  * never shows between the header and the scroller's edge. */
 
-import { cleanup, render, renderHook, screen } from "@testing-library/react"
+import {
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+} from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { DataGrid } from "./data-grid"
@@ -100,5 +106,79 @@ describe("changed rows", () => {
     expect(fading.className).toMatch(/\bbg-background\b/)
     expect(fading.className).toContain("transition-[background-color]")
     expect(still.className).not.toContain("transition-[background-color]")
+  })
+})
+
+describe("the sorted column", () => {
+  it("says which column is sorted and which way, and nothing on the rest", () => {
+    const { result, rerender } = renderHook(
+      ({ sorting }: { sorting: { id: string; desc: boolean }[] }) =>
+        useDataTable({
+          columns,
+          data: [{ id: "a", name: "A" }],
+          getRowId: (r) => r.id,
+          sorting,
+        }),
+      { initialProps: { sorting: [{ id: "name", desc: true }] } }
+    )
+    const { rerender: redraw } = render(
+      <DataGrid table={result.current} label="Tasks" />
+    )
+    const sortOf = () =>
+      screen
+        .getAllByRole("columnheader")
+        .map((th) => th.getAttribute("aria-sort"))
+    expect(sortOf()).toEqual(["descending", null])
+    rerender({ sorting: [{ id: "other", desc: false }] })
+    redraw(<DataGrid table={result.current} label="Tasks" />)
+    expect(sortOf()).toEqual([null, "ascending"])
+  })
+})
+
+describe("groups", () => {
+  it("heads each run of rows, counts it and folds it", () => {
+    const data = [
+      { id: "a", name: "high" },
+      { id: "b", name: "high" },
+      { id: "c", name: "low" },
+    ]
+    const { result } = renderHook(() =>
+      useDataTable({ columns, data, getRowId: (r) => r.id })
+    )
+    const collapsed = new Set<string>()
+    const toggled: string[] = []
+    const draw = () => (
+      <DataGrid
+        table={result.current}
+        label="Tasks"
+        groups={{
+          keyOf: (r) => r.name,
+          head: (key) => <span>{`${key} group`}</span>,
+          label: (key) => `Priority: ${key}`,
+          collapsed,
+          onToggle: (key) => toggled.push(key),
+        }}
+      />
+    )
+    const { container, rerender } = render(draw())
+    const bodies = container.querySelectorAll("tbody[data-slot=grid-group]")
+    expect(bodies).toHaveLength(2)
+    expect(
+      [...bodies].map((b) => b.querySelectorAll("[data-slot=grid-row]").length)
+    ).toEqual([2, 1])
+    expect(screen.getAllByRole("rowheader").map((h) => h.textContent)).toEqual([
+      "high group",
+      "low group",
+    ])
+    fireEvent.click(screen.getByRole("button", { name: "Hide Priority: high" }))
+    expect(toggled).toEqual(["high"])
+    collapsed.add("high")
+    rerender(draw())
+    expect(
+      screen
+        .getByRole("button", { name: "Show Priority: high" })
+        .getAttribute("aria-expanded")
+    ).toBe("false")
+    expect(container.querySelectorAll("[data-slot=grid-row]")).toHaveLength(1)
   })
 })

@@ -121,6 +121,12 @@ declare module "@tanstack/react-table" {
     emptyHidden?: string[]
     /** Show every column `emptyHidden` names, and remember that. */
     showEmptyColumns?: () => void
+    /** The columns the reader hides, by their own choice or the surface's
+     * default (not the ones hidden for holding nothing). */
+    readerHidden?: string[]
+    /** Take a column order and a hidden set at once (a saved view); either
+     * absent keeps what is there. Drag widths stay. */
+    applyColumns?: (columns: { order?: string[]; hidden?: string[] }) => void
   }
 }
 
@@ -145,6 +151,18 @@ export interface UseDataTableOptions<TData extends RowData> {
 }
 
 const NOOP_SORT: OnChangeFn<SortingState> = () => {}
+
+/** A header cell's `aria-sort`: the sorted column says which way, and every
+ * other column says nothing, so a screen reader names only the one sort. */
+export function ariaSortOf(
+  sorted: false | "asc" | "desc"
+): "ascending" | "descending" | undefined {
+  return sorted === "asc"
+    ? "ascending"
+    : sorted === "desc"
+      ? "descending"
+      : undefined
+}
 
 export type DataTableInstance<TData extends RowData> = ReactTable<
   DataTableFeatures,
@@ -286,6 +304,14 @@ export function useDataTable<TData extends RowData>(
           ...shown,
           ...emptyHidden,
         ]),
+      readerHidden: naturalIds.filter((id) => baseVisibility[id] === false),
+      applyColumns: ({ order, hidden }) =>
+        persist(
+          order ? orderedColumns(naturalIds, order) : columnOrder,
+          hidden ? columnVisibilityOf(naturalIds, hidden) : baseVisibility,
+          columnSizing,
+          []
+        ),
     },
   })
 }
@@ -445,6 +471,7 @@ export function DataTable<TData extends RowData>({
               {headerGroup.headers.map((header, i) => (
                 <TableHead
                   key={header.id}
+                  aria-sort={ariaSortOf(header.column.getIsSorted())}
                   className={cn(
                     "relative",
                     header.column.columnDef.meta?.headerClassName,

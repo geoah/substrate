@@ -6,14 +6,25 @@
  * collection for a reader and keeps the kind reference for technical mode. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { act, cleanup, render, waitFor } from "@testing-library/react"
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
 import { NuqsTestingAdapter, type UrlUpdateEvent } from "nuqs/adapters/testing"
 import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import type { KindInfo } from "@/lib/api/types"
-import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
+import {
+  DEFAULT_SETTINGS,
+  type ConsoleAction,
+  type ConsolePreferences,
+} from "@/lib/console-preferences"
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
@@ -49,12 +60,14 @@ const team: KindInfo = {
     properties: {
       name: { type: "string" },
       parent: { type: "reference", kind: TEAM },
+      size: { type: "enum", values: ["small", "large"] },
     },
   },
 }
 
 let resolveRegistry: (kinds: KindInfo[]) => void = () => {}
 const offsets: (number | undefined)[] = []
+const orders: (string | undefined)[] = []
 
 vi.mock("@/lib/api/kinds", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/kinds")>()
@@ -80,6 +93,7 @@ vi.mock("@/lib/api/records", async (importOriginal) => {
       ...actual.recordsQueryOptions(p),
       queryFn: () => {
         offsets.push(p.offset)
+        orders.push(p.orderBy)
         return Promise.resolve({ records: [], cursor: "next" })
       },
     }),
@@ -97,6 +111,7 @@ import { KindBrowsePage } from "./kind-browse"
 afterEach(() => {
   cleanup()
   offsets.length = 0
+  orders.length = 0
   localStorage.clear()
 })
 
@@ -176,5 +191,77 @@ describe("the collection head", () => {
     expect(
       head.querySelector("[aria-label='Copy the kind reference']")
     ).not.toBe(null)
+  })
+})
+
+describe("views, grouping and the star", () => {
+  async function renderPage(
+    searchParams: string,
+    over: Partial<ConsolePreferences> = {}
+  ) {
+    const actions: ConsoleAction[] = []
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const view = render(
+      <ConsolePreferencesContext.Provider
+        value={{
+          preferences: {
+            collapsed: [],
+            favorites: [],
+            sidebarOpen: true,
+            ...DEFAULT_SETTINGS,
+            ...over,
+          },
+          busy: false,
+          change: (a) => actions.push(a),
+          set: () => {},
+        }}
+      >
+        <QueryClientProvider client={client}>
+          <NuqsTestingAdapter searchParams={searchParams}>
+            <KindBrowsePage />
+          </NuqsTestingAdapter>
+        </QueryClientProvider>
+      </ConsolePreferencesContext.Provider>
+    )
+    await waitFor(async () => {
+      await act(async () => resolveRegistry([team]))
+      expect(view.container.querySelector("[data-slot=page-header]")).not.toBe(
+        null
+      )
+    })
+    return actions
+  }
+
+  it("stars the collection from its header", async () => {
+    const actions = await renderPage("")
+    const star = screen.getByRole("button", { name: "Add Teams to favorites" })
+    expect(star.getAttribute("aria-pressed")).toBe("false")
+    fireEvent.click(star)
+    expect(actions).toEqual([{ type: "favorite", key: TEAM, starred: true }])
+  })
+
+  it("orders the wire by the grouped property first", async () => {
+    await renderPage("?group=size")
+    await waitFor(() => expect(orders).toContain("size:asc,updatedAt:desc"))
+    expect(
+      screen.getByRole("button", { name: /Grouped by/ }).textContent
+    ).toContain("size")
+  })
+
+  it("lights the saved view the page shows", async () => {
+    await renderPage("?group=size", {
+      views: [
+        { id: "v1", collection: TEAM, name: "By size", group: "size" },
+        { id: "v2", collection: "other.example.com/x/y", name: "Elsewhere" },
+      ],
+    })
+    const views = screen.getByRole("group", { name: "Views" })
+    const pressed = [...views.querySelectorAll("[aria-pressed=true]")].map(
+      (b) => b.textContent
+    )
+    expect(pressed).toEqual(["By size"])
+    expect(views.textContent).not.toContain("Elsewhere")
   })
 })

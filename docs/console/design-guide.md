@@ -130,10 +130,10 @@ The display settings follow the person: record width (default wide), table
 width (default full), table rows (default comfortable), Technical details
 (default off) and appearance (default system) are properties of the
 `substrate.reamde.dev/core/consolepreference/navigation` record, beside the
-favorites and folded groups. Whether the sidebar is open is a fact about one
-window and is kept in this browser's `localStorage` alone, as are a
-collection's last filters, sort, nesting and columns and the Search page's
-ranking
+favorites, the folded groups and each collection's saved views. Whether the
+sidebar is open is a fact about one window and is kept in this browser's
+`localStorage` alone, as are a collection's last filters, sort, nesting,
+grouping and columns and the Search page's ranking
 ([0132](../decisions/0132-console-preferences-follow-the-person-and-a-window-fact-stays-in-the-browser.md)).
 `lib/console-preferences.ts` holds the split.
 
@@ -326,10 +326,11 @@ technical mode appends the stored value.
   Home and End. `ChoiceList` moves with the arrows and picks with Enter. The
   grid's scroll container takes focus and has a name, and a focused cell
   scrolls clear of the pinned column.
+- **Sort.** The sorted column's header cell carries `aria-sort`
+  (`ascending` or `descending`), in step with the address's sort; the arrow
+  beside the label is drawn for the eye alone.
 - **Landmarks.** The shell holds the page's one `main`.
 - **Type.** Nothing below 11.5px.
-
-`aria-sort` on sorted column headers is not there yet (issue #677).
 
 ## What holds this
 

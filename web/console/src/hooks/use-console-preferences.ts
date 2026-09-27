@@ -30,6 +30,7 @@ const OUTSIDE: ConsolePreferencesContextValue = {
     collapsed: [],
     favorites: [],
     sidebarOpen: true,
+    views: [],
     ...DEFAULT_SETTINGS,
   },
   busy: false,

@@ -45,6 +45,7 @@ describe("console preferences", () => {
       favorites: ["example.com/people/person", "example.com/tasks/task"],
       collapsed: ["example.com/tasks"],
       sidebarOpen: true,
+      views: [],
       ...DEFAULT_SETTINGS,
     })
     prefs = applyConsoleAction(prefs, {
@@ -242,5 +243,77 @@ describe("display settings", () => {
         value: "roomy" as never,
       })
     ).toBe(prefs)
+  })
+})
+
+describe("saved views", () => {
+  const store = new Map<string, string>()
+  beforeEach(() => {
+    store.clear()
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    })
+  })
+  const open = {
+    id: "v1",
+    collection: "example.com/tasks/task",
+    name: "Open",
+    filter: ["status~eq~open"],
+  }
+
+  it("adds a view, replaces it by id and forgets it", () => {
+    let prefs = applyConsoleAction(preferencesOf(), {
+      type: "view",
+      view: open,
+    })
+    expect(prefs.views).toEqual([open])
+    prefs = applyConsoleAction(prefs, {
+      type: "view",
+      view: { ...open, name: "Still open" },
+    })
+    expect(prefs.views?.map((v) => v.name)).toEqual(["Still open"])
+    prefs = applyConsoleAction(prefs, { type: "forget-view", id: "v1" })
+    expect(prefs.views).toEqual([])
+  })
+
+  it("writes the views to the record once the stored kind declares them", async () => {
+    wire
+      .mockResolvedValueOnce({ version: 7, properties: { favorites: ["a"] } })
+      .mockResolvedValueOnce({ version: 8 })
+    await saveConsoleAction(
+      { type: "view", view: open },
+      declaredSettings([preferenceKind("views")])
+    )
+    expect(wire).toHaveBeenLastCalledWith("PUT", expect.any(String), {
+      properties: { collapsed: [], favorites: ["a"], views: [open] },
+      ifVersion: 7,
+    })
+  })
+
+  it("keeps the views in this browser where the stored kind predates them", async () => {
+    const saved = await saveConsoleAction(
+      { type: "view", view: open },
+      declaredSettings([preferenceKind("technicalDetails")])
+    )
+    expect(saved).toBeNull()
+    expect(wire).not.toHaveBeenCalled()
+    expect(preferencesOf(null, readLocalSettings()).views).toEqual([open])
+    await saveConsoleAction({ type: "forget-view", id: "v1" }, new Set())
+    expect(preferencesOf(null, readLocalSettings()).views).toEqual([])
+  })
+
+  it("reads the record's views over this browser's", () => {
+    const record = {
+      id: "navigation",
+      kind: "substrate.reamde.dev/core/consolepreference",
+      version: 3,
+      properties: { views: [{ ...open, name: "Mine" }, { id: "broken" }] },
+    } as never
+    expect(
+      preferencesOf(record, { views: [open] }).views?.map((v) => v.name)
+    ).toEqual(["Mine"])
+    expect(preferencesOf(null, { views: [open] }).views).toEqual([open])
   })
 })
