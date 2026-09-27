@@ -385,3 +385,47 @@ all: an enum as its `EnumTag`, a state as its `StateBadge`, a reference as its
 Props: `spec`, `value`. Used by the sheet, the ownership detail, suggested
 changes and History's value moves, so a value reads the same wherever it is
 shown.
+
+## Agents and suggested changes
+
+In `components/agent/` and beside `components/change-request.tsx`, the
+controls the agents pages and the change request page share.
+
+### GrantsEditor
+
+What an agent may see and change, edited by collection: "Can see" and "Can
+change", each the collections its grant names (a `KindRef`, or "All your
+data" for `*`) with a remove, and **Add** opening a `ChoiceList` of
+collections. Every pick is one patch of the agent record's `permissions`
+under `ifVersion`, the rest of the object carried through; an edit that would
+leave a tool the agent holds without its grant is held back with the reason
+(`lib/agent-grants.ts`). Props: `agent`. Used by the agent page.
+
+### AlwaysAllowButton and AllowRules
+
+**Always allow this** on a suggested change a gate held: it confirms, saves
+one `allow` per door verb naming that gate in `overrides`
+([0109](../decisions/0109-an-allow-outranks-a-gate-only-by-naming-it.md)),
+then applies the suggestion (`request`, `rule`, `deleting`). `AllowRules`
+lists the rules it wrote for one agent, each with **Revoke**, which deletes
+them after a confirmation (`agent`, `rules`). The rules are read and worded
+by `lib/agent-rules.ts`. Used by the chat card, the agent panel and the agent
+page.
+
+### ModelKeyDialog and AddKeyButton
+
+"Add your _Provider_ key": one sealed write of the llm/provider row's
+`apiKey`, through the record page's own patch (`providerId`, `open`,
+`onOpenChange`). `AddKeyButton` is the button that opens it (`providerId`,
+`size`, `variant`). Used wherever an agent refuses for want of a key: the
+chat's callout, the agent panel, the agent page.
+
+### ReviewComparison and SuggestedAndApplied
+
+The change request page's **Now** and **If applied** grid, editable: a click
+on an If applied value opens the property sheet's own editor on a draft
+(`SheetDraftContext`), and a row can be left out and put back. Props: `rows`
+(`reviewRows` in `lib/changerequests.ts`), `compare`, `specs`, `kind`,
+`kinds`, `target`, `edited`, `onEdit`, `emptyText`, `create`.
+`SuggestedAndApplied` reads a decided request the owner adjusted: what was
+suggested beside what was applied (`rows`, `specs`).
