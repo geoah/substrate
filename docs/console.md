@@ -250,11 +250,14 @@ switch in the toolbar is on by default and remembered per collection; off
 (`?nest=false`), the same rows are a flat list. While a filter or a search is
 set the grid is flat regardless, so a match is shown wherever it sits.
 
-A page is fifty rows, and `?page=` makes one linkable. The footer shows the
-range and the total from a bounded count, marked `+` where the count stopped
-at its ceiling; **Next** follows the page's own cursor rather than that count,
-so a collection past the ceiling still pages to its end. Under a tree the
-footer counts the collection and its top level both.
+A page is fifty rows read by offset (the wire's `offset=`), so any page is
+one request and `?page=` makes one linkable. The footer shows the range and
+the total from a bounded count, marked `+` where the count stopped at its
+ceiling. Whether there is a next page is not taken from that count: the page
+answers with a cursor when more rows follow, and **Next** is offered on that
+alone (the cursor itself is never followed), so a collection past the ceiling
+still pages to its end. Under a tree the footer counts the collection and its
+top level both.
 
 ## A record
 
