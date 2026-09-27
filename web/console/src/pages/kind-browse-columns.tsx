@@ -32,6 +32,7 @@ import {
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { RecordRef } from "@/components/identity/record-ref"
 import { StateBadge } from "@/components/identity/state-badge"
+import { PROVIDERS_AUTHORITY } from "@/lib/actor-identity"
 import { readReference } from "@/lib/api/types"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import {
@@ -115,15 +116,40 @@ const DEFAULT_HIDDEN: Record<string, string[]> = {
   ],
 }
 
+/** The properties a kind declares that are not a reader's values: anything
+ * marked `deprecated`, and on a provider's collection every property a writer
+ * role other than the owner keeps (a sync cursor, a status, a token). A
+ * writer role on the repository's own kind stays shown: there it is somebody
+ * the person asked to keep the value. */
+function bookkeeping(kind: KindInfo): string[] {
+  const provider =
+    kind.authority === PROVIDERS_AUTHORITY || kind.source === "published"
+  const props = (kind.definition?.properties ?? {}) as Record<
+    string,
+    Record<string, unknown> | undefined
+  >
+  return Object.entries(props).flatMap(([name, def]) => {
+    if (def?.deprecated === true) return [name]
+    const writer = def?.writer
+    if (provider && typeof writer === "string" && writer !== "owner")
+      return [name]
+    return []
+  })
+}
+
 /** The column ids a kind's grid hides until the reader asks for them: the
- * machinery above, and the properties the title is made of, which the title
- * column already shows. The one the title IS has no column to hide. A saved
- * preference wins over this entirely. */
+ * machinery above, a provider's bookkeeping and anything deprecated, and the
+ * properties the title is made of, which the title column already shows. The
+ * one the title IS has no column to hide. Every one stays in Columns, and a
+ * saved preference wins over this entirely. */
 export function defaultHiddenColumns(kind: KindInfo): string[] {
   const backing = titleBacking(kind)
   return [
-    ...(DEFAULT_HIDDEN[kind.identity] ?? []),
-    ...titleProperties(kind).filter((name) => name !== backing),
+    ...new Set([
+      ...(DEFAULT_HIDDEN[kind.identity] ?? []),
+      ...bookkeeping(kind),
+      ...titleProperties(kind).filter((name) => name !== backing),
+    ]),
   ].map(propertyColumnId)
 }
 
