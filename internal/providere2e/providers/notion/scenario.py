@@ -1282,10 +1282,10 @@ def main():
         ok(good.get("syncState") == "ok",
            "with the rules cleared the next run raises the state back to `ok` "
            "(%s)" % good.get("syncState"))
-        ok(good.get("syncError") == bad.get("syncError"),
-           "while syncError stays as the RECORD of the last failure — the "
-           "state is what says the account is healthy again, not the absence "
-           "of a past error (%s)" % good.get("syncError"))
+        ok(not good.get("syncError") and not good.get("syncErrorAt"),
+           "and the run that ends ok clears the older syncError and "
+           "syncErrorAt, so a healthy account shows no stale error (%s)"
+           % good.get("syncError"))
         final_rows = {name: {r["id"] for r in all_records(api, KINDS[name])}
                       for name in MIRRORS if name != "block"}
         ok(all(final_rows[name] == before[name]
