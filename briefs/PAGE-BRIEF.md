@@ -1,0 +1,49 @@
+# Page builder brief — console redesign (shared by six parallel agents)
+
+Read first, in order:
+1. Your worktree's `CLAUDE.md` (= AGENTS.md): house rules.
+2. `/private/tmp/claude-501/-Users-geoah-src-github-com-geoah-substrate/ecb153f3-6121-45bd-9577-eebedb8a34f1/scratchpad/DESIGN-GUIDE.md` — the design source of truth.
+3. The approved prototype `.../scratchpad/proto/console-prototype.html` — read the functions and CSS for YOUR area (named in your task). Port its look and copy into real React on real data; do not port its code.
+
+## Your worktree
+You work ONLY in `/Users/geoah/.t3/worktrees/substrate/rd-<area>` on branch `console/rd-<area>`, which starts from `console/redesign` (foundations done, routes stubbed). Deps are installed. Six agents work in parallel, one per area, and the orchestrator merges the six branches back into `console/redesign` — so STAY INSIDE YOUR OWNERSHIP (below). Do not push. Do not open PRs. No AI attribution / Co-Authored-By lines. Commit in logical steps with conventional titles (`feat(console): …`).
+
+## Ownership (who may edit what)
+- **nav**: `components/app-shell.tsx`, `components/app-sidebar.tsx` (+test), `components/command-menu.tsx`, `pages/home.tsx` + `components/home/*`, `pages/all-data.tsx` (+ its "Add a collection" dialog), `pages/history.tsx` + `components/changelog/*` + `pages/changelog.tsx` + `pages/actor.tsx`, `pages/console-settings.tsx` + `pages/account.tsx` + `pages/tokens.tsx`, `pages/search.tsx`, route REDIRECTS for `/changelog`→`/history`, `/account`+`/account/tokens`→`/settings`. Owns `router.tsx` edits for those.
+- **table**: `pages/kind-browse.tsx`, `pages/kind-browse-columns.tsx`, `components/data-table/*`, `hooks/use-record-tree.ts`, `lib/record-tree.ts`, `lib/filters.ts`, `lib/table-prefs.ts`, `lib/column-widths.ts`, `pages/authority.tsx` (authority/package pages).
+- **record**: `pages/record.tsx`, `pages/record-editor.tsx`, `components/record/*`, `components/record-config-form.tsx`, new `components/property-sheet/*` (PropertySheet, OwnershipChip), `lib/record-form.ts`, `lib/record-schema.ts`, `lib/record-yaml.ts`, `lib/provenance.ts`, `lib/manifest.ts`, `pages/merge-request-detail.tsx`, `pages/change-request-detail.tsx`, `components/merge-request.tsx`, `components/change-request.tsx`.
+- **agents**: `pages/agents.tsx`, `pages/agent-chat.tsx`, `components/agent/*`, `lib/api/agents.ts`, `lib/api/transcript.ts`, `lib/agent-grants.ts`. May add routes under `/agents…` in `router.tsx`.
+- **tools**: `pages/tools.tsx`, `pages/tool.tsx`, new `components/tools/*`, new `lib/tools.ts`, a new `callFunction` in a NEW `lib/api/functions.ts` (wire rules below).
+- **providers**: `pages/providers.tsx`, `pages/provider.tsx`, `pages/registry.tsx`, `pages/bundle-detail.tsx`, `pages/connections.tsx`, `pages/connection-detail.tsx`, `pages/settings.tsx` (bundle settings), `components/sync/*`, `components/bundle-settings.tsx`, `components/bundle-state-badge.tsx`, `components/import-refusal.tsx`, `components/oauth-callback-note.tsx`, `lib/bundles.ts`, `lib/sync.ts`, `lib/settings.ts`, `lib/api/{catalog,bundles,sync,settings}.ts`. Owns redirects `/registry`, `/registry/$id`, `/connections`, `/connections/…`, `/settings/$id` → `/providers…` in `router.tsx`.
+- **Shared, read-mostly** (anyone may ADD new exports; do not change existing signatures or behaviour without saying so in your report): `components/identity/*`, `lib/kind-names.ts`, `lib/kind-glyph.ts`, `lib/definition.ts`, `lib/actor-identity.ts`, `lib/state-words.ts`, `lib/console-preferences.ts`, `hooks/use-console-preferences.ts`, `components/ui/*`, `index.css` (add classes/tokens only), `lib/api/types.ts` + `wire.golden.json` (see wire rules). If you need a shared change, make it minimal and additive and list it in your report.
+- `router.tsx`: only the lines for your own routes/redirects. The stubs for `/data`, `/history`, `/tools`, `/tools/$authority/$pkg/$name`, `/providers`, `/providers/$authority/$pkg`, and `/settings` (console settings) already exist.
+
+## Foundations you build on (already on your branch)
+- Tokens (index.css): Paper palette; utilities `bg-panel`, `bg-hover`, `bg-selection`, `text-faint`, `border-border-strong`, `text-primary-text`, `bg-primary-soft`, `text-ok`/`bg-ok-soft`, `bg-warn-soft`, `bg-bad-soft`, `shadow-card`, `font-mono`, kind hues `bg-kind-<hue>-bg`/`text-kind-<hue>-fg` (gray brown orange yellow green teal blue purple pink red). Default Tailwind spacing. `data` utility = copyable-identifier mono style (use it ONLY for ids/references/YAML/URLs; remove it from times, verbs, statuses, counts in the files you own).
+- `lib/kind-names.ts`: `displayName(kind)`, `displayPlural(kind)`, `untitled(kind)`, `splitWords`, `pluralWord`.
+- `lib/definition.ts`: `kindPurpose(kind)` → primary|supporting|internal (core is always internal; absent = primary). Plus the existing `declaredProperties`, `temporalProperties`, etc.
+- `lib/kind-glyph.ts`: `kindGlyph(kind)` → `{icon, iconName, hue}`; `HUE_CLASSES`.
+- `lib/actor-identity.ts`: `actorIdentity(actor)` → `{actor, cls: you|agent|function|bundle|engine, name, via?, provider?, description, record?}`; `providerInfo(key)` → `{key,name,letter,color}`; `providerOfKind(ref)`.
+- `lib/state-words.ts`: `stateWord(v)`, `stateTone(v, initial?)`.
+- `lib/reference-titles.ts`: `recordTitleQueryOptions(kind,id)`, batched title reads.
+- Preferences: `hooks/use-console-preferences.ts` → `useConsolePreferences()` `{preferences, busy, change(action), set(key,value)}`, `useTechnicalDetails()` `[on,setOn]`, `useLayoutWidths()` `{recordWidth, tableWidth, setRecordWidth, setTableWidth}`, `useDensity()` `[density,setDensity]`. `preferences` also has `collapsed`, `favorites`, `sidebarOpen`, `theme`. Stored on `substrate.reamde.dev/core/consolepreference/navigation` (the dev server's core is v2, so every setting persists there).
+- Components (`components/identity/`): `KindGlyph {kind,size xs|sm|md|lg}`, `KindRef {kind, mode "label"|"reference", link?, count?}`, `KindPath {reference}`, `RecordRef {kind,id,title?,variant "mention"|"chip",link?}` (never a bare id), `ActorRef {actor, link "actor"|"record"|false}`, `ActorMark {identity,size?}`, `ProviderBadge {provider,size?}`, `StateBadge {value,initial?,variant "dot"|"tag"}`, `IdentityHoverCard {trigger,children,card,delay?}`, `IdentityCard {mark?,title,sub?,description?,facts?,reference?,loading?}`, `CopyButton {value,label?}`, `IdText {value,copy?}`, `PageHeader {title,meta?,description?,actions?,glyph?,size "page"|"record"}`, `DocPage` (left-aligned, width from `recordWidth`), `TablePage` (width from `tableWidth`).
+
+## Rules
+- Everyday copy by default; everything technical behind `useTechnicalDetails()` (and always in hover cards). Kinds: display plural as labels, full reference as identity. Dead words (see guide) never in copy — note "integration" is dead: say "provider".
+- Pages that read like documents use `DocPage` (left-aligned!). Table pages use `TablePage`/full width.
+- One component per idea: use the identity components; never hand-draw a kind/record/actor/state.
+- Destructive actions confirm and name the consequence.
+- Wire: the console mirrors the Go wire by hand. A new exported interface in `lib/api/*` must appear in `lib/api/wire.golden.json` (generated from Go — you cannot add Go-less entries) or be listed in `notOnTheWire` in `lib/api/wire.golden.test.ts` with a reason. Types that already exist in `types.ts` (e.g. `FunctionCalled`) are already pinned.
+- Keep behaviour that users rely on (filters grammar, URL state, cursor/offset paging, CAS writes with `ifVersion`), but restructure freely inside your area. Delete dead code you replace. Update/rewrite tests for what you changed; add tests for new pure logic. Test files use vitest; rendering suites start with `// @vitest-environment jsdom`.
+
+## Run and look
+- Dev substrate: http://localhost:8097 (already running; do NOT restart it). Your own repository is `<area>.localhost` (e.g. `table.localhost`), seeded with the people/tasks/calendar/messaging/notes samples, the Google provider installed, 331 people, 78 tasks, 3 projects, 3 organizations. Its CLI config (with the token) is `/private/tmp/claude-501/-Users-geoah-src-github-com-geoah-substrate/ecb153f3-6121-45bd-9577-eebedb8a34f1/scratchpad/dev/ctl-<area>.yaml`; use `SUBSTRATECTL_CONFIG=<that> SUBSTRATE_SERVER=http://localhost:8097 /Users/geoah/.t3/worktrees/substrate/console-redesign/bin/substratectl …` to add data you need (e.g. apply YAML). Never touch other areas' repositories.
+- Run vite: in `web/console`, `VITE_PROXY_SUBSTRATE=http://localhost:8097 pnpm vite --port <PORT> --strictPort` in the background (ports: nav 5301, table 5302, record 5303, agents 5304, tools 5305, providers 5306). Stop it when done.
+- Screenshot: `/private/tmp/claude-501/-Users-geoah-src-github-com-geoah-substrate/ecb153f3-6121-45bd-9577-eebedb8a34f1/scratchpad/shot-vite.sh <area> <PORT> <out.png> <path> [width] [height]` — signs in as your repository through `public/__shot.html` (already present, git-excluded — never commit it) and captures `<path>`. Save PNGs under the scratchpad dir `shots-<area>/`. Look at your pages in light AND dark (toggle via your repository's preference or the sidebar theme menu) and with Technical details on and off. Iterate until they match the prototype's quality. Keep screenshot loops reasonable (don't flood your context: view at most ~12 images total).
+
+## Verify before reporting
+In `web/console`: `pnpm typecheck && pnpm lint && pnpm fmt:check && pnpm test && pnpm build` (or `mise run ci:console` from the worktree root) — all green.
+
+## Report
+Commit list (hash + title); what you built (routes, components, behaviour); any shared-file edits (file + what + why); screenshots you took (paths) and what they show; known gaps / follow-ups.

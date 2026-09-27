@@ -1,0 +1,1060 @@
+
+Paper Console Review
+Substrate web console · design review, round two · 26 September 2026
+The Paper console, reviewed against the build
+An independent look at the redesigned console on branch 
+console/redesign
+ (head 
+3a243d4c
+), measured against the approved Paper prototype, the design guide and the four purposes the owner set: see, navigate and control your data, your providers, your agents and your tools.
+Looked at
+ every page, light and dark, everyday and technical, at 1440 / 1024 / 390
+Repositories
+ ada (328 people, 72 tasks), record (1,503 organizations, long values, a merge request), table (nested tasks), agents (47 chats, suggestion cards), providers (Google at step 3)
+Also read
+ the console source, docs/console.md, the prototype's functions and the three audits linked in the appendix
+Contents
+1
+Verdict
+2
+What works, keep it
+3
+Shell, sidebar and navigation
+4
+⌘K and Search
+5
+Home and All data
+6
+Collection tables
+7
+Record page and inline editing
+8
+Creating a record
+9
+Merge and change requests
+10
+Agents
+11
+Tools
+12
+Providers
+13
+History and actors
+14
+Settings, sign-in and register
+15
+Technical mode
+16
+Colour, type and themes
+17
+Responsiveness
+18
+Accessibility
+19
+Performance feel
+20
+Where the build leaves the prototype and the guide
+21
+Cross-cutting system proposals
+22
+Roadmap
+23
+Open questions for the owner
+24
+Appendix: method and screenshots
+1. Verdict
+The redesign lands the Paper direction: the collection grid, the record page, the tool page and the provider setup are calmer, denser and more legible than the old console, the dark theme is thorough, and the identity components (glyphs, record and actor marks, state words) make the whole thing feel like one product. Where the build followed a prototype page it is close to it. Where it had to invent (creating a record, reviewing a suggested change, writing history sentences about system objects, filtering by a state) it fell back to the data model and the developer's vocabulary, and those are the surfaces a non-technical person hits first when they try to 
+do
+ something rather than look. One crash (the task create form), one control that cannot work ("Always allow this"), and a create form built from native selects and raw enum values are the three things to fix before this merges; the first is the one critical finding, the other two lead the twelve major ones. The rest is a copy and consistency pass, then the parts of the purpose the build does not yet serve: seeing and changing what an agent may do, and seeing what a provider or an agent has done to your data from its own page.
+1
+critical
+12
+major
+30
+minor
+14
+polish
+2. What works, keep it
+These are the decisions the rest of the console should be pulled toward, not away from.
+keep
+The record page as a document.
+ Glyph, title, one meta line, a 36px property sheet, prose under a rule, then "Connected to", "Where it comes from", "Merged", "History". The sections have one heading recipe and the empty copy ("Nothing else points to this yet", "Only you have added to this. No provider fills it in.") is exactly the register the guide asked for.
+keep
+Inline editing for enums, states, references and lists.
+ The enum popover, the "Move to → Done · fills in Completed at" state mover, the reference picker with "Showing the most recent. Type to search all people.", and the list editor with reorder, Add another and a keyboard legend are the best interaction work in the console.
+keep
+The tool page.
+ "What it's allowed to do" as four plain cells, "When it runs", "Used by", "What it needs, and what it gives back", Try it with a result card ("Done. It changed nothing. Characters 44, Words 9"), and Recent runs. This is the clearest statement of the four purposes anywhere in the product.
+keep
+Provider setup.
+ Four numbered steps with one action each, the redirect address with a copy button, accounts with "How it's doing", and confirmations that name the consequence ("Remove Google? This deletes the 0 records Google brought in…"). The "Waiting for Google" banner on a sync tool that links to "Finish setting up Google" is a good cross-link.
+keep
+The agent chat.
+ Tool calls as one-line receipts ("Searched for "on-call handover", found 7 ✓"), suggestion cards with before → after and Apply / Edit first / Dismiss, the agent panel's "Can see / Can change / Tools it can use". It matches the prototype almost line for line.
+keep
+The dark theme and the token map.
+ Every colour is a semantic token, kind hues have dark variants, soft fills are alpha so they sit on any surface. Nothing I opened broke in dark.
+keep
+Filters as full-size 
+field | value | ×
+ controls
+ with "Clear all", the search box composed with them, and URL state for all of it.
+keep
+Empty and read-only states on collections.
+ "No notes yet — Add the first one with New note, or ask an agent to." and, on a provider copy, "Google adds them here when it syncs." with the "read-only copies, kept up to date by Google" line and no New button.
+keep
+Nested tasks.
+ The tree opens in place, "Today" due dates are amber, done rows grey their date, and the nesting switch is remembered per collection.
+keep
+History's live tail and four actor views
+, and the record page's per-value history lines ("Priority: High → Urgent").
+3. Shell, sidebar and navigation
+The sidebar is right: five places, Favorites, "Your data" and one "From Google" group, History and Settings at the foot, the switch. The problems are in what the header shows and what persists.
+major
+S1
+Every collection page shows the kind reference in monospace with a copy button, in everyday mode
+Tasks, People, Organizations, every provider collection · 
+pages/kind-browse.tsx:446-450
+, 
+identity/kind-ref.tsx:108
+; sidebar rows carry 
+title={kind.identity}
+ (
+app-sidebar.tsx:194
+)
+Under "Tasks" sits 
+ada.localhost/tasks/task
+ with a copy icon, on every collection, for every reader. The guide reserves full references for technical mode and hover cards; the prototype drew the line only with Technical details on. For a person who just wants their tasks it is the first line under the title and it means nothing to them. Hovering a sidebar row shows the same path as a browser tooltip.
+Proposal.
+ Everyday header: glyph, display plural, the one-line description, and for a provider collection the "read-only copies, kept up to date by Google" note. Move the reference line (with its copy button) behind the switch, where the record page already puts it, and keep it in the 
+KindRef
+ hover card footer. Drop the raw 
+title
+ attribute on sidebar rows or make it the description.
+Tasks in everyday mode. The second line is a developer's address, not the reader's.
+minor
+S2
+Collapsing the sidebar is saved to the repository, so it collapses on every device
+consolepreference/navigation.sidebarOpen
+I collapsed the sidebar once in a scripted browser and every later screenshot, in a fresh browser, opened without it. A person who tucks the sidebar away on a 13-inch laptop loses it on the desktop monitor too, and on the phone the same flag is meaningless. Layout width, density and theme are reasonable to share; whether a panel is open is a per-window fact.
+Proposal.
+ Keep 
+sidebarOpen
+ in 
+localStorage
+ only (the docs already carve out per-browser conveniences), and stop writing it to the record.
+minor
+S3
+A collapsed sidebar leaves nothing behind but the toggle
+Collapsed, the shell is a bare page with a panel icon at top left. Navigation, search and the switch are all gone; getting anywhere means reopening the sidebar first. Notion and Linear keep a hover strip that peeks the sidebar in.
+Proposal.
+ When collapsed, hovering the left 12px or the toggle reveals the sidebar as an overlay (the shadcn sidebar has this mode); ⌘K stays reachable from the top bar (it is), and the Technical details switch moves into the account menu.
+minor
+S4
+Sign out from the account menu does not confirm; the same action in Settings does
+app-sidebar.tsx:556
+ vs 
+pages/tokens.tsx:127-151
+The menu signs out immediately and revokes the token. Settings asks first, and its dialog talks about "revoking a token". The menu also says "Theme" where Settings says "Appearance".
+Proposal.
+ One "Sign out?" dialog ("This browser is signed out. Other browsers and scripts stay signed in.") used by both; one word, "Appearance".
+polish
+S5
+Breadcrumbs and package pages fall back to raw names in everyday mode
+Tool page for 
+stats
+: crumb "Tools / stats" while the sync reads "Tools / Google Contacts sync"; package page 
+/data/ada.localhost/tasks
+: title "tasks", crumb in monospace; 
+app-shell.tsx:145,195-202
+Proposal.
+ The crumb and the page title use the tool's display name everywhere ("Stats"); the package page titles itself "Tasks package" (or, better, is reached only from technical mode) and its crumb uses the same word.
+polish
+S6
+The browser tab always says "Substrate Console"
+No route sets 
+document.title
+. History, bookmarks and tab switching all show the same label; a screen reader announces nothing on navigation.
+Proposal.
+ Title per route: "Test the landing page · Tasks", "Google · Providers", "Settings"; announce route changes in a live region.
+4. ⌘K and Search
+major
+K1
+⌘K promises "Search or jump to…" but never shows a record
+components/command-menu.tsx
+Typing "lisb" offers one row, "Search your records for "lisb"", which leaves the palette for the Search page, and beneath it the four Google collections. They appear because cmdk's default filter matches letter subsequences: "Drive files" contains an l, an i, an s. No task named "Prepare travel for Lisbon" is offered, although the server answers a Words search in a few milliseconds.
+Proposal.
+ After a 150ms debounce, run the ranked read (Words mode, five hits) and show "Records" above "Collections" and "Pages", each hit as a 
+RecordRef
+ with its collection; keep the "Search your records" row last as the door to the full page. Replace the subsequence filter for collections and pages with word-prefix matching.
+"lisb" in ⌘K: no records, and four collections matched by scattered letters.
+minor
+K2
+The Search page mixes machinery into everyday results and explains ranking in engine terms
+pages/search.tsx
+, 
+lib/search.ts:27-33
+Searching "landing" on ada returns three tasks, then "recordpatchpolicy in Kinds", "substrate.reamde.dev/core/propose in Functions" and "person in Kinds". Those are internal kinds that the sidebar hides in everyday mode. The mode blurbs say "Both arms fused: the word ranking and the embedding similarity" and "spends one embedding call per search".
+Proposal.
+ Everyday scope = the primary kinds the sidebar lists; technical mode adds "Include the substrate's own records". Blurbs: Words "Matches the words you typed. Instant." · Words + meaning "Also finds records that mean the same thing, when a model is set up." · Meaning "Only by meaning. Needs a model, and each search calls it."
+5. Home and All data
+minor
+H1
+Two cards called "Calendar events" sit side by side, told apart only by a faint caption
+Home › Collections; the same pair appears on the phone in one column
+"Calendar events · 0 · yours" and "Calendar events · 0 · from Google" use the same glyph and hue. The guide asks that a provider's copy is always marked by the provider; the prototype went further and captioned agent-built collections "made by an agent", which the build has no way to say.
+Proposal.
+ Group the Home grid the way the sidebar does ("Your data", then "From Google" with the badge in the heading), or put the 
+ProviderBadge
+ in the card title. For "made by an agent" the engine would need to record the actor that declared a package; see open question 5.
+Home. The two "Calendar events" cards in the second row; "Recent changes" reads "You added 22+ tasks".
+minor
+H2
+"Recent changes" on Home says "22+ tasks" where History says "60 tasks", and ends with a system-changes note
+hooks/use-history-feed.ts:139-163
+; 
+pages/home.tsx:201
+The Home feed reads 60 rows, folds runs, and caps the count of a run at what fit in the window, so the same event is "22+ tasks" on Home, "60 tasks" in History and "42+ people" for the other run. The line "98 system changes hidden · Show in History" is a developer's fact on a page that is meant to ask nothing of the reader. The prototype filled this slot with "Recent chats".
+Proposal.
+ Let the server fold runs (it now returns values; a run summary is one more field) or read until the run closes; never print "+" on Home. Drop the system-changes line from Home. Add the prototype's "Recent chats" above "Recent changes": it is the one place a person returns to.
+major
+A1
+"Add a collection › Start from a sample" lists things that are not collections
+components/all-data/add-collection-dialog.tsx
+The dialog opens with "A collection holds one kind of record: tasks, recipes, trips." and then offers "Firecrawl — Web search and page reading through Firecrawl: two tools an agent can call" and "LLM — Three keyless provider rows and six agents" with an "Upgrade" button. Neither adds a collection. The list is the whole sample catalog in alphabetical order, with "Added" and "Upgrade" mixed among "Add".
+Proposal.
+ Filter to samples that declare at least one primary kind, and describe each by what you will see ("Tasks and projects"). Tool-only samples belong on Tools ("Add tools") and agent samples on Agents; "Upgrade" belongs on the package's own page, not in an add dialog.
+Firecrawl and LLM offered as collections.
+minor
+A2
+"Ask an agent" hands the request to whichever agent you last talked to, and does not send it
+add-collection-dialog.tsx:129-165
+, 
+pages/agents.tsx:76,128-132
+; docs/console.md says the console opens Agents "with that as your first message"
+The text only pre-fills the composer. The agent chosen is the last one used, else the first chat-capable one; on ada that is Titler, whose panel says it "can't look things up in your data" and can change "Nothing". Nothing checks that any agent may declare kinds.
+Proposal.
+ Pick the agent whose write grant covers 
+substrate.reamde.dev/core/kind
+; if none can, say so in the dialog ("None of your agents can set up a collection yet. Start from a sample, or give an agent that permission.") and send the message when one can.
+6. Collection tables
+The grid is the strongest table the project has had: pinned title column, 38px rows, glyphs in cells, reference chips, a footer with paging. The filters and the column list are where the data model shows through.
+major
+T1
+Filters speak in stored values: "proposed / open / done / abandoned", and an enum filter is a text box
+components/data-table/data-table-filters.tsx
+Add filter › Status lists lowercase stored values with checkboxes while the same column reads "Open" and the state word for 
+proposed
+ is "Suggested" everywhere else; the applied control then reads "Status | open". Add filter › Priority opens "Priority is…" with the hint "Press Enter to apply. A comma means any of", although the kind declares five values the grid already renders as tags.
+Proposal.
+ One 
+ChoiceList
+ for state and enum filters, the same component the property sheet's enum popover uses: display words, stored value beside them in technical mode, multi-select with a check. The applied control shows the display word ("Status | Open").
+Left: the Status filter. Right: the Priority filter, dark theme.
+minor
+T2
+"Name" appears twice in Sort and in Columns, and every empty property is listed
+data-grid-sort.tsx
+, 
+data-table-view-options.tsx
+The title column is derived from 
+name
+, and 
+name
+ is also offered as its own column and sort key, so the menus read Name … Name. Nine empty columns (Exdates, Rdates, Original at…) sit in the same list as the five that hold something.
+Proposal.
+ Fold the title-backing property into the title column. Group "9 empty" under a disclosure at the end of the Columns list; the "Show 9 empty columns" link already exists, make it the disclosure.
+Columns: two "Name" rows, nine "empty" rows interleaved.
+minor
+T3
+The footer glues three facts into one faint line
+"72 tasks, 72 at the top level · 9 columns with nothing in them are hidden Show"
+Count, tree count and a hidden-columns notice with an inline "Show" button, all in 
+text-faint
+ at 12.5px. The house rule is one role per fact.
+Proposal.
+ Footer left: "72 tasks" (tree: "72 tasks · 60 at the top level"). The hidden-columns notice moves next to the Columns button as a count badge ("9 hidden") whose click opens the popover.
+minor
+T4
+Provider collections show the provider's bookkeeping as primary columns
+From Google › Contacts: columns "Etag", "Age range"; Notes: "Characters", "Words", both "Name" and "Note title"
+Proposal.
+ Default columns skip properties whose 
+writer
+ is not the owner (etag, resourceName, cursors) and any property the kind marks 
+deprecated
+; they stay reachable from Columns. The sample's duplicated title properties are a declaration bug for the copy pass.
+polish
+T5
+The row's hover-only "Open" button and the unexplained "1/3" chip
+kind-browse-columns.tsx:446-455
+ (tabIndex −1, hidden until hover); tree chip at 
+:420
+Proposal.
+ Drop the "Open" button (the title is the link) or make it the row's keyboard target. Give the chip a title "1 of 3 subtasks done" and render it as "1 / 3" with a tiny progress ring, the way the project page's "0 of 17 done" bar does.
+The tree, opened two levels. Good rhythm; the chips need a word.
+polish
+T6
+Paging is by offset while the docs promise a cursor
+kind-browse.tsx:266-267,699
+; docs/console.md:232-235
+1,503 organizations page fine (31 pages, "1–50 of 1,503"). The cursor is used only to know there is a next page. Either is defensible; the docs should say what the code does.
+7. Record page and inline editing
+major
+R1
+A "You" chip on every row, when every value is yours
+components/property-sheet/ownership.tsx
+; task x059, Fran Lamarr, every record on ada
+Five identical pills in the right column say the same thing five times and pull the eye off the values. The chip earns its place when a provider or an agent holds a value, or when a source differs; on a repository with no provider connected that is never. On the phone each chip drops under its value and doubles the sheet's height.
+Proposal.
+ State the default once in the meta line ("Added by you 3h ago · every value is yours") and show a chip only where a row departs from it (provider badge, agent mark, "Google differs"). The detail panel stays reachable from the label's hover card and from a row menu.
+The chips at 1440 and at 390.
+minor
+R2
+The record hover card shows property keys and a raw referent id
+identity/identity-hover-card.tsx
+, 
+identity/record-ref.tsx
+Hovering "Linus Pauling" shows "emails / memberOf / name" as labels and "globex" for the organization. The guide says the card carries up to three key property values; keys are for technical mode.
+Proposal.
+ Use the declaration's labels, resolve reference values through the batched title read the page already runs, and show the key only with the switch on.
+The hover card in everyday mode.
+minor
+R3
+The prose editor saves on blur and cancels on Esc with no visible controls
+components/record/record-body.tsx:57-78
+Clicking "Add details…" opens a bare textarea. Typing then clicking elsewhere saves silently; Esc throws the text away silently. The list editor next to it shows Save, Cancel and "Enter adds a line · ⌘Enter saves · Esc cancels".
+Proposal.
+ The same footer as the list editor under the textarea, and a "Saved" toast or an inline tick on blur-save.
+Left: the body editor. Right: the list editor it should borrow from.
+minor
+R4
+Dates edit in the browser's native datetime control
+components/property-sheet/inline-editor.tsx
+Clicking "8 Oct, 11:00" turns it into 
+08/10/2026, 11:00
+ with the OS calendar glyph, in the browser's locale order and chrome. Every other value type got a Paper-styled control.
+Proposal.
+ A small calendar popover (month grid + time field, Base UI) that opens on the same click, with the native control kept on touch devices where it is the better keyboard.
+The native control inside the Paper sheet.
+polish
+R5
+The ⋯ menu holds one item, Delete
+Proposal.
+ Copy link, Duplicate, Open in YAML (technical), then Delete under a separator. The menu is the natural home for "Who holds each value" once R1 hides the chips.
+polish
+R6
+Small inconsistencies on the sheet
+Priority "High" is red in the grid (kind-hue ladder) and grey on the record page (
+property-value.tsx:139-148
+); the enum should render the same in both.
+The empty token is "—" in the grid and "Empty" on the sheet.
+"Hide empty" / "9 empty: …" at 390 wraps into a two-line faint paragraph; show "9 empty" alone under 480px.
+The ownership detail says "You set this" twice ("Yours · You set this · 3h ago" then "You set this. Syncs keep…").
+8. Creating a record
+This is the one flow a new user is guaranteed to try in their first minute, and it is the weakest surface in the build.
+critical
+C1
+The task create form crashes when you open "12 more"
+/data/ada.localhost/tasks/task/new
+ › "12 more: Assignee, Completed at, Exdates…" → "This page couldn't be shown … Cannot read properties of undefined (reading 'toLowerCase')"; reproducible every time on ada and record; the person form survives the same click
+Assignee, Project and Due are behind that fold, so a task cannot be created with any of them from the console. The route error boundary catches it, but the page is gone.
+Proposal.
+ Fix first (one of the folded task properties, the recurring-trait datetimes or the unpinned 
+source
+ reference, reaches a label helper with an undefined name); add a rendering test that opens the fold for every shipped sample kind.
+Before and after opening "12 more".
+major
+C2
+The create form is a different product from the record page
+components/record/create-sheet.tsx
+, 
+components/record/property-field.tsx:227,256,594
+ (native 
+<select>
+)
+The record page edits a task with a Paper enum popover, a state mover and a reference picker. The create page for the same kind uses native 
+<select>
+ elements with the stored values ("open", "utility"), a monospace placeholder "e.g. someone@example.com", a plain textarea for Phones, a "+ Add" button for Member of, and on the person form a red "expected one of unknown, friend, acquaintance, relative, coworker, publicfigure" error before anything was touched. The fields a task needs first (Assignee, Project, Due) are hidden behind "12 more" while Priority and Status, which have defaults, are shown. The prototype's 
+newRecord()
+ is the record page in a new state; the build wrote a second form.
+Proposal.
+ Make "New" the record page with an unsaved record: the same 
+PropertySheet
+ rows and the same editors, rows ordered required → commonly filled (references, dates) → the rest folded, validation on blur in the sheet's own error style, and one primary "Create task". Delete 
+property-field.tsx
+'s form controls once the sheet covers them; keep the YAML lens as the technical alternative.
+New person: native controls, lowercase enum values, an error before input.
+minor
+C3
+Create-flow copy is the engine's
+pages/record-editor.tsx:274,297,579,602,621
+; 
+property-field.tsx:273,315-316,600-631
+; 
+record-combobox.tsx:138-139,309
+"task created.", "The substrate rejected this apply", "Ready to apply", "The document parses and satisfies the kind's declaration", "A state changes by transition, not by editing it here", "Each one points at a ada.localhost/people/person", "Search people, or type an id".
+Proposal.
+ "Task created", "Couldn't save: 
+", "Ready to save", drop the parse sentence, "Status is set by moving it after the task exists", "Pick a person", "Search people".
+9. Merge and change requests
+major
+M1
+The change request page is a developer view that everyday users are sent to
+/change-requests/:id
+, 
+pages/change-request-detail.tsx
+; reached from the chat card's "Edit first" and "See the change" and from a record's "Suggested changes"
+A monospace 
+patch
+ chip before the title, a table headed "field / x052 NOW / proposed IF ACCEPTED / the accept", a cell "high → urgent … overwrites" in monospace, "proposed by You" (it was an agent), and a confirmation dialog that leads with "op / target / version". The chat card two clicks earlier said the same thing as "Change · Call the API docs · Priority High → Urgent".
+Proposal.
+ Rebuild the page from the card: heading "Change to Call the API docs" with the record ref, the rationale, who suggested it and when (the agent, with its mark), a two-column "Now / If accepted" using the sheet's labels and value renderers, then Accept / Reject with the card's confirmation. Ids, op, version and the raw diff move under the switch.
+Left: the page. Right: the chat cards that already say it plainly.
+major
+M2
+"Edit first" cannot edit, and "Always allow this" cannot take effect
+agent/proposal-card.tsx:143-182, 290-329
+; engine precedence in 
+internal/engine/policy.go:210-248
+ and docs/agents.md:312 (refuse › gate › allow)
+"Edit first" opens the page above, which only accepts or rejects. "Always allow this" writes an 
+allow
+ policy for that agent, kind and verb, but the engine lets the most restrictive policy win, so the 
+gate
+ that held the write still holds the next one; the rule is inert, and nothing in the console lists or revokes the rules it wrote (they are visible only as text in the technical panel).
+Proposal.
+ Rename "Edit first" to "Review" until the review page can edit (then let the reviewer change the proposed values in the sheet before accepting). Hide "Always allow this" until the engine can express an exception to a gate (open question 6); when it can, list the rules in the agent panel with a Revoke.
+minor
+M3
+The merge page speaks in keys and in projection terms
+pages/merge-request-detail.tsx:113-115,131-135
+"Are these the same?" and "Both share grace@example.com and nearly the same name." are exactly right. Then the table: "field", "goes into the other / stays", rows "details", "memberOf", "title", and a fourth column that says "recompute settles" on every line.
+Proposal.
+ Labels from the declaration; "Kept" / "Combined" / "Grace Hopper's" in the last column with the tier word only in technical mode; drop "title" (derived). The confirmation "A split can take them apart again later" becomes "You can separate them again later."
+The merge page. Good head, developer's table.
+minor
+M4
+One click deletes from the chat card; the same decision confirms on the page
+proposal-card.tsx:263-289
+ vs 
+change-request-detail.tsx:468-503
+Proposal.
+ "Delete it" on a card becomes a two-step button (press again to confirm) with the consequence line beside it; "Dismiss" needs no confirmation but should read "Reject" on the page too, or "Dismiss" in both. Pick one pair: Apply / Dismiss.
+10. Agents
+Seeing is done well. Controlling is not there yet, and the purpose statement puts control on the same line as seeing.
+major
+G1
+What an agent may see and change can be read but not changed
+agent/agent-panel.tsx
+, 
+lib/agent-chat.ts:325-363
+; "Edit agent" → the agent's record page → 
+permissions
+ as an object property or YAML
+The panel says "Can see: All your data · Can change: All your data. It suggests anything you should decide yourself." A person who wants this agent to stop touching People has to open a core record and edit a JSON object of kind references. There is no per-agent page: runs, failures, budgets and cost are never rendered (the thread's 
+status
+ and 
+costUSD
+ exist on the wire).
+Proposal.
+ (a) A grants editor in the panel: two lists of collections with checkboxes for "can see" and "can change", a switch "asks before changing", the tools it may use; it writes the agent record with 
+ifVersion
+. (b) An agent page at 
+/agents/<id>
+ (the route already redirects) with the panel's facts, "What it changed" (the actor feed), recent runs with cost and failures, and its rules. Link it from the panel and from Tools › "Used by".
+The panel reads well; nothing on it is a control.
+minor
+G2
+"No API key for OpenAI yet" sends a person to a core record to paste a secret
+agent/conversation.tsx:68
+, 
+agent-panel.tsx:99
+The banner's "Add the key" opens 
+substrate.reamde.dev/llm/provider/openai
+, an internal record, where the key is an 
+apiKey
+ row. The panel's orange "No API key for OpenAI yet." looks like a link and is not. Everyday copy also calls OpenAI "the provider", the word the console uses for Google.
+Proposal.
+ A "Add your OpenAI key" dialog (secret field, "never shown again") from both the banner and the panel; call the row a "model account" in everyday copy.
+polish
+G3
+Small chat things
+Thread list shows "Substrate · in 8h" and "in 3h" for future timestamps; clamp relative time to "just now".
+Card values are stored words ("Priority high → urgent", "Status open") while the same values are "High", "Open" one screen away.
+The "Runs on its own" group is a collapsed row with a count; the prototype listed those agents under the others with a "Runs on its own" caption, which reads better than a fold.
+No agent hover card: hovering an agent name in "Used by" or the thread list should give the same card the panel head shows.
+11. Tools
+minor
+L1
+Pausing a tool is immediate; pausing a provider asks first
+pages/tool.tsx:194-206
+ vs 
+providers/bundle-actions.tsx:695
+; the account's sync Pause (
+sync-panel.tsx:395
+) is also immediate
+Proposal.
+ One Pause dialog for all three: "Pause Google Contacts sync? It won't run on its own until you resume it. Nothing it brought in changes."
+minor
+L2
+"Never ran" on built-in tools that run inside every agent turn
+Tools › Built in: Ask you a question, Look things up, Make a change, Suggest a change all read "Never ran"
+Host functions are not recorded as trigger runs, so the chip is truthful about the table and wrong about the world. On ada the Substrate agent has used "Look things up" in 25 chats.
+Proposal.
+ Omit the run chip where nothing records runs, or count tool calls from 
+llm/message
+ rows ("Used 40 times · last 2h ago") for built-ins and agent tools.
+Tools. The card layout is right; the status chips on the last row are not.
+polish
+L3
+Origin marks: four renderings of "yours / from Google"
+tools/tool-marks.tsx
+ OriginTag, 
+lib/provenance.ts
+ TierTag, 
+home/collection-card.tsx:46
+, 
+ownership.tsx
+ Holding chip
+Proposal.
+ One 
+OriginMark
+ (mark + word) used on tool cards, collection cards, the provider's "What it brings in" and the ownership chip.
+12. Providers
+minor
+P1
+A provider's page never shows what the provider did to your data
+pages/provider.tsx
+; History › By providers exists, 
+/actors/bundle:…:google
+ exists, neither is linked from the page
+The page answers "is it set up" and "what will it bring in" and stops. The owner's purpose includes understanding what providers do to your data; the actor feed for the bundle is one query away and already renders as sentences.
+Proposal.
+ A "Recent activity" section on the provider page (the actor feed narrowed to the bundle and its functions, ten rows, "See all in History"), and per collection in "What it brings in" the last sync time.
+The provider page at step 2 of 4.
+minor
+P2
+The sign-in details dialog explains fields in developer notes
+sync/credentials-dialog.tsx
+; helper text comes from the input declarations ("the Google OAuth client id (from the Google Cloud console)", "the Google OAuth client secret — sealed at rest, never read back")
+Proposal.
+ Helper text under the dialog's control, not the declaration's: "From the app you created in Google Cloud." and "Saved once and never shown again." The declaration's description stays for technical mode. Also capitalise account labels that start a sentence ("work is waiting for you…").
+The credentials dialog.
+polish
+P3
+Technical mode prints whole declaration descriptions under "What it brings in"
+"One connected Google account. The OAuth facility writes its credential reference, status and granted scopes; the owner enables features and picks the cadence, and each stream keeps its own cursor here — except the per-calendar one, which lives in a calendarsync state row."
+Proposal.
+ Two lines with a "more" disclosure; the paragraph belongs on the kind's Definition tab.
+13. History and actors
+major
+Y1
+Sentences about system records read as nonsense, and value chips use a bare "+"
+History with system changes shown, Home when the fill window includes them, the actor page for "You"; 
+changelog/history-feed.tsx
+, 
+changelog/value-moves.tsx
+"Google changed google", "notes bundle changed notes", "You changed navigation" followed by "Collapsed + · Density + Comfortable · Favorites + · Sidebar open + No", and "Origin digest 82007523704685a2e7d5bd9e4ca99934e7e96b74ada02b8c2dd46b6598b… → 075e3623f6acd8677e5d02c6c84966e76c511c22dfef500727d9dde2051…" in everyday mode. The "+" means "value added" to the author and nothing to a reader; a sixty-character hash is never everyday content.
+Proposal.
+ Name system records by what they are to the person: "Google updated its package to version 35", "You changed your console layout (sidebar closed, table width Full)". Spell added and removed values ("Density: set to Comfortable", "Emails: added grace@…", "removed …") or use ＋ / − glyphs with a tooltip, consistently with the record page's history. Hide digests, cursors and other host-written properties outside technical mode.
+History with system changes shown, everyday mode.
+minor
+Y2
+In technical mode the actor id sits inside the sentence
+"You 
+api
+ changed navigation", "Substrate 
+substrate
+ changed recordmapping", "Google 
+bundle:providers.substrate.reamde.dev:google
+ added 12 triggers"
+Proposal.
+ The raw actor id goes after the sentence in the faint mono line that already holds the sequence numbers ("#2138–2142 · actor console"), so the sentence still parses.
+Technical History.
+polish
+Y3
+Table view: clock time only, truncated kind, whole-row expand chevron at 12px
+Proposal.
+ Show the date on the first row of each day; let the kind column show the last segment with the full reference in a title; make the whole row the expand target.
+14. Settings, sign-in and register
+minor
+E1
+Account and session copy is written for the operator
+Settings › Account › "Second factor: off … the operator issues one with 
+substratectl user reset
+"; Settings › Signed in dialog "Revoking it signs you out… A revoked token cannot be restored"; sign-in "Signing in mints a token that stays in this browser"; register "Registering creates your repository, seeded with the shipped kinds"
+Proposal.
+ Second factor: "Off. This substrate signs you in with a password alone." (operator note only in technical mode). Sessions: "Sign out this browser? It will need your password again." Sign-in: "Your name and password." Register: "Choose the name your data lives under."
+minor
+E2
+"Repository" is the label on the sign-in field
+The model says the name is the repository's authority and there is no username, which is right. To the person typing it, it is their name. "Repository" reads as a git term.
+Proposal.
+ Label "Your name" with the helper "The name you registered, such as ada.example.com. It is also the address of your data." Open question 3.
+Sign in, as the system theme rendered it.
+polish
+E3
+Row height applies to the grid and All data only
+useDensity
+ is read in 
+kind-browse.tsx
+, 
+all-data.tsx
+ and the setting itself; the sidebar, authority page, thread list, connected-records lists and pickers are fixed
+Proposal.
+ Either wire density through the sidebar rows and every list (30px compact / 38px comfortable), or describe the setting as "Table rows".
+15. Technical mode
+Mostly complete, and the best-executed part of the two-reader idea. What is there: references and ids with copy on the record and collection heads, keys under labels, YAML source with links, the Definition tab, the tool's Developer section, the provider's connection details, the agent manifest, sequence numbers, the table view, per-arm scores. What a developer still reaches for:
+minor
+X1
+Gaps a developer hits in the first hour
+No copy button on inline actor ids, sequence numbers, mapping ids, connected-record paths or the hover card footer.
+No raw JSON of a record (YAML only), and the YAML omits 
+linkedFrom
+.
+Tool runs list has no per-run input and output; a trigger's cursor and lag live only on the provider's connection details, not on the tool that runs it.
+The change request page does not name the policy that gated it, the thread it came from, or the judge's verdict (only the chat card does).
+Threads never show their stored status, token counts or cost; only the just-finished live run does.
+Provenance chips never name the mapping behind a synced value (
+mappingOfSource
+ exists in 
+lib/provenance.ts:146
+, nothing calls it).
+minor
+X2
+The technical sidebar drops display names entirely
+app-sidebar.tsx:180-323
+; sidebar rows read "calendarevent", "emailthread", "scratchpad" under package headings
+A developer benefits from the label too; the raw name is what they copy, and the copy button is elsewhere. Twenty lowercase words in a column are hard to scan.
+Proposal.
+ Label first, name in faint mono beside it ("Calendar events 
+calendarevent
+"), tree structure unchanged. Open question 7.
+Technical mode on a record and in the agent panel: complete and readable.
+16. Colour, type and themes
+major
+V1
+The faint text token fails contrast wherever it carries meaning
+--faint: #9a9892
+ on white ≈ 2.9:1, on the sidebar ≈ 2.7:1; 225 uses, among them every grid column header, every count in the sidebar, every page meta line, every setting description, "Empty", section hints, the pagination bar, date group headings. Soft pill ink also fails: warning #b7791f on #fbf1de ≈ 3.3:1, ok #2f8f5b on #e6f4ec ≈ 3.6:1, the yellow priority tag ≈ 3.5:1, all at 12px.
+Paper's quietness comes from the palette, and it is right to keep it; but 2.9:1 at 12.5px is below what a person with ordinary eyesight reads comfortably on a bright day, and it is the tone used for the labels that tell the reader what a number is.
+Proposal.
+ Split the token: 
+--faint
+ (#9a9892) for icons, separators and decoration; 
+--faint-text
+ (#7d7b74 light ≈ 4.6:1 at 13px, #8a8983 dark) for any text under 14px that names or counts something. Darken pill inks in light mode one step (warn #94600f, ok #256f46, blue #2358bf) and keep the soft fills.
+minor
+V2
+Monospace where the guide says never
+History values (
+false → true
+), the OpBadge (
+patch
+), change-request values and version numbers, row-detail timestamps and op, merge evidence sentences, error messages in 
+page-error.tsx
+ and the record editor, the "sealed" secret placeholder, the account name on Settings
+Proposal.
+ Mono only for ids, references, YAML, URLs and code. A value in History renders through the same 
+PropertyValue
+ as the sheet; an op is a word; an error message is prose.
+polish
+V3
+Type sizes below the floor, and the wordmark
+Purpose tags at 10px, the Developer headings at 11px uppercase, the badge letter at 10px. The guide's scale starts at 12. The login page's "substrate" wordmark with a blue tile is the one place the product has a face; the console's sidebar shows only the repository's initial in a black square.
+Proposal.
+ 11.5px floor for any text. Consider the wordmark tile as the sidebar's mark when collapsed.
+Dark theme: grid and record. Consistent, and the kind hues hold up.
+17. Responsiveness
+1024 works everywhere I looked: the grid scrolls sideways under a pinned title column, the record page keeps its width, the agents page drops the panel behind a toggle. 390 is usable on every page, with one break.
+minor
+W1
+Page titles split mid-word on the phone when actions share the row
+Tool page at 390: "Google Contact / s sync" beside Pause and Sync now; 
+identity/page-header.tsx:40
+ uses 
+break-words
+Proposal.
+ Under 560px the actions row drops below the title and meta; the title takes the full width with 
+overflow-wrap: anywhere
+ only as a last resort.
+Tool page at 390.
+polish
+W2
+Phone details
+The record sheet's ownership chips stack under every value (goes away with R1).
+The empty-properties line becomes a wrapped faint paragraph (R6).
+The sidebar sheet is fine; the Technical details switch sits at its foot, reachable.
+The agents page at 390 hides the chat list behind a "Chats" button and the panel behind the toggle; the composer stays at the bottom. Good.
+Agents at 390 and 1024.
+18. Accessibility
+Icon buttons are labelled and confirmations are real dialogs. The gaps are in editing and focus.
+major
+B1
+Editing is mouse-first
+record-header.tsx:136-154
+ (
+<h1 onClick>
+, no role, no key handler); 
+property-sheet.tsx:152-181
+ (aria-label "Edit Status" replaces the value, links nested inside role=button); focus drops to 
+<body>
+ after every save because the editor unmounts; the value cell's focus style is a 5.5% tint
+The title cannot be edited from the keyboard at all.
+A screen reader hears "Edit Status, button" and never "Open".
+After Enter saves, focus is lost; Tab starts from the top of the page.
+Tooltips on plain 
+<span>
+s (definition, yaml view, column headers, the "Update blocked" pill) never open for keyboard users.
+Proposal.
+ Title as a button that becomes an input; value cell announces "Status: Open, edit" (aria-label from label and rendered value, or 
+aria-describedby
+); return focus to the cell after save or cancel; a 2px ring on 
+:focus-visible
+ for cells, the body and the title; tooltip triggers rendered as buttons.
+minor
+B2
+Tables, targets and motion
+No 
+aria-sort
+ anywhere; the sort state is an icon inside the header button.
+The pinned first column can cover a focused link scrolled in from the right; the scroll container has no tabindex.
+Targets under 24px: copy button 20px, tree expander 18px, the Technical details switch 18×30, column move arrows ≈18px, the table's row expander ≈12px.
+Nothing honours 
+prefers-reduced-motion
+; every popover and dialog animates, two places scroll smoothly by code.
+Segmented controls (Settings, Search, History, actor page) are hand-copied four times with two ARIA semantics (radio vs pressed) and no arrow-key handling.
+The agents page nests a second 
+<main>
+ inside the shell's.
+19. Performance feel
+minor
+Q1
+Only the provider pages update live
+hooks/use-live-records.ts
+ is used by 
+providers/use-providers.ts:219-231
+ alone; the grid, the record page and the chat list refetch only after the console's own writes (30s stale time)
+A person watching a record while an agent changes it, or a table while a sync fills it, sees nothing until they reload. The changes stream is already open for History.
+Proposal.
+ Subscribe the record page and the open collection to the same stream (debounced invalidation on their kind and id); mark a row that changed under you with a brief highlight.
+polish
+Q2
+What is already good, and one guard
+Skeletons on every page, the previous page kept at 60% while the next loads, reference titles fetched by 
+expand
+ with a graceful fallback, batched title reads for the record page, counts bounded and marked. Against a server without 
+count
+, Home fires a sequential doubling probe per collection; cap that to one probe and show "many" rather than a late-arriving number.
+20. Where the build leaves the prototype and the guide
+Stated plainly, so the owner can decide which are intended.
+Surface
+Prototype / guide
+Build
+Verdict
+Collection header
+Reference only with Technical details on
+Mono reference + copy in everyday mode
+Revert (S1)
+Home
+Cards, Collections, 
+Recent chats
+; "made by an agent" origin
+Cards, Collections, Recent changes; no origin
+Add chats; origin needs engine (Q5)
+Collection toolbar
+Saved views (All / Open / Mine / +), Group by, favorite star, ⋯
+Nesting switch, Add filter, search, sort, columns
+Later (Q4)
+Priority cell
+Bar-glyph ladder
+Coloured tag
+Either; keep one across grid and sheet (R6)
+Due cell
+Today / Tomorrow / overdue coloured
+Present (Today amber, done greyed)
+Matches
+New record
+newRecord()
+: the record page in a new state
+A separate form with native controls
+Rebuild (C2)
+Change request page
+No prototype (cards only)
+Invented from the wire
+Rebuild from the card (M1)
+Ownership chip
+At the right end of a property row
+Same, on every row including all-yours records
+Show on departure only (R1)
+Mono usage
+Only what you copy; never times, verbs, statuses, counts
+Leaks in History, requests, editor, errors
+Copy pass (V2)
+Filters
+Full-size field | value | × controls, never chips
+Matches
+Keep
+Row heights, sheet rows, type scale
+38 / 30, 36, 12–32
+Matches (a few 10–11px tags)
+Keep; floor at 11.5
+Section headings
+One component
+Ten local copies of the recipe
+Consolidate (§21)
+21. Cross-cutting system proposals
+Component and token changes that resolve many findings at once.
+One 
+SectionHead
+h2 15px/600/−0.01em with an optional faint hint and a right-aligned action, in 
+components/identity/
+. Replaces the copies in record.tsx, provider-marks.tsx, tool.tsx, tools.tsx, home.tsx, setting-row.tsx, all-data.tsx, authority.tsx, actor.tsx and merge-request-detail.tsx, which differ in margins, alignment and tracking today.
+One pill family
+StateBadge
+ (dot + word; tag variant) for states; one 
+Pill
+ for statuses (merge provider-marks 
+Pill
+, tool-marks 
+StatusPill
+, 
+SyncStateBadge
+); retire shadcn 
+Badge
+ from merge/change requests and definition. Delete 
+components/state-badge.tsx
+ (no importers), 
+actor-chip.tsx
+, 
+record-pill.tsx
+, 
+record-peek.tsx
+; merge 
+ReferenceMark
+ and 
+ReferenceValue
+.
+One 
+EnumTag
+ and one 
+ChoiceList
+The grid's hue ladder and the sheet's grey tag become one component with one colour map; the sheet's enum popover, the state mover and the filter value picker share one keyboard-driven list. Display words everywhere, stored values with the switch.
+PageHeader
+ with a "glyph above" layout
+The record, merge, change-request and editor heads hand-roll a glyph row with actions on the right and a 32px title. Add that layout to 
+PageHeader
+ (size="record" already exists and is unused) so every head has one place for actions, meta and description.
+Tokens
+--faint-text
+ beside 
+--faint
+ (V1); darker light-mode pill inks; 
+--row-comfortable: 38px
+ / 
+--row-compact: 30px
+ read by the grid, sidebar and lists so density is one switch; an 
+--empty
+ token word ("—") used by grid and sheet alike.
+One 
+Segmented
+ control
+The Settings/Search/History/actor segmented buttons become one component with roving tabindex and arrow keys, radio semantics.
+One confirmation pattern
+A 
+ConfirmDialog
+ with title, consequence and a destructive variant, used by Delete, Remove, Pause (provider, tool, account sync), Disconnect, Sign out, Reject/Dismiss-with-delete, Combine, Follow. Today six of these confirm and five do not.
+A word list for the copy pass
+Accept / Apply → 
+Apply
+; Reject / Dismiss / Keep apart → 
+Dismiss
+ (merge keeps "Keep them apart"); Suggested / Proposed → 
+Suggested
+; Update / Upgrade → 
+Update
+; Add / Import / Take → 
+Add
+; Retry / Try again → 
+Try again
+; Theme / Appearance → 
+Appearance
+; History / changelog → 
+History
+; field / property → 
+property
+; Loading / Reading → 
+Loading
+. And a rule the linter can hold: no 
+authority/package/name
+ path in a string rendered without 
+useTechnicalDetails()
+.
+Retire 
+property-field.tsx
+'s controls
+Once the create page is the sheet (C2), the native selects, textareas and "+ Add" buttons go, and there is one editor per value type in the whole console.
+22. Roadmap
+Effort: 
+S
+ under a day, 
+M
+ a few days, 
+L
+ a week or more. "Now" is before this branch merges.
+When
+Item
+Findings
+Effort
+Now
+Fix the task create crash; add a fold-open test for every shipped kind
+C1
+S
+Now
+Create page = record page with an unsaved record; retire the native form controls
+C2, C3
+L
+Now
+Rebuild the change request page from the chat card; rename "Edit first"; hide "Always allow this"
+M1, M2, M4
+M
+Now
+Filters: one ChoiceList with display words for states and enums
+T1
+S
+Now
+Collection header: reference behind the switch; drop sidebar title tooltips
+S1
+S
+Now
+Ownership chips only where a row departs from the default
+R1
+S
+Now
+History sentences for system records; spelled-out value moves; no digests in everyday mode
+Y1, H2
+M
+Now
+Contrast tokens (
+--faint-text
+, pill inks)
+V1
+S
+Now
+Add-a-collection lists collections only; provider badge on Home cards
+A1, H1
+S
+Now
+Keyboard: title edit, cell announcement, focus return, focus rings
+B1
+M
+Next
+⌘K searches records inline; prefix matching for pages and collections
+K1
+M
+Next
+Copy pass with the word list; search blurbs; auth and account copy; provider dialog helper text
+K2, C3, E1, P2, G3
+M
+Next
+Component consolidation: SectionHead, pills, EnumTag, PageHeader layout, Segmented, ConfirmDialog; delete shims
+§21, L1, S4
+M
+Next
+Body editor footer; calendar popover for dates; ⋯ menu items
+R3, R4, R5
+M
+Next
+Provider page "Recent activity"; tool run status for built-ins
+P1, L2
+S
+Next
+Live updates on the record page and the open collection
+Q1
+S
+Next
+Sidebar state per browser; hover-reveal when collapsed; document titles
+S2, S3, S6
+S
+Next
+Technical-mode gaps: copy buttons, JSON view, run IO, request's policy and thread, thread cost
+X1
+M
+Next
+aria-sort, targets, reduced motion, tooltip triggers
+B2
+S
+Later
+Agent grants editor and an agent page with runs, cost and rules
+G1, G2
+L
+Later
+Gate exceptions in the engine, then "Always allow this" with a rules list
+M2
+M + engine
+Later
+Saved views and Group by on collections; favorite star in the top bar
+T3 (§20)
+L
+Later
+"Made by an agent": record the declaring actor on a package; a package (app) page with its kinds, tools and agent
+H1, Q5
+M + engine
+Later
+A key dialog for model accounts; "Ask an agent" that picks the agent that can declare kinds
+G2, A2
+S
+23. Open questions for the owner
+The reference line on collection pages.
+ The build shows it in everyday mode; the guide does not. Was that a deliberate change of mind, or drift? (S1)
+Home's third section.
+ The prototype had Recent chats; the build has Recent changes. Both, chats first? (H2)
+The sign-in word.
+ "Repository" is the model's word. Is "Your name" (with the address as helper) acceptable on the sign-in and register pages, or is the repository word part of the product's identity? (E2)
+Saved views and Group by.
+ They are in the approved prototype and not in the build. In scope for this redesign, or a later feature? (§20)
+Apps built by agents.
+ Today an agent's collections land in "Your data" flat, indistinguishable from samples. Should a package record the actor that declared it, so the console can say "Recipes · made by Notekeeper" and offer a package page with its kinds, its tools and its agent? That is an engine field, not a console change.
+"Always allow this".
+ The rule it writes cannot outrank a gate. Should the engine gain an exception form (an allow that names the gate it overrides), or should the control go? (M2)
+The technical sidebar.
+ Raw kind names only, as documented, or label with the name beside it? (X2)
+Sidebar state.
+ Shared through the preference record by design; is per-device acceptable? (S2)
+Model keys.
+ Is a console dialog for pasting an OpenAI key acceptable, or must a secret only ever be written through a record's own page? (G2)
+Density.
+ Should Compact reach the sidebar, lists and pickers, or stay a table setting? (E3)
+24. Appendix: method and screenshots
+Every screenshot was taken from the vite build on port 5310 against the shared dev substrate, signed in through the 
+__shot.html
+ helper, in headless Chrome with a scripted CDP driver (
+fable-review/cdp.mjs
+) for clicks, hovers, typing, dark theme and phone emulation. Technical mode was switched through the repository's own preference record on the 
+record
+ repository and restored afterwards; the 
+ada
+ repository's sidebar preference was restored after the collapse test. The prototype was served over HTTP and screenshotted at its hash routes. Three code audits (copy and dead words; accessibility and component consistency; technical mode, agent and provider control, provenance and loading) were run against the source and are folded into the findings above with file and line references.
+All screenshots in the shots folder (58)
+home-1440, home-dark-1440, d-home, w1024-home, home-390
+data-1440, add-collection, i-package
+tasks-1440, tasks-dark-1440, d-tasks, w1024-tasks, w390-tasks-js, people-1440, orgs-1500, table-nested, i-tree
+i-cmdk, i-cmdk-2, i-filter, i-filter-2, i-filter-applied, d-filter, i-sort, i-sort-2, i-showcols, i-empty, i-empty-provider
+task-record, person-record, project-record, d-record, w1024-record, w390-record, i-person-full
+i-enum, i-enum-2, d-enum, i-edit-text, i-edit-text-2, i-edit-text-3, i-edit-date, i-edit-date-2, i-body-edit, i-own, i-hover, i-menu, i-menu-2
+new-task, i-new-expanded, i-new-person, i-new-person-2
+merge-request, change-request, t-merge
+agents-1440, agents-chat, i-proposals, i-proposals-2, w1024-agents, w390-agents, t-agents
+tools-1440, d-tools, t-tools, tool-stats, tool-synccontacts, i-tryit, t-tool, w390-tool
+providers-1440, t-providers, provider-google, provider-google-step3, i-creds, t-provider, w1024-provider, w390-providers
+history-1440, i-history-system, d-history, t-history, t-history-2, i-actor, t-actor
+search-1440, t-search, settings-1440, i-settings-full, d-settings, t-settings, w390-settings, w390-sidebar, i-account, i-account-2
+t-home, t-data, t-tasks, t-record, t-yaml, t-task, t-definition, t-cmdk
+auth-login, auth-register
+proto-home, proto-collection, proto-record, proto-agents, proto-tools, proto-tool-page, proto-providers, proto-settings, proto-history
+Review of 
+console/redesign
+ at 
+3a243d4c
+, 26 September 2026. Severity: critical = blocks use or loses data; major = a purpose is not served or a first-minute flow is wrong; minor = a person notices and works around it; polish = a designer notices.

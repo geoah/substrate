@@ -1,0 +1,48 @@
+# Wave 2 brief — consolidation, accessibility, and the catalog's purposes (four parallel agents)
+
+Round 3 wave 1 merged into `console/redesign` (draft PR #648): the design review's (Fable) Now/Next findings per page area. Wave 2 finishes the "Next" column's cross-cutting items. Findings text: `scratchpad/fable-review/review.txt` (ids on their own line; §21 "Cross-cutting system proposals" near the end). Owner exclusions: **no aria-sort** (Later); **no search scope filtering by kind purpose** (Later — search API is being reworked elsewhere).
+
+Scratchpad = `/private/tmp/claude-501/-Users-geoah-src-github-com-geoah-substrate/ecb153f3-6121-45bd-9577-eebedb8a34f1/scratchpad`. Read first: your worktree's `CLAUDE.md`; `scratchpad/DESIGN-GUIDE.md`; "Run and look" + "Rules" in `scratchpad/PAGE-BRIEF.md` (dev substrate :8097 — never restart it; `shot-vite.sh <repo-prefix> <port> <out> <path> [w] [h]`; CLI configs `scratchpad/dev/ctl-<repo>.yaml`; substratectl at `/Users/geoah/.t3/worktrees/substrate/console-redesign/bin/substratectl`). Note `history.localhost` does not exist on :8097; use the others.
+
+| area | worktree | branch | vite port | dev repository |
+|---|---|---|---|---|
+| dialogs | ~/.t3/worktrees/substrate/w2-dialogs | console/w2-dialogs | 5341 | nav.localhost |
+| heads | ~/.t3/worktrees/substrate/w2-heads | console/w2-heads | 5342 | record.localhost |
+| choice | ~/.t3/worktrees/substrate/w2-choice | console/w2-choice | 5343 | table.localhost |
+| catalog | ~/.t3/worktrees/substrate/w2-catalog | console/w2-catalog | 5344 | tools.localhost |
+
+Deps installed; `web/console/public/__shot.html` in place (git-excluded; move it aside into the scratchpad while running `ci:console`, then back).
+
+Rules: no push, no PR, no AI attribution lines, conventional commit titles, one logical change per commit, tests with every change (failing test first for bugs). Delete dead code you replace. Four agents touch overlapping page files: make each edit the smallest that does your job (swap the component, keep the surrounding markup), so the orchestrator's merges stay mechanical. Verify `mise run ci:console` green (and the Go checks listed for catalog) before reporting. Keep screenshot loops small (≤ 8 images).
+
+## dialogs — ConfirmDialog, Segmented, and B2 (minus aria-sort)
+- **One `ConfirmDialog`** (`components/ui/confirm-dialog.tsx`): title, consequence line, confirm word, destructive variant, pending state. Use it for every confirmation: Delete, Remove, Disconnect, Sign out (S4: the account menu's sign out now confirms, with the same dialog as Settings: "Sign out? This browser will need your password again."), Combine/Keep apart where a dialog exists, and **Pause** (L1): tool Pause (`pages/tool.tsx`), provider Pause (`components/providers/bundle-actions.tsx`) and the account sync Pause (`components/sync/sync-panel.tsx`) share one Pause dialog: "Pause <name>? It won't run on its own until you resume it. Nothing it brought in changes." Replace the local dialog copies you find.
+- **One `Segmented`** (`components/ui/segmented.tsx`): radio semantics, roving tabindex, arrow keys, Home/End. Replace the hand-copied segmented controls (Settings, Search, History, actor page, the record source YAML/JSON switch, any other).
+- **B2 without aria-sort**: targets ≥ 24px (copy button, tree expander, Technical details switch, column move arrows, table row expander) — grow the hit area (padding/pseudo-element), not the glyph; honour `prefers-reduced-motion` globally (popover/dialog animations, the two smooth `scrollIntoView`/scrollTo calls, the live-change row fade); tooltip triggers on plain spans become focusable buttons (definition, yaml view, column headers, "Update blocked" pill, any other); the grid scroll container gets `tabIndex={0}` and an accessible name, and a focused cell scrolls clear of the pinned column (`scroll-padding-left`); the agents page's nested second `<main>` becomes a `<div>`/`<section>`.
+- Also: `bg-faint` used for decorative dots (`components/providers/accounts-section.tsx`, `components/agent/message-text.tsx`) → `bg-faint-deco`.
+- Owns: `components/ui/confirm-dialog.tsx`, `components/ui/segmented.tsx`, every call site swap for those two, and the B2 edits.
+
+## heads — SectionHead, PageHeader layout, one pill family, shim deletion
+- **`SectionHead`** in `components/identity/section-head.tsx`: h2 15px/600/−0.01em, optional faint hint, right-aligned action. Replace the local copies in record.tsx, provider-marks.tsx, tool.tsx, tools.tsx, home.tsx, setting-row.tsx, all-data.tsx, authority.tsx, actor.tsx, merge-request-detail.tsx, change-request-detail.tsx and any other you find.
+- **`PageHeader` "glyph above" layout** (`size="record"` exists and is unused): one place for glyph row, title, meta, description and right-side actions. Move the record, merge, change-request, editor/create heads onto it. W1 (review): under 560px the actions drop below the title and the title wraps normally (no mid-word split), `overflow-wrap:anywhere` only as last resort.
+- **One pill family**: `StateBadge` for states; one `Pill` (new, `components/identity/pill.tsx`) for statuses, merging providers' `Pill`, tools' `StatusPill`, `SyncStateBadge`; retire shadcn `Badge` from merge/change requests and the definition view. L3: one `OriginMark` (mark + word: "Yours", "From Google", "Made by <agent>") used on tool cards, collection cards, the provider's "What it brings in" and the ownership chip.
+- **Delete shims**: `components/state-badge.tsx` (no importers), `actor-chip.tsx`, `record-pill.tsx`, `record-peek.tsx` (move any remaining importer onto the identity components); merge `ReferenceMark` and `ReferenceValue` into one.
+- V3: an 11.5px floor for text (purpose tags at 10px, Developer headings at 11px uppercase, badge letters at 10px).
+- Owns: the new identity components and the call-site swaps for them.
+
+## choice — EnumTag + ChoiceList, one enum look everywhere
+- One `EnumTag` with one colour map (grid's hue ladder — the grid's current `components/data-table/enum-tag.tsx` — is the reference) used by the grid, the property sheet (`property-value.tsx`, which today draws enums grey: R6), filters, change request/card values, history value moves.
+- One keyboard-driven choosing list: `components/ui/choice-list.tsx` (table agent's, wave 1) is the base. Move onto it: the sheet's enum popover (`components/property-sheet/inline-editor.tsx` or wherever it lives), the state mover, `components/record/property-choice.tsx` (create agent's, wave 1) — delete what duplicates.
+- R6 leftovers: one empty token ("—" or "Empty", pick one via an `--empty`-style constant used by grid and sheet alike); under 480px the "N empty: …" line shows "N empty" alone; ownership detail doesn't say "You set this" twice.
+- T2 (review): fold the title-backing property into the title column (no "Name … Name" in Sort and Columns); Columns list groups the empty ones under a trailing "N empty" disclosure. T3: footer left says "72 tasks" (tree: "72 tasks · 60 at the top level"); the hidden-columns notice becomes a count badge on the Columns button.
+- Owns: `components/ui/choice-list.tsx`, `components/data-table/enum-tag.tsx` (may move to `components/identity/enum-tag.tsx`), the enum/state editors in `components/property-sheet/*`, `components/record/property-choice.tsx`, `components/data-table/*` for T2/T3.
+
+## catalog — kind purposes in the catalog; A1 rule; small leftovers (engine + console)
+- **Problem**: wave 1's "Add a collection" dialog (`components/all-data/sample-collections.ts`) keeps only samples with a primary kind AND no functions/agents, because the catalog closure carries no kind `purpose` (so an unadded sample reads as all-primary). That hides Notes, Pebble and Readinglist, which ARE collections. Fix at the source: the catalog listing carries each kind's declared purpose (additive wire field on the catalog closure in `internal/substrate`, filled by the engine/catalog code, wire golden regenerated with `go test ./internal/substrate/ -run TestWireGolden -update`, `types.ts` follows, docs/api.md mentions it). Then give kinds that are machinery `purpose: supporting` (or `internal`) in the samples that lack it (e.g. firecrawl's `webdocument`, llm's `scratchpad`, and any other kind in `samples/` that a person would not browse as a collection) with version bumps per AGENTS.md. Then the dialog rule becomes "at least one primary kind" alone. Check `mise run kinds:check`, `mise run test:short`, `mise run lint`, `mise run fmt:check`, the relevant DB suites ALONE (`go test ./internal/engine/ -run <Catalog…>` or `mise run test:db:engine` if needed; never concurrently with another engine suite). A decision record only if AGENTS.md's bar is met (it probably is not: purpose was decided in 0104; this only surfaces it).
+- **Samples that ship tools or agents**: Tools gets an "Add tools" entry listing samples that ship functions (Firecrawl), and Agents an equivalent for samples that ship agents, if one does not already exist; "Upgrade/Update" of an added sample belongs on its package page.
+- **Sample bundle actors** read "notes bundle": `lib/actor-identity.ts` should name a sample's bundle actor by its package's display name ("Notes").
+- `pages/tool.tsx` "Used by": switch its `ActorRef` for agents to `<AgentRef id={agent} link />` (components/agent/agent-ref.tsx).
+- Owns: the Go catalog path + wire + docs, `samples/**` and `kinds/**` purpose lines, `components/all-data/*`, `lib/actor-identity.ts`, the Tools/Agents add entry points.
+
+## Report
+Commits (hash + title), what changed per item, files touched outside your ownership, screenshots (paths under `scratchpad/shots-w2-<area>/`), known gaps.
