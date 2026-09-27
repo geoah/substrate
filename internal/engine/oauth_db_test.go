@@ -995,3 +995,63 @@ func TestOAuthStartTakesTheAccountsFullIdentity(t *testing.T) {
 	_, err = ds.StartOAuth(ctx, owner, vocabulary.RecordPath(mbAccountType, "nosuch"))
 	wantErr(t, err, substrate.ErrNotFound, "a full identity naming no account")
 }
+
+// TestOAuthReconnectClearsTheSyncError: the error pair on a `sync`-trait
+// account describes the grant a reconnect replaces, so the reconnect clears
+// it. The pair is `writer: connector`, which the facility's actor may not
+// write; the clear goes through the bundle tier. The state stays for the
+// next run to settle.
+func TestOAuthReconnectClearsTheSyncError(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	p := newFakeProvider(t)
+	svc, ds := newDataset(t,
+		engine.WithOAuth("test-state-key", "https://substrate.example/api/v1/substrate.reamde.dev/core/oauth/callback", p.ts.Client()),
+		engine.WithCredentialKey(engine.TestCredentialKey),
+	)
+	docs := mbStandardDocs()
+	mbPointOAuthAt(docs, p.ts.URL)
+	for _, d := range docs {
+		if meta, _ := d["metadata"].(map[string]any); d["kind"] != vocabulary.CoreKind(vocabulary.DocKind) || meta["id"] != mbAccountType {
+			continue
+		}
+		data, _ := d["data"].(map[string]any)
+		data["traits"] = append(data["traits"].([]any), "substrate.reamde.dev/core/sync")
+		props, _ := data["properties"].(map[string]any)
+		for name, decl := range syncProps() {
+			if name != "name" {
+				props[name] = decl
+			}
+		}
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+		t.Fatalf("install bundle: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: p.configProps()})
+	account := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: mbAccountType, Properties: map[string]any{"address": "geo@example.com", "enabledMail": true},
+	})
+	connectOAuthAccount(t, svc, ds, account)
+
+	connector := substrate.FunctionActor(vocabulary.SplitKindRef(mbEchoFn))
+	mustPatch(t, ds, connector, account.Kind, account.ID, substrate.PatchInput{Properties: map[string]any{
+		"syncState":   substrate.SyncStateErroring,
+		"syncError":   "token refresh failed: invalid_grant",
+		"syncErrorAt": "2026-09-20T10:00:00Z",
+	}})
+
+	connectOAuthAccount(t, svc, ds, account)
+
+	got := mustGet(t, ds, account.Kind, account.ID)
+	if got.Properties["tokenStatus"] != "connected" {
+		t.Fatalf("tokenStatus = %v, want connected", got.Properties["tokenStatus"])
+	}
+	for _, name := range []string{"syncError", "syncErrorAt"} {
+		if v, ok := got.Properties[name]; ok {
+			t.Errorf("%s survived the reconnect: %v", name, v)
+		}
+	}
+	if got.Properties["syncState"] != substrate.SyncStateErroring {
+		t.Errorf("syncState = %v, want the stored erroring left for the next run", got.Properties["syncState"])
+	}
+}

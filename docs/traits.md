@@ -225,7 +225,8 @@ opt into twice:
   doing them: the trigger dispatcher stamps a record-sourced delivery's start
   (`syncState: running`, `lastSyncStartedAt`), its finish (`ok` and
   `lastSyncDurationMs`, in the transaction that commits the body's last
-  effects) and its park (`erroring`, `syncError`, `syncErrorAt`) onto the
+  effects, clearing an older `syncError` and `syncErrorAt` when the run ends
+  `ok`) and its park (`erroring`, `syncError`, `syncErrorAt`) onto the
   record under the callable's own actor, when the callable is a function of
   the package that declares the kind; a record whose owner set
   `syncPaused` has those deliveries skipped; and `GET /api/v1/sync/status`

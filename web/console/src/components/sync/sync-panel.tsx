@@ -28,6 +28,7 @@ import {
   cursorText,
   durationText,
   requestServed,
+  syncErrorIsCurrent,
   syncStateOf,
   type Health,
   type SyncFields,
@@ -289,7 +290,7 @@ export function SyncSummary({
       </dl>
       {fields.progress && <SyncProgressBar progress={fields.progress} />}
       <SyncStreams streams={fields.streams} />
-      {fields.error && (
+      {syncErrorIsCurrent(fields) && (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs">
           <div className="flex items-baseline justify-between gap-3">
             <span className="font-medium text-destructive">Last error</span>

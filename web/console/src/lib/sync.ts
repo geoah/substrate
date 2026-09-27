@@ -150,6 +150,23 @@ export function requestServed(
   return Date.parse(f.requestedAck) >= Date.parse(f.requestedAt)
 }
 
+/** Whether the stored error still describes the sync: always while the state
+ * is `erroring`, otherwise only when it is newer than the last finished run.
+ * An error the engine did not clear (a scheduled run settles through the
+ * body alone) is resolved once a later run finished. A missing or unreadable
+ * instant keeps the error shown, since nothing proves it old. */
+export function syncErrorIsCurrent(
+  f: Pick<SyncFields, "state" | "error" | "errorAt" | "lastSyncedAt">
+): boolean {
+  if (!f.error) return false
+  if (f.state === "erroring") return true
+  if (!f.errorAt || !f.lastSyncedAt) return true
+  const errorAt = Date.parse(f.errorAt)
+  const syncedAt = Date.parse(f.lastSyncedAt)
+  if (Number.isNaN(errorAt) || Number.isNaN(syncedAt)) return true
+  return errorAt > syncedAt
+}
+
 // ── health ───────────────────────────────────────────────────────────────────
 
 export type Health = "healthy" | "attention" | "broken" | "idle"
