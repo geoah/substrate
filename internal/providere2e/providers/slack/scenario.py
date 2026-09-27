@@ -1748,9 +1748,10 @@ def main():
         ok(back.get("syncRequestedAck") == back.get("syncRequestedAt"),
            "the recovered run left syncRequestedAck %r against request %r"
            % (back.get("syncRequestedAck"), back.get("syncRequestedAt")))
-        ok(back.get("syncError"),
-           "syncError was cleared by a later success — it is the LAST error, "
-           "and syncState is what says the run is over")
+        ok(not back.get("syncError") and not back.get("syncErrorAt"),
+           "a run that ends ok clears the older syncError and syncErrorAt, "
+           "so a healthy account shows no stale error (%r)"
+           % back.get("syncError"))
 
     # --------------------------------------------------------------- 16
     section("16. new history lands while a backlog drains")
