@@ -1823,7 +1823,13 @@ func captureState(t *testing.T, e *testenv.Env, ds substrate.Dataset, scoped *sq
 	s.kindVersions = kindVersions(t, e)
 	for _, st := range statuses(t, e) {
 		s.statuses[st.ID] = st
-		s.parked[st.ID] = parkedOf(t, e, st.ID)
+		parked := parkedOf(t, e, st.ID)
+		// Running is what this process is delivering now, not what the
+		// repository holds: a restore starts with nothing running.
+		for i := range parked {
+			parked[i].Running = false
+		}
+		s.parked[st.ID] = parked
 	}
 	s.pagedCursors = pagedCursors(t, scoped)
 	if err := scoped.QueryRowContext(ctx, `SELECT count(*) FROM changelog WHERE op = 'delivery'`).Scan(&s.deliveries); err != nil {
