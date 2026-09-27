@@ -369,6 +369,33 @@ export interface ChangePage {
   generation: string
 }
 
+/** Consecutive rows of the filtered feed that share an actor, a kind and a
+ * verb (`substrate.ChangeRun`, decision 0110). A run is whole: a page never
+ * ends inside one, so `count` is exact. `verb` is `create`, `restore` or
+ * `update` for a put (a patch is an `update`) and the op otherwise.
+ * `recordId` is set when the run touched one record. */
+export interface ChangeRun {
+  actor: string
+  kind: string
+  verb: string
+  count: number
+  records: number
+  recordId?: string
+  newestSeq: number
+  oldestSeq: number
+  newestTs: string
+  oldestTs: string
+}
+
+/** The `runs=1` history page (`substrate.ChangeRunPage`): `first` counts
+ * runs, and `cursor` is the oldest run's `oldestSeq` when rows lie below. */
+export interface ChangeRunPage {
+  runs: ChangeRun[]
+  cursor?: number
+  head: number
+  generation: string
+}
+
 /** One predicate of the filter grammar (`substrate.Cond`). The console writes
  * eq/in/contains/prefix; the rest of the grammar rides along for completeness. */
 export interface Cond {

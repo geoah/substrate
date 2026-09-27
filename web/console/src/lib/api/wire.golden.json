@@ -162,6 +162,24 @@
     "triggers": false,
     "ts": true
   },
+  "ChangeRun": {
+    "actor": true,
+    "count": true,
+    "kind": true,
+    "newestSeq": true,
+    "newestTs": true,
+    "oldestSeq": true,
+    "oldestTs": true,
+    "recordId": false,
+    "records": true,
+    "verb": true
+  },
+  "ChangeRunPage": {
+    "cursor": false,
+    "generation": true,
+    "head": true,
+    "runs": true
+  },
   "ChangeTrigger": {
     "callable": true,
     "error": false,
