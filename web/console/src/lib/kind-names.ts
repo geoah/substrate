@@ -1,13 +1,37 @@
-/** A kind's DISPLAY name — "Calendar event series", "People" — built from
- * the compound lowercase word its declaration names it by
- * (`names.singular`: `calendareventseries`, `person`).
+/** A kind's DISPLAY name — "Calendar event series", "People", "Channels".
+ * The kind's declared `label:` wins where it declares one (decision 0113);
+ * otherwise the name is built from the compound lowercase word its
+ * declaration names it by (`names.singular`: `calendareventseries`,
+ * `person`).
  *
  * UI-only, and only ever a label: a display name is never sent to the API and
  * never stands where a kind is identified. The identifier is always the full
  * reference `<authority>/<package>/<name>` (record 0101). */
 
 import { splitKind } from "@/lib/api/http"
-import type { KindInfo } from "@/lib/api/types"
+import type { KindInfo, KindLabel } from "@/lib/api/types"
+
+/** The declared labels of the registry this console last read, by kind
+ * reference, so a surface that holds only a reference (a record's `kind`, a
+ * favorite, a History row) names the kind as its declaration does. Filled
+ * from the registry read; replaced whole on every read, so a label a kind
+ * drops is dropped here too. */
+let declaredLabels: ReadonlyMap<string, KindLabel> = new Map()
+
+/** Remember the registry's declared labels (`fetchKinds` calls this). */
+export function rememberKindLabels(kinds: readonly KindInfo[]): void {
+  declaredLabels = new Map(
+    kinds.flatMap((k) => (k.label ? [[k.identity, k.label] as const] : []))
+  )
+}
+
+/** The kind's declared label: off the registry entry, else off the last
+ * registry read for a full reference. */
+export function declaredLabel(kind: KindInfo | string): KindLabel | undefined {
+  if (typeof kind !== "string")
+    return kind.label ?? declaredLabels.get(kind.identity)
+  return declaredLabels.get(kind)
+}
 
 /** The words a kind name is split into. A name that does not split fully
  * into these reads as the raw name, capitalised — a wrong split is worse
@@ -228,8 +252,10 @@ function words(kind: KindInfo | string): string[] {
   return (splitWords(name) ?? [name]).map(displayWord)
 }
 
-/** "Calendar event series", "Gmail thread", "Person". */
+/** "Calendar event series", "Gmail thread", "Person", "Channel". */
 export function displayName(kind: KindInfo | string): string {
+  const label = declaredLabel(kind)
+  if (label) return label.singular
   return capitalise(words(kind).join(" "))
 }
 
@@ -237,6 +263,8 @@ export function displayName(kind: KindInfo | string): string {
  * one that takes the plural, except in an "X of Y" name, where X does
  * ("Codes of conduct"). */
 export function displayPlural(kind: KindInfo | string): string {
+  const label = declaredLabel(kind)
+  if (label) return label.plural
   const parts = words(kind)
   // An empty reference names no kind (an any-kind reference before one is
   // chosen): there is no word to take the plural.
