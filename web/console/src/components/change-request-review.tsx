@@ -245,7 +245,7 @@ export function ReviewComparison({
                   </span>
                 )}
                 {!row.leftOut && (
-                  <span className="flex shrink-0 flex-col items-center pt-1">
+                  <span className="flex shrink-0 items-center pt-1.5">
                     {row.edited && (
                       <Button
                         size="icon-xs"
