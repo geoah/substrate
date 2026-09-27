@@ -223,6 +223,24 @@ describe("HistoryEntryRow", () => {
     expect(url).toContain("values=1")
   })
 
+  it("says a rename across many records once, by both names", async () => {
+    const rows = ["t1", "t2"].map((id, i): ChangeRow => ({
+      seq: 20 - i,
+      ts: new Date().toISOString(),
+      actor: "console",
+      op: "patch",
+      recordId: id,
+      kind: TASK,
+      payload: {
+        properties: ["priority", "urgency"],
+        renamed: { urgency: "priority" },
+      },
+    }))
+    const [entry] = foldHistory(rows)
+    renderRow(<HistoryEntryRow entry={entry} today />)
+    expect(await screen.findByText("Urgency renamed to Priority")).toBeTruthy()
+  })
+
   it("says a provider's update as what it is, and keeps the digest for technical details", async () => {
     const row: ChangeRow = {
       seq: 1053,

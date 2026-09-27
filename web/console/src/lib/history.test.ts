@@ -11,6 +11,7 @@ import {
   joinLive,
   kindsByReference,
   layoutSummary,
+  namedProperties,
   propertyLabel,
   runEntry,
   runNeedsRows,
@@ -488,5 +489,41 @@ describe("joinLive", () => {
     const told = [runEntry(run(), source)]
     const live = foldHistory([row({ seq: 201, op: "delete" })])
     expect(joinLive(live, told)).toHaveLength(2)
+  })
+})
+
+describe("namedProperties", () => {
+  it("names a rename once, by both names", () => {
+    const rename = (id: string) =>
+      row({
+        op: "patch",
+        recordId: id,
+        payload: {
+          properties: ["displayLabel", "label"],
+          renamed: { label: "displayLabel" },
+        },
+      })
+    const [entry] = foldHistory([rename("a"), rename("b")])
+    expect(namedProperties(entry)).toEqual([
+      { name: "displayLabel", renamedFrom: "label" },
+    ])
+  })
+
+  it("keeps the old name where another change touched it too", () => {
+    const [entry] = foldHistory([
+      row({
+        op: "patch",
+        recordId: "a",
+        payload: {
+          properties: ["displayLabel", "label"],
+          renamed: { label: "displayLabel" },
+        },
+      }),
+      row({ op: "patch", recordId: "b", payload: { properties: ["label"] } }),
+    ])
+    expect(namedProperties(entry)).toEqual([
+      { name: "displayLabel", renamedFrom: "label" },
+      { name: "label" },
+    ])
   })
 })

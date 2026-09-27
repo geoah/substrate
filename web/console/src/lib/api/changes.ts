@@ -344,7 +344,9 @@ export function runRowsQueryOptions(run: RunSource | undefined) {
     ...run.filter,
     actors: [run.actor],
     kinds: [run.kind],
-    values: run.values,
+    // Values are said for one record's run alone: a run over many says
+    // names, and each record's values cost the server a walk.
+    values: run.values && Boolean(run.recordId),
     ...(run.recordId ? { recordId: run.recordId, recordKind: run.kind } : {}),
   }
   return queryOptions({

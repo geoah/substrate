@@ -261,6 +261,49 @@ export function rowsComplete(entry: HistoryEntry): boolean {
   return entry.rows.length === entry.count
 }
 
+/** A property a sentence names: a rename is one name, said with its old
+ * one. */
+export interface NamedProperty {
+  name: string
+  renamedFrom?: string
+}
+
+/** The renames a row's payload records (`renamed`, old name to new), the
+ * pairs a schema change moved a value across. */
+function rowRenames(row: ChangeRow): Map<string, string> {
+  const out = new Map<string, string>()
+  const renamed = row.payload?.renamed
+  if (renamed && typeof renamed === "object" && !Array.isArray(renamed)) {
+    for (const [from, to] of Object.entries(renamed))
+      if (typeof to === "string") out.set(from, to)
+  }
+  return out
+}
+
+/** The properties the rows in hand named, a rename said once by both names
+ * ("Label renamed to Display label") rather than as the old name cleared and
+ * the new one set. The old name stays where some change touched it other
+ * than by being renamed. Names alone, so it holds against a server that sends
+ * no values: the pair rides the payload (decision 0114). */
+export function namedProperties(entry: HistoryEntry): NamedProperty[] {
+  const renamedFrom = new Map<string, string>()
+  const touchedOtherwise = new Set<string>()
+  for (const row of entry.rows) {
+    const renames = rowRenames(row)
+    for (const [from, to] of renames) renamedFrom.set(to, from)
+    for (const p of changedProperties(row))
+      if (!renames.has(p)) touchedOtherwise.add(p)
+  }
+  const olds = new Set(renamedFrom.values())
+  return entry.properties
+    .filter((p) => !olds.has(p) || touchedOtherwise.has(p))
+    .map((p) =>
+      renamedFrom.has(p)
+        ? { name: p, renamedFrom: renamedFrom.get(p) }
+        : { name: p }
+    )
+}
+
 /** Housekeeping rather than a change anybody made: collecting what a delete
  * left behind, and pruning a trigger's finished runs. */
 export function isHousekeeping(entry: { verb: string; kind: string }): boolean {

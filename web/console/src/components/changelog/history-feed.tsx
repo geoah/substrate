@@ -30,6 +30,7 @@ import { hostWritten, netMoves, valueSpecs } from "@/lib/change-values"
 import { relativeTime, shortTime } from "@/lib/format"
 import {
   groupByDay,
+  namedProperties,
   propertyLabel,
   rowsComplete,
   runNeedsRows,
@@ -132,10 +133,11 @@ export function HistoryEntryRow({
   const showMoves = changed && moves && moves.length > 0 && !quiet
   const names =
     changed && !moves && !quiet
-      ? technical
-        ? entry.properties
-        : entry.properties.filter((p) => !hostWritten(specs.get(p)))
+      ? namedProperties(entry).filter(
+          (p) => technical || !hostWritten(specs.get(p.name))
+        )
       : []
+  const label = (key: string) => specs.get(key)?.label ?? propertyLabel(key)
   const seq = seqRange(entry)
   return (
     <div
@@ -159,10 +161,22 @@ export function HistoryEntryRow({
             {names.length > 0 &&
               (technical ? (
                 <span className="font-mono text-[11.5px]">
-                  {names.join(", ")}
+                  {names
+                    .map((p) =>
+                      p.renamedFrom ? `${p.renamedFrom} → ${p.name}` : p.name
+                    )
+                    .join(", ")}
                 </span>
               ) : (
-                <span>{names.map(propertyLabel).join(" · ")}</span>
+                <span>
+                  {names
+                    .map((p) =>
+                      p.renamedFrom
+                        ? `${label(p.renamedFrom)} renamed to ${label(p.name)}`
+                        : label(p.name)
+                    )
+                    .join(" · ")}
+                </span>
               ))}
             {technical && (
               <>
