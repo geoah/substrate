@@ -152,8 +152,10 @@ and nesting, its columns, and the Search page's ranking choice.
 cards (how many collections and providers, the agents by name, how many tools
 and how many of them came from your providers), up to nine **Collections**
 with their record counts (yours first, those holding something leading, then
-what providers bring in), and **Recent changes** in [History](#history)'s
-sentences. Nothing on Home asks you to act.
+what providers bring in), and **Recent changes**, the newest six of
+[History](#history)'s sentences from one read. Against a server that cannot
+count a collection, a card reads at most 100 of its records once and says
+**many** past that. Nothing on Home asks you to act.
 
 ## All data
 
@@ -550,20 +552,31 @@ that account, and `/settings/{bundle id}` that page's Settings.
 ## History
 
 **History** (`/history`) is [the changelog](changelog.md) as sentences, newest
-first, grouped by day, following new changes live. A change to one record
-says its values, a run of changes to it their net effect, and a run across
-many records the properties they touched. Four views narrow it by
-who made the change: **Everything**, **By you**, **By agents** and **By
-providers**, each an actor filter the change feed applies server-side.
+first, grouped by day, following new changes live. Each sentence is one of the
+server's [run summaries](changelog.md#run-summaries) (`runs=1`), so "You added
+1,500 organizations" is counted exactly from one read however far the run
+reaches; new changes from the live tail continue the newest run. A change to
+one record says its values, a run of changes to it their net effect, and a run
+across many records the properties they touched, a rename said once by both
+names ("Summary renamed to Overview"); the rows behind a sentence are read on
+their own, only where it says them. Against a server without `runs=1` the
+rows are read and folded in the browser, and the oldest sentence loaded is
+said without a count. Four views narrow it by who made the change:
+**Everything**, **By you**, **By agents** and **By providers**, each an actor
+filter the change feed applies server-side.
 
 In everyday mode, changes to internal kinds (trigger runs, tokens,
-preferences) are system changes and are hidden; a line says how many, and
-**Show** brings them back (`?system=true`). With Technical details on they
-are shown, each sentence carries its sequence number and raw actor id, and
-**Table view** is the full changelog table: filters for authority, kind,
-actor, op, a time range and free text, all in the URL, and the same live
-tail. An actor opens at `/actors/{id}`: who it is, and History narrowed to
-it. The old address `/changelog` redirects here with its filters.
+preferences) are system changes and are left out server-side
+(`excludeKinds`), so a run is whole across them; a line says they are hidden,
+and **Show** brings them back (`?system=true`). With Technical details on they
+are shown, each sentence carries its sequence numbers and raw actor id after
+it, and **Table view** is the full changelog table: filters for authority,
+kind, actor, op, a time range and free text, all in the URL, and the same
+live tail. Its rows read the date on the first row of each day and the clock
+after, name the kind by its display name (the full reference on hover), and
+open their detail from anywhere on the row. An actor opens at `/actors/{id}`:
+who it is, and History narrowed to it. The old address `/changelog` redirects
+here with its filters.
 
 ## Search
 
