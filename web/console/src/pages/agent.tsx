@@ -1,4 +1,5 @@
-/** One agent (`/agents/$id`): what it is and runs on, what it is allowed to
+/** One agent (`/agents/$id`): what it is and runs on (the provider and the
+ * model, changed together here), what it is allowed to
  * see and change (edited here, by collection), the rules its changes go
  * through (the ones "Always allow this" wrote, each revocable), and its
  * recent runs with what they spent and which failed. Chatting with it is the
@@ -16,6 +17,7 @@ import { AgentRef } from "@/components/agent/agent-ref"
 import { AllowRules } from "@/components/agent/always-allow"
 import { GrantsEditor } from "@/components/agent/grants-editor"
 import { AddKeyButton } from "@/components/agent/model-key-dialog"
+import { RunsOn } from "@/components/agent/runs-on"
 import { EmptyValue } from "@/components/identity/empty-value"
 import { IdText } from "@/components/identity/id-text"
 import { PageHeader } from "@/components/identity/page-header"
@@ -206,6 +208,12 @@ export function AgentPage() {
           <AddKeyButton providerId={provider} />
         </div>
       )}
+
+      <SectionHead
+        title="What it runs on"
+        hint="a model id belongs to one provider"
+      />
+      <RunsOn agent={record} />
 
       <SectionHead title="What it’s allowed to do" />
       <GrantsEditor agent={record} />

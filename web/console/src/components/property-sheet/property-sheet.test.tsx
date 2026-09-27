@@ -46,6 +46,8 @@ const wire = vi.hoisted(() => ({
   writes: [] as { method: string; path: string; body: unknown }[],
   refuse: undefined as
     undefined | { code: "conflict" | "validation"; message: string },
+  /** What every list read answers. */
+  listed: [] as SubstrateRecord[],
 }))
 
 vi.mock("@/lib/api/http", async (importOriginal) => {
@@ -63,7 +65,11 @@ vi.mock("@/lib/api/http", async (importOriginal) => {
         }
         return Promise.resolve({})
       }
-      return Promise.resolve({ records: [], head: 0, generation: "g" })
+      return Promise.resolve({
+        records: wire.listed,
+        head: 0,
+        generation: "g",
+      })
     }),
   }
 })
@@ -199,6 +205,7 @@ const valueOf = (name: string) =>
 beforeEach(() => {
   wire.writes = []
   wire.refuse = undefined
+  wire.listed = []
 })
 afterEach(cleanup)
 
@@ -692,6 +699,83 @@ describe("PropertySheet references with link data", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }))
     await new Promise((r) => setTimeout(r, 0))
     expect(wire.writes).toHaveLength(0)
+  })
+})
+
+describe("PropertySheet reference edit", () => {
+  const AGENT = "substrate.reamde.dev/core/agent"
+  const PROVIDER = "substrate.reamde.dev/llm/provider"
+  const agent = kind(AGENT, {
+    displayTemplate: "{localName}",
+    properties: {
+      provider: { type: "reference", kind: PROVIDER, required: true },
+      model: { type: "string", required: true },
+    },
+  })
+  const provider = (id: string, label: string): SubstrateRecord => ({
+    id,
+    kind: PROVIDER,
+    properties: { label, title: label },
+    labels: {},
+    version: 1,
+    createdAt: "2026-09-01T00:00:00Z",
+    updatedAt: "2026-09-01T00:00:00Z",
+  })
+
+  it("changes an agent's provider from its row, without leaving the page", async () => {
+    wire.listed = [
+      provider("openai", "OpenAI"),
+      provider("anthropic", "Anthropic"),
+    ]
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <PropertySheet
+          record={{
+            id: "ada.example.com/llm/helper",
+            kind: AGENT,
+            properties: {
+              provider: { ref: `${PROVIDER}/openai` },
+              model: "gpt-5-mini",
+            },
+            labels: {},
+            version: 4,
+            createdAt: "2026-09-01T00:00:00Z",
+            updatedAt: "2026-09-10T00:00:00Z",
+          }}
+          kind={agent}
+          kinds={[agent, kind(PROVIDER, {})]}
+        />
+      </QueryClientProvider>
+    )
+    // The value itself is the referent's link; the row's own button edits.
+    expect(row("provider").querySelector("a")?.getAttribute("href")).toBe(
+      "/data/substrate.reamde.dev/llm/provider/openai"
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Change Provider" }))
+    fireEvent.click(await screen.findByRole("option", { name: /Anthropic/ }))
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].path).toContain("/substrate.reamde.dev/core/agent/")
+    expect(wire.writes[0].body).toEqual({
+      properties: { provider: `${PROVIDER}/anthropic` },
+      ifVersion: 4,
+    })
+  })
+
+  it("offers no Change on a row the owner may not write", () => {
+    renderSheet(
+      record({
+        properties: {
+          ...record().properties,
+          assignee: { ref: `${PERSON}/ada` },
+        },
+      }),
+      task,
+      true
+    )
+    expect(screen.queryByRole("button", { name: /^Change / })).toBeNull()
   })
 })
 
