@@ -121,6 +121,12 @@ declare module "@tanstack/react-table" {
     emptyHidden?: string[]
     /** Show every column `emptyHidden` names, and remember that. */
     showEmptyColumns?: () => void
+    /** The columns the reader hides, by their own choice or the surface's
+     * default (not the ones hidden for holding nothing). */
+    readerHidden?: string[]
+    /** Take a column order and a hidden set at once (a saved view); either
+     * absent keeps what is there. Drag widths stay. */
+    applyColumns?: (columns: { order?: string[]; hidden?: string[] }) => void
   }
 }
 
@@ -298,6 +304,14 @@ export function useDataTable<TData extends RowData>(
           ...shown,
           ...emptyHidden,
         ]),
+      readerHidden: naturalIds.filter((id) => baseVisibility[id] === false),
+      applyColumns: ({ order, hidden }) =>
+        persist(
+          order ? orderedColumns(naturalIds, order) : columnOrder,
+          hidden ? columnVisibilityOf(naturalIds, hidden) : baseVisibility,
+          columnSizing,
+          []
+        ),
     },
   })
 }

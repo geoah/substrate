@@ -316,3 +316,33 @@ describe("the sorted column's header cell", () => {
     ).toEqual([null, "ascending", null])
   })
 })
+
+describe("columns taken whole", () => {
+  it("applies a view's order and hidden set at once and reports the reader's hidden columns", () => {
+    const { result } = renderHook(() =>
+      useDataTable({
+        columns: COLUMNS,
+        data: DATA,
+        prefsKey: "t",
+        defaultHidden: ["c"],
+      })
+    )
+    expect(result.current.options.meta?.readerHidden).toEqual(["c"])
+    act(() =>
+      result.current.options.meta?.applyColumns?.({
+        order: ["c", "a", "b"],
+        hidden: ["b"],
+      })
+    )
+    expect(result.current.getVisibleLeafColumns().map((c) => c.id)).toEqual([
+      "c",
+      "a",
+    ])
+    expect(result.current.options.meta?.readerHidden).toEqual(["b"])
+    act(() => result.current.options.meta?.applyColumns?.({}))
+    expect(result.current.getVisibleLeafColumns().map((c) => c.id)).toEqual([
+      "c",
+      "a",
+    ])
+  })
+})
