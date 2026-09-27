@@ -1,14 +1,20 @@
 /** A record's properties as a sheet: the label (an icon for its datatype and
  * its display label; the key too in technical mode) on the left, the value on
  * the right, 36px rows, and read and edit the same row. A click on a value
- * edits it in place. A chip at the row's end says who holds the value only
+ * edits it in place; a reference's value is a link to its referent, so its
+ * row carries a Change button that edits instead. A chip at the row's end says who holds the value only
  * where that departs from the page's default (the owner's own hand), or on
  * every row when the reader asks who holds each value; it opens where the
  * value came from, as does the label's hover card. Empty properties fold
  * into one line that expands. */
 
 import { useEffect, useId, useMemo, useRef, useState } from "react"
-import { ChevronDownIcon, ChevronRightIcon, LockIcon } from "lucide-react"
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  LockIcon,
+  PencilIcon,
+} from "lucide-react"
 
 import { useSheetDraft } from "./draft"
 import { InlineEditor } from "./inline-editor"
@@ -23,6 +29,7 @@ import {
   IdentityCard,
   IdentityHoverCard,
 } from "@/components/identity/identity-hover-card"
+import { Button } from "@/components/ui/button"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import {
@@ -114,6 +121,12 @@ function Label({
       </span>
     </IdentityHoverCard>
   )
+}
+
+/** Whether the row's value is drawn as links to other records. */
+function pointsAtRecords(row: SheetRow): boolean {
+  const control = row.field?.control
+  return control === "reference" || control === "referenceList"
 }
 
 function Value({ row }: { row: SheetRow }) {
@@ -323,6 +336,24 @@ export function PropertySheet({
                     <span id={`${uid}-${row.name}-edit`} className="sr-only">
                       , edit
                     </span>
+                  )}
+                  {editable && row.filled && pointsAtRecords(row) && (
+                    // A reference's value is a link to its referent, so a
+                    // click on it navigates; this is the click that edits.
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="ghost"
+                      aria-label={`Change ${row.spec.label}`}
+                      className="text-muted-foreground"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        startEdit(row)
+                      }}
+                    >
+                      <PencilIcon aria-hidden />
+                      Change
+                    </Button>
                   )}
                 </>
               )}
