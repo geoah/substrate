@@ -397,8 +397,8 @@ datatype.
 Package `providers.substrate.reamde.dev/github`. An OAuth provider that mirrors
 the code work you are involved in: the connected user, the repositories the
 account can reach, and every issue and pull request you author, are assigned,
-are mentioned in, comment on or are review-requested on, with the reviews on
-those pull requests. The host runs the flow against the endpoints the bundle
+are mentioned in, comment on, are review-requested on or have reviewed, with
+the reviews on those pull requests. The host runs the flow against the endpoints the bundle
 document carries and derives the scope union from the account's toggles:
 `enabledUser` asks for `read:user`, and `enabledRepos`, `enabledIssues` and
 `enabledPullRequests` each ask for `read:user` and `repo`. The sync never
@@ -442,8 +442,8 @@ writes to GitHub; `submitreview` is the one write.
 mirrors the connected user's profile and hydrates a full profile (name, public
 email) for every other login the sync meets; `enabledRepos` the repositories the
 account can reach; `enabledIssues` the issues the connected user is involved in;
-`enabledPullRequests` the pull requests the user is involved in or
-review-requested on, with their reviews. GitHub's classic scopes are coarse:
+`enabledPullRequests` the pull requests the user is involved in,
+review-requested on or has reviewed, with their reviews. GitHub's classic scopes are coarse:
 there is no read-only repository grant, so the last three all ride the one
 `repo` scope, which grants write on private repositories even though this bundle
 only ever reads. `user:email` is never requested, so the identity probe reads
@@ -467,16 +467,18 @@ to ask for a run whatever the cadence says.
 (`GET /user`) always runs, because the searches need the login, and it sets
 `account.user`. `enabledRepos` adds `repos` (`GET /user/repos`, one page per
 invocation), `reposFetch` and `licensesFetch`; `enabledIssues` adds the `issues`
-search; `enabledPullRequests` adds the `pulls` and `pullsReview` searches and
-then `pullsFetch` and `reviewsFetch`; `enabledIssues` then adds `issuesFetch`
-and `graphFetch`; `enabledUser` adds `usersFetch`. The three searches are
+search; `enabledPullRequests` adds the `pulls`, `pullsReview` and
+`pullsReviewed` searches and then `pullsFetch` and `reviewsFetch`; `enabledIssues` then adds `issuesFetch`
+and `graphFetch`; `enabledUser` adds `usersFetch`. The four searches are
 `GET /search/issues` over `type:issue involves:<login>`,
-`type:pr involves:<login>` and `type:pr review-requested:<login>`, because
-`involves:` does not cover a review request.
+`type:pr involves:<login>`, `type:pr review-requested:<login>` and
+`type:pr reviewed-by:<login>`, because `involves:` covers neither a review
+request nor a review, and GitHub drops a requested reviewer from the list once
+they review.
 
 **The watermarks and the backlog live on the account and nowhere else.**
 `syncCursors` is a keyed `datetime` map with one entry per search stage
-(`issues`, `pulls`, `pullsReview`), stamped with the run's start rather than the
+(`issues`, `pulls`, `pullsReview`, `pullsReviewed`), stamped with the run's start rather than the
 completion clock and re-queried with a 120-second overlap, so one stage stalling
 never advances another's tail. `syncPending` is the hydration backlog, keyed by
 queue (`repos`, `licenses`, `pulls`, `reviews`, `issues`, `graph`, `users`),
@@ -545,11 +547,10 @@ injects for the sync, and the `repo` scope that `enabledRepos`,
 `enabledIssues` and `enabledPullRequests` ask for is what grants the write; an
 account granted neither `repo` nor `public_repo` is refused before a request.
 It answers the review's `id`, `state` (`APPROVED` or `COMMENTED`) and `url`,
-and it writes no record: the review reaches the `review` mirror only when
-the sync still finds the pull request. The sync searches `involves:` and
-`review-requested:`, and GitHub stops listing a requested reviewer once they
-review, so an approval by the owner who was only asked to review is never
-read back ([issue #710](https://github.com/geoah/substrate/issues/710)).
+and it writes no record: the review reaches the `review` mirror on the next
+sync. GitHub stops listing a requested reviewer once they review, so the
+`reviewed-by:` search is what reads back an approval by an owner who was only
+asked to review ([issue #710](https://github.com/geoah/substrate/issues/710)).
 A GitHub refusal (`422` for approving your own pull request, `404` for
 a repository the grant cannot see) fails the call with GitHub's message.
 Redirects are refused rather than followed, so the origin pin holds for the

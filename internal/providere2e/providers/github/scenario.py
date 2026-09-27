@@ -46,6 +46,9 @@ WHAT IT PROVES
      body it sends, its output, no record written, GitHub's refusal
      surfaced, bad arguments refused unsent, and an apiBase off
      api.github.com refused unsent (#644).
+ 11. the owner's approval of a pull request they were only asked to review
+     reaches the `review` mirror: GitHub drops them from the requested
+     reviewers, so only the `reviewed-by:` search still finds it (#710).
 """
 
 import json
@@ -87,6 +90,9 @@ FORBIDDEN = ("raw", "person", "task", "authorLogin", "assigneeLogins",
              "lastSyncDurationMs", "syncRequestedAt", "syncRequestedAck",
              "syncPaused", "syncProgress", "syncError", "syncErrorAt",
              "syncStreams")
+
+# The searches, each with its own watermark on `syncCursors`.
+SEARCH_STAGES = ("issues", "pulls", "pullsReview", "pullsReviewed")
 
 # `never | running | ok | erroring | throttled` — held in prose and in the
 # engine's constants, because a trait contracts a datatype and not a value set.
@@ -228,7 +234,7 @@ def recordings(directory):
     """What the fixture set says the mirrors should hold."""
     out = {"issues": {}, "pulls": {}, "reviews": {}, "users": set(),
            "repos": {}, "milestones": {}, "labels": {}, "owner": "",
-           "reviewRequested": set(), "involves": set(), "pullIssueIds": {},
+           "reviewRequested": set(), "reviewedBy": set(), "involves": set(), "pullIssueIds": {},
            "teams": {}, "apps": {}, "issuetypes": {}, "parents": set(),
            "repoPayloads": {},
            # the graph recordings (T-022): parent issue id -> the edge's issue
@@ -250,6 +256,8 @@ def recordings(directory):
                 out["pullIssueIds"][pid] = iid
                 if "review-requested" in f.name:
                     out["reviewRequested"].add(pid)
+                elif "reviewed-by" in f.name:
+                    out["reviewedBy"].add(pid)
                 else:
                     out["involves"].add(pid)
             else:
@@ -415,7 +423,7 @@ def main():
     ok(str(acct.get("syncStatus", "")).startswith("ok"),
        "the first sync finished ok (%s)" % acct.get("syncStatus"))
     cursors = acct.get("syncCursors") or {}
-    ok(isinstance(cursors, dict) and set(cursors) >= {"issues", "pulls", "pullsReview"},
+    ok(isinstance(cursors, dict) and set(cursors) >= set(SEARCH_STAGES),
        "every search stage stamped its own watermark, in a keyed map: %s"
        % sorted(cursors))
     ok("syncCursor" not in acct,
@@ -1102,8 +1110,7 @@ def main():
         ok(bool(hyd) and bool(srch) and hyd[0] < srch[0],
            "the parked entries were hydrated BEFORE the first search "
            "(first user read at %s, first search at %s)" % (hyd[:1], srch[:1]))
-        ok(set(walked.get("syncCursors") or {}) >= {"issues", "pulls",
-                                                    "pullsReview"},
+        ok(set(walked.get("syncCursors") or {}) >= set(SEARCH_STAGES),
            "so the run stamped watermarks for every search stage (%s)"
            % sorted(walked.get("syncCursors") or {}))
         ok(not walked.get("syncPending"),
@@ -1291,7 +1298,7 @@ def main():
             "/repos/%s/" % org) and "/pulls/" in str(e.get("path") or "")]),
            "and the org's pull requests were hydrated at last")
         cursors3 = healed.get("syncCursors") or {}
-        ok(set(cursors3) >= {"issues", "pulls", "pullsReview"},
+        ok(set(cursors3) >= set(SEARCH_STAGES),
            "the re-walk stamped fresh watermarks for every search stage (%s)"
            % sorted(cursors3))
         rows_after = {name: {r["id"] for r in all_records(api, KINDS[name])}
@@ -1309,6 +1316,12 @@ def main():
         submitreview(api, server, token, runner_mock, recdir, ckind, aid)
     else:
         print("    skip  submitreview is driven against the mock only")
+
+    print("--> the owner's approval of a review-requested pull request lands (#710)")
+    if mode == "e2e" and runner_mock:
+        approval_lands(api, akind, ckind, aid, recdir, runner_mock)
+    else:
+        print("    skip  the approval read-back is driven against the mock only")
 
     print()
     summary = ", ".join("%s %d" % (k, got[k]) for k in sorted(got) if got[k])
@@ -1419,6 +1432,107 @@ def submitreview(api, server, token, mock_url, recdir, ckind, aid):
         repoint(api, ckind, mock_url)
     ok(len(w.requests("POST", route)) == before,
        "the refused call still reached the mock")
+
+
+def approval_lands(api, akind, ckind, aid, recdir, runner_mock):
+    """#710. The submitreview recording's approval is on a pull request the
+    owner was only asked to review. GitHub answers the approval by dropping the
+    owner from the requested reviewers, so the next sync's `review-requested:`
+    search no longer lists the pull request and `involves:` never did. This
+    serves GitHub's state after the approval, derived from the committed
+    recordings in a staging copy: the review-requested page without the pull
+    request, the reviewed-by page with it, and its reviews with the approval.
+    The sync has to find it through `reviewed-by:` and mirror the review."""
+    from mock import serve
+
+    recs = _recs(recdir, "POST_repos_*_pulls_*_reviews.json")
+    answers = json.loads(recs[0].read_text()).get("__responses") or [] \
+        if recs else []
+    approval = (answers[:1] or [{}])[0]
+    m = re.search(r"/repos/([^/]+)/([^/]+)/pulls/(\d+)$",
+                  str(approval.get("pull_request_url") or ""))
+    if not (m and approval.get("state") == "APPROVED"):
+        ok(False, "the submitreview recording's first answer is an approval "
+                  "naming its pull request")
+        return
+    org, name, number = m.group(1), m.group(2), int(m.group(3))
+
+    def is_it(it):
+        return (str(it.get("repository_url") or "").endswith(
+            "/repos/%s/%s" % (org, name)) and it.get("number") == number)
+
+    staging = pathlib.Path(tempfile.mkdtemp()) / "recordings"
+    shutil.copytree(recdir, staging)
+    requested = _recs(staging, "GET_search_issues*review-requested*.json")
+    reviewed = _recs(staging, "GET_search_issues*reviewed-by*.json")
+    involves = _recs(staging, "GET_search_issues*type_pr_involves*.json")
+    if not (requested and reviewed and involves):
+        ok(False, "the fixtures hold the involves, review-requested and "
+                  "reviewed-by pull request searches")
+        return
+    body = json.loads(requested[0].read_text())
+    hit = [it for it in body.get("items") or [] if is_it(it)]
+    ok(len(hit) == 1 and not [it for it in json.loads(
+        involves[0].read_text()).get("items") or [] if is_it(it)],
+       "%s/%s#%d reaches the first sync only through `review-requested:`"
+       % (org, name, number))
+    if len(hit) != 1:
+        return
+    body["items"] = [it for it in body["items"] if not is_it(it)]
+    body["total_count"] = len(body["items"])
+    requested[0].write_text(json.dumps(body, indent=1) + "\n")
+    moved = dict(hit[0], updated_at=approval.get("submitted_at")
+                 or hit[0].get("updated_at"))
+    body = json.loads(reviewed[0].read_text())
+    body["items"] = [it for it in body.get("items") or [] if not is_it(it)] \
+        + [moved]
+    body["total_count"] = len(body["items"])
+    reviewed[0].write_text(json.dumps(body, indent=1) + "\n")
+    rfile = staging / ("GET_repos_%s_%s_pulls_%d_reviews__per_page-100.json"
+                       % (org, name, number))
+    before = json.loads(rfile.read_text()) if rfile.exists() else []
+    ok(approval["id"] not in {r.get("id") for r in before},
+       "the approval is not in the reviews the first sync read")
+    rfile.write_text(json.dumps(before + [approval], indent=1) + "\n")
+
+    pull_id = pull_ids(hit[0])[0]
+    api_base, srv, mock = serve(staging)
+    try:
+        repoint(api, ckind, api_base)
+        acct = force_sync(api, akind, aid)
+        ok(str(acct.get("syncStatus") or "").startswith("ok"),
+           "the sync after the approval finished ok (%s)"
+           % str(acct.get("syncStatus"))[:80])
+        qs = [urllib.parse.parse_qs(str(e.get("query") or "")).get("q", [""])[0]
+              for e in list(mock.requests)
+              if str(e.get("path") or "") == "/search/issues"]
+        login = json.loads((recdir / "GET_user.json").read_text())["login"]
+        ok(any(q.split(" updated:")[0] == "type:pr reviewed-by:" + login
+               for q in qs),
+           "the sync searched `type:pr reviewed-by:%s` (%s)"
+           % (login, [q for q in qs if "reviewed-by" in q][:1]))
+        ok("pullsReviewed" in (acct.get("syncCursors") or {}),
+           "and stamped its own `pullsReviewed` watermark")
+        pulls = {props(r).get("pullRequestId"): r
+                 for r in all_records(api, KINDS["pullrequest"])}
+        rows = [r for r in all_records(api, KINDS["review"])
+                if props(r).get("reviewId") == approval["id"]]
+        ok(len(rows) == 1,
+           "the owner's approval %d is one github/review row (%d found)"
+           % (approval["id"], len(rows)))
+        if rows:
+            p = props(rows[0])
+            ok(p.get("state") == "approved",
+               "its state is `approved` (%r)" % p.get("state"))
+            ok(ref(p.get("user")) == ref(acct.get("user")),
+               "its user is the account's own user row")
+            want_pull = pulls.get(pull_id)
+            ok(want_pull is not None and ref(p.get("pullRequest")) ==
+               KINDS["pullrequest"] + "/" + want_pull["id"],
+               "its pullRequest is %s/%s#%d's row" % (org, name, number))
+    finally:
+        srv.shutdown()
+        repoint(api, ckind, runner_mock)
 
 
 if __name__ == "__main__":
