@@ -125,10 +125,15 @@ data:
   #
   # 11, #644: the `postmessage` function, the bundle's first write to Slack.
   #
-  # 12: every kind declares its purpose (decision 0133), and its
+  # 12, #711: an incremental history walk asks for `oldest=` a day behind the
+  # stored cursor, so a message that takes its FIRST reply is read again with
+  # its new `reply_count` and its thread is walked. The re-read day stops at
+  # the backfill floor the first walk carried.
+  #
+  # 13: every kind declares its purpose (decision 0133), and its
   # description opens with one plain sentence saying what a record is to
   # a person.
-  version: 12
+  version: 13
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -2778,8 +2783,9 @@ data:
       writer: connector
       displayName: History cursor
       description: >-
-        the newest message ts mirrored from this conversation. The next run
-        asks Slack for oldest=this, which Slack treats as exclusive
+        the newest message ts mirrored. The next run reads from this less
+        a day, stopping at the backfill floor, so a recent message that took
+        its first reply is read again with its reply count
     repliesTs:
       type: string
       writer: connector
@@ -2795,8 +2801,8 @@ data:
       displayName: Watched threads
       description: >-
         the ts of every thread parent seen here, newest first and capped.
-        An incremental page never returns an OLD parent, so a reply to one
-        is invisible unless its thread is re-asked
+        An incremental page reaches back only a day, so a reply to an older
+        parent is invisible unless its thread is re-asked
     membersSyncedAt:
       type: datetime
       writer: connector
@@ -2826,8 +2832,9 @@ data:
 #   info          ONE conversations.info per queued conversation: the fields
 #                 the list shape does not carry (latest, last_read, unread
 #                 counts, is_open).
-#   history       ONE conversations.history page per invocation, from THAT
-#                 conversation's own stored cursor on its conversationsync row.
+#   history       ONE conversations.history page per invocation, from a day
+#                 behind THAT conversation's own stored cursor on its
+#                 conversationsync row.
 #   replies       ONE conversations.replies page per thread whose latest_reply
 #                 is newer than the conversation's replies cursor.
 #   hydrate       ONE users.info per invocation, for a sender this workspace's
@@ -2982,6 +2989,15 @@ data:
     # ever seen. Newest first, because an old silent thread is the one that can
     # be dropped.
     WATCH_MAX = 200
+    # How far behind its stored cursor an incremental history walk starts
+    # (#711). A message's FIRST reply never appears in `conversations.history`
+    # and never touches the watch, which holds only parents seen WITH replies;
+    # the one place it shows is the parent's own `reply_count`, and a window
+    # starting at the cursor never returns the parent again. Re-reading a day
+    # returns every recent parent with its current count, and the puts absorb
+    # the overlap. A first reply to a message more than a day older than the
+    # conversation's newest one is still missed.
+    RESCAN_SECONDS = 86400
     IGNORED_STATUS = ("ignored: duplicate account (one pasted token addresses "
                       "one workspace)")
 
@@ -3041,6 +3057,14 @@ data:
         except (OverflowError, OSError, ValueError):
             return None
         return base.replace(microsecond=micros).isoformat()
+
+
+    def _ts_back(ts, seconds):
+        """A Slack ts moved back by whole seconds, as a string. The ts is a
+        decimal with six places, and a float carries sixteen digits, so
+        arithmetic through float can move the microseconds."""
+        whole, _, frac = str(ts).partition(".")
+        return "%d.%s" % (max(0, int(whole) - seconds), (frac + "000000")[:6])
 
 
     def _ts_iso(ts):
@@ -4851,10 +4875,18 @@ data:
         params = {"channel": cid, "limit": PAGE_LIMIT,
                   "include_all_metadata": "true"}
         # A cold walk takes Slack's newest-first default and stops at the backfill
-        # floor; an incremental one names the stored cursor and walks forward.
-        # `oldest` is exclusive, so the last message never repeats.
+        # floor; an incremental one starts RESCAN_SECONDS behind the stored
+        # cursor, so a recent parent that took its first reply comes back with
+        # its `reply_count` and the thread radar below queues it. The re-read
+        # day stops at the carried backfill floor, and never passes the cursor
+        # itself, so it never mirrors history the first walk left out.
         if work["oldest"]:
-            params["oldest"] = work["oldest"]
+            oldest = _ts_back(work["oldest"], RESCAN_SECONDS)
+            floor = resume.get("floor")
+            if floor is not None and float(floor) > float(oldest):
+                oldest = (work["oldest"] if float(floor) >= float(work["oldest"])
+                          else "%.6f" % float(floor))
+            params["oldest"] = oldest
         if work.get("latest"):
             params["latest"] = work["latest"]
             params["inclusive"] = "false"
@@ -4918,12 +4950,11 @@ data:
         if work["max"] and work["max"] > (state.get("latestTs") or ""):
             patch["latestTs"] = work["max"]
         # THE THREAD WATCH. An incremental history page asks for everything after
-        # `latestTs`, so a reply to a parent that does NOT reappear in that
-        # window is invisible: the parent is older than the cursor and the reply
-        # never shows up in history at all. The overlap margin cannot help —
-        # there is nothing to overlap with. So every parent this walk saw with
-        # replies is remembered on the state row, and every incremental walk
-        # re-asks each watched thread for `oldest=repliesTs`. Bounded by
+        # `latestTs` less RESCAN_SECONDS, so a reply to a parent that does NOT
+        # reappear in that window is invisible: the parent is older than the
+        # window and the reply never shows up in history at all. So every
+        # parent this walk saw with replies is remembered on the state row,
+        # and every incremental walk re-asks each watched thread. Bounded by
         # WATCH_MAX, newest first: an old thread that has been silent for a
         # backfill window falls off the watch.
         watch = [t for t in (list(work["watch"])
@@ -5602,9 +5633,9 @@ data:
 # It spends the same pasted user token the sync does, taken from the same
 # injected connector input, and sends it to the same pinned origin. It writes
 # no record: the message it posts reaches the mirror only when the sync reads
-# it back (decision record 0125). A first reply in a thread that had no
-# replies is never read back, because the sync watches only threads it saw
-# with replies (issue #711).
+# it back (decision record 0125). The next sync reads a first reply in a
+# thread that had no replies when its parent is within a day of the
+# conversation's newest message, and misses it otherwise.
 kind: substrate.reamde.dev/core/function
 metadata:
   id: providers.substrate.reamde.dev/slack/postmessage

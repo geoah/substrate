@@ -56,7 +56,7 @@ e2e_test.go                     the cases and the provider table
 harness_test.go                 the server, the door, the toolchain
 runner/e2e.py                   the runner: one provider, start to finish
 runner/mockserver.py            the file-lookup mock over a recordings directory
-runner/writecall.py             calls a write function and reads what it sent the mock
+runner/writecall.py             calls a write function, directly or as an agent's tool, and reads what it sent the mock
 providers/google/drive_requests.py  the Drive request constants google's scenario reads
 providers/<p>/e2e.json          what the runner cannot guess: hosts, triggers, waits
 providers/<p>/scenario.py       the provider's own assertions
