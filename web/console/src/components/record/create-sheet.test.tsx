@@ -121,6 +121,9 @@ describe("the create sheet", () => {
     expect(KINDS.map((k) => k.identity)).toContain(TASK)
   })
 
+  // Every shipped kind, every editor opened: the widest provider kinds (Slack
+  // file, Linear issue) take 6 to 12 s on a CI runner, past vitest's 5 s
+  // default, and the time grows with the kind. The sweep gets its own budget.
   it.each(KINDS.map((k) => [k.identity, k] as const))(
     "%s draws every row, the folded ones too, and opens every editor",
     (_, kind) => {
@@ -138,7 +141,8 @@ describe("the create sheet", () => {
         )
         if (edit) fireEvent.click(edit)
       }
-    }
+    },
+    30_000
   )
 
   it("asks a task for its Assignee, Project and Due at, and folds the rest", () => {
