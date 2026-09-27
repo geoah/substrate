@@ -526,12 +526,12 @@ account it was delivered, in the same patch effect it already makes for its
 cursor: `lastSyncedAt`, `syncMessage`, `syncState` (on a schedule run, where
 the dispatcher is not there to write it), `syncProgress` while a drain pages,
 `syncStreams.<name>` for each stream it owns, and `syncRequestedAck` once it
-has served the owner's `syncRequestedAt`. Around a record-sourced delivery the
-dispatcher writes the other half itself — `running` and the start before the
-body, `ok` and the duration with the body's last effects, `erroring` and the
-cause with a park — under the function's own actor, so the account's kind
-declares those properties `writer: connector` exactly as the ones the body
-writes ([decision 0085](decisions/0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md)).
+has served the owner's `syncRequestedAt`. Around a record-sourced delivery to
+a function of the account kind's own package, the dispatcher writes the
+other half itself — `running` and the start before the body, `ok` and the
+duration with the body's last effects, `erroring` and the cause with a
+park — under the function's own actor, so the account's kind declares those
+properties `writer: connector` exactly as the ones the body writes ([decision 0085](decisions/0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md)).
 
 ## The SDK
 

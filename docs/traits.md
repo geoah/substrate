@@ -226,8 +226,9 @@ opt into twice:
   (`syncState: running`, `lastSyncStartedAt`), its finish (`ok` and
   `lastSyncDurationMs`, in the transaction that commits the body's last
   effects) and its park (`erroring`, `syncError`, `syncErrorAt`) onto the
-  record under the callable's own actor; a record whose owner set
-  `syncPaused` has its deliveries skipped; and `GET /api/v1/sync/status`
+  record under the callable's own actor, when the callable is a function of
+  the package that declares the kind; a record whose owner set
+  `syncPaused` has those deliveries skipped; and `GET /api/v1/sync/status`
   lists the record joined with the record triggers on its kind, which the
   Accounts on the console's provider pages and `substratectl sync status`
   read. The body

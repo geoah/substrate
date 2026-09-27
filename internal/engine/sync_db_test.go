@@ -43,11 +43,18 @@ func syncProps() map[string]any {
 // record trigger on it bound to fn.
 func newSyncDataset(t *testing.T, fn, source string) substrate.Dataset {
 	t.Helper()
-	_, ds := newDataset(t)
-	m := fnConnector(
+	return newSyncKindDataset(t,
 		[]enginetest.Trigger{trigOn(fn, map[string]any{"kinds": []any{jobType}, "ops": []any{"create"}})},
 		pyFn(fn, map[string]any{}, []any{jobType}, source),
 	)
+}
+
+// newSyncKindDataset installs the widgets connector plus the job kind, with
+// the given triggers and functions of the job's own package.
+func newSyncKindDataset(t *testing.T, triggers []enginetest.Trigger, fns ...map[string]any) substrate.Dataset {
+	t.Helper()
+	_, ds := newDataset(t)
+	m := fnConnector(triggers, fns...)
 	m.Manifests = append(m.Manifests, vocabulary.KindManifest(fnPackage, map[string]any{"singular": "job"}, map[string]any{
 		"traits":          []any{"substrate.reamde.dev/core/sync"},
 		"displayTemplate": "{name}",
@@ -189,5 +196,120 @@ func TestSyncPausedRecordIsSkipped(t *testing.T) {
 	}
 	if len(statuses) != 1 || !statuses[0].Paused || statuses[0].State != substrate.SyncStateNever {
 		t.Fatalf("sync statuses = %+v, want paused and never", statuses)
+	}
+}
+
+// A second package's function on the job kind, the way a user bundle's
+// identity resolver watches provider accounts: it records each delivery as a
+// note of its own kind, and never writes the job.
+const (
+	watcherPackage = "watcher.test.dev/watcher"
+	watcherNote    = watcherPackage + "/note"
+	watcherFn      = watcherPackage + "/owneridentity"
+	watcherTrigger = "on-job-owneridentity"
+)
+
+func installJobWatcher(t *testing.T, ds substrate.Dataset) {
+	t.Helper()
+	m := enginetest.Manifest{
+		Name:      "watcher",
+		Authority: watcherPackage,
+		Manifests: []map[string]any{
+			vocabulary.PackageManifest(watcherPackage, 0),
+			vocabulary.ActorManifest(watcherPackage, vocabulary.PackageActor(watcherPackage)),
+			vocabulary.KindManifest(watcherPackage, map[string]any{"singular": "note"}, map[string]any{
+				"properties": map[string]any{"job": map[string]any{"type": "string", "fts": false}},
+			}),
+			vocabulary.FunctionManifest(watcherPackage, "owneridentity", map[string]any{
+				"description": "notes every job it is delivered",
+				"runtime":     vocabulary.RuntimePython,
+				"permissions": map[string]any{"writes": []any{watcherNote}},
+				"source": `
+def main(input, host):
+    env = input["envelope"]
+    return {"effects": [{"action": "put", "kind": "` + watcherNote + `", "id": env["change"]["id"],
+                         "properties": {"job": env["change"]["id"]}}]}
+`,
+			}),
+		},
+		Triggers: []enginetest.Trigger{{
+			ID: watcherTrigger,
+			Properties: map[string]any{
+				"enabled":  true,
+				"source":   map[string]any{"record": map[string]any{"kinds": []any{jobType}, "ops": []any{"create", "update"}}},
+				"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", watcherFn),
+			},
+		}},
+	}
+	if err := enginetest.Install(context.Background(), ds, owner, m); err != nil {
+		t.Fatalf("install the watcher: %v", err)
+	}
+}
+
+// TestSyncForeignFunctionIsNotStamped: a function of another package
+// delivered a `sync`-trait record runs as any delivery does, paused record
+// included, and the dispatcher writes none of the sync stamps: its runs are
+// not the sync's, and the record's version does not move.
+func TestSyncForeignFunctionIsNotStamped(t *testing.T) {
+	t.Parallel()
+	ds := newSyncKindDataset(t, nil)
+	installJobWatcher(t, ds)
+
+	job := mustPut(t, ds, owner, substrate.PutInput{Kind: jobType, Properties: map[string]any{"name": "inbox"}})
+	paused := mustPut(t, ds, owner, substrate.PutInput{Kind: jobType, Properties: map[string]any{"name": "outbox", "syncPaused": true}})
+	process(t, ds)
+
+	for _, rec := range []*substrate.Record{job, paused} {
+		got := mustGet(t, ds, jobType, rec.ID)
+		for _, name := range []string{"syncState", "lastSyncStartedAt", "lastSyncDurationMs", "syncError", "syncErrorAt"} {
+			if v, ok := got.Properties[name]; ok {
+				t.Fatalf("job %s: %s = %v, want unset: another package's function is not the sync", rec.ID, name, v)
+			}
+		}
+		if got.Version != rec.Version {
+			t.Fatalf("job %s: version %d, want %d: the watcher's delivery moved the record", rec.ID, got.Version, rec.Version)
+		}
+		// The body ran, paused record included: the pause is the owner's hand
+		// on the sync, not on every function watching the record.
+		if note := mustGet(t, ds, watcherNote, rec.ID); note.Properties["job"] != rec.ID {
+			t.Fatalf("watcher note for %s = %v", rec.ID, note.Properties)
+		}
+	}
+	if runs := runRowsOf(t, ds, watcherTrigger, "skipped"); len(runs) != 0 {
+		t.Fatalf("skipped watcher runs = %d, want 0", len(runs))
+	}
+	if runs := runRowsOf(t, ds, watcherTrigger, "ok"); len(runs) != 2 {
+		t.Fatalf("ok watcher runs = %d, want 2", len(runs))
+	}
+}
+
+// TestSyncOwnFunctionStampsBesideForeign: with a second package's function
+// on the same kind, the kind's own sync still stamps running then ok, and
+// every stamp is the sync's: the watcher's actor never writes the job.
+func TestSyncOwnFunctionStampsBesideForeign(t *testing.T) {
+	t.Parallel()
+	ds := newSyncDataset(t, "drain", syncOKSource)
+	installJobWatcher(t, ds)
+
+	job := mustPut(t, ds, owner, substrate.PutInput{Kind: jobType, Properties: map[string]any{"name": "inbox"}})
+	process(t, ds)
+
+	got := mustGet(t, ds, jobType, job.ID)
+	if got.Properties["syncState"] != substrate.SyncStateOK {
+		t.Fatalf("syncState = %v, want ok (properties %v)", got.Properties["syncState"], got.Properties)
+	}
+	if got.Properties["lastSyncStartedAt"] == nil || got.Properties["lastSyncDurationMs"] == nil {
+		t.Fatalf("the sync's stamps are missing: %v", got.Properties)
+	}
+	if runs := runRowsOf(t, ds, trigID("drain"), "ok"); len(runs) != 1 {
+		t.Fatalf("ok drain runs = %d, want 1", len(runs))
+	}
+	if note := mustGet(t, ds, watcherNote, job.ID); note.Properties["job"] != job.ID {
+		t.Fatalf("watcher note = %v", note.Properties)
+	}
+	for _, ch := range actorChanges(t, ds, watcherFn) {
+		if ch.Kind == jobType {
+			t.Fatalf("the watcher wrote the job: %+v", ch)
+		}
 	}
 }

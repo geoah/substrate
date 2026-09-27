@@ -51,17 +51,26 @@ type syncStamp struct {
 }
 
 // syncStampFor answers the stamp a delivery of ch carries: nil when the
-// change's kind does not bind the trait, when the record is gone (a delete
-// delivers null, and there is nothing to stamp), or when the callable is an
-// agent, whose loop is many transactions across model turns and settles
-// through its own claim (settlement.claim) rather than the effects
-// transaction the stamps ride.
+// change's kind does not bind the trait, when the callable is not the kind's
+// own sync, when the record is gone (a delete delivers null, and there is
+// nothing to stamp), or when the callable is an agent, whose loop is many
+// transactions across model turns and settles through its own claim
+// (settlement.claim) rather than the effects transaction the stamps ride.
+//
+// The kind's own sync is a function of the package that declares the kind:
+// the bundle that owns the account is the one that syncs it. Another
+// package's function triggered on the same record (an identity resolver, a
+// mirror) is not a run of the sync, and stamping it would report its runs
+// as the sync's and move the record's version on every one.
 func (ds *dataset) syncStampFor(tr *trigger, ch substrate.Change, envelope map[string]any, started time.Time) *syncStamp {
 	if tr.Callable == nil {
 		return nil
 	}
 	ty, ok := ds.registry().ByIdentity(ch.Kind)
 	if !ok || !ty.Implements(vocabulary.TraitSyncCore) {
+		return nil
+	}
+	if tr.Callable.Package != ty.Package {
 		return nil
 	}
 	if envelope["record"] == nil {
@@ -78,8 +87,11 @@ func (ds *dataset) syncStampFor(tr *trigger, ch substrate.Change, envelope map[s
 }
 
 // syncPaused reads the owner's pause off the delivered record: a paused
-// record's deliveries are skipped, so a pause stops the sync without the
-// body knowing, and the skip is a settled attempt on the ledger.
+// record's deliveries of its own sync are skipped, so a pause stops the sync
+// without the body knowing, and the skip is a settled attempt on the ledger.
+// It is asked only where syncStampFor answered a stamp: the pause is the
+// owner's hand on the sync, and another package's function on the record
+// runs whatever the pause says.
 func syncPaused(envelope map[string]any) bool {
 	record, _ := envelope["record"].(map[string]any)
 	props, _ := record["properties"].(map[string]any)

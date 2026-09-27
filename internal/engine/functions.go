@@ -793,7 +793,8 @@ func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change
 		res.skipped = true
 		return res, nil
 	}
-	// A record whose kind binds the `sync` trait: a pause skips the delivery
+	// A record whose kind binds the `sync` trait, delivered to a function of
+	// the kind's own package (sync.go syncStampFor): a pause skips the delivery
 	// before the body runs, and the first attempt writes `running` in a
 	// transaction of its own so the run is visible while it runs; the
 	// settlement and the park write the other half (sync.go). A manual run
