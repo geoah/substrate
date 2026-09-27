@@ -112,7 +112,7 @@
   --panel: #fbfaf8;
   --hover: rgba(55, 53, 47, 0.055);
   --selection: rgba(47, 107, 219, 0.09);
-  --destructive: #c94a3d;
+  --destructive: #b94033;
   --bad-soft: #fbe9e6;
   /* Transient trouble is amber, never the red of "action required". Both
      inks are a step darker than the guide's so a pill's word reads on its
@@ -140,17 +140,17 @@
   --sidebar-border: #ecebe7;
   --sidebar-ring: #2f6bdb;
   --kind-gray-bg: #efeeeb;
-  --kind-gray-fg: #6f6d67;
+  --kind-gray-fg: #6c6a65;
   --kind-brown-bg: #f3eae3;
   --kind-brown-fg: #8a5a3b;
   --kind-orange-bg: #fcebdd;
-  --kind-orange-fg: #c2621d;
+  --kind-orange-fg: #a55319;
   --kind-yellow-bg: #fbf1d2;
-  --kind-yellow-fg: #a07a12;
+  --kind-yellow-fg: #87670f;
   --kind-green-bg: #e3f2e8;
-  --kind-green-fg: #2e7d4f;
+  --kind-green-fg: #2c774b;
   --kind-teal-bg: #ddf1f0;
-  --kind-teal-fg: #1f7a77;
+  --kind-teal-fg: #1e7673;
   --kind-blue-bg: #e3edfb;
   --kind-blue-fg: #2f63c0;
   --kind-purple-bg: #eee8fa;

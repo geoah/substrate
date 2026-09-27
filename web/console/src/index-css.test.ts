@@ -56,11 +56,38 @@ describe("the palette", () => {
       ["warning", "warn-soft"],
       ["ok", "ok-soft"],
       ["primary-text", "primary-soft"],
+      ["destructive", "bad-soft"],
     ]
     for (const [ink, fill] of pairs) {
       expect(
         contrast(token(":root", ink), token(":root", fill))
       ).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  // A kind hue's ink carries words, not only a glyph: an enum value ("High")
+  // is its label on its hue at 12px.
+  it("reads every kind hue's ink on its own tile, in both modes", () => {
+    const hues = [
+      "gray",
+      "brown",
+      "orange",
+      "yellow",
+      "green",
+      "teal",
+      "blue",
+      "purple",
+      "pink",
+      "red",
+    ]
+    for (const scope of [":root", ".dark"]) {
+      for (const hue of hues) {
+        const ratio = contrast(
+          token(scope, `kind-${hue}-fg`),
+          token(scope, `kind-${hue}-bg`)
+        )
+        expect(ratio, `${scope} ${hue}`).toBeGreaterThanOrEqual(4.5)
+      }
     }
   })
 })
