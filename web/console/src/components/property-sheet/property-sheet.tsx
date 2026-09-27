@@ -50,6 +50,7 @@ const LOCK_WORDS: Record<RowLock, string> = {
   host: "Kept up to date for you; not edited here",
   provider: "Change it in the provider",
   undeclared: "Not part of this collection’s shape, so it isn’t edited here",
+  id: "Taken from the record id, which never changes",
 }
 
 function Label({

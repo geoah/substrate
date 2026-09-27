@@ -236,6 +236,48 @@ describe("PropertySheet rows", () => {
     expect(valueOf("location")).not.toBeNull()
   })
 
+  it("reads an agent's authority and package as its id's, never edited", () => {
+    const AGENT = "substrate.reamde.dev/core/agent"
+    const agent = kind(AGENT, {
+      displayTemplate: "{localName}",
+      properties: {
+        authority: { type: "string", required: true },
+        package: { type: "string" },
+        model: { type: "string", required: true },
+      },
+    })
+    renderSheet(
+      record({
+        id: "ada.example.com/llm/helper",
+        kind: AGENT,
+        properties: {
+          authority: "ada.example.com",
+          package: "llm",
+          model: "gpt-5-mini",
+        },
+      }),
+      agent
+    )
+    for (const name of ["authority", "package"]) {
+      expect(valueOf(name)).toBeNull()
+      expect(row(name).textContent).toContain("from the record id")
+      expect(
+        row(name).querySelector(
+          "[aria-label='Taken from the record id, which never changes']"
+        )
+      ).not.toBeNull()
+    }
+    expect(valueOf("model")).not.toBeNull()
+  })
+
+  it("keeps an ordinary kind's package property editable", () => {
+    const withPackage = kind(TASK, {
+      properties: { package: { type: "string" } },
+    })
+    renderSheet(record({ properties: { package: "parcel" } }), withPackage)
+    expect(valueOf("package")).not.toBeNull()
+  })
+
   it("offers nothing to edit on a provider's copy", () => {
     renderSheet(record({ kind: CONTACT }), task, true)
     expect(

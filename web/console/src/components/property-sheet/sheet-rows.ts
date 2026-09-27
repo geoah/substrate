@@ -3,6 +3,12 @@
  * which fold away as empty. */
 
 import type { KindInfo, PropertyMeta, SubstrateRecord } from "@/lib/api/types"
+import {
+  AUTHORITY_PROPERTY,
+  PACKAGE_PROPERTY,
+  authorityIsDerived,
+  packageIsDerived,
+} from "@/lib/declarations"
 import { fieldOf, type FormField } from "@/lib/record-form"
 import {
   bodyProperty,
@@ -23,6 +29,10 @@ export type RowLock =
   | "provider"
   /** The record carries it and the kind never declared it. */
   | "undeclared"
+  /** A segment of the record's own id (a declaration's authority or
+   * package): the id never changes, and the server refuses a value that
+   * disagrees with it. */
+  | "id"
 
 export interface SheetRow {
   name: string
@@ -60,6 +70,14 @@ function rank(spec: PropSpec): number {
   if (spec.kind === "markdown" || spec.kind === "text") return 6
   if (spec.repeated) return 5
   return 5
+}
+
+/** Whether the property is a segment of the record's own id: a declaration's
+ * `authority` (the first) and `package` (the second). */
+function idSegment(kind: string, name: string): boolean {
+  if (name === AUTHORITY_PROPERTY) return authorityIsDerived(kind)
+  if (name === PACKAGE_PROPERTY) return packageIsDerived(kind)
+  return false
 }
 
 /** A spec for a value no declaration names, read off its shape. */
@@ -118,13 +136,16 @@ export function sheetRows(
   for (const spec of specs) {
     if (skip.has(spec.name)) continue
     const value = record.properties[spec.name]
+    const fromId = idSegment(record.kind, spec.name)
     const lock: RowLock | undefined = readOnly
       ? "provider"
       : spec.managed
         ? "managed"
-        : !ownerWritable(spec)
-          ? "host"
-          : undefined
+        : fromId
+          ? "id"
+          : !ownerWritable(spec)
+            ? "host"
+            : undefined
     rows.push({
       name: spec.name,
       spec,
@@ -133,6 +154,7 @@ export function sheetRows(
       filled: isFilled(value),
       lock,
       meta: record.propertyMeta?.[spec.name],
+      hint: fromId ? "from the record id" : undefined,
     })
   }
   for (const name of Object.keys(record.properties).sort()) {
