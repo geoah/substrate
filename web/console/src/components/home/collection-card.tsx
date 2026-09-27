@@ -1,5 +1,6 @@
 /** A collection as a card: its glyph and display plural, how many records
- * it holds, and where they come from. The whole card opens the collection. */
+ * it holds, and where they come from ("Made by Notekeeper" for an agent's
+ * app). The whole card opens the collection. */
 
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
@@ -9,16 +10,17 @@ import { KindPath } from "@/components/identity/kind-ref"
 import { OriginMark } from "@/components/identity/origin-mark"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { useKindOrigin } from "@/hooks/use-kind-origin"
 import { splitKind } from "@/lib/api/http"
 import { formatCount, recordCountQueryOptions } from "@/lib/api/records"
 import type { KindInfo } from "@/lib/api/types"
 import { displayPlural } from "@/lib/kind-names"
-import { originOfKind } from "@/lib/origin"
 
 export function CollectionCard({ kind }: { kind: KindInfo }) {
   const [technical] = useTechnicalDetails()
   const { authority, pkg, name } = splitKind(kind.identity)
   const count = useQuery(recordCountQueryOptions(authority, pkg, name))
+  const origin = useKindOrigin(kind.identity)
   return (
     <Link
       to="/data/$authority/$pkg/$name"
@@ -42,10 +44,7 @@ export function CollectionCard({ kind }: { kind: KindInfo }) {
         ) : (
           <Skeleton className="h-7 w-10" />
         )}
-        <OriginMark
-          origin={originOfKind(kind.identity)}
-          className="text-[12.5px] text-faint"
-        />
+        <OriginMark origin={origin} className="text-[12.5px] text-faint" />
       </span>
     </Link>
   )

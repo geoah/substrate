@@ -2,7 +2,8 @@
  * sidebar groups them. "Your data" is yours to change; each "From
  * <Provider>" group holds copies that provider keeps up to date. Everyday
  * mode lists the primary collections and says how many supporting ones sit
- * behind them; technical mode lists every kind with its reference, the
+ * behind them, and a group holding an agent's app says which agent made
+ * what; technical mode lists every kind with its reference, the
  * substrate's own included. */
 
 import { useMemo } from "react"
@@ -17,6 +18,7 @@ import {
 } from "@/components/all-data/add-collection-dialog"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { KindPath } from "@/components/identity/kind-ref"
+import { OriginMark } from "@/components/identity/origin-mark"
 import { TablePage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
 import { ProviderBadge } from "@/components/identity/provider-badge"
@@ -41,8 +43,10 @@ import {
 } from "@/lib/collections"
 import { kindPurpose } from "@/lib/definition"
 import { displayPlural } from "@/lib/kind-names"
-import { cn } from "@/lib/utils"
 import { kindDescription } from "@/lib/kind-copy"
+import type { Origin } from "@/lib/origin"
+import { kindOrigin, packageAgent, packagesQueryOptions } from "@/lib/packages"
+import { cn } from "@/lib/utils"
 
 const HINT: Record<CollectionGroup["type"], (g: CollectionGroup) => string> = {
   yours: () => "yours to change",
@@ -63,10 +67,14 @@ function CollectionRow({
   kind,
   technical,
   compact,
+  origin,
 }: {
   kind: KindInfo
   technical: boolean
   compact: boolean
+  /** Where it comes from, in a group some of whose collections an agent
+   * made; absent where every row comes from the same place. */
+  origin?: Origin
 }) {
   const navigate = useNavigate()
   const { authority, pkg, name } = splitKind(kind.identity)
@@ -107,6 +115,11 @@ function CollectionRow({
           {kindDescription(kind, technical) || "—"}
         </span>
       </td>
+      {origin && (
+        <td className={cn(cell, "border-l text-muted-foreground")}>
+          <OriginMark origin={origin} className="max-w-full" />
+        </td>
+      )}
       <td className={cn(cell, "border-l text-right tabular-nums")}>
         <RecordCount kind={kind} />
       </td>
@@ -125,6 +138,11 @@ function GroupTable({
 }) {
   const shown = technical ? [...group.primary, ...group.hidden] : group.primary
   const hidden = technical ? 0 : group.hidden.length
+  const packages = useQuery(packagesQueryOptions)
+  // The column earns its place only where an agent made something here.
+  const madeBy = shown.some((k) =>
+    packageAgent(packages.data, `${k.authority}/${k.package}`)
+  )
   return (
     <section>
       <SectionHead
@@ -144,6 +162,7 @@ function GroupTable({
             <col className="w-[240px]" />
             {technical && <col className="w-[400px]" />}
             <col />
+            {madeBy && <col className="w-[200px]" />}
             <col className="w-[90px]" />
           </colgroup>
           <thead>
@@ -159,6 +178,11 @@ function GroupTable({
               <th className="border-b border-l border-border px-2.5 font-medium">
                 What it holds
               </th>
+              {madeBy && (
+                <th className="border-b border-l border-border px-2.5 font-medium">
+                  Made by
+                </th>
+              )}
               <th className="border-b border-l border-border px-2.5 text-right font-medium">
                 Records
               </th>
@@ -171,6 +195,9 @@ function GroupTable({
                 kind={k}
                 technical={technical}
                 compact={compact}
+                origin={
+                  madeBy ? kindOrigin(k.identity, packages.data) : undefined
+                }
               />
             ))}
           </tbody>
