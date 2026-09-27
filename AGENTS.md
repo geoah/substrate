@@ -343,11 +343,16 @@ first label.
   implementation of it, and the API is tested entirely against a hand-written
   fake (`internal/api/fake_test.go`).
 - **The top level stays empty.** Every Go package is under `internal/` (or
-  `cmd/`), and the two exceptions are the vocabulary as files: `kinds/` (the
-  seeded `core` and `llm` packages and the shipped providers) and `samples/` (the sample
-  packages a repository copies), each with the one Go file that embeds it. No
-  package is named for a language construct: no `types.go`, no `iface.go`, no
-  `utils`. An interface lives with the subject it describes.
+  `cmd/`), and four directories are the exceptions. Two are the vocabulary as
+  files: `kinds/` (the seeded `core` and `llm` packages and the shipped
+  providers) and `samples/` (the sample packages a repository copies), each
+  with the one Go file that embeds it. Two are for people building on a
+  substrate: `skills/`, the agent skills they install (the upgrade runbook),
+  and `.claude-plugin/`, the marketplace manifest Claude Code installs them
+  from. A skill there speaks to a user of a substrate, never to this repo's
+  developers, whose skills stay under `.claude/skills/`. No package is named
+  for a language construct: no `types.go`, no `iface.go`, no `utils`. An
+  interface lives with the subject it describes.
 - **The changelog is the truth.** It lives in the repository's directory
   under `SUBSTRATE_DATA_ROOT` as checksummed segment files, and the
   `changelog` table indexes them; `internal/engine/fold.go` is the one path
