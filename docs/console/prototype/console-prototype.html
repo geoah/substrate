@@ -1616,7 +1616,11 @@ document.addEventListener("mouseover",e=>{
 document.addEventListener("focusin",e=>{ if(e.target.matches&&e.target.matches("[data-hc]")) e.target.dispatchEvent(new MouseEvent("mouseover",{bubbles:true})); });
 addEventListener("scroll",()=>{hc.style.display="none"},true);
 
-const hm=location.hash.slice(1);
+// The hash, resolved against the names the prototype knows. The match is the
+// list's own constant, never the hash itself, so a name such as constructor
+// selects nothing.
+const hashName=location.hash.slice(1);
+const hm=[...Object.keys(REC_PAGE),"big","collection","tool-page","tools",...PAGES.map(p=>p[0])].find(k=>k===hashName)||"";
 if(REC_PAGE[hm]){S.page="record";S.rec=REC_PAGE[hm];} else if(hm==="big"){S.page="collection";S.kind="gcontact";} else if(hm==="collection"){S.page="collection";S.kind="task";} else if(hm==="tool-page"){S.page="tools";S.toolView="page";S.tool="synccontacts";} else if(hm==="tools"){S.page="tools";S.toolView="list";} else if(PAGES.some(p=>p[0]===hm)) S.page=hm;
 if(/tech/.test(location.search)) S.tech=true;
 if(/tall/.test(location.search)) app.style.height='auto';
