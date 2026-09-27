@@ -5,9 +5,10 @@
 # It connects a GitHub account over the host OAuth facility and mirrors what
 # GitHub holds about the owner: the connected user, the repositories the
 # account can reach, and every issue and pull request the user is involved in
-# (author / assignee / mentioned / commenter) or review-requested on —
-# `involves:` does NOT cover review requests, so those ride a third
-# `review-requested:` search.
+# (author / assignee / mentioned / commenter), review-requested on or has
+# reviewed. `involves:` covers neither of the last two, so those ride their own
+# `review-requested:` and `reviewed-by:` searches: GitHub drops a reviewer from
+# the requested list once they review (#710).
 #
 # THE RULE THIS BUNDLE OBEYS is `docs/kind-design.md` (v3), and every line of
 # it is load-bearing here:
@@ -77,11 +78,12 @@ data:
   authority: providers.substrate.reamde.dev
   package: github
   # 25, #644: the `submitreview` function, the bundle's first write to GitHub.
+  # 26, #710: the `pullsReviewed` search, `type:pr reviewed-by:<login>`.
   #
-  # 26: every kind declares its purpose (decision 0133), and its
+  # 27: every kind declares its purpose (decision 0133), and its
   # description opens with one plain sentence saying what a record is to
   # a person.
-  version: 26
+  version: 27
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -297,7 +299,7 @@ data:
       writer: owner
       displayName: Pull requests
       description: mirror every pull request the connected user is involved
-        in or review-requested on, with its reviews
+        in, review-requested on or has reviewed, with its reviews
     syncFrequency:
       type: enum
       values:
@@ -371,8 +373,9 @@ data:
       writer: connector
       displayName: Sync cursors
       description: >-
-        the per-stream incremental floor, keyed by stage (issues, pulls, pullsReview)
-        — one stage hitting a search cap never advances another's tail
+        the per-stream incremental floor, keyed by stage (issues, pulls, pullsReview,
+        pullsReviewed) — one stage hitting a search cap never advances another's
+        tail
     syncPending:
       type: json
       writer: connector
@@ -2633,6 +2636,7 @@ data:
 #   issues       GET /search/issues                 type:issue involves:<login>
 #   pulls        GET /search/issues                 type:pr involves:<login>
 #   pullsReview  GET /search/issues                 type:pr review-requested:<login>
+#   pullsReviewed GET /search/issues                type:pr reviewed-by:<login>
 #   pullsFetch   GET /repos/{o}/{r}/pulls/{n}       requested_reviewers,
 #                                                   requested_teams, merged_by,
 #                                                   head/base, the diff counts
@@ -2795,11 +2799,16 @@ data:
     GRAPH_PAGES = 10
     BACKFILL_DAYS = {"last30d": 30, "last90d": 90, "last1y": 365}
     TOGGLES = ("enabledUser", "enabledRepos", "enabledIssues", "enabledPullRequests")
-    SEARCH_STAGES = ("issues", "pulls", "pullsReview")
+    SEARCH_STAGES = ("issues", "pulls", "pullsReview", "pullsReviewed")
+    # `involves:` covers neither a review request nor a review, and GitHub drops
+    # a user from a pull request's requested reviewers the moment they review
+    # it: without `reviewed-by:` a pull request the owner was only asked to
+    # review leaves every search once they approve it (#710).
     SEARCH_QUERY = {
         "issues": "type:issue involves:",
         "pulls": "type:pr involves:",
         "pullsReview": "type:pr review-requested:",
+        "pullsReviewed": "type:pr reviewed-by:",
     }
     # GitHub's two ORGANIZATION-level refusals: an OAuth app the org has not
     # approved ("…the `acme` organization has enabled OAuth App access
@@ -2886,7 +2895,8 @@ data:
         if props.get("enabledIssues"):
             out.append("issues")
         if props.get("enabledPullRequests"):
-            out.extend(["pulls", "pullsReview", "pullsFetch", "reviewsFetch"])
+            out.extend(["pulls", "pullsReview", "pullsReviewed", "pullsFetch",
+                        "reviewsFetch"])
         if props.get("enabledIssues"):
             # `graphFetch` follows `issuesFetch`: an issue's own read is what
             # states the summaries the graph reads are asked for, and the parent
@@ -5226,8 +5236,9 @@ data:
                 return _more(host, cur)
             return _advance(host, acct, aid, cur, queue)
 
-        # issues | pulls | pullsReview: the three searches. Ascending by update
-        # time, so a partition boundary is the page's newest item.
+        # issues | pulls | pullsReview | pullsReviewed: the four searches.
+        # Ascending by update time, so a partition boundary is the page's
+        # newest item.
         pull = stage != "issues"
         q = SEARCH_QUERY[stage] + (cur.get("login") or "")
         pfloor = cur.get("pfloor") or ""
@@ -5859,9 +5870,10 @@ data:
 # `config.accounts[].token`, exactly as the sync does, and sends it only to
 # https://api.github.com or loopback. The `repo` scope the pull request toggle
 # already asks for is what grants a review write. It writes no record: the
-# review reaches the mirror only when the sync still finds the pull request,
-# and it does not when the owner was only review-requested (GitHub drops a
-# reviewer from that list once they review; issue #710, decision record 0125).
+# review reaches the mirror on the next sync, which finds the pull request
+# through the `reviewed-by:` search even when the owner was only
+# review-requested (GitHub drops a reviewer from that list once they review;
+# issue #710, decision record 0125).
 kind: substrate.reamde.dev/core/function
 metadata:
   id: providers.substrate.reamde.dev/github/submitreview

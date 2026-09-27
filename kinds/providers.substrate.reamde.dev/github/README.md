@@ -3,8 +3,8 @@
 Package `providers.substrate.reamde.dev/github`: an OAuth provider that mirrors
 the code work the owner is involved in (the connected user, the repositories
 they can reach, and the issues and pull requests they author, are assigned,
-are mentioned in, comment on or are review-requested on, with the reviews on
-those pull requests). The sync never writes to GitHub. `submitreview` is the
+are mentioned in, comment on, are review-requested on or have reviewed, with
+the reviews on those pull requests). The sync never writes to GitHub. `submitreview` is the
 one write: a function a caller invokes, which approves or comments on one
 pull request with the account's token.
 
