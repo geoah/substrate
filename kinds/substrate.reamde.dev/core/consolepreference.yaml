@@ -4,7 +4,7 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  version: 2
+  version: 3
   description: Repository-owned console preferences, for navigation and display,
     shared across sessions.
   purpose: internal
@@ -24,9 +24,14 @@ data:
       type: string
       repeated: true
       description: Favorite kind references in display order.
+    # Deprecated rather than dropped: whether the sidebar is open is a fact
+    # about one window and stays in that browser (record 0132), and removing a
+    # property live records hold is a narrowing the upgrade refuses.
     sidebarOpen:
       type: bool
-      description: Whether the desktop sidebar is expanded.
+      deprecated: true
+      description: Whether the desktop sidebar is expanded. No console writes
+        it any more; each browser keeps its own.
     recordWidth:
       type: enum
       values:
@@ -57,3 +62,47 @@ data:
         - light
         - dark
       description: The color theme; system follows the device.
+    views:
+      type: object
+      repeated: true
+      description: Saved views of collections, each a named filter, sort,
+        column set, nesting and grouping for one collection, in the order
+        they were saved.
+      fields:
+        id:
+          type: string
+          required: true
+          description: The view's own id, unique among the views.
+        collection:
+          type: string
+          required: true
+          description: The kind reference of the collection the view belongs
+            to.
+        name:
+          type: string
+          required: true
+          description: What the view is called on the collection's tab strip.
+        filter:
+          type: string
+          repeated: true
+          description: The view's filters, one console filter token each.
+        sort:
+          type: string
+          description: The order, as `property:asc` or `property:desc`; absent
+            is the newest change first.
+        columns:
+          type: string
+          repeated: true
+          description: The collection's column ids in the view's display order.
+        hidden:
+          type: string
+          repeated: true
+          description: The column ids the view hides.
+        nest:
+          type: bool
+          description: Whether a collection that nests shows its tree; absent
+            is on.
+        group:
+          type: string
+          description: The property the rows are grouped by; absent is no
+            grouping.
