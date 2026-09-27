@@ -654,7 +654,7 @@ export function MergeRequestDetailPage() {
             )}
             {proposer && (
               <span className="flex items-center gap-1.5">
-                Suggested by <ActorRef actor={proposer} />
+                Suggested by <ActorRef actor={proposer} inlineId={false} />
               </span>
             )}
             <span title={request.createdAt}>
@@ -665,7 +665,7 @@ export function MergeRequestDetailPage() {
                 Decided <span title={decidedAt}>{relativeTime(decidedAt)}</span>
                 {decider && (
                   <>
-                    by <ActorRef actor={decider} />
+                    by <ActorRef actor={decider} inlineId={false} />
                   </>
                 )}
               </span>
@@ -675,6 +675,11 @@ export function MergeRequestDetailPage() {
                 value={`${CORE_PACKAGE}/recordmergerequest/${request.id}`}
                 copy
               />
+            )}
+            {/* The actors' ids after the words, so each phrase reads whole. */}
+            {technical && proposer && <IdText value={proposer} copy />}
+            {technical && decider && decider !== proposer && (
+              <IdText value={decider} copy />
             )}
           </>
         }

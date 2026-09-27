@@ -64,6 +64,35 @@ export function tableDateTime(iso: string, now = Date.now()): string {
   return `${day}${year}, ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+/** The change table's stamp: the clock with seconds, which orders rows
+ * inside a burst, and the day before it on the first row of each local day
+ * (`Today, 13:04:52`, `Sep 25, 09:30:00`), so a page reads each date once.
+ * `previous` is the row above's stamp, absent on the first row. */
+export function feedStamp(
+  iso: string,
+  previous: string | undefined,
+  now = Date.now()
+): string {
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return iso
+  const clock = shortTime(iso, true)
+  if (previous && shortDate(previous) === shortDate(iso)) return clock
+  const d = new Date(t)
+  const today = new Date(now)
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+  const day = shortDate(iso)
+  const word =
+    day === shortDate(today.toISOString())
+      ? "Today"
+      : day === shortDate(yesterday.toISOString())
+        ? "Yesterday"
+        : `${MONTHS[d.getMonth()]} ${d.getDate()}${
+            d.getFullYear() === today.getFullYear() ? "" : ` ${d.getFullYear()}`
+          }`
+  return `${word}, ${clock}`
+}
+
 /** `2026-08-04 13:04` — detail-context stamp, minutes are enough. */
 export function shortDateTime(iso: string): string {
   const t = Date.parse(iso)

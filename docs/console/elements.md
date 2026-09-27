@@ -104,7 +104,10 @@ and, with Technical details on, inline.
 that names the actor another way. Used by History, the record's history and
 details, the ownership detail, the grid's row detail, the tool page, merge
 and change requests, Home's recent chats. **Rule:** an actor is never a raw
-id in everyday mode, and every actor mark opens the same card.
+id in everyday mode, and every actor mark opens the same card. Where a
+sentence names the actor ("You changed Home"), `inlineId` is off and the raw
+id sits after the sentence, on its faint technical line with a copy button,
+so the sentence still reads as one.
 
 ### AgentRef and AgentMark
 

@@ -52,6 +52,8 @@ import type {
   Change,
   ChangePage,
   ChangeRow,
+  ChangeRun,
+  ChangeRunPage,
   ChangeTrigger,
   Cond,
   ConversionConfirm,
@@ -291,6 +293,26 @@ const changeRow: Shape<ChangeRow> = {
 
 const changePage: Shape<ChangePage> = {
   changes: true,
+  cursor: false,
+  head: true,
+  generation: true,
+}
+
+const changeRun: Shape<ChangeRun> = {
+  actor: true,
+  kind: true,
+  verb: true,
+  count: true,
+  records: true,
+  recordId: false,
+  newestSeq: true,
+  oldestSeq: true,
+  newestTs: true,
+  oldestTs: true,
+}
+
+const changeRunPage: Shape<ChangeRunPage> = {
+  runs: true,
   cursor: false,
   head: true,
   generation: true,
@@ -649,6 +671,8 @@ const mirrors: Record<string, Record<string, boolean>> = {
   ChangeTrigger: changeTrigger,
   ChangeRow: changeRow,
   ChangePage: changePage,
+  ChangeRun: changeRun,
+  ChangeRunPage: changeRunPage,
   Page: page,
   RankedPage: rankedPage,
   Scores: scores,
@@ -731,6 +755,8 @@ const notOnTheWire: Record<string, string> = {
     "the feed's query parameters, URL-encoded, never a JSON body",
   ChangesFeedOpts: "query options for the infinite feed, client-side",
   HistoryPosition: "a seek position the console holds, client-side",
+  RunSource:
+    "a run summary plus the page filter its rows are read under, client-side",
   WatchError:
     "a loose reading of ErrorPayload off a stream frame (`code` as any string); the shape is pinned as ErrorPayload",
   WatchLine:

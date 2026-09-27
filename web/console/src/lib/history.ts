@@ -10,14 +10,16 @@ import {
   PROVIDERS_AUTHORITY,
 } from "@/lib/actor-identity"
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME, splitKind } from "@/lib/api/http"
-import type { ChangeRow, KindInfo } from "@/lib/api/types"
+import type { RunSource } from "@/lib/api/changes"
+import type { ChangeRow, ChangeRun, KindInfo } from "@/lib/api/types"
 import type { ValueMove } from "@/lib/change-values"
 import { changedProperties } from "@/lib/changelog"
 import { kindPurpose } from "@/lib/definition"
 import { packageDisplayName } from "@/lib/kind-names"
 
-/** Runs of the same actor doing the same thing to the same kind fold into one
- * sentence while each row lands within this long of the one before it. */
+/** Where the server makes no runs, rows of the same actor doing the same
+ * thing to the same kind fold into one sentence while each row lands within
+ * this long of the one before it. */
 export const FOLD_WINDOW_MS = 10 * 60_000
 
 /** What a row did, as the verb of a sentence. */
@@ -41,25 +43,92 @@ export function historyVerb(row: ChangeRow): string {
   }
 }
 
+/** A run's verb (`substrate.RunVerb`) as the verb of a sentence: the same
+ * words `historyVerb` gives the rows it summarizes. */
+export function runVerb(verb: string): string {
+  switch (verb) {
+    case "create":
+      return "added"
+    case "restore":
+      return "restored"
+    case "update":
+      return "changed"
+    case "delete":
+      return "deleted"
+    case "merge":
+      return "merged"
+    case "gc":
+      return "cleaned up"
+    default:
+      return verb
+  }
+}
+
 export interface HistoryEntry {
   /** The newest row's seq: stable while the entry grows at its old end. */
   key: string
   actor: string
   verb: string
   kind: string
-  /** Newest first. */
-  rows: ChangeRow[]
-  /** The distinct records the rows touched, in first-seen order. */
+  /** How many changes the sentence says. */
+  count: number
+  /** How many distinct records they touched. */
+  recordCount: number
+  /** The records known by id, first-seen order: every one where the rows
+   * are in hand, the one record of a one-record run. */
   records: string[]
-  /** The newest row's time. */
+  /** The newest change's time. */
   ts: string
-  /** Every property the rows named, first-seen order. */
+  newestSeq: number
+  oldestSeq: number
+  /** The rows in hand, newest first: the live tail's, or every row where
+   * the server makes no runs. */
+  rows: ChangeRow[]
+  /** Every property the rows in hand named, first-seen order. */
   properties: string[]
+  /** The part of the sentence the server summarized, whose rows are read on
+   * demand. */
+  run?: RunSource
+  /** The feed goes on in older rows the fold has not read, and this is its
+   * oldest entry: its count may be short, so it is said without one. Only a
+   * server without runs leaves one. */
+  openEnded?: boolean
+}
+
+function rowEntry(row: ChangeRow, verb = historyVerb(row)): HistoryEntry {
+  return {
+    key: String(row.seq),
+    actor: row.actor,
+    verb,
+    kind: row.kind,
+    count: 1,
+    recordCount: 1,
+    records: [row.recordId],
+    ts: row.ts,
+    newestSeq: row.seq,
+    oldestSeq: row.seq,
+    rows: [row],
+    properties: [...changedProperties(row)],
+  }
+}
+
+/** Add an older row to an entry. */
+function extend(entry: HistoryEntry, row: ChangeRow) {
+  entry.rows.push(row)
+  entry.count += 1
+  entry.oldestSeq = row.seq
+  if (!entry.records.includes(row.recordId)) {
+    entry.records.push(row.recordId)
+    entry.recordCount += 1
+  }
+  for (const p of changedProperties(row))
+    if (!entry.properties.includes(p)) entry.properties.push(p)
 }
 
 /** Fold a newest-first feed into sentences. Only neighbours fold: a run is
  * broken by any row from another actor, verb or kind, so the order of what
- * happened is never rearranged. */
+ * happened is never rearranged. What the server's runs replace, for a server
+ * without them and for the live tail above the first page. */
 export function foldHistory(
   rows: readonly ChangeRow[],
   windowMs = FOLD_WINDOW_MS
@@ -77,21 +146,9 @@ export function foldHistory(
       last.kind === row.kind &&
       Math.abs(lastTs - ts) <= windowMs
     if (fits && last) {
-      last.rows.push(row)
-      if (!last.records.includes(row.recordId)) last.records.push(row.recordId)
-      for (const p of changedProperties(row))
-        if (!last.properties.includes(p)) last.properties.push(p)
+      extend(last, row)
     } else {
-      last = {
-        key: String(row.seq),
-        actor: row.actor,
-        verb,
-        kind: row.kind,
-        rows: [row],
-        records: [row.recordId],
-        ts: row.ts,
-        properties: [...changedProperties(row)],
-      }
+      last = rowEntry(row, verb)
       out.push(last)
     }
     lastTs = ts
@@ -99,21 +156,161 @@ export function foldHistory(
   return out
 }
 
+/** A run the server summarized, as a sentence whose rows are read later. */
+export function runEntry(
+  run: ChangeRun,
+  source: Pick<RunSource, "generation" | "filter" | "values">
+): HistoryEntry {
+  return {
+    key: String(run.newestSeq),
+    actor: run.actor,
+    verb: runVerb(run.verb),
+    kind: run.kind,
+    count: run.count,
+    recordCount: run.records,
+    records: run.recordId ? [run.recordId] : [],
+    ts: run.newestTs,
+    newestSeq: run.newestSeq,
+    oldestSeq: run.oldestSeq,
+    rows: [],
+    properties: [],
+    run: {
+      actor: run.actor,
+      kind: run.kind,
+      recordId: run.recordId,
+      newestSeq: run.newestSeq,
+      oldestSeq: run.oldestSeq,
+      count: run.count,
+      ...source,
+    },
+  }
+}
+
+/** The live tail's sentences over the first page's: the tail's oldest
+ * sentence continues the page's newest run where both say the same act, as
+ * the server would have summarized them. A record the two share is counted
+ * once only where the run touched one record; a run over many records says
+ * no ids, so one the tail touches again counts twice. */
+export function joinLive(
+  live: readonly HistoryEntry[],
+  history: readonly HistoryEntry[]
+): HistoryEntry[] {
+  const newer = live.at(-1)
+  const older = history[0]
+  if (
+    !newer ||
+    !older ||
+    newer.actor !== older.actor ||
+    newer.verb !== older.verb ||
+    newer.kind !== older.kind
+  ) {
+    return [...live, ...history]
+  }
+  const known = new Set(older.records)
+  const fresh = newer.records.filter((id) => !known.has(id))
+  const joined: HistoryEntry = {
+    ...newer,
+    count: newer.count + older.count,
+    recordCount: older.recordCount + fresh.length,
+    records: [...fresh, ...older.records],
+    oldestSeq: older.oldestSeq,
+    rows: [...newer.rows, ...older.rows],
+    properties: [...new Set([...newer.properties, ...older.properties])],
+    run: older.run,
+    openEnded: older.openEnded,
+  }
+  return [...live.slice(0, -1), joined, ...history.slice(1)]
+}
+
 const TRIGGER_RUN = `${CORE_AUTHORITY}/${CORE_PACKAGE_NAME}/triggerrun`
+const CONSOLE_PREFERENCE = `${CORE_AUTHORITY}/${CORE_PACKAGE_NAME}/consolepreference`
+
+/** Whether a sentence needs its run's rows: a change says its values or the
+ * properties it touched, and a run of a trigger or a new console layout says
+ * what the rows hold. Adding and removing records say all they need. */
+export function runNeedsRows(entry: HistoryEntry): boolean {
+  if (!entry.run) return false
+  if (entry.verb === "changed") return true
+  return (
+    entry.verb === "added" &&
+    entry.recordCount === 1 &&
+    (entry.kind === TRIGGER_RUN || entry.kind === CONSOLE_PREFERENCE)
+  )
+}
+
+/** An entry with its run's rows read: the rows in hand, then the run's. */
+export function withRunRows(
+  entry: HistoryEntry,
+  runRows: readonly ChangeRow[] | undefined
+): HistoryEntry {
+  if (!runRows?.length) return entry
+  const rows = [...entry.rows, ...runRows]
+  const properties = [...entry.properties]
+  for (const row of runRows)
+    for (const p of changedProperties(row))
+      if (!properties.includes(p)) properties.push(p)
+  const records = [...entry.records]
+  for (const row of runRows)
+    if (!records.includes(row.recordId)) records.push(row.recordId)
+  return { ...entry, rows, properties, records }
+}
+
+/** Whether the rows in hand are every row the sentence stands for, so a
+ * net move across them is the sentence's own. */
+export function rowsComplete(entry: HistoryEntry): boolean {
+  return entry.rows.length === entry.count
+}
+
+/** A property a sentence names: a rename is one name, said with its old
+ * one. */
+export interface NamedProperty {
+  name: string
+  renamedFrom?: string
+}
+
+/** The renames a row's payload records (`renamed`, old name to new), the
+ * pairs a schema change moved a value across. */
+function rowRenames(row: ChangeRow): Map<string, string> {
+  const out = new Map<string, string>()
+  const renamed = row.payload?.renamed
+  if (renamed && typeof renamed === "object" && !Array.isArray(renamed)) {
+    for (const [from, to] of Object.entries(renamed))
+      if (typeof to === "string") out.set(from, to)
+  }
+  return out
+}
+
+/** The properties the rows in hand named, a rename said once by both names
+ * ("Label renamed to Display label") rather than as the old name cleared and
+ * the new one set. The old name stays where some change touched it other
+ * than by being renamed. Names alone, so it holds against a server that sends
+ * no values: the pair rides the payload (decision 0114). */
+export function namedProperties(entry: HistoryEntry): NamedProperty[] {
+  const renamedFrom = new Map<string, string>()
+  const touchedOtherwise = new Set<string>()
+  for (const row of entry.rows) {
+    const renames = rowRenames(row)
+    for (const [from, to] of renames) renamedFrom.set(to, from)
+    for (const p of changedProperties(row))
+      if (!renames.has(p)) touchedOtherwise.add(p)
+  }
+  const olds = new Set(renamedFrom.values())
+  return entry.properties
+    .filter((p) => !olds.has(p) || touchedOtherwise.has(p))
+    .map((p) =>
+      renamedFrom.has(p)
+        ? { name: p, renamedFrom: renamedFrom.get(p) }
+        : { name: p }
+    )
+}
 
 /** Housekeeping rather than a change anybody made: collecting what a delete
  * left behind, and pruning a trigger's finished runs. */
-export function isHousekeeping(row: ChangeRow): boolean {
-  return row.op === "gc" || (row.op === "delete" && row.kind === TRIGGER_RUN)
-}
-
-/** The sentences a feed shows, housekeeping only with technical details on,
- * folded. */
-export function historyEntries(
-  rows: readonly ChangeRow[],
-  technical: boolean
-): HistoryEntry[] {
-  return foldHistory(technical ? rows : rows.filter((r) => !isHousekeeping(r)))
+export function isHousekeeping(entry: { verb: string; kind: string }): boolean {
+  return (
+    entry.verb === "cleaned up" ||
+    (entry.verb === "deleted" && entry.kind === TRIGGER_RUN)
+  )
 }
 
 export interface HistoryDay {
@@ -384,7 +581,7 @@ export function systemPhrase(
     return undefined
   const verb = VERB_WORDS[entry.verb]
   if (!verb) return undefined
-  const n = entry.records.length
+  const n = entry.recordCount
   const one = n === 1 ? entry.records[0] : undefined
   const own = (identity: string) =>
     entry.actor === `bundle:${identity.split("/").join(":")}`

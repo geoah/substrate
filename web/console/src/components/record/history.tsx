@@ -18,6 +18,7 @@ import { useMemo } from "react"
 import { ago } from "@/components/property-sheet/dates"
 import { ValueMoves } from "@/components/changelog/value-moves"
 import { ActorRef } from "@/components/identity/actor-ref"
+import { CopyButton } from "@/components/identity/copy-button"
 import { StateBadge } from "@/components/identity/state-badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -59,7 +60,7 @@ function Row({
     >
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5 leading-normal">
-          <ActorRef actor={row.actor} />
+          <ActorRef actor={row.actor} inlineId={false} />
           <span>{changeSentence(row, record)}</span>
         </div>
         {showValues && (
@@ -96,12 +97,27 @@ function Row({
             )}
           </div>
         )}
-      </div>
-      <div className="flex flex-col items-end gap-0.5 text-[12.5px] whitespace-nowrap text-faint tabular-nums">
-        <span title={row.ts}>{ago(row.ts)}</span>
         {technical && (
-          <span className="font-mono text-[11.5px]">#{row.seq}</span>
+          // The ids go after the sentence, so it still reads as one.
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px] text-faint">
+            <span className="inline-flex items-center gap-0.5 tabular-nums">
+              #{row.seq}
+              <CopyButton
+                value={String(row.seq)}
+                label="Copy the sequence number"
+              />
+            </span>
+            <span className="inline-flex min-w-0 items-center gap-0.5">
+              <span className="font-mono text-[11.5px] [overflow-wrap:anywhere]">
+                {row.actor}
+              </span>
+              <CopyButton value={row.actor} label="Copy the actor id" />
+            </span>
+          </div>
         )}
+      </div>
+      <div className="text-[12.5px] whitespace-nowrap text-faint tabular-nums">
+        <span title={row.ts}>{ago(row.ts)}</span>
       </div>
     </div>
   )

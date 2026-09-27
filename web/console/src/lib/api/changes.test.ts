@@ -4,12 +4,15 @@ import {
   changesInfiniteOptions,
   changesSearch,
   fetchChangesPage,
+  fetchHistoryPage,
   parseWatchLine,
+  resetRunsSupport,
   resetValuesSupport,
+  runRowsQueryOptions,
   seekBoundary,
   type SeekProbe,
 } from "./changes"
-import type { ChangePage, ChangeRow } from "./types"
+import type { ChangePage, ChangeRow, ChangeRunPage } from "./types"
 
 const T0 = Date.parse("2026-08-05T12:00:00Z")
 
@@ -239,5 +242,122 @@ describe("values", () => {
       fetchChangesPage({ filter: { values: true } })
     ).rejects.toThrow("recordId")
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("runs", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+  beforeEach(() => {
+    resetRunsSupport()
+    resetValuesSupport()
+    vi.stubGlobal("fetch", fetchMock)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+  const runs: ChangeRunPage = {
+    runs: [
+      {
+        actor: "console",
+        kind: "samples.substrate.reamde.dev/tasks/task",
+        verb: "create",
+        count: 60,
+        records: 60,
+        newestSeq: 90,
+        oldestSeq: 31,
+        newestTs: "2026-09-27T10:00:00Z",
+        oldestTs: "2026-09-27T09:00:00Z",
+      },
+    ],
+    cursor: 31,
+    head: 95,
+    generation: "g",
+  }
+  const answer = (body: unknown, status = 200) =>
+    Promise.resolve(new Response(JSON.stringify(body), { status }))
+
+  it("asks for runs, counted by first, never with values", async () => {
+    fetchMock.mockImplementation(() => answer(runs))
+    const got = await fetchHistoryPage({
+      first: 6,
+      before: 40,
+      generation: "g",
+      filter: { actors: ["console"], excludeKinds: ["x.example.com/a/b"] },
+    })
+    expect(got).toEqual(runs)
+    const url = new URL(String(fetchMock.mock.calls[0][0]), "http://x")
+    expect(url.searchParams.get("runs")).toBe("1")
+    expect(url.searchParams.get("first")).toBe("6")
+    expect(url.searchParams.get("before")).toBe("40")
+    expect(url.searchParams.get("generation")).toBe("g")
+    expect(url.searchParams.getAll("excludeKinds")).toEqual([
+      "x.example.com/a/b",
+    ])
+    expect(url.searchParams.has("values")).toBe(false)
+  })
+
+  it("reads rows instead from a server without runs, and remembers", async () => {
+    const page: ChangePage = { changes: [row(3)], head: 3, generation: "g" }
+    fetchMock
+      .mockImplementationOnce(() =>
+        answer(
+          {
+            error: {
+              code: "bad_request",
+              message: 'unknown query parameter "runs"',
+            },
+          },
+          400
+        )
+      )
+      .mockImplementation(() => answer(page))
+    expect(await fetchHistoryPage({ first: 6, rows: 60 })).toEqual(page)
+    const urls = fetchMock.mock.calls.map(([u]) => String(u))
+    expect(urls[0]).toContain("runs=1")
+    expect(urls[1]).not.toContain("runs")
+    expect(urls[1]).toContain("first=60")
+    await fetchHistoryPage({ first: 6, rows: 60 })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(String(fetchMock.mock.calls[2][0])).not.toContain("runs")
+  })
+
+  it("reads a run's rows under the page filter narrowed to the run", async () => {
+    fetchMock.mockImplementation(() =>
+      answer({ changes: [row(9), row(8), row(7)], head: 95, generation: "g" })
+    )
+    const options = runRowsQueryOptions({
+      actor: "console",
+      kind: "samples.substrate.reamde.dev/tasks/task",
+      recordId: "t1",
+      newestSeq: 9,
+      oldestSeq: 8,
+      count: 2,
+      generation: "g",
+      filter: {
+        actors: ["console", "api"],
+        q: "x",
+        excludeKinds: ["substrate.reamde.dev/core/token"],
+        excludeOps: ["gc"],
+      },
+      values: true,
+    })
+    const rows = await options.queryFn!({
+      signal: new AbortController().signal,
+    } as never)
+    // A row below the run is not the run's.
+    expect(rows.map((r) => r.seq)).toEqual([9, 8])
+    const url = new URL(String(fetchMock.mock.calls[0][0]), "http://x")
+    expect(url.searchParams.get("before")).toBe("10")
+    expect(url.searchParams.get("first")).toBe("2")
+    expect(url.searchParams.getAll("actors")).toEqual(["console"])
+    expect(url.searchParams.getAll("kinds")).toEqual([
+      "samples.substrate.reamde.dev/tasks/task",
+    ])
+    expect(url.searchParams.get("recordId")).toBe("t1")
+    expect(url.searchParams.get("q")).toBe("x")
+    expect(url.searchParams.get("values")).toBe("1")
+    expect(url.searchParams.has("excludeKinds")).toBe(false)
+    expect(url.searchParams.getAll("excludeOps")).toEqual(["gc"])
   })
 })

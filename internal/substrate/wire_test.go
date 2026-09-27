@@ -73,6 +73,10 @@ var wireTypes = map[string]any{
 	"ChangeTrigger": ChangeTrigger{},
 	"ChangeRow":     ChangeRow{},
 	"ChangePage":    ChangePage{},
+	// The `runs=1` form of the history page (decision 0110): Home and History
+	// say a run's count from it, so a field that moves here moves a sentence.
+	"ChangeRun":     ChangeRun{},
+	"ChangeRunPage": ChangeRunPage{},
 	// The public change event nested in a Change (decision 0061): the console
 	// renders it in place of the replay effects it used to decode.
 	"AffectedRecord": AffectedRecord{},

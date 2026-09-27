@@ -1,9 +1,13 @@
 /** The cross-collection change feed (`GET /api/v1/changes`), read
- * three ways:
+ * four ways:
  *
  * - **History**: newest-first pages addressed by `before=<seq>`. The changelog
  *   is seq-addressed, so the feed pages older by cursor rather than by an
  *   offset jump.
+ * - **Runs**: the same pages summarized (`runs=1`, decision 0110), where
+ *   `first` counts runs and each run is read to its end, so "You added 60
+ *   tasks" is exact from one read. A server that predates it refuses the
+ *   parameter; the read then falls back to rows, once for the page's life.
  * - **Time seek**: the wire has no time-range parameter, but seq order is time
  *   order, so "history until T" is a binary search over the seq axis — a dozen
  *   one-row probes finding the newest row at or before T.
@@ -14,8 +18,9 @@
  *   from a generation it does not hold (a restore of an older repository
  *   directory) instead of skipping the writes in between.
  *
- * Server-side facets (parseChangeFilter): `kinds`, `actors`, `ops`,
- * `recordId`+`recordKind`, `q` — history and watch honor the same set. Time is
+ * Server-side facets (parseChangeFilter): `kinds`, `actors`, `ops`, their
+ * `exclude…` twins, `recordId`+`recordKind`, `q` — history, runs and watch
+ * honor the same set. Time is
  * NOT on the wire: it rides the seek above. A `kind` is a reference
  * (`<authority>/<name>`); its `/` percent-encodes as `%2F` in the query. */
 
@@ -27,6 +32,7 @@ import {
   ApiError,
   type ChangePage,
   type ChangeRow,
+  type ChangeRunPage,
   type ProblemDetail,
 } from "./types"
 
@@ -38,6 +44,11 @@ export interface ChangeFeedFilter {
   kinds?: string[]
   actors?: string[]
   ops?: string[]
+  /** Kind references left out, each in full: what everyday History does not
+   * show (the internal kinds) is left out server-side, so runs stay whole
+   * across it and a page is full of what is shown. */
+  excludeKinds?: string[]
+  excludeOps?: string[]
   /** Scope to one record's audit trail. An id is NOT unique
    * , so `recordId` REQUIRES `recordKind` — either alone is a bad_request. */
   recordId?: string
@@ -74,6 +85,8 @@ export function changesSearch(filter: ChangeFeedFilter = {}): URLSearchParams {
   for (const k of filter.kinds ?? []) params.append("kinds", k)
   for (const a of filter.actors ?? []) params.append("actors", a)
   for (const o of filter.ops ?? []) params.append("ops", o)
+  for (const k of filter.excludeKinds ?? []) params.append("excludeKinds", k)
+  for (const o of filter.excludeOps ?? []) params.append("excludeOps", o)
   // recordId and recordKind travel together or not at all (the server rejects
   // either alone); only emit the pair when both are present.
   if (filter.recordId && filter.recordKind) {
@@ -91,6 +104,8 @@ function filterKey(filter: ChangeFeedFilter) {
     kinds: filter.kinds?.slice().sort() ?? null,
     actors: filter.actors?.slice().sort() ?? null,
     ops: filter.ops?.slice().sort() ?? null,
+    excludeKinds: filter.excludeKinds?.slice().sort() ?? null,
+    excludeOps: filter.excludeOps?.slice().sort() ?? null,
     recordId: filter.recordId ?? null,
     recordKind: filter.recordKind ?? null,
     q: filter.q ?? null,
@@ -200,6 +215,164 @@ export function changesInfiniteOptions(
       }
       return { before: last.cursor, generation: last.generation }
     },
+  })
+}
+
+// ── run summaries ───────────────────────────────────────────────────────────
+
+/** Whether this server takes `runs=1`. Learned from the first refusal and
+ * kept for the page's life, as `values` is. */
+let runsSupported = true
+
+function refusedRuns(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    err.status === 400 &&
+    err.message.includes('"runs"')
+  )
+}
+
+/** Forget what an earlier refusal taught (tests). */
+export function resetRunsSupport() {
+  runsSupported = true
+}
+
+/** One page of History: run summaries from a server that makes them, else
+ * the rows they would summarize, which the client folds itself. */
+export type HistoryPage =
+  | (ChangeRunPage & { changes?: undefined })
+  | (ChangePage & { runs?: undefined })
+
+/** Runs a History page asks for, and the rows it reads in their place from
+ * a server without runs. */
+export const HISTORY_RUNS = 30
+export const HISTORY_ROWS = 100
+
+export async function fetchHistoryPage(opts: {
+  before?: number
+  generation?: string
+  /** Runs on the page. */
+  first?: number
+  /** Rows on the page, where the server makes no runs. */
+  rows?: number
+  filter?: ChangeFeedFilter
+  signal?: AbortSignal
+}): Promise<HistoryPage> {
+  if (runsSupported) {
+    // Runs carry no values: a run's rows are read on their own when a
+    // sentence needs them (runRowsQueryOptions).
+    const params = changesSearch({ ...opts.filter, values: false })
+    params.set("runs", "1")
+    params.set("first", String(opts.first ?? HISTORY_RUNS))
+    if (opts.before && opts.before > 0) {
+      params.set("before", String(opts.before))
+      if (opts.generation) params.set("generation", opts.generation)
+    }
+    try {
+      return await request<ChangeRunPage>(
+        "GET",
+        `${rootPath("changes")}?${params}`,
+        undefined,
+        { signal: opts.signal }
+      )
+    } catch (err) {
+      if (!refusedRuns(err)) throw err
+      runsSupported = false
+    }
+  }
+  return fetchChangesPage({
+    before: opts.before,
+    generation: opts.generation,
+    first: opts.rows ?? HISTORY_ROWS,
+    filter: opts.filter,
+    signal: opts.signal,
+  })
+}
+
+export function historyInfiniteOptions(
+  filter: ChangeFeedFilter = {},
+  opts: { first?: number; rows?: number } = {}
+) {
+  const first = opts.first ?? HISTORY_RUNS
+  const rows = opts.rows ?? HISTORY_ROWS
+  return infiniteQueryOptions({
+    queryKey: ["changes", "history", filterKey(filter), { first, rows }],
+    queryFn: ({ pageParam, signal }) =>
+      fetchHistoryPage({
+        before: pageParam.before > 0 ? pageParam.before : undefined,
+        generation: pageParam.generation,
+        first,
+        rows,
+        filter,
+        signal,
+      }),
+    initialPageParam: { before: 0 } as HistoryPosition,
+    // The cursor is the oldest run's first row (or the page's oldest row):
+    // its absence is the feed's beginning.
+    getNextPageParam: (last): HistoryPosition | undefined =>
+      last.cursor === undefined
+        ? undefined
+        : { before: last.cursor, generation: last.generation },
+  })
+}
+
+/** What a run's rows are read by: the run itself, the page's filter and
+ * generation, and whether the sentence wants values. */
+export interface RunSource {
+  actor: string
+  kind: string
+  /** The one record the run touched. */
+  recordId?: string
+  newestSeq: number
+  oldestSeq: number
+  count: number
+  generation: string
+  filter: ChangeFeedFilter
+  values: boolean
+}
+
+/** The most rows one run's sentence reads. A longer run says the names its
+ * newest rows touched. */
+export const RUN_ROWS = 100
+
+/** A run's own rows, newest first, read under the page's filter narrowed to
+ * the run's actor, kind and record: within the run's seq range those are the
+ * run's rows and nothing else. Immutable once read. With no run (a sentence
+ * whose rows are all in hand), it reads nothing. */
+export function runRowsQueryOptions(run: RunSource | undefined) {
+  const filter: ChangeFeedFilter | undefined = run && {
+    ...run.filter,
+    actors: [run.actor],
+    kinds: [run.kind],
+    // The run's own kind is not one the page left out.
+    excludeKinds: undefined,
+    // Values are said for one record's run alone: a run over many says
+    // names, and each record's values cost the server a walk.
+    values: run.values && Boolean(run.recordId),
+    ...(run.recordId ? { recordId: run.recordId, recordKind: run.kind } : {}),
+  }
+  return queryOptions({
+    queryKey: [
+      "changes",
+      "run",
+      filter ? filterKey(filter) : null,
+      run?.newestSeq ?? null,
+      run?.oldestSeq ?? null,
+      run?.generation ?? null,
+    ],
+    queryFn: async ({ signal }): Promise<ChangeRow[]> => {
+      if (!run || !filter) return []
+      const page = await fetchChangesPage({
+        before: run.newestSeq + 1,
+        generation: run.generation,
+        first: Math.min(run.count, RUN_ROWS),
+        filter,
+        signal,
+      })
+      return page.changes.filter((r) => r.seq >= run.oldestSeq)
+    },
+    enabled: Boolean(run),
+    staleTime: Infinity,
   })
 }
 

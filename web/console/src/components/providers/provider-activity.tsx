@@ -44,13 +44,14 @@ export function RecentActivity({
   name: string
 }) {
   const actors = useProviderActors(bundleId)
-  const filter = useMemo(() => ({ actors: actors ?? [] }), [actors])
-  const keep = useEverydayChanges()
+  const everyday = useEverydayChanges()
+  const filter = useMemo(
+    () => ({ ...everyday, actors: actors ?? [] }),
+    [everyday, actors]
+  )
   const feed = useHistoryFeed(filter, {
-    enabled: Boolean(actors),
-    first: 200,
-    keep,
-    fill: SHOWN,
+    enabled: Boolean(actors) && everyday !== undefined,
+    first: SHOWN,
   })
   return (
     <section aria-labelledby="activity">
@@ -82,13 +83,11 @@ export function RecentActivity({
             Try again
           </button>
         </p>
-      ) : feed.rows.length ? (
-        <HistorySentences rows={feed.rows} limit={SHOWN} more={feed.hasOlder} />
+      ) : feed.entries.length ? (
+        <HistorySentences entries={feed.entries} limit={SHOWN} />
       ) : (
         <p className="text-[13px] text-muted-foreground">
-          {feed.hidden
-            ? "Only system changes lately."
-            : `${name} hasn’t changed anything yet.`}
+          {name} hasn’t changed anything yet.
         </p>
       )}
     </section>

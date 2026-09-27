@@ -17,9 +17,10 @@ import type { DataTableColumn } from "@/components/data-table/data-table"
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
 import { EmptyValue } from "@/components/identity/empty-value"
 import type { ChangeRow, KindInfo } from "@/lib/api/types"
-import { relativeTime, shortDate, shortTime, tableDateTime } from "@/lib/format"
+import { feedStamp, relativeTime, tableDateTime } from "@/lib/format"
 import { splitKind, kindByIdentity } from "@/lib/definition"
 import { changeSummary, verbOf } from "@/lib/changelog"
+import { displayName } from "@/lib/kind-names"
 import { cn } from "@/lib/utils"
 
 // ── time ────────────────────────────────────────────────────────────────────
@@ -27,9 +28,9 @@ import { cn } from "@/lib/utils"
 /** How a stamp reads in a cell; hover ALWAYS carries the wire ISO verbatim.
  * - `relative`: `3m ago` — list temporality.
  * - `datetime`: `Aug 6, 01:10` — local absolute, redline format.
- * - `clock`: `01:10:32`, dated when not today's — the changelog's voice, where
- *   seconds order rows inside a burst. */
-export type TimeVoice = "relative" | "datetime" | "clock"
+ * The change feed has its own voice, which needs the row above
+ * (`changeTimeColumn`). */
+export type TimeVoice = "relative" | "datetime"
 
 export function timeText(
   iso: string,
@@ -37,12 +38,7 @@ export function timeText(
   now = Date.now()
 ): string {
   if (voice === "relative") return relativeTime(iso, now)
-  if (voice === "datetime") return tableDateTime(iso, now)
-  const day = shortDate(iso)
-  const stamp = shortTime(iso, true)
-  return day === shortDate(new Date(now).toISOString())
-    ? stamp
-    : `${day} ${stamp}`
+  return tableDateTime(iso, now)
 }
 
 export function timeColumn<T extends RowData>(opts: {
@@ -181,16 +177,29 @@ export function ChangeRecordLink({
   )
 }
 
+/** The feed's stamp (`feedStamp`): the clock, dated on the first row of
+ * each day, which the row above decides. Rows keep the feed's order. */
 export function changeTimeColumn(opts?: {
-  voice?: TimeVoice
   width?: number
 }): DataTableColumn<ChangeRow> {
-  return timeColumn<ChangeRow>({
-    id: "time",
-    iso: (row) => row.ts,
-    voice: opts?.voice ?? "clock",
-    width: opts?.width ?? 140,
-  })
+  return {
+    ...timeColumn<ChangeRow>({
+      id: "time",
+      iso: (row) => row.ts,
+      width: opts?.width ?? 150,
+    }),
+    cell: ({ row, table }) => {
+      const above = table.options.data[row.index - 1] as ChangeRow | undefined
+      return (
+        <span
+          className="block truncate text-muted-foreground tabular-nums"
+          title={row.original.ts}
+        >
+          {feedStamp(row.original.ts, above?.ts)}
+        </span>
+      )
+    },
+  }
 }
 
 export function changeActorColumn(opts?: {
@@ -248,8 +257,12 @@ export function changeRecordColumn(
   }
 }
 
+/** The kind by its display name (its declared label where it has one),
+ * the full reference on hover. */
 export function changeKindColumn(opts?: {
   width?: number
+  /** The registry, for the declared labels. */
+  kinds?: readonly KindInfo[]
 }): DataTableColumn<ChangeRow> {
   return {
     id: "kind",
@@ -259,22 +272,23 @@ export function changeKindColumn(opts?: {
       <DataTableColumnHeader column={column} title="kind" />
     ),
     cell: ({ row }) => {
-      const { name } = splitKind(row.original.kind)
+      const reference = row.original.kind
       return (
         <span
-          className="block truncate data text-muted-foreground"
-          title={row.original.kind}
+          className="block truncate text-muted-foreground"
+          title={reference}
         >
-          {name}
+          {displayName(
+            opts?.kinds?.find((k) => k.identity === reference) ?? reference
+          )}
         </span>
       )
     },
     meta: {
       label: "kind",
-      // kind names hug their content: a small share inside tight bounds.
       ...(opts?.width
         ? { width: opts.width }
-        : { size: { min: 110, max: 180, weight: 0.5 } }),
+        : { size: { min: 160, max: 220, weight: 0.6 } }),
     },
   }
 }

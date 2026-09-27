@@ -12,14 +12,14 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useKindOrigin } from "@/hooks/use-kind-origin"
 import { splitKind } from "@/lib/api/http"
-import { formatCount, recordCountQueryOptions } from "@/lib/api/records"
+import { formatCount, glanceCountQueryOptions } from "@/lib/api/records"
 import type { KindInfo } from "@/lib/api/types"
 import { displayPlural } from "@/lib/kind-names"
 
 export function CollectionCard({ kind }: { kind: KindInfo }) {
   const [technical] = useTechnicalDetails()
   const { authority, pkg, name } = splitKind(kind.identity)
-  const count = useQuery(recordCountQueryOptions(authority, pkg, name))
+  const count = useQuery(glanceCountQueryOptions(authority, pkg, name))
   const origin = useKindOrigin(kind.identity)
   return (
     <Link

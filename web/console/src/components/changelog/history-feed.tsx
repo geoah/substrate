@@ -1,14 +1,16 @@
-/** History as sentences: "<Actor> changed <Record>", runs folded into
- * "<Actor> added 14 tasks", grouped under the day they happened. Shared by
+/** History as sentences: "<Actor> changed <Record>", a run the server
+ * summarized as "<Actor> added 14 tasks", grouped under the day they
+ * happened. Shared by
  * the History page, the actor page and Home's recent changes. The
  * substrate's own records read as what they are to a person ("Google updated
  * its package to version 35"). Technical mode adds a line after the sentence
  * with each entry's changelog sequence numbers, the raw actor id and the
  * property keys, the first two with copy buttons. A change to one record
  * says its values ("Priority: High → Urgent") where the server sends them,
- * and the property names where it does not. */
+ * and the property names where it does not; a run's rows are read for that
+ * only when the sentence needs them. */
 
-import { useMemo, type ReactNode } from "react"
+import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 
@@ -21,17 +23,19 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import type { HistoryFeedState } from "@/hooks/use-history-feed"
-import type { WatchStatus } from "@/lib/api/changes"
+import { runRowsQueryOptions, type WatchStatus } from "@/lib/api/changes"
 import { splitKind } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
-import type { ChangeRow } from "@/lib/api/types"
 import { hostWritten, netMoves, valueSpecs } from "@/lib/change-values"
 import { relativeTime, shortTime } from "@/lib/format"
 import {
   groupByDay,
-  historyEntries,
+  namedProperties,
   propertyLabel,
+  rowsComplete,
+  runNeedsRows,
   systemPhrase,
+  withRunRows,
   type HistoryEntry,
   type SystemPhrase,
 } from "@/lib/history"
@@ -44,19 +48,15 @@ function collectionLink(kind: string) {
 }
 
 /** The object of the sentence: the one record, or "14 tasks" for a run. A
- * run the loaded page may cut short goes on in older rows, so it is said
- * without a count ("added tasks") rather than with one that may be wrong. */
-function EntryObject({
-  entry,
-  openEnded,
-}: {
-  entry: HistoryEntry
-  openEnded?: boolean
-}) {
-  if (entry.records.length === 1 && !openEnded) {
+ * run the loaded rows may cut short (only against a server that makes no
+ * runs) is said without a count ("added tasks") rather than with one that
+ * may be wrong. */
+function EntryObject({ entry }: { entry: HistoryEntry }) {
+  const openEnded = entry.openEnded === true
+  if (entry.recordCount === 1 && entry.records[0] && !openEnded) {
     return <RecordRef kind={entry.kind} id={entry.records[0]} />
   }
-  const count = entry.records.length
+  const count = entry.recordCount
   const words =
     count === 1 && !openEnded
       ? displayName(entry.kind)
@@ -93,30 +93,35 @@ function Phrase({ phrase }: { phrase: SystemPhrase }) {
 }
 
 function seqRange(entry: HistoryEntry): string {
-  const newest = entry.rows[0].seq
-  const oldest = entry.rows[entry.rows.length - 1].seq
-  return newest === oldest ? `${newest}` : `${oldest}–${newest}`
+  const { newestSeq, oldestSeq } = entry
+  return newestSeq === oldestSeq ? `${newestSeq}` : `${oldestSeq}–${newestSeq}`
 }
 
 export function HistoryEntryRow({
-  entry,
+  entry: told,
   today,
-  openEnded,
 }: {
   entry: HistoryEntry
-  /** The feed has older rows, and this is its oldest entry. */
-  openEnded?: boolean
   /** Today's entries read as "3m ago"; older ones by the time of day, under
    * their day's heading. */
   today: boolean
 }) {
   const [technical] = useTechnicalDetails()
   const registry = useQuery(kindsQueryOptions)
+  const runRows = useQuery({
+    ...runRowsQueryOptions(told.run),
+    enabled: runNeedsRows(told),
+  })
+  const entry = useMemo(
+    () => withRunRows(told, runRows.data),
+    [told, runRows.data]
+  )
   const changed = entry.verb === "changed" && entry.properties.length > 0
-  // One record's run says its net change in values; a run over many records,
-  // or rows from a server that sends names alone, says the names.
+  // One record's run says its net change in values, once every row of it is
+  // in hand; a run over many records, or rows from a server that sends names
+  // alone, says the names.
   const moves =
-    entry.records.length === 1
+    entry.recordCount === 1 && rowsComplete(entry)
       ? netMoves(entry.rows, entry.records[0], entry.kind)
       : undefined
   const phrase = systemPhrase(entry, moves)
@@ -128,10 +133,11 @@ export function HistoryEntryRow({
   const showMoves = changed && moves && moves.length > 0 && !quiet
   const names =
     changed && !moves && !quiet
-      ? technical
-        ? entry.properties
-        : entry.properties.filter((p) => !hostWritten(specs.get(p)))
+      ? namedProperties(entry).filter(
+          (p) => technical || !hostWritten(specs.get(p.name))
+        )
       : []
+  const label = (key: string) => specs.get(key)?.label ?? propertyLabel(key)
   const seq = seqRange(entry)
   return (
     <div
@@ -144,8 +150,7 @@ export function HistoryEntryRow({
           <Phrase phrase={phrase} />
         ) : (
           <>
-            <span>{entry.verb}</span>{" "}
-            <EntryObject entry={entry} openEnded={openEnded} />
+            <span>{entry.verb}</span> <EntryObject entry={entry} />
           </>
         )}
         {showMoves && (
@@ -156,10 +161,22 @@ export function HistoryEntryRow({
             {names.length > 0 &&
               (technical ? (
                 <span className="font-mono text-[11.5px]">
-                  {names.join(", ")}
+                  {names
+                    .map((p) =>
+                      p.renamedFrom ? `${p.renamedFrom} → ${p.name}` : p.name
+                    )
+                    .join(", ")}
                 </span>
               ) : (
-                <span>{names.map(propertyLabel).join(" · ")}</span>
+                <span>
+                  {names
+                    .map((p) =>
+                      p.renamedFrom
+                        ? `${label(p.renamedFrom)} renamed to ${label(p.name)}`
+                        : label(p.name)
+                    )
+                    .join(" · ")}
+                </span>
               ))}
             {technical && (
               <>
@@ -168,7 +185,7 @@ export function HistoryEntryRow({
                   <CopyButton
                     value={seq.replace("–", "-")}
                     label={
-                      entry.rows.length > 1
+                      entry.count > 1
                         ? "Copy the sequence numbers"
                         : "Copy the sequence number"
                     }
@@ -180,7 +197,7 @@ export function HistoryEntryRow({
                   </span>
                   <CopyButton value={entry.actor} label="Copy the actor id" />
                 </span>
-                {entry.records.length > 1 && (
+                {entry.recordCount > 1 && (
                   <KindPath reference={entry.kind} className="text-[11.5px]" />
                 )}
               </>
@@ -201,26 +218,18 @@ export function HistoryEntryRow({
 /** The sentences, grouped by day. `limit` caps the entries (Home shows a
  * few); the full page shows every loaded one. */
 export function HistorySentences({
-  rows,
+  entries,
   limit,
-  more = false,
   className,
 }: {
-  rows: ChangeRow[]
+  entries: readonly HistoryEntry[]
   limit?: number
-  /** Older rows exist beyond `rows`. */
-  more?: boolean
   className?: string
 }) {
-  const [technical] = useTechnicalDetails()
-  const { days, oldest } = useMemo(() => {
-    const entries = historyEntries(rows, technical)
-    const oldest = more ? entries[entries.length - 1]?.key : undefined
-    return {
-      oldest,
-      days: groupByDay(limit ? entries.slice(0, limit) : entries),
-    }
-  }, [rows, limit, technical, more])
+  const days = useMemo(
+    () => groupByDay(limit ? entries.slice(0, limit) : entries),
+    [entries, limit]
+  )
   return (
     <div data-slot="history" className={cn("flex flex-col", className)}>
       {days.map((day) => (
@@ -233,7 +242,6 @@ export function HistorySentences({
               key={entry.key}
               entry={entry}
               today={day.label === "Today"}
-              openEnded={entry.key === oldest}
             />
           ))}
         </section>
@@ -253,41 +261,32 @@ export function HistorySkeleton({ rows = 6 }: { rows?: number }) {
   )
 }
 
-/** The line that says what an everyday feed left out, so nothing is lost
- * silently: "12 system changes hidden · Show". With `shown`, the way back. */
+/** The line that says an everyday feed leaves the system's own changes out,
+ * so nothing is lost silently: "System changes hidden · Show". With `shown`,
+ * the way back. */
 export function SystemChangesNote({
-  hidden,
   shown = false,
   onToggle,
-  action,
   className,
 }: {
-  hidden: number
   shown?: boolean
-  onToggle?: () => void
-  /** In place of the toggle: somewhere else they can be seen. */
-  action?: ReactNode
+  onToggle: () => void
   className?: string
 }) {
-  if (!shown && hidden === 0) return null
   return (
     <p
       data-slot="system-changes"
       className={cn("text-[12.5px] text-faint", className)}
     >
-      {shown
-        ? "Showing system changes"
-        : `${hidden} system ${hidden === 1 ? "change" : "changes"} hidden`}
+      {shown ? "Showing system changes" : "System changes hidden"}
       {" · "}
-      {action ?? (
-        <button
-          type="button"
-          onClick={onToggle}
-          className="cursor-pointer text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-        >
-          {shown ? "Hide" : "Show"}
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={onToggle}
+        className="cursor-pointer text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+      >
+        {shown ? "Hide" : "Show"}
+      </button>
     </p>
   )
 }
@@ -311,20 +310,12 @@ export function HistoryFeed({
       </div>
     )
   }
-  if (!feed.rows.length && !feed.hidden && !feed.hasOlder) {
+  if (!feed.entries.length && !feed.hasOlder) {
     return <p className="py-8 text-muted-foreground">{empty}</p>
   }
   return (
     <>
-      {feed.rows.length ? (
-        <HistorySentences rows={feed.rows} more={feed.hasOlder} />
-      ) : (
-        <p className="py-8 text-muted-foreground">
-          {feed.hasOlder
-            ? "Only system changes among the latest ones."
-            : "Only system changes so far."}
-        </p>
-      )}
+      <HistorySentences entries={feed.entries} />
       {feed.hasOlder && (
         <div className="pt-4">
           <Button
