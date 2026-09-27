@@ -267,3 +267,6 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0113](0113-a-kind-may-declare-its-display-label.md) | A kind may declare its display label, singular and plural | accepted |
 | [0114](0114-a-change-row-reads-a-property-rename-as-one-move.md) | A change row reads a property rename as one move | accepted |
 | [0115](0115-search-ranks-by-bm25f-and-a-kinds-purpose.md) | Search ranks by BM25F and a kind's purpose | accepted |
+| [0130](0130-the-console-serves-four-things-and-its-navigation-follows-them.md) | The console serves four things, and its navigation follows them | accepted |
+| [0131](0131-the-console-writes-for-two-readers-behind-one-switch.md) | The console writes for two readers, and one switch tells them apart | accepted |
+| [0132](0132-console-preferences-follow-the-person-and-a-window-fact-stays-in-the-browser.md) | Console preferences follow the person, and a window's own facts stay in the browser | accepted |

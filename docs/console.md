@@ -24,16 +24,25 @@ The console is built around four things, and Home opens on one card for each:
 - **Tools**: everything that can act on your data besides you, each saying
   what it may see and change and when it runs.
 
-Everything else (History, Search, Settings) serves those four.
+Everything else (History, Search, Settings) serves those four, and there is
+no inbox: a change an agent suggests is a card in its thread, and a merge
+request is reached from the records it names
+([0130](decisions/0130-the-console-serves-four-things-and-its-navigation-follows-them.md)).
+[The console's design guide](console/design-guide.md) describes what every
+page shares (the two readers, layout, tokens, words and accessibility), and
+[the element catalogue](console/elements.md) the components they are built
+from.
 
 ## Navigation
 
-The sidebar holds, top to bottom: the repository name, a search button that
-opens ⌘K, the five places (**Home**, **All data**, **Agents**, **Tools**,
+The sidebar holds, top to bottom: the repository name, which opens the account
+menu (**Account and settings**, **Appearance**, the **Technical details**
+switch, and **Sign out…**, which asks first), a search button that opens ⌘K,
+the five places (**Home**, **All data**, **Agents**, **Tools**,
 **Providers**, with the number of providers added beside the last),
-**Favorites**, the collections, and at the foot **History**, **Settings**, the
-**Technical details** switch and the account menu (Account and settings, the
-theme, and Sign out).
+**Favorites**, the collections, and at the foot **History**, **Settings** and
+the **Technical details** switch. Collapsed, it peeks over the page while the
+pointer rests at the window's left side or on its toggle.
 
 The collections are sorted by where they come from, and every surface that
 lists collections (the sidebar, ⌘K, All data, Home) uses the same sections:
@@ -59,8 +68,11 @@ remembers it; provider sections start folded, the others open. Hovering a
 collection shows a star that adds it to **Favorites**, above the sections,
 where up and down controls reorder it.
 
-**⌘K** (Ctrl-K elsewhere) jumps to a page or a collection, or hands what you
-typed to the [Search page](#search) as a records query. It lists collections
+**⌘K** (Ctrl-K elsewhere) jumps to a record, a collection or a page, or hands
+what you typed to the [Search page](#search) as a records query. Typing runs
+the ranked read (words, five hits) after a short pause and lists the records
+it finds first; collections and pages match when every word typed starts a
+word of their name. It lists collections
 the way the sidebar does: primary ones in everyday mode, every kind with its
 purpose labelled with Technical details on.
 
@@ -71,10 +83,11 @@ by segment and ends in the record id.
 
 ### Technical details
 
-The **Technical details** switch, at the foot of the sidebar and on the
-Settings page, is one setting for the whole console. Off, the console speaks
-in everyday words. On, it adds what a developer or an agent author needs,
-without taking anything away:
+The **Technical details** switch, at the foot of the sidebar, in the account
+menu and on the Settings page, is one setting for the whole console
+([0131](decisions/0131-the-console-writes-for-two-readers-behind-one-switch.md)).
+Off, the console speaks in everyday words. On, it adds what a developer or an
+agent author needs, without taking anything away:
 
 - every kind, supporting and internal ones included, and the **Substrate**
   section; the sidebar becomes the authority → package → kind tree, each kind
@@ -96,11 +109,9 @@ without taking anything away:
 ### Display names
 
 A collection is labelled by a display name the console builds from the kind's
-name: the lowercase compound word is split into known words, acronyms and
-brands keep their capitals, and the last word takes the plural (`person` reads
-**People**, `calendareventseries` **Calendar event series**, `apikey` **API
-keys**). A name that does not split cleanly into known words reads as itself,
-capitalised. A record with no title reads **Untitled _person_**, never its id.
+name (`person` reads **People**, `calendareventseries` **Calendar event
+series**, `apikey` **API keys**; [how](console/design-guide.md#words)). A
+record with no title reads **Untitled _person_**, never its id.
 
 Display names are labels only. The console never sends one to the API and
 never lets one stand where a kind is identified: the identifier is always the
@@ -111,12 +122,16 @@ carries.
 
 ### Layout preferences
 
-The console's preferences live on one record,
+The console's preferences follow the person: they live on one record,
 `substrate.reamde.dev/core/consolepreference/navigation`, so every browser
-signed in to the repository looks the same. It carries the sidebar's state
-(`collapsed`, `favorites`, `sidebarOpen`) and the layout settings
-(`recordWidth`, `tableWidth`, `density`, `technicalDetails`, `theme`), each
-optional, so an absent one is the console's own default. A change is a
+signed in to the repository looks the same
+([0132](decisions/0132-console-preferences-follow-the-person-and-a-window-fact-stays-in-the-browser.md)).
+It carries the sidebar's folded groups and favorites (`collapsed`,
+`favorites`) and the layout settings (`recordWidth`, `tableWidth`, `density`,
+`technicalDetails`, `theme`), each optional, so an absent one is the console's
+own default. Whether the sidebar is open is a fact about one window, so it is
+kept in this browser alone and never written to the record, and a
+`sidebarOpen` an older console stored there is ignored. A change is a
 read-modify-write under `ifVersion`, retried against fresh state after a
 conflict, so two sessions changing different settings keep both.
 
@@ -128,8 +143,8 @@ then the default, and every written setting is mirrored into `localStorage` as
 well, so the sign-in page already starts from it.
 
 A few conveniences are per browser by design and live only in
-`localStorage`: a collection's last filters, sort and nesting, its columns,
-and the Search page's ranking choice.
+`localStorage`: whether the sidebar is open, a collection's last filters, sort
+and nesting, its columns, and the Search page's ranking choice.
 
 ## Home
 
@@ -184,9 +199,9 @@ straight to it:
 ## A collection
 
 A collection lives at `/data/{authority}/{package}/{kind}`: a data address is
-the kind reference, segment for segment. The header carries the display name,
-the full reference with a copy button, and the everyday description; a
-provider's collection says its records are read-only copies kept up to date by
+the kind reference, segment for segment. The header carries the kind's glyph,
+its display name and its everyday description, and, with Technical details
+on, the full reference with a copy button; a provider's collection says its records are read-only copies kept up to date by
 that provider, and has no **New** button. With Technical details on,
 **Definition** (`?tab=definition`) shows the declaration.
 
@@ -196,7 +211,8 @@ then the states, the time stamps the kind's temporal trait binds, the
 references (each read as the referent's title, fetched beside the page with
 `expand`), the enums and the other short values; paragraphs and blobs never
 earn a column, and the last change closes the row. A column that holds nothing
-on the rows loaded opens hidden, and the footer says how many are. **Columns**
+on the rows loaded opens hidden, and the **Columns** button says how many
+are. **Columns**
 shows, hides and reorders them, per collection, and Reset returns the
 collection's own defaults. **Sort** (or a header click) picks the order; the
 default is newest change first.
@@ -245,10 +261,12 @@ footer counts the collection and its top level both.
 A record lives at `/data/{authority}/{package}/{kind}/{id}` and reads like a
 document, top to bottom on one page. The head is the kind's glyph, the title
 (edited in place where the kind titles itself from a property you write), and
-one line saying what it is and who added and last changed it; with Technical
-details on, the line is its full reference with a copy button. The **⋯** menu
-holds **Delete**, which asks first. A provider's copy is read-only here
-throughout, and says to change it at the provider.
+one line saying what it is, who added and last changed it, and, where it is
+so, that every value is yours; with Technical details on, the line is its full
+reference with a copy button. The **⋯** menu holds **Copy link**,
+**Duplicate**, **Who holds each value**, **Open in YAML** (with Technical
+details on) and **Delete**, which asks first. A provider's copy is read-only
+here throughout, and says to change it at the provider.
 
 **The properties** are a sheet: one row per property, its label (and
 its key, with Technical details on) on the left and its value on the right,
@@ -267,10 +285,13 @@ provider's copy, or the kind never declared it. The record's prose, where the
 kind has a body property, reads under the sheet and edits in place the same
 way.
 
-**Who holds each value** is a chip at the end of its row, read off the
-record's [`propertyMeta`](projection.md#reading-provenance-propertymeta):
-**You**, or the provider's badge and name, and an amber **_Provider_ differs**
-where a live source offers something else. Opening it says who holds the value
+**Who holds each value** is read off the record's
+[`propertyMeta`](projection.md#reading-provenance-propertymeta). Where every
+value is yours the head says so once; otherwise a chip at the end of a row
+marks a value someone else holds (the provider's badge and name, or an
+agent), and an amber **_Provider_ differs** marks one a live source offers
+differently. **Who holds each value** in the ⋯ menu puts a chip on every row.
+Opening one says who holds the value
 at which [tier](terms.md#truth-and-derivation) and what that means for it
 (**Yours**, **Synced**, **Set by provider** or **Set by an agent**), the
 source record it came from, and every other version a live source offers, with
@@ -328,10 +349,14 @@ property rows, the optional ones folded into one line, and the prose under a
 divider. **Edit YAML** on a record opens `…/{id}/edit`. Both are two **lenses
 over one document**, and the document is the apply-able envelope.
 
-- **Form** is composed from the declaration: one control per declared
-  property, carrying its description and a worked example. An enum is a
-  dropdown of what the kind admits, a `state` offers its machine's states, a
-  `reference` picks a record of the kind it points at, a `secret` is
+- **Form** is composed from the declaration. A new record's form is the
+  record page's own property sheet over an unsaved draft, with the same
+  editors: what the kind requires first, then what a record is commonly given
+  (the records it points at, the times it is about), the rest folded, and a
+  problem named only once a value has moved or **Create** is asked for. An
+  edit's form is one control per declared property, carrying its description
+  and a worked example. An enum and a `state` are picked from what the kind
+  admits, a `reference` picks a record of the kind it points at, a `secret` is
   write-only (a read serves `<redacted>`, and leaving the field blank keeps the
   sealed value), and a `json` property gets a JSON editor. Host-managed
   properties (a declared `writer:` that is not the owner) are never offered.
@@ -360,20 +385,24 @@ the server is shown in place.
 
 A proposed [merge](projection.md#merge-requests) is an ordinary
 `substrate.reamde.dev/core/recordmergerequest` record, and one opens at
-`/merge-requests/{id}`: the matcher's evidence, a field-by-field comparison of
-the two records that says what the merge will do to each row, and accept or
-reject, each behind a confirmation, with an optional note. Accepting is an
-ordinary state transition, and performing the merge is what that transition
-does.
+`/merge-requests/{id}`: the matcher's evidence, a property-by-property
+comparison of the two records that says what the merge will do to each row
+(**Kept** or **Combined**), and **Combine them** or **Keep them apart**, each
+behind a confirmation, with an optional note. Combining is an ordinary state
+transition, and performing the merge is what that transition does.
 
 A [gated](agents.md#the-policy-door) agent write lands as a
 `substrate.reamde.dev/core/recordpatchrequest` instead of applying, and one
-opens at `/change-requests/{id}`: the rationale and who proposed it, then what
-accepting would do — a patch field by field against the target's live values,
-a create as the record it would make, a delete as the record it would remove —
-and accept or reject. Accepting is the state transition that applies the
-change; a refused apply comes back on the request rather than as a
-half-applied change.
+opens at `/change-requests/{id}`, read like the chat card that led there: the
+change it would make to which record, the rationale, and which agent
+suggested it and when; then what applying would do — a patch property by
+property, the values now beside the values if applied, a create as the record
+it would make, a delete as the record it would remove — and **Apply** or
+**Dismiss**. Applying is the state transition that applies the change; a
+refused apply comes back on the request rather than as a half-applied change.
+With Technical details on the page adds the ids, the op and versions, the
+policy that held the write, the thread it came from, a judge's verdict and
+the raw diff.
 
 Both queues are their collections, under **Substrate** with Technical details
 on. A request is also reached from the records it names (their **Connected
@@ -402,11 +431,11 @@ panel on the right.
   started it.
 - **Suggested changes** are cards inside the thread, not a queue somewhere
   else: each reads the change request's live state, says what it would change
-  as before and after, and offers **Apply** (**Add it**, **Delete it**),
-  **Dismiss**, **Edit first** (the review page) and, on a write the
-  [policy door](agents.md#the-policy-door) held, **Always allow this**, which
-  writes a narrow `recordpatchpolicy` allowing exactly this agent, this kind
-  and this verb before applying. Deciding writes a message into the thread and
+  as before and after, and offers **Apply** (**Add it**, **Delete it**, a
+  delete confirming first), **Dismiss** and **Review** (the change request
+  page). A card offers no way to allow the agent for good: under the
+  [policy door](agents.md#the-policy-door) an `allow` cannot outrank the
+  `gate` that held the write. Deciding writes a message into the thread and
   resumes the agent. Questions the agent asks are cards too, answered in
   place.
 - **The panel** says what the agent can see, change and ask, which tools it
@@ -491,9 +520,11 @@ back to it:
   brings in, and **Disconnect**. `?account=<id>` scrolls to one and highlights
   it.
 - **What it adds**: what it brings in (its primary kinds, each with what it
-  is, how many records it holds and which of your own kinds its records fill
-  in through a mapping, with the supporting kinds counted) and its tools, each
-  with when it runs and how its last run went.
+  is, how many records it holds, when it last synced and which of your own
+  kinds its records fill in through a mapping, with the supporting kinds
+  counted) and its tools, each with when it runs and how its last run went.
+- **Recent activity**: the newest ten changes the provider and its tools
+  made, in History's sentences, and **See all in History**.
 - **Settings**: its `setting` and `secret` records as one form
   ([Settings](bundles.md#settings)), a secret write-only, and anything else it
   still needs, in the server's words.
@@ -561,8 +592,9 @@ how many values are pending.
 **Settings** (`/settings`):
 
 - **Layout**: record page width (narrow, wide, full; it also sizes tool and
-  provider pages), table width (wide, full), row height (comfortable,
-  compact), Technical details, and appearance (system, light, dark), saved as
+  provider pages), table width (wide, full), table rows (comfortable,
+  compact; the height of a collection's rows and All data's), Technical
+  details, and appearance (system, light, dark), saved as
   [layout preferences](#layout-preferences).
 - **Account**: the repository name you sign in with, and the two credential
   changes: change your password, and replace your authenticator where the
