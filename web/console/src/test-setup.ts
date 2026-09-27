@@ -16,6 +16,13 @@ function installBrowserGaps() {
    * anything to report; it only has to exist. */
   if (!("ResizeObserver" in globalThis)) {
     globalThis.ResizeObserver = class {
+      // The real constructor takes the callback; declaring it keeps every
+      // `new ResizeObserver(cb)` a call with the right arity. jsdom has no
+      // layout, so it is kept and never called.
+      callback: ResizeObserverCallback
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback
+      }
       observe() {}
       unobserve() {}
       disconnect() {}
