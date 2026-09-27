@@ -387,10 +387,13 @@ export function KindBrowsePage() {
       ? treeGroupKeys(rows, (id) => tree.nodes.get(id)?.depth, keyOf)
       : new Map(rows.map((r) => [r.id, keyOf(r)]))
   }, [groupProperty, rows, tree.active, tree.nodes])
+  // A head's count is the group's records by their OWN value. Under a tree a
+  // row sits in its top-level row's group instead, so that count would not be
+  // the rows the head draws: the tree's heads carry no count.
   const groupCounts = useGroupCounts(
     { authority, pkg, name },
     recordFilter,
-    groupProperty,
+    tree.active ? undefined : groupProperty,
     groupKeys ? [...groupKeys.values()] : []
   )
   // Folded groups, forgotten when the grouping changes.

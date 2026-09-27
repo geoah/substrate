@@ -68,6 +68,9 @@ const team: KindInfo = {
 let resolveRegistry: (kinds: KindInfo[]) => void = () => {}
 const offsets: (number | undefined)[] = []
 const orders: (string | undefined)[] = []
+// What the records read answers, and every filter a count was asked for.
+let pageRecords: unknown[] = []
+const countFilters: unknown[] = []
 
 vi.mock("@/lib/api/kinds", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/kinds")>()
@@ -94,14 +97,17 @@ vi.mock("@/lib/api/records", async (importOriginal) => {
       queryFn: () => {
         offsets.push(p.offset)
         orders.push(p.orderBy)
-        return Promise.resolve({ records: [], cursor: "next" })
+        return Promise.resolve({ records: pageRecords, cursor: "next" })
       },
     }),
     recordCountQueryOptions: (
       ...args: Parameters<typeof actual.recordCountQueryOptions>
     ) => ({
       ...actual.recordCountQueryOptions(...args),
-      queryFn: () => Promise.resolve({ value: 400, capped: false }),
+      queryFn: () => {
+        countFilters.push(args[3])
+        return Promise.resolve({ value: 400, capped: false })
+      },
     }),
   }
 })
@@ -112,6 +118,8 @@ afterEach(() => {
   cleanup()
   offsets.length = 0
   orders.length = 0
+  pageRecords = []
+  countFilters.length = 0
   localStorage.clear()
 })
 
@@ -240,6 +248,43 @@ describe("views, grouping and the star", () => {
     expect(star.getAttribute("aria-pressed")).toBe("false")
     fireEvent.click(star)
     expect(actions).toEqual([{ type: "favorite", key: TEAM, starred: true }])
+  })
+
+  // Codex P2: under a tree a child sits in its top-level row's group, so a
+  // count of the records holding the value would not be what the head draws.
+  const record = (id: string, size: string, parent?: string) => ({
+    id,
+    kind: TEAM,
+    version: 1,
+    createdAt: "2026-09-27T00:00:00Z",
+    updatedAt: "2026-09-27T00:00:00Z",
+    properties: {
+      name: id,
+      size,
+      ...(parent ? { parent: { ref: `${TEAM}/${parent}` } } : {}),
+    },
+  })
+  const sizeCounted = () =>
+    countFilters.some(
+      (f) =>
+        (f as { properties?: Record<string, unknown> })?.properties?.size !==
+        undefined
+    )
+
+  it("counts no group under the tree, where a row takes its root's group", async () => {
+    pageRecords = [record("root", "small"), record("child", "large", "root")]
+    await renderPage("?group=size")
+    await waitFor(() => expect(orders).toContain("size:asc,updatedAt:desc"))
+    await waitFor(() =>
+      expect(screen.getAllByText(/small/i).length).toBeGreaterThan(0)
+    )
+    expect(sizeCounted()).toBe(false)
+  })
+
+  it("counts each group on a flat page", async () => {
+    pageRecords = [record("a", "small"), record("b", "large")]
+    await renderPage("?group=size&nest=false")
+    await waitFor(() => expect(sizeCounted()).toBe(true))
   })
 
   it("orders the wire by the grouped property first", async () => {
