@@ -22,6 +22,7 @@ import { request } from "@/lib/api/http"
 import { listPath } from "@/lib/api/records"
 import { readReference, type Page, type SubstrateRecord } from "@/lib/api/types"
 import { recordTitle } from "@/lib/format"
+import { isRecordId } from "@/lib/kind-pointer"
 import { splitRecordPath } from "@/lib/record-path"
 
 /** Record path → the referent's title. Read-only: a resolver is handed down
@@ -185,6 +186,9 @@ export function batchedRecordTitle(
   kind: string,
   id: string
 ): Promise<string | null> {
+  // An id outside the record id alphabet (a grant's `*`) names no record, so
+  // there is no title to ask the server for.
+  if (!isRecordId(id)) return Promise.resolve(null)
   return new Promise((resolve, reject) => {
     const path = `${kind}/${id}`
     let waiter = waiting.get(path)

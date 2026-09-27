@@ -178,6 +178,66 @@ describe("ReferenceValue", () => {
     expect(await screen.findByText("not a pointer")).toBeTruthy()
     expect(screen.queryByRole("link")).toBeNull()
   })
+
+  // A grant entry is a reference pinned at core's kind kind, so the stored
+  // `substrate.reamde.dev/core/kind/*` is the grant `*`: every kind but the
+  // auth ones, and no record at all.
+  it("draws a grant's glob as the pattern and what it grants, never a record", async () => {
+    renderWith(
+      <ReferenceValue value={{ ref: "substrate.reamde.dev/core/kind/*" }} />
+    )
+    const pattern = await screen.findByText(
+      "Every kind, except the token, credential, secret and recoverykey kinds"
+    )
+    expect(pattern.closest("[data-slot=kind-pattern]")?.textContent).toContain(
+      "*"
+    )
+    expect(document.body.textContent).not.toContain("Untitled")
+    expect(screen.queryByRole("link")).toBeNull()
+  })
+
+  it("names the package or the authority a narrower glob covers", async () => {
+    renderWith(
+      <ul>
+        <li>
+          <ReferenceValue value="substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/tasks/*" />
+        </li>
+        <li>
+          <ReferenceValue value="substrate.reamde.dev/core/kind/providers.substrate.reamde.dev/*" />
+        </li>
+        <li>
+          <ReferenceValue value="substrate.reamde.dev/core/kind/substrate.reamde.dev/core/*" />
+        </li>
+      </ul>
+    )
+    expect(
+      await screen.findByText(
+        "Every kind in the package samples.substrate.reamde.dev/tasks"
+      )
+    ).toBeTruthy()
+    expect(
+      screen.getByText("Every kind published by providers.substrate.reamde.dev")
+    ).toBeTruthy()
+    expect(
+      screen.getByText(
+        "Every kind in the package substrate.reamde.dev/core, except the token, credential, secret and recoverykey kinds"
+      )
+    ).toBeTruthy()
+    expect(document.body.textContent).not.toContain("Untitled")
+    expect(screen.queryByRole("link")).toBeNull()
+  })
+
+  it("draws a reference at one kind as that kind's full reference", async () => {
+    renderWith(
+      <ReferenceValue value="substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/tasks/task" />
+    )
+    const link = await screen.findByRole("link")
+    expect(link.getAttribute("href")).toBe(
+      "/data/samples.substrate.reamde.dev/tasks/task"
+    )
+    expect(link.textContent).toBe("samples.substrate.reamde.dev/tasks/task")
+    expect(document.body.textContent).not.toContain("Untitled")
+  })
 })
 
 describe("ActorRef", () => {

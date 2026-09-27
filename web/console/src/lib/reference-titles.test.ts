@@ -2,10 +2,11 @@
  * reading a batch of referents, finding the paths one record points at, and
  * turning those paths into the one list read that answers them. */
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import type { SubstrateRecord } from "@/lib/api/types"
 import {
+  batchedRecordTitle,
   referencePathsOf,
   titleReadScope,
   titlesFromIncluded,
@@ -145,5 +146,21 @@ describe("the scope of the one batched read", () => {
       kinds: [],
       ids: [],
     })
+  })
+})
+
+describe("batchedRecordTitle", () => {
+  it("asks nothing for an id outside the record id alphabet", async () => {
+    const fetch = vi.fn()
+    vi.stubGlobal("fetch", fetch)
+    try {
+      await expect(
+        batchedRecordTitle("substrate.reamde.dev/core/kind", "*")
+      ).resolves.toBeNull()
+      await new Promise((r) => setTimeout(r, 30))
+      expect(fetch).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
