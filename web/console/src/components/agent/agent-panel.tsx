@@ -4,10 +4,11 @@
  * it; technical mode adds the references and the declaration itself. */
 
 import { Link } from "@tanstack/react-router"
-import { BotIcon, PencilIcon, WrenchIcon } from "lucide-react"
+import { BotIcon, GaugeIcon, PencilIcon, WrenchIcon } from "lucide-react"
 
 import { AgentManifest } from "@/components/agent/agent-manifest"
 import { AllowRules } from "@/components/agent/always-allow"
+import { AddKeyButton } from "@/components/agent/model-key-dialog"
 import { AgentMark } from "@/components/agent/agent-mark"
 import { IdText } from "@/components/identity/id-text"
 import { Button } from "@/components/ui/button"
@@ -98,9 +99,12 @@ export function AgentPanel({
           </div>
         </div>
         {hasKey === false && provider && (
-          <p className="text-[12.5px] text-warning">
-            No API key for {providerName(provider)} yet.
-          </p>
+          <div className="flex flex-col items-start gap-1.5">
+            <p className="text-[12.5px] text-warning">
+              No API key for {providerName(provider)} yet.
+            </p>
+            <AddKeyButton providerId={provider} size="xs" />
+          </div>
         )}
         {description && (
           <p className="text-[13px] text-muted-foreground">{description}</p>
@@ -210,25 +214,36 @@ export function AgentPanel({
         </section>
       )}
 
-      <Button
-        size="sm"
-        variant="outline"
-        className="self-start"
-        render={
-          <Link
-            to="/data/$authority/$pkg/$name/$id"
-            params={{
-              authority: CORE_AUTHORITY,
-              pkg: CORE_PACKAGE_NAME,
-              name: "agent",
-              id: agent.id,
-            }}
-          >
-            <PencilIcon />
-            Edit agent
-          </Link>
-        }
-      />
+      <div className="flex flex-wrap gap-1.5">
+        <Button
+          size="sm"
+          variant="outline"
+          render={
+            <Link to="/agents/$id" params={{ id: agent.id }}>
+              <GaugeIcon />
+              Runs and permissions
+            </Link>
+          }
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          render={
+            <Link
+              to="/data/$authority/$pkg/$name/$id"
+              params={{
+                authority: CORE_AUTHORITY,
+                pkg: CORE_PACKAGE_NAME,
+                name: "agent",
+                id: agent.id,
+              }}
+            >
+              <PencilIcon />
+              Edit agent
+            </Link>
+          }
+        />
+      </div>
     </div>
   )
 }
