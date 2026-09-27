@@ -43,8 +43,14 @@ func syncProps() map[string]any {
 // record trigger on it bound to fn.
 func newSyncDataset(t *testing.T, fn, source string) substrate.Dataset {
 	t.Helper()
+	return newSyncDatasetOn(t, fn, source, "create")
+}
+
+// newSyncDatasetOn is newSyncDataset with the trigger firing on ops.
+func newSyncDatasetOn(t *testing.T, fn, source string, ops ...any) substrate.Dataset {
+	t.Helper()
 	return newSyncKindDataset(t,
-		[]enginetest.Trigger{trigOn(fn, map[string]any{"kinds": []any{jobType}, "ops": []any{"create"}})},
+		[]enginetest.Trigger{trigOn(fn, map[string]any{"kinds": []any{jobType}, "ops": ops})},
 		pyFn(fn, map[string]any{}, []any{jobType}, source),
 	)
 }
@@ -311,5 +317,66 @@ func TestSyncOwnFunctionStampsBesideForeign(t *testing.T) {
 		if ch.Kind == jobType {
 			t.Fatalf("the watcher wrote the job: %+v", ch)
 		}
+	}
+}
+
+// A body whose outcome the record's name picks: `broken` fails out and parks,
+// `throttled` and `self-ok` write that state themselves, anything else leaves
+// the state to the engine.
+const syncByNameSource = `
+def main(input, host):
+    env = input["envelope"]
+    name = env["record"]["properties"].get("name")
+    if name == "broken":
+        raise RuntimeError("upstream returned HTTP 403")
+    props = {"syncMessage": "drained"}
+    if name == "throttled":
+        props["syncState"] = "throttled"
+    if name == "self-ok":
+        props["syncState"] = "ok"
+    return {"effects": [{"action": "patch", "kind": env["change"]["kind"], "id": env["change"]["id"],
+                         "properties": props}]}
+`
+
+// TestSyncGoodRunClearsTheParkedError: a run that settles `ok` after a park
+// clears `syncError` and `syncErrorAt`, whether the engine wrote the `ok` or
+// the body did. A body that wrote `throttled` keeps its word, and the error
+// pair with it.
+func TestSyncGoodRunClearsTheParkedError(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		state     string
+		wantError bool
+	}{
+		{name: "fixed", state: substrate.SyncStateOK},
+		{name: "self-ok", state: substrate.SyncStateOK},
+		{name: "throttled", state: substrate.SyncStateThrottled, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ds := newSyncDatasetOn(t, "drain", syncByNameSource, "create", "update")
+
+			job := mustPut(t, ds, owner, substrate.PutInput{Kind: jobType, Properties: map[string]any{"name": "broken"}})
+			process(t, ds)
+			parked := mustGet(t, ds, jobType, job.ID)
+			if parked.Properties["syncState"] != substrate.SyncStateErroring || parked.Properties["syncError"] == nil || parked.Properties["syncErrorAt"] == nil {
+				t.Fatalf("the park did not stamp the error pair: %v", parked.Properties)
+			}
+
+			mustPatch(t, ds, owner, jobType, job.ID, substrate.PatchInput{Properties: map[string]any{"name": tc.name}})
+			process(t, ds)
+
+			got := mustGet(t, ds, jobType, job.ID)
+			if got.Properties["syncState"] != tc.state {
+				t.Fatalf("syncState = %v, want %s (properties %v)", got.Properties["syncState"], tc.state, got.Properties)
+			}
+			_, hasError := got.Properties["syncError"]
+			_, hasErrorAt := got.Properties["syncErrorAt"]
+			if hasError != tc.wantError || hasErrorAt != tc.wantError {
+				t.Fatalf("syncError present %v, syncErrorAt present %v, want %v: %v",
+					hasError, hasErrorAt, tc.wantError, got.Properties)
+			}
+		})
 	}
 }

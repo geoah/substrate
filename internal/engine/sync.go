@@ -124,7 +124,9 @@ func (ds *dataset) syncStart(ctx context.Context, s *syncStamp, seq int64) error
 // syncSettleOK rides the transaction that commits the delivery's last
 // effects: the duration always, and `ok` only where the body left the state
 // at `running` — a body that wrote `throttled` or `erroring` itself has said
-// more than the engine knows, and its word stands.
+// more than the engine knows, and its word stands. A run that ends `ok`,
+// whoever wrote the word, clears an error pair older than the run: left in
+// place, the last failure reads as current on an account that is healthy.
 func (t *txn) syncSettleOK(s *syncStamp) error {
 	return t.asSyncWriter(s.actor, func() error {
 		row, err := t.loadRow(s.ref, false)
@@ -132,10 +134,51 @@ func (t *txn) syncSettleOK(s *syncStamp) error {
 			return err
 		}
 		props := map[string]any{propLastSyncDurationMs: s.durationMs(t.now)}
-		if state, _ := row.Props[propSyncState].(string); state == substrate.SyncStateRunning {
-			props[propSyncState] = substrate.SyncStateOK
+		state, _ := row.Props[propSyncState].(string)
+		if state == substrate.SyncStateRunning {
+			state = substrate.SyncStateOK
+			props[propSyncState] = state
+		}
+		if state == substrate.SyncStateOK && syncErrorBefore(row.Props, s.started) {
+			props[propSyncError] = nil
+			props[propSyncErrorAt] = nil
 		}
 		_, err = t.patch(s.ref, substrate.PatchInput{Properties: props})
+		return err
+	})
+}
+
+// syncErrorBefore reports whether the row holds an error pair written before
+// `at`, so an error the run itself recorded beside its `ok` stays. A pair
+// with no readable instant is old.
+func syncErrorBefore(p map[string]any, at time.Time) bool {
+	if p[propSyncError] == nil && p[propSyncErrorAt] == nil {
+		return false
+	}
+	errAt := syncTime(p, propSyncErrorAt)
+	return errAt == nil || errAt.Before(at)
+}
+
+// syncClearErrorOnReconnect rides the OAuth facility's reconnect: a fresh
+// grant replaces the one the last error was about, so the pair goes with it.
+// The pair is `writer: connector`, which the facility's own actor may not
+// write, so the clear is written under the kind's package actor at the
+// bundle tier, the hand the open-time sweep uses. `syncState` is left alone:
+// the next run is what says whether the account is healthy.
+func (t *txn) syncClearErrorOnReconnect(ty *vocabulary.Kind, row *erow) error {
+	if !ty.Implements(vocabulary.TraitSyncCore) {
+		return nil
+	}
+	if row.Props[propSyncError] == nil && row.Props[propSyncErrorAt] == nil {
+		return nil
+	}
+	authority, pkg := vocabulary.SplitPackageRef(ty.Package)
+	actor := substrate.BundleActor(authority, pkg)
+	return t.asSyncWriter(actor, func() error {
+		_, err := t.patch(eref{Kind: ty.Identity, ID: row.ID}, substrate.PatchInput{Properties: map[string]any{
+			propSyncError:   nil,
+			propSyncErrorAt: nil,
+		}})
 		return err
 	})
 }

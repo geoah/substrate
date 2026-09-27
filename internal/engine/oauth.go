@@ -466,6 +466,16 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 		if err := t.putCredential(ref, account, tok); err != nil {
 			return err
 		}
+		// Before the facility's own patch, so the clear lands while the row
+		// still carries the old tokenStatus: an on-connect trigger guarded on
+		// `connected` does not match it and fire a second time.
+		ty, err := t.resolveType(row.Kind)
+		if err != nil {
+			return err
+		}
+		if err := t.syncClearErrorOnReconnect(ty, row); err != nil {
+			return err
+		}
 		// The secret-typed ref, the status, and the granted scope set land on
 		// the record; the facility's finalizer holds it against GC so deletion
 		// runs teardown first.

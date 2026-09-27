@@ -519,10 +519,13 @@ declares the kind, the trigger dispatcher writes
 transaction of its own so the run is visible while it runs; `ok` and
 `lastSyncDurationMs` in the transaction that commits the body's last effects
 (`ok` only where the body left the state at `running` — a body that wrote
-`throttled` or `erroring` itself has said more than the engine knows); and
-`erroring`, `syncError` and `syncErrorAt` in the transaction that parks a
+`throttled` or `erroring` itself has said more than the engine knows, and a
+run that ends `ok` clears a `syncError` and `syncErrorAt` older than the run);
+and `erroring`, `syncError` and `syncErrorAt` in the transaction that parks a
 delivery that failed out, so no reader meets a parked delivery whose record
-still says `running`. The stamps are written under the CALLABLE's own actor at
+still says `running`. An OAuth reconnect clears the error pair too, under the
+kind's package actor at the bundle tier, and leaves `syncState` for the next
+run. The stamps are written under the CALLABLE's own actor at
 the bundle tier, the write context the body's effects use: `writer: connector`
 holds, and a record trigger never delivers its own callable's writes, so a
 stamp cannot fire the trigger that made it. A record whose owner set

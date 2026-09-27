@@ -504,8 +504,9 @@ empty by definition.
 **Errors report on the account.** `syncState` is `never`, `running`, `ok`,
 `erroring` or `throttled`; a rate limit is `throttled`, with the retry instant
 in `syncMessage`, the one human line the last run left. `syncError` and
-`syncErrorAt` hold the last error text and when it was written, and a later good
-run does not clear them. The legacy `syncStatus` string stays beside the trait
+`syncErrorAt` hold the last error text and when it was written; a scheduled good
+run does not clear them, while a record-triggered run that ends `ok` and a
+reconnect do. The legacy `syncStatus` string stays beside the trait
 with its own prefixes (`ok`, `ok (partial: …)`, `ok (capped: …)`,
 `ok (deferred: …)`, `erroring: …`). `syncStreams` is declared because the trait
 contracts it and written by nobody: GitHub is one function over one account.
@@ -1226,8 +1227,9 @@ The account binds the core `sync` trait, so every run writes `syncState`
 `syncProgress` and `syncStreams` (`users`, `conversations` and `messages`,
 each with its own state, message and pending count) beside the older
 `syncStatus`, `lastSyncedAt` and `lastCompletedAt`. `syncError` and
-`syncErrorAt` hold the last error text and when it was written, and a later
-success does not clear them; `syncState` is what says it is over. A 429 puts
+`syncErrorAt` hold the last error text and when it was written; a scheduled
+success does not clear them, a record-triggered run that ends `ok` does, and
+`syncState` is what says it is over. A 429 puts
 Slack's `Retry-After` on `retryNotBefore`, which the sync honours for every
 call including `auth.test`, and reports `throttled`. Work that fails
 transiently keeps its attempt count, is re-queued at the top of the next
