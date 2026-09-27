@@ -323,6 +323,46 @@ describe("ChangeRequestDetailPage", () => {
     expect(screen.getByText("New summary")).toBeTruthy()
   })
 
+  it("keeps Apply when every value is left out but labels still change", async () => {
+    serve(
+      request({
+        properties: {
+          ...patchRequest.properties,
+          diff: {
+            properties: { summary: "New summary", note: null },
+            labels: { triage: "done" },
+          },
+        },
+      }),
+      { target }
+    )
+    renderPage(<ChangeRequestDetailPage />)
+    await screen.findByText("Old summary")
+    fireEvent.click(screen.getByRole("button", { name: "Leave out Summary" }))
+    fireEvent.click(screen.getByRole("button", { name: "Leave out Note" }))
+    expect(screen.queryByText(/Nothing is left to apply/)).toBeNull()
+    const apply = screen.getByRole("button", { name: "Apply" })
+    expect((apply as HTMLButtonElement).disabled).toBe(false)
+
+    fireEvent.click(apply)
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+      )
+      expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({
+        properties: {
+          decision: "accepted",
+          adjustedDiff: {
+            properties: {},
+            labels: { triage: "done" },
+            ifVersion: 3,
+          },
+        },
+        ifVersion: 4,
+      })
+    })
+  })
+
   it("shows what was suggested beside what was applied once adjusted", async () => {
     serve(
       request({
@@ -428,6 +468,49 @@ describe("ChangeRequestDetailPage", () => {
     ).toBeTruthy()
     // Nothing exists yet, so there is no Now column to compare with.
     expect(screen.queryByText("Now")).toBeNull()
+  })
+
+  it("lets the reviewer correct a create's heading before adding it", async () => {
+    serve(
+      request({
+        properties: {
+          op: "create",
+          targetKind: TASK_KIND,
+          targetId: "task-9",
+          diff: { properties: { summary: "Wrte it down", note: "soon" } },
+        },
+      })
+    )
+    renderPage(<ChangeRequestDetailPage />)
+    await screen.findByText("What it adds")
+    expect(screen.getByText("New task: Wrte it down")).toBeTruthy()
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Summary: change the value it applies",
+      })
+    )
+    const box = await screen.findByDisplayValue("Wrte it down")
+    fireEvent.change(box, { target: { value: "Write it down" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    // The title reads the draft, not the suggestion.
+    expect(await screen.findByText("New task: Write it down")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Add it" }))
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+      )
+      expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({
+        properties: {
+          decision: "accepted",
+          adjustedDiff: {
+            properties: { summary: "Write it down", note: "soon" },
+          },
+        },
+        ifVersion: 4,
+      })
+    })
   })
 
   it("is unmistakable about a delete, and summarizes what would go", async () => {

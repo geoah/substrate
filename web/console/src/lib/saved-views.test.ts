@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   isAllView,
+  matchingView,
   newViewId,
   viewFromState,
   viewMatches,
@@ -131,6 +132,15 @@ describe("saved views", () => {
     ).toBe(false)
     const bare: SavedView = { id: "b", collection: TASK, name: "Bare" }
     expect(viewMatches(bare, state({ hidden: ["x"] }), DEFAULT_SORT)).toBe(true)
+  })
+
+  it("prefers the picked view among views of the same shape", () => {
+    const a: SavedView = { id: "a", collection: TASK, name: "A", group: "x" }
+    const b: SavedView = { id: "b", collection: TASK, name: "B", group: "x" }
+    const now = state({ group: "x" })
+    expect(matchingView([a, b], now, DEFAULT_SORT)?.id).toBe("a")
+    expect(matchingView([a, b], now, DEFAULT_SORT, "b")?.id).toBe("b")
+    expect(matchingView([a, b], state(), DEFAULT_SORT, "b")).toBeUndefined()
   })
 
   it("knows the collection as it opens", () => {

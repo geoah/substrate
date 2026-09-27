@@ -280,9 +280,11 @@ reference by the path it stores, the records with none last.
 opens), each view saved for this collection, and **Save view**. A view is a
 name for a filter, sort, column set, nesting and grouping, never a search or a
 page, and it is kept on the console preference record, so it follows you to
-every browser. A tab is lit when the grid shows what it names; the view you
-picked last stays marked once you change something, and its menu saves those
-changes to it or discards them. Saving, renaming and deleting ask first.
+every browser. A tab is lit when the grid shows what it names, the one you
+picked where two name the same; the view you picked last stays marked once
+you change something, and its menu saves those changes to it or discards
+them. Saving what a view already shows is refused, naming that view. Saving,
+renaming and deleting ask first.
 
 Opening a collection at its bare address restores the filters, sort, nesting
 and grouping you last used there; an address that names them always wins, so a

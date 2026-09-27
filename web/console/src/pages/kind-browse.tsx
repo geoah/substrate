@@ -131,9 +131,9 @@ import { nestingProperty, rootsFilter } from "@/lib/record-tree"
 import { titlesFromIncluded } from "@/lib/reference-titles"
 import {
   isAllView,
+  matchingView,
   newViewId,
   viewFromState,
-  viewMatches,
   viewsOf,
   type SavedView,
   type ViewState,
@@ -512,22 +512,20 @@ export function KindBrowsePage() {
     columns: table.state.columnOrder,
     hidden: table.options.meta?.readerHidden ?? [],
   }
-  const matchedView = views.find((v) => viewMatches(v, viewState, DEFAULT_SORT))
+  // The view picked last on this collection, so a view the reader has since
+  // changed can take those changes or drop them.
+  const [picked, setPicked] = useState<{ collection: string; id: string }>()
+  const pickedId =
+    picked && picked.collection === kindInfo?.identity ? picked.id : undefined
+  const matchedView = matchingView(views, viewState, DEFAULT_SORT, pickedId)
   const activeView = matchedView
     ? matchedView.id
     : isAllView(viewState, DEFAULT_SORT)
       ? "all"
       : null
-
-  // The view picked last on this collection, so a view the reader has since
-  // changed can take those changes or drop them.
-  const [picked, setPicked] = useState<{ collection: string; id: string }>()
   const editedView =
-    activeView === null &&
-    picked &&
-    picked.collection === kindInfo?.identity &&
-    views.some((v) => v.id === picked.id)
-      ? picked.id
+    activeView === null && pickedId && views.some((v) => v.id === pickedId)
+      ? pickedId
       : null
 
   function saveView(viewName: string) {

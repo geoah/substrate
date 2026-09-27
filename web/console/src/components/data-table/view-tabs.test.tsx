@@ -70,4 +70,15 @@ describe("ViewTabs", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }))
     expect(props.onSave).toHaveBeenCalledWith("Urgent")
   })
+
+  it("refuses to save what a saved view already shows, naming it", () => {
+    const props = draw({ active: "v2" })
+    fireEvent.click(screen.getByRole("button", { name: "Save view" }))
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Also mine" },
+    })
+    expect(screen.getByText(/“Mine” already shows this/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    expect(props.onSave).not.toHaveBeenCalled()
+  })
 })
