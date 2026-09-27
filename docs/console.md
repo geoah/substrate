@@ -127,7 +127,7 @@ The console's preferences follow the person: they live on one record,
 signed in to the repository looks the same
 ([0132](decisions/0132-console-preferences-follow-the-person-and-a-window-fact-stays-in-the-browser.md)).
 It carries the sidebar's folded groups and favorites (`collapsed`,
-`favorites`) and the layout settings (`recordWidth`, `tableWidth`, `density`,
+`favorites`), each collection's saved views (`views`) and the layout settings (`recordWidth`, `tableWidth`, `density`,
 `technicalDetails`, `theme`), each optional, so an absent one is the console's
 own default. Whether the sidebar is open is a fact about one window, so it is
 kept in this browser alone and never written to the record, and a
@@ -136,15 +136,16 @@ read-modify-write under `ifVersion`, retried against fresh state after a
 conflict, so two sessions changing different settings keep both.
 
 A repository whose stored `consolepreference` kind predates a setting refuses
-the undeclared property, so the console writes a setting to the record only
-when the stored declaration names it; otherwise the setting stays in this
-browser's `localStorage`. A read takes the record first, then `localStorage`,
+the undeclared property, so the console writes a setting (or the views) to the
+record only when the stored declaration names it; otherwise it stays in this
+browser's `localStorage`, and the first save onto a record that declares it
+carries it across. A read takes the record first, then `localStorage`,
 then the default, and every written setting is mirrored into `localStorage` as
 well, so the sign-in page already starts from it.
 
 A few conveniences are per browser by design and live only in
-`localStorage`: whether the sidebar is open, a collection's last filters, sort
-and nesting, its columns, and the Search page's ranking choice.
+`localStorage`: whether the sidebar is open, a collection's last filters, sort,
+nesting and grouping, its columns, and the Search page's ranking choice.
 
 ## Home
 
@@ -202,7 +203,8 @@ A collection lives at `/data/{authority}/{package}/{kind}`: a data address is
 the kind reference, segment for segment. The header carries the kind's glyph,
 its display name and its everyday description, and, with Technical details
 on, the full reference with a copy button; a provider's collection says its records are read-only copies kept up to date by
-that provider, and has no **New** button. With Technical details on,
+that provider, and has no **New** button. The star beside **New** adds the
+collection to the sidebar's **Favorites**, or takes it off. With Technical details on,
 **Definition** (`?tab=definition`) shows the declaration.
 
 The records are a grid that fills the page, with a pinned header row and a
@@ -236,8 +238,26 @@ of a longer one, composed with the filters and the sort, so the grid stays a
 grid: the rows that match, in the order you chose, paged like
 any other list.
 
-Opening a collection at its bare address restores the filters, sort and
-nesting you last used there; an address that names them always wins, so a
+**Group** cuts the grid by an enum, a state or a single reference
+(`?group=`): the list is ordered by that property first and the view's own
+order inside each group, so every page is whole runs of groups, and each run
+sits under a head that names the value, counts the whole group (a bounded
+count over the view's filter narrowed to that value) and folds it. A run that
+carries on from or to another page says so. Nested, a subtree stays in its
+top-level row's group, and the tree's own reference is not offered. The groups
+come in the server's order: an enum or a state by its stored value, a
+reference by the path it stores, the records with none last.
+
+**Saved views** are the tabs above the toolbar: **All** (the collection as it
+opens), each view saved for this collection, and **Save view**. A view is a
+name for a filter, sort, column set, nesting and grouping, never a search or a
+page, and it is kept on the console preference record, so it follows you to
+every browser. A tab is lit when the grid shows what it names; the view you
+picked last stays marked once you change something, and its menu saves those
+changes to it or discards them. Saving, renaming and deleting ask first.
+
+Opening a collection at its bare address restores the filters, sort, nesting
+and grouping you last used there; an address that names them always wins, so a
 shared view stays exact. A search is never restored: it is the question of the
 moment, not the shape of the view.
 

@@ -385,3 +385,44 @@ all: an enum as its `EnumTag`, a state as its `StateBadge`, a reference as its
 Props: `spec`, `value`. Used by the sheet, the ownership detail, suggested
 changes and History's value moves, so a value reads the same wherever it is
 shown.
+
+## The collection grid
+
+In `components/data-table/`, the collection page's grid and what sits above
+it.
+
+### DataGrid
+
+One page of records in a sheet that scrolls both ways under a pinned header
+row and a pinned title column. The sorted column's header cell carries
+`aria-sort`. Grouped, the rows are cut wherever their group changes and each
+run is its own `tbody` under a head row with a fold button.
+
+- `table`: the `useDataTable` instance
+- `density`, `fill`, `loading`, `empty`, `scrollKey`, `marks`, `label`
+- `groups`: `keyOf`, `head`, `label`, `collapsed`, `onToggle`
+
+### ViewTabs
+
+A collection's saved views as a strip of tabs above its toolbar: **All**, each
+view by name, and **Save view**. A tab is chosen when the grid shows what it
+names; the view picked last stays marked once the reader changes something,
+and its menu saves or discards the changes. Save, rename, save changes and
+delete each confirm through `ConfirmDialog`.
+
+- `views`: this collection's `SavedView`s
+- `active`: `all`, a view's id, or null
+- `edited`: the changed view's id
+- `busy`, `onPick`, `onSave`, `onRename`, `onReplace`, `onDelete`
+
+### GroupByMenu and GroupHead
+
+`GroupByMenu` is the toolbar's **Group** control: the enums, states and single
+references a collection may be grouped by, and **No grouping** (`options`,
+`value`, `labelOf`, `technical`, `onChange`). `GroupHead` is what a group's
+head row says: the value as the grid's cells draw it (`EnumTag`, `StateBadge`,
+`RecordRef`, or "No _property_"), the whole group's count, and where a run
+carries on from or to another page (`prop`, `groupKey`, `label`, `count`,
+`note`, `kinds`, `titles`). **Rule:** a group head draws its value through the
+same mark the cells do.
+

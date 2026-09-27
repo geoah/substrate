@@ -129,10 +129,10 @@ The display settings follow the person: record width (default wide), table
 width (default full), table rows (default comfortable), Technical details
 (default off) and appearance (default system) are properties of the
 `substrate.reamde.dev/core/consolepreference/navigation` record, beside the
-favorites and folded groups. Whether the sidebar is open is a fact about one
-window and is kept in this browser's `localStorage` alone, as are a
-collection's last filters, sort, nesting and columns and the Search page's
-ranking
+favorites, the folded groups and each collection's saved views. Whether the
+sidebar is open is a fact about one window and is kept in this browser's
+`localStorage` alone, as are a collection's last filters, sort, nesting,
+grouping and columns and the Search page's ranking
 ([0132](../decisions/0132-console-preferences-follow-the-person-and-a-window-fact-stays-in-the-browser.md)).
 `lib/console-preferences.ts` holds the split.
 
