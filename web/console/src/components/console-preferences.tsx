@@ -67,7 +67,13 @@ export function ConsolePreferencesProvider({
             declaredSettings(kinds)
           )
           if (record) client.setQueryData(queryKey, record)
-          if (action.type === "set") setLocal(readLocalSettings())
+          // A setting or a view kept in this browser moved its store.
+          if (
+            action.type === "set" ||
+            action.type === "view" ||
+            action.type === "forget-view"
+          )
+            setLocal(readLocalSettings())
         } catch {
           setFailed(action)
         } finally {
