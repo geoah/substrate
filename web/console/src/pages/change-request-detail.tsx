@@ -139,20 +139,21 @@ function Warning({
   )
 }
 
-/** What the change is, as the page's title. */
+/** What the change is, as the page's title. A create's reads the values it
+ * would add as they stand, edits included. */
 function Heading({
   op,
   target,
-  diff,
+  properties,
 }: {
   op?: string
   target?: ChangeTargetRef
-  diff: ProposedDiff
+  properties: Record<string, unknown>
 }) {
   if (!op) return <>A change the console can’t read</>
   if (op === "create") {
     const what = target ? lowerFirst(displayName(target.kind)) : "record"
-    const heading = proposedHeading(diff.properties)
+    const heading = proposedHeading(properties)
     return <>{heading ? `New ${what}: ${heading.text}` : `New ${what}`}</>
   }
   const record = target ? (
@@ -376,7 +377,13 @@ export function ChangeRequestDetailPage() {
             </span>
           )
         }
-        title={<Heading op={op} target={target} diff={diff} />}
+        title={
+          <Heading
+            op={op}
+            target={target}
+            properties={pending ? edited : (applied ?? diff.properties)}
+          />
+        }
         meta={
           <>
             {decision && (
@@ -637,10 +644,10 @@ function PendingBody({
     [diff.properties, comparable, targetRecord, targetKind]
   )
   const create = op === "create"
-  // The property the title already reads from is not a row too.
-  const heading = create ? proposedHeading(diff.properties)?.key : undefined
+  // The heading property keeps its row even though the title reads it: the
+  // row is its only editor, and the title follows the draft.
   const rows = reviewRows(
-    order.filter((key) => key !== heading),
+    order,
     diff.properties,
     edited,
     comparable ? targetRecord : undefined
