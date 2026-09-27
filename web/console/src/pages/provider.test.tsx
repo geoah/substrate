@@ -1033,6 +1033,32 @@ describe("ProviderPage", () => {
       ).toBeNull()
     })
 
+    it("says why a sign-in stopped working, and never borrows the sync error", async () => {
+      const reason =
+        'oauthflow: refresh: provider answered 400, error code "invalid_grant"'
+      serve({
+        accounts: [
+          account("george-work", {
+            email: "george@example.com",
+            tokenStatus: "erroring",
+            tokenError: reason,
+            tokenErrorAt: HOUR_AGO,
+            syncState: "erroring",
+            syncError: "gmail: HTTP 403",
+          }),
+        ],
+      })
+      renderPage(<ProviderPage />)
+      const callout = await problems()
+      expect(within(callout).getByText(reason)).toBeTruthy()
+      expect(within(callout).queryByText("gmail: HTTP 403")).toBeNull()
+      expect(
+        await screen.findByText(
+          `Its sign-in stopped working: ${reason} · reconnect it`
+        )
+      ).toBeTruthy()
+    })
+
     it("says a provider that failed to load, and why", async () => {
       serve({
         statuses: [

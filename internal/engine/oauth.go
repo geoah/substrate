@@ -48,6 +48,75 @@ const (
 	tokenStatusErroring  = "erroring"
 )
 
+// Why the facility last failed to refresh an account's token, and when. They
+// are not part of the accountconfig trait: a trait property is a contract
+// every implementor must declare, and a repository's own account kind, or a
+// provider installed before these shipped, would stop loading. The facility
+// writes each one only where the account's kind declares it `writer: oauth`,
+// and stamps `erroring` either way.
+const (
+	propTokenError   = "tokenError"
+	propTokenErrorAt = "tokenErrorAt"
+)
+
+// oauthWrites reports whether a kind declares name as a `writer: oauth`
+// property: the only slot the facility may fill, and a write to an undeclared
+// one is refused whole.
+func oauthWrites(ty *vocabulary.Kind, name string) bool {
+	p, ok := ty.Prop(name)
+	return ok && p.Writer == vocabulary.WriterOAuth
+}
+
+// noteTokenRefresh stamps one refresh's outcome onto the account: a failure
+// writes `erroring` with its reason and when, a success writes `connected` and
+// clears both. It writes nothing when the row already says so, because the
+// loop retries an erroring account every pass and each write is a changelog
+// entry; `tokenErrorAt` is therefore when the current reason first appeared.
+// The reason is the flow package's text, which carries the HTTP status and
+// the RFC 6749 code and never the provider's description, a token or the
+// client secret.
+func (ds *dataset) noteTokenRefresh(ctx context.Context, account eref, cause error) {
+	// A refresh cut short by the caller's own context ending (a canceled
+	// request or invocation, a shutdown) says nothing about the grant, and
+	// stamping `erroring` for it would send the owner to reconnect a sign-in
+	// that works.
+	if cause != nil && ctx.Err() != nil {
+		return
+	}
+	row, err := ds.loadRowDB(ctx, account)
+	if err != nil || row == nil || row.DeletedAt != nil {
+		return
+	}
+	ty, err := ds.resolveType(row.Kind)
+	if err != nil {
+		return
+	}
+	status, reason := tokenStatusConnected, ""
+	if cause != nil {
+		status, reason = tokenStatusErroring, boundText(firstLine(cause.Error()), syncErrorMax)
+	}
+	props := map[string]any{}
+	if propString(row, propTokenStatus) != status {
+		props[propTokenStatus] = status
+	}
+	if oauthWrites(ty, propTokenError) && propString(row, propTokenError) != reason {
+		var text, at any // nil clears the property
+		if reason != "" {
+			text, at = reason, nowUTC().Format(time.RFC3339Nano)
+		}
+		props[propTokenError] = text
+		if oauthWrites(ty, propTokenErrorAt) {
+			props[propTokenErrorAt] = at
+		}
+	}
+	if len(props) == 0 {
+		return
+	}
+	if _, err := ds.patchInternal(ctx, actorOAuth, account.Kind, account.ID, substrate.PatchInput{Properties: props}); err != nil {
+		ds.svc.log.Warn("substrate: oauth refresh: stamping the account", "record", account.ID, "error", err)
+	}
+}
+
 // oauthRefreshWindow is how far ahead of expiry the refresh loop acts.
 const oauthRefreshWindow = 10 * time.Minute
 
@@ -481,6 +550,14 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 		// runs teardown first.
 		props := map[string]any{propTokenRef: ref, propTokenStatus: tokenStatusConnected}
 		props[propGrantedScopes] = stringsToAny(grantedScopes)
+		// A fresh consent answers the last refresh failure: its reason goes.
+		if ty, err := ds.resolveType(row.Kind); err == nil {
+			for _, name := range []string{propTokenError, propTokenErrorAt} {
+				if oauthWrites(ty, name) && row.Props[name] != nil {
+					props[name] = nil
+				}
+			}
+		}
 		// The derived email lands only when the bundle names a real `writer:
 		// oauth` property (Finalize enforces the pairing; this re-checks against
 		// the live type so a misconfigured bundle skips instead of failing the
@@ -538,14 +615,19 @@ func (ds *dataset) accountAccessToken(ctx context.Context, ref string, ep oauthE
 	}
 	fresh, err := ds.svc.oauth.Refresh(ctx, ep, tok)
 	if err != nil {
+		ds.noteTokenRefresh(ctx, account, err)
 		return "", err
 	}
 	// Update-only, compare-and-swap: a teardown or reconnect that landed
 	// while the provider call was in flight wins, and this refresh persists
 	// nothing (never recreating a deleted credential). The fresh token still
 	// serves THIS invocation.
-	if _, err := ds.updateCredential(ctx, ref, account, fresh, seen); err != nil {
+	swapped, err := ds.updateCredential(ctx, ref, account, fresh, seen)
+	if err != nil {
 		return "", err
+	}
+	if swapped {
+		ds.noteTokenRefresh(ctx, account, nil)
 	}
 	return fresh.AccessToken, nil
 }
@@ -606,9 +688,7 @@ func (ds *dataset) RefreshOAuthTokens(ctx context.Context) (int, error) {
 		if err != nil {
 			ds.svc.log.Warn("substrate: oauth refresh failed — the account needs a reconnect if this persists",
 				"record", account.ID, "error", err)
-			_, _ = ds.patchInternal(ctx, actorOAuth, account.Kind, account.ID, substrate.PatchInput{
-				Properties: map[string]any{propTokenStatus: tokenStatusErroring},
-			})
+			ds.noteTokenRefresh(ctx, account, err)
 			continue
 		}
 		// Update-only, compare-and-swap on the generation this pass read: a
@@ -621,11 +701,7 @@ func (ds *dataset) RefreshOAuthTokens(ctx context.Context) (int, error) {
 		if !swapped {
 			continue
 		}
-		if status, _ := row.Props[propTokenStatus].(string); status != tokenStatusConnected {
-			_, _ = ds.patchInternal(ctx, actorOAuth, account.Kind, account.ID, substrate.PatchInput{
-				Properties: map[string]any{propTokenStatus: tokenStatusConnected},
-			})
-		}
+		ds.noteTokenRefresh(ctx, account, nil)
 		n++
 	}
 	return n, nil

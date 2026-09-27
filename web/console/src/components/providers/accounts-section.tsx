@@ -147,7 +147,7 @@ function AccountRow({
         },
         providerName
       )
-    : connectionWords(account.tokenStatus, providerName)
+    : connectionWords(account.tokenStatus, providerName, account.tokenError)
   const every = enumLabel(account.kind, "syncFrequency", account.syncFrequency)
   const at = account.sync.lastSyncedAt
   return (

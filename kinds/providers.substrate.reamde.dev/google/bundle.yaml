@@ -233,7 +233,10 @@ data:
   # 37: every stream's failure log line prints `_reason(e)`, so a Drive
   # grant missing drive.readonly logs why instead of an empty message, and
   # only on the run that enters `needsreconsent`. Body text only.
-  version: 37
+  #
+  # 38: the account declares `tokenError` and `tokenErrorAt`, the reason
+  # and time the OAuth facility last failed to refresh its token. ADDITIVE.
+  version: 38
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -478,6 +481,21 @@ data:
       displayName: Granted scopes
       description: the OAuth scopes the last consent was granted for; drives
         reconnect-on-new-feature
+    # Why the facility last failed to refresh the token, and when. The facility
+    # writes both beside `tokenStatus: erroring` and clears them on the next good
+    # refresh or reconnect.
+    tokenError:
+      type: string
+      writer: oauth
+      displayName: Sign-in error
+      description: why the OAuth facility last failed to refresh this account's
+        token, as the provider's status and error code; empty while it works
+    tokenErrorAt:
+      type: datetime
+      writer: oauth
+      displayName: Sign-in error at
+      description: when the OAuth facility first recorded the current sign-in
+        error
     # The connected account's address, as the grant reported it. It is the
     # account's own fact and NOT a mirror's: nothing on a message, an event or
     # an emailaddress row is computed against it (record: no owner-relative

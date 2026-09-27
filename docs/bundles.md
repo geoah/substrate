@@ -391,8 +391,12 @@ line.
 
 The facility then keeps the grant alive without the bundle: a service loop
 trades the refresh token for every credential expiring within ten minutes,
-marks `tokenStatus: erroring` when that fails, and skips disabled bundles;
-deleting a connected account revokes best-effort against the declared
+marks `tokenStatus: erroring` when that fails, and skips disabled bundles.
+Beside `erroring` it writes `tokenError` (the provider's HTTP status and RFC
+6749 error code, never its description) and `tokenErrorAt`, on an account kind
+that declares both `writer: oauth`; a good refresh or a reconnect clears them.
+An invocation that refreshes a token on the spot reports a failure the same way.
+Deleting a connected account revokes best-effort against the declared
 `revocationEndpoint`, deletes the stored credential, and only then releases the
 record. A function never sees any of it — its injected config carries a
 resolved `token`, never the client secret or the reference.
