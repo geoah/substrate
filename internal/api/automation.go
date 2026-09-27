@@ -29,7 +29,7 @@ func (h *handler) getTriggerStatus(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
 	statuses, err := ds.TriggerStatuses(r.Context())
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.Listed(statuses))
@@ -43,7 +43,7 @@ func (h *handler) getSyncStatus(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
 	statuses, err := ds.SyncStatuses(r.Context())
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.Listed(statuses))
@@ -63,7 +63,7 @@ func (h *handler) postTriggerReplay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := ds.ReplayTrigger(r.Context(), pathParam(r, "id"), req.From); err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.TriggerReplayed{From: req.From})
@@ -90,7 +90,7 @@ func (h *handler) postTriggerRun(w http.ResponseWriter, r *http.Request) {
 	}
 	ran, err := ds.RunTrigger(r.Context(), pathParam(r, "id"), req.Kind, req.ID)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.TriggerRan{Ran: ran})
@@ -105,7 +105,7 @@ func (h *handler) postTriggerWake(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
 	ran, err := ds.WakeTrigger(r.Context(), pathParam(r, "id"))
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.TriggerRan{Ran: ran})
@@ -116,7 +116,7 @@ func (h *handler) getTriggerParked(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
 	failures, err := ds.TriggerFailures(r.Context(), pathParam(r, "id"))
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.Listed(failures))
@@ -132,7 +132,7 @@ func (h *handler) postTriggerRetry(w http.ResponseWriter, r *http.Request) {
 	}
 	ran, err := ds.RetryTriggerFailure(r.Context(), pathParam(r, "id"), fid)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.TriggerRan{Ran: ran})
@@ -150,7 +150,7 @@ func (h *handler) deleteTriggerParked(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := ds.ForgetTriggerFailure(r.Context(), pathParam(r, "id"), fid); err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -172,7 +172,7 @@ func (h *handler) postFunctionCall(w http.ResponseWriter, r *http.Request) {
 	}
 	output, effects, err := ds.CallFunction(idempotentContext(r), ActorFrom(r.Context()), pathParam(r, "name"), req.Input)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.FunctionCalled{Output: output, Effects: effects})

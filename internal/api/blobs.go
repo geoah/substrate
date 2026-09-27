@@ -74,7 +74,7 @@ func (h *handler) putBlob(w http.ResponseWriter, r *http.Request) {
 		MediaType: r.Header.Get("Content-Type"),
 	}, data, wantDigest)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	w.Header().Set("Location", "/api/"+APIVersion+"/blobs/"+info.Digest)
@@ -143,7 +143,7 @@ func (h *handler) getBlob(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(ctx)
 	info, data, err := ds.GetBlob(ctx, chi.URLParam(r, "digest"))
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	// The mime type is OPTIONAL on the manifest, so the read falls back to the

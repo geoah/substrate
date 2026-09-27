@@ -123,12 +123,12 @@ func (h *handler) inviteOK(w http.ResponseWriter, presented string) bool {
 
 // writeAuthFailure is the one answer every refused factor gets: no oracle for
 // which of the three was wrong, and none for whether the user exists.
-func writeAuthFailure(w http.ResponseWriter, err error) {
+func writeAuthFailure(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, substrate.ErrAuth) {
 		writeError(w, http.StatusUnauthorized, codeAuth, "invalid repository, password or code")
 		return
 	}
-	writeSubstrateError(w, err)
+	writeSubstrateError(w, r, err)
 }
 
 // --- registration ---
@@ -152,7 +152,7 @@ func (h *handler) postRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	}
 	enrollment, err := h.svc.BeginRegistration(r.Context(), repository)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	// Enroll proves the shared invite code and NOTHING about the named
@@ -186,7 +186,7 @@ func (h *handler) postRegister(w http.ResponseWriter, r *http.Request) {
 		RecoveryPublicKey: req.RecoveryPublicKey,
 	})
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, substrate.Registered{
@@ -214,7 +214,7 @@ func (h *handler) postLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	info, secret, err := h.svc.Login(r.Context(), substrate.LoginInput(req))
 	if err != nil {
-		writeAuthFailure(w, err)
+		writeAuthFailure(w, r, err)
 		return
 	}
 	// The repository is echoed as the door RESOLVED it, so a client that sent
@@ -246,7 +246,7 @@ func (h *handler) postPassword(w http.ResponseWriter, r *http.Request) {
 		Repository: repository, Password: req.Password, TOTPCode: req.TOTPCode,
 	}, req.NewPassword)
 	if err != nil {
-		writeAuthFailure(w, err)
+		writeAuthFailure(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.SessionCredential{Repository: repository})
@@ -272,7 +272,7 @@ func (h *handler) postTOTPBegin(w http.ResponseWriter, r *http.Request) {
 		Repository: repository, Password: req.Password, TOTPCode: req.TOTPCode,
 	})
 	if err != nil {
-		writeAuthFailure(w, err)
+		writeAuthFailure(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, enrollment)
@@ -298,7 +298,7 @@ func (h *handler) postTOTP(w http.ResponseWriter, r *http.Request) {
 		Repository: repository, Password: req.Password, TOTPCode: req.TOTPCode,
 	}, req.NewTOTPSecret, req.NewTOTPCode)
 	if err != nil {
-		writeAuthFailure(w, err)
+		writeAuthFailure(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.SessionCredential{Repository: repository})
@@ -341,7 +341,7 @@ func (h *handler) postMintToken(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	info, secret, err := DatasetFrom(ctx).MintToken(ctx, req.Label, req.ExpiresAt)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, substrate.MintedToken{Token: info, Secret: secret})
@@ -351,7 +351,7 @@ func (h *handler) getTokens(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	tokens, err := DatasetFrom(ctx).Tokens(ctx)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.Listed(tokens))
@@ -365,7 +365,7 @@ func (h *handler) deleteToken(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ent, err := DatasetFrom(ctx).Delete(ctx, ActorFrom(ctx), tokenType, pathParam(r, "id"), substrate.DeleteInput{})
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, ent)

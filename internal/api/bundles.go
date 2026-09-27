@@ -17,7 +17,7 @@ func (h *handler) getBundleStatuses(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
 	statuses, err := ds.BundleStatuses(r.Context())
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.Listed(statuses))
@@ -29,7 +29,7 @@ func (h *handler) getBundleStatus(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
 	st, err := ds.BundleStatus(r.Context(), pathParam(r, "id"))
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
@@ -43,7 +43,7 @@ func (h *handler) getBundleStatus(w http.ResponseWriter, r *http.Request) {
 func (h *handler) bundleLifecycleGate(w http.ResponseWriter, r *http.Request, ds substrate.Dataset) (string, bool) {
 	authority, err := ds.BundlePackage(r.Context(), pathParam(r, "id"))
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return "", false
 	}
 	return authority, true
@@ -107,7 +107,7 @@ func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, i
 	// uses, so this cannot reuse bundleLifecycleGate — that reads `pathParam
 	// "id"`, which is empty here.
 	if _, err := ds.BundlePackage(r.Context(), id); err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	ctx := r.Context()
@@ -131,12 +131,12 @@ func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, i
 			err = ds.EnableBundle(ctx, id)
 		}
 		if err != nil {
-			writeSubstrateError(w, err)
+			writeSubstrateError(w, r, err)
 			return
 		}
 		st, err := ds.BundleStatus(ctx, id)
 		if err != nil {
-			writeSubstrateError(w, err)
+			writeSubstrateError(w, r, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, st)
@@ -146,7 +146,7 @@ func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, i
 			return
 		}
 		if err := ds.UninstallBundle(ctx, id); err != nil {
-			writeSubstrateError(w, err)
+			writeSubstrateError(w, r, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, substrate.BundleUninstalled{Uninstalled: true})
@@ -157,7 +157,7 @@ func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, i
 		}
 		purged, err := ds.PurgeBundle(ctx, id)
 		if err != nil {
-			writeSubstrateError(w, err)
+			writeSubstrateError(w, r, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, substrate.BundlePurged{Purged: purged})
@@ -201,12 +201,12 @@ func (h *handler) postBundleBind(w http.ResponseWriter, r *http.Request) {
 	}
 	id := pathParam(r, "id")
 	if err := ds.BindBundleInput(r.Context(), id, body.Input, body.Record); err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	st, err := ds.BundleStatus(r.Context(), id)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
@@ -218,7 +218,7 @@ func (h *handler) getTraitImplementors(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
 	types, err := ds.TypesImplementing(r.Context(), pathParam(r, "id"))
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.Listed(types))
@@ -243,7 +243,7 @@ func (h *handler) postOAuthStart(w http.ResponseWriter, r *http.Request) {
 	}
 	url, err := ds.StartOAuth(r.Context(), ActorFrom(r.Context()), req.Record)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.OAuthStarted{URL: url})

@@ -64,7 +64,7 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, codeNotFound, "no such webhook")
 			return
 		}
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, substrate.WebhookAccepted{Fire: fid})

@@ -103,7 +103,7 @@ func (h *handler) getRecords(w http.ResponseWriter, r *http.Request) {
 			K:        first,
 		})
 		if err != nil {
-			writeSubstrateError(w, err)
+			writeSubstrateError(w, r, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, substrate.Ranked(res))
@@ -149,14 +149,14 @@ func (h *handler) getRecords(w http.ResponseWriter, r *http.Request) {
 			// client would read as its own mistake.
 			head, herr := ds.Head(ctx)
 			if herr != nil {
-				writeSubstrateError(w, herr)
+				writeSubstrateError(w, r, herr)
 				return
 			}
 			writeCompacted(w, head, err.Error())
 			return
 		}
 		if err != nil {
-			writeSubstrateError(w, err)
+			writeSubstrateError(w, r, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, page)
@@ -174,7 +174,7 @@ func (h *handler) resolveKinds(w http.ResponseWriter, r *http.Request, ds substr
 			return nil, false
 		}
 		if err != nil {
-			writeSubstrateError(w, err)
+			writeSubstrateError(w, r, err)
 			return nil, false
 		}
 		out = append(out, ti.Identity)
@@ -265,14 +265,14 @@ func (h *handler) postRecords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	in.Kind = ti.Identity
 	ctx = idempotentContext(r)
 	ent, err := ds.Put(ctx, ActorFrom(ctx), in)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, putStatus(ent), ent)

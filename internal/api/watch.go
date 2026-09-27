@@ -89,12 +89,12 @@ func (h *handler) getChanges(w http.ResponseWriter, r *http.Request) {
 	}
 	changes, err := ds.Changes(r.Context(), rs.from, f, changeBatch)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	rows, err := annotateChanges(r.Context(), ds, changes)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-ndjson")
@@ -243,7 +243,7 @@ func resumeCursor(w http.ResponseWriter, r *http.Request, ds substrate.Dataset) 
 	}
 	head, err := ds.Head(r.Context())
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return resume{}, false
 	}
 	generation := r.URL.Query().Get("generation")
