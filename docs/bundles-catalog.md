@@ -1222,7 +1222,15 @@ The drain bounds itself at 75 seconds and 300 Slack calls, inside the
 engine's 512 invocations and two minutes. What it did not reach goes to the
 account's `streamCursors` (where the `users.list` and `conversations.list`
 walks stopped, and the queues of conversations, threads, users, files, bots
-and rosters), and `syncStatus` reads `ok (N pending: …)`.
+and rosters), and `syncStatus` reads `ok (N pending: …)`. A run that resumes
+a walk past `history` spends its first 25 seconds and 100 calls on new
+history for every conversation, then walks any queued threads before files,
+bots and rosters. Every invocation is one Slack call at most, so one run
+drains at most about 200 queued items: a backlog of thousands of files takes
+many runs. The file, bot and user queues step over a row that its own
+endpoint (or `users.list`) already filled in without a call, and a file whose
+embed says it was deleted, is past the plan's history limit or is not
+readable by the owner is never asked for.
 
 `message_changed` and `message_deleted` are mutation envelopes and are never
 mirrored as rows. A change lands on the nested message's own identity, and
@@ -1247,7 +1255,15 @@ transiently keeps its attempt count, is re-queued at the top of the next
 walk, and after three attempts shows on the status as `[N failed]`. One
 conversation's failure is that conversation's: the Slack error
 (`not_in_channel`, `channel_not_found`) lands on its
-`conversationsync.historyStatus` and the queue moves on.
+`conversationsync.historyStatus` and the queue moves on. An error that says
+the target itself cannot be read (`channel_not_found`, `not_in_channel`,
+`is_archived`, `missing_scope`, `thread_not_found`, `file_not_found`,
+`bot_not_found`, `user_not_found` and a few more) is a refusal: it goes to
+`streamCursors.refused`, the status shows `[N refused]`, and no later walk
+asks for that conversation or item again until its `conversations.list`
+entry changes, the `config` record is edited (a new token), or a walk starts
+with no `lastCompletedAt`. A failure is logged once, by the run it happened
+in.
 
 The sync writes nothing back. It spends the token on reads only, and a file's
 bytes are never fetched: the `file` row holds what `files.info` returns and

@@ -133,7 +133,14 @@ data:
   # 13: every kind declares its purpose (decision 0133), and its
   # description opens with one plain sentence saying what a record is to
   # a person.
-  version: 13
+  #
+  # 14: a target Slack refuses (`channel_not_found`, `bot_not_found`, …) is
+  # kept on `streamCursors.refused` and not asked again until its channel
+  # list entry or the connector config changes; a failure is logged in the
+  # run it happened in only. The drain steps over users users.list already
+  # wrote whole, never asks files.info for a file the embed says the owner
+  # cannot read, and walks queued threads before files.
+  version: 14
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -2854,7 +2861,15 @@ data:
 # in `replies` or `files` behind thousands of queued entries would never reach
 # `history` again. A run that resumes a walk already past `history` therefore
 # spends its first share (25s, 100 calls) pulling each conversation's new
-# messages from its stored cursor, and only then resumes the backlog.
+# messages from its stored cursor, and only then resumes the backlog. A walk
+# past `replies` walks the threads that pass queued before any file, bot or
+# roster.
+#
+# A REFUSAL IS ASKED ONCE. A Slack error word that says one target cannot be
+# read (the channel is gone, the file was deleted) lands on
+# `streamCursors.refused`, which outlives the walk, and nothing queues or
+# calls that target again until its conversations.list entry changes, the
+# connector config is edited, or a walk starts cold.
 #
 # WHAT MOVED, versus the first cut of this bundle. Every relation is written
 # as a REFERENCE at a mirrored row — the id is composed with the same
@@ -4530,12 +4545,29 @@ data:
             top = sorted(by_why.items(), key=lambda kv: -kv[1])[:3]
             status += " [%d failed: %s]" % (
                 len(failed), ", ".join("%s x%d" % (k, n) for k, n in top))
-            host.log("slack: %d units of work failed; streamCursors.failed holds "
-                     "[kind, id, attempts, why] for each. By class: %s"
-                     % (len(failed),
-                        ", ".join("%s x%d" % (k, n)
-                                  for k, n in sorted(by_why.items(),
-                                                     key=lambda kv: -kv[1]))))
+        # The log names what failed IN THIS RUN only. Logging the whole list
+        # at every stamp repeated one walk's failures on every run of it.
+        new = min(int((run or {}).get("newFailed") or 0), len(failed))
+        if new:
+            by_new = {}
+            for row in failed[-new:]:
+                key = "%s/%s" % (row[0], _why_class(row[3] if len(row) > 3 else ""))
+                by_new[key] = by_new.get(key, 0) + 1
+            host.log("slack: %d units of work failed in this run; "
+                     "streamCursors.failed holds [kind, id, attempts, why] for "
+                     "each, and a refused one is skipped from now on "
+                     "(streamCursors.refused). By class: %s"
+                     % (new, ", ".join("%s x%d" % (k, n) for k, n in
+                                       sorted(by_new.items(), key=lambda kv: -kv[1]))))
+        refused = cursors.get("refused") or {}
+        if refused:
+            by_word = {}
+            for key, entry in refused.items():
+                word = "%s/%s" % (key.split(" ")[0], (entry or {}).get("why") or "")
+                by_word[word] = by_word.get(word, 0) + 1
+            top = sorted(by_word.items(), key=lambda kv: -kv[1])[:2]
+            status += " [%d refused: %s]" % (
+                len(refused), ", ".join("%s x%d" % (k, n) for k, n in top))
         status = status[:REASON_MAX]
         now = _now_iso()
         props = {
@@ -4678,10 +4710,110 @@ data:
         failed.append([kind, ident, n, ("permanent: " if permanent else "") + why])
         # Newest last, capped: the list is diagnosis, not a queue, and an
         # unbounded one would grow the account row without limit.
-        out = dict(resume, failed=failed[-FAILED_MAX:], **rest)
+        # `newFailed` counts this RUN's rows, the newest ones, so the stamp
+        # logs a failure in the run it happened in and not in every run after.
+        out = dict(resume, failed=failed[-FAILED_MAX:],
+                   newFailed=(resume.get("newFailed") or 0) + 1, **rest)
         if not permanent and n <= RETRY_MAX:
             out["retry"] = list(resume.get("retry") or []) + [[kind, ident]]
+        word = str(getattr(err, "error", "") or "")
+        if word in REFUSED_WORDS:
+            out = _refuse(out, kind, ident, word)
         return out
+
+
+    # REFUSALS: the Slack error words that say ONE target cannot be read by
+    # this token, where `failed` alone lasts one walk. A new walk lists the
+    # conversations again and an incremental one re-reads a day of history,
+    # so the same channel, thread, file, bot or user was queued and refused
+    # again every walk, and the history-first pass asked a refused channel
+    # again on every run (two `channel_not_found` channels logged 154 times
+    # in ten hours). A refusal is kept on `streamCursors.refused` across
+    # walks, keyed "<kind> <id>" with the kinds `_failed` uses, and nothing
+    # is queued or called for it again until the conversation's
+    # conversations.list entry changes, the connector config is edited (a new
+    # token) or a walk starts with no `lastCompletedAt`. An HTTP 4xx is never
+    # a refusal: that is a missing recording as often as an answer.
+    REFUSED_WORDS = {
+        "channel_not_found", "not_in_channel", "is_archived",
+        "method_not_supported_for_channel_type", "team_access_not_granted",
+        "missing_scope", "no_permission", "restricted_action",
+        "thread_not_found", "message_not_found", "file_not_found",
+        "file_deleted", "bot_not_found", "user_not_found", "users_not_found",
+    }
+    # The words that say the CONVERSATION is unreadable, whatever was asked of
+    # it: the refusal covers its info, history, threads and roster at once.
+    GONE_WORDS = {"channel_not_found", "not_in_channel", "is_archived"}
+    # The kinds of work that belong to one conversation, whose refusals its
+    # list entry changing clears.
+    CONV_WORK = ("conversation", "info", "history", "thread", "roster")
+    REFUSED_MAX = 1000
+
+
+    def _rkey(kind, ident):
+        if isinstance(ident, (list, tuple)):
+            ident = "/".join(str(i) for i in ident)
+        return "%s %s" % (kind, ident)
+
+
+    def _rcid(key):
+        """The conversation a refusal key belongs to, or None."""
+        kind, _, ident = key.partition(" ")
+        return ident.split("/")[0] if kind in CONV_WORK else None
+
+
+    def _refused(resume, kind, ident, cid=None):
+        """Has Slack refused this unit of work, or the conversation it is in?"""
+        refused = resume.get("refused") or {}
+        if _rkey(kind, ident) in refused:
+            return True
+        return bool(cid) and _rkey("conversation", cid) in refused
+
+
+    def _refuse(resume, kind, ident, word):
+        refused = dict(resume.get("refused") or {})
+        cid = None
+        if kind in CONV_WORK:
+            cid = ident[0] if isinstance(ident, (list, tuple)) else ident
+        key = _rkey("conversation", cid) if cid and word in GONE_WORDS \
+            else _rkey(kind, ident)
+        refused[key] = {"why": word}
+        while len(refused) > REFUSED_MAX:
+            refused.pop(next(iter(refused)))
+        out = dict(resume, refused=refused)
+        if cid and key.split(" ")[0] in ("conversation", "history"):
+            # The history-first pass must not come back to it either.
+            out["convs"] = [c for c in (resume.get("convs") or []) if c != cid] \
+                if resume.get("convs") is not None else None
+            out["fresh"] = [c for c in (resume.get("fresh") or []) if c != cid]
+        return out
+
+
+    def _listing_shape(c):
+        """What a conversations.list entry says about whether its history is
+        readable. A refusal holds while this stays the same."""
+        return "|".join(str(c.get(k)) for k in (
+            "name", "is_member", "is_archived", "is_private", "is_shared",
+            "is_ext_shared", "is_org_shared", "is_user_deleted", "updated"))
+
+
+    def _held(refused, cid, c):
+        """The kinds of work still refused for one listed conversation.
+
+        A refusal recorded mid-walk has no listing to compare against, so the
+        first listing after it is adopted; a later listing that differs drops
+        it, and the conversation is asked again. Mutates `refused`."""
+        shape = _listing_shape(c)
+        held = set()
+        for key in [k for k in refused if _rcid(k) == cid]:
+            entry = refused[key]
+            if entry.get("shape") is None:
+                refused[key] = dict(entry, shape=shape)
+            elif entry.get("shape") != shape:
+                del refused[key]
+                continue
+            held.add(key.split(" ")[0])
+        return held
 
 
     def _budget_left(resume, calls=1):
@@ -4709,10 +4841,19 @@ data:
             # mirror minted from an id alone is queued to be filled in.
             ids = _actors(msg)
             for uid in sorted(ids):
-                if uid and uid not in known and uid not in seen:
+                if uid and uid not in known and uid not in seen \
+                        and not _refused(resume, "hydrate", uid):
                     seen.add(uid)
                     queue.append(uid)
         return queue
+
+
+    # The file embeds that are a stub Slack will not fill in for this owner: a
+    # deleted file (`tombstone`), one past a free plan's visible history
+    # (`hidden_by_limit`), and one the owner has no access to. A
+    # `check_file_info` stub is the opposite and IS asked for.
+    UNREADABLE_FILE_MODES = ("tombstone", "hidden_by_limit")
+    UNREADABLE_FILE_ACCESS = ("access_denied", "file_not_found")
 
 
     def _unhydrated(resume, msgs):
@@ -4738,12 +4879,20 @@ data:
             for inner in (msg, msg.get("message"), msg.get("root")):
                 if not isinstance(inner, dict):
                     continue
+                # A file the embed already says the owner cannot read is
+                # written as it came and never asked for: files.info would
+                # only refuse it, one invocation per file.
+                closed = {f["id"] for f in (inner.get("files") or [])
+                          if isinstance(f, dict) and f.get("id")
+                          and (f.get("mode") in UNREADABLE_FILE_MODES
+                               or f.get("file_access") in UNREADABLE_FILE_ACCESS)}
                 for fid in _file_ids(inner):
-                    if fid not in fseen:
+                    if fid not in fseen and fid not in closed \
+                            and not _refused(resume, "file", fid):
                         fseen.add(fid)
                         files.append(fid)
                 for bid in _bot_ids(inner):
-                    if bid not in bseen:
+                    if bid not in bseen and not _refused(resume, "bot", bid):
                         bseen.add(bid)
                         bots.append(bid)
         return files, bots
@@ -4790,6 +4939,7 @@ data:
         queue = list(resume.get("queue") or [])
         info = list(resume.get("info") or [])
         rosters = list(resume.get("rosters") or [])
+        refused = dict(resume.get("refused") or {})
         for c in body.get("channels") or []:
             cid = c.get("id")
             if not cid:
@@ -4802,11 +4952,17 @@ data:
             _put_latest(host, aid, team, resume.get("domain") or "", cid, c)
             if not _walkable(resume, c):
                 continue
-            info.append(cid)
-            queue.append(cid)
+            held = _held(refused, cid, c)
+            if "conversation" in held:
+                continue
+            if "info" not in held:
+                info.append(cid)
+            if "history" not in held:
+                queue.append(cid)
             if resume.get("members") and (c.get("is_channel") or c.get("is_group")) \
-                    and not (c.get("is_im") or c.get("is_mpim")):
+                    and not (c.get("is_im") or c.get("is_mpim")) and "roster" not in held:
                 rosters.append(cid)
+        resume = dict(resume, refused=refused)
         nxt = _cursor_of(body)
         if nxt:
             return dict(resume, cursor=nxt, queue=queue, info=info, rosters=rosters)
@@ -4833,6 +4989,8 @@ data:
         shape does not carry."""
         aid, team = resume["account"], resume["team"]
         info = list(resume.get("info") or [])
+        while info and _refused(resume, "info", info[0], info[0]):
+            info = info[1:]
         if not info:
             return dict(resume, phase="history", info=[])
         cid = info[0]
@@ -4856,6 +5014,10 @@ data:
     def _phase_history(host, base, token, resume, rewatch=True):
         aid, team = resume["account"], resume["team"]
         queue = list(resume.get("queue") or [])
+        inflight = (resume.get("work") or {}).get("conversation")
+        while queue and queue[0] != inflight \
+                and _refused(resume, "history", queue[0], queue[0]):
+            queue = queue[1:]
         if not queue:
             return dict(resume, phase="replies", queue=[])
         cid = queue[0]
@@ -4963,7 +5125,11 @@ data:
         patch["threadWatch"] = watch or None
         _state_patch(host, aid, team, cid, patch)
         threads = list(resume.get("threads") or [])
-        queued = {ts for _c, ts in threads if _c == cid}
+        # A refused thread counts as queued, so neither the radar nor the
+        # watch queues it again.
+        queued = {ts for _c, ts in threads if _c == cid} | {
+            ts for ts in list(work["threads"]) + list(watch)
+            if _refused(resume, "thread", [cid, ts])}
         for ts in work["threads"]:
             if ts not in queued:
                 queued.add(ts)
@@ -4985,6 +5151,10 @@ data:
     def _phase_replies(host, base, token, resume):
         aid, team = resume["account"], resume["team"]
         threads = list(resume.get("threads") or [])
+        inflight = (resume.get("reply") or {}).get("thread")
+        while threads and list(threads[0]) != inflight \
+                and _refused(resume, "thread", threads[0], threads[0][0]):
+            threads = threads[1:]
         if not threads:
             return dict(resume, phase="hydrate", threads=[])
         cid, parent_ts = threads[0]
@@ -5045,8 +5215,24 @@ data:
         # ONE users.info per invocation, for a sender this workspace's users.list
         # never carried. A failure is that user's business: an id Slack will not
         # resolve is remembered as known so the queue does not circle back.
+        #
+        # A row users.list or users.info already wrote WHOLE is stepped over
+        # for a record read, as the file and bot phases do. `known` rides only
+        # the run that walked users.list, so a resumed walk queued every author
+        # its history and threads named and spent one users.info on each. Only
+        # a whole user object carries `name` and `updated`; a thin mint and an
+        # inlined `user_profile` carry neither.
         aid, team = resume["account"], resume["team"]
         queue = list(resume.get("hydrate") or [])
+        for _ in range(HYDRATE_SCAN):
+            if not queue:
+                return dict(resume, phase="files", hydrate=[])
+            if not _refused(resume, "hydrate", queue[0]):
+                eid = _user_ref(host, aid, team, queue[0])
+                row = (host.records.get(USER_TYPE, eid) or {}).get("properties") or {}
+                if not (row.get("name") or row.get("updated")):
+                    break
+            queue = queue[1:]
         if not queue:
             return dict(resume, phase="files", hydrate=[])
         uid = queue[0]
@@ -5090,10 +5276,11 @@ data:
         for _ in range(HYDRATE_SCAN):
             if not queue:
                 return dict(resume, phase="bots", files=[])
-            eid = _file_ref(host, aid, team, queue[0])
-            row = (host.records.get(FILE_TYPE, eid) or {}).get("properties") or {}
-            if row.get("commentsCount") is None:
-                break
+            if not _refused(resume, "file", queue[0]):
+                eid = _file_ref(host, aid, team, queue[0])
+                row = (host.records.get(FILE_TYPE, eid) or {}).get("properties") or {}
+                if row.get("commentsCount") is None:
+                    break
             queue = queue[1:]
         if not queue:
             return dict(resume, phase="bots", files=[])
@@ -5153,10 +5340,11 @@ data:
         for _ in range(HYDRATE_SCAN):
             if not queue:
                 return dict(resume, phase="members", bots=[])
-            eid = _bot_ref(host, aid, team, queue[0])
-            row = (host.records.get(BOT_TYPE, eid) or {}).get("properties") or {}
-            if not row.get("name"):
-                break
+            if not _refused(resume, "bot", queue[0]):
+                eid = _bot_ref(host, aid, team, queue[0])
+                row = (host.records.get(BOT_TYPE, eid) or {}).get("properties") or {}
+                if not row.get("name"):
+                    break
             queue = queue[1:]
         if not queue:
             return dict(resume, phase="members", bots=[])
@@ -5212,6 +5400,10 @@ data:
     def _phase_members(host, base, token, resume):
         aid, team = resume["account"], resume["team"]
         rosters = list(resume.get("rosters") or [])
+        inflight = (resume.get("roster") or {}).get("conversation")
+        while rosters and rosters[0] != inflight \
+                and _refused(resume, "roster", rosters[0], rosters[0]):
+            rosters = rosters[1:]
         if not rosters:
             return dict(resume, phase="done", rosters=[])
         cid = rosters[0]
@@ -5303,7 +5495,8 @@ data:
             convs = list(dict.fromkeys(convs))
             return dict(resume, convs=convs, fresh=list(convs), freshListing=None)
         for c in body.get("channels") or []:
-            if c.get("id") and _walkable(resume, c):
+            if c.get("id") and _walkable(resume, c) \
+                    and not _refused(resume, "history", c["id"], c["id"]):
                 convs.append(c["id"])
         nxt = _cursor_of(body)
         if nxt:
@@ -5329,7 +5522,8 @@ data:
         fresh = list(resume.get("fresh") or [])
         work = resume.get("freshWork")
         while fresh and not (work and work.get("conversation") == fresh[0]):
-            if _sync_state(host, aid, team, fresh[0])[2].get("latestTs"):
+            if not _refused(resume, "history", fresh[0], fresh[0]) \
+                    and _sync_state(host, aid, team, fresh[0])[2].get("latestTs"):
                 break
             fresh = fresh[1:]
         if not fresh:
@@ -5339,6 +5533,25 @@ data:
         return dict(out, phase=resume.get("phase"), queue=resume.get("queue"),
                     work=resume.get("work"), fresh=list(out.get("queue") or []),
                     freshWork=out.get("work"))
+
+
+    def _threads_first(resume):
+        """Is there a thread to walk while the walk is past `replies`?
+
+        MESSAGES BEFORE FILES. The history-first pass queues the threads it
+        finds on the backlog, and a walk in `hydrate`, `files`, `bots` or
+        `members` would reach them only in the NEXT walk's `replies`: after
+        every queued file (8,450 on the owner's account), every bot, every
+        roster and a whole walk's info and history. The replies are messages,
+        so they drain first."""
+        return (resume.get("phase") in ("hydrate", "files", "bots", "members")
+                and bool(resume.get("threads")))
+
+
+    def _phase_threads_first(host, base, token, resume):
+        """One `_phase_replies` step that leaves the walk's phase where it is."""
+        out = _phase_replies(host, base, token, resume)
+        return dict(out, phase=resume.get("phase"))
 
 
     PHASES = {
@@ -5374,6 +5587,11 @@ data:
             # would ever queue it again.
             "failed": list(resume.get("failed") or [])[:200],
             "retry": list(resume.get("retry") or [])[:200],
+            # What Slack refused, kept ACROSS walks (see REFUSED_WORDS), and
+            # the connector config version it was refused under: an edited
+            # config is a new token, and a new token is asked again.
+            "refused": dict(resume.get("refused") or {}),
+            "refusedUnder": resume.get("refusedUnder"),
             "queue": list(resume.get("queue") or []),
             "info": list(resume.get("info") or []),
             "threads": [list(t) for t in (resume.get("threads") or [])],
@@ -5411,7 +5629,8 @@ data:
 
     def main(input, host):
         cfg = input.get("config") or {}
-        conf = (((cfg.get("inputs") or {}).get("connector") or {}).get("properties")) or {}
+        connector = ((cfg.get("inputs") or {}).get("connector")) or {}
+        conf = connector.get("properties") or {}
         accounts = {a.get("id"): a for a in (cfg.get("accounts") or [])}
         token = conf.get("userToken") or ""
         base = (conf.get("apiBase") or DEFAULT_API).rstrip("/")
@@ -5447,7 +5666,9 @@ data:
                 return {"output": {"account": aid, "pending": True,
                                    "calls": resume.get("calls") or 0}}
             fresh = _fresh_due(resume)
-            step = _phase_fresh if fresh else PHASES[phase]
+            late = not fresh and _threads_first(resume)
+            step = (_phase_fresh if fresh else
+                    _phase_threads_first if late else PHASES[phase])
             try:
                 nxt = step(host, base, token, _spend(resume))
             except RateLimited as rl:
@@ -5460,7 +5681,8 @@ data:
                                    "retryAfter": rl.retry_after}}
             except Exception as e:  # noqa: BLE001 - every failure is the account's status
                 _erroring(host, acct, aid, e, _carry(resume), run=resume,
-                          at_phase="history" if fresh else phase)
+                          at_phase=("history" if fresh else
+                                    "replies" if late else phase))
                 return {"output": {"account": aid, "erroring": True}}
             if (nxt.get("phase") or "done") == "done":
                 _stamp(host, acct, aid, _carry(nxt), run=nxt)
@@ -5554,6 +5776,10 @@ data:
             "cursor": stored.get("cursor") or "",
             "failed": list(stored.get("failed") or []),
             "retry": list(stored.get("retry") or []),
+            # An edited connector config is a new token: what the old one was
+            # refused is asked again.
+            "refusedUnder": "%s@%s" % (connector.get("id") or "",
+                                       connector.get("version") or ""),
             "queue": list(stored.get("queue") or []),
             "info": list(stored.get("info") or []),
             "threads": [list(t) for t in (stored.get("threads") or [])],
@@ -5571,6 +5797,8 @@ data:
             "freshListing": stored.get("freshListing"),
             "freshCalls": 0,
         }
+        if stored.get("refusedUnder") == cursor["refusedUnder"]:
+            cursor["refused"] = dict(stored.get("refused") or {})
         # The retry list, read before anything clears it. It is re-queued ONLY at
         # the top of a NEW walk, and that "only" was exactly backwards: a new
         # walk emptied the list before the re-queue loop read it, so a failure
@@ -5590,6 +5818,10 @@ data:
             # never re-queued WITHIN a walk.
             cursor["phase"] = "team"
             cursor["failed"] = []
+            if cold:
+                # A first walk, or one after the completion marker was
+                # cleared: nothing Slack refused before is taken on trust.
+                cursor["refused"] = {}
             cursor["fresh"], cursor["freshWork"] = [], None
             cursor["freshListing"] = None
         else:
@@ -5610,7 +5842,8 @@ data:
                     cursor["convs"] = []
                     cursor["freshListing"] = {"cursor": ""}
                 else:
-                    cursor["fresh"] = list(cursor["convs"])
+                    cursor["fresh"] = [c for c in cursor["convs"]
+                                       if not _refused(cursor, "history", c, c)]
         for kind, ident in retries:
             if kind == "thread" and isinstance(ident, list):
                 cursor["threads"].append(list(ident))
