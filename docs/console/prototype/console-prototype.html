@@ -1518,7 +1518,10 @@ const app=document.getElementById("app"), hc=document.getElementById("hc");
 function curPageKey(){ if(S.page==="record"){ const e=Object.entries(REC_PAGE).find(([,id])=>id===S.rec); return e?e[0]:""; } if(S.page==="collection") return S.kind==="gcontact"?"big":S.kind==="task"?"collection":""; if(S.page==="tools") return S.toolView==="page"?"tool-page":"tools"; return S.page; }
 function render(){
   app.className=`app a${S.density==="compact"?" compact":""}`;
-  const pg = {home,data:dataPage,collection,record,new:newRecord,agents:agentsPage,tools:()=>S.toolView==="page"?toolPage():toolsList(),providers:providersPage,history:historyPage,settings:settingsPage}[S.page]||home;
+  const pages = {home,data:dataPage,collection,record,new:newRecord,agents:agentsPage,tools:()=>S.toolView==="page"?toolPage():toolsList(),providers:providersPage,history:historyPage,settings:settingsPage};
+  // Only the table's own pages: a restored or hashed S.page naming anything
+  // else (an inherited "constructor") falls back to Home.
+  const pg = Object.prototype.hasOwnProperty.call(pages,S.page) ? pages[S.page] : home;
   app.innerHTML=sidebar()+`<main class="main">${pg()}</main>`;
   document.getElementById("dirNote").innerHTML=`<b>Paper.</b> Record, tool and provider pages start at the left edge; tables use the full width (both are settings, saved in your substrate). The sidebar lists only main collections; <b>Technical details</b> (${S.tech?"on":"off"}) shows the supporting and internal ones, references, ids and change numbers.`;
   seg("techSeg",[["off","Everyday"],["on","Technical"]],S.tech?"on":"off",v=>{S.tech=v==="on";});
