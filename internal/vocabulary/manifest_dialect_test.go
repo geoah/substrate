@@ -308,6 +308,42 @@ func TestFunctionReturnsCompileToTheSchema(t *testing.T) {
 	}
 }
 
+// Issue #709: an `enum` argument admits only its declared `values`, alone or
+// repeated, and the refusal names the argument and the allowed set. Every path
+// that checks function input (the call API, host calls, agent tools, trigger
+// writes) reads this one check.
+func TestAnEnumArgumentRefusesAValueOutsideItsValues(t *testing.T) {
+	fn := flatFn(t, `  arguments:
+    - {name: period, type: enum, values: [daily, weekly, monthly]}
+    - {name: periods, type: enum, repeated: true, values: [daily, weekly]}
+`)
+	for _, ok := range []map[string]any{
+		{"period": "weekly"},
+		{"periods": []any{"daily", "weekly"}},
+	} {
+		if err := vocabulary.CheckValue(fn.Input, ok); err != nil {
+			t.Fatalf("%v refused: %v", ok, err)
+		}
+	}
+	for in, want := range map[string]struct {
+		value map[string]any
+		parts []string
+	}{
+		"single":   {map[string]any{"period": "wekly"}, []string{"period", `"wekly"`, "daily, weekly, monthly"}},
+		"repeated": {map[string]any{"periods": []any{"daily", "monthly"}}, []string{"periods[1]", `"monthly"`, "daily, weekly"}},
+	} {
+		err := vocabulary.CheckValue(fn.Input, want.value)
+		if err == nil {
+			t.Fatalf("%s: %v admitted outside the enum", in, want.value)
+		}
+		for _, part := range want.parts {
+			if !strings.Contains(err.Error(), part) {
+				t.Errorf("%s: %q does not name %q", in, err, part)
+			}
+		}
+	}
+}
+
 func TestFunctionArgumentRefusals(t *testing.T) {
 	cases := map[string]struct{ io, want string }{
 		"arguments is a list": {
