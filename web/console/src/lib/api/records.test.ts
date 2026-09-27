@@ -1,12 +1,15 @@
+import { QueryClient } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   countRecords,
   glanceCount,
+  glanceCountQueryOptions,
   GLANCE_ROWS,
   createRecord,
   fetchRecordsPage,
   recordIdSegment,
+  recordCountQueryOptions,
   referenceTitlesQueryOptions,
   formatCount,
   groupReferencing,
@@ -424,6 +427,62 @@ describe("glanceCount (Home's collection sizes)", () => {
       capped: false,
     })
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe("glanceCountQueryOptions (reusing an exact count)", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock)
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ records: [{ id: "a" }], count: 9 }), {
+          status: 200,
+        })
+    )
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+    vi.useRealTimers()
+  })
+
+  const exact = recordCountQueryOptions("g.dev", "k", "things").queryKey
+  const glance = () => glanceCountQueryOptions("g.dev", "k", "things")
+
+  it("reuses a fresh exact count without a request", async () => {
+    const client = new QueryClient()
+    client.setQueryData(exact, { value: 3, capped: false })
+    expect(await client.fetchQuery(glance())).toEqual({
+      value: 3,
+      capped: false,
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("counts again when the exact count was invalidated", async () => {
+    const client = new QueryClient()
+    client.setQueryData(exact, { value: 3, capped: false })
+    // A write invalidates the exact key without refetching it: the sidebar's
+    // observer is disabled, so the stale entry stays in the cache.
+    await client.invalidateQueries({ queryKey: exact, refetchType: "none" })
+    expect(await client.fetchQuery(glance())).toEqual({
+      value: 9,
+      capped: false,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("counts again when the exact count is past its stale time", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    const client = new QueryClient()
+    client.setQueryData(exact, { value: 3, capped: false })
+    vi.setSystemTime(Date.now() + 61_000)
+    expect(await client.fetchQuery(glance())).toEqual({
+      value: 9,
+      capped: false,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })
 

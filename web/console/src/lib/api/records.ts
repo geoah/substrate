@@ -484,6 +484,9 @@ async function walkCount(
   return { value, capped: true }
 }
 
+/** How long a count is trusted before it is asked again. */
+const COUNT_STALE_MS = 60_000
+
 export function recordCountQueryOptions(
   authority: string,
   pkg: string,
@@ -499,7 +502,7 @@ export function recordCountQueryOptions(
       listFilter({ authority, package: pkg, name, filter }) ?? null,
     ],
     queryFn: ({ signal }) => countRecords(authority, pkg, name, filter, signal),
-    staleTime: 60_000,
+    staleTime: COUNT_STALE_MS,
   })
 }
 
@@ -515,13 +518,20 @@ export function glanceCountQueryOptions(
   return queryOptions({
     queryKey: [...exact, "glance"],
     queryFn: async ({ signal, client }) => {
-      const known = client.getQueryData<RecordCount>(exact)
-      if (known) return known
+      // Only a fresh answer is reused: a disabled observer (the sidebar's)
+      // keeps an invalidated or stale entry in the cache indefinitely.
+      const known = client.getQueryState<RecordCount>(exact)
+      if (
+        known?.data &&
+        !known.isInvalidated &&
+        Date.now() - known.dataUpdatedAt < COUNT_STALE_MS
+      )
+        return known.data
       const count = await glanceCount(authority, pkg, name, signal)
       if (!count.many) client.setQueryData(exact, count)
       return count
     },
-    staleTime: 60_000,
+    staleTime: COUNT_STALE_MS,
   })
 }
 
