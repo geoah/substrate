@@ -91,17 +91,18 @@ export function HistoryPage() {
   )
   const table = technical && layout === "table"
   const { actors, ready } = useViewActors(view)
-  const filter = useMemo(() => (actors ? { actors } : {}), [actors])
   const nobody = actors !== undefined && actors.length === 0
   const [showSystem, setShowSystem] = useQueryState(
     "system",
     parseAsBoolean.withDefault(false)
   )
-  const keep = useEverydayChanges(showSystem)
+  const everyday = useEverydayChanges(showSystem)
+  const filter = useMemo(
+    () => ({ ...everyday, ...(actors ? { actors } : {}) }),
+    [everyday, actors]
+  )
   const feed = useHistoryFeed(filter, {
-    enabled: ready && !nobody && !table,
-    keep,
-    fill: 30,
+    enabled: ready && everyday !== undefined && !nobody && !table,
     values: true,
   })
 
@@ -142,7 +143,6 @@ export function HistoryPage() {
               {!technical && (
                 <SystemChangesNote
                   className="ml-auto self-center"
-                  hidden={feed.hidden}
                   shown={showSystem}
                   onToggle={() => void setShowSystem(showSystem ? null : true)}
                 />

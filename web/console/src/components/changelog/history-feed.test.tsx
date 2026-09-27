@@ -22,7 +22,7 @@ import {
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { ChangeRow, KindInfo } from "@/lib/api/types"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
-import { foldHistory } from "@/lib/history"
+import { foldHistory, runEntry } from "@/lib/history"
 
 const TASK = "samples.substrate.reamde.dev/tasks/task"
 
@@ -161,12 +161,66 @@ describe("HistoryEntryRow", () => {
       affected: undefined,
     }))
     const [entry] = foldHistory(rows)
-    renderRow(<HistoryEntryRow entry={entry} today openEnded />)
+    renderRow(<HistoryEntryRow entry={{ ...entry, openEnded: true }} today />)
     const said = (await screen.findByText("tasks")).closest(
       "[data-slot=history-entry]"
     )
     expect(said?.textContent).not.toMatch(/\d\+|\+/)
     expect(said?.textContent).toContain("added tasks")
+  })
+
+  it("says a run the server summarized with its exact count, reading no rows", async () => {
+    const entry = runEntry(
+      {
+        actor: "console",
+        kind: TASK,
+        verb: "create",
+        count: 60,
+        records: 60,
+        newestSeq: 90,
+        oldestSeq: 31,
+        newestTs: new Date().toISOString(),
+        oldestTs: new Date().toISOString(),
+      },
+      { generation: "g", filter: {}, values: true }
+    )
+    renderRow(<HistoryEntryRow entry={entry} today />)
+    const said = (await screen.findByText("60 tasks")).closest(
+      "[data-slot=history-entry]"
+    )
+    expect(said?.textContent).toContain("added 60 tasks")
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it("reads a one-record run's rows to say its values", async () => {
+    vi.mocked(fetch).mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ changes: [patch(true)], head: 9, generation: "g" }),
+          { status: 200 }
+        )
+      )
+    )
+    const entry = runEntry(
+      {
+        actor: "console",
+        kind: TASK,
+        verb: "update",
+        count: 1,
+        records: 1,
+        recordId: "t1",
+        newestSeq: 7,
+        oldestSeq: 7,
+        newestTs: new Date().toISOString(),
+        oldestTs: new Date().toISOString(),
+      },
+      { generation: "g", filter: {}, values: true }
+    )
+    renderRow(<HistoryEntryRow entry={entry} today />)
+    expect(await screen.findByText("Urgent")).toBeTruthy()
+    const url = String(vi.mocked(fetch).mock.calls[0][0])
+    expect(url).toContain("recordId=t1")
+    expect(url).toContain("values=1")
   })
 
   it("says a provider's update as what it is, and keeps the digest for technical details", async () => {

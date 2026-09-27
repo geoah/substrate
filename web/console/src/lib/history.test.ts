@@ -1,18 +1,23 @@
 import { describe, expect, it } from "vitest"
 
-import type { ChangeRow, KindInfo } from "@/lib/api/types"
+import type { ChangeRow, ChangeRun, KindInfo } from "@/lib/api/types"
 import {
   dayLabel,
   foldHistory,
   groupByDay,
-  historyEntries,
   historyVerb,
+  isHousekeeping,
   isSystemChange,
+  joinLive,
   kindsByReference,
   layoutSummary,
   propertyLabel,
+  runEntry,
+  runNeedsRows,
+  rowsComplete,
   systemPhrase,
   viewActors,
+  withRunRows,
 } from "./history"
 import { netMoves } from "./change-values"
 
@@ -374,14 +379,114 @@ describe("systemPhrase", () => {
   })
 })
 
-describe("historyEntries", () => {
-  it("leaves housekeeping out unless technical details are on", () => {
-    const rows = [
+describe("isHousekeeping", () => {
+  it("names what nobody did: a collection, and a trigger's pruned runs", () => {
+    const [gc, pruned, kept] = foldHistory([
       row({ op: "gc" }),
       row({ op: "delete", kind: "substrate.reamde.dev/core/triggerrun" }),
       row({}),
+    ])
+    expect(isHousekeeping(gc)).toBe(true)
+    expect(isHousekeeping(pruned)).toBe(true)
+    expect(isHousekeeping(kept)).toBe(false)
+  })
+})
+
+function run(over: Partial<ChangeRun> = {}): ChangeRun {
+  return {
+    actor: "console",
+    kind: "ada.example.com/tasks/task",
+    verb: "create",
+    count: 60,
+    records: 60,
+    newestSeq: 200,
+    oldestSeq: 141,
+    newestTs: "2026-09-24T12:00:00Z",
+    oldestTs: "2026-09-24T11:00:00Z",
+    ...over,
+  }
+}
+
+const source = { generation: "g", filter: {}, values: true }
+
+describe("runEntry", () => {
+  it("says a run's exact count with no row in hand", () => {
+    const entry = runEntry(run(), source)
+    expect(entry).toMatchObject({
+      verb: "added",
+      count: 60,
+      recordCount: 60,
+      records: [],
+      rows: [],
+      ts: "2026-09-24T12:00:00Z",
+    })
+    expect(entry.run).toMatchObject({ newestSeq: 200, oldestSeq: 141 })
+  })
+
+  it("speaks each run verb in the words a row's would", () => {
+    const said = (verb: string) => runEntry(run({ verb }), source).verb
+    expect(said("create")).toBe("added")
+    expect(said("restore")).toBe("restored")
+    expect(said("update")).toBe("changed")
+    expect(said("delete")).toBe("deleted")
+    expect(said("gc")).toBe("cleaned up")
+  })
+
+  it("reads a run's rows only where the sentence says them", () => {
+    const one = { records: 1, recordId: "t1" }
+    expect(runNeedsRows(runEntry(run({ verb: "update" }), source))).toBe(true)
+    expect(runNeedsRows(runEntry(run(one), source))).toBe(false)
+    expect(
+      runNeedsRows(
+        runEntry(
+          run({ ...one, kind: "substrate.reamde.dev/core/triggerrun" }),
+          source
+        )
+      )
+    ).toBe(true)
+    expect(runNeedsRows(foldHistory([row({ op: "patch" })])[0])).toBe(false)
+  })
+
+  it("takes the run's rows in, and is complete once every row is", () => {
+    const entry = runEntry(
+      run({ verb: "update", count: 2, records: 1, recordId: "t1" }),
+      source
+    )
+    expect(rowsComplete(entry)).toBe(false)
+    const full = withRunRows(entry, [
+      row({ op: "patch", recordId: "t1", payload: { properties: ["status"] } }),
+      row({ op: "patch", recordId: "t1", payload: { properties: ["dueAt"] } }),
+    ])
+    expect(rowsComplete(full)).toBe(true)
+    expect(full.properties).toEqual(["status", "dueAt"])
+    expect(full.records).toEqual(["t1"])
+  })
+})
+
+describe("joinLive", () => {
+  it("continues the newest run with the tail's rows of the same act", () => {
+    const told = [
+      runEntry(
+        run({ records: 1, count: 3, recordId: "t1", verb: "update" }),
+        source
+      ),
     ]
-    expect(historyEntries(rows, false)).toHaveLength(1)
-    expect(historyEntries(rows, true)).toHaveLength(3)
+    const live = foldHistory([
+      row({ seq: 202, op: "patch", recordId: "t1" }),
+      row({ seq: 201, op: "patch", recordId: "t2" }),
+    ])
+    const [entry, ...rest] = joinLive(live, told)
+    expect(rest).toHaveLength(0)
+    expect(entry.count).toBe(5)
+    expect(entry.recordCount).toBe(2)
+    expect(entry.rows).toHaveLength(2)
+    expect(entry.oldestSeq).toBe(141)
+    expect(entry.run).toBe(told[0].run)
+  })
+
+  it("keeps a different act as a sentence of its own", () => {
+    const told = [runEntry(run(), source)]
+    const live = foldHistory([row({ seq: 201, op: "delete" })])
+    expect(joinLive(live, told)).toHaveLength(2)
   })
 })

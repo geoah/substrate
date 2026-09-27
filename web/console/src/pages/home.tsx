@@ -4,7 +4,7 @@
  * the latest changes to your data in History's sentences. No inbox: nothing
  * here asks the reader to act. */
 
-import { useEffect, useMemo, useRef, type ReactNode } from "react"
+import { useMemo, type ReactNode } from "react"
 import { useQueries, useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 
@@ -21,26 +21,20 @@ import { ProviderBadge } from "@/components/identity/provider-badge"
 import { SectionHead } from "@/components/identity/section-head"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useEverydayChanges, useHistoryFeed } from "@/hooks/use-history-feed"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { recordCountQueryOptions } from "@/lib/api/records"
 import { repositoryQueryOptions } from "@/lib/api/repository"
 import { getRepository } from "@/lib/api/session"
 import { collectionGroups } from "@/lib/collections"
-import { historyEntries } from "@/lib/history"
 import { homeSections } from "@/lib/home-summary"
 
 /** The collections Home shows before "All data" takes over: yours first,
  * then what providers bring in, each group under its own heading. */
 const SHOWN_COLLECTIONS = 9
 const SHOWN_YOURS = 6
-/** The newest changes Home shows, as folded sentences, and the rows read to
- * fold them from. */
+/** The newest changes Home shows, as sentences. */
 const SHOWN_CHANGES = 6
-const RECENT_ROWS = 60
-/** The further pages Home reads to close the oldest run it shows. */
-const CLOSE_PAGES = 4
 
 function Section({
   title,
@@ -91,27 +85,12 @@ export function HomePage() {
     SHOWN_COLLECTIONS,
     SHOWN_YOURS
   )
-  const keep = useEverydayChanges()
-  const recent = useHistoryFeed(
-    {},
-    { first: RECENT_ROWS, keep, fill: SHOWN_CHANGES * 3 }
-  )
-  // The oldest sentence loaded may go on in older rows. While it is among
-  // the ones shown, read on so its count is whole; past the budget it is
-  // said without one.
-  const [technical] = useTechnicalDetails()
-  const shownEntries = useMemo(
-    () => historyEntries(recent.rows, technical).length,
-    [recent.rows, technical]
-  )
-  const closing = useRef(CLOSE_PAGES)
-  const { hasOlder, loadingOlder, isPending, fetchOlder } = recent
-  const open = hasOlder && shownEntries <= SHOWN_CHANGES
-  useEffect(() => {
-    if (!open || loadingOlder || isPending || closing.current <= 0) return
-    closing.current -= 1
-    fetchOlder()
-  }, [open, loadingOlder, isPending, fetchOlder])
+  const everyday = useEverydayChanges()
+  const recent = useHistoryFeed(everyday ?? {}, {
+    enabled: everyday !== undefined,
+    first: SHOWN_CHANGES,
+    rows: SHOWN_CHANGES * 10,
+  })
 
   return (
     <DocPage>
@@ -217,18 +196,13 @@ export function HomePage() {
           <p className="text-muted-foreground">
             Recent changes didn’t load: {recent.error.message}
           </p>
-        ) : recent.rows.length === 0 ? (
+        ) : recent.entries.length === 0 ? (
           <p className="text-muted-foreground">
-            {recent.hidden
-              ? "None of your data has changed lately."
-              : "Nothing has changed yet. Changes show up here as they happen."}
+            None of your data has changed yet. Changes show up here as they
+            happen.
           </p>
         ) : (
-          <HistorySentences
-            rows={recent.rows}
-            limit={SHOWN_CHANGES}
-            more={recent.hasOlder}
-          />
+          <HistorySentences entries={recent.entries} limit={SHOWN_CHANGES} />
         )}
       </Section>
     </DocPage>
