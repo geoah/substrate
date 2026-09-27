@@ -127,7 +127,8 @@ data:
   #
   # 12, #711: an incremental history walk asks for `oldest=` a day behind the
   # stored cursor, so a message that takes its FIRST reply is read again with
-  # its new `reply_count` and its thread is walked.
+  # its new `reply_count` and its thread is walked. The re-read day stops at
+  # the backfill floor the first walk carried.
   version: 12
 ---
 # ---- the bundle document: the install unit --------------------------------
@@ -2764,8 +2765,8 @@ data:
       writer: connector
       displayName: History cursor
       description: >-
-        the newest message ts mirrored from this conversation. The next run
-        asks Slack for oldest=this less a day, so a recent message that took
+        the newest message ts mirrored. The next run reads from this less
+        a day, stopping at the backfill floor, so a recent message that took
         its first reply is read again with its reply count
     repliesTs:
       type: string
@@ -4858,9 +4859,16 @@ data:
         # A cold walk takes Slack's newest-first default and stops at the backfill
         # floor; an incremental one starts RESCAN_SECONDS behind the stored
         # cursor, so a recent parent that took its first reply comes back with
-        # its `reply_count` and the thread radar below queues it.
+        # its `reply_count` and the thread radar below queues it. The re-read
+        # day stops at the carried backfill floor, and never passes the cursor
+        # itself, so it never mirrors history the first walk left out.
         if work["oldest"]:
-            params["oldest"] = _ts_back(work["oldest"], RESCAN_SECONDS)
+            oldest = _ts_back(work["oldest"], RESCAN_SECONDS)
+            floor = resume.get("floor")
+            if floor is not None and float(floor) > float(oldest):
+                oldest = (work["oldest"] if float(floor) >= float(work["oldest"])
+                          else "%.6f" % float(floor))
+            params["oldest"] = oldest
         if work.get("latest"):
             params["latest"] = work["latest"]
             params["inclusive"] = "false"
@@ -5607,9 +5615,9 @@ data:
 # It spends the same pasted user token the sync does, taken from the same
 # injected connector input, and sends it to the same pinned origin. It writes
 # no record: the message it posts reaches the mirror only when the sync reads
-# it back (decision record 0125). A first reply in a thread that had no
-# replies is never read back, because the sync watches only threads it saw
-# with replies (issue #711).
+# it back (decision record 0125). The next sync reads a first reply in a
+# thread that had no replies when its parent is within a day of the
+# conversation's newest message, and misses it otherwise.
 kind: substrate.reamde.dev/core/function
 metadata:
   id: providers.substrate.reamde.dev/slack/postmessage

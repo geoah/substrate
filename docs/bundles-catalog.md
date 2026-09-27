@@ -1184,7 +1184,8 @@ what says a walk ran out of work, so a bounded drain is still a first sync.
 Slack has no workspace-wide change feed, so the history cursor is per
 conversation, on a `conversationsync` row that cascades from the
 conversation. It holds `latestTs` (the newest message ts mirrored; the next
-run asks `conversations.history` for `oldest=` that value less a day),
+run asks `conversations.history` for `oldest=` that value less a day, and
+the re-read day stops at the backfill floor),
 `repliesTs` (the newest reply ts from any thread there),
 `threadWatch` (the ts of every thread parent the conversation has shown,
 newest first, capped at 200), `membersSyncedAt` (rosters are walked at most
@@ -1255,10 +1256,10 @@ needs Slack's `chat:write` user scope; without it Slack answers
 `missing_scope`, and every refusal (`not_in_channel`, `channel_not_found`)
 fails the call with Slack's own error code. It writes no record: the message
 reaches the `message` mirror only when the sync reads it back. A top-level
-post is read on the next sync. A reply is read only if the sync already
-watches its thread, which it does for a parent it saw with replies; a first
-reply to a message that had none is never read
-([issue #711](https://github.com/geoah/substrate/issues/711)).
+post is read on the next sync. A reply is read when the sync already
+watches its thread, which it does for a parent it saw with replies. The next
+sync reads a first reply when its parent is within a day of the
+conversation's newest message, and misses it otherwise.
 Redirects are refused rather than followed, so the origin pin holds for the
 one request made.
 
