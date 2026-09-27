@@ -489,6 +489,34 @@ describe("ChangeRequestDetailPage", () => {
     expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull()
   })
 
+  it("puts the raw actor ids after the sentences, never inside them", async () => {
+    serve(
+      request({
+        ...patchRequest,
+        properties: {
+          ...patchRequest.properties,
+          decision: "rejected",
+          decidedAt: "2026-08-14T01:00:00Z",
+        },
+        propertyMeta: {
+          diff: {
+            manager: "learner.substrate",
+            updatedAt: "2026-08-14T00:00:00Z",
+          },
+          decidedAt: { manager: "console", updatedAt: "2026-08-14T01:00:00Z" },
+        },
+      }),
+      { target }
+    )
+    renderPage(<ChangeRequestDetailPage />, true)
+    const sentence = await screen.findByText(/Nothing was changed/)
+    expect(sentence.textContent).toContain("by You")
+    expect(sentence.textContent).not.toContain("console")
+    expect(
+      screen.getAllByRole("button", { name: "Copy the actor id" }).length
+    ).toBeGreaterThanOrEqual(2)
+  })
+
   it("refuses to guess at an op it does not know", async () => {
     serve(request({ properties: { op: "merge" } }))
     renderPage(<ChangeRequestDetailPage />)

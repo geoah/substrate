@@ -160,7 +160,10 @@ export function ReviewComparison({
                   />
                   {technical && row.manager && !row.unchanged && (
                     <span className="mt-1 flex items-center gap-1.5 text-[12px] text-faint">
-                      set by <ActorRef actor={row.manager} />
+                      set by <ActorRef actor={row.manager} inlineId={false} />
+                      <span className="font-mono text-[11.5px] [overflow-wrap:anywhere]">
+                        {row.manager}
+                      </span>
                     </span>
                   )}
                 </span>

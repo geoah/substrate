@@ -35,6 +35,7 @@ import {
   SuggestedAndApplied,
 } from "@/components/change-request-review"
 import { ActorRef } from "@/components/identity/actor-ref"
+import { CopyButton } from "@/components/identity/copy-button"
 import { IdText } from "@/components/identity/id-text"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { PageHeader } from "@/components/identity/page-header"
@@ -171,8 +172,27 @@ function Heading({
  * the proposal. */
 function Suggester({ agent, actor }: { agent?: string; actor?: string }) {
   if (agent) return <AgentRef id={agent} link />
-  if (actor) return <ActorRef actor={actor} />
+  if (actor) return <ActorRef actor={actor} inlineId={false} />
   return null
+}
+
+/** The raw actor ids a sentence named, on the faint technical line after
+ * it, each with a copy button, the way History places them. */
+function ActorIds({ ids }: { ids: Array<string | undefined> }) {
+  const shown = [...new Set(ids.filter((id): id is string => Boolean(id)))]
+  if (shown.length === 0) return null
+  return (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px] text-faint">
+      {shown.map((id) => (
+        <span key={id} className="inline-flex min-w-0 items-center gap-0.5">
+          <span className="font-mono text-[11.5px] [overflow-wrap:anywhere]">
+            {id}
+          </span>
+          <CopyButton value={id} label="Copy the actor id" />
+        </span>
+      ))}
+    </span>
+  )
 }
 
 // ── the comparison ──────────────────────────────────────────────────────────
@@ -385,7 +405,13 @@ export function ChangeRequestDetailPage() {
             )}
           </>
         }
-      />
+      >
+        {technical && (agent || proposer) && (
+          <div className="mt-1">
+            <ActorIds ids={[agent ? agentActor(agent) : proposer]} />
+          </div>
+        )}
+      </PageHeader>
 
       {rationale && (
         <p className="mt-5 max-w-[68ch] border-l-2 pl-3.5 text-[14px] [overflow-wrap:anywhere]">
@@ -498,7 +524,7 @@ export function ChangeRequestDetailPage() {
               )}
               {decider && (
                 <span className="inline-flex items-center gap-1.5">
-                  &nbsp;by <ActorRef actor={decider} />
+                  &nbsp;by <ActorRef actor={decider} inlineId={false} />
                 </span>
               )}
               {decision === "accepted" && applied && " with your edits"}.{" "}
@@ -508,6 +534,11 @@ export function ChangeRequestDetailPage() {
                   : "What is shown is what was suggested; open the record to see where it stands now."
                 : "Nothing was changed."}
             </p>
+            {technical && decider && (
+              <div className="-mt-4 mb-5">
+                <ActorIds ids={[decider]} />
+              </div>
+            )}
             {note && (
               <p className="mb-5 text-[13px] text-muted-foreground">
                 Note: {note}
