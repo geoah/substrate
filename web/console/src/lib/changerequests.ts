@@ -499,7 +499,7 @@ export function decisionPatch(
     properties: { decision: verdict },
     ifVersion: version,
   }
-  // The owner's own values ride the ACCEPT alone (decision 0112): the engine
+  // The owner's own values ride the ACCEPT alone (decision 0115): the engine
   // refuses an adjustment on any other write.
   if (adjustedDiff && verdict === "accepted") {
     patch.properties.adjustedDiff = adjustedDiff
@@ -511,7 +511,7 @@ export function decisionPatch(
 // ── the owner's adjustment ──────────────────────────────────────────────────
 
 /** The values the owner applied instead of the proposal's, where they
- * adjusted it (decision 0112): `adjustedDiff` replaces `diff` whole, so a
+ * adjusted it (decision 0115): `adjustedDiff` replaces `diff` whole, so a
  * property it leaves out was not applied. Undefined when the request was
  * applied, or is pending, as proposed. */
 export function adjustedProperties(

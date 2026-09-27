@@ -29,7 +29,7 @@ POST   /api/v1/records                            # create; the body names `kind
 GET    /api/v1/{authority}/{package}/{kind}/{id}
 PUT    /api/v1/{authority}/{package}/{kind}/{id}  # upsert at the given id
 PATCH  /api/v1/{authority}/{package}/{kind}/{id}  # patch, including state transitions
-DELETE /api/v1/{authority}/{package}/{kind}/{id}  # soft delete; ?ifVersion= guards it
+DELETE /api/v1/{authority}/{package}/{kind}/{id}  # soft delete; ?ifVersion= guards it, ?purge=true collects it now
 ```
 
 There is no per-kind list route: `/api/v1/{authority}/{package}/{kind}` names
@@ -306,6 +306,36 @@ Ids are stable while a record exists; they are not promised unique across
 time, so a writer that composes an id from a provider's key may delete and
 recreate at will.
 
+`DELETE ?purge=true` runs that purge in the delete itself, so a writer can
+start a record over: the tombstone lands if the record was live, what it owns
+through `onDelete: cascade` is tombstoned for the sweep, the row is
+hard-deleted, and the changelog records a `gc` entry with reason `purged`.
+The next `put` at the id creates a fresh record, and a mapping source
+resolves its subject again through the probes when that `put` leaves the
+subject slot out, which is how one identity is re-resolved after a mapping's
+probes improve. A `put` that names the slot keeps the subject it names, so
+put back the old `properties` without it. The old subject is not deleted or
+re-pointed. On a kind a mapping points at, that `put` is refused like any
+client-supplied create id ([idempotency](#idempotency-and-retries)), so a
+purged subject comes back through `POST` with a new id. `purge` takes `true`
+or `1`, and `false` or `0` is a plain delete; it combines with `ifVersion`.
+A retried purge answers `404 not found`, because the record no longer exists.
+A record a finalizer holds answers `409 conflict` and nothing changes, the
+tombstone included: delete it without `purge`, wait for the finalizers to
+release, then purge. A purge through a merge loser's former id answers `409
+conflict` naming the canonical id, because the former id resolves to the
+winner. A declaration record answers `422 validation`: it leaves through
+admission
+([decision record 0122](decisions/0122-a-delete-may-purge-so-a-put-starts-the-record-over.md)).
+Purging an account runs its whole `onDelete: cascade` inside the request,
+under the repository's write lock, and the mirrors it owns are only
+tombstoned: a sync within the sweep window restores them with their old
+properties and subjects, so purge those mirrors first when they must start
+over too. `purge` is a REST and `substratectl` option only: an agent's
+`write` tool and a function's `delete` effect always delete plainly, because
+a purge cannot be undone. It differs from the bundle lifecycle's `purge`
+([bundles](bundles.md)), which tombstones a bundle's records for the sweep.
+
 A `patch` onto a tombstone is refused `404 not found` and changes nothing:
 a patch edits a record that exists, and a tombstone is gone to every list.
 The one patch a tombstone takes releases finalizers (`removeFinalizers` and
@@ -361,7 +391,11 @@ mutations under its version precondition (`ifVersion` on `put`, `patch`,
 compare-and-set: the second attempt sees the version it already moved and fails
 `conflict`. A blob `PUT` is content addressed by its digest. The trigger
 delivery path carries its own idempotency key, so a redelivered change applies
-once.
+once. The exception is a function body that runs an agent: the agent commits
+its writes as it runs, so the delivery claims itself when the agent opens its
+thread. A delivery that fails after that parks instead of retrying, one a crash
+interrupted stays listed in flight, and a retry of either by hand runs the
+agent again ([running an agent](functions.md#running-an-agent)).
 
 A retried write is NOT safe on its own when the server assigns the identity or
 the effect. `POST /api/v1/records` mints a random id, so a client that
@@ -407,15 +441,18 @@ The contract, per key:
   its key lasts its own deadline plus a minute of slack (a function call adds
   two minutes for provisioning a PEP 723 body before its timeout starts); a
   claim a dead server left behind is cleared when the repository next opens.
-- A failed attempt stores nothing. A `422`, a `500 function_failed` or a
+- A failed attempt stores no outcome. A `422`, a `500 function_failed` or a
   connection lost before the commit leaves no key behind, and the retry runs
-  the operation again.
+  the operation again. The exceptions are an agent call and a function call
+  whose body ran an agent, in the next item.
 - An agent call binds its key to the thread the moment the thread opens,
   because the loop's tool effects commit one by one before the run settles.
   A repeat after the first attempt failed mid-run, or after the server died
   before settling, is `409 conflict` naming the thread: the client reads the
   thread (its messages record every effect) and runs again under a new key.
-  One key never opens two threads.
+  One key never opens two threads. A function call whose body runs an agent
+  binds its key to the first thread the same way, so a repeat after the body
+  failed is `409 conflict` naming that thread.
 - A stored outcome is capped at 1 MiB. A larger one is not kept: the effect
   still ran once, and the repeat is `409 conflict` saying the outcome was not
   retained. For a create, merge or split the message names the record the
@@ -497,8 +534,8 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
 - `deleted` picks the tombstones: absent or `false` lists only live records,
   `true` lists only soft-deleted ones.
 - `orphaned` picks the **orphaned mapping targets**: `true` lists only the
-  records the engine has marked — a kind something maps onto, no live source
-  left, and nothing above the machine tier holding a property — and `false`
+  records the engine has marked — a kind something maps onto, no live covered
+  source left, and nothing above the machine tier holding a property — and `false`
   only the unmarked. Absent is every record. It is derived state, not a
   property, so a re-linked record leaves the set on its next write
   ([the orphan mark](projection.md#when-the-last-source-goes-the-orphan-mark)).
@@ -592,6 +629,10 @@ error rather than a short page; a series whose rule the expander cannot walk
 and direction it was minted under. One bound alone (`at` with only `gte`) is
 an ordinary list: the rows are filtered as ever and nothing is computed.
 
+A function body's `host.records.list` and an agent's `query` tool answer the
+same window read for the same filter
+([decision 0111](decisions/0111-a-function-and-an-agent-list-read-is-the-window-read.md)).
+
 ## Pagination
 
 Lists page forward with a keyset cursor carried behind one opaque token. You
@@ -656,7 +697,7 @@ on the ranked read, which has no keyset at all.
 
 `count=1` asks the list for the size of the whole set its filter admits, and
 the page answers it as `count` beside the rows
-([decision 0107](decisions/0107-the-records-list-counts-its-filtered-set-on-request.md)):
+([decision 0134](decisions/0134-the-records-list-counts-its-filtered-set-on-request.md)):
 
 ```http
 GET /api/v1/records?filter={"kinds":["samples.substrate.reamde.dev/tasks/task"],
@@ -868,7 +909,7 @@ It has two arms:
 the query's words, every `-exclusion` still applied, so a query with one word
 no record holds still finds the records holding the others. The records
 holding every word rank first. Within that, the arm ranks by
-[BM25F](decisions/0115-search-ranks-by-bm25f-and-a-kinds-purpose.md): each band is a
+[BM25F](decisions/0136-search-ranks-by-bm25f-and-a-kinds-purpose.md): each band is a
 field with its own weight (title 3, short strings 1.5, prose 1) and its own
 length normalization, a word held by few records weighs more than one held by
 many, and repetition saturates, so a title match outranks a long text that

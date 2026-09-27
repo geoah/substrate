@@ -34,7 +34,9 @@ built and `fixtures/<provider>`. The runner:
    `e2e.json` says `"auth": "token"`;
 6. waits for the on-connect trigger's runs to settle, then for the account's
    own `lastSyncedAt`;
-7. runs `providers/<provider>/scenario.py`, which holds the assertions;
+7. runs `providers/<provider>/scenario.py`, which holds the assertions,
+   including the calls to the provider's write functions: the mock logs
+   each request's body, so a scenario checks what a write sent;
 8. prints what the run touched: recordings hit, recordings missed, mirror rows
    by kind, trigger runs.
 
@@ -54,6 +56,7 @@ e2e_test.go                     the cases and the provider table
 harness_test.go                 the server, the door, the toolchain
 runner/e2e.py                   the runner: one provider, start to finish
 runner/mockserver.py            the file-lookup mock over a recordings directory
+runner/writecall.py             calls a write function and reads what it sent the mock
 providers/google/drive_requests.py  the Drive request constants google's scenario reads
 providers/<p>/e2e.json          what the runner cannot guess: hosts, triggers, waits
 providers/<p>/scenario.py       the provider's own assertions

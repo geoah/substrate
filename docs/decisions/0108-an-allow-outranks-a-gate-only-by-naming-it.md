@@ -4,7 +4,7 @@ date: 2026-09-26
 decision-makers: George Antoniadis
 ---
 
-# 0109. An allow outranks a gate only by naming it
+# 0108. An allow outranks a gate only by naming it
 
 ## Context and Problem Statement
 

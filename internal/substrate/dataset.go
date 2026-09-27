@@ -64,8 +64,8 @@ type Dataset interface {
 	List(ctx context.Context, q Query) (*Page, error)
 	// Window is the engine's half of a window read (occurrence.go): the rows
 	// after a key, every candidate series and the overrides claiming slots in
-	// the window, read on one snapshot. The API layer expands and merges; the
-	// engine holds no expander.
+	// the window, read on one snapshot. internal/window expands and merges;
+	// the engine holds no expander.
 	Window(ctx context.Context, q WindowQuery) (*WindowPage, error)
 	Search(ctx context.Context, in SearchInput) (SearchResult, error)
 	Changes(ctx context.Context, after int64, f ChangeFilter, limit int) ([]Change, error)
@@ -153,7 +153,9 @@ type Dataset interface {
 	// row an operator has judged stale, whose callable or record may be long
 	// gone, and which a retry therefore cannot clear.
 	ForgetTriggerFailure(ctx context.Context, id string, failureID int64) error
-	CallFunction(ctx context.Context, name string, args any) (any, int, error)
+	// CallFunction takes the caller's actor for the call run a networked
+	// function writes; the function's effects carry the function's own.
+	CallFunction(ctx context.Context, caller Actor, name string, args any) (any, int, error)
 	// ProcessTriggers is the dispatcher pass the service loop drives: each
 	// enabled schedule trigger fires its due occurrences, then each enabled
 	// record trigger drains its changelog backlog, every trigger for at most a

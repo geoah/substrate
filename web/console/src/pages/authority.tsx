@@ -315,7 +315,7 @@ export function AuthorityPage() {
 }
 
 /** One package, read as the app it is: its collections, the tools it ships
- * and, where an agent declared it (decision 0111), the agent that made it. A
+ * and, where an agent declared it (decision 0109), the agent that made it. A
  * package is the group a declaration is versioned and quarantined in
  * (decision 0047); an agent's package is what a person asked it to build. */
 export function PackagePage() {

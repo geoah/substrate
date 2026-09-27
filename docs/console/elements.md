@@ -145,7 +145,7 @@ into substrate".
 
 `useKindOrigin(kind)` (`hooks/use-kind-origin.ts`) is a collection's origin,
 reading the package rows so an agent's app reads "Made by _agent_"
-(`lib/packages.ts`, decision 0111).
+(`lib/packages.ts`, decision 0109).
 
 Used by tool cards and the tool page, Home's collection cards, a kind's hover
 card, All data's **Made by** column, the package page and the ownership chip.
@@ -461,7 +461,7 @@ leave a tool the agent holds without its grant is held back with the reason
 
 **Always allow this** on a suggested change a gate held: it confirms, saves
 one `allow` per door verb naming that gate in `overrides`
-([0109](../decisions/0109-an-allow-outranks-a-gate-only-by-naming-it.md)),
+([0108](../decisions/0108-an-allow-outranks-a-gate-only-by-naming-it.md)),
 then applies the suggestion (`request`, `rule`, `deleting`). `AllowRules`
 lists the rules it wrote for one agent, each with **Revoke**, which deletes
 them after a confirmation (`agent`, `rules`). The rules are read and worded

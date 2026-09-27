@@ -21,9 +21,10 @@ report `beta`, and `embeddings` is the other `alpha` entry. Read
 server version where an alpha break would cost you.
 
 An `agent` is a callable whose body is an **LLM loop**, run host-side. It has
-one reference and the same four ways in as a [function](functions.md): a
+one reference and the same ways in as a [function](functions.md): a
 trigger delivery (a `callable` whose `kind` is `substrate.reamde.dev/core/agent`), the
-call API, a sub-agent call, and chat. Its actor is
+call API, a sub-agent call, chat, and a function body that names it under
+`permissions.agents` ([running an agent](functions.md#running-an-agent)). Its actor is
 `agent:<authority>:<package>:<name>`, its own machine hand, held apart from a
 function's so an agent and a function of one name in one package are two
 writers; its dispatch stamps the
@@ -197,12 +198,16 @@ entry could name only a function.
   otherwise `filter` (the whole [grammar](api.md#the-filter-grammar),
   `referencing` included), `orderBy`, `first`, `after` and `expand` list a
   page, which answers `{records, cursor, head, generation, included?,
-  matches?}` exactly as the route does. It requires `permissions.reads`, a
+  matches?}` exactly as the route does. A `filter` bounding `at` on both
+  ends is the [window read](api.md#the-window-read), computed occurrences
+  included. It requires `permissions.reads`, a
   load error otherwise, and every arm is held to that allowlist: a get outside
   it answers like an absent id, a kind outside it in `filter.kinds` or `kinds`
   is refused by name, an expanded referent outside it is left out, and a list
   that names no kinds lists the allowlist — expanded against the repository's
-  current kinds where the allowlist globs. List and search clamp to the
+  current kinds where the allowlist globs. A window read still folds in every
+  override that claims a slot, whatever its kind, so an override outside the
+  allowlist removes its slot (decision 0111). List and search clamp to the
   remaining row budget; a blown budget is a tool error the model sees.
 - **`substrate.reamde.dev/core/write`** is the direct write: one call is
   `{op, kind, id, input, ifVersion}`, where `op` is `put` (create or update,
@@ -298,7 +303,12 @@ moves the causal one, while a function sub-call inside a tool still rides it.
 declared emit intersected with the caller's effective emit, enforced against
 function-tool effects and `propose` alike. An empty-emit parent delegating to a
 write-capable child yields a child that writes nothing: no chain of children can
-ever write a kind its narrowest ancestor could not. Accepting a proposed
+ever write a kind its narrowest ancestor could not. The ceiling also rides a
+function tool: when a tool's body runs an agent with `host.agents.call`, that
+agent starts under the calling loop's effective emit, as a sub-agent does
+([0121](decisions/0121-a-function-body-runs-an-agent-under-permissions-agents.md)).
+A function run from a delivery or the call API sets no ceiling on the agents it
+runs. Accepting a proposed
 request is authorized as the transitive write too, so a function or agent that
 drives an accept must have the concrete written kind in its effective emit, or
 the accept refuses. An owner's acceptance stays unbounded.
@@ -344,7 +354,7 @@ data:
 
 **An allow outranks a gate only by naming it.** "This agent may do this
 without asking me" is an `allow` whose `overrides` names the gate it answers
-([0109](decisions/0109-an-allow-outranks-a-gate-only-by-naming-it.md)). Where
+([0108](decisions/0108-an-allow-outranks-a-gate-only-by-naming-it.md)). Where
 both match one write, that gate steps aside and the allow governs. A `refuse`
 still wins, and any other matching gate still holds the write. The write door
 refuses `overrides` on anything but an allow whose selector names exactly one

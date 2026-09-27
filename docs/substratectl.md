@@ -143,12 +143,18 @@ output applies back unchanged.
   input first: every mention of the one authority its declarations are
   written under becomes the one named, which is `import` (below) run
   client-side over files on disk. An input declaring under two authorities is
-  refused naming both.
+  refused naming both. `--hold-waiting-mappings` holds back each suggested
+  mapping whose source kind this repository does not have, applies the rest,
+  and prints one line per mapping held; apply the same files again once the
+  provider is installed ([vocabulary](vocabulary.md#how-the-vocabulary-reaches-a-repository)).
 - `patch <kind> <id>` edits in place: `--state status=done` for
   [transitions](data-model.md#validation-and-state-machines) (apply cannot
   move a state), `--prop` for properties, `--label` for labels, and `-p` for a
   raw JSON patch, where a null value deletes a key.
 - `delete <kind> <id>` tombstones; hard deletion waits on finalizers.
+  `--purge` collects the record now, so the next `apply` at the id is a fresh
+  record rather than a restore of the tombstone
+  ([api](api.md#the-five-mutations)); a record a finalizer holds refuses it.
 
 A pointer at another record is a property, so `apply` and `patch` write it like
 any other value: `--prop project=infra7` against a pinned declaration, or the

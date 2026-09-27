@@ -102,7 +102,7 @@ const ToAny = "any"
 // purged.
 const OnDeleteCascade = "cascade"
 
-// The three declared `purpose:` values (decision record 0106): why a kind
+// The three declared `purpose:` values (decision record 0133): why a kind
 // exists, which is what a client reads to decide what it lists. Nothing
 // server-side acts on the value, so a client that never reads it loses
 // nothing but a shorter list.
@@ -659,7 +659,7 @@ type Kind struct {
 	// sentence; a kind's gets two (maxKindDescription), still on one line.
 	Description string
 
-	// Label is the kind's declared display label (decision 0113), zero when
+	// Label is the kind's declared display label (decision 0117), zero when
 	// it declared none.
 	Label KindLabel
 
@@ -692,7 +692,7 @@ type Kind struct {
 	// an incompatible move.
 	MovedFrom string
 
-	// Purpose is the kind's declared `purpose:` (decision record 0106), empty
+	// Purpose is the kind's declared `purpose:` (decision record 0133), empty
 	// where the declaration says nothing. Read it through PurposeOrPrimary:
 	// the default is the reader's, never written into Definition, so the
 	// stored declaration stays exactly what its author wrote.

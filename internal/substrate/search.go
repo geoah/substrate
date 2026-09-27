@@ -15,7 +15,7 @@ type SearchInput struct {
 	Mode  SearchMode `json:"mode,omitempty"` // default hybrid
 	Kinds []string   `json:"kinds,omitempty"`
 	// Purposes narrows to the kinds declaring one of these purposes (decision
-	// records 0106 and 0115), intersected with Kinds where both are set.
+	// records 0133 and 0136), intersected with Kinds where both are set.
 	Purposes []string `json:"purposes,omitempty"`
 	K        int      `json:"k,omitempty"` // default 20
 }

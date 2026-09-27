@@ -4,7 +4,7 @@
  * the decision patch Apply and Dismiss send. The mock answers ONLY at those
  * paths, so a component that routed by anything else would render neither
  * side. A suggestion a gate held offers "Always allow this", which saves one
- * allow per verb naming that gate in `overrides` (decision 0109) and then
+ * allow per verb naming that gate in `overrides` (decision 0108) and then
  * applies the suggestion; one nothing held does not. A delete takes a second
  * press. */
 

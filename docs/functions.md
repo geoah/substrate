@@ -77,13 +77,15 @@ permissions:
     - samples.substrate.reamde.dev/tasks/task
   call:                            # which other functions its code may invoke
     - samples.substrate.reamde.dev/readinglist/setclass
+  agents:                          # which agents its code may run
+    - samples.substrate.reamde.dev/llm/substrateSummarizer
   network:                         # the hosts it may reach; any entry grants egress
     - api.example.com
   mutations:                       # the identity-changing operations: merge, split
     - merge
 ```
 
-One object holds all five, because a bare `emit:` beside `returns:` said
+One object holds all six, because a bare `emit:` beside `returns:` said
 nothing about being a permission. A document that still writes any of them at
 the top level (or nests them under the older `capabilities:` wrapper) is
 refused naming its place inside `permissions:`.
@@ -95,25 +97,29 @@ effect it staged would be refused. `permissions.reads.kinds` is the host-read
 allowlist and `permissions.reads.budgets` its budget (defaults 16 calls / 500
 rows, raised to at most 1000 calls / 10000 rows); a `reads:` block that declares
 no `kinds` is a load error. `permissions.call` is the host-call allowlist; every
-target must be a registered function. `permissions.network` is enforced as a
+target must be a registered function. `permissions.agents` is the same
+allowlist for agents: every target must be a registered agent, and an identity
+may sit on only one of the two lists ([running an agent](#running-an-agent)).
+`permissions.network` is enforced as a
 **binary** gate: a function declaring none is denied IPv4 and IPv6 sockets by the
 sandbox, while the host patterns themselves are still only documentation (see
 [the sandbox](#the-sandbox)). `permissions.mutations` gates the `merge` and
 `split` effects, which are refused without it. Every entry in `writes`,
-`reads.kinds` and `call` is a full reference, `<authority>/<package>/<name>`.
+`reads.kinds`, `call` and `agents` is a full reference, `<authority>/<package>/<name>`.
 The two KIND lists also take a glob — `*`, `<authority>/*` or
 `<authority>/<package>/*`, the spellings a trigger selector uses — which
 covers kinds the repository gains later, and never reaches
 `substrate.reamde.dev/core/token`, `/credential`, `/secret` or `/recoverykey`
 ([0080](decisions/0080-a-kind-grant-may-glob-and-a-glob-never-reaches-auth-material.md)).
-`call` admits no glob: it names functions, not kinds.
+`call` and `agents` admit no glob: they name callables, not kinds.
 
 The body's entrypoint is `main(input, host)`, and it returns
 `{effects, output}`. `input` names the `mode` that woke the body (`record`,
 `schedule`, `webhook`, `manual` or `call`) beside an `idempotencyKey`, a
 `causalDepth` and a `callDepth`, then carries that mode's payload: a delivery
 puts the envelope under `input["envelope"]`, while a direct call puts the
-caller's own JSON under **`input["args"]`**.
+caller's own JSON under **`input["args"]`**, and a schedule fire puts its
+trigger's `arguments` there too.
 
 ### Arguments and returns
 
@@ -159,7 +165,9 @@ An entry carries six keys and no others:
 - **`values`** is the admitted set, and belongs to `enum` alone: an enum
   without values is refused (it would be a string), and values on any other
   type are refused too. They are wire values a model echoes back verbatim, not
-  declared names, so they are not held to the camelCase rule.
+  declared names, so they are not held to the camelCase rule. A value outside
+  the set is refused like a mistyped one, naming the argument and the set:
+  `.period: "wekly" is not one of the allowed values: daily, weekly, monthly`.
 
 The engine **compiles** the list into the object schema every consumer reads:
 `{type: object, properties: …}`, carrying `required` only when something is
@@ -177,8 +185,11 @@ prose: the model sees the closed set.
 
 Both sides are checked on every path that carries arguments: the
 [call API](#driving-triggers), a [host call](#host-call), and an agent's function
-tool. A trigger delivery checks neither, because its payload is the envelope
-below rather than `args`.
+tool. A schedule trigger's `arguments` are checked against the input side
+when the trigger is written and again at each fire ([Triggers](#triggers)). A
+record or webhook delivery checks neither side, because its payload is the
+envelope below rather than `args`, and no delivery checks `returns:`, because a
+delivery applies the effects and discards the output.
 
 ## Host functions
 
@@ -534,6 +545,7 @@ host.records.get(kind, id)                        # the record, or None
 host.records.list(kinds, where=None, first=None, after=None, order=None)
 host.records.search(q, kinds, k=None, mode=None)  # hits, with .pending beside them
 host.functions.call(function, input=None)         # permissions.call gated
+host.agents.call(agent, input)                    # permissions.agents gated
 host.effects.put(kind, id, properties=None, if_absent=False, if_version=<int>,
                  on_conflict=None)                # None | "park" | "yield"
 host.effects.patch(kind, id, properties=None, if_version=<int>, on_conflict=None)
@@ -573,6 +585,26 @@ route](api.md#the-filter-grammar) takes: the compact string (`"at"`,
 `{"property": …, "desc": …}`. One parser reads both, so a body may sort the
 way a URL does.
 
+A `list` whose `where` bounds `at` on both ends is the records route's
+[window read](api.md#the-window-read): the page carries the plain events and
+overrides in the window and, merged by slot, the occurrences computed from
+every series among the kinds read, with overrides and `exdates` folded in and
+`computed: true` on each ([decision 0111](decisions/0111-a-function-and-an-agent-list-read-is-the-window-read.md)).
+Series rows are not on the page; read them with a one-sided `at` bound or by
+`ids`. A body never expands a recurrence rule itself. The window read's rules
+hold: `order` is `at` alone and defaults to `at` ascending, `offset` is
+refused, and pages follow `after`. Bounds take the forms a plain list takes
+(RFC 3339, zone-less or date-only, the last two as UTC). A computed row is
+read-only: a patch at its id fails `not found`, and a put at it creates an
+override where the kind binds `override`.
+
+```python
+page = host.records.list(["providers.substrate.reamde.dev/google/calendarseries"],
+                         where={"at": {"gte": "2026-09-24T00:00:00Z",
+                                       "lt": "2026-09-25T00:00:00Z"}})
+# page["records"]: [{"id": "abc_20260924T130000Z", "computed": True, ...}, ...]
+```
+
 **Reads are scoped and budgeted.** Reads see committed state, never this
 delivery's own staged effects, so a local overlay can never lie. They are held
 to the `permissions.reads` grant: with no `reads:` block the allowlist is
@@ -580,7 +612,9 @@ empty, so every `list` and `search` is refused and every `get` answers absent.
 A forbidden kind answers exactly like an absent id, same nil shape and same
 budget charge, so a disallowed `get` is never an existence or kind oracle.
 Calls are charged before they run, `first` and `k` clamp to the remaining row
-budget, and returned rows charge on top.
+budget, and returned rows charge on top. One exception: a window read folds in
+every override that claims a slot, whatever its kind, so an override of a kind
+outside the allowlist still removes its slot from the page (decision 0111).
 
 **Writes are held to the declaration.** The engine stays authoritative for the
 emit ceiling and kind admission, on a staged effect exactly as on a returned
@@ -699,7 +733,7 @@ the same 409 a stale `ifVersion` has always produced.
 
 `host.functions.call(function, input)` runs another function to completion
 inside the caller's invocation. The runner refuses a target outside the
-caller's `permissions.call` grant and charges the call budget before executing; the
+caller's `permissions.call` and `permissions.agents` grants and charges the call budget before executing; the
 engine refuses a target already on the call stack (direct and mutual recursion
 both) and one that would exceed the causal-depth cap. The callee gets its own
 fresh read budgets and its own timeout (bounded by the caller's remaining
@@ -709,6 +743,64 @@ envelope, and land in the caller's delivery transaction, sub-call effects first
 in call order, all under the delivery's actor. One delivery is one transaction,
 so a caller that fails after a sub-call rolls the sub-call's writes back with
 it.
+
+### Running an agent
+
+`host.agents.call(agent, input)` runs an agent the body names under
+`permissions.agents` to settlement and returns
+`{"reply": ..., "thread": ..., "status": ...}`
+([0121](decisions/0121-a-function-body-runs-an-agent-under-permissions-agents.md)).
+`input` becomes the agent's first user message: a string as written, anything
+else as JSON. An input that carries a secret injected into the body (its
+bundle config or an account token) verbatim is refused before the agent runs,
+because the message commits to the changelog and goes to the LLM provider.
+The gates are a function call's: the runner checks the grant and
+charges the call budget, and the engine refuses an agent whose bundle is
+disabled, an agent already on the call stack, and a call past the causal-depth
+cap. The call stack carries on into the agent, so a tool of that agent that
+names a function already running is refused as recursion.
+
+The agent's writes do not wait for the caller. The loop commits its thread,
+its messages and its tools' effects as it runs, under the agent's own actor and
+`permissions.writes`, so a caller that fails afterwards leaves them in place.
+When the body runs as an agent's function tool, the calling agent's effective
+emit caps those writes, as it caps a sub-agent's
+([emit ceiling](agents.md#sub-agents-budgets-and-the-emit-ceiling)): an agent
+that may not write a kind cannot reach it through a tool's agent.
+They are not counted in the caller's effects: a body that only runs an agent
+records `ran = 0` on its run and answers `effects: 0` on the call API. So that
+a retry does not repeat them, a trigger delivery claims itself in the
+transaction that opens the thread, as an agent trigger does before its loop:
+the cursor or fire state moves there, and the delivery is listed under the
+trigger's failures as in flight until the body settles. A second dispatch of
+the change finds the claim and runs no agent, and a crash leaves the claim to
+retry by hand. A guarded write that yields its version race after the thread
+opened settles as a skip, and the skip retires the claim. A delivery that fails
+after the thread opened parks on that attempt, also when the dispatcher is
+stopping. A call under an
+`Idempotency-Key` binds the key to the first thread, so a repeat is `409
+conflict` naming it ([idempotency](api.md#idempotency-and-retries)). A retry of
+the parked delivery by hand runs the agent again. On a record delivery every row
+the agent writes names the delivery's change as its cause, and the thread's
+first message is attributed to the calling function.
+
+A trigger never delivers a function the writes of the agents it grants, as it
+never delivers a function its own writes. Without that, a function watching a
+kind its agent writes would wake on each row the agent wrote, until the
+causal-depth cap stopped the chain. The cost is that the function also misses
+those agents' writes from their other runs. The agent runs
+inside the caller's `timeout`: its deadline is the earlier of its own
+`budgets.deadlineSeconds` and the caller's, and when that passes it settles its
+thread and the caller fails its timeout. A function's timeout is
+at most 60s, so a body that runs an agent declares one that covers the
+agent's work.
+
+```python
+def main(input, host):
+    out = host.agents.call("samples.substrate.reamde.dev/llm/substrateSummarizer",
+                           {"page": input["args"]["id"]})
+    return {"output": {"summary": out["reply"], "status": out["status"]}}
+```
 
 ## Triggers
 
@@ -749,6 +841,17 @@ data:
   occurrences (the server down, the trigger disabled, a repository restored
   to an older fire state) catches up at most ten per dispatcher pass, and none
   is coalesced away.
+  The trigger's optional `arguments` property is a map of named arguments
+  each fire, and each retry of a parked one, hands a function as
+  `input["args"]`, so one function serves several schedules. The map is
+  checked against the function's declared `arguments:` when the trigger is
+  written and again at every fire; a fire the live declaration refuses parks
+  after one attempt. `arguments` is refused on a record or webhook source,
+  on an agent, and on a function that declares no `arguments:`. Every write
+  to the trigger re-checks the whole record, so once the function narrows, a
+  patch that only sets `enabled: false` is refused too: the patch must fix or
+  drop `arguments`. A manual run (`POST .../run`) passes no `arguments`
+  ([decision 0110](decisions/0110-a-schedule-trigger-passes-declared-arguments-to-its-function.md)).
 - A **`webhook`** arm is a public endpoint: `POST
   /webhooks/{authority}/{trigger}`, where `authority` is the repository's
   authority and `trigger` the record's id,
@@ -807,6 +910,19 @@ runs. The cursor still
 moves only past rows that were delivered or matched nothing. A `wake` runs
 without the budget and drains to head.
 
+**A record trigger reads only the kinds it names.** The dispatcher's
+changelog read asks Postgres for the entries of the source's kinds past the
+cursor, and moves the cursor over every other entry in one step
+([#637](https://github.com/geoah/substrate/issues/637),
+[decision 0123](decisions/0123-a-trigger-read-names-its-kinds.md)). Each
+batch reads each named kind in seq order from the cursor through the
+`(repository, kind, seq)` index and stops at 200 entries, so a batch reads
+at most 200 entries per kind and sorts nothing, however dense the kind is.
+A drain, and a `replay` from seq 0, therefore read the kinds' entries and
+not the whole changelog. A package or authority glob matches against the
+kinds the changelog holds at each read, so a kind whose first entry lands
+mid-drain is read too. A `*` source still reads every entry.
+
 The `when:` guard is the one place [CEL](https://cel.dev) survives. It is a
 boolean over three read-only bindings, `change`, `record` (null after a
 delete), and `repository`. There is deliberately no clock and no way to fetch
@@ -830,11 +946,14 @@ is the function body.
   it, and a trigger never delivers writes carrying its own callable's actor.
   That actor is `function:<authority>:<package>:<name>` (an agent's is
   `agent:<authority>:<package>:<name>`), so two packages declaring a callable of
-  one name are two actors and neither reads as the other's echo. A causal chain deeper
+  one name are two actors and neither reads as the other's echo. A function
+  that grants agents under `permissions.agents` is not delivered those
+  agents' writes either ([running an agent](#running-an-agent)). A causal chain deeper
   than the engine's cap (16) parks instead of spinning.
 - **No wedging.** A delivery that keeps failing is parked (3 attempts with
-  backoff; a deterministic trip like an allowlist or budget violation, or an
-  installation retired by a redeploy mid-delivery, parks on the first) and the trigger's cursor moves on. A false `when` is a skip, not a
+  backoff; a deterministic trip like an allowlist or budget violation, an
+  installation retired by a redeploy mid-delivery, or a failure after the body
+  ran an agent, parks on the first) and the trigger's cursor moves on. A false `when` is a skip, not a
   failure, and so is a guarded write that yielded its version race — a race two
   triggers are designed to have is not an operator's problem
   ([two invocations over one record](#two-invocations-over-one-record)).
@@ -909,9 +1028,29 @@ applied-effects summary. The callable lands twice from the one value —
 `callableRef`, a reference at the function or agent record, which is what
 `filter.referencing` follows to read every run of one callable, and
 `callable`, the deprecated bare id of that record. Parked runs are kept; the
-newest twenty non-parked runs per trigger stay and older ones tombstone. The
-direct invocations — a manual run, a parked retry, a host call, the call API —
-mint nothing.
+newest twenty non-parked runs per trigger stay and older ones tombstone. A
+manual run, a parked retry and a host call mint nothing.
+
+**A direct call of a networked function writes a run row.** A call through
+the call API of a function that declares `permissions.network`, or whose
+`permissions.call` grant reaches one that does at any depth, writes one
+`triggerrun` row with mode `call` and no `trigger`, because what such a body
+sends out (a message, a review) leaves nothing else in the repository
+([decision 0119](decisions/0119-a-direct-call-of-a-networked-function-writes-a-run-row.md)).
+The row names the callable, the `caller` (the request's actor: `api`,
+`console`, `substratectl`), the `principal` (the id of the token that made the
+call), `startedAt` and `finishedAt`, the status, the applied-effects summary,
+`outputBytes`, and `output` itself when it encodes to at most 4096 bytes of
+JSON and carries no NUL (U+0000), which no row stores. A call that settles writes it in the transaction that commits its
+effects and its idempotency key, as `ok`. A call whose body ran and failed
+(a raise, an output outside `returns:`, a commit that failed) writes it alone,
+as `failed`, with the error in `reason`; so does a runner that failed before
+the body started (provisioning, spawn). A call refused before its body runs
+(an unknown function, input outside `arguments:`, a disabled bundle) and the
+replay of a stored `Idempotency-Key` outcome write nothing. Call runs are
+never pruned. A function with no network grant still writes no row: its
+effects in the changelog are its whole trace, attributed to the token behind
+the call.
 
 `substratectl function call <name> --input <json>` invokes one function directly,
 applies its effects under the function's actor, and prints the effect count

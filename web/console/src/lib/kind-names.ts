@@ -1,5 +1,5 @@
 /** A kind's DISPLAY name — "Calendar event series", "People", "Channels".
- * The kind's declared `label:` wins where it declares one (decision 0113);
+ * The kind's declared `label:` wins where it declares one (decision 0117);
  * otherwise the name is built from the compound lowercase word its
  * declaration names it by (`names.singular`: `calendareventseries`,
  * `person`).

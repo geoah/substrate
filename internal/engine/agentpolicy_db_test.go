@@ -388,7 +388,7 @@ func TestPolicyRefusesAndComposesMostRestrictive(t *testing.T) {
 	}
 }
 
-// AN ALLOW THAT NAMES A GATE OUTRANKS IT (decision record 0109), for the
+// AN ALLOW THAT NAMES A GATE OUTRANKS IT (decision record 0108), for the
 // one agent, kind and verb it names and nothing else. Any other matching gate
 // still holds the write, a refuse still wins, and disabling the allow brings
 // the gate back.

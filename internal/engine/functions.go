@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/geoah/substrate/internal/metrics"
@@ -272,14 +273,11 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadli
 	}
 	ran := 0
 	for {
-		changes, err := ds.changesPast(ctx, cursor)
+		changes, scanned, err := ds.changesPast(ctx, tr, cursor)
 		if err != nil {
 			return ran, err
 		}
-		if len(changes) == 0 {
-			return ran, nil
-		}
-		matched := matchChanges(tr, changes)
+		matched := matchChanges(tr, tr.selfActors(ds.registry()), changes)
 		if tr.Record.Coalesce {
 			matched = coalesceChanges(matched)
 		}
@@ -302,20 +300,20 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadli
 			}
 			cursor = next
 		}
-		// Trailing rows the source skipped move the SCAN position, the one
-		// cursor motion outside the ledger (delivery.go): a crash or a
-		// restore before this line only re-reads rows that do not match.
-		last := changes[len(changes)-1].Seq
-		if last > cursor {
-			if err := ds.advanceCursor(ctx, tr, cursor, last); err != nil {
+		// Trailing rows the source skipped, the ones the read filtered out
+		// by kind included, move the SCAN position, the one cursor motion
+		// outside the ledger (delivery.go): a crash or a restore before this
+		// line only re-reads rows that do not match.
+		if scanned > cursor {
+			if err := ds.advanceCursor(ctx, tr, cursor, scanned); err != nil {
 				if errors.Is(err, errCursorMoved) {
 					return ran, nil
 				}
 				return ran, err
 			}
-			cursor = last
+			cursor = scanned
 		}
-		if deadline.spent() {
+		if len(changes) == 0 || deadline.spent() {
 			return ran, nil
 		}
 		// Loop until a read comes back empty rather than on a short batch:
@@ -331,12 +329,12 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadli
 // writes a run row and a `*` subscription over runs would feed itself, and by
 // the delivery entry, which is the ledger's own bookkeeping (delivery.go).
 // (An agent's thread/message rows carry the agent's actor, so the same
-// exclusion keeps an agent off its own transcript.)
-func matchChanges(tr *trigger, changes []substrate.Change) []substrate.Change {
-	self := substrate.Actor(tr.callableActor())
+// exclusion keeps an agent off its own transcript.) A function's self also
+// covers the agents it may run (trigger.selfActors).
+func matchChanges(tr *trigger, self map[substrate.Actor]bool, changes []substrate.Change) []substrate.Change {
 	var out []substrate.Change
 	for _, ch := range changes {
-		if ch.Actor == self || ch.Kind == typeTriggerRun || ch.Op == substrate.OpDelivery {
+		if self[ch.Actor] || ch.Kind == typeTriggerRun || ch.Op == substrate.OpDelivery {
 			continue
 		}
 		if !tr.Record.matches(ch.Kind, runner.OpOf(ch)) {
@@ -398,6 +396,10 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 	// The claim an agent attempt takes is held through every attempt and
 	// the park, so a retry by hand cannot start a second loop between them.
 	defer settle.release()
+	// An agent the body runs records its thread here, so a failed attempt
+	// after it parks rather than running the agent again (agentThreads).
+	threads := &agentThreads{settle: settle}
+	ctx = withCallOrigin(ctx, callOrigin{threads: threads})
 	for attempt := range triggerAttempts {
 		settle.attempt = attempt + 1
 		if attempt > 0 {
@@ -417,6 +419,8 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 			return 0, from, rerr
 		}
 		res, err := ds.deliver(ctx, tr, ch, from, depth, resume, settle)
+		cause := err
+		err = agentRetryGate(threads, err)
 		if err == nil {
 			if res.skipped {
 				// The guard said no: a skip is a settled attempt — record it
@@ -431,6 +435,20 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 		if errors.Is(err, errCursorMoved) || errors.Is(err, errCallableGone) {
 			return 0, from, err
 		}
+		if declinedDelivery(err) && threads.opened() != "" {
+			// The body lost a race it declared it could lose after its agent
+			// claimed the delivery (agentThreads.bind): the cursor moved with
+			// the claim, so the skip retires the claim instead.
+			if err := ds.skipClaimed(parkContext(ctx, threads), settle, runRecord{
+				trigger: tr.ID, callable: tr.callablePath(), mode: runner.ModeRecord,
+				seq: ch.Seq, recordID: ch.RecordID, status: runStatusSkipped,
+				attempt: settle.attempt, startedAt: started,
+				errMsg: fmt.Sprintf("%v (agent thread %s)", cause, threads.opened()),
+			}); err != nil {
+				return 0, from, err
+			}
+			return 0, ch.Seq, nil
+		}
 		if declinedDelivery(err) {
 			// Another dispatch holds this delivery, or this one lost a race it
 			// declared it could lose: either way the work is another
@@ -443,8 +461,9 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 		}
 		// Only the DISPATCHER's context ending aborts the pass: a
 		// per-invocation runner timeout is a delivery failure that rides the
-		// retries.
-		if ctx.Err() != nil {
+		// retries. A body whose agent opened a thread parks even then: its
+		// claim already moved the cursor, and the park records why.
+		if ctx.Err() != nil && !errors.Is(err, errAgentThreadOpened) {
 			return 0, from, ctx.Err()
 		}
 		lastErr = err
@@ -454,12 +473,12 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 		// (db load) and rides the attempts. A paged drain that already
 		// committed pages (errPagedParked) also parks now: re-running it would
 		// only resume the same chain, so leave it to the parked-failure retry.
-		if runner.Deterministic(err) || errors.Is(err, errPagedParked) {
+		if runner.Deterministic(err) || errors.Is(err, errPagedParked) || errors.Is(err, errAgentThreadOpened) {
 			attempts = attempt + 1
 			break
 		}
 	}
-	if err := ds.parkAndAdvance(ctx, tr, ch, from, attempts, started, settle.sync, lastErr); err != nil {
+	if err := ds.parkAndAdvance(parkContext(ctx, threads), tr, ch, from, attempts, started, settle.sync, lastErr); err != nil {
 		return 0, from, err
 	}
 	return 0, ch.Seq, nil
@@ -498,8 +517,11 @@ func settledResult(advance bool, summary map[string]int, pages int) deliverResul
 // runs the loop, then retires the claim with the run record (complete). A
 // crash between the two leaves the delivery listed under the trigger's
 // parked failures as in flight, retried by hand; nothing redelivers by
-// itself and no effect commits without a recorded delivery state. nil
-// settles nothing: a manual run mints nothing durable.
+// itself and no effect commits without a recorded delivery state. A function
+// body that runs an agent takes the same claim in the agent thread's
+// transaction (agentThreads.bind), and its final transaction then retires
+// the claim instead of acknowledging (settle). nil settles nothing: a manual
+// run mints nothing durable.
 type settlement struct {
 	ds      *dataset
 	trigger string
@@ -548,7 +570,18 @@ func (s *settlement) settle(t *txn, res deliverResult) error {
 	if err := s.ds.settlementFault(t); err != nil {
 		return err
 	}
-	if s.acknowledge != nil {
+	switch {
+	case s.claimed != 0:
+		// A function body that ran an agent claimed the delivery in the
+		// thread's transaction (agentThreads.bind): the acknowledgement
+		// landed there, and the claim retires here.
+		if err := t.lockFailure(s.trigger, s.claimed); err != nil {
+			return err
+		}
+		if err := t.unparkTx(s.trigger, s.claimed); err != nil {
+			return err
+		}
+	case s.acknowledge != nil:
 		if err := s.acknowledge(t); err != nil {
 			return err
 		}
@@ -575,6 +608,26 @@ func (s *settlement) settle(t *txn, res deliverResult) error {
 		return t.syncSettleOK(s.sync)
 	}
 	return nil
+}
+
+// retireClaim retires the claim a function body's agent took
+// (agentThreads.bind) without the completion's run record: the claimed
+// failure a dispatch wrote, or the admitted webhook request's row that
+// bind rewrote as in flight. The caller writes the run.
+func (s *settlement) retireClaim(t *txn) error {
+	id := s.claimed
+	if id == 0 {
+		id = s.retire
+	}
+	if id != 0 {
+		if err := t.lockFailure(s.trigger, id); err != nil {
+			return err
+		}
+		if err := t.unparkTx(s.trigger, id); err != nil {
+			return err
+		}
+	}
+	return t.settleDelivery(s.trigger)
 }
 
 // claim is the agent path's first transaction, before the loop: the
@@ -805,6 +858,11 @@ func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change
 		// never sees it.
 		Resume: resume.cursor,
 	}
+	// The change rides the invocation so an agent the body runs stamps it on
+	// its rows, and the causal-depth walk sees through the agent.
+	origin := callOriginOf(ctx)
+	origin.causedBy = ch.Seq
+	ctx = withCallOrigin(ctx, origin)
 	effects, _, more, err := ds.runCallableRaw(ctx, tr.Callable, in)
 	if err != nil {
 		return res, err
@@ -936,6 +994,23 @@ func (ds *dataset) recordSkipAndAdvance(ctx context.Context, tr *trigger, ch sub
 	})
 }
 
+// skipClaimed settles a declined attempt whose body's agent had already
+// claimed the delivery (agentThreads.bind): a guarded write that yielded its
+// version race after the thread opened. The claim moved the cursor or fire
+// state, so the skip retires the claim and writes the skipped run in one
+// transaction, and nothing is left in flight (decision 0093, record 0121).
+func (ds *dataset) skipClaimed(ctx context.Context, s *settlement, run runRecord) error {
+	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		if err := s.retireClaim(t); err != nil {
+			return err
+		}
+		if err := t.putRun(run); err != nil {
+			return err
+		}
+		return t.pruneRuns(s.trigger)
+	})
+}
+
 // --- schedule-sourced delivery ----------------------------------------------------
 
 // processScheduleTrigger fires the occurrences due since the last one the
@@ -1022,6 +1097,10 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 			return 0, err
 		}
 	}
+	// As in deliverWithRetry: a function body that ran an agent parks on
+	// its first failure after the thread opened (agentThreads).
+	threads := &agentThreads{settle: settle}
+	fctx := withCallOrigin(ctx, callOrigin{threads: threads})
 	for attempt := range triggerAttempts {
 		if attempt > 0 {
 			select {
@@ -1032,14 +1111,26 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 		}
 		settle.attempt = attempt + 1
 		var applied int
-		var err error
+		var err, cause error
 		if tr.Agent != nil {
 			applied, err = ds.agentFire(ctx, tr, mode, fid, at, envelope, settle)
 		} else {
-			applied, err = ds.functionFire(ctx, tr, mode, fid, at, envelope, settle)
+			applied, err = ds.functionFire(fctx, tr, mode, fid, at, envelope, settle)
+			cause = err
+			err = agentRetryGate(threads, err)
 		}
 		if err == nil {
 			return applied, nil
+		}
+		if declinedDelivery(err) && threads.opened() != "" {
+			// As in deliverWithRetry: the agent's claim already moved the
+			// fire state (or rewrote the admitted request as in flight), so
+			// the skip retires the claim.
+			return 0, ds.skipClaimed(parkContext(ctx, threads), settle, runRecord{
+				trigger: tr.ID, callable: tr.callablePath(), mode: mode, fireID: fid,
+				status: runStatusSkipped, attempt: settle.attempt, startedAt: started,
+				errMsg: fmt.Sprintf("%v (agent thread %s)", cause, threads.opened()),
+			})
 		}
 		if declinedDelivery(err) {
 			// Another dispatch holds this fire, or this one lost a guarded
@@ -1074,11 +1165,11 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 			// delivery landed, and there is nothing to run again or park.
 			return 0, err
 		}
-		if ctx.Err() != nil {
+		if ctx.Err() != nil && !errors.Is(err, errAgentThreadOpened) {
 			return 0, ctx.Err()
 		}
 		lastErr = err
-		if runner.Deterministic(err) || errors.Is(err, errPagedParked) {
+		if runner.Deterministic(err) || errors.Is(err, errPagedParked) || errors.Is(err, errTriggerArguments) || errors.Is(err, errAgentThreadOpened) {
 			attempts = attempt + 1
 			break
 		}
@@ -1095,6 +1186,9 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 	// into one: the fire read
 	// the body into it (fireEnvelope), and the bytes must not enter the
 	// changelog.
+	// A body whose agent opened a thread parks even when the dispatcher is
+	// stopping (deliverWithRetry).
+	ctx = parkContext(ctx, threads)
 	var payload json.RawMessage
 	if pending != nil {
 		payload = pending.Payload
@@ -1193,6 +1287,16 @@ func (ds *dataset) functionFire(ctx context.Context, tr *trigger, mode, fid stri
 		IdempotencyKey: key,
 		Resume:         resume.cursor,
 	}
+	// The trigger's arguments, held to the body resolved for THIS fire: an
+	// apply since the trigger was written may have changed what the function
+	// takes. A retry of a parked occurrence reads the trigger as it stands,
+	// so fixing the record is what lets the retry deliver.
+	if tr.Arguments != nil {
+		if err := checkTriggerArguments(tr, tr.Callable); err != nil {
+			return 0, fmt.Errorf("%w: trigger %s: %w", errTriggerArguments, tr.ID, err)
+		}
+		in.Args = tr.Arguments
+	}
 	effects, _, more, err := ds.runCallableRaw(ctx, tr.Callable, in)
 	if err != nil {
 		return 0, err
@@ -1271,11 +1375,14 @@ const (
 	runStatusOK      = "ok"
 	runStatusSkipped = "skipped"
 	runStatusParked  = "parked"
+	// runStatusFailed is a call run's alone: the body ran and failed, so
+	// nothing applied. A delivery that fails is retried and parks instead.
+	runStatusFailed = "failed"
 )
 
 // runRecord is one settled delivery attempt, about to become a run record.
 type runRecord struct {
-	trigger string
+	trigger string // empty on a call run, which no trigger fired
 	// callable is the callable's RECORD path, not its id: the run stores it
 	// twice (putRun says why) and one field is what keeps the two agreeing.
 	callable  string
@@ -1289,6 +1396,11 @@ type runRecord struct {
 	errMsg    string
 	effects   map[string]int
 	pages     int // committed pages for a paged (backfill) delivery; >1 only when the body paged
+	// A call run's audit (callrun.go): the door the call came through, the
+	// token behind it, and what it returned.
+	caller    substrate.Actor
+	principal string
+	output    *callOutput
 }
 
 // putRun writes one run record inside the caller's transaction.
@@ -1307,7 +1419,6 @@ func (t *txn) putRun(r runRecord) error {
 		return fmt.Errorf("run callable %q is not a record path", r.callable)
 	}
 	props := map[string]any{
-		"trigger":     vocabulary.RecordPath(typeTrigger, r.trigger),
 		"callable":    callableID,
 		"callableRef": r.callable,
 		"mode":        r.mode,
@@ -1315,6 +1426,21 @@ func (t *txn) putRun(r runRecord) error {
 		"attempt":     r.attempt,
 		"startedAt":   r.startedAt.Format(time.RFC3339Nano),
 		"finishedAt":  t.now.Format(time.RFC3339Nano),
+	}
+	if r.trigger != "" {
+		props["trigger"] = vocabulary.RecordPath(typeTrigger, r.trigger)
+	}
+	if r.caller != "" {
+		props["caller"] = string(r.caller)
+	}
+	if r.principal != "" {
+		props["principal"] = r.principal
+	}
+	if r.output != nil {
+		props["outputBytes"] = r.output.bytes
+		if r.output.kept {
+			props["output"] = r.output.value
+		}
 	}
 	if r.seq > 0 {
 		props["seq"] = r.seq
@@ -1858,13 +1984,162 @@ func cursorMoved(res sql.Result, err error) error {
 	return nil
 }
 
-// changesPast reads one raw batch past a cursor: every entry, the ledger's
-// own `delivery` entries included, so the scan position moves past them and
-// lag reads zero; matchChanges drops them. The public read hides them.
-func (ds *dataset) changesPast(ctx context.Context, after int64) ([]substrate.Change, error) {
-	b := &builder{}
-	b.add(`seq > ` + b.arg(after))
-	return ds.queryChanges(ctx, b, `seq`, triggerBatch, false)
+// changesPast reads one batch past a cursor for one record trigger, and
+// returns it with the scan position the read covers. The read is bounded by
+// the trigger's kinds (#637): Postgres returns only entries of a kind the
+// source can match (triggerRead), so a trigger over one small kind drains in
+// proportion to that kind's entries and not to the whole changelog. Every
+// other entry past the cursor, up to the head read first, is one the source
+// could never match, so a short batch covers through that head and the
+// caller moves the scan position there; a full batch covers through its last
+// entry. Sequence order is commit-visibility order (docs/changelog.md), so
+// every entry at or under the head is visible to the batch read that follows
+// it.
+//
+// A `*` source reads every entry, the ledger's own `delivery` entries
+// included; matchChanges drops them, and the public read hides them.
+func (ds *dataset) changesPast(ctx context.Context, tr *trigger, after int64) ([]substrate.Change, int64, error) {
+	var head int64
+	if err := ds.db.QueryRowContext(ctx,
+		`SELECT COALESCE(max(seq), 0) FROM changelog`).Scan(&head); err != nil {
+		return nil, after, err
+	}
+	if head <= after {
+		return nil, after, nil
+	}
+	kinds, every, err := ds.sourceKinds(ctx, tr.Record.Kinds)
+	if err != nil {
+		return nil, after, err
+	}
+	if !every && len(kinds) == 0 {
+		return nil, head, nil
+	}
+	if every {
+		kinds = nil
+	}
+	query, args := triggerRead(kinds, after, head)
+	rows, err := ds.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, after, err
+	}
+	changes, err := collectChanges(rows)
+	if err != nil {
+		return nil, after, err
+	}
+	if len(changes) == triggerBatch {
+		return changes, changes[len(changes)-1].Seq, nil
+	}
+	return changes, head, nil
+}
+
+// triggerRead builds the dispatcher's batch read of the entries in
+// (after, head], at most triggerBatch of them in seq order. With no kinds it
+// reads every entry. With kinds it reads each kind as its own branch,
+// `kind = $n AND seq > after ORDER BY seq LIMIT batch`, which walks that
+// kind's range of changelog_kind_seq_idx from the cursor in seq order, and
+// joins the branches with UNION ALL under one `ORDER BY seq LIMIT batch`,
+// which Postgres runs as a Merge Append over the branches: no Sort, and at
+// most one batch of entries read from each kind, however dense the kind is in
+// the changelog. A single `kind = ANY(...)` does not give that bound: an
+// array on the index's second column cannot return rows in seq order, so the
+// planner either sorts every remaining entry of the kinds or walks the
+// primary key and filters out every entry of another kind (#637 review).
+func triggerRead(kinds []string, after, head int64) (string, []any) {
+	const cols = `SELECT seq, ts, actor, op, record_id, kind, payload, hash FROM changelog`
+	args := []any{after, head, triggerBatch}
+	if len(kinds) == 0 {
+		return cols + ` WHERE seq > $1 AND seq <= $2 ORDER BY seq LIMIT $3`, args
+	}
+	branch := func(n int) string {
+		return cols + ` WHERE kind = $` + strconv.Itoa(n) + ` AND seq > $1 AND seq <= $2 ORDER BY seq LIMIT $3`
+	}
+	if len(kinds) == 1 {
+		return branch(4), append(args, kinds[0])
+	}
+	parts := make([]string, len(kinds))
+	for i, k := range kinds {
+		args = append(args, k)
+		parts[i] = `(` + branch(len(args)) + `)`
+	}
+	return strings.Join(parts, ` UNION ALL `) + ` ORDER BY seq LIMIT $3`, args
+}
+
+// sourceKinds turns a record source's kind globs into the exact kinds the
+// dispatcher's read names. every is true for a `*` source, which reads the
+// whole changelog. A package or authority glob matches against the kinds the
+// changelog holds, read at the moment of the batch, so a kind whose first
+// entry landed mid-drain is still read; the globs are matched in Go
+// (vocabulary.MatchTypeGlob, the matcher matchChanges uses) rather than as a
+// range in SQL, because a prefix is a contiguous range only under the C
+// collation and the column carries the database's.
+func (ds *dataset) sourceKinds(ctx context.Context, pats []string) (kinds []string, every bool, err error) {
+	// Each kind is named once: triggerRead reads one branch per kind, so a
+	// kind named twice (listed twice, or exact and under a glob) would
+	// deliver its entries twice.
+	seen := map[string]bool{}
+	add := func(k string) {
+		if !seen[k] {
+			seen[k] = true
+			kinds = append(kinds, k)
+		}
+	}
+	var globs []string
+	for _, pat := range pats {
+		switch {
+		case pat == "*":
+			return nil, true, nil
+		case strings.HasSuffix(pat, "/*"):
+			globs = append(globs, pat)
+		default:
+			add(pat)
+		}
+	}
+	if len(globs) == 0 {
+		return kinds, false, nil
+	}
+	logged, err := ds.changelogKinds(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, k := range logged {
+		for _, pat := range globs {
+			if vocabulary.MatchTypeGlob(pat, k) {
+				add(k)
+				break
+			}
+		}
+	}
+	return kinds, false, nil
+}
+
+const changelogKindsQuery = `
+		WITH RECURSIVE k(kind) AS (
+			(SELECT kind FROM changelog ORDER BY kind LIMIT 1)
+			UNION ALL
+			SELECT (SELECT c.kind FROM changelog c WHERE c.kind > k.kind ORDER BY c.kind LIMIT 1)
+			FROM k WHERE k.kind IS NOT NULL
+		)
+		SELECT kind FROM k WHERE kind IS NOT NULL`
+
+// changelogKinds lists the distinct kinds the changelog holds. A recursive
+// skip scan: each step is one probe of changelog_kind_seq_idx for the next
+// kind above the last, so the read costs one probe per distinct kind and not
+// one row per entry.
+func (ds *dataset) changelogKinds(ctx context.Context) ([]string, error) {
+	rows, err := ds.db.QueryContext(ctx, changelogKindsQuery)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
 }
 
 // causalDepth walks caused_by from a change to the direct write that started
@@ -2012,7 +2287,7 @@ func (ds *dataset) ReplayTrigger(ctx context.Context, id string, from int64) err
 
 // RunTrigger synthesizes one delivery of a record's current state through a
 // trigger — the record's latest change replayed through the callable, cursor
-// untouched, no run row (direct invocations mint nothing durable). The
+// untouched, no run row (a manual run mints nothing durable). The
 // source filter is deliberately not applied — a manual run is the owner's
 // hand — but the guard still is: manual runs answer "would it fire".
 func (ds *dataset) RunTrigger(ctx context.Context, id, recordKind, recordID string) (int, error) {

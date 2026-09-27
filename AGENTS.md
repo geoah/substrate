@@ -393,7 +393,7 @@ first label.
   (`primary`, `supporting` or `internal`; absent reads as `primary`) is
   validated and stored and read by clients alone, to decide what they list;
   every seeded kind is `internal`
-  ([0106](docs/decisions/0106-a-kind-declares-its-purpose.md)). `renamedFrom` is live, on a
+  ([0133](docs/decisions/0133-a-kind-declares-its-purpose.md)). `renamedFrom` is live, on a
   property and on an enum value entry alike:
   admitting the declaration moves every live record's value to the new name,
   or rewrites the old spelling to the new one, inside the apply's
@@ -502,4 +502,7 @@ first label.
   all three of hard to reverse, shapes what other code may do, and reasoning
   not already written down; everything else is a commit. Read the index before
   proposing design work, so an option already rejected is not proposed again.
-  A rule here may link its record.
+  A rule here may link its record. Before citing a new record's number,
+  `git fetch --prune` and run `mise run decisions:check`: it refuses a number `main`
+  or another live branch already took, and names a free one
+  ([0124](docs/decisions/0124-a-decision-number-is-checked-against-every-live-branch-before-the-merge.md)).

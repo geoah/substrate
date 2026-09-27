@@ -4,7 +4,7 @@
  * - **History**: newest-first pages addressed by `before=<seq>`. The changelog
  *   is seq-addressed, so the feed pages older by cursor rather than by an
  *   offset jump.
- * - **Runs**: the same pages summarized (`runs=1`, decision 0110), where
+ * - **Runs**: the same pages summarized (`runs=1`, decision 0126), where
  *   `first` counts runs and each run is read to its end, so "You added 60
  *   tasks" is exact from one read. A server that predates it refuses the
  *   parameter; the read then falls back to rows, once for the page's life.
@@ -56,7 +56,7 @@ export interface ChangeFeedFilter {
   /** Case-insensitive substring over kind, actor, record id, payload text. */
   q?: string
   /** Ask for each affected record's before and after property values
-   * (`values=1`, decision 0108). It narrows nothing. A server that predates
+   * (`values=1`, decision 0135). It narrows nothing. A server that predates
    * it refuses the parameter; the read then retries without it and the rows
    * carry names alone. */
   values?: boolean

@@ -1529,6 +1529,94 @@ func TestParsePath(t *testing.T) {
 	}
 }
 
+// A mapping's `where` (#581, record 0118) names declared properties of its
+// source kind, each with one condition object of the filter grammar. What
+// the operators mean for a type is the engine's to check, at apply.
+func TestMappingWhere(t *testing.T) {
+	head := `kind: substrate.reamde.dev/core/package
+metadata: {id: x.example.com/x}
+data: {authority: x.example.com, package: x, version: 1}
+---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/person}
+data:
+  authority: x.example.com
+  package: x
+  names: {singular: person}
+  properties:
+    name: {type: string}
+---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/rec}
+data:
+  authority: x.example.com
+  package: x
+  names: {singular: rec}
+  properties:
+    name: {type: string}
+    state: {type: enum, values: [open, closed]}
+    count: {type: int}
+    token: {type: secret}
+    owner:
+      type: reference
+      kind: x.example.com/x/person
+      required: true
+      mustExist: true
+      subject: true
+---
+kind: substrate.reamde.dev/core/recordmapping
+metadata: {id: x.example.com/x/recperson}
+data:
+  authority: x.example.com
+  package: x
+  from: x.example.com/x/rec
+  to: x.example.com/x/person
+  map:
+    name: {path: name}
+`
+	load := func(property, where string) (*vocabulary.Registry, error) {
+		src := head + "  property: " + property + "\n" + where
+		return vocabulary.LoadFS(fstest.MapFS{"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(src)}})
+	}
+
+	reg, err := load("person", "  where:\n    state: {in: [open]}\n    count: {gte: 2}\n")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	m, _ := reg.MappingFor("x.example.com/x/rec", "person")
+	if got := strings.Join(m.WhereOrder, ","); got != "count,state" {
+		t.Fatalf("where order = %q", got)
+	}
+	if c := m.Where["state"]; len(c.In) != 1 || c.In[0] != "open" {
+		t.Fatalf("where.state = %+v", c)
+	}
+	if c := m.Where["count"]; c.Gte != float64(2) {
+		t.Fatalf("where.count = %+v", c)
+	}
+
+	bad := map[string]struct{ property, where string }{
+		"a bare value":         {"person", "  where:\n    state: open\n"},
+		"an unknown operator":  {"person", "  where:\n    state: {is: open}\n"},
+		"an empty condition":   {"person", "  where:\n    state: {}\n"},
+		"not a map":            {"person", "  where: [state]\n"},
+		"an undeclared name":   {"person", "  where:\n    status: {eq: open}\n"},
+		"a sensitive property": {"person", "  where:\n    token: {exists: true}\n"},
+		"the subject slot":     {"person", "  where:\n    person: {exists: true}\n"},
+		// A required slot is filled on every write, so a record outside the
+		// where could not be written at all.
+		"a required slot": {"owner", "  where:\n    state: {eq: open}\n"},
+	}
+	for name, tc := range bad {
+		t.Run(name, func(t *testing.T) {
+			if _, err := load(tc.property, tc.where); err == nil {
+				t.Fatal("expected a load error")
+			} else if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "where") {
+				t.Fatalf("expected a validation error naming where, got %v", err)
+			}
+		})
+	}
+}
+
 // A mapping's rules are loader-enforced: the subject reference's shape, every
 // path against both declared kinds, one mapping per source kind, and the
 // registry-wide bipartite rule.
@@ -1718,6 +1806,11 @@ data:
 `),
 		"onAmbiguous is a word": recperson(`  onAmbiguous: true
 `),
+		// fold is one word (#586, record 0116): a fold past case is a scoring
+		// problem, not a probe's.
+		"unknown fold": recperson(`  match:
+    - {from: "emails[].value", to: emails, fold: accents}
+`),
 	}
 	for name, src := range bad {
 		t.Run(name, func(t *testing.T) {
@@ -1745,6 +1838,22 @@ data:
 		m, ok := reg.MappingFor("x.example.com/x/rec", "person")
 		if !ok || m.OnAmbiguous != tc.want {
 			t.Fatalf("%q: onAmbiguous = %+v, want %s", tc.rules, m, tc.want)
+		}
+	}
+
+	// fold parses to its word, and an absent one compares exactly.
+	for _, tc := range []struct{ rules, want string }{
+		{"  match:\n    - {from: \"emails[].value\", to: emails}\n", ""},
+		{"  match:\n    - {from: \"emails[].value\", to: emails, fold: case}\n", vocabulary.FoldCase},
+	} {
+		fsys := fstest.MapFS{"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(recperson(tc.rules))}}
+		reg, err := vocabulary.LoadFS(fsys)
+		if err != nil {
+			t.Fatalf("load %q: %v", tc.rules, err)
+		}
+		m, ok := reg.MappingFor("x.example.com/x/rec", "person")
+		if !ok || len(m.Match) != 1 || m.Match[0].Fold != tc.want {
+			t.Fatalf("%q: match = %+v, want fold %q", tc.rules, m, tc.want)
 		}
 	}
 
@@ -1787,6 +1896,76 @@ data:
 		}
 		if got := note.Props["attribution"].Fields["by"].To; got != "x.example.com/x/rec" {
 			t.Fatalf("note.attribution.by pins %q", got)
+		}
+	})
+
+	// A MAP PATH NEVER CROSSES A REFERENCE (#580, record 0120). The relation a
+	// `assignees[].person` path reaches for is copied as the reference itself,
+	// and the target's pin at the subject kind stores the subject through the
+	// hop; the refusal names that spelling rather than calling the reference
+	// "not an object".
+	t.Run("a map path never crosses a reference", func(t *testing.T) {
+		ticketcard := func(rules string) string {
+			return recperson("") + `---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/card}
+data:
+  authority: x.example.com
+  package: x
+  names: {singular: card}
+  properties:
+    owner: {type: reference, kind: x.example.com/x/person}
+    watchers: {type: reference, kind: x.example.com/x/person, repeated: true}
+---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/ticket}
+data:
+  authority: x.example.com
+  package: x
+  names: {singular: ticket}
+  properties:
+    lead: {type: reference, kind: x.example.com/x/rec}
+    assignees: {type: reference, kind: x.example.com/x/rec, repeated: true}
+---
+kind: substrate.reamde.dev/core/recordmapping
+metadata: {id: x.example.com/x/ticketcard}
+data:
+  authority: x.example.com
+  package: x
+  from: x.example.com/x/ticket
+  to: x.example.com/x/card
+  property: card
+  map:
+` + rules
+		}
+		load := func(rules string) error {
+			fsys := fstest.MapFS{"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(ticketcard(rules))}}
+			_, err := vocabulary.LoadFS(fsys)
+			return err
+		}
+		for _, rules := range []string{
+			"    owner: {path: lead}\n",
+			"    owner: {path: assignees, merge: first}\n",
+			"    watchers: {path: assignees}\n",
+		} {
+			if err := load(rules); err != nil {
+				t.Fatalf("%q must load: %v", rules, err)
+			}
+		}
+		// A repeated source onto a single slot needs `merge: first`, and the
+		// suggestion says so.
+		for _, tc := range []struct{ rule, want string }{
+			{`    owner: {path: "assignees[].person"}` + "\n", "map {path: assignees, merge: first} onto"},
+			{`    watchers: {path: "assignees[].person"}` + "\n", "map {path: assignees} onto"},
+			{"    owner: {path: lead.person}\n", "map {path: lead} onto"},
+		} {
+			err := load(tc.rule)
+			if err == nil {
+				t.Fatalf("%q must be refused", tc.rule)
+			}
+			if !strings.Contains(err.Error(), "a path never crosses one") || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("%q: the refusal names the spelling that works (%q), got: %v", tc.rule, tc.want, err)
+			}
 		}
 	})
 

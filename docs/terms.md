@@ -8,7 +8,7 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 **schema** → vocabulary, **log** → changelog, **extension** → bundle,
 **relationship** and **edge** → reference, **plural** → the kind's name, the
 third segment of its reference (decision 0033), as an address; a plural
-display form is the kind's declared `label` (decision 0113), **incoming** → the
+display form is the kind's declared `label` (decision 0117), **incoming** → the
 `referencing` filter arm (decision 0079), **username** → the repository name,
 which is its authority (decision 0074), **tenant** and **identity** →
 nothing, there are none.
@@ -25,7 +25,7 @@ nothing, there are none.
 | **property** | A named, typed value on a record, declared by its kind. |
 | **property type** | A named refinement of a base type plus its validations, declared in a package and reusable across its kinds. |
 | **trait** | A contract a kind implements: a set of properties a kind promises to declare, so unrelated kinds can be treated alike. |
-| **purpose** | Why a kind exists, declared on the kind: `primary` (browsed and opened directly), `supporting` (a detail reached from the records it belongs to) or `internal` (machinery); absent reads as `primary`. Clients read it to decide what they list, `filter.purposes` narrows a read by it, and search ranks machinery lower. Decision records 0106 and 0115. |
+| **purpose** | Why a kind exists, declared on the kind: `primary` (browsed and opened directly), `supporting` (a detail reached from the records it belongs to) or `internal` (machinery); absent reads as `primary`. Clients read it to decide what they list, `filter.purposes` narrows a read by it, and search ranks machinery lower. Decision records 0133 and 0136. |
 | **series** | A temporal record with a repeat rule (`recurrence`, or `rdates`) under core's `recurring` trait. Its bound slot is the rule's first occurrence; the substrate stores the rule and never expands it into rows. |
 | **occurrence** | One instant a series' rule names. Computed by the window read, never stored: it is served in the record envelope as `<seriesId>_<slot>` with `computed: true`, and on a kind that binds `override` a put at that id turns it into one. |
 | **override** | A temporal record standing in for one occurrence of a series, moved or edited: it names the series in `recurrenceOf` and the slot it replaces in `originalAt`, under core's `override` trait. iCalendar's `RECURRENCE-ID`. |
@@ -72,7 +72,7 @@ nothing, there are none.
 | **sync** | The synchronization a provider's function drives on one account, as the core `sync` trait reports it: a state (`never`, `running`, `ok`, `erroring`, `throttled`), a message, the last run, the owner's request for the next one, progress and streams. The body writes it through its effects; the dispatcher stamps a delivery's start, finish and park. Decision record 0085. |
 | **catalog** | The read-only list of the bundle closures built into the binary, each in one of the two tiers. A source to install or import from, never a package. |
 | **callable** | The union of function and agent — what a trigger binds and what dispatch invokes. |
-| **function** | A callable whose body is inline Python, bounded by its declared `permissions`: `reads`, `writes`, `call`, `network` and `mutations`, five grants in one object on the declaration. |
+| **function** | A callable whose body is inline Python, bounded by its declared `permissions`: `reads`, `writes`, `call`, `agents`, `network` and `mutations`, six grants in one object on the declaration. |
 | **agent** | A callable whose body is an LLM loop. Alpha. |
 | **llm/provider** | One place an agent buys completions: a wire, an endpoint and a key, as data. The kind is `provider` in the seeded `substrate.reamde.dev/llm` package, written here with its package because the bare word also names a catalog tier. Alpha. |
 | **wire** | The protocol an `llm/provider`'s adapter speaks — `openai`, `anthropic` or `azure` — never a company: a gateway that speaks OpenAI's wire is an `openai` row. |
@@ -107,7 +107,7 @@ nothing, there are none.
 ## Words that mean something narrower than they look
 
 - **capabilities** — only ever the name for a function's security envelope, and
-  no longer a key: the grant is five keys on the declaration itself, and a
+  no longer a key: the grant is six keys on the declaration itself, and a
   document nesting them under `capabilities:` is refused. The substrate does not
   otherwise use the word; what a deployment offers is a *feature*, and what a
   kind promises is a *trait*.

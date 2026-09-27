@@ -3,7 +3,7 @@
  * write lands in a draft of the owner's values (`SheetDraftContext`), never
  * on the record. A row can be left out, and put back. Applying sends the
  * draft as the accept's `adjustedDiff` when it differs from what was
- * suggested (decision 0112); nothing is stored before then. */
+ * suggested (decision 0115); nothing is stored before then. */
 
 import { useMemo, useState } from "react"
 import { Undo2Icon, XIcon } from "lucide-react"

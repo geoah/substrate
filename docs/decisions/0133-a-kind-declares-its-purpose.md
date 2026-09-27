@@ -2,10 +2,10 @@
 status: accepted
 date: 2026-09-25
 decision-makers: George Antoniadis
-amended-by: 0115
+amended-by: 0136
 ---
 
-# 0106. A kind declares its purpose
+# 0133. A kind declares its purpose
 
 ## Context and Problem Statement
 

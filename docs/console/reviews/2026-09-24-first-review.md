@@ -138,7 +138,7 @@ substratectl created 12 tasks".
   31 are things you open, about 45 are details of those and about 49 are
   machinery. A kind-level key, `purpose: primary | supporting | internal`
   with absent meaning primary, lets the console list the first group only.
-  This became [0106](../../decisions/0106-a-kind-declares-its-purpose.md).
+  This became [0133](../../decisions/0133-a-kind-declares-its-purpose.md).
 - *Console settings live in the repository.* The console already kept its
   sidebar state on `substrate.reamde.dev/core/consolepreference`; add the
   layout settings (record width, table width, density, technical details,

@@ -79,7 +79,7 @@ export const SEARCH_GRAMMAR: readonly { example: string; means: string }[] = [
 ]
 
 /** Everyday search, on the Search page and in ⌘K: what a person keeps and
- * its details (`filter.purposes`, decision 0115). The substrate's own
+ * its details (`filter.purposes`, decision 0136). The substrate's own
  * machinery (accounts, sync state, the vocabulary) is left out, as it is in
  * the sidebar. */
 export const EVERYDAY_PURPOSES: NonNullable<RecordFilter["purposes"]> = [

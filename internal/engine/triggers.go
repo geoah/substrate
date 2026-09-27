@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -65,6 +66,12 @@ type trigger struct {
 
 	CallableKind string
 	CallableID   string
+	// Arguments is the trigger's `arguments`: the named arguments every fire
+	// hands the callable as `input["args"]`, held to the function's declared
+	// `arguments:` at write time and again at fire time (decision 0110). Only
+	// a schedule source to a function carries them. Nil declares none, which
+	// is a fire with no args.
+	Arguments map[string]any
 	// Exactly one of Callable/Agent is set once resolution succeeds; both
 	// nil when the id no longer resolves (the callable was uninstalled after
 	// the trigger was written) — the dispatcher skips the trigger, loudly,
@@ -99,6 +106,26 @@ func (t *trigger) callableActor() string {
 	default:
 		return ""
 	}
+}
+
+// selfActors is every actor whose writes this trigger never delivers: the
+// callable's own, and for a function the actors of the agents it may run
+// under `permissions.agents` (record 0121). A callee function's effects
+// commit under the caller's actor, but an agent's thread, messages and tool
+// effects commit under the agent's, so without this a function watching a
+// kind its agent writes would wake again on every row the agent wrote. The
+// cost: the function also misses those agents' writes from their other runs.
+func (t *trigger) selfActors(reg *vocabulary.Registry) map[substrate.Actor]bool {
+	self := map[substrate.Actor]bool{substrate.Actor(t.callableActor()): true}
+	if t.Callable == nil {
+		return self
+	}
+	for _, id := range t.Callable.Caps.Agents {
+		if ag, err := reg.ResolveAgent(id); err == nil {
+			self[substrate.Actor(ag.Actor())] = true
+		}
+	}
+	return self
 }
 
 // resolveCallable fills the resolved half from the registry, kind-aware.
@@ -300,6 +327,20 @@ func parseTrigger(id string, props map[string]any) (*trigger, error) {
 		return nil, fmt.Errorf("callable kind %q is not dispatchable — substrate.reamde.dev/core/function or substrate.reamde.dev/core/agent", callableRef)
 	}
 
+	if raw, has := props["arguments"]; has && raw != nil {
+		args, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("arguments: a map of argument name to value, got %T", raw)
+		}
+		// An agent reads its fire as the envelope, marshaled into the turn's
+		// user message, and declares no `arguments:` to hold a value to, so
+		// arguments bound to one would be a promise nothing checks.
+		if t.CallableKind == callableKindAgent {
+			return nil, fmt.Errorf("arguments: an agent takes no arguments; the callable must be a substrate.reamde.dev/core/function")
+		}
+		t.Arguments = args
+	}
+
 	source, ok := props["source"].(map[string]any)
 	if !ok || len(source) == 0 {
 		return nil, fmt.Errorf("source is required: exactly one of record, schedule, webhook")
@@ -354,6 +395,12 @@ func parseTrigger(id string, props map[string]any) (*trigger, error) {
 		}
 		t.WebhookHeaders = headers
 		t.Webhook = true
+	}
+	// A record delivery and a webhook fire already hand the body its input,
+	// the changed record or the request; only a schedule fire arrives empty,
+	// so it is the one source arguments are admitted on (decision 0110).
+	if t.Arguments != nil && t.Schedule == nil {
+		return nil, fmt.Errorf("arguments: only a schedule source passes arguments; a %s source hands the callable its envelope", arms[0])
 	}
 	return t, nil
 }
@@ -498,7 +545,7 @@ func parseScheduleSource(raw any) (*scheduleSource, error) {
 	src.Timezone, _ = m["timezone"].(string)
 	if raw, has := m["startsAt"]; has {
 		s, _ := raw.(string)
-		ts, err := parseTime(s)
+		ts, err := substrate.ParseInstant(s)
 		if err != nil {
 			return nil, fmt.Errorf("source.schedule.startsAt: %w", err)
 		}
@@ -552,8 +599,35 @@ func (ds *dataset) validateTriggerRow(reg *vocabulary.Registry, id string, props
 				return fmt.Errorf("%w: trigger callable: %s is a built-in — the engine runs it under a CALLER's grants, and a delivery has none: declare an agent carrying it as a tool and target the agent",
 					substrate.ErrValidation, fn.Identity())
 			}
+			if err := checkTriggerArguments(t, fn); err != nil {
+				return fmt.Errorf("%w: trigger %w", substrate.ErrValidation, err)
+			}
 			ds.warnDiscardedOutput(t, fn)
 		}
+	}
+	return nil
+}
+
+// errTriggerArguments marks a fire whose declared arguments the callable's
+// live `arguments:` refuses. Retrying reproduces it, so the fire parks at once
+// rather than burning its attempts.
+var errTriggerArguments = errors.New("trigger arguments refused")
+
+// checkTriggerArguments holds a trigger's `arguments` to the function's
+// declared `arguments:`, the same check a direct call's args meet. Arguments
+// bound to a function that declares none are refused: nothing in the body's
+// declaration says it reads them. A trigger declaring no arguments is not
+// checked, so a function with required arguments fires with none, as it did
+// before the property existed.
+func checkTriggerArguments(t *trigger, fn *vocabulary.Function) error {
+	if t.Arguments == nil {
+		return nil
+	}
+	if fn.Input == nil {
+		return fmt.Errorf("arguments: %s declares no arguments", fn.Identity())
+	}
+	if err := vocabulary.CheckValue(fn.Input, t.Arguments); err != nil {
+		return fmt.Errorf("arguments: %s: %w", fn.Identity(), err)
 	}
 	return nil
 }
@@ -567,7 +641,7 @@ func (ds *dataset) validateTriggerRow(reg *vocabulary.Registry, id string, props
 // A warning, never a refusal: the declaration may be mid-edit, and a trigger the
 // engine refused would have to be re-created rather than fixed.
 func (ds *dataset) warnDiscardedOutput(t *trigger, fn *vocabulary.Function) {
-	if len(fn.Caps.Emit) > 0 || len(fn.Caps.Call) > 0 || len(fn.Caps.Network) > 0 {
+	if len(fn.Caps.Emit) > 0 || len(fn.Caps.Call) > 0 || len(fn.Caps.Agents) > 0 || len(fn.Caps.Network) > 0 {
 		return
 	}
 	// The ids are user-authored strings from record rows: logged only after

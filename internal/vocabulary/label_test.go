@@ -32,7 +32,7 @@ data:
 }
 
 // A kind declares its display label, both forms, and the parsed kind carries
-// it structurally (decision 0113). A kind that declares none has the zero
+// it structurally (decision 0117). A kind that declares none has the zero
 // label, and a client humanizes the name.
 func TestKindLabel(t *testing.T) {
 	r := loadFixture(t, labelFixture("  label:\n    singular: Channel\n    plural: Channels\n"))
@@ -47,6 +47,13 @@ func TestKindLabel(t *testing.T) {
 	r = loadFixture(t, labelFixture("  label:\n    singular: Sync progress\n    plural: Sync progress\n"))
 	if k, _ := r.ByIdentity("d.example.com/d/conversation"); k.Label.Plural != "Sync progress" {
 		t.Errorf("mass-noun label = %+v", k.Label)
+	}
+
+	// The cap counts characters, not bytes: 80 two-byte letters fit.
+	accented := strings.Repeat("é", 80)
+	r = loadFixture(t, labelFixture("  label:\n    singular: Channel\n    plural: "+accented+"\n"))
+	if k, _ := r.ByIdentity("d.example.com/d/conversation"); k.Label.Plural != accented {
+		t.Errorf("80-character non-ASCII label = %+v", k.Label)
 	}
 
 	r = loadFixture(t, labelFixture(""))
@@ -66,7 +73,7 @@ func TestKindLabelRefusals(t *testing.T) {
 		"an unknown key":       {"  label:\n    singular: Channel\n    plural: Channels\n    short: Ch\n", `data.label: unknown key "short"`},
 		"a newline":            {"  label:\n    singular: \"Chan\\nnel\"\n    plural: Channels\n", "data.label.singular: a short single-line caption"},
 		"padding":              {"  label:\n    singular: \" Channel\"\n    plural: Channels\n", "data.label.singular: no leading or trailing whitespace"},
-		"over the caption cap": {"  label:\n    singular: Channel\n    plural: " + long + "\n", "data.label.plural: a short caption (at most 80 chars), got 81"},
+		"over the caption cap": {"  label:\n    singular: Channel\n    plural: " + long + "\n", "data.label.plural: a short caption (at most 80 characters), got 81"},
 	} {
 		fsys := fstest.MapFS{}
 		for name, body := range labelFixture(tc.label) {

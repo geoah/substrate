@@ -71,6 +71,50 @@ func TestRESTDeleteRefusesAMalformedPrecondition(t *testing.T) {
 	}
 }
 
+// DELETE ?purge=true reaches the dataset as DeleteInput.Purge, a record a
+// finalizer holds answers `409 conflict` and stays, and a purge value that is
+// not a boolean is refused by name before the dataset is reached (#585).
+func TestRESTDeletePurge(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+	ds.put(&substrate.Record{ID: "p1", Kind: personKind, Version: 3})
+	ds.put(&substrate.Record{ID: "p2", Kind: personKind, Version: 3, Finalizers: []string{"example.com/hold"}})
+
+	rec := env.do(t, http.MethodDelete, peoplePath+"/p1?purge=true", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if !ds.lastDelete.Purge {
+		t.Fatal("purge=true did not reach the dataset")
+	}
+	if _, ok := ds.records["p1"]; ok {
+		t.Fatal("the purged record is still stored")
+	}
+
+	rec = env.do(t, http.MethodDelete, peoplePath+"/p2?purge=1", tok, nil)
+	wantErrorCode(t, rec, http.StatusConflict, codeConflict)
+	if got := ds.records["p2"]; got == nil || got.DeletedAt != nil {
+		t.Fatalf("a refused purge changed the held record: %+v", got)
+	}
+
+	rec = env.do(t, http.MethodDelete, peoplePath+"/p2?purge=false", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if ds.lastDelete.Purge {
+		t.Fatal("purge=false reached the dataset as a purge")
+	}
+
+	for _, query := range []string{"?purge=yes", "?purge="} {
+		ds.lastDeleteID = ""
+		rec := env.do(t, http.MethodDelete, peoplePath+"/p2"+query, tok, nil)
+		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
+		if ds.lastDeleteID != "" {
+			t.Fatalf("DELETE %s reached the dataset", query)
+		}
+		if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "purge") {
+			t.Fatalf("DELETE %s said %q; it must name purge", query, msg)
+		}
+	}
+}
+
 // The merge body carries one precondition per participant, each optional, and
 // the split body carries the recordmerge record's. Both are the engine's own
 // inputs, decoded strictly, so a stale version is `409 conflict` and a

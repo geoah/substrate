@@ -1,0 +1,27 @@
+{
+ "__responses": [
+  {
+   "ok": true,
+   "channel": "C0HDRLQ9144",
+   "ts": "1747674390.000100",
+   "message": {
+    "type": "message",
+    "user": "U0ADA0WNER1",
+    "text": "On it, thanks.",
+    "ts": "1747674390.000100",
+    "thread_ts": "1747674380.100249"
+   }
+  },
+  {
+   "ok": true,
+   "channel": "C0HDRLQ9144",
+   "ts": "1747674391.000200",
+   "message": {
+    "type": "message",
+    "user": "U0ADA0WNER1",
+    "text": "Posted to the channel.",
+    "ts": "1747674391.000200"
+   }
+  }
+ ]
+}

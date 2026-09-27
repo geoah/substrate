@@ -4,7 +4,7 @@ date: 2026-09-26
 decision-makers: George Antoniadis (via the issue-674 agent session)
 ---
 
-# 0110. The changes read summarizes runs and never ends a page inside one
+# 0126. The changes read summarizes runs and never ends a page inside one
 
 ## Context and Problem Statement
 

@@ -71,12 +71,21 @@ data:
 # entirely — a record delivery syncs ITS account whether or not the schedule
 # would have called it due.
 #
-# It cannot loop. The guard is "the request is newer than the last sync", and
-# the sync's own last effect is to stamp `lastSyncedAt` at a later instant, so
-# the connector's own patch closes the condition behind it. That is also why it
-# is a REQUEST TIME rather than a boolean: a boolean would need someone to
-# unset it, and only the owner may write an owner-tier property — the connector
-# could not.
+# The guard is a GENERATION comparison, not a time one: it fires while the
+# request differs from the `syncRequestedAck` the sync writes back. It used to
+# be `syncRequestedAt > lastSyncedAt`, and CEL compares the two as STRINGS.
+# Both stamps carry sub-second precision, but the engine writes an instant
+# with its trailing zeros trimmed, so within one second "…:30.5Z" sorts after
+# "…:30.51Z" and a request could still land below the stamp it followed and
+# never be served (Slack's whole-second stamp lost every same-second request
+# that way). A request dated in the future would also loop forever against
+# the time comparison.
+#
+# It cannot loop. The sync's own writes never fire a trigger whose callable
+# they came from, so only another owner write reopens the question, and a
+# request a bounded or failed run left unacknowledged is still owed. Both sides
+# are stringified: one is owner-written and the other connector-written, and a
+# guard must not depend on the envelope handing both back in the same CEL type.
 kind: substrate.reamde.dev/core/trigger
 metadata:
   id: beeper-messages-on-demand
@@ -91,6 +100,7 @@ data:
         # absent one throws, so each is proved present before it is read.
         when: >-
           record != null && "enabledMessages" in record.properties && record.properties.enabledMessages
-          == true && "syncRequestedAt" in record.properties && (!("lastSyncedAt"
-          in record.properties) || record.properties.syncRequestedAt > record.properties.lastSyncedAt)
+          == true && "syncRequestedAt" in record.properties && (!("syncRequestedAck"
+          in record.properties) || string(record.properties.syncRequestedAt)
+          != string(record.properties.syncRequestedAck))
     callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/beeper/messagessync

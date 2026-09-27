@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -102,6 +103,15 @@ type agentInvocation struct {
 	// causalDepth rides into function-tool sub-calls so the changelog chain
 	// cap keeps holding through an agent hop.
 	causalDepth int
+	// callStack is the host-Call stack of the function chain that ran this
+	// agent, empty on every other entry; runAgent adds the agent itself. The
+	// loop's function tools start from it, so a body that runs an agent
+	// whose tool calls that body back is refused as recursion (record 0121).
+	callStack []string
+	// notAfter, when set, is the calling body's own deadline: the loop's
+	// deadline is the earlier of it and the agent's budget, so the loop
+	// settles its thread before the body's runner gives up on it.
+	notAfter time.Time
 	// emit streams loop events; nil disables streaming.
 	emit func(substrate.AgentEvent)
 	// tally is the shared root roll-up; nil at the root.
@@ -384,6 +394,7 @@ func (ds *dataset) runAgent(ctx context.Context, ag *vocabulary.Agent, in agentI
 	if in.tally == nil {
 		in.tally = &agentTally{effects: map[string]int{}}
 	}
+	in.callStack = append(slices.Clone(in.callStack), agentStackKey(ag.Identity()))
 	if in.delivery == "" {
 		// Direct invocations mint a per-call identity — two manual runs are
 		// two operations to any external deduper (the CallFunction precedent).
@@ -409,6 +420,9 @@ func (ds *dataset) runAgent(ctx context.Context, ag *vocabulary.Agent, in agentI
 	l.event(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: l.threadID})
 
 	deadline := nowUTC().Add(time.Duration(ag.Budgets.DeadlineSeconds) * time.Second)
+	if !in.notAfter.IsZero() && in.notAfter.Before(deadline) {
+		deadline = in.notAfter
+	}
 	lctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 
@@ -1255,7 +1269,7 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 			q.Expand = append(q.Expand, fmt.Sprint(n))
 		}
 	}
-	page, err := ds.List(ctx, q)
+	page, err := ds.readList(ctx, q)
 	if err != nil {
 		return toolError(err.Error()), false, 0
 	}
@@ -1477,7 +1491,13 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 	// attempt: a retried delivery hands an external deduper the SAME key,
 	// so an effectful tool that honors idempotency keys never double-fires.
 	key := fmt.Sprintf("%s/agent/%s/%d", l.in.delivery, l.ag.Identity(), l.toolCalls)
-	effects, output, err := l.ds.runCallable(ctx, fn, runner.Input{
+	// The loop's effective emit rides the origin: an agent the function
+	// body runs starts under it, as a sub-agent does (record 0121).
+	fctx := withCallOrigin(ctx, callOrigin{
+		causedBy: l.in.causedBy, stack: l.in.callStack,
+		emitCeiling: l.emit, ceilinged: true,
+	})
+	effects, output, err := l.ds.runCallable(fctx, fn, runner.Input{
 		Mode: runner.ModeCall, Args: input,
 		CausalDepth:    l.in.causalDepth,
 		IdempotencyKey: key,
@@ -1595,7 +1615,7 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, sub *vocabulary.Agent,
 		mode: agentModeSubagent, user: input,
 		parent: l.threadID, depth: depth,
 		causedBy: l.in.causedBy, causalDepth: l.in.causalDepth,
-		tally: l.in.tally,
+		tally: l.in.tally, callStack: l.in.callStack,
 		// The child's ceiling is THIS loop's effective emit: intersection at
 		// every hop, so delegation can only narrow, never widen.
 		emitCeiling: l.emit, ceilinged: true,

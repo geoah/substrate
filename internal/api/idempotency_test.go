@@ -19,8 +19,9 @@ import (
 type callableFake struct {
 	*fakeDataset
 
-	mu   sync.Mutex
-	keys map[string]string
+	mu    sync.Mutex
+	keys  map[string]string
+	actor substrate.Actor
 }
 
 func (c *callableFake) saw(method, key string) {
@@ -35,8 +36,11 @@ func (c *callableFake) key(method string) string {
 	return c.keys[method]
 }
 
-func (c *callableFake) CallFunction(ctx context.Context, _ string, _ any) (any, int, error) {
+func (c *callableFake) CallFunction(ctx context.Context, caller substrate.Actor, _ string, _ any) (any, int, error) {
 	c.saw("CallFunction", substrate.IdempotencyKeyFrom(ctx))
+	c.mu.Lock()
+	c.actor = caller
+	c.mu.Unlock()
 	return map[string]any{"ok": true}, 0, nil
 }
 
@@ -120,6 +124,34 @@ func TestIdempotencyKeyReachesTheFiveOperations(t *testing.T) {
 	wantStatus(t, rec, http.StatusOK)
 	if got := callable.key("ChatAgent"); got != "" {
 		t.Fatalf("chat carried Idempotency-Key %q; the stream is excluded", got)
+	}
+}
+
+// The X-Substrate-Actor header reaches CallFunction as its caller, the
+// door a networked call's run row names (#645); no header is the API door.
+func TestCallFunctionCallerIsTheRequestActor(t *testing.T) {
+	env := newTestEnv(t)
+	callable := &callableFake{fakeDataset: env.svc.datasets[fakeRepository], keys: map[string]string{}}
+	env.svc.wrap = func(*fakeDataset) substrate.Dataset { return callable }
+	tok := env.svc.token(fakeRepository)
+	path := "/api/v1/substrate.reamde.dev/core/function/adder/call"
+	body := map[string]any{"input": map[string]any{"title": "x"}}
+
+	for _, tc := range []struct {
+		header []string
+		want   substrate.Actor
+	}{
+		{[]string{actorHeader, "console"}, substrate.ActorConsole},
+		{nil, substrate.ActorAPI},
+	} {
+		rec := env.do(t, http.MethodPost, path, tok, body, tc.header...)
+		wantStatus(t, rec, http.StatusOK)
+		callable.mu.Lock()
+		got := callable.actor
+		callable.mu.Unlock()
+		if got != tc.want {
+			t.Fatalf("header %v: CallFunction saw caller %q, want %q", tc.header, got, tc.want)
+		}
 	}
 }
 

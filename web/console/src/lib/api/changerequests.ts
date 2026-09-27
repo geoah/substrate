@@ -10,7 +10,7 @@
  * request proposed, and lands the server's account on it as
  * `substrate/conflict`, so a rejected call means re-read, never retry. An
  * accept may carry the owner's adjusted values as `adjustedDiff`, applied
- * instead of the proposed `diff` (decision 0112). */
+ * instead of the proposed `diff` (decision 0115). */
 
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "./http"
 import {

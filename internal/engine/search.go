@@ -186,7 +186,7 @@ func narrowByPurpose(reg *vocabulary.Registry, named []*vocabulary.Kind, purpose
 }
 
 // purposeWeights is the ranking prior a kind's declared purpose sets
-// (decision record 0115): a record a person browses ranks above a detail of
+// (decision record 0136): a record a person browses ranks above a detail of
 // one, and both above machinery, by a factor rather than a tier, so a strong
 // match on machinery still outranks a weak one on data. A kind the registry no
 // longer declares reads as primary, as an undeclared purpose does.

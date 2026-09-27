@@ -43,6 +43,9 @@ WHAT IT ASSERTS, and why each one is worth a run:
                   `erroring` with the cause, and the next run recovers
    16. backlog    with a `replies` backlog bigger than a run's budget, a new
                   message in a mirrored channel lands within that one run
+   17. write      `postmessage` posts through the config's token: the form it
+                  sends, its output, no record written, Slack's refusal
+                  surfaced, and an apiBase off slack.com refused unsent
 
 Run against `raw/slack` (MODE=seed) two families of check relax, and only
 two; both are commented "SEED:" at the site and described in
@@ -448,11 +451,12 @@ def sync_now():
     NOT a function call. Call mode runs ONE invocation and does not drain a
     paged body, so a paged sync fired that way stops after its first page."""
     import datetime as dt
-    # MICROSECONDS, deliberately. The trigger fires on `syncRequestedAt >
-    # lastSyncedAt` and the sync stamps `lastSyncedAt` to the whole second;
-    # a request stamped in the same second is NOT greater, so the guard
-    # closes and the continuation deadlocks. A sub-second request is strictly
-    # later than a whole-second completion in the same second.
+    # MICROSECONDS, so two requests inside one second are two requests: the
+    # trigger fires while `syncRequestedAt` differs from `syncRequestedAck`.
+    # It used to fire on `syncRequestedAt > lastSyncedAt`, which CEL compares
+    # as strings, and a request stamped in the same second as the
+    # whole-second `lastSyncedAt` sorted below it ("." before "Z") and never
+    # ran. That is what failed sections 9, 15 and 16 at random in CI.
     now = dt.datetime.now(dt.timezone.utc).isoformat()
     return api("PATCH", "/api/v1/%s/%s" % (ACCOUNT_KIND, ACCOUNT_ID),
                {"properties": {"syncRequestedAt": now}})
@@ -486,21 +490,31 @@ def pending(p):
 def wait_for_sync(previous_stamp, seconds=240):
     """Wait for a sync to settle, DRIVING it while it has work left.
 
-    The on-demand trigger fires on `syncRequestedAt > lastSyncedAt`, and both
-    are whole seconds: a drain that stamps its completion in the same second
-    as the request closes its own guard, and nothing fires again. Re-stamping
-    only when `lastSyncedAt` CHANGED therefore deadlocks — the owner's
-    workspace stalled at 1,249 pending with the two equal to the second. So
-    the driver re-stamps whenever the account still has pending work and the
-    last stamp has gone quiet, whether or not it moved.
+    A bounded drain stamps `lastSyncedAt` with work still pending and nothing
+    fires again on its own, so the driver re-stamps the request whenever the
+    account still has pending work and the last stamp has gone quiet, whether
+    or not it moved.
+
+    SETTLED means the LATEST request was served, not only that some run
+    finished with nothing pending: a drive stamped while a run was in flight
+    queues one more delivery, and returning before it ran left a check
+    reading `syncRequestedAck` one request behind `syncRequestedAt`. A run
+    that walks to the end always acknowledges the request it read, so the
+    wait is for that. It never drives while the dispatcher says a run is
+    `running`, for the same reason.
     """
     deadline = time.time() + seconds
-    quiet_since, driven = time.time(), 0
+    quiet_since, driven, moved = time.time(), 0, False
     while time.time() < deadline:
         _st, body = api("GET", "/api/v1/%s/%s" % (ACCOUNT_KIND, ACCOUNT_ID))
         p = props(body or {})
         stamp = p.get("lastSyncedAt")
-        if stamp and stamp != previous_stamp and not pending(p):
+        running = p.get("syncState") == "running"
+        served = p.get("syncRequestedAck") == p.get("syncRequestedAt")
+        # MOVED ONCE is enough: two runs can stamp the same whole second, so
+        # the run that serves the last request may leave the stamp unchanged.
+        moved = moved or bool(stamp and stamp != previous_stamp)
+        if moved and not pending(p) and not running and served:
             return p
         if stamp != previous_stamp:
             quiet_since = time.time()
@@ -508,7 +522,7 @@ def wait_for_sync(previous_stamp, seconds=240):
             if pending(p):
                 sync_now()
                 driven += 1
-        elif pending(p) and time.time() - quiet_since > 20:
+        elif pending(p) and not running and time.time() - quiet_since > 20:
             # Nothing has run for twenty seconds and there is work left: the
             # guard is closed, so open it again.
             quiet_since = time.time()
@@ -1805,7 +1819,95 @@ def main():
             ok(not pending(drained), "the backlog did not drain afterwards: %r"
                % drained.get("syncStatus"))
             faults([])
+
+    section("17. postmessage posts through the pasted token")
+    postmessage()
     return finish()
+
+
+POST_FN = P + "/postmessage"
+POST_ROUTE = "/api/chat.postMessage"
+
+
+def postmessage():
+    """#644. The bundle's one write: a callable, fired by nobody but its
+    caller, that spends the config's token on `chat.postMessage` and writes
+    no record. The recording names the conversation and the thread parent,
+    so the call is built from it and checked against the mirror first."""
+    if not MOCK or SEED:
+        seed_note("postmessage is driven against the mock only")
+        return
+    from writecall import Writes, error_text, form
+    rec = load("POST_api_chat.postMessage.json") or {}
+    channel = rec.get("channel")
+    parent = (rec.get("message") or {}).get("thread_ts")
+    if not ok(channel and parent, "the postMessage recording names no channel "
+                                  "and thread parent"):
+        return
+    convs = {props(r).get("conversationId"): rid(r) for r in records(CONV)}
+    ok(channel in convs, "the recording's conversation %s is not mirrored" % channel)
+    ok(any(props(m).get("ts") == parent
+           and ref_id(props(m).get("channel")) == convs.get(channel)
+           for m in records(MESSAGE)),
+       "the thread parent %s is not a mirrored message in %s" % (parent, channel))
+    w = Writes(SERVER, TOKEN, MOCK)
+    w.reset()
+
+    text = "On it, thanks."
+    st, reply = w.call(POST_FN, {"channel": channel, "text": text,
+                                 "threadTs": parent})
+    ok(st == 200, "a threaded reply answered %s: %s" % (st, error_text(reply)[:300]))
+    out = (reply or {}).get("output") or {} if st == 200 else {}
+    ok(out == {"channel": channel, "ts": rec.get("ts")},
+       "the reply's output is %r, want the recording's channel and ts" % out)
+    ok((reply or {}).get("effects") == 0,
+       "postmessage wrote %r records; it writes none" % (reply or {}).get("effects"))
+    sent = w.requests("POST", POST_ROUTE)
+    ok(len(sent) == 1, "%d chat.postMessage requests reached Slack, want 1" % len(sent))
+    if sent:
+        ok(form(sent[0]) == {"channel": channel, "text": text, "thread_ts": parent},
+           "the form sent was %r" % form(sent[0]))
+        ok(str(sent[0].get("auth") or "").startswith("Bearer xoxp-"),
+           "the token rode the Authorization header (%r)" % sent[0].get("auth"))
+        ok("token" not in form(sent[0]), "the token was sent in the form")
+
+    st, reply = w.call(POST_FN, {"channel": channel,
+                                 "text": "Posted to the channel."})
+    ok(st == 200, "a top-level post answered %s: %s" % (st, error_text(reply)[:300]))
+    sent = w.requests("POST", POST_ROUTE)
+    ok(len(sent) == 2 and "thread_ts" not in form(sent[-1]),
+       "a post with no threadTs sent a thread_ts (%r)" % (sent[-1:] or None))
+
+    w.faults([{"match": "POST " + POST_ROUTE, "status": [200],
+               "body": {"ok": False, "error": "not_in_channel"}}])
+    st, reply = w.call(POST_FN, {"channel": channel, "text": text})
+    ok(st >= 400 and "not_in_channel" in error_text(reply),
+       "Slack's refusal did not reach the caller: %s %s"
+       % (st, error_text(reply)[:300]))
+    w.faults([])
+
+    before = len(w.requests("POST", POST_ROUTE))
+    st, reply = w.call(POST_FN, {"channel": channel})
+    ok(400 <= st < 500, "a call with no text answered %s, want a 4xx" % st)
+    ok(len(w.requests("POST", POST_ROUTE)) == before,
+       "a call with no text still reached Slack")
+
+    # The origin pin: an apiBase off slack.com refuses before any request.
+    # The value it had is put back, not cleared: a scenario-only run reaches
+    # the mock through it.
+    cfg = "/api/v1/%s/default" % os.environ.get("CONFIG_KIND", P + "/config")
+    had = props(api("GET", cfg)[1] or {}).get("apiBase")
+    st, _ = api("PATCH", cfg, {"properties": {"apiBase": "https://slack.example.com"}})
+    if ok(st < 400, "could not point apiBase off Slack: %s" % st):
+        st, reply = w.call(POST_FN, {"channel": channel, "text": text})
+        ok(st >= 400 and "not a pinned origin" in error_text(reply),
+           "an apiBase off slack.com did not refuse: %s %s"
+           % (st, error_text(reply)[:200]))
+        ok(len(w.requests("POST", POST_ROUTE)) == before,
+           "the refused call still reached the mock")
+        api("PATCH", cfg, {"properties": {"apiBase": had}})
+    note("postmessage: %d calls reached the mock"
+         % len(w.requests("POST", POST_ROUTE)))
 
 
 def finish():

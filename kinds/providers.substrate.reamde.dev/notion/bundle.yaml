@@ -106,11 +106,17 @@ data:
   # pre-guide draft. A changed declaration shipping the same version reaches
   # no repository, so every edit from here bumps this.
   #
-  # 15 — every kind's description opens with one plain sentence
-  # saying what a record is to a person.
-  #
-  # 16, #675: `pagesync` is labelled Sync progress (decision 0113). Display
+  # 14, #675: `pagesync` is labelled Sync progress (decision 0117). Display
   # text only.
+  #
+  # 15: the on-request trigger fires while `syncRequestedAt` differs from
+  # `syncRequestedAck`. Its `syncRequestedAt > lastSyncedAt` guard compared
+  # the two instants as strings and could drop a request stamped in the same
+  # second as the last run.
+  #
+  # 16: every kind declares its purpose (decision 0133), and its
+  # description opens with one plain sentence saying what a record is to
+  # a person.
   version: 16
 ---
 # ---- the bundle document: the install unit --------------------------------
@@ -2228,9 +2234,10 @@ data:
 
 
     def _now():
-        # SUB-SECOND, deliberately. A whole-second stamp is not greater than a
-        # `syncRequestedAt` landing in the same second, and the on-request guard
-        # closes for good (`docs/provider-practices.md` §4).
+        # SUB-SECOND, so two runs inside one second stamp distinct instants. The
+        # stamp no longer gates Sync now: the on-request guard compares
+        # `syncRequestedAt` with `syncRequestedAck` (triggers.yaml), because a
+        # string comparison against `lastSyncedAt` dropped same-second requests.
         return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 

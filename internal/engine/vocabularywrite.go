@@ -545,7 +545,27 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		// publishes are the ones the published closure derives; a property no
 		// candidate mapping supplies any more is released first
 		// (recomputeMappingTargets).
+		//
+		// Every where compiles first, against the candidate, so neither the
+		// backfill nor the recompute reads a source through a where the
+		// filter grammar refuses (checkMappingWhere, decision record 0118).
+		// The sources come next: a mapping the batch admits, changes or
+		// names links every live source its where covers whose slot is
+		// still empty, which mints or finds the targets the recompute then
+		// reads (decision record 0107).
+		if err := t.checkMappingWhere(candidate); err != nil {
+			return err
+		}
+		if err := t.linkUnpointedSources(backfilledMappings(ds.registry(), candidate, b.docs)); err != nil {
+			return err
+		}
 		if err := t.recomputeMappingTargets(ds.registry(), candidate); err != nil {
+			return err
+		}
+		// An actor the batch declares at the machine tier, or re-declares
+		// there in a package it touches, releases what it holds above it the
+		// same way (recomputeDemotedActors).
+		if err := t.recomputeDemotedActors(ds.registry(), candidate, touched); err != nil {
 			return err
 		}
 		final, err := droppedTypeGuards(t, st.droppedTypes)
@@ -1285,7 +1305,7 @@ func (t *txn) projectPackage(reg *vocabulary.Registry, projecting map[string]boo
 }
 
 // propPackageDeclaredBy is the actor that first declared a package (decision
-// record 0111). `managed` on the core `package` kind and no document key, so
+// record 0109). `managed` on the core `package` kind and no document key, so
 // no document can write it and `engineOwned` keeps it across every later
 // re-projection.
 const propPackageDeclaredBy = "declaredBy"

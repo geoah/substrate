@@ -661,7 +661,7 @@ describe("proposerOf / deciderOf", () => {
 
 // ── the owner's adjustment ──────────────────────────────────────────────────
 
-describe("the owner's adjustment (decision 0112)", () => {
+describe("the owner's adjustment (decision 0115)", () => {
   it("rides the accept alone, as adjustedDiff", () => {
     const adjusted = { properties: { summary: "mine" } }
     expect(decisionPatch("accepted", 7, undefined, adjusted)).toEqual({

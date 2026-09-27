@@ -4,7 +4,7 @@ date: 2026-09-26
 decision-makers: George Antoniadis (via the issue-673 agent session)
 ---
 
-# 0112. An owner adjusts a change request on the accepting write
+# 0115. An owner adjusts a change request on the accepting write
 
 ## Context and Problem Statement
 

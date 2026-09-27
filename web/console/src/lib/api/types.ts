@@ -302,7 +302,7 @@ export interface AffectedRecord {
   version?: number
   deleted?: boolean
   /** What the entry did to each property, before and after, in name order.
-   * Only on a read that asked (`values=1`, decision 0108) from a server that
+   * Only on a read that asked (`values=1`, decision 0135) from a server that
    * knows it; absent otherwise, so its absence is never "nothing changed". */
   properties?: PropertyChange[]
 }
@@ -370,7 +370,7 @@ export interface ChangePage {
 }
 
 /** Consecutive rows of the filtered feed that share an actor, a kind and a
- * verb (`substrate.ChangeRun`, decision 0110). A run is whole: a page never
+ * verb (`substrate.ChangeRun`, decision 0126). A run is whole: a page never
  * ends inside one, so `count` is exact. `verb` is `create`, `restore` or
  * `update` for a put (a patch is an `update`) and the op otherwise.
  * `recordId` is set when the run touched one record. */
@@ -534,7 +534,7 @@ export interface KindInfo {
   /** What the kind is for, as its declaration says it — a sentence or two,
    * read above the collection. Empty when the declaration carries none. */
   description: string
-  /** The kind's declared display label (decision 0113); absent when the
+  /** The kind's declared display label (decision 0117); absent when the
    * declaration carries none, and the console names the kind from `name`. */
   label?: KindLabel
   /** The reconciled declaration — the `data` of the `substrate.reamde.dev/core/kind`
@@ -724,7 +724,7 @@ export interface BundleClosure {
    * kinds ARE before an install has put them in the registry. Absent for a
    * kind that declares none, and from an older server whole. */
   kindDescriptions?: Record<string, string>
-  /** Each kind's declared `purpose` (decision record 0106), keyed the same
+  /** Each kind's declared `purpose` (decision record 0133), keyed the same
    * way. Absent for a kind that declares none, which reads as primary, and
    * from an older server whole. */
   kindPurposes?: Record<string, string>

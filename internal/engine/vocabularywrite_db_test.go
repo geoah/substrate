@@ -421,7 +421,7 @@ func TestProjectionStoresTheAuthoredDeclaration(t *testing.T) {
 	}
 }
 
-// A DECLARED LABEL REACHES BOTH READS (decision 0113): the kind's row carries
+// A DECLARED LABEL REACHES BOTH READS (decision 0117): the kind's row carries
 // it as the `label` property the meta-kind declares, and KindInfo carries it as
 // its own field, before and after a reopen rebuilds the registry from the row.
 func TestADeclaredKindLabelIsStoredAndRead(t *testing.T) {

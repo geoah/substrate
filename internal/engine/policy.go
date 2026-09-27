@@ -13,7 +13,7 @@ package engine
 // every surveyed harness trains people on. No match means today's behavior.
 // The one exception is an allow that names, in `overrides`, the gate it
 // answers: where both match, that gate steps aside for that write
-// (decision record 0109). It is held narrow at the write door (one agent,
+// (decision record 0108). It is held narrow at the write door (one agent,
 // one kind, one verb), and it never lifts a refuse.
 //
 // Policy never runs for owner or machine writes, never gates the request
@@ -64,7 +64,7 @@ type policyRule struct {
 	autoRefuse      *float64
 	mode            string
 	// overrides is the id of the gate this allow answers (decision record
-	// 0109): where both match one write, the gate steps aside. Empty on
+	// 0108): where both match one write, the gate steps aside. Empty on
 	// every rule that is not a narrow allow.
 	overrides string
 }
@@ -347,7 +347,7 @@ func (ds *dataset) policyVerdict(ctx context.Context, kind, op, agent string) (s
 	}
 	matched := make([]*policyRule, 0, len(rules))
 	// lifted holds the gates a matching allow overrides for this write
-	// (decision record 0109). Only a gate is lifted: a refuse still wins, and
+	// (decision record 0108). Only a gate is lifted: a refuse still wins, and
 	// a gate no matching allow names still holds the write.
 	lifted := map[string]bool{}
 	for i := range rules {

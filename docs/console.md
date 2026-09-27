@@ -57,7 +57,7 @@ lists collections (the sidebar, ⌘K, All data, Home) uses the same sections:
 
 What a section lists is decided by each kind's declared
 [`purpose`](vocabulary.md#the-reserved-keys)
-([0106](decisions/0106-a-kind-declares-its-purpose.md)): `primary` is a thing
+([0133](decisions/0133-a-kind-declares-its-purpose.md)): `primary` is a thing
 you browse and open directly, `supporting` is a detail of another kind,
 reached from the records it belongs to, and `internal` is machinery. A kind
 that declares none reads as `primary`, so a kind you or an agent declares is
@@ -116,7 +116,7 @@ agent author needs, without taking anything away:
 ### Display names
 
 A collection is labelled by the display label its kind declares
-([0113](decisions/0113-a-kind-may-declare-its-display-label.md)): Slack's
+([0117](decisions/0117-a-kind-may-declare-its-display-label.md)): Slack's
 `conversation` reads **Channels**, Google's `calendarseries` **Repeating
 events**. A kind that declares none is named from its name (`person` reads
 **People**, `calendareventseries` **Calendar event series**, `apikey` **API
@@ -188,7 +188,7 @@ naming the agent that made it where one did, and
 **Collections**, the **Tools** it ships, and, where an agent declared it,
 **Made by** with that agent's card and a way to ask it. Who declared a
 package is the `package` row's `declaredBy`, stamped by the engine
-([0111](decisions/0111-a-package-row-names-the-actor-that-declared-it.md));
+([0109](decisions/0109-a-package-row-names-the-actor-that-declared-it.md));
 a package created before the stamp names no one.
 
 ### Add a collection
@@ -205,7 +205,7 @@ straight to it:
 - **Start from a sample**: the shipped [samples](bundles-catalog.md) that
   declare at least one primary kind (tasks, people, notes and the rest), each
   by the collections it adds and with **Add**. A kind's
-  [purpose](decisions/0106-a-kind-declares-its-purpose.md) is read from the
+  [purpose](decisions/0133-a-kind-declares-its-purpose.md) is read from the
   catalog's closure until the repository holds the kind, so a sample whose
   kinds are all supporting or internal is not offered as a collection. Adding
   one imports it under the repository's own authority
@@ -454,7 +454,7 @@ refused apply comes back on the request rather than as a half-applied change.
 The **If applied** values are editable with the property sheet's own
 editors, and a value can be left out and put back; nothing is stored until
 **Apply**, which then sends the owner's values as the accept's `adjustedDiff`
-([0112](decisions/0112-an-owner-adjusts-a-change-request-on-the-accepting-write.md)),
+([0115](decisions/0115-an-owner-adjusts-a-change-request-on-the-accepting-write.md)),
 checked against the version of the record the page showed. A decided request
 the owner adjusted shows what was suggested beside what was applied, and the
 chat card and the thread say it was applied with your edits. With Technical
@@ -495,7 +495,7 @@ panel on the right.
   asks first ("_Agent_ will add and change tasks without asking. You can
   take this back in the agent's panel."), then saves an `allow` naming that
   gate in `overrides` for this agent, kind and verb, one per door verb
-  ([0109](decisions/0109-an-allow-outranks-a-gate-only-by-naming-it.md)),
+  ([0108](decisions/0108-an-allow-outranks-a-gate-only-by-naming-it.md)),
   and applies the suggestion. Deciding writes a message into the thread and
   resumes the agent. Questions the agent asks are cards too, answered in
   place.
@@ -658,7 +658,7 @@ every one), and the hits best first, each with its collection. Each typed
 word also matches as the start of a longer one (`ans` finds `Ansel`), and the
 server ranks the word itself above its completions. The page searches what
 you keep and its details (`filter.purposes` `primary` and `supporting`,
-[0115](decisions/0115-search-ranks-by-bm25f-and-a-kinds-purpose.md)); with
+[0136](decisions/0136-search-ranks-by-bm25f-and-a-kinds-purpose.md)); with
 Technical details on, **Include the substrate's own records** searches every
 purpose (`?system=true`), and picking a collection searches it whatever its
 purpose. How to rank is

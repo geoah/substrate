@@ -4,7 +4,7 @@
  * in the record page's own labels and values, then Apply and Dismiss. The If
  * applied values are editable with the property sheet's own editors, and an
  * Apply after an edit sends the owner's values as the accept's
- * `adjustedDiff` (decision 0112); a decided request the owner adjusted shows
+ * `adjustedDiff` (decision 0115); a decided request the owner adjusted shows
  * what was suggested beside what was applied. A create shows the record it
  * would add; a delete says plainly what goes. The ids, the
  * op, the versions, the policy that held the write, the thread it came from,

@@ -263,7 +263,8 @@ def force_sync(api, kind, aid, timeout=300, wait_pending=True):
     before = account(api, kind, aid).get("lastSyncedAt") or ""
     # A REAL fractional stamp. `.000000Z` on a whole second is not sub-second
     # precision: two requests in the same second produce the same string, and
-    # `syncRequestedAt > lastSyncedAt` closes (Codex 21, §4).
+    # the on-request guard (`syncRequestedAt` differs from `syncRequestedAck`)
+    # sees no new request (Codex 21, §4).
     import datetime as _dt
     stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     st, body, _ = api.call("PATCH", "/api/v1/%s/%s" % (kind, aid),
@@ -276,7 +277,9 @@ def force_sync(api, kind, aid, timeout=300, wait_pending=True):
     seen, quiet = False, 0
     while time.time() < deadline:
         p = account(api, kind, aid)
-        moved = (p.get("lastSyncedAt") or "") > before
+        # MOVED, not "greater": instants compared as strings misorder inside
+        # one second, and nothing but a new run moves the stamp.
+        moved = (p.get("lastSyncedAt") or "") != before
         if moved and not p.get("syncPending"):
             return p                      # a walk ran to the end
         if wait_pending:

@@ -89,7 +89,7 @@ The sidebar, top to bottom:
   switch.
 
 What a group lists is decided by each kind's declared `purpose`
-([0106](../decisions/0106-a-kind-declares-its-purpose.md)): everyday mode
+([0133](../decisions/0133-a-kind-declares-its-purpose.md)): everyday mode
 lists `primary` kinds by display plural; technical mode lists the authority,
 package and kind tree, each kind by its display plural with its own name in
 faint mono beside it, supporting and internal kinds tagged. Every kind under
@@ -286,7 +286,7 @@ property's name, which is data and fine, and nowhere else.
 
 A kind's **display name** is the `label:` its declaration carries, where it
 declares one ("Channels", "Repeating events",
-[0113](../decisions/0113-a-kind-may-declare-its-display-label.md)); otherwise
+[0117](../decisions/0117-a-kind-may-declare-its-display-label.md)); otherwise
 `lib/kind-names.ts` builds it from its lowercase compound name: the name is split into known words (the fewest-words split, the
 longer first word winning a tie), acronyms and brands keep their capitals
 ("API keys", "Gmail threads", "WHOOP"), the first word is capitalised, and the

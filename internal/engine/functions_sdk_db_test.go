@@ -30,7 +30,7 @@ def main(input, host):
 	ctx := context.Background()
 	fn := fnPackage + "/sdkbuild"
 
-	out, n, err := ds.CallFunction(ctx, fn, map[string]any{
+	out, n, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{
 		"account": "acct1", "ext": "rec/9", "title": "staged",
 	})
 	if err != nil {
@@ -49,7 +49,7 @@ def main(input, host):
 
 	// ids.external is deterministic: the same provider/account/external id
 	// recomputes the same id, and the if_absent put is then a no-op.
-	out2, _, err := ds.CallFunction(ctx, fn, map[string]any{
+	out2, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{
 		"account": "acct1", "ext": "rec/9", "title": "again",
 	})
 	if err != nil {
@@ -77,7 +77,7 @@ def main(input, host):
                          "id": "returned-" + k, "properties": {"name": "returned"}}]}
 `))
 	ctx := context.Background()
-	_, _, err := ds.CallFunction(ctx, fnPackage+"/bothways", map[string]any{"k": "1"})
+	_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/bothways", map[string]any{"k": "1"})
 	if err == nil || !strings.Contains(err.Error(), "not both") {
 		t.Fatalf("mixed mode: want the one-mode refusal, got %v", err)
 	}
@@ -106,11 +106,11 @@ def main(input, host):
     return {}
 `))
 	ctx := context.Background()
-	if _, _, err := ds.CallFunction(ctx, fnPackage+"/badreturn", map[string]any{}); err == nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/badreturn", map[string]any{}); err == nil {
 		t.Fatalf("returning a staged handle should fail the delivery")
 	}
 	// The shared host survived: a subsequent delivery still works.
-	if _, _, err := ds.CallFunction(ctx, fnPackage+"/goodafter", map[string]any{}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/goodafter", map[string]any{}); err != nil {
 		t.Fatalf("shared host did not survive a bad return: %v", err)
 	}
 	if got := mustGet(t, ds, taskType, "survivor"); got.Title != "ok" {
@@ -131,7 +131,7 @@ def main(input, host):
     return {}
 `))
 	ctx := context.Background()
-	if _, n, err := ds.CallFunction(ctx, fnPackage+"/snap", map[string]any{}); err != nil || n != 3 {
+	if _, n, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/snap", map[string]any{}); err != nil || n != 3 {
 		t.Fatalf("snapshot call: n=%d err=%v", n, err)
 	}
 	for i, want := range []string{"t0", "t1", "t2"} {
@@ -161,14 +161,14 @@ def main(input, host):
 	fn := fnPackage + "/ver"
 
 	// Omitted → unguarded, applies.
-	if _, _, err := ds.CallFunction(ctx, fn, map[string]any{"mode": "omitted"}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{"mode": "omitted"}); err != nil {
 		t.Fatalf("omitted if_version: %v", err)
 	}
 	if got := mustGet(t, ds, taskType, "v-omitted"); got.Title != "t" {
 		t.Fatalf("omitted if_version did not apply: %+v", got)
 	}
 	// Explicit None → builder error, nothing lands.
-	if _, _, err := ds.CallFunction(ctx, fn, map[string]any{"mode": "none"}); err == nil ||
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{"mode": "none"}); err == nil ||
 		!strings.Contains(err.Error(), "if_version=None") {
 		t.Fatalf("explicit None if_version: want the builder refusal, got %v", err)
 	}
@@ -176,7 +176,7 @@ def main(input, host):
 		t.Fatalf("explicit-None delivery leaked a write")
 	}
 	// Zero → a real precondition; an absent record is version 0, so it applies.
-	if _, _, err := ds.CallFunction(ctx, fn, map[string]any{"mode": "zero"}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{"mode": "zero"}); err != nil {
 		t.Fatalf("if_version=0: %v", err)
 	}
 	if got := mustGet(t, ds, taskType, "v-zero"); got.Title != "t" {
@@ -212,7 +212,7 @@ def main(input, host):
 		{"nilmore", "cursor is required"},
 	}
 	for _, tc := range cases {
-		if _, _, err := ds.CallFunction(ctx, fnPackage+"/"+tc.fn, map[string]any{}); err == nil ||
+		if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/"+tc.fn, map[string]any{}); err == nil ||
 			!strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%s: want %q, got %v", tc.fn, tc.want, err)
 		}
@@ -244,7 +244,7 @@ def main(input, host):
 	task := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "v"}})
 
 	// The read's version feeds a matching guarded patch, so it applies.
-	if _, _, err := ds.CallFunction(ctx, fn, map[string]any{"id": task.ID}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{"id": task.ID}); err != nil {
 		t.Fatalf("guarded patch: %v", err)
 	}
 	if got := mustGet(t, ds, task.Kind, task.ID); got.Title != "guarded" {
@@ -256,7 +256,7 @@ def main(input, host):
 	if _, err := ds.Patch(ctx, owner, task.Kind, task.ID, substrate.PatchInput{Properties: map[string]any{"name": "moved"}}); err != nil {
 		t.Fatalf("owner patch: %v", err)
 	}
-	if _, _, err := ds.CallFunction(ctx, fn, map[string]any{"id": task.ID}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{"id": task.ID}); err != nil {
 		t.Fatalf("guarded patch after move: %v", err)
 	}
 	if got := mustGet(t, ds, task.Kind, task.ID); got.Title != "guarded" {
@@ -284,7 +284,7 @@ def main(input, host):
 	ctx := context.Background()
 	fn := fnPackage + "/verwrite"
 	call := func(args map[string]any) error {
-		_, _, err := ds.CallFunction(ctx, fn, args)
+		_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, args)
 		return err
 	}
 
@@ -360,7 +360,7 @@ def main(input, host):
 
 	// A patch proposal: the request carries the target edge, the diff and the
 	// rationale, and the task is untouched until the owner accepts.
-	if _, _, err := ds.CallFunction(ctx, fn, map[string]any{
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{
 		"id": "req-sdk-patch", "target": task.ID, "rationale": "the transcript says Friday",
 		"diff": map[string]any{"description": "due Friday"},
 	}); err != nil {
@@ -385,7 +385,7 @@ def main(input, host):
 
 	// A create proposal names the kind and id the accept would mint, so the
 	// record is born only once somebody agrees.
-	if _, _, err := ds.CallFunction(ctx, fn, map[string]any{
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{
 		"id": "req-sdk-create", "op": "create", "target": "t-minted",
 		"diff": map[string]any{"name": "Follow up"},
 	}); err != nil {
@@ -402,7 +402,7 @@ def main(input, host):
 	}
 
 	// A delete proposal carries no diff, and tombstones on accept.
-	if _, _, err := ds.CallFunction(ctx, fn, map[string]any{
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{
 		"id": "req-sdk-delete", "op": "delete", "target": "t-minted",
 	}); err != nil {
 		t.Fatalf("propose delete: %v", err)
@@ -416,14 +416,14 @@ def main(input, host):
 
 	// The builder validates locally: a patch proposal with no diff is a body
 	// error, not an engine park.
-	if _, _, err := ds.CallFunction(ctx, fn, map[string]any{
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{
 		"id": "req-sdk-empty", "target": task.ID,
 	}); err == nil || !strings.Contains(err.Error(), "needs a diff") {
 		t.Fatalf("a diffless patch proposal: %v", err)
 	}
 	// And a delete carrying a diff is refused on PRESENCE, so an empty one is
 	// a body error here rather than a write the engine's admission parks on.
-	if _, _, err := ds.CallFunction(ctx, fn, map[string]any{
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{
 		"id": "req-sdk-emptydel", "op": "delete", "target": task.ID,
 		"diff": map[string]any{},
 	}); err == nil || !strings.Contains(err.Error(), "proposes no values") {

@@ -756,7 +756,7 @@ func TestAnAgentDeliveryIsClaimedBeforeItsLoopAndCompletedAfter(t *testing.T) {
 	}
 
 	// Retried by hand once the completion can land: the claim retires. A
-	// retry mints no run record, like every direct invocation.
+	// retry mints no run record, like a manual run.
 	ds.mu.Lock()
 	ds.deliveryFault = nil
 	ds.mu.Unlock()

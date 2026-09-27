@@ -42,6 +42,9 @@ WHAT IT ASSERTS, and why each one is worth a run:
                   `ok` with both streams acked against the request that drove
                   it, an injected 429 is `throttled`, an injected 401 is
                   `erroring` with the cause, and the next run recovers
+   14. write      `sendmessage` sends through the config's token: the body it
+                  sends, its output, no record written, Beeper's refusal
+                  surfaced, and a public apiBase refused unsent
 
 Run against `raw/beeper` (MODE=seed) two families of check relax, and only
 two; both are commented "SEED:" at the site and described in
@@ -355,12 +358,15 @@ def account_row():
 
 
 def resync(label, timeout=240):
-    """Ask for a sync now — the same `syncRequestedAt` door the console's
-    button uses — and wait for the account's own stamp to move past it."""
+    """Ask for a sync now (the same `syncRequestedAt` door the console's
+    button uses) and wait for the run that serves it.
+
+    SERVED is `syncRequestedAck` equal to the request, and the stamp moved.
+    `lastSyncedAt > before` compared two instants as strings, which gets the
+    order wrong inside one second, and the whole-second request this used to
+    send was one generation with any other request in that second."""
     before = props(account_row()).get("lastSyncedAt") or ""
-    stamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + ".000000Z"
-    st, body = api("PATCH", "/api/v1/%s/%s" % (ACCOUNT_KIND, ACCOUNT_ID),
-                   {"properties": {"syncRequestedAt": stamp}})
+    st, body = request_sync()
     if st >= 400:
         problems.append((_section, "%s: syncRequestedAt refused: HTTP %s %s"
                          % (label, st, json.dumps(body)[:200])))
@@ -370,8 +376,9 @@ def resync(label, timeout=240):
         time.sleep(4)
         p = props(account_row())
         after = p.get("lastSyncedAt") or ""
-        if after and after > before and not str(p.get("syncStatus") or "") \
-                .startswith("erroring"):
+        served = p.get("syncRequestedAck") == p.get("syncRequestedAt")
+        if after and after != before and served and p.get("syncState") != "running" \
+                and not str(p.get("syncStatus") or "").startswith("erroring"):
             if "pending" not in str(p.get("syncStatus") or ""):
                 note("%s: %s" % (label, p.get("syncStatus")))
                 return True
@@ -396,13 +403,13 @@ def faults(rules):
 
 
 def request_sync():
-    """Stamp `syncRequestedAt` and return it — the same door the console's
-    Sync now button uses. SUB-SECOND, because the on-demand guard is
-    `syncRequestedAt > lastSyncedAt` and the body stamps sub-second too."""
+    """Stamp `syncRequestedAt`, the same door the console's Sync now button
+    uses, and return the PATCH's status and body. SUB-SECOND, so two requests
+    inside one second are two requests: the on-demand guard fires while
+    `syncRequestedAt` differs from `syncRequestedAck`."""
     stamp = _dt.datetime.now(_dt.timezone.utc).isoformat()
-    api("PATCH", "/api/v1/%s/%s" % (ACCOUNT_KIND, ACCOUNT_ID),
-        {"properties": {"syncRequestedAt": stamp}})
-    return stamp
+    return api("PATCH", "/api/v1/%s/%s" % (ACCOUNT_KIND, ACCOUNT_ID),
+               {"properties": {"syncRequestedAt": stamp}})
 
 
 def wait_for_state(want, seconds=120):
@@ -1089,6 +1096,9 @@ def main() -> int:
                "syncError was cleared by a later success — it is the LAST "
                "error, and syncState is what says the run is over")
 
+    section("14. sendmessage sends through the pasted token")
+    sendmessage()
+
     # ------------------------------------------------------------- the report
     print("")
     if not problems:
@@ -1102,6 +1112,86 @@ def main() -> int:
             last = sec
         print("    - %s" % msg)
     return 1
+
+
+SEND_FN = P + "/sendmessage"
+
+
+def sendmessage():
+    """#644. The bundle's one write: a callable, fired by nobody but its
+    caller, that spends the config's token on `POST /v1/chats/{id}/messages`
+    and writes no record. The recording names the chat; the message replied
+    to is one the sync mirrored in it."""
+    if not MOCK or SEED:
+        seed_note("sendmessage is driven against the mock only")
+        return
+    from writecall import Writes, body_json, error_text
+    rec_name = next((n for n, _ in each("POST_v1_chats_*_messages.json")), None)
+    rec = load(rec_name) if rec_name else {}
+    chat = (rec or {}).get("chatID")
+    if not ok(chat, "no sendmessage recording names a chatID"):
+        return
+    chats = {props(r).get("chatId"): rid(r) for r in records(CHAT)}
+    ok(chat in chats, "the recording's chat %s is not mirrored" % chat)
+    mine = [props(m).get("messageId") for m in records(MESSAGE)
+            if ref_id(props(m).get("chat")) == chats.get(chat)
+            and props(m).get("messageId")]
+    if not ok(mine, "no mirrored message in %s to reply to" % chat):
+        return
+    route = "/v1/chats/%s/messages" % chat
+    w = Writes(SERVER, TOKEN, MOCK)
+    w.reset()
+
+    text = "On my way."
+    st, reply = w.call(SEND_FN, {"chat": chat, "text": text, "replyTo": mine[0]})
+    ok(st == 200, "a reply answered %s: %s" % (st, error_text(reply)[:300]))
+    out = (reply or {}).get("output") or {} if st == 200 else {}
+    ok(out == {"chat": chat, "pendingMessageId": rec.get("pendingMessageID")},
+       "the reply's output is %r, want the recording's chat and pending id" % out)
+    ok((reply or {}).get("effects") == 0,
+       "sendmessage wrote %r records; it writes none" % (reply or {}).get("effects"))
+    sent = w.requests("POST", route)
+    ok(len(sent) == 1, "%d sends reached Beeper, want 1" % len(sent))
+    if sent:
+        ok(body_json(sent[0]) == {"text": text, "replyToMessageID": mine[0]},
+           "the body sent was %r" % sent[0].get("body"))
+        ok(str(sent[0].get("auth") or "").startswith("Bearer bdapi-"),
+           "the token rode the Authorization header (%r)" % sent[0].get("auth"))
+
+    st, reply = w.call(SEND_FN, {"chat": chat, "text": text})
+    sent = w.requests("POST", route)
+    ok(st == 200 and len(sent) == 2 and body_json(sent[-1]) == {"text": text},
+       "a plain message answered %s and sent %r" % (st, sent[-1:] or None))
+
+    w.faults([{"match": "POST /v1/chats/*/messages", "status": [404],
+               "body": {"message": "Chat not found", "code": "NOT_FOUND"}}])
+    st, reply = w.call(SEND_FN, {"chat": chat, "text": text})
+    ok(st >= 400 and "Chat not found" in error_text(reply),
+       "Beeper's refusal did not reach the caller: %s %s"
+       % (st, error_text(reply)[:300]))
+    w.faults([])
+
+    before = len(w.requests("POST", route))
+    st, reply = w.call(SEND_FN, {"chat": chat})
+    ok(400 <= st < 500, "a call with no text answered %s, want a 4xx" % st)
+    ok(len(w.requests("POST", route)) == before,
+       "a call with no text still reached Beeper")
+
+    # The origin pin: a public apiBase refuses before any request. The value
+    # it had is put back, not cleared: a scenario-only run reaches the mock
+    # through it.
+    cfg = "/api/v1/%s/default" % os.environ.get("CONFIG_KIND", P + "/config")
+    had = props(api("GET", cfg)[1] or {}).get("apiBase")
+    st, _ = api("PATCH", cfg, {"properties": {"apiBase": "https://beeper.example.com"}})
+    if ok(st < 400, "could not point apiBase at a public host: %s" % st):
+        st, reply = w.call(SEND_FN, {"chat": chat, "text": text})
+        ok(st >= 400 and "not a private origin" in error_text(reply),
+           "a public apiBase did not refuse: %s %s"
+           % (st, error_text(reply)[:200]))
+        ok(len(w.requests("POST", route)) == before,
+           "the refused call still reached the mock")
+        api("PATCH", cfg, {"properties": {"apiBase": had}})
+    note("sendmessage: %d sends reached the mock" % len(w.requests("POST", route)))
 
 
 if __name__ == "__main__":

@@ -47,7 +47,7 @@ type Filter struct {
 	Implements string `json:"implements,omitempty"`
 	// Purposes narrows to the kinds declaring one of these purposes:
 	// `primary`, `supporting` or `internal`, an undeclared purpose reading as
-	// primary (decision records 0106 and 0115). Like Implements it INTERSECTS
+	// primary (decision records 0133 and 0136). Like Implements it INTERSECTS
 	// with Kinds; alone it means every kind of those purposes. It is resolved
 	// against the registry when the read runs.
 	Purposes   []string        `json:"purposes,omitempty"`

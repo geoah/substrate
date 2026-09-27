@@ -4,7 +4,7 @@ date: 2026-09-26
 decision-makers: George Antoniadis (via the issue-672 agent session)
 ---
 
-# 0111. A package row names the actor that declared it
+# 0109. A package row names the actor that declared it
 
 ## Context and Problem Statement
 

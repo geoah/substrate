@@ -9,7 +9,7 @@ decision-makers: George Antoniadis
 ## Context and Problem Statement
 
 Change values
-([0108](0108-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md))
+([0135](0135-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md))
 pair before and after by property name. A vocabulary apply that renames a
 property (`renamedFrom`,
 [0063](0063-a-property-rename-is-ordinary-record-writes.md)) writes one
@@ -64,5 +64,5 @@ value-moves.test.tsx in web/console).
 
 ## More Information
 
-Amends [0108](0108-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md)
+Amends [0135](0135-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md)
 without superseding it.

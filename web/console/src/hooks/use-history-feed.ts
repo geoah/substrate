@@ -1,6 +1,6 @@
 /** One filter's History, newest first, as sentences with the live tail joined
  * on top: what History, the actor page, a provider's activity and Home read.
- * The server summarizes the runs (`runs=1`, decision 0110), so a sentence's
+ * The server summarizes the runs (`runs=1`, decision 0126), so a sentence's
  * count is exact from one read; against a server without runs the rows are
  * read instead and folded here. */
 

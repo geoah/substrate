@@ -75,7 +75,7 @@ data:
         accepted — property values under `properties`, a link to another record
         among them
     # The owner's adjustment, written on the accepting write alone and frozen
-    # with the decision (decision 0112). `diff` stays what the proposer sent,
+    # with the decision (decision 0115). `diff` stays what the proposer sent,
     # so the request holds both what was proposed and what was applied.
     adjustedDiff:
       type: json

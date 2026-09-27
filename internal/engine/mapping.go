@@ -113,6 +113,11 @@ func (t *txn) subjectOf(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapping
 		// Already canonical: subjectTargetOf resolves the stored id.
 		return linked.ID, nil
 	}
+	if ok, err := t.covers(m, srcTy, src); err != nil {
+		return "", err
+	} else if !ok {
+		return "", uncoveredSource(src, m)
+	}
 	// THE HOP DEMANDS A SUBJECT. Somebody's write names this mirror in a slot
 	// pinned at the subject kind, so there has to be a record to point at:
 	// this is the one caller that mints whatever the source carries, and the
@@ -195,6 +200,12 @@ func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) (se
 	// leave it unset: a source that offers nothing mints nothing, and an
 	// ambiguous probe does what the mapping's onAmbiguous says, parking by
 	// default (records 0087 and 0103).
+	// A record the mapping's where does not cover describes no subject: it
+	// resolves nothing and mints nothing, and is resolved again on the write
+	// that brings it inside (mappingwhere.go).
+	if ok, err := t.covers(m, sp.ty, row); err != nil || !ok {
+		return false, false, err
+	}
 	slot, declared := sp.ty.Prop(m.Property)
 	target, parked, err := t.matchOrMint(row, sp.ty, m, declared && slot.Required)
 	if err != nil || target == "" {
@@ -302,7 +313,7 @@ func (t *txn) matchSubject(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapp
 		if !ok {
 			continue
 		}
-		candidates, err := t.probeCandidates(m.To, tp, values)
+		candidates, err := t.probeCandidates(m.To, tp, values, probe.Fold == vocabulary.FoldCase)
 		if err != nil {
 			return "", nil, err
 		}
@@ -362,7 +373,8 @@ func carriesValue(v any) bool {
 }
 
 // probeValues extracts one probe's identifier values from a source record,
-// normalized: strings trimmed, email values lowercased. The loader keeps
+// normalized: strings trimmed, and lowercased where the source property is an
+// email or the probe declares `fold: case` (record 0116). The loader keeps
 // probes in the short-string family, so everything here is a string.
 func probeValues(srcTy *vocabulary.Kind, src *erow, probe vocabulary.MatchRule) []string {
 	sp, _, err := vocabulary.PathProperty(srcTy, probe.From)
@@ -379,7 +391,7 @@ func probeValues(srcTy *vocabulary.Kind, src *erow, probe vocabulary.MatchRule) 
 	for _, item := range items {
 		s, _ := item.(string)
 		s = strings.TrimSpace(s)
-		if sp.Datatype == vocabulary.DatatypeEmail {
+		if sp.Datatype == vocabulary.DatatypeEmail || probe.Fold == vocabulary.FoldCase {
 			s = strings.ToLower(s)
 		}
 		if s == "" || seen[s] {
@@ -394,13 +406,33 @@ func probeValues(srcTy *vocabulary.Kind, src *erow, probe vocabulary.MatchRule) 
 // probeCandidates lists the distinct live records of the target type whose
 // probe property carries any of the values (repeated: containment; scalar:
 // equality).
-func (t *txn) probeCandidates(toIdentity string, tp *vocabulary.Property, values []string) ([]string, error) {
+//
+// A FOLDED probe (`fold: case`, record 0116) compares the stored value
+// lowercased and trimmed too, because the target holds what its writers
+// wrote: a person named `Ada Example` is found by `ada example` only when
+// both ends are folded. The stored side is folded with lower(btrim()) on each
+// live row of the target kind the probe reads.
+func (t *txn) probeCandidates(toIdentity string, tp *vocabulary.Property, values []string, fold bool) ([]string, error) {
 	seen := map[string]bool{}
 	var out []string
 	for _, v := range values {
 		var rows *sql.Rows
 		var err error
-		if tp.Repeated {
+		switch {
+		case fold && tp.Repeated:
+			rows, err = t.query(`
+				SELECT id FROM records
+				WHERE kind = $1 AND deleted_at IS NULL AND EXISTS (
+					SELECT 1 FROM jsonb_array_elements_text(
+						CASE WHEN jsonb_typeof(props->$2) = 'array' THEN props->$2 END) AS item
+					WHERE lower(btrim(item)) = lower($3))
+				ORDER BY id`, toIdentity, tp.Name, v)
+		case fold:
+			rows, err = t.query(`
+				SELECT id FROM records
+				WHERE kind = $1 AND deleted_at IS NULL AND lower(btrim(props->>$2)) = lower($3)
+				ORDER BY id`, toIdentity, tp.Name, v)
+		case tp.Repeated:
 			needle, merr := json.Marshal([]string{v})
 			if merr != nil {
 				return nil, merr
@@ -409,7 +441,7 @@ func (t *txn) probeCandidates(toIdentity string, tp *vocabulary.Property, values
 				SELECT id FROM records
 				WHERE kind = $1 AND deleted_at IS NULL AND props->$2 @> $3::jsonb
 				ORDER BY id`, toIdentity, tp.Name, needle)
-		} else {
+		default:
 			rows, err = t.query(`
 				SELECT id FROM records
 				WHERE kind = $1 AND deleted_at IS NULL AND props->>$2 = $3
@@ -587,7 +619,15 @@ type mappedInputs struct {
 	unionProp map[string]bool
 	// probed is the target properties some mapping's probe matches on, the
 	// ones withheldElsewhere guards.
-	probed map[string]*vocabulary.Property
+	probed map[string]probedProp
+}
+
+// probedProp is one target property some probe matches on, and whether any
+// probe onto it folds case: a value then collides with another target's in
+// any casing, because that is what the folded probe would find.
+type probedProp struct {
+	tp   *vocabulary.Property
+	fold bool
 }
 
 // mappedInputsOf loads a target's mapped inputs, nil when there is nothing to
@@ -642,11 +682,14 @@ func (t *txn) mappedInputsOf(target eref) (*mappedInputs, error) {
 		// A link-only mapping carries structure and copies nothing.
 		return nil, nil
 	}
-	probed := map[string]*vocabulary.Property{}
+	probed := map[string]probedProp{}
 	for _, m := range mappings {
 		for _, probe := range m.Match {
 			if tp, ok := ty.Props[probe.To]; ok {
-				probed[probe.To] = tp
+				pp := probed[probe.To]
+				pp.tp = tp
+				pp.fold = pp.fold || probe.Fold == vocabulary.FoldCase
+				probed[probe.To] = pp
 			}
 		}
 	}
@@ -712,9 +755,12 @@ func (t *txn) recomputeValues(target eref) error {
 		if m, held := managers[name]; held && m.tier != substrate.TierMachine {
 			continue // yield: the offer above is the whole record of it
 		}
-		cands := contributionsFor(name, in.srcs)
-		if tp := in.probed[name]; tp != nil {
-			if cands, err = t.withheldElsewhere(in.row, tp, cands); err != nil {
+		cands, err := t.throughSubjects(in.ty, name, contributionsFor(name, in.srcs))
+		if err != nil {
+			return err
+		}
+		if pp, ok := in.probed[name]; ok {
+			if cands, err = t.withheldElsewhere(in.row, pp.tp, pp.fold, cands); err != nil {
 				return err
 			}
 		}
@@ -856,7 +902,9 @@ func (t *txn) subjectSourceSites(target eref, mappings []*vocabulary.Mapping) ([
 		return nil, err
 	}
 	_ = rows.Close()
-	return found, nil
+	// A source outside its mapping's where is no source, exactly as a
+	// tombstone is not (mappingwhere.go).
+	return t.coveredSites(found, bySlot)
 }
 
 // sourceActor is the actor a source record's contributions are attributed
@@ -926,10 +974,10 @@ func contributionOf(s mappedSource, name string) any {
 //
 // Values compare the way a probe compares them (probeKey), because the
 // question is what the next probe would find.
-func (t *txn) withheldElsewhere(target *erow, tp *vocabulary.Property, cands []contribution) ([]contribution, error) {
+func (t *txn) withheldElsewhere(target *erow, tp *vocabulary.Property, fold bool, cands []contribution) ([]contribution, error) {
 	held := map[string]bool{}
 	for _, item := range asItems(target.Props[tp.Name]) {
-		if key, ok := probeKey(tp, item); ok {
+		if key, ok := probeKey(tp, item, fold); ok {
 			held[key] = true
 		}
 	}
@@ -947,13 +995,13 @@ func (t *txn) withheldElsewhere(target *erow, tp *vocabulary.Property, cands []c
 		}
 		kept := make([]any, 0, len(items))
 		for _, item := range items {
-			key, ok := probeKey(tp, item)
+			key, ok := probeKey(tp, item, fold)
 			if !ok || held[key] {
 				kept = append(kept, item)
 				continue
 			}
 			if !decided[key] {
-				holders, err := t.probeCandidates(target.Kind, tp, []string{key})
+				holders, err := t.probeCandidates(target.Kind, tp, []string{key}, fold)
 				if err != nil {
 					return nil, err
 				}
@@ -983,15 +1031,15 @@ func (t *txn) withheldElsewhere(target *erow, tp *vocabulary.Property, cands []c
 }
 
 // probeKey is one value as a probe looks it up: a trimmed string, lowercased
-// for an email property, and not a probe value at all when it is empty or not
-// a string.
-func probeKey(tp *vocabulary.Property, v any) (string, bool) {
+// for an email property or a folded probe, and not a probe value at all when
+// it is empty or not a string.
+func probeKey(tp *vocabulary.Property, v any, fold bool) (string, bool) {
 	s, ok := v.(string)
 	if !ok {
 		return "", false
 	}
 	s = strings.TrimSpace(s)
-	if tp.Datatype == vocabulary.DatatypeEmail {
+	if tp.Datatype == vocabulary.DatatypeEmail || fold {
 		s = strings.ToLower(s)
 	}
 	return s, s != ""
@@ -1062,6 +1110,98 @@ func contributionsFor(name string, srcs []mappedSource) []contribution {
 	return out
 }
 
+// throughSubjects reads each reference a contribution carries the way the
+// target property's pin will store it (#580). A map rule copying a MIRROR
+// reference (`issue.assignee` at `github/user`) onto a slot pinned at the
+// mirror's subject kind (`task.assignee` at `person`) is resolved by the
+// subject hop when recompute writes it (references.go subjectHop), so two
+// mirrors of one person would reach a repeated target as that person twice.
+// Resolving first lets the items that land on one record collapse to one,
+// compared canonically as duplicateRefs compares them.
+//
+// It runs on the VALUE path only. The offers stay a function of the source
+// rows, spelling the mirror as the source wrote it, because nothing
+// recomputes them when a mirror's subject moves (a merge, a delete, a
+// re-link) and a rebuild derives them again from the rows (rebuild.go
+// rederiveOffers). The read compares an offer with the stored value through
+// the mirror's subject instead (query.go comparableReference). It reads the
+// mirror's live subject and never mints; a mirror with no live subject stays
+// as written, and the write's own hop resolves it.
+//
+// Only a reference property's own value is read, a single one or a plain
+// list. A keyed reference target or a reference nested in an object target is
+// left as written.
+func (t *txn) throughSubjects(ty *vocabulary.Kind, name string, cands []contribution) ([]contribution, error) {
+	tp, ok := ty.Props[name]
+	if !ok || tp.Datatype != vocabulary.DatatypeReference || len(cands) == 0 {
+		return cands, nil
+	}
+	reg := t.declarations()
+	resolve := func(item any) (any, error) {
+		kind, id, ok := vocabulary.SplitRecordPath(referencePathOf(item))
+		if !ok {
+			return item, nil
+		}
+		// An unknown kind is left for the write to refuse, in its own words.
+		rt, known := reg.ByIdentity(kind)
+		if !known || referenceAdmits(reg, tp, rt) {
+			return item, nil
+		}
+		hops := hopMappings(reg, tp, rt)
+		if len(hops) != 1 {
+			return item, nil
+		}
+		subject, err := t.subjectTargetOf(eref{Kind: rt.Identity, ID: id}, hops[0].Property)
+		if err != nil || subject.ID == "" {
+			return item, err
+		}
+		out := referenceValueOf(vocabulary.RecordPath(subject.Kind, subject.ID))
+		if m, ok := item.(map[string]any); ok {
+			for k, v := range m {
+				if k != vocabulary.ReferenceValueKey {
+					out[k] = v
+				}
+			}
+		}
+		return out, nil
+	}
+	out := make([]contribution, 0, len(cands))
+	for _, c := range cands {
+		items, isList := c.value.([]any)
+		if !isList {
+			v, err := resolve(c.value)
+			if err != nil {
+				return nil, err
+			}
+			c.value = v
+			out = append(out, c)
+			continue
+		}
+		seen := map[string]bool{}
+		kept := make([]any, 0, len(items))
+		for _, item := range items {
+			v, err := resolve(item)
+			if err != nil {
+				return nil, err
+			}
+			if kind, id, ok := vocabulary.SplitRecordPath(referencePathOf(v)); ok {
+				canon, err := t.canonicalOf(eref{Kind: kind, ID: id})
+				if err != nil {
+					return nil, err
+				}
+				if seen[canon.key()] {
+					continue
+				}
+				seen[canon.key()] = true
+			}
+			kept = append(kept, v)
+		}
+		c.value = kept
+		out = append(out, c)
+	}
+	return out, nil
+}
+
 // selectValue applies the selection to one property's ordered candidates:
 // atomic takes the first candidate whole, union takes the deduped
 // concatenation of every candidate's items, attributed to the first
@@ -1117,7 +1257,10 @@ func selectValue(union bool, cands []contribution) (any, string) {
 // the property for that actor, never the transaction's clock, and its source
 // is that record's path: both are a function of the live records exactly as
 // the value is, so a rebuild, which derives the table again (rebuild.go
-// rederiveOffers), reproduces them.
+// rederiveOffers), reproduces them. For the same reason an offer spells a
+// reference as the source wrote it, a mirror included, and never through the
+// mirror's subject (#580): the subject can move without a write to the source
+// or the target. The read resolves it before comparing (propertyMeta).
 func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool, srcs []mappedSource) error {
 	current := map[offerKey]offer{}
 	for _, name := range props {
@@ -1226,10 +1369,19 @@ func sortedOfferKeys(m map[offerKey]offer) []offerKey {
 }
 
 // managerRow is one property's manager as recompute reads it: the actor for
-// attribution, the stored tier for yield.
+// attribution, the tier the row holds at for yield, and the tier the write
+// stored.
 type managerRow struct {
 	actor string
-	tier  substrate.Tier
+	// tier is the tier the row holds at under the transaction's declarations
+	// (heldTierIn): the stored tier unless the actor has since been declared
+	// at the machine tier (record 0113). The yield and the orphan mark read
+	// it.
+	tier substrate.Tier
+	// stored is the tier column as the write recorded it. A kind move copies
+	// it and releaseMachineManaged decides on it, so neither rewrites nor
+	// nulls a row on the strength of a later declaration.
+	stored substrate.Tier
 	// principal is the token id the write stood behind, empty where none did.
 	// A kind move carries it with the manager (move.go), because who wrote a
 	// value is the whole row and not two thirds of it.
@@ -1237,7 +1389,8 @@ type managerRow struct {
 }
 
 // managersOf reads the target's property-manager ledger, property → manager.
-// The tier column is NOT NULL, so the row is the whole answer.
+// The tier column is NOT NULL, so the row and the declarations are the whole
+// answer.
 func (t *txn) managersOf(ref eref) (map[string]managerRow, error) {
 	rows, err := t.query(
 		`SELECT property, actor, tier, coalesce(principal, '') FROM property_managers WHERE record_kind = $1 AND record_id = $2`,
@@ -1252,7 +1405,12 @@ func (t *txn) managersOf(ref eref) (map[string]managerRow, error) {
 		if err := rows.Scan(&property, &actor, &tier, &principal); err != nil {
 			return nil, err
 		}
-		out[property] = managerRow{actor: actor, tier: substrate.Tier(tier), principal: principal}
+		out[property] = managerRow{
+			actor:     actor,
+			tier:      heldTierIn(t.declarations(), actor, substrate.Tier(tier)),
+			stored:    substrate.Tier(tier),
+			principal: principal,
+		}
 	}
 	return out, rows.Err()
 }
@@ -1325,7 +1483,10 @@ func (t *txn) releaseMachineManaged(target eref, props []string) error {
 	}
 	patch := map[string]any{}
 	for _, name := range props {
-		if m, held := managers[name]; !held || m.tier != substrate.TierMachine {
+		// The stored tier: a row an actor wrote above the machine tier is not
+		// recompute's to null here, even once its actor is declared at the
+		// machine tier (record 0113).
+		if m, held := managers[name]; !held || m.stored != substrate.TierMachine {
 			continue
 		}
 		if p, ok := ty.Props[name]; ok && p.Required {

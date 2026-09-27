@@ -72,11 +72,18 @@ are drawn here:
 Files are `NNNN-kebab-title.md`, four digits. `template.md` is the template
 and `README.md` is this page; everything else in this directory is a record.
 
-The number is the next free one. Numbers are permanent once merged to `main`:
-if two branches take the same number, the one that merges second renumbers
-before merging. There is no contiguity contract. Gaps are legal, so the linter
-checks the format and uniqueness and nothing more, and nobody should read the
-sequence as a count.
+The number is the next free one, counting the numbers other branches have
+already taken as well as `main`'s. Numbers are permanent once merged to
+`main`. `mise run decisions:check` refuses a record whose number `main`
+already uses, or that another branch pushed in the last 30 days added first,
+and names the next number nobody holds
+([0124](0124-a-decision-number-is-checked-against-every-live-branch-before-the-merge.md)).
+Run it after `git fetch --prune` (a deleted branch's stale ref still reads as
+a claim) and before citing the number anywhere. CI runs it on pull requests
+and on `main`, so a pushed branch without a pull request counts as a claim for
+others but is not checked itself. There is no contiguity contract. Gaps are
+legal, so the linter checks the format and uniqueness and nothing more, and
+nobody should read the sequence as a count.
 
 ## Statuses and lifecycle
 
@@ -146,6 +153,10 @@ marking a record superseded edits `status:` and `superseded-by:` and trips
 nothing. It reads the diff against the base branch rather than the files, which
 is why it sits beside `kinds:check` in the `lint` job instead of inside
 `lint:docs`.
+
+`mise run decisions:check` holds the rule no single tree can show: a number
+another branch took first. It reads the other branches on `origin`, so it sits
+in the same job for the same reason.
 
 Not held, on purpose: whether the record is under two pages, whether the
 options were seriously considered, and whether Confirmation names a real test.
@@ -257,16 +268,30 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0103](0103-an-ambiguous-probe-follows-its-mappings-policy-and-a-probed-value-never-spreads.md) | An ambiguous probe follows its mapping's `onAmbiguous`, and a probed value never spreads to a second target | accepted |
 | [0104](0104-the-changelog-is-one-keep-a-changelog-file-a-release-bot-dates.md) | The changelog is one Keep a Changelog file, and a release bot dates it | proposed |
 | [0105](0105-a-lossy-confirmation-binds-to-what-the-plan-affects.md) | A lossy confirmation binds to what the plan affects | accepted |
-| [0106](0106-a-kind-declares-its-purpose.md) | A kind declares its purpose | accepted |
-| [0107](0107-the-records-list-counts-its-filtered-set-on-request.md) | The records list counts its filtered set on request | accepted |
-| [0108](0108-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md) | A change row carries before and after values on request, derived at read | accepted |
-| [0109](0109-an-allow-outranks-a-gate-only-by-naming-it.md) | An allow outranks a gate only by naming it | proposed |
-| [0110](0110-the-changes-read-summarizes-runs-and-never-ends-a-page-inside-one.md) | The changes read summarizes runs and never ends a page inside one | accepted |
-| [0111](0111-a-package-row-names-the-actor-that-declared-it.md) | A package row names the actor that declared it | accepted |
-| [0112](0112-an-owner-adjusts-a-change-request-on-the-accepting-write.md) | An owner adjusts a change request on the accepting write | accepted |
-| [0113](0113-a-kind-may-declare-its-display-label.md) | A kind may declare its display label, singular and plural | accepted |
+| [0106](0106-the-apply-door-holds-back-a-mapping-whose-provider-is-absent.md) | The apply door holds back a mapping whose provider is absent, on request | accepted |
+| [0107](0107-an-apply-links-the-sources-its-mappings-left-unlinked.md) | An apply links the sources its mappings left unlinked | accepted |
+| [0108](0108-an-allow-outranks-a-gate-only-by-naming-it.md) | An allow outranks a gate only by naming it | proposed |
+| [0109](0109-a-package-row-names-the-actor-that-declared-it.md) | A package row names the actor that declared it | accepted |
+| [0110](0110-a-schedule-trigger-passes-declared-arguments-to-its-function.md) | A schedule trigger passes declared arguments to its function | accepted |
+| [0111](0111-a-function-and-an-agent-list-read-is-the-window-read.md) | A function's and an agent's list read is the window read | accepted |
+| [0113](0113-a-manager-row-holds-at-its-actors-live-machine-tier.md) | A manager row holds at the machine tier once its actor is declared there | accepted |
 | [0114](0114-a-change-row-reads-a-property-rename-as-one-move.md) | A change row reads a property rename as one move | accepted |
-| [0115](0115-search-ranks-by-bm25f-and-a-kinds-purpose.md) | Search ranks by BM25F and a kind's purpose | accepted |
+| [0115](0115-an-owner-adjusts-a-change-request-on-the-accepting-write.md) | An owner adjusts a change request on the accepting write | accepted |
+| [0116](0116-a-probe-folds-case-only-when-it-declares-fold-case.md) | A probe folds case only when it declares `fold: case` | accepted |
+| [0117](0117-a-kind-may-declare-its-display-label.md) | A kind may declare its display label, singular and plural | accepted |
+| [0118](0118-a-mapping-where-narrows-its-sources-in-the-filter-grammar.md) | A mapping's `where` narrows its sources in the filter grammar | accepted |
+| [0119](0119-a-direct-call-of-a-networked-function-writes-a-run-row.md) | A direct call of a networked function writes a run row | proposed |
+| [0120](0120-a-map-rule-reaches-a-mirrors-subject-through-the-targets-pin.md) | A map rule reaches a mirror's subject through the target's pin | accepted |
+| [0121](0121-a-function-body-runs-an-agent-under-permissions-agents.md) | A function body runs an agent under `permissions.agents` | accepted |
+| [0122](0122-a-delete-may-purge-so-a-put-starts-the-record-over.md) | A delete may purge, so the next put starts the record over | accepted |
+| [0123](0123-a-trigger-read-names-its-kinds.md) | A record trigger's changelog read names its kinds | accepted |
+| [0124](0124-a-decision-number-is-checked-against-every-live-branch-before-the-merge.md) | A decision number is checked against every live branch before the merge | accepted |
+| [0125](0125-a-provider-write-is-a-callable-that-writes-no-record.md) | A provider write is a callable that writes no record | accepted |
+| [0126](0126-the-changes-read-summarizes-runs-and-never-ends-a-page-inside-one.md) | The changes read summarizes runs and never ends a page inside one | accepted |
 | [0130](0130-the-console-serves-four-things-and-its-navigation-follows-them.md) | The console serves four things, and its navigation follows them | accepted |
 | [0131](0131-the-console-writes-for-two-readers-behind-one-switch.md) | The console writes for two readers, and one switch tells them apart | accepted |
 | [0132](0132-console-preferences-follow-the-person-and-a-window-fact-stays-in-the-browser.md) | Console preferences follow the person, and a window's own facts stay in the browser | accepted |
+| [0133](0133-a-kind-declares-its-purpose.md) | A kind declares its purpose | accepted |
+| [0134](0134-the-records-list-counts-its-filtered-set-on-request.md) | The records list counts its filtered set on request | accepted |
+| [0135](0135-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md) | A change row carries before and after values on request, derived at read | accepted |
+| [0136](0136-search-ranks-by-bm25f-and-a-kinds-purpose.md) | Search ranks by BM25F and a kind's purpose | accepted |

@@ -850,6 +850,201 @@ func TestPutResurrectsATombstone(t *testing.T) {
 	}
 }
 
+// A delete with Purge collects the record in the delete's own transaction, so
+// the next put at the id is a fresh record: version 1, and only the properties
+// that put names. A plain delete followed by the same put restores the row
+// and every property it held, which is what left a re-seed unable to start
+// an account over (#585).
+func TestPurgeThenPutStartsARecordOver(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newVocabularyDataset(t, "tasks")
+	const kind = "samples.substrate.reamde.dev/tasks/task"
+	first := map[string]any{"name": "Sync", "url": "https://example.com/1", "description": "written by the connector"}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: "t1", Properties: first})
+
+	// Without purge the put merges over the tombstone.
+	if _, err := ds.Delete(ctx, owner, kind, "t1", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	back := mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: "t1", Properties: map[string]any{"name": "Sync"}})
+	if back.Properties["url"] == nil {
+		t.Fatalf("a plain delete and put should restore the old properties: %v", back.Properties)
+	}
+
+	before := maxSeq(t, ds)
+	gone, err := ds.Delete(ctx, owner, kind, "t1", substrate.DeleteInput{Purge: true})
+	if err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+	if gone.DeletedAt == nil {
+		t.Fatalf("the purge answered a live record: %+v", gone)
+	}
+	if _, err := ds.Get(ctx, kind, "t1"); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the purged record still reads: %v", err)
+	}
+	rows := changesSince(t, ds, before)
+	if len(rows) != 2 || rows[0].Op != substrate.OpDelete || rows[1].Op != substrate.OpGC ||
+		rows[1].Payload["reason"] != "purged" || rows[1].Actor != owner {
+		t.Fatalf("want a delete then a purged gc row by the caller, got %+v", rows)
+	}
+
+	fresh := mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: "t1", Properties: map[string]any{"name": "Sync"}})
+	if fresh.Version != 1 {
+		t.Fatalf("the put after a purge is version %d, want a fresh record at 1", fresh.Version)
+	}
+	for _, name := range []string{"url", "description"} {
+		if v, ok := fresh.Properties[name]; ok {
+			t.Fatalf("the put after a purge brought %s back: %v", name, v)
+		}
+	}
+
+	// A purge also collects a record that is already a tombstone.
+	if _, err := ds.Delete(ctx, owner, kind, "t1", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := ds.Delete(ctx, owner, kind, "t1", substrate.DeleteInput{Purge: true}); err != nil {
+		t.Fatalf("purge a tombstone: %v", err)
+	}
+	if _, err := ds.Get(ctx, kind, "t1"); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the purged tombstone still reads: %v", err)
+	}
+}
+
+// A finalizer is a hold another hand releases, so a purge of a held record is
+// refused as a conflict and the whole delete rolls back: the record stays
+// live at its version.
+func TestPurgeRefusesAHeldRecord(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newVocabularyDataset(t, "tasks")
+	const hold = "samples.substrate.reamde.dev/tasks/teardown"
+	task := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "Held"},
+	})
+	held := mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{AddFinalizers: []string{hold}})
+
+	_, err := ds.Delete(ctx, owner, task.Kind, task.ID, substrate.DeleteInput{Purge: true})
+	wantErr(t, err, substrate.ErrConflict, "purge of a held record")
+	if got := mustGet(t, ds, task.Kind, task.ID); got.DeletedAt != nil || got.Version != held.Version {
+		t.Fatalf("the refused purge changed the record: version %d -> %d, deletedAt=%v",
+			held.Version, got.Version, got.DeletedAt)
+	}
+}
+
+// A declaration leaves through admission, so a purge of a kind record is
+// refused as a validation error (422 on the wire) and the kind still resolves.
+func TestPurgeRefusesADeclarationRecord(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	const pkg = "purge.example.com/purge"
+	const kind = pkg + "/row"
+	const kindKind = "substrate.reamde.dev/core/kind"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(pkg, 1),
+		vocabulary.KindManifest(pkg, map[string]any{"singular": "row"},
+			map[string]any{"properties": map[string]any{"headline": map[string]any{"type": "string"}}}),
+	}); err != nil {
+		t.Fatalf("declare: %v", err)
+	}
+	before := mustGet(t, ds, kindKind, kind)
+	_, err := ds.Delete(ctx, owner, kindKind, kind, substrate.DeleteInput{Purge: true})
+	wantErr(t, err, substrate.ErrValidation, "purge of a kind record")
+	if got := mustGet(t, ds, kindKind, kind); got.DeletedAt != nil || got.Version != before.Version {
+		t.Fatalf("the refused purge changed the declaration: version %d -> %d, deletedAt=%v",
+			before.Version, got.Version, got.DeletedAt)
+	}
+	if _, err := ds.KindByRef(ctx, kind); err != nil {
+		t.Fatalf("the kind stopped resolving after a refused purge: %v", err)
+	}
+}
+
+// A former id resolves to the merge winner, and a purge cannot be undone, so
+// a purge addressed through the loser's id is refused as a conflict naming the
+// canonical id, and the winner stays live at its version.
+func TestPurgeRefusesAFormerID(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	const kind = "samples.substrate.reamde.dev/people/person"
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: kind, Properties: map[string]any{"name": "A"}})
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: kind, Properties: map[string]any{"name": "B"}})
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: kind, Winner: a.ID, Loser: b.ID}); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	winner := mustGet(t, ds, kind, a.ID)
+
+	_, err := ds.Delete(ctx, owner, kind, b.ID, substrate.DeleteInput{Purge: true})
+	wantErr(t, err, substrate.ErrConflict, "purge through a former id")
+	if !strings.Contains(err.Error(), a.ID) {
+		t.Fatalf("the refusal does not name the canonical id %s: %v", a.ID, err)
+	}
+	if got := mustGet(t, ds, kind, a.ID); got.DeletedAt != nil || got.Version != winner.Version {
+		t.Fatalf("the refused purge changed the winner: version %d -> %d, deletedAt=%v",
+			winner.Version, got.Version, got.DeletedAt)
+	}
+}
+
+// A purge is the collector's pass run early, so what the record owns through
+// `onDelete: cascade` is tombstoned in the same transaction, for the sweep.
+func TestPurgeTombstonesCascadeChildren(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newVocabularyDataset(t, "tasks")
+	task := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "Water plants"},
+	})
+	log := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "samples.substrate.reamde.dev/tasks/tasklog",
+		Properties: map[string]any{
+			"task": task.ID, "status": "done",
+			"at": "2026-09-01T09:00:00Z", "scheduledAt": "2026-09-01T09:00:00Z",
+		},
+	})
+	if _, err := ds.Delete(ctx, owner, task.Kind, task.ID, substrate.DeleteInput{Purge: true}); err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+	if got := mustGet(t, ds, log.Kind, log.ID); got.DeletedAt == nil {
+		t.Fatal("the purge left its cascade child live")
+	}
+}
+
+// A purge honors ifVersion like a plain delete: a stale version is refused
+// and changes nothing, the current one purges. A retried purge answers not
+// found, because the record no longer exists, where a retried plain delete
+// answers the tombstone.
+func TestPurgeUnderIfVersion(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newVocabularyDataset(t, "tasks")
+	task := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "Guarded"},
+	})
+	stale := task.Version - 1
+	_, err := ds.Delete(ctx, owner, task.Kind, task.ID, substrate.DeleteInput{IfVersion: &stale, Purge: true})
+	wantErr(t, err, substrate.ErrConflict, "purge under a stale version")
+	if got := mustGet(t, ds, task.Kind, task.ID); got.DeletedAt != nil || got.Version != task.Version {
+		t.Fatalf("the refused purge changed the record: version %d -> %d", task.Version, got.Version)
+	}
+
+	current := task.Version
+	if _, err := ds.Delete(ctx, owner, task.Kind, task.ID, substrate.DeleteInput{IfVersion: &current, Purge: true}); err != nil {
+		t.Fatalf("purge under the current version: %v", err)
+	}
+	_, err = ds.Delete(ctx, owner, task.Kind, task.ID, substrate.DeleteInput{Purge: true})
+	wantErr(t, err, substrate.ErrNotFound, "a retried purge")
+
+	plain := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "Plain"},
+	})
+	for range 2 {
+		if _, err := ds.Delete(ctx, owner, plain.Kind, plain.ID, substrate.DeleteInput{}); err != nil {
+			t.Fatalf("a plain delete, retried: %v", err)
+		}
+	}
+}
+
 // A patch onto a TOMBSTONE is refused as not found, and changes nothing: a
 // patch edits a record the caller believes exists, and a tombstone is gone to
 // every list. Before #633 it landed: the version climbed and the properties

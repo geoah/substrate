@@ -641,7 +641,7 @@ unknown id is a 404 `not_found`. The id is a package identity, so it carries a
 `…/catalog/samples.substrate.reamde.dev%2Ftasks`.
 The closure names every kind, trait, function, agent, mapping and shipped
 record, each declaration's description beside it, and in `kindPurposes` each
-kind's declared [`purpose`](decisions/0106-a-kind-declares-its-purpose.md)
+kind's declared [`purpose`](decisions/0133-a-kind-declares-its-purpose.md)
 (absent where the kind declares none, which reads as `primary`), so a client
 can tell a sample's collections from its machinery before taking it.
 
@@ -766,7 +766,12 @@ refuses a mapping whose source kind is absent or shaped wrong. So **the import
 is conditional**: a suggested mapping (and its `installs:` entry) is admitted
 only where this repository can resolve it, and dropped otherwise. Importing
 `people` onto a repository with no provider lands three kinds and no mapping,
-rather than being refused for vocabulary you never asked for.
+rather than being refused for vocabulary you never asked for. A hand apply of
+the same files takes only the `waiting` half of this rule, with `substratectl
+apply --hold-waiting-mappings` (`holdWaitingMappings` on `POST
+/api/v1/vocabulary/apply`): it holds back the mappings whose provider is absent
+and reports them as `waiting`, and a `blocked` mapping still refuses the whole
+batch ([decision 0106](decisions/0106-the-apply-door-holds-back-a-mapping-whose-provider-is-absent.md)).
 
 Every door and every surface says which of four states each mapping is in. The
 state is the MAPPING RECORD's, not the provider's: installing GitHub lands

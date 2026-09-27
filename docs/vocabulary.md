@@ -103,7 +103,7 @@ adds to an existing repository, the door (`console`, `substratectl`, `api`)
 for a hand apply, and `function:…` or `agent:…` for a callable. Every later apply,
 upgrade or re-import leaves it alone, so it names the first declarer, and no
 document may write it. A package created before the stamp existed carries none
-([0111](decisions/0111-a-package-row-names-the-actor-that-declared-it.md)).
+([0109](decisions/0109-a-package-row-names-the-actor-that-declared-it.md)).
 The package's record read (`GET
 /api/v1/substrate.reamde.dev/core/package/<authority>%2F<package>`) returns it
 in `properties`.
@@ -117,6 +117,36 @@ honored only when it moves past the stored one, a changed definition lands at
 stored+1, an unchanged one keeps its stored version, and a changed or deleted
 declaration that cannot carry a version of its own (a trait, a function)
 moves its package's forward instead, so nobody bumps by hand.
+
+**A mapping whose provider is absent refuses the batch, unless the request
+asks to hold it.** A `recordmapping` resolves its `from` kind at admission, so
+one mapping onto a provider this repository does not have takes the whole batch
+down. With `"holdWaitingMappings": true` in the body (`substratectl apply
+--hold-waiting-mappings`), the door holds back each suggested mapping (onto the
+declaring package's own kind from another package's kind) whose source kind
+neither the repository nor the batch declares, prunes its `installs:` entry,
+commits the rest, and names what it held
+([decision 0106](decisions/0106-the-apply-door-holds-back-a-mapping-whose-provider-is-absent.md)):
+
+```http
+POST /api/v1/vocabulary/apply
+{"documents": […], "holdWaitingMappings": true}
+
+→ 200 {"records": […],
+       "heldMappings": [
+         {"id": "ada.example.com/people/slackuserperson",
+          "from": "providers.substrate.reamde.dev/slack/user",
+          "to": "ada.example.com/people/person",
+          "package": "providers.substrate.reamde.dev/slack",
+          "state": "waiting"}]}
+```
+
+Nothing is stored for a held mapping: it lands on the first apply of the same
+documents after its provider is installed. Only an ABSENT source is held: a
+mapping whose source kind is present and does not fit it (`blocked` in the
+catalog, which drops it) still refuses the batch, naming the problem. `POST
+…/vocabulary/plan` takes the same key, so the preview is of the batch the apply
+commits; the plan response does not list the held mappings.
 
 **The package chokepoint** decides who may write a declaration, which is what
 a package is for. Shipped vocabulary, a package whose stored rows say
@@ -268,7 +298,7 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   The vocabulary read carries it as `label` beside `description`, absent
   when the kind declares none. It is display text: the collection segment is
   still the kind's name, and no route, filter, reference or grant reads it
-  ([decision record 0113](decisions/0113-a-kind-may-declare-its-display-label.md)).
+  ([decision record 0117](decisions/0117-a-kind-may-declare-its-display-label.md)).
 
 Three guardrails worth knowing:
 
@@ -708,7 +738,7 @@ and the marker is what makes the deprecated half tellable from the live one. A
 both stop offering a value and refuse to submit without it.
 
 **`purpose:` says why a kind exists**
-([record 0106](decisions/0106-a-kind-declares-its-purpose.md)). It sits on the
+([record 0133](decisions/0133-a-kind-declares-its-purpose.md)). It sits on the
 kind, beside `names:`, and takes one of three values:
 
 ```yaml
@@ -739,7 +769,7 @@ lists, and still reaches every kind by its reference. On the server,
 [`filter.purposes`](api.md#the-filter-grammar) narrows a list or a ranked read
 to the kinds of the named purposes, and [search](api.md#search) ranks
 `supporting` and `internal` records lower
-([record 0115](decisions/0115-search-ranks-by-bm25f-and-a-kinds-purpose.md)). A kind's `purpose:` is
+([record 0136](decisions/0136-search-ranks-by-bm25f-and-a-kinds-purpose.md)). A kind's `purpose:` is
 not a property named `purpose` — a kind may declare one of those too, under
 `properties:`, and it is an ordinary property.
 

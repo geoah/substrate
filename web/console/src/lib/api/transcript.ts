@@ -284,7 +284,7 @@ export interface DecisionNotice {
   version?: number
   deleted?: boolean
   /** The owner applied their own values instead of the proposal's
-   * (decision 0112): the envelope carries `adjustedDiff`. */
+   * (decision 0115): the envelope carries `adjustedDiff`. */
   adjusted?: boolean
 }
 

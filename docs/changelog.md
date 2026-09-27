@@ -151,7 +151,7 @@ before entries held values, a history with no creation, or a previous write
 further back than the read's budget of 4096 earlier entries, which every
 record on the page shares) the property carries `"beforeUnknown": true` and
 no `before`, which is not the same as "there was none"
-([decision 0108](decisions/0108-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md)).
+([decision 0135](decisions/0135-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md)).
 The walk costs a read per record on the page, so a client that does not ask
 pays nothing and gets the same rows without `properties`. Every mode of
 `/changes` honours it: the history page, the forward read and the watch.
@@ -182,7 +182,7 @@ writes a rule that matches nothing. Here is one act across all four:
 | ----------------------------- | -------------------------------------------------- | -------------------------------- | ----------------------- | --------------------------- |
 | a record comes into existence | `put`, with `created: true` in the payload         | `put`, `patch`                   | `create`                | `create`                    |
 | an existing record changes    | `put`, `patch`, `merge`, `split`                   | `put`, `patch`                   | `patch`                 | `update`                    |
-| a record goes away            | `delete`, and `gc` on the collector's pass         | `delete`                         | `delete`                | `delete`                    |
+| a record goes away            | `delete`, and `gc` on a sweep or a purge           | `delete`                         | `delete`                | `delete`                    |
 
 Merge and split are the two rows the table cannot hold, because each one
 changes two records under one entry. A merge tombstones the loser under the
@@ -426,7 +426,7 @@ misses nothing and double-sees nothing.
 `runs=1` turns the history page into run summaries: consecutive rows of the
 filtered feed that share an actor, a kind and a verb, each with its count, so
 a client says "added 60 tasks" from one read
-([0110](decisions/0110-the-changes-read-summarizes-runs-and-never-ends-a-page-inside-one.md)).
+([0126](decisions/0126-the-changes-read-summarizes-runs-and-never-ends-a-page-inside-one.md)).
 The verb is `create` for a `put` whose payload carries `created: true`,
 `restore` for one carrying `restored: true`, `update` for any other `put` and
 every `patch`, and the op itself for `delete`, `merge`, `split` and `gc`.

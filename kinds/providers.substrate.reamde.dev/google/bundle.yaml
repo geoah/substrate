@@ -222,12 +222,13 @@ data:
   # optional fields on that object (`deltaHistoryId`, `deltaToken`,
   # `deltaOff`). ADDITIVE.
   #
-  # 35 — every kind's description opens with one plain sentence
-  # saying what a record is to a person.
-  #
-  # 36, #675: `contactgroup` is labelled Contact labels, `calendarseries`
-  # Repeating events and `calendarsync` Sync progress (decision 0113).
+  # 35, #675: `contactgroup` is labelled Contact labels, `calendarseries`
+  # Repeating events and `calendarsync` Sync progress (decision 0117).
   # Display text only.
+  #
+  # 36: every kind declares its purpose (decision 0133), and its
+  # description opens with one plain sentence saying what a record is to
+  # a person.
   version: 36
 ---
 kind: substrate.reamde.dev/core/bundle

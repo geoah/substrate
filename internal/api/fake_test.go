@@ -12,6 +12,7 @@ import (
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
+	"github.com/geoah/substrate/internal/window"
 )
 
 // The api package is developed against this hand-written fake rather than
@@ -695,6 +696,11 @@ func (d *fakeDataset) Delete(ctx context.Context, _ substrate.Actor, typ, id str
 	if err := fakeCAS(e, in.IfVersion); err != nil {
 		return nil, err
 	}
+	// A purge collects the row now, unless a finalizer holds it (the
+	// engine's purgeNow): then nothing changes, the tombstone included.
+	if in.Purge && len(e.Finalizers) > 0 {
+		return nil, fmt.Errorf("%w: record %s is held by finalizers", substrate.ErrConflict, id)
+	}
 	// The tombstone moves the version, as the engine's does (rows.go), so a
 	// retried conditioned delete meets the same conflict here; a delete of a
 	// tombstone is the engine's no-op and moves nothing.
@@ -702,6 +708,9 @@ func (d *fakeDataset) Delete(ctx context.Context, _ substrate.Actor, typ, id str
 		now := time.Unix(10, 0).UTC()
 		e.DeletedAt = &now
 		e.Version++
+	}
+	if in.Purge {
+		delete(d.records, id)
 	}
 	return e, nil
 }
@@ -868,7 +877,7 @@ func (d *fakeDataset) List(_ context.Context, q substrate.Query) (*substrate.Pag
 	// named properties, keyed by record path; a dangling pointer has no entry.
 	for _, name := range q.Expand {
 		for _, e := range out {
-			for _, path := range referencePaths(e.Properties[name]) {
+			for _, path := range window.ReferencePaths(e.Properties[name]) {
 				target := d.recordAt(path)
 				if target == nil {
 					continue
@@ -909,7 +918,7 @@ func referenceSites(props map[string]any, targets []string, property string) []s
 		if property != "" && name != property {
 			continue
 		}
-		for _, path := range referencePaths(props[name]) {
+		for _, path := range window.ReferencePaths(props[name]) {
 			if containsString(targets, path) {
 				out = append(out, substrate.ReferenceSite{Property: name})
 				break
@@ -1215,7 +1224,7 @@ func (d *fakeDataset) ForgetTriggerFailure(_ context.Context, id string, _ int64
 	return noSuch("trigger", id)
 }
 
-func (d *fakeDataset) CallFunction(_ context.Context, name string, _ any) (any, int, error) {
+func (d *fakeDataset) CallFunction(_ context.Context, _ substrate.Actor, name string, _ any) (any, int, error) {
 	return nil, 0, noSuch("function", name)
 }
 

@@ -23,7 +23,7 @@ reached.
 
 The decisions made over the redesign:
 
-- [0106](../decisions/0106-a-kind-declares-its-purpose.md): a kind declares
+- [0133](../decisions/0133-a-kind-declares-its-purpose.md): a kind declares
   its purpose, so navigation lists what a person browses.
 - [0130](../decisions/0130-the-console-serves-four-things-and-its-navigation-follows-them.md):
   the console serves four things, and its navigation follows them.

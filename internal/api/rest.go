@@ -12,6 +12,7 @@ import (
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
+	"github.com/geoah/substrate/internal/window"
 )
 
 // THE RECORD PATH (decisions 0033, 0042, 0047).
@@ -103,7 +104,7 @@ func (h *handler) getResource(w http.ResponseWriter, r *http.Request) {
 		// slot, the read answers the envelope the window read would, so
 		// `get -o yaml | apply -f` is a complete path to an override. A
 		// stored record always won above.
-		if computed, ok := h.computedResource(r.Context(), ds, ti.Identity, addr.id); ok {
+		if computed, ok := window.Occurrence(r.Context(), ds, ti.Identity, addr.id); ok {
 			writeJSON(w, http.StatusOK, computed)
 			return
 		}
@@ -164,10 +165,11 @@ func (h *handler) patchResource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ent)
 }
 
-// deleteResource tombstones one record. The version precondition travels as
-// the `ifVersion` query parameter: a DELETE body is dropped by enough clients
-// and proxies to be no place for a guard, and the spelling is the one `put`
-// and `patch` carry in their bodies. Any other parameter is refused by name.
+// deleteResource tombstones one record, and with `purge` collects it too.
+// Both options travel as query parameters (`ifVersion`, `purge`): a DELETE
+// body is dropped by enough clients and proxies to be no place for them, and
+// `ifVersion` is the spelling `put` and `patch` carry in their bodies. Any
+// other parameter is refused by name.
 func (h *handler) deleteResource(w http.ResponseWriter, r *http.Request) {
 	ds, ti, addr, ok := h.record(w, r)
 	if !ok {
@@ -190,6 +192,19 @@ func (h *handler) deleteResource(w http.ResponseWriter, r *http.Request) {
 		}
 		in.IfVersion = &n
 	}
+	// purge collects the record now rather than at the sweep, so a put at
+	// the id afterwards is a fresh record. Only the two boolean spellings are
+	// read; anything else is refused, never taken as false.
+	if q := r.URL.Query(); q.Has("purge") {
+		switch raw := q.Get("purge"); raw {
+		case "true", "1":
+			in.Purge = true
+		case "false", "0":
+		default:
+			writeError(w, http.StatusBadRequest, codeBadRequest, "purge: "+strconv.Quote(raw)+" is not true, false, 1 or 0")
+			return
+		}
+	}
 	ctx := r.Context()
 	ent, err := ds.Delete(ctx, ActorFrom(ctx), ti.Identity, addr.id, in)
 	if err != nil {
@@ -204,8 +219,8 @@ func (h *handler) deleteResource(w http.ResponseWriter, r *http.Request) {
 // silently ignored parameter returns UNFILTERED rows that look filtered.
 var (
 	// deleteParams is a record delete's grammar: the version precondition
-	// alone.
-	deleteParams = []string{"ifVersion"}
+	// and the purge flag.
+	deleteParams = []string{"ifVersion", "purge"}
 	// changeParams is the cross-collection changefeed: the two modes' cursors
 	// plus the change filter, whose list-valued keys are all PLURAL.
 	changeParams = []string{

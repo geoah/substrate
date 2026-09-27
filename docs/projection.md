@@ -27,7 +27,9 @@ when the mapping is installed, so a mapping naming a provider that is absent
 fails on that document. That is why a sample's shipped mappings are
 conditional: the catalog's install and import verbs drop the ones whose
 provider this repository does not hold rather than refuse the whole import
-([suggested mappings](bundles.md#suggested-mappings)).
+([suggested mappings](bundles.md#suggested-mappings)). The apply door does the
+same when the request asks it to, with `holdWaitingMappings`
+([how the vocabulary reaches a repository](vocabulary.md#how-the-vocabulary-reaches-a-repository)).
 
 **One mapping per (source kind, subject property), and one per (source kind,
 target kind).** The first is the record's rule: one mirror kind reaches two
@@ -119,11 +121,60 @@ itself to one provider, is left dangling when that provider is uninstalled,
 and is not carried by a merge. Pin the mirror when the relation IS the
 provider's — inside its own package — and the subject everywhere else.
 
+**A mapping carries a relation the same way.** A map rule copies a mirror
+reference as it is, and the target's pin decides what is stored
+([decision record 0120](decisions/0120-a-map-rule-reaches-a-mirrors-subject-through-the-targets-pin.md)).
+This rule, in the package that owns `task`, gives a GitHub issue's task its
+assignee:
+
+```yaml
+  from: providers.substrate.reamde.dev/github/issue
+  to: <authority>/tasks/task
+  property: task
+  map:
+    name:
+      path: issueTitle
+    assignee:                      # pinned at person on task
+      path: assignee               # a github/user reference on the issue
+```
+
+The recompute writes the `github/user` reference into the person-pinned
+`assignee`, and the subject hop stores that user's person. A user with no
+person yet gets one, as any hop does. The offer behind the value keeps the
+`github/user` as the issue wrote it, and the read compares it through the
+user's person, so the issue shows as the source and no alternative appears.
+A repeated source onto a repeated target (`assignees` onto a `person[]` slot)
+resolves each item, and two users of one person are one entry. A path never
+crosses a reference: `assignees[].person` is refused, naming this spelling.
+The value follows the user's person when the ISSUE is next written. Moving
+the user to another person (a split) leaves the task on the old one until
+then, and the read lists the issue's offer as an alternative meanwhile.
+
 **A `match` probe reads the source record's own values**, so it needs a value
 and not a pointer: a source that declares its email addresses as references
 cannot probe them onto `person.emails`, because what the row holds there is a
 record path. A provider that wants its rows matchable keeps the scalar beside
 the reference (`email`, `emailAddresses`) and probes that.
+
+**A probe compares exactly unless it folds.** Every value is trimmed, and a
+value read from an `email` property is lowercased, but the target's value is
+compared as stored, so `Ada Example` and `ada example` are two people. A probe
+that declares `fold: case` lowercases and trims both ends, the target's
+stored value item by item on a repeated property. The stored side is trimmed
+of ASCII spaces only, so a stored value ending in a tab never matches:
+
+```yaml
+  match:
+    - from: realName
+      to: name
+      fold: case
+```
+
+`case` is the only fold. It is opt-in because a probe links records without
+asking, and short strings also carry identifiers whose case is significant.
+A folded probe computes `lower(btrim())` on each stored value it reads, and
+Postgres folds that side under the database's locale
+([decision record 0116](decisions/0116-a-probe-folds-case-only-when-it-declares-fold-case.md)).
 
 `from:` and `to:` are kind references, so a mapping says exactly which two
 kinds it joins and an installed manifest can name a shipped kind without
@@ -168,9 +219,10 @@ Three behaviors fall out of this one document:
   ([below](#when-a-probe-finds-several-candidates-onambiguous)); by default the
   source parks with its slot unset rather than add a third person the same
   address then points at, and it resolves on its next write once the owner has
-  settled the ambiguity. A source that offers nothing at all — no probe value
-  and no mapped value — mints nothing either, because a shell born from it is a
-  row no probe can ever match
+  settled the ambiguity, or when the mapping is applied again
+  ([below](#sources-that-exist-before-their-mapping)). A source that offers
+  nothing at all — no probe value and no mapped value — mints nothing either,
+  because a shell born from it is a row no probe can ever match
   ([decision record 0087](decisions/0087-an-unresolved-source-parks-instead-of-minting.md)).
   Two callers still mint whatever the source carries, because both need a
   record to point at: the [subject hop](data-model.md#kinds-and-references),
@@ -183,6 +235,41 @@ Three behaviors fall out of this one document:
   **you** wrote is never touched (the next section is the whole rule).
 - **Ids that never lie.** After a merge, the losing id resolves to the winner
   forever, and any read by it says so.
+
+### Sources that exist before their mapping
+
+**The apply that admits a mapping links the sources that already exist**
+([decision record 0107](decisions/0107-an-apply-links-the-sources-its-mappings-left-unlinked.md)).
+A mapping resolves a subject on the source's own write, and the usual order is
+the provider first, its sync, then the mapping, so without this every mirror
+synced before the mapping kept an empty slot until the provider wrote that row
+again. In the same transaction as the declaration, every live source whose
+slot names no live record is decided exactly as its own write would decide it:
+one candidate links, none mints, and a source that offers nothing, parks on
+an ambiguous probe, or falls outside the mapping's
+[`where`](#which-sources-a-mapping-covers-where) stays unlinked. Each link is an ordinary write of the
+source's slot, credited to the mapping, so it is in the changelog and a
+rebuild replays it.
+
+The same pass runs for every mapping a batch **changes**, and for every
+mapping a batch **names by document**, changed or not. Re-applying an
+unchanged mapping is therefore how a repository reprojects it: after the owner
+merges the candidates a parked source was waiting on, or after an upgrade from
+a binary that did not backfill, apply the documents of the package that
+declares the mapping again, the mapping among them.
+
+```bash
+substratectl apply -f people.yaml    # the package closure, recordmapping included
+```
+
+A source that is already linked is not touched, so a second apply links
+nothing new and mints nothing. The cost is one probe per unlinked source, in
+the apply's transaction, while every other write to the repository waits for
+the apply. Two side effects: a slot naming a **deleted** subject counts as
+unlinked, so each such apply mints a fresh subject for that source, as the
+source's own write would; and a link bumps the source's `version` and
+`updated_at`, so it becomes the newest writer for its target's `atomic`
+properties.
 
 ### When a probe finds several candidates: `onAmbiguous`
 
@@ -201,8 +288,9 @@ mapping says what happens then, beside its `match`:
   the source's own write sets and clears it, a rebuild derives it again, and
   the list filter reads it, `filter.ambiguous` (`substratectl get <kind>
   --ambiguous`). It is read when the source is written, so merging the two
-  people leaves it in place until the source's next sync links it and clears
-  it. A source that is unlinked because it offers nothing is not marked.
+  people leaves it in place until the source's next sync, or the next apply of
+  the mapping, links it and clears it. A source that is unlinked because it
+  offers nothing is not marked.
 - `oldest` links the candidate created first. Ids are random, so creation is
   the only order among candidates that means anything.
 - `mint` mints a fresh subject, as though the probe had found none.
@@ -221,6 +309,63 @@ already holds stays, so a duplicate that exists is the owner's to settle with
 [alternative](#reading-provenance-propertymeta) the owner may adopt by writing
 it
 ([decision record 0103](decisions/0103-an-ambiguous-probe-follows-its-mappings-policy-and-a-probed-value-never-spreads.md)).
+
+### Which sources a mapping covers: `where`
+
+A mapping covers every record of its source kind unless it says otherwise.
+`where` narrows it to the records that meet one condition per property, in the
+[filter grammar](api.md#the-filter-grammar)'s condition objects, all of which
+must hold:
+
+```yaml
+  from: providers.substrate.reamde.dev/github/pullrequest
+  to: samples.substrate.reamde.dev/tasks/task
+  property: task
+  where:
+    state:
+      eq: open
+  map:
+    name:
+      path: title
+```
+
+A condition means exactly what the same entry under `filter.properties`
+means on a list of the source kind, because the engine compiles it with the
+same code. It names a property the source kind declares, never a sensitive
+one and never the mapping's own slot, and a bare value (`state: open`) is
+refused, as the filter refuses one. An operator that does not fit the type
+(`match` on a number, `gt` on a reference) fails the apply that declares it.
+
+Two things a list accepts are refused in a `where`. A declared property named
+`createdAt`, `updatedAt`, `deletedAt`, `id` or `version` is refused, because
+the filter grammar reads that name as the record's own column, which a
+`where` cannot read. A condition that tests nothing (`eq: null`, `in: []`, an
+empty `prefix`) is refused rather than dropped. Every apply compiles every
+`where` again, so a change to the source kind that breaks one (a retyped
+property it names) fails that apply.
+
+A record outside the `where` is treated as a deleted source is:
+
+- **Its own write resolves nothing.** It links no subject, mints none, and is
+  never marked ambiguous. The write that brings it inside resolves it then,
+  and so does the apply that [links existing sources](#sources-that-exist-before-their-mapping).
+- **It contributes nothing.** Recompute reads no value from it, so a record
+  that leaves the `where` releases what it projected, and a subject left with
+  no covered source takes the [orphan mark](#when-the-last-source-goes-the-orphan-mark).
+- **Its link stays.** Only merge and split move a subject slot, so the pointer
+  it already holds is kept, `linkedFrom` still lists it, and a record that
+  comes back inside projects onto the same subject instead of minting another.
+  The kept pointer also spares the subject from `SUBSTRATE_ORPHAN_GRACE`
+  collection, which skips any record a live record points at.
+- **The subject hop refuses it** when it holds no link, rather than mint a
+  subject for a record the mapping does not cover.
+
+Changing a mapping's `where` recomputes every record of its target kind in
+the apply, so a narrowed mapping releases what it no longer covers at once. A
+widened `where` is a changed mapping too, so the same apply links every
+unlinked record it newly covers
+([decision record 0107](decisions/0107-an-apply-links-the-sources-its-mappings-left-unlinked.md),
+[decision record 0118](decisions/0118-a-mapping-where-narrows-its-sources-in-the-filter-grammar.md)).
 
 ### Reading the links back: `linkedFrom`
 
@@ -295,6 +440,23 @@ declaration on every write, never frozen at mint, so re-declaring an actor at
 a different tier changes what already-minted tokens may do from their next
 write onward. Renaming an actor never changes write semantics.
 
+A manager row stores the tier its write was admitted at, and the yield below
+reads that stored tier with one exception: a row whose actor a live
+declaration puts at the machine tier holds at the machine tier, whatever it
+was stored at. Declaring an actor at `tier: machine` therefore releases what
+it already holds: the apply that declares it, and every later apply of the
+package that declares it, recomputes every mapped record it holds above
+machine. An import written under an undeclared name (the owner tier) goes
+back to following its sources, and the release is recompute's ordinary rule:
+a mapped property no live source offers is deleted, and a union keeps only
+its sources' items. An import that must outlive its sources is a source kind
+([Contributing a value](#contributing-a-value)). The reverse does not hold:
+declaring an actor above machine pins only what it writes next, because a
+machine row may be recompute's credit to that actor. A package's own
+`bundle:` hand keeps its stored tier, and a kind move, a merge and a rename
+copy the stored tier
+([0113](decisions/0113-a-manager-row-holds-at-its-actors-live-machine-tier.md)).
+
 Beside the actor and the tier, a manager row records the **principal** of the
 write that set it: the token id the API resolved, where the actor is only
 what the caller claimed. The manager and tier a read reports are the actor and
@@ -354,7 +516,11 @@ live records, so a `repository rebuild` or a restore derives the same
 alternatives, stamps and sources included. The manager carries a `source` too,
 but only where the read can stand behind it: the property is machine-held and
 the manager's own offer backs the stored value (equal to it, or, on a union,
-every item of it among the stored items). A hand edit and a bundle pin name no
+every item of it among the stored items). On a reference property both sides
+are compared through a mirror's stored subject and the former-id trail, so an
+offer naming a `github/user` backs the person the pin stored for it
+([decision record 0120](decisions/0120-a-map-rule-reaches-a-mirrors-subject-through-the-targets-pin.md)).
+A hand edit and a bundle pin name no
 source, because nothing stands behind them but the hand
 ([decision record 0094](decisions/0094-propertymeta-names-the-source-record-behind-each-manager-and-alternative.md)).
 Lists and changes never carry `propertyMeta`; only a single-record read
@@ -435,12 +601,16 @@ re-seed left 2,727 of them on one repository
 ([#578](https://github.com/geoah/substrate/issues/578)).
 
 The engine marks those rows. A record is **orphaned** when all three hold:
-something maps onto its kind, no live record links to it through a mapping's
-subject slot (counted over every id it has ever had, so a merge does not hide
-a source), and every one of its `property_managers` rows is at the machine
+something maps onto its kind, no live record that mapping's `where` covers
+links to it through the mapping's subject slot (counted over every id it has
+ever had, so a merge does not hide a source), and every one of its
+`property_managers` rows holds at the machine
 tier — or it has none at all. A property held above machine is a hand's, and a
 record a hand has written on is not a husk, whether that hand was yours or a
-function's. Releasing the hold (the null patch above) makes it one again.
+function's. Releasing the hold (the null patch above) makes it one again, and
+so does declaring the hand's actor at `tier: machine`: a row holds at its
+actor's live machine tier whatever tier it was stored at
+([0113](decisions/0113-a-manager-row-holds-at-its-actors-live-machine-tier.md)).
 
 The mark is derived, like an alternative: nothing writes it into the
 changelog, a re-link clears it on the next recompute, and a
@@ -638,7 +808,7 @@ client can branch on the answer.
 
 **The owner may adjust the values before accepting.** The accepting write may
 carry `adjustedDiff` beside `decision: accepted`, and the accept applies it
-instead of `diff` ([0112](decisions/0112-an-owner-adjusts-a-change-request-on-the-accepting-write.md)).
+instead of `diff` ([0115](decisions/0115-an-owner-adjusts-a-change-request-on-the-accepting-write.md)).
 It takes the same two shapes as `diff`, is admitted the same way (every
 property declared and writable, stored in the wrapper form), and is then held
 to the same re-validation: the target's version and the no-op check. It

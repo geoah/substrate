@@ -178,7 +178,7 @@ owner. **Not addressed** is still true of the code.
 | B1 | major | Editing was mouse-first | Fixed (record): the title edits from the keyboard, cells announce label and value, focus returns, a 2px focus ring |
 | B2 | minor | No `aria-sort`, small targets, no reduced motion, hand-copied segmented controls, a nested `main` | Fixed (dialogs) except `aria-sort`, deferred, #677 |
 | Q1 | minor | Only the provider pages updated live | Fixed (table, record): the open collection and the record page follow the changes stream and mark what moved |
-| Q2 | polish | Against a server without `count`, Home probes each collection | Not addressed: the server counts on request now ([0107](../../decisions/0107-the-records-list-counts-its-filtered-set-on-request.md)), so the probe runs only against an older one |
+| Q2 | polish | Against a server without `count`, Home probes each collection | Not addressed: the server counts on request now ([0134](../../decisions/0134-the-records-list-counts-its-filtered-set-on-request.md)), so the probe runs only against an older one |
 
 ## Where the build left the prototype
 

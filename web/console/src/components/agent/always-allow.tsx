@@ -1,7 +1,7 @@
 /** "Always allow this" on a suggested change a gate held, and the list of the
  * rules it wrote, each with Revoke. The rule is narrow by construction (one
  * agent, one kind, the verbs this request stands for) and lifts only the
- * gate that held the write (`lib/agent-rules.ts`, decision 0109). */
+ * gate that held the write (`lib/agent-rules.ts`, decision 0108). */
 
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"

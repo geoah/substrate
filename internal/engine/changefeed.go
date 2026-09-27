@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -126,7 +127,9 @@ func escapeLike(s string) string {
 	return r.Replace(s)
 }
 
-// queryChanges runs one changelog page over the builder's predicates.
+// queryChanges runs one changelog page over the builder's predicates. With
+// values it also derives each affected record's before and after property
+// values (decision 0135).
 func (ds *dataset) queryChanges(ctx context.Context, b *builder, order string, limit int, values bool) ([]substrate.Change, error) {
 	if limit <= 0 {
 		limit = 100
@@ -138,15 +141,37 @@ func (ds *dataset) queryChanges(ctx context.Context, b *builder, order string, l
 	if err != nil {
 		return nil, err
 	}
+	out, effects, err := collectChangeEffects(rows, values)
+	if err != nil || !values {
+		return out, err
+	}
+	if err := ds.deriveValues(ctx, out, effects); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// collectChanges scans changelog rows selected as queryChanges selects them
+// (seq, ts, actor, op, record_id, kind, payload, hash) and closes them.
+func collectChanges(rows *sql.Rows) ([]substrate.Change, error) {
+	out, _, err := collectChangeEffects(rows, false)
+	return out, err
+}
+
+// collectChangeEffects is collectChanges that, with keep, also returns each
+// row's stored replay effects, taken before projectAffected strips them: the
+// values derivation reads them. The rows are closed before it returns, so the
+// walk that follows can read the changelog again.
+func collectChangeEffects(rows *sql.Rows, keep bool) ([]substrate.Change, [][]foldOp, error) {
 	defer func() { _ = rows.Close() }()
 	var out []substrate.Change
 	var effects [][]foldOp
 	for rows.Next() {
 		c, err := scanChange(rows)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		if values {
+		if keep {
 			effects = append(effects, effectsOf(c))
 		}
 		if c.Op == substrate.OpDelivery {
@@ -160,19 +185,12 @@ func (ds *dataset) queryChanges(ctx context.Context, b *builder, order string, l
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if !values {
-		return out, nil
-	}
-	// The walk reads the changelog again; the page's cursor closes first.
 	if err := rows.Close(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if err := ds.deriveValues(ctx, out, effects); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return out, effects, nil
 }
 
 // projectAffected turns a row's stored replay effects into the public change
@@ -324,13 +342,18 @@ func (ds *dataset) ChangeTriggers(ctx context.Context, changes []substrate.Chang
 	if err != nil {
 		return nil, err
 	}
+	reg := ds.registry()
+	self := make([]map[substrate.Actor]bool, len(live))
+	for i, lt := range live {
+		self[i] = lt.selfActors(reg)
+	}
 	for _, ch := range changes {
 		if ch.Kind == typeTriggerRun {
 			continue
 		}
 		op := runner.OpOf(ch)
-		for _, lt := range live {
-			if ch.Actor == substrate.Actor(lt.callableActor()) || !lt.Record.matches(ch.Kind, op) {
+		for i, lt := range live {
+			if self[i][ch.Actor] || !lt.Record.matches(ch.Kind, op) {
 				continue
 			}
 			ct := substrate.ChangeTrigger{

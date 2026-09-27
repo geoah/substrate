@@ -1,6 +1,6 @@
 package vocabulary
 
-// A KIND DECLARES ITS PURPOSE (decision record 0106). `purpose:` says why a
+// A KIND DECLARES ITS PURPOSE (decision record 0133). `purpose:` says why a
 // kind exists — a thing a person browses, a detail of another kind, or
 // machinery — because the declaration is the one place that knows, and a
 // client listing every kind it holds has nothing else to decide by.
@@ -8,7 +8,7 @@ package vocabulary
 // The loader's half is the grammar: one of three words or nothing. The value
 // is stored with the declaration and read by clients; on the server,
 // `filter.purposes` narrows a read by it and the ranked read weighs it
-// (decision record 0115). No write is refused over it.
+// (decision record 0136). No write is refused over it.
 //
 // The key is reserved by name, not tolerated by prefix (record 0020): it is in
 // typeDataKeys, so a binary that did not know it quarantines the package rather

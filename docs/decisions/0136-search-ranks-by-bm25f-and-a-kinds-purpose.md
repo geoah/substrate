@@ -4,7 +4,7 @@ date: 2026-09-26
 decision-makers: George Antoniadis
 ---
 
-# 0115. Search ranks by BM25F and a kind's purpose
+# 0136. Search ranks by BM25F and a kind's purpose
 
 ## Context and Problem Statement
 
@@ -16,7 +16,7 @@ long Drive file that repeats a word scored near 1.0 against the record titled
 by it. Every word was required, so a query with one word no record holds
 answered nothing. Hybrid added the two arms after scaling each by its own top
 hit, so the best semantic hit tied the best lexical one however weak it was.
-[0106](0106-a-kind-declares-its-purpose.md) made `purpose` advisory and named
+[0133](0133-a-kind-declares-its-purpose.md) made `purpose` advisory and named
 a search that ranks by it as the trigger for its own record.
 
 ## Considered Options
@@ -108,7 +108,7 @@ the ordering.
 
 ## More Information
 
-This amends 0106's "the server stores the key and acts on nothing": the key,
+This amends 0133's "the server stores the key and acts on nothing": the key,
 its values and its default stand. The same change indexes the parts of email
 addresses, URLs and paths and a folded copy of accented words, and re-derives
 existing rows at the next open (search_index, migration 0008). Those follow

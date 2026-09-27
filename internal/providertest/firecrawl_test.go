@@ -291,7 +291,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 		firecrawlSearchFn: {"query": "anything"},
 		firecrawlScrapeFn: {"url": firecrawlPageURL},
 	} {
-		_, applied, err := ds.CallFunction(ctx, fn, input)
+		_, applied, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, input)
 		if err == nil || !strings.Contains(err.Error(), "pinned provider origin") {
 			t.Fatalf("%s against a hostile baseUrl: err=%v, want the origin-pin refusal", fn, err)
 		}
@@ -319,7 +319,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 		"https://":                                    "hostname",
 		"https://user:pass@blog.example.com/blog/how": "credentials",
 	} {
-		_, applied, err := ds.CallFunction(ctx, firecrawlScrapeFn, map[string]any{"url": url})
+		_, applied, err := ds.CallFunction(ctx, substrate.ActorAPI, firecrawlScrapeFn, map[string]any{"url": url})
 		if err == nil || !strings.Contains(err.Error(), wantErr) {
 			t.Fatalf("scrapepage(%q): err=%v, want a refusal mentioning %q", url, err, wantErr)
 		}
@@ -335,7 +335,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 	}
 
 	// websearch: hits come back shaped, and the call is EFFECTS-FREE.
-	out, applied, err := ds.CallFunction(ctx, firecrawlSearchFn,
+	out, applied, err := ds.CallFunction(ctx, substrate.ActorAPI, firecrawlSearchFn,
 		map[string]any{"query": "how substrates compose", "limit": 2})
 	if err != nil {
 		t.Fatalf("call websearch: %v", err)
@@ -359,7 +359,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 	// scrapepage: the content caps at 24000, ONE webdocument lands under
 	// host.ids.url(url), and the built-in title rides the put.
 	docID := runner.URLID(firecrawlPageURL)
-	out, applied, err = ds.CallFunction(ctx, firecrawlScrapeFn, map[string]any{"url": firecrawlPageURL})
+	out, applied, err = ds.CallFunction(ctx, substrate.ActorAPI, firecrawlScrapeFn, map[string]any{"url": firecrawlPageURL})
 	if err != nil {
 		t.Fatalf("call scrapepage: %v", err)
 	}
@@ -396,7 +396,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 
 	// Re-scrape: the SAME id updates in place (if_absent stays false) — one
 	// document, new content, a moved version.
-	if _, applied, err = ds.CallFunction(ctx, firecrawlScrapeFn, map[string]any{"url": firecrawlPageURL}); err != nil {
+	if _, applied, err = ds.CallFunction(ctx, substrate.ActorAPI, firecrawlScrapeFn, map[string]any{"url": firecrawlPageURL}); err != nil {
 		t.Fatalf("re-scrape: %v", err)
 	}
 	if applied != 1 {

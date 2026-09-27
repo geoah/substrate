@@ -2,7 +2,7 @@
  * change that a gate held, and the words they read in.
  *
  * An `allow` recordpatchpolicy outranks a gate only by naming it in
- * `overrides` (decision 0109), and the write door admits `overrides` only on
+ * `overrides` (decision 0108), and the write door admits `overrides` only on
  * an allow whose selector names exactly one agent, one kind reference and one
  * op. A gated create or patch request does not record whether the agent
  * called `put` or `patch` (policy.go convertToRequest maps both onto the

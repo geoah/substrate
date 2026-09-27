@@ -268,7 +268,7 @@ const affectedRecord: Shape<AffectedRecord> = {
   properties: false,
 }
 
-/** One property's before and after on an affected record (decision 0108). */
+/** One property's before and after on an affected record (decision 0135). */
 const propertyChange: Shape<PropertyChange> = {
   name: true,
   renamedFrom: false,

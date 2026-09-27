@@ -1,6 +1,6 @@
 /** The repository's packages as the console reads them: the core `package`
  * rows, one per `<authority>/<package>`, and the one fact on them the console
- * shows a person, who declared the package (decision 0111). A package an
+ * shows a person, who declared the package (decision 0109). A package an
  * agent declared is an app that agent made: its collections read "Made by
  * <agent>" and its package page gathers what it ships. */
 
