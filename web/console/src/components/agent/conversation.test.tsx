@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /** A new chat whose run fails before the server names its thread has nothing
  * to hand over to: there are no rows to read back. The composer is released,
- * the error is shown, and what was typed comes back so a retry is one press. */
+ * the error is shown, and what was typed comes back so a retry is one press.
+ * A question another page handed over to be asked is sent once, on open. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -47,8 +48,18 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function Harness({ initialThread = "" }: { initialThread?: string }) {
-  const [draft, setDraft] = useState("")
+function Harness({
+  initialThread = "",
+  initialDraft = "",
+  autoSend = false,
+  onAutoSent,
+}: {
+  initialThread?: string
+  initialDraft?: string
+  autoSend?: boolean
+  onAutoSent?: () => void
+}) {
+  const [draft, setDraft] = useState(initialDraft)
   const [thread, setThread] = useState(initialThread)
   return (
     <Conversation
@@ -58,17 +69,22 @@ function Harness({ initialThread = "" }: { initialThread?: string }) {
       onThread={setThread}
       draft={draft}
       onDraft={setDraft}
+      autoSend={autoSend}
+      onAutoSent={onAutoSent}
     />
   )
 }
 
-function mount(initialThread?: string) {
+function mount(
+  initialThread?: string,
+  extra: Omit<Parameters<typeof Harness>[0], "initialThread"> = {}
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   return render(
     <QueryClientProvider client={client}>
-      <Harness initialThread={initialThread} />
+      <Harness initialThread={initialThread} {...extra} />
     </QueryClientProvider>
   )
 }
@@ -134,5 +150,23 @@ describe("Conversation", () => {
     fail = false
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull())
+  })
+
+  it("sends a handed-over question once, on open", () => {
+    const sent = vi.fn()
+    const view = mount(undefined, {
+      initialDraft: "Keep my recipes",
+      autoSend: true,
+      onAutoSent: sent,
+    })
+    expect(calls).toHaveLength(1)
+    expect(calls[0].message).toBe("Keep my recipes")
+    expect(sent).toHaveBeenCalledTimes(1)
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <Harness initialDraft="Keep my recipes" autoSend onAutoSent={sent} />
+      </QueryClientProvider>
+    )
+    expect(calls).toHaveLength(1)
   })
 })

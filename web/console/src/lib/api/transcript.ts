@@ -283,6 +283,9 @@ export interface DecisionNotice {
   /** The target's version after an accepted patch or create. */
   version?: number
   deleted?: boolean
+  /** The owner applied their own values instead of the proposal's
+   * (decision 0112): the envelope carries `adjustedDiff`. */
+  adjusted?: boolean
 }
 
 /** A system turn's interaction resolution, decoded — how the transcript says
@@ -415,6 +418,9 @@ export function decisionNoticeOf(turn: TurnView): DecisionNotice | undefined {
       target: str(env.target) || undefined,
       version: typeof env.version === "number" ? env.version : undefined,
       deleted: env.deleted === true || undefined,
+      adjusted:
+        (typeof env.adjustedDiff === "object" && env.adjustedDiff !== null) ||
+        undefined,
     }
   } catch {
     return undefined

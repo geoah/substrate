@@ -3,9 +3,10 @@
  * (decision 0033): the live-target read behind the before → after words and
  * the decision patch Apply and Dismiss send. The mock answers ONLY at those
  * paths, so a component that routed by anything else would render neither
- * side. The card offers no standing rule: an allow cannot outrank the gate
- * that held the write, so "Always allow this" stays out until the engine can
- * say an exception. A delete takes a second press. */
+ * side. A suggestion a gate held offers "Always allow this", which saves one
+ * allow per verb naming that gate in `overrides` (decision 0109) and then
+ * applies the suggestion; one nothing held does not. A delete takes a second
+ * press. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -43,6 +44,9 @@ import { ProposalCard } from "./proposal-card"
 const TASK_KIND = "samples.substrate.reamde.dev/tasks/task"
 const REQUEST_PATH = "/api/v1/substrate.reamde.dev/core/recordpatchrequest/cr-1"
 const TARGET_PATH = "/api/v1/samples.substrate.reamde.dev/tasks/task/task-1"
+const THREAD_PATH = "/api/v1/substrate.reamde.dev/llm/thread/th-1"
+const POLICY_PATH = "/api/v1/substrate.reamde.dev/core/recordpatchpolicy/"
+const AGENT = "crew.example.com/bots/taskbot"
 
 const KINDS: KindInfo[] = [
   {
@@ -144,8 +148,27 @@ describe("ProposalCard", () => {
       }
       if (path === REQUEST_PATH) return jsonResponse(200, gatedRequest)
       if (path === TARGET_PATH) return jsonResponse(200, target)
-      if (path === REQUEST_PATH && method === "PATCH") {
-        return jsonResponse(200, gatedRequest)
+      if (path === THREAD_PATH) {
+        return jsonResponse(
+          200,
+          record({
+            id: "th-1",
+            kind: "substrate.reamde.dev/llm/thread",
+            properties: {
+              agent: { ref: `substrate.reamde.dev/core/agent/${AGENT}` },
+            },
+          })
+        )
+      }
+      if (
+        listedKinds(path).includes(
+          "substrate.reamde.dev/core/recordpatchpolicy"
+        )
+      ) {
+        return jsonResponse(200, { records: [] })
+      }
+      if (path.startsWith(POLICY_PATH) && method === "PUT") {
+        return jsonResponse(200, record({ id: path.slice(POLICY_PATH.length) }))
       }
       return jsonResponse(404, {
         error: { code: "not_found", message: `no route for ${path}` },
@@ -174,11 +197,81 @@ describe("ProposalCard", () => {
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toContain(
       TARGET_PATH
     )
-    // Review opens the page; the standing rule is not offered.
+    // Review opens the page.
     expect(
       screen.getByText("Review").closest('a[data-to="/change-requests/$id"]')
     ).toBeTruthy()
     expect(screen.queryByText("Edit first")).toBeNull()
+  })
+
+  it("always allows a gated suggestion: one allow per verb naming the gate, then the apply", async () => {
+    renderCard()
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Always allow this" })
+    )
+    const dialog = await screen.findByRole("dialog")
+    expect(dialog.textContent).toContain(
+      "Taskbot will add and change tasks without asking. You can take this back in the agent’s panel."
+    )
+    // Asked, not written.
+    expect(
+      fetchMock.mock.calls.some(
+        ([, init]) => (init as RequestInit | undefined)?.method === "PUT"
+      )
+    ).toBe(false)
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Apply and always allow" })
+    )
+    await waitFor(() => {
+      const writes = fetchMock.mock.calls.filter(([, init]) =>
+        ["PUT", "PATCH"].includes(
+          (init as RequestInit | undefined)?.method ?? ""
+        )
+      )
+      expect(writes).toHaveLength(3)
+    })
+    const writes = fetchMock.mock.calls.filter(([, init]) =>
+      ["PUT", "PATCH"].includes((init as RequestInit | undefined)?.method ?? "")
+    )
+    const bodies = writes.map(([, init]) =>
+      JSON.parse((init as RequestInit).body as string)
+    )
+    expect(bodies.slice(0, 2).map((b) => b.properties)).toEqual([
+      {
+        selector: { kinds: [TASK_KIND], ops: ["put"], agents: [AGENT] },
+        action: "allow",
+        overrides: "gate-1",
+      },
+      {
+        selector: { kinds: [TASK_KIND], ops: ["patch"], agents: [AGENT] },
+        action: "allow",
+        overrides: "gate-1",
+      },
+    ])
+    // The rules land before the apply.
+    expect(String(writes[2][0])).toBe(REQUEST_PATH)
+    expect(bodies[2]).toEqual({
+      properties: { decision: "accepted" },
+      ifVersion: 4,
+    })
+  })
+
+  it("offers no standing rule on a suggestion nothing held", async () => {
+    fetchMock.mockImplementation(async (url) => {
+      const path = String(url)
+      if (listedKinds(path).includes("substrate.reamde.dev/core/kind")) {
+        return jsonResponse(200, { kinds: KINDS })
+      }
+      if (path === REQUEST_PATH) {
+        const properties = { ...gatedRequest.properties }
+        delete properties.policy
+        return jsonResponse(200, { ...gatedRequest, properties })
+      }
+      if (path === TARGET_PATH) return jsonResponse(200, target)
+      return jsonResponse(404, { error: { code: "not_found", message: "" } })
+    })
+    renderCard()
+    expect(await screen.findByText("Old summary")).toBeTruthy()
     expect(screen.queryByText("Always allow this")).toBeNull()
   })
 

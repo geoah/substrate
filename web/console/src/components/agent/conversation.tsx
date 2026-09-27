@@ -19,12 +19,18 @@
  * The parent keys this component by conversation, and keeps the key when a
  * new chat's run mints its thread — remounting then would drop the stream. */
 
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Link } from "@tanstack/react-router"
 import { KeyRoundIcon } from "lucide-react"
 
 import { AgentMark } from "@/components/agent/agent-mark"
+import { AddKeyButton } from "@/components/agent/model-key-dialog"
 import { Composer } from "@/components/agent/composer"
 import { Transcript } from "@/components/agent/transcript"
 import { IdText } from "@/components/identity/id-text"
@@ -45,7 +51,7 @@ import {
   type AgentResult,
   type ChatHandle,
 } from "@/lib/api/agents"
-import { CORE_AUTHORITY, LLM_PACKAGE, LLM_PACKAGE_NAME } from "@/lib/api/http"
+import { LLM_PACKAGE } from "@/lib/api/http"
 import {
   EMPTY_OVERLAY,
   pushDelta,
@@ -62,30 +68,19 @@ function KeylessCallout({ provider }: { provider: string }) {
   return (
     <div
       role="note"
-      className="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warn-soft px-3.5 py-2.5 text-[13px]"
+      className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-warning/30 bg-warn-soft px-3.5 py-2.5 text-[13px]"
     >
-      <KeyRoundIcon className="mt-0.5 size-4 shrink-0 text-warning" />
-      <div className="flex flex-col gap-0.5">
+      <KeyRoundIcon className="size-4 shrink-0 text-warning" />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="font-medium">
           This agent can’t answer yet: add an API key for{" "}
           {providerName(provider)}
         </span>
         <span className="text-muted-foreground">
-          Agents run on your own key, kept on the provider’s record.{" "}
-          <Link
-            to="/data/$authority/$pkg/$name/$id"
-            params={{
-              authority: CORE_AUTHORITY,
-              pkg: LLM_PACKAGE_NAME,
-              name: "provider",
-              id: provider,
-            }}
-            className="text-primary-text underline underline-offset-2"
-          >
-            Add the key
-          </Link>
+          Agents run on your own key, kept sealed on the provider’s record.
         </span>
       </div>
+      <AddKeyButton providerId={provider} />
     </div>
   )
 }
@@ -102,6 +97,8 @@ export function Conversation({
   pickable,
   onPickAgent,
   keylessProvider,
+  autoSend = false,
+  onAutoSent,
   actions,
 }: {
   /** The agent this conversation is with; undefined while none is known. */
@@ -122,6 +119,11 @@ export function Conversation({
   onPickAgent?: (agent: string) => void
   /** The provider row id, when the agent's provider has no key. */
   keylessProvider?: string
+  /** Send the draft as soon as the conversation opens, once: another page
+   * handed the question over to be asked, not only written down. */
+  autoSend?: boolean
+  /** The hand-over was used (sent, or held for a missing key). */
+  onAutoSent?: () => void
   /** The header's buttons. */
   actions?: ReactNode
 }) {
@@ -263,6 +265,18 @@ export function Conversation({
         break
     }
   }
+
+  // The hand-over sends once, the first time the conversation can.
+  const autoSent = useRef(false)
+  const handOver = useEffectEvent(() => {
+    onAutoSent?.()
+    send()
+  })
+  useEffect(() => {
+    if (!autoSend || autoSent.current || !agentId) return
+    autoSent.current = true
+    handOver()
+  }, [autoSend, agentId])
 
   function send(text = draft) {
     const message = text.trim()

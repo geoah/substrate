@@ -364,14 +364,65 @@ export function deriveChangeRows(
   return rows
 }
 
-/** True when accepting would apply NOTHING even though the diff names things:
- * every named property already matches, and no label, annotation or finalizer
- * rides along. The write path refuses that accept rather than recording a
- * decision that changed nothing, so the page says so before the button. Only
- * meaningful where the live target was read; a create has nothing to match. */
-export function appliesNothing(diff: ProposedDiff, rows: ChangeRow[]): boolean {
-  if (rows.length === 0) return false
-  if (!rows.every((r) => r.effect === "unchanged")) return false
+/** One row of the review: a property the suggestion names, what the record
+ * holds now, what was suggested, and what applying writes now that the owner
+ * may have edited it. */
+export interface ReviewRow {
+  key: string
+  before: unknown
+  suggested: unknown
+  /** What applying writes now; undefined when the row is left out. */
+  after: unknown
+  leftOut: boolean
+  /** The owner changed the suggested value. */
+  edited: boolean
+  /** Applying would leave the record's value as it is, as the apply
+   * compares it (a `null` for a key the target lacks deletes nothing). */
+  unchanged: boolean
+  /** Who last had a change to this property accepted on the target. */
+  manager?: string
+}
+
+/** The review's rows in `order` (the suggestion's own, so a row never jumps
+ * as it is edited). `edited` is the owner's property set: a key missing from
+ * it is left out. `target` is the live record for a patch, absent for a
+ * create. */
+export function reviewRows(
+  order: string[],
+  proposed: Record<string, unknown>,
+  edited: Record<string, unknown>,
+  target?: SubstrateRecord
+): ReviewRow[] {
+  return order.map((key) => {
+    const leftOut = !(key in edited)
+    const after = leftOut ? undefined : edited[key]
+    const before = target?.properties[key]
+    const had = target ? key in target.properties : false
+    return {
+      key,
+      before,
+      suggested: proposed[key],
+      after,
+      leftOut,
+      edited: !leftOut && !sameApplied(after, proposed[key]),
+      unchanged:
+        !leftOut &&
+        Boolean(target) &&
+        (after === null ? !had : had && sameApplied(before, after)),
+      manager: target?.propertyMeta?.[key]?.manager,
+    }
+  })
+}
+
+/** True when accepting would apply NOTHING though something is still named:
+ * every property applied already matches, and no label, annotation or
+ * finalizer rides along. The write path refuses that accept rather than
+ * recording a decision that changed nothing, so the page says so before the
+ * button. Only meaningful where the live target was read. */
+export function appliesNothing(diff: ProposedDiff, rows: ReviewRow[]): boolean {
+  const applied = rows.filter((r) => !r.leftOut)
+  if (applied.length === 0) return false
+  if (!applied.every((r) => r.unchanged)) return false
   return (
     Object.keys(diff.labels ?? {}).length === 0 &&
     Object.keys(diff.annotations ?? {}).length === 0 &&
@@ -426,7 +477,7 @@ export function targetDrift(
 // ── the decision patch ─────────────────────────────────────────────────────
 
 export interface DecisionPatch {
-  properties: { decision: Verdict }
+  properties: { decision: Verdict; adjustedDiff?: Record<string, unknown> }
   annotations?: Record<string, string>
   /** NOT optional: deciding a change request must carry the version of the
    * request the reviewer read, so a concurrent write cannot swap the envelope
@@ -440,15 +491,94 @@ export interface DecisionPatch {
 export function decisionPatch(
   verdict: Verdict,
   version: number,
-  note?: string
+  note?: string,
+  adjustedDiff?: Record<string, unknown>
 ): DecisionPatch {
   const trimmed = note?.trim()
   const patch: DecisionPatch = {
     properties: { decision: verdict },
     ifVersion: version,
   }
+  // The owner's own values ride the ACCEPT alone (decision 0112): the engine
+  // refuses an adjustment on any other write.
+  if (adjustedDiff && verdict === "accepted") {
+    patch.properties.adjustedDiff = adjustedDiff
+  }
   if (trimmed) patch.annotations = { "owner/note": trimmed }
   return patch
+}
+
+// ── the owner's adjustment ──────────────────────────────────────────────────
+
+/** The values the owner applied instead of the proposal's, where they
+ * adjusted it (decision 0112): `adjustedDiff` replaces `diff` whole, so a
+ * property it leaves out was not applied. Undefined when the request was
+ * applied, or is pending, as proposed. */
+export function adjustedProperties(
+  r: SubstrateRecord
+): Record<string, unknown> | undefined {
+  const raw = mapOf(r.properties.adjustedDiff)
+  if (!raw) return undefined
+  return mapOf(raw.properties) ?? {}
+}
+
+/** Whether an edited property set differs from what was proposed. */
+export function isAdjusted(
+  proposed: Record<string, unknown>,
+  edited: Record<string, unknown>
+): boolean {
+  return !sameApplied(proposed, edited)
+}
+
+/** The `adjustedDiff` an accept carries: the stored diff whole (labels,
+ * annotations and finalizers the owner cannot edit here ride along
+ * unchanged, because the adjustment replaces the diff whole), its properties
+ * the owner's, and for a patch the version the owner reviewed the target at,
+ * so the accept checks the record they saw rather than the one proposed
+ * against. */
+export function adjustedDiffFor(
+  r: SubstrateRecord,
+  properties: Record<string, unknown>,
+  reviewedVersion?: number
+): Record<string, unknown> {
+  const raw = mapOf(r.properties.diff) ?? {}
+  const out: Record<string, unknown> = { ...raw, properties }
+  if (reviewedVersion !== undefined && changeOp(r) === "patch") {
+    out.ifVersion = reviewedVersion
+  }
+  return out
+}
+
+/** One row of what was suggested beside what was applied. */
+export interface AdjustedRow {
+  key: string
+  suggested: unknown
+  applied: unknown
+  /** `left out`: proposed and not applied; `added`: applied and never
+   * proposed; `changed`: both, different; `same`: both, equal. */
+  effect: "same" | "changed" | "left out" | "added"
+}
+
+export function adjustedRows(
+  proposed: Record<string, unknown>,
+  applied: Record<string, unknown>
+): AdjustedRow[] {
+  const keys = [
+    ...Object.keys(proposed),
+    ...Object.keys(applied).filter((k) => !(k in proposed)),
+  ]
+  return keys.map((key) => {
+    const inProposed = key in proposed
+    const inApplied = key in applied
+    const effect: AdjustedRow["effect"] = !inApplied
+      ? "left out"
+      : !inProposed
+        ? "added"
+        : sameApplied(proposed[key], applied[key])
+          ? "same"
+          : "changed"
+    return { key, suggested: proposed[key], applied: applied[key], effect }
+  })
 }
 
 // ── what the server left behind ─────────────────────────────────────────────

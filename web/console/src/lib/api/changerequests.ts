@@ -8,7 +8,9 @@
  * the same transaction, branching on `op` (patch the target, mint the named
  * record, tombstone it). A refused apply fails the whole transition, leaves the
  * request proposed, and lands the server's account on it as
- * `substrate/conflict`, so a rejected call means re-read, never retry. */
+ * `substrate/conflict`, so a rejected call means re-read, never retry. An
+ * accept may carry the owner's adjusted values as `adjustedDiff`, applied
+ * instead of the proposed `diff` (decision 0112). */
 
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "./http"
 import {
@@ -93,13 +95,14 @@ export function submitDecision(
   id: string,
   verdict: Verdict,
   version: number,
-  note?: string
+  note?: string,
+  adjustedDiff?: Record<string, unknown>
 ): Promise<SubstrateRecord> {
   return patchRecord(
     CORE_AUTHORITY,
     CORE_PACKAGE_NAME,
     CR_NAME,
     id,
-    decisionPatch(verdict, version, note)
+    decisionPatch(verdict, version, note, adjustedDiff)
   )
 }

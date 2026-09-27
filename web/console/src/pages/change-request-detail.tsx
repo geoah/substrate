@@ -1,8 +1,12 @@
 /** A suggested change (`/change-requests/:id`), read the way its chat card
  * reads it, at full size: "Change to <record>", why, who suggested it and
  * when, then what the record holds now beside what it would hold if applied,
- * in the record page's own labels and values, then Apply and Dismiss. A create
- * shows the record it would add; a delete says plainly what goes. The ids, the
+ * in the record page's own labels and values, then Apply and Dismiss. The If
+ * applied values are editable with the property sheet's own editors, and an
+ * Apply after an edit sends the owner's values as the accept's
+ * `adjustedDiff` (decision 0112); a decided request the owner adjusted shows
+ * what was suggested beside what was applied. A create shows the record it
+ * would add; a delete says plainly what goes. The ids, the
  * op, the versions, the policy that held the write, the thread it came from,
  * a judge's verdict and the raw diff are behind Technical details.
  *
@@ -11,7 +15,7 @@
  * request's `substrate/conflict` annotation rather than as a half-applied
  * change. A decided request renders read-only. */
 
-import { useMemo, type ReactNode } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import {
@@ -26,7 +30,12 @@ import {
   ChangeValue,
   DecisionButtons,
 } from "@/components/change-request"
+import {
+  ReviewComparison,
+  SuggestedAndApplied,
+} from "@/components/change-request-review"
 import { ActorRef } from "@/components/identity/actor-ref"
+import { CopyButton } from "@/components/identity/copy-button"
 import { IdText } from "@/components/identity/id-text"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { PageHeader } from "@/components/identity/page-header"
@@ -72,8 +81,12 @@ import {
 } from "@/lib/api/types"
 import {
   DECISION_INITIAL,
+  adjustedDiffFor,
+  adjustedProperties,
+  adjustedRows,
   appliesNothing,
   applyConflict,
+  isAdjusted,
   changeOp,
   changeTarget,
   decidedAtOf,
@@ -86,8 +99,8 @@ import {
   proposedDiff,
   proposerOf,
   rationaleOf,
+  reviewRows,
   targetDrift,
-  type ChangeRow,
   type ChangeTargetRef,
   type ProposedDiff,
   type UnreadableField,
@@ -159,77 +172,35 @@ function Heading({
  * the proposal. */
 function Suggester({ agent, actor }: { agent?: string; actor?: string }) {
   if (agent) return <AgentRef id={agent} link />
-  if (actor) return <ActorRef actor={actor} />
+  if (actor) return <ActorRef actor={actor} inlineId={false} />
   return null
+}
+
+/** The raw actor ids a sentence named, on the faint technical line after
+ * it, each with a copy button, the way History places them. */
+function ActorIds({ ids }: { ids: Array<string | undefined> }) {
+  const shown = [...new Set(ids.filter((id): id is string => Boolean(id)))]
+  if (shown.length === 0) return null
+  return (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px] text-faint">
+      {shown.map((id) => (
+        <span key={id} className="inline-flex min-w-0 items-center gap-0.5">
+          <span className="font-mono text-[11.5px] [overflow-wrap:anywhere]">
+            {id}
+          </span>
+          <CopyButton value={id} label="Copy the actor id" />
+        </span>
+      ))}
+    </span>
+  )
 }
 
 // ── the comparison ──────────────────────────────────────────────────────────
 
-const GRID3 =
-  "grid grid-cols-[minmax(96px,150px)_minmax(0,1fr)_minmax(0,1fr)] sm:grid-cols-[minmax(120px,170px)_minmax(0,1fr)_minmax(0,1fr)]"
 const GRID2 =
   "grid grid-cols-[minmax(96px,150px)_minmax(0,1fr)] sm:grid-cols-[minmax(120px,170px)_minmax(0,1fr)]"
 const HEAD = "pr-4 pb-1.5 text-[12px] font-medium text-faint"
 const CELL = "min-w-0 py-2 pr-4 text-[14px]"
-
-/** Now beside If applied, one row per property the change names. */
-function Comparison({
-  rows,
-  specs,
-  emptyText,
-}: {
-  rows: ChangeRow[]
-  specs: Map<string, PropSpec>
-  emptyText: string
-}) {
-  const [technical] = useTechnicalDetails()
-  return (
-    <div data-slot="change-comparison" className={GRID3}>
-      <span className={HEAD} />
-      <span className={HEAD}>Now</span>
-      <span className={cn(HEAD, "text-primary-text")}>If applied</span>
-      {rows.length === 0 && (
-        <p className="col-span-3 border-t py-3 text-[13px] text-muted-foreground">
-          {emptyText}
-        </p>
-      )}
-      {rows.map((row) => {
-        const spec = specs.get(row.key)
-        return (
-          <div key={row.key} className="contents">
-            <span className={cn(CELL, "border-t")}>
-              <ChangeLabel name={row.key} spec={spec} />
-              {technical && (
-                <span className="block font-mono text-[11.5px] text-faint">
-                  {row.key}
-                </span>
-              )}
-            </span>
-            <span className={cn(CELL, "border-t text-muted-foreground")}>
-              <ChangeValue
-                value={row.before === undefined ? "" : row.before}
-                spec={spec}
-              />
-              {technical && row.manager && row.effect !== "unchanged" && (
-                <span className="mt-1 flex items-center gap-1.5 text-[12px] text-faint">
-                  set by <ActorRef actor={row.manager} />
-                </span>
-              )}
-            </span>
-            <span className={cn(CELL, "border-t")}>
-              <ChangeValue value={row.after} spec={spec} />
-              {row.effect === "unchanged" && (
-                <span className="ml-1.5 text-[12.5px] text-faint">
-                  Already set
-                </span>
-              )}
-            </span>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
 
 /** The values alone: what a create would add, and what was suggested once
  * the request is decided (the record has moved on since). */
@@ -330,6 +301,9 @@ export function ChangeRequestDetailPage() {
   })
   const [technical] = useTechnicalDetails()
   const specs = useMemo(() => changeSpecs(targetSide.kind), [targetSide.kind])
+  // The owner's values for If applied, undefined until they edit one. Held
+  // here and nowhere else: an adjustment is stored only by the accept.
+  const [edits, setEdits] = useState<Record<string, unknown>>()
 
   if (cr.isPending || registry.isPending) return <DetailSkeleton />
 
@@ -373,6 +347,21 @@ export function ChangeRequestDetailPage() {
     op === "patch" ? targetDrift(request, diff, targetRecord) : undefined
   const blocked = diffCannotApply(diff)
   const empty = emptyText(diff, blocked)
+  const edited = edits ?? diff.properties
+  const adjusted = isAdjusted(diff.properties, edited)
+  // A drifted target is applied to as it stands now, which is what Now
+  // shows: the owner reviewed that version, so the accept checks it.
+  const sendAdjusted = op !== "delete" && (adjusted || Boolean(drift))
+  const adjustedDiff = sendAdjusted
+    ? adjustedDiffFor(request, edited, targetRecord?.version)
+    : undefined
+  const held =
+    op !== "delete" &&
+    Object.keys(edited).length === 0 &&
+    Object.keys(diff.properties).length > 0
+      ? "Nothing is left to apply. Put a value back, or dismiss it."
+      : undefined
+  const applied = adjustedProperties(request)
 
   return (
     <DocPage>
@@ -416,7 +405,13 @@ export function ChangeRequestDetailPage() {
             )}
           </>
         }
-      />
+      >
+        {technical && (agent || proposer) && (
+          <div className="mt-1">
+            <ActorIds ids={[agent ? agentActor(agent) : proposer]} />
+          </div>
+        )}
+      </PageHeader>
 
       {rationale && (
         <p className="mt-5 max-w-[68ch] border-l-2 pl-3.5 text-[14px] [overflow-wrap:anywhere]">
@@ -475,11 +470,12 @@ export function ChangeRequestDetailPage() {
           </p>
         </Warning>
       )}
-      {drift && (
+      {drift && pending && (
         <Warning>
           <p>
-            The record changed after this was suggested, so it can’t be applied
-            as it is. Dismiss it and ask the agent again.
+            The record changed after this was suggested. Now shows it as it is
+            today; applying writes the values under If applied over it, so check
+            them first.
           </p>
           {technical && (
             <p className="text-xs text-muted-foreground">
@@ -506,8 +502,12 @@ export function ChangeRequestDetailPage() {
           <PendingBody
             op={op}
             diff={diff}
+            edited={edited}
+            onEdit={setEdits}
+            adjusted={adjusted}
             targetRecord={targetRecord}
             targetKind={targetSide.kind}
+            kinds={kinds}
             specs={specs}
             loading={targetSide.query.isLoading}
             error={targetSide.query.error?.message}
@@ -524,20 +524,33 @@ export function ChangeRequestDetailPage() {
               )}
               {decider && (
                 <span className="inline-flex items-center gap-1.5">
-                  &nbsp;by <ActorRef actor={decider} />
+                  &nbsp;by <ActorRef actor={decider} inlineId={false} />
                 </span>
               )}
-              .{" "}
+              {decision === "accepted" && applied && " with your edits"}.{" "}
               {decision === "accepted"
-                ? "What is shown is what was suggested; open the record to see where it stands now."
+                ? applied
+                  ? "What is shown is what was suggested and what was applied; open the record to see where it stands now."
+                  : "What is shown is what was suggested; open the record to see where it stands now."
                 : "Nothing was changed."}
             </p>
+            {technical && decider && (
+              <div className="-mt-4 mb-5">
+                <ActorIds ids={[decider]} />
+              </div>
+            )}
             {note && (
               <p className="mb-5 text-[13px] text-muted-foreground">
                 Note: {note}
               </p>
             )}
-            {op !== "delete" && (
+            {op !== "delete" && applied && (
+              <SuggestedAndApplied
+                rows={adjustedRows(diff.properties, applied)}
+                specs={specs}
+              />
+            )}
+            {op !== "delete" && !applied && (
               <Values
                 rows={Object.entries(diff.properties).map(([key, value]) => ({
                   key,
@@ -557,7 +570,12 @@ export function ChangeRequestDetailPage() {
 
       {pending && op && (
         <div className="mt-6">
-          <DecisionButtons request={request} op={op} />
+          <DecisionButtons
+            request={request}
+            op={op}
+            adjustedDiff={adjustedDiff}
+            held={held}
+          />
         </div>
       )}
 
@@ -569,18 +587,24 @@ export function ChangeRequestDetailPage() {
           diff={diff}
           threadId={threadId}
           thread={thread.data}
+          sending={pending ? adjustedDiff : undefined}
         />
       )}
     </DocPage>
   )
 }
 
-/** A patch's comparison, or a create's values. */
+/** A patch's comparison, or a create's values, both editable before the
+ * apply. */
 function PendingBody({
   op,
   diff,
+  edited,
+  onEdit,
+  adjusted,
   targetRecord,
   targetKind,
+  kinds,
   specs,
   loading,
   error,
@@ -589,8 +613,12 @@ function PendingBody({
 }: {
   op?: string
   diff: ProposedDiff
+  edited: Record<string, unknown>
+  onEdit: (next: Record<string, unknown> | undefined) => void
+  adjusted: boolean
   targetRecord?: SubstrateRecord
   targetKind?: KindInfo
+  kinds: KindInfo[]
   specs: Map<string, PropSpec>
   loading: boolean
   error?: string
@@ -598,32 +626,34 @@ function PendingBody({
   emptyText: string
 }) {
   const comparable = op === "patch" && Boolean(targetRecord)
-  const rows = useMemo(
+  // The rows read in the suggestion's own order, fixed while it is edited.
+  const order = useMemo(
     () =>
       deriveChangeRows(
         diff.properties,
         comparable ? targetRecord : undefined,
         targetKind
-      ),
+      ).map((row) => row.key),
     [diff.properties, comparable, targetRecord, targetKind]
   )
-  const values = rows.map((r) => ({ key: r.key, value: r.after }))
+  const create = op === "create"
+  // The property the title already reads from is not a row too.
+  const heading = create ? proposedHeading(diff.properties)?.key : undefined
+  const rows = reviewRows(
+    order.filter((key) => key !== heading),
+    diff.properties,
+    edited,
+    comparable ? targetRecord : undefined
+  )
+  const actions = adjusted ? (
+    <Button size="xs" variant="ghost" onClick={() => onEdit(undefined)}>
+      Back to the suggestion
+    </Button>
+  ) : undefined
+  const hint = targetKind
+    ? "Click a value to change it before you apply"
+    : undefined
 
-  if (op === "create") {
-    // The property the title already reads from is not a row too.
-    const heading = proposedHeading(diff.properties)?.key
-    return (
-      <>
-        <SectionHead title="What it adds" className="mt-0" />
-        <Values
-          rows={values.filter((r) => r.key !== heading)}
-          specs={specs}
-          caption="If applied"
-          emptyText={emptyText}
-        />
-      </>
-    )
-  }
   if (op === "patch" && !comparable) {
     if (loading) return <Skeleton className="h-24 w-full rounded-md" />
     return (
@@ -636,7 +666,7 @@ function PendingBody({
               : "This suggestion names no record to change, so it can’t be applied."}
         </p>
         <Values
-          rows={values}
+          rows={order.map((key) => ({ key, value: diff.properties[key] }))}
           specs={specs}
           caption="If applied"
           emptyText={emptyText}
@@ -647,23 +677,30 @@ function PendingBody({
   const noop = op === "patch" && appliesNothing(diff, rows)
   return (
     <>
-      <SectionHead title="What changes" className="mt-0" />
+      <SectionHead
+        title={create ? "What it adds" : "What changes"}
+        hint={hint}
+        actions={actions}
+        className="mt-0"
+      />
       {noop && (
         <p className="mb-3 text-[13px] text-warning">
-          The record already has every value suggested here, so applying would
-          do nothing. Dismiss it instead.
+          The record already has every value here, so applying would do nothing.
+          Change a value, or dismiss it.
         </p>
       )}
-      {op === "patch" ? (
-        <Comparison rows={rows} specs={specs} emptyText={emptyText} />
-      ) : (
-        <Values
-          rows={values}
-          specs={specs}
-          caption="If applied"
-          emptyText={emptyText}
-        />
-      )}
+      <ReviewComparison
+        rows={rows}
+        compare={comparable}
+        specs={specs}
+        kind={targetKind}
+        kinds={kinds}
+        target={comparable ? targetRecord : undefined}
+        edited={edited}
+        onEdit={onEdit}
+        emptyText={emptyText}
+        create={create}
+      />
     </>
   )
 }
@@ -804,6 +841,7 @@ function TechnicalDetails({
   diff,
   threadId,
   thread,
+  sending,
 }: {
   request: SubstrateRecord
   op?: string
@@ -811,6 +849,8 @@ function TechnicalDetails({
   diff: ProposedDiff
   threadId?: string
   thread?: SubstrateRecord
+  /** The adjusted diff Apply would send now, while the request is pending. */
+  sending?: Record<string, unknown>
 }) {
   const policy = readReference(request.properties.policy)?.path
   const revision = request.properties.policyRevision
@@ -878,6 +918,26 @@ function TechnicalDetails({
       <pre className="overflow-x-auto rounded-md border bg-background px-3 py-2 font-mono text-xs whitespace-pre-wrap">
         {JSON.stringify(request.properties.diff ?? null, null, 2)}
       </pre>
+      {sending && (
+        <>
+          <p className="mt-4 mb-1 text-[12px] font-medium text-faint">
+            Adjusted diff (Apply sends this)
+          </p>
+          <pre className="overflow-x-auto rounded-md border bg-background px-3 py-2 font-mono text-xs whitespace-pre-wrap">
+            {JSON.stringify(sending, null, 2)}
+          </pre>
+        </>
+      )}
+      {request.properties.adjustedDiff !== undefined && (
+        <>
+          <p className="mt-4 mb-1 text-[12px] font-medium text-faint">
+            Adjusted diff (what was applied)
+          </p>
+          <pre className="overflow-x-auto rounded-md border bg-background px-3 py-2 font-mono text-xs whitespace-pre-wrap">
+            {JSON.stringify(request.properties.adjustedDiff, null, 2)}
+          </pre>
+        </>
+      )}
     </section>
   )
 }

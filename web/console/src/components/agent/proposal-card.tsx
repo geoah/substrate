@@ -4,14 +4,17 @@
  * disagree about what a suggestion says or whether it is decided.
  *
  * Apply and Dismiss are the review page's own buttons (`DecisionButtons`);
- * Review opens that page. Deciding also writes a `system` message into this
- * very thread and resumes the agent, so a decision made here shows up as new
- * turns. */
+ * Review opens that page. A suggestion a gate held also offers Always allow
+ * this, which saves a narrow allow naming that gate and applies the
+ * suggestion (`AlwaysAllowButton`). Deciding also writes a `system` message
+ * into this very thread and resumes the agent, so a decision made here shows
+ * up as new turns. */
 
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react"
 
+import { AlwaysAllowButton } from "@/components/agent/always-allow"
 import { ChangeValue, DecisionButtons } from "@/components/change-request"
 import { RecordRef } from "@/components/identity/record-ref"
 import { StateBadge } from "@/components/identity/state-badge"
@@ -24,13 +27,24 @@ import {
   changeSpecs,
   judgeVerdictOf,
   proposedHeading,
+  requestThreadId,
+  threadAgentId,
   verdictWords,
 } from "@/lib/agent-chat"
+import {
+  allowRuleFor,
+  policyIdOf,
+  ruleHeld,
+  standingAllows,
+} from "@/lib/agent-rules"
+import { writePoliciesQueryOptions } from "@/lib/api/agents"
 import { changeRequestQueryOptions } from "@/lib/api/changerequests"
+import { CORE_AUTHORITY, LLM_PACKAGE_NAME } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { recordQueryOptions } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
 import {
+  adjustedProperties,
   changeOp,
   changeTarget,
   decisionOf,
@@ -71,6 +85,28 @@ export function ProposalCard({ id }: { id: string }) {
     ),
     enabled: pendingOp === "patch" && Boolean(pendingTarget && targetKindInfo),
   })
+  // The agent a standing rule would name is the thread's, read only for a
+  // pending suggestion a gate held.
+  const gated = Boolean(
+    request.data && policyIdOf(request.data.properties.policy)
+  )
+  const threadId = request.data ? requestThreadId(request.data) : undefined
+  const thread = useQuery({
+    ...recordQueryOptions(
+      CORE_AUTHORITY,
+      LLM_PACKAGE_NAME,
+      "thread",
+      threadId ?? ""
+    ),
+    enabled:
+      gated &&
+      Boolean(threadId) &&
+      Boolean(request.data && decisionOf(request.data) === "proposed"),
+  })
+  const policies = useQuery({
+    ...writePoliciesQueryOptions(),
+    enabled: thread.isSuccess,
+  })
 
   if (request.isPending) {
     return (
@@ -105,6 +141,23 @@ export function ProposalCard({ id }: { id: string }) {
   const pending = decision === "proposed"
   const specs = changeSpecs(targetKindInfo)
 
+  const offered = pending
+    ? allowRuleFor({
+        request: record,
+        op,
+        agent: thread.data ? threadAgentId(thread.data) : undefined,
+        kind: target?.kind,
+      })
+    : undefined
+  // A rule already standing is not offered again; while the rules load,
+  // nothing is offered.
+  const rule =
+    offered &&
+    policies.data &&
+    !ruleHeld(offered, standingAllows(policies.data.records, offered.agent))
+      ? offered
+      : undefined
+
   const heading = op === "create" ? proposedHeading(diff.properties) : undefined
   const Icon =
     op === "create" ? PlusIcon : op === "delete" ? Trash2Icon : PencilIcon
@@ -134,7 +187,11 @@ export function ProposalCard({ id }: { id: string }) {
         {!pending && (
           <StateBadge
             value={decision}
-            label={DECISION_WORDS[decision]}
+            label={
+              decision === "accepted" && adjustedProperties(record)
+                ? `${DECISION_WORDS[decision]} with your edits`
+                : DECISION_WORDS[decision]
+            }
             className="ml-auto text-[12.5px]"
           />
         )}
@@ -163,15 +220,24 @@ export function ProposalCard({ id }: { id: string }) {
           request={record}
           op={op}
           review={
-            <Button
-              size="sm"
-              variant="outline"
-              render={
-                <Link to="/change-requests/$id" params={{ id }}>
-                  Review
-                </Link>
-              }
-            />
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                render={
+                  <Link to="/change-requests/$id" params={{ id }}>
+                    Review
+                  </Link>
+                }
+              />
+              {rule && (
+                <AlwaysAllowButton
+                  request={record}
+                  rule={rule}
+                  deleting={op === "delete"}
+                />
+              )}
+            </>
           }
         />
       ) : (

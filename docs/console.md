@@ -198,7 +198,10 @@ a package created before the stamp names no one.
 straight to it:
 
 - **Ask an agent**: say what you want to keep, and the console opens
-  [Agents](#agents) with that as your first message.
+  [Agents](#agents) in a new chat with an agent that can set a collection up
+  (its write grant covers `substrate.reamde.dev/core/kind` and it holds a
+  tool that writes) and sends it as the first message. When no agent can,
+  the dialog says so and offers a sample instead.
 - **Start from a sample**: the shipped [samples](bundles-catalog.md) that
   declare at least one primary kind (tasks, people, notes and the rest), each
   by the collections it adds and with **Add**. A kind's
@@ -448,9 +451,16 @@ property, the values now beside the values if applied, a create as the record
 it would make, a delete as the record it would remove — and **Apply** or
 **Dismiss**. Applying is the state transition that applies the change; a
 refused apply comes back on the request rather than as a half-applied change.
-With Technical details on the page adds the ids, the op and versions, the
-policy that held the write, the thread it came from, a judge's verdict and
-the raw diff.
+The **If applied** values are editable with the property sheet's own
+editors, and a value can be left out and put back; nothing is stored until
+**Apply**, which then sends the owner's values as the accept's `adjustedDiff`
+([0112](decisions/0112-an-owner-adjusts-a-change-request-on-the-accepting-write.md)),
+checked against the version of the record the page showed. A decided request
+the owner adjusted shows what was suggested beside what was applied, and the
+chat card and the thread say it was applied with your edits. With Technical
+details on the page adds the ids, the op and versions, the policy that held
+the write, the thread it came from, a judge's verdict, the raw diff and the
+adjusted one.
 
 Both queues are their collections, under **Substrate** with Technical details
 on. A request is also reached from the records it names (their **Connected
@@ -481,26 +491,42 @@ panel on the right.
   else: each reads the change request's live state, says what it would change
   as before and after, and offers **Apply** (**Add it**, **Delete it**, a
   delete confirming first), **Dismiss** and **Review** (the change request
-  page). A card offers no way to allow the agent for good: under the
-  [policy door](agents.md#the-policy-door) an `allow` cannot outrank the
-  `gate` that held the write. Deciding writes a message into the thread and
+  page). A suggestion a gate held also offers **Always allow this**, which
+  asks first ("_Agent_ will add and change tasks without asking. You can
+  take this back in the agent's panel."), then saves an `allow` naming that
+  gate in `overrides` for this agent, kind and verb, one per door verb
+  ([0109](decisions/0109-an-allow-outranks-a-gate-only-by-naming-it.md)),
+  and applies the suggestion. Deciding writes a message into the thread and
   resumes the agent. Questions the agent asks are cards too, answered in
   place.
-- **The panel** says what the agent can see, change and ask, which tools it
-  uses, its model and its provider, and links **Edit agent** to its record;
-  with Technical details on it adds the system prompt, each tool's reference,
-  the grants and the budgets.
+- **The panel** says what the agent can see, change and ask, what it is
+  always allowed to do (each rule with **Revoke**), which tools it uses, its
+  model and its provider, and links **Runs and permissions** to the agent's
+  page and **Edit agent** to its record; with Technical details on it adds
+  the system prompt, each tool's reference, the grants and the budgets.
 
 The address names what is open: `?thread=<id>` opens one conversation,
 `?agent=<id>` opens a new chat with that agent, and `?prompt=<text>` fills a
-new chat's message box, which is how other pages hand over a question. A bare
-`/agents` opens the most recent conversation, or a new chat when there is
-none; the old per-agent address `/agents/{id}` redirects to `?agent=`, keeping
-a `?thread=` it carried.
+new chat's message box, which is how other pages hand over a question;
+`?send=1` beside it sends that question as soon as the agent can take it,
+once. A bare `/agents` opens the most recent conversation, or a new chat when
+there is none.
+
+**An agent's page** (`/agents/{id}`; a `?thread=` there still opens the
+chat) is what the agent is and may do: **Can see** and **Can change**,
+edited by collection and written as its `permissions`, an edit that would
+leave a tool it holds without its grant held back with the reason; the tools
+it uses and the agents it can ask; **Always allowed**, each rule with
+**Revoke**; the other rules its changes go through, in words; and its last
+fifty **Recent runs**, with how many there were, how many didn't finish, the
+tokens and the cost, and per run what started it, how it ended (and why, when
+it failed), its tokens and its cost. With Technical details on it adds the
+references and the declaration.
 
 The [`llm/provider`](agents.md#providers) rows are not on this page: an agent
 names one by id, its panel shows which, and a provider without a key says so
-where the conversation would otherwise fail. The rows are the
+where the conversation would otherwise fail, with **Add your _Provider_ key**,
+which writes the row's sealed `apiKey` as the record page would. The rows are the
 `substrate.reamde.dev/llm/provider` collection, and
 [registering one](agents.md#registering-a-provider) is an ordinary record
 write.
