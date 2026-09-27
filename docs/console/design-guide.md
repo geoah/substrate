@@ -91,9 +91,10 @@ The sidebar, top to bottom:
 What a group lists is decided by each kind's declared `purpose`
 ([0106](../decisions/0106-a-kind-declares-its-purpose.md)): everyday mode
 lists `primary` kinds by display plural; technical mode lists the authority,
-package and kind tree by each kind's own name, supporting and internal kinds
-tagged. Every kind under `substrate.reamde.dev` reads as internal. A row tips
-its description, never its raw reference. Collapsed, the sidebar peeks as an
+package and kind tree, each kind by its display plural with its own name in
+faint mono beside it, supporting and internal kinds tagged. Every kind under
+`substrate.reamde.dev` reads as internal. A row opens the kind's hover card
+beside the sidebar. Collapsed, the sidebar peeks as an
 overlay while the pointer rests at the page's left side or on the toggle.
 
 The breadcrumb above every page reads where the page sits ("Your data /
@@ -283,8 +284,10 @@ technical mode; a function is labelled a **tool**. The dead words in
 [terms](../terms.md) never appear in UI copy: `relationship` is a sample
 property's name, which is data and fine, and nowhere else.
 
-A kind's **display name** is built by `lib/kind-names.ts` from its lowercase
-compound name: the name is split into known words (the fewest-words split, the
+A kind's **display name** is the `label:` its declaration carries, where it
+declares one ("Channels", "Repeating events",
+[0113](../decisions/0113-a-kind-may-declare-its-display-label.md)); otherwise
+`lib/kind-names.ts` builds it from its lowercase compound name: the name is split into known words (the fewest-words split, the
 longer first word winning a tie), acronyms and brands keep their capitals
 ("API keys", "Gmail threads", "WHOOP"), the first word is capitalised, and the
 last word takes the plural ("People", "Calendar event series", "Codes of

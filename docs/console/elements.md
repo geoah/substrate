@@ -34,8 +34,10 @@ never marked by an icon of a page's own choosing.
 A kind, named: its glyph and its display plural ("People") in `label` mode,
 or its full reference in `reference` mode. With Technical details on, label
 mode shows the reference beside the label. Links to the collection; its hover
-card gives the display name, the everyday description, how many records it
-holds, how it is listed (its purpose) and the full reference.
+card gives the display name, where the collection comes from (an
+`OriginMark`: "Made by _agent_" where an agent declared its package), the
+everyday description, how many records it holds, how it is listed (its
+purpose) and the full reference.
 
 - `kind`: a registry entry or a full kind reference
 - `mode`: `label` (default) or `reference`
@@ -46,7 +48,7 @@ holds, how it is listed (its purpose) and the full reference.
 authority and package toned down and the name emphasised; it wraps and never
 truncates (`reference`). `KindCard` is the hover card's body for a trigger
 that is not a `KindRef`, such as a collection's own heading (`kind`,
-`count`).
+`count`); the sidebar's rows open it too.
 
 Used by the record head, **Connected to**, **Where it comes from**, History,
 Search, a provider's contents and the record editor. **Rule:** never a short
@@ -58,9 +60,11 @@ identity.
 A record, named: its kind's glyph and its title, in the mention style
 (underlined on hover) or as a soft chip. A record with no title reads
 "Untitled _kind_", never its id; where only the reference is known the title
-is read, batched with every other mark on the page. Its hover card gives the
-title, the collection (and "from Google" for a provider's copy), up to three
-property values and the full reference.
+is read, batched with every other mark on the page. Its hover card
+(`RecordCard`) gives the title, the collection (and "from Google" for a
+provider's copy), up to three property values under their declared labels (a
+reference as its referent's title, through the same batched read; the key
+under the label only in technical mode) and the full reference.
 
 - `kind`: the record's kind reference
 - `id`: the record id
@@ -136,8 +140,13 @@ into substrate".
 - `origin`: an `Origin`, from `originOfActor` or `originOfKind`
 - `short`: the name alone ("You", "Google"), for a chip
 
-Used by tool cards and the tool page, Home's collection cards and the
-ownership chip. **Rule:** one rendering of "yours / from _Provider_".
+`useKindOrigin(kind)` (`hooks/use-kind-origin.ts`) is a collection's origin,
+reading the package rows so an agent's app reads "Made by _agent_"
+(`lib/packages.ts`, decision 0111).
+
+Used by tool cards and the tool page, Home's collection cards, a kind's hover
+card, All data's **Made by** column, the package page and the ownership chip.
+**Rule:** one rendering of "yours / from _Provider_ / made by _agent_".
 
 ### StateBadge
 
@@ -207,9 +216,13 @@ row.
 - `card`: the card's body, or a function that mounts it only while open
 - `delay`: the open delay (default 500ms)
 - `label`: the trigger's accessible name, where its text does not say it
+- `side`: `bottom` (default) or `right`, beside the mark where a card below
+  would cover the next row (the sidebar)
 
-`IdentityCard`: `mark`, `title`, `sub`, `description`, `facts`, `reference`,
-`loading`. Used by every mark above and by the property sheet's labels and
+`IdentityCard`: `mark`, `title`, `sub`, `description`, `facts` (each a
+`label`, a `value` and an optional `detail`, the quiet line under the label
+that technical mode fills with a property key), `reference` (the footer, with
+a copy button), `loading`. Used by every mark above and by the property sheet's labels and
 the ownership chip. **Rule:** one hover card design; a new mark uses it.
 
 ### CopyButton and IdText
