@@ -940,13 +940,16 @@ SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap ./repositories/ada.e
 **On the compose deployment, run them inside the container.** The image
 carries `substratectl` beside the server, because `compose.yaml`
 publishes no Postgres port and the DSN resolves nowhere else. The container
-already holds `DATABASE_URL`, `SUBSTRATE_DATA_ROOT` and
-`SUBSTRATE_CREDENTIAL_KEY` in its environment, so none is repeated on the
-command line:
+holds `DATABASE_URL` and `SUBSTRATE_DATA_ROOT` in its environment, so
+neither is repeated on the command line. It holds `SUBSTRATE_CREDENTIAL_KEY`
+only when the environment compose reads sets it: a key the entrypoint minted
+into `/keys/credential.key` reaches the server process alone, and a bare
+`repository verify` then passes without opening a sealed file. A command
+that should open them reads the file when the variable is empty:
 
 ```
 docker compose exec substrate substratectl repository list
-docker compose exec substrate substratectl repository verify ada.example.com
+docker compose exec substrate sh -c 'SUBSTRATE_CREDENTIAL_KEY="${SUBSTRATE_CREDENTIAL_KEY:-$(cat /keys/credential.key)}" exec substratectl repository verify ada.example.com'
 docker compose exec substrate substratectl user reset ada.example.com
 ```
 

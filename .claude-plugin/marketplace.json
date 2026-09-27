@@ -11,7 +11,6 @@
       "name": "substrate-runbooks",
       "description": "Runbooks for operating and building on a substrate: upgrading a server and everything that depends on it to a newer release",
       "source": "./skills",
-      "strict": false,
       "homepage": "https://github.com/geoah/substrate",
       "skills": ["./substrate-runbook-upgrade"]
     }

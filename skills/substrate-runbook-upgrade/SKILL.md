@@ -8,8 +8,8 @@ description: >-
   substrate release, when a substrate release is out and code depends on the
   server, or when a server reports a version the client code was not written
   against. Reads the upgrade notes of every release in the range, writes a
-  plan, takes a backup, deploys, verifies, and takes the upgrades the catalog
-  offers.
+  plan, takes a verified backup, deploys, verifies, and takes the upgrades the
+  catalog offers.
 ---
 
 # Upgrade substrate
@@ -68,7 +68,21 @@ Outside compose, use the `substratectl` from the same release archive as the
 server binary. The user's commands (everything that speaks HTTP with a
 token) migrate nothing.
 
-## Step 1: Find where you are
+## Keep secrets out of the conversation
+
+Two secrets matter in an upgrade, and each has one owner:
+
+- **`SUBSTRATE_CREDENTIAL_KEY`** is the operator's. It unwraps the key every
+  repository on the host is sealed under. The operator confirms it is stored
+  in their own secret storage, apart from the data backups.
+- **The recovery key** is the user's, handed to them at registration. It
+  opens their export on any host. The user confirms they still have it.
+
+Ask each owner to confirm; never ask to see either. Never put a secret, a
+token or a password into a message, the plan, a log, or a file in a code
+repository.
+
+## Step 1: Record the version, the target and the inventory
 
 **Work out which role you are in.** An *operator* runs the server: they can
 change the image, stop the process, and reach `DATABASE_URL`,
@@ -81,7 +95,7 @@ server's part (the server backup in step 5, the deploy in step 6,
 
 ```bash
 curl -fsS "$SUBSTRATE_SERVER/.well-known/substrate/server.json" | jq '.server'
-substratectl version    # the CLI's own version; step 9 installs the matching one
+substratectl version    # the CLI's own version; step 6 switches it to the target's
 ```
 
 - A release reports its tag (`v0.85.0`).
@@ -134,9 +148,8 @@ Read the notes of every release after the current one, up to and including
 the target. Read all of them, oldest first: releases ship several times a
 day, so a range often spans dozens, and any one of them can hold a break.
 
-**Where the notes are.** Each release page carries its notes. Today they sit
-between two markers above the commit list; where a page has no markers, the
-body is the notes.
+**Where the notes are.** Each release page carries its notes between two
+markers, above the commit list:
 
 ```bash
 # every release tag, newest first
@@ -149,9 +162,9 @@ gh release view v0.105.0 --repo geoah/substrate --json body -q .body |
 
 Without `gh`, the same bodies are at
 `https://api.github.com/repos/geoah/substrate/releases?per_page=100&page=N`,
-in the `body` field of each entry. A release whose page lists only commits
-has no notes; read its commit list for subjects with `!` before the colon,
-because each of those is a break.
+in the `body` field of each entry. A page without the markers has no notes;
+read its commit list for subjects with `!` before the colon, because each of
+those is a break.
 
 **How to read a note.** Each note is a break, a deprecation, a feature or a
 fix. A break or a deprecation ends in a `What to do` section whose steps are
@@ -169,11 +182,10 @@ written to be followed literally. For each note, decide:
 4. **Is it one-way?** Mark every note that says a rollback is not possible
    or that every server must be upgraded first.
 
-**Read the operations docs at the target tag** for the mechanisms the notes
-assume:
-<https://github.com/geoah/substrate/blob/main/docs/operations.md#upgrading-the-binary>
-(swap `main` for the target tag). It says what the boot does, which boots
-refuse, and why a rollback closes.
+**Read "Upgrading the binary" in `docs/operations.md` at the target tag**
+for the mechanisms the notes assume:
+`https://github.com/geoah/substrate/blob/<target tag>/docs/operations.md#upgrading-the-binary`.
+It says what the boot does, which boots refuse, and why a rollback closes.
 
 **Two floors exist.** A database migrated before `v0.70.0` cannot be
 upgraded in place: the `v0.70.0` note moves the data root onto an empty
@@ -192,17 +204,19 @@ Upgrade v0.101.0 -> v0.105.0 (operator and user)
 One-way: v0.105.0 (a kind declares `purpose`; no rollback past it)
 
 Before the deploy, with the old server running
-1. [user] <each pre-deploy `What to do` step, with its note>
-2. [user] Back up: `substratectl export` (step 5)
-3. [operator] Stop the server; copy the data root; dump the database (step 5)
+1. [user] Export; download the v0.105.0 `substratectl` beside the current one (step 4)
+2. [user] <each pre-deploy `What to do` step, with its note>
+3. [user] Export again (step 5)
+4. [operator] Stop the server; snapshot every repository; dump the database (step 5)
 
 Deploy
-4. [operator] Image `ghcr.io/geoah/substrate:0.105.0`; env changes: none
+5. [operator] Image `ghcr.io/geoah/substrate:0.105.0`; env changes: none
+6. [user] Switch to the v0.105.0 `substratectl` (step 6)
 
 After the deploy
-5. [operator] `repository verify` every repository (step 7)
-6. [user] Take the provider, then the sample upgrades `substratectl catalog` offers
-7. [user] Client changes: <each change, with the file it touches>
+7. [operator] `repository verify` every repository (step 7)
+8. [user] Take the provider, then the sample upgrades `substratectl catalog` offers
+9. [user] Client changes: <each change, with the file it touches>
 
 Skipped notes
 - v0.103.0 "<heading>": the user has no Slack account
@@ -213,72 +227,107 @@ you found in step 1 is a question for the user; do not guess at it.
 
 ## Step 4: Do the pre-deploy steps
 
-The old server is still running. Carry out every plan step marked for before
-the deploy. Typical ones:
+The old server is still running, and the current `substratectl` is the one
+to use.
 
-- Rewrite the records a note says would block an upgrade. The boot upgrade
-  never runs a lossy step, so a shipped change that would remove values from
-  live records is refused until those records are rewritten.
-- Add what a note says a record must now declare, for example the headers
-  a webhook trigger's callable reads (`source.webhook.headers`).
+1. **Export first**, so the values the pre-deploy writes replace have a copy
+   outside the changelog: `substratectl export`.
+2. **Download the target's `substratectl`** into its own directory, and keep
+   using the current one until step 6. Each release attaches
+   `substrate_<version>_<os>_<arch>.tar.gz` and a `checksums.txt`:
 
-## Step 5: Take a backup
+   ```bash
+   mkdir -p ~/substratectl-v0.105.0 && cd ~/substratectl-v0.105.0
+   gh release download v0.105.0 --repo geoah/substrate \
+     --pattern 'substrate_0.105.0_linux_amd64.tar.gz' --pattern checksums.txt
+   sha256sum --check --ignore-missing checksums.txt && tar -xzf substrate_0.105.0_linux_amd64.tar.gz
+   ```
+
+3. **Carry out every plan step marked for before the deploy.** Typical ones:
+   - Rewrite the records a note says would block an upgrade. The boot
+     upgrade never runs a lossy step, so a shipped change that would remove
+     values from live records is refused until those records are rewritten.
+   - Add what a note says a record must now declare, for example the
+     headers a webhook trigger's callable reads (`source.webhook.headers`).
+
+## Step 5: Take a verified backup
 
 The first boot of the new binary closes the rollback, so the backup comes
-last before the deploy, after every pre-deploy write.
+last before the deploy, after every pre-deploy write, and it is verified
+before anything else happens.
 
-**User.** Download the recovery export while the server still runs:
+**User.** Download the recovery export again while the server still runs:
 
 ```bash
 substratectl export            # writes <authority>-<head>.tar, refuses to keep a truncated archive
 ```
 
-The export opens anywhere with the recovery key the user saved at
-registration. Ask the user to confirm they still have that key; do not ask
-them to show it to you.
-
 **Operator.** Stop every server process that opens the database, and leave
-them stopped until step 6. Then copy the data root and dump the database, as
-one pair:
+them stopped until step 6. Then take a snapshot of every repository with the
+old server's `substratectl`. `repository snapshot` verifies the repository
+before it copies anything, reads the copy back, and records the point it
+holds. It refuses a destination that already holds the repository, so use a
+fresh directory per upgrade. Dump the database beside it as well, as a
+private file that exists only once the dump succeeded:
 
 ```bash
-rsync -a "$SUBSTRATE_DATA_ROOT"/ /srv/substrate-backup/<date>/
-pg_dump "$DATABASE_URL" > /srv/substrate-backup/<date>.sql
+SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… \
+  substratectl repository snapshot <repository> /srv/substrate-backup/<date>    # once per repository
+( umask 077
+  pg_dump "$DATABASE_URL" > /srv/substrate-backup/<date>.sql.tmp &&
+    mv /srv/substrate-backup/<date>.sql.tmp /srv/substrate-backup/<date>.sql )
 ```
 
-On the compose deployment Postgres publishes no port, so dump it through its
-container (`-T`, so no terminal mangles the dump). `docker compose cp` reads
-a stopped container:
+On the compose deployment the server runs as uid 65532 and Postgres
+publishes no port, so the snapshot runs in a one-off container of the same
+image with a directory that uid owns mounted in, and the dump runs in the
+`postgres` container:
 
 ```bash
 docker compose stop substrate
-docker compose cp substrate:/var/lib/substrate ./substrate-backup
-docker compose exec -T postgres pg_dump -U postgres substrate > ./substrate-backup.sql
+sudo install -d -m 700 -o 65532 -g 65532 ./substrate-backup-<date>
+docker compose run --rm -v "$PWD/substrate-backup-<date>:/backup" --entrypoint /bin/sh substrate -c \
+  'SUBSTRATE_CREDENTIAL_KEY="${SUBSTRATE_CREDENTIAL_KEY:-$(cat /keys/credential.key)}" exec substratectl repository snapshot <repository> /backup'
+( umask 077
+  docker compose exec -T postgres sh -c 'pg_dump -U postgres "$POSTGRES_DB"' > ./substrate-backup-<date>.sql.tmp &&
+    mv ./substrate-backup-<date>.sql.tmp ./substrate-backup-<date>.sql )
 ```
 
 Never run `docker compose down -v`: it deletes the database, the data root
 and the key volumes.
 
-Confirm that the user holds a copy of `SUBSTRATE_CREDENTIAL_KEY` stored
-apart from the data copy. On compose it is `/keys/credential.key` in the
-`substrate-keys` volume, unless the environment sets one. Without it the
-secrets in the copy (provider credentials, API keys, the login credential)
-cannot be opened. Never print the key, copy it into a file, or paste it into
-a message.
+A snapshot that reports a finding is not a backup. Stop and show the user
+the finding; do not deploy. Then confirm that the operator holds
+`SUBSTRATE_CREDENTIAL_KEY` apart from the backup (on compose it is
+`/keys/credential.key` in the `substrate-keys` volume, unless the
+environment sets one), and that the user holds their recovery key.
 
-**Show the user:** where the backup is and what it holds.
+**Show the user:** where the backup is, what it holds, and the point each
+snapshot recorded.
 
-## Step 6: Deploy the new binary
+## Step 6: Deploy the new binary and switch the CLI
 
-Pin the image to the target tag (`ghcr.io/geoah/substrate:0.105.0`). On
-compose, replace `build: .` or the old tag with that `image:`. Apply every
-env var change the notes list.
+Pin the image to the target tag (`ghcr.io/geoah/substrate:0.105.0`) and
+apply every env var change the notes list. Start exactly one server process,
+and only after every old one has stopped. A rolling deploy that starts the
+new process beside the old one is refused, because a repository has one
+writer.
 
-Start exactly one server process, and only after every old one has stopped.
-A rolling deploy that starts the new process beside the old one is refused,
-because a repository has one writer. Watch the log until the server is
-serving: a long boot import logs `still booting` every 10 seconds, and that
-is progress, not a hang.
+On compose, replace `build: .` or the old tag with that `image:`, then:
+
+```bash
+docker compose pull substrate
+docker compose up -d substrate      # recreates the container with the new image and environment
+docker compose logs -f substrate
+```
+
+Not `docker compose restart`: it keeps the environment the container was
+created with.
+
+Watch the log until the server is serving: a long boot import logs `still
+booting` every 10 seconds, and that is progress, not a hang. Then switch the
+user's `substratectl` to the one downloaded in step 4; every later step
+uses it.
 
 When the server refuses, it says what it refused. Do not work around a
 refusal by editing tables or files:
@@ -290,7 +339,7 @@ refusal by editing tables or files:
 | `the repository recorded migrations this binary does not carry` | a newer binary already ran repository migrations on it | deploy that release or a later one |
 | `the changelog speaks a newer dialect than this binary can replay`, or `the store speaks a newer schema dialect than this binary` | the binary is older than the repository | deploy a newer binary |
 | `another process is this repository's writer`, or `another process holds the changelog writer lock` | a second server process opened the same repositories | stop every other process, then start one |
-| a refusal naming each repository and two key ids | this host's `SUBSTRATE_CREDENTIAL_KEY` is not the key the repositories were sealed under | set the original key |
+| `is not the key the DEK wrap of repository` | this host's `SUBSTRATE_CREDENTIAL_KEY` is not the key the repository was sealed under | set the original key |
 | the API answers `503 unavailable` with `Retry-After` for one repository | that repository's open was refused; the server log names it and why | fix what the log names, then restart |
 | `REFUSED to upgrade a repository's shipped vocabulary`, with the guard lines under `refused` | the seeded packages stay at their stored version; the lines name the kind, the property and the records to rewrite | rewrite those records, then restart the server |
 | `function body failed to prepare at repository open` | that function's deliveries park; the repository still serves | re-apply a working function (a provider's arrives with its upgrade in step 8), then retry the parked deliveries |
@@ -298,7 +347,7 @@ refusal by editing tables or files:
 ## Step 7: Verify
 
 **Operator.** Check the server, then verify every repository with the new
-server's `substratectl` (see above):
+server's `substratectl`:
 
 ```bash
 curl -fsS "$SUBSTRATE_SERVER/healthz"
@@ -313,8 +362,7 @@ takes no lease, so it is safe beside the running server.
 **User.**
 
 ```bash
-substratectl catalog
-curl -fsS -H "Authorization: Bearer $SUBSTRATE_TOKEN" "$SUBSTRATE_SERVER/api/v1/vocabulary/upgrade" | jq
+substratectl catalog                                         # seeded packages first, then providers and samples
 substratectl get substrate.reamde.dev/core/package -o yaml   # look for quarantined: true
 substratectl trigger status
 substratectl sync status
@@ -332,9 +380,10 @@ substratectl sync status
 - **`quarantined: true`** on a package: the new binary does not admit its
   stored declarations, and `quarantineReason` says why. Its kinds refuse
   writes and its functions do not run until a valid closure is re-applied.
-  For the user's own package, fix the declarations and `substratectl apply`
-  them. For a provider or sample, install or import it again (step 8). If
-  the marker stays, show the user the `quarantineReason`.
+  For the user's own package, fix the declarations and apply them
+  (`substratectl apply -f <package.yaml>`). For a provider or sample,
+  install or import it again (step 8). If the marker stays, show the user
+  the `quarantineReason`.
 - **Parked deliveries or a new last error** on a trigger, or a sync account
   in an error state: read the error before you retry anything. `substratectl
   trigger parked <id>` lists them, and `substratectl trigger retry <id>
@@ -355,8 +404,8 @@ substratectl import samples.substrate.reamde.dev/tasks       # a sample: importi
 ```
 
 A sample can require another at a minimum version (`tasks` requires `people`
-4 and `scheduling` 2). When an import is refused naming such a floor, import
-the sample it names first.
+4 and `scheduling` 2). An import refused with a `requiresAtLeast` line names
+the sample and the version it needs: import that one first.
 
 Four cases are refused:
 
@@ -367,22 +416,20 @@ Four cases are refused:
   records.
 - **An `edited copy`**, on `import`: a sample the user changed since the
   import. A re-import replaces the package whole, so the edits are lost.
-- **A missing floor**, on `import`: see above.
+- **A `requiresAtLeast` floor**, on `import`: see above.
 
 A lossy plan and an edited copy clear only with `--allow-data-loss`. Show the
 user the steps or the edits that would be lost, and pass the flag only after
 they say yes. The old values stay in the changelog either way.
 
 Then carry out the notes aimed at the user's own packages (a new key to
-declare, a deprecated one to replace) with `substratectl apply -f`. A change
-that removes values from live records is refused the same way, and
-`substratectl apply --allow-data-loss` takes the same explicit yes.
+declare, a deprecated one to replace) with `substratectl apply -f
+<package.yaml>`. A change that removes values from live records is refused
+the same way, and `substratectl apply -f <package.yaml> --allow-data-loss`
+takes the same explicit yes.
 
-## Step 9: Update clients
+## Step 9: Update the client code
 
-- **Install the matching `substratectl`.** Each release attaches
-  `substrate_<version>_<os>_<arch>.tar.gz`, for example
-  `substrate_0.105.0_linux_amd64.tar.gz`. `substratectl version` confirms it.
 - **Change the client code.** Carry out every `What to do` step aimed at
   clients: routes, request and response fields, kind references, agent tool
   names.
@@ -391,36 +438,59 @@ that removes values from live records is refused the same way, and
 
 ## When it goes wrong
 
-- **Roll forward.** A release that migrated the schema, stamped a newer
-  dialect, ran a repository migration or shipped a new declaration key
-  leaves the database or its repositories unreadable to an older binary.
-  Assume the target did at least one of these. Deploying a binary at or
-  above the target always works.
-- **To go back, restore the backup with the old binary.** Stop the server.
-  Create a fresh, empty database and restore the dump into it. Empty the
-  data root and restore the data copy into it, so no segment the new binary
-  wrote survives. Boot the old server, then stop it. Run `substratectl
-  repository rotate-generation <repository>` for each repository with the
-  old server's `substratectl`, and start the server again. The rotation makes
-  clients re-list instead of resuming change cursors from a history that no
-  longer exists. The
-  [backups](https://github.com/geoah/substrate/blob/main/docs/operations.md#backups)
-  section has the full procedure.
-- **A user's export** restores through the operator. It goes under the data
-  root of a stopped server whose database holds no row for that repository,
-  a fresh database for example. A database that still holds the row
-  reconciles the older files forward from the table instead of rolling back.
+- **Roll forward by planning again.** A release that migrated the schema,
+  stamped a newer dialect, ran a repository migration or shipped a new
+  declaration key leaves the database or its repositories unreadable to an
+  older binary, so assume the target did at least one of these. A newer
+  release than the target is a new range: go back to step 2 for the releases
+  it adds and follow their notes before deploying it.
+- **Going back is the user's call.** Show them the refusal and the backup,
+  and restore only after they say yes. The restore puts the snapshots under
+  an empty data root, boots the old binary on a fresh, empty database, and
+  lets the boot import each repository:
+  1. Stop the server.
+  2. Move the upgraded data root aside, and keep it until the restore is
+     verified: `mv "$SUBSTRATE_DATA_ROOT" "$SUBSTRATE_DATA_ROOT.upgraded-<date>"`.
+  3. Recreate the data root and copy the snapshots in, owned by the user
+     the server runs as (uid 65532 in the image):
+
+     ```bash
+     install -d -m 700 -o 65532 -g 65532 "$SUBSTRATE_DATA_ROOT"
+     cp -a /srv/substrate-backup/<date>/repositories "$SUBSTRATE_DATA_ROOT"/
+     chown -R 65532:65532 "$SUBSTRATE_DATA_ROOT"
+     ```
+
+  4. Create a fresh, empty database and point `DATABASE_URL` at it. Keep
+     the upgraded one until the restore is verified.
+  5. Start the old release's server with the same `SUBSTRATE_CREDENTIAL_KEY`.
+     It imports every repository directory.
+  6. Run `repository verify` for every repository with the old release's
+     `substratectl`. Each prints the point its snapshot recorded.
+  7. Only then, and with the user's yes, delete the upgraded data root and
+     database.
+
+  Clients re-list once, because an import starts a new history generation.
+  On compose the data root and the database are the `substrate-data` and
+  `substrate-db` volumes, so a restore needs a second volume and a second
+  database: write the `compose.yaml` edits into the plan and show them to
+  the user first. "Backups" in `docs/operations.md`, at the tag you restore
+  to, has the full procedure, the dump path included.
+- **A user's export** restores through the operator, the same way: it goes
+  under the data root of a stopped server whose database holds no row for
+  that repository. A database that still holds the row reconciles the older
+  files forward from the table instead of rolling back.
 
 ## What not to do
 
 - Never deploy without reading every note in the range.
 - Never deploy the `latest` tag, or roll an image back over a database the
   new binary has booted on.
+- Never deploy on a backup that did not verify.
 - Never run an operator command with a `substratectl` from another release
   than the server's.
 - Never edit `schema_migrations`, `repository_migrations`, the `records`
   table or the files under the data root by hand to get past a refusal.
 - Never pass `--allow-data-loss` without the user's explicit yes to the
   steps it confirms.
-- Never print, store or send `SUBSTRATE_CREDENTIAL_KEY`, a token, a password
-  or the recovery key.
+- Never put `SUBSTRATE_CREDENTIAL_KEY`, the recovery key, a token or a
+  password into a message, the plan, a log or a file in a code repository.
