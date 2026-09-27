@@ -436,6 +436,8 @@
     "errorAt": false,
     "id": true,
     "kind": true,
+    "lastParkedAt": false,
+    "lastParkedError": false,
     "lastSyncDurationMs": false,
     "lastSyncStartedAt": false,
     "lastSyncedAt": false,
@@ -494,6 +496,8 @@
     "kind": true,
     "lag": false,
     "lastFire": false,
+    "lastParkedAt": false,
+    "lastParkedError": false,
     "parked": true,
     "pending": true,
     "webhookPath": false

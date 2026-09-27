@@ -1152,7 +1152,7 @@ func (f *fakeSubstrate) handleTriggerStatus(w http.ResponseWriter, r *http.Reque
 
 // handleSyncStatus answers one `sync`-trait account joined with its trigger:
 // an erroring Gmail stream beside a healthy contacts one, a request the sync
-// has not yet acknowledged, and one parked delivery.
+// has not yet acknowledged, and one parked delivery with its traceback.
 func (f *fakeSubstrate) handleSyncStatus(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
 	requested := time.Date(2026, 9, 19, 9, 0, 0, 0, time.UTC)
@@ -1165,7 +1165,7 @@ func (f *fakeSubstrate) handleSyncStatus(w http.ResponseWriter, r *http.Request)
 			"gmail":    {State: substrate.SyncStateErroring, Pending: 12},
 			"contacts": {State: substrate.SyncStateOK},
 		},
-		Parked:   1,
+		Parked: 1, LastParkedError: "RuntimeError: contacts: HTTP 500\nTraceback (most recent call last):", LastParkedAt: &synced,
 		Triggers: []substrate.TriggerStatus{{ID: "google-gmail-on-connect", Kind: substrate.TriggerKindRecord, Parked: 3, Lag: 2}},
 	}}})
 }

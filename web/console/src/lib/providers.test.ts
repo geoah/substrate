@@ -610,6 +610,36 @@ describe("tools", () => {
       )
     ).toEqual({ lastFire: "2026-09-02T10:00:00Z", parked: 2 })
   })
+
+  it("names the newest parked run's error across a tool's triggers", () => {
+    const status = (
+      id: string,
+      parked: number,
+      lastParkedError?: string,
+      lastParkedAt?: string
+    ): TriggerStatus => ({
+      id,
+      kind: "schedule",
+      callable: "",
+      enabled: true,
+      head: 0,
+      parked,
+      pending: 0,
+      lastParkedError,
+      lastParkedAt,
+    })
+    expect(
+      toolActivity(
+        ["a", "b", "c"],
+        [
+          status("a", 1, "HTTP 500", "2026-09-01T10:00:00Z"),
+          status("b", 92, "HTTP 401", "2026-09-02T10:00:00Z"),
+          status("c", 0),
+          status("d", 5, "not this tool's", "2026-09-03T10:00:00Z"),
+        ]
+      ).lastParked
+    ).toEqual({ error: "HTTP 401", at: "2026-09-02T10:00:00Z" })
+  })
 })
 
 describe("fillsIn", () => {

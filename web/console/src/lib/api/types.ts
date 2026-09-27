@@ -604,6 +604,10 @@ export interface TriggerStatus {
   webhookPath?: string
   parked: number
   pending: number
+  /** The newest parked delivery's error, its first line cut at 500 bytes,
+   * and when it parked; both absent while `parked` is 0. */
+  lastParkedError?: string
+  lastParkedAt?: string
   /** Names a trigger the dispatcher cannot run: an unparseable row or a
    * callable that no longer resolves. */
   error?: string
@@ -657,11 +661,18 @@ export interface SyncStatus {
   errorAt?: string
   /** The per-stream slice a multi-stream provider reports, by stream name. */
   streams?: Record<string, SyncStream>
-  /** The parked deliveries that name THIS record, across the triggers on
-   * its kind; a trigger's own `parked` counts every record's. */
+  /** The parked deliveries of this record's sync: those on its kind's record
+   * triggers that name THIS record, plus those no record owns (a schedule
+   * fire, a webhook wake) on a trigger firing one of the same callables. A
+   * trigger's own `parked` counts every record's. */
   parked: number
+  /** The newest of those parked deliveries' error, its first line cut at 500
+   * bytes, and when it parked; both absent while `parked` is 0. */
+  lastParkedError?: string
+  lastParkedAt?: string
   /** The record triggers on the kind; a schedule trigger firing the same
-   * callable is not tied to a kind and is not here. */
+   * callable is not tied to a kind and is not here, though its parks count
+   * in `parked`. */
   triggers: TriggerStatus[]
 }
 

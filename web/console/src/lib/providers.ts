@@ -186,7 +186,10 @@ export interface StandingInput {
   > & { record: Pick<SubstrateRecord, "id"> })[]
   /** The delivery bookkeeping of the triggers that run the provider's own
    * functions. */
-  triggers?: Pick<TriggerStatus, "id" | "parked" | "error">[]
+  triggers?: Pick<
+    TriggerStatus,
+    "id" | "parked" | "error" | "lastParkedError" | "lastParkedAt"
+  >[]
 }
 
 const ATTENTION = "Needs attention"
@@ -325,12 +328,14 @@ export function standingProblems(s: StandingInput): ProviderProblem[] {
   }
   const parked = triggers.reduce((n, t) => n + t.parked, 0)
   if (parked > 0) {
+    const why = latestParked(triggers)
     out.push({
       code: "parked",
       summary:
         parked === 1
           ? "1 run failed and is waiting to be tried again"
           : `${parked} runs failed and are waiting to be tried again`,
+      detail: why ? [`Latest error: ${why.error}`] : undefined,
       fixes: ["retry-parked"],
     })
   }
@@ -556,21 +561,43 @@ export function providerTools(
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
-/** The last time any of a tool's triggers fired, and how many deliveries are
- * parked across them. */
+/** The newest parked delivery across some triggers: its error and when it
+ * parked, off each status's own newest. */
+export function latestParked(
+  statuses: readonly Pick<
+    TriggerStatus,
+    "parked" | "lastParkedError" | "lastParkedAt"
+  >[]
+): { error: string; at?: string } | undefined {
+  let latest: { error: string; at?: string } | undefined
+  for (const s of statuses) {
+    if (s.parked <= 0 || !s.lastParkedError) continue
+    if (!latest || (s.lastParkedAt ?? "") > (latest.at ?? ""))
+      latest = { error: s.lastParkedError, at: s.lastParkedAt }
+  }
+  return latest
+}
+
+/** The last time any of a tool's triggers fired, how many deliveries are
+ * parked across them, and the newest parked one's error. */
 export function toolActivity(
   triggerIds: readonly string[],
   statuses: readonly TriggerStatus[]
-): { lastFire?: string; parked: number } {
+): {
+  lastFire?: string
+  parked: number
+  lastParked?: { error: string; at?: string }
+} {
   let lastFire: string | undefined
   let parked = 0
-  for (const s of statuses) {
-    if (!triggerIds.includes(s.id)) continue
+  const mine = statuses.filter((s) => triggerIds.includes(s.id))
+  for (const s of mine) {
     parked += s.parked
     if (s.lastFire && (!lastFire || s.lastFire > lastFire))
       lastFire = s.lastFire
   }
-  return { lastFire, parked }
+  const lastParked = latestParked(mine)
+  return { lastFire, parked, ...(lastParked && { lastParked }) }
 }
 
 // ── what a provider did ──────────────────────────────────────────────────────

@@ -23,6 +23,7 @@ import { toast } from "@/components/ui/toast"
 import {
   retryParked,
   runTrigger,
+  syncStatusesQueryOptions,
   triggerParkedQueryOptions,
   triggerRecordsQueryOptions,
   triggerRunsQueryOptions,
@@ -33,6 +34,7 @@ import type { SubstrateRecord, TriggerStatus } from "@/lib/api/types"
 import { relativeTime, tableDateTime } from "@/lib/format"
 import {
   statusesOnKind,
+  syncParkedOf,
   triggersOnKind,
   type AccountView,
   type TriggerSource,
@@ -50,6 +52,7 @@ function useRefreshTriggers() {
 export function ConnectionDetails({ accounts }: { accounts: AccountView[] }) {
   const triggers = useQuery(triggerRecordsQueryOptions)
   const statuses = useQuery(triggerStatusesQueryOptions)
+  const syncStatuses = useQuery(syncStatusesQueryOptions)
   return (
     <div className="flex flex-col gap-4">
       {accounts.map((account) => {
@@ -74,6 +77,13 @@ export function ConnectionDetails({ accounts }: { accounts: AccountView[] }) {
               <SyncSummary
                 fields={account.sync}
                 legacyStatus={account.legacySyncStatus}
+                parked={syncParkedOf(
+                  syncStatuses.data?.find(
+                    (s) =>
+                      s.kind === account.record.kind &&
+                      s.id === account.record.id
+                  )
+                )}
               />
             ) : (
               <p className="text-[12.5px] text-muted-foreground">

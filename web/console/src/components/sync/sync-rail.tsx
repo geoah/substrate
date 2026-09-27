@@ -11,14 +11,26 @@ import { ArrowUpRightIcon } from "lucide-react"
 import { SyncActions, SyncSummary } from "@/components/sync/sync-panel"
 import { Button } from "@/components/ui/button"
 import { splitKind } from "@/lib/api/http"
-import { triggerRecordsQueryOptions } from "@/lib/api/sync"
+import {
+  syncStatusesQueryOptions,
+  triggerRecordsQueryOptions,
+} from "@/lib/api/sync"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { recordTitle } from "@/lib/format"
 import { untitled } from "@/lib/kind-names"
-import { requestTriggers, syncFieldsOf, triggersOnKind } from "@/lib/sync"
+import {
+  requestTriggers,
+  syncFieldsOf,
+  syncParkedOf,
+  triggersOnKind,
+} from "@/lib/sync"
 
 export function SyncRail({ record }: { record: SubstrateRecord }) {
   const triggers = useQuery(triggerRecordsQueryOptions)
+  const syncStatuses = useQuery(syncStatusesQueryOptions)
+  const parked = syncParkedOf(
+    syncStatuses.data?.find((s) => s.kind === record.kind && s.id === record.id)
+  )
   const fields = useMemo(
     () => syncFieldsOf(record.properties),
     [record.properties]
@@ -60,7 +72,7 @@ export function SyncRail({ record }: { record: SubstrateRecord }) {
           <ArrowUpRightIcon className="size-3.5" />
         </Button>
       </div>
-      <SyncSummary fields={fields} legacyStatus={legacy} />
+      <SyncSummary fields={fields} legacyStatus={legacy} parked={parked} />
     </div>
   )
 }

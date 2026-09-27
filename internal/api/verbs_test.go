@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -189,6 +190,48 @@ func TestSyncStatusLivesAtTheRoot(t *testing.T) {
 	// No bearer, no answer: the read is the repository's own.
 	rec = env.do(t, http.MethodGet, "/api/v1/sync/status", "", nil)
 	wantStatus(t, rec, http.StatusUnauthorized)
+}
+
+// TestStatusReadsCarryTheLatestParkedReason: both status reads put the
+// newest parked delivery's reason and instant beside the parked count, so a
+// list says why runs failed without reading each trigger's `…/parked`.
+func TestStatusReadsCarryTheLatestParkedReason(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+	at := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
+	scheduled := substrate.TriggerStatus{
+		ID: "github-scheduled", Kind: substrate.TriggerKindSchedule, Enabled: true,
+		Parked: 93, LastParkedError: "RuntimeError: GitHub answered 401", LastParkedAt: &at,
+	}
+	ds.triggerStatuses = []substrate.TriggerStatus{scheduled}
+	ds.syncStatuses = []substrate.SyncStatus{{
+		Kind: "providers.substrate.reamde.dev/github/account", ID: "geoah", State: substrate.SyncStateOK,
+		Parked: 93, LastParkedError: "RuntimeError: GitHub answered 401", LastParkedAt: &at,
+		Triggers: []substrate.TriggerStatus{},
+	}}
+
+	for _, path := range []string{"/api/v1/sync/status", "/api/v1/substrate.reamde.dev/core/trigger/status"} {
+		rec := env.do(t, http.MethodGet, path, tok, nil)
+		wantStatus(t, rec, http.StatusOK)
+		var body struct {
+			Items []struct {
+				Parked          int64  `json:"parked"`
+				LastParkedError string `json:"lastParkedError"`
+				LastParkedAt    string `json:"lastParkedAt"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("%s: decode: %v", path, err)
+		}
+		if len(body.Items) != 1 {
+			t.Fatalf("%s: items = %s, want one", path, rec.Body.String())
+		}
+		got := body.Items[0]
+		if got.Parked != 93 || got.LastParkedError != "RuntimeError: GitHub answered 401" || got.LastParkedAt != "2026-09-27T09:00:00Z" {
+			t.Fatalf("%s: item = %+v, want the count, the reason and when", path, got)
+		}
+	}
 }
 
 // TestWatchRejectsListParams is ruling A8's unsupported-param rule: a param a

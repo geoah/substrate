@@ -47,11 +47,9 @@ export function AccountsSection({
   const triggers = useQuery(triggerRecordsQueryOptions)
   const triggerStatuses = useQuery(triggerStatusesQueryOptions)
   const syncStatuses = useQuery(syncStatusesQueryOptions)
-  const parkedOf = useMemo(
+  const syncOf = useMemo(
     () =>
-      new Map(
-        (syncStatuses.data ?? []).map((s) => [`${s.kind}|${s.id}`, s.parked])
-      ),
+      new Map((syncStatuses.data ?? []).map((s) => [`${s.kind}|${s.id}`, s])),
     [syncStatuses.data]
   )
   // Connecting is refused by the server while the provider is paused or has
@@ -83,6 +81,9 @@ export function AccountsSection({
             const totals = triggerTotals(
               statusesOnKind(triggerStatuses.data ?? [], sources)
             )
+            const sync = syncOf.get(
+              `${account.record.kind}|${account.record.id}`
+            )
             return (
               <AccountRow
                 key={account.record.id}
@@ -92,9 +93,11 @@ export function AccountsSection({
                 technical={technical}
                 highlighted={highlight === account.record.id}
                 requestTriggerIds={requestTriggers(sources).map((s) => s.id)}
-                parked={
-                  parkedOf.get(`${account.record.kind}|${account.record.id}`) ??
-                  totals.parked
+                parked={sync?.parked ?? totals.parked}
+                lastParked={
+                  sync?.lastParkedError
+                    ? { error: sync.lastParkedError, at: sync.lastParkedAt }
+                    : undefined
                 }
                 lag={totals.lag}
                 connectBlocked={connectBlocked}
@@ -115,6 +118,7 @@ function AccountRow({
   highlighted,
   requestTriggerIds,
   parked,
+  lastParked,
   lag,
   connectBlocked,
 }: {
@@ -125,6 +129,8 @@ function AccountRow({
   highlighted: boolean
   requestTriggerIds: string[]
   parked: number
+  /** The newest parked run of the account's sync: its error and when. */
+  lastParked?: { error: string; at?: string }
   lag: number
   connectBlocked: boolean
 }) {
@@ -199,6 +205,23 @@ function AccountRow({
           )}
           {lag > 0 && (
             <span className="text-muted-foreground"> · {lag} behind</span>
+          )}
+          {parked > 0 && lastParked && (
+            <div
+              data-slot="account-parked-reason"
+              className="mt-1 max-w-72 text-xs whitespace-normal"
+            >
+              <span className="text-faint">Latest error</span>
+              {lastParked.at && (
+                <span className="text-faint" title={lastParked.at}>
+                  {" "}
+                  · {relativeTime(lastParked.at)}
+                </span>
+              )}
+              <span className="block break-words text-muted-foreground">
+                {lastParked.error}
+              </span>
+            </div>
           )}
         </td>
       )}

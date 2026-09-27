@@ -29,6 +29,7 @@ import type {
   ChangeRow,
   KindInfo,
   SubstrateRecord,
+  SyncStatus,
   TriggerStatus,
 } from "@/lib/api/types"
 
@@ -335,6 +336,26 @@ interface Wire {
   accounts?: SubstrateRecord[]
   settings?: SubstrateRecord[]
   triggerStatuses?: TriggerStatus[]
+  syncStatuses?: SyncStatus[]
+}
+
+const SYNC_STATUSES: SyncStatus[] = [
+  {
+    kind: ACCOUNT,
+    id: "george-work",
+    state: "erroring",
+    paused: false,
+    parked: 1,
+    triggers: [],
+  },
+]
+
+/** A scheduled sync that keeps failing: the account is not erroring, and
+ * only the parked runs say why. */
+const SCHEDULE_PARKED = {
+  parked: 93,
+  lastParkedError: "RuntimeError: Google answered 401",
+  lastParkedAt: HOUR_AGO,
 }
 
 function filterOf(path: string): { kinds?: string[]; implements?: string } {
@@ -396,16 +417,7 @@ describe("ProviderPage", () => {
       }
       if (path === "/api/v1/sync/status") {
         return jsonResponse(200, {
-          items: [
-            {
-              kind: ACCOUNT,
-              id: "george-work",
-              state: "erroring",
-              paused: false,
-              parked: 1,
-              triggers: [],
-            },
-          ],
+          items: wire.syncStatuses ?? SYNC_STATUSES,
         })
       }
       if (filter.kinds?.includes("substrate.reamde.dev/core/repository")) {
@@ -715,6 +727,27 @@ describe("ProviderPage", () => {
       expect(within(work).getByText("george-work")).toBeTruthy()
     })
 
+    it("says why the account's parked runs failed in technical mode", async () => {
+      serve({ syncStatuses: [{ ...SYNC_STATUSES[0], ...SCHEDULE_PARKED }] })
+      renderPage(<ProviderPage />, true)
+      const work = await row("george@example.com")
+      expect(await within(work).findByText("93 parked")).toBeTruthy()
+      const reason = work.querySelector(
+        '[data-slot="account-parked-reason"]'
+      ) as HTMLElement
+      expect(within(reason).getByText("Latest error")).toBeTruthy()
+      expect(
+        within(reason).getByText("RuntimeError: Google answered 401")
+      ).toBeTruthy()
+      // The connection details' sync panel says it too, labelled.
+      const panel = await screen.findByText("Parked runs · 93")
+      const note = panel.closest('[data-slot="sync-parked"]') as HTMLElement
+      expect(within(note).getByText("Latest error")).toBeTruthy()
+      expect(
+        within(note).getByText("RuntimeError: Google answered 401")
+      ).toBeTruthy()
+    })
+
     it("Sync now stamps the request, then wakes the on-request trigger", async () => {
       renderPage(<ProviderPage />)
       // The trigger records say which one answers a request.
@@ -930,6 +963,23 @@ describe("ProviderPage", () => {
       ).toBeTruthy()
       expect(within(row).getByText("Ran 2h ago")).toBeTruthy()
     })
+
+    it("says why a tool's runs failed beside the count", async () => {
+      serve({
+        triggerStatuses: [{ ...TRIGGER_STATUSES[0], ...SCHEDULE_PARKED }],
+      })
+      renderPage(<ProviderPage />)
+      const tool = await screen.findByText("Google Contacts sync")
+      const row = tool.closest('[data-slot="tool-row"]') as HTMLElement
+      expect(await within(row).findByText("93 runs failed")).toBeTruthy()
+      const reason = row.querySelector(
+        '[data-slot="tool-parked-reason"]'
+      ) as HTMLElement
+      expect(within(reason).getByText("Latest error")).toBeTruthy()
+      expect(
+        within(reason).getByText("RuntimeError: Google answered 401")
+      ).toBeTruthy()
+    })
   })
 
   describe("why it needs attention", () => {
@@ -1016,6 +1066,8 @@ describe("ProviderPage", () => {
           "2 runs failed and are waiting to be tried again"
         )
       ).toBeTruthy()
+      // No reason on the wire, no reason line.
+      expect(within(callout).queryByText(/^Latest error/)).toBeNull()
       const retry = within(callout).getByRole("button", { name: "Try again" })
       await waitFor(() =>
         expect((retry as HTMLButtonElement).disabled).toBe(false)
@@ -1030,6 +1082,25 @@ describe("ProviderPage", () => {
           "/api/v1/substrate.reamde.dev/core/trigger/google-contacts-scheduled/parked/8/retry",
         ])
       })
+    })
+
+    it("says why the parked runs failed", async () => {
+      serve({
+        accounts: [PERSONAL],
+        triggerStatuses: [{ ...TRIGGER_STATUSES[0], ...SCHEDULE_PARKED }],
+      })
+      renderPage(<ProviderPage />)
+      const callout = await problems()
+      expect(
+        within(callout).getByText(
+          "93 runs failed and are waiting to be tried again"
+        )
+      ).toBeTruthy()
+      expect(
+        within(callout).getByText(
+          "Latest error: RuntimeError: Google answered 401"
+        )
+      ).toBeTruthy()
     })
 
     it("names what blocks an update", async () => {

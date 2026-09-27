@@ -2232,6 +2232,22 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 			FROM trigger_failures WHERE trigger_id = $1`, lt.ID, pendingWebhookError).Scan(&st.Parked, &st.Pending); err != nil {
 			return nil, err
 		}
+		if st.Parked > 0 {
+			var lastErr string
+			var at time.Time
+			err := ds.db.QueryRowContext(ctx, `
+				SELECT last_error, parked_at FROM trigger_failures
+				WHERE trigger_id = $1 AND last_error <> $2
+				ORDER BY parked_at DESC, id DESC LIMIT 1`, lt.ID, pendingWebhookError).Scan(&lastErr, &at)
+			// No row is a park retired since the count, which has no reason
+			// left to give.
+			switch {
+			case err == nil:
+				st.LastParkedError, st.LastParkedAt = parkedReason(lastErr, at)
+			case !errors.Is(err, sql.ErrNoRows):
+				return nil, err
+			}
+		}
 		out = append(out, st)
 	}
 	return out, nil
