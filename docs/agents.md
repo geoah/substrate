@@ -21,9 +21,10 @@ report `beta`, and `embeddings` is the other `alpha` entry. Read
 server version where an alpha break would cost you.
 
 An `agent` is a callable whose body is an **LLM loop**, run host-side. It has
-one reference and the same four ways in as a [function](functions.md): a
+one reference and the same ways in as a [function](functions.md): a
 trigger delivery (a `callable` whose `kind` is `substrate.reamde.dev/core/agent`), the
-call API, a sub-agent call, and chat. Its actor is
+call API, a sub-agent call, chat, and a function body that names it under
+`permissions.agents` ([running an agent](functions.md#running-an-agent)). Its actor is
 `agent:<authority>:<package>:<name>`, its own machine hand, held apart from a
 function's so an agent and a function of one name in one package are two
 writers; its dispatch stamps the
@@ -302,7 +303,12 @@ moves the causal one, while a function sub-call inside a tool still rides it.
 declared emit intersected with the caller's effective emit, enforced against
 function-tool effects and `propose` alike. An empty-emit parent delegating to a
 write-capable child yields a child that writes nothing: no chain of children can
-ever write a kind its narrowest ancestor could not. Accepting a proposed
+ever write a kind its narrowest ancestor could not. The ceiling also rides a
+function tool: when a tool's body runs an agent with `host.agents.call`, that
+agent starts under the calling loop's effective emit, as a sub-agent does
+([0121](decisions/0121-a-function-body-runs-an-agent-under-permissions-agents.md)).
+A function run from a delivery or the call API sets no ceiling on the agents it
+runs. Accepting a proposed
 request is authorized as the transitive write too, so a function or agent that
 drives an accept must have the concrete written kind in its effective emit, or
 the accept refuses. An owner's acceptance stays unbounded.
