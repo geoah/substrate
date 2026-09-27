@@ -37,6 +37,9 @@ type fakeProvider struct {
 	refreshes int
 	revoked   []string
 	expiresIn int
+	// refuseRefresh answers every refresh with an RFC 6749 `invalid_grant`
+	// whose description echoes the client secret, as a provider may.
+	refuseRefresh bool
 }
 
 func newFakeProvider(t *testing.T) *fakeProvider {
@@ -61,6 +64,15 @@ func newFakeProvider(t *testing.T) *fakeProvider {
 			out["access_token"] = "at-1"
 			out["refresh_token"] = "rt-1"
 		case "refresh_token":
+			if p.refuseRefresh {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"error":             "invalid_grant",
+					"error_description": "SECRET-PROVIDER-DETAIL client-1:s3cret rt-1",
+				})
+				return
+			}
 			if r.Form.Get("refresh_token") != "rt-1" {
 				http.Error(w, "bad refresh", http.StatusBadRequest)
 				return
@@ -296,6 +308,109 @@ func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 	if acc["token"] != engine.Redacted {
 		t.Fatalf("refreshed token escaped the invocation: %v", acc["token"])
 	}
+}
+
+// A refresh the provider refuses leaves its reason and time on the account
+// beside `erroring`, from the central loop and from the on-demand refresh an
+// invocation makes alike; the reason carries the RFC 6749 code and never the
+// provider's description, and a later good refresh or a reconnect clears it.
+func TestOAuthRefreshFailureStoresItsReason(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	p := newFakeProvider(t)
+	svc, ds := newDataset(t,
+		engine.WithOAuth("test-state-key", "https://substrate.example/api/v1/substrate.reamde.dev/core/oauth/callback", p.ts.Client()),
+		engine.WithCredentialKey(engine.TestCredentialKey),
+	)
+	docs := mbStandardDocs()
+	for _, d := range docs {
+		if meta, _ := d["metadata"].(map[string]any); d["kind"] == vocabulary.CoreKind(vocabulary.DocKind) && meta["id"] == mbAccountType {
+			props, _ := d["data"].(map[string]any)["properties"].(map[string]any)
+			props["tokenError"] = map[string]any{"type": "string", "writer": "oauth"}
+			props["tokenErrorAt"] = map[string]any{"type": "datetime", "writer": "oauth"}
+		}
+	}
+	mbPointOAuthAt(docs, p.ts.URL)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+		t.Fatalf("install bundle: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: p.configProps()})
+	account := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: mbAccountType, Properties: map[string]any{"address": "geo@example.com", "enabledMail": true},
+	})
+	p.expiresIn = 30 // inside both the loop's window and the inline one
+	connectOAuthAccount(t, svc, ds, account)
+	refuse := func(on bool) {
+		p.mu.Lock()
+		p.refuseRefresh = on
+		p.mu.Unlock()
+	}
+
+	wantFailure := func(when string) *substrate.Record {
+		t.Helper()
+		got := mustGet(t, ds, account.Kind, account.ID)
+		if got.Properties["tokenStatus"] != "erroring" {
+			t.Fatalf("%s: tokenStatus = %v, want erroring", when, got.Properties["tokenStatus"])
+		}
+		reason, _ := got.Properties["tokenError"].(string)
+		if !strings.Contains(reason, "400") || !strings.Contains(reason, "invalid_grant") {
+			t.Fatalf("%s: tokenError = %q, want the status and the RFC 6749 code", when, reason)
+		}
+		for _, leak := range []string{"SECRET-PROVIDER-DETAIL", "s3cret", "rt-1", "at-1"} {
+			if strings.Contains(reason, leak) {
+				t.Fatalf("%s: tokenError carries %q: %q", when, leak, reason)
+			}
+		}
+		at, _ := got.Properties["tokenErrorAt"].(string)
+		if _, err := time.Parse(time.RFC3339Nano, at); err != nil {
+			t.Fatalf("%s: tokenErrorAt = %v, want a timestamp", when, got.Properties["tokenErrorAt"])
+		}
+		return got
+	}
+	wantCleared := func(when string) {
+		t.Helper()
+		got := mustGet(t, ds, account.Kind, account.ID)
+		if got.Properties["tokenStatus"] != "connected" {
+			t.Fatalf("%s: tokenStatus = %v, want connected", when, got.Properties["tokenStatus"])
+		}
+		for _, name := range []string{"tokenError", "tokenErrorAt"} {
+			if v, ok := got.Properties[name]; ok {
+				t.Fatalf("%s: %s = %v, want it cleared", when, name, v)
+			}
+		}
+	}
+
+	// The central loop.
+	refuse(true)
+	if n, err := ds.RefreshOAuthTokens(ctx); err != nil || n != 0 {
+		t.Fatalf("refused refresh: %d %v", n, err)
+	}
+	first := wantFailure("after a refused loop refresh")
+	// The loop retries an erroring account every pass; the same reason is
+	// not written again.
+	if _, err := ds.RefreshOAuthTokens(ctx); err != nil {
+		t.Fatalf("second refused refresh: %v", err)
+	}
+	if again := mustGet(t, ds, account.Kind, account.ID); again.Version != first.Version {
+		t.Fatalf("a repeated failure rewrote the account: version %d, then %d", first.Version, again.Version)
+	}
+	refuse(false)
+	if n, err := ds.RefreshOAuthTokens(ctx); err != nil || n != 1 {
+		t.Fatalf("good refresh: %d %v", n, err)
+	}
+	wantCleared("after a good loop refresh")
+
+	// The on-demand refresh an invocation makes: the stored token expires
+	// inside the inline window, so the config resolution refreshes it.
+	refuse(true)
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{}); err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	wantFailure("after a refused on-demand refresh")
+
+	// A reconnect clears it.
+	connectOAuthAccount(t, svc, ds, account)
+	wantCleared("after a reconnect")
 }
 
 // Deleting a connected account rides the finalizer flow: the facility

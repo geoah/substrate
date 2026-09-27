@@ -182,7 +182,7 @@ export interface StandingInput {
   oauth?: boolean
   accounts: (Pick<
     AccountView,
-    "sync" | "label" | "tokenStatus" | "legacySyncStatus"
+    "sync" | "label" | "tokenStatus" | "tokenError" | "legacySyncStatus"
   > & { record: Pick<SubstrateRecord, "id"> })[]
   /** The delivery bookkeeping of the triggers that run the provider's own
    * functions. */
@@ -268,10 +268,13 @@ export function standingProblems(s: StandingInput): ProviderProblem[] {
       a.sync.error ?? a.sync.message ?? a.legacySyncStatus ?? ""
     )
     if (a.tokenStatus === "erroring") {
+      // The OAuth facility's own reason. A sync error is a different
+      // failure, often an older one, so it never stands in for it.
+      const reason = firstLine(a.tokenError ?? "")
       out.push({
         code: "sign-in",
         summary: `The sign-in for ${a.label} stopped working`,
-        detail: why ? [why] : undefined,
+        detail: reason ? [reason] : undefined,
         account: a.record.id,
         fixes: ["reconnect"],
       })
@@ -396,10 +399,12 @@ export function syncWords(
   }
 }
 
-/** The OAuth facility's `tokenStatus` as a person reads it. */
+/** The OAuth facility's `tokenStatus` as a person reads it, with the
+ * facility's `tokenError` as the reason a broken sign-in gives. */
 export function connectionWords(
   tokenStatus: string | undefined,
-  providerName: string
+  providerName: string,
+  tokenError?: string
 ): Words {
   switch (tokenStatus) {
     case "connected":
@@ -409,8 +414,15 @@ export function connectionWords(
         text: `Waiting for you to approve it at ${providerName}`,
         tone: "warn",
       }
-    case "erroring":
-      return { text: "Its sign-in stopped working · reconnect it", tone: "bad" }
+    case "erroring": {
+      const why = firstLine(tokenError ?? "")
+      return {
+        text: why
+          ? `Its sign-in stopped working: ${why} · reconnect it`
+          : "Its sign-in stopped working · reconnect it",
+        tone: "bad",
+      }
+    }
     case undefined:
     case "":
       return { text: "Not connected yet", tone: "warn" }

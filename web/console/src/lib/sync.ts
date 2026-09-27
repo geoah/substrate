@@ -204,6 +204,10 @@ export interface AccountView {
   /** `email`, else `displayName`, else the rendered title, else the id. */
   label: string
   tokenStatus?: string
+  /** Why the OAuth facility last failed to refresh the token (`tokenError`),
+   * and when (`tokenErrorAt`); absent while the sign-in works. */
+  tokenError?: string
+  tokenErrorAt?: string
   grantedScopes: string[]
   syncFrequency?: string
   backfillDepth?: string
@@ -258,6 +262,8 @@ export function accountViewOf(
       str(p.userId) ??
       record.id,
     tokenStatus,
+    tokenError: str(p.tokenError),
+    tokenErrorAt: str(p.tokenErrorAt),
     grantedScopes: scopes,
     syncFrequency: str(p.syncFrequency),
     backfillDepth: str(p.backfillDepth),

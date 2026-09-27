@@ -83,7 +83,10 @@ data:
   # 27: every kind declares its purpose (decision 0133), and its
   # description opens with one plain sentence saying what a record is to
   # a person.
-  version: 27
+  #
+  # 28: the account declares `tokenError` and `tokenErrorAt`, the reason
+  # and time the OAuth facility last failed to refresh its token. ADDITIVE.
+  version: 28
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -259,6 +262,21 @@ data:
       displayName: Granted scopes
       description: the OAuth scopes the last consent was granted for; drives
         reconnect-on-new-feature
+    # Why the facility last failed to refresh the token, and when. The facility
+    # writes both beside `tokenStatus: erroring` and clears them on the next good
+    # refresh or reconnect.
+    tokenError:
+      type: string
+      writer: oauth
+      displayName: Sign-in error
+      description: why the OAuth facility last failed to refresh this account's
+        token, as the provider's status and error code; empty while it works
+    tokenErrorAt:
+      type: datetime
+      writer: oauth
+      displayName: Sign-in error at
+      description: when the OAuth facility first recorded the current sign-in
+        error
     email:
       type: email
       writer: oauth

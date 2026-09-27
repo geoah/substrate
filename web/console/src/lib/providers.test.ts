@@ -251,7 +251,33 @@ describe("providerStanding", () => {
     })
   })
 
-  it("asks to reconnect an account whose sign-in stopped working", () => {
+  it("asks to reconnect an account whose sign-in stopped working, and says why", () => {
+    const s = providerStanding({
+      ...base,
+      accounts: [
+        {
+          ...ada,
+          tokenStatus: "erroring",
+          tokenError:
+            'oauthflow: refresh: provider answered 400, error code "invalid_grant"',
+          sync: syncFieldsOf({ syncState: "erroring", syncError: "401" }),
+        },
+      ],
+    })
+    expect(s.problems).toEqual([
+      {
+        code: "sign-in",
+        summary: "The sign-in for ada@example.com stopped working",
+        detail: [
+          'oauthflow: refresh: provider answered 400, error code "invalid_grant"',
+        ],
+        account: "ada",
+        fixes: ["reconnect"],
+      },
+    ])
+  })
+
+  it("never gives a sync error as the reason a sign-in stopped working", () => {
     const s = providerStanding({
       ...base,
       accounts: [
@@ -262,15 +288,7 @@ describe("providerStanding", () => {
         },
       ],
     })
-    expect(s.problems).toEqual([
-      {
-        code: "sign-in",
-        summary: "The sign-in for ada@example.com stopped working",
-        detail: ["401"],
-        account: "ada",
-        fixes: ["reconnect"],
-      },
-    ])
+    expect(s.problems[0]).toMatchObject({ code: "sign-in", detail: undefined })
   })
 
   it("says why it failed to load, before anything else", () => {
@@ -472,6 +490,21 @@ describe("connectionWords", () => {
     )
     expect(connectionWords(undefined, "Google").text).toBe("Not connected yet")
     expect(connectionWords("erroring", "Google").tone).toBe("bad")
+  })
+
+  it("gives the facility's reason when the sign-in stopped working", () => {
+    expect(
+      connectionWords(
+        "erroring",
+        "Google",
+        'provider answered 400, error code "invalid_grant"'
+      ).text
+    ).toBe(
+      'Its sign-in stopped working: provider answered 400, error code "invalid_grant" · reconnect it'
+    )
+    expect(connectionWords("erroring", "Google").text).toBe(
+      "Its sign-in stopped working · reconnect it"
+    )
   })
 })
 
