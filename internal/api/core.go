@@ -51,7 +51,7 @@ func (h *handler) postMerges(w http.ResponseWriter, r *http.Request) {
 	ctx := idempotentContext(r)
 	ent, err := DatasetFrom(ctx).Merge(ctx, ActorFrom(ctx), req)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, ent)
@@ -66,7 +66,7 @@ func (h *handler) postSplits(w http.ResponseWriter, r *http.Request) {
 	ctx := idempotentContext(r)
 	ent, err := DatasetFrom(ctx).Split(ctx, ActorFrom(ctx), req)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, ent)

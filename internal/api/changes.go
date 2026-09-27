@@ -41,7 +41,7 @@ func (h *handler) getChangesPage(w http.ResponseWriter, r *http.Request, ds subs
 	exhausted := false
 	changes, err := ds.ChangesBefore(r.Context(), cur, f, first)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	if len(changes) < first {
@@ -53,7 +53,7 @@ func (h *handler) getChangesPage(w http.ResponseWriter, r *http.Request, ds subs
 		cur = changes[len(changes)-1].Seq
 		rows, err := annotateChanges(r.Context(), ds, changes)
 		if err != nil {
-			writeSubstrateError(w, err)
+			writeSubstrateError(w, r, err)
 			return
 		}
 		kept = append(kept, rows...)
@@ -99,7 +99,7 @@ walk:
 	for {
 		changes, err := ds.ChangesBefore(r.Context(), cur, f, changeBatch)
 		if err != nil {
-			writeSubstrateError(w, err)
+			writeSubstrateError(w, r, err)
 			return
 		}
 		for _, c := range changes {
@@ -155,7 +155,7 @@ func historyStart(w http.ResponseWriter, r *http.Request, ds substrate.Dataset) 
 	// hide it under a head the page never saw.
 	head, err := ds.Head(r.Context())
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return 0, substrate.ChangelogHead{}, 0, false
 	}
 	// The horizon binds both ends of the cursor contract, not just the forward

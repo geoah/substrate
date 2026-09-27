@@ -71,7 +71,7 @@ func (h *handler) applyVocabulary(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(ctx)
 	docs, held, err := holdWaitingMappings(ctx, ds, req.Documents, req.HoldWaitingMappings)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	if len(docs) == 0 && len(held) > 0 {
@@ -90,7 +90,7 @@ func (h *handler) applyVocabulary(w http.ResponseWriter, r *http.Request) {
 		ents, err = ds.ApplyVocabularyDocuments(ctx, ActorFrom(ctx), docs)
 	}
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, vocabularyApplyResponse{Records: ents, HeldMappings: held})
@@ -148,7 +148,7 @@ func (h *handler) planVocabulary(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(ctx)
 	docs, held, err := holdWaitingMappings(ctx, ds, req.Documents, req.HoldWaitingMappings)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	if len(docs) == 0 && len(held) > 0 {
@@ -159,7 +159,7 @@ func (h *handler) planVocabulary(w http.ResponseWriter, r *http.Request) {
 	}
 	plan, err := ds.PlanVocabularyApplyWith(ctx, ActorFrom(ctx), docs, substrate.VocabularyApply{Origin: req.Origin})
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, plan)
@@ -178,7 +178,7 @@ func (h *handler) getVocabularyUpgrade(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(ctx)
 	items, err := ds.PlanShippedUpgrade(ctx)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.Listed(items))

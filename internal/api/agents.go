@@ -24,7 +24,7 @@ func (h *handler) postAgentCall(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := ds.CallAgent(idempotentContext(r), pathParam(r, "name"), req.Input)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, res)

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -8,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -139,14 +142,49 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 
 // writeSubstrateError maps the engine's sentinel errors onto the wire
 // envelope; unknown errors are 500 without leaking their text shape.
-func writeSubstrateError(w http.ResponseWriter, err error) {
+//
+// A 5xx is logged at ERROR with the request's method, route and repository,
+// because a line without them cannot be traced to anything. A failure that is
+// the client's own cancellation is logged at DEBUG instead: the client went
+// away, the server did nothing wrong, and the body written after it reaches
+// nobody.
+func writeSubstrateError(w http.ResponseWriter, r *http.Request, err error) {
 	status, p := problemFor(err)
 	if status == http.StatusServiceUnavailable {
 		writeUnavailable(w, time.Second, p.Message)
 		return
 	}
 	if status >= http.StatusInternalServerError {
-		slog.Error("request failed", "error", err)
+		if clientCanceled(r.Context(), err) {
+			slog.Debug("request canceled by the client", append(requestLogAttrs(r), "error", err)...)
+		} else {
+			slog.Error("request failed", append(requestLogAttrs(r), "error", err)...)
+		}
 	}
 	writeJSON(w, status, substrate.ErrorEnvelope{Error: p})
+}
+
+// clientCanceled reports whether err is the request's own cancellation. Both
+// halves are needed: a context.Canceled while the request's context is still
+// live came from a context the server canceled, which is a server fault, and
+// a context.DeadlineExceeded is a server-side timeout.
+func clientCanceled(ctx context.Context, err error) bool {
+	return errors.Is(err, context.Canceled) && errors.Is(ctx.Err(), context.Canceled)
+}
+
+// requestLogAttrs names the request a log line is about: its method, chi's
+// route pattern (the path when no route matched) and, once the bearer check
+// has run, the repository.
+func requestLogAttrs(r *http.Request) []any {
+	route := r.URL.Path
+	if rctx := chi.RouteContext(r.Context()); rctx != nil {
+		if p := rctx.RoutePattern(); p != "" {
+			route = p
+		}
+	}
+	attrs := []any{"method", r.Method, "route", route}
+	if ds := DatasetFrom(r.Context()); ds != nil {
+		attrs = append(attrs, "repository", ds.Repository().ID)
+	}
+	return attrs
 }

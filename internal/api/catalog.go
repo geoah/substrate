@@ -20,12 +20,12 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 	if h.catalog != nil {
 		installed, err := h.installedBundles(r.Context())
 		if err != nil {
-			writeSubstrateError(w, err)
+			writeSubstrateError(w, r, err)
 			return
 		}
 		home := homeAuthority(r.Context())
 		for _, b := range h.catalog.Bundles() {
-			items = append(items, h.catalogItemFor(r.Context(), b, installed.copyOf(b, home)))
+			items = append(items, h.catalogItemFor(r, b, installed.copyOf(b, home)))
 		}
 	}
 	writeJSON(w, http.StatusOK, substrate.Listed(items))
@@ -57,10 +57,10 @@ func (h *handler) getCatalogItem(w http.ResponseWriter, r *http.Request) {
 	}
 	installed, err := h.installedBundles(r.Context())
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, h.catalogItemFor(r.Context(), b, installed.copyOf(b, homeAuthority(r.Context()))))
+	writeJSON(w, http.StatusOK, h.catalogItemFor(r, b, installed.copyOf(b, homeAuthority(r.Context()))))
 }
 
 // installedSet is every bundle installed in this repository, read once per
@@ -108,7 +108,8 @@ func (s installedSet) copyOf(b *catalog.Bundle, home string) *substrate.BundleSt
 // nothing to offer. The error goes to the server log alone: a driver error
 // names a host or a table, and a 200 body for a repository token is not where
 // the deployment is described (never leak the deployment).
-func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, held *substrate.BundleStatus) substrate.CatalogItem {
+func (h *handler) catalogItemFor(r *http.Request, b *catalog.Bundle, held *substrate.BundleStatus) substrate.CatalogItem {
+	ctx := r.Context()
 	installed := held != nil
 	item := substrate.CatalogItem{CatalogBundle: b.CatalogBundle, Installed: installed}
 	// The held copy's provenance, when it has one: which shipped id it was
@@ -133,7 +134,11 @@ func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, held *s
 	}
 	up, err := h.catalog.Upgrade(ctx, b.ID, DatasetFrom(ctx), held)
 	if err != nil {
-		slog.Error("catalog: upgrade preview failed", "bundle", b.ID, "error", err)
+		if clientCanceled(ctx, err) {
+			slog.Debug("catalog: upgrade preview canceled by the client", append(requestLogAttrs(r), "bundle", b.ID, "error", err)...)
+		} else {
+			slog.Error("catalog: upgrade preview failed", append(requestLogAttrs(r), "bundle", b.ID, "error", err)...)
+		}
 		item.Upgrade = &substrate.BundleUpgrade{Blockers: []string{failedPreviewBlocker}}
 		return item
 	}
@@ -208,7 +213,7 @@ func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
 	ctx := r.Context()
 	b, suggested, err := take(h.catalog, ctx, ActorFrom(ctx), pathParam(r, "id"), DatasetFrom(ctx), req.Confirm)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	landed := b.ID
@@ -219,7 +224,7 @@ func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
 	// this endpoint promises.
 	st, err := DatasetFrom(ctx).BundleStatus(ctx, landed)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	// What the closure's SUGGESTED MAPPINGS did (decision record 0049),

@@ -62,7 +62,7 @@ func (h *handler) record(w http.ResponseWriter, r *http.Request) (substrate.Data
 			writeError(w, http.StatusNotFound, codeNotFound, "unknown kind "+addr.kind)
 			return nil, substrate.KindInfo{}, address{}, false
 		}
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return nil, substrate.KindInfo{}, address{}, false
 	}
 	return ds, ti, addr, true
@@ -110,7 +110,7 @@ func (h *handler) getResource(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, ent)
@@ -131,7 +131,7 @@ func (h *handler) putResource(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ent, err := ds.Put(ctx, ActorFrom(ctx), in)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, putStatus(ent), ent)
@@ -159,7 +159,7 @@ func (h *handler) patchResource(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ent, err := ds.Patch(ctx, ActorFrom(ctx), ti.Identity, addr.id, in)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, ent)
@@ -208,7 +208,7 @@ func (h *handler) deleteResource(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ent, err := ds.Delete(ctx, ActorFrom(ctx), ti.Identity, addr.id, in)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, ent)

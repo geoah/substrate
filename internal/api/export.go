@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"mime"
@@ -29,7 +31,7 @@ func (h *handler) getExport(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(ctx)
 	export, err := ds.Export(ctx)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeSubstrateError(w, r, err)
 		return
 	}
 	point := export.Point()
@@ -43,7 +45,14 @@ func (h *handler) getExport(w http.ResponseWriter, r *http.Request) {
 	// is a cut body, never a request that got no answer.
 	_ = http.NewResponseController(w).Flush()
 	if _, err := export.WriteTo(w); err != nil {
-		slog.Error("export aborted mid-stream", "repository", point.Authority, "head", point.Head, "error", err)
+		// A client that leaves mid-stream fails the next write to it with an
+		// error carrying no context.Canceled, so the request's own context is
+		// what says the client went away.
+		if errors.Is(ctx.Err(), context.Canceled) {
+			slog.Debug("export aborted mid-stream: the client went away", append(requestLogAttrs(r), "head", point.Head, "error", err)...)
+		} else {
+			slog.Error("export aborted mid-stream", append(requestLogAttrs(r), "head", point.Head, "error", err)...)
+		}
 		panic(http.ErrAbortHandler)
 	}
 }
