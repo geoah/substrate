@@ -444,7 +444,22 @@ describe("decisionNoticeOf", () => {
       target: "samples.substrate.reamde.dev/people/person/p1",
       version: 4,
       deleted: undefined,
+      adjusted: undefined,
     })
+  })
+
+  it("says the owner applied their own values when the envelope carries them", () => {
+    const notice = decisionNoticeOf(
+      system(
+        JSON.stringify({
+          event: "proposalDecision",
+          request: "substrate.reamde.dev/core/recordpatchrequest/r1",
+          decision: "accepted",
+          adjustedDiff: { properties: { name: "best" } },
+        })
+      )
+    )
+    expect(notice?.adjusted).toBe(true)
   })
 
   it("says nothing about a system row that is not a decision", () => {

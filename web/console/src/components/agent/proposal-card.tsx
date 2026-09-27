@@ -38,6 +38,7 @@ import { kindsQueryOptions } from "@/lib/api/kinds"
 import { recordQueryOptions } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
 import {
+  adjustedProperties,
   changeOp,
   changeTarget,
   decisionOf,
@@ -168,7 +169,11 @@ export function ProposalCard({ id }: { id: string }) {
         {!pending && (
           <StateBadge
             value={decision}
-            label={DECISION_WORDS[decision]}
+            label={
+              decision === "accepted" && adjustedProperties(record)
+                ? `${DECISION_WORDS[decision]} with your edits`
+                : DECISION_WORDS[decision]
+            }
             className="ml-auto text-[12.5px]"
           />
         )}

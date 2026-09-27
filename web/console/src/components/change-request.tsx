@@ -60,11 +60,17 @@ export function DecisionButtons({
   request,
   op,
   review,
+  adjustedDiff,
+  held,
 }: {
   request: SubstrateRecord
   op: ChangeOp
   /** Anything between Apply and Dismiss: the card's link to the review. */
   review?: ReactNode
+  /** The owner's own values, applied instead of the proposal's. */
+  adjustedDiff?: Record<string, unknown>
+  /** Why Apply is held back, when it is. */
+  held?: string
 }) {
   const client = useQueryClient()
   const [submitting, setSubmitting] = useState<Verdict | null>(null)
@@ -75,7 +81,13 @@ export function DecisionButtons({
     setSubmitting(next)
     setError(null)
     try {
-      await submitDecision(request.id, next, request.version)
+      await submitDecision(
+        request.id,
+        next,
+        request.version,
+        undefined,
+        adjustedDiff
+      )
       await client.invalidateQueries()
       setTimeout(() => void client.invalidateQueries(), 4000)
     } catch (err) {
@@ -98,7 +110,7 @@ export function DecisionButtons({
         <Button
           size="sm"
           variant={deleting ? "destructive" : "default"}
-          disabled={submitting !== null}
+          disabled={submitting !== null || Boolean(held)}
           onClick={() =>
             deleting ? setConfirming(true) : void decide("accepted")
           }
@@ -128,6 +140,7 @@ export function DecisionButtons({
           onClose={() => setConfirming(false)}
         />
       )}
+      {held && <p className="text-[12.5px] text-muted-foreground">{held}</p>}
       {error && (
         <p role="alert" className="text-[12.5px] text-destructive">
           {error}

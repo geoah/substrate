@@ -259,6 +259,91 @@ describe("ChangeRequestDetailPage", () => {
     })
   })
 
+  it("edits a value before applying, and the apply carries it as adjustedDiff", async () => {
+    serve(patchRequest, { target })
+    renderPage(<ChangeRequestDetailPage />)
+    await screen.findByText("Old summary")
+
+    // The If applied value opens the sheet's own editor.
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Summary: change the value it applies",
+      })
+    )
+    const box = await screen.findByDisplayValue("New summary")
+    fireEvent.change(box, { target: { value: "My summary" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    expect(await screen.findByText("My summary")).toBeTruthy()
+    expect(screen.getByText("Your edit")).toBeTruthy()
+    // Nothing reached the server yet.
+    expect(
+      fetchMock.mock.calls.some(
+        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+      )
+    ).toBe(false)
+
+    // Leaving the note out means it is not applied.
+    fireEvent.click(screen.getByRole("button", { name: "Leave out Note" }))
+    expect(screen.getByText("Left as it is")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }))
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+      )
+      expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({
+        properties: {
+          decision: "accepted",
+          adjustedDiff: {
+            properties: { summary: "My summary" },
+            // The version the owner reviewed the record at.
+            ifVersion: 3,
+          },
+        },
+        ifVersion: 4,
+      })
+    })
+  })
+
+  it("holds Apply back when every value is left out", async () => {
+    serve(patchRequest, { target })
+    renderPage(<ChangeRequestDetailPage />)
+    await screen.findByText("Old summary")
+    fireEvent.click(screen.getByRole("button", { name: "Leave out Summary" }))
+    fireEvent.click(screen.getByRole("button", { name: "Leave out Note" }))
+    expect(screen.getByText(/Nothing is left to apply/)).toBeTruthy()
+    expect(
+      (screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement)
+        .disabled
+    ).toBe(true)
+    // And comes back to the suggestion in one press.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to the suggestion" })
+    )
+    expect(screen.getByText("New summary")).toBeTruthy()
+  })
+
+  it("shows what was suggested beside what was applied once adjusted", async () => {
+    serve(
+      request({
+        properties: {
+          ...patchRequest.properties,
+          decision: "accepted",
+          decidedAt: "2026-08-15T00:00:00Z",
+          adjustedDiff: { properties: { summary: "My summary" } },
+        },
+      })
+    )
+    renderPage(<ChangeRequestDetailPage />)
+    expect(await screen.findByText(/with your edits/)).toBeTruthy()
+    const grid = document.querySelector('[data-slot="change-adjusted"]')!
+    expect(within(grid as HTMLElement).getByText("Suggested")).toBeTruthy()
+    expect(within(grid as HTMLElement).getByText("Applied")).toBeTruthy()
+    expect(screen.getByText("New summary")).toBeTruthy()
+    expect(screen.getByText("My summary")).toBeTruthy()
+    expect(screen.getByText("Left out")).toBeTruthy()
+  })
+
   it("dismisses without asking", async () => {
     serve(patchRequest, { target })
     renderPage(<ChangeRequestDetailPage />)

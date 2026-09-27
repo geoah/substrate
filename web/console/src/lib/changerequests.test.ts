@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest"
 
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import {
+  adjustedDiffFor,
+  adjustedProperties,
+  adjustedRows,
   appliesNothing,
+  reviewRows,
   applyConflict,
   changeOp,
   changeTarget,
@@ -479,36 +483,50 @@ describe("effectiveCAS / targetDrift", () => {
 
 describe("appliesNothing", () => {
   const target = targetRecord({ summary: "same" })
+  const rowsOf = (diff: ReturnType<typeof diffOf>) =>
+    reviewRows(
+      Object.keys(diff.properties),
+      diff.properties,
+      diff.properties,
+      target
+    )
 
   it("is true when every named property already matches and nothing else rides", () => {
     const diff = diffOf({ diff: { properties: { summary: "same" } } })
-    const rows = deriveChangeRows(diff.properties, target, taskKind)
-    expect(appliesNothing(diff, rows)).toBe(true)
+    expect(appliesNothing(diff, rowsOf(diff))).toBe(true)
   })
 
   it("is FALSE for a finalizer-only diff, which applies something", () => {
     const diff = diffOf({ diff: { addFinalizers: ["owner/hold"] } })
-    const rows = deriveChangeRows(diff.properties, target, taskKind)
-    expect(rows).toEqual([])
-    expect(appliesNothing(diff, rows)).toBe(false)
+    expect(rowsOf(diff)).toEqual([])
+    expect(appliesNothing(diff, rowsOf(diff))).toBe(false)
   })
 
   it("is false when a label or an annotation rides along unchanged properties", () => {
     const withLabel = diffOf({
       diff: { properties: { summary: "same" }, labels: { tier: "a" } },
     })
-    expect(
-      appliesNothing(
-        withLabel,
-        deriveChangeRows(withLabel.properties, target, taskKind)
-      )
-    ).toBe(false)
+    expect(appliesNothing(withLabel, rowsOf(withLabel))).toBe(false)
   })
 
   it("is false as soon as one property really changes", () => {
     const diff = diffOf({ diff: { properties: { summary: "other" } } })
+    expect(appliesNothing(diff, rowsOf(diff))).toBe(false)
+  })
+
+  it("reads the owner's edits: an edit that matches the record applies nothing", () => {
+    const diff = diffOf({ diff: { properties: { summary: "other" } } })
+    const rows = reviewRows(
+      ["summary"],
+      diff.properties,
+      { summary: "same" },
+      target
+    )
+    expect(rows[0]).toMatchObject({ edited: true, unchanged: true })
+    expect(appliesNothing(diff, rows)).toBe(true)
+    // Everything left out is not "nothing": it is held back another way.
     expect(
-      appliesNothing(diff, deriveChangeRows(diff.properties, target, taskKind))
+      appliesNothing(diff, reviewRows(["summary"], diff.properties, {}, target))
     ).toBe(false)
   })
 })
@@ -638,5 +656,64 @@ describe("proposerOf / deciderOf", () => {
       deciderOf(requestRecord({}, { meta: { decidedAt: "console" } }))
     ).toBe("console")
     expect(deciderOf(requestRecord({}))).toBeUndefined()
+  })
+})
+
+// ── the owner's adjustment ──────────────────────────────────────────────────
+
+describe("the owner's adjustment (decision 0112)", () => {
+  it("rides the accept alone, as adjustedDiff", () => {
+    const adjusted = { properties: { summary: "mine" } }
+    expect(decisionPatch("accepted", 7, undefined, adjusted)).toEqual({
+      properties: { decision: "accepted", adjustedDiff: adjusted },
+      ifVersion: 7,
+    })
+    expect(decisionPatch("rejected", 7, undefined, adjusted)).toEqual({
+      properties: { decision: "rejected" },
+      ifVersion: 7,
+    })
+  })
+
+  it("replaces the diff whole: what else it carried rides along, the version is the one reviewed", () => {
+    const r = requestRecord({
+      op: "patch",
+      diff: { properties: { summary: "theirs" }, labels: { tier: "a" } },
+    })
+    expect(adjustedDiffFor(r, { summary: "mine" }, 9)).toEqual({
+      properties: { summary: "mine" },
+      labels: { tier: "a" },
+      ifVersion: 9,
+    })
+    // A create has no target version to check.
+    const create = requestRecord({
+      op: "create",
+      diff: { properties: { summary: "theirs" } },
+    })
+    expect(adjustedDiffFor(create, {}, 9)).toEqual({ properties: {} })
+  })
+
+  it("reads what was applied, and pairs it with what was suggested", () => {
+    expect(adjustedProperties(requestRecord({}))).toBeUndefined()
+    expect(
+      adjustedProperties(
+        requestRecord({ adjustedDiff: { properties: { summary: "mine" } } })
+      )
+    ).toEqual({ summary: "mine" })
+    expect(
+      adjustedRows(
+        { summary: "theirs", priority: "high", due: "x" },
+        { summary: "mine", priority: "high", notes: "added" }
+      )
+    ).toEqual([
+      {
+        key: "summary",
+        suggested: "theirs",
+        applied: "mine",
+        effect: "changed",
+      },
+      { key: "priority", suggested: "high", applied: "high", effect: "same" },
+      { key: "due", suggested: "x", applied: undefined, effect: "left out" },
+      { key: "notes", suggested: undefined, applied: "added", effect: "added" },
+    ])
   })
 })

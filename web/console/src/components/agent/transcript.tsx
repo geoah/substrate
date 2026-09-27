@@ -70,6 +70,7 @@ function SystemTurn({ turn }: { turn: TurnView }) {
               ) : (
                 <span>a record</span>
               )}
+              {notice.adjusted && <span>with your edits</span>}
               {technical && notice.version !== undefined && (
                 <span className="text-[11.5px] text-faint">
                   v{notice.version}
