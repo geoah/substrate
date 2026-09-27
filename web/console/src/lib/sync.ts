@@ -140,6 +140,23 @@ export function syncFieldsOfStatus(s: SyncStatus): SyncFields {
   }
 }
 
+/** A record's parked runs as `sync/status` counts them, with the newest one's
+ * error and when it parked. */
+export interface SyncParked {
+  count: number
+  error?: string
+  at?: string
+}
+
+/** The parked runs off a `sync/status` row; undefined without a row, so a
+ * renderer shows nothing rather than a zero it never read. */
+export function syncParkedOf(
+  s: Pick<SyncStatus, "parked" | "lastParkedError" | "lastParkedAt"> | undefined
+): SyncParked | undefined {
+  if (!s) return undefined
+  return { count: s.parked, error: s.lastParkedError, at: s.lastParkedAt }
+}
+
 /** Whether the owner's last request has been served: no request is served
  * (nothing is owed), and an ack at or after the request is too. */
 export function requestServed(

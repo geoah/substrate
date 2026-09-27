@@ -555,7 +555,11 @@ example, `coalesce: true` so one request is one delivery per stream.
 
 **Reading it.** `GET /api/v1/sync/status` lists every binding record's
 sync properties joined with the status of the record triggers on its kind
-(cursor, head, lag, parked, pending), one row per account;
+(cursor, head, lag, parked, pending), one row per account. The row's
+`parked` also counts the parks of a schedule or webhook trigger that fires
+the same callable (a scheduled run names no account, so each account of the
+kind counts it), and `lastParkedError` and `lastParkedAt` give the newest
+park's first error line and when it parked;
 `substratectl sync status` prints the same, and the console renders it on
 each provider's page, with a Sync section on the record page of any binding
 kind.

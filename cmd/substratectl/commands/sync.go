@@ -34,7 +34,7 @@ the account; to stop one, patch syncPaused.`,
 func (a *app) syncStatusCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Per-account sync state, message, last run, request, streams, parked and lagging triggers",
+		Short: "Per-account sync state, message, last run, request, streams, parked and lagging triggers, and the newest parked run's reason",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cl, err := a.client()
@@ -46,13 +46,13 @@ func (a *app) syncStatusCommand() *cobra.Command {
 				return err
 			}
 			tw := newTable(a.out)
-			fmt.Fprintln(tw, "KIND\tID\tSTATE\tPAUSED\tLAST\tREQUESTED\tSTREAMS\tPARKED\tLAG\tMESSAGE")
+			fmt.Fprintln(tw, "KIND\tID\tSTATE\tPAUSED\tLAST\tREQUESTED\tSTREAMS\tPARKED\tLAG\tMESSAGE\tLAST PARKED")
 			for _, s := range res.Items {
 				last := ""
 				if s.LastSyncedAt != nil {
 					last = humanAge(a.now(), *s.LastSyncedAt)
 				}
-				// PARKED is this account's own parked deliveries; LAG is the
+				// PARKED is the parked deliveries of this account's sync; LAG is the
 				// kind's triggers' backlog summed, which no record owns alone.
 				var lag int64
 				for _, tr := range s.Triggers {
@@ -65,12 +65,26 @@ func (a *app) syncStatusCommand() *cobra.Command {
 				// One line per account: a message carrying a newline would
 				// break the table.
 				message, _, _ = strings.Cut(message, "\n")
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\t%s\t%s\t%d\t%d\t%s\n",
-					s.Kind, s.ID, s.State, s.Paused, last, syncRequest(s), syncStreams(s), s.Parked, lag, truncate(message, 60))
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\t%s\t%s\t%d\t%d\t%s\t%s\n",
+					s.Kind, s.ID, s.State, s.Paused, last, syncRequest(s), syncStreams(s), s.Parked, lag, truncate(message, 60), a.lastParked(s))
 			}
 			return tw.Flush()
 		},
 	}
+}
+
+// lastParked renders the newest parked delivery as its age and its reason:
+// a scheduled sync's park moves no account to erroring, so MESSAGE alone
+// does not say why PARKED is not zero.
+func (a *app) lastParked(s substrate.SyncStatus) string {
+	if s.Parked == 0 || s.LastParkedError == "" {
+		return ""
+	}
+	reason, _, _ := strings.Cut(s.LastParkedError, "\n")
+	if s.LastParkedAt == nil {
+		return truncate(reason, 60)
+	}
+	return humanAge(a.now(), *s.LastParkedAt) + ": " + truncate(reason, 60)
 }
 
 // syncRequest renders the request pair as one word: nothing when nothing was

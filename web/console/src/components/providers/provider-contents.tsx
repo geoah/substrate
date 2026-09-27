@@ -317,6 +317,23 @@ export function ProviderTools({
                   <ToneText tone="muted">It hasn’t run yet</ToneText>
                 )}
               </div>
+              {installed && activity.parked > 0 && activity.lastParked && (
+                <p
+                  data-slot="tool-parked-reason"
+                  className="col-span-2 mt-1.5 text-[12.5px] break-words"
+                >
+                  <span className="text-faint">Latest error</span>
+                  {activity.lastParked.at && (
+                    <span className="text-faint" title={activity.lastParked.at}>
+                      {" "}
+                      · {relativeTime(activity.lastParked.at)}
+                    </span>
+                  )}
+                  <span className="block text-muted-foreground">
+                    {activity.lastParked.error}
+                  </span>
+                </p>
+              )}
             </div>
           )
         })}

@@ -31,6 +31,7 @@ import {
   syncStateOf,
   type Health,
   type SyncFields,
+  type SyncParked,
 } from "@/lib/sync"
 import { cn } from "@/lib/utils"
 
@@ -205,12 +206,17 @@ export function SyncStreams({ streams }: { streams: SyncFields["streams"] }) {
 export function SyncSummary({
   fields,
   legacyStatus,
+  parked,
   compact = false,
 }: {
   fields: SyncFields
   /** The free-text `syncStatus` a bundle still writes before it binds the
    * trait; shown in full when the trait carries no message of its own. */
   legacyStatus?: string
+  /** The parked runs of the record's sync, off `sync/status`: a scheduled
+   * run's park moves no record to erroring, so the record's own error does
+   * not say why these failed. */
+  parked?: SyncParked
   compact?: boolean
 }) {
   const message = fields.message ?? legacyStatus
@@ -301,6 +307,33 @@ export function SyncSummary({
           </div>
           <p className="mt-1 break-words whitespace-pre-wrap">{fields.error}</p>
         </div>
+      )}
+      {parked && parked.count > 0 && <SyncParkedNote parked={parked} />}
+    </div>
+  )
+}
+
+function SyncParkedNote({ parked }: { parked: SyncParked }) {
+  return (
+    <div
+      data-slot="sync-parked"
+      className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs"
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="font-medium text-destructive">
+          Parked runs · {parked.count.toLocaleString()}
+        </span>
+        {parked.at && (
+          <span className="text-muted-foreground" title={parked.at}>
+            latest {relativeTime(parked.at)}
+          </span>
+        )}
+      </div>
+      {parked.error && (
+        <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2">
+          <dt className="text-muted-foreground">Latest error</dt>
+          <dd className="break-words">{parked.error}</dd>
+        </dl>
       )}
     </div>
   )

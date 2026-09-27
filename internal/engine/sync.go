@@ -243,8 +243,9 @@ func (ds *dataset) settleInterruptedSyncs(ctx context.Context) error {
 
 // SyncStatuses reads every `sync`-trait record's synchronization: the
 // trait's properties off the row, joined with the status of each record
-// trigger whose source names the record's kind. The triggers half is the
-// same computation TriggerStatuses answers, done once for the whole list.
+// trigger whose source names the record's kind, and the parked deliveries
+// of its sync with the newest one's reason. The triggers half is the same
+// computation TriggerStatuses answers, done once for the whole list.
 func (ds *dataset) SyncStatuses(ctx context.Context) ([]substrate.SyncStatus, error) {
 	var kinds []*vocabulary.Kind
 	for _, ty := range ds.registry().Kinds() {
@@ -271,6 +272,7 @@ func (ds *dataset) SyncStatuses(ctx context.Context) ([]substrate.SyncStatus, er
 	for _, ty := range kinds {
 		var onKind []substrate.TriggerStatus
 		var triggerIDs []string
+		callables := map[string]bool{}
 		for _, lt := range triggers {
 			if lt.Record == nil || lt.Err != nil {
 				continue
@@ -281,39 +283,25 @@ func (ds *dataset) SyncStatuses(ctx context.Context) ([]substrate.SyncStatus, er
 						onKind = append(onKind, st)
 					}
 					triggerIDs = append(triggerIDs, lt.ID)
+					callables[lt.CallableID] = true
 					break
 				}
 			}
 		}
-		// The record's own parked deliveries: the failures on the kind's
-		// triggers that name it, keyed by id, in one query per kind.
-		parkedByRecord := map[string]int64{}
-		if len(triggerIDs) > 0 {
-			ids, err := json.Marshal(triggerIDs)
-			if err != nil {
-				return nil, err
-			}
-			prows, err := ds.db.QueryContext(ctx, `
-				SELECT record_id, count(*) FROM trigger_failures
-				WHERE trigger_id IN (SELECT jsonb_array_elements_text($1::jsonb)) AND record_id <> ''
-				GROUP BY record_id`, ids)
-			if err != nil {
-				return nil, err
-			}
-			for prows.Next() {
-				var id string
-				var n int64
-				if err := prows.Scan(&id, &n); err != nil {
-					_ = prows.Close()
-					return nil, err
-				}
-				parkedByRecord[id] = n
-			}
-			_ = prows.Close()
-			if err := prows.Err(); err != nil {
-				return nil, err
+		// A schedule or webhook trigger names no kind, but one that fires a
+		// callable the kind's record triggers fire runs the same sync: a
+		// provider's hourly tick syncs every due account. Its parks carry no
+		// record, so they count on every record of the kind.
+		for _, lt := range triggers {
+			if lt.Record == nil && lt.Err == nil && callables[lt.CallableID] {
+				triggerIDs = append(triggerIDs, lt.ID)
 			}
 		}
+		parks, err := ds.syncParks(ctx, triggerIDs)
+		if err != nil {
+			return nil, err
+		}
+		shared := parks[""]
 		rows, err := ds.db.QueryContext(ctx, `SELECT `+recordCols+` FROM records WHERE kind = $1 AND deleted_at IS NULL ORDER BY id`, ty.Identity)
 		if err != nil {
 			return nil, err
@@ -325,7 +313,15 @@ func (ds *dataset) SyncStatuses(ctx context.Context) ([]substrate.SyncStatus, er
 				return nil, err
 			}
 			st := syncStatusOf(row)
-			st.Parked = parkedByRecord[row.ID]
+			own := parks[row.ID]
+			st.Parked = own.count + shared.count
+			latest := own
+			if shared.at.After(latest.at) {
+				latest = shared
+			}
+			if st.Parked > 0 {
+				st.LastParkedError, st.LastParkedAt = parkedReason(latest.lastError, latest.at)
+			}
 			st.Triggers = append([]substrate.TriggerStatus{}, onKind...)
 			out = append(out, st)
 		}
@@ -335,6 +331,53 @@ func (ds *dataset) SyncStatuses(ctx context.Context) ([]substrate.SyncStatus, er
 		}
 	}
 	return out, nil
+}
+
+// syncParkGroup is the parked deliveries of one record, or of none (the
+// "" key): how many there are, and the newest one's error and instant.
+type syncParkGroup struct {
+	count     int64
+	lastError string
+	at        time.Time
+}
+
+// syncParks groups the parked deliveries of the given triggers by the record
+// they name, in one query. A webhook request still settling is pending, not
+// parked, and is left out, as TriggerStatuses leaves it out of `parked`.
+func (ds *dataset) syncParks(ctx context.Context, triggerIDs []string) (map[string]syncParkGroup, error) {
+	out := map[string]syncParkGroup{}
+	if len(triggerIDs) == 0 {
+		return out, nil
+	}
+	ids, err := json.Marshal(triggerIDs)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := ds.db.QueryContext(ctx, `
+		SELECT DISTINCT ON (record_id) record_id, count(*) OVER (PARTITION BY record_id), last_error, parked_at
+		FROM trigger_failures
+		WHERE trigger_id IN (SELECT jsonb_array_elements_text($1::jsonb)) AND last_error <> $2
+		ORDER BY record_id, parked_at DESC, id DESC`, ids, pendingWebhookError)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id string
+		var g syncParkGroup
+		if err := rows.Scan(&id, &g.count, &g.lastError, &g.at); err != nil {
+			return nil, err
+		}
+		out[id] = g
+	}
+	return out, rows.Err()
+}
+
+// parkedReason is a parked delivery's error as a status carries it: the first
+// line, bounded as a park bounds the record's syncError, and the instant.
+func parkedReason(lastError string, at time.Time) (string, *time.Time) {
+	u := at.UTC()
+	return boundText(firstLine(lastError), syncErrorMax), &u
 }
 
 // syncStatusOf projects the trait's properties off one row. Every read is

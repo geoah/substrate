@@ -43,13 +43,21 @@ type SyncStatus struct {
 	// Streams is the per-stream slice a multi-stream provider reports, keyed
 	// by the stream's name.
 	Streams map[string]SyncStream `json:"streams,omitempty"`
-	// Parked counts the parked deliveries that name THIS record, across the
-	// triggers on its kind: the account's own failures, where a trigger's
+	// Parked counts the parked deliveries of this record's sync: those on
+	// the record triggers of its kind that name THIS record, plus those no
+	// record owns (a schedule fire, a webhook wake) on any trigger that fires
+	// a callable one of those record triggers fires. A trigger's own
 	// `parked` counts every record's.
 	Parked int64 `json:"parked"`
+	// LastParkedError is the newest of those parked deliveries' error: its
+	// first line, cut at 500 bytes. LastParkedAt is when it parked. Both are
+	// absent while Parked is 0.
+	LastParkedError string     `json:"lastParkedError,omitempty"`
+	LastParkedAt    *time.Time `json:"lastParkedAt,omitempty"`
 	// Triggers is every trigger whose record source matches the kind, with
 	// its cursor, lag, parked and pending counts; a schedule trigger that
-	// fires the same callable is not tied to a kind and is not here.
+	// fires the same callable is not tied to a kind and is not here, though
+	// its parked deliveries count in Parked.
 	Triggers []TriggerStatus `json:"triggers"`
 }
 

@@ -45,3 +45,22 @@ func TestSyncStatusRendersTheAccountLine(t *testing.T) {
 		t.Errorf("parked/lag not summed onto the line: %q", line)
 	}
 }
+
+// A parked scheduled run moves no account to erroring, so the line names the
+// newest park itself: when it parked and the first line of why, never the
+// traceback under it.
+func TestSyncStatusNamesTheLatestParkedReason(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+
+	out, _ := h.mustRun("sync", "status")
+	if !strings.Contains(out, "LAST PARKED") {
+		t.Fatalf("no LAST PARKED column: %q", out)
+	}
+	if !strings.Contains(out, "RuntimeError: contacts: HTTP 500") {
+		t.Errorf("sync status output lacks the parked reason:\n%s", out)
+	}
+	if strings.Contains(out, "Traceback") {
+		t.Errorf("the parked reason carries the traceback:\n%s", out)
+	}
+}

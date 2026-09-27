@@ -288,6 +288,10 @@ type fakeDataset struct {
 	// chips the engine would compute.
 	trStates map[int64][]substrate.ChangeTrigger
 	signals  chan int64
+	// triggerStatuses and syncStatuses are the canned answers of the two
+	// status reads; nil is the empty repository's empty list.
+	triggerStatuses []substrate.TriggerStatus
+	syncStatuses    []substrate.SyncStatus
 
 	// exportErr refuses Export before a point is pinned; exportFailMidway
 	// makes the stream fail after its first entry (export_test.go).
@@ -1193,11 +1197,15 @@ func (d *fakeDataset) PlanShippedUpgrade(context.Context) ([]substrate.ShippedUp
 }
 
 func (d *fakeDataset) TriggerStatuses(context.Context) ([]substrate.TriggerStatus, error) {
-	return nil, nil
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.triggerStatuses, nil
 }
 
 func (d *fakeDataset) SyncStatuses(context.Context) ([]substrate.SyncStatus, error) {
-	return nil, nil
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.syncStatuses, nil
 }
 
 func (d *fakeDataset) ReplayTrigger(_ context.Context, id string, _ int64) error {

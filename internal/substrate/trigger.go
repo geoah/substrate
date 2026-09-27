@@ -48,6 +48,12 @@ type TriggerStatus struct {
 	// and not a failure.
 	Parked  int64 `json:"parked"`
 	Pending int64 `json:"pending"`
+	// LastParkedError is the newest parked delivery's error: its first line,
+	// cut at 500 bytes, so a list says why without reading `…/parked`.
+	// LastParkedAt is when that delivery parked. Both are absent while
+	// Parked is 0.
+	LastParkedError string     `json:"lastParkedError,omitempty"`
+	LastParkedAt    *time.Time `json:"lastParkedAt,omitempty"`
 	// Error names a trigger the dispatcher cannot run: an unparseable row or
 	// a callable that no longer resolves.
 	Error string `json:"error,omitempty"`
