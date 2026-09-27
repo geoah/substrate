@@ -530,6 +530,13 @@ the directories whole rather than latched.
 
 ## Upgrading the binary
 
+**Have an agent run the upgrade.**
+[`skills/substrate-runbook-upgrade`](../skills/substrate-runbook-upgrade/SKILL.md)
+is the runbook for the whole upgrade, from reading the notes to the
+provider and sample upgrades afterwards, and the
+[README](../README.md#upgrading) says how to install it. What follows is
+the mechanics it relies on.
+
 **Read the upgrade notes first.** Every release between the version you run
 and the one you deploy opens its
 [release page](https://github.com/geoah/substrate/releases) with them: the

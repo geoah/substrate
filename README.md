@@ -382,6 +382,28 @@ secret is sealed under, and a server without it refuses to boot).
 [docs/operations.md](docs/operations.md) has the full table, blob stores and
 egress rules included.
 
+## Upgrading
+
+Do not upgrade by hand: have an agent follow the upgrade runbook,
+[skills/substrate-runbook-upgrade](skills/substrate-runbook-upgrade/SKILL.md).
+A new binary migrates the database and every repository it opens, and only
+a backup taken beforehand undoes that. Each release's upgrade notes say what
+you must change before and after. The runbook reads the notes of every
+release between yours and the target, writes a plan for you to approve,
+takes the backup, deploys, verifies, and then takes the provider and sample
+upgrades the catalog offers.
+
+In Claude Code:
+
+```
+/plugin marketplace add geoah/substrate
+/plugin install substrate-runbooks@substrate
+```
+
+Then ask it to upgrade your substrate. Any other agent that reads `SKILL.md`
+skills can use the same directory: copy `skills/substrate-runbook-upgrade`
+into that agent's skills directory.
+
 ## Development
 
 Toolchain is [mise](https://mise.jdx.dev): `mise install` once, then:
@@ -419,6 +441,7 @@ rules. [docs/testing.md](docs/testing.md) maps the test suites.
 | [docs/terms.md](docs/terms.md)                       | one word per thing, and the dead words each replaced              |
 | [docs/decisions](docs/decisions/README.md)           | the decision records: one short, dated page per choice            |
 | [kinds/](kinds), [samples/](samples)                 | the shipped vocabulary and the sample packages, as YAML           |
+| [skills/](skills)                                    | agent skills for running and building on a substrate              |
 | [AGENTS.md](AGENTS.md)                               | how to work on this code                                          |
 | [SECURITY.md](SECURITY.md)                           | how to report a vulnerability                                     |
 | [Releases](https://github.com/geoah/substrate/releases) | every released version, its upgrade notes and its commits      |

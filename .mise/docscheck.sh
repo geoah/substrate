@@ -9,16 +9,17 @@
 # used before it is defined, a mechanism explained on three pages, a claim the
 # code contradicts — is a reading pass, and no script is going to hold it.
 #
-# Scope is docs/*.md plus README.md: the pages a reader is handed. AGENTS.md is
-# the working guide and speaks to a different audience, so it is not held to
-# the reader-facing vocabulary.
+# Scope is docs/*.md, README.md and each skill under skills/: the pages a
+# reader is handed, and the runbooks their agents follow. AGENTS.md is the
+# working guide and speaks to a different audience, so it is not held to the
+# reader-facing vocabulary.
 # No `-e`: every rule below runs and reports, so one pass names everything
 # wrong rather than the first thing wrong.
 set -uo pipefail
 
 cd "$(git rev-parse --show-toplevel)" || exit 2
 
-files=(docs/*.md README.md)
+files=(docs/*.md README.md skills/*/SKILL.md)
 fail=0
 
 flag() {
@@ -329,7 +330,7 @@ done
 # README prints its route table. The shipped READMEs sit one directory per
 # package: `kinds/<authority>/<package>/` for the providers, `samples/<package>/`
 # for the samples (decision 0047).
-url_files=(docs/*.md README.md web/console/README.md
+url_files=(docs/*.md README.md skills/*/SKILL.md web/console/README.md
   kinds/*/*/README.md samples/*/README.md)
 
 grep_urls() {
