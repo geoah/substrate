@@ -630,8 +630,22 @@ func checkValue(path string, schema map[string]any, v any) error {
 		}
 		return nil
 	case "string":
-		if _, ok := v.(string); !ok {
+		s, ok := v.(string)
+		if !ok {
 			return fmt.Errorf("%s: expected a string, got %T", at(), v)
+		}
+		// An `enum` argument compiles to a string closed over its `values`
+		// (parseArguments), and every path that checks input reads this one
+		// schema: the call API, host calls, agent tools and trigger writes.
+		if enum, closed := schema["enum"].([]any); closed {
+			allowed := make([]string, 0, len(enum))
+			for _, ev := range enum {
+				if ev == s {
+					return nil
+				}
+				allowed = append(allowed, fmt.Sprint(ev))
+			}
+			return fmt.Errorf("%s: %q is not one of the allowed values: %s", at(), s, strings.Join(allowed, ", "))
 		}
 		return nil
 	case "number":

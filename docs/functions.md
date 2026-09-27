@@ -165,7 +165,9 @@ An entry carries six keys and no others:
 - **`values`** is the admitted set, and belongs to `enum` alone: an enum
   without values is refused (it would be a string), and values on any other
   type are refused too. They are wire values a model echoes back verbatim, not
-  declared names, so they are not held to the camelCase rule.
+  declared names, so they are not held to the camelCase rule. A value outside
+  the set is refused like a mistyped one, naming the argument and the set:
+  `.period: "wekly" is not one of the allowed values: daily, weekly, monthly`.
 
 The engine **compiles** the list into the object schema every consumer reads:
 `{type: object, properties: …}`, carrying `required` only when something is
