@@ -5,7 +5,9 @@
  *
  * THE ADDRESS. `?thread=<id>` opens one conversation (a deep link);
  * `?agent=<agent id>` opens a new chat with that agent; `?prompt=<text>`
- * prefills the composer of a new chat (other pages link here with a question).
+ * prefills the composer of a new chat (other pages link here with a question),
+ * and `?send=1` beside it sends that question as soon as the agent can take
+ * it, once (Add a collection's Ask an agent hands its request over this way).
  * A bare `/agents` opens the most recent conversation, or a new chat when
  * there is none. The chats column can be narrowed to one agent; `?agent=`
  * narrows it too, and New chat starts with the agent it is narrowed to. `/agents/<agent id>` is the old per-agent address and
@@ -63,6 +65,7 @@ const SEARCH = {
   thread: parseAsString.withDefault(""),
   agent: parseAsString.withDefault(""),
   prompt: parseAsString.withDefault(""),
+  send: parseAsString.withDefault(""),
 }
 
 export function AgentsPage() {
@@ -163,7 +166,7 @@ export function AgentsPage() {
   function openThread(id: string) {
     setChatsSheet(false)
     setDraft("")
-    void setSearch({ thread: id, agent: null, prompt: null })
+    void setSearch({ thread: id, agent: null, prompt: null, send: null })
   }
 
   function startChat(agent?: string) {
@@ -235,7 +238,7 @@ export function AgentsPage() {
           onThread={(minted) => {
             setAdopted({ from: conversationKey, to: minted })
             void setSearch(
-              { thread: minted, agent: null, prompt: null },
+              { thread: minted, agent: null, prompt: null, send: null },
               { history: "replace" }
             )
           }}
@@ -244,6 +247,15 @@ export function AgentsPage() {
           pickable={talkable.map((a) => a.id)}
           onPickAgent={(next) => void setSearch({ agent: next, prompt: null })}
           keylessProvider={hasKey === false ? providerId : undefined}
+          autoSend={
+            search.send === "1" &&
+            !threadId &&
+            Boolean(search.prompt) &&
+            hasKey !== undefined
+          }
+          onAutoSent={() =>
+            void setSearch({ send: null }, { history: "replace" })
+          }
           actions={
             <>
               {!roomy && (

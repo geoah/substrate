@@ -1,12 +1,15 @@
 /** "Add a collection": three ways to start one. Ask an agent to make it,
  * start from a sample (imported under the repository's own authority, the
  * packages it needs first; only samples that add a collection, see
- * `collectionSamples`), or declare the kind yourself in YAML. */
+ * `collectionSamples`), or declare the kind yourself in YAML. Asking goes to
+ * the agent that can declare a kind, and is sent, not only written down. */
 
 import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { BotIcon, CodeIcon, LayersIcon, type LucideIcon } from "lucide-react"
 
+import { AgentRef } from "@/components/agent/agent-ref"
 import { CopyButton } from "@/components/identity/copy-button"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { SampleList } from "@/components/samples/sample-list"
@@ -20,7 +23,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { radioKeys, radioTabIndex } from "@/components/ui/segmented"
+import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
+import { collectionMaker } from "@/lib/agent-grants"
+import { agentsQueryOptions } from "@/lib/api/agents"
 import type { KindInfo } from "@/lib/api/types"
 import type { BundleRow } from "@/lib/bundles"
 import { cn } from "@/lib/utils"
@@ -105,7 +111,12 @@ export function AddCollectionDialog({
           ))}
         </div>
         <div className="min-h-40">
-          {way === "agent" && <AskAnAgent onDone={() => onOpenChange(false)} />}
+          {way === "agent" && (
+            <AskAnAgent
+              onDone={() => onOpenChange(false)}
+              onSample={() => setWay("sample")}
+            />
+          )}
           {way === "sample" && <Samples />}
           {way === "yaml" && <WriteIt />}
         </div>
@@ -114,15 +125,58 @@ export function AddCollectionDialog({
   )
 }
 
-function AskAnAgent({ onDone }: { onDone: () => void }) {
+/** Ask the one agent that can set a collection up, and send the request
+ * rather than only writing it down: the Agents page opens a new chat with it
+ * and asks at once. An agent can when its write grant covers the kind kind
+ * and it holds a tool that writes (`canDeclareKinds`); when none can, the
+ * dialog says so instead of handing the request to one that would refuse. */
+function AskAnAgent({
+  onDone,
+  onSample,
+}: {
+  onDone: () => void
+  onSample: () => void
+}) {
   const navigate = useNavigate()
   const [text, setText] = useState("")
+  const agents = useQuery(agentsQueryOptions())
+  const maker = collectionMaker(agents.data?.records ?? [])
+
+  if (agents.isPending) {
+    return (
+      <p className="flex items-center gap-1.5 text-muted-foreground">
+        <Spinner className="size-3" /> Loading your agents
+      </p>
+    )
+  }
+  if (!maker) {
+    return (
+      <div className="flex flex-col items-start gap-3">
+        <p>
+          None of your agents can set up a collection yet. Start from a sample,
+          or give an agent that permission.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={onSample}>Start from a sample</Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              onDone()
+              void navigate({ to: "/agents" })
+            }}
+          >
+            Go to Agents
+          </Button>
+        </div>
+      </div>
+    )
+  }
   const ask = () => {
-    onDone()
     const prompt = text.trim()
-    void navigate({
-      href: prompt ? `/agents?prompt=${encodeURIComponent(prompt)}` : "/agents",
-    })
+    if (!prompt) return
+    onDone()
+    const q = new URLSearchParams({ agent: maker.id, prompt, send: "1" })
+    void navigate({ href: `/agents?${q.toString()}` })
   }
   return (
     <form
@@ -142,10 +196,12 @@ function AskAnAgent({ onDone }: { onDone: () => void }) {
         value={text}
         onChange={(e) => setText(e.target.value)}
       />
-      <div className="flex items-center gap-3">
-        <Button type="submit">Ask</Button>
-        <span className="text-[12.5px] text-faint">
-          Opens Agents with this as your message.
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" disabled={!text.trim()}>
+          Ask
+        </Button>
+        <span className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-muted-foreground">
+          <AgentRef id={maker.id} agent={maker} /> sets it up, in a new chat.
         </span>
       </div>
     </form>

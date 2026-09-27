@@ -261,3 +261,43 @@ export function grantEditProblem(
   }
   return undefined
 }
+
+// ── who can set up a collection ─────────────────────────────────────────────
+
+/** Whether one grant pattern covers a kind: the kind itself, a
+ * `<authority>/<package>/*` or `<authority>/*` over it, or `*`. */
+export function patternCovers(pattern: string, kind: string): boolean {
+  if (pattern === "*" || pattern === kind) return true
+  return pattern.endsWith("/*") && kind.startsWith(pattern.slice(0, -1))
+}
+
+/** Whether an agent can declare a kind, which is what setting up a
+ * collection is: its write grant covers the kind kind, and it holds a tool
+ * that writes (`write`, or `propose` to suggest it). */
+export function canDeclareKinds(properties: Record<string, unknown>): boolean {
+  const tools = hostToolsOf(properties)
+  if (
+    !tools.includes(HOST_FUNCTION_WRITE) &&
+    !tools.includes(HOST_FUNCTION_PROPOSE)
+  ) {
+    return false
+  }
+  return identitiesOf(permissionsOf(properties).writes).some((p) =>
+    patternCovers(p, KIND_KIND)
+  )
+}
+
+/** The agent Add a collection hands a request to: one a person can chat with
+ * that can declare kinds, one that writes itself before one that only
+ * suggests, else the first. Undefined when none can. */
+export function collectionMaker<
+  T extends { id: string; properties: Record<string, unknown> },
+>(agents: T[]): T | undefined {
+  const able = agents.filter(
+    (a) => a.properties.hiddenFromChat !== true && canDeclareKinds(a.properties)
+  )
+  return (
+    able.find((a) => hostToolsOf(a.properties).includes(HOST_FUNCTION_WRITE)) ??
+    able[0]
+  )
+}

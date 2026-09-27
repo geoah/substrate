@@ -14,10 +14,13 @@ import {
   HOST_FUNCTION_QUERY,
   HOST_FUNCTION_WRITE,
   RECORD_PATCH_REQUEST_KIND,
+  canDeclareKinds,
+  collectionMaker,
   grantEditProblem,
   grantHints,
   grantKindsOf,
   hostToolsOf,
+  patternCovers,
   permissionsWith,
 } from "./agent-grants"
 
@@ -333,5 +336,67 @@ describe("editing the grants", () => {
     expect(grantEditProblem(writer, "writes", [])).toMatch(
       /needs to be able to change/
     )
+  })
+})
+
+describe("who can set up a collection", () => {
+  const KIND_KIND = "substrate.reamde.dev/core/kind"
+  const tool = (fn: string) => ({
+    function: { ref: `substrate.reamde.dev/core/function/${fn}` },
+  })
+  const writes = (...kinds: string[]) => ({
+    writes: kinds.map((k) => ({ ref: `${KIND_KIND}/${k}` })),
+  })
+
+  it("reads a grant pattern the way the door does", () => {
+    expect(patternCovers("*", KIND_KIND)).toBe(true)
+    expect(patternCovers("substrate.reamde.dev/*", KIND_KIND)).toBe(true)
+    expect(patternCovers("substrate.reamde.dev/core/*", KIND_KIND)).toBe(true)
+    expect(patternCovers(KIND_KIND, KIND_KIND)).toBe(true)
+    expect(patternCovers("substrate.reamde.dev/co*", KIND_KIND)).toBe(false)
+    expect(patternCovers("samples.substrate.reamde.dev/*", KIND_KIND)).toBe(
+      false
+    )
+  })
+
+  it("needs the kind kind in its write grant and a tool that writes", () => {
+    expect(
+      canDeclareKinds({
+        tools: [tool(HOST_FUNCTION_WRITE)],
+        permissions: writes("*"),
+      })
+    ).toBe(true)
+    expect(
+      canDeclareKinds({
+        tools: [tool(HOST_FUNCTION_QUERY)],
+        permissions: writes("*"),
+      })
+    ).toBe(false)
+    expect(
+      canDeclareKinds({
+        tools: [tool(HOST_FUNCTION_WRITE)],
+        permissions: writes("samples.substrate.reamde.dev/notes/note"),
+      })
+    ).toBe(false)
+  })
+
+  it("hands the request to one that writes itself, never to one hidden from chat", () => {
+    const agent = (id: string, fn: string, hidden = false) => ({
+      id,
+      properties: {
+        tools: [tool(fn)],
+        permissions: writes("*"),
+        ...(hidden && { hiddenFromChat: true }),
+      },
+    })
+    expect(
+      collectionMaker([
+        agent("a", HOST_FUNCTION_PROPOSE),
+        agent("b", HOST_FUNCTION_WRITE, true),
+        agent("c", HOST_FUNCTION_WRITE),
+      ])?.id
+    ).toBe("c")
+    expect(collectionMaker([agent("a", HOST_FUNCTION_PROPOSE)])?.id).toBe("a")
+    expect(collectionMaker([agent("q", HOST_FUNCTION_QUERY)])).toBeUndefined()
   })
 })

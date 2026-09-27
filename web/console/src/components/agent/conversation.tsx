@@ -19,7 +19,13 @@
  * The parent keys this component by conversation, and keeps the key when a
  * new chat's run mints its thread — remounting then would drop the stream. */
 
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { KeyRoundIcon } from "lucide-react"
 
@@ -91,6 +97,8 @@ export function Conversation({
   pickable,
   onPickAgent,
   keylessProvider,
+  autoSend = false,
+  onAutoSent,
   actions,
 }: {
   /** The agent this conversation is with; undefined while none is known. */
@@ -111,6 +119,11 @@ export function Conversation({
   onPickAgent?: (agent: string) => void
   /** The provider row id, when the agent's provider has no key. */
   keylessProvider?: string
+  /** Send the draft as soon as the conversation opens, once: another page
+   * handed the question over to be asked, not only written down. */
+  autoSend?: boolean
+  /** The hand-over was used (sent, or held for a missing key). */
+  onAutoSent?: () => void
   /** The header's buttons. */
   actions?: ReactNode
 }) {
@@ -253,6 +266,18 @@ export function Conversation({
     }
   }
 
+  // The hand-over sends once, the first time the conversation can.
+  const autoSent = useRef(false)
+  const handOver = useEffectEvent(() => {
+    onAutoSent?.()
+    send()
+  })
+  useEffect(() => {
+    if (!autoSend || autoSent.current || !agentId) return
+    autoSent.current = true
+    handOver()
+  }, [autoSend, agentId])
+
   function send(text = draft) {
     const message = text.trim()
     if (!message || busy || !agentId || keylessProvider) return
@@ -326,6 +351,7 @@ export function Conversation({
       ? agent.properties.description
       : ""
   const name = agentId ? agentName(agentId) : "an agent"
+
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
