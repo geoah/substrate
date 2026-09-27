@@ -120,10 +120,13 @@ because a fabricated seam nobody points at is a lie about the data.
 
 1. **`…history__channel-<C>_limit-200_oldest-<ts>.json`** — the incremental
    page. The second sync asks each conversation for `oldest=<the ts the first
-   sync stored>`, and no pull can have recorded that request: the cursor did
-   not exist when the pull ran. The curator cuts it from the conversation's
-   own newest message, one second later — a message the first sync provably
-   did not see. It is why the cold walk sends no `oldest` at all: a cold
+   sync stored, less a day>` (the sync re-reads a day so a message that took
+   its first reply comes back with its count, #711), and no pull can have
+   recorded that request: the cursor did not exist when the pull ran. The
+   curator cuts it from the conversation's own newest message, one second
+   later — a message the first sync provably did not see. The page carries
+   only that message, not the day before the cursor a real one restates.
+   It is why the cold walk sends no `oldest` at all: a cold
    request carries no wall-clock parameter, so its recording is one the sync
    can reproduce exactly at replay time.
 
@@ -135,7 +138,7 @@ because a fabricated seam nobody points at is a lie about the data.
    stale silently.
 
 3. **The UNCHANGED page**, `oldest=<the newest ts the incremental page
-   carried>`: an empty `messages` list. The third sync asks with the cursor
+   carried, less a day>`: an empty `messages` list. The third sync asks with the cursor
    the second one stored, and without this recording the mock answered by
    DROPPING `oldest` and handing back the cold page — a fallback that makes a
    broken replay look idempotent.

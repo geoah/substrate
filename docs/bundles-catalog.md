@@ -1184,8 +1184,8 @@ what says a walk ran out of work, so a bounded drain is still a first sync.
 Slack has no workspace-wide change feed, so the history cursor is per
 conversation, on a `conversationsync` row that cascades from the
 conversation. It holds `latestTs` (the newest message ts mirrored; the next
-run asks `conversations.history` for `oldest=` that value, which Slack treats
-as exclusive), `repliesTs` (the newest reply ts from any thread there),
+run asks `conversations.history` for `oldest=` that value less a day),
+`repliesTs` (the newest reply ts from any thread there),
 `threadWatch` (the ts of every thread parent the conversation has shown,
 newest first, capped at 200), `membersSyncedAt` (rosters are walked at most
 daily) and `historyStatus`. Keeping them off the conversation means a page of
@@ -1195,8 +1195,13 @@ crash re-reads a window and the repeated writes are absorbed.
 
 The thread walk descends into a parent whose `latest_reply` is newer than
 `repliesTs` less a 30-minute margin, and an incremental walk re-asks every
-watched thread: an incremental history page never returns a parent older than
-`latestTs`, so a reply to one would otherwise be invisible. A `has_more` page
+watched thread: an incremental history page never returns a parent more than
+a day older than `latestTs`, so a reply to one would otherwise be invisible.
+The day of overlap is what finds a FIRST reply: Slack never lists it in
+`conversations.history` and the watch holds only parents seen with replies,
+so the re-read parent's `reply_count` is the one place it shows. A first
+reply to a message more than a day older than the conversation's newest one
+is still missed. A `has_more` page
 with no cursor continues by window, `latest` at the oldest ts that page
 carried, rather than being read as the end of the history.
 
