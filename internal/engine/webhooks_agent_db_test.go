@@ -69,9 +69,15 @@ func TestAnAgentWebhookInterruptedMidLoopWaitsForAHand(t *testing.T) {
 	cancel()
 	fid := <-done
 	close(release)
+	// The stored row is still the claim; nothing holds it, so the listing
+	// reads it as interrupted.
 	failures, err = ds.TriggerFailures(ctx, tr.ID)
-	if err != nil || len(failures) != 1 || failures[0].LastError != inFlightError || failures[0].FireID != fid {
-		t.Fatalf("failures after the interrupted loop = %+v (%v), want the claim under fire %s", failures, err, fid)
+	if err != nil || len(failures) != 1 || failures[0].LastError != interruptedAgentError || failures[0].Running || failures[0].FireID != fid {
+		t.Fatalf("failures after the interrupted loop = %+v (%v), want the interrupted claim under fire %s", failures, err, fid)
+	}
+	var stored string
+	if err := ds.db.QueryRowContext(ctx, `SELECT last_error FROM trigger_failures WHERE id = $1`, failures[0].ID).Scan(&stored); err != nil || stored != inFlightError {
+		t.Fatalf("the interrupted row is stored as %q (%v), want the claim", stored, err)
 	}
 	if pending, err := ds.pendingWebhooks(ctx, 0); err != nil || len(pending) != 0 {
 		t.Fatalf("the next dispatcher pass would resume %+v (%v); an interrupted agent delivery waits for a hand", pending, err)

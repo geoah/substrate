@@ -599,6 +599,7 @@ const triggerStatus: Shape<TriggerStatus> = {
   webhookPath: false,
   parked: true,
   pending: true,
+  inFlight: true,
   lastParkedError: false,
   lastParkedAt: false,
   error: false,
@@ -612,6 +613,7 @@ const triggerFailure: Shape<TriggerFailure> = {
   attempts: true,
   lastError: true,
   parkedAt: true,
+  running: false,
 }
 const syncStatus: Shape<SyncStatus> = {
   kind: true,

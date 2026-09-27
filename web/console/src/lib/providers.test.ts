@@ -630,6 +630,7 @@ describe("tools", () => {
       head: 0,
       parked,
       pending: 0,
+      inFlight: 0,
       lastFire,
     })
     expect(
@@ -658,6 +659,7 @@ describe("tools", () => {
       head: 0,
       parked,
       pending: 0,
+      inFlight: 0,
       lastParkedError,
       lastParkedAt,
     })

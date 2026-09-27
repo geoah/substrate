@@ -460,6 +460,7 @@ describe("ProvidersPage", () => {
           head: 3,
           parked: 2,
           pending: 0,
+          inFlight: 0,
         },
         {
           id: "linear-issues-scheduled",
@@ -469,6 +470,7 @@ describe("ProvidersPage", () => {
           head: 3,
           parked: 5,
           pending: 0,
+          inFlight: 0,
         },
       ],
     })

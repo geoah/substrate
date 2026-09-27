@@ -515,9 +515,10 @@ func settledResult(advance bool, summary map[string]int, pages int) deliverResul
 // transactions across model turns. It writes the acknowledgement FIRST
 // (claim), recording the delivery as in flight under a parked failure, then
 // runs the loop, then retires the claim with the run record (complete). A
-// crash between the two leaves the delivery listed under the trigger's
-// parked failures as in flight, retried by hand; nothing redelivers by
-// itself and no effect commits without a recorded delivery state. A function
+// crash between the two leaves the claim, which the next open parks as
+// interrupted (settleInterruptedAgentRuns) for a person to retry or forget;
+// nothing redelivers by itself and no effect commits without a recorded
+// delivery state. A function
 // body that runs an agent takes the same claim in the agent thread's
 // transaction (agentThreads.bind), and its final transaction then retires
 // the claim instead of acknowledging (settle). nil settles nothing: a manual
@@ -2170,11 +2171,17 @@ func (ds *dataset) causalDepth(ctx context.Context, seq int64) (int, error) {
 // the trigger record itself — status derives from the cursor (or fire
 // state), the head and the parked count. An admitted webhook request whose
 // fire has not settled (webhooks.go pendingWebhookError) is counted as
-// pending, not parked: a healthy door is not a trigger giving up.
+// pending, not parked: a healthy door is not a trigger giving up. A row this
+// process is delivering now (presentFailure) is counted as in flight, not
+// parked, for the same reason.
 func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStatus, error) {
 	var head int64
 	if err := ds.db.QueryRowContext(ctx,
 		`SELECT COALESCE(max(seq), 0) FROM changelog`).Scan(&head); err != nil {
+		return nil, err
+	}
+	running, err := ds.runningFailureIDs()
+	if err != nil {
 		return nil, err
 	}
 	triggers, err := ds.loadTriggers(ctx)
@@ -2228,8 +2235,14 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 			st.WebhookPath = webhookPath(ds.Repository().Authority, lt.ID)
 		}
 		if err := ds.db.QueryRowContext(ctx, `
-			SELECT count(*) FILTER (WHERE last_error <> $2), count(*) FILTER (WHERE last_error = $2)
-			FROM trigger_failures WHERE trigger_id = $1`, lt.ID, pendingWebhookError).Scan(&st.Parked, &st.Pending); err != nil {
+			WITH f AS (
+				SELECT last_error, id IN (SELECT jsonb_array_elements_text($3::jsonb)::bigint) AS running
+				FROM trigger_failures WHERE trigger_id = $1
+			)
+			SELECT count(*) FILTER (WHERE last_error <> $2 AND NOT running),
+			       count(*) FILTER (WHERE last_error = $2),
+			       count(*) FILTER (WHERE last_error <> $2 AND running)
+			FROM f`, lt.ID, pendingWebhookError, running).Scan(&st.Parked, &st.Pending, &st.InFlight); err != nil {
 			return nil, err
 		}
 		if st.Parked > 0 {
@@ -2238,12 +2251,13 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 			err := ds.db.QueryRowContext(ctx, `
 				SELECT last_error, parked_at FROM trigger_failures
 				WHERE trigger_id = $1 AND last_error <> $2
-				ORDER BY parked_at DESC, id DESC LIMIT 1`, lt.ID, pendingWebhookError).Scan(&lastErr, &at)
+				  AND id NOT IN (SELECT jsonb_array_elements_text($3::jsonb)::bigint)
+				ORDER BY parked_at DESC, id DESC LIMIT 1`, lt.ID, pendingWebhookError, running).Scan(&lastErr, &at)
 			// No row is a park retired since the count, which has no reason
 			// left to give.
 			switch {
 			case err == nil:
-				st.LastParkedError, st.LastParkedAt = parkedReason(lastErr, at)
+				st.LastParkedError, st.LastParkedAt = parkedReason(heldError(lastErr), at)
 			case !errors.Is(err, sql.ErrNoRows):
 				return nil, err
 			}
@@ -2391,9 +2405,47 @@ func (ds *dataset) TriggerFailures(ctx context.Context, id string) ([]substrate.
 			return nil, err
 		}
 		f.ParkedAt = f.ParkedAt.UTC()
+		ds.presentFailure(&f)
 		out = append(out, f)
 	}
 	return out, rows.Err()
+}
+
+// presentFailure says where a listed row's delivery stands. A row this
+// process holds in runningClaims is being delivered now: a claim, a retry
+// by hand or a webhook fire. A claim it does NOT hold belongs to a run that
+// ended without settling (its dispatch was canceled or died), so the row
+// reads as interrupted; the stored claim stays until a retry or a forget
+// ends it, or the next open rewrites it (settleInterruptedAgentRuns).
+func (ds *dataset) presentFailure(f *substrate.TriggerFailure) {
+	if _, running := ds.runningClaims.Load(f.ID); running {
+		f.Running = true
+		return
+	}
+	f.LastError = heldError(f.LastError)
+}
+
+// heldError is the error of a row nothing in this process is delivering: a
+// claim there reads as interrupted, every other error as stored.
+func heldError(lastError string) string {
+	if lastError == inFlightError {
+		return interruptedAgentError
+	}
+	return lastError
+}
+
+// runningFailureIDs is every failure id this process is delivering now, as
+// the JSON array TriggerStatuses hands its count query.
+func (ds *dataset) runningFailureIDs() (string, error) {
+	ids := []int64{}
+	ds.runningClaims.Range(func(k, _ any) bool {
+		if id, ok := k.(int64); ok {
+			ids = append(ids, id)
+		}
+		return true
+	})
+	raw, err := json.Marshal(ids)
+	return string(raw), err
 }
 
 // RetryTriggerFailure re-runs one parked delivery against current state: on

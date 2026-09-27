@@ -477,6 +477,7 @@
     "lastError": true,
     "parkedAt": true,
     "recordId": false,
+    "running": false,
     "seq": false,
     "trigger": true
   },
@@ -493,6 +494,7 @@
     "error": false,
     "head": true,
     "id": true,
+    "inFlight": true,
     "kind": true,
     "lag": false,
     "lastFire": false,

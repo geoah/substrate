@@ -247,9 +247,17 @@ function TriggerRow({
       </td>
       <td className="py-2 pr-3 text-right tabular-nums">
         {status ? (
-          <span className={status.parked > 0 ? "text-destructive" : ""}>
-            {status.parked}
-          </span>
+          <>
+            <span className={status.parked > 0 ? "text-destructive" : ""}>
+              {status.parked}
+            </span>
+            {status.inFlight > 0 && (
+              <span className="text-muted-foreground">
+                {" "}
+                · {status.inFlight} running
+              </span>
+            )}
+          </>
         ) : (
           "—"
         )}
@@ -348,14 +356,20 @@ function ParkedList({
                       : ""}
                 </span>
               </div>
-              <p className="mt-1 break-words whitespace-pre-wrap text-destructive">
-                {f.lastError}
-              </p>
+              {f.running ? (
+                <p className="mt-1 text-muted-foreground">
+                  Running now. It leaves this list when it finishes.
+                </p>
+              ) : (
+                <p className="mt-1 break-words whitespace-pre-wrap text-destructive">
+                  {f.lastError}
+                </p>
+              )}
             </div>
             <Button
               variant="outline"
               size="xs"
-              disabled={retry.isPending}
+              disabled={retry.isPending || f.running}
               onClick={() => retry.mutate({ trigger: f.trigger, id: f.id })}
             >
               <RotateCcwIcon />

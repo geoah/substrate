@@ -26,9 +26,10 @@ import (
 // and the run record are one commit. A concurrent dispatcher's duplicate
 // loses the claim's swap and runs nothing. A loop error rides the ordinary
 // retries, which find the claim, and parks by rewriting it. A crash mid-loop
-// leaves the claim, listed as in flight and retried by hand: the loop's
-// effects are never committed without a recorded delivery state, and nothing
-// redelivers by itself.
+// leaves the claim, which the next open parks as interrupted and a person
+// retries or forgets (settleInterruptedAgentRuns): the loop's effects are
+// never committed without a recorded delivery state, and nothing redelivers
+// by itself.
 func (ds *dataset) deliverToAgent(ctx context.Context, tr *trigger, ch substrate.Change, depth int, envelope map[string]any, mode string, advance bool, settle *settlement) (deliverResult, error) {
 	var res deliverResult
 	claim, err := ds.claimAgentDelivery(ctx, settle)
@@ -303,4 +304,121 @@ func agentUserContent(input any) (string, error) {
 		}
 		return string(buf), nil
 	}
+}
+
+// interruptedThreadReason is the reason a thread a stopped writer left
+// `running` settles with (settleInterruptedAgentRuns).
+const interruptedThreadReason = "interrupted: the server stopped during the run"
+
+// settleInterruptedAgentRuns is the agent runs' open-time sweep, beside
+// settleInterruptedSyncs: at open no loop of this repository is running (0083:
+// one writer per repository, and open runs before the dataset is published),
+// so every claim still stored and every thread still `running` belongs to a
+// run the last writer's stop ended. A claim becomes an ordinary parked
+// failure naming the stop, so the listing and a replay stop treating it as a
+// live run; it is still retried or forgotten by hand, never redelivered
+// (decision 0064). A thread settles to `error` naming the stop.
+func (ds *dataset) settleInterruptedAgentRuns(ctx context.Context) error {
+	if ds.svc.readOnly {
+		return nil
+	}
+	if err := ds.settleInterruptedClaims(ctx); err != nil {
+		return err
+	}
+	return ds.settleInterruptedThreads(ctx)
+}
+
+// settleInterruptedClaims rewrites every stored claim to interruptedAgentError,
+// one ledger entry per trigger, so a rebuild and a restore agree.
+func (ds *dataset) settleInterruptedClaims(ctx context.Context) error {
+	rows, err := ds.db.QueryContext(ctx, `
+		SELECT id, trigger_id, seq, fire_id, record_id, attempts, parked_at, payload
+		FROM trigger_failures WHERE last_error IN ($1, $2) ORDER BY trigger_id, id`,
+		inFlightError, legacyInFlightError)
+	if err != nil {
+		return err
+	}
+	byTrigger := map[string][]foldFailure{}
+	var order []string
+	for rows.Next() {
+		var f foldFailure
+		var trigger string
+		var payload []byte
+		if err := rows.Scan(&f.ID, &trigger, &f.Seq, &f.FireID, &f.RecordID, &f.Attempts, &f.ParkedAt, &payload); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		f.ParkedAt = f.ParkedAt.UTC()
+		f.Payload = json.RawMessage(payload)
+		f.LastError = interruptedAgentError
+		// The interrupted run was one attempt.
+		f.Attempts = max(f.Attempts, 1)
+		if _, seen := byTrigger[trigger]; !seen {
+			order = append(order, trigger)
+		}
+		byTrigger[trigger] = append(byTrigger[trigger], f)
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, trigger := range order {
+		failures := byTrigger[trigger]
+		err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+			for _, f := range failures {
+				if err := t.lockFailure(trigger, int64(f.ID)); err != nil {
+					return err
+				}
+				if err := t.parkTx(trigger, f); err != nil {
+					return err
+				}
+			}
+			return t.settleDelivery(trigger)
+		})
+		if err != nil {
+			return fmt.Errorf("settle interrupted agent deliveries of trigger %s: %w", trigger, err)
+		}
+		ds.svc.log.Warn("substrate: agent deliveries interrupted by a stop, parked for a hand",
+			"trigger", logSafeID(trigger), "deliveries", len(failures))
+	}
+	return nil
+}
+
+// settleInterruptedThreads settles every `running` thread to `error`.
+func (ds *dataset) settleInterruptedThreads(ctx context.Context) error {
+	rows, err := ds.db.QueryContext(ctx, `
+		SELECT id FROM records
+		WHERE kind = $1 AND deleted_at IS NULL AND props->>'status' = $2
+		ORDER BY id`, typeThread, threadRunning)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+			_, err := t.patch(eref{Kind: typeThread, ID: id}, substrate.PatchInput{Properties: map[string]any{
+				"status":     threadError,
+				"reason":     interruptedThreadReason,
+				"finishedAt": t.now.Format(time.RFC3339Nano),
+			}})
+			return err
+		})
+		if err != nil {
+			return fmt.Errorf("settle interrupted thread %s: %w", id, err)
+		}
+		ds.svc.log.Warn("substrate: agent thread interrupted by a stop, marked error", "thread", id)
+	}
+	return nil
 }
