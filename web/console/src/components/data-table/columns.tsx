@@ -288,7 +288,7 @@ export function changeKindColumn(opts?: {
       label: "kind",
       ...(opts?.width
         ? { width: opts.width }
-        : { size: { min: 120, max: 220, weight: 0.6 } }),
+        : { size: { min: 160, max: 220, weight: 0.6 } }),
     },
   }
 }
