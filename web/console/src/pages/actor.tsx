@@ -1,107 +1,126 @@
-/** Actor view (`/actors/:id`): "what has this actor done?" — the actor's
- * identity card over its changelog, which is the same changelog list
- * pre-filtered to one actor (one spine, two views).
+/** One actor (`/actors/:id`): who it is, in plain words, and everything it
+ * changed, as History's sentences narrowed to it.
  *
- * Actors are records: the mirror row in `substrate.reamde.dev/core/actors`, or — for a
- * single-writer connector whose actor IS its authority (record 60) — the
- * `authorities` mirror. A name in neither collection still has a real
- * changelog; it renders an unregistered stub, never a dead end. */
+ * Actors are records: the mirror row in `substrate.reamde.dev/core/actor`,
+ * or, for a single-writer bundle whose actor IS its authority (record 60),
+ * the `authority` mirror. A name in neither still has a real history; it
+ * renders without a record, never as a dead end. Technical mode shows the
+ * raw actor id, the record behind it and the full changelog table. */
 
 import { useQuery } from "@tanstack/react-query"
-import { Link } from "@tanstack/react-router"
-import { ArrowUpRightIcon } from "lucide-react"
+import { parseAsStringLiteral, useQueryState } from "nuqs"
 
 import { ChangelogPanel } from "@/components/changelog/changelog-panel"
-import { Badge } from "@/components/ui/badge"
-import { Skeleton } from "@/components/ui/skeleton"
+import { HistoryFeed, LiveStatus } from "@/components/changelog/history-feed"
+import { ActorMark } from "@/components/identity/actor-ref"
+import { CopyButton } from "@/components/identity/copy-button"
+import { DocPage } from "@/components/identity/page-layout"
+import { PageHeader } from "@/components/identity/page-header"
+import { RecordRef } from "@/components/identity/record-ref"
+import { SectionHead } from "@/components/identity/section-head"
+import { Segmented } from "@/components/ui/segmented"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { useHistoryFeed } from "@/hooks/use-history-feed"
+import { actorIdentity } from "@/lib/actor-identity"
 import { actorMirrorsQueryOptions, resolveActor } from "@/lib/api/actors"
+import { CORE_PACKAGE } from "@/lib/api/http"
+import { HISTORY_LAYOUTS } from "@/lib/history"
 import { actorRoute } from "@/router"
+import { cn } from "@/lib/utils"
 
-function IdentityCard({ actorId }: { actorId: string }) {
+function ActorMeta({ actorId }: { actorId: string }) {
   const resolved = useQuery({
     ...actorMirrorsQueryOptions,
     select: (mirrors) => resolveActor(mirrors, actorId),
   })
-
-  if (resolved.isPending) {
-    return (
-      <div className="flex flex-col gap-1.5">
-        <Skeleton className="h-5 w-56" />
-        <Skeleton className="h-3.5 w-40" />
-      </div>
-    )
-  }
-
-  const record = resolved.data?.record
-  const collection = resolved.data?.collection
-  const source =
-    typeof record?.properties.source === "string"
-      ? record.properties.source
-      : undefined
-  const authority =
-    typeof record?.properties.authority === "string"
-      ? record.properties.authority
-      : undefined
-
-  // No avatar/initials bubble — actors render name-only everywhere (owner
-  // redline 2026-08-06 on ActorChip; the identity card follows the same voice).
+  const identity = actorIdentity(actorId)
+  const record = identity.record
+  const mirror = resolved.data
   return (
-    <div className="flex min-w-0 items-center gap-3">
-      <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-2">
-          <h1 className="truncate data text-lg font-semibold">{actorId}</h1>
-          {source && (
-            <Badge variant="outline" className="font-normal">
-              {source}
-            </Badge>
-          )}
-          {collection === "authority" && (
-            <Badge variant="outline" className="font-normal">
-              writes as its authority
-            </Badge>
-          )}
-        </div>
-        <p className="flex items-center gap-2 text-xs text-muted-foreground">
-          {record ? (
-            <>
-              {authority && <span className="data">{authority}</span>}
-              <Link
-                to="/data/$authority/$pkg/$name/$id"
-                params={{
-                  authority: "substrate.reamde.dev",
-                  pkg: "core",
-                  name: collection!,
-                  id: actorId,
-                }}
-                className="inline-flex items-center gap-0.5 underline-offset-4 hover:underline"
-              >
-                View record
-                <ArrowUpRightIcon className="size-3" />
-              </Link>
-            </>
-          ) : resolved.isError ? (
-            <span>{resolved.error.message}</span>
-          ) : (
-            <span>
-              This actor has no record here. The changelog below is still
-              everything it did.
-            </span>
-          )}
-        </p>
-      </div>
-    </div>
+    <>
+      <span className="inline-flex items-center gap-1">
+        <span className="font-mono text-[12px] [overflow-wrap:anywhere]">
+          {actorId}
+        </span>
+        <CopyButton value={actorId} label="Copy the actor id" />
+      </span>
+      {record && <RecordRef kind={record.kind} id={record.id} />}
+      {mirror && (
+        <RecordRef
+          kind={`${CORE_PACKAGE}/${mirror.collection}`}
+          id={mirror.record.id}
+        />
+      )}
+    </>
   )
 }
 
 export function ActorPage() {
   const { actorId } = actorRoute.useParams()
+  const [technical] = useTechnicalDetails()
+  const [layout, setLayout] = useQueryState(
+    "layout",
+    parseAsStringLiteral(["sentences", "table"] as const).withDefault(
+      "sentences"
+    )
+  )
+  const table = technical && layout === "table"
+  const identity = actorIdentity(actorId)
+  const feed = useHistoryFeed(
+    { actors: [actorId] },
+    { enabled: !table, values: true }
+  )
+  const title =
+    identity.cls === "agent"
+      ? `${identity.name} agent`
+      : identity.via
+        ? `${identity.name}, via ${identity.via}`
+        : identity.name
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 px-6 pt-5 pb-2">
-        <IdentityCard actorId={actorId} />
-      </div>
-      {/* keyed: switching actors resets follow state and facets cleanly */}
-      <ChangelogPanel key={actorId} fixedActors={[actorId]} surface="actor" />
+      <DocPage className={cn(table && "pb-2 md:pb-3")}>
+        <PageHeader
+          glyph={
+            <span className="inline-grid origin-top-left scale-[1.6] p-0.5">
+              <ActorMark identity={identity} />
+            </span>
+          }
+          title={title}
+          description={identity.description}
+          meta={technical ? <ActorMeta actorId={actorId} /> : undefined}
+          actions={
+            <div className="flex items-center gap-3">
+              {!table && <LiveStatus status={feed.status} />}
+              {technical && (
+                <Segmented
+                  label="Layout"
+                  value={layout}
+                  options={HISTORY_LAYOUTS}
+                  onChange={(value) =>
+                    void setLayout(value === "sentences" ? null : value)
+                  }
+                />
+              )}
+            </div>
+          }
+        />
+        {!table && (
+          <>
+            <SectionHead
+              title={`What ${identity.cls === "you" ? "you" : "it"} changed`}
+            />
+            <HistoryFeed
+              feed={feed}
+              empty={`${identity.cls === "you" ? "You haven’t" : "It hasn’t"} changed anything yet.`}
+            />
+          </>
+        )}
+      </DocPage>
+      {/* keyed: switching actors resets the tail and the facets cleanly */}
+      {table && (
+        <ChangelogPanel key={actorId} fixedActors={[actorId]} surface="actor" />
+      )}
     </div>
   )
 }

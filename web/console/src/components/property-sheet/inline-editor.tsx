@@ -1,0 +1,437 @@
+/** A property edited where it is read. A click on a value opens the editor
+ * its datatype earns: a text box, a number, a calendar for a date (the native
+ * control on a touch device), a textarea for
+ * prose, a list to pick from for an enum, the moves a state may make, a
+ * record picker for a reference, and for the shapes that need room (lists,
+ * objects, maps, JSON) the whole control in a panel under the row. Enter or
+ * leaving the box saves, Esc cancels, and a save is one property's PATCH
+ * carrying the version the page read. */
+
+import {
+  useRef,
+  useState,
+  type ComponentProps,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react"
+import { useQuery } from "@tanstack/react-query"
+import { ArrowRightIcon } from "lucide-react"
+
+import { prefersNativeDate } from "./calendar"
+import { DatePicker } from "./date-picker"
+import { fromLocalInput, toLocalInput } from "./dates"
+import { ListEditor } from "./list-editor"
+import { editStyle, propertyWrite } from "./sheet-model"
+import { type SheetRow } from "./sheet-rows"
+import { useEditBase, useRecordPatch, writeError } from "./use-record-patch"
+import { EnumTag } from "@/components/identity/enum-tag"
+import { StateBadge } from "@/components/identity/state-badge"
+import { PropertyField } from "@/components/record/property-field"
+import { RecordCombobox } from "@/components/record/record-combobox"
+import { Button } from "@/components/ui/button"
+import { ChoiceList } from "@/components/ui/choice-list"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { Spinner } from "@/components/ui/spinner"
+import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+import { enumLabel } from "@/lib/grid-values"
+import { recordTitleQueryOptions } from "@/lib/reference-titles"
+import {
+  seedField,
+  type FormField,
+  type FormValue,
+  type RefValue,
+} from "@/lib/record-form"
+import { humanizeName, movesFrom } from "@/lib/record-schema"
+import { stateWord } from "@/lib/state-words"
+import { cn } from "@/lib/utils"
+
+export interface InlineEditorProps {
+  row: SheetRow & { field: FormField }
+  record: SubstrateRecord
+  kinds: KindInfo[]
+  onDone: () => void
+  onError: (message: string | undefined) => void
+}
+
+export function InlineEditor(props: InlineEditorProps) {
+  const style = editStyle(props.row.field)
+  const control = props.row.field.control
+  if (control === "state") return <StateMoves {...props} />
+  if (control === "select") return <EnumPicker {...props} />
+  if (control === "list") return <ListEditor {...props} />
+  // A finger gets the platform's own date control, the better keyboard there.
+  if (control === "datetime" && !prefersNativeDate()) {
+    return <DateEditor {...props} />
+  }
+  if (control === "reference" && style === "line") {
+    return <ReferencePicker {...props} />
+  }
+  if (style === "line") return <LineEditor {...props} />
+  return <PanelEditor {...props} />
+}
+
+/** Saves one write and reports how it went. */
+function useSave({ row, record, onDone, onError }: InlineEditorProps) {
+  const patch = useRecordPatch(record, useEditBase(record))
+  async function save(next: FormValue) {
+    const write = propertyWrite(row.field, row.value, next)
+    if (write.error) {
+      onError(write.error)
+      return
+    }
+    if (!write.properties) {
+      onError(undefined)
+      onDone()
+      return
+    }
+    try {
+      await patch.mutateAsync(write.properties)
+      onError(undefined)
+      onDone()
+    } catch (error) {
+      onError(writeError(error))
+    }
+  }
+  return { save, pending: patch.isPending }
+}
+
+const INPUT =
+  "w-full min-w-0 rounded-md border border-primary bg-background px-2 py-1 text-sm text-foreground ring-3 ring-primary-soft outline-none"
+
+function LineEditor(props: InlineEditorProps) {
+  const { row, onDone, onError } = props
+  const { field } = row
+  const { save, pending } = useSave(props)
+  const isDate = field.control === "datetime" && field.spec.kind !== "date"
+  const [initial] = useState(() => {
+    const seeded = seedField(field, row.value, false)
+    const s = typeof seeded === "string" ? seeded : ""
+    return isDate ? toLocalInput(s) : s
+  })
+  const [text, setText] = useState(initial)
+  const done = useRef(false)
+
+  function commit() {
+    if (done.current) return
+    // Leaving the box as it opened is not an edit. The draft is compared,
+    // not the stored value: a date shown to the minute would otherwise write
+    // back the stored instant without its seconds.
+    if (text === initial) return cancel()
+    done.current = true
+    void save(isDate ? fromLocalInput(text) : text).finally(() => {
+      done.current = false
+    })
+  }
+  function cancel() {
+    done.current = true
+    onError(undefined)
+    onDone()
+  }
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      e.preventDefault()
+      cancel()
+    } else if (
+      e.key === "Enter" &&
+      (field.control !== "prose" || e.metaKey || e.ctrlKey)
+    ) {
+      e.preventDefault()
+      commit()
+    }
+  }
+
+  const common = {
+    autoFocus: true,
+    "aria-label": field.label,
+    disabled: pending,
+    value: text,
+    onKeyDown,
+    onBlur: commit,
+  }
+  return (
+    <div className="flex w-full min-w-0 items-center gap-2">
+      {field.control === "prose" ? (
+        <textarea
+          {...common}
+          rows={Math.min(10, Math.max(3, text.split("\n").length + 1))}
+          className={cn(INPUT, "resize-y leading-relaxed")}
+          onChange={(e) => setText(e.target.value)}
+        />
+      ) : (
+        <input
+          {...common}
+          type={
+            field.control === "secret"
+              ? "password"
+              : field.control === "number"
+                ? "number"
+                : field.spec.kind === "date"
+                  ? "date"
+                  : isDate
+                    ? "datetime-local"
+                    : field.inputType
+          }
+          placeholder={
+            field.control === "secret"
+              ? "A new value; the stored one never reads back"
+              : field.example
+                ? `e.g. ${field.example}`
+                : undefined
+          }
+          className={INPUT}
+          onChange={(e) => setText(e.target.value)}
+        />
+      )}
+      {pending && <Spinner className="size-3.5 shrink-0" />}
+    </div>
+  )
+}
+
+function DateEditor(props: InlineEditorProps) {
+  const { row, onDone, onError } = props
+  const { save, pending } = useSave(props)
+  return (
+    <DatePicker
+      label={row.field.label}
+      value={row.value}
+      withTime={row.field.spec.kind !== "date"}
+      required={row.field.required}
+      pending={pending}
+      onSave={(next) => void save(next)}
+      onCancel={() => {
+        onError(undefined)
+        onDone()
+      }}
+    />
+  )
+}
+
+/** A short list that drops from the value: a popover, so no row below can
+ * paint over it or clip it, around the one ChoiceList. It opens on the value
+ * held. Esc, a click outside or a click on the value closes it without a
+ * write. */
+function ChoicePop({
+  shown,
+  onClose,
+  ...list
+}: {
+  /** What the value reads while the list is open. */
+  shown: ReactNode
+  onClose: () => void
+} & Omit<ComponentProps<typeof ChoiceList>, "ref">) {
+  const root = useRef<HTMLDivElement>(null)
+  return (
+    <Popover
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
+      <PopoverTrigger
+        nativeButton={false}
+        render={<span className="min-w-0 text-muted-foreground" />}
+      >
+        {shown}
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        initialFocus={root}
+        className="w-64 max-w-[calc(100vw-2rem)] gap-0 p-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <ChoiceList ref={root} {...list} />
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function StateMoves(props: InlineEditorProps) {
+  const { row, onDone, onError } = props
+  const { save, pending } = useSave(props)
+  const current = typeof row.value === "string" ? row.value : ""
+  const initial = row.field.spec.initial
+  const moves = movesFrom(row.field.spec, current)
+  return (
+    <ChoicePop
+      label={`Move ${row.field.label}`}
+      shown={<StateBadge value={current} initial={initial} />}
+      onClose={() => {
+        onError(undefined)
+        onDone()
+      }}
+      heading={moves.length ? "Move to" : `No moves from ${current || "here"}`}
+      // A state's badge says its stored value itself in technical mode.
+      showValues={false}
+      options={moves.map((move) => ({
+        value: move.to,
+        label: stateWord(move.to),
+        display: (
+          <>
+            <ArrowRightIcon aria-hidden className="size-3 text-faint" />
+            <StateBadge value={move.to} initial={initial} />
+          </>
+        ),
+        hint: stampHint(move.stamps),
+        disabled: pending,
+      }))}
+      selected={[]}
+      onChange={([to]) => {
+        if (to) void save(to)
+      }}
+      footer={
+        pending && (
+          <>
+            <Spinner className="size-3" /> Saving
+          </>
+        )
+      }
+    />
+  )
+}
+
+/** "fills in Completed at": what a move stamps, said beside it. */
+function stampHint(stamps: string[]): string | undefined {
+  if (!stamps.length) return undefined
+  return `fills in ${stamps.map((s) => humanizeName(s)).join(", ")}`
+}
+
+function EnumPicker(props: InlineEditorProps) {
+  const { row, onDone, onError } = props
+  const { save, pending } = useSave(props)
+  const current = typeof row.value === "string" ? row.value : ""
+  const spec = row.field.spec
+  // A deprecated value is never offered; the one a record still holds keeps
+  // its row, so the list says what is there.
+  const offered = (row.field.options ?? []).filter(
+    (o) => !o.deprecated || o.value === current
+  )
+  return (
+    <ChoicePop
+      label={`Choose ${row.field.label}`}
+      shown={current ? <EnumTag prop={spec} value={current} /> : "Choose…"}
+      onClose={() => {
+        onError(undefined)
+        onDone()
+      }}
+      options={offered.map((option) => ({
+        value: option.value,
+        label: enumLabel(spec, option.value),
+        display: <EnumTag prop={spec} value={option.value} />,
+        hint: option.deprecated ? "no longer offered" : undefined,
+        disabled: pending,
+      }))}
+      selected={current ? [current] : []}
+      clearLabel={row.field.required ? undefined : "Clear"}
+      onChange={([value]) => void save(value ?? null)}
+    />
+  )
+}
+
+function ReferencePicker(props: InlineEditorProps) {
+  const { row, kinds, record, onDone, onError } = props
+  const { save, pending } = useSave(props)
+  const pin = row.field.spec.to ?? ""
+  const chosen = useRef(false)
+  const seeded = seedField(row.field, row.value, false) as RefValue
+  // The chosen record may sit past the loaded page; its title is read.
+  const title = useQuery({
+    ...recordTitleQueryOptions(seeded.kind || pin, seeded.id),
+    enabled: Boolean(seeded.id),
+  })
+  return (
+    <div className="flex w-full min-w-0 items-center gap-2">
+      <RecordCombobox
+        pin={pin}
+        kinds={kinds}
+        self={record.id}
+        defaultOpen
+        ariaLabel={row.field.label}
+        value={seeded.id}
+        valueTitle={title.data ?? undefined}
+        placeholder="Choose…"
+        onSelect={(id) => {
+          chosen.current = true
+          // The record already held keeps its link data; another starts
+          // with none.
+          void save(id === seeded.id ? seeded : { kind: pin, id })
+        }}
+        onClear={
+          row.field.required
+            ? undefined
+            : () => {
+                chosen.current = true
+                void save(null)
+              }
+        }
+        onOpenChange={(open) => {
+          if (!open && !chosen.current) {
+            onError(undefined)
+            onDone()
+          }
+        }}
+      />
+      {pending && <Spinner className="size-3.5 shrink-0" />}
+    </div>
+  )
+}
+
+/** The shapes that need room: the whole control, and an explicit save. */
+function PanelEditor(props: InlineEditorProps) {
+  const { row, kinds, record, onDone, onError } = props
+  const { save, pending } = useSave(props)
+  const [initial] = useState<FormValue>(() =>
+    seedField(row.field, row.value, false)
+  )
+  const [value, setValue] = useState<FormValue>(initial)
+  // A save with nothing changed closes: the seeded draft is the stored value
+  // as the control shows it, which may round what is stored.
+  const commit = () => {
+    if (value === initial) {
+      onError(undefined)
+      onDone()
+    } else void save(value)
+  }
+  return (
+    <div
+      className="flex w-full min-w-0 flex-col gap-3 rounded-lg border border-primary bg-background p-3 ring-3 ring-primary-soft"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          onError(undefined)
+          onDone()
+        }
+      }}
+    >
+      <PropertyField
+        field={row.field}
+        value={value}
+        onChange={setValue}
+        mode="patch"
+        kinds={kinds}
+        self={record.id}
+        idPrefix="sheet"
+        bare
+      />
+      <div className="flex items-center gap-2">
+        <Button size="sm" disabled={pending} onClick={commit}>
+          {pending && <Spinner className="size-3.5" />}
+          Save
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={pending}
+          onClick={() => {
+            onError(undefined)
+            onDone()
+          }}
+        >
+          Cancel
+        </Button>
+      </div>
+    </div>
+  )
+}

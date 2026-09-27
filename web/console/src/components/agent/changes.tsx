@@ -1,32 +1,39 @@
-/** The engine-stamped `changes` of a turn, as rows: one per changelog entry a
- * dispatch (or a decision) wrote — the op as a badge in the change-request
- * voice (`delete` wears destructive, a reviewer must never have to read the
- * label), and the record it moved as the pill every reference renders as. The
- * seq rides as the row's title: it addresses the delta in the changelog for a
- * reader who wants the exact entry. */
+/** The engine-stamped `changes` of a turn, as sentences: one per changelog
+ * entry a dispatch (or a decision) wrote — what happened to which record, the
+ * record as its mark. Technical mode adds the stored op and the changelog
+ * seq, which addresses the exact entry. */
 
-import { RecordPill } from "@/components/record-pill"
-import { Badge } from "@/components/ui/badge"
+import { RecordRef } from "@/components/identity/record-ref"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import type { ChangeStamp } from "@/lib/api/transcript"
+import { cn } from "@/lib/utils"
+
+const VERBS: Record<string, string> = {
+  put: "Saved",
+  patch: "Changed",
+  delete: "Deleted",
+  merge: "Merged",
+  split: "Split",
+}
 
 function ChangeRow({ change }: { change: ChangeStamp }) {
+  const [technical] = useTechnicalDetails()
   return (
-    <div
-      className="flex min-w-0 items-center gap-1.5"
-      title={`changelog seq ${change.seq}`}
-    >
-      <Badge
-        variant={
-          change.op === "delete" || !change.op ? "destructive" : "outline"
-        }
-        className="shrink-0 data font-normal"
+    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px]">
+      <span
+        className={cn(
+          "shrink-0 text-muted-foreground",
+          change.op === "delete" && "text-destructive"
+        )}
       >
-        {change.op || "unknown op"}
-      </Badge>
-      <RecordPill kind={change.kind} id={change.id} className="min-w-0" />
-      <span className="ml-auto shrink-0 data text-[0.65rem] text-muted-foreground">
-        seq {change.seq}
+        {VERBS[change.op] ?? "Wrote"}
       </span>
+      <RecordRef kind={change.kind} id={change.id} className="min-w-0" />
+      {technical && (
+        <span className="font-mono text-[11.5px] text-faint">
+          {change.op || "unknown op"} · seq {change.seq}
+        </span>
+      )}
     </div>
   )
 }

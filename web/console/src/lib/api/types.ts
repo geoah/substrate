@@ -248,6 +248,9 @@ export interface Page<T = SubstrateRecord> {
   /** On a window read (`at` bounded on both ends): each series the expansion
    * could not read, named; the page stands without it. */
   problems?: OccurrenceProblem[]
+  /** The size of the whole filtered set, when the read asked `count=1`;
+   * absent otherwise, and from a server that predates the parameter. */
+  count?: number
 }
 
 /** A ranked read's answer (`substrate.RankedPage`, `GET /records?q=`): the
@@ -298,6 +301,25 @@ export interface AffectedRecord {
   id: string
   version?: number
   deleted?: boolean
+  /** What the entry did to each property, before and after, in name order.
+   * Only on a read that asked (`values=1`, decision 0135) from a server that
+   * knows it; absent otherwise, so its absence is never "nothing changed". */
+  properties?: PropertyChange[]
+}
+
+/** One property an entry moved (`substrate.PropertyChange`). `before` is
+ * absent where the record held no value, `after` where the entry cleared it;
+ * a sensitive property reads `<redacted>` on both sides. `beforeUnknown`
+ * marks a before the server could not derive, which is not "there was none".
+ * `renamedFrom` is the old name where the entry moved the value to `name`
+ * under a declaration's rename (decision 0114); `before` is then the value
+ * the old name held, and the old name has no entry of its own. */
+export interface PropertyChange {
+  name: string
+  renamedFrom?: string
+  before?: unknown
+  after?: unknown
+  beforeUnknown?: boolean
 }
 
 /** One changelog entry as the server serializes it (`substrate.Change`). */
@@ -347,6 +369,33 @@ export interface ChangePage {
   generation: string
 }
 
+/** Consecutive rows of the filtered feed that share an actor, a kind and a
+ * verb (`substrate.ChangeRun`, decision 0126). A run is whole: a page never
+ * ends inside one, so `count` is exact. `verb` is `create`, `restore` or
+ * `update` for a put (a patch is an `update`) and the op otherwise.
+ * `recordId` is set when the run touched one record. */
+export interface ChangeRun {
+  actor: string
+  kind: string
+  verb: string
+  count: number
+  records: number
+  recordId?: string
+  newestSeq: number
+  oldestSeq: number
+  newestTs: string
+  oldestTs: string
+}
+
+/** The `runs=1` history page (`substrate.ChangeRunPage`): `first` counts
+ * runs, and `cursor` is the oldest run's `oldestSeq` when rows lie below. */
+export interface ChangeRunPage {
+  runs: ChangeRun[]
+  cursor?: number
+  head: number
+  generation: string
+}
+
 /** One predicate of the filter grammar (`substrate.Cond`). The console writes
  * eq/in/contains/prefix; the rest of the grammar rides along for completeness. */
 export interface Cond {
@@ -368,8 +417,9 @@ export interface Cond {
 
 /** The filter grammar (`substrate.Filter`, `?filter=` as URL-encoded JSON on
  * `GET /records`). `kinds` names the kinds a list reads — one for a
- * collection, several for a cross-kind read, none for every kind; the ranked
- * read and the tail admit `kinds` alone. `implements` intersects with it;
+ * collection, several for a cross-kind read, none for every kind; the tail
+ * admits `kinds` alone and the ranked read `kinds` and `purposes`.
+ * `implements` and `purposes` intersect with it;
  * `deleted` absent means live records only; `orphaned` picks the mapping
  * targets the engine marked (sources all gone, nothing above the machine
  * tier holding a property); `ambiguous` picks the mapping sources a probe
@@ -382,6 +432,9 @@ export interface RecordFilter {
   search?: string
   kinds?: string[]
   implements?: string
+  /** The kinds declaring one of these purposes, an undeclared purpose
+   * reading as `primary`. */
+  purposes?: ("primary" | "supporting" | "internal")[]
   ids?: string[]
   properties?: Record<string, Cond>
   labels?: Record<string, Cond>
@@ -417,6 +470,9 @@ export interface ReferenceSite {
 export interface EnumValue {
   value: string
   label: string
+  /** The add-and-deprecate marker: still admitted and still held by records
+   * that carry it, never offered by a picker. */
+  deprecated?: boolean
 }
 
 /** Parse a property's raw `values` (the enum admitted set) into `EnumValue[]`.
@@ -436,6 +492,7 @@ export function parseEnumValues(raw: unknown): EnumValue[] | undefined {
         out.push({
           value: rec.value,
           label: typeof rec.label === "string" ? rec.label : "",
+          ...(rec.deprecated === true ? { deprecated: true } : {}),
         })
       }
     }
@@ -667,6 +724,10 @@ export interface BundleClosure {
    * kinds ARE before an install has put them in the registry. Absent for a
    * kind that declares none, and from an older server whole. */
   kindDescriptions?: Record<string, string>
+  /** Each kind's declared `purpose` (decision record 0133), keyed the same
+   * way. Absent for a kind that declares none, which reads as primary, and
+   * from an older server whole. */
+  kindPurposes?: Record<string, string>
   /** The contracts the closure declares, and what each one is. A package can
    * ship traits and nothing else, so these are the whole of what it adds. */
   traits: string[] | null

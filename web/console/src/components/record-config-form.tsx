@@ -76,6 +76,10 @@ interface RecordConfigFormProps {
    * (a test seam, a budget) are not what a person setting up credentials
    * came for. */
   first?: readonly string[]
+  /** Help under a property's control, by property name, in the surface's
+   * own words: it replaces the declaration's description, which is written
+   * for whoever wrote the bundle. */
+  help?: Readonly<Record<string, string>>
   open: boolean
   onOpenChange: (open: boolean) => void
   /** Run after a successful write (refresh the owning surface). */
@@ -89,6 +93,7 @@ export function RecordConfigForm({
   description,
   lead,
   first,
+  help,
   open,
   onOpenChange,
   onSaved,
@@ -96,8 +101,11 @@ export function RecordConfigForm({
   const queryClient = useQueryClient()
   const registry = useQuery(kindsQueryOptions)
   const fields = useMemo(
-    () => firstThenRest(buildFormFields(type), first ?? []),
-    [type, first]
+    () =>
+      firstThenRest(buildFormFields(type), first ?? []).map((f) =>
+        help?.[f.name] ? { ...f, description: help[f.name] } : f
+      ),
+    [type, first, help]
   )
   // The fold: with a `first` set, everything not in it is an extra.
   const extras = useMemo(

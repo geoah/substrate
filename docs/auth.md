@@ -185,7 +185,7 @@ at all.**
 This is the one rule that bounds what a leaked token can do. Without it, any
 leaked token could rotate the password and outlive its own revocation; with it,
 a token's blast radius is the data, never the account. It is also why the
-console's account page sends no bearer token at all on either change.
+console's Settings page sends no bearer token at all on either change.
 
 The generic record API cannot touch either auth kind: the credential cannot be
 put, patched, or deleted through REST or the CLI's record surface,

@@ -19,6 +19,7 @@ data:
     owns, it names the exact closure it ships — kinds, record mappings, functions,
     agents and triggers — and it carries the runtime state the lifecycle verbs
     own: disabled, uninstalled, purging.
+  purpose: internal
   names:
     singular: bundle
   displayTemplate: "{localName}"

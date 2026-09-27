@@ -7,10 +7,14 @@ import { describe, expect, it } from "vitest"
 import {
   decisionNoticeOf,
   deliveryNoticeOf,
+  EMPTY_OVERLAY,
   interactionIdOf,
   interactionNoticeOf,
   proposedRequestId,
+  pushDelta,
+  pushToolStart,
   requestIdOf,
+  settleTool,
   toolOK,
   transcriptOf,
   type ToolCallView,
@@ -440,7 +444,22 @@ describe("decisionNoticeOf", () => {
       target: "samples.substrate.reamde.dev/people/person/p1",
       version: 4,
       deleted: undefined,
+      adjusted: undefined,
     })
+  })
+
+  it("says the owner applied their own values when the envelope carries them", () => {
+    const notice = decisionNoticeOf(
+      system(
+        JSON.stringify({
+          event: "proposalDecision",
+          request: "substrate.reamde.dev/core/recordpatchrequest/r1",
+          decision: "accepted",
+          adjustedDiff: { properties: { name: "best" } },
+        })
+      )
+    )
+    expect(notice?.adjusted).toBe(true)
   })
 
   it("says nothing about a system row that is not a decision", () => {
@@ -507,5 +526,34 @@ describe("interactions", () => {
         content: '{"event":"proposalDecision"}',
       })
     ).toBeUndefined()
+  })
+})
+
+describe("the live overlay", () => {
+  const started = { id: "c1", name: "query", arguments: "{}" }
+
+  it("opens an assistant turn for a delta and appends to it", () => {
+    let live = pushDelta(EMPTY_OVERLAY, "Hel", 1)
+    live = pushDelta(live, "lo", 2)
+    expect(live.turns).toHaveLength(1)
+    expect(live.turns[0]).toMatchObject({ role: "assistant", content: "Hello" })
+  })
+
+  it("settles a call by id, and the next delta starts a new turn", () => {
+    let live = pushToolStart(EMPTY_OVERLAY, started, 1)
+    live = settleTool(live, started, '{"records":[]}', true, 2)
+    expect(live.turns[0].tools[0]).toMatchObject({ ok: true })
+    expect(live.closed).toBe(true)
+    live = pushDelta(live, "Done.", 3)
+    expect(live.turns).toHaveLength(2)
+  })
+
+  it("gives an unclaimed finish a card of its own", () => {
+    const live = settleTool(EMPTY_OVERLAY, started, "refused", false, 1)
+    expect(live.turns).toHaveLength(1)
+    expect(live.turns[0].tools[0]).toMatchObject({
+      ok: false,
+      output: "refused",
+    })
   })
 })

@@ -3,6 +3,11 @@ import { beforeEach, describe, expect, it } from "vitest"
 
 import {
   DEFAULT_SEARCH_MODE,
+  EVERYDAY_PURPOSES,
+  searchPurposes,
+  SEARCH_MODE_DESCRIPTION,
+  SEARCH_MODE_DETAIL,
+  SEARCH_MODES,
   isSearchMode,
   loadSearchMode,
   saveSearchMode,
@@ -31,5 +36,45 @@ describe("the search mode preference", () => {
     expect(isSearchMode("semantic")).toBe(true)
     expect(isSearchMode("Lexical")).toBe(false)
     expect(isSearchMode(null)).toBe(false)
+  })
+})
+
+describe("the mode blurbs", () => {
+  it("say what each arm does in the reader's words, the machinery kept for technical mode", () => {
+    for (const mode of SEARCH_MODES) {
+      expect(SEARCH_MODE_DESCRIPTION[mode]).not.toMatch(
+        /embedding|arm|fused|provider/i
+      )
+      expect(SEARCH_MODE_DETAIL[mode]).toBeTruthy()
+    }
+    expect(SEARCH_MODE_DESCRIPTION.lexical).toBe(
+      "Matches the words you typed. Instant."
+    )
+  })
+})
+
+describe("what a search reaches", () => {
+  it("is what you keep and its details, in both modes, by default", () => {
+    expect(EVERYDAY_PURPOSES).toEqual(["primary", "supporting"])
+    for (const technical of [false, true]) {
+      expect(searchPurposes({ technical, includeSystem: false })).toEqual(
+        EVERYDAY_PURPOSES
+      )
+    }
+  })
+
+  it("adds the substrate's own records only on request in technical mode", () => {
+    expect(
+      searchPurposes({ technical: true, includeSystem: true })
+    ).toBeUndefined()
+    expect(searchPurposes({ technical: false, includeSystem: true })).toEqual(
+      EVERYDAY_PURPOSES
+    )
+  })
+
+  it("searches a collection picked by name whatever its purpose", () => {
+    expect(
+      searchPurposes({ narrowed: true, technical: false, includeSystem: false })
+    ).toBeUndefined()
   })
 })

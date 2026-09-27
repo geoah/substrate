@@ -1,187 +1,365 @@
 // @vitest-environment jsdom
-/** The record dropdown. It replaced a datalist, which hung off a text box and
- * showed nothing but the value: what a person is owed here is a list they can
- * OPEN and read, so the contract under test is that clicking shows the records
- * with what distinguishes them, that choosing one inserts it, and that a value
- * the list does not hold is still reachable. */
+/** The record dropdown. What a person is owed here is a list they can OPEN and
+ * read: clicking shows the records by title with their kind's glyph, typing
+ * asks the SERVER (a collection of thousands is a few keystrokes away, not
+ * capped at whatever page the browser happened to load), choosing one inserts
+ * its id, a value the list does not hold is still reachable by typing it, and
+ * the read ALWAYS ends: rows, "No <plural> yet", or a refusal with a retry.
+ * A spinner that never stops (owner report, 2026-09-26: "Reading the
+ * collection" forever on a person's Member of) is the failure this guards. */
 
 import {
+  QueryClient,
+  QueryClientProvider,
+  onlineManager,
+} from "@tanstack/react-query"
+import {
+  act,
   cleanup,
   fireEvent,
   render,
   screen,
   waitFor,
 } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { RecordOption } from "@/lib/identities"
+import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+
+type Answer = { records: unknown[]; cursor?: string } | "hang" | Error
+
+const wire = vi.hoisted(() => ({
+  /** Every list read the picker made, as its parsed filter. */
+  reads: [] as { first: number; filter: Record<string, unknown> }[],
+  /** What a read answers, by the filter it carried. */
+  answer: ((): unknown => ({ records: [] })) as (
+    filter: Record<string, unknown>
+  ) => unknown,
+}))
+
+vi.mock("@/lib/api/http", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/http")>()
+  return {
+    ...actual,
+    request: vi.fn(
+      (
+        _method: string,
+        path: string,
+        _body?: unknown,
+        opts: { signal?: AbortSignal } = {}
+      ) => {
+        const url = new URL(path, "http://localhost")
+        const filter = JSON.parse(url.searchParams.get("filter") ?? "{}")
+        wire.reads.push({
+          first: Number(url.searchParams.get("first")),
+          filter,
+        })
+        const answer = wire.answer(filter) as Answer
+        if (answer instanceof Error) return Promise.reject(answer)
+        if (answer === "hang") {
+          // A read the server never answers: it ends only when aborted.
+          return new Promise((_, reject) =>
+            opts.signal?.addEventListener("abort", () =>
+              reject(new Error("aborted"))
+            )
+          )
+        }
+        return Promise.resolve(answer)
+      }
+    ),
+  }
+})
+
+import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
+import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { RecordCombobox } from "./record-combobox"
 
-/** The function collection, as the picker offers it: one row per record, by
- * the id the write names it with. */
-const HOST_FUNCTIONS: RecordOption[] = [
-  {
-    value: "substrate.reamde.dev/core/query",
-    title: "",
+const ORG = "ada.example.com/people/organization"
+const FUNCTION = "substrate.reamde.dev/core/function"
+
+function kind(identity: string): KindInfo {
+  const [authority, pkg, name] = identity.split("/")
+  return {
+    identity,
+    name,
+    authority,
+    package: pkg,
+    version: 1,
+    source: "installed",
+    description: "",
+    definition: { properties: {} },
+  }
+}
+const KINDS = [kind(ORG), kind(FUNCTION)]
+
+function row(
+  k: string,
+  id: string,
+  properties: Record<string, unknown>
+): SubstrateRecord {
+  return {
+    id,
+    kind: k,
+    properties,
+    labels: {},
+    version: 1,
+    createdAt: "x",
+    updatedAt: "x",
+  }
+}
+
+const ORGS = [
+  row(ORG, "acme", { name: "Acme Robotics", title: "Acme Robotics" }),
+  row(ORG, "globex", { name: "Globex", title: "Globex" }),
+]
+
+/** The host functions: registry records with no title, named by their id,
+ * whose one-liner is what somebody choosing a tool wants to read. */
+const HOST_FUNCTIONS = [
+  row(FUNCTION, "substrate.reamde.dev/core/query", {
     description: "Read records: one by id, a filtered list, or a ranking.",
-  },
-  {
-    value: "substrate.reamde.dev/core/propose",
-    title: "",
+  }),
+  row(FUNCTION, "substrate.reamde.dev/core/propose", {
     description:
       "Propose a reviewed change to the graph instead of writing it.",
-  },
-  {
-    value: "crew.test.dev/summarize",
+  }),
+  row(FUNCTION, "crew.test.dev/summarize", {
     title: "Summarize",
     description: "shorten a note",
-  },
+  }),
 ]
 
 function open(
-  over: Partial<React.ComponentProps<typeof RecordCombobox>> = {}
+  over: Partial<React.ComponentProps<typeof RecordCombobox>> = {},
+  technical = false
 ): { onSelect: ReturnType<typeof vi.fn> } {
   const onSelect = vi.fn()
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   render(
-    <RecordCombobox
-      id="pick"
-      value=""
-      onSelect={onSelect}
-      options={HOST_FUNCTIONS}
-      loading={false}
-      capped={false}
-      ariaLabel="Tool"
-      {...over}
-    />
+    <ConsolePreferencesContext.Provider
+      value={{
+        preferences: {
+          collapsed: [],
+          favorites: [],
+          sidebarOpen: true,
+          ...DEFAULT_SETTINGS,
+          technicalDetails: technical,
+        },
+        busy: false,
+        change: () => {},
+        set: () => {},
+      }}
+    >
+      <QueryClientProvider client={client}>
+        <RecordCombobox
+          id="pick"
+          pin={ORG}
+          kinds={KINDS}
+          value=""
+          onSelect={onSelect}
+          ariaLabel="Member of"
+          {...over}
+        />
+      </QueryClientProvider>
+    </ConsolePreferencesContext.Provider>
   )
-  fireEvent.click(screen.getByLabelText(over.ariaLabel ?? "Tool"))
+  fireEvent.click(screen.getByLabelText(over.ariaLabel ?? "Member of"))
   return { onSelect }
 }
 
 function search(): HTMLInputElement {
-  return screen.getByPlaceholderText(
-    "Search records, or type an id"
-  ) as HTMLInputElement
+  return screen.getByPlaceholderText(/^Search/) as HTMLInputElement
 }
 
-/** The record rows the list is offering right now, best match first. cmdk
- * keeps every item mounted and hides what does not match, so "offered" is what
- * is left visible, and it SORTS by score, so the head is the best answer. */
+/** The record rows the list is offering right now, in order. */
 function showing(): string[] {
   return [...document.querySelectorAll("[cmdk-item]")]
     .filter((el) => !el.hasAttribute("hidden"))
-    .map((el) => el.getAttribute("data-value") ?? "")
-    .filter((v) => !v.startsWith("use-typed-"))
+    .map((el) => (el.getAttribute("data-value") ?? "").split(" ")[0])
+    .filter((v) => !v.startsWith("use-typed-") && v !== "remove-the-value")
 }
 
-afterEach(cleanup)
+beforeEach(() => {
+  wire.reads = []
+  wire.answer = (filter) => {
+    const kinds = (filter.kinds as string[]) ?? []
+    if (kinds.includes(FUNCTION)) return { records: HOST_FUNCTIONS }
+    if (filter.search) {
+      return {
+        records: [row(ORG, "org1412", { title: "Harbor Design 1412" })],
+      }
+    }
+    return { records: ORGS, cursor: "more" }
+  }
+})
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+  onlineManager.setOnline(true)
+})
 
 describe("the record dropdown", () => {
-  it("stays shut until it is opened, then shows the records", () => {
-    const onSelect = vi.fn()
+  it("stays shut until it is opened, then shows the records by title", async () => {
+    const client = new QueryClient()
     render(
-      <RecordCombobox
-        id="pick"
-        value=""
-        onSelect={onSelect}
-        options={HOST_FUNCTIONS}
-        loading={false}
-        capped={false}
-        ariaLabel="Tool"
-      />
+      <QueryClientProvider client={client}>
+        <RecordCombobox
+          pin={ORG}
+          kinds={KINDS}
+          onSelect={vi.fn()}
+          ariaLabel="Member of"
+        />
+      </QueryClientProvider>
     )
-    expect(screen.queryByPlaceholderText(/Search records/)).toBeNull()
-    fireEvent.click(screen.getByLabelText("Tool"))
-    expect(search()).toBeTruthy()
-  })
-
-  it("gives every record its id and its one-liner, so a host function is a card", () => {
-    open()
-    expect(screen.getByText("substrate.reamde.dev/core/propose")).toBeTruthy()
+    expect(screen.queryByPlaceholderText(/^Search/)).toBeNull()
+    fireEvent.click(screen.getByLabelText("Member of"))
+    expect(await screen.findByText("Acme Robotics")).toBeTruthy()
+    // Everyday mode names a record; the id it is stored under is not a name.
+    expect(screen.queryByText("acme")).toBeNull()
+    // Every row wears its kind's glyph.
     expect(
-      screen.getByText(/Propose a reviewed change to the graph/)
-    ).toBeTruthy()
-    // A record with a title leads with it and keeps the id beside it.
-    expect(screen.getByText("Summarize")).toBeTruthy()
-    expect(screen.getByText("crew.test.dev/summarize")).toBeTruthy()
-    expect(screen.getByText("shorten a note")).toBeTruthy()
+      document.querySelectorAll("[cmdk-item] [data-slot=kind-glyph]").length
+    ).toBe(2)
   })
 
-  it("inserts the record chosen", async () => {
+  it("inserts the record chosen, and closes", async () => {
     const { onSelect } = open()
-    fireEvent.click(screen.getByText("substrate.reamde.dev/core/propose"))
-    // The RECORD is what a selection inserts; the pin supplies the kind the
-    // write joins onto it.
-    expect(onSelect).toHaveBeenCalledWith("substrate.reamde.dev/core/propose")
-    // Choosing closes it: the list has done its job. The close settles after
-    // base-ui's animation check, so the unmount is awaited, not asserted flat.
+    fireEvent.click(await screen.findByText("Globex"))
+    expect(onSelect).toHaveBeenCalledWith("globex")
     await waitFor(() =>
-      expect(screen.queryByPlaceholderText(/Search records/)).toBeNull()
+      expect(screen.queryByPlaceholderText(/^Search/)).toBeNull()
     )
   })
 
-  it("narrows on what a reader can SEE, descriptions included", () => {
+  it("searches the server for what is typed, past the page it loaded", async () => {
     open()
-    // Nothing in this record's id or title says "shorten": only its
-    // description does, and it is the best answer to it.
+    await screen.findByText("Acme Robotics")
+    fireEvent.change(search(), { target: { value: "harb" } })
+    expect(await screen.findByText("Harbor Design 1412")).toBeTruthy()
+    const searched = wire.reads.find((r) => r.filter.search)
+    expect(searched?.filter).toEqual({ kinds: [ORG], search: "harb*" })
+  })
+
+  it("names an untitled registry record by its id, and finds it by its one-liner", async () => {
+    open({ pin: FUNCTION, ariaLabel: "Tool" })
+    expect(
+      await screen.findByText("substrate.reamde.dev/core/propose")
+    ).toBeTruthy()
+    expect(screen.getByText(/Propose a reviewed change/)).toBeTruthy()
     fireEvent.change(search(), { target: { value: "shorten" } })
-    expect(showing()[0]).toContain("crew.test.dev/summarize")
+    await waitFor(() => expect(showing()).toEqual(["crew.test.dev/summarize"]))
   })
 
-  it("offers whatever is typed, because a record can be minted at any time", () => {
-    const { onSelect } = open()
-    fireEvent.change(search(), { target: { value: "crew.test.dev/not-yet" } })
-    fireEvent.click(screen.getByText(/^Use/))
-    expect(onSelect).toHaveBeenCalledWith("crew.test.dev/not-yet")
-  })
-
-  it("does not offer to type what the list already holds", () => {
+  it("searches, and only searches, in everyday words", async () => {
     open()
-    fireEvent.change(search(), {
-      target: { value: "substrate.reamde.dev/core/propose" },
-    })
+    await screen.findByText("Acme Robotics")
+    expect(search().placeholder).toBe("Search organizations")
+    fireEvent.change(search(), { target: { value: "not-yet" } })
     expect(screen.queryByText(/^Use/)).toBeNull()
   })
 
-  it("selects with the keyboard and closes on escape", async () => {
-    const { onSelect } = open()
-    fireEvent.keyDown(search(), { key: "ArrowDown" })
-    fireEvent.keyDown(search(), { key: "Enter" })
-    expect(onSelect).toHaveBeenCalledTimes(1)
-    cleanup()
+  it("offers whatever is typed, because a record can be minted at any time", async () => {
+    const { onSelect } = open({}, true)
+    expect(search().placeholder).toBe("Search organizations, or type an id")
+    await screen.findByText("Acme Robotics")
+    fireEvent.change(search(), { target: { value: "not-yet" } })
+    fireEvent.click(screen.getByText(/^Use/))
+    expect(onSelect).toHaveBeenCalledWith("not-yet")
+  })
 
+  it("leaves out what the caller already holds", async () => {
+    open({ exclude: new Set(["acme"]) })
+    await screen.findByText("Globex")
+    expect(screen.queryByText("Acme Robotics")).toBeNull()
+  })
+
+  it("never offers a held id, or the record itself, as a typed one", async () => {
+    open({ exclude: new Set(["acme"]), self: "globex" })
+    await screen.findByText("No other organizations to choose.")
+    fireEvent.change(search(), { target: { value: "acme" } })
+    await waitFor(() => expect(wire.reads.length).toBeGreaterThan(1))
+    expect(screen.queryByText(/^Use/)).toBeNull()
+    fireEvent.change(search(), { target: { value: "globex" } })
+    expect(screen.queryByText(/^Use/)).toBeNull()
+  })
+
+  it("says the collection is empty in words, not as a failed search", async () => {
+    wire.answer = () => ({ records: [] })
     open()
-    fireEvent.keyDown(search(), { key: "Escape" })
-    await waitFor(() =>
-      expect(screen.queryByPlaceholderText(/Search records/)).toBeNull()
-    )
+    expect(await screen.findByText("No organizations yet.")).toBeTruthy()
   })
 
-  it("says it is reading rather than showing an empty list", () => {
-    open({ options: [], loading: true })
-    expect(screen.getByText(/Reading the collection/)).toBeTruthy()
+  it("says there is nothing OTHER to choose when only the record itself is there", async () => {
+    wire.answer = () => ({ records: [ORGS[0]] })
+    open({ self: "acme" })
+    expect(
+      await screen.findByText("No other organizations to choose.")
+    ).toBeTruthy()
   })
 
-  it("says what went wrong, and leaves typing open anyway", () => {
-    const { onSelect } = open({ options: [], error: "network error" })
-    expect(screen.getByText("network error")).toBeTruthy()
+  it("ends a read the server never answers in an error with a retry", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    wire.answer = () => "hang"
+    open()
+    expect(screen.getByText(/Loading organizations/)).toBeTruthy()
+    await act(() => vi.advanceTimersByTimeAsync(20_000))
+    expect(screen.queryByText(/Loading/)).toBeNull()
+    expect(screen.getByText(/took too long/)).toBeTruthy()
+    wire.answer = () => ({ records: ORGS })
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+    expect(await screen.findByText("Acme Robotics")).toBeTruthy()
+  })
+
+  it("says it is waiting for a connection rather than reading forever", async () => {
+    onlineManager.setOnline(false)
+    open()
+    expect(await screen.findByText(/offline/i)).toBeTruthy()
+    expect(screen.queryByText(/Loading/)).toBeNull()
+  })
+
+  it("says what went wrong, offers a retry, and leaves typing open", async () => {
+    wire.answer = () => new Error("network error")
+    const { onSelect } = open({}, true)
+    expect(await screen.findByText(/network error/)).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy()
     fireEvent.change(search(), { target: { value: "typed-anyway" } })
     fireEvent.click(screen.getByText(/^Use/))
     expect(onSelect).toHaveBeenCalledWith("typed-anyway")
   })
 
-  it("says the collection is empty rather than that nothing matched", () => {
-    open({ options: [] })
-    expect(screen.getByText(/no records of this kind yet/)).toBeTruthy()
-  })
-
-  it("says so when the page did not hold the whole collection", () => {
-    open({ capped: true })
-    expect(screen.getByText(/Showing the first 3/)).toBeTruthy()
+  it("says so when the pin names a kind this repository does not declare", () => {
+    open({ pin: "gone.example.com/people/organization" }, true)
+    expect(screen.getByText(/doesn’t have/)).toBeTruthy()
+    expect(wire.reads).toHaveLength(0)
+    cleanup()
+    open({ pin: "gone.example.com/people/organization" })
+    expect(
+      screen.getByText("There are no organizations here yet.")
+    ).toBeTruthy()
   })
 
   it("reads as an ADD where a repeated picker grows its list", () => {
-    open({ adding: true, addLabel: "Add", ariaLabel: "Add Agents" })
-    expect(screen.getByLabelText("Add Agents")).toBeTruthy()
+    open({ adding: true, addLabel: "Add", ariaLabel: "Add Member of" })
+    expect(screen.getByLabelText("Add Member of")).toBeTruthy()
+  })
+
+  it("reads the chosen record by the title it is handed, with the id on the hover", () => {
+    const client = new QueryClient()
+    render(
+      <QueryClientProvider client={client}>
+        <RecordCombobox
+          pin={ORG}
+          kinds={KINDS}
+          value="p9"
+          valueTitle="Initech"
+          onSelect={vi.fn()}
+          ariaLabel="Employer"
+        />
+      </QueryClientProvider>
+    )
+    const trigger = screen.getByLabelText("Employer")
+    expect(trigger.textContent).toBe("Initech")
+    expect(trigger.querySelector("[title]")?.getAttribute("title")).toBe("p9")
   })
 })

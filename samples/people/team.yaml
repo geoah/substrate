@@ -6,10 +6,10 @@ data:
   authority: samples.substrate.reamde.dev
   package: people
   description: >-
-    A working group finer than an organization: the people who share a backlog.
-    Teams nest through the parent reference, and leadership is the leads reference
-    rather than a flag on the member, so one person can lead one team and
-    merely sit on another.
+    A group of people who work together. A working group finer than an organization:
+    the people who share a backlog. Teams nest through the parent reference,
+    and leadership is the leads reference rather than a flag on the member,
+    so one person can lead one team and merely sit on another.
   names:
     singular: team
   displayTemplate: "{name}"

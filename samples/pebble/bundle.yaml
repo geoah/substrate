@@ -65,7 +65,9 @@ data:
   # 9: the webhook trigger declares the headers the ingest function reads
   #    (`source.webhook.headers`), now that the engine keeps no global
   #    provider allowlist (decision record 0097).
-  version: 9
+  # 11: every kind's description opens with one plain sentence
+  # saying what a record is to a person.
+  version: 11
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -99,9 +101,10 @@ data:
   authority: samples.substrate.reamde.dev
   package: pebble
   description: >-
-    One voice capture from the ring: the transcription the app produced, when
-    it was recorded, which gesture sent it, and the audio as a blob reference.
-    Written by the ingest function, never by hand.
+    A voice note you recorded on your ring. One voice capture from the ring:
+    the transcription the app produced, when it was recorded, which gesture
+    sent it, and the audio as a blob reference. Written by the ingest function,
+    never by hand.
   names:
     singular: recording
   displayTemplate: "{transcription}"
@@ -146,9 +149,10 @@ data:
   authority: samples.substrate.reamde.dev
   package: pebble
   description: >-
-    One spoken instruction from an agent-mode capture: the text the owner
-    said, when, and the recording it came from. The assistant reads it and
-    writes tasks.
+    Something you asked the assistant to do, out loud. One spoken instruction
+    from an agent-mode capture: the text the owner said, when, and the recording
+    it came from. The assistant reads it and writes tasks.
+  purpose: supporting
   names:
     singular: instruction
   displayTemplate: "{text}"

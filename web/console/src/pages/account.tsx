@@ -1,27 +1,22 @@
-/** The account: the two credential changes, both under the password-factor
- * rule.
+/** The account, as Settings shows it: the repository name, and the two
+ * credential changes, both under the password-factor rule.
  *
- * These endpoints do not accept a bearer token at all — the current password
+ * These endpoints do not accept a bearer token at all: the current password
  * AND code travel in the body, and a request that brings only the browser's
  * token is refused. That is the whole point: a leaked token's blast radius is
  * the data, never the account. So both forms ask for the password even though
  * you are plainly signed in.
  *
  * Live tokens SURVIVE a password change: a token is data access, the credential
- * is the account. Revoking is the tokens page's job. */
+ * is the account. Signing a browser or a script out is the Signed in section's
+ * job. */
 
 import { useState } from "react"
-import { Link } from "@tanstack/react-router"
 import { CopyIcon } from "lucide-react"
 
+import { CopyButton } from "@/components/identity/copy-button"
+import { SettingRow } from "@/components/settings-page/setting-row"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import {
   Field,
   FieldDescription,
@@ -40,6 +35,7 @@ import {
   totpChange,
   totpEnroll,
 } from "@/lib/api/auth"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useAuthPolicy } from "@/lib/api/discovery"
 import { getRepository } from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
@@ -74,63 +70,102 @@ async function copy(value: string) {
   }
 }
 
-export function AccountPage() {
+/** The account rows: the repository name, the password, the second factor. */
+export function AccountRows() {
   const repository = getRepository() ?? ""
   const { totpRequired } = useAuthPolicy()
+  const [technical] = useTechnicalDetails()
+  const [open, setOpen] = useState<"password" | "totp" | null>(null)
+  const toggle = (which: "password" | "totp") =>
+    setOpen((o) => (o === which ? null : which))
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-end justify-between gap-3 px-6 pt-5 pb-2">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Account</h1>
-          <p className="text-xs text-muted-foreground">
-            Changing your password needs your current password
-            {totpRequired && " and code"}. Being signed in is not enough.
-          </p>
-        </div>
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto">
-        <div className="flex flex-col gap-6 px-6 py-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>You</CardTitle>
-              <CardDescription>
-                Every signed-in browser and script holds a token. Open{" "}
-                <Link
-                  to="/account/tokens"
-                  className="underline underline-offset-4 hover:text-foreground"
-                >
-                  Tokens
-                </Link>{" "}
-                to revoke one.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-baseline gap-2 text-sm">
-                <span className="text-muted-foreground">Repository</span>
-                <span className="data">{repository || "unknown"}</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          <PasswordCard repository={repository} totpRequired={totpRequired} />
-          {totpRequired ? (
-            <TotpCard repository={repository} />
-          ) : (
-            <TotpOffCard />
+    <>
+      <SettingRow
+        title={
+          <span className="[overflow-wrap:anywhere]">
+            {repository || "unknown"}
+          </span>
+        }
+        description="The name you sign in with. It’s also the address of your data."
+        control={
+          repository ? (
+            <CopyButton value={repository} label="Copy your repository name" />
+          ) : undefined
+        }
+      />
+      <SettingRow
+        title="Password"
+        description={`Changing it needs your current password${totpRequired ? " and a code" : ""}. Browsers and scripts you signed in stay signed in.`}
+        control={
+          <Button
+            variant="outline"
+            size="sm"
+            aria-expanded={open === "password"}
+            onClick={() => toggle("password")}
+          >
+            {open === "password" ? "Cancel" : "Change…"}
+          </Button>
+        }
+      >
+        {open === "password" && (
+          <PasswordForm
+            repository={repository}
+            totpRequired={totpRequired}
+            onDone={() => setOpen(null)}
+          />
+        )}
+      </SettingRow>
+      {totpRequired ? (
+        <SettingRow
+          title="Second factor"
+          description="On. Signing in asks for a code from your authenticator app."
+          control={
+            <Button
+              variant="outline"
+              size="sm"
+              aria-expanded={open === "totp"}
+              onClick={() => toggle("totp")}
+            >
+              {open === "totp" ? "Cancel" : "Replace authenticator…"}
+            </Button>
+          }
+        >
+          {open === "totp" && (
+            <TotpForm repository={repository} onDone={() => setOpen(null)} />
           )}
-        </div>
-      </div>
-    </div>
+        </SettingRow>
+      ) : (
+        <SettingRow
+          title="Second factor"
+          description={
+            <>
+              Off. This substrate signs you in with a password alone.
+              {technical && (
+                <>
+                  {" "}
+                  It is a setting for local development. If you registered while
+                  it was off, nobody holds a secret for you; the operator issues
+                  one with{" "}
+                  <code className="font-mono">substratectl user reset</code>.
+                </>
+              )}
+            </>
+          }
+        />
+      )}
+    </>
   )
 }
 
-function PasswordCard({
+function PasswordForm({
   repository,
   totpRequired,
+  onDone,
 }: {
   repository: string
   totpRequired: boolean
+  onDone: () => void
 }) {
   const [password, setPassword] = useState("")
   const [code, setCode] = useState("")
@@ -154,14 +189,11 @@ function PasswordCard({
     setBusy(true)
     try {
       await changePassword(repository, password, normalized, next)
-      setPassword("")
-      setCode("")
-      setNext("")
-      setConfirm("")
       toast.add({
         type: "success",
-        title: "Password changed. Your tokens still work.",
+        title: "Password changed. You stay signed in everywhere.",
       })
+      onDone()
     } catch (err) {
       setError(describe(err))
       setCode("")
@@ -171,121 +203,90 @@ function PasswordCard({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Change password</CardTitle>
-        <CardDescription>
-          Changing the password does not revoke your tokens. Revoke them on the
-          Tokens page if you need to.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            void submit()
-          }}
-        >
-          <FieldGroup>
-            {error && (
-              <p role="alert" className="text-sm font-normal text-destructive">
-                {error}
-              </p>
-            )}
-            <Field>
-              <FieldLabel htmlFor="pw-current">Current password</FieldLabel>
-              <Input
-                id="pw-current"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </Field>
-            {totpRequired && (
-              <Field>
-                <FieldLabel htmlFor="pw-code">Current code</FieldLabel>
-                <Input
-                  id="pw-code"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={CODE_DIGITS + 2}
-                  placeholder="123456"
-                  className="data tracking-[0.25em]"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                />
-              </Field>
-            )}
-            <Field>
-              <FieldLabel htmlFor="pw-new">New password</FieldLabel>
-              <Input
-                id="pw-new"
-                type="password"
-                autoComplete="new-password"
-                value={next}
-                onChange={(e) => setNext(e.target.value)}
-              />
-              <FieldDescription>
-                At least {MIN_PASSWORD} characters.
-              </FieldDescription>
-            </Field>
-            <Field data-invalid={(confirm.length > 0 && !matches) || undefined}>
-              <FieldLabel htmlFor="pw-confirm">Confirm new password</FieldLabel>
-              <Input
-                id="pw-confirm"
-                type="password"
-                autoComplete="new-password"
-                aria-invalid={confirm.length > 0 && !matches}
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-              />
-              {confirm.length > 0 && !matches && (
-                <FieldError
-                  errors={[{ message: "The two passwords differ." }]}
-                />
-              )}
-            </Field>
-            <Field>
-              <Button type="submit" disabled={!canSubmit || isBusy}>
-                {isBusy && <Spinner />}
-                Change password
-              </Button>
-            </Field>
-          </FieldGroup>
-        </form>
-      </CardContent>
-    </Card>
+    <form
+      aria-label="Change your password"
+      className="max-w-sm"
+      onSubmit={(e) => {
+        e.preventDefault()
+        void submit()
+      }}
+    >
+      <FieldGroup>
+        {error && (
+          <p role="alert" className="text-sm font-normal text-destructive">
+            {error}
+          </p>
+        )}
+        <Field>
+          <FieldLabel htmlFor="pw-current">Current password</FieldLabel>
+          <Input
+            id="pw-current"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </Field>
+        {totpRequired && (
+          <Field>
+            <FieldLabel htmlFor="pw-code">Current code</FieldLabel>
+            <Input
+              id="pw-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={CODE_DIGITS + 2}
+              placeholder="123456"
+              className="font-mono tracking-[0.25em]"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+          </Field>
+        )}
+        <Field>
+          <FieldLabel htmlFor="pw-new">New password</FieldLabel>
+          <Input
+            id="pw-new"
+            type="password"
+            autoComplete="new-password"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+          />
+          <FieldDescription>
+            At least {MIN_PASSWORD} characters.
+          </FieldDescription>
+        </Field>
+        <Field data-invalid={(confirm.length > 0 && !matches) || undefined}>
+          <FieldLabel htmlFor="pw-confirm">Confirm new password</FieldLabel>
+          <Input
+            id="pw-confirm"
+            type="password"
+            autoComplete="new-password"
+            aria-invalid={confirm.length > 0 && !matches}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+          />
+          {confirm.length > 0 && !matches && (
+            <FieldError errors={[{ message: "The two passwords differ." }]} />
+          )}
+        </Field>
+        <Field>
+          <Button type="submit" disabled={!canSubmit || isBusy}>
+            {isBusy && <Spinner />}
+            Change password
+          </Button>
+        </Field>
+      </FieldGroup>
+    </form>
   )
 }
 
-/** What stands where the re-enrollment normally does on a substrate that
- * verifies no code. Replacing an authenticator here would be a ceremony with
- * nothing on the other end of it — and the seed a registration minted was
- * never shown to anybody, so the honest thing is to say who can put the factor
- * back and what it costs. */
-function TotpOffCard() {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Second factor: off</CardTitle>
-        <CardDescription>
-          This substrate verifies no code, so your password is all you need to
-          sign in. It is a setting for local development.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm text-muted-foreground">
-          If you registered while it was off, nobody holds a secret for you. The
-          operator issues one with{" "}
-          <code className="data">substratectl user reset</code>.
-        </p>
-      </CardContent>
-    </Card>
-  )
-}
-
-function TotpCard({ repository }: { repository: string }) {
+function TotpForm({
+  repository,
+  onDone,
+}: {
+  repository: string
+  onDone: () => void
+}) {
   const [password, setPassword] = useState("")
   const [code, setCode] = useState("")
   const [enrollment, setEnrollment] = useState<TOTPEnrollment | null>(null)
@@ -325,14 +326,11 @@ function TotpCard({ repository }: { repository: string }) {
         enrollment.totpSecret,
         normalizedNew
       )
-      setEnrollment(null)
-      setPassword("")
-      setCode("")
-      setNewCode("")
       toast.add({
         type: "success",
         title: "Authenticator replaced. The old secret no longer works.",
       })
+      onDone()
     } catch (err) {
       setError(describe(err))
       setNewCode("")
@@ -341,128 +339,123 @@ function TotpCard({ repository }: { repository: string }) {
     }
   }
 
-  function cancel() {
-    setEnrollment(null)
-    setNewCode("")
-  }
-
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Replace your authenticator</CardTitle>
-        <CardDescription>
-          Enter your current password and code, add the new secret, then enter a
-          code from it. The old secret stops working straight away.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            void (enrollment ? finish() : begin())
-          }}
-        >
-          <FieldGroup>
-            {error && (
-              <p role="alert" className="text-sm font-normal text-destructive">
-                {error}
+    <form
+      aria-label="Replace your authenticator"
+      className="max-w-sm"
+      onSubmit={(e) => {
+        e.preventDefault()
+        void (enrollment ? finish() : begin())
+      }}
+    >
+      <FieldGroup>
+        <p className="text-[12.5px] text-muted-foreground">
+          Enter your current password and code, add the new secret to your app,
+          then enter a code from it. The old secret stops working straight away.
+        </p>
+        {error && (
+          <p role="alert" className="text-sm font-normal text-destructive">
+            {error}
+          </p>
+        )}
+        <Field>
+          <FieldLabel htmlFor="totp-current-pw">Current password</FieldLabel>
+          <Input
+            id="totp-current-pw"
+            type="password"
+            autoComplete="current-password"
+            disabled={enrollment !== null}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="totp-current-code">Current code</FieldLabel>
+          <Input
+            id="totp-current-code"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={CODE_DIGITS + 2}
+            placeholder="123456"
+            className="font-mono tracking-[0.25em]"
+            disabled={enrollment !== null}
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+          />
+        </Field>
+
+        {enrollment && (
+          <>
+            <Separator />
+            <div className="flex flex-col gap-2">
+              <p className="text-sm text-muted-foreground">
+                Add this to your authenticator with{" "}
+                <a
+                  href={enrollment.otpauthUri}
+                  className="underline underline-offset-4 hover:text-foreground"
+                >
+                  the link
+                </a>
+                , or type the secret by hand.
               </p>
-            )}
+              <div className="flex items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded-lg bg-muted px-2.5 py-1.5 font-mono text-xs">
+                  {enrollment.totpSecret}
+                </code>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Copy secret"
+                  onClick={() => void copy(enrollment.totpSecret)}
+                >
+                  <CopyIcon />
+                </Button>
+              </div>
+            </div>
             <Field>
-              <FieldLabel htmlFor="totp-current-pw">
-                Current password
+              <FieldLabel htmlFor="totp-new-code">
+                Code from the new secret
               </FieldLabel>
               <Input
-                id="totp-current-pw"
-                type="password"
-                autoComplete="current-password"
-                disabled={enrollment !== null}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="totp-current-code">Current code</FieldLabel>
-              <Input
-                id="totp-current-code"
+                id="totp-new-code"
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 maxLength={CODE_DIGITS + 2}
                 placeholder="123456"
-                className="data tracking-[0.25em]"
-                disabled={enrollment !== null}
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
+                className="font-mono tracking-[0.25em]"
+                value={newCode}
+                onChange={(e) => setNewCode(e.target.value)}
               />
             </Field>
+          </>
+        )}
 
-            {enrollment && (
-              <>
-                <Separator />
-                <div className="flex flex-col gap-2">
-                  <p className="text-sm text-muted-foreground">
-                    Add this to your authenticator with{" "}
-                    <a
-                      href={enrollment.otpauthUri}
-                      className="underline underline-offset-4 hover:text-foreground"
-                    >
-                      the link
-                    </a>
-                    , or type the secret by hand.
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <code className="min-w-0 flex-1 truncate rounded-lg bg-muted px-2.5 py-1.5 data text-xs">
-                      {enrollment.totpSecret}
-                    </code>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon-sm"
-                      aria-label="Copy secret"
-                      onClick={() => void copy(enrollment.totpSecret)}
-                    >
-                      <CopyIcon />
-                    </Button>
-                  </div>
-                </div>
-                <Field>
-                  <FieldLabel htmlFor="totp-new-code">
-                    Code from the new secret
-                  </FieldLabel>
-                  <Input
-                    id="totp-new-code"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    maxLength={CODE_DIGITS + 2}
-                    placeholder="123456"
-                    className="data tracking-[0.25em]"
-                    value={newCode}
-                    onChange={(e) => setNewCode(e.target.value)}
-                  />
-                </Field>
-              </>
-            )}
-
-            <div className="flex gap-2">
-              <Button
-                type="submit"
-                disabled={
-                  isBusy ||
-                  (enrollment ? normalizeCode(newCode) === null : !canBegin)
-                }
-              >
-                {isBusy && <Spinner />}
-                {enrollment ? "Replace authenticator" : "Continue"}
-              </Button>
-              {enrollment && (
-                <Button type="button" variant="ghost" onClick={cancel}>
-                  Cancel
-                </Button>
-              )}
-            </div>
-          </FieldGroup>
-        </form>
-      </CardContent>
-    </Card>
+        <div className="flex gap-2">
+          <Button
+            type="submit"
+            disabled={
+              isBusy ||
+              (enrollment ? normalizeCode(newCode) === null : !canBegin)
+            }
+          >
+            {isBusy && <Spinner />}
+            {enrollment ? "Replace authenticator" : "Continue"}
+          </Button>
+          {enrollment && (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setEnrollment(null)
+                setNewCode("")
+              }}
+            >
+              Start over
+            </Button>
+          )}
+        </div>
+      </FieldGroup>
+    </form>
   )
 }

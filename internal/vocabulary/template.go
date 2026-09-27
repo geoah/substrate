@@ -2,7 +2,10 @@ package vocabulary
 
 import (
 	"fmt"
+	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Template is a parsed display_template: literal text interleaved with
@@ -201,55 +204,163 @@ type Resolver interface {
 	Derived(token string) string
 }
 
-// Render resolves the template, dropping tokens whose alternatives are all
-// empty. A template that resolves to nothing renders "".
+// Render resolves the template. A token whose alternatives are all empty
+// renders nothing and takes the separator joining it to its neighbor with it
+// (dropSeparators), so `{decision}: {winner}` with no decision is the winner,
+// not ": " and the winner. A template that resolves to nothing renders "".
 func (t *Template) Render(r Resolver) string {
-	var b strings.Builder
-	for _, p := range t.Parts {
+	out := make([]string, len(t.Parts))
+	for i, p := range t.Parts {
 		if len(p.Alts) == 0 {
-			b.WriteString(p.Literal)
+			out[i] = p.Literal
 			continue
 		}
-		for _, alt := range p.Alts {
-			var v string
-			switch {
-			case alt.Derived == DerivedSnippet:
-				v = r.Derived(alt.Derived)
-			case alt.Derived != "":
-				// A REAL declaration of the token's name wins, by DECLARATION and
-				// not by having a value: a kind that declares `localName` means its
-				// own property every time it is rendered, and only a kind that
-				// declares none gets the derived one. Declared, the token resolves
-				// exactly as the bare identifier below does — the property's value,
-				// then the referents' titles — because a derived token that skipped
-				// that hop would render an id where the model says a referent's title.
-				//
-				// {snippet} predates the rule and keeps its old meaning: it has
-				// always been derived-only, and a kind declaring `snippet` would
-				// silently change what its shipped template rendered.
-				if !r.Declares(alt.Derived) {
-					v = r.Derived(alt.Derived)
-				} else if v = r.Prop(alt.Derived); v == "" {
-					v = r.Reference(alt.Derived, "")
-				}
-			case alt.List && alt.Ref != "":
-				v = r.First(alt.Ref, alt.Prop)
-			case alt.List:
-				v = r.First(alt.Prop, "")
-			case alt.Ref != "":
-				v = r.Reference(alt.Ref, alt.Prop)
-			default:
-				// A bare identifier is a property's own value or, failing that,
-				// the titles a reference property names ("{name|participants}").
-				if v = r.Prop(alt.Prop); v == "" {
-					v = r.Reference(alt.Prop, "")
-				}
+		out[i] = p.resolve(r)
+	}
+	t.dropSeparators(out)
+	return strings.TrimSpace(strings.Join(out, ""))
+}
+
+// dropSeparators edits the rendered parts in place around every empty token.
+// Only a literal's SEPARATOR edge goes — whitespace and punctuation, never a
+// letter or a digit — because the words of a literal are the author's
+// ("Issue {x}" stays "Issue"), and a rendered value is never edited at all,
+// so a title that is "Q3: plan" or "C++" survives whatever surrounds it.
+//
+// Around one empty token: a bracket or quote pair enclosing it goes whole
+// ("{label} ({wire})" is the label); a sigil written straight before it
+// ("#{n}") is its own and goes; then the separator on its left and the one
+// on its right have become one gap. With content on both sides the gap keeps
+// ONE of them, the left one where there is one ("{a}/{b}/{c}" with no b is
+// "a/c", "{d}: {w} + {l}" with no w is "d: l"); with content on one side
+// only, the gap is at an edge and both go.
+func (t *Template) dropSeparators(out []string) {
+	token := func(i int) bool { return len(t.Parts[i].Alts) > 0 }
+	// Content is decided on what the parts held before any edit: an edit only
+	// ever removes separators, which are never content.
+	content := make([]bool, len(out))
+	for i, v := range out {
+		content[i] = v != "" && (token(i) || strings.IndexFunc(v, isWordRune) >= 0)
+	}
+	for i := range out {
+		if !token(i) || out[i] != "" {
+			continue
+		}
+		left, right := -1, -1
+		if i > 0 && !token(i-1) {
+			left = i - 1
+		}
+		if i+1 < len(out) && !token(i+1) {
+			right = i + 1
+		}
+		if left >= 0 && right >= 0 {
+			if l, r, ok := stripEnclosing(out[left], out[right]); ok {
+				out[left], out[right] = l, r
 			}
-			if v != "" {
-				b.WriteString(v)
-				break
+		}
+		if left >= 0 {
+			out[left] = strings.TrimRightFunc(out[left], isSigil)
+		}
+		before := slices.Contains(content[:i], true)
+		after := slices.Contains(content[i+1:], true)
+		lrun, rrun := 0, 0
+		if left >= 0 {
+			lrun = len(out[left]) - len(strings.TrimRightFunc(out[left], isSeparatorRune))
+		}
+		if right >= 0 {
+			rrun = len(out[right]) - len(strings.TrimLeftFunc(out[right], isSeparatorRune))
+		}
+		switch {
+		case before && after:
+			if lrun > 0 && rrun > 0 {
+				out[right] = out[right][rrun:]
+			}
+		default:
+			if left >= 0 {
+				out[left] = out[left][:len(out[left])-lrun]
+			}
+			if right >= 0 {
+				out[right] = out[right][rrun:]
 			}
 		}
 	}
-	return strings.TrimSpace(b.String())
+}
+
+// enclosers are the pairs an empty token takes with it when they enclose it.
+var enclosers = map[rune]rune{'(': ')', '[': ']', '"': '"', '“': '”', '«': '»'}
+
+// stripEnclosing removes an opener ending left and its closer opening right,
+// with the whitespace written before the opener.
+func stripEnclosing(left, right string) (string, string, bool) {
+	open, size := utf8.DecodeLastRuneInString(left)
+	closer, ok := enclosers[open]
+	if !ok || !strings.HasPrefix(right, string(closer)) {
+		return left, right, false
+	}
+	return strings.TrimRightFunc(left[:len(left)-size], unicode.IsSpace), right[len(string(closer)):], true
+}
+
+// isWordRune is what makes a literal content rather than a separator.
+func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
+
+// isSigil is a mark written straight before a token that belongs to it:
+// "#{number}", "@{login}".
+func isSigil(r rune) bool { return r == '#' || r == '@' }
+
+// isSeparatorRune is whitespace and the punctuation that joins two values —
+// ": ", " + ", " — ", "/" — and not a bracket or a quote, which enclose one
+// value rather than join two, nor a sigil, which belongs to the token after
+// it.
+func isSeparatorRune(r rune) bool {
+	if unicode.IsSpace(r) {
+		return true
+	}
+	if isSigil(r) || r == '\'' || r == '"' || unicode.In(r, unicode.Ps, unicode.Pe, unicode.Pi, unicode.Pf) {
+		return false
+	}
+	return unicode.IsPunct(r) || unicode.IsSymbol(r)
+}
+
+// resolve renders one token: the first alternative with a value, or "".
+func (p TemplatePart) resolve(r Resolver) string {
+	for _, alt := range p.Alts {
+		var v string
+		switch {
+		case alt.Derived == DerivedSnippet:
+			v = r.Derived(alt.Derived)
+		case alt.Derived != "":
+			// A REAL declaration of the token's name wins, by DECLARATION and
+			// not by having a value: a kind that declares `localName` means its
+			// own property every time it is rendered, and only a kind that
+			// declares none gets the derived one. Declared, the token resolves
+			// exactly as the bare identifier below does — the property's value,
+			// then the referents' titles — because a derived token that skipped
+			// that hop would render an id where the model says a referent's title.
+			//
+			// {snippet} predates the rule and keeps its old meaning: it has
+			// always been derived-only, and a kind declaring `snippet` would
+			// silently change what its shipped template rendered.
+			if !r.Declares(alt.Derived) {
+				v = r.Derived(alt.Derived)
+			} else if v = r.Prop(alt.Derived); v == "" {
+				v = r.Reference(alt.Derived, "")
+			}
+		case alt.List && alt.Ref != "":
+			v = r.First(alt.Ref, alt.Prop)
+		case alt.List:
+			v = r.First(alt.Prop, "")
+		case alt.Ref != "":
+			v = r.Reference(alt.Ref, alt.Prop)
+		default:
+			// A bare identifier is a property's own value or, failing that,
+			// the titles a reference property names ("{name|participants}").
+			if v = r.Prop(alt.Prop); v == "" {
+				v = r.Reference(alt.Prop, "")
+			}
+		}
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

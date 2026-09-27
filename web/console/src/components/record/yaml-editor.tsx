@@ -331,8 +331,8 @@ function specCard(spec: PropSpec): HTMLElement {
   type.textContent = typeLabel(spec)
   const need = document.createElement("span")
   need.className = spec.required
-    ? "text-[10px] uppercase text-destructive"
-    : "text-[10px] uppercase text-muted-foreground"
+    ? "text-[11.5px] uppercase text-destructive"
+    : "text-[11.5px] uppercase text-muted-foreground"
   need.textContent = spec.required ? "required" : "optional"
   head.append(name, type, need)
   dom.append(head)

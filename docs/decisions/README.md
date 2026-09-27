@@ -275,6 +275,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0110](0110-a-schedule-trigger-passes-declared-arguments-to-its-function.md) | A schedule trigger passes declared arguments to its function | accepted |
 | [0111](0111-a-function-and-an-agent-list-read-is-the-window-read.md) | A function's and an agent's list read is the window read | accepted |
 | [0113](0113-a-manager-row-holds-at-its-actors-live-machine-tier.md) | A manager row holds at the machine tier once its actor is declared there | accepted |
+| [0114](0114-a-change-row-reads-a-property-rename-as-one-move.md) | A change row reads a property rename as one move | accepted |
 | [0115](0115-an-owner-adjusts-a-change-request-on-the-accepting-write.md) | An owner adjusts a change request on the accepting write | accepted |
 | [0116](0116-a-probe-folds-case-only-when-it-declares-fold-case.md) | A probe folds case only when it declares `fold: case` | accepted |
 | [0117](0117-a-kind-may-declare-its-display-label.md) | A kind may declare its display label, singular and plural | accepted |
@@ -287,3 +288,10 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0124](0124-a-decision-number-is-checked-against-every-live-branch-before-the-merge.md) | A decision number is checked against every live branch before the merge | accepted |
 | [0125](0125-a-provider-write-is-a-callable-that-writes-no-record.md) | A provider write is a callable that writes no record | accepted |
 | [0126](0126-the-changes-read-summarizes-runs-and-never-ends-a-page-inside-one.md) | The changes read summarizes runs and never ends a page inside one | accepted |
+| [0130](0130-the-console-serves-four-things-and-its-navigation-follows-them.md) | The console serves four things, and its navigation follows them | accepted |
+| [0131](0131-the-console-writes-for-two-readers-behind-one-switch.md) | The console writes for two readers, and one switch tells them apart | accepted |
+| [0132](0132-console-preferences-follow-the-person-and-a-window-fact-stays-in-the-browser.md) | Console preferences follow the person, and a window's own facts stay in the browser | accepted |
+| [0133](0133-a-kind-declares-its-purpose.md) | A kind declares its purpose | accepted |
+| [0134](0134-the-records-list-counts-its-filtered-set-on-request.md) | The records list counts its filtered set on request | accepted |
+| [0135](0135-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md) | A change row carries before and after values on request, derived at read | accepted |
+| [0136](0136-search-ranks-by-bm25f-and-a-kinds-purpose.md) | Search ranks by BM25F and a kind's purpose | accepted |

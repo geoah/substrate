@@ -445,6 +445,24 @@ const openTask: SubstrateRecord = {
 }
 
 describe("validateApplyDoc: the datatypes and the write's own rules", () => {
+  // A task binds `dueAt` through core's trait, spelled in full the way every
+  // shipped declaration spells it, and never declares it as a property: the
+  // write path splits it out as a hot column, so it is not undeclared.
+  it("never calls a trait-bound hot column undeclared", () => {
+    const bound: KindInfo = {
+      ...taskKind,
+      definition: {
+        traits: ["substrate.reamde.dev/core/temporal(point: dueAt)"],
+        properties: { title: { type: "string" } },
+      },
+    }
+    const yaml =
+      "data:\n  properties:\n    title: hi\n    dueAt: 2026-09-01T00:00:00Z\n"
+    expect(
+      validateApplyDoc(yaml, bound).find((p) => p.path === "dueAt")
+    ).toBeUndefined()
+  })
+
   it("names a value its datatype refuses, on the line it sits on", () => {
     const yaml =
       "data:\n  properties:\n    title: hi\n    dueAt: yesterday\n    endpoint: example.com\n"

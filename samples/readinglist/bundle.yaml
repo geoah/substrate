@@ -28,7 +28,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: readinglist
-  version: 12
+  version: 13
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -78,8 +78,8 @@ data:
   authority: samples.substrate.reamde.dev
   package: readinglist
   description: >-
-    A summary of the pages harvested over one week, written when you accept
-    the weekly rollup's proposal.
+    A weekly summary of your reading. A summary of the pages harvested over
+    one week, written when you accept the weekly rollup's proposal.
   names:
     singular: digest
   displayTemplate: "{summary}"
@@ -98,9 +98,10 @@ data:
   authority: samples.substrate.reamde.dev
   package: readinglist
   description: >-
-    One page picked up from a link: where the link came from, the page's text,
-    what sort of thing it is, and whether you said to save it. Its id is a
-    hash of the URL, so the same link never lands twice.
+    A web page on your reading list. One page picked up from a link: where
+    the link came from, the page's text, what sort of thing it is, and whether
+    you said to save it. Its id is a hash of the URL, so the same link never
+    lands twice.
   names:
     singular: page
   properties:

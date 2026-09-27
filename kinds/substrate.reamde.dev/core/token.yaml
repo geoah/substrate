@@ -10,7 +10,8 @@ data:
     mint, and an optional expiry. A token has full access to its repository
     — sessions are these records, login mints one, and revoking one is an
     ordinary record delete.
-  version: 6
+  version: 7
+  purpose: internal
   names:
     singular: token
   # A token has FULL ACCESS to its repository: no scopes, no actor set, no

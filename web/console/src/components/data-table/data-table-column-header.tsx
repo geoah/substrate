@@ -2,6 +2,7 @@
  * in schema casing, the record-56 description as a Tooltip, and — rule 4 —
  * a sort indicator on every sortable column, the active sort distinct. */
 
+import { cloneElement, type ReactElement, type ReactNode } from "react"
 import type { Column, RowData } from "@tanstack/react-table"
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon } from "lucide-react"
 
@@ -28,28 +29,40 @@ export function DataTableColumnHeader<TData extends RowData, TValue>({
 }: DataTableColumnHeaderProps<TData, TValue>) {
   const sorted = column.getIsSorted()
 
-  const label = description ? (
-    <Tooltip>
-      <TooltipTrigger render={<span className="cursor-help" />}>
-        {title}
-      </TooltipTrigger>
-      <TooltipContent>{description}</TooltipContent>
-    </Tooltip>
-  ) : (
-    <span>{title}</span>
-  )
+  // The tooltip rides a focusable control, so a keyboard reader reaches the
+  // description too: the sort button where there is one, else a button of
+  // its own.
+  const withTip = (trigger: ReactElement, body: ReactNode) =>
+    description ? (
+      <Tooltip>
+        <TooltipTrigger render={trigger}>{body}</TooltipTrigger>
+        <TooltipContent>{description}</TooltipContent>
+      </Tooltip>
+    ) : (
+      cloneElement(trigger, undefined, body)
+    )
 
   if (!column.getCanSort()) {
     return (
       <div
         className={cn("flex items-center", align === "right" && "justify-end")}
       >
-        {label}
+        {description ? (
+          withTip(
+            <button
+              type="button"
+              className="cursor-help rounded-[2px] outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            />,
+            title
+          )
+        ) : (
+          <span>{title}</span>
+        )}
       </div>
     )
   }
 
-  return (
+  return withTip(
     <button
       type="button"
       className={cn(
@@ -58,8 +71,9 @@ export function DataTableColumnHeader<TData extends RowData, TValue>({
         sorted && "text-foreground"
       )}
       onClick={() => column.toggleSorting(sorted === "asc")}
-    >
-      {label}
+    />,
+    <>
+      <span>{title}</span>
       {sorted === "desc" ? (
         <ArrowDownIcon className="size-3.5" />
       ) : sorted === "asc" ? (
@@ -69,6 +83,6 @@ export function DataTableColumnHeader<TData extends RowData, TValue>({
         // codex finding 2026-08-05); 65 keeps it quiet but legible.
         <ChevronsUpDownIcon className="size-3.5 opacity-65" />
       )}
-    </button>
+    </>
   )
 }

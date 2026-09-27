@@ -23,13 +23,6 @@ import {
 const NOW = Date.parse("2026-08-06T15:00:00")
 
 describe("timeText", () => {
-  it("clock voice: seconds, dated only when not today's", () => {
-    expect(timeText("2026-08-06T14:59:30", "clock", NOW)).toBe("14:59:30")
-    expect(timeText("2026-08-04T09:05:07", "clock", NOW)).toBe(
-      "2026-08-04 09:05:07"
-    )
-  })
-
   it("relative voice", () => {
     expect(timeText("2026-08-06T14:57:00", "relative", NOW)).toBe("3m ago")
   })

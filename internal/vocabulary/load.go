@@ -803,6 +803,10 @@ var typeDataKeys = map[string]bool{
 	// 0078): admitting it moves the old kind's live rows and repoints every
 	// live reference at them.
 	"movedFrom": true,
+	// `purpose` is why the kind exists — primary, supporting or internal
+	// (decision 0133): validated and stored, read by clients deciding what
+	// to list, and acted on by nothing server-side.
+	"purpose": true,
 	// `label` is the kind's display label, both forms (decision 0117): display
 	// text only, read by no route, filter or grant.
 	"label": true,
@@ -918,6 +922,7 @@ func (l *loader) parseType(doc Document) *Kind {
 	}
 	sort.Strings(t.PropOrder)
 	l.parseMovedFrom(where, d, t)
+	l.parseKindPurpose(where, d, t)
 	// After the properties: a retired name that is also declared is refused.
 	l.parseKindRetirement(where, d, t)
 

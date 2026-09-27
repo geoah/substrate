@@ -284,7 +284,7 @@ describe("RegisterPage", () => {
     render(<RegisterPage />)
     expect(
       screen.getByText(
-        /If you lose both factors, only the operator can reset you/
+        /If you lose both, only whoever runs this substrate can reset them/
       )
     ).toBeTruthy()
     cleanup()
@@ -294,9 +294,11 @@ describe("RegisterPage", () => {
     policy.totpRequired = false
     render(<RegisterPage />)
     expect(
-      screen.getByText(/If you lose it, only the operator can reset you/)
+      screen.getByText(
+        /If you lose it, only whoever runs this substrate can reset it/
+      )
     ).toBeTruthy()
-    expect(screen.queryByText(/lose both factors/)).toBeNull()
+    expect(screen.queryByText(/lose both/)).toBeNull()
   })
 
   it("still asks for the invite code where one is read, with the factor off", () => {

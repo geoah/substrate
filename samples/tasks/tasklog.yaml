@@ -9,6 +9,7 @@ data:
     The done or skipped mark for one occurrence of a repeating task. The task
     stays open while it keeps repeating, so it is the occurrences that get
     marked, and one with no mark was missed.
+  purpose: supporting
   names:
     singular: tasklog
   displayTemplate: "{status}"

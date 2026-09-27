@@ -5,11 +5,12 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  version: 17
+  version: 18
   description: >-
     One authority whose packages this repository holds, named by its DNS-style
     label. It says who publishes; the packages under it say what, and each
     one carries its own version, origin and quarantine mark.
+  purpose: internal
   names:
     singular: authority
   displayTemplate: "{localName}"

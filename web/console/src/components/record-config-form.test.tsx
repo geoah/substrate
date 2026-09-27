@@ -7,13 +7,7 @@
  * column beside it. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { KindInfo } from "@/lib/api/types"
@@ -90,42 +84,43 @@ describe("RecordConfigForm", () => {
     expect(screen.queryByText("backfillDepth")).toBeNull()
   })
 
-  it("renders an enum property as a <select> carrying its options", () => {
+  /** The open choice list's rows: stored value and the words it reads as. */
+  function offered(): [string, string][] {
+    return [...document.querySelectorAll("[cmdk-item]")].map((el) => [
+      el.getAttribute("data-value") ?? "",
+      el.textContent ?? "",
+    ])
+  }
+
+  it("chooses an enum property from its values, seeded with the default", () => {
     renderForm()
-    const select = screen.getByLabelText(/Sync cadence/) as HTMLSelectElement
-    expect(select.tagName).toBe("SELECT")
-    const options = within(select)
-      .getAllByRole("option")
-      .map((o) => (o as HTMLOptionElement).value)
-    expect(options).toEqual(expect.arrayContaining(["off", "hourly", "daily"]))
+    const choice = screen.getByLabelText(/Sync cadence/)
+    expect(choice.tagName).toBe("BUTTON")
     // The declared default is the seeded value on create.
-    expect(select.value).toBe("daily")
+    expect(choice.textContent).toContain("Once a day")
+    fireEvent.click(choice)
+    expect(offered().map(([v]) => v)).toEqual(["off", "hourly", "daily"])
   })
 
   it("shows each option's authored label ({value, label}), submitting the raw value", () => {
     renderForm()
-    const select = screen.getByLabelText(/Sync cadence/) as HTMLSelectElement
-    const options = within(select).getAllByRole("option") as HTMLOptionElement[]
-    const byValue = Object.fromEntries(
-      options.map((o) => [o.value, o.textContent])
-    )
-    // The visible text is the declared name; the submitted value stays raw.
-    expect(byValue.daily).toBe("Once a day")
+    fireEvent.click(screen.getByLabelText(/Sync cadence/))
+    const byValue = Object.fromEntries(offered())
+    // The visible text is the declared name; the stored value stays raw.
+    // The held one also tells a screen reader it is the one chosen.
+    expect(byValue.daily).toBe("Once a day(chosen)")
     expect(byValue.hourly).toBe("Every hour")
     expect(byValue.off).toBe("Off")
   })
 
-  it("a required enum seeded with a default offers NO empty option (the 'two none' fix)", () => {
+  it("a required enum seeded with a default offers NO empty choice (the 'two none' fix)", () => {
     renderForm()
-    const select = screen.getByLabelText(/Sync cadence/) as HTMLSelectElement
-    const options = within(select).getAllByRole("option") as HTMLOptionElement[]
-    // No empty placeholder (its value is ""), and none of the empty-choice
-    // copy — a required select with a value must not offer an empty pick.
-    expect(options.some((o) => o.value === "")).toBe(false)
-    expect(within(select).queryByText("None")).toBeNull()
-    expect(within(select).queryByText("Select…")).toBeNull()
-    // Exactly the three declared options remain.
-    expect(options.map((o) => o.value)).toEqual(["off", "hourly", "daily"])
+    fireEvent.click(screen.getByLabelText(/Sync cadence/))
+    // No clear row and none of the empty-choice copy: a required enum with a
+    // value must not offer an empty pick.
+    expect(offered().map(([v]) => v)).toEqual(["off", "hourly", "daily"])
+    expect(screen.queryByText("Clear")).toBeNull()
+    expect(screen.queryByText("None")).toBeNull()
   })
 
   it("never offers a host-managed (writer!=owner) property", () => {

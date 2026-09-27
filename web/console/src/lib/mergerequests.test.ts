@@ -214,16 +214,23 @@ describe("deriveDiff", () => {
   })
 
   it("includes undeclared properties either side carries, marked undeclared", () => {
-    const winner = person("w", { name: "A", title: "A" })
-    const loser = person("l", { name: "A", title: "A", phones: ["+30"] })
+    const winner = person("w", { name: "A" })
+    const loser = person("l", { name: "A", phones: ["+30"] })
     const rows = deriveDiff(winner, loser, personType)
-    const title = rows.find((r) => r.key === "title")
     const phones = rows.find((r) => r.key === "phones")
-    expect(title?.declared).toBe(false)
-    expect(title?.posture).toBe("equal")
     // present on one side only = a difference, machine-held by default.
     expect(phones?.declared).toBe(false)
     expect(phones?.posture).toBe("recompute")
+  })
+
+  it("leaves out the derived title a kind does not declare", () => {
+    // The title is worked out from a declared property (decision record
+    // 0016), so comparing it repeats the row it comes from.
+    const winner = person("w", { name: "Ada", title: "Ada" })
+    const loser = person("l", { name: "Ada L", title: "Ada L" })
+    const rows = deriveDiff(winner, loser, personType)
+    expect(rows.map((r) => r.key)).not.toContain("title")
+    expect(rows.find((r) => r.key === "name")?.posture).toBe("recompute")
   })
 
   it("diffs a reference property like any other, machine-held", () => {

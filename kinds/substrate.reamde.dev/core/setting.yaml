@@ -23,6 +23,7 @@ data:
     id — `<authority>/<package>/<name>`. The bundle ships it empty, the user
     fills the value, and every function of that bundle reads it as `config.settings.<name>`.
     A value that carries a secret is a `secret` record instead.
+  purpose: internal
   names:
     singular: setting
   # The id carries the bundle prefix, so the bare name is what a row should

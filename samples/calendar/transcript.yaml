@@ -6,10 +6,12 @@ data:
   authority: samples.substrate.reamde.dev
   package: calendar
   description: >-
-    A meeting's transcript, pointed at the occurrence that actually happened
-    and the people who spoke. The text is embedded, so what was said in a
-    meeting is searchable alongside everything else rather than only scrollable.
-  version: 6
+    What was said in a meeting, written out. A meeting's transcript, pointed
+    at the occurrence that actually happened and the people who spoke. The
+    text is embedded, so what was said in a meeting is searchable alongside
+    everything else rather than only scrollable.
+  version: 8
+  purpose: supporting
   names:
     singular: transcript
   traits:

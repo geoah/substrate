@@ -4,7 +4,7 @@
  * that feed every hover. Key order in `definition` is lost to jsonb, so
  * declared names sort alphabetically — stable and honest. */
 
-import { splitKind } from "@/lib/api/http"
+import { CORE_AUTHORITY, splitKind } from "@/lib/api/http"
 import { parseEnumValues, type EnumValue, type KindInfo } from "@/lib/api/types"
 
 /** A kind reference split into `{authority, pkg, name}`:
@@ -18,6 +18,34 @@ export { splitKind }
  * repository-local kind, which carries neither. */
 export function kindPackage(k: KindInfo): string {
   return k.authority ? `${k.authority}/${k.package}` : ""
+}
+
+/** What a kind is FOR, as the console lists it: `primary` kinds are the
+ * collections a person keeps; `supporting` kinds hold what those need
+ * (email addresses, labels); `internal` kinds are machinery. */
+export type KindPurpose = "primary" | "supporting" | "internal"
+
+const PURPOSES: readonly KindPurpose[] = ["primary", "supporting", "internal"]
+
+/** The declaration's `purpose`, absent reading `primary`. `shipped` is the
+ * purpose the catalog says the shipped declaration carries: it stands in for
+ * a kind not held here, and for one held from a copy taken before it declared
+ * any. Every kind the substrate's own authority publishes is machinery
+ * whatever it declares. */
+export function kindPurpose(
+  k: KindInfo | string,
+  shipped?: string
+): KindPurpose {
+  const authority = typeof k === "string" ? splitKind(k).authority : k.authority
+  if (authority === CORE_AUTHORITY) return "internal"
+  const declared = typeof k === "string" ? undefined : k.definition?.purpose
+  return asPurpose(declared) ?? asPurpose(shipped) ?? "primary"
+}
+
+function asPurpose(value: unknown): KindPurpose | undefined {
+  return PURPOSES.includes(value as KindPurpose)
+    ? (value as KindPurpose)
+    : undefined
 }
 
 export interface DeclaredProperty {
@@ -130,6 +158,12 @@ function linkPropertyNames(raw: unknown): string[] | undefined {
   return names.length ? names : undefined
 }
 
+/** Core's `temporal` trait, named in full (decision 0101) or, as older
+ * declarations still spell it, bare. The prefix is core's own and nothing
+ * else: another package's `temporal` is not the trait that binds hot columns. */
+const TEMPORAL_TRAIT =
+  /^(?:substrate\.reamde\.dev\/core\/)?temporal\(\s*(point|range)(?:\s*:\s*(\w+))?\s*\)$/
+
 /** The hot columns a kind's traits bind: `temporal(point)` → `at`,
  * `temporal(range)` → `at` + `endsAt`, and a remap like
  * `temporal(point: dueAt)` moves the point onto `dueAt`. */
@@ -139,7 +173,7 @@ export function temporalProperties(k: KindInfo): string[] {
   const out: string[] = []
   for (const trait of traits) {
     if (typeof trait !== "string") continue
-    const m = trait.match(/^temporal\(\s*(point|range)(?:\s*:\s*(\w+))?\s*\)$/)
+    const m = trait.match(TEMPORAL_TRAIT)
     if (!m) continue
     if (m[1] === "range") out.push("at", "endsAt")
     else out.push(m[2] ?? "at")

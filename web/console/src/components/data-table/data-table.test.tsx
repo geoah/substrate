@@ -258,3 +258,91 @@ describe("useDataTable sorting", () => {
     ])
   })
 })
+
+/** A column's description is reachable from the keyboard: it rides a button,
+ * the sort button where the column sorts. */
+describe("DataTableColumnHeader descriptions", () => {
+  afterEach(cleanup)
+
+  function Surface({ sortable }: { sortable: boolean }) {
+    const table = useDataTable({
+      columns: [
+        {
+          id: "a",
+          accessorFn: (r: Row) => r.a,
+          enableSorting: sortable,
+          header: ({ column }) => (
+            <DataTableColumnHeader
+              column={column}
+              title="Due"
+              description="When it is due"
+            />
+          ),
+        },
+      ],
+      data: DATA,
+      sorting: [],
+      onSortingChange: () => {},
+    })
+    return <DataTable table={table} />
+  }
+
+  it("puts a plain column's description on a focusable button", () => {
+    render(<Surface sortable={false} />)
+    const trigger = screen.getByRole("button", { name: "Due" })
+    expect(trigger.tagName).toBe("BUTTON")
+  })
+
+  it("puts a sortable column's description on its sort button", () => {
+    render(<Surface sortable />)
+    expect(screen.getAllByRole("button", { name: /Due/ })).toHaveLength(1)
+  })
+})
+
+describe("the sorted column's header cell", () => {
+  it("carries aria-sort in step with the sorting state", () => {
+    const { result } = renderHook(() =>
+      useDataTable({
+        columns: COLUMNS,
+        data: DATA,
+        sorting: [{ id: "b", desc: false }],
+      })
+    )
+    render(<DataTable table={result.current} />)
+    expect(
+      screen
+        .getAllByRole("columnheader")
+        .map((th) => th.getAttribute("aria-sort"))
+    ).toEqual([null, "ascending", null])
+  })
+})
+
+describe("columns taken whole", () => {
+  it("applies a view's order and hidden set at once and reports the reader's hidden columns", () => {
+    const { result } = renderHook(() =>
+      useDataTable({
+        columns: COLUMNS,
+        data: DATA,
+        prefsKey: "t",
+        defaultHidden: ["c"],
+      })
+    )
+    expect(result.current.options.meta?.readerHidden).toEqual(["c"])
+    act(() =>
+      result.current.options.meta?.applyColumns?.({
+        order: ["c", "a", "b"],
+        hidden: ["b"],
+      })
+    )
+    expect(result.current.getVisibleLeafColumns().map((c) => c.id)).toEqual([
+      "c",
+      "a",
+    ])
+    expect(result.current.options.meta?.readerHidden).toEqual(["b"])
+    act(() => result.current.options.meta?.applyColumns?.({}))
+    expect(result.current.getVisibleLeafColumns().map((c) => c.id)).toEqual([
+      "c",
+      "a",
+    ])
+  })
+})

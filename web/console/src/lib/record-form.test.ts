@@ -8,13 +8,16 @@ import { describe, expect, it } from "vitest"
 
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import {
+  arrangeNewRecord,
   buildFormFields,
   humanizeName,
   initialValues,
+  newRecordBands,
   parseList,
   toProperties,
   validate,
 } from "./record-form"
+import { propSpecsByName } from "./record-schema"
 
 function typeWith(
   properties: Record<string, Record<string, unknown>>
@@ -437,7 +440,7 @@ describe("reference fields", () => {
     })
   })
 
-  it("seeds a reference that carries link data from the path under `ref`", () => {
+  it("seeds a reference that carries link data from the path under `ref`, and keeps the link", () => {
     const record = {
       properties: {
         owner: {
@@ -449,6 +452,7 @@ describe("reference fields", () => {
     expect(initialValues(fieldsOf(), record).owner).toEqual({
       kind: "samples.substrate.reamde.dev/people/person",
       id: "alice",
+      link: { role: "lead" },
     })
   })
 
@@ -563,5 +567,163 @@ describe("reference fields", () => {
     const values = initialValues(fields)
     expect(toProperties(fields, values)).toEqual({})
     expect(validate(fields, values, "create")).toEqual([])
+  })
+})
+
+describe("link data on a reference", () => {
+  const ORG = "samples.substrate.reamde.dev/people/organization"
+  const kind = typeWith({
+    employer: {
+      type: "reference",
+      kind: ORG,
+      properties: { role: { type: "string" } },
+    },
+    memberOf: {
+      type: "reference",
+      kind: ORG,
+      repeated: true,
+      properties: { role: { type: "string" }, since: { type: "date" } },
+    },
+  })
+  const fields = () => buildFormFields(kind)
+  const stored = {
+    properties: {
+      employer: { ref: `${ORG}/acme`, role: "CTO" },
+      memberOf: [
+        { ref: `${ORG}/acme`, role: "CTO", since: "2020-01-01" },
+        { ref: `${ORG}/globex` },
+        { ref: `${ORG}/initech`, role: "advisor" },
+      ],
+    },
+  } as unknown as SubstrateRecord
+
+  // Owner report follow-up, 2026-09-26: a person's Member of carries each
+  // membership's role and start date beside the pointer, and a save that
+  // wrote the paths alone erased them from every row it touched.
+  it("writes a list back with every item's link data, unchanged", () => {
+    const f = fields()
+    expect(toProperties(f, initialValues(f, stored)).memberOf).toEqual([
+      { ref: `${ORG}/acme`, role: "CTO", since: "2020-01-01" },
+      `${ORG}/globex`,
+      { ref: `${ORG}/initech`, role: "advisor" },
+    ])
+    expect(toProperties(f, initialValues(f, stored)).employer).toEqual({
+      ref: `${ORG}/acme`,
+      role: "CTO",
+    })
+  })
+
+  it("keeps link data through a remove, a reorder and an add; the added item has none", () => {
+    const f = fields()
+    const values = initialValues(f, stored)
+    const [acme, , initech] = values.memberOf as { kind: string; id: string }[]
+    values.memberOf = [initech, acme, { kind: ORG, id: "umbrella" }]
+    expect(toProperties(f, values).memberOf).toEqual([
+      { ref: `${ORG}/initech`, role: "advisor" },
+      { ref: `${ORG}/acme`, role: "CTO", since: "2020-01-01" },
+      `${ORG}/umbrella`,
+    ])
+  })
+})
+
+describe("a new record's rows", () => {
+  const task: KindInfo = {
+    identity: "example.com/tasks/task",
+    name: "task",
+    authority: "example.com",
+    package: "tasks",
+    version: 1,
+    source: "installed",
+    description: "",
+    definition: {
+      traits: [
+        "substrate.reamde.dev/core/temporal(point: dueAt)",
+        "substrate.reamde.dev/core/recurring",
+        "substrate.reamde.dev/core/override",
+      ],
+      properties: {
+        name: { type: "string", required: true },
+        url: { type: "url" },
+        priority: { type: "enum", values: ["low", "high"] },
+        dueAt: { type: "datetime" },
+        startedOn: { type: "date" },
+        completedAt: { type: "datetime" },
+        exdates: { type: "datetime", repeated: true },
+        recurrence: { type: "recurrence" },
+        recurrenceOf: { type: "reference", kind: "example.com/tasks/task" },
+        originalAt: { type: "datetime" },
+        assignee: { type: "reference", kind: "example.com/people/person" },
+        watchers: {
+          type: "reference",
+          kind: "example.com/people/person",
+          repeated: true,
+        },
+        source: { type: "reference" },
+        status: {
+          type: "state",
+          states: ["open", "done"],
+          initial: "open",
+          transitions: [
+            { from: "open", to: "done", stamps: { completedAt: "now" } },
+          ],
+        },
+      },
+    },
+  }
+  const rows = propSpecsByName(task).map((spec) => ({ name: spec.name, spec }))
+
+  it("asks for what it must have, then what it points at and when", () => {
+    const bands = newRecordBands(
+      task,
+      rows.map((r) => r.spec)
+    )
+    expect(Object.fromEntries(bands)).toEqual({
+      assignee: "common",
+      completedAt: "later",
+      dueAt: "common",
+      exdates: "later",
+      name: "required",
+      originalAt: "later",
+      priority: "rest",
+      recurrence: "later",
+      recurrenceOf: "later",
+      source: "later",
+      startedOn: "common",
+      status: "rest",
+      url: "rest",
+      watchers: "common",
+    })
+  })
+
+  it("shows the required and the common, folds the rest, the seldom-typed last", () => {
+    const { shown, folded } = arrangeNewRecord(task, rows)
+    expect(shown.map((r) => r.name)).toEqual([
+      "name",
+      "assignee",
+      "dueAt",
+      "startedOn",
+      "watchers",
+    ])
+    expect(folded.map((r) => r.name)).toEqual([
+      "priority",
+      "status",
+      "url",
+      "completedAt",
+      "exdates",
+      "originalAt",
+      "recurrence",
+      "recurrenceOf",
+      "source",
+    ])
+  })
+
+  it("keeps a folded row open once it holds something", () => {
+    const { shown, folded } = arrangeNewRecord(
+      task,
+      rows,
+      (r) => r.name === "priority"
+    )
+    expect(shown.map((r) => r.name).at(-1)).toBe("priority")
+    expect(folded.map((r) => r.name)).not.toContain("priority")
   })
 })

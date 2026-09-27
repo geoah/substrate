@@ -108,7 +108,8 @@ substratectl get $AUTHORITY/tasks/task    # empty, but the kind is there
 The import rewrites the closure onto the authority THIS repository owns, so
 what lands is `<your authority>/tasks/task` and it is yours to change
 ([0048](decisions/0048-providers-are-published-samples-are-copied.md)). The
-console does the same thing from the [Registry](console.md#registry) page,
+console does the same thing from **All data → Add a collection → Start from
+a sample** ([web console](console.md#add-a-collection)),
 `substratectl import samples.substrate.reamde.dev/tasks` does it from a
 terminal, and `substratectl apply -f bundle.yaml --as <your authority>` applies
 a closure you hold as files. All four run the same admission, which

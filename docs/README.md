@@ -57,7 +57,10 @@ API call that completes a task.
 ## Tools and operations
 
 - [substratectl](substratectl.md) — the CLI
-- [The web console](console.md)
+- [The web console](console.md), and its [design](console/README.md): the
+  [design guide](console/design-guide.md), the
+  [element catalogue](console/elements.md), the two design reviews and the
+  approved prototype
 - [Running one locally](running-locally.md)
 - [Running a substrate](operations.md)
 - [Upgrade notes](changes/README.md): what each release changes that a

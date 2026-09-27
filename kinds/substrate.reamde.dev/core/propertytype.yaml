@@ -10,7 +10,8 @@ data:
     range or a value set (`isbn`, `asin`). Package-local — only the package
     that declares it may use it — so a shape is stated once instead of repeated
     on every property that wants it.
-  version: 11
+  version: 12
+  purpose: internal
   names:
     singular: propertytype
   # id = "<authority>/<package>/<name>". A refinement is package-local — a

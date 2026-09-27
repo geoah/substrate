@@ -6,9 +6,12 @@ import { describe, expect, it } from "vitest"
 
 import {
   cellValue,
+  cleanTitle,
+  recordTitle,
   referenceCell,
   referenceID,
   referenceObjects,
+  feedStamp,
   shortDate,
   tableDateTime,
 } from "./format"
@@ -28,6 +31,27 @@ const MONTHS = [
   "Nov",
   "Dec",
 ]
+
+describe("feedStamp", () => {
+  // Local noon, so neighbours stay on their local day in any timezone.
+  const at = (day: number, h = 12, m = 0, sec = 0) =>
+    new Date(2026, 8, day, h, m, sec).toISOString()
+  const now = Date.parse(at(27, 18))
+
+  it("dates the first row of each day and clocks the rest", () => {
+    expect(feedStamp(at(27, 12, 4, 9), undefined, now)).toBe("Today, 12:04:09")
+    expect(feedStamp(at(27, 11, 0, 1), at(27, 12, 4, 9), now)).toBe("11:00:01")
+    expect(feedStamp(at(26, 23, 59, 0), at(27, 0, 1), now)).toBe(
+      "Yesterday, 23:59:00"
+    )
+    expect(feedStamp(at(25, 9, 30, 0), at(26, 8), now)).toBe("Sep 25, 09:30:00")
+  })
+
+  it("adds the year once it differs from now's", () => {
+    const old = new Date(2025, 2, 4, 9, 5, 0).toISOString()
+    expect(feedStamp(old, undefined, now)).toBe("Mar 4 2025, 09:05:00")
+  })
+})
 
 describe("tableDateTime", () => {
   it("renders the LOCAL month-day and time", () => {
@@ -130,5 +154,23 @@ describe("referenceObjects", () => {
     ).toBeUndefined()
     expect(referenceObjects([])).toBeUndefined()
     expect(referenceObjects(null)).toBeUndefined()
+  })
+})
+
+describe("cleanTitle", () => {
+  it("drops the separator an empty template token left at an edge", () => {
+    expect(cleanTitle(": Grace Hopper + Grace B. Hopper")).toBe(
+      "Grace Hopper + Grace B. Hopper"
+    )
+    expect(cleanTitle("proposed: Grace Hopper +")).toBe(
+      "proposed: Grace Hopper"
+    )
+    expect(recordTitle({ title: ": target-1" })).toBe("target-1")
+  })
+
+  it("leaves a title that only looks like one alone", () => {
+    expect(cleanTitle("C++")).toBe("C++")
+    expect(cleanTitle("Q3: plan")).toBe("Q3: plan")
+    expect(cleanTitle("-5 degrees")).toBe("-5 degrees")
   })
 })

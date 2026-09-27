@@ -52,6 +52,8 @@ import type {
   Change,
   ChangePage,
   ChangeRow,
+  ChangeRun,
+  ChangeRunPage,
   ChangeTrigger,
   Cond,
   ConversionConfirm,
@@ -71,6 +73,7 @@ import type {
   Page,
   ProblemDetail,
   PropertyAlternative,
+  PropertyChange,
   PropertyMeta,
   PutInput,
   RankedPage,
@@ -217,6 +220,7 @@ const recordFilter: Shape<RecordFilter> = {
   search: false,
   kinds: false,
   implements: false,
+  purposes: false,
   ids: false,
   properties: false,
   labels: false,
@@ -261,6 +265,16 @@ const affectedRecord: Shape<AffectedRecord> = {
   id: true,
   version: false,
   deleted: false,
+  properties: false,
+}
+
+/** One property's before and after on an affected record (decision 0135). */
+const propertyChange: Shape<PropertyChange> = {
+  name: true,
+  renamedFrom: false,
+  before: false,
+  after: false,
+  beforeUnknown: false,
 }
 
 const changeTrigger: Shape<ChangeTrigger> = {
@@ -284,6 +298,26 @@ const changePage: Shape<ChangePage> = {
   generation: true,
 }
 
+const changeRun: Shape<ChangeRun> = {
+  actor: true,
+  kind: true,
+  verb: true,
+  count: true,
+  records: true,
+  recordId: false,
+  newestSeq: true,
+  oldestSeq: true,
+  newestTs: true,
+  oldestTs: true,
+}
+
+const changeRunPage: Shape<ChangeRunPage> = {
+  runs: true,
+  cursor: false,
+  head: true,
+  generation: true,
+}
+
 /** The list envelope; the element type does not change its keys. */
 const page: Shape<Page<unknown>> = {
   records: true,
@@ -293,6 +327,7 @@ const page: Shape<Page<unknown>> = {
   included: false,
   matches: false,
   problems: false,
+  count: false,
 }
 
 /** The ranked read's envelope, and one hit's per-arm scores. */
@@ -440,6 +475,7 @@ const suggestedMapping: Shape<SuggestedMapping> = {
 const bundleClosure: Shape<BundleClosure> = {
   kinds: true,
   kindDescriptions: false,
+  kindPurposes: false,
   traits: true,
   traitDescriptions: false,
   functions: true,
@@ -631,9 +667,12 @@ const mirrors: Record<string, Record<string, boolean>> = {
   KindLabel: kindLabel,
   Change: change,
   AffectedRecord: affectedRecord,
+  PropertyChange: propertyChange,
   ChangeTrigger: changeTrigger,
   ChangeRow: changeRow,
   ChangePage: changePage,
+  ChangeRun: changeRun,
+  ChangeRunPage: changeRunPage,
   Page: page,
   RankedPage: rankedPage,
   Scores: scores,
@@ -705,6 +744,7 @@ const notOnTheWire: Record<string, string> = {
   DecisionNotice: "a view the console folds from llm/message records",
   InteractionNotice: "a view the console folds from llm/message records",
   DeliveryNotice: "a view the console folds from llm/message records",
+  LiveOverlay: "the chat stream's events folded client-side, never serialized",
   // actors.ts
   ActorMirrors: "client-side actor resolution state",
   ResolvedActor: "client-side actor resolution state",
@@ -715,13 +755,13 @@ const notOnTheWire: Record<string, string> = {
     "the feed's query parameters, URL-encoded, never a JSON body",
   ChangesFeedOpts: "query options for the infinite feed, client-side",
   HistoryPosition: "a seek position the console holds, client-side",
+  RunSource:
+    "a run summary plus the page filter its rows are read under, client-side",
   WatchError:
     "a loose reading of ErrorPayload off a stream frame (`code` as any string); the shape is pinned as ErrorPayload",
   WatchLine:
     "the union of the three ndjson frame shapes (a ChangeRow, `{bookmark, generation}`, `{error}`), keyed by which field is present",
   WatchHandle: "a client handle over the stream, never serialized",
-  // overview.ts
-  KindCount: "a dashboard tally the console computes",
   // records.ts
   ListParams: "the list read's query parameters, never a JSON body",
   RecordCount: "a bounded walk's tally the console computes",

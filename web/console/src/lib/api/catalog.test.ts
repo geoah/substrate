@@ -169,6 +169,9 @@ describe("landedCatalog", () => {
         kindDescriptions: {
           "samples.substrate.reamde.dev/pebble/recording": "one capture",
         },
+        kindPurposes: {
+          "samples.substrate.reamde.dev/pebble/recording": "supporting",
+        },
         traits: null,
         functions: ["samples.substrate.reamde.dev/pebble/ingest"],
         agents: null,
@@ -194,6 +197,9 @@ describe("landedCatalog", () => {
     expect(landed.closure.kinds).toEqual([`${HOME}/pebble/recording`])
     expect(landed.closure.kindDescriptions).toEqual({
       [`${HOME}/pebble/recording`]: "one capture",
+    })
+    expect(landed.closure.kindPurposes).toEqual({
+      [`${HOME}/pebble/recording`]: "supporting",
     })
     // A callable is a core kind reference with the sample's identity INSIDE
     // it: a prefix rewrite left the shipped authority sitting in the middle.

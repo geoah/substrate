@@ -10,6 +10,7 @@ data:
     enrolled and the repository's data-encryption key wrapped to it. Only
     the matching age identity, which the user keeps and the substrate never
     stores, opens the wrap.
+  purpose: internal
   names:
     singular: recoverykey
   # A SINGLETON, id `self`, like the credential. The sealedKey is ciphertext

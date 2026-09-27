@@ -109,7 +109,10 @@ data:
   # Connections page, `GET /api/v1/sync/status` and `substratectl sync status`
   # render this bundle without knowing it (T-084). ADDITIVE, unlike 10: every
   # property version 10 declared stays, at its own name and type.
-  version: 13
+  #
+  # 15 — every kind's description opens with one plain sentence
+  # saying what a record is to a person.
+  version: 15
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -217,10 +220,12 @@ data:
   authority: providers.substrate.reamde.dev
   package: whoop
   description: >-
-    The WHOOP OAuth app this bundle authenticates through — its client id,
-    a sealed client secret, and the data API's origin. The record the bundle's
-    client input resolves; endpoints and scopes are manifest metadata rather
-    than editable rows.
+    The WHOOP app settings your account connects through. The WHOOP OAuth
+    app this bundle authenticates through — its client id, a sealed client
+    secret, and the data API's origin. The record the bundle's client input
+    resolves; endpoints and scopes are manifest metadata rather than editable
+    rows.
+  purpose: internal
   names:
     singular: config
   traits: [substrate.reamde.dev/core/oauth2]
@@ -270,10 +275,12 @@ data:
   authority: providers.substrate.reamde.dev
   package: whoop
   description: >-
-    One connected WHOOP account: these records ARE the bundle's connections.
-    The OAuth facility writes the credential reference, status, granted scopes
-    and address; the owner chooses which collections sync and how often; the
-    sync keeps its cursors and stamps here rather than on any mirror.
+    Your WHOOP account, connected here. One connected WHOOP account: these
+    records ARE the bundle's connections. The OAuth facility writes the credential
+    reference, status, granted scopes and address; the owner chooses which
+    collections sync and how often; the sync keeps its cursors and stamps
+    here rather than on any mirror.
+  purpose: internal
   names:
     singular: account
   # `sync` is the core trait the Connections page, `GET /api/v1/sync/status`
@@ -586,11 +593,12 @@ data:
   authority: providers.substrate.reamde.dev
   package: whoop
   description: >-
-    One WHOOP member, as API v2 describes them across two sibling calls keyed
-    by their identity: GET /v2/user/profile/basic and GET /v2/user/measurement/body.
-    The sync runs BOTH, both are authoritative, neither is paged, and WHOOP
-    negotiates no media type (the sync sends Accept: application/json). No
-    instant of its own, so no temporal trait.
+    Your WHOOP profile and body measurements. One WHOOP member, as API v2
+    describes them across two sibling calls keyed by their identity: GET /v2/user/profile/basic
+    and GET /v2/user/measurement/body. The sync runs BOTH, both are authoritative,
+    neither is paged, and WHOOP negotiates no media type (the sync sends Accept:
+    application/json). No instant of its own, so no temporal trait.
+  purpose: supporting
   names:
     singular: user
   displayTemplate: "{firstName} {lastName}"
@@ -663,12 +671,13 @@ data:
   authority: providers.substrate.reamde.dev
   package: whoop
   description: >-
-    One WHOOP physiological cycle — the wake-to-wake day it scores strain
-    over. The SYNC reads GET /v2/cycle, paged and authoritative, and nothing
-    else; GET /v2/cycle/{id} returns the same resource and is not called.
-    `at` is the cycle's `start` and `endsAt` its `end`; the CURRENT cycle
-    has no `end` and so no `endsAt`. The paging envelope is the one omitted
-    class.
+    One day on WHOOP, from waking up to waking up, and the strain it scored.
+    A WHOOP physiological cycle. The SYNC reads GET /v2/cycle, paged and authoritative,
+    and nothing else; GET /v2/cycle/{id} returns the same resource and is
+    not called. `at` is the cycle's `start` and `endsAt` its `end`; the CURRENT
+    cycle has no `end` and so no `endsAt`. The paging envelope is the one
+    omitted class.
+  purpose: supporting
   names:
     singular: cycle
   traits:
@@ -784,11 +793,12 @@ data:
   authority: providers.substrate.reamde.dev
   package: whoop
   description: >-
-    One WHOOP recovery — the verdict on a physiological cycle. The SYNC reads
-    GET /v2/recovery, paged and authoritative; GET /v2/cycle/{id}/recovery
-    returns the same resource and is not called. It has no id of its own,
-    so this row's identity is its `cycle` reference and a re-score converges
-    on the same row. `at` is `created_at`; the paging envelope is omitted.
+    How well you recovered on one WHOOP day. One WHOOP recovery — the verdict
+    on a physiological cycle. The SYNC reads GET /v2/recovery, paged and authoritative;
+    GET /v2/cycle/{id}/recovery returns the same resource and is not called.
+    It has no id of its own, so this row's identity is its `cycle` reference
+    and a re-score converges on the same row. `at` is `created_at`; the paging
+    envelope is omitted.
   names:
     singular: recovery
   traits:
@@ -916,11 +926,12 @@ data:
   authority: providers.substrate.reamde.dev
   package: whoop
   description: >-
-    One WHOOP sleep — a night or a nap; WHOOP gives both one identity and
-    one shape and tells them apart with `nap`. The SYNC reads GET /v2/activity/sleep,
-    paged and authoritative; the per-id and per-cycle calls return the same
-    resource and are not called. `at` is the sleep's `start` and `endsAt`
-    its `end`. The paging envelope is the one omitted class.
+    A night's sleep or a nap, as WHOOP recorded it. One WHOOP sleep — a night
+    or a nap; WHOOP gives both one identity and one shape and tells them apart
+    with `nap`. The SYNC reads GET /v2/activity/sleep, paged and authoritative;
+    the per-id and per-cycle calls return the same resource and are not called.
+    `at` is the sleep's `start` and `endsAt` its `end`. The paging envelope
+    is the one omitted class.
   names:
     singular: sleep
   traits:
@@ -1116,11 +1127,11 @@ data:
   authority: providers.substrate.reamde.dev
   package: whoop
   description: >-
-    One WHOOP workout — a recorded activity. The SYNC reads GET /v2/activity/workout,
-    paged and authoritative; GET /v2/activity/workout/{id} returns the same
-    resource and is not called. `at` is the workout's `start` and `endsAt`
-    its `end`. The paging envelope is the one omitted class; v2 publishes
-    no hypermedia.
+    A workout WHOOP recorded. One WHOOP workout — a recorded activity. The
+    SYNC reads GET /v2/activity/workout, paged and authoritative; GET /v2/activity/workout/{id}
+    returns the same resource and is not called. `at` is the workout's `start`
+    and `endsAt` its `end`. The paging envelope is the one omitted class;
+    v2 publishes no hypermedia.
   names:
     singular: workout
   traits:

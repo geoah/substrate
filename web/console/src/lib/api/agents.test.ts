@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   lastAssistantReply,
   parseAgentEvent,
+  policiesForAgent,
   providerEndpoint,
   providerHasKey,
   streamChat,
@@ -195,5 +196,28 @@ describe("provider rows", () => {
     expect(providerHasKey(provider({ apiKey: "<redacted>" }))).toBe(true)
     expect(providerHasKey(provider({ apiKey: "" }))).toBe(false)
     expect(providerHasKey(provider({}))).toBe(false)
+  })
+})
+
+describe("policiesForAgent", () => {
+  const policy = (id: string, properties: Record<string, unknown>) =>
+    ({
+      id,
+      kind: "substrate.reamde.dev/core/recordpatchpolicy",
+      properties,
+      labels: {},
+      version: 1,
+      createdAt: "",
+      updatedAt: "",
+    }) as SubstrateRecord
+
+  it("keeps the enabled policies that name the agent or no agent", () => {
+    const got = policiesForAgent("ada.localhost/llm/substrate", [
+      policy("mine", { selector: { agents: ["ada.localhost/llm/substrate"] } }),
+      policy("everyone", { selector: { kinds: ["*"] } }),
+      policy("other", { selector: { agents: ["ada.localhost/llm/other"] } }),
+      policy("off", { disabled: true, selector: {} }),
+    ])
+    expect(got.map((p) => p.id)).toEqual(["mine", "everyone"])
   })
 })

@@ -6,9 +6,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: tasks
   description: >-
-    What tasks group under: a name, a lifecycle and a summary, with the tasks
-    pointing at it. Still thin on purpose: everything else about the work
-    lives on the tasks themselves.
+    A project your tasks belong to. What tasks group under: a name, a lifecycle
+    and a summary, with the tasks pointing at it. Still thin on purpose: everything
+    else about the work lives on the tasks themselves.
   names:
     singular: project
   displayTemplate: "{name}"

@@ -335,6 +335,7 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 		case vocabulary.DocKind:
 			b.Closure.Kinds = append(b.Closure.Kinds, id)
 			describe(&b.Closure.KindDescriptions, id, mstr(data, "description"))
+			describe(&b.Closure.KindPurposes, id, mstr(data, "purpose"))
 		case vocabulary.DocTrait:
 			b.Closure.Traits = append(b.Closure.Traits, id)
 			describe(&b.Closure.TraitDescriptions, id, mstr(data, "description"))

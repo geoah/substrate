@@ -6,10 +6,11 @@ data:
   authority: samples.substrate.reamde.dev
   package: people
   description: >-
-    A corporate body a person belongs to: employer, workspace, publisher,
-    studio, network, label. Which of those it is depends on the reference
-    pointing at it, not on a second kind, and nothing matches on the domain
-    — grouping contacts under one is deliberate.
+    A company or other organization people belong to. A corporate body a person
+    belongs to: employer, workspace, publisher, studio, network, label. Which
+    of those it is depends on the reference pointing at it, not on a second
+    kind, and nothing matches on the domain — grouping contacts under one
+    is deliberate.
   names:
     singular: organization
   # one type for every corporate body — which of the many it is (employer,

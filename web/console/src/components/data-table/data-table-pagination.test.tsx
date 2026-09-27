@@ -43,8 +43,7 @@ describe("the bar", () => {
 
   it("says which rows are on screen, out of how many", () => {
     render(<DataTablePagination {...base} />)
-    expect(screen.getByText("101–150")).toBeTruthy()
-    expect(screen.getByText("1,234")).toBeTruthy()
+    expect(screen.getByText("101–150 of 1,234")).toBeTruthy()
   })
 
   it("jumps to the page whose number was clicked", () => {
@@ -55,27 +54,51 @@ describe("the bar", () => {
   })
 
   it("marks the current page and offers no navigation off the ends", () => {
-    render(<DataTablePagination {...base} page={1} hasNext={false} />)
+    render(<DataTablePagination {...base} page={1} total={120} />)
     expect(
       screen
         .getByRole("button", { name: "Page 1" })
         .getAttribute("aria-current")
     ).toBe("page")
-    for (const name of ["First page", "Previous page", "Next page"]) {
-      expect(
-        screen.getByRole("button", { name }).hasAttribute("disabled")
-      ).toBe(true)
-    }
+    expect(
+      screen
+        .getByRole("button", { name: "Previous page" })
+        .hasAttribute("disabled")
+    ).toBe(true)
+    cleanup()
+    render(
+      <DataTablePagination
+        {...base}
+        page={3}
+        total={120}
+        rows={20}
+        hasNext={false}
+      />
+    )
+    expect(
+      screen.getByRole("button", { name: "Next page" }).hasAttribute("disabled")
+    ).toBe(true)
+  })
+
+  it("draws no page controls when everything fits on one page", () => {
+    render(
+      <DataTablePagination
+        {...base}
+        page={1}
+        rows={12}
+        total={12}
+        hasNext={false}
+      />
+    )
+    expect(screen.getByText("1–12 of 12")).toBeTruthy()
+    expect(screen.queryByRole("navigation")).toBeNull()
   })
 
   it("does not claim a last page when the count is a floor", () => {
-    // The size probe is a bounded walk, so `10000+` means "at least": a Last
-    // button built on it would land in the middle of the collection.
+    // The size probe is a bounded walk, so `10000+` means "at least": the
+    // numbers stop at the floor and an ellipsis says there is more.
     render(<DataTablePagination {...base} total={10000} totalCapped hasNext />)
-    expect(screen.getByText("10,000+")).toBeTruthy()
-    expect(
-      screen.getByRole("button", { name: "Last page" }).hasAttribute("disabled")
-    ).toBe(true)
+    expect(screen.getByText("101–150 of 10,000+")).toBeTruthy()
     // Next still works: the page's own cursor says there is another one.
     expect(
       screen.getByRole("button", { name: "Next page" }).hasAttribute("disabled")

@@ -10,6 +10,7 @@ data:
     creating it performs the merge, nothing waits on a decision, and the loser
     is tombstoned rather than erased so the recorded moves can be undone by
     a split.
+  purpose: internal
   names:
     singular: recordmerge
   # A random-id row reads as the pair it joined instead of its opaque id.

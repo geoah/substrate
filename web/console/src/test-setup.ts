@@ -16,6 +16,13 @@ function installBrowserGaps() {
    * anything to report; it only has to exist. */
   if (!("ResizeObserver" in globalThis)) {
     globalThis.ResizeObserver = class {
+      // The real constructor takes the callback; declaring it keeps every
+      // `new ResizeObserver(cb)` a call with the right arity. jsdom has no
+      // layout, so it is kept and never called.
+      callback: ResizeObserverCallback
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback
+      }
       observe() {}
       unobserve() {}
       disconnect() {}
@@ -25,6 +32,12 @@ function installBrowserGaps() {
   /** cmdk scrolls the selected row into view on every keyboard move. */
   if (!Element.prototype.scrollIntoView) {
     Element.prototype.scrollIntoView = function scrollIntoView() {}
+  }
+
+  /** The collection grid scrolls back to its top when the page it shows
+   * changes (`DataGrid`). jsdom has no layout, so there is nowhere to go. */
+  if (!Element.prototype.scrollTo) {
+    Element.prototype.scrollTo = function scrollTo() {}
   }
 
   /** base-ui's popover positioning measures text ranges through the DOM Range

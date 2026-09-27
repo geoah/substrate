@@ -3,6 +3,7 @@
     "deleted": false,
     "id": true,
     "kind": true,
+    "properties": false,
     "version": false
   },
   "AgentEvent": {
@@ -37,6 +38,7 @@
     "functionDescriptions": false,
     "functions": true,
     "kindDescriptions": false,
+    "kindPurposes": false,
     "kinds": true,
     "mappings": true,
     "records": true,
@@ -160,6 +162,24 @@
     "triggers": false,
     "ts": true
   },
+  "ChangeRun": {
+    "actor": true,
+    "count": true,
+    "kind": true,
+    "newestSeq": true,
+    "newestTs": true,
+    "oldestSeq": true,
+    "oldestTs": true,
+    "recordId": false,
+    "records": true,
+    "verb": true
+  },
+  "ChangeRunPage": {
+    "cursor": false,
+    "generation": true,
+    "head": true,
+    "runs": true
+  },
   "ChangeTrigger": {
     "callable": true,
     "error": false,
@@ -266,6 +286,7 @@
     "items": true
   },
   "Page": {
+    "count": false,
     "cursor": false,
     "generation": true,
     "head": true,
@@ -283,6 +304,13 @@
     "source": false,
     "updatedAt": true,
     "value": true
+  },
+  "PropertyChange": {
+    "after": false,
+    "before": false,
+    "beforeUnknown": false,
+    "name": true,
+    "renamedFrom": false
   },
   "PropertyMeta": {
     "alternatives": false,
@@ -313,6 +341,7 @@
     "labels": false,
     "orphaned": false,
     "properties": false,
+    "purposes": false,
     "referencing": false,
     "search": false
   },

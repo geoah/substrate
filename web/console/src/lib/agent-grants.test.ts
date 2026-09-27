@@ -14,8 +14,14 @@ import {
   HOST_FUNCTION_QUERY,
   HOST_FUNCTION_WRITE,
   RECORD_PATCH_REQUEST_KIND,
+  canDeclareKinds,
+  collectionMaker,
+  grantEditProblem,
   grantHints,
+  grantKindsOf,
   hostToolsOf,
+  patternCovers,
+  permissionsWith,
 } from "./agent-grants"
 
 const WIDGET = "crew.test.dev/widget"
@@ -275,5 +281,122 @@ describe("grantHints", () => {
       HOST_FUNCTION_QUERY,
       HOST_FUNCTION_WRITE,
     ])
+  })
+})
+
+describe("editing the grants", () => {
+  const KIND = "substrate.reamde.dev/core/kind/"
+  const TASK = "samples.substrate.reamde.dev/tasks/task"
+  const PERSON = "samples.substrate.reamde.dev/people/person"
+  const tool = (fn: string) => ({
+    function: { ref: `substrate.reamde.dev/core/function/${fn}` },
+  })
+  const agent = {
+    tools: [tool(HOST_FUNCTION_QUERY), tool(HOST_FUNCTION_PROPOSE)],
+    permissions: {
+      reads: { kinds: [{ ref: `${KIND}${TASK}` }], budgets: { rows: 50 } },
+      writes: [
+        { ref: `${KIND}${TASK}` },
+        { ref: `${KIND}${RECORD_PATCH_REQUEST_KIND}` },
+      ],
+    },
+  }
+
+  it("reads each grant's kinds, leaving propose's own grant out", () => {
+    expect(grantKindsOf(agent, "reads")).toEqual([TASK])
+    expect(grantKindsOf(agent, "writes")).toEqual([TASK])
+    expect(grantKindsOf({}, "reads")).toEqual([])
+  })
+
+  it("sets one grant and carries everything else through", () => {
+    expect(permissionsWith(agent, "reads", [TASK, PERSON])).toEqual({
+      reads: {
+        kinds: [`${KIND}${TASK}`, `${KIND}${PERSON}`],
+        budgets: { rows: 50 },
+      },
+      writes: agent.permissions.writes,
+    })
+    expect(permissionsWith(agent, "writes", [PERSON]).writes).toEqual([
+      `${KIND}${PERSON}`,
+      `${KIND}${RECORD_PATCH_REQUEST_KIND}`,
+    ])
+    // An empty read grant is no grant at all.
+    expect(permissionsWith(agent, "reads", []).reads).toBeUndefined()
+  })
+
+  it("holds back an edit that would break a tool the agent holds", () => {
+    expect(grantEditProblem(agent, "reads", [])).toMatch(/needs to see/)
+    expect(grantEditProblem(agent, "reads", [PERSON])).toBeUndefined()
+    // propose keeps its own grant, so emptying the picked kinds is fine.
+    expect(grantEditProblem(agent, "writes", [])).toBeUndefined()
+    const writer = {
+      tools: [tool(HOST_FUNCTION_WRITE)],
+      permissions: { writes: [{ ref: `${KIND}${TASK}` }] },
+    }
+    expect(grantEditProblem(writer, "writes", [])).toMatch(
+      /needs to be able to change/
+    )
+  })
+})
+
+describe("who can set up a collection", () => {
+  const KIND_KIND = "substrate.reamde.dev/core/kind"
+  const tool = (fn: string) => ({
+    function: { ref: `substrate.reamde.dev/core/function/${fn}` },
+  })
+  const writes = (...kinds: string[]) => ({
+    writes: kinds.map((k) => ({ ref: `${KIND_KIND}/${k}` })),
+  })
+
+  it("reads a grant pattern the way the door does", () => {
+    expect(patternCovers("*", KIND_KIND)).toBe(true)
+    expect(patternCovers("substrate.reamde.dev/*", KIND_KIND)).toBe(true)
+    expect(patternCovers("substrate.reamde.dev/core/*", KIND_KIND)).toBe(true)
+    expect(patternCovers(KIND_KIND, KIND_KIND)).toBe(true)
+    expect(patternCovers("substrate.reamde.dev/co*", KIND_KIND)).toBe(false)
+    expect(patternCovers("samples.substrate.reamde.dev/*", KIND_KIND)).toBe(
+      false
+    )
+  })
+
+  it("needs the kind kind in its write grant and a tool that writes", () => {
+    expect(
+      canDeclareKinds({
+        tools: [tool(HOST_FUNCTION_WRITE)],
+        permissions: writes("*"),
+      })
+    ).toBe(true)
+    expect(
+      canDeclareKinds({
+        tools: [tool(HOST_FUNCTION_QUERY)],
+        permissions: writes("*"),
+      })
+    ).toBe(false)
+    expect(
+      canDeclareKinds({
+        tools: [tool(HOST_FUNCTION_WRITE)],
+        permissions: writes("samples.substrate.reamde.dev/notes/note"),
+      })
+    ).toBe(false)
+  })
+
+  it("hands the request to one that writes itself, never to one hidden from chat", () => {
+    const agent = (id: string, fn: string, hidden = false) => ({
+      id,
+      properties: {
+        tools: [tool(fn)],
+        permissions: writes("*"),
+        ...(hidden && { hiddenFromChat: true }),
+      },
+    })
+    expect(
+      collectionMaker([
+        agent("a", HOST_FUNCTION_PROPOSE),
+        agent("b", HOST_FUNCTION_WRITE, true),
+        agent("c", HOST_FUNCTION_WRITE),
+      ])?.id
+    ).toBe("c")
+    expect(collectionMaker([agent("a", HOST_FUNCTION_PROPOSE)])?.id).toBe("a")
+    expect(collectionMaker([agent("q", HOST_FUNCTION_QUERY)])).toBeUndefined()
   })
 })

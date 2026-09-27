@@ -16,6 +16,8 @@ import {
   parseValue,
   propSpecs,
   seedValue,
+  titleEditor,
+  titleProperty,
   type PropSpec,
 } from "./record-schema"
 
@@ -376,5 +378,91 @@ describe("parseValue / formatValue", () => {
 
   it("never renders a stored secret", () => {
     expect(formatValue(spec(wideKind, "apiKey"), "<redacted>")).toBe("")
+  })
+})
+
+/** The heading is editable only where typing into it changes it: the
+ * template reads one declared, owner-writable string property first, or the
+ * kind has no template and the built-in `title` is the heading. A written
+ * `title` on a templated kind is ignored by the server (decision 0016). */
+describe("titleProperty", () => {
+  function templated(
+    template: string | undefined,
+    properties: Record<string, unknown> = {}
+  ): KindInfo {
+    return {
+      identity: "acme.example.com/notes/note",
+      name: "note",
+      authority: "acme.example.com",
+      package: "notes",
+      version: 1,
+      source: "installed",
+      description: "",
+      definition: {
+        properties,
+        ...(template === undefined ? {} : { displayTemplate: template }),
+      },
+    }
+  }
+
+  it("edits the one string property the template reads", () => {
+    const props = { name: { type: "string" } }
+    expect(titleProperty(templated("{name}", props))).toBe("name")
+    expect(titleProperty(templated("{name|title}", props))).toBe("name")
+    expect(titleProperty(templated("{ name | id }", props))).toBe("name")
+  })
+
+  it("edits the built-in title only on a kind with no template", () => {
+    expect(titleProperty(templated(undefined))).toBe("title")
+    expect(titleProperty(undefined)).toBe("title")
+  })
+
+  it("offers no editor for a template naming nothing declared", () => {
+    // `{localName}` is the engine's own word, not a property.
+    expect(titleProperty(templated("{localName}"))).toBeUndefined()
+    expect(
+      titleProperty(templated("{title}", { name: { type: "string" } }))
+    ).toBeUndefined()
+  })
+
+  it("offers no editor where typing would not be the heading", () => {
+    const props = {
+      identifier: { type: "string" },
+      issueTitle: { type: "string" },
+      count: { type: "int" },
+      names: { type: "object", repeated: true },
+      synced: { type: "string", writer: "host" },
+      tags: { type: "string", repeated: true },
+    }
+    // Literal text, or a second placeholder, around the property.
+    expect(
+      titleProperty(templated("{identifier} {issueTitle}", props))
+    ).toBeUndefined()
+    expect(
+      titleProperty(templated("Issue {identifier}", props))
+    ).toBeUndefined()
+    // Not a one-line string, a path into one, or not the owner's to write.
+    expect(titleProperty(templated("{count}", props))).toBeUndefined()
+    expect(
+      titleProperty(templated("{names[].displayName|identifier}", props))
+    ).toBeUndefined()
+    expect(titleProperty(templated("{tags}", props))).toBeUndefined()
+  })
+
+  it("edits the heading only where the owner may write what it shows", () => {
+    const props = {
+      name: { type: "string" },
+      synced: { type: "string", writer: "host" },
+      stamped: { type: "string", managed: true },
+    }
+    expect(titleEditor(templated("{name}", props))?.name).toBe("name")
+    expect(titleEditor(templated(undefined))?.name).toBe("title")
+    expect(titleEditor(templated("{localName}"))).toBeUndefined()
+    // Shown by the heading, so never a row; but not the owner's to type.
+    expect(titleProperty(templated("{synced}", props))).toBe("synced")
+    expect(titleEditor(templated("{synced}", props))).toBeUndefined()
+    expect(titleEditor(templated("{stamped}", props))).toBeUndefined()
+    // Before the declaration is read, nothing is offered.
+    expect(titleEditor(undefined)).toBeUndefined()
   })
 })

@@ -43,7 +43,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: llm
-  version: 19
+  version: 21
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -75,9 +75,11 @@ data:
   authority: samples.substrate.reamde.dev
   package: llm
   description: >-
-    A practice record for the LLM examples: a name and a note, nothing else.
-    Propose one through the assistant, edit one through the editor, let the
-    arbiter judge a change to one.
+    A place to try out the assistant: a name and a note. A practice record
+    for the LLM sample: a name and a note, nothing else. Propose one through
+    the assistant, edit one through the editor, let the arbiter judge a change
+    to one.
+  purpose: supporting
   names:
     singular: scratchpad
   displayTemplate: "{name}"

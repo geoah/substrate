@@ -9,6 +9,7 @@ data:
     The undo of one merge, performed on creation exactly as the merge was.
     It names the recordmerge it reverses and reads that merge's recorded moves
     to put every property back where it came from.
+  purpose: internal
   names:
     singular: recordsplit
   # A random-id row reads as the merge it undoes instead of its opaque id.

@@ -256,3 +256,21 @@ export function bundleState(b: BundleStatus): BundleState {
 export function setupCount(b: Pick<BundleStatus, "setup">): number {
   return b.setup?.length ?? 0
 }
+
+/** Every record mapping this repository declares, one bounded page: what a
+ * provider page reads to say which of the reader's kinds a provider kind
+ * fills in (a mapping's `from` is the provider's kind, its `to` the
+ * reader's). */
+export const recordMappingsListQueryOptions = queryOptions({
+  queryKey: ["records", [`${CORE_PACKAGE}/recordmapping`], "providers"],
+  queryFn: async ({ signal }) => {
+    const page = await request<Page>(
+      "GET",
+      listPath({ kinds: [`${CORE_PACKAGE}/recordmapping`], first: 200 }),
+      undefined,
+      { signal }
+    )
+    return page.records ?? []
+  },
+  staleTime: 60_000,
+})

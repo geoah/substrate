@@ -116,6 +116,17 @@ declare module "@tanstack/react-table" {
     /** ONE atomic reset — order, visibility AND sizing together (sequential
      * state writes would persist each other's stale halves). */
     resetColumnPrefs?: () => void
+    /** Columns hidden right now only because they hold nothing on the rows
+     * loaded (`autoHidden` less what the reader asked to see). */
+    emptyHidden?: string[]
+    /** Show every column `emptyHidden` names, and remember that. */
+    showEmptyColumns?: () => void
+    /** The columns the reader hides, by their own choice or the surface's
+     * default (not the ones hidden for holding nothing). */
+    readerHidden?: string[]
+    /** Take a column order and a hidden set at once (a saved view); either
+     * absent keeps what is there. Drag widths stay. */
+    applyColumns?: (columns: { order?: string[]; hidden?: string[] }) => void
   }
 }
 
@@ -133,9 +144,25 @@ export interface UseDataTableOptions<TData extends RowData> {
   prefsKey?: string
   /** Columns the surface hides until the user asks for them. */
   defaultHidden?: string[]
+  /** Columns hidden because they hold nothing on the rows loaded. A column
+   * the reader turns on stays on (the prefs' `shown`); the rest come back by
+   * themselves on a page where they hold something. */
+  autoHidden?: string[]
 }
 
 const NOOP_SORT: OnChangeFn<SortingState> = () => {}
+
+/** A header cell's `aria-sort`: the sorted column says which way, and every
+ * other column says nothing, so a screen reader names only the one sort. */
+export function ariaSortOf(
+  sorted: false | "asc" | "desc"
+): "ascending" | "descending" | undefined {
+  return sorted === "asc"
+    ? "ascending"
+    : sorted === "desc"
+      ? "descending"
+      : undefined
+}
 
 export type DataTableInstance<TData extends RowData> = ReactTable<
   DataTableFeatures,
@@ -145,7 +172,7 @@ export type DataTableInstance<TData extends RowData> = ReactTable<
 export function useDataTable<TData extends RowData>(
   opts: UseDataTableOptions<TData>
 ): DataTableInstance<TData> {
-  const { prefsKey, defaultHidden } = opts
+  const { prefsKey, defaultHidden, autoHidden } = opts
   const naturalIds = useMemo(
     () =>
       opts.columns
@@ -170,10 +197,24 @@ export function useDataTable<TData extends RowData>(
     () => orderedColumns(naturalIds, prefs.order),
     [naturalIds, prefs.order]
   )
-  const columnVisibility = useMemo(
+  const baseVisibility = useMemo(
     () => columnVisibilityOf(naturalIds, prefs.hidden ?? defaultHidden),
     [naturalIds, prefs.hidden, defaultHidden]
   )
+  const shown = useMemo(() => prefs.shown ?? [], [prefs.shown])
+  const emptyHidden = useMemo(
+    () =>
+      (autoHidden ?? []).filter(
+        (id) => !shown.includes(id) && baseVisibility[id] !== false
+      ),
+    [autoHidden, shown, baseVisibility]
+  )
+  const columnVisibility = useMemo(() => {
+    if (!emptyHidden.length) return baseVisibility
+    const out = { ...baseVisibility }
+    for (const id of emptyHidden) out[id] = false
+    return out
+  }, [baseVisibility, emptyHidden])
   // The drag-resize overrides: column id → fixed px, empty = all computed.
   const columnSizing = useMemo<ColumnSizingState>(
     () => prefs.sizing ?? {},
@@ -183,14 +224,16 @@ export function useDataTable<TData extends RowData>(
   function persist(
     order: string[],
     visibility: Record<string, boolean>,
-    sizing: Record<string, number>
+    sizing: Record<string, number>,
+    nextShown: string[] = shown
   ) {
     const delta = prefsDelta(
       naturalIds,
       order,
       visibility,
       defaultHidden,
-      sizing
+      sizing,
+      nextShown
     )
     setPrefs(delta)
     if (prefsKey) saveTablePrefs(prefsKey, delta)
@@ -198,18 +241,33 @@ export function useDataTable<TData extends RowData>(
 
   const onColumnOrderChange: OnChangeFn<ColumnOrderState> = (updater) => {
     const next = typeof updater === "function" ? updater(columnOrder) : updater
-    persist(next, columnVisibility, columnSizing)
+    persist(next, baseVisibility, columnSizing)
   }
+  // The updater sees what is on screen; what is stored is the reader's own
+  // choice, so a column turned on while empty joins `shown` rather than
+  // flipping a visibility it already had.
   const onColumnVisibilityChange: OnChangeFn<ColumnVisibilityState> = (
     updater
   ) => {
-    const next =
-      typeof updater === "function" ? updater(columnVisibility) : updater
-    persist(columnOrder, { ...columnVisibility, ...next }, columnSizing)
+    const next = {
+      ...columnVisibility,
+      ...(typeof updater === "function" ? updater(columnVisibility) : updater),
+    }
+    const base = { ...baseVisibility }
+    let nextShown = shown
+    for (const id of naturalIds) {
+      if (next[id] === columnVisibility[id]) continue
+      base[id] = next[id] !== false
+      nextShown = nextShown.filter((s) => s !== id)
+      if (next[id] !== false && autoHidden?.includes(id)) {
+        nextShown = [...nextShown, id]
+      }
+    }
+    persist(columnOrder, base, columnSizing, nextShown)
   }
   const onColumnSizingChange: OnChangeFn<ColumnSizingState> = (updater) => {
     const next = typeof updater === "function" ? updater(columnSizing) : updater
-    persist(columnOrder, columnVisibility, next)
+    persist(columnOrder, baseVisibility, next)
   }
 
   return useTable({
@@ -237,7 +295,22 @@ export function useDataTable<TData extends RowData>(
         persist(
           [...naturalIds],
           columnVisibilityOf(naturalIds, defaultHidden),
-          {}
+          {},
+          []
+        ),
+      emptyHidden,
+      showEmptyColumns: () =>
+        persist(columnOrder, baseVisibility, columnSizing, [
+          ...shown,
+          ...emptyHidden,
+        ]),
+      readerHidden: naturalIds.filter((id) => baseVisibility[id] === false),
+      applyColumns: ({ order, hidden }) =>
+        persist(
+          order ? orderedColumns(naturalIds, order) : columnOrder,
+          hidden ? columnVisibilityOf(naturalIds, hidden) : baseVisibility,
+          columnSizing,
+          []
         ),
     },
   })
@@ -398,6 +471,7 @@ export function DataTable<TData extends RowData>({
               {headerGroup.headers.map((header, i) => (
                 <TableHead
                   key={header.id}
+                  aria-sort={ariaSortOf(header.column.getIsSorted())}
                   className={cn(
                     "relative",
                     header.column.columnDef.meta?.headerClassName,
@@ -486,7 +560,7 @@ export function DataTable<TData extends RowData>({
                             type="button"
                             aria-expanded={open}
                             aria-label="Toggle row details"
-                            className="flex cursor-pointer items-center"
+                            className="hit-area flex cursor-pointer items-center rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                             onClick={(e) => {
                               e.stopPropagation()
                               toggle(row.id)

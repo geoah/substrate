@@ -80,6 +80,22 @@ function fallbackCode(status: number): ErrorCode {
   }
 }
 
+/** The words for a refusal that means the SERVER predates the route: an
+ * older substrate answers a path it has never heard of with 404, a method it
+ * does not route with 405, and a verb it does not implement with 501. Only for
+ * a route that names no record — on a record's own path a 404 is the record.
+ * `what` completes "can't … yet". Undefined for any other refusal, whose own
+ * message is the one to show. */
+export function olderServerMessage(
+  error: unknown,
+  what: string
+): string | undefined {
+  if (!(error instanceof ApiError)) return undefined
+  if (error.status !== 404 && error.status !== 405 && error.status !== 501)
+    return undefined
+  return `This substrate runs an older version that can’t ${what} yet. Update it, then try again.`
+}
+
 export function envelopeError(
   status: number,
   body: unknown,

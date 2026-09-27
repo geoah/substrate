@@ -228,6 +228,14 @@ func TestWindowRefusals(t *testing.T) {
 		t.Fatalf("refusal does not name offset: %s", rec.Body.String())
 	}
 
+	// Nor a count: occurrences are computed per slot and are not rows, so a
+	// count of the stored rows would disagree with the page beside it.
+	rec = env.do(t, http.MethodGet, windowPath("2026-07-01T00:00:00Z", "2026-07-06T00:00:00Z", "count=1"), tok, nil)
+	wantStatus(t, rec, http.StatusBadRequest)
+	if !strings.Contains(rec.Body.String(), "count is not supported on a window read") {
+		t.Fatalf("refusal does not name count: %s", rec.Body.String())
+	}
+
 	// A cursor from another filter is refused, not mis-seeked.
 	first := decodeJSON[windowPage](t, env.do(t, http.MethodGet,
 		windowPath("2026-07-01T00:00:00Z", "2026-07-06T00:00:00Z", "first=1"), tok, nil))

@@ -233,7 +233,7 @@ func TestCatalogListReturnsShippedBundles(t *testing.T) {
 	for _, item := range body.Items {
 		if item.ID == rlBundleID {
 			found = true
-			if item.Name != "readinglist" || item.Authority != "samples.substrate.reamde.dev" || item.Package != "readinglist" || item.Version != 12 {
+			if item.Name != "readinglist" || item.Authority != "samples.substrate.reamde.dev" || item.Package != "readinglist" || item.Version != 13 {
 				t.Errorf("reading-list entry fields = %+v", item)
 			}
 			if item.Installed {

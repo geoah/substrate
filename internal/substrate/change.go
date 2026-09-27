@@ -150,6 +150,31 @@ type AffectedRecord struct {
 	ID      string `json:"id"`
 	Version int64  `json:"version,omitempty"`
 	Deleted bool   `json:"deleted,omitempty"`
+	// Properties is what the entry did to each property of the record, in
+	// name order, as a read of the record renders the values: a sensitive
+	// property reads Redacted on both sides. Present only on a read that asked
+	// for values (ChangeFilter.Values) and only where the record's kind is
+	// declared; an entry that moved no property carries none (decision 0135).
+	Properties []PropertyChange `json:"properties,omitempty"`
+}
+
+// PropertyChange is one property an entry moved on one record. Before is
+// the value the record held just before the entry and After the value it
+// left, each absent where the record held none: a property the entry added
+// has no Before, one it cleared has no After. BeforeUnknown marks a Before
+// the read could not derive from the changelog (history older than the
+// stored values, or a walk that reached its bound), which is not the same
+// as "there was none". RenamedFrom names the property's previous name where
+// the entry is a vocabulary apply moving the record's value to Name (a
+// declaration's `renamedFrom`): the one change is the move, Before is the
+// value the record held under the old name, and the old name has no change
+// of its own (decision 0114).
+type PropertyChange struct {
+	Name          string `json:"name"`
+	RenamedFrom   string `json:"renamedFrom,omitempty"`
+	Before        any    `json:"before,omitempty"`
+	After         any    `json:"after,omitempty"`
+	BeforeUnknown bool   `json:"beforeUnknown,omitempty"`
 }
 
 // ChangelogHead is where a repository's changelog stands: its highest
@@ -183,6 +208,12 @@ type ChangeFilter struct {
 	// actor, record id and payload text — the feed's one search box, a
 	// cheap ILIKE at personal scale.
 	Q string `json:"q,omitempty"`
+	// Values asks the read to carry each affected record's property values
+	// before and after the entry (AffectedRecord.Properties). It narrows
+	// nothing: the rows are the same, and the "before" side costs a walk back
+	// through each record's earlier entries, so a read pays it only on
+	// request.
+	Values bool `json:"values,omitempty"`
 }
 
 // A ChangeTrigger's delivery state relative to one change row.

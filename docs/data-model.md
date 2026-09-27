@@ -726,8 +726,8 @@ traits:
 ```
 
 Because implementing a trait is queryable, a client can page every record of
-a trait (`GET /api/v1/records?filter={"implements": …}`), which is what the
-console's connections view over `accountconfig` accounts is.
+a trait (`GET /api/v1/records?filter={"implements": …}`), which is how the
+console lists every provider's `accountconfig` accounts.
 [Bundles](bundles.md) puts these three interfaces to work, and
 [traits and interfaces](traits.md) is the worked tour: declaring a trait of
 your own, and every query surface binding unlocks.

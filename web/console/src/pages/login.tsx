@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
+import { useDocumentTitle } from "@/hooks/use-document-title"
 import { CODE_DIGITS, login, normalizeCode } from "@/lib/api/auth"
 import { useAuthPolicy } from "@/lib/api/discovery"
 import { saveSession } from "@/lib/api/session"
@@ -32,14 +33,16 @@ import { loginRoute } from "@/router"
  * code fail as one, and a lockout reads the same — so the console must not
  * invent specifics the server withheld. Only the rate limit earns sugar (the
  * wait). */
-function describeError(err: unknown): string {
+function describeError(err: unknown, totpRequired: boolean): string {
   if (err instanceof ApiError) {
     if (err.code === "rate_limited") {
       const wait = err.retryAfter ?? 5
       return `Too many attempts. Try again in ${wait}s.`
     }
     if (err.code === "auth") {
-      return "The repository, password or code is wrong. Wait for a fresh code and try again."
+      return totpRequired
+        ? "The repository name, password or code is wrong. Wait for a fresh code and try again."
+        : "The repository name or password is wrong. Check both and try again."
     }
     return err.message
   }
@@ -50,7 +53,7 @@ function describeError(err: unknown): string {
  * not, an empty field is valid and the input is never rendered. */
 function loginSchema(totpRequired: boolean) {
   return z.object({
-    repository: z.string().trim().min(1, "Enter your repository."),
+    repository: z.string().trim().min(1, "Enter your repository name."),
     password: z.string().min(1, "Enter your password."),
     code: z.string().refine((v) => !totpRequired || normalizeCode(v) !== null, {
       message: `Enter the current ${CODE_DIGITS}-digit code.`,
@@ -65,9 +68,10 @@ type LoginValues = z.infer<ReturnType<typeof loginSchema>>
  * no session beside it, so what the browser keeps is a token like any other
  * client's. */
 export function LoginPage() {
+  useDocumentTitle("Sign in")
   const navigate = useNavigate()
   const search = loginRoute.useSearch()
-  const { totpRequired } = useAuthPolicy()
+  const { inviteRequired, totpRequired } = useAuthPolicy()
   const [apiError, setApiError] = useState<string | null>(null)
   // The policy lands one render AFTER the first paint, so the resolver has to
   // FOLLOW it rather than be fixed at mount: react-hook-form reads the options
@@ -90,7 +94,7 @@ export function LoginPage() {
     try {
       minted = await login(repository, values.password, code)
     } catch (err) {
-      setApiError(describeError(err))
+      setApiError(describeError(err, totpRequired))
       // A stale code cannot succeed twice; drop it so the next try starts fresh.
       form.resetField("code")
       return
@@ -117,9 +121,8 @@ export function LoginPage() {
             <CardTitle>Sign in</CardTitle>
             <CardDescription>
               {totpRequired
-                ? `Your repository, password and the current ${CODE_DIGITS}-digit code.`
-                : "Your repository name and password."}{" "}
-              Signing in mints a token that stays in this browser.
+                ? `Your name, password and the current ${CODE_DIGITS}-digit code.`
+                : "Your name and password."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -135,7 +138,8 @@ export function LoginPage() {
                     {...form.register("repository")}
                   />
                   <FieldDescription>
-                    The name you registered, such as ada.example.com.
+                    The name you chose when you registered, such as
+                    ada.example.com.
                   </FieldDescription>
                   <FieldError errors={[errors.repository]} />
                 </Field>
@@ -189,14 +193,14 @@ export function LoginPage() {
           </CardContent>
         </Card>
         <p className="text-center text-xs text-muted-foreground">
-          Have an invite code?{" "}
+          {inviteRequired ? "Have an invite code?" : "New here?"}{" "}
           <Link
             to="/register"
             className="underline underline-offset-4 hover:text-foreground"
           >
             Register
           </Link>{" "}
-          to create your repository and sign in.
+          to choose your name.
         </p>
       </div>
     </div>

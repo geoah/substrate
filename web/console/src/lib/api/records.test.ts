@@ -1,16 +1,22 @@
+import { QueryClient } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   countRecords,
+  glanceCount,
+  glanceCountQueryOptions,
+  GLANCE_ROWS,
   createRecord,
   fetchRecordsPage,
   recordIdSegment,
+  recordCountQueryOptions,
   referenceTitlesQueryOptions,
   formatCount,
   groupReferencing,
   listPath,
   patchRecord,
   referencingRows,
+  searchQueryOptions,
   type ReferencingRow,
 } from "./records"
 import type { Page, SubstrateRecord } from "./types"
@@ -218,7 +224,7 @@ describe("record writes (integrations flow)", () => {
   })
 })
 
-describe("countRecords (bounded keyset walk)", () => {
+describe("countRecords (the server's count)", () => {
   const fetchMock = vi.fn<typeof fetch>()
   beforeEach(() => vi.stubGlobal("fetch", fetchMock))
   afterEach(() => {
@@ -226,43 +232,257 @@ describe("countRecords (bounded keyset walk)", () => {
     fetchMock.mockReset()
   })
 
-  function page(n: number, cursor?: string): Response {
-    return new Response(
-      JSON.stringify({
-        records: Array.from({ length: n }, (_, i) => ({ id: String(i) })),
-        cursor,
-      }),
-      { status: 200 }
+  it("asks for count=1 over one row and answers the server's number", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ records: [{ id: "a" }], count: 1284 }), {
+        status: 200,
+      })
     )
-  }
-
-  it("sums pages, resends the server cursor verbatim, and stops when it is omitted", async () => {
-    fetchMock
-      .mockResolvedValueOnce(page(500, "CUR1"))
-      .mockResolvedValueOnce(page(120))
-    const count = await countRecords("g.dev", "k", "things", undefined)
-    expect(count).toEqual({ value: 620, capped: false })
-    // Page one asks with no cursor; page two resends the returned one verbatim.
-    expect(String(fetchMock.mock.calls[0][0])).not.toContain("after=")
-    expect(String(fetchMock.mock.calls[1][0])).toContain("after=CUR1")
+    expect(
+      await countRecords("g.dev", "k", "things", {
+        properties: { status: { eq: "open" } },
+      })
+    ).toEqual({ value: 1284, capped: false })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const url = new URL(String(fetchMock.mock.calls[0][0]), "http://x")
+    expect(url.searchParams.get("count")).toBe("1")
+    expect(url.searchParams.get("first")).toBe("1")
+    expect(JSON.parse(url.searchParams.get("filter") ?? "")).toEqual({
+      properties: { status: { eq: "open" } },
+      kinds: ["g.dev/k/things"],
+    })
   })
 
-  it("answers a single cursorless page exactly", async () => {
-    fetchMock.mockResolvedValueOnce(page(7))
+  it("answers a zero count without probing", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ records: [], count: 0 }), { status: 200 })
+    )
     expect(await countRecords("g.dev", "k", "things", undefined)).toEqual({
-      value: 7,
+      value: 0,
       capped: false,
     })
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it("caps a collection that outruns the ceiling", async () => {
-    // Every page returns a cursor, so the walk hits its 20-page ceiling.
-    fetchMock.mockImplementation(async () => page(500, "MORE"))
+  it("probes when an older server refuses count by name", async () => {
+    const size = 37
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input), "http://x")
+      if (url.searchParams.has("count"))
+        return new Response(
+          JSON.stringify({
+            error: { code: "bad_request", message: "count" },
+          }),
+          { status: 400 }
+        )
+      const offset = Number(url.searchParams.get("offset") ?? 0)
+      const records = offset < size ? [{ id: String(offset) }] : []
+      return new Response(JSON.stringify({ records }), { status: 200 })
+    })
+    expect(await countRecords("g.dev", "k", "things", undefined)).toEqual({
+      value: size,
+      capped: false,
+    })
+  })
+
+  it("does not fall back past a failure of the read itself", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: { code: "not_found", message: "unknown" } }),
+        { status: 404 }
+      )
+    )
+    await expect(
+      countRecords("g.dev", "k", "things", undefined)
+    ).rejects.toMatchObject({ status: 404 })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("countRecords (one-row offset probes, a server without count)", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+  beforeEach(() => vi.stubGlobal("fetch", fetchMock))
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+
+  function collection(size: number) {
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input), "http://x")
+      const offset = Number(url.searchParams.get("offset") ?? 0)
+      const records = offset < size ? [{ id: String(offset) }] : []
+      return new Response(JSON.stringify({ records }), { status: 200 })
+    })
+  }
+
+  it.each([0, 1, 2, 7, 500, 620, 1284, 10000])(
+    "counts a collection of %i rows exactly, one row per read",
+    async (size) => {
+      collection(size)
+      expect(await countRecords("g.dev", "k", "things", undefined)).toEqual({
+        value: size,
+        capped: false,
+      })
+      for (const [input] of fetchMock.mock.calls) {
+        expect(String(input)).toContain("first=1")
+        expect(String(input)).not.toContain("after=")
+      }
+      // The count request's own row stands in for the probe at offset 0.
+      const zeroes = fetchMock.mock.calls.filter(
+        ([input]) =>
+          !new URL(String(input), "http://x").searchParams.has("offset")
+      )
+      expect(zeroes).toHaveLength(1)
+      // A bracket of doubling probes plus a bisection: never a full read.
+      expect(fetchMock.mock.calls.length).toBeLessThan(40)
+    }
+  )
+
+  it("caps a collection past the probe ceiling", async () => {
+    collection(Number.MAX_SAFE_INTEGER)
     const count = await countRecords("g.dev", "k", "things", undefined)
-    expect(count.capped).toBe(true)
-    expect(count.value).toBe(500 * 20)
-    expect(fetchMock).toHaveBeenCalledTimes(20)
+    expect(count).toEqual({ value: 1 << 17, capped: true })
+  })
+
+  it("falls back to the keyset walk when the server refuses an offset", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input), "http://x")
+      if (
+        url.searchParams.has("offset") ||
+        url.searchParams.get("first") === "1"
+      )
+        return new Response(
+          JSON.stringify({ code: "invalid", message: "offset is refused" }),
+          { status: 422 }
+        )
+      return new Response(
+        JSON.stringify({
+          records: Array.from({ length: 7 }, (_, i) => ({ id: String(i) })),
+        }),
+        { status: 200 }
+      )
+    })
+    expect(await countRecords("g.dev", "k", "things", undefined)).toEqual({
+      value: 7,
+      capped: false,
+    })
+  })
+})
+
+describe("glanceCount (Home's collection sizes)", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+  beforeEach(() => vi.stubGlobal("fetch", fetchMock))
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+
+  function olderServer(size: number) {
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input), "http://x")
+      if (url.searchParams.has("count"))
+        return new Response(
+          JSON.stringify({
+            error: { code: "bad_request", message: 'unknown "count"' },
+          }),
+          { status: 400 }
+        )
+      const first = Number(url.searchParams.get("first"))
+      const records = Array.from({ length: Math.min(first, size) }, (_, i) => ({
+        id: String(i),
+      }))
+      return new Response(
+        JSON.stringify({ records, cursor: size > first ? "next" : undefined }),
+        { status: 200 }
+      )
+    })
+  }
+
+  it("answers the server's count from one read", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ records: [{ id: "a" }], count: 1284 }), {
+        status: 200,
+      })
+    )
+    expect(await glanceCount("g.dev", "k", "things")).toEqual({
+      value: 1284,
+      capped: false,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("fires at most one probe against a server without count, and says many past it", async () => {
+    olderServer(10000)
+    const count = await glanceCount("g.dev", "k", "things")
+    expect(count).toEqual({ value: GLANCE_ROWS, capped: true, many: true })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(formatCount(count)).toBe("many")
+  })
+
+  it("says a small collection exactly from that one probe", async () => {
+    olderServer(12)
+    expect(await glanceCount("g.dev", "k", "things")).toEqual({
+      value: 12,
+      capped: false,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe("glanceCountQueryOptions (reusing an exact count)", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock)
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ records: [{ id: "a" }], count: 9 }), {
+          status: 200,
+        })
+    )
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+    vi.useRealTimers()
+  })
+
+  const exact = recordCountQueryOptions("g.dev", "k", "things").queryKey
+  const glance = () => glanceCountQueryOptions("g.dev", "k", "things")
+
+  it("reuses a fresh exact count without a request", async () => {
+    const client = new QueryClient()
+    client.setQueryData(exact, { value: 3, capped: false })
+    expect(await client.fetchQuery(glance())).toEqual({
+      value: 3,
+      capped: false,
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("counts again when the exact count was invalidated", async () => {
+    const client = new QueryClient()
+    client.setQueryData(exact, { value: 3, capped: false })
+    // A write invalidates the exact key without refetching it: the sidebar's
+    // observer is disabled, so the stale entry stays in the cache.
+    await client.invalidateQueries({ queryKey: exact, refetchType: "none" })
+    expect(await client.fetchQuery(glance())).toEqual({
+      value: 9,
+      capped: false,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("counts again when the exact count is past its stale time", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    const client = new QueryClient()
+    client.setQueryData(exact, { value: 3, capped: false })
+    vi.setSystemTime(Date.now() + 61_000)
+    expect(await client.fetchQuery(glance())).toEqual({
+      value: 9,
+      capped: false,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -512,5 +732,50 @@ describe("the batched title read a record page makes", () => {
     expect(referenceTitlesQueryOptions({ kinds: [], ids: [] }).enabled).toBe(
       false
     )
+  })
+})
+
+describe("searchQueryOptions", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+  beforeEach(() => vi.stubGlobal("fetch", fetchMock))
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+  const ranked = () =>
+    new Response(JSON.stringify({ records: [], scores: {}, pending: 0 }))
+
+  async function searchURL(
+    opts: Parameters<typeof searchQueryOptions>[1]
+  ): Promise<URL> {
+    fetchMock.mockResolvedValueOnce(ranked())
+    const options = searchQueryOptions("ada*", opts)
+    await options.queryFn!({
+      signal: new AbortController().signal,
+    } as never)
+    return new URL(String(fetchMock.mock.calls[0][0]), "http://x")
+  }
+
+  it("sends the kinds and the purposes in one filter", async () => {
+    const url = await searchURL({
+      kinds: ["samples.substrate.reamde.dev/people/person"],
+      purposes: ["primary", "supporting"],
+    })
+    expect(url.searchParams.get("q")).toBe("ada*")
+    expect(JSON.parse(url.searchParams.get("filter")!)).toEqual({
+      kinds: ["samples.substrate.reamde.dev/people/person"],
+      purposes: ["primary", "supporting"],
+    })
+  })
+
+  it("sends no filter when nothing narrows", async () => {
+    const url = await searchURL({})
+    expect(url.searchParams.has("filter")).toBe(false)
+  })
+
+  it("keys the cache on the purposes", () => {
+    const a = searchQueryOptions("ada", { purposes: ["primary"] }).queryKey
+    const b = searchQueryOptions("ada", {}).queryKey
+    expect(a).not.toEqual(b)
   })
 })

@@ -10,7 +10,8 @@ data:
     or an app writes one and accepting the decision is what performs the merge;
     the row is also the rejection memory, since an existing request suppresses
     re-suggesting the pair.
-  version: 13
+  version: 14
+  purpose: internal
   names:
     singular: recordmergerequest
   displayTemplate: "{decision}: {winner} + {loser}"

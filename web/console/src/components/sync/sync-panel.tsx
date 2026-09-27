@@ -7,6 +7,7 @@
  * the account detail and the record page all render it off the same fields
  * (lib/sync.ts syncFieldsOf). */
 
+import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   LoaderCircleIcon,
@@ -15,8 +16,9 @@ import {
   RefreshCwIcon,
 } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
+import { Pill, type PillTone } from "@/components/identity/pill"
 import { Button } from "@/components/ui/button"
+import { PauseDialog } from "@/components/ui/confirm-dialog"
 import { Spinner } from "@/components/ui/spinner"
 import { toast } from "@/components/ui/toast"
 import { requestSync, setSyncPaused, wakeTriggers } from "@/lib/api/sync"
@@ -32,19 +34,24 @@ import {
 } from "@/lib/sync"
 import { cn } from "@/lib/utils"
 
-/** Semantic tokens only: running and ok are primary (running pulses), an
- * error is destructive, throttled wants a look, never recedes. */
-const STATE_DOT: Record<SyncState, string> = {
-  never: "bg-muted-foreground/40",
-  running: "bg-primary animate-pulse",
-  ok: "bg-primary",
-  erroring: "bg-destructive",
-  throttled: "bg-warning",
+/** Running is under way (its dot pulses), ok is fine, an error is bad,
+ * throttled wants a look, never recedes. */
+const STATE_TONE: Record<SyncState, PillTone> = {
+  never: "neutral",
+  running: "accent",
+  ok: "ok",
+  erroring: "bad",
+  throttled: "warn",
 }
 
-const STATE_TEXT: Partial<Record<SyncState, string>> = {
-  erroring: "text-destructive",
-  throttled: "text-warning",
+/** The trait's states as a person reads them; an unknown word a body wrote
+ * shows as it is. */
+const STATE_WORD: Record<SyncState, string> = {
+  never: "Not synced yet",
+  running: "Syncing…",
+  ok: "Up to date",
+  erroring: "Having trouble",
+  throttled: "Slowed down",
 }
 
 export function SyncStateBadge({
@@ -54,24 +61,17 @@ export function SyncStateBadge({
   fields: Pick<SyncFields, "state" | "rawState" | "paused">
   className?: string
 }) {
-  const word = fields.paused ? "paused" : (fields.rawState ?? fields.state)
+  const word = fields.paused
+    ? "Paused"
+    : (fields.rawState ?? STATE_WORD[fields.state])
   return (
-    <Badge
-      variant="outline"
-      className={cn(
-        "gap-1.5 font-normal",
-        fields.paused ? "text-warning" : STATE_TEXT[fields.state],
-        className
-      )}
+    <Pill
+      tone={fields.paused ? "neutral" : STATE_TONE[fields.state]}
+      live={!fields.paused && fields.state === "running"}
+      className={className}
     >
-      <span
-        className={cn(
-          "size-1.5 shrink-0 rounded-full",
-          fields.paused ? "bg-warning" : STATE_DOT[fields.state]
-        )}
-      />
-      <span className="data">{word}</span>
-    </Badge>
+      {word}
+    </Pill>
   )
 }
 
@@ -115,7 +115,7 @@ export function SyncProgressBar({
         <span className="text-muted-foreground">
           {progress.phase ? `Phase ${progress.phase}` : "Progress"}
         </span>
-        <span className="data tabular-nums">
+        <span className="tabular-nums">
           {progress.done.toLocaleString()} / {total.toLocaleString()}
           {progress.pending > 0 && (
             <span className="text-muted-foreground">
@@ -182,7 +182,7 @@ export function SyncStreams({ streams }: { streams: SyncFields["streams"] }) {
               >
                 {s.lastAt ? relativeTime(s.lastAt) : "never"}
               </td>
-              <td className="py-1.5 pr-3 text-right data tabular-nums">
+              <td className="py-1.5 pr-3 text-right tabular-nums">
                 {s.pending.toLocaleString()}
               </td>
               <td className="py-1.5 pr-3 text-muted-foreground">
@@ -380,50 +380,68 @@ export function SyncNowButton({
   )
 }
 
-/** Pause or Resume: the trait's `syncPaused`, the owner's other hand. */
+/** Pause or Resume: the trait's `syncPaused`, the owner's other hand. A
+ * pause asks first; a resume picks up where it left off. */
 export function PauseButton({
   record,
+  name,
   paused,
   disabled,
   className,
 }: {
   record: Pick<SubstrateRecord, "kind" | "id">
+  /** The account, as the reader knows it: "george@example.com". */
+  name: string
   paused: boolean
   disabled?: boolean
   className?: string
 }) {
   const refresh = useRefreshSync()
+  const [confirming, setConfirming] = useState(false)
   const pause = useMutation({
     mutationFn: () => setSyncPaused(record, !paused),
     onSuccess: () => {
+      setConfirming(false)
       toast.add({
         type: "success",
         title: paused ? "Sync resumed" : "Sync paused",
       })
       refresh()
     },
-    onError: (error) =>
+    onError: (error) => {
+      setConfirming(false)
       toast.add({
         type: "error",
         title: paused ? "Resume failed" : "Pause failed",
         description: error.message,
-      }),
+      })
+    },
   })
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className={cn("h-7 gap-1 px-2 text-xs", className)}
-      disabled={disabled || pause.isPending}
-      onClick={() => pause.mutate()}
-    >
-      {paused ? (
-        <PlayIcon className="size-3" />
-      ) : (
-        <PauseIcon className="size-3" />
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        className={cn("h-7 gap-1 px-2 text-xs", className)}
+        disabled={disabled || pause.isPending}
+        onClick={() => (paused ? pause.mutate() : setConfirming(true))}
+      >
+        {paused ? (
+          <PlayIcon className="size-3" />
+        ) : (
+          <PauseIcon className="size-3" />
+        )}
+        {paused ? "Resume" : "Pause"}
+      </Button>
+      {confirming && (
+        <PauseDialog
+          name={`the sync for ${name}`}
+          pending={pause.isPending}
+          onConfirm={() => pause.mutate()}
+          onClose={() => setConfirming(false)}
+        />
       )}
-      {paused ? "Resume" : "Pause"}
-    </Button>
+    </>
   )
 }
 
@@ -431,11 +449,14 @@ export function PauseButton({
  * record page's toolbar. */
 export function SyncActions({
   record,
+  name,
   paused,
   requestTriggerIds,
   disabled,
 }: {
   record: Pick<SubstrateRecord, "kind" | "id">
+  /** The account, as the reader knows it. */
+  name: string
   paused: boolean
   requestTriggerIds: string[]
   disabled?: boolean
@@ -451,6 +472,7 @@ export function SyncActions({
       />
       <PauseButton
         record={record}
+        name={name}
         paused={paused}
         disabled={disabled}
         className="h-8 text-sm"

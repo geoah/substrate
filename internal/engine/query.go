@@ -476,6 +476,17 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	if q.Offset > 0 && q.After != "" {
 		return nil, fmt.Errorf("%w: offset and after are alternatives: a cursor seeks to a position and an offset skips a count, so a page cannot do both", substrate.ErrValidation)
 	}
+	// The count reads the filter's predicate BEFORE a seek is added to it, so
+	// it is the size of the filtered set and not of what is left past the
+	// cursor, and it reads inside this snapshot so it agrees with the page.
+	var count *int64
+	if q.Count {
+		n, err := countSQL(ctx, tx, b)
+		if err != nil {
+			return nil, err
+		}
+		count = &n
+	}
 	if q.After != "" {
 		tok, err := decodeKeyset(q.After)
 		if err != nil {
@@ -524,7 +535,7 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 
 	// Records starts non-nil so an empty page serializes `[]`, the array the
 	// wire promises, never `null`.
-	page := &substrate.Page{Records: []*substrate.Record{}, Generation: ds.historyGeneration()}
+	page := &substrate.Page{Records: []*substrate.Record{}, Generation: ds.historyGeneration(), Count: count}
 	if carriedHead != 0 {
 		page.Head = carriedHead
 	} else {
@@ -615,6 +626,24 @@ func listSQL(where string, keyCols []string, order, limitArg, offsetArg string) 
 	return sql
 }
 
+// countSQL counts the rows the builder's predicate admits. It is the list's
+// own WHERE over the same table, so what the list excludes (tombstones, a
+// merged-away loser, another kind) the count excludes, and the indexes that
+// serve the list's predicate serve this; there is no ORDER BY and no row is
+// read out. Its cost is still a scan of every matching row, which Postgres
+// has no cheaper way to answer exactly.
+func countSQL(ctx context.Context, x dbx, b *builder) (int64, error) {
+	where := "TRUE"
+	if len(b.where) > 0 {
+		where = strings.Join(b.where, " AND ")
+	}
+	var n int64
+	if err := x.QueryRowContext(ctx, `SELECT count(*) FROM records WHERE `+where, b.args...).Scan(&n); err != nil {
+		return 0, fmt.Errorf("substrate/engine: count: %w", err)
+	}
+	return n, nil
+}
+
 // buildFilter renders the filter's predicates into b and returns the kinds
 // the filter admits (nil when it names none, which means every kind).
 func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substrate.Filter) ([]*vocabulary.Kind, error) {
@@ -667,6 +696,16 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 			types = kept
 		}
 	}
+	// `purposes` narrows the same way `implements` does. A narrowing that
+	// admits no kind is an empty answer, not every kind: a repository with no
+	// supporting kinds has no supporting records.
+	types, restrict, err := narrowByPurpose(reg, types, f.Purposes)
+	if err != nil {
+		return nil, err
+	}
+	if restrict && len(types) == 0 {
+		b.add(`FALSE`)
+	}
 	if len(types) > 0 {
 		idents := make([]string, 0, len(types))
 		for _, t := range types {
@@ -696,11 +735,11 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 		// every text the kind indexes (validate.go ftsBands), matched by the
 		// grammar the ranked read ranks by, and nothing about rank here — the
 		// list keeps the caller's order.
-		tq, err := tsqueryText("filter.search", f.Search)
+		tq, err := searchExpr(b, "filter.search", f.Search)
 		if err != nil {
 			return nil, err
 		}
-		b.add(`fts @@ to_tsquery('english', ` + b.arg(tq) + `)`)
+		b.add(`fts @@ ` + tq)
 	}
 	// The orphan mark is a column on the row, derived (orphans.go), so it is
 	// a predicate here and not a property condition: no kind declares it.
@@ -1201,11 +1240,11 @@ func condColumn(b *builder, col string, c substrate.Cond) error {
 			return fmt.Errorf("%w: %s is not a text property — match needs one, use eq, prefix or the comparison operators",
 				substrate.ErrValidation, col)
 		}
-		tq, err := tsqueryText(col+": match", c.Match)
+		tq, err := searchExpr(b, col+": match", c.Match)
 		if err != nil {
 			return err
 		}
-		b.add(`to_tsvector('english', coalesce(` + expr + `, '')) @@ to_tsquery('english', ` + b.arg(tq) + `)`)
+		b.add(`to_tsvector('english', coalesce(` + expr + `, '')) @@ ` + tq)
 	}
 	if c.Exists != nil {
 		if *c.Exists {
@@ -1326,7 +1365,7 @@ func condJSON(b *builder, col, key string, c substrate.Cond, kind vocabulary.Dat
 		b.add(col + `->(` + b.arg(key) + `::text) @> ` + b.arg(raw) + `::jsonb`)
 	}
 	if c.Match != "" {
-		tq, err := tsqueryText(key+": match", c.Match)
+		tq, err := searchExpr(b, key+": match", c.Match)
 		if err != nil {
 			return err
 		}
@@ -1340,7 +1379,7 @@ func condJSON(b *builder, col, key string, c substrate.Cond, kind vocabulary.Dat
 		text := `(CASE jsonb_typeof(` + v + `) WHEN 'array' THEN ` +
 			`(SELECT coalesce(string_agg(x.v, ' '), '') FROM jsonb_array_elements_text(` + v + `) AS x(v)) ` +
 			`ELSE coalesce(` + col + `->>(` + k + `::text), '') END)`
-		b.add(`to_tsvector('english', ` + text + `) @@ to_tsquery('english', ` + b.arg(tq) + `)`)
+		b.add(`to_tsvector('english', ` + text + `) @@ ` + tq)
 	}
 	if c.Exists != nil {
 		clause := `jsonb_exists(` + col + `, ` + b.arg(key) + `)`
@@ -1573,5 +1612,5 @@ func (ds *dataset) Changes(ctx context.Context, after int64, f substrate.ChangeF
 	if err := ds.buildChangeFilter(b, f); err != nil {
 		return nil, err
 	}
-	return ds.queryChanges(ctx, b, `seq`, limit)
+	return ds.queryChanges(ctx, b, `seq`, limit, f.Values)
 }

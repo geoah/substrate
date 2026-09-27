@@ -17,6 +17,8 @@
 
 import type { Cond, RecordFilter } from "@/lib/api/types"
 import type { DeclaredProperty } from "@/lib/definition"
+import { enumLabel } from "@/lib/grid-values"
+import { stateWord } from "@/lib/state-words"
 
 export type FilterOp = "eq" | "contains" | "prefix" | "match"
 
@@ -191,6 +193,56 @@ export function displayValue(f: ActiveFilter, prop?: DeclaredProperty): string {
   return f.value
 }
 
+// ── picked values ───────────────────────────────────────────────────────────
+
+/** Whether a field's values are a declared set the reader picks from rather
+ * than types: a state machine's states, an enum's values, a yes or no. */
+export function isChoiceField(prop?: DeclaredProperty): boolean {
+  if (!prop) return false
+  if (prop.kind === "state") return Boolean(prop.states?.length)
+  if (prop.kind === "enum") return Boolean(prop.values?.length)
+  return prop.kind === "bool"
+}
+
+/** Whether a picked filter may hold several values at once. A scalar folds
+ * them to `in`, "any of"; a repeated value is matched item-wise by
+ * `contains`, which holds one. */
+export function picksMany(prop?: DeclaredProperty): boolean {
+  return isChoiceField(prop) && prop?.kind !== "bool" && !prop?.repeated
+}
+
+/** One picked value in the words the grid shows it in: a state's word, an
+ * enum's label, Yes or No. `words` is off for a bar whose "states" are not a
+ * record's (the History bar's kinds and actors), which keeps them stored. */
+export function choiceWord(
+  value: string,
+  prop: DeclaredProperty | undefined,
+  words: boolean
+): string {
+  if (prop?.kind === "bool")
+    return value === "true" ? "Yes" : value === "false" ? "No" : value
+  if (prop?.kind === "enum") return enumLabel(prop, value)
+  if (prop?.kind === "state" && words) return stateWord(value)
+  return value
+}
+
+/** What an applied control says after its field: the picked values in
+ * words for a declared set, else the value as the editor takes it. */
+export function filterValueText(
+  f: ActiveFilter,
+  prop: DeclaredProperty | undefined,
+  words: boolean
+): string {
+  if (isChoiceField(prop) && f.op !== "match" && f.op !== "prefix")
+    return f.value
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean)
+      .map((v) => choiceWord(v, prop, words))
+      .join(", ")
+  return displayValue(f, prop).replaceAll(",", ", ")
+}
+
 // ── per-type persistence (localStorage) ─────────────────────────────────────
 // The last-used filters and sort survive navigation: a BARE url restores
 // them; explicit url params always win (shareable views stay exact).
@@ -203,6 +255,8 @@ export interface BrowsePrefs {
   /** `false` when the reader turned the tree off on a kind that nests by a
    * parent reference; absent otherwise, the tree being the default. */
   nest?: boolean
+  /** The property the rows are grouped by; absent when they are not. */
+  group?: string
 }
 
 function prefsKey(group: string, name: string): string {
@@ -228,14 +282,17 @@ export function loadBrowsePrefs(
     }
     if (typeof p.sort === "string" && p.sort) out.sort = p.sort
     if (p.nest === false) out.nest = false
-    return out.filter?.length || out.sort || out.nest === false ? out : null
+    if (typeof p.group === "string" && p.group) out.group = p.group
+    return out.filter?.length || out.sort || out.nest === false || out.group
+      ? out
+      : null
   } catch {
     return null
   }
 }
 
 /** Persist the view; an all-default view (no filters, default sort, the tree
- * on) removes the entry entirely — clearing filters clears the stored state
+ * on, no grouping) removes the entry entirely — clearing filters clears the stored state
  * too. */
 export function saveBrowsePrefs(
   group: string,
@@ -247,7 +304,8 @@ export function saveBrowsePrefs(
     if (prefs.filter?.length) out.filter = prefs.filter
     if (prefs.sort) out.sort = prefs.sort
     if (prefs.nest === false) out.nest = false
-    if (out.filter || out.sort || out.nest === false) {
+    if (prefs.group) out.group = prefs.group
+    if (out.filter || out.sort || out.nest === false || out.group) {
       localStorage.setItem(prefsKey(group, name), JSON.stringify(out))
     } else {
       localStorage.removeItem(prefsKey(group, name))

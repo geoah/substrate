@@ -691,6 +691,107 @@ func TestListIntersectsKindsAndImplements(t *testing.T) {
 	})
 }
 
+// COUNT is the size of the set the list's own filter admits, read in the
+// page's snapshot: every arm narrows it exactly as it narrows the rows, a
+// tombstone and a merged-away loser are out of it as they are out of the
+// list, and paging does not move it.
+func TestListCount(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newVocabularyDataset(t, "tasks", "calendar")
+
+	const (
+		personKind = "samples.substrate.reamde.dev/people/person"
+		orgKind    = "samples.substrate.reamde.dev/people/organization"
+		taskKind   = "samples.substrate.reamde.dev/tasks/task"
+		temporal   = "substrate.reamde.dev/core/temporal"
+	)
+	org := mustPut(t, ds, owner, substrate.PutInput{Kind: orgKind, Properties: map[string]any{"name": "Analytical"}})
+	var people []*substrate.Record
+	for _, name := range []string{"Ada", "Grace", "Grace B.", "Hedy", "Joan", "Katherine"} {
+		props := map[string]any{"name": name}
+		if name != "Joan" {
+			props["memberOf"] = []any{org.ID}
+		}
+		people = append(people, mustPut(t, ds, owner, substrate.PutInput{Kind: personKind, Properties: props}))
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{
+		"title": "send the rack layout", "dueAt": "2026-08-04T09:00:00Z",
+	}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/calendar/transcript", Properties: map[string]any{
+		"title": "the standup", "text": "…", "at": "2026-08-03T09:00:00Z", "endsAt": "2026-08-03T09:30:00Z",
+	}})
+	// One deleted, one merged away: seven people written, four live.
+	if _, err := ds.Delete(ctx, owner, personKind, people[3].ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: personKind, Winner: people[1].ID, Loser: people[2].ID}); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+
+	count := func(q substrate.Query) (int64, *substrate.Page) {
+		t.Helper()
+		q.Count = true
+		page, err := ds.List(ctx, q)
+		if err != nil {
+			t.Fatalf("count %+v: %v", q.Filter, err)
+		}
+		if page.Count == nil {
+			t.Fatalf("count %+v: the page carried no count", q.Filter)
+		}
+		return *page.Count, page
+	}
+	people1 := substrate.Filter{Kinds: []string{personKind}}
+	yes, no := true, false
+
+	for _, tc := range []struct {
+		name   string
+		filter substrate.Filter
+		want   int64
+	}{
+		{"one kind, live rows only", people1, 4},
+		{"the tombstones", substrate.Filter{Kinds: []string{personKind}, Deleted: &yes}, 2},
+		{"live, spelled out", substrate.Filter{Kinds: []string{personKind}, Deleted: &no}, 4},
+		{"a property", substrate.Filter{Kinds: []string{personKind}, Properties: map[string]substrate.Cond{"name": {Prefix: "K"}}}, 1},
+		{"the search index", substrate.Filter{Kinds: []string{personKind}, Search: "grace"}, 1},
+		{"the reverse read", substrate.Filter{Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(orgKind, org.ID), Property: "memberOf"}}, 3},
+		{"a trait across packages", substrate.Filter{Implements: temporal}, 2},
+		{"a trait inside one kind", substrate.Filter{Kinds: []string{taskKind}, Implements: temporal}, 1},
+		{"ids", substrate.Filter{Kinds: []string{personKind}, IDs: []string{people[0].ID, people[3].ID}}, 1},
+	} {
+		got, page := count(substrate.Query{Filter: tc.filter, First: 500})
+		if got != tc.want {
+			t.Errorf("%s: count = %d, want %d", tc.name, got, tc.want)
+		}
+		// The count and the rows answer one question.
+		if int64(len(page.Records)) != got {
+			t.Errorf("%s: count %d beside %d rows on an exhausted page", tc.name, got, len(page.Records))
+		}
+	}
+
+	// Paging does not move it: a cursor page and an offset page count the
+	// filtered set, not what is left past them.
+	first, page := count(substrate.Query{Filter: people1, First: 1, OrderBy: []substrate.Order{{Property: "name"}}})
+	if page.Cursor == "" {
+		t.Fatal("first=1 over four rows minted no cursor")
+	}
+	if n, _ := count(substrate.Query{Filter: people1, First: 1, OrderBy: []substrate.Order{{Property: "name"}}, After: page.Cursor}); n != first {
+		t.Fatalf("the second page counted %d, the first %d", n, first)
+	}
+	if n, _ := count(substrate.Query{Filter: people1, First: 1, Offset: 3}); n != first {
+		t.Fatalf("an offset page counted %d, want %d", n, first)
+	}
+
+	// Not asked, not answered.
+	plain, err := ds.List(ctx, substrate.Query{Filter: people1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.Count != nil {
+		t.Fatalf("a list that did not ask carried count %d", *plain.Count)
+	}
+}
+
 // OFFSET addresses a page by its number: the same ordered rows a keyset walk
 // would reach, without the walk. The two continuations are alternatives, and
 // a page reached by offset still mints a cursor so the reader can hand off to

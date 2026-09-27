@@ -186,7 +186,7 @@ func preHostKindsDir(t *testing.T) string {
 		t.Fatal(err)
 	}
 	body := string(raw)
-	body = strings.Replace(body, "  version: 17\n", "  version: 4\n", 1)
+	body = strings.Replace(body, "  version: 18\n", "  version: 4\n", 1)
 	body = strings.Replace(body, "        - python\n        - host\n", "        - python\n", 1)
 	body = strings.Replace(body,
 		"      fts: false\n      description: the inline body, on an inline runtime\n",
@@ -363,7 +363,7 @@ func TestAgentQueryBuiltinByReference(t *testing.T) {
 	if len(reqs) == 0 {
 		t.Fatal("no completion request reached the fake")
 	}
-	if !strings.Contains(toJSONString(t, reqs[0]["tools"]), "Records are always addressed by their full reference") {
+	if !strings.Contains(toJSONString(t, reqs[0]["tools"]), "Records are addressed by their full reference") {
 		t.Fatalf("the query card is not the declaration's: %v", reqs[0]["tools"])
 	}
 }

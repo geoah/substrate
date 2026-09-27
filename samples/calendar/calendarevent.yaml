@@ -6,10 +6,10 @@ data:
   authority: samples.substrate.reamde.dev
   package: calendar
   description: >-
-    One concrete occurrence on the timeline — title, location, prose, the
-    join link, and who is coming. Connectors explode recurring definitions
-    into these, and a cancelled event is DELETED rather than flagged, so a
-    reader never has to filter tombstones.
+    An event on your calendar. One concrete occurrence on the timeline — title,
+    location, prose, the join link, and who is coming. Connectors explode
+    recurring definitions into these, and a cancelled event is DELETED rather
+    than flagged, so a reader never has to filter tombstones.
   names:
     singular: calendarevent
   # `override` (core's) is how one occurrence of a series is moved or edited:

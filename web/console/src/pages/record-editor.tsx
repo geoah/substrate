@@ -1,10 +1,10 @@
 /** The record editor (create + edit a record of any kind), in TWO LENSES over
  * ONE document.
  *
- * - **Form** is the default: one typed control per declared property, composed
- *   from the declaration (`PropertyForm`). An enum is a select, a state offers
- *   its states, a reference picks a record, a secret is write-only, and every
- *   control carries the property's one-liner and a worked example.
+ * - **Form** is the default. A NEW record is the record page with nothing
+ *   saved yet (`CreateSheet`): the property sheet and its editors over a
+ *   draft. An EDIT's form is one typed control per declared property
+ *   (`PropertyForm`).
  * - **YAML** is the expert lens: the whole apply-able envelope in a code editor
  *   that knows the kind (`YamlEditor`, CodeMirror). Completion, diagnostics and
  *   hovers all read the declaration.
@@ -31,6 +31,7 @@ import { Suspense, lazy, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import {
+  CodeIcon,
   AlertCircleIcon,
   AlertTriangleIcon,
   CheckCircle2Icon,
@@ -38,6 +39,14 @@ import {
   WandSparklesIcon,
 } from "lucide-react"
 
+import { IdText } from "@/components/identity/id-text"
+
+import { KindGlyph } from "@/components/identity/kind-glyph"
+import { KindRef } from "@/components/identity/kind-ref"
+import { PageHeader } from "@/components/identity/page-header"
+import { DocPage } from "@/components/identity/page-layout"
+import { SectionBoundary } from "@/components/page-error"
+import { CreateSheet } from "@/components/record/create-sheet"
 import { PropertyForm } from "@/components/record/property-form"
 
 /** CodeMirror and its YAML grammar are the editor's alone: they load when the
@@ -76,6 +85,8 @@ import {
   type Problem,
 } from "@/lib/record-yaml"
 import { kindByCollection } from "@/lib/definition"
+import { displayName, lowerFirst } from "@/lib/kind-names"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { cn } from "@/lib/utils"
 import { recordEditRoute, recordNewRoute } from "@/router"
 
@@ -133,15 +144,15 @@ function RecordEditor({
   if (registry.isError || !kindInfo) {
     return (
       <EditorEmpty
-        title="No such kind"
-        description={`This repository has no kind called ${authority}/${name}.`}
+        title="This collection isn’t here"
+        description={`${authority}/${pkg}/${name}`}
       />
     )
   }
   if (mode === "edit" && record.isError) {
     return (
       <EditorEmpty
-        title="The record didn't load"
+        title="Couldn’t load this record"
         description={`${authority}/${name}/${id}: ${record.error.message}`}
       />
     )
@@ -201,7 +212,11 @@ export function RecordEditorForm({
 
   // The lens is this editor's own state, not the URL's: the address already
   // names the record, and a half-typed document is nobody's link.
-  const [lens, setLens] = useState<Lens>("form")
+  const [lens, setLens] = useState<Lens>(mode === "edit" ? "yaml" : "form")
+  const [technical] = useTechnicalDetails()
+  // A create names its problems once the person asks to create, not while
+  // the template is still blank.
+  const [attempted, setAttempted] = useState(false)
 
   // The API's own rejection (schema/admission), shown inline until the next edit.
   const [serverError, setServerError] = useState<ApiError | undefined>()
@@ -247,7 +262,7 @@ export function RecordEditorForm({
       if (parsed.error || !parsed.value) {
         throw new ApiError(
           "validation",
-          parsed.error?.message ?? "The document did not parse.",
+          parsed.error?.message ?? "The YAML didn’t parse.",
           0
         )
       }
@@ -259,8 +274,7 @@ export function RecordEditorForm({
     onSuccess: (saved) => {
       toast.add({
         type: "success",
-        title:
-          mode === "edit" ? `${kind.name} updated.` : `${kind.name} created.`,
+        title: `${displayName(kind)} ${mode === "edit" ? "saved" : "created"}`,
       })
       void queryClient.invalidateQueries()
       void navigate({
@@ -281,10 +295,7 @@ export function RecordEditorForm({
       setServerError(api)
       toast.add({
         type: "error",
-        title:
-          mode === "edit"
-            ? `Saving the ${kind.name} failed`
-            : `Creating the ${kind.name} failed`,
+        title: `Couldn’t save this ${lowerFirst(displayName(kind))}`,
         description: api.message,
       })
     },
@@ -300,7 +311,7 @@ export function RecordEditorForm({
     if (error) {
       toast.add({
         type: "error",
-        title: "Formatting failed",
+        title: "Couldn’t format the YAML",
         description: error,
       })
       return
@@ -310,68 +321,194 @@ export function RecordEditorForm({
 
   const canSave = errorCount === 0 && !mutation.isPending
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-start justify-between gap-3 px-6 pt-5 pb-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight break-words">
-            {mode === "edit" ? `Edit ${kind.name}` : `New ${kind.name}`}
-          </h1>
-          <p className="data text-xs text-muted-foreground">
-            {mode === "edit" && record
-              ? `${authority}/${name}/${record.id}`
-              : `${authority}/${name}`}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
-          {lens === "yaml" && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-1.5"
-              disabled={mutation.isPending}
-              onClick={format}
-            >
-              <WandSparklesIcon className="size-3.5" />
-              Format
-            </Button>
-          )}
+  if (mode === "create") {
+    const noun = lowerFirst(displayName(kind))
+    const glyph = <KindGlyph kind={kind} size="lg" />
+    const headActions = (
+      <>
+        {lens === "yaml" && (
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             disabled={mutation.isPending}
+            onClick={format}
+          >
+            <WandSparklesIcon />
+            Format
+          </Button>
+        )}
+        {(technical || lens === "yaml") && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-pressed={lens === "yaml"}
+            onClick={() => setLens(lens === "form" ? "yaml" : "form")}
+          >
+            <CodeIcon />
+            {lens === "form" ? "Write YAML" : "Use the form"}
+          </Button>
+        )}
+      </>
+    )
+    return (
+      <DocPage>
+        {lens === "form" ? (
+          <SectionBoundary name="The form" resetKey={text}>
+            <CreateSheet
+              text={text}
+              kind={kind}
+              kinds={kinds}
+              onChange={onChange}
+              seed={seededFrom}
+              problems={liveErrors}
+              attempted={attempted}
+              glyph={glyph}
+              actions={headActions}
+              meta={
+                <span className="inline-flex items-center gap-1.5">
+                  New in <KindRef kind={kind} />
+                </span>
+              }
+            />
+          </SectionBoundary>
+        ) : (
+          <>
+            <PageHeader
+              size="record"
+              glyph={glyph}
+              actions={headActions}
+              title={`New ${noun}`}
+              className="mb-3"
+            />
+            <div className="overflow-hidden rounded-lg border">
+              <Suspense
+                fallback={
+                  <div className="p-4">
+                    <Skeleton className="h-4 w-64" />
+                  </div>
+                }
+              >
+                <YamlEditor
+                  value={text}
+                  onChange={onChange}
+                  kind={kind}
+                  ctx={ctx}
+                />
+              </Suspense>
+            </div>
+          </>
+        )}
+        {lens === "form" && (
+          <SaveRefusal
+            serverError={serverError}
+            problems={attempted ? liveErrors.filter((p) => !onSheet(p)) : []}
+          />
+        )}
+        {lens === "yaml" &&
+          (errorCount > 0 || warnCount > 0 || serverError) && (
+            <div className="mt-4 rounded-lg border bg-panel">
+              <ProblemsList
+                problems={problems}
+                errorCount={errorCount}
+                warnCount={warnCount}
+                serverError={serverError}
+                onShowLine={() => setLens("yaml")}
+              />
+            </div>
+          )}
+        <div className="mt-6 flex items-center gap-2 border-t pt-4">
+          <Button
+            disabled={mutation.isPending}
+            onClick={() => {
+              setAttempted(true)
+              if (canSave) mutation.mutate()
+            }}
+          >
+            {mutation.isPending && <Spinner className="size-3.5" />}
+            Create {noun}
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={mutation.isPending}
             render={
-              mode === "edit" && record ? (
-                <Link
-                  to="/data/$authority/$pkg/$name/$id"
-                  params={{
-                    authority: authority,
-                    pkg: pkg,
-                    name,
-                    id: record.id,
-                  }}
-                />
-              ) : (
-                <Link
-                  to="/data/$authority/$pkg/$name"
-                  params={{ authority: authority, pkg: pkg, name }}
-                />
-              )
+              <Link
+                to="/data/$authority/$pkg/$name"
+                params={{ authority: authority, pkg: pkg, name }}
+              />
             }
           >
             Cancel
           </Button>
-          <Button
-            size="sm"
-            className="gap-1.5"
-            disabled={!canSave}
-            onClick={() => mutation.mutate()}
-          >
-            {mutation.isPending && <Spinner className="size-3.5" />}
-            {mode === "edit" ? "Save changes" : "Create"}
-          </Button>
         </div>
-      </div>
+      </DocPage>
+    )
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <PageHeader
+        className="shrink-0 px-6 pt-5 pb-3"
+        title={`Edit ${lowerFirst(displayName(kind))}`}
+        meta={
+          <IdText
+            value={
+              mode === "edit" && record
+                ? `${kind.identity}/${record.id}`
+                : kind.identity
+            }
+          />
+        }
+        actions={
+          <>
+            {lens === "yaml" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                disabled={mutation.isPending}
+                onClick={format}
+              >
+                <WandSparklesIcon className="size-3.5" />
+                Format
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={mutation.isPending}
+              render={
+                mode === "edit" && record ? (
+                  <Link
+                    to="/data/$authority/$pkg/$name/$id"
+                    params={{
+                      authority: authority,
+                      pkg: pkg,
+                      name,
+                      id: record.id,
+                    }}
+                  />
+                ) : (
+                  <Link
+                    to="/data/$authority/$pkg/$name"
+                    params={{ authority: authority, pkg: pkg, name }}
+                  />
+                )
+              }
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="gap-1.5"
+              disabled={!canSave}
+              onClick={() => mutation.mutate()}
+            >
+              {mutation.isPending && <Spinner className="size-3.5" />}
+              {mode === "edit" ? "Save changes" : "Create"}
+            </Button>
+          </>
+        }
+      />
 
       <div className="flex min-h-0 flex-1 flex-col border-t xl:flex-row">
         <Tabs
@@ -429,80 +566,115 @@ export function RecordEditorForm({
 
 /** The validation surface: a status line, the API's rejection when there is
  * one, and the live client-side problems, each keyed to its line. */
-function ProblemsPanel({
-  problems,
-  errorCount,
-  warnCount,
-  serverError,
-  onShowLine,
-}: {
+interface ProblemsProps {
   problems: Problem[]
   errorCount: number
   warnCount: number
   serverError?: ApiError
   onShowLine: () => void
-}) {
-  const clean = errorCount === 0 && warnCount === 0 && !serverError
+}
+
+function ProblemsPanel(props: ProblemsProps) {
   return (
     <ScrollArea className="h-full">
-      <div className="flex flex-col gap-3 p-4">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          {clean ? (
-            <>
-              <CheckCircle2Icon className="size-4 text-primary" />
-              <span>Ready to apply</span>
-            </>
-          ) : (
-            <span>
-              {errorCount > 0 && (
-                <span className="text-destructive">
-                  {errorCount} {errorCount === 1 ? "error" : "errors"}
-                </span>
-              )}
-              {errorCount > 0 && warnCount > 0 && ", "}
-              {warnCount > 0 && (
-                <span className="text-muted-foreground">
-                  {warnCount} {warnCount === 1 ? "warning" : "warnings"}
-                </span>
-              )}
-            </span>
-          )}
-        </div>
+      <ProblemsList {...props} />
+    </ScrollArea>
+  )
+}
 
-        {serverError && (
-          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-destructive">
-              <AlertCircleIcon className="size-4 shrink-0" />
-              The substrate rejected this apply
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {serverError.message}
-            </p>
-            {serverError.problems.length > 0 && (
-              <ul className="mt-2 flex flex-col gap-1">
-                {serverError.problems.map((p, i) => (
-                  <li key={i} className="data text-xs text-muted-foreground">
-                    {p}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-
+function ProblemsList({
+  problems,
+  errorCount,
+  warnCount,
+  serverError,
+  onShowLine,
+}: ProblemsProps) {
+  const clean = errorCount === 0 && warnCount === 0 && !serverError
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      <div className="flex items-center gap-2 text-sm font-medium">
         {clean ? (
-          <p className="text-xs text-muted-foreground">
-            The document parses and satisfies the kind's declaration.
-          </p>
+          <>
+            <CheckCircle2Icon className="size-4 text-primary" />
+            <span>Ready to save</span>
+          </>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {problems.map((p, i) => (
-              <ProblemRow key={i} problem={p} onShowLine={onShowLine} />
-            ))}
-          </ul>
+          <span>
+            {errorCount > 0 && (
+              <span className="text-destructive">
+                {errorCount} {errorCount === 1 ? "error" : "errors"}
+              </span>
+            )}
+            {errorCount > 0 && warnCount > 0 && ", "}
+            {warnCount > 0 && (
+              <span className="text-muted-foreground">
+                {warnCount} {warnCount === 1 ? "warning" : "warnings"}
+              </span>
+            )}
+          </span>
         )}
       </div>
-    </ScrollArea>
+
+      {serverError && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-destructive">
+            <AlertCircleIcon className="size-4 shrink-0" />
+            Couldn’t save: {serverError.message}
+          </div>
+          {serverError.problems.length > 0 && (
+            <ul className="mt-2 flex flex-col gap-1">
+              {serverError.problems.map((p, i) => (
+                <li key={i} className="text-xs text-muted-foreground">
+                  {p}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {!clean && (
+        <ul className="flex flex-col gap-2">
+          {problems.map((p, i) => (
+            <ProblemRow key={i} problem={p} onShowLine={onShowLine} />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** Whether the new-record sheet names this problem on its own row (or the
+ * heading, or the ID). */
+function onSheet(problem: Problem): boolean {
+  return Boolean(problem.path) && problem.path !== "kind"
+}
+
+/** Why a create did not happen, under the sheet: what the server said, and
+ * whatever the sheet has no row to name. */
+function SaveRefusal({
+  serverError,
+  problems,
+}: {
+  serverError?: ApiError
+  problems: Problem[]
+}) {
+  if (!serverError && !problems.length) return null
+  return (
+    <div
+      role="alert"
+      className="mt-4 flex flex-col gap-1 rounded-md bg-bad-soft px-3 py-2.5 text-[13px] text-destructive"
+    >
+      {serverError && <p>Couldn’t save: {serverError.message}</p>}
+      {serverError?.problems.map((p, i) => (
+        <p key={i} className="text-[12.5px]">
+          {p}
+        </p>
+      ))}
+      {problems.map((p, i) => (
+        <p key={`p${i}`}>{p.message.replace(/`/g, "")}</p>
+      ))}
+    </div>
   )
 }
 
@@ -531,7 +703,7 @@ function ProblemRow({
           <button
             type="button"
             onClick={onShowLine}
-            className="ml-1.5 data text-muted-foreground underline-offset-4 hover:underline"
+            className="ml-1.5 text-muted-foreground underline-offset-4 hover:underline"
           >
             line {problem.line}
           </button>
@@ -556,9 +728,7 @@ function EditorEmpty({
             <FileQuestionIcon />
           </EmptyMedia>
           <EmptyTitle>{title}</EmptyTitle>
-          <EmptyDescription>
-            <span className="data">{description}</span>
-          </EmptyDescription>
+          <EmptyDescription>{description}</EmptyDescription>
         </EmptyHeader>
       </Empty>
     </div>

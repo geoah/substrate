@@ -1,6 +1,7 @@
 /** The record page's Sync tab, for any kind binding the core `sync` trait:
  * the generic renderer over the record's own properties, with the two owner
- * actions and a link to the Connection's operational page. */
+ * actions and a link to its provider's page, where the account is
+ * highlighted among the others. */
 
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -12,6 +13,8 @@ import { Button } from "@/components/ui/button"
 import { splitKind } from "@/lib/api/http"
 import { triggerRecordsQueryOptions } from "@/lib/api/sync"
 import type { SubstrateRecord } from "@/lib/api/types"
+import { recordTitle } from "@/lib/format"
+import { untitled } from "@/lib/kind-names"
 import { requestTriggers, syncFieldsOf, triggersOnKind } from "@/lib/sync"
 
 export function SyncRail({ record }: { record: SubstrateRecord }) {
@@ -37,6 +40,7 @@ export function SyncRail({ record }: { record: SubstrateRecord }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <SyncActions
           record={record}
+          name={recordTitle(record.properties) || untitled(record.kind)}
           paused={fields.paused}
           requestTriggerIds={requestIds}
         />
@@ -46,12 +50,13 @@ export function SyncRail({ record }: { record: SubstrateRecord }) {
           className="gap-1"
           render={
             <Link
-              to="/connections/$authority/$pkg/$name/$id"
-              params={{ ...parts, id: record.id }}
+              to="/providers/$authority/$pkg"
+              params={{ authority: parts.authority, pkg: parts.pkg }}
+              search={{ account: record.id }}
             />
           }
         >
-          Open in Connections
+          Open its provider
           <ArrowUpRightIcon className="size-3.5" />
         </Button>
       </div>

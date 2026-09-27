@@ -163,3 +163,16 @@ describe("save/load round-trip", () => {
     expect(loadTablePrefs("changelog")).toBeNull()
   })
 })
+
+describe("columns shown while empty", () => {
+  it("keeps the reader's list across a save and a load", () => {
+    saveTablePrefs("t", { shown: ["actor"] })
+    expect(loadTablePrefs("t")).toEqual({ shown: ["actor"] })
+  })
+
+  it("stores only columns that still exist", () => {
+    expect(prefsDelta(IDS, IDS, {}, [], {}, ["actor", "ghost"])).toEqual({
+      shown: ["actor"],
+    })
+  })
+})

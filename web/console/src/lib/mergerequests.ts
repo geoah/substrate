@@ -174,6 +174,9 @@ export function deriveDiff(
   const propKeys = new Set<string>(declaredPropNames)
   for (const k of Object.keys(winner.properties)) propKeys.add(k)
   for (const k of Object.keys(loser.properties)) propKeys.add(k)
+  // The built-in title is derived from a declared property (decision record
+  // 0016): comparing it only repeats the row it is worked out from.
+  if (!declaredPropNames.has("title")) propKeys.delete("title")
 
   const rows: DiffRow[] = []
 

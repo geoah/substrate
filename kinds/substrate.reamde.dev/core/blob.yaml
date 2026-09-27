@@ -16,7 +16,8 @@ data:
     — while the bytes themselves live in the store behind /blobs. The digest
     is the id, so identical bytes always mint the same blob, and a blobref
     property elsewhere points at one.
-  version: 6
+  version: 7
+  purpose: internal
   names:
     singular: blob
   # The name if it has one, the digest if it doesn't: a blob reads as

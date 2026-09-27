@@ -174,3 +174,55 @@ func TestChangesBadPagingParams(t *testing.T) {
 		wantStatus(t, rec, http.StatusBadRequest)
 	}
 }
+
+func TestChangesCarryValuesOnlyWhenAsked(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+	ds.commit(substrate.Change{
+		TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPatch,
+		RecordID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task",
+		Affected: []substrate.AffectedRecord{{
+			Kind: "samples.substrate.reamde.dev/tasks/task", ID: "t1", Version: 2,
+			Properties: []substrate.PropertyChange{
+				{Name: "priority", Before: "high", After: "urgent"},
+				{Name: "notes", After: "call back"},
+				{Name: "apiKey", Before: "<redacted>", After: "<redacted>"},
+			},
+		}},
+	})
+	<-ds.signals
+
+	type body struct {
+		Changes []struct {
+			Affected []substrate.AffectedRecord `json:"affected"`
+		} `json:"changes"`
+	}
+	for _, path := range []string{
+		"/api/v1/changes?first=10",
+		"/api/v1/changes?first=10&values=0",
+	} {
+		rec := env.do(t, http.MethodGet, path, tok, nil)
+		wantStatus(t, rec, http.StatusOK)
+		page := decodeJSON[body](t, rec)
+		if len(page.Changes) != 1 || page.Changes[0].Affected[0].Properties != nil {
+			t.Fatalf("%s: values without asking: %+v", path, page.Changes)
+		}
+	}
+
+	rec := env.do(t, http.MethodGet, "/api/v1/changes?first=10&values=1", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	page := decodeJSON[body](t, rec)
+	if len(page.Changes) != 1 {
+		t.Fatalf("page = %+v", page.Changes)
+	}
+	got := page.Changes[0].Affected[0].Properties
+	if len(got) != 3 || got[0].Before != "high" || got[0].After != "urgent" ||
+		got[1].Before != nil || got[1].After != "call back" ||
+		got[2].Before != "<redacted>" {
+		t.Fatalf("values = %+v", got)
+	}
+
+	rec = env.do(t, http.MethodGet, "/api/v1/changes?first=10&values=yes", tok, nil)
+	wantStatus(t, rec, http.StatusBadRequest)
+}

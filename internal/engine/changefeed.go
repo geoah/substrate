@@ -94,7 +94,7 @@ func (ds *dataset) buildChangeFilter(b *builder, f substrate.ChangeFilter) error
 		// The match is the addressed pair only: the winner's later writes do
 		// not follow a former id here, and the entry count is unchanged.
 		//
-		// Three flat arms, each with an index: changelog_record_idx for the
+		// Three flat arms, each with an index: changelog_record_seq_idx for the
 		// first, the partial changelog_pair_idx for the other two, whose WHERE
 		// the op test must repeat as a LITERAL. Bound as a parameter, a generic
 		// plan could not prove the partial index applicable and would walk the
@@ -127,8 +127,10 @@ func escapeLike(s string) string {
 	return r.Replace(s)
 }
 
-// queryChanges runs one changelog page over the builder's predicates.
-func (ds *dataset) queryChanges(ctx context.Context, b *builder, order string, limit int) ([]substrate.Change, error) {
+// queryChanges runs one changelog page over the builder's predicates. With
+// values it also derives each affected record's before and after property
+// values (decision 0135).
+func (ds *dataset) queryChanges(ctx context.Context, b *builder, order string, limit int, values bool) ([]substrate.Change, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -139,18 +141,38 @@ func (ds *dataset) queryChanges(ctx context.Context, b *builder, order string, l
 	if err != nil {
 		return nil, err
 	}
-	return collectChanges(rows)
+	out, effects, err := collectChangeEffects(rows, values)
+	if err != nil || !values {
+		return out, err
+	}
+	if err := ds.deriveValues(ctx, out, effects); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // collectChanges scans changelog rows selected as queryChanges selects them
 // (seq, ts, actor, op, record_id, kind, payload, hash) and closes them.
 func collectChanges(rows *sql.Rows) ([]substrate.Change, error) {
+	out, _, err := collectChangeEffects(rows, false)
+	return out, err
+}
+
+// collectChangeEffects is collectChanges that, with keep, also returns each
+// row's stored replay effects, taken before projectAffected strips them: the
+// values derivation reads them. The rows are closed before it returns, so the
+// walk that follows can read the changelog again.
+func collectChangeEffects(rows *sql.Rows, keep bool) ([]substrate.Change, [][]foldOp, error) {
 	defer func() { _ = rows.Close() }()
 	var out []substrate.Change
+	var effects [][]foldOp
 	for rows.Next() {
 		c, err := scanChange(rows)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+		if keep {
+			effects = append(effects, effectsOf(c))
 		}
 		if c.Op == substrate.OpDelivery {
 			// The ledger's own entry (delivery.go) moves no record and has
@@ -162,7 +184,13 @@ func collectChanges(rows *sql.Rows) ([]substrate.Change, error) {
 		}
 		out = append(out, c)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, nil, err
+	}
+	return out, effects, nil
 }
 
 // projectAffected turns a row's stored replay effects into the public change
@@ -279,7 +307,7 @@ func (ds *dataset) ChangesBefore(ctx context.Context, before int64, f substrate.
 	if err := ds.buildChangeFilter(b, f); err != nil {
 		return nil, err
 	}
-	return ds.queryChanges(ctx, b, `seq DESC`, limit)
+	return ds.queryChanges(ctx, b, `seq DESC`, limit, f.Values)
 }
 
 // ChangeTriggers computes, for each given change, every runnable enabled

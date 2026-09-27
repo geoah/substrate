@@ -86,6 +86,10 @@ export interface PropSpec {
   /** `state`: the machine's states and the state a record is born into. */
   states?: string[]
   initial?: string
+  /** `state`: the declared moves. A patch may move the state only along one
+   * of these (engine/write.go); `stamps` names the properties the move fills
+   * in with the time. */
+  transitions?: StateTransition[]
   /** `reference`: the kind this pointer is pinned to, or `any`. */
   to?: string
   /** `reference`: the LINK DATA the declaration hangs off the pointer, each a
@@ -105,6 +109,13 @@ export interface PropSpec {
    * never offered for editing. */
   writer?: string
   description?: string
+}
+
+/** One declared move of a state machine. */
+export interface StateTransition {
+  from: string
+  to: string
+  stamps: string[]
 }
 
 /** The control a property earns. `select` covers an enum and any property that
@@ -168,6 +179,15 @@ export function ownerWritable(spec: PropSpec): boolean {
   return !spec.writer || spec.writer === "owner"
 }
 
+/** Words a lowercase id spells that a reader knows in capitals. */
+const ACRONYMS: Record<string, string> = {
+  url: "URL",
+  uri: "URI",
+  id: "ID",
+  ids: "IDs",
+  html: "HTML",
+}
+
 /** Humanize a camelCase property id for a label when the declaration carries no
  * `displayName`: `backfillDepth` becomes "Backfill depth". An ALL-CAPS run is
  * an acronym the author wrote, and keeps its case — `baseURL` is "Base URL",
@@ -181,7 +201,11 @@ export function humanizeName(name: string): string {
   if (!spaced) return name
   const words = spaced
     .split(/\s+/)
-    .map((word) => (/^[A-Z0-9]{2,}$/.test(word) ? word : word.toLowerCase()))
+    .map((word) =>
+      /^[A-Z0-9]{2,}$/.test(word)
+        ? word
+        : (ACRONYMS[word.toLowerCase()] ?? word.toLowerCase())
+    )
   const first = words[0]
   words[0] = first.charAt(0).toUpperCase() + first.slice(1)
   return words.join(" ")
@@ -216,6 +240,22 @@ function fieldSpecs(v: unknown): PropSpec[] | undefined {
   return out.length ? out : undefined
 }
 
+function transitionsOf(v: unknown): StateTransition[] | undefined {
+  if (!Array.isArray(v)) return undefined
+  const out: StateTransition[] = []
+  for (const raw of v) {
+    if (!raw || typeof raw !== "object") continue
+    const t = raw as Record<string, unknown>
+    if (typeof t.from !== "string" || typeof t.to !== "string") continue
+    const stamps =
+      t.stamps && typeof t.stamps === "object" && !Array.isArray(t.stamps)
+        ? Object.keys(t.stamps).sort()
+        : []
+    out.push({ from: t.from, to: t.to, stamps })
+  }
+  return out
+}
+
 function specOf(name: string, def: Record<string, unknown>): PropSpec {
   const displayName =
     typeof def.displayName === "string" && def.displayName.trim()
@@ -234,6 +274,7 @@ function specOf(name: string, def: Record<string, unknown>): PropSpec {
     default: def.default,
     states: stringList(def.states),
     initial: typeof def.initial === "string" ? def.initial : undefined,
+    transitions: transitionsOf(def.transitions),
     // THE PIN. A reference property names the kind its value points at under
     // `kind:`, the one spelling the loader accepts.
     to: typeof def.kind === "string" ? def.kind : undefined,
@@ -297,6 +338,77 @@ export function propSpecsByName(kind: KindInfo): PropSpec[] {
   return Object.entries(rawProps(kind))
     .map(([name, def]) => specOf(name, def ?? {}))
     .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/** The moves a state may make from where it stands. A patch naming any other
+ * state is refused (engine/write.go), so nothing else is offered. */
+export function movesFrom(spec: PropSpec, current: string): StateTransition[] {
+  return (spec.transitions ?? []).filter(
+    (t) => t.from === current && t.to !== current
+  )
+}
+
+/** The property the heading shows in full, or undefined when it shows no
+ * one property (decision 0016).
+ *
+ * A kind with no `displayTemplate` is headed by the built-in `title`. A kind
+ * with one is headed by what the template renders, and the server ignores a
+ * written `title` there, so the heading is a property only when the template
+ * is ONE placeholder whose first name is a declared, one-line string property
+ * (`{name}`, `{name|title}`: `name`). Literal text or a second placeholder
+ * around it (`Issue {number}`, `{first} {last}`), a path into a value, or an
+ * engine word the kind does not declare (`{localName}`) is a heading no one
+ * property holds. */
+export function titleProperty(kind: KindInfo | undefined): string | undefined {
+  if (!kind) return "title"
+  const template = (kind.definition as Record<string, unknown>).displayTemplate
+  if (typeof template !== "string" || !template.trim()) return "title"
+  const m = template
+    .trim()
+    .match(/^\{\s*([A-Za-z][A-Za-z0-9]*)\s*(?:\|[^{}]*)?\}$/)
+  const def = m ? rawProps(kind)[m[1]] : undefined
+  if (!m || !def) return undefined
+  const spec = specOf(m[1], def)
+  return spec.kind === "string" && !spec.repeated && !spec.keyed
+    ? m[1]
+    : undefined
+}
+
+/** The property typing into the heading writes, or undefined when the
+ * heading is read-only: it shows no one property, or that property is the
+ * engine's or another writer's to set. */
+export function titleEditor(kind: KindInfo | undefined): PropSpec | undefined {
+  // Until the declaration is read nobody knows whether a template heads it.
+  if (!kind) return undefined
+  const name = titleProperty(kind)
+  if (!name) return undefined
+  const spec =
+    name === "title" ? systemSpecs(kind)[0] : specOf(name, rawProps(kind)[name])
+  return !spec.managed && ownerWritable(spec) ? spec : undefined
+}
+
+/** The names a kind's prose usually goes under, most body-like first. */
+const BODY_NAMES = ["body", "description", "details", "summary", "notes"]
+
+/** The prose property a record page reads as its body: the first declared
+ * `markdown` property by the usual names, else the only one it declares. A
+ * kind with several unnamed prose properties has no body; they stay rows. */
+export function bodyProperty(kind: KindInfo | undefined): PropSpec | undefined {
+  if (!kind) return undefined
+  const title = titleProperty(kind)
+  const prose = propSpecsByName(kind).filter(
+    (s) =>
+      s.kind === "markdown" &&
+      !s.repeated &&
+      !s.keyed &&
+      !s.managed &&
+      s.name !== title
+  )
+  for (const name of BODY_NAMES) {
+    const hit = prose.find((s) => s.name === name)
+    if (hit) return hit
+  }
+  return prose.length === 1 ? prose[0] : undefined
 }
 
 /** One ITEM of a container, as a declaration in its own right: the same spec
@@ -503,7 +615,7 @@ function checkItem(spec: PropSpec, value: unknown): string | undefined {
       const held = value as Record<string, unknown>
       for (const [name, field] of Object.entries(held)) {
         const declared = spec.fields.find((f) => f.name === name)
-        if (!declared) return `\`${name}\` is not a declared field`
+        if (!declared) return `\`${name}\` is not a declared property`
         const problem = checkValue(declared, field)
         if (problem) return underField(name, problem)
       }
