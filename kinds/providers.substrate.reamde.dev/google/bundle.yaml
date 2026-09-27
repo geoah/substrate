@@ -229,7 +229,11 @@ data:
   # 36: every kind declares its purpose (decision 0133), and its
   # description opens with one plain sentence saying what a record is to
   # a person.
-  version: 36
+  #
+  # 37: every stream's failure log line prints `_reason(e)`, so a Drive
+  # grant missing drive.readonly logs why instead of an empty message, and
+  # only on the run that enters `needsreconsent`. Body text only.
+  version: 37
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -6501,7 +6505,7 @@ data:
                              set(cur.get("unknown") or ()))
             except Exception as e:
                 host.log("google-contacts: contact groups failed for %s: %s"
-                         % (aid, e))
+                         % (aid, _reason(e)))
         cur["queue"] = queue
 
         return _run_account(host, cfg, cur, queue, aid, acct, props)
@@ -6656,7 +6660,8 @@ data:
             return {"more": host.page.more(cur)}
         except Exception as e:
             host.log("google-contacts: %s/%s failed for %s: %s"
-                     % (cur.get("phase"), cur.get("stream") or "connections", aid, e))
+                     % (cur.get("phase"), cur.get("stream") or "connections", aid,
+                        _reason(e)))
             _erroring(host, acct, _reason(e), _retry_after(e))
             rest = queue[1:]
             if rest:
@@ -10577,7 +10582,7 @@ data:
             # a half-written page is worse than an unwritten one, and the
             # watermark never advanced, so the next run re-reads it.
             host.log("google-gmail: %s failed for %s: %s"
-                     % (cur.get("phase"), aid, e))
+                     % (cur.get("phase"), aid, _reason(e)))
             failure = _Batch()
             _erroring(failure, acct, _reason(e), _retry_after(e))
             failure.flush(host)
@@ -15563,7 +15568,7 @@ data:
                           _api_base(cfg), acct["token"], cur, notes)
         except Exception as e:
             host.log("google-calendar: %s failed for %s: %s"
-                     % (cur.get("phase"), aid, e))
+                     % (cur.get("phase"), aid, _reason(e)))
             # WHICH CALENDAR, AND IN WHICH PHASE (T-055). The status used to read
             # `erroring: google returned HTTP 404` and nothing else, so an
             # account with nine calendars said only that ONE of them answered
@@ -17047,7 +17052,10 @@ data:
             start = _get(base, token, "/drive/v3/changes/startPageToken")
         except urllib.error.HTTPError as e:
             if _status(e) == 403 and _scope_refused(_detail(e)):
-                raise _NeedsReconsent()
+                raise _NeedsReconsent(
+                    "Google refused changes/startPageToken (403): the grant "
+                    "lacks drive.readonly; the owner must reconnect the "
+                    "account and grant Drive access")
             raise
         cur["startToken"] = str(start.get("startPageToken") or "")
         anchor = str(props.get("driveBackfillAnchorAt") or "")
@@ -17438,11 +17446,17 @@ data:
             # A provider failure, a refused origin or a dead grant stamps THIS
             # account and the drain continues behind it. The buffered effects
             # are DISCARDED rather than flushed beside the error stamp.
-            host.log("google-drive: %s failed for %s: %s"
-                     % (cur.get("phase"), aid, e))
+            reconsent = isinstance(e, _NeedsReconsent)
+            # A missing scope fails every run until the owner reconnects, and
+            # the account's `driveSyncState` already says so: log the run that
+            # enters the state, not each run that finds it unchanged.
+            props = acct.get("properties") or {}
+            if not (reconsent and props.get("driveSyncState") == "needsreconsent"):
+                host.log("google-drive: %s failed for %s: %s"
+                         % (cur.get("phase"), aid, _reason(e)))
             failure = _Batch()
             _erroring(failure, acct, _reason(e), _retry_after(e),
-                      reconsent=isinstance(e, _NeedsReconsent))
+                      reconsent=reconsent)
             failure.flush(host)
             rest = queue[1:]
             if rest:
