@@ -48,6 +48,8 @@ WHAT IT ASSERTS, and why each one is worth a run:
                   and a `missing_scope` refusal surfaced, an apiBase off
                   slack.com refused unsent, and an agent calling it as a
                   tool (#712)
+   18. first      a first reply posted into a mirrored message that had no
+                  replies lands on the next sync (#711)
 
 Run against `raw/slack` (MODE=seed) two families of check relax, and only
 two; both are commented "SEED:" at the site and described in
@@ -81,6 +83,15 @@ P = "providers.substrate.reamde.dev/slack"
 TEAM, USER, BOT = P + "/team", P + "/user", P + "/bot"
 CONV, MESSAGE, FILE = P + "/conversation", P + "/message", P + "/file"
 SYNC = P + "/conversationsync"
+# The sync's RESCAN_SECONDS: an incremental history walk asks for `oldest=` a
+# day behind the cursor it stored (#711).
+RESCAN_SECONDS = 86400
+
+
+def rescan(ts):
+    """The `oldest` an incremental walk sends for a stored cursor `ts`."""
+    whole, _, frac = str(ts).partition(".")
+    return "%d.%s" % (int(whole) - RESCAN_SECONDS, (frac + "000000")[:6])
 
 MENTION_RE = re.compile(r"<@([UWB][A-Z0-9]+)(?:\|[^>]*)?>")
 CHANNEL_RE = re.compile(r"<#([CDG][A-Z0-9]+)(?:\|[^>]*)?>")
@@ -1344,8 +1355,8 @@ def main():
 
             # EXACT BOUNDS, not "a request containing oldest". Every
             # incremental window must name a cursor the mirror actually
-            # stored for that conversation, or the sync is walking from
-            # somewhere it invented.
+            # stored for that conversation, less the rescan day, or the sync
+            # is walking from somewhere it invented.
             # Every cursor the mirror has EVER held, because the third
             # sync asks with the cursor the second one stored and `states2`
             # is the snapshot before that.
@@ -1353,7 +1364,7 @@ def main():
             for st in list(states) + list(states2) + list(states3):
                 cid = conv_of_row.get(ref_id(props(st).get("conversation")))
                 if cid and props(st).get("latestTs"):
-                    stored.setdefault(cid, set()).add(props(st)["latestTs"])
+                    stored.setdefault(cid, set()).add(rescan(props(st)["latestTs"]))
                 for ts in props(st).get("threadWatch") or []:
                     stored.setdefault(cid, set()).add(ts)
             stray = [(q(e, "channel"), q(e, "oldest")) for e in inc
@@ -1824,6 +1835,9 @@ def main():
 
     section("17. postmessage posts through the pasted token")
     postmessage()
+
+    section("18. a first reply into a thread lands")
+    first_reply()
     return finish()
 
 
@@ -1951,6 +1965,93 @@ def postmessage():
        % (sent[0].get("auth") if sent else None))
     note("postmessage: %d calls reached the mock"
          % len(w.requests("POST", POST_ROUTE)))
+
+
+def first_reply():
+    """#711. `postmessage` replies to a mirrored message that had no replies,
+    and the next sync must read the thread. The first reply never appears in
+    `conversations.history`, and the watch holds only parents seen WITH
+    replies, so the one signal is the parent's own `reply_count` on a history
+    page that reaches back to it. The mock plays Slack after the post: the
+    history page for the rescan window restates the parent with its reply
+    count, and `conversations.replies` answers the parent and the reply. On
+    the unfixed body the incremental window starts at the cursor, that page
+    is never asked for, and the reply never lands."""
+    if not MOCK or SEED:
+        seed_note("the first reply is driven against the mock only")
+        return
+    # `load` answers the first of the recording's responses: the threaded one.
+    first = load("POST_api_chat.postMessage.json") or {}
+    channel = first.get("channel")
+    reply = dict(first.get("message") or {})
+    parent_ts, reply_ts = reply.get("thread_ts"), reply.get("ts")
+    if not ok(channel and parent_ts and reply_ts,
+              "the postMessage recording names no channel, parent and reply"):
+        return
+    convs = {props(r).get("conversationId"): rid(r) for r in records(CONV)}
+    conv_row = convs.get(channel)
+    by_ts = {props(m).get("ts"): m for m in records(MESSAGE)
+             if ref_id(props(m).get("channel")) == conv_row}
+    parent_row = by_ts.get(parent_ts)
+    if not ok(parent_row, "the thread parent %s is not mirrored in %s"
+              % (parent_ts, channel)):
+        return
+    ok(not props(parent_row).get("replyCount"),
+       "the parent %s already has replies, so this is not a first reply"
+       % parent_ts)
+    ok(reply_ts not in by_ts, "the reply %s is mirrored before it was posted"
+       % reply_ts)
+    state = next((props(s) for s in records(SYNC)
+                  if ref_id(props(s).get("conversation")) == conv_row), {})
+    cursor = state.get("latestTs") or ""
+    ok(cursor and parent_ts < cursor,
+       "the parent %s is not older than the cursor %r, so an unfixed window "
+       "would return it anyway and this proves nothing" % (parent_ts, cursor))
+    ok(parent_ts not in (state.get("threadWatch") or []),
+       "the parent %s is already watched" % parent_ts)
+    raw = None
+    for _name, doc in each("GET_api_conversations.history__channel-%s_*" % channel):
+        for m in doc.get("messages") or []:
+            if m.get("ts") == parent_ts:
+                raw = m
+    if not ok(raw, "no history recording carries the parent %s" % parent_ts):
+        return
+
+    from writecall import Writes, error_text
+    w = Writes(SERVER, TOKEN, MOCK)
+    w.reset()
+    st, out = w.call(POST_FN, {"channel": channel, "text": reply.get("text"),
+                               "threadTs": parent_ts})
+    ok(st == 200, "the first reply answered %s: %s" % (st, error_text(out)[:300]))
+
+    restated = dict(raw, thread_ts=parent_ts, reply_count=1,
+                    reply_users_count=1, reply_users=[reply.get("user")],
+                    latest_reply=reply_ts)
+    faults([{"match": "GET /api/conversations.history",
+             "contains": "oldest=" + rescan(cursor), "status": [200] * 20,
+             "body": {"ok": True, "has_more": False, "messages": [restated],
+                      "response_metadata": {"next_cursor": ""}}},
+            {"match": "GET /api/conversations.replies",
+             "contains": "ts=" + parent_ts, "status": [200] * 20,
+             "body": {"ok": True, "has_more": False,
+                      "messages": [restated, reply],
+                      "response_metadata": {"next_cursor": ""}}}])
+    base = settle()
+    sync_now()
+    wait_for_sync(base.get("lastSyncedAt"))
+    faults([])
+    rows = [m for m in records(MESSAGE)
+            if props(m).get("ts") == reply_ts
+            and ref_id(props(m).get("channel")) == conv_row]
+    ok(rows, "the first reply %s to %s in %s is not in the mirror after a sync"
+       % (reply_ts, parent_ts, channel))
+    if rows:
+        ok(ref_id(props(rows[0]).get("parent")) == rid(parent_row),
+           "the reply's parent is %r, want the mirrored parent %s"
+           % (props(rows[0]).get("parent"), rid(parent_row)))
+    # NOT "the parent is now watched": section 16 filled this conversation's
+    # watch with newer parents, and the watch keeps the newest WATCH_MAX.
+    note("first reply %s %s" % (reply_ts, "landed" if rows else "MISSING"))
 
 
 def finish():

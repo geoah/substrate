@@ -18,7 +18,7 @@ What it produces, under the SAME recording names `tools/mockserver.py` serves:
     conversations.history                   one page per cast conversation
     conversations.replies                   every threaded parent in the cast
     conversations.info, .members, users.info  where the raw pull has them
-    conversations.history?oldest=<cursor>   ONE forward page per cast
+    conversations.history?oldest=<cursor less a day>  ONE page per cast
                                             conversation: the request only an
                                             INCREMENTAL sync makes, carrying
                                             the message the second sync must
@@ -63,6 +63,15 @@ WINDOW_DAYS = 2
 # What the sync sends on every history and replies call. `include_all_metadata`
 # rides in the recording's NAME, so the cut and the pull have to agree on it.
 HISTORY_PARAMS = {"limit": "200", "include_all_metadata": "true"}
+# The sync's RESCAN_SECONDS: an incremental walk asks for `oldest=` a day
+# behind the cursor it stored (#711), so that is the request to record.
+RESCAN_SECONDS = 86400
+
+
+def rescan(ts: str) -> str:
+    """The `oldest` an incremental walk sends for a stored cursor `ts`."""
+    whole, _, frac = ts.partition(".")
+    return "%d.%s" % (int(whole) - RESCAN_SECONDS, (frac + "000000")[:6])
 
 
 def load_cast() -> list[tuple[str, str]]:
@@ -627,10 +636,12 @@ def main():
            "response_metadata": {"next_cursor": ""}})
 
     # THE INCREMENTAL PAGE. The second sync asks each conversation for
-    # `oldest=<the ts the first sync stored>`; no pull can have recorded that
-    # request, because the cursor did not exist yet. So it is cut here, from
-    # the conversation's own newest message: the same payload one second
-    # later, which is a message the first sync provably did not see.
+    # `oldest=<the ts the first sync stored, less a day>`; no pull can have
+    # recorded that request, because the cursor did not exist yet. So it is
+    # cut here, from the conversation's own newest message: the same payload
+    # one second later, which is a message the first sync provably did not
+    # see. A real page would also restate the day before the cursor; the cut
+    # carries only what is new, and the sync's puts absorb a restatement.
     incremental, mutations = 0, 0
     for cid, d in histories.items():
         msgs = [m for m in (d.get("messages") or []) if keep(m)]
@@ -687,7 +698,7 @@ def main():
             page.append(cleared)
             mutations = 1
         write("/api/conversations.history",
-              dict(HISTORY_PARAMS, channel=cid, oldest=newest["ts"]),
+              dict(HISTORY_PARAMS, channel=cid, oldest=rescan(newest["ts"])),
               {"ok": True, "messages": page, "has_more": False,
                "response_metadata": {"next_cursor": ""}})
         # AND THE UNCHANGED PAGE. A third sync asks with the cursor the
@@ -698,7 +709,7 @@ def main():
         # empty page is the honest answer: nothing has happened since.
         top = max(m["ts"] for m in page)
         write("/api/conversations.history",
-              dict(HISTORY_PARAMS, channel=cid, oldest=top),
+              dict(HISTORY_PARAMS, channel=cid, oldest=rescan(top)),
               {"ok": True, "messages": [], "has_more": False,
                "response_metadata": {"next_cursor": ""}})
         incremental += 1
