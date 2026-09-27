@@ -356,10 +356,12 @@ export function ChangeRequestDetailPage() {
   const adjustedDiff = sendAdjusted
     ? adjustedDiffFor(request, edited, targetRecord?.version)
     : undefined
+  // Empty is judged on the whole diff the apply would send: the labels,
+  // annotations and finalizers ride along with whatever properties are left.
   const held =
     op !== "delete" &&
-    Object.keys(edited).length === 0 &&
-    Object.keys(diff.properties).length > 0
+    Object.keys(diff.properties).length > 0 &&
+    diffNamesNothing({ ...diff, properties: edited })
       ? "Nothing is left to apply. Put a value back, or dismiss it."
       : undefined
   const applied = adjustedProperties(request)

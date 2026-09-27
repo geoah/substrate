@@ -323,6 +323,46 @@ describe("ChangeRequestDetailPage", () => {
     expect(screen.getByText("New summary")).toBeTruthy()
   })
 
+  it("keeps Apply when every value is left out but labels still change", async () => {
+    serve(
+      request({
+        properties: {
+          ...patchRequest.properties,
+          diff: {
+            properties: { summary: "New summary", note: null },
+            labels: { triage: "done" },
+          },
+        },
+      }),
+      { target }
+    )
+    renderPage(<ChangeRequestDetailPage />)
+    await screen.findByText("Old summary")
+    fireEvent.click(screen.getByRole("button", { name: "Leave out Summary" }))
+    fireEvent.click(screen.getByRole("button", { name: "Leave out Note" }))
+    expect(screen.queryByText(/Nothing is left to apply/)).toBeNull()
+    const apply = screen.getByRole("button", { name: "Apply" })
+    expect((apply as HTMLButtonElement).disabled).toBe(false)
+
+    fireEvent.click(apply)
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+      )
+      expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({
+        properties: {
+          decision: "accepted",
+          adjustedDiff: {
+            properties: {},
+            labels: { triage: "done" },
+            ifVersion: 3,
+          },
+        },
+        ifVersion: 4,
+      })
+    })
+  })
+
   it("shows what was suggested beside what was applied once adjusted", async () => {
     serve(
       request({
