@@ -41,7 +41,9 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+import { IdentityHoverCard } from "@/components/identity/identity-hover-card"
 import { KindGlyph } from "@/components/identity/kind-glyph"
+import { KindCard } from "@/components/identity/kind-ref"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { PurposeTag } from "@/components/identity/purpose-tag"
 import { SwitchMark, ToggleSwitch } from "@/components/nav/toggle-switch"
@@ -89,7 +91,6 @@ import {
   type CollectionGroup,
 } from "@/lib/collections"
 import { kindByIdentity, kindPurpose } from "@/lib/definition"
-import { kindDescription } from "@/lib/kind-copy"
 import { displayPlural } from "@/lib/kind-names"
 import { cn } from "@/lib/utils"
 
@@ -179,10 +180,20 @@ function StarButton({ identity }: { identity: string }) {
   )
 }
 
-/** One collection in a group. Everyday: glyph and display plural. Technical:
- * the reference's own name, tagged when it is not a primary collection. The
- * tooltip is what the collection holds; its reference is on the collection
- * page and in every hover card. */
+/** A kind's own name beside its label, in technical mode: what a developer
+ * copies, quiet enough that the label still leads. */
+function RawName({ name }: { name: string }) {
+  return (
+    <>
+      {" "}
+      <span className="ml-0.5 font-mono text-[11.5px] text-faint">{name}</span>
+    </>
+  )
+}
+
+/** One collection in a group: glyph and display plural; technical mode adds
+ * the kind's own name beside it and tags a collection that is not primary.
+ * Its hover card says what the collection holds and where it comes from. */
 function KindRow({ kind, technical }: { kind: KindInfo; technical: boolean }) {
   const params = useParams({ strict: false })
   const close = useCloseOnPhone()
@@ -192,13 +203,18 @@ function KindRow({ kind, technical }: { kind: KindInfo; technical: boolean }) {
   const purpose = kindPurpose(kind)
   return (
     <div className="group/kind relative">
-      <Link
-        to="/data/$authority/$pkg/$name"
-        params={{ authority, pkg, name }}
-        onClick={close}
-        aria-current={active ? "page" : undefined}
-        title={kindDescription(kind, technical)}
+      <IdentityHoverCard
+        side="right"
+        trigger={
+          <Link
+            to="/data/$authority/$pkg/$name"
+            params={{ authority, pkg, name }}
+            onClick={close}
+            aria-current={active ? "page" : undefined}
+          />
+        }
         className={cn(ROW, "pr-2 pl-3.5", active && ACTIVE)}
+        card={(open) => open && <KindCard kind={kind} />}
       >
         <KindGlyph kind={kind} size="xs" />
         <span
@@ -207,11 +223,12 @@ function KindRow({ kind, technical }: { kind: KindInfo; technical: boolean }) {
             purpose !== "primary" && !active && "text-faint"
           )}
         >
-          {technical ? name : displayPlural(kind)}
+          {displayPlural(kind)}
+          {technical && <RawName name={name} />}
         </span>
         {technical && <PurposeTag purpose={purpose} />}
         <CachedCount kind={kind} />
-      </Link>
+      </IdentityHoverCard>
       <StarButton identity={kind.identity} />
     </div>
   )
@@ -395,21 +412,25 @@ export function Favorites() {
           params.name === parts.name
         return (
           <div key={identity} className="group/fav relative">
-            <Link
-              to="/data/$authority/$pkg/$name"
-              params={parts}
-              onClick={close}
-              title={
-                declared ? kindDescription(declared, technical) : undefined
+            <IdentityHoverCard
+              side="right"
+              trigger={
+                <Link
+                  to="/data/$authority/$pkg/$name"
+                  params={parts}
+                  onClick={close}
+                  aria-current={active ? "page" : undefined}
+                />
               }
-              aria-current={active ? "page" : undefined}
               className={cn(ROW, active && ACTIVE)}
+              card={(open) => open && <KindCard kind={declared ?? identity} />}
             >
               <KindGlyph kind={identity} size="xs" />
               <span className="min-w-0 truncate">
-                {technical ? parts.name : plural}
+                {declared ? displayPlural(declared) : plural}
+                {technical && <RawName name={parts.name} />}
               </span>
-            </Link>
+            </IdentityHoverCard>
             <div className="absolute top-1/2 right-1 flex -translate-y-1/2 rounded bg-sidebar opacity-0 group-hover/fav:opacity-100 focus-within:opacity-100">
               <button
                 type="button"

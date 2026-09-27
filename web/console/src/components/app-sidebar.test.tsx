@@ -260,12 +260,22 @@ describe("technical groups", () => {
     renderGroups()
     expect(await href("ada.example.com")).toBe("/data/ada.example.com")
     expect(await href("tasks")).toBe("/data/ada.example.com/tasks")
-    expect(await href("task")).toBe("/data/ada.example.com/tasks/task")
+    expect(await href("Tasks task")).toBe("/data/ada.example.com/tasks/task")
+  })
+
+  it("names a kind by its label first, its own name beside it", async () => {
+    renderGroups()
+    const row = await screen.findByRole("link", { name: "Tasks task" })
+    const raw = row.querySelector(".font-mono")
+    expect(raw?.textContent).toBe("task")
+    expect(row.textContent?.indexOf("Tasks")).toBeLessThan(
+      row.textContent?.indexOf("task", 5) ?? -1
+    )
   })
 
   it("shows the supporting kinds on request, tagged", async () => {
     renderGroups()
-    await screen.findByRole("link", { name: "task" })
+    await screen.findByRole("link", { name: "Tasks task" })
     expect(screen.queryByRole("link", { name: /tasklog/ })).toBeNull()
     await press("Show 1 supporting and internal")
     const tasklog = await screen.findByRole("link", { name: /tasklog/ })
