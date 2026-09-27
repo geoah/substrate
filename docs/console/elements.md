@@ -424,7 +424,9 @@ A collection's saved views as a strip of tabs above its toolbar: **All**, each
 view by name, and **Save view**. A tab is chosen when the grid shows what it
 names; the view picked last stays marked once the reader changes something,
 and its menu saves or discards the changes. Save, rename, save changes and
-delete each confirm through `ConfirmDialog`.
+delete each confirm through `ConfirmDialog`, and Save refuses while a saved
+view is chosen, naming it, since a second view of the same shape could never
+be told apart.
 
 - `views`: this collection's `SavedView`s
 - `active`: `all`, a view's id, or null

@@ -5,7 +5,8 @@
  * The view picked last stays marked once the reader changes something, and
  * its menu saves those changes to it or discards them; the chosen view's
  * menu renames or deletes it. Saving, renaming, replacing and deleting each
- * ask first through the one confirmation dialog. */
+ * ask first through the one confirmation dialog, and saving is refused while
+ * a saved view is chosen. */
 
 import { useId, useState, type ReactNode } from "react"
 import { MoreHorizontalIcon, PlusIcon } from "lucide-react"
@@ -59,6 +60,8 @@ export function ViewTabs({
 }) {
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const close = () => setDialog(null)
+  // A second view of the same shape would only compete for the same tab.
+  const shown = views.find((v) => v.id === active)
 
   return (
     <div
@@ -151,6 +154,11 @@ export function ViewTabs({
           consequence="Its filters, sort, columns, nesting and grouping are kept under this name, in every browser signed in to this repository. A search is not kept."
           confirm="Save"
           views={views}
+          refusal={
+            shown
+              ? `“${shown.name}” already shows this. Change a filter, the sort, the columns, nesting or grouping first, or rename “${shown.name}”.`
+              : undefined
+          }
           onConfirm={(name) => {
             onSave(name)
             close()
@@ -230,6 +238,7 @@ function NameDialog({
   initial = "",
   except,
   views,
+  refusal,
   onConfirm,
   onClose,
 }: {
@@ -240,13 +249,16 @@ function NameDialog({
   /** The view being renamed, whose own name is no clash. */
   except?: string
   views: SavedView[]
+  /** Why nothing may be saved under any name; shown before a name is typed. */
+  refusal?: string
   onConfirm: (name: string) => void
   onClose: () => void
 }) {
   const id = useId()
   const [name, setName] = useState(initial)
   const [touched, setTouched] = useState(false)
-  const problem = viewNameProblem(name, views, except)
+  const problem = refusal ?? viewNameProblem(name, views, except)
+  const shownProblem = refusal ?? (touched ? problem : undefined)
   const submit = () => {
     setTouched(true)
     if (!problem) onConfirm(name.trim())
@@ -256,7 +268,7 @@ function NameDialog({
       title={title}
       consequence={consequence}
       confirm={confirm}
-      disabled={Boolean(problem) && touched}
+      disabled={Boolean(shownProblem)}
       onConfirm={submit}
       onClose={onClose}
     >
@@ -266,7 +278,7 @@ function NameDialog({
           submit()
         }}
       >
-        <Field data-invalid={(touched && Boolean(problem)) || undefined}>
+        <Field data-invalid={Boolean(shownProblem) || undefined}>
           <FieldLabel htmlFor={`${id}-name`}>Name</FieldLabel>
           <Input
             id={`${id}-name`}
@@ -274,16 +286,16 @@ function NameDialog({
             autoComplete="off"
             placeholder="Open, Mine, This week…"
             value={name}
-            aria-invalid={(touched && Boolean(problem)) || undefined}
-            aria-describedby={touched && problem ? `${id}-problem` : undefined}
+            aria-invalid={Boolean(shownProblem) || undefined}
+            aria-describedby={shownProblem ? `${id}-problem` : undefined}
             onChange={(e) => {
               setName(e.target.value)
               setTouched(true)
             }}
           />
-          {touched && problem && (
+          {shownProblem && (
             <FieldDescription id={`${id}-problem`} className="text-destructive">
-              {problem}
+              {shownProblem}
             </FieldDescription>
           )}
         </Field>

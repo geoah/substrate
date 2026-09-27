@@ -264,4 +264,24 @@ describe("views, grouping and the star", () => {
     expect(pressed).toEqual(["By size"])
     expect(views.textContent).not.toContain("Elsewhere")
   })
+
+  it("keeps the picked view chosen when another saved view shows the same", async () => {
+    await renderPage("?group=size", {
+      views: [
+        { id: "v1", collection: TEAM, name: "By size", group: "size" },
+        { id: "v2", collection: TEAM, name: "Sized", group: "size" },
+      ],
+    })
+    const views = screen.getByRole("group", { name: "Views" })
+    const pressedNames = () =>
+      [...views.querySelectorAll("[aria-pressed=true]")].map(
+        (b) => b.textContent
+      )
+    expect(pressedNames()).toEqual(["By size"])
+    fireEvent.click(screen.getByRole("button", { name: "Sized" }))
+    await waitFor(() => expect(pressedNames()).toEqual(["Sized"]))
+    expect(
+      screen.getByRole("button", { name: "More for the “Sized” view" })
+    ).toBeTruthy()
+  })
 })

@@ -150,6 +150,19 @@ export function viewMatches(
   return true
 }
 
+/** The saved view the page shows, if any. Two views may name the same
+ * shape, so the one the reader picked wins among those that match; otherwise
+ * the first saved. */
+export function matchingView(
+  views: readonly SavedView[],
+  state: ViewState,
+  defaultSort: string,
+  preferred?: string
+): SavedView | undefined {
+  const matches = views.filter((v) => viewMatches(v, state, defaultSort))
+  return matches.find((v) => v.id === preferred) ?? matches[0]
+}
+
 /** The collection as it opens: no filter, the default order, the tree on, no
  * grouping. Columns are the reader's own and do not count. */
 export function isAllView(state: ViewState, defaultSort: string): boolean {
