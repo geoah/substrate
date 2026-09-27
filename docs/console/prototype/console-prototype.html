@@ -1047,7 +1047,6 @@ function actor(a,variant){
   const via = A.cls==="you"&&tech()?`<span class="via">via ${esc(A.via)}</span>`:"";
   return `<button class="actor" data-hc="actor:${a}">${avatar(a)}<span>${esc(A.name)}</span>${A.kindOf?`<span class="via">agent</span>`:""}${via}</button>`;
 }
-const STATE_ICON = {open:1};
 function state(v){ const dev=tech()?` <span class="devnote">${v}</span>`:""; return `<span class="st dot-${v}"><span class="dot"></span><span class="lab">${STATE_WORDS[v]||cap(v)}</span>${dev}</span>`; }
 function prio(v){
   if(v==="urgent") return `<span class="en"><span class="urgent-ico">!</span>Urgent</span>`;
@@ -1084,7 +1083,6 @@ function val(prop,v,r,{cell=false}={}){
   return esc(v);
 }
 const copyBtn = (t) => `<button class="copy" data-copy="${esc(t)}" aria-label="Copy ${esc(t)}" title="Copy">${ic("copy")}</button>`;
-const info = (t) => `<span class="info" data-hc="text:${esc(t)}" tabindex="0" aria-label="${esc(t)}">${ic("info")}</span>`;
 const pk = p => `<span class="pk" data-hc="pk:${p}">${p}</span>`;
 const plab = p => tech()?pk(p):`<b style="font-weight:500">${PROPS[p].label}</b>`;
 const TIER = {owner:["Yours","owner","You set this. Syncs keep their own version but never change yours."],machine:["Synced","machine","Kept up to date by a provider. If you edit it, your version sticks."],bundle:["Set by provider","bundle","A provider set this and syncs won’t move it. Your own edit replaces it."]};
@@ -1598,7 +1596,7 @@ function hcBody(spec){
   if(t==="kind"){ const K=KINDS[a]; return `<div class="hc-top"><div class="hct">${glyph(a,"sm")}${esc(K.plural||K.name)}</div><div class="hcd">${esc(K.desc)}</div></div><div class="hck"><span>Records</span><span>${K.count?num(K.count):"none yet"}</span><span>Shown as</span><span>${PURPOSE[K.purpose||"primary"][0]}</span></div><div class="hc-foot" style="font-family:var(--mono);font-size:11px;overflow-wrap:anywhere">${K.ref}</div>`; }
   if(t==="actor"){ const A=ACTORS[a]; return `<div class="hc-top"><div class="hct">${avatar(a)}${A.name}${A.cls==="you"?` <span style="font-weight:400;color:var(--ink3)">via ${A.via}</span>`:""}</div><div class="hcd">${{you:"You, signed in.",agent:"One of your agents.",fn:"Runs for a provider you added.",engine:"The substrate itself: merges, schedules and housekeeping."}[A.cls]}</div></div><div class="hc-foot" style="font-family:var(--mono);font-size:11px;overflow-wrap:anywhere">${A.id}</div>`; }
   if(t==="own"){ const [id,p]=a.split(":"); return ownSummary(R[id],p); }
-  if(t==="prop"){ const [k,p]=a.split(":"); const pd=PROPS[p]; return `<div class="hc-top"><div class="hct">${ic(pd.icon)}${pd.label}</div><div class="hcd">${esc(cap(pd.desc))}.</div></div><div class="hc-foot" style="font-family:var(--mono);font-size:11px">${p} · ${pd.type}${pd.to?` → ${KINDS[pd.to].ref}`:""}</div>`; }
+  if(t==="prop"){ const [,p]=a.split(":"); const pd=PROPS[p]; return `<div class="hc-top"><div class="hct">${ic(pd.icon)}${pd.label}</div><div class="hcd">${esc(cap(pd.desc))}.</div></div><div class="hc-foot" style="font-family:var(--mono);font-size:11px">${p} · ${pd.type}${pd.to?` → ${KINDS[pd.to].ref}`:""}</div>`; }
   if(t==="pk"){ const pd=PROPS[a]; if(!pd) return ""; return `<div class="hc-top"><div class="hct"><span class="mono" style="font-size:12.5px">${a}</span></div><div class="hcd">${esc(pd.label)}: ${esc(pd.desc)}.</div></div>`; }
   if(t==="text") return `<div class="hc-top"><div class="hcd" style="margin:0;color:var(--ink)">${esc(a)}</div></div>`;
   return "";
