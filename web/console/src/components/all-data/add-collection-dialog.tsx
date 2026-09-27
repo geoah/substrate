@@ -111,12 +111,7 @@ export function AddCollectionDialog({
           ))}
         </div>
         <div className="min-h-40">
-          {way === "agent" && (
-            <AskAnAgent
-              onDone={() => onOpenChange(false)}
-              onSample={() => setWay("sample")}
-            />
-          )}
+          {way === "agent" && <AskAnAgent onSample={() => setWay("sample")} />}
           {way === "sample" && <Samples />}
           {way === "yaml" && <WriteIt />}
         </div>
@@ -130,13 +125,7 @@ export function AddCollectionDialog({
  * and asks at once. An agent can when its write grant covers the kind kind
  * and it holds a tool that writes (`canDeclareKinds`); when none can, the
  * dialog says so instead of handing the request to one that would refuse. */
-function AskAnAgent({
-  onDone,
-  onSample,
-}: {
-  onDone: () => void
-  onSample: () => void
-}) {
+function AskAnAgent({ onSample }: { onSample: () => void }) {
   const navigate = useNavigate()
   const [text, setText] = useState("")
   const agents = useQuery(agentsQueryOptions())
@@ -160,10 +149,7 @@ function AskAnAgent({
           <Button onClick={onSample}>Start from a sample</Button>
           <Button
             variant="outline"
-            onClick={() => {
-              onDone()
-              void navigate({ to: "/agents" })
-            }}
+            onClick={() => void navigate({ to: "/agents" })}
           >
             Go to Agents
           </Button>
@@ -174,7 +160,8 @@ function AskAnAgent({
   const ask = () => {
     const prompt = text.trim()
     if (!prompt) return
-    onDone()
+    // Leaving the page closes the dialog. Closing it first writes the page's
+    // own address (`?add=` dropped) after this navigation and lands back here.
     const q = new URLSearchParams({ agent: maker.id, prompt, send: "1" })
     void navigate({ href: `/agents?${q.toString()}` })
   }
