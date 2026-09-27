@@ -299,7 +299,7 @@ export function ChangelogTable({
       changeActorColumn(),
       changeOpColumn(),
       changeRecordColumn(kinds),
-      changeKindColumn(),
+      changeKindColumn({ kinds }),
       changeAuthorityColumn(),
       changeSummaryColumn(),
     ],
