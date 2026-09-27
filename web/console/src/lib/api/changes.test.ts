@@ -334,7 +334,12 @@ describe("runs", () => {
       oldestSeq: 8,
       count: 2,
       generation: "g",
-      filter: { actors: ["console", "api"], q: "x" },
+      filter: {
+        actors: ["console", "api"],
+        q: "x",
+        excludeKinds: ["substrate.reamde.dev/core/token"],
+        excludeOps: ["gc"],
+      },
       values: true,
     })
     const rows = await options.queryFn!({
@@ -352,5 +357,7 @@ describe("runs", () => {
     expect(url.searchParams.get("recordId")).toBe("t1")
     expect(url.searchParams.get("q")).toBe("x")
     expect(url.searchParams.get("values")).toBe("1")
+    expect(url.searchParams.has("excludeKinds")).toBe(false)
+    expect(url.searchParams.getAll("excludeOps")).toEqual(["gc"])
   })
 })

@@ -344,6 +344,8 @@ export function runRowsQueryOptions(run: RunSource | undefined) {
     ...run.filter,
     actors: [run.actor],
     kinds: [run.kind],
+    // The run's own kind is not one the page left out.
+    excludeKinds: undefined,
     // Values are said for one record's run alone: a run over many says
     // names, and each record's values cost the server a walk.
     values: run.values && Boolean(run.recordId),
