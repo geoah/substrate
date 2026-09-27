@@ -255,6 +255,8 @@ export interface BrowsePrefs {
   /** `false` when the reader turned the tree off on a kind that nests by a
    * parent reference; absent otherwise, the tree being the default. */
   nest?: boolean
+  /** The property the rows are grouped by; absent when they are not. */
+  group?: string
 }
 
 function prefsKey(group: string, name: string): string {
@@ -280,14 +282,17 @@ export function loadBrowsePrefs(
     }
     if (typeof p.sort === "string" && p.sort) out.sort = p.sort
     if (p.nest === false) out.nest = false
-    return out.filter?.length || out.sort || out.nest === false ? out : null
+    if (typeof p.group === "string" && p.group) out.group = p.group
+    return out.filter?.length || out.sort || out.nest === false || out.group
+      ? out
+      : null
   } catch {
     return null
   }
 }
 
 /** Persist the view; an all-default view (no filters, default sort, the tree
- * on) removes the entry entirely — clearing filters clears the stored state
+ * on, no grouping) removes the entry entirely — clearing filters clears the stored state
  * too. */
 export function saveBrowsePrefs(
   group: string,
@@ -299,7 +304,8 @@ export function saveBrowsePrefs(
     if (prefs.filter?.length) out.filter = prefs.filter
     if (prefs.sort) out.sort = prefs.sort
     if (prefs.nest === false) out.nest = false
-    if (out.filter || out.sort || out.nest === false) {
+    if (prefs.group) out.group = prefs.group
+    if (out.filter || out.sort || out.nest === false || out.group) {
       localStorage.setItem(prefsKey(group, name), JSON.stringify(out))
     } else {
       localStorage.removeItem(prefsKey(group, name))
