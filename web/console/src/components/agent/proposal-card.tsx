@@ -31,7 +31,13 @@ import {
   threadAgentId,
   verdictWords,
 } from "@/lib/agent-chat"
-import { allowRuleFor, policyIdOf } from "@/lib/agent-rules"
+import {
+  allowRuleFor,
+  policyIdOf,
+  ruleHeld,
+  standingAllows,
+} from "@/lib/agent-rules"
+import { writePoliciesQueryOptions } from "@/lib/api/agents"
 import { changeRequestQueryOptions } from "@/lib/api/changerequests"
 import { CORE_AUTHORITY, LLM_PACKAGE_NAME } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
@@ -97,6 +103,10 @@ export function ProposalCard({ id }: { id: string }) {
       Boolean(threadId) &&
       Boolean(request.data && decisionOf(request.data) === "proposed"),
   })
+  const policies = useQuery({
+    ...writePoliciesQueryOptions(),
+    enabled: thread.isSuccess,
+  })
 
   if (request.isPending) {
     return (
@@ -131,7 +141,7 @@ export function ProposalCard({ id }: { id: string }) {
   const pending = decision === "proposed"
   const specs = changeSpecs(targetKindInfo)
 
-  const rule = pending
+  const offered = pending
     ? allowRuleFor({
         request: record,
         op,
@@ -139,6 +149,14 @@ export function ProposalCard({ id }: { id: string }) {
         kind: target?.kind,
       })
     : undefined
+  // A rule already standing is not offered again; while the rules load,
+  // nothing is offered.
+  const rule =
+    offered &&
+    policies.data &&
+    !ruleHeld(offered, standingAllows(policies.data.records, offered.agent))
+      ? offered
+      : undefined
 
   const heading = op === "create" ? proposedHeading(diff.properties) : undefined
   const Icon =

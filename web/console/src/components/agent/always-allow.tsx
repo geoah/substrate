@@ -45,8 +45,13 @@ export function AlwaysAllowButton({
   const client = useQueryClient()
   const [technical] = useTechnicalDetails()
   const [open, setOpen] = useState(false)
+  const [saved, setSaved] = useState(false)
   const save = useMutation({
     mutationFn: async () => {
+      if (saved) {
+        await submitDecision(request.id, "accepted", request.version)
+        return
+      }
       for (const { id, properties } of allowRuleRecords(rule)) {
         await putRecord(CORE_AUTHORITY, CORE_PACKAGE_NAME, POLICY, id, {
           properties,
@@ -55,6 +60,7 @@ export function AlwaysAllowButton({
           },
         })
       }
+      setSaved(true)
       await submitDecision(request.id, "accepted", request.version)
     },
     onSuccess: () => {
@@ -83,12 +89,14 @@ export function AlwaysAllowButton({
         <ConfirmDialog
           title={`Always let ${name} ${allowWords(rule.kind, rule.ops)}?`}
           consequence={allowConsequence(name, rule)}
-          confirm="Apply and always allow"
+          confirm={saved ? "Try applying again" : "Apply and always allow"}
           destructive={deleting}
           pending={save.isPending}
           error={
             save.error
-              ? `That didn’t go through: ${save.error.message}`
+              ? saved
+                ? `The rule is saved, but this suggestion wasn’t applied: ${save.error.message}`
+                : `That didn’t go through: ${save.error.message}`
               : undefined
           }
           onConfirm={() => save.mutate()}

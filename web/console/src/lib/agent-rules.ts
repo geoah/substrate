@@ -151,6 +151,18 @@ export function standingAllows(
   return out.sort((a, b) => a.kind.localeCompare(b.kind))
 }
 
+/** Whether the standing allows already hold every verb of a rule, so
+ * offering it again would write nothing new. */
+export function ruleHeld(rule: AllowRule, standing: StandingAllow[]): boolean {
+  return standing.some(
+    (held) =>
+      held.agent === rule.agent &&
+      held.kind === rule.kind &&
+      held.gate === rule.gate &&
+      rule.ops.every((op) => held.ops.includes(op))
+  )
+}
+
 /** What the verbs let the agent do to a kind, as a phrase: "add and change
  * tasks", "delete people". */
 export function allowWords(kind: string, ops: PolicyOp[]): string {

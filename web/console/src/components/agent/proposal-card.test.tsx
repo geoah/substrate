@@ -160,6 +160,13 @@ describe("ProposalCard", () => {
           })
         )
       }
+      if (
+        listedKinds(path).includes(
+          "substrate.reamde.dev/core/recordpatchpolicy"
+        )
+      ) {
+        return jsonResponse(200, { records: [] })
+      }
       if (path.startsWith(POLICY_PATH) && method === "PUT") {
         return jsonResponse(200, record({ id: path.slice(POLICY_PATH.length) }))
       }

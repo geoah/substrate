@@ -7,6 +7,7 @@ import {
   allowWords,
   opsForRequest,
   policyIdOf,
+  ruleHeld,
   standingAllows,
 } from "./agent-rules"
 import type { SubstrateRecord } from "@/lib/api/types"
@@ -121,6 +122,12 @@ describe("agent rules", () => {
     expect(rules).toHaveLength(1)
     expect(rules[0].ops).toEqual(["put", "patch"])
     expect(rules[0].records.map((r) => r.id)).toEqual(["a-patch", "a-put"])
+    const rule = { agent: AGENT, kind: TASK, gate: "gate-1" }
+    expect(ruleHeld({ ...rule, ops: ["put", "patch"] }, rules)).toBe(true)
+    expect(ruleHeld({ ...rule, ops: ["delete"] }, rules)).toBe(false)
+    expect(
+      ruleHeld({ ...rule, ops: ["put", "patch"], gate: "gate-9" }, rules)
+    ).toBe(false)
   })
 
   it("says the rule in words", () => {
