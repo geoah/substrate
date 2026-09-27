@@ -556,6 +556,7 @@ export function ChangeRequestDetailPage() {
           diff={diff}
           threadId={threadId}
           thread={thread.data}
+          sending={pending ? adjustedDiff : undefined}
         />
       )}
     </DocPage>
@@ -809,6 +810,7 @@ function TechnicalDetails({
   diff,
   threadId,
   thread,
+  sending,
 }: {
   request: SubstrateRecord
   op?: string
@@ -816,6 +818,8 @@ function TechnicalDetails({
   diff: ProposedDiff
   threadId?: string
   thread?: SubstrateRecord
+  /** The adjusted diff Apply would send now, while the request is pending. */
+  sending?: Record<string, unknown>
 }) {
   const policy = readReference(request.properties.policy)?.path
   const revision = request.properties.policyRevision
@@ -883,6 +887,16 @@ function TechnicalDetails({
       <pre className="overflow-x-auto rounded-md border bg-background px-3 py-2 font-mono text-xs whitespace-pre-wrap">
         {JSON.stringify(request.properties.diff ?? null, null, 2)}
       </pre>
+      {sending && (
+        <>
+          <p className="mt-4 mb-1 text-[12px] font-medium text-faint">
+            Adjusted diff (Apply sends this)
+          </p>
+          <pre className="overflow-x-auto rounded-md border bg-background px-3 py-2 font-mono text-xs whitespace-pre-wrap">
+            {JSON.stringify(sending, null, 2)}
+          </pre>
+        </>
+      )}
       {request.properties.adjustedDiff !== undefined && (
         <>
           <p className="mt-4 mb-1 text-[12px] font-medium text-faint">
