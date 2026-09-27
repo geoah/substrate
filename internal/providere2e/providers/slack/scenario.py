@@ -45,7 +45,9 @@ WHAT IT ASSERTS, and why each one is worth a run:
                   message in a mirrored channel lands within that one run
    17. write      `postmessage` posts through the config's token: the form it
                   sends, its output, no record written, Slack's refusal
-                  surfaced, and an apiBase off slack.com refused unsent
+                  and a `missing_scope` refusal surfaced, an apiBase off
+                  slack.com refused unsent, and an agent calling it as a
+                  tool (#712)
 
 Run against `raw/slack` (MODE=seed) two families of check relax, and only
 two; both are commented "SEED:" at the site and described in
@@ -1886,6 +1888,19 @@ def postmessage():
        % (st, error_text(reply)[:300]))
     w.faults([])
 
+    # A token without chat:write: Slack answers 200 with `missing_scope` and
+    # a `needed` field. The call fails naming `missing_scope`; the body does
+    # not pass on Slack's `needed` field, so the caller is not told which
+    # scope to grant.
+    w.faults([{"match": "POST " + POST_ROUTE, "status": [200],
+               "body": {"ok": False, "error": "missing_scope",
+                        "needed": "chat:write", "provided": "channels:history"}}])
+    st, reply = w.call(POST_FN, {"channel": channel, "text": text})
+    ok(st >= 400 and "missing_scope" in error_text(reply),
+       "a token without chat:write did not refuse: %s %s"
+       % (st, error_text(reply)[:300]))
+    w.faults([])
+
     before = len(w.requests("POST", POST_ROUTE))
     st, reply = w.call(POST_FN, {"channel": channel})
     ok(400 <= st < 500, "a call with no text answered %s, want a 4xx" % st)
@@ -1906,6 +1921,34 @@ def postmessage():
         ok(len(w.requests("POST", POST_ROUTE)) == before,
            "the refused call still reached the mock")
         api("PATCH", cfg, {"properties": {"apiBase": had}})
+
+    # #712: an agent names postmessage as a tool. The engine runs it through
+    # the agent loop's function dispatch, which must inject the same config
+    # the host call does: the token on the config record and the API base.
+    before = len(w.requests("POST", POST_ROUTE))
+    agent_text = "Sent by an agent."
+    run = w.agent_call(POST_FN, {"channel": channel, "text": agent_text,
+                                 "threadTs": parent})
+    res = run["result"] if isinstance(run["result"], dict) else {}
+    ok(run["status"] == 200 and res.get("status") == "ok"
+       and res.get("toolCalls") == 1,
+       "the agent run answered %s with %s" % (run["status"], error_text(run["result"])[:300]))
+    ok("postmessage" in run["tools"],
+       "the agent was offered %r, not postmessage" % run["tools"])
+    # The mock repeats the recording's last answer once the list is spent.
+    answers = json.loads((RECORDINGS / "POST_api_chat.postMessage.json")
+                         .read_text()).get("__responses") or [rec]
+    tr = run["toolResult"] if isinstance(run["toolResult"], dict) else {}
+    ok(tr.get("output") == {"channel": channel, "ts": answers[-1].get("ts")}
+       and tr.get("effects") == 0,
+       "the agent's tool result is %r" % run["toolResult"])
+    sent = w.requests("POST", POST_ROUTE)[before:]
+    ok(len(sent) == 1 and form(sent[0]) == {"channel": channel, "text": agent_text,
+                                            "thread_ts": parent},
+       "the agent's call sent %r" % [s.get("body") for s in sent])
+    ok(bool(sent) and str(sent[0].get("auth") or "").startswith("Bearer xoxp-"),
+       "the agent's call carried no Slack token (%r)"
+       % (sent[0].get("auth") if sent else None))
     note("postmessage: %d calls reached the mock"
          % len(w.requests("POST", POST_ROUTE)))
 

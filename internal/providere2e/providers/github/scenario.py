@@ -45,7 +45,8 @@ WHAT IT PROVES
  10. `submitreview` approves and comments through the account's token: the
      body it sends, its output, no record written, GitHub's refusal
      surfaced, bad arguments refused unsent, and an apiBase off
-     api.github.com refused unsent (#644).
+     api.github.com refused unsent (#644); an agent calling it as a tool,
+     and an account granted only `read:user` refused unsent (#712).
  11. the owner's approval of a pull request they were only asked to review
      reaches the `review` mirror: GitHub drops them from the requested
      reviewers, so only the `reviewed-by:` search still finds it (#710).
@@ -1432,6 +1433,77 @@ def submitreview(api, server, token, mock_url, recdir, ckind, aid):
         repoint(api, ckind, mock_url)
     ok(len(w.requests("POST", route)) == before,
        "the refused call still reached the mock")
+
+    # #712: an agent names submitreview as a tool. The engine runs it through
+    # the agent loop's function dispatch, which must inject the same config
+    # the host call does: the account's host-resolved token and the client
+    # input's apiBase. The recording repeats its last answer, a comment.
+    agent_text = "Reviewed by an agent."
+    run = w.agent_call(REVIEW_FN, {"repository": repo, "number": number,
+                                   "event": "comment", "body": agent_text})
+    res = run["result"] if isinstance(run["result"], dict) else {}
+    ok(run["status"] == 200 and res.get("status") == "ok"
+       and res.get("toolCalls") == 1,
+       "the agent run answered %s with %s"
+       % (run["status"], error_text(run["result"])[:300]))
+    ok("submitreview" in run["tools"],
+       "the agent was offered %r, not submitreview" % run["tools"])
+    tr = run["toolResult"] if isinstance(run["toolResult"], dict) else {}
+    ok((tr.get("output") or {}).get("id") == answers[-1]["id"]
+       and tr.get("effects") == 0,
+       "the agent's tool result is %r" % run["toolResult"])
+    sent = w.requests("POST", route)[before:]
+    ok(len(sent) == 1 and body_json(sent[0]) == {"event": "COMMENT",
+                                                 "body": agent_text},
+       "the agent's call sent %r" % [s.get("body") for s in sent])
+    ok(bool(sent) and str(sent[0].get("auth") or "").startswith("Bearer mock-access-"),
+       "the agent's call carried no account token (%r)"
+       % (sent[0].get("auth") if sent else None))
+
+    # #712: an account granted neither `repo` nor `public_repo`. Only the
+    # OAuth facility writes grantedScopes, so a second account connects with
+    # enabledUser alone and the facility grants it `read:user`. The body
+    # refuses before any request, and names the scope and the fix.
+    readonly = readonly_account(api)
+    if readonly:
+        before = len(w.requests("POST", route))
+        st, reply = w.call(REVIEW_FN, {"repository": repo, "number": number,
+                                       "event": "approve", "account": readonly})
+        ok(st >= 400 and "a review needs `repo`" in error_text(reply)
+           and "read:user" in error_text(reply),
+           "an account granted only read:user did not refuse: %s %s"
+           % (st, error_text(reply)[:300]))
+        ok(len(w.requests("POST", route)) == before,
+           "the refused review still reached GitHub")
+
+
+READONLY_ACCOUNT = "e2e-readonly"
+
+
+def readonly_account(api):
+    """Connect a second account with only enabledUser on and wait for its
+    on-connect sync to settle. Returns its id, or None after a failure."""
+    from e2e import connect_oauth, wait_for
+    akind = os.environ.get("ACCOUNT_KIND", AUTHORITY + "/account")
+    st, body, _ = api.call("PUT", "/api/v1/%s/%s" % (akind, READONLY_ACCOUNT),
+                           {"properties": {
+                               "enabledUser": True, "enabledRepos": False,
+                               "enabledIssues": False,
+                               "enabledPullRequests": False,
+                               "syncFrequency": "hourly",
+                               "backfillDepth": "all"}})
+    ok(st < 400, "the read-only account was refused: %s %s"
+       % (st, json.dumps(body)[:300]))
+    if st >= 400:
+        return None
+    connect_oauth(api, akind, READONLY_ACCOUNT)
+    props = account(api, akind, READONLY_ACCOUNT)
+    ok(sorted(props.get("grantedScopes") or []) == ["read:user"],
+       "the read-only account was granted %r, want only read:user"
+       % props.get("grantedScopes"))
+    wait_for(lambda: account(api, akind, READONLY_ACCOUNT).get("lastSyncedAt"),
+             120)
+    return READONLY_ACCOUNT
 
 
 def approval_lands(api, akind, ckind, aid, recdir, runner_mock):
