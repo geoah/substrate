@@ -1,7 +1,8 @@
 /** A grid column's header: the property's icon and label (its key in
  * technical mode), an ⓘ that shows on hover and carries the property's
  * description, and — on a sortable column — the click that sorts by it, with
- * an arrow while it does. */
+ * an arrow while it does. The arrow is drawn for the eye alone: the header
+ * cell's `aria-sort` is what a screen reader hears. */
 
 import type { Column, RowData } from "@tanstack/react-table"
 import { ArrowDownIcon, ArrowUpIcon, InfoIcon } from "lucide-react"
@@ -40,9 +41,9 @@ export function GridColumnHeader<TData extends RowData, TValue>({
         {label}
       </span>
       {sorted === "desc" ? (
-        <ArrowDownIcon aria-label="sorted descending" className="size-3" />
+        <ArrowDownIcon aria-hidden className="size-3" />
       ) : sorted === "asc" ? (
-        <ArrowUpIcon aria-label="sorted ascending" className="size-3" />
+        <ArrowUpIcon aria-hidden className="size-3" />
       ) : null}
     </>
   )

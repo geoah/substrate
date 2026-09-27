@@ -320,10 +320,11 @@ technical mode appends the stored value.
   Home and End. `ChoiceList` moves with the arrows and picks with Enter. The
   grid's scroll container takes focus and has a name, and a focused cell
   scrolls clear of the pinned column.
+- **Sort.** The sorted column's header cell carries `aria-sort`
+  (`ascending` or `descending`), in step with the address's sort; the arrow
+  beside the label is drawn for the eye alone.
 - **Landmarks.** The shell holds the page's one `main`.
 - **Type.** Nothing below 11.5px.
-
-`aria-sort` on sorted column headers is not there yet (issue #677).
 
 ## What holds this
 

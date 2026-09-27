@@ -12,7 +12,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { flexRender, type RowData } from "@tanstack/react-table"
 
-import type { DataTableInstance } from "@/components/data-table/data-table"
+import {
+  ariaSortOf,
+  type DataTableInstance,
+} from "@/components/data-table/data-table"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
@@ -141,6 +144,7 @@ export function DataGrid<TData extends RowData>({
                   <th
                     key={header.id}
                     scope="col"
+                    aria-sort={ariaSortOf(header.column.getIsSorted())}
                     // The upward shadow is the header's cover: the scroller
                     // clips it while the row sits at the top, and wherever an
                     // engine rounds the pinned row a fraction of a pixel

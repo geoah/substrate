@@ -102,3 +102,29 @@ describe("changed rows", () => {
     expect(still.className).not.toContain("transition-[background-color]")
   })
 })
+
+describe("the sorted column", () => {
+  it("says which column is sorted and which way, and nothing on the rest", () => {
+    const { result, rerender } = renderHook(
+      ({ sorting }: { sorting: { id: string; desc: boolean }[] }) =>
+        useDataTable({
+          columns,
+          data: [{ id: "a", name: "A" }],
+          getRowId: (r) => r.id,
+          sorting,
+        }),
+      { initialProps: { sorting: [{ id: "name", desc: true }] } }
+    )
+    const { rerender: redraw } = render(
+      <DataGrid table={result.current} label="Tasks" />
+    )
+    const sortOf = () =>
+      screen
+        .getAllByRole("columnheader")
+        .map((th) => th.getAttribute("aria-sort"))
+    expect(sortOf()).toEqual(["descending", null])
+    rerender({ sorting: [{ id: "other", desc: false }] })
+    redraw(<DataGrid table={result.current} label="Tasks" />)
+    expect(sortOf()).toEqual([null, "ascending"])
+  })
+})

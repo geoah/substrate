@@ -146,6 +146,18 @@ export interface UseDataTableOptions<TData extends RowData> {
 
 const NOOP_SORT: OnChangeFn<SortingState> = () => {}
 
+/** A header cell's `aria-sort`: the sorted column says which way, and every
+ * other column says nothing, so a screen reader names only the one sort. */
+export function ariaSortOf(
+  sorted: false | "asc" | "desc"
+): "ascending" | "descending" | undefined {
+  return sorted === "asc"
+    ? "ascending"
+    : sorted === "desc"
+      ? "descending"
+      : undefined
+}
+
 export type DataTableInstance<TData extends RowData> = ReactTable<
   DataTableFeatures,
   TData
@@ -445,6 +457,7 @@ export function DataTable<TData extends RowData>({
               {headerGroup.headers.map((header, i) => (
                 <TableHead
                   key={header.id}
+                  aria-sort={ariaSortOf(header.column.getIsSorted())}
                   className={cn(
                     "relative",
                     header.column.columnDef.meta?.headerClassName,
