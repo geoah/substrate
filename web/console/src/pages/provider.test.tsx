@@ -313,6 +313,7 @@ const TRIGGER_STATUSES: TriggerStatus[] = [
     lastFire: HOUR_AGO,
     parked: 0,
     pending: 0,
+    inFlight: 0,
   },
 ]
 

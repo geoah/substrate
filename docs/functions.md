@@ -938,8 +938,8 @@ is the function body.
   as a function's effects, so substrate-side consequences are effectively-once
   and no crash leaves effects with no record of the delivery. An
   [agent](agents.md) delivery claims the cursor before its loop runs and
-  completes the claim after: a crash mid-loop leaves the delivery listed under
-  `…/parked` as in flight, to retry by hand, and never redelivers by itself.
+  completes the claim after: a crash mid-loop leaves the delivery parked under
+  `…/parked` as interrupted, to retry by hand, and never redelivers by itself.
   External consumers get an at-least-once floor, made safe by the same id
   composition.
 - **No loops.** Every function-authored write records the change that caused
@@ -993,6 +993,14 @@ repository.
   callable's fire claims that entry before its loop, so one interrupted
   mid-loop waits under `…/parked` for a hand like every agent delivery.
 - `GET …/trigger/{id}/parked` lists the deliveries the trigger gave up on,
+  and the agent runs it is delivering right now: those carry `running: true`,
+  a retry of one answers `409`, and the trigger's status counts them as
+  `inFlight`, not `parked`. A server that starts finds every agent run the
+  last one left unfinished: it settles each `running` thread to `error` with
+  the reason `interrupted: the server stopped during the run`, and parks its
+  delivery with an error that says so. Nothing reruns it by itself, because
+  the run may have spent tokens and written records: read its thread, then
+  retry the delivery or forget it.
   `POST …/trigger/{id}/parked/{failureId}/retry` re-runs one, and `DELETE
   …/trigger/{id}/parked/{failureId}` forgets one — the two ways a parked row
   ends. A RETRY runs the delivery and settles the row whatever the delivery

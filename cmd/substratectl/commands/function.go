@@ -41,7 +41,7 @@ records: get/apply/delete them like any other.`,
 func (a *app) triggerStatusCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Per-trigger kind, callable, cursor, lag, last fire, parked count, pending count and webhook path",
+		Short: "Per-trigger kind, callable, cursor, lag, last fire, parked, pending and in-flight counts, and webhook path",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cl, err := a.client()
@@ -53,14 +53,14 @@ func (a *app) triggerStatusCommand() *cobra.Command {
 				return err
 			}
 			tw := newTable(a.out)
-			fmt.Fprintln(tw, "ID\tKIND\tCALLABLE\tENABLED\tCURSOR\tHEAD\tLAG\tLASTFIRE\tPARKED\tPENDING\tWEBHOOK\tERROR")
+			fmt.Fprintln(tw, "ID\tKIND\tCALLABLE\tENABLED\tCURSOR\tHEAD\tLAG\tLASTFIRE\tPARKED\tPENDING\tINFLIGHT\tWEBHOOK\tERROR")
 			for _, t := range res.Items {
 				lastFire := ""
 				if t.LastFire != nil {
 					lastFire = humanAge(a.now(), *t.LastFire)
 				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%d\t%d\t%d\t%s\t%d\t%d\t%s\t%s\n",
-					t.ID, t.Kind, t.Callable, t.Enabled, t.Cursor, t.Head, t.Lag, lastFire, t.Parked, t.Pending, t.WebhookPath, truncate(t.Error, 60))
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%d\t%d\t%d\t%s\t%d\t%d\t%d\t%s\t%s\n",
+					t.ID, t.Kind, t.Callable, t.Enabled, t.Cursor, t.Head, t.Lag, lastFire, t.Parked, t.Pending, t.InFlight, t.WebhookPath, truncate(t.Error, 60))
 			}
 			return tw.Flush()
 		},
@@ -173,10 +173,10 @@ func (a *app) triggerParkedCommand() *cobra.Command {
 				return err
 			}
 			tw := newTable(a.out)
-			fmt.Fprintln(tw, "ID\tSEQ\tFIRE\tRECORD\tATTEMPTS\tPARKED\tERROR")
+			fmt.Fprintln(tw, "ID\tSEQ\tFIRE\tRECORD\tATTEMPTS\tPARKED\tRUNNING\tERROR")
 			for _, f := range parked {
-				fmt.Fprintf(tw, "%d\t%d\t%s\t%s\t%d\t%s\t%s\n",
-					f.ID, f.Seq, f.FireID, f.RecordID, f.Attempts, humanAge(a.now(), f.ParkedAt), truncate(f.LastError, 80))
+				fmt.Fprintf(tw, "%d\t%d\t%s\t%s\t%d\t%s\t%t\t%s\n",
+					f.ID, f.Seq, f.FireID, f.RecordID, f.Attempts, humanAge(a.now(), f.ParkedAt), f.Running, truncate(f.LastError, 80))
 			}
 			return tw.Flush()
 		},

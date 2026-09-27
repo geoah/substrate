@@ -185,8 +185,16 @@ const crewPackage = "crew.test.dev/crew"
 // exercise.
 func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 	t.Helper()
-	ctx := context.Background()
 	ds := openInternalDataset(t)
+	return ds, provisionAgents(t, ds)
+}
+
+// provisionAgents is openAgentDataset's fixture on a dataset the caller
+// opened: the provider rows pointed at a fresh fake server, and the crew
+// authority.
+func provisionAgents(t *testing.T, ds *dataset) *fakeLLM {
+	t.Helper()
+	ctx := context.Background()
 	fake := newFakeLLM(t)
 	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "archllm", "editllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm", "stoicllm", "selfllm", "askllm", "medllm", "burnllm", "vjudgellm"} {
 		model := strings.TrimSuffix(id, "llm")
@@ -431,7 +439,7 @@ def main(input, host):
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
 		t.Fatalf("install crew authority: %v", err)
 	}
-	return ds, fake
+	return fake
 }
 
 func agentThreadsOf(t *testing.T, ds *dataset, agent string) []map[string]any {

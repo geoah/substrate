@@ -646,6 +646,7 @@ describe("triggerProgress", () => {
     head: 1240,
     parked: 0,
     pending: 0,
+    inFlight: 0,
   }
   it("puts a record source's cursor against the head", () => {
     expect(

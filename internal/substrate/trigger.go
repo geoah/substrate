@@ -45,9 +45,12 @@ type TriggerStatus struct {
 	// Parked counts the deliveries the trigger gave up on, listed under
 	// `…/parked`. Pending counts the webhook requests the door accepted whose
 	// fire has not settled: listed there too, with `lastError` saying so,
-	// and not a failure.
-	Parked  int64 `json:"parked"`
-	Pending int64 `json:"pending"`
+	// and not a failure. InFlight counts the rows the server is delivering
+	// right now (an agent run's claim, a retry by hand): listed there with
+	// `running` set, and not counted as parked.
+	Parked   int64 `json:"parked"`
+	Pending  int64 `json:"pending"`
+	InFlight int64 `json:"inFlight"`
 	// LastParkedError is the newest parked delivery's error: its first line,
 	// cut at 500 bytes, so a list says why without reading `…/parked`.
 	// LastParkedAt is when that delivery parked. Both are absent while
@@ -73,6 +76,10 @@ type TriggerFailure struct {
 	Attempts  int       `json:"attempts"`
 	LastError string    `json:"lastError"`
 	ParkedAt  time.Time `json:"parkedAt"`
+	// Running is set while the server is delivering this row: an agent run
+	// that holds it as its claim, or a retry by hand. A retry of a running
+	// row answers conflict.
+	Running bool `json:"running,omitempty"`
 }
 
 // TriggerReplayed is the reply to a replay: the seq the trigger's cursor was

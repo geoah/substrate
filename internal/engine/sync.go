@@ -396,11 +396,18 @@ func (ds *dataset) syncParks(ctx context.Context, triggerIDs []string) (map[stri
 	if err != nil {
 		return nil, err
 	}
+	// A row this process is delivering is in flight, not parked
+	// (presentFailure).
+	running, err := ds.runningFailureIDs()
+	if err != nil {
+		return nil, err
+	}
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT DISTINCT ON (record_id) record_id, count(*) OVER (PARTITION BY record_id), last_error, parked_at
 		FROM trigger_failures
 		WHERE trigger_id IN (SELECT jsonb_array_elements_text($1::jsonb)) AND last_error <> $2
-		ORDER BY record_id, parked_at DESC, id DESC`, ids, pendingWebhookError)
+		  AND id NOT IN (SELECT jsonb_array_elements_text($3::jsonb)::bigint)
+		ORDER BY record_id, parked_at DESC, id DESC`, ids, pendingWebhookError, running)
 	if err != nil {
 		return nil, err
 	}
@@ -411,6 +418,7 @@ func (ds *dataset) syncParks(ctx context.Context, triggerIDs []string) (map[stri
 		if err := rows.Scan(&id, &g.count, &g.lastError, &g.at); err != nil {
 			return nil, err
 		}
+		g.lastError = heldError(g.lastError)
 		out[id] = g
 	}
 	return out, rows.Err()

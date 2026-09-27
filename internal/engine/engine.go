@@ -932,6 +932,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.ensureDefaultProviders,
 		ds.ensureTriggerCursors,
 		ds.settleInterruptedSyncs,
+		ds.settleInterruptedAgentRuns,
 		ds.clearDeadReservations,
 	} {
 		if err := step(ctx); err != nil {

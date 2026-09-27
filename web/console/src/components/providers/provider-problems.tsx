@@ -198,7 +198,8 @@ function RetryParkedButton({ bundleId }: { bundleId: string }) {
           ...triggerParkedQueryOptions(t.id),
           staleTime: 0,
         })
-        for (const f of failures) {
+        // A running row answers conflict: it is still being delivered.
+        for (const f of failures.filter((f) => !f.running)) {
           await retryParked(t.id, f.id)
           retried++
         }

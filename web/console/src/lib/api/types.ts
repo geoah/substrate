@@ -602,8 +602,12 @@ export interface TriggerStatus {
   lastFire?: string
   /** A webhook trigger's public path, relative to the server root. */
   webhookPath?: string
+  /** Deliveries the trigger gave up on, `inFlight` rows excluded. */
   parked: number
   pending: number
+  /** Rows the server is delivering right now: an agent run's claim or a
+   * retry by hand. Listed under `…/parked` with `running` set. */
+  inFlight: number
   /** The newest parked delivery's error, its first line cut at 500 bytes,
    * and when it parked; both absent while `parked` is 0. */
   lastParkedError?: string
@@ -628,6 +632,8 @@ export interface TriggerFailure {
   attempts: number
   lastError: string
   parkedAt: string
+  /** The server is delivering this row now; a retry answers conflict. */
+  running?: boolean
 }
 
 /** The words a `sync`-trait record's `syncState` carries. A plain string on

@@ -248,9 +248,23 @@ func (t *txn) parkTx(triggerID string, f foldFailure) error {
 }
 
 // inFlightError is the error a claim carries (settlement.claim): a parked
-// failure row that stands while an agent delivery runs, and that outlives a
-// crash as the record of an interrupted delivery, retried by hand.
-const inFlightError = "delivery in flight: an agent run a restart interrupted stays here, retried by hand"
+// failure row that stands while an agent delivery runs. A claim a stopped
+// process left behind is rewritten to interruptedAgentError at the next open
+// (settleInterruptedAgentRuns), so a stored claim is a run this writer
+// started; one this process no longer holds in runningClaims reads as
+// interrupted in the listing (TriggerFailures).
+const inFlightError = "delivery in flight: an agent run is running it now"
+
+// legacyInFlightError is the text a claim carried before inFlightError was
+// reworded. Only the open-time sweep reads it: a claim written by an earlier
+// binary is an interrupted run by construction, and the sweep rewrites it.
+const legacyInFlightError = "delivery in flight: an agent run a restart interrupted stays here, retried by hand"
+
+// interruptedAgentError is the error an agent delivery's claim carries once
+// its run is known to be dead. Nothing reruns it by itself (decision 0064):
+// the run may have spent tokens and written records, so a person decides.
+const interruptedAgentError = "interrupted: the server stopped during this agent run, and nothing reruns it by itself; " +
+	"read its thread, then retry this delivery to run the agent again, or forget it"
 
 // errClaimedElsewhere is a dispatch finding a claim it did not write on the
 // delivery it is about to run: another dispatch (a replayed pass under a
