@@ -513,7 +513,8 @@ own `{cursor, lastAt, pending, state, message, requestedAck}`, so a provider
 with several streams (Google's contacts, Gmail, calendar and Drive) reports each.
 
 **What the engine does with it.** Around a record-sourced delivery of a
-binding record whose `when` passed, the trigger dispatcher writes
+binding record whose `when` passed, to a function of the package that
+declares the kind, the trigger dispatcher writes
 `syncState: running` and `lastSyncStartedAt` before the body runs, in a
 transaction of its own so the run is visible while it runs; `ok` and
 `lastSyncDurationMs` in the transaction that commits the body's last effects
@@ -525,8 +526,11 @@ still says `running`. The stamps are written under the CALLABLE's own actor at
 the bundle tier, the write context the body's effects use: `writer: connector`
 holds, and a record trigger never delivers its own callable's writes, so a
 stamp cannot fire the trigger that made it. A record whose owner set
-`syncPaused` has its deliveries settled as skips, so a pause stops the sync
-without the body knowing. At open, a record still `running` becomes
+`syncPaused` has those deliveries settled as skips, so a pause stops the sync
+without the body knowing. A function of any other package triggered on the
+same record (an identity resolver, a mirror) is not the sync: its deliveries
+run as any other delivery does, paused or not, and the dispatcher stamps
+nothing around them. At open, a record still `running` becomes
 `erroring: interrupted`, because a repository has one writer
 ([0083](decisions/0083-a-repository-has-one-writer-and-a-second-is-refused-at-open.md))
 and nothing can be in flight. A SCHEDULE-sourced delivery names no record, so
