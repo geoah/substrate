@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useEverydayChanges, useHistoryFeed } from "@/hooks/use-history-feed"
 import { kindsQueryOptions } from "@/lib/api/kinds"
-import { recordCountQueryOptions } from "@/lib/api/records"
+import { glanceCountQueryOptions } from "@/lib/api/records"
 import { repositoryQueryOptions } from "@/lib/api/repository"
 import { getRepository } from "@/lib/api/session"
 import { collectionGroups } from "@/lib/collections"
@@ -73,7 +73,7 @@ export function HomePage() {
   // cards read, so this costs no extra request.
   const counts = useQueries({
     queries: yourKinds.map((k) =>
-      recordCountQueryOptions(k.authority, k.package, k.name)
+      glanceCountQueryOptions(k.authority, k.package, k.name)
     ),
   })
   const heldBy = new Map(

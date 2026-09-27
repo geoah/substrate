@@ -293,6 +293,9 @@ export function mergeRequestsForQueryOptions(ref: string, enabled = true) {
 export interface RecordCount {
   value: number
   capped: boolean
+  /** A glance stopped counting at `value` (a server without `count`): say
+   * "many" rather than a number. */
+  many?: boolean
 }
 
 /** One walk page (big — a size cares about throughput, not latency). */
@@ -329,9 +332,25 @@ export async function countRecords(
   signal?: AbortSignal
 ): Promise<RecordCount> {
   const scope = { authority, package: pkg, name, filter }
-  let first: Page | undefined
+  const first = await askCount(scope, signal)
+  if (typeof first?.count === "number")
+    return { value: first.count, capped: false }
+  return probeCount(scope, first, signal)
+}
+
+/** The list's own count (`count=1` over one row), or undefined where the
+ * server refuses the parameter. */
+async function askCount(
+  scope: {
+    authority: string
+    package: string
+    name: string
+    filter: RecordFilter | undefined
+  },
+  signal?: AbortSignal
+): Promise<Page | undefined> {
   try {
-    first = await request<Page>(
+    return await request<Page>(
       "GET",
       listPath({ ...scope, first: 1, count: true }),
       undefined,
@@ -345,10 +364,38 @@ export async function countRecords(
       (err.status !== 400 && err.status !== 422)
     )
       throw err
+    return undefined
   }
+}
+
+/** The rows a glance reads where the server cannot count: exact up to it,
+ * "many" past it. */
+export const GLANCE_ROWS = 100
+
+/** A size for a surface that glances at many collections at once (Home):
+ * the server's count from one read, and against a server without one a
+ * single further read of up to GLANCE_ROWS rows, never a walk of probes that
+ * lands a number long after the page settled. */
+export async function glanceCount(
+  authority: string,
+  pkg: string,
+  name: string,
+  signal?: AbortSignal
+): Promise<RecordCount> {
+  const scope = { authority, package: pkg, name, filter: undefined }
+  const first = await askCount(scope, signal)
   if (typeof first?.count === "number")
     return { value: first.count, capped: false }
-  return probeCount(scope, first, signal)
+  const page = await request<Page>(
+    "GET",
+    listPath({ ...scope, first: GLANCE_ROWS }),
+    undefined,
+    { signal }
+  )
+  const value = page.records?.length ?? 0
+  return page.cursor
+    ? { value, capped: true, many: true }
+    : { value, capped: false }
 }
 
 /** Count by one-row offset probes. `atZero` is a first-row read already in
@@ -456,8 +503,32 @@ export function recordCountQueryOptions(
   })
 }
 
-/** Render a `RecordCount` for a glance surface: the number, `+` when capped. */
+/** A collection's size at a glance. It shares an exact answer with
+ * `recordCountQueryOptions`, both ways, so the sidebar and All data show
+ * what Home read and Home reuses what they did; a "many" stays its own. */
+export function glanceCountQueryOptions(
+  authority: string,
+  pkg: string,
+  name: string
+) {
+  const exact = recordCountQueryOptions(authority, pkg, name).queryKey
+  return queryOptions({
+    queryKey: [...exact, "glance"],
+    queryFn: async ({ signal, client }) => {
+      const known = client.getQueryData<RecordCount>(exact)
+      if (known) return known
+      const count = await glanceCount(authority, pkg, name, signal)
+      if (!count.many) client.setQueryData(exact, count)
+      return count
+    },
+    staleTime: 60_000,
+  })
+}
+
+/** Render a `RecordCount` for a glance surface: the number, `+` when capped,
+ * "many" where a glance stopped counting. */
 export function formatCount(count: RecordCount): string {
+  if (count.many) return "many"
   return `${count.value.toLocaleString()}${count.capped ? "+" : ""}`
 }
 

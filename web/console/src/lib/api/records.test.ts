@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   countRecords,
+  glanceCount,
+  GLANCE_ROWS,
   createRecord,
   fetchRecordsPage,
   recordIdSegment,
@@ -362,6 +364,66 @@ describe("countRecords (one-row offset probes, a server without count)", () => {
       value: 7,
       capped: false,
     })
+  })
+})
+
+describe("glanceCount (Home's collection sizes)", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+  beforeEach(() => vi.stubGlobal("fetch", fetchMock))
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+
+  function olderServer(size: number) {
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input), "http://x")
+      if (url.searchParams.has("count"))
+        return new Response(
+          JSON.stringify({
+            error: { code: "bad_request", message: 'unknown "count"' },
+          }),
+          { status: 400 }
+        )
+      const first = Number(url.searchParams.get("first"))
+      const records = Array.from({ length: Math.min(first, size) }, (_, i) => ({
+        id: String(i),
+      }))
+      return new Response(
+        JSON.stringify({ records, cursor: size > first ? "next" : undefined }),
+        { status: 200 }
+      )
+    })
+  }
+
+  it("answers the server's count from one read", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ records: [{ id: "a" }], count: 1284 }), {
+        status: 200,
+      })
+    )
+    expect(await glanceCount("g.dev", "k", "things")).toEqual({
+      value: 1284,
+      capped: false,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("fires at most one probe against a server without count, and says many past it", async () => {
+    olderServer(10000)
+    const count = await glanceCount("g.dev", "k", "things")
+    expect(count).toEqual({ value: GLANCE_ROWS, capped: true, many: true })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(formatCount(count)).toBe("many")
+  })
+
+  it("says a small collection exactly from that one probe", async () => {
+    olderServer(12)
+    expect(await glanceCount("g.dev", "k", "things")).toEqual({
+      value: 12,
+      capped: false,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })
 
