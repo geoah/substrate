@@ -44,7 +44,8 @@ WHAT IT ASSERTS, and why each one is worth a run:
                   `erroring` with the cause, and the next run recovers
    14. write      `sendmessage` sends through the config's token: the body it
                   sends, its output, no record written, Beeper's refusal
-                  surfaced, and a public apiBase refused unsent
+                  surfaced, a public apiBase refused unsent, and an agent
+                  calling it as a tool (#712)
 
 Run against `raw/beeper` (MODE=seed) two families of check relax, and only
 two; both are commented "SEED:" at the site and described in
@@ -1191,6 +1192,31 @@ def sendmessage():
         ok(len(w.requests("POST", route)) == before,
            "the refused call still reached the mock")
         api("PATCH", cfg, {"properties": {"apiBase": had}})
+
+    # #712: an agent names sendmessage as a tool. The engine runs it through
+    # the agent loop's function dispatch, which must inject the same config
+    # the host call does: the token on the config record and the API base.
+    before = len(w.requests("POST", route))
+    agent_text = "Sent by an agent."
+    run = w.agent_call(SEND_FN, {"chat": chat, "text": agent_text,
+                                 "replyTo": mine[0]})
+    res = run["result"] if isinstance(run["result"], dict) else {}
+    ok(run["status"] == 200 and res.get("status") == "ok"
+       and res.get("toolCalls") == 1,
+       "the agent run answered %s with %s" % (run["status"], error_text(run["result"])[:300]))
+    ok("sendmessage" in run["tools"],
+       "the agent was offered %r, not sendmessage" % run["tools"])
+    tr = run["toolResult"] if isinstance(run["toolResult"], dict) else {}
+    ok(tr.get("output") == {"chat": chat, "pendingMessageId": rec.get("pendingMessageID")}
+       and tr.get("effects") == 0,
+       "the agent's tool result is %r" % run["toolResult"])
+    sent = w.requests("POST", route)[before:]
+    ok(len(sent) == 1 and body_json(sent[0]) == {"text": agent_text,
+                                                 "replyToMessageID": mine[0]},
+       "the agent's call sent %r" % [s.get("body") for s in sent])
+    ok(bool(sent) and str(sent[0].get("auth") or "").startswith("Bearer bdapi-"),
+       "the agent's call carried no Beeper token (%r)"
+       % (sent[0].get("auth") if sent else None))
     note("sendmessage: %d sends reached the mock" % len(w.requests("POST", route)))
 
 
