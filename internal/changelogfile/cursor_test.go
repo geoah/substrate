@@ -110,6 +110,25 @@ func TestCursorUntilAndStartingPoints(t *testing.T) {
 		}
 		_ = c.Close()
 	}
+	// Closed before its first read, when no segment is open yet, and closed
+	// mid-walk with one open, a cursor reads nothing more.
+	unread := l.Cursor(0)
+	if err := unread.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if es, err := unread.Next(0); err != nil || len(es) != 0 {
+		t.Fatalf("a cursor closed before its first read returned %v, %v", seqs(es), err)
+	}
+	between := l.Cursor(0)
+	if _, err := between.Until(2); err != nil {
+		t.Fatal(err)
+	}
+	if err := between.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if es, err := between.Until(7); err != nil || len(es) != 0 {
+		t.Fatalf("a cursor closed between segments returned %v, %v", seqs(es), err)
+	}
 }
 
 // Log.Verify reports a position after every entry, with the byte count

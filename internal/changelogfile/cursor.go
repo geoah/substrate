@@ -133,12 +133,14 @@ func (c *Cursor) Position() Position {
 
 // Close releases the open segment. A closed cursor reads nothing more.
 func (c *Cursor) Close() error {
+	// Closed whether or not a segment is open: before the first read, and
+	// between two segments, there is none, and the cursor must still stop.
+	c.expected = c.l.head + 1
 	if c.r == nil {
 		return nil
 	}
 	err := c.r.close()
 	c.r = nil
-	c.expected = c.l.head + 1
 	return err
 }
 
